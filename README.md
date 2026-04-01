@@ -42,11 +42,17 @@
 
 You need a running **ComfyUI** backend (v0.2.0 or newer). The installer handles custom nodes, models, and plugin files automatically.
 
+<p align="center">
+  <a href="https://github.com/laboratoiresonore/spellcaster/releases/download/v1.0.0/spellcaster-installer.exe">
+    <img src="https://img.shields.io/badge/Download%20for%20Windows-spellcaster--installer.exe-7c3aed?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows"/>
+  </a>
+</p>
+
 ### 🌟 Simple — Standalone Installer
 
 *For artists who don't want to touch a terminal.*
 
-1. Go to the [**Releases page**](https://github.com/laboratoiresonore/spellcaster/releases) and download the installer for your OS:
+1. Click the button above (Windows) or go to the [**Releases page**](https://github.com/laboratoiresonore/spellcaster/releases) for all platforms:
    - **Windows:** `spellcaster-installer.exe`
    - **macOS:** `Spellcaster Installer.app`
    - **Linux:** `spellcaster-installer`

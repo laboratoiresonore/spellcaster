@@ -115,7 +115,7 @@ def build(target_platform: str, onedir: bool = False):
     result = subprocess.run(cmd, cwd=str(HERE))
 
     if result.returncode == 0:
-        print(f"\n✓ Build complete: {output}")
+        print(f"\nBuild complete: {output}")
         print(f"  Full path: {HERE / output}")
 
         if target_platform == "macos" and onedir:
@@ -127,7 +127,7 @@ def build(target_platform: str, onedir: bool = False):
         else:
             print(f"\nTo distribute: share {output}")
     else:
-        print(f"\n✗ Build failed (exit code {result.returncode})")
+        print(f"\nBuild failed (exit code {result.returncode})")
         sys.exit(result.returncode)
 
 
