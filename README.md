@@ -43,8 +43,16 @@
 You need a running **ComfyUI** backend (v0.2.0 or newer). The installer handles custom nodes, models, and plugin files automatically.
 
 <p align="center">
-  <a href="https://github.com/laboratoiresonore/spellcaster/releases/download/v1.0.0/spellcaster-installer.exe">
-    <img src="https://img.shields.io/badge/Download%20for%20Windows-spellcaster--installer.exe-7c3aed?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows"/>
+  <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-installer.exe">
+    <img src="https://img.shields.io/badge/Windows-spellcaster--installer.exe-7c3aed?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows"/>
+  </a>
+  &nbsp;
+  <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-installer-macos.zip">
+    <img src="https://img.shields.io/badge/macOS-Spellcaster%20Installer.app-7c3aed?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS"/>
+  </a>
+  &nbsp;
+  <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-installer-linux">
+    <img src="https://img.shields.io/badge/Linux-spellcaster--installer-7c3aed?style=for-the-badge&logo=linux&logoColor=white" alt="Download for Linux"/>
   </a>
 </p>
 
@@ -52,10 +60,10 @@ You need a running **ComfyUI** backend (v0.2.0 or newer). The installer handles 
 
 *For artists who don't want to touch a terminal.*
 
-1. Click the button above (Windows) or go to the [**Releases page**](https://github.com/laboratoiresonore/spellcaster/releases) for all platforms:
+1. Click your platform's button above, or visit the [**Releases page**](https://github.com/laboratoiresonore/spellcaster/releases):
    - **Windows:** `spellcaster-installer.exe`
-   - **macOS:** `Spellcaster Installer.app`
-   - **Linux:** `spellcaster-installer`
+   - **macOS:** `spellcaster-installer-macos.zip` → unzip → run `Spellcaster Installer.app`
+   - **Linux:** `spellcaster-installer` → `chmod +x spellcaster-installer && ./spellcaster-installer`
 2. Run it — a wizard walks you through everything.
 3. Point it at your ComfyUI folder. It downloads models, clones nodes, and installs the plugins.
 
