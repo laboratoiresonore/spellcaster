@@ -1,0 +1,275 @@
+{
+  "version": "1.0.0",
+  "name": "Spellcaster",
+  "description": "ComfyUI connector plugins for GIMP 3 and Darktable — AI image generation, inpainting, face swap, video generation, and more.",
+  "repo": "https://github.com/laboratoiresonore/spellcaster",
+
+  "custom_nodes": {
+    "ComfyUI-GGUF": {
+      "repo": "https://github.com/city96/ComfyUI-GGUF",
+      "provides": ["CLIPLoaderGGUF", "UnetLoaderGGUF"],
+      "required_by": ["wan_i2v"]
+    },
+    "ComfyUI-VideoHelperSuite": {
+      "repo": "https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite",
+      "provides": ["VHS_VideoCombine"],
+      "required_by": ["wan_i2v"]
+    },
+    "ComfyUI-RIFE": {
+      "repo": "https://github.com/dajes/frame-interpolation-pytorch",
+      "alt_repo": "https://github.com/Fannovel16/ComfyUI-Frame-Interpolation",
+      "provides": ["RIFE VFI"],
+      "required_by": ["wan_i2v"]
+    },
+    "comfyui-reactor-node": {
+      "repo": "https://github.com/Gourieff/comfyui-reactor-node",
+      "provides": ["ReActorFaceSwap", "ReActorLoadFaceModel", "ReActorFaceSwapOpt", "ReActorOptions", "ReActorFaceBoost"],
+      "required_by": ["face_swap_reactor"]
+    },
+    "comfyui-mtb": {
+      "repo": "https://github.com/melMass/comfyui-mtb",
+      "provides": ["Load Face Analysis Model (mtb)", "Load Face Swap Model (mtb)", "Face Swap (mtb)"],
+      "required_by": ["face_swap_mtb"]
+    },
+    "ComfyUI_IPAdapter_plus": {
+      "repo": "https://github.com/cubiq/ComfyUI_IPAdapter_plus",
+      "provides": ["IPAdapterUnifiedLoaderFaceID", "IPAdapterFaceID"],
+      "required_by": ["faceid_img2img"]
+    },
+    "PuLID_ComfyUI": {
+      "repo": "https://github.com/cubiq/PuLID_ComfyUI",
+      "provides": ["PulidFluxModelLoader", "PulidFluxEvaClipLoader", "PulidFluxInsightFaceLoader", "ApplyPulidFlux"],
+      "required_by": ["pulid_flux"]
+    },
+    "ComfyUI_GetImageSize": {
+      "repo": "https://github.com/IuvenisSapworworiens/ComfyUI_GetImageSize",
+      "alt_repo": "https://github.com/kijai/ComfyUI-KJNodes",
+      "provides": ["GetImageSize+"],
+      "required_by": ["img2img", "inpaint", "face_swap_reactor", "face_swap_mtb"]
+    },
+    "ComfyUI-RTX-Remix": {
+      "repo": "https://github.com/NVlabs/ComfyUI-RTXVideoSuperResolution",
+      "alt_repo": "https://github.com/pifroggi/ComfyUI-RTXVideoSuperResolution",
+      "provides": ["RTXVideoSuperResolution"],
+      "required_by": ["wan_i2v"],
+      "note": "Requires NVIDIA RTX GPU with Tensor cores"
+    }
+  },
+
+  "features": {
+    "img2img": {
+      "label": "Image-to-Image Generation",
+      "description": "Generate images from source images using SD 1.5, SDXL, Illustrious, and Klein Flux2 models",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "checkpoints": [
+          {"path": "checkpoints/SD-1.5/juggernaut_reborn.safetensors", "url": "https://civitai.com/api/download/models/274039", "size_mb": 2013, "optional": true, "note": "SD 1.5 — Juggernaut Reborn"},
+          {"path": "checkpoints/SD-1.5/realisticVisionV51_v51VAE.safetensors", "url": "https://civitai.com/api/download/models/130072", "size_mb": 2013, "optional": true, "note": "SD 1.5 — Realistic Vision v5.1"},
+          {"path": "checkpoints/SD-1.5/v1-5-pruned-emaonly.safetensors", "url": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/v1-5-pruned-emaonly.safetensors", "size_mb": 4265, "optional": true, "note": "SD 1.5 — Base model"},
+          {"path": "checkpoints/SDXL/Anime/NoobAI-XL-v1.1.safetensors", "url": null, "size_mb": 6938, "optional": true, "note": "SDXL Anime — NoobAI XL"},
+          {"path": "checkpoints/SDXL/Anime/novaAnimeXL_ilV170.safetensors", "url": null, "size_mb": 6938, "optional": true, "note": "SDXL Anime — Nova Anime XL"},
+          {"path": "checkpoints/SDXL/Anime/waiIllustriousSDXL_v160-a5f5.safetensors", "url": null, "size_mb": 6938, "optional": true, "note": "SDXL Anime — Wai Illustrious"},
+          {"path": "checkpoints/SDXL/Base/AlbedoBaseXL.safetensors", "url": null, "size_mb": 6938, "optional": true, "note": "SDXL — AlbedoBase XL"},
+          {"path": "checkpoints/SDXL/Base/sd_xl_base_1.0.safetensors", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors", "size_mb": 6938, "optional": true, "note": "SDXL — Official base model"},
+          {"path": "checkpoints/SDXL/Cartoon-3D/modernDisneyXL_v3.safetensors", "url": null, "size_mb": 6938, "optional": true, "note": "SDXL Cartoon — Modern Disney XL"},
+          {"path": "checkpoints/SDXL/Cartoon-3D/novaCartoonXL_v60.safetensors", "url": null, "size_mb": 6938, "optional": true, "note": "SDXL Cartoon — Nova Cartoon XL"},
+          {"path": "checkpoints/SDXL/Realistic/cyberrealisticPony_v160.safetensors", "url": null, "size_mb": 6938, "optional": true, "note": "SDXL Realistic — CyberRealistic Pony"},
+          {"path": "checkpoints/SDXL/Realistic/jibMixRealisticXL_v180SkinSupreme.safetensors", "url": null, "size_mb": 6938, "optional": true, "note": "SDXL Realistic — JibMix Realistic XL"},
+          {"path": "checkpoints/SDXL/Realistic/juggernautXL_ragnarok.safetensors", "url": null, "size_mb": 6938, "optional": true, "note": "SDXL Realistic — Juggernaut XL Ragnarok"},
+          {"path": "checkpoints/SDXL/Realistic/juggernautXL_v9Rundiffusionphoto2.safetensors", "url": "https://civitai.com/api/download/models/456194", "size_mb": 6938, "optional": true, "note": "SDXL Realistic — Juggernaut XL v9"},
+          {"path": "checkpoints/SDXL/Realistic/zavychromaxl_v100.safetensors", "url": null, "size_mb": 6938, "optional": true, "note": "SDXL Realistic — ZavyChroma XL"},
+          {"path": "checkpoints/Illustrious/ilustreal_v50VAE.safetensors", "url": null, "size_mb": 6938, "optional": true, "note": "Illustrious — IlustrReal v5"},
+          {"path": "checkpoints/Illustrious/sloppyMessyMix_sloppyMessyMixV1.safetensors", "url": null, "size_mb": 6938, "optional": true, "note": "Illustrious — Sloppy Messy Mix"}
+        ],
+        "note": "You need at least ONE checkpoint. Recommended starter: juggernautXL_v9Rundiffusionphoto2 (SDXL Realistic)."
+      },
+      "custom_nodes": ["ComfyUI_GetImageSize"]
+    },
+
+    "txt2img": {
+      "label": "Text-to-Image Generation",
+      "description": "Generate images from text prompts (GIMP only)",
+      "plugins": ["gimp"],
+      "models": {
+        "note": "Uses same checkpoints as img2img — no additional models needed."
+      },
+      "custom_nodes": []
+    },
+
+    "inpaint": {
+      "label": "Inpainting & Refinement",
+      "description": "Mask-based refinement with 38 preset templates (hands, eyes, skin, style effects). GIMP only.",
+      "plugins": ["gimp"],
+      "models": {
+        "loras_body": [
+          {"path": "loras/SDXL/Body/HandFineTuning_XL.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Fix hands/fingers (SDXL)"},
+          {"path": "loras/SDXL/Body/hand 5.5.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Hand detail v5.5 (SDXL)"}
+        ],
+        "loras_detail": [
+          {"path": "loras/SDXL/Detail/Eyes_High_Definition-000007.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Eye detail (SDXL)"},
+          {"path": "loras/SDXL/Detail/RealSkin_xxXL_v1.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Real skin texture (SDXL)"},
+          {"path": "loras/SDXL/Detail/Teefs-000007.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Teeth/mouth fix (SDXL)"},
+          {"path": "loras/SDXL/Detail/skin texture style v4.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Skin texture style (SDXL)"},
+          {"path": "loras/SDXL/Detail/Wonderful_Details_XL_V1a.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Wonderful Details XL (SDXL)"}
+        ],
+        "loras_style": [
+          {"path": "loras/SDXL/Style/dark.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Dark/gothic style"},
+          {"path": "loras/SDXL/Style/epiCPhotoXL-Derp2.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Epic photo style"},
+          {"path": "loras/SDXL/Style/epicNewPhoto.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Epic new photo style"},
+          {"path": "loras/SDXL/Style/RawCam_250_v1.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Raw camera style"},
+          {"path": "loras/SDXL/Style/ghibli_last.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Studio Ghibli style"},
+          {"path": "loras/SDXL/Style/SDXLFaeTastic2400.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Fantasy/ethereal style"},
+          {"path": "loras/SDXL/Style/epiCRealnessRC1.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Epic realism style"},
+          {"path": "loras/SDXL/Style/zy_AmateurStyle_v2.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Amateur/imperfect style"},
+          {"path": "loras/SDXL/Style/sd_xl_offset_example-lora_1.0.safetensors", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_offset_example-lora_1.0.safetensors", "size_mb": 50, "optional": true, "note": "SDXL offset LoRA"}
+        ],
+        "loras_concept": [
+          {"path": "loras/SDXL/Concept/ARobotGirls_Concept-12.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Robot girls concept"},
+          {"path": "loras/SDXL/Concept/err0rFv1.6.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Glitch/corrupted effect"},
+          {"path": "loras/SDXL/Concept/Aliens_AILF_SDXL.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Aliens/sci-fi concept"},
+          {"path": "loras/SDXL/Concept/Space_ship_concept.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Spaceship concept"}
+        ],
+        "loras_misc": [
+          {"path": "loras/SDXL/Oily skin style xl v1.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Wet/oily skin"},
+          {"path": "loras/SDXL/Sweating my balls of mate.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Sweaty/glistening"},
+          {"path": "loras/SDXL/Green_Slime_WAM_Gunge_Wet_and_Messy_Sploshing_Splosh.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "WAM/wet and messy"},
+          {"path": "loras/SDXL/polyhedron_all_sdxl-000004.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Poly/3D geometry"},
+          {"path": "loras/SDXL/realistic/feet v3.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Feet fix LoRA"},
+          {"path": "loras/SDXL/Slider/Dramatic Lighting Slider.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Dramatic lighting slider"}
+        ],
+        "loras_illustrious_pony": [
+          {"path": "loras/Illustrious-Pony/MetallicGoldSilver_skinbody_paint-000019.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Metallic gold/silver"},
+          {"path": "loras/Illustrious-Pony/Ethereal_Gothic_Elegance.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Ethereal gothic"},
+          {"path": "loras/Illustrious-Pony/Chiaroscuro film style pony v1.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Chiaroscuro/cinematic dark"},
+          {"path": "loras/Illustrious-Pony/Cinematic Photography Style pony v1.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Cinematic photography"},
+          {"path": "loras/Illustrious-Pony/HyperdetailedRealismMJ7Pony.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Hyperdetailed realism"},
+          {"path": "loras/Illustrious-Pony/StS_PonyXL_Detail_Slider_v1.4_iteration_3.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Detail slider"}
+        ],
+        "loras_klein": [
+          {"path": "loras/Flux-2-Klein/K9bSh4rpD3tails.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Klein sharp details"},
+          {"path": "loras/Flux-2-Klein/K9bSR3al.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Klein realism"},
+          {"path": "loras/Flux-2-Klein/Sliders/klein_slider_anatomy_9B_v1.5.safetensors", "url": null, "size_mb": 50, "optional": true, "note": "Klein anatomy slider"},
+          {"path": "loras/Flux-2-Klein/Sliders/klein_slider_glow.safetensors", "url": null, "size_mb": 50, "optional": true, "note": "Klein glow slider"},
+          {"path": "loras/Flux-2-Klein/Sliders/ColorTone_Standard.safetensors", "url": null, "size_mb": 50, "optional": true, "note": "Klein color tone"},
+          {"path": "loras/Flux-2-Klein/hipoly_3dcg_v7-epoch-000012.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Klein hi-poly 3D CG"},
+          {"path": "loras/Flux-2-Klein/Tentacle v2_000002000.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Klein tentacle/organic"},
+          {"path": "loras/Flux-2-Klein/Character/Flux2Klein_AnythingtoRealCharacters.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Klein real characters"},
+          {"path": "loras/Flux-2-Klein/upscale_portrait_9bklein.safetensors", "url": null, "size_mb": 144, "optional": true, "note": "Klein upscale portrait"}
+        ],
+        "note": "All inpaint LoRAs are optional. The inpaint feature works without them, but refinement presets (Fix Hands, Fix Eyes, etc.) will lack style-specific enhancements."
+      },
+      "custom_nodes": ["ComfyUI_GetImageSize"]
+    },
+
+    "face_swap_reactor": {
+      "label": "Face Swap (ReActor)",
+      "description": "Swap faces between images using ReActor",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "face_restore": [
+          {"path": "facerestore_models/codeformer-v0.1.0.pth", "url": "https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/codeformer.pth", "size_mb": 376, "optional": false, "note": "CodeFormer face restoration (required by ReActor)"},
+          {"path": "facerestore_models/GFPGANv1.3.pth", "url": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.3.pth", "size_mb": 332, "optional": true, "note": "GFPGAN v1.3"},
+          {"path": "facerestore_models/GFPGANv1.4.pth", "url": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.4/GFPGANv1.4.pth", "size_mb": 349, "optional": true, "note": "GFPGAN v1.4"}
+        ],
+        "note": "ReActor downloads its own insightface/inswapper model on first use. CodeFormer is required for face restoration."
+      },
+      "custom_nodes": ["comfyui-reactor-node", "ComfyUI_GetImageSize"]
+    },
+
+    "face_swap_mtb": {
+      "label": "Face Swap (MTB)",
+      "description": "Alternative face swap using comfyui-mtb",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "note": "MTB face swap models are downloaded automatically by the node on first use."
+      },
+      "custom_nodes": ["comfyui-mtb", "ComfyUI_GetImageSize"]
+    },
+
+    "faceid_img2img": {
+      "label": "FaceID Image-to-Image",
+      "description": "Generate images preserving face identity using IPAdapter FaceID (GIMP only)",
+      "plugins": ["gimp"],
+      "models": {
+        "note": "IPAdapter FaceID models are managed by the IPAdapter node. It will prompt you to download the correct model on first use."
+      },
+      "custom_nodes": ["ComfyUI_IPAdapter_plus"]
+    },
+
+    "pulid_flux": {
+      "label": "PuLID Flux (Face Identity)",
+      "description": "Generate images with face identity preservation using PuLID + Flux (GIMP only)",
+      "plugins": ["gimp"],
+      "models": {
+        "unet": [
+          {"path": "unet/Flux/FLUX1 Dev fp8.safetensors", "url": null, "size_mb": 11904, "optional": false, "note": "Flux 1 Dev fp8 — required for PuLID"},
+          {"path": "unet/Flux/flux1-dev-kontext_fp8_scaled.safetensors", "url": null, "size_mb": 11904, "optional": true, "note": "Flux 1 Dev Kontext (alternative)"}
+        ],
+        "clip": [
+          {"path": "clip/clip_l.safetensors", "url": "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors", "size_mb": 235, "optional": false, "note": "CLIP-L text encoder"},
+          {"path": "clip/t5xxl_fp8_e4m3fn.safetensors", "url": "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors", "size_mb": 4892, "optional": false, "note": "T5-XXL fp8 text encoder"}
+        ],
+        "vae": [
+          {"path": "vae/ae.safetensors", "url": "https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/ae.safetensors", "size_mb": 167, "optional": false, "note": "Flux autoencoder VAE"}
+        ],
+        "pulid": [
+          {"path": "pulid/pulid_flux_v0.9.1.safetensors", "url": "https://huggingface.co/guozinan/PuLID/resolve/main/pulid_flux_v0.9.1.safetensors", "size_mb": 1078, "optional": false, "note": "PuLID Flux model v0.9.1"}
+        ]
+      },
+      "custom_nodes": ["PuLID_ComfyUI"]
+    },
+
+    "klein_flux2": {
+      "label": "Klein Flux2 Image-to-Image",
+      "description": "Fast distilled Flux 2 img2img using Klein 9B/4B models",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "unet": [
+          {"path": "unet/A-Flux/Flux2/flux-2-klein-9b.safetensors", "url": null, "size_mb": 19000, "optional": false, "note": "Klein 9B (primary — best quality)"},
+          {"path": "unet/A-Flux/flux-2-klein-4b-fp8.safetensors", "url": null, "size_mb": 4500, "optional": true, "note": "Klein 4B fp8 (faster, less VRAM)"},
+          {"path": "unet/A-Flux/flux-2-klein-base-4b-fp8.safetensors", "url": null, "size_mb": 4500, "optional": true, "note": "Klein Base 4B fp8 (lightest)"}
+        ],
+        "clip": [
+          {"path": "clip/qwen_3_8b_fp8mixed.safetensors", "url": null, "size_mb": 4100, "optional": false, "note": "Qwen 3 8B fp8 (for Klein 9B)"},
+          {"path": "clip/qwen_3_4b.safetensors", "url": null, "size_mb": 2100, "optional": true, "note": "Qwen 3 4B (for Klein 4B variants)"}
+        ],
+        "vae": [
+          {"path": "vae/flux2-vae.safetensors", "url": null, "size_mb": 167, "optional": false, "note": "Flux 2 VAE"}
+        ]
+      },
+      "custom_nodes": []
+    },
+
+    "wan_i2v": {
+      "label": "Wan 2.2 Image-to-Video",
+      "description": "Generate video from images using Wan 2.2 dual-model architecture with optional RTX upscale and RIFE interpolation",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "unet": [
+          {"path": "unet/Wan/wan2.2_i2v_high_noise_14B_Q4_K_S.gguf", "url": null, "size_mb": 8200, "optional": false, "note": "Wan 14B high-noise GGUF Q4 (recommended)"},
+          {"path": "unet/Wan/wan2.2_i2v_low_noise_14B_Q4_K_S.gguf", "url": null, "size_mb": 8200, "optional": false, "note": "Wan 14B low-noise GGUF Q4 (recommended)"},
+          {"path": "unet/Wan/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors", "url": null, "size_mb": 14000, "optional": true, "note": "Wan 14B high-noise fp8 (alternative)"},
+          {"path": "unet/Wan/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors", "url": null, "size_mb": 14000, "optional": true, "note": "Wan 14B low-noise fp8 (alternative)"},
+          {"path": "unet/Wan/wan22EnhancedNSFWSVICamera_nsfwV2FP8H.safetensors", "url": null, "size_mb": 14000, "optional": true, "note": "Wan Enhanced NSFW SVI high fp8"},
+          {"path": "unet/Wan/wan22EnhancedNSFWSVICamera_nsfwV2FP8L.safetensors", "url": null, "size_mb": 14000, "optional": true, "note": "Wan Enhanced NSFW SVI low fp8"}
+        ],
+        "clip": [
+          {"path": "clip/umt5-xxl-encoder-Q8_0.gguf", "url": "https://huggingface.co/city96/umt5-xxl-encoder-gguf/resolve/main/umt5-xxl-encoder-Q8_0.gguf", "size_mb": 5170, "optional": false, "note": "UMT5-XXL GGUF encoder for Wan"}
+        ],
+        "vae": [
+          {"path": "vae/wan_2.1_vae.safetensors", "url": "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors", "size_mb": 335, "optional": false, "note": "Wan 2.1 VAE"}
+        ],
+        "loras": [
+          {"path": "loras/WAN/wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors", "url": null, "size_mb": 80, "optional": true, "note": "LightX2V accelerator LoRA (high noise) — speeds up generation ~4x. Place in loras/WAN/"},
+          {"path": "loras/WAN/wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors", "url": null, "size_mb": 80, "optional": true, "note": "LightX2V accelerator LoRA (low noise) — speeds up generation ~4x. Place in loras/WAN/"},
+          {"path": "loras/WAN/SVI_v2_PRO_Wan2.2-I2V-A14B_HIGH_lora_rank_128_fp16.safetensors", "url": null, "size_mb": 256, "optional": true, "note": "SVI v2 Pro accelerator LoRA (high noise) for Enhanced NSFW SVI preset. Place in loras/WAN/"},
+          {"path": "loras/WAN/SVI_v2_PRO_Wan2.2-I2V-A14B_LOW_lora_rank_128_fp16.safetensors", "url": null, "size_mb": 256, "optional": true, "note": "SVI v2 Pro accelerator LoRA (low noise) for Enhanced NSFW SVI preset. Place in loras/WAN/"}
+        ],
+        "interpolation": [
+          {"path": "custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth", "url": null, "size_mb": 30, "optional": true, "note": "RIFE v4.9 model (for frame interpolation)"}
+        ]
+      },
+      "custom_nodes": ["ComfyUI-GGUF", "ComfyUI-VideoHelperSuite", "ComfyUI-RIFE", "ComfyUI-RTX-Remix"]
+    }
+  }
+}
