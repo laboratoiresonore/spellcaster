@@ -1,2 +1,2 @@
-# spellcaster
+# Spellcaster
 retouch images with AI
