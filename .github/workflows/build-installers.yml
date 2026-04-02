@@ -1,0 +1,97 @@
+name: Build Installers
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            artifact: dist/spellcaster-installer.exe
+            asset_name: spellcaster-installer.exe
+
+          - os: macos-latest
+            platform: macos
+            onedir: true
+            artifact: dist/Spellcaster Installer.app
+            asset_name: spellcaster-installer-macos.zip
+
+          - os: ubuntu-latest
+            platform: linux
+            artifact: dist/spellcaster-installer
+            asset_name: spellcaster-installer-linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+
+      - name: Install tkinter (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get install -y python3-tk
+
+      - name: Build installer (Windows / Linux)
+        if: matrix.onedir != true
+        run: python build_installer.py --platform ${{ matrix.platform }} --update-tool
+
+      - name: Build installer (macOS app bundle)
+        if: matrix.onedir == true
+        run: python build_installer.py --platform macos --onedir --update-tool
+
+      - name: Zip macOS app bundle
+        if: matrix.os == 'macos-latest'
+        run: cd dist && zip -r "../spellcaster-installer-macos.zip" "Spellcaster Installer.app"
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: |
+            ${{ matrix.os == 'macos-latest' && 'spellcaster-installer-macos.zip' || matrix.artifact }}
+
+      - name: Upload manual update artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spellcaster-manual-update-${{ matrix.platform }}
+          path: |
+            dist/spellcaster-manual-update${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: find artifacts -type f
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/spellcaster-installer.exe
+            artifacts/spellcaster-installer-macos.zip
+            artifacts/spellcaster-installer-linux
+            artifacts/spellcaster-manual-update.exe
+            artifacts/spellcaster-manual-update
