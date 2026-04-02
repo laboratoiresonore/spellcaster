@@ -1052,11 +1052,13 @@ class InstallerApp(ctk.CTk):
             # GIMP system splash
             if self.gimp_path.get():
                 gimp_splash = builder._find_gimp_system_splash()
-                gimp_src_dir = builder._find_gimp_plugin_src()
-                if gimp_src_dir:
-                    gimp_banner = gimp_src_dir.parent.parent / "gimp_banner.png"
-                else:
-                    gimp_banner = Path("plugins/gimp/gimp_banner.png")
+                # Look for gimp_banner.png in the bundled plugins/gimp/ directory
+                gimp_banner = builder.SCRIPT_DIR / "plugins" / "gimp" / "gimp_banner.png"
+                if not gimp_banner.exists():
+                    # Fallback: next to the plugin source
+                    gimp_src_dir = builder._find_gimp_plugin_src()
+                    if gimp_src_dir:
+                        gimp_banner = gimp_src_dir.parent / "gimp_banner.png"
                 if gimp_splash and gimp_banner.exists():
                     backup = gimp_splash.with_suffix(".orig" + gimp_splash.suffix)
                     try:
@@ -1076,9 +1078,11 @@ class InstallerApp(ctk.CTk):
             # Darktable system splash
             if self.darktable_path.get():
                 dt_splash = builder._find_darktable_system_splash()
-                dt_src_file = builder._find_darktable_plugin_src()
-                dt_splash_src = (dt_src_file.parent / "darktable_splash.jpg"
-                                 if dt_src_file else Path("plugins/darktable/darktable_splash.jpg"))
+                dt_splash_src = builder.SCRIPT_DIR / "plugins" / "darktable" / "darktable_splash.jpg"
+                if not dt_splash_src.exists():
+                    dt_src_file = builder._find_darktable_plugin_src()
+                    if dt_src_file:
+                        dt_splash_src = dt_src_file.parent / "darktable_splash.jpg"
                 if dt_splash and dt_splash_src.exists():
                     backup = dt_splash.with_suffix(".orig" + dt_splash.suffix)
                     try:
