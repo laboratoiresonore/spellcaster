@@ -449,6 +449,41 @@ class InstallerApp(ctk.CTk):
         server_entry.pack(side="left", padx=10)
         _ToolTip(server_entry, "The URL where ComfyUI's API server is running. Default is http://127.0.0.1:8188. Only change this if you run ComfyUI on a different port or on a remote machine.")
 
+        # Help panel: show download links for missing apps
+        missing = []
+        if not self.comfyui_path.get().strip():
+            missing.append(("ComfyUI", "https://github.com/comfyanonymous/ComfyUI"))
+        if not self.gimp_path.get().strip():
+            missing.append(("GIMP 3", "https://www.gimp.org/downloads/"))
+        if not self.darktable_path.get().strip():
+            missing.append(("Darktable", "https://www.darktable.org/install/"))
+
+        if missing:
+            help_frame = ctk.CTkFrame(f_paths, fg_color="#1a0f2e", corner_radius=8,
+                                      border_width=1, border_color=self.accent_amber)
+            help_frame.pack(fill="x", padx=30, pady=(5, 15))
+            ctk.CTkLabel(help_frame,
+                         text="Some applications were not detected. Install them first, or set paths manually:",
+                         font=ctk.CTkFont(family="Inter", size=12, weight="bold"),
+                         text_color=self.accent_amber).pack(anchor="w", padx=15, pady=(10, 5))
+            for app_name, url in missing:
+                link_row = ctk.CTkFrame(help_frame, fg_color="transparent")
+                link_row.pack(fill="x", padx=15, pady=2)
+                ctk.CTkLabel(link_row, text=f"  {app_name}:",
+                             font=ctk.CTkFont(family="Inter", size=12, weight="bold"),
+                             text_color=self.text_main, width=100, anchor="w").pack(side="left")
+                link_btn = ctk.CTkButton(link_row, text=url,
+                                         font=ctk.CTkFont(family="Inter", size=12, underline=True),
+                                         fg_color="transparent", hover_color="#21153B",
+                                         text_color="#7c9dff", anchor="w",
+                                         command=lambda u=url: __import__('webbrowser').open(u))
+                link_btn.pack(side="left", padx=5)
+                _ToolTip(link_btn, f"Open {app_name} download page in your browser")
+            ctk.CTkLabel(help_frame,
+                         text="You can also leave ComfyUI blank and set a remote server IP above to use a network GPU.",
+                         font=ctk.CTkFont(family="Inter", size=11, slant="italic"),
+                         text_color=self.text_muted, wraplength=700, justify="left").pack(anchor="w", padx=15, pady=(5, 10))
+
         # Theme override checkbox
         theme_frame = ctk.CTkFrame(f_paths, fg_color="#150D26", corner_radius=8,
                                    border_width=1, border_color="#3A2863")
