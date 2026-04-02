@@ -648,9 +648,10 @@ class InstallerApp(ctk.CTk):
             for fkey in valid_features:
                 feat = self.manifest["features"][fkey]
 
-                # VRAM-aware default
+                # VRAM-aware default (NSFW_ALL_ON overrides to enable everything)
+                _force_all = getattr(self, '_nsfw_force_all', False)
                 vram_status, vram_reason = builder.feature_compatible(feat, self._vram_mb)
-                default_on = vram_status in ("ok", "warn") if self._vram_mb > 0 else False
+                default_on = True if _force_all else (vram_status in ("ok", "warn") if self._vram_mb > 0 else False)
 
                 var = ctk.BooleanVar(value=default_on)
                 self.feature_vars[fkey] = var
