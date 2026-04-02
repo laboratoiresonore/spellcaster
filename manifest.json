@@ -1,0 +1,512 @@
+{
+  "version": "1.0",
+  "name": "Spellcaster",
+  "description": "AI superpowers for GIMP 3 and Darktable — image generation, inpainting, face swap, background removal, video generation, and more.",
+  "repo": "https://github.com/laboratoiresonore/spellcaster",
+
+  "custom_nodes": {
+    "ComfyUI-GGUF": {
+      "repo": "https://github.com/city96/ComfyUI-GGUF",
+      "provides": ["CLIPLoaderGGUF", "UnetLoaderGGUF"],
+      "required_by": ["wan_i2v"]
+    },
+    "ComfyUI-VideoHelperSuite": {
+      "repo": "https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite",
+      "provides": ["VHS_VideoCombine"],
+      "required_by": ["wan_i2v"]
+    },
+    "ComfyUI-RIFE": {
+      "repo": "https://github.com/dajes/frame-interpolation-pytorch",
+      "alt_repo": "https://github.com/Fannovel16/ComfyUI-Frame-Interpolation",
+      "provides": ["RIFE VFI"],
+      "required_by": ["wan_i2v"]
+    },
+    "comfyui-reactor-node": {
+      "repo": "https://github.com/Gourieff/comfyui-reactor-node",
+      "provides": ["ReActorFaceSwap", "ReActorLoadFaceModel", "ReActorFaceSwapOpt", "ReActorOptions", "ReActorFaceBoost"],
+      "required_by": ["face_swap_reactor"]
+    },
+    "comfyui-mtb": {
+      "repo": "https://github.com/melMass/comfyui-mtb",
+      "provides": ["Load Face Analysis Model (mtb)", "Load Face Swap Model (mtb)", "Face Swap (mtb)"],
+      "required_by": ["face_swap_mtb"]
+    },
+    "ComfyUI_IPAdapter_plus": {
+      "repo": "https://github.com/cubiq/ComfyUI_IPAdapter_plus",
+      "provides": ["IPAdapterUnifiedLoaderFaceID", "IPAdapterFaceID"],
+      "required_by": ["faceid_img2img"]
+    },
+    "PuLID_ComfyUI": {
+      "repo": "https://github.com/cubiq/PuLID_ComfyUI",
+      "provides": ["PulidFluxModelLoader", "PulidFluxEvaClipLoader", "PulidFluxInsightFaceLoader", "ApplyPulidFlux"],
+      "required_by": ["pulid_flux"]
+    },
+    "ComfyUI_GetImageSize": {
+      "repo": "https://github.com/IuvenisSapworworiens/ComfyUI_GetImageSize",
+      "alt_repo": "https://github.com/kijai/ComfyUI-KJNodes",
+      "provides": ["GetImageSize+"],
+      "required_by": ["img2img", "inpaint", "face_swap_reactor", "face_swap_mtb"]
+    },
+    "ComfyUI-RTX-Remix": {
+      "repo": "https://github.com/NVlabs/ComfyUI-RTXVideoSuperResolution",
+      "alt_repo": "https://github.com/pifroggi/ComfyUI-RTXVideoSuperResolution",
+      "provides": ["RTXVideoSuperResolution"],
+      "required_by": ["wan_i2v"],
+      "note": "Requires NVIDIA RTX GPU with Tensor cores"
+    },
+    "ComfyUI-REMBG": {
+      "repo": "https://github.com/Jcd1230/rembg-comfyui-node",
+      "alt_repo": "https://github.com/Loewen-Hob/rembg-comfyui-node-better",
+      "provides": ["Image Rembg (Remove Background)"],
+      "required_by": ["rembg"],
+      "note": "The isnet-general-use model is downloaded automatically on first use"
+    },
+    "ComfyUI-LaMa": {
+      "repo": "https://github.com/mlinmg/ComfyUI-LaMA-Preprocessor",
+      "alt_repo": "https://github.com/Acly/comfyui-inpaint-nodes",
+      "provides": ["LaMaInpaint"],
+      "required_by": ["lama_remove"]
+    },
+    "ComfyUI-essentials": {
+      "repo": "https://github.com/cubiq/ComfyUI_essentials",
+      "provides": ["ImageApplyLUT+"],
+      "required_by": ["lut_grading"]
+    },
+    "comfyui-controlnet-aux": {
+      "repo": "https://github.com/Fannovel16/comfyui_controlnet_aux",
+      "provides": ["CannyEdgePreprocessor", "MiDaS-DepthMapPreprocessor", "DWPreprocessor", "ScribblePreprocessor", "LineArtPreprocessor"],
+      "required_by": ["controlnet", "colorize"]
+    },
+    "ComfyUI-IC-Light": {
+      "repo": "https://github.com/kijai/ComfyUI-IC-Light-Wrapper",
+      "alt_repo": "https://github.com/huchenlei/ComfyUI-IC-Light",
+      "provides": ["LoadAndApplyICLightUnet", "ICLightConditioning"],
+      "required_by": ["iclight"]
+    },
+    "ComfyUI-SUPIR": {
+      "repo": "https://github.com/kijai/ComfyUI-SUPIR",
+      "provides": ["SUPIR_model_loader", "SUPIR_encode", "SUPIR_sample", "SUPIR_decode"],
+      "required_by": ["supir"]
+    }
+  },
+
+  "features": {
+    "img2img": {
+      "vram_min_gb": 4,
+      "label": "Image-to-Image Generation",
+      "description": "Generate images from source images using SD 1.5, SDXL, Illustrious, and Klein Flux2 models",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "checkpoints": [
+          {"path": "checkpoints/SD-1.5/juggernaut_reborn.safetensors", "url": "https://civitai.com/api/download/models/274039", "page_url": "https://civitai.com/models/46422", "size_mb": 2013, "optional": true, "note": "SD 1.5 — Juggernaut Reborn"},
+          {"path": "checkpoints/SD-1.5/realisticVisionV51_v51VAE.safetensors", "url": "https://civitai.com/api/download/models/130072", "page_url": "https://civitai.com/models/4201", "size_mb": 2013, "optional": true, "note": "SD 1.5 — Realistic Vision v5.1"},
+          {"path": "checkpoints/SD-1.5/v1-5-pruned-emaonly.safetensors", "url": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/v1-5-pruned-emaonly.safetensors", "page_url": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5", "size_mb": 4265, "optional": true, "note": "SD 1.5 — Base model"},
+          {"path": "checkpoints/SDXL/Anime/NoobAI-XL-v1.1.safetensors", "url": null, "page_url": "https://civitai.com/models/833294", "size_mb": 6938, "optional": true, "note": "SDXL Anime — NoobAI XL"},
+          {"path": "checkpoints/SDXL/Anime/novaAnimeXL_ilV170.safetensors", "url": null, "page_url": "https://civitai.com/models/376130", "size_mb": 6938, "optional": true, "note": "SDXL Anime — Nova Anime XL Illustrious"},
+          {"path": "checkpoints/SDXL/Anime/waiIllustriousSDXL_v160-a5f5.safetensors", "url": null, "page_url": "https://civitai.com/models/827184", "size_mb": 6938, "optional": true, "note": "SDXL Anime — Wai NSFW Illustrious SDXL"},
+          {"path": "checkpoints/SDXL/Base/AlbedoBaseXL.safetensors", "url": null, "page_url": "https://civitai.com/models/140737", "size_mb": 6938, "optional": true, "note": "SDXL — AlbedoBase XL"},
+          {"path": "checkpoints/SDXL/Base/sd_xl_base_1.0.safetensors", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors", "page_url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0", "size_mb": 6938, "optional": true, "note": "SDXL — Official base model"},
+          {"path": "checkpoints/SDXL/Cartoon-3D/modernDisneyXL_v3.safetensors", "url": null, "page_url": "https://civitai.com/models/138857", "size_mb": 6938, "optional": true, "note": "SDXL Cartoon — Modern Disney XL"},
+          {"path": "checkpoints/SDXL/Cartoon-3D/novaCartoonXL_v60.safetensors", "url": null, "page_url": "https://civitai.com/models/1570391", "size_mb": 6938, "optional": true, "note": "SDXL Cartoon — Nova Cartoon XL"},
+          {"path": "checkpoints/SDXL/Realistic/cyberrealisticPony_v160.safetensors", "url": null, "page_url": "https://civitai.com/models/443821", "size_mb": 6938, "optional": true, "note": "SDXL Realistic — CyberRealistic Pony"},
+          {"path": "checkpoints/SDXL/Realistic/jibMixRealisticXL_v180SkinSupreme.safetensors", "url": null, "page_url": "https://civitai.com/models/194768", "size_mb": 6938, "optional": true, "note": "SDXL Realistic — JibMix Realistic XL"},
+          {"path": "checkpoints/SDXL/Realistic/juggernautXL_ragnarok.safetensors", "url": null, "page_url": "https://civitai.com/models/133005", "size_mb": 6938, "optional": true, "note": "SDXL Realistic — Juggernaut XL Ragnarok"},
+          {"path": "checkpoints/SDXL/Realistic/juggernautXL_v9Rundiffusionphoto2.safetensors", "url": "https://civitai.com/api/download/models/456194", "page_url": "https://civitai.com/models/133005", "size_mb": 6938, "optional": true, "note": "SDXL Realistic — Juggernaut XL v9"},
+          {"path": "checkpoints/SDXL/Realistic/zavychromaxl_v100.safetensors", "url": null, "page_url": "https://civitai.com/models/119229", "size_mb": 6938, "optional": true, "note": "SDXL Realistic — ZavyChroma XL"},
+          {"path": "checkpoints/Illustrious/ilustreal_v50VAE.safetensors", "url": null, "page_url": "https://civitai.com/models/1046064", "size_mb": 6938, "optional": true, "note": "Illustrious — IlustrReal v5"},
+          {"path": "checkpoints/Illustrious/sloppyMessyMix_sloppyMessyMixV1.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=sloppy+messy+mix+illustrious", "size_mb": 6938, "optional": true, "note": "Illustrious — Sloppy Messy Mix"}
+        ],
+        "note": "You need at least ONE checkpoint. Recommended starter: juggernautXL_v9Rundiffusionphoto2 (SDXL Realistic)."
+      },
+      "custom_nodes": ["ComfyUI_GetImageSize"]
+    },
+
+    "txt2img": {
+      "vram_min_gb": 4,
+      "label": "Text-to-Image Generation",
+      "description": "Generate images from text prompts (GIMP only)",
+      "plugins": ["gimp"],
+      "models": {
+        "note": "Uses same checkpoints as img2img — no additional models needed."
+      },
+      "custom_nodes": []
+    },
+
+    "inpaint": {
+      "vram_min_gb": 4,
+      "label": "Inpainting & Refinement",
+      "description": "Mask-based refinement with 38 preset templates (hands, eyes, skin, style effects). GIMP only.",
+      "plugins": ["gimp"],
+      "models": {
+        "loras_body": [
+          {"path": "loras/SDXL/Body/HandFineTuning_XL.safetensors", "url": null, "page_url": "https://civitai.com/models/278497", "size_mb": 144, "optional": true, "note": "Fix hands/fingers (SDXL)"},
+          {"path": "loras/SDXL/Body/hand 5.5.safetensors", "url": null, "page_url": "https://civitai.com/models/99358", "size_mb": 144, "optional": true, "note": "Hand detail v5.5 (SDXL)"}
+        ],
+        "loras_detail": [
+          {"path": "loras/SDXL/Detail/Eyes_High_Definition-000007.safetensors", "url": null, "page_url": "https://civitai.com/models/670378", "size_mb": 144, "optional": true, "note": "Eye detail (SDXL)"},
+          {"path": "loras/SDXL/Detail/RealSkin_xxXL_v1.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=realskin+xxXL+sdxl", "size_mb": 144, "optional": true, "note": "Real skin texture (SDXL)"},
+          {"path": "loras/SDXL/Detail/Teefs-000007.safetensors", "url": null, "page_url": "https://civitai.com/models/985036", "size_mb": 144, "optional": true, "note": "Teeth/mouth fix (SDXL)"},
+          {"path": "loras/SDXL/Detail/skin texture style v4.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=skin+texture+style+sdxl", "size_mb": 144, "optional": true, "note": "Skin texture style (SDXL)"},
+          {"path": "loras/SDXL/Detail/Wonderful_Details_XL_V1a.safetensors", "url": null, "page_url": "https://civitai.com/models/1849396", "size_mb": 144, "optional": true, "note": "Wonderful Details XL (SDXL)"}
+        ],
+        "loras_style": [
+          {"path": "loras/SDXL/Style/dark.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=dark+style+lora+sdxl", "size_mb": 144, "optional": true, "note": "Dark/gothic style"},
+          {"path": "loras/SDXL/Style/epiCPhotoXL-Derp2.safetensors", "url": null, "page_url": "https://civitai.com/models/1003950", "size_mb": 144, "optional": true, "note": "Epic photo style"},
+          {"path": "loras/SDXL/Style/epicNewPhoto.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=epicNewPhoto+sdxl", "size_mb": 144, "optional": true, "note": "Epic new photo style"},
+          {"path": "loras/SDXL/Style/RawCam_250_v1.safetensors", "url": null, "page_url": "https://civitai.com/models/176425", "size_mb": 144, "optional": true, "note": "Raw camera style"},
+          {"path": "loras/SDXL/Style/ghibli_last.safetensors", "url": null, "page_url": "https://civitai.com/models/106712", "size_mb": 144, "optional": true, "note": "Studio Ghibli style"},
+          {"path": "loras/SDXL/Style/SDXLFaeTastic2400.safetensors", "url": null, "page_url": "https://civitai.com/models/122891", "size_mb": 144, "optional": true, "note": "Fantasy/ethereal style"},
+          {"path": "loras/SDXL/Style/epiCRealnessRC1.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=epiCRealness+sdxl", "size_mb": 144, "optional": true, "note": "Epic realism style"},
+          {"path": "loras/SDXL/Style/zy_AmateurStyle_v2.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=amateur+style+sdxl", "size_mb": 144, "optional": true, "note": "Amateur/imperfect style"},
+          {"path": "loras/SDXL/Style/sd_xl_offset_example-lora_1.0.safetensors", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_offset_example-lora_1.0.safetensors", "page_url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0", "size_mb": 50, "optional": true, "note": "SDXL offset LoRA"}
+        ],
+        "loras_concept": [
+          {"path": "loras/SDXL/Concept/ARobotGirls_Concept-12.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=robot+girls+concept+sdxl", "size_mb": 144, "optional": true, "note": "Robot girls concept"},
+          {"path": "loras/SDXL/Concept/err0rFv1.6.safetensors", "url": null, "page_url": "https://civitai.com/models/167294", "size_mb": 144, "optional": true, "note": "Glitch/corrupted effect"},
+          {"path": "loras/SDXL/Concept/Aliens_AILF_SDXL.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=aliens+AILF+sdxl", "size_mb": 144, "optional": true, "note": "Aliens/sci-fi concept"},
+          {"path": "loras/SDXL/Concept/Space_ship_concept.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=spaceship+concept+sdxl", "size_mb": 144, "optional": true, "note": "Spaceship concept"}
+        ],
+        "loras_misc": [
+          {"path": "loras/SDXL/Oily skin style xl v1.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=oily+skin+xl", "size_mb": 144, "optional": true, "note": "Wet/oily skin"},
+          {"path": "loras/SDXL/Sweating my balls of mate.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=sweaty+skin+sdxl", "size_mb": 144, "optional": true, "note": "Sweaty/glistening"},
+          {"path": "loras/SDXL/polyhedron_all_sdxl-000004.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=polyhedron+sdxl", "size_mb": 144, "optional": true, "note": "Poly/3D geometry"},
+          {"path": "loras/SDXL/Slider/Dramatic Lighting Slider.safetensors", "url": null, "page_url": "https://civitai.com/models/173691", "size_mb": 144, "optional": true, "note": "Dramatic lighting slider"}
+        ],
+        "loras_illustrious_pony": [
+          {"path": "loras/Illustrious-Pony/MetallicGoldSilver_skinbody_paint-000019.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=metallic+gold+silver+skin+pony", "size_mb": 144, "optional": true, "note": "Metallic gold/silver"},
+          {"path": "loras/Illustrious-Pony/Ethereal_Gothic_Elegance.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=ethereal+gothic+elegance+pony", "size_mb": 144, "optional": true, "note": "Ethereal gothic"},
+          {"path": "loras/Illustrious-Pony/Chiaroscuro film style pony v1.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=chiaroscuro+film+pony", "size_mb": 144, "optional": true, "note": "Chiaroscuro/cinematic dark"},
+          {"path": "loras/Illustrious-Pony/Cinematic Photography Style pony v1.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=cinematic+photography+pony", "size_mb": 144, "optional": true, "note": "Cinematic photography"},
+          {"path": "loras/Illustrious-Pony/HyperdetailedRealismMJ7Pony.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=hyperdetailed+realism+pony", "size_mb": 144, "optional": true, "note": "Hyperdetailed realism"},
+          {"path": "loras/Illustrious-Pony/StS_PonyXL_Detail_Slider_v1.4_iteration_3.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=detail+slider+pony", "size_mb": 144, "optional": true, "note": "Detail slider"}
+        ],
+        "loras_klein": [
+          {"path": "loras/Flux-2-Klein/K9bSh4rpD3tails.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=K9b+sharp+details+klein", "size_mb": 144, "optional": true, "note": "Klein sharp details"},
+          {"path": "loras/Flux-2-Klein/K9bSR3al.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=K9b+realism+klein", "size_mb": 144, "optional": true, "note": "Klein realism"},
+          {"path": "loras/Flux-2-Klein/Sliders/klein_slider_anatomy_9B_v1.5.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=klein+slider+anatomy", "size_mb": 50, "optional": true, "note": "Klein anatomy slider"},
+          {"path": "loras/Flux-2-Klein/Sliders/klein_slider_glow.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=klein+slider+glow", "size_mb": 50, "optional": true, "note": "Klein glow slider"},
+          {"path": "loras/Flux-2-Klein/Sliders/ColorTone_Standard.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=color+tone+standard+klein", "size_mb": 50, "optional": true, "note": "Klein color tone"},
+          {"path": "loras/Flux-2-Klein/hipoly_3dcg_v7-epoch-000012.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=hipoly+3dcg+klein", "size_mb": 144, "optional": true, "note": "Klein hi-poly 3D CG"},
+          {"path": "loras/Flux-2-Klein/Character/Flux2Klein_AnythingtoRealCharacters.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=anything+to+real+klein+flux2", "size_mb": 144, "optional": true, "note": "Klein real characters"},
+          {"path": "loras/Flux-2-Klein/upscale_portrait_9bklein.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=upscale+portrait+klein", "size_mb": 144, "optional": true, "note": "Klein upscale portrait"}
+        ],
+        "note": "All inpaint LoRAs are optional. The inpaint feature works without them, but refinement presets (Fix Hands, Fix Eyes, etc.) will lack style-specific enhancements."
+      },
+      "custom_nodes": ["ComfyUI_GetImageSize"]
+    },
+
+    "face_swap_reactor": {
+      "vram_min_gb": 4,
+      "label": "Face Swap (ReActor)",
+      "description": "Swap faces between images using ReActor",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "face_restore": [
+          {"path": "facerestore_models/codeformer-v0.1.0.pth", "url": "https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/codeformer.pth", "size_mb": 376, "optional": false, "note": "CodeFormer face restoration (required by ReActor)"},
+          {"path": "facerestore_models/GFPGANv1.3.pth", "url": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.3.pth", "size_mb": 332, "optional": true, "note": "GFPGAN v1.3"},
+          {"path": "facerestore_models/GFPGANv1.4.pth", "url": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.4/GFPGANv1.4.pth", "size_mb": 349, "optional": true, "note": "GFPGAN v1.4"}
+        ],
+        "note": "ReActor downloads its own insightface/inswapper model on first use. CodeFormer is required for face restoration."
+      },
+      "custom_nodes": ["comfyui-reactor-node", "ComfyUI_GetImageSize"]
+    },
+
+    "face_swap_mtb": {
+      "vram_min_gb": 4,
+      "label": "Face Swap (MTB)",
+      "description": "Alternative face swap using comfyui-mtb",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "note": "MTB face swap models are downloaded automatically by the node on first use."
+      },
+      "custom_nodes": ["comfyui-mtb", "ComfyUI_GetImageSize"]
+    },
+
+    "faceid_img2img": {
+      "vram_min_gb": 8,
+      "label": "FaceID Image-to-Image",
+      "description": "Generate images preserving face identity using IPAdapter FaceID (GIMP only)",
+      "plugins": ["gimp"],
+      "models": {
+        "note": "IPAdapter FaceID models are managed by the IPAdapter node. It will prompt you to download the correct model on first use."
+      },
+      "custom_nodes": ["ComfyUI_IPAdapter_plus"]
+    },
+
+    "pulid_flux": {
+      "vram_min_gb": 12,
+      "label": "PuLID Flux (Face Identity)",
+      "description": "Generate images with face identity preservation using PuLID + Flux (GIMP only)",
+      "plugins": ["gimp"],
+      "models": {
+        "unet": [
+          {"path": "unet/Flux/FLUX1 Dev fp8.safetensors", "url": null, "page_url": "https://huggingface.co/Comfy-Org/flux1-dev/tree/main", "size_mb": 11904, "vram_min_gb": 12, "optional": false, "note": "Flux 1 Dev fp8 — required for PuLID (12 GB+ VRAM)"},
+          {"path": "unet/Flux/flux1-dev-kontext_fp8_scaled.safetensors", "url": null, "page_url": "https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev", "size_mb": 11904, "vram_min_gb": 12, "optional": true, "note": "Flux 1 Dev Kontext fp8 — alternative for Kontext workflows"}
+        ],
+        "clip": [
+          {"path": "clip/clip_l.safetensors", "url": "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors", "page_url": "https://huggingface.co/comfyanonymous/flux_text_encoders", "size_mb": 235, "optional": false, "note": "CLIP-L text encoder"},
+          {"path": "clip/t5xxl_fp8_e4m3fn.safetensors", "url": "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors", "page_url": "https://huggingface.co/comfyanonymous/flux_text_encoders", "size_mb": 4892, "optional": false, "note": "T5-XXL fp8 text encoder"}
+        ],
+        "vae": [
+          {"path": "vae/ae.safetensors", "url": "https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/ae.safetensors", "page_url": "https://huggingface.co/black-forest-labs/FLUX.1-schnell", "size_mb": 167, "optional": false, "note": "Flux autoencoder VAE"}
+        ],
+        "pulid": [
+          {"path": "pulid/pulid_flux_v0.9.1.safetensors", "url": "https://huggingface.co/guozinan/PuLID/resolve/main/pulid_flux_v0.9.1.safetensors", "page_url": "https://huggingface.co/guozinan/PuLID", "size_mb": 1078, "optional": false, "note": "PuLID Flux model v0.9.1"}
+        ]
+      },
+      "custom_nodes": ["PuLID_ComfyUI"]
+    },
+
+    "klein_flux2": {
+      "vram_min_gb": 6,
+      "vram_recommended_gb": 12,
+      "label": "Klein Flux2 Image-to-Image",
+      "description": "Fast distilled Flux 2 img2img using Klein 9B/4B models",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "unet": [
+          {"path": "unet/A-Flux/Flux2/flux-2-klein-9b.safetensors", "url": null, "page_url": "https://huggingface.co/black-forest-labs/FLUX.2-klein-9B", "size_mb": 19000, "vram_min_gb": 20, "optional": false, "note": "Klein 9B (primary — best quality, needs 20 GB+ VRAM)"},
+          {"path": "unet/A-Flux/flux-2-klein-4b-fp8.safetensors", "url": null, "page_url": "https://civitai.com/models/2322332", "size_mb": 4500, "vram_min_gb": 8, "optional": true, "note": "Klein 4B fp8 (8–12 GB VRAM)"},
+          {"path": "unet/A-Flux/flux-2-klein-base-4b-fp8.safetensors", "url": null, "page_url": "https://civitai.com/models/2322332", "size_mb": 4500, "vram_min_gb": 6, "optional": true, "note": "Klein Base 4B fp8 (6+ GB VRAM, lightest)"}
+        ],
+        "clip": [
+          {"path": "clip/qwen_3_8b_fp8mixed.safetensors", "url": null, "page_url": "https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-9b", "size_mb": 4100, "optional": false, "note": "Qwen 3 8B fp8 text encoder (for Klein 9B)"},
+          {"path": "clip/qwen_3_4b.safetensors", "url": null, "page_url": "https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-9b", "size_mb": 2100, "optional": true, "note": "Qwen 3 4B text encoder (for Klein 4B variants)"}
+        ],
+        "vae": [
+          {"path": "vae/flux2-vae.safetensors", "url": null, "page_url": "https://huggingface.co/search/full-text?q=flux2+vae", "size_mb": 167, "optional": false, "note": "Flux 2 VAE"}
+        ]
+      },
+      "custom_nodes": []
+    },
+
+    "wan_i2v": {
+      "vram_min_gb": 8,
+      "vram_recommended_gb": 12,
+      "label": "Wan 2.2 Image-to-Video",
+      "description": "Generate video from images using Wan 2.2 dual-model architecture with optional RTX upscale and RIFE interpolation",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "unet": [
+          {"path": "unet/Wan/wan2.2_i2v_high_noise_14B_Q4_K_S.gguf", "url": null, "page_url": "https://huggingface.co/city96/Wan2.2-I2V-A14B-480p-gguf", "size_mb": 8200, "vram_min_gb": 8, "optional": false, "note": "Wan 14B high-noise GGUF Q4 — recommended for 8–16 GB VRAM"},
+          {"path": "unet/Wan/wan2.2_i2v_low_noise_14B_Q4_K_S.gguf", "url": null, "page_url": "https://huggingface.co/city96/Wan2.2-I2V-A14B-480p-gguf", "size_mb": 8200, "vram_min_gb": 8, "optional": false, "note": "Wan 14B low-noise GGUF Q4 — recommended for 8–16 GB VRAM"},
+          {"path": "unet/Wan/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors", "url": null, "page_url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged", "size_mb": 14000, "vram_min_gb": 16, "optional": true, "note": "Wan 14B high-noise fp8 — needs 16 GB+ VRAM"},
+          {"path": "unet/Wan/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors", "url": null, "page_url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged", "size_mb": 14000, "vram_min_gb": 16, "optional": true, "note": "Wan 14B low-noise fp8 — needs 16 GB+ VRAM"},
+          {"path": "unet/Wan/wan22EnhancedNSFWSVICamera_nsfwV2FP8H.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=wan22+enhanced+nsfw+svi", "size_mb": 14000, "vram_min_gb": 16, "optional": true, "note": "Wan Enhanced NSFW SVI high fp8"},
+          {"path": "unet/Wan/wan22EnhancedNSFWSVICamera_nsfwV2FP8L.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=wan22+enhanced+nsfw+svi", "size_mb": 14000, "vram_min_gb": 16, "optional": true, "note": "Wan Enhanced NSFW SVI low fp8"}
+        ],
+        "clip": [
+          {"path": "clip/umt5-xxl-encoder-Q8_0.gguf", "url": "https://huggingface.co/city96/umt5-xxl-encoder-gguf/resolve/main/umt5-xxl-encoder-Q8_0.gguf", "page_url": "https://huggingface.co/city96/umt5-xxl-encoder-gguf", "size_mb": 5170, "optional": false, "note": "UMT5-XXL GGUF encoder for Wan"}
+        ],
+        "vae": [
+          {"path": "vae/wan_2.1_vae.safetensors", "url": "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors", "page_url": "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged", "size_mb": 335, "optional": false, "note": "Wan 2.1 VAE"}
+        ],
+        "loras": [
+          {"path": "loras/WAN/wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors", "url": null, "page_url": "https://huggingface.co/lightx2v/Wan2.2-Lightning", "size_mb": 80, "optional": true, "note": "LightX2V accelerator LoRA (high noise) — speeds up generation ~4x. Place in loras/WAN/"},
+          {"path": "loras/WAN/wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors", "url": null, "page_url": "https://huggingface.co/lightx2v/Wan2.2-Lightning", "size_mb": 80, "optional": true, "note": "LightX2V accelerator LoRA (low noise) — speeds up generation ~4x. Place in loras/WAN/"},
+          {"path": "loras/WAN/SVI_v2_PRO_Wan2.2-I2V-A14B_HIGH_lora_rank_128_fp16.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=SVI+v2+PRO+Wan2.2+I2V", "size_mb": 256, "optional": true, "note": "SVI v2 Pro accelerator LoRA (high noise) for Enhanced NSFW SVI preset. Place in loras/WAN/"},
+          {"path": "loras/WAN/SVI_v2_PRO_Wan2.2-I2V-A14B_LOW_lora_rank_128_fp16.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=SVI+v2+PRO+Wan2.2+I2V", "size_mb": 256, "optional": true, "note": "SVI v2 Pro accelerator LoRA (low noise) for Enhanced NSFW SVI preset. Place in loras/WAN/"}
+        ],
+        "interpolation": [
+          {"path": "custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth", "url": null, "page_url": "https://github.com/hzwer/ECCV2022-RIFE", "size_mb": 30, "optional": true, "note": "RIFE v4.9 model (for frame interpolation)"}
+        ]
+      },
+      "custom_nodes": ["ComfyUI-GGUF", "ComfyUI-VideoHelperSuite", "ComfyUI-RIFE", "ComfyUI-RTX-Remix"]
+    },
+
+    "rembg": {
+      "vram_min_gb": 1,
+      "label": "Remove Background",
+      "description": "AI background removal producing transparent PNG output using isnet-general-use model — one click, no settings needed",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "note": "The rembg model (isnet-general-use) is downloaded automatically by the ComfyUI node on first use. No manual model download needed."
+      },
+      "custom_nodes": ["ComfyUI-REMBG"]
+    },
+
+    "upscale": {
+      "vram_min_gb": 2,
+      "label": "AI Upscale (4x/8x)",
+      "description": "One-click AI upscaling using 6 model presets — UltraSharp, RealESRGAN, Remacri, NMKD, and more",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "upscale_models": [
+          {"path": "upscale_models/4x-UltraSharp.pth", "url": "https://huggingface.co/uwg/upscaler/resolve/main/ESRGAN/4x-UltraSharp.pth", "size_mb": 67, "optional": false, "note": "4x UltraSharp — best general-purpose"},
+          {"path": "upscale_models/RealESRGAN_x4plus.pth", "url": "https://huggingface.co/uwg/upscaler/resolve/main/ESRGAN/RealESRGAN_x4plus.pth", "size_mb": 67, "optional": true, "note": "4x RealESRGAN — good for photos"},
+          {"path": "upscale_models/4x_foolhardy_Remacri.pth", "url": "https://huggingface.co/uwg/upscaler/resolve/main/ESRGAN/4x_foolhardy_Remacri.pth", "size_mb": 67, "optional": true, "note": "4x Remacri — great for restoration"},
+          {"path": "upscale_models/4x_NMKD-Superscale-SP_178000_G.pth", "url": "https://huggingface.co/uwg/upscaler/resolve/main/ESRGAN/4x_NMKD-Superscale-SP_178000_G.pth", "size_mb": 67, "optional": true, "note": "4x NMKD Superscale — sharp results"},
+          {"path": "upscale_models/RealESRGAN_x4plus_anime_6B.pth", "url": "https://huggingface.co/uwg/upscaler/resolve/main/ESRGAN/RealESRGAN_x4plus_anime_6B.pth", "size_mb": 17, "optional": true, "note": "4x RealESRGAN Anime"},
+          {"path": "upscale_models/8x_NMKD-Faces_160000_G.pth", "url": "https://huggingface.co/uwg/upscaler/resolve/main/ESRGAN/8x_NMKD-Faces_160000_G.pth", "size_mb": 67, "optional": true, "note": "8x NMKD Faces — portraits"}
+        ]
+      },
+      "custom_nodes": []
+    },
+
+    "lama_remove": {
+      "vram_min_gb": 2,
+      "label": "Object Removal (LaMa)",
+      "description": "Paint over any object to remove it — no prompt needed, uses LaMa inpainting",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "note": "LaMa model is included with the comfyui-lama-remover node and downloads automatically."
+      },
+      "custom_nodes": ["ComfyUI-LaMa"]
+    },
+
+    "lut_grading": {
+      "vram_min_gb": 0,
+      "label": "Color Grading (LUT)",
+      "description": "Apply cinematic film stock LUTs — Kodak, Fujifilm, ACES with adjustable strength",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "note": "LUT files (Kodak 2383, Fujifilm 3513DI, ACES) are included with ComfyUI-essentials. No additional downloads."
+      },
+      "custom_nodes": ["ComfyUI-essentials"]
+    },
+
+    "outpaint": {
+      "vram_min_gb": 4,
+      "label": "Outpaint / Extend Canvas",
+      "description": "AI-powered canvas extension in any direction",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "note": "Uses the same checkpoints as img2img. No additional models needed."
+      },
+      "custom_nodes": []
+    },
+
+    "style_transfer": {
+      "vram_min_gb": 6,
+      "label": "Style Transfer (IPAdapter)",
+      "description": "Apply any reference image's visual style using IPAdapter",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "note": "IPAdapter models are managed by the IPAdapter Plus node and downloaded on first use."
+      },
+      "custom_nodes": ["ComfyUI_IPAdapter_plus"]
+    },
+
+    "face_restore": {
+      "vram_min_gb": 2,
+      "label": "Face Restoration",
+      "description": "Restore damaged/blurry faces using CodeFormer, GFPGAN, GPEN, or RestoreFormer++",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "face_restore": [
+          {"path": "facerestore_models/codeformer-v0.1.0.pth", "url": "https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/codeformer.pth", "size_mb": 376, "optional": false, "note": "CodeFormer (best quality)"},
+          {"path": "facerestore_models/GFPGANv1.4.pth", "url": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.4/GFPGANv1.4.pth", "size_mb": 349, "optional": true, "note": "GFPGAN v1.4 (fast, good)"}
+        ],
+        "note": "GPEN and RestoreFormer++ models are managed by the ReActor node."
+      },
+      "custom_nodes": ["comfyui-reactor-node"]
+    },
+
+    "photo_restore": {
+      "vram_min_gb": 2,
+      "label": "Photo Restoration Pipeline",
+      "description": "Full restoration: Upscale + Face Restore + Sharpen in one click",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "note": "Uses upscale models + face restore models. Install both 'upscale' and 'face_restore' features."
+      },
+      "custom_nodes": ["comfyui-reactor-node"]
+    },
+
+    "detail_hallucinate": {
+      "vram_min_gb": 4,
+      "label": "Detail Hallucination (Seed2VR)",
+      "description": "Upscale + img2img at low denoise to AI-hallucinate fine detail",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "note": "Uses upscale models + checkpoints. Install 'upscale' and 'img2img' features."
+      },
+      "custom_nodes": []
+    },
+
+    "colorize": {
+      "vram_min_gb": 4,
+      "label": "Colorize B&W Photos",
+      "description": "Add natural color to black & white photos using ControlNet lineart",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "controlnet": [
+          {"path": "controlnet/control_v11p_sd15_lineart_fp16.safetensors", "url": "https://huggingface.co/comfyanonymous/ControlNet-v1-1_fp16_safetensors/resolve/main/control_v11p_sd15_lineart_fp16.safetensors", "size_mb": 722, "optional": false, "note": "SD1.5 lineart ControlNet"},
+          {"path": "controlnet/SDXL/controlnet-canny-sdxl-1.0.safetensors", "url": "https://huggingface.co/diffusers/controlnet-canny-sdxl-1.0/resolve/main/diffusion_pytorch_model.safetensors", "size_mb": 2502, "optional": true, "note": "SDXL canny ControlNet"}
+        ],
+        "note": "Also requires checkpoints from img2img feature."
+      },
+      "custom_nodes": ["comfyui-controlnet-aux"]
+    },
+
+    "controlnet": {
+      "vram_min_gb": 4,
+      "label": "ControlNet Structure Guide",
+      "description": "Structure-guided generation: Canny edges, depth maps, pose detection, scribble, lineart, tile",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "controlnet": [
+          {"path": "controlnet/control_v11p_sd15_lineart_fp16.safetensors", "url": "https://huggingface.co/comfyanonymous/ControlNet-v1-1_fp16_safetensors/resolve/main/control_v11p_sd15_lineart_fp16.safetensors", "size_mb": 722, "optional": false, "note": "SD1.5 lineart ControlNet"},
+          {"path": "controlnet/control_v11f1p_sd15_depth_fp16.safetensors", "url": "https://huggingface.co/comfyanonymous/ControlNet-v1-1_fp16_safetensors/resolve/main/control_v11f1p_sd15_depth_fp16.safetensors", "size_mb": 722, "optional": true, "note": "SD1.5 depth ControlNet"},
+          {"path": "controlnet/control_v11p_sd15_openpose_fp16.safetensors", "url": "https://huggingface.co/comfyanonymous/ControlNet-v1-1_fp16_safetensors/resolve/main/control_v11p_sd15_openpose_fp16.safetensors", "size_mb": 722, "optional": true, "note": "SD1.5 OpenPose ControlNet"},
+          {"path": "controlnet/control_v11f1e_sd15_tile.pth", "url": "https://huggingface.co/lllyasviel/ControlNet-v1-1/resolve/main/control_v11f1e_sd15_tile.pth", "size_mb": 1450, "optional": true, "note": "SD1.5 tile ControlNet"},
+          {"path": "controlnet/SDXL/controlnet-canny-sdxl-1.0.safetensors", "url": "https://huggingface.co/diffusers/controlnet-canny-sdxl-1.0/resolve/main/diffusion_pytorch_model.safetensors", "size_mb": 2502, "optional": true, "note": "SDXL canny ControlNet"},
+          {"path": "controlnet/OpenPoseXL2.safetensors", "url": null, "page_url": "https://huggingface.co/thibaud/controlnet-openpose-sdxl-1.0", "size_mb": 2502, "optional": true, "note": "SDXL OpenPose ControlNet"},
+          {"path": "controlnet/SDXL/ttplanetSDXLControlnet_Tile_v20Fp16.safetensors", "url": null, "page_url": "https://huggingface.co/TTPlanet/TTPLanet_SDXL_Controlnet_Tile_Realistic", "size_mb": 2502, "optional": true, "note": "SDXL tile ControlNet"}
+        ]
+      },
+      "custom_nodes": ["comfyui-controlnet-aux"]
+    },
+
+    "iclight": {
+      "vram_min_gb": 4,
+      "label": "IC-Light Relighting",
+      "description": "Change lighting direction on any photo — 10 presets. SD1.5 only.",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "iclight": [
+          {"path": "unet/iclight_sd15_fc.safetensors", "url": "https://huggingface.co/lllyasviel/ic-light/resolve/main/iclight_sd15_fc.safetensors", "size_mb": 1719, "optional": false, "note": "IC-Light SD1.5 model"}
+        ],
+        "note": "Requires a SD1.5 checkpoint (from img2img feature)."
+      },
+      "custom_nodes": ["ComfyUI-IC-Light"]
+    },
+
+    "supir": {
+      "vram_min_gb": 10,
+      "vram_recommended_gb": 16,
+      "label": "SUPIR AI Restoration",
+      "description": "State-of-the-art AI image restoration and upscaling",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "supir": [
+          {"path": "checkpoints/Other/SUPIR-v0Q_fp16.safetensors", "url": "https://huggingface.co/Kijai/SUPIR_pruned/resolve/main/SUPIR-v0Q_fp16.safetensors", "size_mb": 5250, "optional": false, "note": "SUPIR v0Q fp16 model"}
+        ],
+        "note": "Also requires an SDXL checkpoint as backbone (from img2img feature)."
+      },
+      "custom_nodes": ["ComfyUI-SUPIR"]
+    },
+
+    "batch_variations": {
+      "vram_min_gb": 4,
+      "label": "Batch Variations",
+      "description": "Generate 2-8 variations from one prompt in a single batch",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "note": "Uses same checkpoints as txt2img/img2img. No additional models."
+      },
+      "custom_nodes": []
+    },
+
+    "seedv2r": {
+      "vram_min_gb": 4,
+      "label": "SeedV2R Upscale",
+      "description": "Upscale + img2img with 5 hallucination levels (Faithful to Extreme) and 1x-4x scale control",
+      "plugins": ["gimp", "darktable"],
+      "models": {
+        "note": "Uses upscale models + checkpoints. Install 'upscale' and 'img2img' features."
+      },
+      "custom_nodes": []
+    }
+  }
+}

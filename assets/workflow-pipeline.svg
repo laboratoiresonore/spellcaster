@@ -1,0 +1,209 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1200" y2="520" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0f0a1a"/>
+      <stop offset="100%" stop-color="#1a0f2e"/>
+    </linearGradient>
+    <linearGradient id="cardGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2a1f3d"/>
+      <stop offset="100%" stop-color="#1e1533"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#a855f7"/>
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#059669"/>
+      <stop offset="100%" stop-color="#34d399"/>
+    </linearGradient>
+    <linearGradient id="blueGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2563eb"/>
+      <stop offset="100%" stop-color="#60a5fa"/>
+    </linearGradient>
+    <linearGradient id="orangeGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#d97706"/>
+      <stop offset="100%" stop-color="#fbbf24"/>
+    </linearGradient>
+    <linearGradient id="pinkGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#db2777"/>
+      <stop offset="100%" stop-color="#f472b6"/>
+    </linearGradient>
+    <linearGradient id="cyanGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0891b2"/>
+      <stop offset="100%" stop-color="#22d3ee"/>
+    </linearGradient>
+    <linearGradient id="redGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#dc2626"/>
+      <stop offset="100%" stop-color="#f87171"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="520" fill="url(#bgGrad)" rx="16"/>
+
+  <!-- Subtle grid pattern -->
+  <g opacity="0.03">
+    <line x1="0" y1="0" x2="0" y2="520" stroke="#fff" stroke-width="1" transform="translate(60,0)" />
+    <line x1="0" y1="0" x2="0" y2="520" stroke="#fff" stroke-width="1" transform="translate(120,0)" />
+    <line x1="0" y1="0" x2="0" y2="520" stroke="#fff" stroke-width="1" transform="translate(180,0)" />
+    <line x1="0" y1="0" x2="0" y2="520" stroke="#fff" stroke-width="1" transform="translate(240,0)" />
+    <line x1="0" y1="0" x2="0" y2="520" stroke="#fff" stroke-width="1" transform="translate(300,0)" />
+    <line x1="0" y1="0" x2="0" y2="520" stroke="#fff" stroke-width="1" transform="translate(360,0)" />
+    <line x1="0" y1="0" x2="0" y2="520" stroke="#fff" stroke-width="1" transform="translate(420,0)" />
+    <line x1="0" y1="0" x2="0" y2="520" stroke="#fff" stroke-width="1" transform="translate(480,0)" />
+    <line x1="0" y1="0" x2="0" y2="520" stroke="#fff" stroke-width="1" transform="translate(540,0)" />
+    <line x1="0" y1="0" x2="0" y2="520" stroke="#fff" stroke-width="1" transform="translate(600,0)" />
+    <line x1="0" y1="0" x2="0" y2="520" stroke="#fff" stroke-width="1" transform="translate(660,0)" />
+    <line x1="0" y1="0" x2="0" y2="520" stroke="#fff" stroke-width="1" transform="translate(720,0)" />
+    <line x1="0" y1="0" x2="0" y2="520" stroke="#fff" stroke-width="1" transform="translate(780,0)" />
+    <line x1="0" y1="0" x2="0" y2="520" stroke="#fff" stroke-width="1" transform="translate(840,0)" />
+    <line x1="0" y1="0" x2="0" y2="520" stroke="#fff" stroke-width="1" transform="translate(900,0)" />
+    <line x1="0" y1="0" x2="0" y2="520" stroke="#fff" stroke-width="1" transform="translate(960,0)" />
+    <line x1="0" y1="0" x2="0" y2="520" stroke="#fff" stroke-width="1" transform="translate(1020,0)" />
+    <line x1="0" y1="0" x2="0" y2="520" stroke="#fff" stroke-width="1" transform="translate(1080,0)" />
+    <line x1="0" y1="0" x2="0" y2="520" stroke="#fff" stroke-width="1" transform="translate(1140,0)" />
+  </g>
+
+  <!-- Title -->
+  <text x="600" y="52" text-anchor="middle" fill="#e2e8f0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="28" font-weight="bold">How Spellcaster Works</text>
+  <text x="600" y="78" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14">From your canvas to AI-generated result in 7 automatic steps</text>
+
+  <!-- Step 1: Select -->
+  <g filter="url(#shadow)" transform="translate(32, 110)">
+    <rect width="148" height="180" rx="12" fill="url(#cardGrad)" stroke="#7c3aed" stroke-width="1.5" stroke-opacity="0.5"/>
+    <circle cx="74" cy="50" r="26" fill="url(#accentGrad)" opacity="0.15"/>
+    <text x="74" y="44" text-anchor="middle" fill="#a855f7" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="28">1</text>
+    <text x="74" y="64" text-anchor="middle" fill="#7c3aed" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="10" font-weight="bold">STEP</text>
+    <text x="74" y="98" text-anchor="middle" fill="#e2e8f0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="bold">Select</text>
+    <text x="74" y="120" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">Paint a selection</text>
+    <text x="74" y="136" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">or pick an image</text>
+    <text x="74" y="152" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">in your editor</text>
+    <!-- Icon: selection box -->
+    <rect x="54" y="26" width="12" height="12" rx="1" stroke="#a855f7" stroke-width="1.5" fill="none" stroke-dasharray="3,2"/>
+    <rect x="82" y="26" width="12" height="12" rx="1" stroke="#a855f7" stroke-width="1.5" fill="none" stroke-dasharray="3,2"/>
+  </g>
+
+  <!-- Arrow 1→2 -->
+  <g transform="translate(185, 198)">
+    <line x1="0" y1="0" x2="24" y2="0" stroke="#7c3aed" stroke-width="2" stroke-opacity="0.6"/>
+    <polygon points="24,-5 34,0 24,5" fill="#7c3aed" opacity="0.6"/>
+  </g>
+
+  <!-- Step 2: Export -->
+  <g filter="url(#shadow)" transform="translate(200, 110)">
+    <rect width="148" height="180" rx="12" fill="url(#cardGrad)" stroke="#2563eb" stroke-width="1.5" stroke-opacity="0.5"/>
+    <circle cx="74" cy="50" r="26" fill="url(#blueGrad)" opacity="0.15"/>
+    <text x="74" y="44" text-anchor="middle" fill="#60a5fa" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="28">2</text>
+    <text x="74" y="64" text-anchor="middle" fill="#2563eb" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="10" font-weight="bold">STEP</text>
+    <text x="74" y="98" text-anchor="middle" fill="#e2e8f0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="bold">Export</text>
+    <text x="74" y="120" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">Image exported</text>
+    <text x="74" y="136" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">as temporary PNG</text>
+    <text x="74" y="152" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">(automatic)</text>
+  </g>
+
+  <!-- Arrow 2→3 -->
+  <g transform="translate(353, 198)">
+    <line x1="0" y1="0" x2="24" y2="0" stroke="#2563eb" stroke-width="2" stroke-opacity="0.6"/>
+    <polygon points="24,-5 34,0 24,5" fill="#2563eb" opacity="0.6"/>
+  </g>
+
+  <!-- Step 3: Upload -->
+  <g filter="url(#shadow)" transform="translate(368, 110)">
+    <rect width="148" height="180" rx="12" fill="url(#cardGrad)" stroke="#0891b2" stroke-width="1.5" stroke-opacity="0.5"/>
+    <circle cx="74" cy="50" r="26" fill="url(#cyanGrad)" opacity="0.15"/>
+    <text x="74" y="44" text-anchor="middle" fill="#22d3ee" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="28">3</text>
+    <text x="74" y="64" text-anchor="middle" fill="#0891b2" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="10" font-weight="bold">STEP</text>
+    <text x="74" y="98" text-anchor="middle" fill="#e2e8f0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="bold">Upload</text>
+    <text x="74" y="120" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">Sent to ComfyUI</text>
+    <text x="74" y="136" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">server via HTTP</text>
+    <text x="74" y="152" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">(local or network)</text>
+  </g>
+
+  <!-- Arrow 3→4 -->
+  <g transform="translate(521, 198)">
+    <line x1="0" y1="0" x2="24" y2="0" stroke="#0891b2" stroke-width="2" stroke-opacity="0.6"/>
+    <polygon points="24,-5 34,0 24,5" fill="#0891b2" opacity="0.6"/>
+  </g>
+
+  <!-- Step 4: Process (larger, central) -->
+  <g filter="url(#shadow)" transform="translate(536, 100)">
+    <rect width="148" height="200" rx="12" fill="url(#cardGrad)" stroke="#d97706" stroke-width="2" stroke-opacity="0.7"/>
+    <!-- Glow effect -->
+    <rect width="148" height="200" rx="12" fill="none" stroke="#fbbf24" stroke-width="1" stroke-opacity="0.15"/>
+    <circle cx="74" cy="50" r="26" fill="url(#orangeGrad)" opacity="0.2"/>
+    <text x="74" y="44" text-anchor="middle" fill="#fbbf24" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="28">4</text>
+    <text x="74" y="64" text-anchor="middle" fill="#d97706" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="10" font-weight="bold">STEP</text>
+    <text x="74" y="100" text-anchor="middle" fill="#fbbf24" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="bold">AI Process</text>
+    <text x="74" y="124" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">ComfyUI runs the</text>
+    <text x="74" y="140" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">workflow on your</text>
+    <text x="74" y="156" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">GPU automatically</text>
+    <!-- GPU icon -->
+    <rect x="56" y="170" width="36" height="14" rx="3" stroke="#fbbf24" stroke-width="1" fill="none" opacity="0.5"/>
+    <rect x="60" y="173" width="6" height="8" rx="1" fill="#fbbf24" opacity="0.3"/>
+    <rect x="69" y="173" width="6" height="8" rx="1" fill="#fbbf24" opacity="0.3"/>
+    <rect x="78" y="173" width="6" height="8" rx="1" fill="#fbbf24" opacity="0.3"/>
+  </g>
+
+  <!-- Arrow 4→5 -->
+  <g transform="translate(689, 198)">
+    <line x1="0" y1="0" x2="24" y2="0" stroke="#d97706" stroke-width="2" stroke-opacity="0.6"/>
+    <polygon points="24,-5 34,0 24,5" fill="#d97706" opacity="0.6"/>
+  </g>
+
+  <!-- Step 5: Download -->
+  <g filter="url(#shadow)" transform="translate(704, 110)">
+    <rect width="148" height="180" rx="12" fill="url(#cardGrad)" stroke="#059669" stroke-width="1.5" stroke-opacity="0.5"/>
+    <circle cx="74" cy="50" r="26" fill="url(#greenGrad)" opacity="0.15"/>
+    <text x="74" y="44" text-anchor="middle" fill="#34d399" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="28">5</text>
+    <text x="74" y="64" text-anchor="middle" fill="#059669" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="10" font-weight="bold">STEP</text>
+    <text x="74" y="98" text-anchor="middle" fill="#e2e8f0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="bold">Download</text>
+    <text x="74" y="120" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">Result fetched</text>
+    <text x="74" y="136" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">back from the</text>
+    <text x="74" y="152" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">server</text>
+  </g>
+
+  <!-- Arrow 5→6 -->
+  <g transform="translate(857, 198)">
+    <line x1="0" y1="0" x2="24" y2="0" stroke="#059669" stroke-width="2" stroke-opacity="0.6"/>
+    <polygon points="24,-5 34,0 24,5" fill="#059669" opacity="0.6"/>
+  </g>
+
+  <!-- Step 6: Import -->
+  <g filter="url(#shadow)" transform="translate(872, 110)">
+    <rect width="148" height="180" rx="12" fill="url(#cardGrad)" stroke="#db2777" stroke-width="1.5" stroke-opacity="0.5"/>
+    <circle cx="74" cy="50" r="26" fill="url(#pinkGrad)" opacity="0.15"/>
+    <text x="74" y="44" text-anchor="middle" fill="#f472b6" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="28">6</text>
+    <text x="74" y="64" text-anchor="middle" fill="#db2777" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="10" font-weight="bold">STEP</text>
+    <text x="74" y="98" text-anchor="middle" fill="#e2e8f0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="bold">Import</text>
+    <text x="74" y="120" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">New layer in GIMP</text>
+    <text x="74" y="136" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">or imported into</text>
+    <text x="74" y="152" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">Darktable library</text>
+  </g>
+
+  <!-- Bottom bar: "You only do step 1" callout -->
+  <g transform="translate(0, 340)">
+    <rect x="32" y="20" width="1136" height="70" rx="12" fill="#1e1533" stroke="#7c3aed" stroke-width="1" stroke-opacity="0.3"/>
+    <rect x="32" y="20" width="190" height="70" rx="12" fill="url(#accentGrad)" opacity="0.12"/>
+    <text x="127" y="52" text-anchor="middle" fill="#a855f7" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="bold">YOU DO THIS</text>
+    <text x="127" y="72" text-anchor="middle" fill="#c4b5fd" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12">Pick a preset + click</text>
+    <line x1="222" y1="30" x2="222" y2="80" stroke="#7c3aed" stroke-width="1" stroke-opacity="0.3"/>
+    <text x="700" y="52" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="bold">SPELLCASTER HANDLES THE REST AUTOMATICALLY</text>
+    <text x="700" y="72" text-anchor="middle" fill="#64748b" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12">Steps 2-6 happen in the background — no AI knowledge required</text>
+  </g>
+
+  <!-- Bottom labels -->
+  <text x="600" y="470" text-anchor="middle" fill="#475569" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">Works with GIMP 3, Darktable, and any ComfyUI server (local or remote)</text>
+
+  <!-- Decorative corner accents -->
+  <path d="M0,16 Q0,0 16,0" stroke="#7c3aed" stroke-width="2" fill="none" opacity="0.3"/>
+  <path d="M1200,16 Q1200,0 1184,0" stroke="#7c3aed" stroke-width="2" fill="none" opacity="0.3"/>
+  <path d="M0,504 Q0,520 16,520" stroke="#7c3aed" stroke-width="2" fill="none" opacity="0.3"/>
+  <path d="M1200,504 Q1200,520 1184,520" stroke="#7c3aed" stroke-width="2" fill="none" opacity="0.3"/>
+</svg>
