@@ -937,10 +937,11 @@ class InstallerApp(ctk.CTk):
         if self._vram_mb > 0:
             self.log(f"  GPU: {self._gpu_name}  |  VRAM: {self._vram_mb/1024:.0f} GB  |  Tier: {self._vram_tier}")
         self.log("")
-        comfy_path = Path(self.comfyui_path.get()) if self.comfyui_path.get() else Path("")
+        comfy_raw = self.comfyui_path.get().strip()
+        comfy_path = Path(comfy_raw) if comfy_raw else None
 
-        # Detect remote-only mode: no local ComfyUI, just install plugins with remote server URL
-        _remote_only = not comfy_path.is_dir()
+        # Detect remote-only mode: no local ComfyUI path provided, or path doesn't exist
+        _remote_only = not comfy_raw or comfy_path is None or not comfy_path.is_dir()
         if _remote_only:
             srv = self.server_url.get()
             self.log("=" * 56)
@@ -1012,7 +1013,7 @@ class InstallerApp(ctk.CTk):
                     stats["plugins"] += 1
 
         # ---- Phase 1b: LUT Import ----
-        if self.lut_path.get():
+        if self.lut_path.get() and not _remote_only:
             import shutil as _shutil
             lut_src = Path(self.lut_path.get())
             if lut_src.is_dir():
