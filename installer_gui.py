@@ -1012,8 +1012,8 @@ class InstallerApp(ctk.CTk):
                     self.log(f"  Darktable plugin installed successfully")
                     stats["plugins"] += 1
 
-        # ---- Phase 1b: LUT Import ----
-        if self.lut_path.get() and not _remote_only:
+        # ---- Phase 1b: LUT Import (only when local ComfyUI + user specified a LUT folder)
+        if self.lut_path.get().strip() and not _remote_only and comfy_path and comfy_path.is_dir():
             import shutil as _shutil
             lut_src = Path(self.lut_path.get())
             if lut_src.is_dir():
