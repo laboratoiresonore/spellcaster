@@ -4124,19 +4124,90 @@ def _build_photo_restore(image_filename, upscale_model, face_model, facedetectio
 # ── Detail Hallucination (Upscale + img2img at low denoise) ─────────
 
 HALLUCINATE_PRESETS = {
-    "Subtle (preserve original)": {"denoise": 0.25, "cfg": 4.0},
-    "Moderate (add detail)": {"denoise": 0.35, "cfg": 5.0},
-    "Strong (reimagine details)": {"denoise": 0.45, "cfg": 6.0},
-    "Extreme (creative reinterpret)": {"denoise": 0.60, "cfg": 7.0},
+    # ── Intensity-based (generic) ──
+    "Subtle — preserve original": {
+        "denoise": 0.20, "cfg": 3.5, "steps": 20,
+        "prompt": "ultra detailed, sharp focus, high resolution, same content, faithful reproduction, clean",
+        "negative": "different content, changed, altered, blurry, soft, painting, illustration",
+    },
+    "Moderate — add fine detail": {
+        "denoise": 0.35, "cfg": 5.0, "steps": 25,
+        "prompt": "ultra detailed, sharp focus, high resolution, intricate details, fine texture, photorealistic",
+        "negative": "blurry, low quality, soft, out of focus, painting, cartoon",
+    },
+    "Strong — reimagine details": {
+        "denoise": 0.50, "cfg": 6.5, "steps": 30,
+        "prompt": "masterpiece, ultra detailed, sharp focus, high resolution, intricate details, rich texture, professional",
+        "negative": "blurry, low quality, worst quality, soft, out of focus, noise, grain",
+    },
+
+    # ── Purpose-specific ──
+    "Skin Texture — pores & micro-detail": {
+        "denoise": 0.30, "cfg": 4.5, "steps": 25,
+        "prompt": "ultra detailed skin, visible pores, natural skin texture, subsurface scattering, "
+                  "realistic skin detail, peach fuzz, micro-wrinkles, beauty photography, 8k macro",
+        "negative": "smooth plastic skin, airbrushed, porcelain, wax, mannequin, painting, soft focus",
+    },
+    "Eyes & Iris — catchlights & detail": {
+        "denoise": 0.28, "cfg": 4.0, "steps": 25,
+        "prompt": "ultra detailed eyes, sharp iris pattern, visible iris fibers, crisp catchlights, "
+                  "natural eye reflection, detailed eyelashes, realistic eye, macro photography",
+        "negative": "blurry eyes, dull eyes, flat eyes, no catchlight, painted eyes, dead eyes",
+    },
+    "Hair — strands & shine": {
+        "denoise": 0.32, "cfg": 5.0, "steps": 25,
+        "prompt": "ultra detailed hair, individual hair strands visible, natural hair shine, "
+                  "hair highlights, detailed hair texture, flyaway hairs, professional hair photo",
+        "negative": "blurry hair, helmet hair, flat hair, painted hair, plastic hair, wig",
+    },
+    "Fabric & Clothing — weave & texture": {
+        "denoise": 0.35, "cfg": 5.5, "steps": 25,
+        "prompt": "ultra detailed fabric texture, visible thread weave, cloth fiber detail, "
+                  "natural fabric folds, realistic material texture, fashion photography detail",
+        "negative": "smooth fabric, flat texture, plastic, blurry clothing, painted",
+    },
+    "Landscape — foliage & terrain": {
+        "denoise": 0.40, "cfg": 5.5, "steps": 30,
+        "prompt": "ultra detailed landscape, individual leaves, grass blades, bark texture, "
+                  "rock detail, water ripples, natural terrain, nature photography, 8k sharp",
+        "negative": "flat landscape, blurry foliage, smooth ground, painting, illustration",
+    },
+    "Architecture — bricks & surfaces": {
+        "denoise": 0.38, "cfg": 5.5, "steps": 28,
+        "prompt": "ultra detailed architecture, visible brick texture, mortar joints, "
+                  "surface imperfections, concrete grain, wood grain, metal rivets, window reflections",
+        "negative": "smooth walls, flat surfaces, blurry building, painting, low resolution",
+    },
+    "Sharpen & De-blur — rescue soft images": {
+        "denoise": 0.22, "cfg": 3.0, "steps": 15,
+        "prompt": "razor sharp, tack sharp focus, crisp edges, no motion blur, "
+                  "high resolution, crystal clear, DSLR quality, perfectly focused",
+        "negative": "blurry, soft, out of focus, motion blur, camera shake, low resolution",
+    },
+    "Food & Macro — appetizing detail": {
+        "denoise": 0.35, "cfg": 5.0, "steps": 25,
+        "prompt": "ultra detailed food photography, glistening sauce, visible seasoning, "
+                  "steam rising, crisp lettuce, juicy meat texture, macro food detail, appetizing",
+        "negative": "blurry food, flat, unappetizing, low quality, plastic food",
+    },
+    "Metal & Jewelry — reflections & polish": {
+        "denoise": 0.30, "cfg": 5.0, "steps": 25,
+        "prompt": "ultra detailed metal surface, mirror polish reflections, visible scratches, "
+                  "gem facets, gold shimmer, diamond sparkle, jewelry macro photography",
+        "negative": "dull metal, flat surface, matte, blurry, painted, low quality",
+    },
 }
 
 def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text, negative_text,
-                               seed, denoise, cfg):
+                               seed, denoise, cfg, steps=None):
     """Upscale + img2img at low denoise to hallucinate fine detail.
 
     Pipeline: LoadImage → UpscaleModelLoader → ImageUpscaleWithModel
-              → CheckpointLoaderSimple → CLIPTextEncode(+/-) → VAEEncode
+              → Model Loader → CLIPTextEncode(+/-) → VAEEncode
               → KSampler → VAEDecode → SaveImage
+
+    Steps can be overridden by the hallucination preset (skin/eyes/landscape
+    presets use different step counts for optimal results).
     """
     wf = {
         "1": {"class_type": "LoadImage",
@@ -4165,7 +4236,7 @@ def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text
                   "negative": ["6", 0],
                   "latent_image": ["7", 0],
                   "seed": seed,
-                  "steps": preset["steps"],
+                  "steps": steps or preset["steps"],
                   "cfg": cfg,
                   "sampler_name": preset["sampler"],
                   "scheduler": preset["scheduler"],
@@ -10530,11 +10601,20 @@ class Spellcaster(Gimp.PlugIn):
         hb2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         hb2.pack_start(Gtk.Label(label="Detail Level:"), False, False, 0)
         detail_combo = Gtk.ComboBoxText()
-        detail_combo.set_tooltip_text("How much AI detail to hallucinate.\nSubtle = minimal changes, Moderate = balanced, Heavy = significant new detail.")
+        detail_combo.set_tooltip_text("What kind of detail to hallucinate.\nGeneric: Subtle/Moderate/Strong by intensity.\nSpecific: Skin Texture, Eyes, Hair, Fabric, Landscape, Architecture, Sharpen, Food, Metal.")
         for label in HALLUCINATE_PRESETS:
             detail_combo.append(label, label)
         detail_combo.set_active(1)  # default to "Moderate"
         detail_combo.set_hexpand(True)
+        def _on_detail_changed(combo):
+            key = combo.get_active_id()
+            if key and key in HALLUCINATE_PRESETS:
+                hp = HALLUCINATE_PRESETS[key]
+                if hp.get("prompt"):
+                    prompt_tv.get_buffer().set_text(hp["prompt"])
+                if hp.get("negative"):
+                    neg_tv.get_buffer().set_text(hp["negative"])
+        detail_combo.connect("changed", _on_detail_changed)
         hb2.pack_start(detail_combo, True, True, 0); bx.pack_start(hb2, False, False, 0)
         # Upscale model dropdown
         hb3 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -10637,7 +10717,8 @@ class Spellcaster(Gimp.PlugIn):
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = _build_detail_hallucinate(uname, upscale_model, preset, prompt, negative,
-                                                seed, h_preset["denoise"], h_preset["cfg"])
+                                                seed, h_preset["denoise"], h_preset["cfg"],
+                                                steps=h_preset.get("steps"))
                 label = f"Detail Hallucinate run {run_i+1}/{runs}" if runs > 1 else "Detail Hallucinate"
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
                                             lambda: list(_run_comfyui_workflow(srv, wf)))
