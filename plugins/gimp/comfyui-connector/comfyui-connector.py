@@ -3253,6 +3253,30 @@ def _model_label(preset, task=None):
     return label
 
 
+def _ensure_mod16(wf, image_ref, preset, scale_node_id="4s"):
+    """For Flux architectures, ensure image dimensions are divisible by 16.
+
+    Flux ControlNet uses patch_size=2 on latents (latent = image/8).
+    If latent dims are odd, einops rearrange fails with 'can't divide axis'.
+    Solution: scale to nearest mod-16 dimensions.
+
+    Returns the (possibly new) image reference to use downstream.
+    """
+    arch = preset.get("arch", "")
+    if arch in ("flux1dev", "flux2klein", "flux_kontext"):
+        # Add ImageScaleToTotalPixels which auto-rounds to mod-16
+        # Using resolution_steps=16 ensures mod-16 output
+        wf[scale_node_id] = {"class_type": "ImageScaleToTotalPixels",
+                             "inputs": {
+                                 "image": image_ref,
+                                 "upscale_method": "nearest-exact",
+                                 "megapixels": 1.0,
+                                 "resolution_steps": 16,
+                             }}
+        return [scale_node_id, 0]
+    return image_ref
+
+
 def _make_model_loader(preset, node_id="1"):
     """Create the correct model/CLIP/VAE loader nodes based on architecture.
 
@@ -3414,10 +3438,10 @@ def _build_img2img(image_filename, preset, prompt_text, negative_text, seed,
     # Determine the final positive prompt source
     pos_prompt_text = prompt_text
 
-    wf.update({
-        "4": {"class_type": "LoadImage",
-              "inputs": {"image": image_filename}},
-    })
+    wf["4"] = {"class_type": "LoadImage",
+              "inputs": {"image": image_filename}}
+    # Flux ControlNet needs mod-16 dimensions
+    img_ref = _ensure_mod16(wf, ["4", 0], preset, "4s")
 
     wf.update({
         "2": {"class_type": "CLIPTextEncode",
@@ -3425,7 +3449,7 @@ def _build_img2img(image_filename, preset, prompt_text, negative_text, seed,
         "3": {"class_type": "CLIPTextEncode",
               "inputs": {"text": negative_text, "clip": clip_ref}},
         "5": {"class_type": "VAEEncode",
-              "inputs": {"pixels": ["4", 0], "vae": vae_ref}},
+              "inputs": {"pixels": img_ref, "vae": vae_ref}},
         "6": {"class_type": "KSampler",
               "inputs": {
                   "model": model_ref, "positive": ["2", 0], "negative": ["3", 0],
@@ -3446,10 +3470,10 @@ def _build_img2img(image_filename, preset, prompt_text, negative_text, seed,
         cn_model = guide["cn_models"].get(arch, guide["cn_models"].get("sdxl"))
         preprocessor = guide["preprocessor"]
 
-        cn_image_ref = ["4", 0]  # LoadImage output
+        cn_image_ref = img_ref  # mod-16 scaled for Flux
         if preprocessor:
             wf["20"] = {"class_type": preprocessor,
-                        "inputs": {"image": ["4", 0]}}
+                        "inputs": {"image": img_ref}}
             cn_image_ref = ["20", 0]
 
         wf["21"] = {"class_type": "ControlNetLoader",
