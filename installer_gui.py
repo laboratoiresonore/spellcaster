@@ -1167,6 +1167,46 @@ class InstallerApp(ctk.CTk):
                 else:
                     self.log(f"  WARNING: Darktable system splash not found")
 
+            # App icon replacement — wizard hat Wilber + sparkly darktable lens
+            self.log("  Replacing app icons...")
+            assets_dir = builder.SCRIPT_DIR / "assets"
+
+            # GIMP: replace Wilber icon + upper-left image
+            if self.gimp_path.get():
+                gimp_icon_src = assets_dir / "spellcaster_gimp_icon.png"
+                gimp_header_src = assets_dir / "spellcaster_gimp_header.png"
+                if gimp_icon_src.exists():
+                    # Copy wizard-hat Wilber to the plugin dir (used by the plugin's banner)
+                    gimp_dest = Path(self.gimp_path.get()) / "comfyui-connector"
+                    if gimp_dest.is_dir():
+                        _shutil.copy2(gimp_icon_src, gimp_dest / "spellcaster_icon.png")
+                        self.log(f"  ✓ GIMP wizard Wilber icon installed")
+                    # Try to replace the system Wilber icon
+                    for wilber_name in ["gimp-logo.png", "wilber.png", "gimp-wilber.png"]:
+                        wilber = builder._find_gimp_system_icon(wilber_name)
+                        if wilber and wilber.exists():
+                            backup = wilber.with_suffix(".orig" + wilber.suffix)
+                            try:
+                                if not backup.exists():
+                                    _shutil.copy2(wilber, backup)
+                                _shutil.copy2(gimp_icon_src, wilber)
+                                self.log(f"  ✓ GIMP system icon replaced: {wilber.name}")
+                            except (PermissionError, OSError):
+                                self.log(f"  ⚠ Could not replace {wilber.name} (needs admin)")
+                if gimp_header_src.exists() and gimp_dest.is_dir():
+                    _shutil.copy2(gimp_header_src, gimp_dest / "spellcaster_header.png")
+
+            # Darktable: sparkly lens icon
+            if self.darktable_path.get():
+                dt_icon_src = assets_dir / "spellcaster_darktable_icon.png"
+                dt_header_src = assets_dir / "spellcaster_darktable_header.png"
+                dt_dir = Path(self.darktable_path.get())
+                if dt_icon_src.exists() and dt_dir.is_dir():
+                    _shutil.copy2(dt_icon_src, dt_dir / "spellcaster_icon.png")
+                    self.log(f"  ✓ Darktable sparkle icon installed")
+                if dt_header_src.exists() and dt_dir.is_dir():
+                    _shutil.copy2(dt_header_src, dt_dir / "spellcaster_header.png")
+
         # ---- Phase 2: Custom Nodes ----
         if _remote_only:
             self.log("Phase 2/3: Skipping custom nodes (remote server mode)")
