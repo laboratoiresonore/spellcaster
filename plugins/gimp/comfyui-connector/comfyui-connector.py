@@ -6097,7 +6097,7 @@ WAN_I2V_PRESETS = {
         "clip": "umt5-xxl-encoder-Q8_0.gguf",
         "vae": "wan_2.1_vae.safetensors",
         "steps": 30, "second_step": 20, "cfg": 5.0, "shift": 8.0,
-        "lora_prefix": "Wan/14B",
+        "lora_prefix": "Wan",
         "high_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
         "low_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
         "accel_strength": 1.0,
@@ -6108,7 +6108,7 @@ WAN_I2V_PRESETS = {
         "clip": "umt5-xxl-encoder-Q8_0.gguf",
         "vae": "wan_2.1_vae.safetensors",
         "steps": 30, "second_step": 20, "cfg": 5.0, "shift": 8.0,
-        "lora_prefix": "Wan/14B",
+        "lora_prefix": "Wan",
         "high_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
         "low_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
         "accel_strength": 1.0,
@@ -6116,31 +6116,81 @@ WAN_I2V_PRESETS = {
 }
 
 def _filter_wan_loras(all_loras, preset_key=None):
-    """Filter LoRAs to only those in the Wan subfolder matching the selected model variant.
+    """Return ALL Wan-related LoRAs from the server list.
 
-    LoRA folder layout:
-        loras/Wan/14B/         — LoRAs compatible with standard Wan 2.2 14B
-    Each preset declares a lora_prefix (e.g. 'Wan/14B') and only LoRAs
-    whose path starts with that prefix are shown.
+    Wan LoRAs live in multiple folders: WAN, Wan/14B, Wan-2.2-I2V, etc.
+    We show all of them regardless of preset since they all work with any
+    Wan 2.2 model variant.
     """
-    if not preset_key or preset_key not in WAN_I2V_PRESETS:
-        # Fallback: show everything under Wan\
-        prefix = "Wan/"
-    else:
-        prefix = WAN_I2V_PRESETS[preset_key].get("lora_prefix", "Wan/")
-        # Normalise to always end with backslash for matching
-        if not prefix.endswith("/"):
-            prefix += "/"
-    prefix_bs = prefix.replace("/", "\\")
+    # Accept everything under any Wan-related folder
+    prefixes = ["wan\\", "wan/", "wan-2.2", "wan2.2"]
     return [l for l in all_loras
-            if l.startswith(prefix) or l.startswith(prefix_bs)
-            or l.lower().startswith(prefix.lower()) or l.lower().startswith(prefix_bs.lower())]
+            if any(l.lower().startswith(p) for p in prefixes)]
+
+
+def _find_wan_lora_pair(lora_name, all_loras):
+    """Given a LoRA name, find its high/low noise counterpart.
+
+    Wan 2.2 uses paired LoRAs: one for the high-noise model and one for
+    the low-noise model. Common naming patterns:
+      - _high_noise / _low_noise
+      - _HIGH / _LOW
+      - HIGH / LOW in the name
+      - High / Low in the name
+
+    Returns (high_lora, low_lora) tuple. If the input is the high variant,
+    returns (input, low_counterpart) and vice versa.
+    """
+    name_lower = lora_name.lower()
+
+    # Determine if this is a high or low noise variant
+    high_markers = ["_high_noise", "_high.", "high_noise", "-high-", "highnoise",
+                    "_high_", "HIGH_", "HIGH.", "-HIGH"]
+    low_markers = ["_low_noise", "_low.", "low_noise", "-low-", "lownoise",
+                   "_low_", "LOW_", "LOW.", "-LOW"]
+
+    is_high = any(m.lower() in name_lower for m in high_markers)
+    is_low = any(m.lower() in name_lower for m in low_markers)
+
+    if not is_high and not is_low:
+        # Can't determine — apply to both models as-is
+        return lora_name, lora_name
+
+    # Build the counterpart name by swapping high↔low
+    def _swap(name):
+        pairs = [
+            ("_high_noise", "_low_noise"), ("_low_noise", "_high_noise"),
+            ("HIGH_", "LOW_"), ("LOW_", "HIGH_"),
+            ("_HIGH", "_LOW"), ("_LOW", "_HIGH"),
+            ("-HIGH-", "-LOW-"), ("-LOW-", "-HIGH-"),
+            ("_high_", "_low_"), ("_low_", "_high_"),
+            ("High", "Low"), ("Low", "High"),
+            ("highnoise", "lownoise"), ("lownoise", "highnoise"),
+            ("HighNoise", "LowNoise"), ("LowNoise", "HighNoise"),
+        ]
+        for old, new in pairs:
+            if old in name:
+                return name.replace(old, new, 1)
+        return name
+
+    counterpart = _swap(lora_name)
+
+    # Verify the counterpart exists on the server
+    if counterpart != lora_name and counterpart in all_loras:
+        if is_high:
+            return lora_name, counterpart
+        else:
+            return counterpart, lora_name
+
+    # Counterpart not found — apply the same LoRA to both models
+    return lora_name, lora_name
 
 
 def _build_wan_i2v(image_filename, preset_key, prompt_text, negative_text, seed,
                     width=832, height=480, length=81,
                     steps=None, cfg=None, shift=None, second_step=None,
-                    loras=None, upscale=True, upscale_factor=1.0,
+                    loras=None, all_server_loras=None,
+                    upscale=True, upscale_factor=1.0,
                     interpolate=True, pingpong=False, fps=16):
     """Wan 2.2 Image-to-Video — fatberg_slim dual-model GGUF architecture.
 
@@ -6209,11 +6259,18 @@ def _build_wan_i2v(image_filename, preset_key, prompt_text, negative_text, seed,
     if p.get("low_accel_lora"):
         low_lora_list.append((p["low_accel_lora"], p.get("accel_strength", 1.0)))
 
-    # User-selected content LoRAs (applied to both models)
+    # User-selected content LoRAs — auto-pair high/low noise variants.
+    # The user picks ONE LoRA from the combo; we automatically find its
+    # high/low counterpart from the full server list so the correct
+    # variant is applied to each model.
+    _server_loras = all_server_loras or []
     if loras:
         for lora_name, lora_str in loras:
-            high_lora_list.append((lora_name, lora_str))
-            low_lora_list.append((lora_name, lora_str))
+            high_lora, low_lora = _find_wan_lora_pair(lora_name, _server_loras)
+            if not any(n == high_lora for n, _ in high_lora_list):
+                high_lora_list.append((high_lora, lora_str))
+            if not any(n == low_lora for n, _ in low_lora_list):
+                low_lora_list.append((low_lora, lora_str))
 
     # Chain LoRAs for high-noise model (nodes 100+)
     for i, (lname, lstr) in enumerate(high_lora_list):
@@ -6323,7 +6380,8 @@ def _build_wan_i2v(image_filename, preset_key, prompt_text, negative_text, seed,
 def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negative_text, seed,
                     width=832, height=480, length=81,
                     steps=None, cfg=None, shift=None, second_step=None,
-                    loras=None, upscale=True, upscale_factor=1.0,
+                    loras=None, all_server_loras=None,
+                    upscale=True, upscale_factor=1.0,
                     interpolate=True, pingpong=False, fps=16):
     """Wan 2.2 First+Last Frame to Video — fatberg_slim dual-model architecture.
 
@@ -6381,10 +6439,14 @@ def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negati
         high_lora_list.append((p["high_accel_lora"], p.get("accel_strength", 1.0)))
     if p.get("low_accel_lora"):
         low_lora_list.append((p["low_accel_lora"], p.get("accel_strength", 1.0)))
+    _server_loras = all_server_loras or []
     if loras:
         for lora_name, lora_str in loras:
-            high_lora_list.append((lora_name, lora_str))
-            low_lora_list.append((lora_name, lora_str))
+            high_lora, low_lora = _find_wan_lora_pair(lora_name, _server_loras)
+            if not any(n == high_lora for n, _ in high_lora_list):
+                high_lora_list.append((high_lora, lora_str))
+            if not any(n == low_lora for n, _ in low_lora_list):
+                low_lora_list.append((low_lora, lora_str))
 
     for i, (lname, lstr) in enumerate(high_lora_list):
         nid = str(100 + i)
@@ -9273,6 +9335,7 @@ class WanI2VDialog(Gtk.Dialog):
 
         return {
             "server": self.server_entry.get_text().strip(),
+            "all_server_loras": list(self._all_wan_loras),
             "preset_key": self.preset_combo.get_active_id(),
             "prompt": self._buf_text(self.prompt_tv),
             "negative": self._buf_text(self.neg_tv),
@@ -10682,6 +10745,7 @@ class Spellcaster(Gimp.PlugIn):
                     width=v["width"], height=v["height"], length=v["length"],
                     steps=v["steps"], cfg=v["cfg"], shift=v["shift"],
                     second_step=v["second_step"], loras=v["loras"],
+                    all_server_loras=v.get("all_server_loras"),
                     upscale=v["upscale"], upscale_factor=v["upscale_factor"],
                     interpolate=v["interpolate"], pingpong=v["pingpong"],
                     fps=v["fps"],
@@ -10838,6 +10902,7 @@ class Spellcaster(Gimp.PlugIn):
                     width=v["width"], height=v["height"], length=v["length"],
                     steps=v["steps"], cfg=v["cfg"], shift=v["shift"],
                     second_step=v["second_step"], loras=v["loras"],
+                    all_server_loras=v.get("all_server_loras"),
                     upscale=v["upscale"], upscale_factor=v["upscale_factor"],
                     interpolate=v["interpolate"], pingpong=v["pingpong"],
                     fps=v["fps"],
