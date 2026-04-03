@@ -3067,6 +3067,46 @@ def _get_output_images(server, prompt_id, timeout=300):
 # Convention: node IDs are assigned by function (1-9 for core pipeline,
 # 30+ for conditioning, 50+ for sampling, 90+ for scaling, 100+ for LoRAs).
 
+def _make_model_loader(preset, node_id="1"):
+    """Create the correct model/CLIP/VAE loader nodes based on architecture.
+
+    Returns (wf_dict, model_ref, clip_ref, vae_ref).
+    Handles: CheckpointLoaderSimple (sd15/sdxl/zit/illustrious),
+             UNETLoader + CLIPLoader + VAELoader (flux2klein),
+             UNETLoader + DualCLIPLoader + VAELoader (flux1dev/flux_kontext).
+    """
+    arch = preset.get("arch", "")
+    if arch == "flux2klein":
+        clip_name = "qwen_3_8b_fp8mixed.safetensors" if "9b" in preset["ckpt"].lower() else "qwen_3_4b.safetensors"
+        wf = {
+            node_id: {"class_type": "UNETLoader",
+                      "inputs": {"unet_name": preset["ckpt"], "weight_dtype": "default"}},
+            f"{node_id}b": {"class_type": "CLIPLoader",
+                            "inputs": {"clip_name": clip_name, "type": "flux2", "device": "default"}},
+            f"{node_id}c": {"class_type": "VAELoader",
+                            "inputs": {"vae_name": "flux2-vae.safetensors"}},
+        }
+        return wf, [node_id, 0], [f"{node_id}b", 0], [f"{node_id}c", 0]
+    elif arch in ("flux1dev", "flux_kontext"):
+        wf = {
+            node_id: {"class_type": "UNETLoader",
+                      "inputs": {"unet_name": preset["ckpt"], "weight_dtype": "default"}},
+            f"{node_id}b": {"class_type": "DualCLIPLoader",
+                            "inputs": {"clip_name1": "clip_l.safetensors",
+                                       "clip_name2": "t5xxl_fp8_e4m3fn.safetensors",
+                                       "type": "flux"}},
+            f"{node_id}c": {"class_type": "VAELoader",
+                            "inputs": {"vae_name": "ae.safetensors"}},
+        }
+        return wf, [node_id, 0], [f"{node_id}b", 0], [f"{node_id}c", 0]
+    else:
+        wf = {
+            node_id: {"class_type": "CheckpointLoaderSimple",
+                      "inputs": {"ckpt_name": preset["ckpt"]}},
+        }
+        return wf, [node_id, 0], [node_id, 1], [node_id, 2]
+
+
 def _inject_loras(wf, loras, ckpt_node="1", model_ref=None, clip_ref=None):
     """Insert LoRA loader nodes between checkpoint and the rest of the workflow.
 
@@ -3114,47 +3154,7 @@ def _build_img2img(image_filename, preset, prompt_text, negative_text, seed,
     Optional WD Tagger auto-tags the input image and prepends tags to the prompt.
     Optional ControlNet injection adds preprocessor + ControlNetApplyAdvanced.
     """
-    _arch = preset.get("arch", "")
-    is_flux = _arch in ("flux1dev", "flux_kontext")
-    is_klein = _arch == "flux2klein"
-
-    if is_klein:
-        # Klein Flux 2 uses UNETLoader + CLIPLoader(type=flux2) + VAELoader
-        _klein_clip = "qwen_3_8b_fp8mixed.safetensors" if "9b" in preset["ckpt"].lower() else "qwen_3_4b.safetensors"
-        wf = {
-            "1": {"class_type": "UNETLoader",
-                  "inputs": {"unet_name": preset["ckpt"], "weight_dtype": "default"}},
-            "1b": {"class_type": "CLIPLoader",
-                   "inputs": {"clip_name": _klein_clip, "type": "flux2", "device": "default"}},
-            "1c": {"class_type": "VAELoader",
-                   "inputs": {"vae_name": "flux2-vae.safetensors"}},
-        }
-        model_ref = ["1", 0]
-        clip_ref = ["1b", 0]
-        vae_ref = ["1c", 0]
-    elif is_flux:
-        # Flux 1 Dev uses UNETLoader + DualCLIPLoader(type=flux) + VAELoader
-        wf = {
-            "1": {"class_type": "UNETLoader",
-                  "inputs": {"unet_name": preset["ckpt"], "weight_dtype": "default"}},
-            "1b": {"class_type": "DualCLIPLoader",
-                   "inputs": {"clip_name1": "clip_l.safetensors",
-                              "clip_name2": "t5xxl_fp8_e4m3fn.safetensors",
-                              "type": "flux"}},
-            "1c": {"class_type": "VAELoader",
-                   "inputs": {"vae_name": "ae.safetensors"}},
-        }
-        model_ref = ["1", 0]
-        clip_ref = ["1b", 0]
-        vae_ref = ["1c", 0]
-    else:
-        wf = {
-            "1": {"class_type": "CheckpointLoaderSimple",
-                  "inputs": {"ckpt_name": preset["ckpt"]}},
-        }
-        model_ref = ["1", 0]
-        clip_ref = ["1", 1]
-        vae_ref = ["1", 2]
+    wf, model_ref, clip_ref, vae_ref = _make_model_loader(preset, "1")
 
     wf, model_ref, clip_ref = _inject_loras(wf, loras or [], model_ref[0], model_ref=model_ref, clip_ref=clip_ref)
 
@@ -3250,30 +3250,7 @@ def _build_txt2img(preset, prompt_text, negative_text, seed, loras=None):
     and denoise is always 1.0 (full generation from noise).
     For flux1dev: uses UNETLoader + DualCLIPLoader + VAELoader.
     """
-    is_flux = preset.get("arch") == "flux1dev"
-
-    if is_flux:
-        wf = {
-            "1": {"class_type": "UNETLoader",
-                  "inputs": {"unet_name": preset["ckpt"], "weight_dtype": "default"}},
-            "1b": {"class_type": "DualCLIPLoader",
-                   "inputs": {"clip_name1": "clip_l.safetensors",
-                              "clip_name2": "t5xxl_fp8_e4m3fn.safetensors",
-                              "type": "flux"}},
-            "1c": {"class_type": "VAELoader",
-                   "inputs": {"vae_name": "ae.safetensors"}},
-        }
-        model_ref = ["1", 0]
-        clip_ref = ["1b", 0]
-        vae_ref = ["1c", 0]
-    else:
-        wf = {
-            "1": {"class_type": "CheckpointLoaderSimple",
-                  "inputs": {"ckpt_name": preset["ckpt"]}},
-        }
-        model_ref = ["1", 0]
-        clip_ref = ["1", 1]
-        vae_ref = ["1", 2]
+    wf, model_ref, clip_ref, vae_ref = _make_model_loader(preset, "1")
 
     wf, model_ref, clip_ref = _inject_loras(wf, loras or [], "1", model_ref=model_ref, clip_ref=clip_ref)
     wf.update({
@@ -3311,11 +3288,8 @@ def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_
     Instead we use output[0] (the actual RGB pixels) and convert the red
     channel to a MASK tensor via ImageToMask.
     """
-    wf = {
-        "1": {"class_type": "CheckpointLoaderSimple",
-              "inputs": {"ckpt_name": preset["ckpt"]}},
-    }
-    wf, model_ref, clip_ref = _inject_loras(wf, loras or [], "1")
+    wf, model_ref, clip_ref, vae_ref = _make_model_loader(preset, "1")
+    wf, model_ref, clip_ref = _inject_loras(wf, loras or [], "1", model_ref=model_ref, clip_ref=clip_ref)
 
     wf["4"] = {"class_type": "LoadImage", "inputs": {"image": image_filename}}
     wf["5"] = {"class_type": "LoadImage", "inputs": {"image": mask_filename}}
@@ -3368,7 +3342,7 @@ def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_
         "52": {"class_type": "ImageToMask",
                "inputs": {"image": ["92", 0], "channel": "red"}},
         "6": {"class_type": "VAEEncode",
-              "inputs": {"pixels": ["91", 0], "vae": ["1", 2]}},
+              "inputs": {"pixels": ["91", 0], "vae": vae_ref}},
         "7": {"class_type": "SetLatentNoiseMask",
               "inputs": {"samples": ["6", 0], "mask": ["52", 0]}},
         "8": {"class_type": "KSampler",
@@ -3380,7 +3354,7 @@ def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_
                   "denoise": preset["denoise"],
               }},
         "9": {"class_type": "VAEDecode",
-              "inputs": {"samples": ["8", 0], "vae": ["1", 2]}},
+              "inputs": {"samples": ["8", 0], "vae": vae_ref}},
         # Restore to original image size
         "95": {"class_type": "ImageScale",
                "inputs": {"image": ["9", 0], "upscale_method": "lanczos",
@@ -4033,17 +4007,17 @@ def _build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_
         # 1x — no upscale, use original image directly
         img_ref = ["1", 0]
 
-    wf["4"] = {"class_type": "CheckpointLoaderSimple",
-               "inputs": {"ckpt_name": preset["ckpt"]}}
+    loader_wf, m_ref, c_ref, v_ref = _make_model_loader(preset, "4")
+    wf.update(loader_wf)
     wf["5"] = {"class_type": "CLIPTextEncode",
-               "inputs": {"text": prompt_text, "clip": ["4", 1]}}
+               "inputs": {"text": prompt_text, "clip": c_ref}}
     wf["6"] = {"class_type": "CLIPTextEncode",
-               "inputs": {"text": negative_text, "clip": ["4", 1]}}
+               "inputs": {"text": negative_text, "clip": c_ref}}
     wf["7"] = {"class_type": "VAEEncode",
-               "inputs": {"pixels": img_ref, "vae": ["4", 2]}}
+               "inputs": {"pixels": img_ref, "vae": v_ref}}
     wf["8"] = {"class_type": "KSampler",
                "inputs": {
-                   "model": ["4", 0],
+                   "model": m_ref,
                    "positive": ["5", 0],
                    "negative": ["6", 0],
                    "latent_image": ["7", 0],
@@ -4055,7 +4029,7 @@ def _build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_
                    "denoise": denoise,
                }}
     wf["9"] = {"class_type": "VAEDecode",
-               "inputs": {"samples": ["8", 0], "vae": ["4", 2]}}
+               "inputs": {"samples": ["8", 0], "vae": v_ref}}
     wf["10"] = {"class_type": "SaveImage",
                 "inputs": {"images": ["9", 0], "filename_prefix": "spellcaster_seedv2r"}}
     return wf
