@@ -8501,6 +8501,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-iclight", "spellcaster-supir",
             "spellcaster-seedv2r",
             "spellcaster-settings",
+            "spellcaster-my-presets",
         ]
 
     def do_create_procedure(self, name):
@@ -8563,6 +8564,8 @@ class Spellcaster(Gimp.PlugIn):
                                      "Upscale with AI detail hallucination and scale control"),
             "spellcaster-settings": ("Settings...", self._run_settings,
                                       "Configure Spellcaster: server URL, defaults, and preferences"),
+            "spellcaster-my-presets": ("My Spellcaster Presets...", self._run_my_presets,
+                                       "Quick access to your saved prompt/settings presets"),
         }
         label, callback, doc = menu_map[name]
         # ImageProcedure.new binds a Python callback to a GIMP procedure.
@@ -10867,6 +10870,122 @@ class Spellcaster(Gimp.PlugIn):
         except Exception as e:
             Gimp.message(f"Upload Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    def _run_my_presets(self, procedure, run_mode, image, drawables, config, data):
+        """My Spellcaster Presets: quick access to all saved presets across tools."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+        _apply_spellcaster_theme()
+        dlg = Gtk.Dialog(title="My Spellcaster Presets")
+        dlg.set_default_size(600, 400)
+        dlg.add_button("_Close", Gtk.ResponseType.CLOSE)
+        _style_dialog_buttons(dlg)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(16); bx.set_margin_end(16)
+        bx.set_margin_top(16); bx.set_margin_bottom(16)
+
+        _make_branded_header(bx)
+
+        # Map dialog keys to human-readable tool names
+        tool_names = {
+            "preset_dialog": "img2img / txt2img / Inpaint",
+            "wan_dialog": "Wan I2V Video",
+            "faceid_dialog": "FaceID",
+            "klein_dialog": "Klein Editor",
+            "klein_ref_dialog": "Klein + Reference",
+            "pulid_dialog": "PuLID Flux",
+        }
+
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_vexpand(True)
+        list_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        scroll.add(list_box)
+
+        found_any = False
+        for dialog_key, tool_label in tool_names.items():
+            saved = _load_user_presets(dialog_key)
+            if not saved:
+                continue
+
+            # Section header
+            header = Gtk.Label()
+            header.set_markup(f'<b><span foreground="#D122E3">{tool_label}</span></b>')
+            header.set_xalign(0)
+            list_box.pack_start(header, False, False, 4)
+
+            for preset in saved:
+                found_any = True
+                row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+                row.set_margin_start(12)
+
+                # Preset name
+                name_lbl = Gtk.Label(label=preset.get("name", "Unnamed"), xalign=0)
+                name_lbl.set_hexpand(True)
+                row.pack_start(name_lbl, True, True, 0)
+
+                # Info tooltip with preset details
+                info_parts = []
+                if preset.get("model_preset_idx") is not None:
+                    idx = preset["model_preset_idx"]
+                    if 0 <= idx < len(MODEL_PRESETS):
+                        info_parts.append(f"Model: {MODEL_PRESETS[idx]['label']}")
+                if preset.get("prompt"):
+                    p = preset["prompt"][:80]
+                    info_parts.append(f"Prompt: {p}...")
+                if preset.get("steps"):
+                    info_parts.append(f"Steps: {preset['steps']}")
+                name_lbl.set_tooltip_text("\n".join(info_parts) if info_parts else "Saved preset")
+
+                # Load button — applies preset to session and opens the tool
+                load_btn = Gtk.Button(label="Load")
+                load_btn.set_tooltip_text(f"Load this preset into {tool_label} and open the tool")
+                def _make_load_cb(dk, p):
+                    def on_load(btn):
+                        # Store preset into session so the tool dialog picks it up
+                        _SESSION[dk.replace("_dialog", "")] = p
+                        _save_session()
+                        dlg.destroy()
+                        # Run the corresponding tool
+                        if dk == "preset_dialog":
+                            Gimp.get_pdb().run_procedure("gimp-script-fu-console-eval",
+                                [GObject.Value(Gimp.RunMode, Gimp.RunMode.INTERACTIVE)])
+                    return on_load
+                load_btn.connect("clicked", _make_load_cb(dialog_key, preset))
+                row.pack_end(load_btn, False, False, 0)
+
+                # Delete button
+                del_btn = Gtk.Button(label="Delete")
+                del_btn.set_tooltip_text(f"Delete this preset permanently")
+                def _make_del_cb(dk, pname, r):
+                    def on_del(btn):
+                        presets = _load_user_presets(dk)
+                        presets = [pp for pp in presets if pp.get("name") != pname]
+                        _save_user_presets(presets, dk)
+                        r.destroy()
+                    return on_del
+                del_btn.connect("clicked", _make_del_cb(dialog_key, preset.get("name"), row))
+                row.pack_end(del_btn, False, False, 0)
+
+                list_box.pack_start(row, False, False, 0)
+
+            list_box.pack_start(Gtk.Separator(), False, False, 2)
+
+        if not found_any:
+            empty = Gtk.Label()
+            empty.set_markup(
+                '<span foreground="#888888">No saved presets yet.\n\n'
+                'To save a preset, open any Spellcaster tool,\n'
+                'configure your settings, then click "Save" in\n'
+                'the My Presets section of the dialog.</span>')
+            list_box.pack_start(empty, True, True, 20)
+
+        bx.pack_start(scroll, True, True, 0)
+        bx.show_all()
+        dlg.run()
+        dlg.destroy()
+        return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
     def _run_settings(self, procedure, run_mode, image, drawables, config, data):
         """Spellcaster Settings: configure server URL, defaults, and preferences."""
