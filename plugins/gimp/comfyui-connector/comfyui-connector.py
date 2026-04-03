@@ -7366,7 +7366,7 @@ class PresetDialog(Gtk.Dialog):
 
         # ── Advanced Parameters (collapsible) ────────────────────────────
         adv_exp = Gtk.Expander(label="\u25b8 Advanced Parameters")
-        _shrink_on_collapse(adv_exp, dlg)
+        _shrink_on_collapse(adv_exp, self)
         adv_exp.set_expanded(False)
         adv_exp.set_tooltip_text("Sampler, scheduler, dimensions, steps, CFG, denoise, and seed.\nDefaults are auto-filled by the model preset.")
         adv_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -7427,7 +7427,7 @@ class PresetDialog(Gtk.Dialog):
 
         # ── LoRAs & Style (collapsible) ──────────────────────────────────
         lora_exp = Gtk.Expander(label="\u25b8 LoRAs (3 slots)")
-        _shrink_on_collapse(lora_exp, dlg)
+        _shrink_on_collapse(lora_exp, self)
         lora_exp.set_expanded(False)
         lora_exp.set_tooltip_text("LoRA add-on models that adjust style, subject, or detail.\nEach slot lets you blend a LoRA with adjustable strength.")
         lora_exp_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -7476,7 +7476,7 @@ class PresetDialog(Gtk.Dialog):
         # ── ControlNet (collapsible) ──────────────────────────────────────
         if mode in ("img2img", "inpaint"):
             cn_exp = Gtk.Expander(label="\u25b8 ControlNet (2 guides)")
-            _shrink_on_collapse(cn_exp, dlg)
+            _shrink_on_collapse(cn_exp, self)
             cn_exp.set_expanded(False)
             cn_exp.set_tooltip_text("ControlNet preserves structure from your source image.\nCN1 + CN2 can be combined for dual guidance (e.g. Tile + Depth).")
             cn_exp_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -7592,7 +7592,7 @@ class PresetDialog(Gtk.Dialog):
 
         # Advanced custom workflow
         exp = Gtk.Expander(label="Advanced: Custom Workflow JSON (overrides everything)")
-        _shrink_on_collapse(exp, dlg)
+        _shrink_on_collapse(exp, self)
         exp.set_tooltip_text("Paste a raw ComfyUI workflow JSON here to bypass all presets.\nOnly for advanced users who export workflows from ComfyUI.")
         self.wf_tv = Gtk.TextView()
         self.wf_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
