@@ -1119,7 +1119,8 @@ class InstallerApp(ctk.CTk):
 
             # ── Install Spellcaster CSS themes to app config dirs ──
 
-            # GIMP CSS theme → %APPDATA%/GIMP/3.0/themes/Spellcaster/gtk.css
+            # GIMP CSS theme → gimp.css in ALL detected GIMP version config dirs
+            # GIMP 3.x loads gimp.css as user CSS override on top of any color scheme
             if self.gimp_path.get():
                 gimp_css_src = builder.SCRIPT_DIR / "plugins" / "gimp" / "comfyui-connector" / "spellcaster-theme.css"
                 if not gimp_css_src.exists():
@@ -1130,16 +1131,16 @@ class InstallerApp(ctk.CTk):
                     try:
                         import platform as _plat
                         if _plat.system() == "Windows":
-                            _appdata = os.environ.get("APPDATA", "")
-                            _theme_dir = Path(_appdata) / "GIMP" / "3.0" / "themes" / "Spellcaster" if _appdata else None
+                            _gimp_base = Path(os.environ.get("APPDATA", "")) / "GIMP"
                         elif _plat.system() == "Darwin":
-                            _theme_dir = Path.home() / "Library" / "Application Support" / "GIMP" / "3.0" / "themes" / "Spellcaster"
+                            _gimp_base = Path.home() / "Library" / "Application Support" / "GIMP"
                         else:
-                            _theme_dir = Path.home() / ".config" / "GIMP" / "3.0" / "themes" / "Spellcaster"
-                        if _theme_dir:
-                            _theme_dir.mkdir(parents=True, exist_ok=True)
-                            _shutil.copy2(gimp_css_src, _theme_dir / "gtk.css")
-                            self.log(f"  ✓ GIMP Spellcaster CSS theme installed to {_theme_dir}")
+                            _gimp_base = Path.home() / ".config" / "GIMP"
+                        if _gimp_base.is_dir():
+                            for _vdir in _gimp_base.iterdir():
+                                if _vdir.is_dir() and _vdir.name[0].isdigit():
+                                    _shutil.copy2(gimp_css_src, _vdir / "gimp.css")
+                                    self.log(f"  ✓ GIMP CSS theme → {_vdir / 'gimp.css'}")
                     except OSError as e:
                         self.log(f"  WARNING: Could not install GIMP CSS theme: {e}")
                 else:
