@@ -11063,17 +11063,66 @@ class Spellcaster(Gimp.PlugIn):
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
+        OUTPAINT_PRESETS = {
+            "(general extension)": {
+                "prompt": "seamless continuation of the existing scene, matching lighting, style, and color palette, natural extension, consistent perspective, same quality and mood",
+                "negative": "different style, inconsistent lighting, visible seam, border artifact, blurry, mismatched colors, distorted perspective",
+            },
+            "Complete person / body": {
+                "prompt": "natural continuation of the human body, correct anatomy, matching skin tone and clothing, same pose direction, realistic body proportions, matching lighting on skin",
+                "negative": "extra limbs, wrong anatomy, mismatched skin color, different clothing, floating body parts, deformed, cut off",
+            },
+            "Extend landscape / sky": {
+                "prompt": "seamless landscape continuation, matching horizon line, consistent sky, natural terrain, same vegetation style, matching cloud formation, coherent depth of field",
+                "negative": "different landscape, sky mismatch, horizon break, inconsistent foliage, visible seam, different season",
+            },
+            "Complete cut-off object": {
+                "prompt": "natural completion of the cut-off object, matching material, same texture and color, correct proportions, physically plausible shape, seamless extension",
+                "negative": "wrong shape, different material, inconsistent color, floating parts, impossible geometry, visible seam",
+            },
+            "Extend interior / room": {
+                "prompt": "seamless room extension, matching wall color, consistent floor, same furniture style, correct perspective lines, matching ambient lighting",
+                "negative": "different room, wrong perspective, inconsistent decor, floating furniture, visible seam, mismatched lighting",
+            },
+            "Add more background / bokeh": {
+                "prompt": "smooth background extension, matching bokeh and depth of field, consistent blur, same color tones, natural out-of-focus continuation",
+                "negative": "sharp background, different blur, focus shift, inconsistent bokeh, visible seam, different color temperature",
+            },
+            "Widen panorama": {
+                "prompt": "panoramic scene extension, wide angle continuation, matching horizon, consistent sky and ground, seamless blend at edges, natural wide-angle perspective",
+                "negative": "lens distortion mismatch, different exposure, sky break, visible stitch line, perspective error",
+            },
+            "Add headroom / space above": {
+                "prompt": "natural sky or ceiling continuation above the subject, matching lighting from above, consistent atmosphere, proper vertical perspective",
+                "negative": "floating objects, wrong ceiling, sky mismatch, inconsistent overhead lighting, visible seam",
+            },
+        }
         dlg = PresetDialog("Spellcaster — Outpaint / Extend Canvas", mode="img2img")
         dlg.w_spin.set_value(image.get_width())
         dlg.h_spin.set_value(image.get_height())
-        # Override default prompt with outpaint-specific text
-        dlg.prompt_tv.get_buffer().set_text(
-            "seamless continuation of the existing scene, matching lighting, "
-            "style, and color palette, natural extension, consistent perspective, "
-            "same quality and mood as the original image")
-        dlg.neg_tv.get_buffer().set_text(
-            "different style, inconsistent lighting, visible seam, border artifact, "
-            "blurry, low quality, mismatched colors, distorted perspective")
+
+        # Outpaint purpose dropdown
+        purpose_combo = Gtk.ComboBoxText()
+        purpose_combo.set_tooltip_text("What you're extending. Each purpose has an optimized prompt\nfor seamless continuation of that specific content type.")
+        for label in OUTPAINT_PRESETS:
+            purpose_combo.append(label, label)
+        purpose_combo.set_active(0)
+        def _on_purpose_changed(combo):
+            key = combo.get_active_id()
+            if key and key in OUTPAINT_PRESETS:
+                p = OUTPAINT_PRESETS[key]
+                dlg.prompt_tv.get_buffer().set_text(p["prompt"])
+                dlg.neg_tv.get_buffer().set_text(p["negative"])
+        purpose_combo.connect("changed", _on_purpose_changed)
+        purpose_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        purpose_box.pack_start(Gtk.Label(label="Purpose:"), False, False, 0)
+        purpose_box.pack_start(purpose_combo, True, True, 0)
+        purpose_box.show_all()
+        dlg.get_content_area().pack_start(purpose_box, False, False, 0)
+        dlg.get_content_area().reorder_child(purpose_box, 2)  # after model, before prompt
+
+        # Set initial outpaint prompt from purpose preset
+        _on_purpose_changed(purpose_combo)
         last = _SESSION.get("outpaint")
         if last:
             last_no_dims = {k: v for k, v in last.items() if k not in ("width", "height")}
