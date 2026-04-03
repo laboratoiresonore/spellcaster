@@ -1117,6 +1117,67 @@ class InstallerApp(ctk.CTk):
             self.log("\nApplying Spellcaster visual theme...")
             import shutil as _shutil
 
+            # ── Install Spellcaster CSS themes to app config dirs ──
+
+            # GIMP CSS theme → %APPDATA%/GIMP/3.0/themes/Spellcaster/gtk.css
+            if self.gimp_path.get():
+                gimp_css_src = builder.SCRIPT_DIR / "plugins" / "gimp" / "comfyui-connector" / "spellcaster-theme.css"
+                if not gimp_css_src.exists():
+                    gimp_src_dir = builder._find_gimp_plugin_src()
+                    if gimp_src_dir:
+                        gimp_css_src = gimp_src_dir / "spellcaster-theme.css"
+                if gimp_css_src.exists():
+                    try:
+                        import platform as _plat
+                        if _plat.system() == "Windows":
+                            _appdata = os.environ.get("APPDATA", "")
+                            _theme_dir = Path(_appdata) / "GIMP" / "3.0" / "themes" / "Spellcaster" if _appdata else None
+                        elif _plat.system() == "Darwin":
+                            _theme_dir = Path.home() / "Library" / "Application Support" / "GIMP" / "3.0" / "themes" / "Spellcaster"
+                        else:
+                            _theme_dir = Path.home() / ".config" / "GIMP" / "3.0" / "themes" / "Spellcaster"
+                        if _theme_dir:
+                            _theme_dir.mkdir(parents=True, exist_ok=True)
+                            _shutil.copy2(gimp_css_src, _theme_dir / "gtk.css")
+                            self.log(f"  ✓ GIMP Spellcaster CSS theme installed to {_theme_dir}")
+                    except OSError as e:
+                        self.log(f"  WARNING: Could not install GIMP CSS theme: {e}")
+                else:
+                    self.log(f"  WARNING: spellcaster-theme.css not found")
+
+                # Also copy CSS into the plugin directory itself (for session injection)
+                gimp_dest_dir = Path(self.gimp_path.get()) / "comfyui-connector"
+                if gimp_dest_dir.is_dir() and gimp_css_src.exists():
+                    _shutil.copy2(gimp_css_src, gimp_dest_dir / "spellcaster-theme.css")
+
+            # Darktable CSS theme → ~/.config/darktable/themes/spellcaster-darktable.css
+            if self.darktable_path.get():
+                dt_css_src = builder.SCRIPT_DIR / "plugins" / "darktable" / "spellcaster-darktable.css"
+                if not dt_css_src.exists():
+                    dt_src_file = builder._find_darktable_plugin_src()
+                    if dt_src_file:
+                        dt_css_src = dt_src_file.parent / "spellcaster-darktable.css"
+                if dt_css_src.exists():
+                    try:
+                        import platform as _plat
+                        if _plat.system() == "Windows":
+                            _appdata = os.environ.get("APPDATA", "")
+                            _dt_themes = Path(_appdata) / "darktable" / "themes" if _appdata else None
+                        elif _plat.system() == "Darwin":
+                            _dt_themes = Path.home() / "Library" / "Application Support" / "darktable" / "themes"
+                        else:
+                            _dt_themes = Path.home() / ".config" / "darktable" / "themes"
+                        if _dt_themes:
+                            _dt_themes.mkdir(parents=True, exist_ok=True)
+                            _shutil.copy2(dt_css_src, _dt_themes / "spellcaster-darktable.css")
+                            self.log(f"  ✓ Darktable Spellcaster CSS theme installed to {_dt_themes}")
+                    except OSError as e:
+                        self.log(f"  WARNING: Could not install Darktable CSS theme: {e}")
+                else:
+                    self.log(f"  WARNING: spellcaster-darktable.css not found")
+
+            # ── GIMP system splash replacement ──
+
             # GIMP system splash
             if self.gimp_path.get():
                 gimp_splash = builder._find_gimp_system_splash()

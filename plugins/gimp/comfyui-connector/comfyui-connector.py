@@ -62,332 +62,63 @@ _GITHUB_TREE   = "https://api.github.com/repos/laboratoiresonore/spellcaster/git
 _RAW_BASE      = "https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main"
 _GIMP_PLUGIN_PREFIX = "plugins/gimp/comfyui-connector/"
 
+def _install_spellcaster_theme_to_disk():
+    """Write spellcaster-theme.css into GIMP's user theme directory so it persists across sessions.
+
+    Copies the bundled CSS file to:
+      - Windows: %APPDATA%/GIMP/3.0/themes/Spellcaster/gtk.css
+      - Linux/macOS: ~/.config/GIMP/3.0/themes/Spellcaster/gtk.css
+    """
+    try:
+        css_src = _PLUGIN_DIR / "spellcaster-theme.css"
+        if not css_src.exists():
+            return  # CSS file not bundled yet
+
+        if sys.platform == "win32":
+            appdata = os.environ.get("APPDATA", "")
+            if appdata:
+                theme_dir = Path(appdata) / "GIMP" / "3.0" / "themes" / "Spellcaster"
+            else:
+                return
+        else:
+            theme_dir = Path.home() / ".config" / "GIMP" / "3.0" / "themes" / "Spellcaster"
+
+        theme_dir.mkdir(parents=True, exist_ok=True)
+        dest = theme_dir / "gtk.css"
+
+        # Only overwrite if source is newer or dest missing
+        import shutil
+        if not dest.exists() or css_src.stat().st_mtime > dest.stat().st_mtime:
+            shutil.copy2(css_src, dest)
+            print(f"Spellcaster theme installed to: {dest}")
+    except Exception as e:
+        print(f"Note: Could not install persistent theme: {e}")
+
+
 def _apply_spellcaster_theme():
-    """Inject a magical, premium dark mode CSS into GIMP's GTK3 environment for all plugin dialogs."""
+    """Inject the Spellcaster premium dark CSS into GIMP's GTK3 environment.
+
+    1. Load the full theme from spellcaster-theme.css (bundled next to this file).
+    2. Apply it to the current GTK screen at APPLICATION priority.
+    3. Also install the CSS to GIMP's user theme directory for persistence.
+    """
     try:
         from gi.repository import Gdk, Gtk
-        css = b'''
-        /* Spellcaster Premium GTK3 Theme */
 
-        /* Base window & dialog */
-        window, dialog {
-            background-color: #0B0715;
-            background-image: linear-gradient(180deg, #0B0715 0%, #110A20 100%);
-        }
+        # --- Load from the bundled CSS file ---
+        css_file = _PLUGIN_DIR / "spellcaster-theme.css"
+        if css_file.exists():
+            css = css_file.read_bytes()
+        else:
+            # Minimal fallback if the CSS file is missing
+            css = b'''
+            window, dialog { background-color: #0B0715; color: #E2DFEB; }
+            label { color: #E2DFEB; }
+            button { background-image: none; background-color: #1A1030; color: #E2DFEB;
+                     border: 1px solid #3A2863; border-radius: 6px; }
+            button:hover { background-color: #D122E3; color: white; }
+            '''
 
-        /* Typography */
-        label {
-            color: #E2DFEB;
-            font-family: "Segoe UI", "Inter", "Cantarell", sans-serif;
-            font-size: 13px;
-        }
-        label.header-label, label.spellcaster-title {
-            font-size: 16px;
-            font-weight: bold;
-            color: #D122E3;
-            margin-bottom: 8px;
-        }
-        label.spellcaster-subtitle {
-            font-size: 11px;
-            color: #8B7CA8;
-            margin-bottom: 6px;
-        }
-        label.section-header {
-            font-size: 14px;
-            font-weight: bold;
-            color: #B060D0;
-            padding: 4px 0px;
-        }
-
-        /* -- Buttons -- */
-        button {
-            background-image: none;
-            background-color: #3A2863;
-            color: white;
-            border-radius: 6px;
-            border: 1px solid #5A3A8A;
-            padding: 8px 16px;
-            font-weight: bold;
-            transition: all 200ms ease-in-out;
-        }
-        button:hover {
-            background-color: #D122E3;
-            color: #0B0715;
-            border-color: #D122E3;
-            box-shadow: 0 0 12px rgba(209, 34, 227, 0.6);
-        }
-        button:active {
-            background-color: #A01AB5;
-            border-color: #A01AB5;
-        }
-        /* Primary action buttons (OK/Run/Generate/Swap) */
-        button.suggested-action, button.spellcaster-primary {
-            background-color: #D122E3;
-            color: white;
-            border: 1px solid #E855F5;
-            padding: 10px 24px;
-            font-size: 14px;
-            font-weight: bold;
-            box-shadow: 0 2px 8px rgba(209, 34, 227, 0.35);
-        }
-        button.suggested-action:hover, button.spellcaster-primary:hover {
-            background-color: #E855F5;
-            box-shadow: 0 4px 16px rgba(209, 34, 227, 0.55);
-        }
-        /* Destructive / Cancel buttons */
-        button.destructive-action {
-            background-color: #2A1A3E;
-            color: #A090B8;
-            border: 1px solid #3A2863;
-            padding: 10px 24px;
-            font-size: 14px;
-        }
-        button.destructive-action:hover {
-            background-color: #3A2863;
-            color: white;
-        }
-
-        /* -- Text inputs -- */
-        entry, spinbutton, textview text, combobox {
-            background-color: #150D26;
-            color: white;
-            border-radius: 4px;
-            border: 1px solid #3A2863;
-            padding: 4px;
-            caret-color: #D122E3;
-            transition: border-color 150ms ease;
-        }
-        entry:focus, spinbutton:focus, textview text:focus {
-            border-color: #D122E3;
-            box-shadow: 0 0 6px rgba(209, 34, 227, 0.4);
-        }
-
-        /* -- Notebook (tabs) -- */
-        notebook {
-            background-color: #0B0715;
-        }
-        notebook header {
-            background-color: #110A20;
-            border-bottom: 2px solid #21153B;
-        }
-        notebook header tab {
-            background-color: #150D26;
-            color: #8B7CA8;
-            border: 1px solid #21153B;
-            border-bottom: none;
-            padding: 6px 14px;
-            border-radius: 6px 6px 0 0;
-            margin: 0 1px;
-        }
-        notebook header tab:checked {
-            background-color: #21153B;
-            color: #D122E3;
-            border-color: #3A2863;
-            border-bottom: 2px solid #D122E3;
-        }
-        notebook header tab:hover {
-            background-color: #1E1435;
-            color: #E2DFEB;
-        }
-        notebook stack { background-color: #0B0715; }
-
-        /* -- TreeView (lists) -- */
-        treeview {
-            background-color: #110A20;
-            color: #E2DFEB;
-        }
-        treeview:selected {
-            background-color: #3A2863;
-            color: white;
-        }
-        treeview header button {
-            background-color: #150D26;
-            color: #B060D0;
-            border: none;
-            border-bottom: 1px solid #3A2863;
-            font-weight: bold;
-            padding: 4px 8px;
-        }
-
-        /* -- MenuBar -- */
-        menubar {
-            background-color: #110A20;
-            border-bottom: 1px solid #21153B;
-        }
-        menubar > menuitem {
-            color: #C0B8D0;
-            padding: 4px 10px;
-        }
-        menubar > menuitem:hover {
-            background-color: #3A2863;
-            color: white;
-        }
-        menu {
-            background-color: #150D26;
-            border: 1px solid #3A2863;
-            border-radius: 4px;
-        }
-        menu menuitem {
-            color: #E2DFEB;
-            padding: 6px 12px;
-        }
-        menu menuitem:hover {
-            background-color: #3A2863;
-            color: white;
-        }
-
-        /* -- Sliders (GtkScale) -- */
-        scale {
-            color: #E2DFEB;
-        }
-        scale trough {
-            background-color: #21153B;
-            border-radius: 4px;
-            min-height: 6px;
-            border: none;
-        }
-        scale trough highlight {
-            background-color: #D122E3;
-            border-radius: 4px;
-            min-height: 6px;
-        }
-        scale slider {
-            background-color: #D122E3;
-            border-radius: 50%;
-            min-width: 16px;
-            min-height: 16px;
-            border: 2px solid #E855F5;
-            box-shadow: 0 0 4px rgba(209, 34, 227, 0.5);
-        }
-        scale slider:hover {
-            background-color: #E855F5;
-            box-shadow: 0 0 8px rgba(209, 34, 227, 0.7);
-        }
-
-        /* -- Switches & Checkboxes -- */
-        switch {
-            background-color: #21153B;
-            border-radius: 12px;
-            border: 1px solid #3A2863;
-            min-width: 40px;
-            min-height: 20px;
-        }
-        switch:checked {
-            background-color: #D122E3;
-            border-color: #E855F5;
-        }
-        switch slider {
-            background-color: #E2DFEB;
-            border-radius: 50%;
-            min-width: 16px;
-            min-height: 16px;
-        }
-        checkbutton check, radiobutton radio {
-            background-color: #150D26;
-            border: 2px solid #3A2863;
-            border-radius: 3px;
-            min-width: 18px;
-            min-height: 18px;
-        }
-        checkbutton check:checked, radiobutton radio:checked {
-            background-color: #D122E3;
-            border-color: #D122E3;
-            color: white;
-        }
-        checkbutton check:hover, radiobutton radio:hover {
-            border-color: #D122E3;
-            box-shadow: 0 0 4px rgba(209, 34, 227, 0.4);
-        }
-
-        /* -- Scrollbars -- */
-        scrollbar {
-            background-color: #0B0715;
-        }
-        scrollbar slider {
-            background-color: #3A2863;
-            border-radius: 8px;
-            min-width: 8px;
-            min-height: 8px;
-            border: none;
-        }
-        scrollbar slider:hover {
-            background-color: #5A3A8A;
-        }
-        scrollbar slider:active {
-            background-color: #D122E3;
-        }
-
-        /* -- Combobox dropdown -- */
-        combobox button {
-            background-color: #150D26;
-            border: 1px solid #3A2863;
-            color: white;
-            padding: 4px 8px;
-        }
-        combobox button:hover {
-            border-color: #D122E3;
-        }
-        combobox arrow {
-            color: #D122E3;
-        }
-
-        /* -- Progress bar -- */
-        progressbar text { color: white; font-weight: bold; }
-        progressbar trough {
-            background-color: #150D26;
-            border-radius: 4px;
-            border: 1px solid #3A2863;
-            min-height: 12px;
-        }
-        progressbar progress {
-            background-color: #D122E3;
-            border-radius: 4px;
-            background-image: linear-gradient(90deg, #D122E3, #E855F5, #D122E3);
-        }
-
-        /* -- Separator -- */
-        separator {
-            background-color: #21153B;
-            min-height: 1px;
-            min-width: 1px;
-        }
-
-        /* -- Tooltip -- */
-        tooltip {
-            background-color: #1E1435;
-            color: #E2DFEB;
-            border: 1px solid #3A2863;
-            border-radius: 4px;
-        }
-
-        /* -- File chooser -- */
-        filechooser {
-            background-color: #0B0715;
-        }
-        placessidebar row {
-            color: #C0B8D0;
-        }
-        placessidebar row:selected {
-            background-color: #3A2863;
-            color: white;
-        }
-
-        /* -- Dialog action area styling -- */
-        dialog .dialog-action-area button {
-            min-width: 100px;
-            min-height: 36px;
-            font-size: 14px;
-            margin: 4px;
-        }
-
-        /* -- Spellcaster branded header -- */
-        .spellcaster-header-box {
-            padding: 6px 12px;
-            background-color: #110A20;
-            border-bottom: 2px solid #D122E3;
-            margin-bottom: 6px;
-        }
-        '''
         provider = Gtk.CssProvider()
         provider.load_from_data(css)
         Gtk.StyleContext.add_provider_for_screen(
@@ -397,6 +128,9 @@ def _apply_spellcaster_theme():
         )
     except Exception as e:
         print(f"Warning: Failed to load premium UI theme: {e}")
+
+    # Also install to GIMP's theme directory for persistence
+    _install_spellcaster_theme_to_disk()
 
 
 def _make_branded_header():
@@ -1022,7 +756,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux 2 Klein 4B — Photo (fast)",
         "arch": "flux2klein",
-        "ckpt": "Flux-2-Klein/flux2-klein-4b.safetensors",
+        "ckpt": "A-Flux\\flux-2-klein-4b-fp8.safetensors",
         "width": 1024, "height": 1024,
         "steps": 4, "cfg": 1.0, "denoise": 0.65,
         "sampler": "euler", "scheduler": "simple",
@@ -1032,7 +766,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux 2 Klein 9B — Photo (quality)",
         "arch": "flux2klein",
-        "ckpt": "Flux-2-Klein/flux2-klein-9b.safetensors",
+        "ckpt": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
         "width": 1024, "height": 1024,
         "steps": 20, "cfg": 1.0, "denoise": 0.65,
         "sampler": "euler", "scheduler": "simple",
@@ -1042,7 +776,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux 2 Klein 9B — Portrait",
         "arch": "flux2klein",
-        "ckpt": "Flux-2-Klein/flux2-klein-9b.safetensors",
+        "ckpt": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
         "width": 896, "height": 1152,
         "steps": 20, "cfg": 1.0, "denoise": 0.60,
         "sampler": "euler", "scheduler": "simple",
@@ -1052,7 +786,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux 2 Klein 9B — Artistic / Painterly",
         "arch": "flux2klein",
-        "ckpt": "Flux-2-Klein/flux2-klein-9b.safetensors",
+        "ckpt": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
         "width": 1024, "height": 1024,
         "steps": 25, "cfg": 1.0, "denoise": 0.72,
         "sampler": "euler", "scheduler": "beta",
@@ -1062,7 +796,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux 2 Klein 9B — Cinematic",
         "arch": "flux2klein",
-        "ckpt": "Flux-2-Klein/flux2-klein-9b.safetensors",
+        "ckpt": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
         "width": 1280, "height": 720,
         "steps": 20, "cfg": 1.0, "denoise": 0.68,
         "sampler": "euler", "scheduler": "simple",
@@ -1072,7 +806,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux 2 Klein 9B — Inpaint / Refinement",
         "arch": "flux2klein",
-        "ckpt": "Flux-2-Klein/flux2-klein-9b.safetensors",
+        "ckpt": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
         "width": 1024, "height": 1024,
         "steps": 20, "cfg": 1.0, "denoise": 0.50,
         "sampler": "euler", "scheduler": "simple",
@@ -1168,7 +902,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux 1 Dev — Schnell (fast)",
         "arch": "flux1dev",
-        "ckpt": "Flux-1-Dev/flux1-schnell.safetensors",
+        "ckpt": "Flux-1-Dev\\flux1-schnell.safetensors",
         "width": 1024, "height": 1024,
         "steps": 4, "cfg": 1.0, "denoise": 0.65,
         "sampler": "euler", "scheduler": "simple",
@@ -1178,7 +912,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux 1 Dev — Fill / Inpaint",
         "arch": "flux1dev",
-        "ckpt": "Flux-1-Dev/flux1-fill-dev.safetensors",
+        "ckpt": "Flux-1-Dev\\flux1-fill-dev.safetensors",
         "width": 1024, "height": 1024,
         "steps": 25, "cfg": 3.0, "denoise": 0.85,
         "sampler": "dpmpp_2m", "scheduler": "sgm_uniform",
@@ -1294,9 +1028,9 @@ ARCH_LORA_PREFIXES = {
     "sd15":         [],                                                      # no dedicated LoRA folders yet
     "sdxl":         ["SDXL/", "Illustrious/", "Illustrious-Pony/", "Pony/"],
     "zit":          ["Z-Image-Turbo/"],
-    "flux2klein":   ["Flux-2-Klein/"],
-    "flux1dev":     ["Flux-1-Dev/"],
-    "flux_kontext": ["Flux-Kontext/", "Flux-1-Dev/"],                      # Kontext can use Dev LoRAs too
+    "flux2klein":   ["Flux-2-Klein\\"],
+    "flux1dev":     ["Flux-1-Dev\\"],
+    "flux_kontext": ["Flux-Kontext/", "Flux-1-Dev\\"],                      # Kontext can use Dev LoRAs too
 }
 
 
@@ -1918,8 +1652,8 @@ INPAINT_REFINEMENTS = [
         "loras": {
             "sdxl":       [("SDXL\\Detail\\RealSkin_xxXL_v1.safetensors", 0.7, 0.7)],
             "sd15":       [],
-            "flux2klein": [("Flux-2-Klein/BFS_head_v1_flux-klein_9b_rank128.safetensors", 0.8, 0.8)],
-            "flux1dev":   [("Flux-1-Dev/Detail/flux_face_detail.safetensors", 0.7, 0.7)],
+            "flux2klein": [("Flux-2-Klein\\BFS_head_v1_flux-klein_9b_rank128.safetensors", 0.8, 0.8)],
+            "flux1dev":   [("Flux-1-Dev\\Detail/flux_face_detail.safetensors", 0.7, 0.7)],
             "flux_kontext": [],
         },
     },
@@ -1956,8 +1690,8 @@ INPAINT_REFINEMENTS = [
             "sdxl":       [("SDXL\\Detail\\skin texture style v4.safetensors", 0.75, 0.75),
                            ("SDXL\\Detail\\RealSkin_xxXL_v1.safetensors", 0.5, 0.5)],
             "sd15":       [],
-            "flux2klein": [("Flux-2-Klein/K9bSh4rpD3tails.safetensors", 0.7, 0.7)],
-            "flux1dev":   [("Flux-1-Dev/Detail/add_detail.safetensors", 0.7, 0.7)],
+            "flux2klein": [("Flux-2-Klein\\K9bSh4rpD3tails.safetensors", 0.7, 0.7)],
+            "flux1dev":   [("Flux-1-Dev\\Detail/add_detail.safetensors", 0.7, 0.7)],
             "flux_kontext": [],
         },
     },
@@ -1975,8 +1709,8 @@ INPAINT_REFINEMENTS = [
         "loras": {
             "sdxl":       [("SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors", 0.65, 0.65)],
             "sd15":       [],
-            "flux2klein": [("Flux-2-Klein/K9bSh4rpD3tails.safetensors", 0.6, 0.6)],
-            "flux1dev":   [("Flux-1-Dev/Detail/add_detail.safetensors", 0.6, 0.6)],
+            "flux2klein": [("Flux-2-Klein\\K9bSh4rpD3tails.safetensors", 0.6, 0.6)],
+            "flux1dev":   [("Flux-1-Dev\\Detail/add_detail.safetensors", 0.6, 0.6)],
             "flux_kontext": [],
         },
     },
@@ -2014,8 +1748,8 @@ INPAINT_REFINEMENTS = [
         "loras": {
             "sdxl":       [("SDXL\\Body\\HandFineTuning_XL.safetensors", 0.5, 0.5)],
             "sd15":       [],
-            "flux2klein": [("Flux-2-Klein/Sliders/klein_slider_anatomy_9B_v1.5.safetensors", 0.8, 0.8)],
-            "flux1dev":   [("Flux-1-Dev/Detail/add_detail.safetensors", 0.5, 0.5)],
+            "flux2klein": [("Flux-2-Klein\\Sliders/klein_slider_anatomy_9B_v1.5.safetensors", 0.8, 0.8)],
+            "flux1dev":   [("Flux-1-Dev\\Detail/add_detail.safetensors", 0.5, 0.5)],
             "flux_kontext": [],
         },
     },
@@ -2070,8 +1804,8 @@ INPAINT_REFINEMENTS = [
         "loras": {
             "sdxl":       [],
             "sd15":       [],
-            "flux2klein": [("Flux-2-Klein/Sliders/klein_slider_anatomy_9B_v1.5.safetensors", 0.6, 0.6)],
-            "flux1dev":   [("Flux-1-Dev/Detail/add_detail.safetensors", 0.4, 0.4)],
+            "flux2klein": [("Flux-2-Klein\\Sliders/klein_slider_anatomy_9B_v1.5.safetensors", 0.6, 0.6)],
+            "flux1dev":   [("Flux-1-Dev\\Detail/add_detail.safetensors", 0.4, 0.4)],
             "flux_kontext": [],
         },
     },
@@ -2089,8 +1823,8 @@ INPAINT_REFINEMENTS = [
         "loras": {
             "sdxl":       [("SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors", 0.7, 0.7)],
             "sd15":       [],
-            "flux2klein": [("Flux-2-Klein/FTextureTransfer_F29B_V2.1.safetensors", 0.6, 0.6)],
-            "flux1dev":   [("Flux-1-Dev/Detail/add_detail.safetensors", 0.5, 0.5)],
+            "flux2klein": [("Flux-2-Klein\\FTextureTransfer_F29B_V2.1.safetensors", 0.6, 0.6)],
+            "flux1dev":   [("Flux-1-Dev\\Detail/add_detail.safetensors", 0.5, 0.5)],
             "flux_kontext": [],
         },
     },
@@ -2108,8 +1842,8 @@ INPAINT_REFINEMENTS = [
         "loras": {
             "sdxl":       [("SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors", 0.6, 0.6)],
             "sd15":       [],
-            "flux2klein": [("Flux-2-Klein/K9bSh4rpD3tails.safetensors", 0.5, 0.5)],
-            "flux1dev":   [("Flux-1-Dev/Detail/add_detail.safetensors", 0.5, 0.5)],
+            "flux2klein": [("Flux-2-Klein\\K9bSh4rpD3tails.safetensors", 0.5, 0.5)],
+            "flux1dev":   [("Flux-1-Dev\\Detail/add_detail.safetensors", 0.5, 0.5)],
             "flux_kontext": [],
         },
     },
@@ -2127,8 +1861,8 @@ INPAINT_REFINEMENTS = [
             "sdxl":       [("SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors", 0.8, 0.8),
                            ("SDXL\\Detail\\rdtdrp.safetensors", 0.5, 0.5)],
             "sd15":       [],
-            "flux2klein": [("Flux-2-Klein/K9bSh4rpD3tails.safetensors", 0.8, 0.8)],
-            "flux1dev":   [("Flux-1-Dev/Detail/add_detail.safetensors", 0.8, 0.8)],
+            "flux2klein": [("Flux-2-Klein\\K9bSh4rpD3tails.safetensors", 0.8, 0.8)],
+            "flux1dev":   [("Flux-1-Dev\\Detail/add_detail.safetensors", 0.8, 0.8)],
             "flux_kontext": [],
         },
     },
@@ -2147,8 +1881,8 @@ INPAINT_REFINEMENTS = [
             "sdxl":       [("SDXL\\Detail\\RealSkin_xxXL_v1.safetensors", 0.65, 0.65),
                            ("SDXL\\Detail\\skin texture style v4.safetensors", 0.5, 0.5)],
             "sd15":       [],
-            "flux2klein": [("Flux-2-Klein/ultra_real_v2.safetensors", 0.7, 0.7)],
-            "flux1dev":   [("Flux-1-Dev/Realism/flux_realism.safetensors", 0.7, 0.7)],
+            "flux2klein": [("Flux-2-Klein\\ultra_real_v2.safetensors", 0.7, 0.7)],
+            "flux1dev":   [("Flux-1-Dev\\Realism/flux_realism.safetensors", 0.7, 0.7)],
             "flux_kontext": [],
         },
     },
@@ -2165,7 +1899,7 @@ INPAINT_REFINEMENTS = [
         "loras": {
             "sdxl":       [("SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors", 0.5, 0.5)],
             "sd15":       [],
-            "flux2klein": [("Flux-2-Klein/FK4B_Image_Repair_V1.safetensors", 0.8, 0.8)],
+            "flux2klein": [("Flux-2-Klein\\FK4B_Image_Repair_V1.safetensors", 0.8, 0.8)],
             "flux1dev":   [],
             "flux_kontext": [],
         },
@@ -2508,10 +2242,10 @@ INPAINT_REFINEMENTS = [
                            ("SDXL\\Detail\\RealSkin_xxXL_v1.safetensors", 0.5, 0.5)],
             "zit":        [("Z-Image-Turbo\\Style\\Z-Image-Professional_Photographer_3500.safetensors", 0.7, 0.7)],
             "sd15":       [],
-            "flux2klein": [("Flux-2-Klein/K9bSR3al.safetensors", 0.7, 0.7),
-                           ("Flux-2-Klein/K9bSh4rpD3tails.safetensors", 0.5, 0.5)],
-            "flux1dev":   [("Flux-1-Dev/Realism/flux_realism.safetensors", 0.7, 0.7),
-                           ("Flux-1-Dev/Detail/add_detail.safetensors", 0.5, 0.5)],
+            "flux2klein": [("Flux-2-Klein\\K9bSR3al.safetensors", 0.7, 0.7),
+                           ("Flux-2-Klein\\K9bSh4rpD3tails.safetensors", 0.5, 0.5)],
+            "flux1dev":   [("Flux-1-Dev\\Realism/flux_realism.safetensors", 0.7, 0.7),
+                           ("Flux-1-Dev\\Detail/add_detail.safetensors", 0.5, 0.5)],
             "flux_kontext": [],
         },
     },
@@ -2530,7 +2264,7 @@ INPAINT_REFINEMENTS = [
             "sdxl":       [("SDXL\\polyhedron_all_sdxl-000004.safetensors", 0.7, 0.7)],
             "zit":        [],
             "sd15":       [],
-            "flux2klein": [("Flux-2-Klein/hipoly_3dcg_v7-epoch-000012.safetensors", 0.85, 0.85)],
+            "flux2klein": [("Flux-2-Klein\\hipoly_3dcg_v7-epoch-000012.safetensors", 0.85, 0.85)],
             "flux1dev":   [],
             "flux_kontext": [],
         },
@@ -2610,7 +2344,7 @@ INPAINT_REFINEMENTS = [
             "sdxl":       [],
             "zit":        [],
             "sd15":       [],
-            "flux2klein": [("Flux-2-Klein/Sliders/klein_slider_glow.safetensors", 0.8, 0.8)],
+            "flux2klein": [("Flux-2-Klein\\Sliders/klein_slider_glow.safetensors", 0.8, 0.8)],
             "flux1dev":   [],
             "flux_kontext": [],
         },
@@ -2670,9 +2404,9 @@ INPAINT_REFINEMENTS = [
             "sdxl":       [("Illustrious-Pony\\StS_PonyXL_Detail_Slider_v1.4_iteration_3.safetensors", 0.7, 0.7)],
             "zit":        [("Z-Image-Turbo\\Style\\Z-Image-Professional_Photographer_3500.safetensors", 0.6, 0.6)],
             "sd15":       [],
-            "flux2klein": [("Flux-2-Klein/upscale_portrait_9bklein.safetensors", 0.8, 0.8),
-                           ("Flux-2-Klein/K9bSh4rpD3tails.safetensors", 0.4, 0.4)],
-            "flux1dev":   [("Flux-1-Dev/Detail/add_detail.safetensors", 0.6, 0.6)],
+            "flux2klein": [("Flux-2-Klein\\upscale_portrait_9bklein.safetensors", 0.8, 0.8),
+                           ("Flux-2-Klein\\K9bSh4rpD3tails.safetensors", 0.4, 0.4)],
+            "flux1dev":   [("Flux-1-Dev\\Detail/add_detail.safetensors", 0.6, 0.6)],
             "flux_kontext": [],
         },
     },
@@ -2691,7 +2425,7 @@ INPAINT_REFINEMENTS = [
             "sdxl":       [("SDXL\\Style\\sd_xl_offset_example-lora_1.0.safetensors", 0.6, 0.6)],
             "zit":        [("Z-Image-Turbo\\Style\\zy_CinematicShot_zit.safetensors", 0.5, 0.5)],
             "sd15":       [],
-            "flux2klein": [("Flux-2-Klein/Sliders/ColorTone_Standard.safetensors", 0.7, 0.7)],
+            "flux2klein": [("Flux-2-Klein\\Sliders/ColorTone_Standard.safetensors", 0.7, 0.7)],
             "flux1dev":   [],
             "flux_kontext": [],
         },
@@ -2711,9 +2445,9 @@ INPAINT_REFINEMENTS = [
             "sdxl":       [("SDXL\\Style\\epiCRealnessRC1.safetensors", 0.8, 0.8)],
             "zit":        [("Z-Image-Turbo\\Style\\Z-Image-Professional_Photographer_3500.safetensors", 0.7, 0.7)],
             "sd15":       [],
-            "flux2klein": [("Flux-2-Klein/Character/Flux2Klein_AnythingtoRealCharacters.safetensors", 0.85, 0.85),
-                           ("Flux-2-Klein/K9bSR3al.safetensors", 0.5, 0.5)],
-            "flux1dev":   [("Flux-1-Dev/Realism/flux_realism.safetensors", 0.8, 0.8)],
+            "flux2klein": [("Flux-2-Klein\\Character/Flux2Klein_AnythingtoRealCharacters.safetensors", 0.85, 0.85),
+                           ("Flux-2-Klein\\K9bSR3al.safetensors", 0.5, 0.5)],
+            "flux1dev":   [("Flux-1-Dev\\Realism/flux_realism.safetensors", 0.8, 0.8)],
             "flux_kontext": [],
         },
     },
@@ -3302,10 +3036,26 @@ def _build_img2img(image_filename, preset, prompt_text, negative_text, seed, lor
     For flux1dev: UNETLoader + CLIPLoader + VAELoader (Flux uses separate loaders).
     Optional ControlNet injection adds preprocessor + ControlNetApplyAdvanced.
     """
-    is_flux = preset.get("arch") == "flux1dev"
+    _arch = preset.get("arch", "")
+    is_flux = _arch in ("flux1dev", "flux_kontext")
+    is_klein = _arch == "flux2klein"
 
-    if is_flux:
-        # Flux 1 Dev uses UNETLoader (not CheckpointLoaderSimple)
+    if is_klein:
+        # Klein Flux 2 uses UNETLoader + CLIPLoader(type=flux2) + VAELoader
+        _klein_clip = "qwen_3_8b_fp8mixed.safetensors" if "9b" in preset["ckpt"].lower() else "qwen_3_4b.safetensors"
+        wf = {
+            "1": {"class_type": "UNETLoader",
+                  "inputs": {"unet_name": preset["ckpt"], "weight_dtype": "default"}},
+            "1b": {"class_type": "CLIPLoader",
+                   "inputs": {"clip_name": _klein_clip, "type": "flux2", "device": "default"}},
+            "1c": {"class_type": "VAELoader",
+                   "inputs": {"vae_name": "flux2-vae.safetensors"}},
+        }
+        model_ref = ["1", 0]
+        clip_ref = ["1b", 0]
+        vae_ref = ["1c", 0]
+    elif is_flux:
+        # Flux 1 Dev uses UNETLoader + DualCLIPLoader(type=flux) + VAELoader
         wf = {
             "1": {"class_type": "UNETLoader",
                   "inputs": {"unet_name": preset["ckpt"], "weight_dtype": "default"}},
