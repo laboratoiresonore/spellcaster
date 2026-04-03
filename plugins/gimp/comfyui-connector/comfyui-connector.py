@@ -4065,18 +4065,19 @@ def _build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
         wf["31"] = {"class_type": "KSamplerSelect",
                     "inputs": {"sampler_name": "euler"}}
         wf["32"] = {"class_type": "Flux2Scheduler",
-                    "inputs": {"steps": preset.get("steps", 20), "denoise": 1.0,
+                    "inputs": {"steps": preset.get("steps", 20), "denoise": 0.90,
                                "width": ["25", 0], "height": ["25", 1]}}
         wf["33"] = {"class_type": "RandomNoise",
                     "inputs": {"noise_seed": seed}}
 
-        # Use the VAE-encoded padded image as the starting latent,
-        # with the outpaint mask so only the new area is generated.
-        # This preserves existing content while generating only the extension.
+        # Use the VAE-encoded padded image as the starting latent with
+        # the outpaint mask.  At denoise < 1.0, the sampler partially
+        # noises only the masked (new/padded) area and the original
+        # content in the unmasked region is preserved through the latent.
         wf["35"] = {"class_type": "SetLatentNoiseMask",
                     "inputs": {"samples": ["6", 0], "mask": ["5", 1]}}
 
-        # Sample
+        # Sample — the noise mask ensures only padded area is regenerated
         wf["40"] = {"class_type": "SamplerCustomAdvanced",
                     "inputs": {"noise": ["33", 0], "guider": ["30", 0],
                                "sampler": ["31", 0], "sigmas": ["32", 0],
