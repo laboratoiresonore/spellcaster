@@ -1075,7 +1075,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux 1 Dev — Photo / Realistic",
         "arch": "flux1dev",
-        "ckpt": "Flux-1-Dev/flux1-dev.safetensors",
+        "ckpt": "Flux\\FLUX1 Dev fp8.safetensors",
         "width": 1024, "height": 1024,
         "steps": 25, "cfg": 3.5, "denoise": 0.65,
         "sampler": "dpmpp_2m", "scheduler": "sgm_uniform",
@@ -1087,7 +1087,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux 1 Dev — Portrait",
         "arch": "flux1dev",
-        "ckpt": "Flux-1-Dev/flux1-dev.safetensors",
+        "ckpt": "Flux\\FLUX1 Dev fp8.safetensors",
         "width": 896, "height": 1152,
         "steps": 25, "cfg": 3.0, "denoise": 0.60,
         "sampler": "dpmpp_2m", "scheduler": "sgm_uniform",
@@ -1099,7 +1099,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux 1 Dev — Landscape / Scene",
         "arch": "flux1dev",
-        "ckpt": "Flux-1-Dev/flux1-dev.safetensors",
+        "ckpt": "Flux\\FLUX1 Dev fp8.safetensors",
         "width": 1280, "height": 768,
         "steps": 25, "cfg": 3.0, "denoise": 0.68,
         "sampler": "dpmpp_2m", "scheduler": "sgm_uniform",
@@ -1110,7 +1110,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux 1 Dev — Anime / Illustration",
         "arch": "flux1dev",
-        "ckpt": "Flux-1-Dev/flux1-dev.safetensors",
+        "ckpt": "Flux\\FLUX1 Dev fp8.safetensors",
         "width": 1024, "height": 1024,
         "steps": 28, "cfg": 3.5, "denoise": 0.72,
         "sampler": "dpmpp_2m", "scheduler": "sgm_uniform",
@@ -1121,7 +1121,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux 1 Dev — Cinematic",
         "arch": "flux1dev",
-        "ckpt": "Flux-1-Dev/flux1-dev.safetensors",
+        "ckpt": "Flux\\FLUX1 Dev fp8.safetensors",
         "width": 1280, "height": 720,
         "steps": 25, "cfg": 3.0, "denoise": 0.65,
         "sampler": "dpmpp_2m", "scheduler": "sgm_uniform",
@@ -1133,7 +1133,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux 1 Dev — Artistic / Painterly",
         "arch": "flux1dev",
-        "ckpt": "Flux-1-Dev/flux1-dev.safetensors",
+        "ckpt": "Flux\\FLUX1 Dev fp8.safetensors",
         "width": 1024, "height": 1024,
         "steps": 30, "cfg": 3.5, "denoise": 0.75,
         "sampler": "dpmpp_2m", "scheduler": "sgm_uniform",
@@ -1145,7 +1145,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux 1 Dev — Detail / Upscale Pass",
         "arch": "flux1dev",
-        "ckpt": "Flux-1-Dev/flux1-dev.safetensors",
+        "ckpt": "Flux\\FLUX1 Dev fp8.safetensors",
         "width": 1024, "height": 1024,
         "steps": 20, "cfg": 4.5, "denoise": 0.35,
         "sampler": "dpmpp_2m", "scheduler": "exponential",
@@ -1177,7 +1177,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux 1 Dev — Inpaint / Light Touch",
         "arch": "flux1dev",
-        "ckpt": "Flux-1-Dev/flux1-dev.safetensors",
+        "ckpt": "Flux\\FLUX1 Dev fp8.safetensors",
         "width": 1024, "height": 1024,
         "steps": 20, "cfg": 2.5, "denoise": 0.45,
         "sampler": "dpmpp_2m", "scheduler": "sgm_uniform",
@@ -1193,7 +1193,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux Kontext Dev — Edit / Modify",
         "arch": "flux_kontext",
-        "ckpt": "Flux-Kontext/flux1-kontext-dev.safetensors",
+        "ckpt": "Flux\\flux1-dev-kontext_fp8_scaled.safetensors",
         "width": 1024, "height": 1024,
         "steps": 25, "cfg": 3.0, "denoise": 0.70,
         "sampler": "dpmpp_2m", "scheduler": "sgm_uniform",
@@ -1204,7 +1204,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux Kontext Dev — Replace Element",
         "arch": "flux_kontext",
-        "ckpt": "Flux-Kontext/flux1-kontext-dev.safetensors",
+        "ckpt": "Flux\\flux1-dev-kontext_fp8_scaled.safetensors",
         "width": 1024, "height": 1024,
         "steps": 25, "cfg": 3.0, "denoise": 0.75,
         "sampler": "dpmpp_2m", "scheduler": "sgm_uniform",
@@ -1215,7 +1215,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux Kontext Dev — Style Transfer",
         "arch": "flux_kontext",
-        "ckpt": "Flux-Kontext/flux1-kontext-dev.safetensors",
+        "ckpt": "Flux\\flux1-dev-kontext_fp8_scaled.safetensors",
         "width": 1024, "height": 1024,
         "steps": 25, "cfg": 3.5, "denoise": 0.80,
         "sampler": "dpmpp_2m", "scheduler": "sgm_uniform",
@@ -1226,7 +1226,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux Kontext Dev — Background Swap",
         "arch": "flux_kontext",
-        "ckpt": "Flux-Kontext/flux1-kontext-dev.safetensors",
+        "ckpt": "Flux\\flux1-dev-kontext_fp8_scaled.safetensors",
         "width": 1024, "height": 1024,
         "steps": 25, "cfg": 3.0, "denoise": 0.75,
         "sampler": "dpmpp_2m", "scheduler": "sgm_uniform",
@@ -1237,7 +1237,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux Kontext Dev — Portrait Retouch",
         "arch": "flux_kontext",
-        "ckpt": "Flux-Kontext/flux1-kontext-dev.safetensors",
+        "ckpt": "Flux\\flux1-dev-kontext_fp8_scaled.safetensors",
         "width": 896, "height": 1152,
         "steps": 20, "cfg": 2.5, "denoise": 0.55,
         "sampler": "dpmpp_2m", "scheduler": "sgm_uniform",
@@ -1248,7 +1248,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux Kontext Dev — Localized Inpaint",
         "arch": "flux_kontext",
-        "ckpt": "Flux-Kontext/flux1-kontext-dev.safetensors",
+        "ckpt": "Flux\\flux1-dev-kontext_fp8_scaled.safetensors",
         "width": 1024, "height": 1024,
         "steps": 20, "cfg": 2.5, "denoise": 0.60,
         "sampler": "dpmpp_2m", "scheduler": "sgm_uniform",
@@ -1259,7 +1259,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux Kontext Dev — Preserve / Light Touch",
         "arch": "flux_kontext",
-        "ckpt": "Flux-Kontext/flux1-kontext-dev.safetensors",
+        "ckpt": "Flux\\flux1-dev-kontext_fp8_scaled.safetensors",
         "width": 1024, "height": 1024,
         "steps": 20, "cfg": 2.5, "denoise": 0.35,
         "sampler": "dpmpp_2m", "scheduler": "sgm_uniform",
@@ -3245,19 +3245,23 @@ def _get_output_images(server, prompt_id, timeout=300):
 # Convention: node IDs are assigned by function (1-9 for core pipeline,
 # 30+ for conditioning, 50+ for sampling, 90+ for scaling, 100+ for LoRAs).
 
-def _inject_loras(wf, loras, ckpt_node="1"):
+def _inject_loras(wf, loras, ckpt_node="1", model_ref=None, clip_ref=None):
     """Insert LoRA loader nodes between checkpoint and the rest of the workflow.
 
     Chains: ckpt -> lora1 -> lora2 -> ... -> (model_out, clip_out).
     Returns (workflow, final_model_ref, final_clip_ref).
 
     Uses high node IDs (100+) to avoid collision with the caller's nodes.
+    model_ref/clip_ref allow overriding the starting references (for Flux/Klein
+    where model and clip come from different loader nodes).
     """
+    default_model = model_ref or [ckpt_node, 0]
+    default_clip = clip_ref or [ckpt_node, 1]
     if not loras:
-        return wf, [ckpt_node, 0], [ckpt_node, 1]
+        return wf, default_model, default_clip
 
-    prev_model = [ckpt_node, 0]
-    prev_clip = [ckpt_node, 1]
+    prev_model = default_model
+    prev_clip = default_clip
     base_id = 100  # high IDs to avoid collision with existing nodes
 
     for i, lora in enumerate(loras):
@@ -3283,13 +3287,36 @@ def _build_img2img(image_filename, preset, prompt_text, negative_text, seed, lor
 
     Pipeline: CheckpointLoaderSimple → [LoRA chain] → CLIPTextEncode(+/-)
               LoadImage → VAEEncode → KSampler → VAEDecode → SaveImage
+    For flux1dev: UNETLoader + CLIPLoader + VAELoader (Flux uses separate loaders).
     Optional ControlNet injection adds preprocessor + ControlNetApplyAdvanced.
     """
-    wf = {
-        "1": {"class_type": "CheckpointLoaderSimple",
-              "inputs": {"ckpt_name": preset["ckpt"]}},
-    }
-    wf, model_ref, clip_ref = _inject_loras(wf, loras or [], "1")
+    is_flux = preset.get("arch") == "flux1dev"
+
+    if is_flux:
+        # Flux 1 Dev uses UNETLoader (not CheckpointLoaderSimple)
+        wf = {
+            "1": {"class_type": "UNETLoader",
+                  "inputs": {"unet_name": preset["ckpt"], "weight_dtype": "default"}},
+            "1b": {"class_type": "DualCLIPLoader",
+                   "inputs": {"clip_name1": "clip_l.safetensors",
+                              "clip_name2": "t5xxl_fp8_e4m3fn.safetensors",
+                              "type": "flux"}},
+            "1c": {"class_type": "VAELoader",
+                   "inputs": {"vae_name": "ae.safetensors"}},
+        }
+        model_ref = ["1", 0]
+        clip_ref = ["1b", 0]
+        vae_ref = ["1c", 0]
+    else:
+        wf = {
+            "1": {"class_type": "CheckpointLoaderSimple",
+                  "inputs": {"ckpt_name": preset["ckpt"]}},
+        }
+        model_ref = ["1", 0]
+        clip_ref = ["1", 1]
+        vae_ref = ["1", 2]
+
+    wf, model_ref, clip_ref = _inject_loras(wf, loras or [], model_ref[0], model_ref=model_ref, clip_ref=clip_ref)
     wf.update({
         "2": {"class_type": "CLIPTextEncode",
               "inputs": {"text": prompt_text, "clip": clip_ref}},
@@ -3298,7 +3325,7 @@ def _build_img2img(image_filename, preset, prompt_text, negative_text, seed, lor
         "4": {"class_type": "LoadImage",
               "inputs": {"image": image_filename}},
         "5": {"class_type": "VAEEncode",
-              "inputs": {"pixels": ["4", 0], "vae": ["1", 2]}},
+              "inputs": {"pixels": ["4", 0], "vae": vae_ref}},
         "6": {"class_type": "KSampler",
               "inputs": {
                   "model": model_ref, "positive": ["2", 0], "negative": ["3", 0],
@@ -3308,7 +3335,7 @@ def _build_img2img(image_filename, preset, prompt_text, negative_text, seed, lor
                   "denoise": preset["denoise"],
               }},
         "7": {"class_type": "VAEDecode",
-              "inputs": {"samples": ["6", 0], "vae": ["1", 2]}},
+              "inputs": {"samples": ["6", 0], "vae": vae_ref}},
         "8": {"class_type": "SaveImage",
               "inputs": {"images": ["7", 0], "filename_prefix": "gimp_comfy"}},
     })
@@ -3351,12 +3378,34 @@ def _build_txt2img(preset, prompt_text, negative_text, seed, loras=None):
 
     Same as img2img but uses EmptyLatentImage instead of VAEEncode,
     and denoise is always 1.0 (full generation from noise).
+    For flux1dev: uses UNETLoader + DualCLIPLoader + VAELoader.
     """
-    wf = {
-        "1": {"class_type": "CheckpointLoaderSimple",
-              "inputs": {"ckpt_name": preset["ckpt"]}},
-    }
-    wf, model_ref, clip_ref = _inject_loras(wf, loras or [], "1")
+    is_flux = preset.get("arch") == "flux1dev"
+
+    if is_flux:
+        wf = {
+            "1": {"class_type": "UNETLoader",
+                  "inputs": {"unet_name": preset["ckpt"], "weight_dtype": "default"}},
+            "1b": {"class_type": "DualCLIPLoader",
+                   "inputs": {"clip_name1": "clip_l.safetensors",
+                              "clip_name2": "t5xxl_fp8_e4m3fn.safetensors",
+                              "type": "flux"}},
+            "1c": {"class_type": "VAELoader",
+                   "inputs": {"vae_name": "ae.safetensors"}},
+        }
+        model_ref = ["1", 0]
+        clip_ref = ["1b", 0]
+        vae_ref = ["1c", 0]
+    else:
+        wf = {
+            "1": {"class_type": "CheckpointLoaderSimple",
+                  "inputs": {"ckpt_name": preset["ckpt"]}},
+        }
+        model_ref = ["1", 0]
+        clip_ref = ["1", 1]
+        vae_ref = ["1", 2]
+
+    wf, model_ref, clip_ref = _inject_loras(wf, loras or [], "1", model_ref=model_ref, clip_ref=clip_ref)
     wf.update({
         "2": {"class_type": "CLIPTextEncode",
               "inputs": {"text": prompt_text, "clip": clip_ref}},
@@ -3373,7 +3422,7 @@ def _build_txt2img(preset, prompt_text, negative_text, seed, loras=None):
                   "denoise": 1.0,
               }},
         "6": {"class_type": "VAEDecode",
-              "inputs": {"samples": ["5", 0], "vae": ["1", 2]}},
+              "inputs": {"samples": ["5", 0], "vae": vae_ref}},
         "7": {"class_type": "SaveImage",
               "inputs": {"images": ["6", 0], "filename_prefix": "gimp_comfy"}},
     })
