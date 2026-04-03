@@ -3928,11 +3928,12 @@ def _build_lut(image_filename, lut_name, strength):
 # ── Outpaint / Extend Canvas ─────────────────────────────────────────
 
 def _build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
-                     left, top, right, bottom, feathering, loras=None):
+                     left, top, right, bottom, feathering, loras=None,
+                     controlnet=None):
     """Outpaint: extend the canvas by padding and inpainting the new area.
 
     Pipeline: LoadImage → ImagePadForOutpaint → VAEEncode → SetLatentNoiseMask
-              → KSampler → VAEDecode → SaveImage
+              → [ControlNet] → KSampler → VAEDecode → SaveImage
 
     ImagePadForOutpaint outputs [0]=padded image, [1]=mask for the new area.
     """
@@ -3972,6 +3973,36 @@ def _build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
         "10": {"class_type": "SaveImage",
                "inputs": {"images": ["9", 0], "filename_prefix": "spellcaster_outpaint"}},
     })
+
+    # ── ControlNet (optional — Canny/Lineart for edge consistency) ──
+    if controlnet and controlnet.get("mode", "Off") != "Off":
+        guide = CONTROLNET_GUIDE_MODES[controlnet["mode"]]
+        arch = preset.get("arch", "sdxl")
+        cn_model = guide["cn_models"].get(arch, guide["cn_models"].get("sdxl"))
+        preprocessor = guide["preprocessor"]
+
+        # ControlNet processes the padded image
+        cn_image_ref = ["5", 0]
+        if preprocessor:
+            wf["20"] = {"class_type": preprocessor,
+                        "inputs": {"image": ["5", 0]}}
+            cn_image_ref = ["20", 0]
+
+        wf["21"] = {"class_type": "ControlNetLoader",
+                    "inputs": {"control_net_name": cn_model}}
+        wf["22"] = {"class_type": "ControlNetApplyAdvanced",
+                    "inputs": {
+                        "positive": ["2", 0],
+                        "negative": ["3", 0],
+                        "control_net": ["21", 0],
+                        "image": cn_image_ref,
+                        "strength": controlnet["strength"],
+                        "start_percent": controlnet.get("start_percent", 0.0),
+                        "end_percent": controlnet.get("end_percent", 1.0),
+                    }}
+        wf["8"]["inputs"]["positive"] = ["22", 0]
+        wf["8"]["inputs"]["negative"] = ["22", 1]
+
     return wf
 
 
@@ -3980,12 +4011,14 @@ def _build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
 def _build_style_transfer(target_filename, style_ref_filename, preset,
                            prompt_text, negative_text, seed,
                            ipadapter_preset="PLUS (high strength)",
-                           weight=0.8, denoise=0.6):
+                           weight=0.8, denoise=0.6,
+                           controlnet=None, controlnet_2=None):
     """Style transfer using IPAdapter — applies the style of a reference image.
 
     Pipeline: CheckpointLoaderSimple → IPAdapterUnifiedLoader → LoadImage(style ref)
               → IPAdapterAdvanced(weight_type="style transfer") → LoadImage(target)
-              → CLIPTextEncode x2 → VAEEncode → KSampler → VAEDecode → SaveImage
+              → CLIPTextEncode x2 → [ControlNet 1] → [ControlNet 2]
+              → VAEEncode → KSampler → VAEDecode → SaveImage
     """
     loader_wf, model_ref, clip_ref, vae_ref = _make_model_loader(preset, "1")
     wf = dict(loader_wf)
@@ -4035,6 +4068,65 @@ def _build_style_transfer(target_filename, style_ref_filename, preset,
         "11": {"class_type": "SaveImage",
                "inputs": {"images": ["10", 0], "filename_prefix": "spellcaster_style"}},
     })
+
+    # ── ControlNet 1 (optional — Depth/Canny preserves structure) ──
+    if controlnet and controlnet.get("mode", "Off") != "Off":
+        guide = CONTROLNET_GUIDE_MODES[controlnet["mode"]]
+        arch = preset.get("arch", "sdxl")
+        cn_model = guide["cn_models"].get(arch, guide["cn_models"].get("sdxl"))
+        preprocessor = guide["preprocessor"]
+
+        cn_image_ref = ["7", 0]  # target image
+        if preprocessor:
+            wf["20"] = {"class_type": preprocessor,
+                        "inputs": {"image": ["7", 0]}}
+            cn_image_ref = ["20", 0]
+
+        wf["21"] = {"class_type": "ControlNetLoader",
+                    "inputs": {"control_net_name": cn_model}}
+        wf["22"] = {"class_type": "ControlNetApplyAdvanced",
+                    "inputs": {
+                        "positive": ["5", 0],
+                        "negative": ["6", 0],
+                        "control_net": ["21", 0],
+                        "image": cn_image_ref,
+                        "strength": controlnet["strength"],
+                        "start_percent": controlnet.get("start_percent", 0.0),
+                        "end_percent": controlnet.get("end_percent", 1.0),
+                    }}
+        wf["9"]["inputs"]["positive"] = ["22", 0]
+        wf["9"]["inputs"]["negative"] = ["22", 1]
+
+    # ── ControlNet 2 (optional) ──
+    if controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
+        guide2 = CONTROLNET_GUIDE_MODES[controlnet_2["mode"]]
+        arch = preset.get("arch", "sdxl")
+        cn_model_2 = guide2["cn_models"].get(arch, guide2["cn_models"].get("sdxl"))
+        preprocessor_2 = guide2["preprocessor"]
+
+        cn_image_ref_2 = ["7", 0]
+        if preprocessor_2:
+            wf["30"] = {"class_type": preprocessor_2,
+                        "inputs": {"image": ["7", 0]}}
+            cn_image_ref_2 = ["30", 0]
+
+        wf["31"] = {"class_type": "ControlNetLoader",
+                    "inputs": {"control_net_name": cn_model_2}}
+        prev_pos = ["22", 0] if "22" in wf else ["5", 0]
+        prev_neg = ["22", 1] if "22" in wf else ["6", 0]
+        wf["32"] = {"class_type": "ControlNetApplyAdvanced",
+                    "inputs": {
+                        "positive": prev_pos,
+                        "negative": prev_neg,
+                        "control_net": ["31", 0],
+                        "image": cn_image_ref_2,
+                        "strength": controlnet_2["strength"],
+                        "start_percent": controlnet_2.get("start_percent", 0.0),
+                        "end_percent": controlnet_2.get("end_percent", 1.0),
+                    }}
+        wf["9"]["inputs"]["positive"] = ["32", 0]
+        wf["9"]["inputs"]["negative"] = ["32", 1]
+
     return wf
 
 
@@ -4195,6 +4287,16 @@ HALLUCINATE_PRESETS = {
         "prompt": "ultra detailed metal surface, mirror polish reflections, visible scratches, "
                   "gem facets, gold shimmer, diamond sparkle, jewelry macro photography",
         "negative": "dull metal, flat surface, matte, blurry, painted, low quality",
+    },
+    "Anti-DoF — sharp focus throughout": {
+        "denoise": 0.35, "cfg": 5.5, "steps": 30,
+        "prompt": "sharp focus throughout entire image, deep depth of field, f/16 aperture, "
+                  "everything in focus from foreground to background, no bokeh, no blur, "
+                  "tack sharp edge to edge, large depth of field, landscape focus, "
+                  "hyperfocal distance, ultra sharp, every detail crisp",
+        "negative": "shallow depth of field, bokeh, blurry background, out of focus areas, "
+                    "selective focus, lens blur, tilt shift, soft background, "
+                    "foreground blur, defocused, f/1.4, f/1.8, wide aperture",
     },
 }
 
@@ -4364,11 +4466,13 @@ SEEDV2R_SCALE_OPTIONS = [
 
 
 def _build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_text,
-                    seed, denoise, cfg, steps, scale_factor, orig_width, orig_height):
+                    seed, denoise, cfg, steps, scale_factor, orig_width, orig_height,
+                    controlnet=None, controlnet_2=None):
     """SeedV2R: upscale + img2img pipeline with user-controlled scale and hallucination.
 
     For scale > 1x: UpscaleModelLoader → ImageUpscaleWithModel (4x) →
-                     ImageScale (to target dims) → VAEEncode → KSampler → ...
+                     ImageScale (to target dims) → [ControlNet 1] → [ControlNet 2]
+                     → VAEEncode → KSampler → ...
     For 1x: skip upscale, go straight to VAEEncode → KSampler.
     """
     wf = {
@@ -4433,6 +4537,66 @@ def _build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_
                "inputs": {"samples": ["8", 0], "vae": v_ref}}
     wf["10"] = {"class_type": "SaveImage",
                 "inputs": {"images": ["9", 0], "filename_prefix": "spellcaster_seedv2r"}}
+
+    # ── ControlNet 1 (optional — Tile recommended for upscale) ──
+    if controlnet and controlnet.get("mode", "Off") != "Off":
+        guide = CONTROLNET_GUIDE_MODES[controlnet["mode"]]
+        arch = preset.get("arch", "sdxl")
+        cn_model = guide["cn_models"].get(arch, guide["cn_models"].get("sdxl"))
+        preprocessor = guide["preprocessor"]
+
+        # ControlNet processes the upscaled image
+        cn_image_ref = img_ref
+        if preprocessor:
+            wf["20"] = {"class_type": preprocessor,
+                        "inputs": {"image": img_ref}}
+            cn_image_ref = ["20", 0]
+
+        wf["21"] = {"class_type": "ControlNetLoader",
+                    "inputs": {"control_net_name": cn_model}}
+        wf["22"] = {"class_type": "ControlNetApplyAdvanced",
+                    "inputs": {
+                        "positive": ["5", 0],
+                        "negative": ["6", 0],
+                        "control_net": ["21", 0],
+                        "image": cn_image_ref,
+                        "strength": controlnet["strength"],
+                        "start_percent": controlnet.get("start_percent", 0.0),
+                        "end_percent": controlnet.get("end_percent", 1.0),
+                    }}
+        wf["8"]["inputs"]["positive"] = ["22", 0]
+        wf["8"]["inputs"]["negative"] = ["22", 1]
+
+    # ── ControlNet 2 (optional — e.g., Tile + Depth) ──
+    if controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
+        guide2 = CONTROLNET_GUIDE_MODES[controlnet_2["mode"]]
+        arch = preset.get("arch", "sdxl")
+        cn_model_2 = guide2["cn_models"].get(arch, guide2["cn_models"].get("sdxl"))
+        preprocessor_2 = guide2["preprocessor"]
+
+        cn_image_ref_2 = img_ref
+        if preprocessor_2:
+            wf["30"] = {"class_type": preprocessor_2,
+                        "inputs": {"image": img_ref}}
+            cn_image_ref_2 = ["30", 0]
+
+        wf["31"] = {"class_type": "ControlNetLoader",
+                    "inputs": {"control_net_name": cn_model_2}}
+        prev_pos = ["22", 0] if "22" in wf else ["5", 0]
+        prev_neg = ["22", 1] if "22" in wf else ["6", 0]
+        wf["32"] = {"class_type": "ControlNetApplyAdvanced",
+                    "inputs": {
+                        "positive": prev_pos,
+                        "negative": prev_neg,
+                        "control_net": ["31", 0],
+                        "image": cn_image_ref_2,
+                        "strength": controlnet_2["strength"],
+                        "start_percent": controlnet_2.get("start_percent", 0.0),
+                        "end_percent": controlnet_2.get("end_percent", 1.0),
+                    }}
+        wf["8"]["inputs"]["positive"] = ["32", 0]
+        wf["8"]["inputs"]["negative"] = ["32", 1]
+
     return wf
 
 
@@ -4525,12 +4689,12 @@ ICLIGHT_PRESETS = {
 }
 
 def _build_colorize(image_filename, preset, prompt_text, negative_text, seed,
-                     controlnet_strength, denoise):
+                     controlnet_strength, denoise, controlnet_2=None):
     """Colorize B&W photo using ControlNet lineart to preserve structure.
 
     Pipeline: LoadImage → LineArtPreprocessor → ControlNetLoader
               → CheckpointLoaderSimple → CLIPTextEncode(+/-) → ControlNetApplyAdvanced
-              → VAEEncode(original) → KSampler → VAEDecode → SaveImage
+              → [ControlNet 2] → VAEEncode(original) → KSampler → VAEDecode → SaveImage
     """
     arch = preset.get("arch", "sdxl")
     cn_model = CONTROLNET_LINEART_MODELS.get(arch, CONTROLNET_LINEART_MODELS["sdxl"])
@@ -4583,6 +4747,34 @@ def _build_colorize(image_filename, preset, prompt_text, negative_text, seed,
         "11": {"class_type": "SaveImage",
                "inputs": {"images": ["10", 0], "filename_prefix": "spellcaster_colorize"}},
     })
+
+    # ── Optional ControlNet 2 (Depth/Pose for spatial guidance) ──
+    if controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
+        guide2 = CONTROLNET_GUIDE_MODES[controlnet_2["mode"]]
+        cn_model_2 = guide2["cn_models"].get(arch, guide2["cn_models"].get("sdxl"))
+        preprocessor_2 = guide2["preprocessor"]
+
+        cn_image_ref_2 = ["1", 0]
+        if preprocessor_2:
+            wf["20"] = {"class_type": preprocessor_2,
+                        "inputs": {"image": ["1", 0]}}
+            cn_image_ref_2 = ["20", 0]
+
+        wf["21"] = {"class_type": "ControlNetLoader",
+                    "inputs": {"control_net_name": cn_model_2}}
+        wf["22"] = {"class_type": "ControlNetApplyAdvanced",
+                    "inputs": {
+                        "positive": ["7", 0],
+                        "negative": ["7", 1],
+                        "control_net": ["21", 0],
+                        "image": cn_image_ref_2,
+                        "strength": controlnet_2["strength"],
+                        "start_percent": controlnet_2.get("start_percent", 0.0),
+                        "end_percent": controlnet_2.get("end_percent", 1.0),
+                    }}
+        wf["9"]["inputs"]["positive"] = ["22", 0]
+        wf["9"]["inputs"]["negative"] = ["22", 1]
+
     return wf
 
 
@@ -4749,7 +4941,8 @@ def _build_iclight(image_filename, ckpt_name, prompt, negative, seed,
 # ── SUPIR AI Restoration builder ──────────────────────────────────────
 
 def _build_supir(image_filename, supir_model, sdxl_model, prompt, seed,
-                  denoise=0.3, steps=45, scale_by=1.0):
+                  denoise=0.3, steps=45, scale_by=1.0,
+                  controlnet=None, controlnet_2=None):
     """SUPIR AI restoration — full granular pipeline for maximum quality.
 
     Pipeline (5 stages):
@@ -4853,10 +5046,101 @@ def _build_supir(image_filename, supir_model, sdxl_model, prompt, seed,
                    "decoder_tile_size": 64,
                }},
 
-        # Output
+        # Output (may be replaced by refinement pass below)
         "60": {"class_type": "SaveImage",
                "inputs": {"images": ["50", 0], "filename_prefix": "spellcaster_supir"}},
     }
+
+    # ── Optional ControlNet Refinement Post-Pass ──────────────────────
+    # SUPIR nodes don't support ControlNet directly. So after SUPIR
+    # restoration we run a quick img2img refinement at very low denoise
+    # (0.12) with ControlNet (Tile/Depth) to lock in structural detail.
+    # Uses the same SDXL model as a standard checkpoint loader.
+    if controlnet and controlnet.get("mode", "Off") != "Off":
+        guide = CONTROLNET_GUIDE_MODES[controlnet["mode"]]
+        cn_model = guide["cn_models"].get("sdxl", guide["cn_models"].get("sd15"))
+        preprocessor = guide["preprocessor"]
+
+        # Load SDXL checkpoint for the refinement pass
+        wf["70"] = {"class_type": "CheckpointLoaderSimple",
+                    "inputs": {"ckpt_name": sdxl_model}}
+        wf["71"] = {"class_type": "CLIPTextEncode",
+                    "inputs": {"text": prompt if prompt.strip() else "high quality, detailed, sharp",
+                               "clip": ["70", 1]}}
+        wf["72"] = {"class_type": "CLIPTextEncode",
+                    "inputs": {"text": "blurry, noisy, artifacts, low quality",
+                               "clip": ["70", 1]}}
+
+        # Preprocess SUPIR output for ControlNet
+        cn_image_ref = ["50", 0]  # SUPIR decoded output
+        if preprocessor:
+            wf["73"] = {"class_type": preprocessor,
+                        "inputs": {"image": ["50", 0]}}
+            cn_image_ref = ["73", 0]
+
+        wf["74"] = {"class_type": "ControlNetLoader",
+                    "inputs": {"control_net_name": cn_model}}
+        wf["75"] = {"class_type": "ControlNetApplyAdvanced",
+                    "inputs": {
+                        "positive": ["71", 0],
+                        "negative": ["72", 0],
+                        "control_net": ["74", 0],
+                        "image": cn_image_ref,
+                        "strength": controlnet["strength"],
+                        "start_percent": 0.0,
+                        "end_percent": 1.0,
+                    }}
+
+        # Encode SUPIR output to latent, sample at very low denoise, decode
+        wf["76"] = {"class_type": "VAEEncode",
+                    "inputs": {"pixels": ["50", 0], "vae": ["70", 2]}}
+        wf["77"] = {"class_type": "KSampler",
+                    "inputs": {
+                        "model": ["70", 0],
+                        "positive": ["75", 0],
+                        "negative": ["75", 1],
+                        "latent_image": ["76", 0],
+                        "seed": seed + 1,
+                        "steps": 15,
+                        "cfg": 4.0,
+                        "sampler_name": "dpmpp_2m_sde",
+                        "scheduler": "karras",
+                        "denoise": 0.12,
+                    }}
+        wf["78"] = {"class_type": "VAEDecode",
+                    "inputs": {"samples": ["77", 0], "vae": ["70", 2]}}
+
+        # Second ControlNet refinement (optional)
+        if controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
+            guide2 = CONTROLNET_GUIDE_MODES[controlnet_2["mode"]]
+            cn_model_2 = guide2["cn_models"].get("sdxl", guide2["cn_models"].get("sd15"))
+            preprocessor_2 = guide2["preprocessor"]
+
+            cn_image_ref_2 = ["50", 0]
+            if preprocessor_2:
+                wf["80"] = {"class_type": preprocessor_2,
+                            "inputs": {"image": ["50", 0]}}
+                cn_image_ref_2 = ["80", 0]
+
+            wf["81"] = {"class_type": "ControlNetLoader",
+                        "inputs": {"control_net_name": cn_model_2}}
+            wf["82"] = {"class_type": "ControlNetApplyAdvanced",
+                        "inputs": {
+                            "positive": ["75", 0],
+                            "negative": ["75", 1],
+                            "control_net": ["81", 0],
+                            "image": cn_image_ref_2,
+                            "strength": controlnet_2["strength"],
+                            "start_percent": 0.0,
+                            "end_percent": 1.0,
+                        }}
+            # Re-wire the KSampler to use chained CN output
+            wf["77"]["inputs"]["positive"] = ["82", 0]
+            wf["77"]["inputs"]["negative"] = ["82", 1]
+
+        # Replace output to use the refined image
+        wf["60"]["inputs"]["images"] = ["78", 0]
+
     return wf
 
 
@@ -10235,6 +10519,27 @@ class Spellcaster(Gimp.PlugIn):
         outpaint_frame.add(grid)
         outpaint_frame.show_all()
         dlg.get_content_area().pack_start(outpaint_frame, False, False, 0)
+        # ControlNet for edge consistency at outpaint borders
+        cn_frame = Gtk.Frame(label="ControlNet (edge consistency)")
+        cn_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        cn_box.set_margin_start(8); cn_box.set_margin_end(8)
+        cn_box.set_margin_top(8); cn_box.set_margin_bottom(8)
+        cn_box.pack_start(Gtk.Label(label="ControlNet 1 (Canny/Lineart for edge matching):", xalign=0), False, False, 0)
+        out_cn_combo = Gtk.ComboBoxText()
+        out_cn_combo.set_tooltip_text("ControlNet at the outpaint border maintains edge consistency.\nCanny or Lineart work best for seamless outpaint transitions.")
+        for key in CONTROLNET_GUIDE_MODES:
+            out_cn_combo.append(key, key)
+        out_cn_combo.set_active(0)  # Off by default
+        cn_box.pack_start(out_cn_combo, False, False, 0)
+        out_cn_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        out_cn_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
+        out_cn_strength = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
+        out_cn_strength.set_digits(2); out_cn_strength.set_value(0.6)
+        out_cn_str_hb.pack_start(out_cn_strength, False, False, 0)
+        cn_box.pack_start(out_cn_str_hb, False, False, 0)
+        cn_frame.add(cn_box)
+        cn_frame.show_all()
+        dlg.get_content_area().pack_start(cn_frame, False, False, 0)
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
@@ -10246,6 +10551,10 @@ class Spellcaster(Gimp.PlugIn):
         pad_right = int(right_spin.get_value())
         pad_bottom = int(bottom_spin.get_value())
         feathering = int(feather_spin.get_value())
+        # ControlNet params
+        out_cn1_mode = out_cn_combo.get_active_id() if out_cn_combo else "Off"
+        out_cn1 = {"mode": out_cn1_mode, "strength": out_cn_strength.get_value(),
+                    "start_percent": 0.0, "end_percent": 1.0} if out_cn1_mode != "Off" else None
         dlg.destroy()
         runs = v.get("runs", 1)
         try:
@@ -10259,7 +10568,8 @@ class Spellcaster(Gimp.PlugIn):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = json.loads(v["custom_workflow"]) if v["custom_workflow"] else \
                      _build_outpaint(uname, v["preset"], v["prompt"], v["negative"], seed,
-                                      pad_left, pad_top, pad_right, pad_bottom, feathering, v.get("loras"))
+                                      pad_left, pad_top, pad_right, pad_bottom, feathering,
+                                      v.get("loras"), controlnet=out_cn1)
                 label = f"Outpaint run {run_i+1}/{runs}" if runs > 1 else "Outpaint"
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
                                             lambda: list(_run_comfyui_workflow(srv, wf)))
@@ -10361,6 +10671,36 @@ class Spellcaster(Gimp.PlugIn):
         seed_spin.set_value(-1); seed_spin.set_tooltip_text("-1 = random")
         sgrid.attach(seed_spin, 1, 1, 1, 1)
         bx.pack_start(sgrid, False, False, 0)
+        # ControlNet 1 (Depth or Canny preserves structure during style transfer)
+        bx.pack_start(Gtk.Separator(), False, False, 2)
+        bx.pack_start(Gtk.Label(label="ControlNet 1 (Depth/Canny preserve structure):", xalign=0), False, False, 0)
+        st_cn_combo = Gtk.ComboBoxText()
+        st_cn_combo.set_tooltip_text("ControlNet preserves spatial structure during style transfer.\nDepth = best for layout, Canny = best for edges, Tile = detail preservation.")
+        for key in CONTROLNET_GUIDE_MODES:
+            st_cn_combo.append(key, key)
+        st_cn_combo.set_active(0)  # Off by default
+        bx.pack_start(st_cn_combo, False, False, 0)
+        st_cn_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        st_cn_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
+        st_cn_strength = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
+        st_cn_strength.set_digits(2); st_cn_strength.set_value(0.6)
+        st_cn_str_hb.pack_start(st_cn_strength, False, False, 0)
+        bx.pack_start(st_cn_str_hb, False, False, 0)
+        # ControlNet 2 (optional)
+        bx.pack_start(Gtk.Label(label="ControlNet 2 (optional):", xalign=0), False, False, 0)
+        st_cn_combo_2 = Gtk.ComboBoxText()
+        st_cn_combo_2.set_tooltip_text("Optional second ControlNet (e.g., Depth + Canny).")
+        for key in CONTROLNET_GUIDE_MODES:
+            st_cn_combo_2.append(key, key)
+        st_cn_combo_2.set_active(0)
+        bx.pack_start(st_cn_combo_2, False, False, 0)
+        st_cn_str_hb_2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        st_cn_str_hb_2.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
+        st_cn_strength_2 = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
+        st_cn_strength_2.set_digits(2); st_cn_strength_2.set_value(0.4)
+        st_cn_str_hb_2.pack_start(st_cn_strength_2, False, False, 0)
+        bx.pack_start(st_cn_str_hb_2, False, False, 0)
+        bx.pack_start(Gtk.Separator(), False, False, 2)
         # Runs spinner
         runs_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         runs_hb.pack_start(Gtk.Label(label="Runs:"), False, False, 0)
@@ -10385,6 +10725,14 @@ class Spellcaster(Gimp.PlugIn):
                 weight_spin.set_value(last["weight"])
             if "denoise" in last:
                 denoise_spin.set_value(last["denoise"])
+            if "cn1_id" in last:
+                st_cn_combo.set_active_id(last["cn1_id"])
+            if "cn1_str" in last:
+                st_cn_strength.set_value(last["cn1_str"])
+            if "cn2_id" in last:
+                st_cn_combo_2.set_active_id(last["cn2_id"])
+            if "cn2_str" in last:
+                st_cn_strength_2.set_value(last["cn2_str"])
             if "runs" in last:
                 runs_spin.set_value(last["runs"])
         if dlg.run() != Gtk.ResponseType.OK:
@@ -10408,10 +10756,19 @@ class Spellcaster(Gimp.PlugIn):
         if base_seed < 0:
             base_seed = random.randint(0, 2**32 - 1)
         runs = int(runs_spin.get_value())
+        # ControlNet params
+        st_cn1_mode = st_cn_combo.get_active_id() if st_cn_combo else "Off"
+        st_cn1 = {"mode": st_cn1_mode, "strength": st_cn_strength.get_value(),
+                   "start_percent": 0.0, "end_percent": 1.0} if st_cn1_mode != "Off" else None
+        st_cn2_mode = st_cn_combo_2.get_active_id() if st_cn_combo_2 else "Off"
+        st_cn2 = {"mode": st_cn2_mode, "strength": st_cn_strength_2.get_value(),
+                   "start_percent": 0.0, "end_percent": 1.0} if st_cn2_mode != "Off" else None
         _SESSION["style_transfer"] = {
             "model_idx": idx, "ip_id": ipadapter_preset,
             "prompt": prompt, "negative": negative,
             "weight": weight, "denoise": denoise,
+            "cn1_id": st_cn1_mode, "cn1_str": st_cn_strength.get_value(),
+            "cn2_id": st_cn2_mode, "cn2_str": st_cn_strength_2.get_value(),
             "runs": runs,
         }
         _save_session()
@@ -10435,6 +10792,7 @@ class Spellcaster(Gimp.PlugIn):
                     prompt, negative, seed,
                     ipadapter_preset=ipadapter_preset,
                     weight=weight, denoise=denoise,
+                    controlnet=st_cn1, controlnet_2=st_cn2,
                 )
                 label = f"Style Transfer run {run_i+1}/{runs}" if runs > 1 else "Style Transfer"
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
@@ -10923,6 +11281,36 @@ class Spellcaster(Gimp.PlugIn):
                 neg_tv.get_buffer().set_text(SEEDV2R_PRESETS[idx]["negative"])
         hall_combo.connect("changed", _on_hall_changed)
 
+        # ControlNet 1 (Tile recommended for upscale)
+        bx.pack_start(Gtk.Separator(), False, False, 2)
+        bx.pack_start(Gtk.Label(label="ControlNet 1 (Tile recommended):", xalign=0), False, False, 0)
+        sv2r_cn_combo = Gtk.ComboBoxText()
+        sv2r_cn_combo.set_tooltip_text("Tile ControlNet is recommended for SeedV2R — preserves\nstructure while AI adds hallucinated detail during upscale.")
+        for key in CONTROLNET_GUIDE_MODES:
+            sv2r_cn_combo.append(key, key)
+        sv2r_cn_combo.set_active(0)  # Off by default
+        bx.pack_start(sv2r_cn_combo, False, False, 0)
+        sv2r_cn_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        sv2r_cn_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
+        sv2r_cn_strength = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
+        sv2r_cn_strength.set_digits(2); sv2r_cn_strength.set_value(0.7)
+        sv2r_cn_str_hb.pack_start(sv2r_cn_strength, False, False, 0)
+        bx.pack_start(sv2r_cn_str_hb, False, False, 0)
+        # ControlNet 2 (optional)
+        bx.pack_start(Gtk.Label(label="ControlNet 2 (optional):", xalign=0), False, False, 0)
+        sv2r_cn_combo_2 = Gtk.ComboBoxText()
+        sv2r_cn_combo_2.set_tooltip_text("Optional second ControlNet (e.g., Tile + Depth).")
+        for key in CONTROLNET_GUIDE_MODES:
+            sv2r_cn_combo_2.append(key, key)
+        sv2r_cn_combo_2.set_active(0)
+        bx.pack_start(sv2r_cn_combo_2, False, False, 0)
+        sv2r_cn_str_hb_2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        sv2r_cn_str_hb_2.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
+        sv2r_cn_strength_2 = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
+        sv2r_cn_strength_2.set_digits(2); sv2r_cn_strength_2.set_value(0.5)
+        sv2r_cn_str_hb_2.pack_start(sv2r_cn_strength_2, False, False, 0)
+        bx.pack_start(sv2r_cn_str_hb_2, False, False, 0)
+        bx.pack_start(Gtk.Separator(), False, False, 2)
         # Seed
         hb_seed = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         hb_seed.pack_start(Gtk.Label(label="Seed:"), False, False, 0)
@@ -10954,6 +11342,14 @@ class Spellcaster(Gimp.PlugIn):
                 prompt_tv.get_buffer().set_text(last["prompt"])
             if "negative" in last:
                 neg_tv.get_buffer().set_text(last["negative"])
+            if "cn1_id" in last:
+                sv2r_cn_combo.set_active_id(last["cn1_id"])
+            if "cn1_str" in last:
+                sv2r_cn_strength.set_value(last["cn1_str"])
+            if "cn2_id" in last:
+                sv2r_cn_combo_2.set_active_id(last["cn2_id"])
+            if "cn2_str" in last:
+                sv2r_cn_strength_2.set_value(last["cn2_str"])
             if "runs" in last:
                 runs_spin.set_value(last["runs"])
         if dlg.run() != Gtk.ResponseType.OK:
@@ -10976,9 +11372,18 @@ class Spellcaster(Gimp.PlugIn):
         if base_seed < 0:
             base_seed = random.randint(0, 2**32 - 1)
         runs = int(runs_spin.get_value())
+        # ControlNet params
+        sv2r_cn1_mode = sv2r_cn_combo.get_active_id() if sv2r_cn_combo else "Off"
+        sv2r_cn1 = {"mode": sv2r_cn1_mode, "strength": sv2r_cn_strength.get_value(),
+                     "start_percent": 0.0, "end_percent": 1.0} if sv2r_cn1_mode != "Off" else None
+        sv2r_cn2_mode = sv2r_cn_combo_2.get_active_id() if sv2r_cn_combo_2 else "Off"
+        sv2r_cn2 = {"mode": sv2r_cn2_mode, "strength": sv2r_cn_strength_2.get_value(),
+                     "start_percent": 0.0, "end_percent": 1.0} if sv2r_cn2_mode != "Off" else None
         _SESSION["seedv2r"] = {
             "model_idx": idx, "up_id": up_key, "scale_idx": scale_idx,
             "hall_idx": hall_idx, "prompt": prompt, "negative": negative,
+            "cn1_id": sv2r_cn1_mode, "cn1_str": sv2r_cn_strength.get_value(),
+            "cn2_id": sv2r_cn2_mode, "cn2_str": sv2r_cn_strength_2.get_value(),
             "runs": runs,
         }
         _save_session()
@@ -10994,7 +11399,8 @@ class Spellcaster(Gimp.PlugIn):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = _build_seedv2r(uname, upscale_model, preset, prompt, negative,
                                      seed, hall_preset["denoise"], hall_preset["cfg"],
-                                     hall_preset["steps"], scale_factor, orig_w, orig_h)
+                                     hall_preset["steps"], scale_factor, orig_w, orig_h,
+                                     controlnet=sv2r_cn1, controlnet_2=sv2r_cn2)
                 label = f"SeedV2R run {run_i+1}/{runs}" if runs > 1 else "SeedV2R"
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
                                             lambda: list(_run_comfyui_workflow(srv, wf)))
@@ -11073,6 +11479,22 @@ class Spellcaster(Gimp.PlugIn):
         neg_tv.get_buffer().set_text("black and white, grayscale, monochrome, desaturated, sepia, low quality")
         sw2 = Gtk.ScrolledWindow(); sw2.add(neg_tv); sw2.set_min_content_height(40)
         bx.pack_start(sw2, False, False, 0)
+        # Optional second ControlNet (Depth/Pose for spatial guidance)
+        bx.pack_start(Gtk.Separator(), False, False, 2)
+        bx.pack_start(Gtk.Label(label="ControlNet 2 (optional — Depth/Pose for structure):", xalign=0), False, False, 0)
+        col_cn2_combo = Gtk.ComboBoxText()
+        col_cn2_combo.set_tooltip_text("Optional second ControlNet in addition to the built-in lineart.\nDepth preserves spatial layout, Pose preserves body positions.")
+        for key in CONTROLNET_GUIDE_MODES:
+            col_cn2_combo.append(key, key)
+        col_cn2_combo.set_active(0)  # Off by default
+        bx.pack_start(col_cn2_combo, False, False, 0)
+        col_cn2_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        col_cn2_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
+        col_cn2_strength = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
+        col_cn2_strength.set_digits(2); col_cn2_strength.set_value(0.5)
+        col_cn2_str_hb.pack_start(col_cn2_strength, False, False, 0)
+        bx.pack_start(col_cn2_str_hb, False, False, 0)
+        bx.pack_start(Gtk.Separator(), False, False, 2)
         # Runs spinner
         runs_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         runs_hb.pack_start(Gtk.Label(label="Runs:"), False, False, 0)
@@ -11095,6 +11517,10 @@ class Spellcaster(Gimp.PlugIn):
                 prompt_tv.get_buffer().set_text(last["prompt"])
             if "negative" in last:
                 neg_tv.get_buffer().set_text(last["negative"])
+            if "cn2_id" in last:
+                col_cn2_combo.set_active_id(last["cn2_id"])
+            if "cn2_str" in last:
+                col_cn2_strength.set_value(last["cn2_str"])
             if "runs" in last:
                 runs_spin.set_value(last["runs"])
         if dlg.run() != Gtk.ResponseType.OK:
@@ -11113,9 +11539,14 @@ class Spellcaster(Gimp.PlugIn):
         prompt = pbuf.get_text(pbuf.get_start_iter(), pbuf.get_end_iter(), False)
         nbuf = neg_tv.get_buffer()
         negative = nbuf.get_text(nbuf.get_start_iter(), nbuf.get_end_iter(), False)
+        # ControlNet 2 params
+        col_cn2_mode = col_cn2_combo.get_active_id() if col_cn2_combo else "Off"
+        col_cn2 = {"mode": col_cn2_mode, "strength": col_cn2_strength.get_value(),
+                    "start_percent": 0.0, "end_percent": 1.0} if col_cn2_mode != "Off" else None
         _SESSION["colorize"] = {
             "model_idx": idx, "cn_strength": cn_strength, "denoise": denoise,
             "prompt": prompt, "negative": negative,
+            "cn2_id": col_cn2_mode, "cn2_str": col_cn2_strength.get_value(),
             "runs": runs,
         }
         _save_session()
@@ -11128,7 +11559,7 @@ class Spellcaster(Gimp.PlugIn):
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = _build_colorize(uname, preset, prompt, negative, seed,
-                                      cn_strength, denoise)
+                                      cn_strength, denoise, controlnet_2=col_cn2)
                 label = f"Colorize run {run_i+1}/{runs}" if runs > 1 else "Colorize"
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
                                             lambda: list(_run_comfyui_workflow(srv, wf)))
@@ -11352,14 +11783,21 @@ class Spellcaster(Gimp.PlugIn):
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
+        _apply_spellcaster_theme()
         dlg = Gtk.Dialog(title="Spellcaster — SUPIR AI Restoration")
-        dlg.set_default_size(560, -1)
+        dlg.set_default_size(600, -1)
         dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
         dlg.add_button("_Restore", Gtk.ResponseType.OK)
         dlg.set_default_response(Gtk.ResponseType.OK)
+        _style_dialog_buttons(dlg)
         bx = dlg.get_content_area()
         bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
         bx.set_margin_top(12); bx.set_margin_bottom(12)
+        # Branded header
+        header = _make_branded_header()
+        if header:
+            bx.pack_start(header, False, False, 4)
+            bx.pack_start(Gtk.Separator(), False, False, 2)
         # Server
         hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
@@ -11379,6 +11817,25 @@ class Spellcaster(Gimp.PlugIn):
         if model_combo.get_active() < 0:
             model_combo.set_active(0)
         bx.pack_start(model_combo, False, False, 0)
+        # Quality preset dropdown
+        SUPIR_QUALITY_PRESETS = [
+            ("Fast Preview (20 steps)", 20, 0.25),
+            ("Standard (45 steps)", 45, 0.30),
+            ("Maximum Detail (70 steps)", 70, 0.35),
+            ("Ultra (100 steps)", 100, 0.40),
+        ]
+        hb_q = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb_q.pack_start(Gtk.Label(label="Quality Preset:"), False, False, 0)
+        quality_combo = Gtk.ComboBoxText()
+        quality_combo.set_tooltip_text(
+            "Quick quality presets that auto-set steps and denoise.\n"
+            "Fast Preview = 20 steps, Standard = 45, Maximum Detail = 70, Ultra = 100.\n"
+            "Higher quality takes longer but produces finer restoration.")
+        for i, (qlbl, _qs, _qd) in enumerate(SUPIR_QUALITY_PRESETS):
+            quality_combo.append(str(i), qlbl)
+        quality_combo.set_active(1)  # Standard
+        quality_combo.set_hexpand(True)
+        hb_q.pack_start(quality_combo, True, True, 0); bx.pack_start(hb_q, False, False, 0)
         # Parameters
         sgrid = Gtk.Grid(column_spacing=12, row_spacing=6)
         sgrid.attach(Gtk.Label(label="Denoise:", xalign=1), 0, 0, 1, 1)
@@ -11391,11 +11848,24 @@ class Spellcaster(Gimp.PlugIn):
         steps_spin.set_value(45)
         steps_spin.set_tooltip_text("Restoration steps. Default: 45 for the full pipeline.\n20 = fast preview, 45 = production quality, 70+ = maximum detail.\nMore steps give finer restoration but take longer.")
         sgrid.attach(steps_spin, 1, 1, 1, 1)
-        sgrid.attach(Gtk.Label(label="Seed:", xalign=1), 0, 2, 1, 1)
+        sgrid.attach(Gtk.Label(label="Scale:", xalign=1), 0, 2, 1, 1)
+        scale_spin = Gtk.SpinButton.new_with_range(1.0, 4.0, 0.25)
+        scale_spin.set_value(1.0); scale_spin.set_digits(2)
+        scale_spin.set_tooltip_text("Output scale factor. 1.0 = same size as input.\nSUPIR can upscale during restoration. 2.0 = double resolution.\nHigher values use more VRAM and take longer.")
+        sgrid.attach(scale_spin, 1, 2, 1, 1)
+        sgrid.attach(Gtk.Label(label="Seed:", xalign=1), 0, 3, 1, 1)
         seed_spin = Gtk.SpinButton.new_with_range(-1, 2**32-1, 1)
         seed_spin.set_value(-1); seed_spin.set_tooltip_text("-1 = random")
-        sgrid.attach(seed_spin, 1, 2, 1, 1)
+        sgrid.attach(seed_spin, 1, 3, 1, 1)
         bx.pack_start(sgrid, False, False, 0)
+        # Quality preset auto-sets steps + denoise
+        def _on_quality_changed(combo):
+            idx = combo.get_active()
+            if 0 <= idx < len(SUPIR_QUALITY_PRESETS):
+                _qlbl, qsteps, qdenoise = SUPIR_QUALITY_PRESETS[idx]
+                steps_spin.set_value(qsteps)
+                denoise_spin.set_value(qdenoise)
+        quality_combo.connect("changed", _on_quality_changed)
         # Prompt
         bx.pack_start(Gtk.Label(label="Positive Prompt:", xalign=0), False, False, 0)
         prompt_tv = Gtk.TextView(); prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
@@ -11404,6 +11874,137 @@ class Spellcaster(Gimp.PlugIn):
         prompt_tv.get_buffer().set_text("high quality, detailed, sharp focus, professional photograph, natural colors, clean, well-lit")
         sw = Gtk.ScrolledWindow(); sw.add(prompt_tv); sw.set_min_content_height(50)
         bx.pack_start(sw, False, False, 0)
+        # WD Tagger button
+        supir_wd_btn = None
+        supir_wd_status = None
+        wd_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        supir_wd_btn = Gtk.Button(label="Tag Image (WD Tagger)")
+        supir_wd_btn.set_tooltip_text(
+            "Sends your image to ComfyUI's WD14 Tagger and pastes the\n"
+            "detected tags into your prompt. Review and edit before generating.\n\n"
+            "Requires the WD14Tagger node (pysssss) in ComfyUI.")
+        supir_wd_status = Gtk.Label(label="")
+        supir_wd_status.set_xalign(0)
+        def _on_supir_wd_tag(btn):
+            server = se.get_text().strip()
+            if not server:
+                supir_wd_status.set_markup('<span foreground="#FF5252">No server URL</span>')
+                return
+            btn.set_sensitive(False)
+            supir_wd_status.set_text("Exporting image...")
+            def _do_tag():
+                try:
+                    images = Gimp.list_images()
+                    if not images:
+                        return None, "No image open in GIMP"
+                    img = images[0]
+                    tmp = _export_image_to_tmp(img)
+                    supir_wd_status.set_text("Uploading...")
+                    uname = f"wd_tag_{uuid.uuid4().hex[:8]}.png"
+                    _upload_image_sync(server, tmp, uname)
+                    os.unlink(tmp)
+                    wf = {
+                        "1": {"class_type": "LoadImage",
+                              "inputs": {"image": uname}},
+                        "2": {"class_type": "WD14Tagger|pysssss",
+                              "inputs": {
+                                  "image": ["1", 0],
+                                  "model": "wd-eva02-large-tagger-v3",
+                                  "threshold": 0.35,
+                                  "character_threshold": 0.85,
+                                  "replace_underscore": True,
+                                  "trailing_comma": True,
+                                  "exclude_tags": "",
+                              }},
+                        "3": {"class_type": "SaveImage",
+                              "inputs": {"images": ["1", 0], "filename_prefix": "wd_tag_dummy"}},
+                    }
+                    supir_wd_status.set_text("Tagging...")
+                    result = _api_post_json(server, "/prompt", {"prompt": wf})
+                    prompt_id = result.get("prompt_id")
+                    if not prompt_id:
+                        return None, "ComfyUI did not return a prompt_id"
+                    deadline = time.time() + 60
+                    while time.time() < deadline:
+                        try:
+                            history = _api_get(server, f"/history/{prompt_id}")
+                            if prompt_id in history:
+                                outputs = history[prompt_id].get("outputs", {})
+                                for nid, nout in outputs.items():
+                                    if "text" in nout:
+                                        tags = nout["text"]
+                                        if isinstance(tags, list):
+                                            tags = tags[0]
+                                        return tags, None
+                                    if "string" in nout:
+                                        tags = nout["string"]
+                                        if isinstance(tags, list):
+                                            tags = tags[0]
+                                        return tags, None
+                                return None, "Tagger ran but tags not in history output."
+                        except Exception:
+                            pass
+                        time.sleep(1)
+                    return None, "Tagger timed out (60s)"
+                except Exception as e:
+                    return None, str(e)
+            def _on_done(result):
+                tags, error = result
+                btn.set_sensitive(True)
+                if error:
+                    supir_wd_status.set_markup(f'<span foreground="#FF5252">{error}</span>')
+                elif tags:
+                    buf = prompt_tv.get_buffer()
+                    existing = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
+                    new_text = f"{tags}, {existing}" if existing.strip() else tags
+                    buf.set_text(new_text)
+                    tag_count = len([t for t in tags.split(",") if t.strip()])
+                    supir_wd_status.set_markup(f'<span foreground="#00E676">{tag_count} tags added</span>')
+            def _on_err(e):
+                btn.set_sensitive(True)
+                supir_wd_status.set_markup(f'<span foreground="#FF5252">{e}</span>')
+            _async_fetch(_do_tag, _on_done, _on_err)
+        supir_wd_btn.connect("clicked", _on_supir_wd_tag)
+        wd_row.pack_start(supir_wd_btn, False, False, 0)
+        wd_row.pack_start(supir_wd_status, True, True, 0)
+        bx.pack_start(wd_row, False, False, 0)
+        # ── ControlNet Refinement Post-Pass ──
+        bx.pack_start(Gtk.Separator(), False, False, 2)
+        bx.pack_start(Gtk.Label(label="ControlNet Refinement (post-SUPIR pass):", xalign=0), False, False, 0)
+        bx.pack_start(Gtk.Label(label="<small>SUPIR does not support ControlNet directly. An optional low-denoise\n"
+                                       "refinement pass with ControlNet locks in structural detail.</small>",
+                                 xalign=0, use_markup=True), False, False, 0)
+        # ControlNet 1
+        bx.pack_start(Gtk.Label(label="ControlNet 1 (Tile recommended):", xalign=0), False, False, 0)
+        supir_cn_combo = Gtk.ComboBoxText()
+        supir_cn_combo.set_tooltip_text("Tile ControlNet is recommended for SUPIR — it preserves structure\nduring the refinement pass. Depth adds spatial layout guidance.")
+        for key in CONTROLNET_GUIDE_MODES:
+            supir_cn_combo.append(key, key)
+        supir_cn_combo.set_active(0)  # Off by default
+        bx.pack_start(supir_cn_combo, False, False, 0)
+        supir_cn_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        supir_cn_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
+        supir_cn_strength = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
+        supir_cn_strength.set_digits(2); supir_cn_strength.set_value(0.6)
+        supir_cn_strength.set_tooltip_text("ControlNet 1 strength for the refinement pass.\n0.6 = default. Higher = more structural guidance.")
+        supir_cn_str_hb.pack_start(supir_cn_strength, False, False, 0)
+        bx.pack_start(supir_cn_str_hb, False, False, 0)
+        # ControlNet 2
+        bx.pack_start(Gtk.Label(label="ControlNet 2 (optional — e.g., Tile + Depth):", xalign=0), False, False, 0)
+        supir_cn_combo_2 = Gtk.ComboBoxText()
+        supir_cn_combo_2.set_tooltip_text("Optional second ControlNet for the refinement pass.\nCombining Tile + Depth gives excellent structural fidelity.")
+        for key in CONTROLNET_GUIDE_MODES:
+            supir_cn_combo_2.append(key, key)
+        supir_cn_combo_2.set_active(0)  # Off by default
+        bx.pack_start(supir_cn_combo_2, False, False, 0)
+        supir_cn_str_hb_2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        supir_cn_str_hb_2.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
+        supir_cn_strength_2 = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
+        supir_cn_strength_2.set_digits(2); supir_cn_strength_2.set_value(0.4)
+        supir_cn_strength_2.set_tooltip_text("ControlNet 2 strength. 0.4 = default for secondary guidance.")
+        supir_cn_str_hb_2.pack_start(supir_cn_strength_2, False, False, 0)
+        bx.pack_start(supir_cn_str_hb_2, False, False, 0)
+        bx.pack_start(Gtk.Separator(), False, False, 2)
         # Runs spinner
         runs_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         runs_hb.pack_start(Gtk.Label(label="Runs:"), False, False, 0)
@@ -11418,12 +12019,24 @@ class Spellcaster(Gimp.PlugIn):
         if last:
             if "model_id" in last:
                 model_combo.set_active_id(last["model_id"])
+            if "quality_idx" in last:
+                quality_combo.set_active(last["quality_idx"])
             if "denoise" in last:
                 denoise_spin.set_value(last["denoise"])
             if "steps" in last:
                 steps_spin.set_value(last["steps"])
+            if "scale" in last:
+                scale_spin.set_value(last["scale"])
             if "prompt" in last:
                 prompt_tv.get_buffer().set_text(last["prompt"])
+            if "cn1_id" in last:
+                supir_cn_combo.set_active_id(last["cn1_id"])
+            if "cn1_str" in last:
+                supir_cn_strength.set_value(last["cn1_str"])
+            if "cn2_id" in last:
+                supir_cn_combo_2.set_active_id(last["cn2_id"])
+            if "cn2_str" in last:
+                supir_cn_strength_2.set_value(last["cn2_str"])
             if "runs" in last:
                 runs_spin.set_value(last["runs"])
         if dlg.run() != Gtk.ResponseType.OK:
@@ -11434,16 +12047,27 @@ class Spellcaster(Gimp.PlugIn):
         sdxl_model = MODEL_PRESETS[idx]["ckpt"]
         denoise = denoise_spin.get_value()
         steps = int(steps_spin.get_value())
+        scale = scale_spin.get_value()
         base_seed = int(seed_spin.get_value())
         if base_seed < 0:
             base_seed = random.randint(0, 2**32 - 1)
         runs = int(runs_spin.get_value())
         pbuf = prompt_tv.get_buffer()
         prompt = pbuf.get_text(pbuf.get_start_iter(), pbuf.get_end_iter(), False)
+        # ControlNet params
+        cn1_mode = supir_cn_combo.get_active_id() if supir_cn_combo else "Off"
+        cn1 = {"mode": cn1_mode, "strength": supir_cn_strength.get_value(),
+                "start_percent": 0.0, "end_percent": 1.0} if cn1_mode != "Off" else None
+        cn2_mode = supir_cn_combo_2.get_active_id() if supir_cn_combo_2 else "Off"
+        cn2 = {"mode": cn2_mode, "strength": supir_cn_strength_2.get_value(),
+                "start_percent": 0.0, "end_percent": 1.0} if cn2_mode != "Off" else None
         _SESSION["supir"] = {
             "model_id": model_combo.get_active_id(),
-            "denoise": denoise, "steps": steps, "prompt": prompt,
-            "runs": runs,
+            "quality_idx": quality_combo.get_active(),
+            "denoise": denoise, "steps": steps, "scale": scale,
+            "prompt": prompt, "runs": runs,
+            "cn1_id": cn1_mode, "cn1_str": supir_cn_strength.get_value(),
+            "cn2_id": cn2_mode, "cn2_str": supir_cn_strength_2.get_value(),
         }
         _save_session()
         dlg.destroy()
@@ -11455,7 +12079,8 @@ class Spellcaster(Gimp.PlugIn):
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = _build_supir(uname, "Other\\SUPIR-v0Q_fp16.safetensors", sdxl_model,
-                                   prompt, seed, denoise, steps)
+                                   prompt, seed, denoise, steps, scale_by=scale,
+                                   controlnet=cn1, controlnet_2=cn2)
                 label = f"SUPIR run {run_i+1}/{runs}" if runs > 1 else "SUPIR"
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
                                             lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
