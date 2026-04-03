@@ -12747,9 +12747,8 @@ class Spellcaster(Gimp.PlugIn):
             uname = f"gimp_upscale_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
             wf = _build_upscale(uname, model_name)
-            _update_spinner_status("Upscale: processing on ComfyUI...")
             results = _run_with_spinner("Upscale: processing on ComfyUI...",
-                                        lambda: list(_run_comfyui_workflow(srv, wf)))
+                                        lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
             for i, (fn, sf, ft) in enumerate(results):
                 _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
                                         f"Upscale {preset_key} #{i+1}")
@@ -13772,9 +13771,8 @@ class Spellcaster(Gimp.PlugIn):
             wf = _build_photo_restore(uname, upscale_model, fr_preset["model"],
                                        facedetection, 1.0, codeformer_weight,
                                        sharpen_radius, 0.5, sharpen_amount)
-            _update_spinner_status("Photo Restore: processing on ComfyUI...")
             results = _run_with_spinner("Photo Restore: processing on ComfyUI...",
-                                        lambda: list(_run_comfyui_workflow(srv, wf)))
+                                        lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
             for i, (fn, sf, ft) in enumerate(results):
                 _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
                                         f"Photo Restore #{i+1}")
@@ -14025,8 +14023,9 @@ class Spellcaster(Gimp.PlugIn):
                                                 steps=h_preset.get("steps"),
                                                 controlnet=cn1, controlnet_2=cn2)
                 label = f"Detail Hallucinate run {run_i+1}/{runs}" if runs > 1 else "Detail Hallucinate"
+                _wf = wf
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
-                                            lambda: list(_run_comfyui_workflow(srv, wf)))
+                                            lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"Detail Hallucinate {detail_key} run {run_i+1} #{i+1}" if runs > 1 \
                           else f"Detail Hallucinate {detail_key} #{i+1}"
@@ -14306,8 +14305,9 @@ class Spellcaster(Gimp.PlugIn):
                                      hall_preset["steps"], scale_factor, orig_w, orig_h,
                                      controlnet=sv2r_cn1, controlnet_2=sv2r_cn2)
                 label = f"SeedV2R run {run_i+1}/{runs}" if runs > 1 else "SeedV2R"
+                _wf = wf
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
-                                            lambda: list(_run_comfyui_workflow(srv, wf)))
+                                            lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"SeedV2R {hall_preset['label']} {_scale_label} run {run_i+1} #{i+1}" if runs > 1 \
                           else f"SeedV2R {hall_preset['label']} {_scale_label} #{i+1}"
