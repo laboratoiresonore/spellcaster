@@ -3200,9 +3200,22 @@ def _get_output_images(server, prompt_id, timeout=300):
     passed to _download_image() to fetch the actual pixel data.
     """
     result = _wait_for_prompt(server, prompt_id, timeout)
+    # Check for execution errors in the prompt result
+    status = result.get("status", {})
+    if status.get("status_str") == "error":
+        msgs = status.get("messages", [])
+        err_text = ""
+        for msg_type, msg_data in msgs:
+            if msg_type == "execution_error":
+                err_text = msg_data.get("message", "") or msg_data.get("exception_message", "")
+                node_type = msg_data.get("node_type", "")
+                if node_type:
+                    err_text = f"[{node_type}] {err_text}"
+                break
+        if err_text:
+            raise RuntimeError(f"ComfyUI execution error: {err_text}")
+        raise RuntimeError("ComfyUI workflow failed (no details available)")
     images = []
-    # Iterate all nodes in the workflow output — any node that produces
-    # images (SaveImage, PreviewImage, etc.) will have an "images" key
     for node_id, node_output in result.get("outputs", {}).items():
         for img in node_output.get("images", []):
             images.append((img["filename"], img.get("subfolder", ""), img.get("type", "output")))
@@ -12137,8 +12150,10 @@ class Spellcaster(Gimp.PlugIn):
 
                 # Optional: blur mask edges for smooth blending
                 if mask_blur > 0:
-                    wf["14"] = {"class_type": "MaskSmooth",
-                                "inputs": {"mask": mask_ref, "amount": mask_blur}}
+                    wf["14"] = {"class_type": "FeatherMask",
+                                "inputs": {"mask": mask_ref, "left": mask_blur,
+                                           "top": mask_blur, "right": mask_blur,
+                                           "bottom": mask_blur}}
                     mask_ref = ["14", 0]
 
                 # Scale image to mod-16 for Flux
