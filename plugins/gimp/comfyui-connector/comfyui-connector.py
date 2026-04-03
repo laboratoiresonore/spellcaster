@@ -7355,7 +7355,13 @@ class PresetDialog(Gtk.Dialog):
         sw2 = Gtk.ScrolledWindow(); sw2.set_min_content_height(40); sw2.add(self.neg_tv)
         box.pack_start(sw2, False, False, 0)
 
-        # Params
+        # ── Advanced Parameters (collapsible) ────────────────────────────
+        adv_exp = Gtk.Expander(label="\u25b8 Advanced Parameters")
+        adv_exp.set_expanded(False)
+        adv_exp.set_tooltip_text("Sampler, scheduler, dimensions, steps, CFG, denoise, and seed.\nDefaults are auto-filled by the model preset.")
+        adv_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        adv_box.set_margin_start(4); adv_box.set_margin_top(4)
+
         grid = Gtk.Grid(column_spacing=8, row_spacing=4)
         r = 0
         grid.attach(Gtk.Label(label="Steps:", xalign=1), 0, r, 1, 1)
@@ -7405,17 +7411,24 @@ class PresetDialog(Gtk.Dialog):
         self.scheduler_entry.set_tooltip_text("Noise schedule (e.g. normal, karras, sgm_uniform).\nAuto-filled by model preset. Karras often gives sharper results.")
         grid.attach(self.scheduler_entry, 3, r, 1, 1)
 
-        box.pack_start(grid, False, False, 0)
+        adv_box.pack_start(grid, False, False, 0)
+        adv_exp.add(adv_box)
+        box.pack_start(adv_exp, False, False, 0)
 
-        # LoRA section
-        box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 4)
+        # ── LoRAs & Style (collapsible) ──────────────────────────────────
+        lora_exp = Gtk.Expander(label="\u25b8 LoRAs (3 slots)")
+        lora_exp.set_expanded(False)
+        lora_exp.set_tooltip_text("LoRA add-on models that adjust style, subject, or detail.\nEach slot lets you blend a LoRA with adjustable strength.")
+        lora_exp_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        lora_exp_box.set_margin_start(4); lora_exp_box.set_margin_top(4)
+
         lora_hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         lora_hdr.pack_start(Gtk.Label(label="LoRA (optional):", xalign=0), False, False, 0)
         self._lora_fetch_btn = Gtk.Button(label="Fetch LoRAs")
         self._lora_fetch_btn.set_tooltip_text("Download the list of available LoRAs from the server.\nLoRAs are small add-on models that adjust style or subject.")
         self._lora_fetch_btn.connect("clicked", self._on_fetch_loras)
         lora_hdr.pack_end(self._lora_fetch_btn, False, False, 0)
-        box.pack_start(lora_hdr, False, False, 0)
+        lora_exp_box.pack_start(lora_hdr, False, False, 0)
 
         self._all_lora_names = []   # full server list (unfiltered)
         self._lora_names = []       # currently displayed (filtered by arch)
@@ -7445,12 +7458,19 @@ class PresetDialog(Gtk.Dialog):
             combo.connect("changed", self._on_lora_combo_changed, ms, cs)
             self.lora_rows.append((combo, ms, cs))
             self._lora_box.pack_start(row, False, False, 0)
-        box.pack_start(self._lora_box, False, False, 0)
+        lora_exp_box.pack_start(self._lora_box, False, False, 0)
+        lora_exp.add(lora_exp_box)
+        box.pack_start(lora_exp, False, False, 0)
 
-        # ── ControlNet Guide (optional) ──────────────────────────────────
+        # ── ControlNet (collapsible) ──────────────────────────────────────
         if mode in ("img2img", "inpaint"):
-            box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 4)
-            box.pack_start(Gtk.Label(label="ControlNet Structure Guide:", xalign=0), False, False, 0)
+            cn_exp = Gtk.Expander(label="\u25b8 ControlNet (2 guides)")
+            cn_exp.set_expanded(False)
+            cn_exp.set_tooltip_text("ControlNet preserves structure from your source image.\nCN1 + CN2 can be combined for dual guidance (e.g. Tile + Depth).")
+            cn_exp_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            cn_exp_box.set_margin_start(4); cn_exp_box.set_margin_top(4)
+
+            cn_exp_box.pack_start(Gtk.Label(label="ControlNet Structure Guide:", xalign=0), False, False, 0)
 
             self._cn_mode_combo = Gtk.ComboBoxText()
             self._cn_mode_combo.set_tooltip_text(
@@ -7471,7 +7491,7 @@ class PresetDialog(Gtk.Dialog):
             for key in CONTROLNET_GUIDE_MODES:
                 self._cn_mode_combo.append(key, key)
             self._cn_mode_combo.set_active(0)  # "Off" by default
-            box.pack_start(self._cn_mode_combo, False, False, 0)
+            cn_exp_box.pack_start(self._cn_mode_combo, False, False, 0)
 
             cn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
             cn_row.pack_start(Gtk.Label(label="CN Strength:"), False, False, 0)
@@ -7495,10 +7515,10 @@ class PresetDialog(Gtk.Dialog):
             self._cn_end_spin.set_tooltip_text("When ControlNet stops influencing (1.0 = until the end).\nLowering this lets the AI improvise in the final steps.")
             cn_row.pack_start(self._cn_end_spin, False, False, 0)
 
-            box.pack_start(cn_row, False, False, 0)
+            cn_exp_box.pack_start(cn_row, False, False, 0)
 
             # ControlNet 2 (optional second guide)
-            box.pack_start(Gtk.Label(label="ControlNet 2 (combine):", xalign=0), False, False, 0)
+            cn_exp_box.pack_start(Gtk.Label(label="ControlNet 2 (combine):", xalign=0), False, False, 0)
             self._cn_mode_combo_2 = Gtk.ComboBoxText()
             self._cn_mode_combo_2.set_tooltip_text(
                 "Optional second ControlNet to combine with the first.\n"
@@ -7512,7 +7532,7 @@ class PresetDialog(Gtk.Dialog):
             for key in CONTROLNET_GUIDE_MODES:
                 self._cn_mode_combo_2.append(key, key)
             self._cn_mode_combo_2.set_active(0)  # "Off" by default
-            box.pack_start(self._cn_mode_combo_2, False, False, 0)
+            cn_exp_box.pack_start(self._cn_mode_combo_2, False, False, 0)
 
             # CN2 strength
             cn_row_2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -7521,7 +7541,10 @@ class PresetDialog(Gtk.Dialog):
             self._cn_strength_spin_2.set_digits(2)
             self._cn_strength_spin_2.set_value(0.6)
             cn_row_2.pack_start(self._cn_strength_spin_2, False, False, 0)
-            box.pack_start(cn_row_2, False, False, 0)
+            cn_exp_box.pack_start(cn_row_2, False, False, 0)
+
+            cn_exp.add(cn_exp_box)
+            box.pack_start(cn_exp, False, False, 0)
         else:
             self._cn_mode_combo = None
             self._cn_strength_spin = None
@@ -11237,26 +11260,13 @@ class Spellcaster(Gimp.PlugIn):
         neg_tv.get_buffer().set_text("blurry, deformed, bad anatomy, disfigured")
         sw2 = Gtk.ScrolledWindow(); sw2.add(neg_tv); sw2.set_min_content_height(40)
         bx.pack_start(sw2, False, False, 0)
-        # Sliders grid
-        sgrid = Gtk.Grid(column_spacing=12, row_spacing=6)
-        sgrid.attach(Gtk.Label(label="Weight:", xalign=1), 0, 0, 1, 1)
-        weight_spin = Gtk.SpinButton.new_with_range(0.0, 1.0, 0.05)
-        weight_spin.set_value(0.8); weight_spin.set_digits(2)
-        weight_spin.set_tooltip_text("How strongly the reference style is applied.\n0.8 = strong style transfer (default). Lower = subtler effect.")
-        sgrid.attach(weight_spin, 1, 0, 1, 1)
-        sgrid.attach(Gtk.Label(label="Denoise:", xalign=1), 2, 0, 1, 1)
-        denoise_spin = Gtk.SpinButton.new_with_range(0.01, 1.0, 0.05)
-        denoise_spin.set_value(0.6); denoise_spin.set_digits(2)
-        denoise_spin.set_tooltip_text("How much to change the original image.\n0.3 = subtle, 0.6 = balanced (default), 0.9 = heavy restyle.")
-        sgrid.attach(denoise_spin, 3, 0, 1, 1)
-        sgrid.attach(Gtk.Label(label="Seed:", xalign=1), 0, 1, 1, 1)
-        seed_spin = Gtk.SpinButton.new_with_range(-1, 2**32-1, 1)
-        seed_spin.set_value(-1); seed_spin.set_tooltip_text("-1 = random")
-        sgrid.attach(seed_spin, 1, 1, 1, 1)
-        bx.pack_start(sgrid, False, False, 0)
-        # ControlNet 1 (Depth or Canny preserves structure during style transfer)
-        bx.pack_start(Gtk.Separator(), False, False, 2)
-        bx.pack_start(Gtk.Label(label="ControlNet 1 (Depth/Canny preserve structure):", xalign=0), False, False, 0)
+        # ── ControlNet (collapsible) ──────────────────────────────────────
+        st_cn_exp = Gtk.Expander(label="\u25b8 ControlNet (2 guides)")
+        st_cn_exp.set_expanded(False)
+        st_cn_exp.set_tooltip_text("ControlNet preserves structure during style transfer.\nDepth or Canny recommended to keep spatial layout.")
+        st_cn_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        st_cn_box.set_margin_start(4); st_cn_box.set_margin_top(4)
+        st_cn_box.pack_start(Gtk.Label(label="ControlNet 1 (Depth/Canny preserve structure):", xalign=0), False, False, 0)
         st_cn_combo = Gtk.ComboBoxText()
         st_cn_combo.set_tooltip_text(
             "ControlNet preserves structure from your source image.\n\n"
@@ -11276,15 +11286,15 @@ class Spellcaster(Gimp.PlugIn):
         for key in CONTROLNET_GUIDE_MODES:
             st_cn_combo.append(key, key)
         st_cn_combo.set_active(0)  # Off by default
-        bx.pack_start(st_cn_combo, False, False, 0)
+        st_cn_box.pack_start(st_cn_combo, False, False, 0)
         st_cn_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         st_cn_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
         st_cn_strength = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
         st_cn_strength.set_digits(2); st_cn_strength.set_value(0.6)
         st_cn_str_hb.pack_start(st_cn_strength, False, False, 0)
-        bx.pack_start(st_cn_str_hb, False, False, 0)
+        st_cn_box.pack_start(st_cn_str_hb, False, False, 0)
         # ControlNet 2 (optional)
-        bx.pack_start(Gtk.Label(label="ControlNet 2 (optional):", xalign=0), False, False, 0)
+        st_cn_box.pack_start(Gtk.Label(label="ControlNet 2 (optional):", xalign=0), False, False, 0)
         st_cn_combo_2 = Gtk.ComboBoxText()
         st_cn_combo_2.set_tooltip_text(
             "Optional second ControlNet to combine with the first.\n"
@@ -11298,15 +11308,37 @@ class Spellcaster(Gimp.PlugIn):
         for key in CONTROLNET_GUIDE_MODES:
             st_cn_combo_2.append(key, key)
         st_cn_combo_2.set_active(0)
-        bx.pack_start(st_cn_combo_2, False, False, 0)
+        st_cn_box.pack_start(st_cn_combo_2, False, False, 0)
         st_cn_str_hb_2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         st_cn_str_hb_2.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
         st_cn_strength_2 = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
         st_cn_strength_2.set_digits(2); st_cn_strength_2.set_value(0.4)
         st_cn_str_hb_2.pack_start(st_cn_strength_2, False, False, 0)
-        bx.pack_start(st_cn_str_hb_2, False, False, 0)
-        bx.pack_start(Gtk.Separator(), False, False, 2)
-        # Runs spinner
+        st_cn_box.pack_start(st_cn_str_hb_2, False, False, 0)
+        st_cn_exp.add(st_cn_box)
+        bx.pack_start(st_cn_exp, False, False, 0)
+        # ── Advanced (collapsible) ───────────────────────────────────────
+        st_adv_exp = Gtk.Expander(label="\u25b8 Advanced")
+        st_adv_exp.set_expanded(False)
+        st_adv_exp.set_tooltip_text("Style weight, denoise strength, seed, and batch run settings.")
+        st_adv_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        st_adv_box.set_margin_start(4); st_adv_box.set_margin_top(4)
+        st_adv_grid = Gtk.Grid(column_spacing=12, row_spacing=6)
+        st_adv_grid.attach(Gtk.Label(label="Weight:", xalign=1), 0, 0, 1, 1)
+        weight_spin = Gtk.SpinButton.new_with_range(0.0, 1.0, 0.05)
+        weight_spin.set_value(0.8); weight_spin.set_digits(2)
+        weight_spin.set_tooltip_text("How strongly the reference style is applied.\n0.8 = strong style transfer (default). Lower = subtler effect.")
+        st_adv_grid.attach(weight_spin, 1, 0, 1, 1)
+        st_adv_grid.attach(Gtk.Label(label="Denoise:", xalign=1), 2, 0, 1, 1)
+        denoise_spin = Gtk.SpinButton.new_with_range(0.01, 1.0, 0.05)
+        denoise_spin.set_value(0.6); denoise_spin.set_digits(2)
+        denoise_spin.set_tooltip_text("How much to change the original image.\n0.3 = subtle, 0.6 = balanced (default), 0.9 = heavy restyle.")
+        st_adv_grid.attach(denoise_spin, 3, 0, 1, 1)
+        st_adv_grid.attach(Gtk.Label(label="Seed:", xalign=1), 0, 1, 1, 1)
+        seed_spin = Gtk.SpinButton.new_with_range(-1, 2**32-1, 1)
+        seed_spin.set_value(-1); seed_spin.set_tooltip_text("-1 = random")
+        st_adv_grid.attach(seed_spin, 1, 1, 1, 1)
+        st_adv_box.pack_start(st_adv_grid, False, False, 0)
         runs_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         runs_hb.pack_start(Gtk.Label(label="Runs:"), False, False, 0)
         runs_spin = Gtk.SpinButton.new_with_range(1, 99, 1)
@@ -11314,7 +11346,9 @@ class Spellcaster(Gimp.PlugIn):
         runs_spin.set_tooltip_text("Number of times to run this generation. Each run uses a fresh random seed.")
         runs_hb.pack_start(runs_spin, False, False, 0)
         runs_hb.pack_start(Gtk.Label(label="(each run gets a new seed)"), False, False, 0)
-        bx.pack_start(runs_hb, False, False, 0)
+        st_adv_box.pack_start(runs_hb, False, False, 0)
+        st_adv_exp.add(st_adv_box)
+        bx.pack_start(st_adv_exp, False, False, 0)
         # AutoSet button
         def _style_auto_set():
             idx = model_combo.get_active()
@@ -11807,9 +11841,13 @@ class Spellcaster(Gimp.PlugIn):
         neg_tv.get_buffer().set_text("blurry, low quality, soft, out of focus")
         sw2 = Gtk.ScrolledWindow(); sw2.add(neg_tv); sw2.set_min_content_height(40)
         bx.pack_start(sw2, False, False, 0)
-        # ControlNet 1 (Tile recommended)
-        bx.pack_start(Gtk.Separator(), False, False, 2)
-        bx.pack_start(Gtk.Label(label="ControlNet 1 (Tile recommended):", xalign=0), False, False, 0)
+        # ── ControlNet (collapsible) ──────────────────────────────────────
+        hall_cn_exp = Gtk.Expander(label="\u25b8 ControlNet (2 guides)")
+        hall_cn_exp.set_expanded(False)
+        hall_cn_exp.set_tooltip_text("ControlNet preserves structure from your source image.\nTile is recommended for detail hallucination.")
+        hall_cn_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        hall_cn_box.set_margin_start(4); hall_cn_box.set_margin_top(4)
+        hall_cn_box.pack_start(Gtk.Label(label="ControlNet 1 (Tile recommended):", xalign=0), False, False, 0)
         cn_combo = Gtk.ComboBoxText()
         cn_combo.set_tooltip_text(
             "ControlNet preserves structure from your source image.\n\n"
@@ -11831,15 +11869,15 @@ class Spellcaster(Gimp.PlugIn):
         cn_combo.set_active_id("Tile (detail upscale) — SD1.5 + SDXL (dedicated models)")
         if cn_combo.get_active() < 0:
             cn_combo.set_active(0)
-        bx.pack_start(cn_combo, False, False, 0)
+        hall_cn_box.pack_start(cn_combo, False, False, 0)
         cn_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         cn_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
         cn_strength = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
         cn_strength.set_digits(2); cn_strength.set_value(0.7)
         cn_str_hb.pack_start(cn_strength, False, False, 0)
-        bx.pack_start(cn_str_hb, False, False, 0)
+        hall_cn_box.pack_start(cn_str_hb, False, False, 0)
         # ControlNet 2 (optional)
-        bx.pack_start(Gtk.Label(label="ControlNet 2 (optional):", xalign=0), False, False, 0)
+        hall_cn_box.pack_start(Gtk.Label(label="ControlNet 2 (optional):", xalign=0), False, False, 0)
         cn_combo_2 = Gtk.ComboBoxText()
         cn_combo_2.set_tooltip_text(
             "Optional second ControlNet to combine with the first.\n"
@@ -11853,25 +11891,33 @@ class Spellcaster(Gimp.PlugIn):
         for key in CONTROLNET_GUIDE_MODES:
             cn_combo_2.append(key, key)
         cn_combo_2.set_active(0)
-        bx.pack_start(cn_combo_2, False, False, 0)
+        hall_cn_box.pack_start(cn_combo_2, False, False, 0)
         cn_str_hb_2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         cn_str_hb_2.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
         cn_strength_2 = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
         cn_strength_2.set_digits(2); cn_strength_2.set_value(0.5)
         cn_str_hb_2.pack_start(cn_strength_2, False, False, 0)
-        bx.pack_start(cn_str_hb_2, False, False, 0)
-        bx.pack_start(Gtk.Separator(), False, False, 2)
-        # Seed
+        hall_cn_box.pack_start(cn_str_hb_2, False, False, 0)
+        hall_cn_exp.add(hall_cn_box)
+        bx.pack_start(hall_cn_exp, False, False, 0)
+        # ── Advanced (collapsible) ───────────────────────────────────────
+        hall_adv_exp = Gtk.Expander(label="\u25b8 Advanced")
+        hall_adv_exp.set_expanded(False)
+        hall_adv_exp.set_tooltip_text("Seed and batch run settings.")
+        hall_adv_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        hall_adv_box.set_margin_start(4); hall_adv_box.set_margin_top(4)
         hb_seed = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         hb_seed.pack_start(Gtk.Label(label="Seed:"), False, False, 0)
         seed_spin = Gtk.SpinButton.new_with_range(-1, 2**32-1, 1)
         seed_spin.set_value(-1); seed_spin.set_tooltip_text("-1 = random")
-        hb_seed.pack_start(seed_spin, True, True, 0); bx.pack_start(hb_seed, False, False, 0)
+        hb_seed.pack_start(seed_spin, True, True, 0); hall_adv_box.pack_start(hb_seed, False, False, 0)
         runs_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         runs_hb.pack_start(Gtk.Label(label="Runs:"), False, False, 0)
         runs_spin = Gtk.SpinButton.new_with_range(1, 99, 1); runs_spin.set_value(1)
         runs_hb.pack_start(runs_spin, False, False, 0)
-        bx.pack_start(runs_hb, False, False, 0)
+        hall_adv_box.pack_start(runs_hb, False, False, 0)
+        hall_adv_exp.add(hall_adv_box)
+        bx.pack_start(hall_adv_exp, False, False, 0)
         # AutoSet button
         def _hall_auto_set():
             idx = model_combo.get_active()
@@ -12031,22 +12077,15 @@ class Spellcaster(Gimp.PlugIn):
         hall_combo.set_active(2)  # default to Moderate
         hall_combo.set_hexpand(True)
         hb_hall.pack_start(hall_combo, True, True, 0); bx.pack_start(hb_hall, False, False, 0)
-        # Prompt
-        bx.pack_start(Gtk.Label(label="Prompt:", xalign=0), False, False, 0)
+        # Prompt and Negative (created here, packed into Advanced expander below)
         prompt_tv = Gtk.TextView(); prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         prompt_tv.set_size_request(-1, 60)
         prompt_tv.set_tooltip_text("Describe the detail style to hallucinate.\nAuto-filled by hallucination level. Customize for specific content.")
         prompt_tv.get_buffer().set_text(SEEDV2R_PRESETS[2]["prompt"])
-        sw = Gtk.ScrolledWindow(); sw.add(prompt_tv); sw.set_min_content_height(60)
-        bx.pack_start(sw, False, False, 0)
-        # Negative
-        bx.pack_start(Gtk.Label(label="Negative:", xalign=0), False, False, 0)
         neg_tv = Gtk.TextView(); neg_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         neg_tv.set_size_request(-1, 40)
         neg_tv.set_tooltip_text("Describe what you do NOT want (e.g. 'blurry, soft').")
         neg_tv.get_buffer().set_text(SEEDV2R_PRESETS[2]["negative"])
-        sw2 = Gtk.ScrolledWindow(); sw2.add(neg_tv); sw2.set_min_content_height(40)
-        bx.pack_start(sw2, False, False, 0)
 
         # Update prompt/negative when hallucination level changes
         def _on_hall_changed(combo):
@@ -12056,9 +12095,13 @@ class Spellcaster(Gimp.PlugIn):
                 neg_tv.get_buffer().set_text(SEEDV2R_PRESETS[idx]["negative"])
         hall_combo.connect("changed", _on_hall_changed)
 
-        # ControlNet 1 (Tile recommended for upscale)
-        bx.pack_start(Gtk.Separator(), False, False, 2)
-        bx.pack_start(Gtk.Label(label="ControlNet 1 (Tile recommended):", xalign=0), False, False, 0)
+        # ── ControlNet (collapsible) ──────────────────────────────────────
+        sv2r_cn_exp = Gtk.Expander(label="\u25b8 ControlNet (2 guides)")
+        sv2r_cn_exp.set_expanded(False)
+        sv2r_cn_exp.set_tooltip_text("ControlNet preserves structure from your source image.\nTile is recommended for SeedV2R upscaling.")
+        sv2r_cn_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        sv2r_cn_box.set_margin_start(4); sv2r_cn_box.set_margin_top(4)
+        sv2r_cn_box.pack_start(Gtk.Label(label="ControlNet 1 (Tile recommended):", xalign=0), False, False, 0)
         sv2r_cn_combo = Gtk.ComboBoxText()
         sv2r_cn_combo.set_tooltip_text(
             "ControlNet preserves structure from your source image.\n\n"
@@ -12078,15 +12121,15 @@ class Spellcaster(Gimp.PlugIn):
         for key in CONTROLNET_GUIDE_MODES:
             sv2r_cn_combo.append(key, key)
         sv2r_cn_combo.set_active(0)  # Off by default
-        bx.pack_start(sv2r_cn_combo, False, False, 0)
+        sv2r_cn_box.pack_start(sv2r_cn_combo, False, False, 0)
         sv2r_cn_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         sv2r_cn_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
         sv2r_cn_strength = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
         sv2r_cn_strength.set_digits(2); sv2r_cn_strength.set_value(0.7)
         sv2r_cn_str_hb.pack_start(sv2r_cn_strength, False, False, 0)
-        bx.pack_start(sv2r_cn_str_hb, False, False, 0)
+        sv2r_cn_box.pack_start(sv2r_cn_str_hb, False, False, 0)
         # ControlNet 2 (optional)
-        bx.pack_start(Gtk.Label(label="ControlNet 2 (optional):", xalign=0), False, False, 0)
+        sv2r_cn_box.pack_start(Gtk.Label(label="ControlNet 2 (optional):", xalign=0), False, False, 0)
         sv2r_cn_combo_2 = Gtk.ComboBoxText()
         sv2r_cn_combo_2.set_tooltip_text(
             "Optional second ControlNet to combine with the first.\n"
@@ -12100,20 +12143,32 @@ class Spellcaster(Gimp.PlugIn):
         for key in CONTROLNET_GUIDE_MODES:
             sv2r_cn_combo_2.append(key, key)
         sv2r_cn_combo_2.set_active(0)
-        bx.pack_start(sv2r_cn_combo_2, False, False, 0)
+        sv2r_cn_box.pack_start(sv2r_cn_combo_2, False, False, 0)
         sv2r_cn_str_hb_2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         sv2r_cn_str_hb_2.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
         sv2r_cn_strength_2 = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
         sv2r_cn_strength_2.set_digits(2); sv2r_cn_strength_2.set_value(0.5)
         sv2r_cn_str_hb_2.pack_start(sv2r_cn_strength_2, False, False, 0)
-        bx.pack_start(sv2r_cn_str_hb_2, False, False, 0)
-        bx.pack_start(Gtk.Separator(), False, False, 2)
-        # Seed
+        sv2r_cn_box.pack_start(sv2r_cn_str_hb_2, False, False, 0)
+        sv2r_cn_exp.add(sv2r_cn_box)
+        bx.pack_start(sv2r_cn_exp, False, False, 0)
+        # ── Advanced (collapsible) ───────────────────────────────────────
+        sv2r_adv_exp = Gtk.Expander(label="\u25b8 Advanced")
+        sv2r_adv_exp.set_expanded(False)
+        sv2r_adv_exp.set_tooltip_text("Prompt, negative prompt, seed, and batch run settings.")
+        sv2r_adv_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        sv2r_adv_box.set_margin_start(4); sv2r_adv_box.set_margin_top(4)
+        sv2r_adv_box.pack_start(Gtk.Label(label="Prompt:", xalign=0), False, False, 0)
+        sw = Gtk.ScrolledWindow(); sw.add(prompt_tv); sw.set_min_content_height(60)
+        sv2r_adv_box.pack_start(sw, False, False, 0)
+        sv2r_adv_box.pack_start(Gtk.Label(label="Negative:", xalign=0), False, False, 0)
+        sw2 = Gtk.ScrolledWindow(); sw2.add(neg_tv); sw2.set_min_content_height(40)
+        sv2r_adv_box.pack_start(sw2, False, False, 0)
         hb_seed = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         hb_seed.pack_start(Gtk.Label(label="Seed:"), False, False, 0)
         seed_spin = Gtk.SpinButton.new_with_range(-1, 2**32-1, 1)
         seed_spin.set_value(-1); seed_spin.set_tooltip_text("-1 = random")
-        hb_seed.pack_start(seed_spin, True, True, 0); bx.pack_start(hb_seed, False, False, 0)
+        hb_seed.pack_start(seed_spin, True, True, 0); sv2r_adv_box.pack_start(hb_seed, False, False, 0)
         # Runs spinner
         runs_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         runs_hb.pack_start(Gtk.Label(label="Runs:"), False, False, 0)
@@ -12122,7 +12177,9 @@ class Spellcaster(Gimp.PlugIn):
         runs_spin.set_tooltip_text("Number of times to run this generation. Each run uses a fresh random seed.")
         runs_hb.pack_start(runs_spin, False, False, 0)
         runs_hb.pack_start(Gtk.Label(label="(each run gets a new seed)"), False, False, 0)
-        bx.pack_start(runs_hb, False, False, 0)
+        sv2r_adv_box.pack_start(runs_hb, False, False, 0)
+        sv2r_adv_exp.add(sv2r_adv_box)
+        bx.pack_start(sv2r_adv_exp, False, False, 0)
         # AutoSet button
         def _sv2r_auto_set():
             idx = model_combo.get_active()
@@ -12286,22 +12343,15 @@ class Spellcaster(Gimp.PlugIn):
                 cn_spin.set_value(cp["cn_strength"])
         bx.pack_start(color_preset_combo, False, False, 0)
         # Parameters (must be created BEFORE connecting preset combo changed signal)
-        sgrid = Gtk.Grid(column_spacing=12, row_spacing=6)
-        sgrid.attach(Gtk.Label(label="Lineart CN Strength:", xalign=1), 0, 0, 1, 1)
+        # CN Strength and Denoise/Seed are created here but packed into expanders below
         cn_spin = Gtk.SpinButton.new_with_range(0.3, 1.0, 0.05)
         cn_spin.set_value(0.85); cn_spin.set_digits(2)
         cn_spin.set_tooltip_text("How strictly to preserve line structure from the original.\n0.85 = default. Higher = more faithful to B&W shapes, lower = more creative.")
-        sgrid.attach(cn_spin, 1, 0, 1, 1)
-        sgrid.attach(Gtk.Label(label="Color Intensity:", xalign=1), 0, 1, 1, 1)
         denoise_spin = Gtk.SpinButton.new_with_range(0.4, 0.85, 0.05)
         denoise_spin.set_value(0.72); denoise_spin.set_digits(2)
         denoise_spin.set_tooltip_text("How vivid the colors will be.\n0.50 = subtle tinting, 0.72 = natural (default), 0.85 = very vivid.")
-        sgrid.attach(denoise_spin, 1, 1, 1, 1)
-        sgrid.attach(Gtk.Label(label="Seed:", xalign=1), 0, 2, 1, 1)
         seed_spin = Gtk.SpinButton.new_with_range(-1, 2**32-1, 1)
         seed_spin.set_value(-1); seed_spin.set_tooltip_text("-1 = random")
-        sgrid.attach(seed_spin, 1, 2, 1, 1)
-        bx.pack_start(sgrid, False, False, 0)
         # Prompt
         bx.pack_start(Gtk.Label(label="Prompt:", xalign=0), False, False, 0)
         prompt_tv = Gtk.TextView(); prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
@@ -12318,9 +12368,17 @@ class Spellcaster(Gimp.PlugIn):
         neg_tv.get_buffer().set_text("black and white, grayscale, monochrome, desaturated, sepia, low quality")
         sw2 = Gtk.ScrolledWindow(); sw2.add(neg_tv); sw2.set_min_content_height(40)
         bx.pack_start(sw2, False, False, 0)
-        # Optional second ControlNet (Depth/Pose for spatial guidance)
-        bx.pack_start(Gtk.Separator(), False, False, 2)
-        bx.pack_start(Gtk.Label(label="ControlNet 2 (optional — Depth/Pose for structure):", xalign=0), False, False, 0)
+        # ── ControlNet (collapsible) ──────────────────────────────────────
+        col_cn_exp = Gtk.Expander(label="\u25b8 ControlNet")
+        col_cn_exp.set_expanded(False)
+        col_cn_exp.set_tooltip_text("Lineart CN strength and optional second ControlNet for spatial guidance.")
+        col_cn_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        col_cn_box.set_margin_start(4); col_cn_box.set_margin_top(4)
+        col_cn_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        col_cn_str_hb.pack_start(Gtk.Label(label="Lineart CN Strength:"), False, False, 0)
+        col_cn_str_hb.pack_start(cn_spin, False, False, 0)
+        col_cn_box.pack_start(col_cn_str_hb, False, False, 0)
+        col_cn_box.pack_start(Gtk.Label(label="ControlNet 2 (optional -- Depth/Pose for structure):", xalign=0), False, False, 0)
         col_cn2_combo = Gtk.ComboBoxText()
         col_cn2_combo.set_tooltip_text(
             "Optional second ControlNet to combine with the first.\n"
@@ -12334,15 +12392,29 @@ class Spellcaster(Gimp.PlugIn):
         for key in CONTROLNET_GUIDE_MODES:
             col_cn2_combo.append(key, key)
         col_cn2_combo.set_active(0)  # Off by default
-        bx.pack_start(col_cn2_combo, False, False, 0)
+        col_cn_box.pack_start(col_cn2_combo, False, False, 0)
         col_cn2_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         col_cn2_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
         col_cn2_strength = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
         col_cn2_strength.set_digits(2); col_cn2_strength.set_value(0.5)
         col_cn2_str_hb.pack_start(col_cn2_strength, False, False, 0)
-        bx.pack_start(col_cn2_str_hb, False, False, 0)
-        bx.pack_start(Gtk.Separator(), False, False, 2)
-        # Runs spinner
+        col_cn_box.pack_start(col_cn2_str_hb, False, False, 0)
+        col_cn_exp.add(col_cn_box)
+        bx.pack_start(col_cn_exp, False, False, 0)
+        # ── Advanced (collapsible) ───────────────────────────────────────
+        col_adv_exp = Gtk.Expander(label="\u25b8 Advanced")
+        col_adv_exp.set_expanded(False)
+        col_adv_exp.set_tooltip_text("Color intensity (denoise), seed, and batch run settings.")
+        col_adv_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        col_adv_box.set_margin_start(4); col_adv_box.set_margin_top(4)
+        col_dn_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        col_dn_hb.pack_start(Gtk.Label(label="Color Intensity:"), False, False, 0)
+        col_dn_hb.pack_start(denoise_spin, False, False, 0)
+        col_adv_box.pack_start(col_dn_hb, False, False, 0)
+        col_seed_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        col_seed_hb.pack_start(Gtk.Label(label="Seed:"), False, False, 0)
+        col_seed_hb.pack_start(seed_spin, False, False, 0)
+        col_adv_box.pack_start(col_seed_hb, False, False, 0)
         runs_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         runs_hb.pack_start(Gtk.Label(label="Runs:"), False, False, 0)
         runs_spin = Gtk.SpinButton.new_with_range(1, 99, 1)
@@ -12350,7 +12422,9 @@ class Spellcaster(Gimp.PlugIn):
         runs_spin.set_tooltip_text("Number of times to run this generation. Each run uses a fresh random seed.")
         runs_hb.pack_start(runs_spin, False, False, 0)
         runs_hb.pack_start(Gtk.Label(label="(each run gets a new seed)"), False, False, 0)
-        bx.pack_start(runs_hb, False, False, 0)
+        col_adv_box.pack_start(runs_hb, False, False, 0)
+        col_adv_exp.add(col_adv_box)
+        bx.pack_start(col_adv_exp, False, False, 0)
         # AutoSet button
         def _col_auto_set():
             idx = model_combo.get_active()
@@ -12788,28 +12862,27 @@ class Spellcaster(Gimp.PlugIn):
         quality_combo.set_active(1)  # Standard
         quality_combo.set_hexpand(True)
         hb_q.pack_start(quality_combo, True, True, 0); bx.pack_start(hb_q, False, False, 0)
-        # Parameters
-        sgrid = Gtk.Grid(column_spacing=12, row_spacing=6)
-        sgrid.attach(Gtk.Label(label="Denoise:", xalign=1), 0, 0, 1, 1)
+        # Denoise (always visible)
+        supir_dn_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        supir_dn_hb.pack_start(Gtk.Label(label="Denoise:"), False, False, 0)
         denoise_spin = Gtk.SpinButton.new_with_range(0.1, 1.0, 0.05)
         denoise_spin.set_value(0.3); denoise_spin.set_digits(2)
         denoise_spin.set_tooltip_text("Lower = more faithful to original, higher = more restoration.\nDefault: 0.3 (conservative). Try 0.5+ for heavily degraded images.")
-        sgrid.attach(denoise_spin, 1, 0, 1, 1)
-        sgrid.attach(Gtk.Label(label="Steps:", xalign=1), 0, 1, 1, 1)
+        supir_dn_hb.pack_start(denoise_spin, False, False, 0)
+        bx.pack_start(supir_dn_hb, False, False, 0)
+        # Create steps/scale/seed spinners (packed into expanders below)
         steps_spin = Gtk.SpinButton.new_with_range(10, 100, 5)
         steps_spin.set_value(45)
         steps_spin.set_tooltip_text("Restoration steps. Default: 45 for the full pipeline.\n20 = fast preview, 45 = production quality, 70+ = maximum detail.\nMore steps give finer restoration but take longer.")
-        sgrid.attach(steps_spin, 1, 1, 1, 1)
-        sgrid.attach(Gtk.Label(label="Scale:", xalign=1), 0, 2, 1, 1)
         scale_spin = Gtk.SpinButton.new_with_range(1.0, 4.0, 0.25)
         scale_spin.set_value(1.0); scale_spin.set_digits(2)
         scale_spin.set_tooltip_text("Output scale factor. 1.0 = same size as input.\nSUPIR can upscale during restoration. 2.0 = double resolution.\nHigher values use more VRAM and take longer.")
-        sgrid.attach(scale_spin, 1, 2, 1, 1)
-        sgrid.attach(Gtk.Label(label="Seed:", xalign=1), 0, 3, 1, 1)
         seed_spin = Gtk.SpinButton.new_with_range(-1, 2**32-1, 1)
         seed_spin.set_value(-1); seed_spin.set_tooltip_text("-1 = random")
-        sgrid.attach(seed_spin, 1, 3, 1, 1)
-        bx.pack_start(sgrid, False, False, 0)
+        prompt_tv = Gtk.TextView(); prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        prompt_tv.set_size_request(-1, 50)
+        prompt_tv.set_tooltip_text("Describe the desired quality of the restored image.\nDefault works well. Add specific terms like 'portrait' or 'landscape' for better results.")
+        prompt_tv.get_buffer().set_text("high quality, detailed, sharp focus, professional photograph, natural colors, clean, well-lit")
         # Quality preset auto-sets steps + denoise
         def _on_quality_changed(combo):
             idx = combo.get_active()
@@ -12818,14 +12891,6 @@ class Spellcaster(Gimp.PlugIn):
                 steps_spin.set_value(qsteps)
                 denoise_spin.set_value(qdenoise)
         quality_combo.connect("changed", _on_quality_changed)
-        # Prompt
-        bx.pack_start(Gtk.Label(label="Positive Prompt:", xalign=0), False, False, 0)
-        prompt_tv = Gtk.TextView(); prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
-        prompt_tv.set_size_request(-1, 50)
-        prompt_tv.set_tooltip_text("Describe the desired quality of the restored image.\nDefault works well. Add specific terms like 'portrait' or 'landscape' for better results.")
-        prompt_tv.get_buffer().set_text("high quality, detailed, sharp focus, professional photograph, natural colors, clean, well-lit")
-        sw = Gtk.ScrolledWindow(); sw.add(prompt_tv); sw.set_min_content_height(50)
-        bx.pack_start(sw, False, False, 0)
         # WD Tagger button
         supir_wd_btn = None
         supir_wd_status = None
@@ -12919,15 +12984,19 @@ class Spellcaster(Gimp.PlugIn):
         supir_wd_btn.connect("clicked", _on_supir_wd_tag)
         wd_row.pack_start(supir_wd_btn, False, False, 0)
         wd_row.pack_start(supir_wd_status, True, True, 0)
-        bx.pack_start(wd_row, False, False, 0)
-        # ── ControlNet Refinement Post-Pass ──
-        bx.pack_start(Gtk.Separator(), False, False, 2)
-        bx.pack_start(Gtk.Label(label="ControlNet Refinement (post-SUPIR pass):", xalign=0), False, False, 0)
-        bx.pack_start(Gtk.Label(label="<small>SUPIR does not support ControlNet directly. An optional low-denoise\n"
+        # wd_row is packed into the Advanced expander below (near prompt_tv)
+        # ── ControlNet & Scale (collapsible) ─────────────────────────────
+        supir_cn_exp = Gtk.Expander(label="\u25b8 ControlNet & Scale")
+        supir_cn_exp.set_expanded(False)
+        supir_cn_exp.set_tooltip_text("ControlNet refinement pass (post-SUPIR) and output scale factor.\nSUPIR does not support ControlNet directly; an optional low-denoise pass locks in detail.")
+        supir_cn_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        supir_cn_box.set_margin_start(4); supir_cn_box.set_margin_top(4)
+        supir_cn_box.pack_start(Gtk.Label(label="ControlNet Refinement (post-SUPIR pass):", xalign=0), False, False, 0)
+        supir_cn_box.pack_start(Gtk.Label(label="<small>SUPIR does not support ControlNet directly. An optional low-denoise\n"
                                        "refinement pass with ControlNet locks in structural detail.</small>",
                                  xalign=0, use_markup=True), False, False, 0)
         # ControlNet 1
-        bx.pack_start(Gtk.Label(label="ControlNet 1 (Tile recommended):", xalign=0), False, False, 0)
+        supir_cn_box.pack_start(Gtk.Label(label="ControlNet 1 (Tile recommended):", xalign=0), False, False, 0)
         supir_cn_combo = Gtk.ComboBoxText()
         supir_cn_combo.set_tooltip_text(
             "ControlNet preserves structure from your source image.\n\n"
@@ -12947,16 +13016,16 @@ class Spellcaster(Gimp.PlugIn):
         for key in CONTROLNET_GUIDE_MODES:
             supir_cn_combo.append(key, key)
         supir_cn_combo.set_active(0)  # Off by default
-        bx.pack_start(supir_cn_combo, False, False, 0)
+        supir_cn_box.pack_start(supir_cn_combo, False, False, 0)
         supir_cn_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         supir_cn_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
         supir_cn_strength = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
         supir_cn_strength.set_digits(2); supir_cn_strength.set_value(0.6)
         supir_cn_strength.set_tooltip_text("ControlNet 1 strength for the refinement pass.\n0.6 = default. Higher = more structural guidance.")
         supir_cn_str_hb.pack_start(supir_cn_strength, False, False, 0)
-        bx.pack_start(supir_cn_str_hb, False, False, 0)
+        supir_cn_box.pack_start(supir_cn_str_hb, False, False, 0)
         # ControlNet 2
-        bx.pack_start(Gtk.Label(label="ControlNet 2 (optional — e.g., Tile + Depth):", xalign=0), False, False, 0)
+        supir_cn_box.pack_start(Gtk.Label(label="ControlNet 2 (optional -- Tile + Depth):", xalign=0), False, False, 0)
         supir_cn_combo_2 = Gtk.ComboBoxText()
         supir_cn_combo_2.set_tooltip_text(
             "Optional second ControlNet to combine with the first.\n"
@@ -12970,15 +13039,39 @@ class Spellcaster(Gimp.PlugIn):
         for key in CONTROLNET_GUIDE_MODES:
             supir_cn_combo_2.append(key, key)
         supir_cn_combo_2.set_active(0)  # Off by default
-        bx.pack_start(supir_cn_combo_2, False, False, 0)
+        supir_cn_box.pack_start(supir_cn_combo_2, False, False, 0)
         supir_cn_str_hb_2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         supir_cn_str_hb_2.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
         supir_cn_strength_2 = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
         supir_cn_strength_2.set_digits(2); supir_cn_strength_2.set_value(0.4)
         supir_cn_strength_2.set_tooltip_text("ControlNet 2 strength. 0.4 = default for secondary guidance.")
         supir_cn_str_hb_2.pack_start(supir_cn_strength_2, False, False, 0)
-        bx.pack_start(supir_cn_str_hb_2, False, False, 0)
-        bx.pack_start(Gtk.Separator(), False, False, 2)
+        supir_cn_box.pack_start(supir_cn_str_hb_2, False, False, 0)
+        # Scale spinner inside CN expander
+        supir_scale_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        supir_scale_hb.pack_start(Gtk.Label(label="Scale:"), False, False, 0)
+        supir_scale_hb.pack_start(scale_spin, False, False, 0)
+        supir_cn_box.pack_start(supir_scale_hb, False, False, 0)
+        supir_cn_exp.add(supir_cn_box)
+        bx.pack_start(supir_cn_exp, False, False, 0)
+        # ── Advanced (collapsible) ───────────────────────────────────────
+        supir_adv_exp = Gtk.Expander(label="\u25b8 Advanced")
+        supir_adv_exp.set_expanded(False)
+        supir_adv_exp.set_tooltip_text("Steps, seed, positive prompt, and batch run settings.")
+        supir_adv_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        supir_adv_box.set_margin_start(4); supir_adv_box.set_margin_top(4)
+        supir_steps_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        supir_steps_hb.pack_start(Gtk.Label(label="Steps:"), False, False, 0)
+        supir_steps_hb.pack_start(steps_spin, False, False, 0)
+        supir_adv_box.pack_start(supir_steps_hb, False, False, 0)
+        supir_seed_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        supir_seed_hb.pack_start(Gtk.Label(label="Seed:"), False, False, 0)
+        supir_seed_hb.pack_start(seed_spin, False, False, 0)
+        supir_adv_box.pack_start(supir_seed_hb, False, False, 0)
+        supir_adv_box.pack_start(Gtk.Label(label="Positive Prompt:", xalign=0), False, False, 0)
+        sw = Gtk.ScrolledWindow(); sw.add(prompt_tv); sw.set_min_content_height(50)
+        supir_adv_box.pack_start(sw, False, False, 0)
+        supir_adv_box.pack_start(wd_row, False, False, 0)
         # Runs spinner
         runs_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         runs_hb.pack_start(Gtk.Label(label="Runs:"), False, False, 0)
@@ -12987,7 +13080,9 @@ class Spellcaster(Gimp.PlugIn):
         runs_spin.set_tooltip_text("Number of times to run this generation. Each run uses a fresh random seed.")
         runs_hb.pack_start(runs_spin, False, False, 0)
         runs_hb.pack_start(Gtk.Label(label="(each run gets a new seed)"), False, False, 0)
-        bx.pack_start(runs_hb, False, False, 0)
+        supir_adv_box.pack_start(runs_hb, False, False, 0)
+        supir_adv_exp.add(supir_adv_box)
+        bx.pack_start(supir_adv_exp, False, False, 0)
         # AutoSet button
         def _supir_auto_set():
             arch = "sdxl"  # SUPIR is always SDXL-based
