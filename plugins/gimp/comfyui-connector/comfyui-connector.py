@@ -3586,6 +3586,7 @@ def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_
     wf, model_ref, clip_ref = _inject_loras(wf, loras or [], "1", model_ref=model_ref, clip_ref=clip_ref)
 
     wf["4"] = {"class_type": "LoadImage", "inputs": {"image": image_filename}}
+    img_ref = _ensure_mod16(wf, ["4", 0], preset, "4s")
     wf["5"] = {"class_type": "LoadImage", "inputs": {"image": mask_filename}}
 
     wf["2"] = {"class_type": "CLIPTextEncode",
@@ -3601,10 +3602,10 @@ def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_
                "inputs": {"image": ["5", 0], "channel": "red"}},
         # Get original image size for restoring after sampling
         "90": {"class_type": "GetImageSize+",
-               "inputs": {"image": ["4", 0]}},
+               "inputs": {"image": img_ref}},
         # Scale image to working resolution
         "91": {"class_type": "ImageScale",
-               "inputs": {"image": ["4", 0], "upscale_method": "lanczos",
+               "inputs": {"image": img_ref, "upscale_method": "lanczos",
                            "width": preset["width"], "height": preset["height"],
                            "crop": "disabled"}},
         # Scale mask to same working resolution
@@ -3643,10 +3644,10 @@ def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_
         cn_model = guide["cn_models"].get(arch, guide["cn_models"].get("sdxl"))
         preprocessor = guide["preprocessor"]
 
-        cn_image_ref = ["4", 0]  # LoadImage output (original image)
+        cn_image_ref = img_ref  # LoadImage output (mod-16 scaled if Flux)
         if preprocessor:
             wf["20"] = {"class_type": preprocessor,
-                        "inputs": {"image": ["4", 0]}}
+                        "inputs": {"image": img_ref}}
             cn_image_ref = ["20", 0]
 
         wf["21"] = {"class_type": "ControlNetLoader",
@@ -3668,7 +3669,7 @@ def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_
         wf["8"]["inputs"]["negative"] = ["22", 1]
 
         # Save ControlNet preprocessor output as debug image (if enabled)
-        if cn_image_ref != ["4", 0] and _load_config().get("debug_images", False):
+        if cn_image_ref != img_ref and _load_config().get("debug_images", False):
             wf["25"] = {"class_type": "SaveImage",
                         "inputs": {"images": cn_image_ref, "filename_prefix": "spellcaster_cn_debug"}}
 
@@ -3679,10 +3680,10 @@ def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_
         cn_model_2 = guide2["cn_models"].get(arch, guide2["cn_models"].get("sdxl"))
         preprocessor_2 = guide2["preprocessor"]
 
-        cn_image_ref_2 = ["4", 0]
+        cn_image_ref_2 = img_ref
         if preprocessor_2:
             wf["30"] = {"class_type": preprocessor_2,
-                        "inputs": {"image": ["4", 0]}}
+                        "inputs": {"image": img_ref}}
             cn_image_ref_2 = ["30", 0]
 
         wf["31"] = {"class_type": "ControlNetLoader",
@@ -4017,8 +4018,11 @@ def _build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
                   "bottom": bottom,
                   "feathering": feathering,
               }},
+    })
+    padded_ref = _ensure_mod16(wf, ["5", 0], preset, "5s")
+    wf.update({
         "6": {"class_type": "VAEEncode",
-              "inputs": {"pixels": ["5", 0], "vae": vae_ref}},
+              "inputs": {"pixels": padded_ref, "vae": vae_ref}},
         "7": {"class_type": "SetLatentNoiseMask",
               "inputs": {"samples": ["6", 0], "mask": ["5", 1]}},
         "8": {"class_type": "KSampler",
@@ -4048,11 +4052,11 @@ def _build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
         cn_model = guide["cn_models"].get(arch, guide["cn_models"].get("sdxl"))
         preprocessor = guide["preprocessor"]
 
-        # ControlNet processes the padded image
-        cn_image_ref = ["5", 0]
+        # ControlNet processes the padded image (mod-16 scaled if Flux)
+        cn_image_ref = padded_ref
         if preprocessor:
             wf["20"] = {"class_type": preprocessor,
-                        "inputs": {"image": ["5", 0]}}
+                        "inputs": {"image": padded_ref}}
             cn_image_ref = ["20", 0]
 
         wf["21"] = {"class_type": "ControlNetLoader",
@@ -4115,8 +4119,11 @@ def _build_style_transfer(target_filename, style_ref_filename, preset,
               "inputs": {"text": negative_text or "blurry, deformed, bad anatomy", "clip": clip_ref}},
         "7": {"class_type": "LoadImage",
               "inputs": {"image": target_filename}},
+    })
+    target_ref = _ensure_mod16(wf, ["7", 0], preset, "7s")
+    wf.update({
         "8": {"class_type": "VAEEncode",
-              "inputs": {"pixels": ["7", 0], "vae": vae_ref}},
+              "inputs": {"pixels": target_ref, "vae": vae_ref}},
         "9": {"class_type": "KSampler",
               "inputs": {
                   "model": ["4", 0],
@@ -4143,10 +4150,10 @@ def _build_style_transfer(target_filename, style_ref_filename, preset,
         cn_model = guide["cn_models"].get(arch, guide["cn_models"].get("sdxl"))
         preprocessor = guide["preprocessor"]
 
-        cn_image_ref = ["7", 0]  # target image
+        cn_image_ref = target_ref  # target image (mod-16 scaled if Flux)
         if preprocessor:
             wf["20"] = {"class_type": preprocessor,
-                        "inputs": {"image": ["7", 0]}}
+                        "inputs": {"image": target_ref}}
             cn_image_ref = ["20", 0]
 
         wf["21"] = {"class_type": "ControlNetLoader",
@@ -4171,10 +4178,10 @@ def _build_style_transfer(target_filename, style_ref_filename, preset,
         cn_model_2 = guide2["cn_models"].get(arch, guide2["cn_models"].get("sdxl"))
         preprocessor_2 = guide2["preprocessor"]
 
-        cn_image_ref_2 = ["7", 0]
+        cn_image_ref_2 = target_ref
         if preprocessor_2:
             wf["30"] = {"class_type": preprocessor_2,
-                        "inputs": {"image": ["7", 0]}}
+                        "inputs": {"image": target_ref}}
             cn_image_ref_2 = ["30", 0]
 
         wf["31"] = {"class_type": "ControlNetLoader",
@@ -4393,6 +4400,7 @@ def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text
         img_ref = ["3", 0]
     else:
         img_ref = ["1", 0]
+    img_ref = _ensure_mod16(wf, img_ref, preset, "3s")
 
     loader_wf, model_ref, clip_ref, vae_ref = _make_model_loader(preset, "4")
     wf.update(loader_wf)
@@ -4581,6 +4589,7 @@ def _build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_
     else:
         # 1x — no upscale, use original image directly
         img_ref = ["1", 0]
+    img_ref = _ensure_mod16(wf, img_ref, preset, "3s")
 
     loader_wf, m_ref, c_ref, v_ref = _make_model_loader(preset, "4")
     wf.update(loader_wf)
@@ -4874,14 +4883,17 @@ def _build_colorize(image_filename, preset, prompt_text, negative_text, seed,
     wf = {
         "1": {"class_type": "LoadImage",
               "inputs": {"image": image_filename}},
+    }
+    img_ref = _ensure_mod16(wf, ["1", 0], preset, "1s")
+    wf.update({
         # Lineart preprocessor at full resolution for fine detail
         "2": {"class_type": "LineArtPreprocessor",
               "inputs": {
-                  "image": ["1", 0],
+                  "image": img_ref,
                   "resolution": res,
                   "coarse": "disable",
               }},
-    }
+    })
     loader_wf, model_ref, clip_ref, vae_ref = _make_model_loader(preset, "3")
     wf.update(loader_wf)
     wf.update({
@@ -4902,7 +4914,7 @@ def _build_colorize(image_filename, preset, prompt_text, negative_text, seed,
                   "end_percent": 1.0,
               }},
         "8": {"class_type": "VAEEncode",
-              "inputs": {"pixels": ["1", 0], "vae": vae_ref}},
+              "inputs": {"pixels": img_ref, "vae": vae_ref}},
         "9": {"class_type": "KSampler",
               "inputs": {
                   "model": model_ref,
@@ -4928,10 +4940,10 @@ def _build_colorize(image_filename, preset, prompt_text, negative_text, seed,
         cn_model_2 = guide2["cn_models"].get(arch, guide2["cn_models"].get("sdxl"))
         preprocessor_2 = guide2["preprocessor"]
 
-        cn_image_ref_2 = ["1", 0]
+        cn_image_ref_2 = img_ref
         if preprocessor_2:
             wf["30"] = {"class_type": preprocessor_2,
-                        "inputs": {"image": ["1", 0]}}
+                        "inputs": {"image": img_ref}}
             cn_image_ref_2 = ["30", 0]
 
         wf["31"] = {"class_type": "ControlNetLoader",
@@ -4950,7 +4962,7 @@ def _build_colorize(image_filename, preset, prompt_text, negative_text, seed,
         wf["9"]["inputs"]["negative"] = ["32", 1]
 
         if _load_config().get("debug_images", False):
-            if cn_image_ref_2 != ["1", 0]:
+            if cn_image_ref_2 != img_ref:
                 wf["35"] = {"class_type": "SaveImage",
                             "inputs": {"images": cn_image_ref_2, "filename_prefix": "spellcaster_cn_debug"}}
 
@@ -4960,10 +4972,10 @@ def _build_colorize(image_filename, preset, prompt_text, negative_text, seed,
         cn_model_2 = guide2["cn_models"].get(arch, guide2["cn_models"].get("sdxl"))
         preprocessor_2 = guide2["preprocessor"]
 
-        cn_image_ref_2 = ["1", 0]
+        cn_image_ref_2 = img_ref
         if preprocessor_2:
             wf["20"] = {"class_type": preprocessor_2,
-                        "inputs": {"image": ["1", 0]}}
+                        "inputs": {"image": img_ref}}
             cn_image_ref_2 = ["20", 0]
 
         wf["21"] = {"class_type": "ControlNetLoader",
