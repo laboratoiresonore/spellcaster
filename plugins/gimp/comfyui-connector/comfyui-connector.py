@@ -9516,27 +9516,59 @@ class Spellcaster(Gimp.PlugIn):
         return False
 
     def do_query_procedures(self):
-        """Return the list of PDB procedure names this plugin provides.
+        """Return procedure names filtered by installed features.
 
-        Each name here must have a corresponding entry in do_create_procedure().
+        Reads config.json for 'installed_features' list. If present, only
+        registers procedures whose feature dependencies are installed.
+        If absent (fresh install), registers everything.
+        This prevents empty submenus when the user didn't install Klein, Wan, etc.
         """
-        return [
-            "spellcaster-img2img", "spellcaster-txt2img", "spellcaster-inpaint", "spellcaster-send-image",
-            "spellcaster-faceswap", "spellcaster-faceswap-model",
-            "spellcaster-faceswap-mtb", "spellcaster-faceid-img2img", "spellcaster-pulid-flux",
-            "spellcaster-klein-img2img", "spellcaster-klein-img2img-ref",
-            "spellcaster-wan-i2v", "spellcaster-rembg",
-            "spellcaster-embed-watermark", "spellcaster-read-watermark",
-            "spellcaster-upscale", "spellcaster-lama-remove",
-            "spellcaster-lut", "spellcaster-outpaint", "spellcaster-style-transfer",
-            "spellcaster-face-restore", "spellcaster-photo-restore",
-            "spellcaster-detail-hallucinate", "spellcaster-colorize",
-            "spellcaster-batch-variations",
-            "spellcaster-iclight", "spellcaster-supir",
-            "spellcaster-seedv2r",
-            "spellcaster-settings",
-            "spellcaster-my-presets",
-        ]
+        # Map each procedure to its required feature (None = always available)
+        _PROC_FEATURES = {
+            "spellcaster-img2img": None,       # core — always available
+            "spellcaster-txt2img": None,
+            "spellcaster-inpaint": None,
+            "spellcaster-send-image": None,
+            "spellcaster-outpaint": None,
+            "spellcaster-batch-variations": None,
+            "spellcaster-upscale": "upscale",
+            "spellcaster-face-restore": "face_restore",
+            "spellcaster-photo-restore": "photo_restore",
+            "spellcaster-detail-hallucinate": "detail_hallucinate",
+            "spellcaster-supir": "supir",
+            "spellcaster-seedv2r": "seedv2r",
+            "spellcaster-colorize": "colorize",
+            "spellcaster-lama-remove": "lama_remove",
+            "spellcaster-faceswap": "face_swap_reactor",
+            "spellcaster-faceswap-model": "face_swap_reactor",
+            "spellcaster-faceswap-mtb": "face_swap_mtb",
+            "spellcaster-faceid-img2img": "faceid_img2img",
+            "spellcaster-pulid-flux": "pulid_flux",
+            "spellcaster-klein-img2img": "klein_flux2",
+            "spellcaster-klein-img2img-ref": "klein_flux2",
+            "spellcaster-wan-i2v": "wan_i2v",
+            "spellcaster-rembg": "rembg",
+            "spellcaster-embed-watermark": None,
+            "spellcaster-read-watermark": None,
+            "spellcaster-lut": "lut_grading",
+            "spellcaster-style-transfer": "style_transfer",
+            "spellcaster-iclight": "iclight",
+            "spellcaster-settings": None,
+            "spellcaster-my-presets": None,
+        }
+
+        cfg = _load_config()
+        installed = cfg.get("installed_features")  # list of feature keys, or None
+
+        procs = []
+        for name, feature in _PROC_FEATURES.items():
+            if feature is None:
+                procs.append(name)  # always register
+            elif installed is None:
+                procs.append(name)  # no config = register everything
+            elif feature in installed:
+                procs.append(name)  # feature was installed
+        return procs
 
     def do_create_procedure(self, name):
         menu_map = {
