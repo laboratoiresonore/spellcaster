@@ -87,6 +87,11 @@
       "repo": "https://github.com/kijai/ComfyUI-SUPIR",
       "provides": ["SUPIR_model_loader", "SUPIR_encode", "SUPIR_sample", "SUPIR_decode"],
       "required_by": ["supir"]
+    },
+    "ComfyUI-WD14-Tagger": {
+      "repo": "https://github.com/pythongosssss/ComfyUI-WD14-Tagger",
+      "provides": ["WD14Tagger|pysssss"],
+      "required_by": ["img2img"]
     }
   },
 
