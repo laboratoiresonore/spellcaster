@@ -4199,15 +4199,17 @@ HALLUCINATE_PRESETS = {
 }
 
 def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text, negative_text,
-                               seed, denoise, cfg, steps=None):
+                               seed, denoise, cfg, steps=None,
+                               controlnet=None, controlnet_2=None):
     """Upscale + img2img at low denoise to hallucinate fine detail.
 
     Pipeline: LoadImage → UpscaleModelLoader → ImageUpscaleWithModel
-              → Model Loader → CLIPTextEncode(+/-) → VAEEncode
-              → KSampler → VAEDecode → SaveImage
+              → Model Loader → CLIPTextEncode(+/-)
+              → [ControlNet 1] → [ControlNet 2]
+              → VAEEncode → KSampler → VAEDecode → SaveImage
 
-    Steps can be overridden by the hallucination preset (skin/eyes/landscape
-    presets use different step counts for optimal results).
+    ControlNet (especially Tile) is highly recommended for hallucination:
+    it preserves the structure of the upscaled image while the AI adds detail.
     """
     wf = {
         "1": {"class_type": "LoadImage",
@@ -4247,6 +4249,73 @@ def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text
         "10": {"class_type": "SaveImage",
                "inputs": {"images": ["9", 0], "filename_prefix": "spellcaster_hallucinate"}},
     })
+
+    # ── ControlNet 1 (optional — Tile recommended for hallucination) ──
+    if controlnet and controlnet.get("mode", "Off") != "Off":
+        guide = CONTROLNET_GUIDE_MODES[controlnet["mode"]]
+        arch = preset.get("arch", "sdxl")
+        cn_model = guide["cn_models"].get(arch, guide["cn_models"].get("sdxl"))
+        preprocessor = guide["preprocessor"]
+
+        # ControlNet processes the UPSCALED image (node 3), not the original
+        cn_image_ref = ["3", 0]
+        if preprocessor:
+            wf["20"] = {"class_type": preprocessor,
+                        "inputs": {"image": ["3", 0]}}
+            cn_image_ref = ["20", 0]
+
+        wf["21"] = {"class_type": "ControlNetLoader",
+                    "inputs": {"control_net_name": cn_model}}
+        wf["22"] = {"class_type": "ControlNetApplyAdvanced",
+                    "inputs": {
+                        "positive": ["5", 0],
+                        "negative": ["6", 0],
+                        "control_net": ["21", 0],
+                        "image": cn_image_ref,
+                        "strength": controlnet["strength"],
+                        "start_percent": controlnet.get("start_percent", 0.0),
+                        "end_percent": controlnet.get("end_percent", 1.0),
+                    }}
+        wf["8"]["inputs"]["positive"] = ["22", 0]
+        wf["8"]["inputs"]["negative"] = ["22", 1]
+
+        # Debug layer
+        if cn_image_ref != ["3", 0] and _load_config().get("debug_images", False):
+            wf["25"] = {"class_type": "SaveImage",
+                        "inputs": {"images": cn_image_ref, "filename_prefix": "spellcaster_cn_debug"}}
+
+    # ── ControlNet 2 (optional — e.g., combine Tile + Depth) ──
+    if controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
+        guide2 = CONTROLNET_GUIDE_MODES[controlnet_2["mode"]]
+        arch = preset.get("arch", "sdxl")
+        cn_model_2 = guide2["cn_models"].get(arch, guide2["cn_models"].get("sdxl"))
+        preprocessor_2 = guide2["preprocessor"]
+
+        cn_image_ref_2 = ["3", 0]
+        if preprocessor_2:
+            wf["30"] = {"class_type": preprocessor_2,
+                        "inputs": {"image": ["3", 0]}}
+            cn_image_ref_2 = ["30", 0]
+
+        wf["31"] = {"class_type": "ControlNetLoader",
+                    "inputs": {"control_net_name": cn_model_2}}
+
+        # Chain from CN1 output if it exists, else from raw CLIP
+        prev_pos = ["22", 0] if "22" in wf else ["5", 0]
+        prev_neg = ["22", 1] if "22" in wf else ["6", 0]
+        wf["32"] = {"class_type": "ControlNetApplyAdvanced",
+                    "inputs": {
+                        "positive": prev_pos,
+                        "negative": prev_neg,
+                        "control_net": ["31", 0],
+                        "image": cn_image_ref_2,
+                        "strength": controlnet_2["strength"],
+                        "start_percent": controlnet_2.get("start_percent", 0.0),
+                        "end_percent": controlnet_2.get("end_percent", 1.0),
+                    }}
+        wf["8"]["inputs"]["positive"] = ["32", 0]
+        wf["8"]["inputs"]["negative"] = ["32", 1]
+
     return wf
 
 
@@ -10654,20 +10723,48 @@ class Spellcaster(Gimp.PlugIn):
         neg_tv.get_buffer().set_text("blurry, low quality, soft, out of focus")
         sw2 = Gtk.ScrolledWindow(); sw2.add(neg_tv); sw2.set_min_content_height(40)
         bx.pack_start(sw2, False, False, 0)
+        # ControlNet 1 (Tile recommended)
+        bx.pack_start(Gtk.Separator(), False, False, 2)
+        bx.pack_start(Gtk.Label(label="ControlNet 1 (Tile recommended):", xalign=0), False, False, 0)
+        cn_combo = Gtk.ComboBoxText()
+        cn_combo.set_tooltip_text("Tile ControlNet is HIGHLY recommended for hallucination.\nIt preserves layout while the AI adds fine detail.")
+        for key in CONTROLNET_GUIDE_MODES:
+            cn_combo.append(key, key)
+        cn_combo.set_active_id("Tile (detail upscale)")
+        if cn_combo.get_active() < 0:
+            cn_combo.set_active(0)
+        bx.pack_start(cn_combo, False, False, 0)
+        cn_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        cn_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
+        cn_strength = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
+        cn_strength.set_digits(2); cn_strength.set_value(0.7)
+        cn_str_hb.pack_start(cn_strength, False, False, 0)
+        bx.pack_start(cn_str_hb, False, False, 0)
+        # ControlNet 2 (optional)
+        bx.pack_start(Gtk.Label(label="ControlNet 2 (optional):", xalign=0), False, False, 0)
+        cn_combo_2 = Gtk.ComboBoxText()
+        cn_combo_2.set_tooltip_text("Optional second ControlNet (e.g., Tile + Depth).")
+        for key in CONTROLNET_GUIDE_MODES:
+            cn_combo_2.append(key, key)
+        cn_combo_2.set_active(0)
+        bx.pack_start(cn_combo_2, False, False, 0)
+        cn_str_hb_2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        cn_str_hb_2.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
+        cn_strength_2 = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
+        cn_strength_2.set_digits(2); cn_strength_2.set_value(0.5)
+        cn_str_hb_2.pack_start(cn_strength_2, False, False, 0)
+        bx.pack_start(cn_str_hb_2, False, False, 0)
+        bx.pack_start(Gtk.Separator(), False, False, 2)
         # Seed
         hb_seed = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         hb_seed.pack_start(Gtk.Label(label="Seed:"), False, False, 0)
         seed_spin = Gtk.SpinButton.new_with_range(-1, 2**32-1, 1)
         seed_spin.set_value(-1); seed_spin.set_tooltip_text("-1 = random")
         hb_seed.pack_start(seed_spin, True, True, 0); bx.pack_start(hb_seed, False, False, 0)
-        # Runs spinner
         runs_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         runs_hb.pack_start(Gtk.Label(label="Runs:"), False, False, 0)
-        runs_spin = Gtk.SpinButton.new_with_range(1, 99, 1)
-        runs_spin.set_value(1)
-        runs_spin.set_tooltip_text("Number of times to run this generation. Each run uses a fresh random seed.")
+        runs_spin = Gtk.SpinButton.new_with_range(1, 99, 1); runs_spin.set_value(1)
         runs_hb.pack_start(runs_spin, False, False, 0)
-        runs_hb.pack_start(Gtk.Label(label="(each run gets a new seed)"), False, False, 0)
         bx.pack_start(runs_hb, False, False, 0)
         bx.show_all()
         last = _SESSION.get("detail_hallucinate")
@@ -10716,9 +10813,16 @@ class Spellcaster(Gimp.PlugIn):
             _upload_image(srv, tmp, uname); os.unlink(tmp)
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+                cn1_mode = cn_combo.get_active_id() if cn_combo else "Off"
+                cn1 = {"mode": cn1_mode, "strength": cn_strength.get_value(),
+                        "start_percent": 0.0, "end_percent": 1.0} if cn1_mode != "Off" else None
+                cn2_mode = cn_combo_2.get_active_id() if cn_combo_2 else "Off"
+                cn2 = {"mode": cn2_mode, "strength": cn_strength_2.get_value(),
+                        "start_percent": 0.0, "end_percent": 1.0} if cn2_mode != "Off" else None
                 wf = _build_detail_hallucinate(uname, upscale_model, preset, prompt, negative,
                                                 seed, h_preset["denoise"], h_preset["cfg"],
-                                                steps=h_preset.get("steps"))
+                                                steps=h_preset.get("steps"),
+                                                controlnet=cn1, controlnet_2=cn2)
                 label = f"Detail Hallucinate run {run_i+1}/{runs}" if runs > 1 else "Detail Hallucinate"
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
                                             lambda: list(_run_comfyui_workflow(srv, wf)))
