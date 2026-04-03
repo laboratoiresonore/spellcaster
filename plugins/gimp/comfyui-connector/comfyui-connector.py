@@ -3028,12 +3028,14 @@ def _inject_loras(wf, loras, ckpt_node="1", model_ref=None, clip_ref=None):
     return wf, prev_model, prev_clip
 
 
-def _build_img2img(image_filename, preset, prompt_text, negative_text, seed, loras=None, controlnet=None):
+def _build_img2img(image_filename, preset, prompt_text, negative_text, seed,
+                    loras=None, controlnet=None, use_wd_tagger=False):
     """Standard img2img: load checkpoint, encode image to latent, denoise, decode.
 
     Pipeline: CheckpointLoaderSimple → [LoRA chain] → CLIPTextEncode(+/-)
-              LoadImage → VAEEncode → KSampler → VAEDecode → SaveImage
+              LoadImage → [WD14Tagger → StringConcatenate] → VAEEncode → KSampler → VAEDecode → SaveImage
     For flux1dev: UNETLoader + CLIPLoader + VAELoader (Flux uses separate loaders).
+    Optional WD Tagger auto-tags the input image and prepends tags to the prompt.
     Optional ControlNet injection adds preprocessor + ControlNetApplyAdvanced.
     """
     _arch = preset.get("arch", "")
@@ -3079,13 +3081,43 @@ def _build_img2img(image_filename, preset, prompt_text, negative_text, seed, lor
         vae_ref = ["1", 2]
 
     wf, model_ref, clip_ref = _inject_loras(wf, loras or [], model_ref[0], model_ref=model_ref, clip_ref=clip_ref)
+
+    # Determine the final positive prompt source
+    pos_prompt_text = prompt_text
+
     wf.update({
-        "2": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": prompt_text, "clip": clip_ref}},
-        "3": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": negative_text, "clip": clip_ref}},
         "4": {"class_type": "LoadImage",
               "inputs": {"image": image_filename}},
+    })
+
+    # WD Tagger: auto-tag the input image and prepend to user prompt
+    if use_wd_tagger:
+        wf["90"] = {"class_type": "WD14Tagger|pysssss",
+                    "inputs": {
+                        "image": ["4", 0],
+                        "model": "wd-eva02-large-tagger-v3",
+                        "threshold": 0.35,
+                        "character_threshold": 0.85,
+                        "replace_underscore": True,
+                        "trailing_comma": True,
+                        "exclude_tags": "",
+                    }}
+        wf["91"] = {"class_type": "StringConcatenate",
+                    "inputs": {
+                        "string_a": ["90", 0],
+                        "string_b": prompt_text,
+                        "delimiter": ", ",
+                    }}
+        # CLIPTextEncode will use the concatenated string
+        wf["2"] = {"class_type": "CLIPTextEncode",
+                   "inputs": {"text": ["91", 0], "clip": clip_ref}}
+    else:
+        wf["2"] = {"class_type": "CLIPTextEncode",
+                   "inputs": {"text": prompt_text, "clip": clip_ref}}
+
+    wf.update({
+        "3": {"class_type": "CLIPTextEncode",
+              "inputs": {"text": negative_text, "clip": clip_ref}},
         "5": {"class_type": "VAEEncode",
               "inputs": {"pixels": ["4", 0], "vae": vae_ref}},
         "6": {"class_type": "KSampler",
@@ -3190,7 +3222,7 @@ def _build_txt2img(preset, prompt_text, negative_text, seed, loras=None):
     })
     return wf
 
-def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_text, seed, loras=None, controlnet=None):
+def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_text, seed, loras=None, controlnet=None, use_wd_tagger=False):
     """Inpainting: regenerate only the masked region of the image.
 
     Pipeline: Load image + mask → scale both to working resolution →
@@ -3208,15 +3240,37 @@ def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_
               "inputs": {"ckpt_name": preset["ckpt"]}},
     }
     wf, model_ref, clip_ref = _inject_loras(wf, loras or [], "1")
+
+    wf["4"] = {"class_type": "LoadImage", "inputs": {"image": image_filename}}
+    wf["5"] = {"class_type": "LoadImage", "inputs": {"image": mask_filename}}
+
+    # WD Tagger for inpainting: auto-tag the source image to improve context
+    if use_wd_tagger:
+        wf["80"] = {"class_type": "WD14Tagger|pysssss",
+                    "inputs": {
+                        "image": ["4", 0],
+                        "model": "wd-eva02-large-tagger-v3",
+                        "threshold": 0.35,
+                        "character_threshold": 0.85,
+                        "replace_underscore": True,
+                        "trailing_comma": True,
+                        "exclude_tags": "",
+                    }}
+        wf["81"] = {"class_type": "StringConcatenate",
+                    "inputs": {
+                        "string_a": ["80", 0],
+                        "string_b": prompt_text,
+                        "delimiter": ", ",
+                    }}
+        wf["2"] = {"class_type": "CLIPTextEncode",
+                   "inputs": {"text": ["81", 0], "clip": clip_ref}}
+    else:
+        wf["2"] = {"class_type": "CLIPTextEncode",
+                   "inputs": {"text": prompt_text, "clip": clip_ref}}
+
     wf.update({
-        "2": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": prompt_text, "clip": clip_ref}},
         "3": {"class_type": "CLIPTextEncode",
               "inputs": {"text": negative_text, "clip": clip_ref}},
-        "4": {"class_type": "LoadImage",
-              "inputs": {"image": image_filename}},
-        "5": {"class_type": "LoadImage",
-              "inputs": {"image": mask_filename}},
         # Convert the grayscale mask IMAGE to a MASK tensor.
         # LoadImage output [1] is the alpha channel (all-zero if no alpha!).
         # We need output [0] (the actual pixels) → ImageToMask → red channel.
@@ -6129,6 +6183,20 @@ class PresetDialog(Gtk.Dialog):
         elif mode == "txt2img":
             box.pack_start(Gtk.Label(label="Generate new image from prompt only.", xalign=0), False, False, 0)
 
+        # WD Tagger auto-tag checkbox (default ON for SDXL img2img/inpaint)
+        self._wd_tagger_cb = Gtk.CheckButton(label="WD Tagger: auto-tag image to enhance prompt")
+        default_wd = mode in ("img2img", "inpaint")  # ON by default for img2img/inpaint
+        self._wd_tagger_cb.set_active(default_wd)
+        self._wd_tagger_cb.set_tooltip_text(
+            "When enabled, WD14 Tagger analyzes your input image and automatically\n"
+            "generates descriptive tags (e.g. '1girl, brown hair, outdoors, smile').\n"
+            "These tags are prepended to your prompt, giving the AI much better\n"
+            "context about what's already in the image.\n\n"
+            "Recommended for img2img and inpaint. Not needed for txt2img.\n"
+            "Requires the WD14Tagger node (pysssss) to be installed in ComfyUI.")
+        if mode != "txt2img":
+            box.pack_start(self._wd_tagger_cb, False, False, 0)
+
         # Runs spinner
         _add_runs_spinner(self, box)
 
@@ -6563,6 +6631,7 @@ class PresetDialog(Gtk.Dialog):
             "controlnet": controlnet,
             "custom_workflow": custom_wf if custom_wf else None,
             "runs": int(self._runs_spin.get_value()),
+            "use_wd_tagger": self._wd_tagger_cb.get_active() if hasattr(self, '_wd_tagger_cb') else False,
         }
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -8236,7 +8305,8 @@ class Spellcaster(Gimp.PlugIn):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = json.loads(v["custom_workflow"]) if v["custom_workflow"] else \
                      _build_img2img(uname, v["preset"], v["prompt"], v["negative"], seed,
-                                    v.get("loras"), controlnet=v.get("controlnet"))
+                                    v.get("loras"), controlnet=v.get("controlnet"),
+                                    use_wd_tagger=v.get("use_wd_tagger", False))
                 label = f"img2img run {run_i+1}/{runs}" if runs > 1 else "img2img"
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
                                             lambda: list(_run_comfyui_workflow(srv, wf)))
@@ -8334,7 +8404,8 @@ class Spellcaster(Gimp.PlugIn):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = json.loads(v["custom_workflow"]) if v["custom_workflow"] else \
                      _build_inpaint(iname, mname, v["preset"], v["prompt"], v["negative"], seed,
-                                    v.get("loras"), controlnet=v.get("controlnet"))
+                                    v.get("loras"), controlnet=v.get("controlnet"),
+                                    use_wd_tagger=v.get("use_wd_tagger", False))
                 label = f"Inpaint run {run_i+1}/{runs}" if runs > 1 else "Inpaint"
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
                                             lambda: list(_run_comfyui_workflow(srv, wf)))
