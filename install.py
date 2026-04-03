@@ -1653,6 +1653,26 @@ def _find_gimp_system_splash() -> Path | None:
     return candidates[0] if candidates else None
 
 
+def _find_gimp_system_icon(icon_name: str = "gimp-logo.png") -> Path | None:
+    """Locate a GIMP system icon file (Wilber logo, window icon, etc.)."""
+    search_dirs = []
+    if platform.system() == "Windows":
+        for pf in [Path("C:/Program Files/GIMP 3"), Path("C:/Program Files (x86)/GIMP 3")]:
+            search_dirs.append(pf / "share/gimp/3.0/images")
+            search_dirs.append(pf / "share/icons/hicolor/256x256/apps")
+            search_dirs.append(pf / "share/icons/hicolor/48x48/apps")
+    elif platform.system() == "Darwin":
+        for app in [Path("/Applications/GIMP-3.0.app"), Path("/Applications/GIMP.app")]:
+            search_dirs.append(app / "Contents/Resources/share/gimp/3.0/images")
+    else:
+        search_dirs += [Path("/usr/share/gimp/3.0/images"), Path("/usr/share/icons/hicolor/256x256/apps")]
+    for d in search_dirs:
+        candidate = d / icon_name
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def _find_darktable_system_splash() -> Path | None:
     """Locate the Darktable system-level splash image on all platforms."""
     candidates: list[Path] = []
