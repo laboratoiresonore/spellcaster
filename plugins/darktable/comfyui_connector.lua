@@ -6801,9 +6801,31 @@ local colorize_preset_combo, colorize_preset_load, colorize_preset_save, coloriz
 -- to lighttable. The "hide" destroy method keeps the module registered
 -- but invisible, so re-showing is instant without re-registration.
 
+-- Server URL entry (editable directly in the panel, syncs with preferences)
+local server_url_entry = dt.new_widget("entry") {
+  tooltip = _("ComfyUI server URL. Change this and press Enter to save.\nAlso configurable in Darktable Preferences > Lua tab."),
+  text = dt.preferences.read(MODULE_NAME, "server_url", "string"),
+  editable = true,
+}
+
+local server_save_btn = dt.new_widget("button") {
+  label = _("Save Server URL"),
+  tooltip = _("Save the server URL to Darktable preferences so it persists across sessions."),
+  clicked_callback = function()
+    local new_url = server_url_entry.text
+    if new_url and new_url ~= "" then
+      dt.preferences.write(MODULE_NAME, "server_url", "string", new_url)
+      dt.print(string.format(_("Server URL saved: %s"), new_url))
+    end
+  end,
+}
+
 local module_widget = dt.new_widget("box") {
   orientation = "vertical",
   dt.new_widget("label") { label = _("\xe2\x9c\xa8 Spellcaster \xe2\x80\x94 AI Superpowers") },
+  dt.new_widget("label") { label = _("Server:") },
+  server_url_entry,
+  server_save_btn,
   status_label,
   test_btn,
   dt.new_widget("separator") {},
