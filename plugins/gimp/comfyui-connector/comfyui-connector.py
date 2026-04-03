@@ -11151,11 +11151,16 @@ class Spellcaster(Gimp.PlugIn):
         grid.attach(steps_sp, 3, 2, 1, 1)
         bx.pack_start(grid, False, False, 0)
 
-        # Seed
+        # Seed + Runs
         hb_seed = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         hb_seed.pack_start(Gtk.Label(label="Seed:"), False, False, 0)
         seed_sp = Gtk.SpinButton.new_with_range(-1, 2**32-1, 1); seed_sp.set_value(-1)
-        hb_seed.pack_start(seed_sp, True, True, 0); bx.pack_start(hb_seed, False, False, 0)
+        hb_seed.pack_start(seed_sp, True, True, 0)
+        hb_seed.pack_start(Gtk.Label(label="Runs:"), False, False, 6)
+        runs_sp = Gtk.SpinButton.new_with_range(1, 99, 1); runs_sp.set_value(1)
+        runs_sp.set_tooltip_text("Generate multiple variations — each with a different random seed")
+        hb_seed.pack_start(runs_sp, False, False, 0)
+        bx.pack_start(hb_seed, False, False, 0)
 
         bx.show_all()
         if dlg.run() != Gtk.ResponseType.OK:
@@ -11169,6 +11174,7 @@ class Spellcaster(Gimp.PlugIn):
         pad_r = int(right_sp.get_value()); pad_b = int(bottom_sp.get_value())
         feathering = int(feather_sp.get_value())
         steps = int(steps_sp.get_value())
+        runs = int(runs_sp.get_value())
         base_seed = int(seed_sp.get_value())
         if base_seed < 0:
             base_seed = random.randint(0, 2**32 - 1)
@@ -11179,20 +11185,22 @@ class Spellcaster(Gimp.PlugIn):
             uname = f"gimp_klein_out_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
 
-            # Build Klein-specific outpaint using the _build_outpaint with flux2klein preset
             km = KLEIN_MODELS[klein_key]
             preset = {
                 "arch": "flux2klein", "ckpt": km["unet"],
                 "steps": steps, "cfg": 1.0, "denoise": 1.0,
                 "sampler": "euler", "scheduler": "simple",
             }
-            wf = _build_outpaint(uname, preset, prompt, "", base_seed,
-                                  pad_l, pad_t, pad_r, pad_b, feathering)
-            results = _run_with_spinner("Klein Outpaint: processing...",
-                                        lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
-            for i, (fn, sf, ft) in enumerate(results):
-                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                        f"Klein Outpaint #{i+1}")
+            for run_i in range(runs):
+                seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+                wf = _build_outpaint(uname, preset, prompt, "", seed,
+                                      pad_l, pad_t, pad_r, pad_b, feathering)
+                label = f"Klein Outpaint run {run_i+1}/{runs}" if runs > 1 else "Klein Outpaint"
+                results = _run_with_spinner(f"{label}: processing...",
+                                            lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
+                for i, (fn, sf, ft) in enumerate(results):
+                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+                                            f"Klein Outpaint run {run_i+1} #{i+1}" if runs > 1 else f"Klein Outpaint #{i+1}")
             Gimp.displays_flush()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
@@ -11348,11 +11356,16 @@ class Spellcaster(Gimp.PlugIn):
         comp_exp.add(comp_box)
         bx.pack_start(comp_exp, False, False, 0)
 
-        # Seed
+        # Seed + Runs
         hb_seed = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         hb_seed.pack_start(Gtk.Label(label="Seed:"), False, False, 0)
         seed_sp = Gtk.SpinButton.new_with_range(-1, 2**32-1, 1); seed_sp.set_value(-1)
-        hb_seed.pack_start(seed_sp, True, True, 0); bx.pack_start(hb_seed, False, False, 0)
+        hb_seed.pack_start(seed_sp, True, True, 0)
+        hb_seed.pack_start(Gtk.Label(label="Runs:"), False, False, 6)
+        runs_sp = Gtk.SpinButton.new_with_range(1, 99, 1); runs_sp.set_value(1)
+        runs_sp.set_tooltip_text("Generate multiple variations — each with a different random seed")
+        hb_seed.pack_start(runs_sp, False, False, 0)
+        bx.pack_start(hb_seed, False, False, 0)
 
         bx.show_all()
         if dlg.run() != Gtk.ResponseType.OK:
@@ -11371,6 +11384,7 @@ class Spellcaster(Gimp.PlugIn):
         scale = scale_sp.get_value()
         px = int(pos_x.get_value()); py = int(pos_y.get_value())
         blend_mode = blend_combo.get_active_id() or "normal"
+        runs = int(runs_sp.get_value())
         base_seed = int(seed_sp.get_value())
         if base_seed < 0:
             base_seed = random.randint(0, 2**32 - 1)
@@ -11378,7 +11392,6 @@ class Spellcaster(Gimp.PlugIn):
 
         try:
             _update_spinner_status("Klein Blend: exporting layers...")
-            # Export both layers as separate images
             fg_layer = layers[fg_idx]
             bg_layer = layers[bg_idx]
 
@@ -11403,59 +11416,55 @@ class Spellcaster(Gimp.PlugIn):
             _upload_image(srv, fg_tmp_path, fg_name); os.unlink(fg_tmp_path)
             _upload_image(srv, bg_tmp_path, bg_name); os.unlink(bg_tmp_path)
 
-            _update_spinner_status("Klein Blend: compositing + AI integration...")
-
-            # Build workflow: composite then Klein refinement
             km = KLEIN_MODELS[klein_key]
-            wf = {
-                # Load both images
-                "1": {"class_type": "LoadImage", "inputs": {"image": fg_name}},
-                "2": {"class_type": "LoadImage", "inputs": {"image": bg_name}},
-                # Composite foreground onto background
-                "3": {"class_type": "AILab_ImageCombiner", "inputs": {
-                    "foreground": ["1", 0], "background": ["2", 0],
-                    "mode": blend_mode, "foreground_opacity": opacity,
-                    "foreground_scale": scale, "position_x": px, "position_y": py,
-                }},
-                # Klein img2img on the composite at low denoise to harmonize
-                "10": {"class_type": "UNETLoader", "inputs": {"unet_name": km["unet"], "weight_dtype": "default"}},
-                "11": {"class_type": "CLIPLoader", "inputs": {
-                    "clip_name": km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
-                    "type": "flux2", "device": "default"}},
-                "12": {"class_type": "VAELoader", "inputs": {"vae_name": "flux2-vae.safetensors"}},
-                "13": {"class_type": "CLIPTextEncode", "inputs": {"text": prompt, "clip": ["11", 0]}},
-                "14": {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["13", 0]}},
-                # Scale composite to mod-16
-                "15": {"class_type": "ImageScaleToTotalPixels", "inputs": {
-                    "image": ["3", 0], "upscale_method": "nearest-exact",
-                    "megapixels": 1.0, "resolution_steps": 16}},
-                "16": {"class_type": "GetImageSize", "inputs": {"image": ["15", 0]}},
-                "17": {"class_type": "VAEEncode", "inputs": {"pixels": ["15", 0], "vae": ["12", 0]}},
-                # ReferenceLatent for img2img
-                "20": {"class_type": "ReferenceLatent", "inputs": {"conditioning": ["13", 0], "latent": ["17", 0]}},
-                "21": {"class_type": "ReferenceLatent", "inputs": {"conditioning": ["14", 0], "latent": ["17", 0]}},
-                # Sampling
-                "30": {"class_type": "CFGGuider", "inputs": {
-                    "model": ["10", 0], "positive": ["20", 0], "negative": ["21", 0], "cfg": 1.0}},
-                "31": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "euler"}},
-                "32": {"class_type": "Flux2Scheduler", "inputs": {
-                    "steps": bp.get("steps", 20), "denoise": bp.get("denoise", 0.25),
-                    "width": ["16", 0], "height": ["16", 1]}},
-                "33": {"class_type": "RandomNoise", "inputs": {"noise_seed": base_seed}},
-                "34": {"class_type": "EmptyFlux2LatentImage", "inputs": {
-                    "width": ["16", 0], "height": ["16", 1], "batch_size": 1}},
-                "40": {"class_type": "SamplerCustomAdvanced", "inputs": {
-                    "noise": ["33", 0], "guider": ["30", 0], "sampler": ["31", 0],
-                    "sigmas": ["32", 0], "latent_image": ["34", 0]}},
-                "50": {"class_type": "VAEDecode", "inputs": {"samples": ["40", 0], "vae": ["12", 0]}},
-                "60": {"class_type": "SaveImage", "inputs": {"images": ["50", 0], "filename_prefix": "spellcaster_blend"}},
-            }
+            for run_i in range(runs):
+                seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+                label = f"Klein Blend run {run_i+1}/{runs}" if runs > 1 else "Klein Blend"
+                _update_spinner_status(f"{label}: compositing + AI integration...")
 
-            results = _run_with_spinner("Klein Blend: AI integration...",
-                                        lambda: list(_run_comfyui_workflow(srv, wf, timeout=300)))
-            for i, (fn, sf, ft) in enumerate(results):
-                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                        f"Klein Blend #{i+1}")
+                wf = {
+                    "1": {"class_type": "LoadImage", "inputs": {"image": fg_name}},
+                    "2": {"class_type": "LoadImage", "inputs": {"image": bg_name}},
+                    "3": {"class_type": "AILab_ImageCombiner", "inputs": {
+                        "foreground": ["1", 0], "background": ["2", 0],
+                        "mode": blend_mode, "foreground_opacity": opacity,
+                        "foreground_scale": scale, "position_x": px, "position_y": py,
+                    }},
+                    "10": {"class_type": "UNETLoader", "inputs": {"unet_name": km["unet"], "weight_dtype": "default"}},
+                    "11": {"class_type": "CLIPLoader", "inputs": {
+                        "clip_name": km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+                        "type": "flux2", "device": "default"}},
+                    "12": {"class_type": "VAELoader", "inputs": {"vae_name": "flux2-vae.safetensors"}},
+                    "13": {"class_type": "CLIPTextEncode", "inputs": {"text": prompt, "clip": ["11", 0]}},
+                    "14": {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["13", 0]}},
+                    "15": {"class_type": "ImageScaleToTotalPixels", "inputs": {
+                        "image": ["3", 0], "upscale_method": "nearest-exact",
+                        "megapixels": 1.0, "resolution_steps": 16}},
+                    "16": {"class_type": "GetImageSize", "inputs": {"image": ["15", 0]}},
+                    "17": {"class_type": "VAEEncode", "inputs": {"pixels": ["15", 0], "vae": ["12", 0]}},
+                    "20": {"class_type": "ReferenceLatent", "inputs": {"conditioning": ["13", 0], "latent": ["17", 0]}},
+                    "21": {"class_type": "ReferenceLatent", "inputs": {"conditioning": ["14", 0], "latent": ["17", 0]}},
+                    "30": {"class_type": "CFGGuider", "inputs": {
+                        "model": ["10", 0], "positive": ["20", 0], "negative": ["21", 0], "cfg": 1.0}},
+                    "31": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "euler"}},
+                    "32": {"class_type": "Flux2Scheduler", "inputs": {
+                        "steps": bp.get("steps", 20), "denoise": bp.get("denoise", 0.25),
+                        "width": ["16", 0], "height": ["16", 1]}},
+                    "33": {"class_type": "RandomNoise", "inputs": {"noise_seed": seed}},
+                    "34": {"class_type": "EmptyFlux2LatentImage", "inputs": {
+                        "width": ["16", 0], "height": ["16", 1], "batch_size": 1}},
+                    "40": {"class_type": "SamplerCustomAdvanced", "inputs": {
+                        "noise": ["33", 0], "guider": ["30", 0], "sampler": ["31", 0],
+                        "sigmas": ["32", 0], "latent_image": ["34", 0]}},
+                    "50": {"class_type": "VAEDecode", "inputs": {"samples": ["40", 0], "vae": ["12", 0]}},
+                    "60": {"class_type": "SaveImage", "inputs": {"images": ["50", 0], "filename_prefix": "spellcaster_blend"}},
+                }
+
+                results = _run_with_spinner(f"{label}: AI integration...",
+                                            lambda: list(_run_comfyui_workflow(srv, wf, timeout=300)))
+                for i, (fn, sf, ft) in enumerate(results):
+                    lbl = f"Klein Blend run {run_i+1} #{i+1}" if runs > 1 else f"Klein Blend #{i+1}"
+                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
             Gimp.displays_flush()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
@@ -11670,6 +11679,12 @@ class Spellcaster(Gimp.PlugIn):
         seed_sp.set_value(-1)
         seed_sp.set_tooltip_text("-1 = random seed each run. Fix a seed to reproduce results")
         grid.attach(seed_sp, 1, 2, 1, 1)
+
+        grid.attach(Gtk.Label(label="Runs:"), 0, 3, 1, 1)
+        runs_sp = Gtk.SpinButton.new_with_range(1, 99, 1)
+        runs_sp.set_value(1)
+        runs_sp.set_tooltip_text("Generate multiple variations — each with a different random seed")
+        grid.attach(runs_sp, 1, 3, 1, 1)
         adv_box.pack_start(grid, False, False, 4)
 
         exp.add(adv_box)
@@ -11732,6 +11747,7 @@ class Spellcaster(Gimp.PlugIn):
         prompt = pbuf.get_text(pbuf.get_start_iter(), pbuf.get_end_iter(), False)
         denoise = denoise_sp.get_value()
         steps = int(steps_sp.get_value())
+        runs = int(runs_sp.get_value())
         base_seed = int(seed_sp.get_value())
         if base_seed < 0:
             base_seed = random.randint(0, 2**32 - 1)
@@ -11744,59 +11760,62 @@ class Spellcaster(Gimp.PlugIn):
             _upload_image(srv, tmp, uname); os.unlink(tmp)
 
             km = KLEIN_MODELS[klein_key]
-            wf = {
-                "1": {"class_type": "UNETLoader",
-                      "inputs": {"unet_name": km["unet"], "weight_dtype": "default"}},
-                "2": {"class_type": "CLIPLoader",
-                      "inputs": {"clip_name": km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
-                                 "type": "flux2", "device": "default"}},
-                "3": {"class_type": "VAELoader",
-                      "inputs": {"vae_name": "flux2-vae.safetensors"}},
-                "4": {"class_type": "CLIPTextEncode",
-                      "inputs": {"text": prompt, "clip": ["2", 0]}},
-                "5": {"class_type": "ConditioningZeroOut",
-                      "inputs": {"conditioning": ["4", 0]}},
-                "10": {"class_type": "LoadImage",
-                       "inputs": {"image": uname}},
-                "11": {"class_type": "ImageScaleToTotalPixels",
-                       "inputs": {"image": ["10", 0], "upscale_method": "nearest-exact",
-                                  "megapixels": 1.0, "resolution_steps": 16}},
-                "12": {"class_type": "GetImageSize",
-                       "inputs": {"image": ["11", 0]}},
-                "13": {"class_type": "VAEEncode",
-                       "inputs": {"pixels": ["11", 0], "vae": ["3", 0]}},
-                "20": {"class_type": "ReferenceLatent",
-                       "inputs": {"conditioning": ["4", 0], "latent": ["13", 0]}},
-                "21": {"class_type": "ReferenceLatent",
-                       "inputs": {"conditioning": ["5", 0], "latent": ["13", 0]}},
-                "30": {"class_type": "CFGGuider",
-                       "inputs": {"model": ["1", 0], "positive": ["20", 0],
-                                  "negative": ["21", 0], "cfg": 1.0}},
-                "31": {"class_type": "KSamplerSelect",
-                       "inputs": {"sampler_name": "euler"}},
-                "32": {"class_type": "Flux2Scheduler",
-                       "inputs": {"steps": steps, "denoise": denoise,
-                                  "width": ["12", 0], "height": ["12", 1]}},
-                "33": {"class_type": "RandomNoise",
-                       "inputs": {"noise_seed": base_seed}},
-                "34": {"class_type": "EmptyFlux2LatentImage",
-                       "inputs": {"width": ["12", 0], "height": ["12", 1],
-                                  "batch_size": 1}},
-                "40": {"class_type": "SamplerCustomAdvanced",
-                       "inputs": {"noise": ["33", 0], "guider": ["30", 0],
-                                  "sampler": ["31", 0], "sigmas": ["32", 0],
-                                  "latent_image": ["34", 0]}},
-                "50": {"class_type": "VAEDecode",
-                       "inputs": {"samples": ["40", 0], "vae": ["3", 0]}},
-                "60": {"class_type": "SaveImage",
-                       "inputs": {"images": ["50", 0], "filename_prefix": "spellcaster_repose"}},
-            }
+            for run_i in range(runs):
+                seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+                label = f"Klein Re-poser run {run_i+1}/{runs}" if runs > 1 else "Klein Re-poser"
+                wf = {
+                    "1": {"class_type": "UNETLoader",
+                          "inputs": {"unet_name": km["unet"], "weight_dtype": "default"}},
+                    "2": {"class_type": "CLIPLoader",
+                          "inputs": {"clip_name": km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+                                     "type": "flux2", "device": "default"}},
+                    "3": {"class_type": "VAELoader",
+                          "inputs": {"vae_name": "flux2-vae.safetensors"}},
+                    "4": {"class_type": "CLIPTextEncode",
+                          "inputs": {"text": prompt, "clip": ["2", 0]}},
+                    "5": {"class_type": "ConditioningZeroOut",
+                          "inputs": {"conditioning": ["4", 0]}},
+                    "10": {"class_type": "LoadImage",
+                           "inputs": {"image": uname}},
+                    "11": {"class_type": "ImageScaleToTotalPixels",
+                           "inputs": {"image": ["10", 0], "upscale_method": "nearest-exact",
+                                      "megapixels": 1.0, "resolution_steps": 16}},
+                    "12": {"class_type": "GetImageSize",
+                           "inputs": {"image": ["11", 0]}},
+                    "13": {"class_type": "VAEEncode",
+                           "inputs": {"pixels": ["11", 0], "vae": ["3", 0]}},
+                    "20": {"class_type": "ReferenceLatent",
+                           "inputs": {"conditioning": ["4", 0], "latent": ["13", 0]}},
+                    "21": {"class_type": "ReferenceLatent",
+                           "inputs": {"conditioning": ["5", 0], "latent": ["13", 0]}},
+                    "30": {"class_type": "CFGGuider",
+                           "inputs": {"model": ["1", 0], "positive": ["20", 0],
+                                      "negative": ["21", 0], "cfg": 1.0}},
+                    "31": {"class_type": "KSamplerSelect",
+                           "inputs": {"sampler_name": "euler"}},
+                    "32": {"class_type": "Flux2Scheduler",
+                           "inputs": {"steps": steps, "denoise": denoise,
+                                      "width": ["12", 0], "height": ["12", 1]}},
+                    "33": {"class_type": "RandomNoise",
+                           "inputs": {"noise_seed": seed}},
+                    "34": {"class_type": "EmptyFlux2LatentImage",
+                           "inputs": {"width": ["12", 0], "height": ["12", 1],
+                                      "batch_size": 1}},
+                    "40": {"class_type": "SamplerCustomAdvanced",
+                           "inputs": {"noise": ["33", 0], "guider": ["30", 0],
+                                      "sampler": ["31", 0], "sigmas": ["32", 0],
+                                      "latent_image": ["34", 0]}},
+                    "50": {"class_type": "VAEDecode",
+                           "inputs": {"samples": ["40", 0], "vae": ["3", 0]}},
+                    "60": {"class_type": "SaveImage",
+                           "inputs": {"images": ["50", 0], "filename_prefix": "spellcaster_repose"}},
+                }
 
-            results = _run_with_spinner("Klein Re-poser: generating new pose...",
-                                         lambda: list(_run_comfyui_workflow(srv, wf, timeout=300)))
-            for i, (fn, sf, ft) in enumerate(results):
-                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                        f"Klein Repose #{i+1}")
+                results = _run_with_spinner(f"{label}: generating new pose...",
+                                             lambda: list(_run_comfyui_workflow(srv, wf, timeout=300)))
+                for i, (fn, sf, ft) in enumerate(results):
+                    lbl = f"Klein Repose run {run_i+1} #{i+1}" if runs > 1 else f"Klein Repose #{i+1}"
+                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
