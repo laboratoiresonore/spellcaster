@@ -7197,6 +7197,15 @@ def _auto_configure(dialog, mode="img2img"):
                 cs_spin.set_value(cs)
 
 
+def _shrink_on_collapse(expander, dlg):
+    """Shrink dialog when an expander collapses so buttons move up."""
+    def _on_toggle(exp, param):
+        if not exp.get_expanded():
+            # Force GTK to recalculate minimum size
+            GLib.idle_add(lambda: dlg.resize(dlg.get_allocated_width(), 1) or False)
+    expander.connect("notify::expanded", _on_toggle)
+
+
 def _make_autoset_button(dialog, mode="img2img"):
     """Create a small 'A.' button that calls _auto_configure on click.
 
@@ -7357,6 +7366,7 @@ class PresetDialog(Gtk.Dialog):
 
         # ── Advanced Parameters (collapsible) ────────────────────────────
         adv_exp = Gtk.Expander(label="\u25b8 Advanced Parameters")
+        _shrink_on_collapse(adv_exp, dlg)
         adv_exp.set_expanded(False)
         adv_exp.set_tooltip_text("Sampler, scheduler, dimensions, steps, CFG, denoise, and seed.\nDefaults are auto-filled by the model preset.")
         adv_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -7417,6 +7427,7 @@ class PresetDialog(Gtk.Dialog):
 
         # ── LoRAs & Style (collapsible) ──────────────────────────────────
         lora_exp = Gtk.Expander(label="\u25b8 LoRAs (3 slots)")
+        _shrink_on_collapse(lora_exp, dlg)
         lora_exp.set_expanded(False)
         lora_exp.set_tooltip_text("LoRA add-on models that adjust style, subject, or detail.\nEach slot lets you blend a LoRA with adjustable strength.")
         lora_exp_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -7465,6 +7476,7 @@ class PresetDialog(Gtk.Dialog):
         # ── ControlNet (collapsible) ──────────────────────────────────────
         if mode in ("img2img", "inpaint"):
             cn_exp = Gtk.Expander(label="\u25b8 ControlNet (2 guides)")
+            _shrink_on_collapse(cn_exp, dlg)
             cn_exp.set_expanded(False)
             cn_exp.set_tooltip_text("ControlNet preserves structure from your source image.\nCN1 + CN2 can be combined for dual guidance (e.g. Tile + Depth).")
             cn_exp_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -7580,6 +7592,7 @@ class PresetDialog(Gtk.Dialog):
 
         # Advanced custom workflow
         exp = Gtk.Expander(label="Advanced: Custom Workflow JSON (overrides everything)")
+        _shrink_on_collapse(exp, dlg)
         exp.set_tooltip_text("Paste a raw ComfyUI workflow JSON here to bypass all presets.\nOnly for advanced users who export workflows from ComfyUI.")
         self.wf_tv = Gtk.TextView()
         self.wf_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
@@ -11311,6 +11324,7 @@ class Spellcaster(Gimp.PlugIn):
         bx.pack_start(sw2, False, False, 0)
         # ── ControlNet (collapsible) ──────────────────────────────────────
         st_cn_exp = Gtk.Expander(label="\u25b8 ControlNet (2 guides)")
+        _shrink_on_collapse(st_cn_exp, dlg)
         st_cn_exp.set_expanded(False)
         st_cn_exp.set_tooltip_text("ControlNet preserves structure during style transfer.\nDepth or Canny recommended to keep spatial layout.")
         st_cn_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -11368,6 +11382,7 @@ class Spellcaster(Gimp.PlugIn):
         bx.pack_start(st_cn_exp, False, False, 0)
         # ── Advanced (collapsible) ───────────────────────────────────────
         st_adv_exp = Gtk.Expander(label="\u25b8 Advanced")
+        _shrink_on_collapse(st_adv_exp, dlg)
         st_adv_exp.set_expanded(False)
         st_adv_exp.set_tooltip_text("Style weight, denoise strength, seed, and batch run settings.")
         st_adv_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -11892,6 +11907,7 @@ class Spellcaster(Gimp.PlugIn):
         bx.pack_start(sw2, False, False, 0)
         # ── ControlNet (collapsible) ──────────────────────────────────────
         hall_cn_exp = Gtk.Expander(label="\u25b8 ControlNet (2 guides)")
+        _shrink_on_collapse(hall_cn_exp, dlg)
         hall_cn_exp.set_expanded(False)
         hall_cn_exp.set_tooltip_text("ControlNet preserves structure from your source image.\nTile is recommended for detail hallucination.")
         hall_cn_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -11951,6 +11967,7 @@ class Spellcaster(Gimp.PlugIn):
         bx.pack_start(hall_cn_exp, False, False, 0)
         # ── Advanced (collapsible) ───────────────────────────────────────
         hall_adv_exp = Gtk.Expander(label="\u25b8 Advanced")
+        _shrink_on_collapse(hall_adv_exp, dlg)
         hall_adv_exp.set_expanded(False)
         hall_adv_exp.set_tooltip_text("Seed and batch run settings.")
         hall_adv_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -12146,6 +12163,7 @@ class Spellcaster(Gimp.PlugIn):
 
         # ── ControlNet (collapsible) ──────────────────────────────────────
         sv2r_cn_exp = Gtk.Expander(label="\u25b8 ControlNet (2 guides)")
+        _shrink_on_collapse(sv2r_cn_exp, dlg)
         sv2r_cn_exp.set_expanded(False)
         sv2r_cn_exp.set_tooltip_text("ControlNet preserves structure from your source image.\nTile is recommended for SeedV2R upscaling.")
         sv2r_cn_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -12203,6 +12221,7 @@ class Spellcaster(Gimp.PlugIn):
         bx.pack_start(sv2r_cn_exp, False, False, 0)
         # ── Advanced (collapsible) ───────────────────────────────────────
         sv2r_adv_exp = Gtk.Expander(label="\u25b8 Advanced")
+        _shrink_on_collapse(sv2r_adv_exp, dlg)
         sv2r_adv_exp.set_expanded(False)
         sv2r_adv_exp.set_tooltip_text("Prompt, negative prompt, seed, and batch run settings.")
         sv2r_adv_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -12419,6 +12438,7 @@ class Spellcaster(Gimp.PlugIn):
         bx.pack_start(sw2, False, False, 0)
         # ── ControlNet (collapsible) ──────────────────────────────────────
         col_cn_exp = Gtk.Expander(label="\u25b8 ControlNet")
+        _shrink_on_collapse(col_cn_exp, dlg)
         col_cn_exp.set_expanded(False)
         col_cn_exp.set_tooltip_text("Lineart CN strength and optional second ControlNet for spatial guidance.")
         col_cn_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -12452,6 +12472,7 @@ class Spellcaster(Gimp.PlugIn):
         bx.pack_start(col_cn_exp, False, False, 0)
         # ── Advanced (collapsible) ───────────────────────────────────────
         col_adv_exp = Gtk.Expander(label="\u25b8 Advanced")
+        _shrink_on_collapse(col_adv_exp, dlg)
         col_adv_exp.set_expanded(False)
         col_adv_exp.set_tooltip_text("Color intensity (denoise), seed, and batch run settings.")
         col_adv_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -13036,6 +13057,7 @@ class Spellcaster(Gimp.PlugIn):
         # wd_row is packed into the Advanced expander below (near prompt_tv)
         # ── ControlNet & Scale (collapsible) ─────────────────────────────
         supir_cn_exp = Gtk.Expander(label="\u25b8 ControlNet & Scale")
+        _shrink_on_collapse(supir_cn_exp, dlg)
         supir_cn_exp.set_expanded(False)
         supir_cn_exp.set_tooltip_text("ControlNet refinement pass (post-SUPIR) and output scale factor.\nSUPIR does not support ControlNet directly; an optional low-denoise pass locks in detail.")
         supir_cn_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -13105,6 +13127,7 @@ class Spellcaster(Gimp.PlugIn):
         bx.pack_start(supir_cn_exp, False, False, 0)
         # ── Advanced (collapsible) ───────────────────────────────────────
         supir_adv_exp = Gtk.Expander(label="\u25b8 Advanced")
+        _shrink_on_collapse(supir_adv_exp, dlg)
         supir_adv_exp.set_expanded(False)
         supir_adv_exp.set_tooltip_text("Steps, seed, positive prompt, and batch run settings.")
         supir_adv_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
