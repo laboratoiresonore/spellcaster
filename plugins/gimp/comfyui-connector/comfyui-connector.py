@@ -247,7 +247,7 @@ def _auto_update():
                 print(f"[Spellcaster] Failed to download {remainder}: {e}", file=_sys.stderr)
 
         # Step 5: Remove local files that no longer exist in the repo
-        protected = {"config.json", ".spellcaster_version"}
+        protected = {"config.json", ".spellcaster_version", "user_presets.json"}
         for local_file in _PLUGIN_DIR.rglob("*"):
             if not local_file.is_file():
                 continue
@@ -1025,12 +1025,14 @@ ARCH_LORA_PREFIXES = {
     # whose server-reported path starts with one of these prefixes are
     # shown in the UI dropdown. This prevents mismatches (e.g. SDXL LoRAs
     # on a Flux model) which would cause ComfyUI errors.
+    # Both slash directions are checked by _filter_loras_for_arch().
     "sd15":         [],                                                      # no dedicated LoRA folders yet
-    "sdxl":         ["SDXL/", "Illustrious/", "Illustrious-Pony/", "Pony/"],
-    "zit":          ["Z-Image-Turbo/"],
+    "sdxl":         ["SDXL\\", "Illustrious\\", "Illustrious-Pony\\", "Pony\\"],
+    "zit":          ["Z-Image-Turbo\\"],
+    "illustrious":  ["Illustrious\\", "Illustrious-Pony\\"],
     "flux2klein":   ["Flux-2-Klein\\"],
     "flux1dev":     ["Flux-1-Dev\\"],
-    "flux_kontext": ["Flux-Kontext/", "Flux-1-Dev\\"],                      # Kontext can use Dev LoRAs too
+    "flux_kontext": ["Flux-1-Dev\\"],                                        # Kontext can use Dev LoRAs
 }
 
 
@@ -2455,11 +2457,23 @@ INPAINT_REFINEMENTS = [
 
 
 def _filter_loras_for_arch(all_loras, arch):
-    """Return only LoRAs whose full path starts with a compatible prefix."""
+    """Return only LoRAs whose full path starts with a compatible prefix.
+
+    Checks both backslash and forward-slash variants of each prefix
+    since ComfyUI may return either depending on the OS.
+    """
     prefixes = ARCH_LORA_PREFIXES.get(arch, [])
     if not prefixes:
         return []
-    return [l for l in all_loras if any(l.startswith(p) or l == p.rstrip("/") for p in prefixes)]
+    result = []
+    for lora in all_loras:
+        for p in prefixes:
+            # Check the prefix as-is AND with swapped slashes
+            alt = p.replace("\\", "/") if "\\" in p else p.replace("/", "\\")
+            if lora.startswith(p) or lora.startswith(alt):
+                result.append(lora)
+                break
+    return result
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -6243,7 +6257,7 @@ class PresetDialog(Gtk.Dialog):
             combo.remove_all()
             combo.append("none", "(none)")
             for lname in self._lora_names:
-                short = lname.rsplit("/", 1)[-1] if "/" in lname else lname
+                short = lname.replace("\\", "/").rsplit("/", 1)[-1]
                 combo.append(lname, short)
             combo.set_active(0)
         total = len(self._all_lora_names)
