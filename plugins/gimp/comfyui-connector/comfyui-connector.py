@@ -12679,6 +12679,67 @@ class Spellcaster(Gimp.PlugIn):
         if model_combo.get_active() < 0:
             model_combo.set_active(0)
         bx.pack_start(model_combo, False, False, 0)
+        # Restoration task presets
+        SUPIR_TASK_PRESETS = {
+            "(general restoration)": {
+                "prompt": "high quality, detailed, sharp focus, professional photograph, natural colors, clean, well-lit",
+                "denoise": 0.30, "steps": 45,
+            },
+            "Portrait / Face restore": {
+                "prompt": "high quality portrait, detailed facial features, sharp eyes, natural skin texture, "
+                          "clear skin pores, realistic skin tone, professional portrait photography, well-lit face",
+                "denoise": 0.28, "steps": 45,
+            },
+            "Landscape / Nature": {
+                "prompt": "high resolution landscape, sharp foliage, detailed terrain, crisp horizon, "
+                          "natural colors, vivid sky, professional nature photography, 8k detail",
+                "denoise": 0.35, "steps": 50,
+            },
+            "Old / Damaged photo repair": {
+                "prompt": "restored vintage photograph, clean image, removed scratches, no damage, no grain, "
+                          "sharp focus, natural colors, professional photo restoration, archival quality",
+                "denoise": 0.45, "steps": 60,
+            },
+            "JPEG artifact removal": {
+                "prompt": "clean image, no compression artifacts, no blocking, smooth gradients, "
+                          "sharp edges, high quality, lossless quality, pristine detail",
+                "denoise": 0.25, "steps": 35,
+            },
+            "Low-light / Noisy photo": {
+                "prompt": "clean photo, no noise, no grain, sharp detail, well-exposed, clear image, "
+                          "professional low-light photography, noise-free, smooth shadows",
+                "denoise": 0.38, "steps": 50,
+            },
+            "Architecture / Interior": {
+                "prompt": "sharp architectural photo, straight lines, detailed surfaces, "
+                          "clean brick texture, precise geometry, professional real estate photography",
+                "denoise": 0.30, "steps": 45,
+            },
+            "Product / Commercial": {
+                "prompt": "product photography, sharp detail, clean background, studio lighting, "
+                          "professional commercial shot, crisp reflections, accurate colors",
+                "denoise": 0.28, "steps": 45,
+            },
+            "Text / Document enhance": {
+                "prompt": "sharp text, readable letters, clean document, high contrast, "
+                          "crisp font edges, legible text, scanned document enhancement",
+                "denoise": 0.20, "steps": 30,
+            },
+            "Anime / Illustration restore": {
+                "prompt": "clean anime illustration, sharp lineart, vivid colors, "
+                          "smooth color fills, crisp edges, high quality anime artwork, no artifacts",
+                "denoise": 0.30, "steps": 45,
+            },
+        }
+
+        bx.pack_start(Gtk.Label(label="Restoration Task:", xalign=0), False, False, 0)
+        task_combo = Gtk.ComboBoxText()
+        task_combo.set_tooltip_text("Select the type of image being restored.\nEach task has an optimized prompt, denoise, and step count.")
+        for label in SUPIR_TASK_PRESETS:
+            task_combo.append(label, label)
+        task_combo.set_active(0)
+        bx.pack_start(task_combo, False, False, 0)
+
         # Quality preset dropdown
         SUPIR_QUALITY_PRESETS = [
             ("Fast Preview (20 steps)", 20, 0.25),
@@ -12921,6 +12982,16 @@ class Spellcaster(Gimp.PlugIn):
         _supir_top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         _supir_top.pack_end(_supir_auto_btn, False, False, 0)
         bx.pack_start(_supir_top, False, False, 0)
+        # Task preset auto-fills prompt, denoise, steps
+        def _on_task_changed(combo):
+            key = combo.get_active_id()
+            if key and key in SUPIR_TASK_PRESETS:
+                tp = SUPIR_TASK_PRESETS[key]
+                prompt_tv.get_buffer().set_text(tp["prompt"])
+                denoise_spin.set_value(tp["denoise"])
+                steps_spin.set_value(tp["steps"])
+        task_combo.connect("changed", _on_task_changed)
+        _on_task_changed(task_combo)  # fill from initial selection
         bx.show_all()
         last = _SESSION.get("supir")
         if last:
