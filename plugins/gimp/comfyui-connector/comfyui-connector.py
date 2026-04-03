@@ -9602,15 +9602,62 @@ class Spellcaster(Gimp.PlugIn):
                                        "Quick access to your saved prompt/settings presets"),
         }
         label, callback, doc = menu_map[name]
-        # ImageProcedure.new binds a Python callback to a GIMP procedure.
-        # The callback receives (procedure, run_mode, image, drawables, config, data).
+
+        # Menu path mapping — organise tools into logical submenus
+        _menu_paths = {
+            # My Presets: TOP-LEVEL under Filters (outside Spellcaster submenus)
+            "spellcaster-my-presets":       "<Image>/Filters",
+
+            # Expert: the do-it-all generation tools
+            "spellcaster-img2img":          "<Image>/Filters/Spellcaster Expert",
+            "spellcaster-txt2img":          "<Image>/Filters/Spellcaster Expert",
+            "spellcaster-inpaint":          "<Image>/Filters/Spellcaster Expert",
+            "spellcaster-outpaint":         "<Image>/Filters/Spellcaster Expert",
+            "spellcaster-batch-variations": "<Image>/Filters/Spellcaster Expert",
+
+            # Face & Identity
+            "spellcaster-faceswap":         "<Image>/Filters/Spellcaster Face",
+            "spellcaster-faceswap-model":   "<Image>/Filters/Spellcaster Face",
+            "spellcaster-faceswap-mtb":     "<Image>/Filters/Spellcaster Face",
+            "spellcaster-faceid-img2img":    "<Image>/Filters/Spellcaster Face",
+            "spellcaster-pulid-flux":        "<Image>/Filters/Spellcaster Face",
+            "spellcaster-face-restore":      "<Image>/Filters/Spellcaster Face",
+
+            # Photofixer: restoration, enhancement, repair
+            "spellcaster-upscale":           "<Image>/Filters/Spellcaster Photofixer",
+            "spellcaster-photo-restore":     "<Image>/Filters/Spellcaster Photofixer",
+            "spellcaster-detail-hallucinate":"<Image>/Filters/Spellcaster Photofixer",
+            "spellcaster-supir":             "<Image>/Filters/Spellcaster Photofixer",
+            "spellcaster-seedv2r":           "<Image>/Filters/Spellcaster Photofixer",
+            "spellcaster-colorize":          "<Image>/Filters/Spellcaster Photofixer",
+            "spellcaster-lama-remove":       "<Image>/Filters/Spellcaster Photofixer",
+
+            # Style & Lighting
+            "spellcaster-style-transfer":    "<Image>/Filters/Spellcaster Style",
+            "spellcaster-lut":               "<Image>/Filters/Spellcaster Style",
+            "spellcaster-iclight":           "<Image>/Filters/Spellcaster Style",
+
+            # Klein / Flux 2
+            "spellcaster-klein-img2img":     "<Image>/Filters/Spellcaster Klein",
+            "spellcaster-klein-img2img-ref": "<Image>/Filters/Spellcaster Klein",
+
+            # Video
+            "spellcaster-wan-i2v":           "<Image>/Filters/Spellcaster Video",
+
+            # Tools & Utility
+            "spellcaster-rembg":             "<Image>/Filters/Spellcaster Tools",
+            "spellcaster-embed-watermark":   "<Image>/Filters/Spellcaster Tools",
+            "spellcaster-read-watermark":    "<Image>/Filters/Spellcaster Tools",
+            "spellcaster-send-image":        "<Image>/Filters/Spellcaster Tools",
+            "spellcaster-settings":          "<Image>/Filters/Spellcaster Tools",
+        }
+
         proc = Gimp.ImageProcedure.new(self, name, Gimp.PDBProcType.PLUGIN, callback, None)
         proc.set_menu_label(label)
-        # "<Image>/Filters/Spellcaster" places all entries under Filters > Spellcaster menu
-        proc.add_menu_path("<Image>/Filters/Spellcaster")
+        proc.add_menu_path(_menu_paths.get(name, "<Image>/Filters/Spellcaster"))
         proc.set_documentation(doc, doc, name)
         proc.set_attribution("Spellcaster", "Spellcaster", "2026")
-        proc.set_image_types("*")   # accept all image types (RGB, GRAY, INDEXED, with/without alpha)
+        proc.set_image_types("*")
         return proc
 
     # ── Procedure callbacks ──────────────────────────────────────────────
