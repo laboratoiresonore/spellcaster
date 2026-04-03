@@ -108,7 +108,7 @@
           {"path": "checkpoints/SD-1.5/v1-5-pruned-emaonly.safetensors", "url": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/v1-5-pruned-emaonly.safetensors", "page_url": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5", "size_mb": 4265, "optional": true, "note": "SD 1.5 — Base model"},
           {"path": "checkpoints/SDXL/Anime/NoobAI-XL-v1.1.safetensors", "url": null, "page_url": "https://civitai.com/models/833294", "size_mb": 6938, "optional": true, "note": "SDXL Anime — NoobAI XL"},
           {"path": "checkpoints/SDXL/Anime/novaAnimeXL_ilV170.safetensors", "url": null, "page_url": "https://civitai.com/models/376130", "size_mb": 6938, "optional": true, "note": "SDXL Anime — Nova Anime XL Illustrious"},
-          {"path": "checkpoints/SDXL/Anime/waiIllustriousSDXL_v160-a5f5.safetensors", "url": null, "page_url": "https://civitai.com/models/827184", "size_mb": 6938, "optional": true, "note": "SDXL Anime — Wai NSFW Illustrious SDXL"},
+          {"path": "checkpoints/SDXL/Anime/waiIllustriousSDXL_v160-a5f5.safetensors", "url": null, "page_url": "https://civitai.com/models/827184", "size_mb": 6938, "optional": true, "note": "SDXL Anime — Wai Illustrious SDXL"},
           {"path": "checkpoints/SDXL/Base/AlbedoBaseXL.safetensors", "url": null, "page_url": "https://civitai.com/models/140737", "size_mb": 6938, "optional": true, "note": "SDXL — AlbedoBase XL"},
           {"path": "checkpoints/SDXL/Base/sd_xl_base_1.0.safetensors", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors", "page_url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0", "size_mb": 6938, "optional": true, "note": "SDXL — Official base model"},
           {"path": "checkpoints/SDXL/Cartoon-3D/modernDisneyXL_v3.safetensors", "url": null, "page_url": "https://civitai.com/models/138857", "size_mb": 6938, "optional": true, "note": "SDXL Cartoon — Modern Disney XL"},
@@ -296,9 +296,7 @@
           {"path": "unet/Wan/wan2.2_i2v_high_noise_14B_Q4_K_S.gguf", "url": null, "page_url": "https://huggingface.co/city96/Wan2.2-I2V-A14B-480p-gguf", "size_mb": 8200, "vram_min_gb": 8, "optional": false, "note": "Wan 14B high-noise GGUF Q4 — recommended for 8–16 GB VRAM"},
           {"path": "unet/Wan/wan2.2_i2v_low_noise_14B_Q4_K_S.gguf", "url": null, "page_url": "https://huggingface.co/city96/Wan2.2-I2V-A14B-480p-gguf", "size_mb": 8200, "vram_min_gb": 8, "optional": false, "note": "Wan 14B low-noise GGUF Q4 — recommended for 8–16 GB VRAM"},
           {"path": "unet/Wan/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors", "url": null, "page_url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged", "size_mb": 14000, "vram_min_gb": 16, "optional": true, "note": "Wan 14B high-noise fp8 — needs 16 GB+ VRAM"},
-          {"path": "unet/Wan/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors", "url": null, "page_url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged", "size_mb": 14000, "vram_min_gb": 16, "optional": true, "note": "Wan 14B low-noise fp8 — needs 16 GB+ VRAM"},
-          {"path": "unet/Wan/wan22EnhancedNSFWSVICamera_nsfwV2FP8H.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=wan22+enhanced+nsfw+svi", "size_mb": 14000, "vram_min_gb": 16, "optional": true, "note": "Wan Enhanced NSFW SVI high fp8"},
-          {"path": "unet/Wan/wan22EnhancedNSFWSVICamera_nsfwV2FP8L.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=wan22+enhanced+nsfw+svi", "size_mb": 14000, "vram_min_gb": 16, "optional": true, "note": "Wan Enhanced NSFW SVI low fp8"}
+          {"path": "unet/Wan/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors", "url": null, "page_url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged", "size_mb": 14000, "vram_min_gb": 16, "optional": true, "note": "Wan 14B low-noise fp8 — needs 16 GB+ VRAM"}
         ],
         "clip": [
           {"path": "clip/umt5-xxl-encoder-Q8_0.gguf", "url": "https://huggingface.co/city96/umt5-xxl-encoder-gguf/resolve/main/umt5-xxl-encoder-Q8_0.gguf", "page_url": "https://huggingface.co/city96/umt5-xxl-encoder-gguf", "size_mb": 5170, "optional": false, "note": "UMT5-XXL GGUF encoder for Wan"}
@@ -308,9 +306,7 @@
         ],
         "loras": [
           {"path": "loras/WAN/wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors", "url": null, "page_url": "https://huggingface.co/lightx2v/Wan2.2-Lightning", "size_mb": 80, "optional": true, "note": "LightX2V accelerator LoRA (high noise) — speeds up generation ~4x. Place in loras/WAN/"},
-          {"path": "loras/WAN/wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors", "url": null, "page_url": "https://huggingface.co/lightx2v/Wan2.2-Lightning", "size_mb": 80, "optional": true, "note": "LightX2V accelerator LoRA (low noise) — speeds up generation ~4x. Place in loras/WAN/"},
-          {"path": "loras/WAN/SVI_v2_PRO_Wan2.2-I2V-A14B_HIGH_lora_rank_128_fp16.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=SVI+v2+PRO+Wan2.2+I2V", "size_mb": 256, "optional": true, "note": "SVI v2 Pro accelerator LoRA (high noise) for Enhanced NSFW SVI preset. Place in loras/WAN/"},
-          {"path": "loras/WAN/SVI_v2_PRO_Wan2.2-I2V-A14B_LOW_lora_rank_128_fp16.safetensors", "url": null, "page_url": "https://civitai.com/search/models?query=SVI+v2+PRO+Wan2.2+I2V", "size_mb": 256, "optional": true, "note": "SVI v2 Pro accelerator LoRA (low noise) for Enhanced NSFW SVI preset. Place in loras/WAN/"}
+          {"path": "loras/WAN/wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors", "url": null, "page_url": "https://huggingface.co/lightx2v/Wan2.2-Lightning", "size_mb": 80, "optional": true, "note": "LightX2V accelerator LoRA (low noise) — speeds up generation ~4x. Place in loras/WAN/"}
         ],
         "interpolation": [
           {"path": "custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth", "url": null, "page_url": "https://github.com/hzwer/ECCV2022-RIFE", "size_mb": 30, "optional": true, "note": "RIFE v4.9 model (for frame interpolation)"}

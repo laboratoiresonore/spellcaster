@@ -1444,18 +1444,6 @@ local WAN_I2V_MODELS = {
     low_accel_lora  = "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
     accel_strength  = 1.0,
   },
-  {
-    label = "Wan Enhanced NSFW SVI (fp8)",
-    high_model = "Wan\\wan22EnhancedNSFWSVICamera_nsfwV2FP8H.safetensors",
-    low_model  = "Wan\\wan22EnhancedNSFWSVICamera_nsfwV2FP8L.safetensors",
-    clip       = "umt5-xxl-encoder-Q8_0.gguf",
-    vae        = "wan_2.1_vae.safetensors",
-    steps = 30, second_step = 20, cfg = 5.0, shift = 8.0,
-    lora_prefixes   = {"WAN\\", "Wan-2.2-I2V\\"},
-    high_accel_lora = "WAN\\SVI_v2_PRO_Wan2.2-I2V-A14B_HIGH_lora_rank_128_fp16.safetensors",
-    low_accel_lora  = "WAN\\SVI_v2_PRO_Wan2.2-I2V-A14B_LOW_lora_rank_128_fp16.safetensors",
-    accel_strength  = 1.0,
-  },
 }
 
 -- ── Wan Video Prompt Presets ────────────────────────────────────────────

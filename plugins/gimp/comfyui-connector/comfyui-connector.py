@@ -4065,16 +4065,16 @@ def _build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
         wf["31"] = {"class_type": "KSamplerSelect",
                     "inputs": {"sampler_name": "euler"}}
         wf["32"] = {"class_type": "Flux2Scheduler",
-                    "inputs": {"steps": preset.get("steps", 20),
+                    "inputs": {"steps": preset.get("steps", 20), "denoise": 1.0,
                                "width": ["25", 0], "height": ["25", 1]}}
         wf["33"] = {"class_type": "RandomNoise",
                     "inputs": {"noise_seed": seed}}
 
-        # Empty latent at the padded size, masked for outpaint
-        wf["34"] = {"class_type": "EmptyFlux2LatentImage",
-                    "inputs": {"width": ["25", 0], "height": ["25", 1], "batch_size": 1}}
+        # Use the VAE-encoded padded image as the starting latent,
+        # with the outpaint mask so only the new area is generated.
+        # This preserves existing content while generating only the extension.
         wf["35"] = {"class_type": "SetLatentNoiseMask",
-                    "inputs": {"samples": ["34", 0], "mask": ["5", 1]}}
+                    "inputs": {"samples": ["6", 0], "mask": ["5", 1]}}
 
         # Sample
         wf["40"] = {"class_type": "SamplerCustomAdvanced",
@@ -6084,14 +6084,6 @@ WAN_I2V_PRESETS = {
         "steps": 30, "second_step": 20, "cfg": 5.0, "shift": 8.0,
         "lora_prefix": "Wan/14B",
     },
-    "Wan Enhanced NSFW SVI (fp8)": {
-        "high_model": "Wan\\wan22EnhancedNSFWSVICamera_nsfwV2FP8H.safetensors",
-        "low_model": "Wan\\wan22EnhancedNSFWSVICamera_nsfwV2FP8L.safetensors",
-        "clip": "umt5-xxl-encoder-Q8_0.gguf",
-        "vae": "wan_2.1_vae.safetensors",
-        "steps": 30, "second_step": 20, "cfg": 5.0, "shift": 8.0,
-        "lora_prefix": "Wan/Enhanced",
-    },
 }
 
 def _filter_wan_loras(all_loras, preset_key=None):
@@ -6099,7 +6091,6 @@ def _filter_wan_loras(all_loras, preset_key=None):
 
     LoRA folder layout:
         loras/Wan/14B/         — LoRAs compatible with standard Wan 2.2 14B
-        loras/Wan/Enhanced/    — LoRAs compatible with Wan Enhanced NSFW SVI
     Each preset declares a lora_prefix (e.g. 'Wan/14B') and only LoRAs
     whose path starts with that prefix are shown.
     """
@@ -9963,10 +9954,15 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-klein-img2img": "klein_flux2",
             "spellcaster-klein-img2img-ref": "klein_flux2",
             "spellcaster-klein-outpaint": "klein_flux2",
+            "spellcaster-klein-blend": "klein_flux2",
+            "spellcaster-klein-repose": "klein_flux2",
+            "spellcaster-klein-inpaint": "klein_flux2",
             "spellcaster-wan-i2v": "wan_i2v",
             "spellcaster-rembg": "rembg",
             "spellcaster-embed-watermark": None,
             "spellcaster-read-watermark": None,
+            "spellcaster-layer-blend-ratio": None,
+            "spellcaster-upscale-blend": "upscale",
             "spellcaster-lut": "lut_grading",
             "spellcaster-style-transfer": "style_transfer",
             "spellcaster-iclight": "iclight",
@@ -10011,6 +10007,10 @@ class Spellcaster(Gimp.PlugIn):
                                           "Edit image with Flux 2 Klein model"),
             "spellcaster-rembg": ("Remove Background...", self._run_rembg,
                                    "Remove image background using AI (transparent PNG)"),
+            "spellcaster-layer-blend-ratio": ("Layer Blend by Ratio...", self._run_layer_blend_ratio,
+                                               "Blend two layers by a controllable ratio (e.g. 40%/60%)"),
+            "spellcaster-upscale-blend": ("Upscaler Ratio Blender...", self._run_upscale_blend,
+                                           "Upscale with two models and blend results (e.g. 40% ESRGAN + 60% Remacri)"),
             "spellcaster-embed-watermark": ("Embed Invisible Watermark...", self._run_embed_watermark,
                                              "Hide encrypted metadata inside image pixels (LSB steganography)"),
             "spellcaster-read-watermark": ("Read Invisible Watermark...", self._run_read_watermark,
@@ -10019,6 +10019,12 @@ class Spellcaster(Gimp.PlugIn):
                                           "Extend canvas using Flux 2 Klein — best outpaint quality"),
             "spellcaster-klein-img2img-ref": ("Klein Image Editor + Reference...", self._run_klein_ref,
                                               "Edit image with Flux 2 Klein using a reference image"),
+            "spellcaster-klein-blend": ("Klein Layer Blender...", self._run_klein_blend,
+                                         "Blend foreground into background using AI-powered harmonization"),
+            "spellcaster-klein-repose": ("Klein Re-poser...", self._run_klein_repose,
+                                          "Change character pose or position using Flux 2 Klein"),
+            "spellcaster-klein-inpaint": ("Klein Inpaint Selection...", self._run_klein_inpaint,
+                                           "Regenerate selected area with Klein AI — context-aware, smooth edges"),
             "spellcaster-wan-i2v": ("Wan 2.2 Image to Video...", self._run_wan_i2v,
                                     "Generate video from image using Wan 2.2"),
 "spellcaster-upscale": ("Upscale 4x...", self._run_upscale,
@@ -10092,12 +10098,17 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-klein-img2img":     "<Image>/Filters/Spellcaster Klein",
             "spellcaster-klein-outpaint": "<Image>/Filters/Spellcaster Klein",
             "spellcaster-klein-img2img-ref": "<Image>/Filters/Spellcaster Klein",
+            "spellcaster-klein-blend":    "<Image>/Filters/Spellcaster Klein",
+            "spellcaster-klein-repose":   "<Image>/Filters/Spellcaster Klein",
+            "spellcaster-klein-inpaint":  "<Image>/Filters/Spellcaster Klein",
 
             # Video
             "spellcaster-wan-i2v":           "<Image>/Filters/Spellcaster Video",
 
             # Tools & Utility
             "spellcaster-rembg":             "<Image>/Filters/Spellcaster Tools",
+            "spellcaster-layer-blend-ratio": "<Image>/Filters/Spellcaster Tools",
+            "spellcaster-upscale-blend":     "<Image>/Filters/Spellcaster Tools",
             "spellcaster-embed-watermark":   "<Image>/Filters/Spellcaster Tools",
             "spellcaster-read-watermark":    "<Image>/Filters/Spellcaster Tools",
             "spellcaster-send-image":        "<Image>/Filters/Spellcaster Tools",
@@ -10873,6 +10884,1277 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Klein Outpaint Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    def _run_klein_blend(self, procedure, run_mode, image, drawables, config, data):
+        """Klein Layer Blender: AI-powered integration of one layer into another."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+
+        # Need at least 2 layers
+        layers = image.get_layers()
+        if len(layers) < 2:
+            Gimp.message("Need at least 2 layers.\n\nLayer 1 (top) = element to integrate\nLayer 2 = background/scene\n\nAdd a new layer with the element you want to blend in.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        dlg = Gtk.Dialog(title="Spellcaster — Klein Layer Blender")
+        dlg.set_default_size(520, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Blend", Gtk.ResponseType.OK)
+        _style_dialog_buttons(dlg)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+
+        header = _make_branded_header()
+        if header:
+            bx.pack_start(header, False, False, 0)
+
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
+        hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+
+        # Layer selection
+        bx.pack_start(Gtk.Label(label="Foreground (element to integrate):", xalign=0), False, False, 0)
+        fg_combo = Gtk.ComboBoxText()
+        fg_combo.set_tooltip_text("The layer containing the element you want to place into the scene.\nThis could be a person, object, or any element on a separate layer.")
+        for i, layer in enumerate(layers):
+            fg_combo.append(str(i), layer.get_name() or f"Layer {i}")
+        fg_combo.set_active(0)  # top layer = foreground
+        bx.pack_start(fg_combo, False, False, 0)
+
+        bx.pack_start(Gtk.Label(label="Background (scene/destination):", xalign=0), False, False, 0)
+        bg_combo = Gtk.ComboBoxText()
+        bg_combo.set_tooltip_text("The layer containing the background/scene where the element will be placed.")
+        for i, layer in enumerate(layers):
+            bg_combo.append(str(i), layer.get_name() or f"Layer {i}")
+        bg_combo.set_active(min(1, len(layers)-1))  # second layer = background
+        bx.pack_start(bg_combo, False, False, 0)
+
+        # Klein model
+        bx.pack_start(Gtk.Label(label="Klein Model:", xalign=0), False, False, 0)
+        klein_combo = Gtk.ComboBoxText()
+        for key in KLEIN_MODELS:
+            klein_combo.append(key, key)
+        klein_combo.set_active(0)
+        bx.pack_start(klein_combo, False, False, 0)
+
+        # Blend mode presets
+        BLEND_PRESETS = {
+            "Natural Integration (harmonize lighting)": {
+                "prompt": "Seamlessly integrated composition, matching lighting and shadows between all elements, "
+                          "consistent color temperature, natural-looking placement, professional compositing, "
+                          "unified scene, same artistic style throughout",
+                "denoise": 0.25, "steps": 20,
+            },
+            "Strong Integration (relight + reshade)": {
+                "prompt": "Perfectly integrated scene, matching light source direction, consistent shadows, "
+                          "matching ambient occlusion, same depth of field, color-matched elements, "
+                          "professional photo composite, indistinguishable from single photograph",
+                "denoise": 0.35, "steps": 25,
+            },
+            "Person into Scene": {
+                "prompt": "Person naturally placed in the scene, matching background lighting on skin and clothes, "
+                          "consistent shadows, correct perspective scale, natural depth of field, "
+                          "same color grading applied to person and background",
+                "denoise": 0.30, "steps": 25,
+            },
+            "Object into Photo": {
+                "prompt": "Object naturally placed in the photograph, matching surface reflections, "
+                          "consistent shadows and ambient light, correct scale, same photographic style, "
+                          "physically plausible placement",
+                "denoise": 0.28, "steps": 20,
+            },
+            "Minimal (just compose, barely touch)": {
+                "prompt": "Clean composite, minimal changes, preserve both elements as-is, slight edge blending only",
+                "denoise": 0.12, "steps": 12,
+            },
+        }
+
+        bx.pack_start(Gtk.Label(label="Integration Mode:", xalign=0), False, False, 0)
+        mode_combo = Gtk.ComboBoxText()
+        mode_combo.set_tooltip_text("How aggressively Klein integrates the elements.\nNatural = gentle harmonization. Strong = relight + reshade. Minimal = just overlay.")
+        for label in BLEND_PRESETS:
+            mode_combo.append(label, label)
+        mode_combo.set_active(0)
+        bx.pack_start(mode_combo, False, False, 0)
+
+        # Prompt
+        bx.pack_start(Gtk.Label(label="Integration Prompt:", xalign=0), False, False, 0)
+        prompt_tv = Gtk.TextView(); prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        prompt_tv.set_size_request(-1, 50)
+        sw = Gtk.ScrolledWindow(); sw.add(prompt_tv); sw.set_min_content_height(50)
+        bx.pack_start(sw, False, False, 0)
+
+        def _on_mode(combo):
+            key = combo.get_active_id()
+            if key and key in BLEND_PRESETS:
+                prompt_tv.get_buffer().set_text(BLEND_PRESETS[key]["prompt"])
+        mode_combo.connect("changed", _on_mode)
+        _on_mode(mode_combo)
+
+        # Composite settings (expander)
+        comp_exp = Gtk.Expander(label="▸ Composite Settings")
+        comp_exp.set_expanded(False)
+        _shrink_on_collapse(comp_exp, dlg)
+        comp_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        comp_box.set_margin_start(4); comp_box.set_margin_top(4)
+        comp_grid = Gtk.Grid(column_spacing=8, row_spacing=4)
+
+        comp_grid.attach(Gtk.Label(label="Opacity:", xalign=1), 0, 0, 1, 1)
+        opacity_sp = Gtk.SpinButton.new_with_range(0.0, 1.0, 0.05)
+        opacity_sp.set_value(1.0); opacity_sp.set_digits(2)
+        opacity_sp.set_tooltip_text("Foreground element opacity. 1.0 = fully visible.")
+        comp_grid.attach(opacity_sp, 1, 0, 1, 1)
+
+        comp_grid.attach(Gtk.Label(label="Scale:", xalign=1), 2, 0, 1, 1)
+        scale_sp = Gtk.SpinButton.new_with_range(0.1, 5.0, 0.05)
+        scale_sp.set_value(1.0); scale_sp.set_digits(2)
+        scale_sp.set_tooltip_text("Scale the foreground element. 1.0 = original size.")
+        comp_grid.attach(scale_sp, 3, 0, 1, 1)
+
+        comp_grid.attach(Gtk.Label(label="X Position %:", xalign=1), 0, 1, 1, 1)
+        pos_x = Gtk.SpinButton.new_with_range(0, 100, 1); pos_x.set_value(50)
+        comp_grid.attach(pos_x, 1, 1, 1, 1)
+
+        comp_grid.attach(Gtk.Label(label="Y Position %:", xalign=1), 2, 1, 1, 1)
+        pos_y = Gtk.SpinButton.new_with_range(0, 100, 1); pos_y.set_value(50)
+        comp_grid.attach(pos_y, 3, 1, 1, 1)
+
+        comp_grid.attach(Gtk.Label(label="Blend:", xalign=1), 0, 2, 1, 1)
+        blend_combo = Gtk.ComboBoxText()
+        for m in ["normal", "multiply", "screen", "overlay", "add", "subtract"]:
+            blend_combo.append(m, m)
+        blend_combo.set_active(0)
+        comp_grid.attach(blend_combo, 1, 2, 1, 1)
+
+        comp_box.pack_start(comp_grid, False, False, 0)
+        comp_exp.add(comp_box)
+        bx.pack_start(comp_exp, False, False, 0)
+
+        # Seed
+        hb_seed = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb_seed.pack_start(Gtk.Label(label="Seed:"), False, False, 0)
+        seed_sp = Gtk.SpinButton.new_with_range(-1, 2**32-1, 1); seed_sp.set_value(-1)
+        hb_seed.pack_start(seed_sp, True, True, 0); bx.pack_start(hb_seed, False, False, 0)
+
+        bx.show_all()
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        srv = se.get_text().strip(); _propagate_server_url(srv)
+        fg_idx = int(fg_combo.get_active_id() or "0")
+        bg_idx = int(bg_combo.get_active_id() or "1")
+        klein_key = klein_combo.get_active_id() or "Klein 9B"
+        mode_key = mode_combo.get_active_id()
+        bp = BLEND_PRESETS.get(mode_key, BLEND_PRESETS["Natural Integration (harmonize lighting)"])
+        pbuf = prompt_tv.get_buffer()
+        prompt = pbuf.get_text(pbuf.get_start_iter(), pbuf.get_end_iter(), False)
+        opacity = opacity_sp.get_value()
+        scale = scale_sp.get_value()
+        px = int(pos_x.get_value()); py = int(pos_y.get_value())
+        blend_mode = blend_combo.get_active_id() or "normal"
+        base_seed = int(seed_sp.get_value())
+        if base_seed < 0:
+            base_seed = random.randint(0, 2**32 - 1)
+        dlg.destroy()
+
+        try:
+            _update_spinner_status("Klein Blend: exporting layers...")
+            # Export both layers as separate images
+            fg_layer = layers[fg_idx]
+            bg_layer = layers[bg_idx]
+
+            # Export foreground layer as a temporary image
+            fg_img = Gimp.Image.new(image.get_width(), image.get_height(), Gimp.ImageType.RGB)
+            fg_copy = Gimp.Layer.new_from_drawable(fg_layer, fg_img)
+            fg_img.insert_layer(fg_copy, None, 0)
+            fg_img.flatten()
+            fg_tmp_path = _export_image_to_tmp(fg_img)
+            fg_img.delete()
+
+            # Export background layer as a temporary image
+            bg_img = Gimp.Image.new(image.get_width(), image.get_height(), Gimp.ImageType.RGB)
+            bg_copy = Gimp.Layer.new_from_drawable(bg_layer, bg_img)
+            bg_img.insert_layer(bg_copy, None, 0)
+            bg_img.flatten()
+            bg_tmp_path = _export_image_to_tmp(bg_img)
+            bg_img.delete()
+
+            fg_name = f"blend_fg_{uuid.uuid4().hex[:8]}.png"
+            bg_name = f"blend_bg_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, fg_tmp_path, fg_name); os.unlink(fg_tmp_path)
+            _upload_image(srv, bg_tmp_path, bg_name); os.unlink(bg_tmp_path)
+
+            _update_spinner_status("Klein Blend: compositing + AI integration...")
+
+            # Build workflow: composite then Klein refinement
+            km = KLEIN_MODELS[klein_key]
+            wf = {
+                # Load both images
+                "1": {"class_type": "LoadImage", "inputs": {"image": fg_name}},
+                "2": {"class_type": "LoadImage", "inputs": {"image": bg_name}},
+                # Composite foreground onto background
+                "3": {"class_type": "AILab_ImageCombiner", "inputs": {
+                    "foreground": ["1", 0], "background": ["2", 0],
+                    "mode": blend_mode, "foreground_opacity": opacity,
+                    "foreground_scale": scale, "position_x": px, "position_y": py,
+                }},
+                # Klein img2img on the composite at low denoise to harmonize
+                "10": {"class_type": "UNETLoader", "inputs": {"unet_name": km["unet"], "weight_dtype": "default"}},
+                "11": {"class_type": "CLIPLoader", "inputs": {
+                    "clip_name": km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+                    "type": "flux2", "device": "default"}},
+                "12": {"class_type": "VAELoader", "inputs": {"vae_name": "flux2-vae.safetensors"}},
+                "13": {"class_type": "CLIPTextEncode", "inputs": {"text": prompt, "clip": ["11", 0]}},
+                "14": {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["13", 0]}},
+                # Scale composite to mod-16
+                "15": {"class_type": "ImageScaleToTotalPixels", "inputs": {
+                    "image": ["3", 0], "upscale_method": "nearest-exact",
+                    "megapixels": 1.0, "resolution_steps": 16}},
+                "16": {"class_type": "GetImageSize", "inputs": {"image": ["15", 0]}},
+                "17": {"class_type": "VAEEncode", "inputs": {"pixels": ["15", 0], "vae": ["12", 0]}},
+                # ReferenceLatent for img2img
+                "20": {"class_type": "ReferenceLatent", "inputs": {"conditioning": ["13", 0], "latent": ["17", 0]}},
+                "21": {"class_type": "ReferenceLatent", "inputs": {"conditioning": ["14", 0], "latent": ["17", 0]}},
+                # Sampling
+                "30": {"class_type": "CFGGuider", "inputs": {
+                    "model": ["10", 0], "positive": ["20", 0], "negative": ["21", 0], "cfg": 1.0}},
+                "31": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "euler"}},
+                "32": {"class_type": "Flux2Scheduler", "inputs": {
+                    "steps": bp.get("steps", 20), "denoise": bp.get("denoise", 0.25),
+                    "width": ["16", 0], "height": ["16", 1]}},
+                "33": {"class_type": "RandomNoise", "inputs": {"noise_seed": base_seed}},
+                "34": {"class_type": "EmptyFlux2LatentImage", "inputs": {
+                    "width": ["16", 0], "height": ["16", 1], "batch_size": 1}},
+                "40": {"class_type": "SamplerCustomAdvanced", "inputs": {
+                    "noise": ["33", 0], "guider": ["30", 0], "sampler": ["31", 0],
+                    "sigmas": ["32", 0], "latent_image": ["34", 0]}},
+                "50": {"class_type": "VAEDecode", "inputs": {"samples": ["40", 0], "vae": ["12", 0]}},
+                "60": {"class_type": "SaveImage", "inputs": {"images": ["50", 0], "filename_prefix": "spellcaster_blend"}},
+            }
+
+            results = _run_with_spinner("Klein Blend: AI integration...",
+                                        lambda: list(_run_comfyui_workflow(srv, wf, timeout=300)))
+            for i, (fn, sf, ft) in enumerate(results):
+                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+                                        f"Klein Blend #{i+1}")
+            Gimp.displays_flush()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Klein Layer Blender Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Klein Re-poser ──────────────────────────────────────────────────
+    def _run_klein_repose(self, procedure, run_mode, image, drawables, config, data):
+        """Klein Re-poser: change character pose/position using Flux 2 Klein."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+
+        # ── Preset libraries ──────────────────────────────────────────
+        CHAR_TEMPLATES = {
+            "Single character": "a single person",
+            "Two characters": "two people",
+            "Three characters": "three people",
+            "Group / crowd": "a group of people",
+            "Animal": "an animal",
+            "Robot / mech": "a humanoid robot",
+        }
+
+        POSE_PRESETS = {
+            # Standing
+            "Standing relaxed":          "standing relaxed with arms at sides, natural weight shift",
+            "Standing arms crossed":     "standing with arms crossed over chest, confident posture",
+            "Standing hands on hips":    "standing with hands on hips, assertive power pose",
+            "Standing contrapposto":     "standing in contrapposto pose, weight on one leg, elegant",
+            "Leaning on wall":           "leaning casually against a wall, one foot propped up",
+            # Sitting
+            "Sitting in chair":          "sitting comfortably in a chair, relaxed posture",
+            "Sitting cross-legged":      "sitting cross-legged on the ground, meditative",
+            "Sitting on edge":           "sitting on the edge of a surface, legs dangling",
+            "Crouching":                 "crouching low to the ground, knees bent",
+            "Kneeling":                  "kneeling on one knee, upright torso",
+            # Action
+            "Walking forward":           "walking forward mid-stride, natural gait",
+            "Running":                   "running dynamically, legs mid-stride, arms pumping",
+            "Jumping":                   "jumping in the air, legs tucked, arms raised",
+            "Dancing":                   "dancing expressively, dynamic body movement, fluid pose",
+            "Fighting stance":           "in a martial arts fighting stance, fists raised, weight centered",
+            "Throwing":                  "mid-throw motion, arm extended back, body coiled",
+            "Reaching up":               "reaching upward with one arm extended high",
+            "Pointing":                  "pointing forward with one hand, confident gesture",
+            # Expressive
+            "Arms raised celebration":   "arms raised overhead in celebration, joyful expression",
+            "Waving":                    "waving with one hand raised, friendly greeting",
+            "Thinking pose":             "hand on chin in a thinking pose, contemplative",
+            "Looking over shoulder":     "turned slightly, looking over one shoulder",
+            "Back turned":               "facing away from camera, back to viewer",
+            # Lying
+            "Lying down relaxed":        "lying down on back, relaxed, arms at sides",
+            "Lying on side":             "lying on one side, head propped on hand",
+            "Prone / face down":         "lying face down, head turned to one side",
+        }
+
+        POSITION_PRESETS = {
+            "Keep current position":     "",
+            "Move to center":            "positioned in the center of the frame",
+            "Move to left":              "positioned on the left side of the frame",
+            "Move to right":             "positioned on the right side of the frame",
+            "Move to foreground":        "positioned in the foreground, close to camera, larger in frame",
+            "Move to background":        "positioned in the background, further away, smaller in frame",
+            "Move to upper area":        "positioned in the upper portion of the frame",
+            "Move to lower area":        "positioned in the lower portion of the frame",
+        }
+
+        CAMERA_PRESETS = {
+            "Keep current angle":        "",
+            "Low angle (heroic)":        "shot from low angle looking up, heroic perspective",
+            "High angle (vulnerable)":   "shot from high angle looking down, diminutive perspective",
+            "Eye level":                 "shot at eye level, neutral straight-on perspective",
+            "Dutch angle (dramatic)":    "tilted dutch angle shot, dramatic off-kilter framing",
+            "Over the shoulder":         "over the shoulder perspective, depth composition",
+            "Close-up":                  "close-up framing, head and shoulders, intimate",
+            "Wide shot":                 "wide shot showing full body and environment",
+        }
+
+        MULTI_CHAR_PRESETS = {
+            "Conversation":              "two people facing each other in conversation, natural body language, eye contact",
+            "Walking together":          "two people walking side by side, matching pace, casual",
+            "Confrontation":             "two people facing each other in tense confrontation, aggressive stances",
+            "Back to back":              "two people standing back to back, arms crossed, dramatic",
+            "One leading the other":     "one person leading, the other following behind",
+            "Group huddle":              "group of people huddled together, leaning inward",
+            "Group line-up":             "group standing in a line facing camera, evenly spaced",
+            "Dancing together":          "two people dancing together, one leading, graceful movement",
+            "Helping / supporting":      "one person helping another up, supportive gesture",
+            "Sitting together":          "people sitting together on a bench, casual gathering",
+        }
+
+        STYLE_PRESETS = {
+            "Photorealistic":            "photorealistic, natural lighting, detailed skin texture",
+            "Cinematic":                 "cinematic lighting, dramatic shadows, film grain, movie still",
+            "Anime / Manga":            "anime style, cel shading, expressive features",
+            "Comic book":                "comic book art style, bold outlines, dynamic composition",
+            "Fashion editorial":         "fashion photography style, editorial lighting, model pose",
+            "Sports photography":        "sports photography, frozen action, high shutter speed",
+            "Fine art":                  "fine art photography, artistic composition, gallery quality",
+            "Keep original style":       "",
+        }
+
+        # ── Dialog ────────────────────────────────────────────────────
+        dlg = Gtk.Dialog(title="Spellcaster — Klein Re-poser")
+        dlg.set_default_size(560, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Re-pose", Gtk.ResponseType.OK)
+        bx = dlg.get_content_area()
+        bx.set_spacing(6); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(10); bx.set_margin_bottom(10)
+
+        _hdr = _make_branded_header()
+        if _hdr: bx.pack_start(_hdr, False, False, 0)
+
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
+        srv_e.set_tooltip_text("ComfyUI server address")
+        hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+
+        # Klein model
+        hb2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb2.pack_start(Gtk.Label(label="Klein Model:"), False, False, 0)
+        klein_combo = Gtk.ComboBoxText()
+        for k in KLEIN_MODELS: klein_combo.append(k, k)
+        klein_combo.set_active_id("Klein 9B")
+        klein_combo.set_tooltip_text("Klein 9B: best quality. Klein 4B: faster, lower VRAM")
+        hb2.pack_start(klein_combo, True, True, 0); bx.pack_start(hb2, False, False, 0)
+
+        # Character count
+        hb3 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb3.pack_start(Gtk.Label(label="Subject:"), False, False, 0)
+        char_combo = Gtk.ComboBoxText()
+        for k in CHAR_TEMPLATES: char_combo.append(k, k)
+        char_combo.set_active_id("Single character")
+        char_combo.set_tooltip_text("How many characters / subjects are in the image?")
+        hb3.pack_start(char_combo, True, True, 0); bx.pack_start(hb3, False, False, 0)
+
+        # Pose preset
+        hb4 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb4.pack_start(Gtk.Label(label="Pose:"), False, False, 0)
+        pose_combo = Gtk.ComboBoxText()
+        for k in POSE_PRESETS: pose_combo.append(k, k)
+        pose_combo.set_active(0)
+        pose_combo.set_tooltip_text("Target body pose — the AI will attempt to repose the subject to match")
+        hb4.pack_start(pose_combo, True, True, 0); bx.pack_start(hb4, False, False, 0)
+
+        # Position preset
+        hb5 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb5.pack_start(Gtk.Label(label="Position:"), False, False, 0)
+        pos_combo = Gtk.ComboBoxText()
+        for k in POSITION_PRESETS: pos_combo.append(k, k)
+        pos_combo.set_active(0)
+        pos_combo.set_tooltip_text("Move the subject within the frame")
+        hb5.pack_start(pos_combo, True, True, 0); bx.pack_start(hb5, False, False, 0)
+
+        # ── Advanced expander ─────────────────────────────────────────
+        exp = Gtk.Expander(label="  Advanced options...")
+        exp.set_expanded(False)
+        adv_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+
+        # Camera angle
+        hca = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hca.pack_start(Gtk.Label(label="Camera:"), False, False, 0)
+        cam_combo = Gtk.ComboBoxText()
+        for k in CAMERA_PRESETS: cam_combo.append(k, k)
+        cam_combo.set_active(0)
+        cam_combo.set_tooltip_text("Change camera angle / framing")
+        hca.pack_start(cam_combo, True, True, 0); adv_box.pack_start(hca, False, False, 0)
+
+        # Multi-character interaction
+        hmc = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hmc.pack_start(Gtk.Label(label="Interaction:"), False, False, 0)
+        multi_combo = Gtk.ComboBoxText()
+        multi_combo.append("(none)", "(none — single subject)")
+        for k in MULTI_CHAR_PRESETS: multi_combo.append(k, k)
+        multi_combo.set_active(0)
+        multi_combo.set_tooltip_text("For multi-character scenes: how subjects interact")
+        hmc.pack_start(multi_combo, True, True, 0); adv_box.pack_start(hmc, False, False, 0)
+
+        # Style
+        hst = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hst.pack_start(Gtk.Label(label="Style:"), False, False, 0)
+        style_combo = Gtk.ComboBoxText()
+        for k in STYLE_PRESETS: style_combo.append(k, k)
+        style_combo.set_active_id("Keep original style")
+        style_combo.set_tooltip_text("Art style or photography style to apply")
+        hst.pack_start(style_combo, True, True, 0); adv_box.pack_start(hst, False, False, 0)
+
+        # Denoise
+        grid = Gtk.Grid(column_spacing=8, row_spacing=4)
+        grid.attach(Gtk.Label(label="Denoise:"), 0, 0, 1, 1)
+        denoise_sp = Gtk.SpinButton.new_with_range(0.50, 1.0, 0.05)
+        denoise_sp.set_value(0.82)
+        denoise_sp.set_digits(2)
+        denoise_sp.set_tooltip_text("How much freedom the AI has to change the image.\n"
+                                     "0.70 = subtle reposing, keeps most details\n"
+                                     "0.82 = balanced (default)\n"
+                                     "0.95 = major reposing, more creative freedom")
+        grid.attach(denoise_sp, 1, 0, 1, 1)
+
+        grid.attach(Gtk.Label(label="Steps:"), 0, 1, 1, 1)
+        steps_sp = Gtk.SpinButton.new_with_range(8, 50, 1)
+        steps_sp.set_value(25)
+        steps_sp.set_tooltip_text("More steps = finer detail but slower. 20-30 recommended")
+        grid.attach(steps_sp, 1, 1, 1, 1)
+
+        grid.attach(Gtk.Label(label="Seed:"), 0, 2, 1, 1)
+        seed_sp = Gtk.SpinButton.new_with_range(-1, 2**32, 1)
+        seed_sp.set_value(-1)
+        seed_sp.set_tooltip_text("-1 = random seed each run. Fix a seed to reproduce results")
+        grid.attach(seed_sp, 1, 2, 1, 1)
+        adv_box.pack_start(grid, False, False, 4)
+
+        exp.add(adv_box)
+        _shrink_on_collapse(exp, dlg)
+        bx.pack_start(exp, False, False, 0)
+
+        # ── Prompt (editable, auto-filled from presets) ───────────────
+        bx.pack_start(Gtk.Label(label="Prompt (auto-built from presets above, edit freely):"),
+                       False, False, 2)
+        sw = Gtk.ScrolledWindow(); sw.set_min_content_height(90)
+        prompt_tv = Gtk.TextView(); prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        prompt_tv.set_tooltip_text("Full prompt sent to Klein. Auto-generated from your preset\n"
+                                    "selections above — feel free to edit, add details, or rewrite entirely")
+        sw.add(prompt_tv); bx.pack_start(sw, True, True, 0)
+
+        # ── Auto-build prompt from combos ─────────────────────────────
+        def _rebuild_prompt(*_args):
+            char_key = char_combo.get_active_id() or "Single character"
+            pose_key = pose_combo.get_active_id() or "Standing relaxed"
+            pos_key = pos_combo.get_active_id() or "Keep current position"
+            cam_key = cam_combo.get_active_id() or "Keep current angle"
+            multi_key = multi_combo.get_active_id() or "(none)"
+            style_key = style_combo.get_active_id() or "Keep original style"
+
+            parts = []
+            # Subject
+            parts.append(CHAR_TEMPLATES.get(char_key, "a person"))
+            # Pose
+            parts.append(POSE_PRESETS.get(pose_key, "standing relaxed"))
+            # Multi-char interaction
+            if multi_key != "(none)" and multi_key in MULTI_CHAR_PRESETS:
+                parts.append(MULTI_CHAR_PRESETS[multi_key])
+            # Position
+            pos_txt = POSITION_PRESETS.get(pos_key, "")
+            if pos_txt: parts.append(pos_txt)
+            # Camera
+            cam_txt = CAMERA_PRESETS.get(cam_key, "")
+            if cam_txt: parts.append(cam_txt)
+            # Style
+            style_txt = STYLE_PRESETS.get(style_key, "")
+            if style_txt: parts.append(style_txt)
+            # Always add quality tail
+            parts.append("high quality, detailed, masterful composition")
+
+            prompt_tv.get_buffer().set_text(", ".join(parts))
+
+        for combo in [char_combo, pose_combo, pos_combo, cam_combo, multi_combo, style_combo]:
+            combo.connect("changed", _rebuild_prompt)
+        _rebuild_prompt()  # initial fill
+
+        bx.show_all()
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        # Collect values
+        srv = srv_e.get_text().strip(); _propagate_server_url(srv)
+        klein_key = klein_combo.get_active_id() or "Klein 9B"
+        pbuf = prompt_tv.get_buffer()
+        prompt = pbuf.get_text(pbuf.get_start_iter(), pbuf.get_end_iter(), False)
+        denoise = denoise_sp.get_value()
+        steps = int(steps_sp.get_value())
+        base_seed = int(seed_sp.get_value())
+        if base_seed < 0:
+            base_seed = random.randint(0, 2**32 - 1)
+        dlg.destroy()
+
+        try:
+            _update_spinner_status("Klein Re-poser: exporting image...")
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_repose_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+
+            km = KLEIN_MODELS[klein_key]
+            wf = {
+                "1": {"class_type": "UNETLoader",
+                      "inputs": {"unet_name": km["unet"], "weight_dtype": "default"}},
+                "2": {"class_type": "CLIPLoader",
+                      "inputs": {"clip_name": km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+                                 "type": "flux2", "device": "default"}},
+                "3": {"class_type": "VAELoader",
+                      "inputs": {"vae_name": "flux2-vae.safetensors"}},
+                "4": {"class_type": "CLIPTextEncode",
+                      "inputs": {"text": prompt, "clip": ["2", 0]}},
+                "5": {"class_type": "ConditioningZeroOut",
+                      "inputs": {"conditioning": ["4", 0]}},
+                "10": {"class_type": "LoadImage",
+                       "inputs": {"image": uname}},
+                "11": {"class_type": "ImageScaleToTotalPixels",
+                       "inputs": {"image": ["10", 0], "upscale_method": "nearest-exact",
+                                  "megapixels": 1.0, "resolution_steps": 16}},
+                "12": {"class_type": "GetImageSize",
+                       "inputs": {"image": ["11", 0]}},
+                "13": {"class_type": "VAEEncode",
+                       "inputs": {"pixels": ["11", 0], "vae": ["3", 0]}},
+                "20": {"class_type": "ReferenceLatent",
+                       "inputs": {"conditioning": ["4", 0], "latent": ["13", 0]}},
+                "21": {"class_type": "ReferenceLatent",
+                       "inputs": {"conditioning": ["5", 0], "latent": ["13", 0]}},
+                "30": {"class_type": "CFGGuider",
+                       "inputs": {"model": ["1", 0], "positive": ["20", 0],
+                                  "negative": ["21", 0], "cfg": 1.0}},
+                "31": {"class_type": "KSamplerSelect",
+                       "inputs": {"sampler_name": "euler"}},
+                "32": {"class_type": "Flux2Scheduler",
+                       "inputs": {"steps": steps, "denoise": denoise,
+                                  "width": ["12", 0], "height": ["12", 1]}},
+                "33": {"class_type": "RandomNoise",
+                       "inputs": {"noise_seed": base_seed}},
+                "34": {"class_type": "EmptyFlux2LatentImage",
+                       "inputs": {"width": ["12", 0], "height": ["12", 1],
+                                  "batch_size": 1}},
+                "40": {"class_type": "SamplerCustomAdvanced",
+                       "inputs": {"noise": ["33", 0], "guider": ["30", 0],
+                                  "sampler": ["31", 0], "sigmas": ["32", 0],
+                                  "latent_image": ["34", 0]}},
+                "50": {"class_type": "VAEDecode",
+                       "inputs": {"samples": ["40", 0], "vae": ["3", 0]}},
+                "60": {"class_type": "SaveImage",
+                       "inputs": {"images": ["50", 0], "filename_prefix": "spellcaster_repose"}},
+            }
+
+            results = _run_with_spinner("Klein Re-poser: generating new pose...",
+                                         lambda: list(_run_comfyui_workflow(srv, wf, timeout=300)))
+            for i, (fn, sf, ft) in enumerate(results):
+                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+                                        f"Klein Repose #{i+1}")
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Klein Re-poser Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Klein Inpaint Selection ─────────────────────────────────────────
+    def _run_klein_inpaint(self, procedure, run_mode, image, drawables, config, data):
+        """Klein Inpaint: regenerate selected area using Flux 2 Klein with
+        ReferenceLatent context, SetLatentNoiseMask precision, and optional
+        DifferentialDiffusion for smooth edges."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+
+        # ── Inpaint task presets ──────────────────────────────────────
+        INPAINT_PRESETS = {
+            "Replace object (describe the replacement)": {
+                "prompt_hint": "Describe what should replace the selected area",
+                "denoise": 0.92, "steps": 25,
+            },
+            "Remove object (fill with background)": {
+                "prompt_hint": "clean background, seamless surface, matching surroundings, no artifacts",
+                "denoise": 0.95, "steps": 25,
+            },
+            "Fix face / restore features": {
+                "prompt_hint": "detailed human face, sharp eyes, natural skin, correct symmetry, proper anatomy",
+                "denoise": 0.45, "steps": 20,
+            },
+            "Fix hands / fingers": {
+                "prompt_hint": "anatomically correct hand, five fingers, natural pose, proper proportions, realistic",
+                "denoise": 0.55, "steps": 25,
+            },
+            "Change clothing / outfit": {
+                "prompt_hint": "Describe the new clothing, e.g. 'elegant red dress, silk fabric, flowing'",
+                "denoise": 0.85, "steps": 25,
+            },
+            "Change expression / emotion": {
+                "prompt_hint": "Describe the expression, e.g. 'warm genuine smile, happy eyes, natural expression'",
+                "denoise": 0.50, "steps": 20,
+            },
+            "Add object / element": {
+                "prompt_hint": "Describe what to add, e.g. 'a small cat sitting, fluffy fur, cute'",
+                "denoise": 0.95, "steps": 25,
+            },
+            "Change material / texture": {
+                "prompt_hint": "Describe the new material, e.g. 'polished marble surface, reflective, veined'",
+                "denoise": 0.75, "steps": 20,
+            },
+            "Change hair / hairstyle": {
+                "prompt_hint": "Describe the hairstyle, e.g. 'long flowing blonde hair, wavy, golden highlights'",
+                "denoise": 0.70, "steps": 25,
+            },
+            "Fill / extend pattern": {
+                "prompt_hint": "seamless continuation of the surrounding pattern, matching texture, color, and rhythm",
+                "denoise": 0.80, "steps": 20,
+            },
+            "Change color / recolor area": {
+                "prompt_hint": "Describe the new color, e.g. 'vivid bright red, saturated, uniform color'",
+                "denoise": 0.55, "steps": 18,
+            },
+            "Change background (behind subject)": {
+                "prompt_hint": "Describe the new background, e.g. 'sunset beach, golden hour, soft waves'",
+                "denoise": 0.90, "steps": 25,
+            },
+            "Weather / lighting change": {
+                "prompt_hint": "Describe the new conditions, e.g. 'snowy winter scene, soft snowfall, cold light'",
+                "denoise": 0.70, "steps": 22,
+            },
+            "Improve detail / sharpen area": {
+                "prompt_hint": "highly detailed, sharp focus, fine textures, enhanced clarity, photorealistic",
+                "denoise": 0.30, "steps": 15,
+            },
+            "Creative reimagine (high freedom)": {
+                "prompt_hint": "Describe your creative vision — high denoise gives Klein full artistic freedom",
+                "denoise": 0.98, "steps": 30,
+            },
+            "(custom — manual settings)": {
+                "prompt_hint": "",
+                "denoise": 0.80, "steps": 20,
+            },
+        }
+
+        # ── Dialog ────────────────────────────────────────────────────
+        dlg = Gtk.Dialog(title="Spellcaster — Klein Inpaint Selection")
+        dlg.set_default_size(560, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Inpaint", Gtk.ResponseType.OK)
+        bx = dlg.get_content_area()
+        bx.set_spacing(6); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(10); bx.set_margin_bottom(10)
+
+        _hdr = _make_branded_header()
+        if _hdr: bx.pack_start(_hdr, False, False, 0)
+
+        bx.pack_start(Gtk.Label(label="Regenerate the selected area using Klein AI.\n"
+                                      "Use any GIMP selection tool to mark what to change."),
+                       False, False, 2)
+
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
+        srv_e.set_tooltip_text("ComfyUI server address")
+        hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+
+        # Klein model
+        hm = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hm.pack_start(Gtk.Label(label="Klein Model:"), False, False, 0)
+        klein_combo = Gtk.ComboBoxText()
+        for k in KLEIN_MODELS: klein_combo.append(k, k)
+        klein_combo.set_active_id("Klein 9B")
+        klein_combo.set_tooltip_text("Klein 9B: best quality and coherence.\n"
+                                      "Klein 4B: faster, lower VRAM, good for quick iterations")
+        hm.pack_start(klein_combo, True, True, 0); bx.pack_start(hm, False, False, 0)
+
+        # Task preset
+        ht = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        ht.pack_start(Gtk.Label(label="Task:"), False, False, 0)
+        task_combo = Gtk.ComboBoxText()
+        for k in INPAINT_PRESETS: task_combo.append(k, k)
+        task_combo.set_active(0)
+        task_combo.set_tooltip_text("What you're doing with the selection.\n"
+                                     "Auto-fills the prompt and sets optimal denoise/steps.\n"
+                                     "You can always edit the prompt and settings after.")
+        ht.pack_start(task_combo, True, True, 0); bx.pack_start(ht, False, False, 0)
+
+        # Prompt
+        bx.pack_start(Gtk.Label(label="Prompt (what should appear in the selected area):"),
+                       False, False, 2)
+        sw = Gtk.ScrolledWindow(); sw.set_min_content_height(80)
+        prompt_tv = Gtk.TextView(); prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        prompt_tv.set_tooltip_text("Describe what Klein should generate in the selected region.\n"
+                                    "Be specific about details, materials, lighting.\n"
+                                    "Klein understands the surrounding context via the reference image.")
+        sw.add(prompt_tv); bx.pack_start(sw, True, True, 0)
+
+        # ── Settings grid ─────────────────────────────────────────────
+        grid = Gtk.Grid(column_spacing=10, row_spacing=4)
+
+        grid.attach(Gtk.Label(label="Denoise:", xalign=1), 0, 0, 1, 1)
+        denoise_sp = Gtk.SpinButton.new_with_range(0.10, 1.0, 0.05)
+        denoise_sp.set_value(0.92); denoise_sp.set_digits(2)
+        denoise_sp.set_tooltip_text("How much Klein can change the selected area:\n"
+                                     "  0.30 = subtle touch-up, keeps most existing detail\n"
+                                     "  0.55 = moderate change, face/expression fixes\n"
+                                     "  0.80 = significant change, new objects\n"
+                                     "  0.95 = near-total regeneration, object replacement\n"
+                                     "  1.00 = full generation (ignores original content)")
+        grid.attach(denoise_sp, 1, 0, 1, 1)
+
+        grid.attach(Gtk.Label(label="Steps:", xalign=1), 2, 0, 1, 1)
+        steps_sp = Gtk.SpinButton.new_with_range(8, 50, 1)
+        steps_sp.set_value(25)
+        steps_sp.set_tooltip_text("Sampling steps. 20-30 recommended for quality")
+        grid.attach(steps_sp, 3, 0, 1, 1)
+
+        grid.attach(Gtk.Label(label="Seed:", xalign=1), 0, 1, 1, 1)
+        seed_sp = Gtk.SpinButton.new_with_range(-1, 2**32, 1)
+        seed_sp.set_value(-1)
+        seed_sp.set_tooltip_text("-1 = random seed. Fix a seed to get reproducible results")
+        grid.attach(seed_sp, 1, 1, 1, 1)
+
+        grid.attach(Gtk.Label(label="Runs:", xalign=1), 2, 1, 1, 1)
+        runs_sp = Gtk.SpinButton.new_with_range(1, 10, 1)
+        runs_sp.set_value(1)
+        runs_sp.set_tooltip_text("Generate multiple variations — each uses a different random seed")
+        grid.attach(runs_sp, 3, 1, 1, 1)
+
+        bx.pack_start(grid, False, False, 4)
+
+        # ── Advanced expander ─────────────────────────────────────────
+        exp = Gtk.Expander(label="  Advanced options...")
+        exp.set_expanded(False)
+        adv_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+
+        # Mask blur
+        hbl = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hbl.pack_start(Gtk.Label(label="Mask blur (edge softness):"), False, False, 0)
+        blur_sp = Gtk.SpinButton.new_with_range(0, 64, 1)
+        blur_sp.set_value(8)
+        blur_sp.set_tooltip_text("Gaussian blur applied to the mask edges.\n"
+                                  "Higher = smoother blending with surrounding area.\n"
+                                  "0 = hard/sharp edges (for precise cutouts)\n"
+                                  "8-16 = natural soft blending (recommended)\n"
+                                  "32+ = very gradual transition")
+        hbl.pack_start(blur_sp, True, True, 0); adv_box.pack_start(hbl, False, False, 0)
+
+        # Grow/shrink mask
+        hgs = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hgs.pack_start(Gtk.Label(label="Grow selection (px):"), False, False, 0)
+        grow_sp = Gtk.SpinButton.new_with_range(-50, 50, 1)
+        grow_sp.set_value(4)
+        grow_sp.set_tooltip_text("Expand or shrink the selection mask.\n"
+                                  "Positive = grow outward (catches edge artifacts)\n"
+                                  "Negative = shrink inward\n"
+                                  "4px grow recommended for natural blending")
+        hgs.pack_start(grow_sp, True, True, 0); adv_box.pack_start(hgs, False, False, 0)
+
+        # Differential diffusion toggle
+        dd_check = Gtk.CheckButton(label="Smooth edges (DifferentialDiffusion)")
+        dd_check.set_active(True)
+        dd_check.set_tooltip_text("Uses DifferentialDiffusion for gradient-aware edge blending.\n"
+                                   "Produces cleaner, more natural transitions at mask boundaries.\n"
+                                   "Recommended ON for most tasks. Disable only if you want\n"
+                                   "hard/precise mask edges (e.g., pixel art, text).")
+        adv_box.pack_start(dd_check, False, False, 0)
+
+        exp.add(adv_box)
+        _shrink_on_collapse(exp, dlg)
+        bx.pack_start(exp, False, False, 0)
+
+        # ── Preset auto-fill ──────────────────────────────────────────
+        def _on_task_changed(*_a):
+            key = task_combo.get_active_id()
+            if key and key in INPAINT_PRESETS:
+                p = INPAINT_PRESETS[key]
+                if p["prompt_hint"]:
+                    prompt_tv.get_buffer().set_text(p["prompt_hint"])
+                denoise_sp.set_value(p["denoise"])
+                steps_sp.set_value(p["steps"])
+        task_combo.connect("changed", _on_task_changed)
+        _on_task_changed()  # initial fill
+
+        bx.show_all()
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        # Collect values
+        srv = srv_e.get_text().strip(); _propagate_server_url(srv)
+        klein_key = klein_combo.get_active_id() or "Klein 9B"
+        pbuf = prompt_tv.get_buffer()
+        prompt = pbuf.get_text(pbuf.get_start_iter(), pbuf.get_end_iter(), False)
+        denoise = denoise_sp.get_value()
+        steps = int(steps_sp.get_value())
+        runs = int(runs_sp.get_value())
+        base_seed = int(seed_sp.get_value())
+        mask_blur = int(blur_sp.get_value())
+        grow_px = int(grow_sp.get_value())
+        use_dd = dd_check.get_active()
+        if base_seed < 0:
+            base_seed = random.randint(0, 2**32 - 1)
+        dlg.destroy()
+
+        try:
+            # ── Build mask from GIMP selection ────────────────────────
+            _update_spinner_status("Klein Inpaint: building selection mask...")
+            global _mask_cache
+            sel_hash = _selection_hash(image)
+            if (sel_hash
+                    and _mask_cache["selection_hash"] == sel_hash
+                    and _mask_cache["server"] == srv
+                    and _mask_cache["uploaded_name"]):
+                mname = _mask_cache["uploaded_name"]
+            else:
+                mtmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False); mtmp.close()
+                _create_selection_mask_png(mtmp.name, image)
+                mname = f"gimp_mask_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, mtmp.name, mname)
+                _mask_cache = {
+                    "selection_hash": sel_hash,
+                    "mask_path": mtmp.name,
+                    "uploaded_name": mname,
+                    "server": srv,
+                }
+
+            # ── Export image ──────────────────────────────────────────
+            _update_spinner_status("Klein Inpaint: exporting image...")
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_kinp_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+
+            km = KLEIN_MODELS[klein_key]
+            all_results = []
+
+            for run_i in range(runs):
+                seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+
+                wf = {
+                    # Model loaders
+                    "1": {"class_type": "UNETLoader",
+                          "inputs": {"unet_name": km["unet"], "weight_dtype": "default"}},
+                    "2": {"class_type": "CLIPLoader",
+                          "inputs": {"clip_name": km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+                                     "type": "flux2", "device": "default"}},
+                    "3": {"class_type": "VAELoader",
+                          "inputs": {"vae_name": "flux2-vae.safetensors"}},
+
+                    # Load source image and mask
+                    "10": {"class_type": "LoadImage",
+                           "inputs": {"image": uname}},
+                    "11": {"class_type": "LoadImage",
+                           "inputs": {"image": mname}},
+
+                    # Convert mask image → MASK tensor (red channel)
+                    "12": {"class_type": "ImageToMask",
+                           "inputs": {"image": ["11", 0], "channel": "red"}},
+                }
+
+                # Optional: grow/shrink the mask
+                mask_ref = ["12", 0]
+                if grow_px > 0:
+                    wf["13"] = {"class_type": "GrowMask",
+                                "inputs": {"mask": mask_ref, "expand": grow_px,
+                                           "tapered_corners": True}}
+                    mask_ref = ["13", 0]
+                elif grow_px < 0:
+                    wf["13"] = {"class_type": "GrowMask",
+                                "inputs": {"mask": mask_ref, "expand": grow_px,
+                                           "tapered_corners": True}}
+                    mask_ref = ["13", 0]
+
+                # Optional: blur mask edges for smooth blending
+                if mask_blur > 0:
+                    wf["14"] = {"class_type": "MaskSmooth",
+                                "inputs": {"mask": mask_ref, "amount": mask_blur}}
+                    mask_ref = ["14", 0]
+
+                # Scale image to mod-16 for Flux
+                wf["15"] = {"class_type": "ImageScaleToTotalPixels",
+                            "inputs": {"image": ["10", 0], "upscale_method": "nearest-exact",
+                                       "megapixels": 1.0, "resolution_steps": 16}}
+                wf["16"] = {"class_type": "GetImageSize",
+                            "inputs": {"image": ["15", 0]}}
+
+                # VAE encode the source image
+                wf["17"] = {"class_type": "VAEEncode",
+                            "inputs": {"pixels": ["15", 0], "vae": ["3", 0]}}
+
+                # Apply mask to the encoded latent — sampler only regenerates masked area
+                wf["18"] = {"class_type": "SetLatentNoiseMask",
+                            "inputs": {"samples": ["17", 0], "mask": mask_ref}}
+
+                # Text conditioning
+                wf["20"] = {"class_type": "CLIPTextEncode",
+                            "inputs": {"text": prompt, "clip": ["2", 0]}}
+                wf["21"] = {"class_type": "ConditioningZeroOut",
+                            "inputs": {"conditioning": ["20", 0]}}
+
+                # ReferenceLatent: gives Klein full context of the existing image
+                # so the inpainted area matches lighting, style, and perspective
+                wf["22"] = {"class_type": "ReferenceLatent",
+                            "inputs": {"conditioning": ["20", 0], "latent": ["17", 0]}}
+                wf["23"] = {"class_type": "ReferenceLatent",
+                            "inputs": {"conditioning": ["21", 0], "latent": ["17", 0]}}
+
+                # DifferentialDiffusion: gradient-aware blending at mask edges
+                model_ref = ["1", 0]
+                if use_dd:
+                    wf["24"] = {"class_type": "DifferentialDiffusion",
+                                "inputs": {"model": ["1", 0]}}
+                    model_ref = ["24", 0]
+
+                # Sampling pipeline
+                wf["30"] = {"class_type": "CFGGuider",
+                            "inputs": {"model": model_ref, "positive": ["22", 0],
+                                       "negative": ["23", 0], "cfg": 1.0}}
+                wf["31"] = {"class_type": "KSamplerSelect",
+                            "inputs": {"sampler_name": "euler"}}
+                wf["32"] = {"class_type": "Flux2Scheduler",
+                            "inputs": {"steps": steps, "denoise": denoise,
+                                       "width": ["16", 0], "height": ["16", 1]}}
+                wf["33"] = {"class_type": "RandomNoise",
+                            "inputs": {"noise_seed": seed}}
+
+                # Sample from the masked latent (preserves unmasked content)
+                wf["40"] = {"class_type": "SamplerCustomAdvanced",
+                            "inputs": {"noise": ["33", 0], "guider": ["30", 0],
+                                       "sampler": ["31", 0], "sigmas": ["32", 0],
+                                       "latent_image": ["18", 0]}}
+
+                # Decode + save
+                wf["50"] = {"class_type": "VAEDecode",
+                            "inputs": {"samples": ["40", 0], "vae": ["3", 0]}}
+                wf["60"] = {"class_type": "SaveImage",
+                            "inputs": {"images": ["50", 0],
+                                       "filename_prefix": "spellcaster_klein_inpaint"}}
+
+                label = f"Klein Inpaint run {run_i+1}/{runs}" if runs > 1 else "Klein Inpaint"
+                results = _run_with_spinner(f"{label}: processing on ComfyUI...",
+                                             lambda: list(_run_comfyui_workflow(srv, wf, timeout=300)))
+                all_results.extend(results)
+
+            for i, (fn, sf, ft) in enumerate(all_results):
+                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+                                        f"Klein Inpaint #{i+1}")
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Klein Inpaint Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Layer Blend by Ratio (utility) ────────────────────────────────
+    def _run_layer_blend_ratio(self, procedure, run_mode, image, drawables, config, data):
+        """Blend two layers by ratio using ComfyUI ImageBlend node."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+
+        layers = image.get_layers()
+        if len(layers) < 2:
+            Gimp.message("Need at least 2 layers to blend.\n\nLayer 1 = Image A\nLayer 2 = Image B\n"
+                         "The blend ratio controls how much of each layer appears in the result.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        BLEND_MODES = ["normal", "multiply", "screen", "overlay", "soft_light", "difference"]
+
+        dlg = Gtk.Dialog(title="Spellcaster — Layer Blend by Ratio")
+        dlg.set_default_size(460, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Blend", Gtk.ResponseType.OK)
+        bx = dlg.get_content_area()
+        bx.set_spacing(6); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(10); bx.set_margin_bottom(10)
+
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
+        hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+
+        bx.pack_start(Gtk.Label(label="Blend two layers by a controllable ratio.\n"
+                                      "0% = 100% Layer A, 100% = 100% Layer B."),
+                       False, False, 4)
+
+        # Layer A
+        hla = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hla.pack_start(Gtk.Label(label="Layer A:"), False, False, 0)
+        la_combo = Gtk.ComboBoxText()
+        for idx, l in enumerate(layers):
+            la_combo.append(str(idx), l.get_name())
+        la_combo.set_active(0)
+        la_combo.set_tooltip_text("First image (base). At ratio 0% you see only this layer")
+        hla.pack_start(la_combo, True, True, 0); bx.pack_start(hla, False, False, 0)
+
+        # Layer B
+        hlb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hlb.pack_start(Gtk.Label(label="Layer B:"), False, False, 0)
+        lb_combo = Gtk.ComboBoxText()
+        for idx, l in enumerate(layers):
+            lb_combo.append(str(idx), l.get_name())
+        lb_combo.set_active(1 if len(layers) > 1 else 0)
+        lb_combo.set_tooltip_text("Second image (blend target). At ratio 100% you see only this layer")
+        hlb.pack_start(lb_combo, True, True, 0); bx.pack_start(hlb, False, False, 0)
+
+        # Blend ratio slider
+        hr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hr.pack_start(Gtk.Label(label="Blend ratio:"), False, False, 0)
+        ratio_sp = Gtk.SpinButton.new_with_range(0.0, 1.0, 0.05)
+        ratio_sp.set_value(0.50)
+        ratio_sp.set_digits(2)
+        ratio_sp.set_tooltip_text("0.0 = 100% Layer A\n0.5 = equal mix\n1.0 = 100% Layer B")
+        hr.pack_start(ratio_sp, True, True, 0)
+        # Percentage label
+        pct_label = Gtk.Label(label="50% A / 50% B")
+        def _update_pct(*_a):
+            r = ratio_sp.get_value()
+            pct_label.set_text(f"{100 - r*100:.0f}% A / {r*100:.0f}% B")
+        ratio_sp.connect("value-changed", _update_pct)
+        hr.pack_start(pct_label, False, False, 4)
+        bx.pack_start(hr, False, False, 0)
+
+        # Blend mode
+        hm = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hm.pack_start(Gtk.Label(label="Mode:"), False, False, 0)
+        mode_combo = Gtk.ComboBoxText()
+        for m in BLEND_MODES: mode_combo.append(m, m)
+        mode_combo.set_active_id("normal")
+        mode_combo.set_tooltip_text("Blending mode:\n• normal: linear interpolation (most common)\n"
+                                     "• multiply: darkens, good for shadows\n• screen: lightens\n"
+                                     "• overlay: contrast boost\n• soft_light: subtle toning")
+        hm.pack_start(mode_combo, True, True, 0); bx.pack_start(hm, False, False, 0)
+
+        bx.show_all()
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        srv = srv_e.get_text().strip(); _propagate_server_url(srv)
+        la_idx = int(la_combo.get_active_id() or "0")
+        lb_idx = int(lb_combo.get_active_id() or "1")
+        ratio = ratio_sp.get_value()
+        mode = mode_combo.get_active_id() or "normal"
+        dlg.destroy()
+
+        try:
+            _update_spinner_status("Layer Blend: exporting layers...")
+            # Export Layer A
+            a_img = Gimp.Image.new(image.get_width(), image.get_height(), Gimp.ImageType.RGB)
+            a_copy = Gimp.Layer.new_from_drawable(layers[la_idx], a_img)
+            a_img.insert_layer(a_copy, None, 0); a_img.flatten()
+            a_tmp = _export_image_to_tmp(a_img); a_img.delete()
+            # Export Layer B
+            b_img = Gimp.Image.new(image.get_width(), image.get_height(), Gimp.ImageType.RGB)
+            b_copy = Gimp.Layer.new_from_drawable(layers[lb_idx], b_img)
+            b_img.insert_layer(b_copy, None, 0); b_img.flatten()
+            b_tmp = _export_image_to_tmp(b_img); b_img.delete()
+
+            a_name = f"blend_a_{uuid.uuid4().hex[:8]}.png"
+            b_name = f"blend_b_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, a_tmp, a_name); os.unlink(a_tmp)
+            _upload_image(srv, b_tmp, b_name); os.unlink(b_tmp)
+
+            wf = {
+                "1": {"class_type": "LoadImage", "inputs": {"image": a_name}},
+                "2": {"class_type": "LoadImage", "inputs": {"image": b_name}},
+                "3": {"class_type": "ImageBlend", "inputs": {
+                    "image1": ["1", 0], "image2": ["2", 0],
+                    "blend_factor": ratio, "blend_mode": mode}},
+                "4": {"class_type": "SaveImage", "inputs": {
+                    "images": ["3", 0], "filename_prefix": "spellcaster_blend_ratio"}},
+            }
+
+            results = _run_with_spinner("Layer Blend: processing...",
+                                         lambda: list(_run_comfyui_workflow(srv, wf)))
+            for i, (fn, sf, ft) in enumerate(results):
+                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+                                        f"Blend {100 - ratio*100:.0f}A/{ratio*100:.0f}B #{i+1}")
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Layer Blend Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Upscaler Ratio Blender ────────────────────────────────────────
+    def _run_upscale_blend(self, procedure, run_mode, image, drawables, config, data):
+        """Upscale with two models and blend results by ratio."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+
+        # Filter out (none)
+        models = {k: v for k, v in UPSCALE_PRESETS.items() if v is not None}
+
+        dlg = Gtk.Dialog(title="Spellcaster — Upscaler Ratio Blender")
+        dlg.set_default_size(500, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Upscale && Blend", Gtk.ResponseType.OK)
+        bx = dlg.get_content_area()
+        bx.set_spacing(6); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(10); bx.set_margin_bottom(10)
+
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
+        hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+
+        bx.pack_start(Gtk.Label(label="Upscale with two different models and blend the results.\n"
+                                      "Example: 40% ESRGAN (sharp) + 60% Remacri (smooth) for balanced output."),
+                       False, False, 4)
+
+        # Model A
+        ha = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        ha.pack_start(Gtk.Label(label="Model A:"), False, False, 0)
+        ma_combo = Gtk.ComboBoxText()
+        for k in models: ma_combo.append(k, k)
+        ma_combo.set_active(0)
+        ma_combo.set_tooltip_text("First upscale model. Its result weight = (1 - ratio)")
+        ha.pack_start(ma_combo, True, True, 0); bx.pack_start(ha, False, False, 0)
+
+        # Model B
+        hb2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb2.pack_start(Gtk.Label(label="Model B:"), False, False, 0)
+        mb_combo = Gtk.ComboBoxText()
+        for k in models: mb_combo.append(k, k)
+        # Default to Remacri if available
+        keys = list(models.keys())
+        mb_combo.set_active(3 if len(keys) > 3 else min(1, len(keys)-1))
+        mb_combo.set_tooltip_text("Second upscale model. Its result weight = ratio")
+        hb2.pack_start(mb_combo, True, True, 0); bx.pack_start(hb2, False, False, 0)
+
+        # Ratio slider
+        hr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hr.pack_start(Gtk.Label(label="Blend ratio:"), False, False, 0)
+        ratio_sp = Gtk.SpinButton.new_with_range(0.0, 1.0, 0.05)
+        ratio_sp.set_value(0.60)
+        ratio_sp.set_digits(2)
+        ratio_sp.set_tooltip_text("0.0 = 100% Model A\n0.5 = equal mix\n1.0 = 100% Model B\n\n"
+                                   "Example: 0.60 = 40% Model A + 60% Model B")
+        hr.pack_start(ratio_sp, True, True, 0)
+        pct_label = Gtk.Label(label="40% A / 60% B")
+        def _update_pct(*_a):
+            r = ratio_sp.get_value()
+            pct_label.set_text(f"{100 - r*100:.0f}% A / {r*100:.0f}% B")
+        ratio_sp.connect("value-changed", _update_pct)
+        hr.pack_start(pct_label, False, False, 4)
+        bx.pack_start(hr, False, False, 0)
+
+        # Quick presets
+        bx.pack_start(Gtk.Label(label="Quick recipes:"), False, False, 2)
+        RECIPES = {
+            "Balanced (50/50 UltraSharp + Remacri)": ("4x UltraSharp (general)", "4x Remacri (restoration)", 0.50),
+            "Sharp detail (70% UltraSharp + 30% ESRGAN)": ("4x UltraSharp (general)", "4x RealESRGAN (photo)", 0.30),
+            "Smooth restoration (30% ESRGAN + 70% Remacri)": ("4x RealESRGAN (photo)", "4x Remacri (restoration)", 0.70),
+            "Anime blend (60% Anime + 40% UltraSharp)": ("4x RealESRGAN Anime", "4x UltraSharp (general)", 0.40),
+            "Portrait (40% Faces + 60% Remacri)": ("8x NMKD Faces (portraits)", "4x Remacri (restoration)", 0.60),
+        }
+        recipe_combo = Gtk.ComboBoxText()
+        recipe_combo.append("(custom)", "(custom — use settings above)")
+        for k in RECIPES: recipe_combo.append(k, k)
+        recipe_combo.set_active(0)
+        recipe_combo.set_tooltip_text("Pre-configured upscaler blending recipes.\n"
+                                       "Select one to auto-fill Model A, Model B, and ratio")
+        def _on_recipe(*_a):
+            key = recipe_combo.get_active_id()
+            if key and key != "(custom)" and key in RECIPES:
+                a_key, b_key, r = RECIPES[key]
+                ma_combo.set_active_id(a_key)
+                mb_combo.set_active_id(b_key)
+                ratio_sp.set_value(r)
+        recipe_combo.connect("changed", _on_recipe)
+        bx.pack_start(recipe_combo, False, False, 0)
+
+        bx.show_all()
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        srv = srv_e.get_text().strip(); _propagate_server_url(srv)
+        ma_key = ma_combo.get_active_id()
+        mb_key = mb_combo.get_active_id()
+        ma_file = models.get(ma_key)
+        mb_file = models.get(mb_key)
+        ratio = ratio_sp.get_value()
+        dlg.destroy()
+
+        if not ma_file or not mb_file:
+            Gimp.message("Please select two valid upscale models.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        try:
+            _update_spinner_status("Upscale Blend: exporting image...")
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_upblend_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+
+            wf = {
+                # Load source image
+                "1": {"class_type": "LoadImage", "inputs": {"image": uname}},
+                # Model A upscale
+                "10": {"class_type": "UpscaleModelLoader", "inputs": {"model_name": ma_file}},
+                "11": {"class_type": "ImageUpscaleWithModel", "inputs": {
+                    "upscale_model": ["10", 0], "image": ["1", 0]}},
+                # Model B upscale
+                "20": {"class_type": "UpscaleModelLoader", "inputs": {"model_name": mb_file}},
+                "21": {"class_type": "ImageUpscaleWithModel", "inputs": {
+                    "upscale_model": ["20", 0], "image": ["1", 0]}},
+                # Blend the two upscaled results
+                "30": {"class_type": "ImageBlend", "inputs": {
+                    "image1": ["11", 0], "image2": ["21", 0],
+                    "blend_factor": ratio, "blend_mode": "normal"}},
+                "40": {"class_type": "SaveImage", "inputs": {
+                    "images": ["30", 0], "filename_prefix": "spellcaster_upblend"}},
+            }
+
+            results = _run_with_spinner("Upscale Blend: upscaling with two models and blending...",
+                                         lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
+            for i, (fn, sf, ft) in enumerate(results):
+                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+                                        f"Upscale {100 - ratio*100:.0f}%{ma_key.split('(')[0].strip()}"
+                                        f" + {ratio*100:.0f}%{mb_key.split('(')[0].strip()} #{i+1}")
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Upscaler Blend Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     def _run_embed_watermark(self, procedure, run_mode, image, drawables, config, data):

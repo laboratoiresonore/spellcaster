@@ -520,8 +520,6 @@ The installer detects your GPU VRAM and recommends the right model tier. Models 
 | Wan 2.2 I2V Low-Noise Q4 GGUF | [HuggingFace](https://huggingface.co/city96/Wan2.2-I2V-A14B-480p-gguf) | 8 GB | **Recommended** |
 | Wan 2.2 I2V High-Noise fp8 | [HuggingFace](https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_repackaged) | 16 GB | Higher quality |
 | Wan 2.2 I2V Low-Noise fp8 | [HuggingFace](https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_repackaged) | 16 GB | Higher quality |
-| Wan Enhanced NSFW SVI fp8 High | CivitAI | 16 GB | Enhanced SVI Camera |
-| Wan Enhanced NSFW SVI fp8 Low | CivitAI | 16 GB | Enhanced SVI Camera |
 | UMT5-XXL Q8 encoder | [HuggingFace](https://huggingface.co/city96/umt5-xxl-encoder-gguf) | -- | Auto-downloaded |
 | Wan 2.1 VAE | [HuggingFace](https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_repackaged) | -- | Auto-downloaded |
 
