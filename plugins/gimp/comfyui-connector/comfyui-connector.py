@@ -461,6 +461,12 @@ def _session_to_values(key, image=None):
             "start_percent": s.get("cn_start", 0.0),
             "end_percent": s.get("cn_end", 1.0),
         },
+        "controlnet_2": {
+            "mode": s.get("cn_mode_2", "Off"),
+            "strength": s.get("cn_strength_2", 0.6),
+            "start_percent": 0.0,
+            "end_percent": 1.0,
+        },
         "custom_workflow": None,
         "runs": s.get("runs", 1),
         "use_wd_tagger": s.get("use_wd_tagger", False),
@@ -2753,6 +2759,52 @@ def _fetch_pulid_models(server):
     except Exception:
         return ["pulid_flux_v0.9.1.safetensors"]
 
+# ── Known ComfyUI error patterns for user-friendly messages ──────────
+_KNOWN_ERRORS = {
+    "value_not_in_list": "Model not found on the ComfyUI server.\n\nThe model file may not be installed, or the path may be incorrect.\nCheck ComfyUI's models/ directory.",
+    "ckpt_name": "Checkpoint model not found.\n\nMake sure the model file exists in ComfyUI/models/checkpoints/.",
+    "lora_name": "LoRA not found on the server.\n\nThe LoRA file may not be installed.\nCheck ComfyUI/models/loras/.",
+    "unet_name": "UNet model not found.\n\nFor Flux/Klein models, check ComfyUI/models/unet/.",
+    "control_net_name": "ControlNet model not found.\n\nDid you try using an SDXL ControlNet on an SD1.5 model (or vice versa)?\nEach architecture needs its own ControlNet.",
+    "vae_name": "VAE model not found.\n\nCheck ComfyUI/models/vae/.",
+    "required_input_missing": "A required node input is missing.\n\nThis usually means a custom node needs updating.\nTry: cd ComfyUI/custom_nodes/<node> && git pull",
+}
+
+
+def _parse_comfyui_error(error_body):
+    """Parse ComfyUI error JSON and return a user-friendly message."""
+    try:
+        err = json.loads(error_body) if isinstance(error_body, str) else error_body
+        node_errors = err.get("node_errors", {})
+        messages = []
+        for node_id, node_err in node_errors.items():
+            for e in node_err.get("errors", []):
+                etype = e.get("type", "")
+                detail = e.get("details", "")
+                extra = e.get("extra_info", {})
+                input_name = extra.get("input_name", "")
+                received = extra.get("received_value", "")
+
+                # Match known error patterns
+                friendly = None
+                if etype == "value_not_in_list" and "controlnet" in input_name.lower():
+                    friendly = f"ControlNet model mismatch!\n\nYou selected '{received}' but it's not available.\nDid you try using an SDXL ControlNet on an SD1.5 model?"
+                elif etype == "value_not_in_list":
+                    friendly = _KNOWN_ERRORS.get(input_name, _KNOWN_ERRORS.get("value_not_in_list", ""))
+                    friendly += f"\n\nReceived: {received}"
+                elif etype in _KNOWN_ERRORS:
+                    friendly = _KNOWN_ERRORS[etype]
+
+                if friendly:
+                    messages.append(friendly)
+                else:
+                    messages.append(f"Node {node_id}: {etype} — {detail}")
+
+        return "\n\n".join(messages) if messages else None
+    except Exception:
+        return None
+
+
 def _api_get(server, path):
     """HTTP GET to ComfyUI server, returns parsed JSON."""
     url = f"{server.rstrip('/')}{path}"
@@ -2770,8 +2822,12 @@ def _api_post_json(server, path, data):
         with urllib.request.urlopen(req, timeout=60) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
-        detail = e.read().decode("utf-8", errors="replace")[:500]
-        raise RuntimeError(f"HTTP {e.code} from {path}: {detail}") from e
+        detail = e.read().decode("utf-8", errors="replace")
+        # Try to parse a user-friendly message from ComfyUI's error JSON
+        friendly = _parse_comfyui_error(detail) if e.code == 400 else None
+        if friendly:
+            raise RuntimeError(friendly) from e
+        raise RuntimeError(f"HTTP {e.code} from {path}: {detail[:500]}") from e
 
 # ── Async upload buffering pattern ─────────────────────────────────────
 # Problem: uploading large PNGs over HTTP blocks the GTK main thread,
@@ -3309,7 +3365,7 @@ LORA_METADATA = {
 
 
 def _build_img2img(image_filename, preset, prompt_text, negative_text, seed,
-                    loras=None, controlnet=None, use_wd_tagger=False):
+                    loras=None, controlnet=None, controlnet_2=None, use_wd_tagger=False):
     """Standard img2img: load checkpoint, encode image to latent, denoise, decode.
 
     Pipeline: CheckpointLoaderSimple → [LoRA chain] → CLIPTextEncode(+/-)
@@ -3409,6 +3465,41 @@ def _build_img2img(image_filename, preset, prompt_text, negative_text, seed,
             wf["25"] = {"class_type": "SaveImage",
                         "inputs": {"images": cn_image_ref, "filename_prefix": "spellcaster_cn_debug"}}
 
+    # ── ControlNet 2 injection (optional second guide, chained) ─────
+    if controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
+        guide2 = CONTROLNET_GUIDE_MODES[controlnet_2["mode"]]
+        arch = preset.get("arch", "sdxl")
+        cn_model_2 = guide2["cn_models"].get(arch, guide2["cn_models"].get("sdxl"))
+        preprocessor_2 = guide2["preprocessor"]
+
+        cn_image_ref_2 = ["4", 0]
+        if preprocessor_2:
+            wf["30"] = {"class_type": preprocessor_2,
+                        "inputs": {"image": ["4", 0]}}
+            cn_image_ref_2 = ["30", 0]
+
+        wf["31"] = {"class_type": "ControlNetLoader",
+                    "inputs": {"control_net_name": cn_model_2}}
+
+        # Determine what CN2 chains from: CN1 output if active, else raw CLIP
+        cn2_pos_ref = ["22", 0] if (controlnet and controlnet.get("mode", "Off") != "Off") else ["2", 0]
+        cn2_neg_ref = ["22", 1] if (controlnet and controlnet.get("mode", "Off") != "Off") else ["3", 0]
+
+        wf["32"] = {"class_type": "ControlNetApplyAdvanced",
+                    "inputs": {
+                        "positive": cn2_pos_ref,
+                        "negative": cn2_neg_ref,
+                        "control_net": ["31", 0],
+                        "image": cn_image_ref_2,
+                        "strength": controlnet_2["strength"],
+                        "start_percent": controlnet_2.get("start_percent", 0.0),
+                        "end_percent": controlnet_2.get("end_percent", 1.0),
+                    }}
+
+        # Redirect KSampler to use the chained output
+        wf["6"]["inputs"]["positive"] = ["32", 0]
+        wf["6"]["inputs"]["negative"] = ["32", 1]
+
     return wf
 
 
@@ -3444,7 +3535,7 @@ def _build_txt2img(preset, prompt_text, negative_text, seed, loras=None):
     })
     return wf
 
-def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_text, seed, loras=None, controlnet=None, use_wd_tagger=False):
+def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_text, seed, loras=None, controlnet=None, controlnet_2=None, use_wd_tagger=False):
     """Inpainting: regenerate only the masked region of the image.
 
     Pipeline: Load image + mask → scale both to working resolution →
@@ -3567,6 +3658,41 @@ def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_
         if cn_image_ref != ["4", 0] and _load_config().get("debug_images", False):
             wf["25"] = {"class_type": "SaveImage",
                         "inputs": {"images": cn_image_ref, "filename_prefix": "spellcaster_cn_debug"}}
+
+    # ── ControlNet 2 injection (optional second guide, chained) ─────
+    if controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
+        guide2 = CONTROLNET_GUIDE_MODES[controlnet_2["mode"]]
+        arch = preset.get("arch", "sdxl")
+        cn_model_2 = guide2["cn_models"].get(arch, guide2["cn_models"].get("sdxl"))
+        preprocessor_2 = guide2["preprocessor"]
+
+        cn_image_ref_2 = ["4", 0]
+        if preprocessor_2:
+            wf["30"] = {"class_type": preprocessor_2,
+                        "inputs": {"image": ["4", 0]}}
+            cn_image_ref_2 = ["30", 0]
+
+        wf["31"] = {"class_type": "ControlNetLoader",
+                    "inputs": {"control_net_name": cn_model_2}}
+
+        # Determine what CN2 chains from: CN1 output if active, else raw CLIP
+        cn2_pos_ref = ["22", 0] if (controlnet and controlnet.get("mode", "Off") != "Off") else ["2", 0]
+        cn2_neg_ref = ["22", 1] if (controlnet and controlnet.get("mode", "Off") != "Off") else ["3", 0]
+
+        wf["32"] = {"class_type": "ControlNetApplyAdvanced",
+                    "inputs": {
+                        "positive": cn2_pos_ref,
+                        "negative": cn2_neg_ref,
+                        "control_net": ["31", 0],
+                        "image": cn_image_ref_2,
+                        "strength": controlnet_2["strength"],
+                        "start_percent": controlnet_2.get("start_percent", 0.0),
+                        "end_percent": controlnet_2.get("end_percent", 1.0),
+                    }}
+
+        # Redirect KSampler to use the chained output
+        wf["8"]["inputs"]["positive"] = ["32", 0]
+        wf["8"]["inputs"]["negative"] = ["32", 1]
 
     # NOTE: When ControlNet is active for inpaint, the preprocessor receives
     # the FULL image (node "4") so it can analyze the complete body pose/structure.
@@ -6500,11 +6626,31 @@ class PresetDialog(Gtk.Dialog):
             cn_row.pack_start(self._cn_end_spin, False, False, 0)
 
             box.pack_start(cn_row, False, False, 0)
+
+            # ControlNet 2 (optional second guide)
+            box.pack_start(Gtk.Label(label="ControlNet 2 (combine):", xalign=0), False, False, 0)
+            self._cn_mode_combo_2 = Gtk.ComboBoxText()
+            self._cn_mode_combo_2.set_tooltip_text("Optional second ControlNet. Combine two guides:\ne.g., OpenPose (body) + Depth (spatial) for maximum structural control.")
+            for key in CONTROLNET_GUIDE_MODES:
+                self._cn_mode_combo_2.append(key, key)
+            self._cn_mode_combo_2.set_active(0)  # "Off" by default
+            box.pack_start(self._cn_mode_combo_2, False, False, 0)
+
+            # CN2 strength
+            cn_row_2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+            cn_row_2.pack_start(Gtk.Label(label="CN2 Strength:"), False, False, 0)
+            self._cn_strength_spin_2 = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
+            self._cn_strength_spin_2.set_digits(2)
+            self._cn_strength_spin_2.set_value(0.6)
+            cn_row_2.pack_start(self._cn_strength_spin_2, False, False, 0)
+            box.pack_start(cn_row_2, False, False, 0)
         else:
             self._cn_mode_combo = None
             self._cn_strength_spin = None
             self._cn_start_spin = None
             self._cn_end_spin = None
+            self._cn_mode_combo_2 = None
+            self._cn_strength_spin_2 = None
 
         # Mode label
         if mode == "img2img":
@@ -6977,6 +7123,10 @@ class PresetDialog(Gtk.Dialog):
             data["cn_strength"] = self._cn_strength_spin.get_value()
             data["cn_start"] = self._cn_start_spin.get_value()
             data["cn_end"] = self._cn_end_spin.get_value()
+        # ControlNet 2
+        if self._cn_mode_combo_2:
+            data["cn_mode_2"] = self._cn_mode_combo_2.get_active_id()
+            data["cn_strength_2"] = self._cn_strength_spin_2.get_value()
         # Scene preset
         if self._scene_combo:
             data["scene_idx"] = self._scene_combo.get_active()
@@ -7021,6 +7171,11 @@ class PresetDialog(Gtk.Dialog):
             self._cn_start_spin.set_value(p["cn_start"])
         if self._cn_end_spin and "cn_end" in p:
             self._cn_end_spin.set_value(p["cn_end"])
+        # ControlNet 2
+        if self._cn_mode_combo_2 and "cn_mode_2" in p:
+            self._cn_mode_combo_2.set_active_id(p["cn_mode_2"])
+        if self._cn_strength_spin_2 and "cn_strength_2" in p:
+            self._cn_strength_spin_2.set_value(p["cn_strength_2"])
         # Scene preset
         if self._scene_combo and "scene_idx" in p:
             self._scene_combo.set_active(p["scene_idx"])
@@ -7079,6 +7234,14 @@ class PresetDialog(Gtk.Dialog):
             "start_percent": self._cn_start_spin.get_value() if self._cn_start_spin else 0.0,
             "end_percent": self._cn_end_spin.get_value() if self._cn_end_spin else 1.0,
         }
+        # ControlNet 2
+        cn_mode_2 = self._cn_mode_combo_2.get_active_id() if self._cn_mode_combo_2 else "Off"
+        controlnet_2 = {
+            "mode": cn_mode_2,
+            "strength": self._cn_strength_spin_2.get_value() if self._cn_strength_spin_2 else 0.6,
+            "start_percent": 0.0,
+            "end_percent": 1.0,
+        }
         # Style preset — merge style prompt/negative/LoRAs when selected
         style_preset = None
         if self._style_combo and self._style_combo.get_active() > 0:
@@ -7114,6 +7277,7 @@ class PresetDialog(Gtk.Dialog):
             "seed": seed,
             "loras": loras,
             "controlnet": controlnet,
+            "controlnet_2": controlnet_2,
             "custom_workflow": custom_wf if custom_wf else None,
             "runs": int(self._runs_spin.get_value()),
             "use_wd_tagger": (self._wd_tagger_cb.get_active() and self._wd_tagger_cb.get_sensitive()) if hasattr(self, '_wd_tagger_cb') else False,
@@ -8806,6 +8970,7 @@ class Spellcaster(Gimp.PlugIn):
                     wf = json.loads(v["custom_workflow"]) if v["custom_workflow"] else \
                          _build_img2img(uname, v["preset"], v["prompt"], v["negative"], seed,
                                         v.get("loras"), controlnet=v.get("controlnet"),
+                                        controlnet_2=v.get("controlnet_2"),
                                         use_wd_tagger=v.get("use_wd_tagger", False))
                     label = f"Run {run_i+1}/{runs}" if runs > 1 else "img2img"
                     _update_spinner_status(f"{label}: processing on ComfyUI...")
@@ -8946,6 +9111,7 @@ class Spellcaster(Gimp.PlugIn):
                     wf = json.loads(v["custom_workflow"]) if v["custom_workflow"] else \
                          _build_inpaint(iname, mname, v["preset"], v["prompt"], v["negative"], seed,
                                         v.get("loras"), controlnet=v.get("controlnet"),
+                                        controlnet_2=v.get("controlnet_2"),
                                         use_wd_tagger=v.get("use_wd_tagger", False))
                     label = f"Run {run_i+1}/{runs}" if runs > 1 else "Inpaint"
                     _update_spinner_status(f"{label}: processing on ComfyUI...")
