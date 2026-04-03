@@ -3468,71 +3468,73 @@ def _build_img2img(image_filename, preset, prompt_text, negative_text, seed,
         guide = CONTROLNET_GUIDE_MODES[controlnet["mode"]]
         arch = preset.get("arch", "sdxl")
         cn_model = guide["cn_models"].get(arch, guide["cn_models"].get("sdxl"))
-        preprocessor = guide["preprocessor"]
+        if cn_model:
+            preprocessor = guide["preprocessor"]
 
-        cn_image_ref = img_ref  # mod-16 scaled for Flux
-        if preprocessor:
-            wf["20"] = {"class_type": preprocessor,
-                        "inputs": {"image": img_ref}}
-            cn_image_ref = ["20", 0]
+            cn_image_ref = img_ref  # mod-16 scaled for Flux
+            if preprocessor:
+                wf["20"] = {"class_type": preprocessor,
+                            "inputs": {"image": img_ref}}
+                cn_image_ref = ["20", 0]
 
-        wf["21"] = {"class_type": "ControlNetLoader",
-                    "inputs": {"control_net_name": cn_model}}
+            wf["21"] = {"class_type": "ControlNetLoader",
+                        "inputs": {"control_net_name": cn_model}}
 
-        wf["22"] = {"class_type": "ControlNetApplyAdvanced",
-                    "inputs": {
-                        "positive": ["2", 0],
-                        "negative": ["3", 0],
-                        "control_net": ["21", 0],
-                        "image": cn_image_ref,
-                        "strength": controlnet["strength"],
-                        "start_percent": controlnet["start_percent"],
-                        "end_percent": controlnet["end_percent"],
-                    }}
+            wf["22"] = {"class_type": "ControlNetApplyAdvanced",
+                        "inputs": {
+                            "positive": ["2", 0],
+                            "negative": ["3", 0],
+                            "control_net": ["21", 0],
+                            "image": cn_image_ref,
+                            "strength": controlnet["strength"],
+                            "start_percent": controlnet["start_percent"],
+                            "end_percent": controlnet["end_percent"],
+                        }}
 
-        # Redirect KSampler to use ControlNet-wrapped conditioning
-        wf["6"]["inputs"]["positive"] = ["22", 0]
-        wf["6"]["inputs"]["negative"] = ["22", 1]
+            # Redirect KSampler to use ControlNet-wrapped conditioning
+            wf["6"]["inputs"]["positive"] = ["22", 0]
+            wf["6"]["inputs"]["negative"] = ["22", 1]
 
-        # Save ControlNet preprocessor output as debug image (if enabled)
-        if cn_image_ref != ["4", 0] and _load_config().get("debug_images", False):
-            wf["25"] = {"class_type": "SaveImage",
-                        "inputs": {"images": cn_image_ref, "filename_prefix": "spellcaster_cn_debug"}}
+            # Save ControlNet preprocessor output as debug image (if enabled)
+            if cn_image_ref != ["4", 0] and _load_config().get("debug_images", False):
+                wf["25"] = {"class_type": "SaveImage",
+                            "inputs": {"images": cn_image_ref, "filename_prefix": "spellcaster_cn_debug"}}
 
     # ── ControlNet 2 injection (optional second guide, chained) ─────
     if controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
         guide2 = CONTROLNET_GUIDE_MODES[controlnet_2["mode"]]
         arch = preset.get("arch", "sdxl")
         cn_model_2 = guide2["cn_models"].get(arch, guide2["cn_models"].get("sdxl"))
-        preprocessor_2 = guide2["preprocessor"]
+        if cn_model_2:
+            preprocessor_2 = guide2["preprocessor"]
 
-        cn_image_ref_2 = ["4", 0]
-        if preprocessor_2:
-            wf["30"] = {"class_type": preprocessor_2,
-                        "inputs": {"image": ["4", 0]}}
-            cn_image_ref_2 = ["30", 0]
+            cn_image_ref_2 = ["4", 0]
+            if preprocessor_2:
+                wf["30"] = {"class_type": preprocessor_2,
+                            "inputs": {"image": ["4", 0]}}
+                cn_image_ref_2 = ["30", 0]
 
-        wf["31"] = {"class_type": "ControlNetLoader",
-                    "inputs": {"control_net_name": cn_model_2}}
+            wf["31"] = {"class_type": "ControlNetLoader",
+                        "inputs": {"control_net_name": cn_model_2}}
 
-        # Determine what CN2 chains from: CN1 output if active, else raw CLIP
-        cn2_pos_ref = ["22", 0] if (controlnet and controlnet.get("mode", "Off") != "Off") else ["2", 0]
-        cn2_neg_ref = ["22", 1] if (controlnet and controlnet.get("mode", "Off") != "Off") else ["3", 0]
+            # Determine what CN2 chains from: CN1 output if active, else raw CLIP
+            cn2_pos_ref = ["22", 0] if "22" in wf else ["2", 0]
+            cn2_neg_ref = ["22", 1] if "22" in wf else ["3", 0]
 
-        wf["32"] = {"class_type": "ControlNetApplyAdvanced",
-                    "inputs": {
-                        "positive": cn2_pos_ref,
-                        "negative": cn2_neg_ref,
-                        "control_net": ["31", 0],
-                        "image": cn_image_ref_2,
-                        "strength": controlnet_2["strength"],
-                        "start_percent": controlnet_2.get("start_percent", 0.0),
-                        "end_percent": controlnet_2.get("end_percent", 1.0),
-                    }}
+            wf["32"] = {"class_type": "ControlNetApplyAdvanced",
+                        "inputs": {
+                            "positive": cn2_pos_ref,
+                            "negative": cn2_neg_ref,
+                            "control_net": ["31", 0],
+                            "image": cn_image_ref_2,
+                            "strength": controlnet_2["strength"],
+                            "start_percent": controlnet_2.get("start_percent", 0.0),
+                            "end_percent": controlnet_2.get("end_percent", 1.0),
+                        }}
 
-        # Redirect KSampler to use the chained output
-        wf["6"]["inputs"]["positive"] = ["32", 0]
-        wf["6"]["inputs"]["negative"] = ["32", 1]
+            # Redirect KSampler to use the chained output
+            wf["6"]["inputs"]["positive"] = ["32", 0]
+            wf["6"]["inputs"]["negative"] = ["32", 1]
 
     return wf
 
@@ -3642,71 +3644,73 @@ def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_
         guide = CONTROLNET_GUIDE_MODES[controlnet["mode"]]
         arch = preset.get("arch", "sdxl")
         cn_model = guide["cn_models"].get(arch, guide["cn_models"].get("sdxl"))
-        preprocessor = guide["preprocessor"]
+        if cn_model:
+            preprocessor = guide["preprocessor"]
 
-        cn_image_ref = img_ref  # LoadImage output (mod-16 scaled if Flux)
-        if preprocessor:
-            wf["20"] = {"class_type": preprocessor,
-                        "inputs": {"image": img_ref}}
-            cn_image_ref = ["20", 0]
+            cn_image_ref = img_ref  # LoadImage output (mod-16 scaled if Flux)
+            if preprocessor:
+                wf["20"] = {"class_type": preprocessor,
+                            "inputs": {"image": img_ref}}
+                cn_image_ref = ["20", 0]
 
-        wf["21"] = {"class_type": "ControlNetLoader",
-                    "inputs": {"control_net_name": cn_model}}
+            wf["21"] = {"class_type": "ControlNetLoader",
+                        "inputs": {"control_net_name": cn_model}}
 
-        wf["22"] = {"class_type": "ControlNetApplyAdvanced",
-                    "inputs": {
-                        "positive": ["2", 0],
-                        "negative": ["3", 0],
-                        "control_net": ["21", 0],
-                        "image": cn_image_ref,
-                        "strength": controlnet["strength"],
-                        "start_percent": controlnet["start_percent"],
-                        "end_percent": controlnet["end_percent"],
-                    }}
+            wf["22"] = {"class_type": "ControlNetApplyAdvanced",
+                        "inputs": {
+                            "positive": ["2", 0],
+                            "negative": ["3", 0],
+                            "control_net": ["21", 0],
+                            "image": cn_image_ref,
+                            "strength": controlnet["strength"],
+                            "start_percent": controlnet["start_percent"],
+                            "end_percent": controlnet["end_percent"],
+                        }}
 
-        # Redirect KSampler to use ControlNet-wrapped conditioning
-        wf["8"]["inputs"]["positive"] = ["22", 0]
-        wf["8"]["inputs"]["negative"] = ["22", 1]
+            # Redirect KSampler to use ControlNet-wrapped conditioning
+            wf["8"]["inputs"]["positive"] = ["22", 0]
+            wf["8"]["inputs"]["negative"] = ["22", 1]
 
-        # Save ControlNet preprocessor output as debug image (if enabled)
-        if cn_image_ref != img_ref and _load_config().get("debug_images", False):
-            wf["25"] = {"class_type": "SaveImage",
-                        "inputs": {"images": cn_image_ref, "filename_prefix": "spellcaster_cn_debug"}}
+            # Save ControlNet preprocessor output as debug image (if enabled)
+            if cn_image_ref != img_ref and _load_config().get("debug_images", False):
+                wf["25"] = {"class_type": "SaveImage",
+                            "inputs": {"images": cn_image_ref, "filename_prefix": "spellcaster_cn_debug"}}
 
     # ── ControlNet 2 injection (optional second guide, chained) ─────
     if controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
         guide2 = CONTROLNET_GUIDE_MODES[controlnet_2["mode"]]
         arch = preset.get("arch", "sdxl")
         cn_model_2 = guide2["cn_models"].get(arch, guide2["cn_models"].get("sdxl"))
-        preprocessor_2 = guide2["preprocessor"]
+        if cn_model_2:
+            preprocessor_2 = guide2["preprocessor"]
 
-        cn_image_ref_2 = img_ref
-        if preprocessor_2:
-            wf["30"] = {"class_type": preprocessor_2,
-                        "inputs": {"image": img_ref}}
-            cn_image_ref_2 = ["30", 0]
+            cn_image_ref_2 = img_ref
+            if preprocessor_2:
+                wf["30"] = {"class_type": preprocessor_2,
+                            "inputs": {"image": img_ref}}
+                cn_image_ref_2 = ["30", 0]
 
-        wf["31"] = {"class_type": "ControlNetLoader",
-                    "inputs": {"control_net_name": cn_model_2}}
+            wf["31"] = {"class_type": "ControlNetLoader",
+                        "inputs": {"control_net_name": cn_model_2}}
 
-        # Determine what CN2 chains from: CN1 output if active, else raw CLIP
-        cn2_pos_ref = ["22", 0] if (controlnet and controlnet.get("mode", "Off") != "Off") else ["2", 0]
-        cn2_neg_ref = ["22", 1] if (controlnet and controlnet.get("mode", "Off") != "Off") else ["3", 0]
+            # Determine what CN2 chains from: CN1 output if active, else raw CLIP
+            cn2_pos_ref = ["22", 0] if "22" in wf else ["2", 0]
+            cn2_neg_ref = ["22", 1] if "22" in wf else ["3", 0]
 
-        wf["32"] = {"class_type": "ControlNetApplyAdvanced",
-                    "inputs": {
-                        "positive": cn2_pos_ref,
-                        "negative": cn2_neg_ref,
-                        "control_net": ["31", 0],
-                        "image": cn_image_ref_2,
-                        "strength": controlnet_2["strength"],
-                        "start_percent": controlnet_2.get("start_percent", 0.0),
-                        "end_percent": controlnet_2.get("end_percent", 1.0),
-                    }}
+            wf["32"] = {"class_type": "ControlNetApplyAdvanced",
+                        "inputs": {
+                            "positive": cn2_pos_ref,
+                            "negative": cn2_neg_ref,
+                            "control_net": ["31", 0],
+                            "image": cn_image_ref_2,
+                            "strength": controlnet_2["strength"],
+                            "start_percent": controlnet_2.get("start_percent", 0.0),
+                            "end_percent": controlnet_2.get("end_percent", 1.0),
+                        }}
 
-        # Redirect KSampler to use the chained output
-        wf["8"]["inputs"]["positive"] = ["32", 0]
-        wf["8"]["inputs"]["negative"] = ["32", 1]
+            # Redirect KSampler to use the chained output
+            wf["8"]["inputs"]["positive"] = ["32", 0]
+            wf["8"]["inputs"]["negative"] = ["32", 1]
 
     # NOTE: When ControlNet is active for inpaint, the preprocessor receives
     # the FULL image (node "4") so it can analyze the complete body pose/structure.
@@ -4055,29 +4059,30 @@ def _build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
         guide = CONTROLNET_GUIDE_MODES[controlnet["mode"]]
         arch = preset.get("arch", "sdxl")
         cn_model = guide["cn_models"].get(arch, guide["cn_models"].get("sdxl"))
-        preprocessor = guide["preprocessor"]
+        if cn_model:
+            preprocessor = guide["preprocessor"]
 
-        # ControlNet processes the padded image (mod-16 scaled if Flux)
-        cn_image_ref = padded_ref
-        if preprocessor:
-            wf["20"] = {"class_type": preprocessor,
-                        "inputs": {"image": padded_ref}}
-            cn_image_ref = ["20", 0]
+            # ControlNet processes the padded image (mod-16 scaled if Flux)
+            cn_image_ref = padded_ref
+            if preprocessor:
+                wf["20"] = {"class_type": preprocessor,
+                            "inputs": {"image": padded_ref}}
+                cn_image_ref = ["20", 0]
 
-        wf["21"] = {"class_type": "ControlNetLoader",
-                    "inputs": {"control_net_name": cn_model}}
-        wf["22"] = {"class_type": "ControlNetApplyAdvanced",
-                    "inputs": {
-                        "positive": ["2", 0],
-                        "negative": ["3", 0],
-                        "control_net": ["21", 0],
-                        "image": cn_image_ref,
-                        "strength": controlnet["strength"],
-                        "start_percent": controlnet.get("start_percent", 0.0),
-                        "end_percent": controlnet.get("end_percent", 1.0),
-                    }}
-        wf["8"]["inputs"]["positive"] = ["22", 0]
-        wf["8"]["inputs"]["negative"] = ["22", 1]
+            wf["21"] = {"class_type": "ControlNetLoader",
+                        "inputs": {"control_net_name": cn_model}}
+            wf["22"] = {"class_type": "ControlNetApplyAdvanced",
+                        "inputs": {
+                            "positive": ["2", 0],
+                            "negative": ["3", 0],
+                            "control_net": ["21", 0],
+                            "image": cn_image_ref,
+                            "strength": controlnet["strength"],
+                            "start_percent": controlnet.get("start_percent", 0.0),
+                            "end_percent": controlnet.get("end_percent", 1.0),
+                        }}
+            wf["8"]["inputs"]["positive"] = ["22", 0]
+            wf["8"]["inputs"]["negative"] = ["22", 1]
 
     return wf
 
@@ -4153,58 +4158,60 @@ def _build_style_transfer(target_filename, style_ref_filename, preset,
         guide = CONTROLNET_GUIDE_MODES[controlnet["mode"]]
         arch = preset.get("arch", "sdxl")
         cn_model = guide["cn_models"].get(arch, guide["cn_models"].get("sdxl"))
-        preprocessor = guide["preprocessor"]
+        if cn_model:
+            preprocessor = guide["preprocessor"]
 
-        cn_image_ref = target_ref  # target image (mod-16 scaled if Flux)
-        if preprocessor:
-            wf["20"] = {"class_type": preprocessor,
-                        "inputs": {"image": target_ref}}
-            cn_image_ref = ["20", 0]
+            cn_image_ref = target_ref  # target image (mod-16 scaled if Flux)
+            if preprocessor:
+                wf["20"] = {"class_type": preprocessor,
+                            "inputs": {"image": target_ref}}
+                cn_image_ref = ["20", 0]
 
-        wf["21"] = {"class_type": "ControlNetLoader",
-                    "inputs": {"control_net_name": cn_model}}
-        wf["22"] = {"class_type": "ControlNetApplyAdvanced",
-                    "inputs": {
-                        "positive": ["5", 0],
-                        "negative": ["6", 0],
-                        "control_net": ["21", 0],
-                        "image": cn_image_ref,
-                        "strength": controlnet["strength"],
-                        "start_percent": controlnet.get("start_percent", 0.0),
-                        "end_percent": controlnet.get("end_percent", 1.0),
-                    }}
-        wf["9"]["inputs"]["positive"] = ["22", 0]
-        wf["9"]["inputs"]["negative"] = ["22", 1]
+            wf["21"] = {"class_type": "ControlNetLoader",
+                        "inputs": {"control_net_name": cn_model}}
+            wf["22"] = {"class_type": "ControlNetApplyAdvanced",
+                        "inputs": {
+                            "positive": ["5", 0],
+                            "negative": ["6", 0],
+                            "control_net": ["21", 0],
+                            "image": cn_image_ref,
+                            "strength": controlnet["strength"],
+                            "start_percent": controlnet.get("start_percent", 0.0),
+                            "end_percent": controlnet.get("end_percent", 1.0),
+                        }}
+            wf["9"]["inputs"]["positive"] = ["22", 0]
+            wf["9"]["inputs"]["negative"] = ["22", 1]
 
     # ── ControlNet 2 (optional) ──
     if controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
         guide2 = CONTROLNET_GUIDE_MODES[controlnet_2["mode"]]
         arch = preset.get("arch", "sdxl")
         cn_model_2 = guide2["cn_models"].get(arch, guide2["cn_models"].get("sdxl"))
-        preprocessor_2 = guide2["preprocessor"]
+        if cn_model_2:
+            preprocessor_2 = guide2["preprocessor"]
 
-        cn_image_ref_2 = target_ref
-        if preprocessor_2:
-            wf["30"] = {"class_type": preprocessor_2,
-                        "inputs": {"image": target_ref}}
-            cn_image_ref_2 = ["30", 0]
+            cn_image_ref_2 = target_ref
+            if preprocessor_2:
+                wf["30"] = {"class_type": preprocessor_2,
+                            "inputs": {"image": target_ref}}
+                cn_image_ref_2 = ["30", 0]
 
-        wf["31"] = {"class_type": "ControlNetLoader",
-                    "inputs": {"control_net_name": cn_model_2}}
-        prev_pos = ["22", 0] if "22" in wf else ["5", 0]
-        prev_neg = ["22", 1] if "22" in wf else ["6", 0]
-        wf["32"] = {"class_type": "ControlNetApplyAdvanced",
-                    "inputs": {
-                        "positive": prev_pos,
-                        "negative": prev_neg,
-                        "control_net": ["31", 0],
-                        "image": cn_image_ref_2,
-                        "strength": controlnet_2["strength"],
-                        "start_percent": controlnet_2.get("start_percent", 0.0),
-                        "end_percent": controlnet_2.get("end_percent", 1.0),
-                    }}
-        wf["9"]["inputs"]["positive"] = ["32", 0]
-        wf["9"]["inputs"]["negative"] = ["32", 1]
+            wf["31"] = {"class_type": "ControlNetLoader",
+                        "inputs": {"control_net_name": cn_model_2}}
+            prev_pos = ["22", 0] if "22" in wf else ["5", 0]
+            prev_neg = ["22", 1] if "22" in wf else ["6", 0]
+            wf["32"] = {"class_type": "ControlNetApplyAdvanced",
+                        "inputs": {
+                            "positive": prev_pos,
+                            "negative": prev_neg,
+                            "control_net": ["31", 0],
+                            "image": cn_image_ref_2,
+                            "strength": controlnet_2["strength"],
+                            "start_percent": controlnet_2.get("start_percent", 0.0),
+                            "end_percent": controlnet_2.get("end_percent", 1.0),
+                        }}
+            wf["9"]["inputs"]["positive"] = ["32", 0]
+            wf["9"]["inputs"]["negative"] = ["32", 1]
 
     return wf
 
@@ -4440,66 +4447,68 @@ def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text
         guide = CONTROLNET_GUIDE_MODES[controlnet["mode"]]
         arch = preset.get("arch", "sdxl")
         cn_model = guide["cn_models"].get(arch, guide["cn_models"].get("sdxl"))
-        preprocessor = guide["preprocessor"]
+        if cn_model:
+            preprocessor = guide["preprocessor"]
 
-        # ControlNet processes the (optionally upscaled) image
-        cn_image_ref = img_ref
-        if preprocessor:
-            wf["20"] = {"class_type": preprocessor,
-                        "inputs": {"image": img_ref}}
-            cn_image_ref = ["20", 0]
+            # ControlNet processes the (optionally upscaled) image
+            cn_image_ref = img_ref
+            if preprocessor:
+                wf["20"] = {"class_type": preprocessor,
+                            "inputs": {"image": img_ref}}
+                cn_image_ref = ["20", 0]
 
-        wf["21"] = {"class_type": "ControlNetLoader",
-                    "inputs": {"control_net_name": cn_model}}
-        wf["22"] = {"class_type": "ControlNetApplyAdvanced",
-                    "inputs": {
-                        "positive": ["5", 0],
-                        "negative": ["6", 0],
-                        "control_net": ["21", 0],
-                        "image": cn_image_ref,
-                        "strength": controlnet["strength"],
-                        "start_percent": controlnet.get("start_percent", 0.0),
-                        "end_percent": controlnet.get("end_percent", 1.0),
-                    }}
-        wf["8"]["inputs"]["positive"] = ["22", 0]
-        wf["8"]["inputs"]["negative"] = ["22", 1]
+            wf["21"] = {"class_type": "ControlNetLoader",
+                        "inputs": {"control_net_name": cn_model}}
+            wf["22"] = {"class_type": "ControlNetApplyAdvanced",
+                        "inputs": {
+                            "positive": ["5", 0],
+                            "negative": ["6", 0],
+                            "control_net": ["21", 0],
+                            "image": cn_image_ref,
+                            "strength": controlnet["strength"],
+                            "start_percent": controlnet.get("start_percent", 0.0),
+                            "end_percent": controlnet.get("end_percent", 1.0),
+                        }}
+            wf["8"]["inputs"]["positive"] = ["22", 0]
+            wf["8"]["inputs"]["negative"] = ["22", 1]
 
-        # Debug layer
-        if cn_image_ref != ["3", 0] and _load_config().get("debug_images", False):
-            wf["25"] = {"class_type": "SaveImage",
-                        "inputs": {"images": cn_image_ref, "filename_prefix": "spellcaster_cn_debug"}}
+            # Debug layer
+            if cn_image_ref != ["3", 0] and _load_config().get("debug_images", False):
+                wf["25"] = {"class_type": "SaveImage",
+                            "inputs": {"images": cn_image_ref, "filename_prefix": "spellcaster_cn_debug"}}
 
     # ── ControlNet 2 (optional — e.g., combine Tile + Depth) ──
     if controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
         guide2 = CONTROLNET_GUIDE_MODES[controlnet_2["mode"]]
         arch = preset.get("arch", "sdxl")
         cn_model_2 = guide2["cn_models"].get(arch, guide2["cn_models"].get("sdxl"))
-        preprocessor_2 = guide2["preprocessor"]
+        if cn_model_2:
+            preprocessor_2 = guide2["preprocessor"]
 
-        cn_image_ref_2 = img_ref
-        if preprocessor_2:
-            wf["30"] = {"class_type": preprocessor_2,
-                        "inputs": {"image": ["3", 0]}}
-            cn_image_ref_2 = ["30", 0]
+            cn_image_ref_2 = img_ref
+            if preprocessor_2:
+                wf["30"] = {"class_type": preprocessor_2,
+                            "inputs": {"image": ["3", 0]}}
+                cn_image_ref_2 = ["30", 0]
 
-        wf["31"] = {"class_type": "ControlNetLoader",
-                    "inputs": {"control_net_name": cn_model_2}}
+            wf["31"] = {"class_type": "ControlNetLoader",
+                        "inputs": {"control_net_name": cn_model_2}}
 
-        # Chain from CN1 output if it exists, else from raw CLIP
-        prev_pos = ["22", 0] if "22" in wf else ["5", 0]
-        prev_neg = ["22", 1] if "22" in wf else ["6", 0]
-        wf["32"] = {"class_type": "ControlNetApplyAdvanced",
-                    "inputs": {
-                        "positive": prev_pos,
-                        "negative": prev_neg,
-                        "control_net": ["31", 0],
-                        "image": cn_image_ref_2,
-                        "strength": controlnet_2["strength"],
-                        "start_percent": controlnet_2.get("start_percent", 0.0),
-                        "end_percent": controlnet_2.get("end_percent", 1.0),
-                    }}
-        wf["8"]["inputs"]["positive"] = ["32", 0]
-        wf["8"]["inputs"]["negative"] = ["32", 1]
+            # Chain from CN1 output if it exists, else from raw CLIP
+            prev_pos = ["22", 0] if "22" in wf else ["5", 0]
+            prev_neg = ["22", 1] if "22" in wf else ["6", 0]
+            wf["32"] = {"class_type": "ControlNetApplyAdvanced",
+                        "inputs": {
+                            "positive": prev_pos,
+                            "negative": prev_neg,
+                            "control_net": ["31", 0],
+                            "image": cn_image_ref_2,
+                            "strength": controlnet_2["strength"],
+                            "start_percent": controlnet_2.get("start_percent", 0.0),
+                            "end_percent": controlnet_2.get("end_percent", 1.0),
+                        }}
+            wf["8"]["inputs"]["positive"] = ["32", 0]
+            wf["8"]["inputs"]["negative"] = ["32", 1]
 
     return wf
 
@@ -4627,59 +4636,61 @@ def _build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_
         guide = CONTROLNET_GUIDE_MODES[controlnet["mode"]]
         arch = preset.get("arch", "sdxl")
         cn_model = guide["cn_models"].get(arch, guide["cn_models"].get("sdxl"))
-        preprocessor = guide["preprocessor"]
+        if cn_model:
+            preprocessor = guide["preprocessor"]
 
-        # ControlNet processes the upscaled image
-        cn_image_ref = img_ref
-        if preprocessor:
-            wf["20"] = {"class_type": preprocessor,
-                        "inputs": {"image": img_ref}}
-            cn_image_ref = ["20", 0]
+            # ControlNet processes the upscaled image
+            cn_image_ref = img_ref
+            if preprocessor:
+                wf["20"] = {"class_type": preprocessor,
+                            "inputs": {"image": img_ref}}
+                cn_image_ref = ["20", 0]
 
-        wf["21"] = {"class_type": "ControlNetLoader",
-                    "inputs": {"control_net_name": cn_model}}
-        wf["22"] = {"class_type": "ControlNetApplyAdvanced",
-                    "inputs": {
-                        "positive": ["5", 0],
-                        "negative": ["6", 0],
-                        "control_net": ["21", 0],
-                        "image": cn_image_ref,
-                        "strength": controlnet["strength"],
-                        "start_percent": controlnet.get("start_percent", 0.0),
-                        "end_percent": controlnet.get("end_percent", 1.0),
-                    }}
-        wf["8"]["inputs"]["positive"] = ["22", 0]
-        wf["8"]["inputs"]["negative"] = ["22", 1]
+            wf["21"] = {"class_type": "ControlNetLoader",
+                        "inputs": {"control_net_name": cn_model}}
+            wf["22"] = {"class_type": "ControlNetApplyAdvanced",
+                        "inputs": {
+                            "positive": ["5", 0],
+                            "negative": ["6", 0],
+                            "control_net": ["21", 0],
+                            "image": cn_image_ref,
+                            "strength": controlnet["strength"],
+                            "start_percent": controlnet.get("start_percent", 0.0),
+                            "end_percent": controlnet.get("end_percent", 1.0),
+                        }}
+            wf["8"]["inputs"]["positive"] = ["22", 0]
+            wf["8"]["inputs"]["negative"] = ["22", 1]
 
     # ── ControlNet 2 (optional — e.g., Tile + Depth) ──
     if controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
         guide2 = CONTROLNET_GUIDE_MODES[controlnet_2["mode"]]
         arch = preset.get("arch", "sdxl")
         cn_model_2 = guide2["cn_models"].get(arch, guide2["cn_models"].get("sdxl"))
-        preprocessor_2 = guide2["preprocessor"]
+        if cn_model_2:
+            preprocessor_2 = guide2["preprocessor"]
 
-        cn_image_ref_2 = img_ref
-        if preprocessor_2:
-            wf["30"] = {"class_type": preprocessor_2,
-                        "inputs": {"image": img_ref}}
-            cn_image_ref_2 = ["30", 0]
+            cn_image_ref_2 = img_ref
+            if preprocessor_2:
+                wf["30"] = {"class_type": preprocessor_2,
+                            "inputs": {"image": img_ref}}
+                cn_image_ref_2 = ["30", 0]
 
-        wf["31"] = {"class_type": "ControlNetLoader",
-                    "inputs": {"control_net_name": cn_model_2}}
-        prev_pos = ["22", 0] if "22" in wf else ["5", 0]
-        prev_neg = ["22", 1] if "22" in wf else ["6", 0]
-        wf["32"] = {"class_type": "ControlNetApplyAdvanced",
-                    "inputs": {
-                        "positive": prev_pos,
-                        "negative": prev_neg,
-                        "control_net": ["31", 0],
-                        "image": cn_image_ref_2,
-                        "strength": controlnet_2["strength"],
-                        "start_percent": controlnet_2.get("start_percent", 0.0),
-                        "end_percent": controlnet_2.get("end_percent", 1.0),
-                    }}
-        wf["8"]["inputs"]["positive"] = ["32", 0]
-        wf["8"]["inputs"]["negative"] = ["32", 1]
+            wf["31"] = {"class_type": "ControlNetLoader",
+                        "inputs": {"control_net_name": cn_model_2}}
+            prev_pos = ["22", 0] if "22" in wf else ["5", 0]
+            prev_neg = ["22", 1] if "22" in wf else ["6", 0]
+            wf["32"] = {"class_type": "ControlNetApplyAdvanced",
+                        "inputs": {
+                            "positive": prev_pos,
+                            "negative": prev_neg,
+                            "control_net": ["31", 0],
+                            "image": cn_image_ref_2,
+                            "strength": controlnet_2["strength"],
+                            "start_percent": controlnet_2.get("start_percent", 0.0),
+                            "end_percent": controlnet_2.get("end_percent", 1.0),
+                        }}
+            wf["8"]["inputs"]["positive"] = ["32", 0]
+            wf["8"]["inputs"]["negative"] = ["32", 1]
 
     return wf
 
@@ -4930,60 +4941,62 @@ def _build_colorize(image_filename, preset, prompt_text, negative_text, seed,
     if controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
         guide2 = CONTROLNET_GUIDE_MODES[controlnet_2["mode"]]
         cn_model_2 = guide2["cn_models"].get(arch, guide2["cn_models"].get("sdxl"))
-        preprocessor_2 = guide2["preprocessor"]
+        if cn_model_2:
+            preprocessor_2 = guide2["preprocessor"]
 
-        cn_image_ref_2 = img_ref
-        if preprocessor_2:
-            wf["30"] = {"class_type": preprocessor_2,
-                        "inputs": {"image": img_ref}}
-            cn_image_ref_2 = ["30", 0]
+            cn_image_ref_2 = img_ref
+            if preprocessor_2:
+                wf["30"] = {"class_type": preprocessor_2,
+                            "inputs": {"image": img_ref}}
+                cn_image_ref_2 = ["30", 0]
 
-        wf["31"] = {"class_type": "ControlNetLoader",
-                    "inputs": {"control_net_name": cn_model_2}}
-        wf["32"] = {"class_type": "ControlNetApplyAdvanced",
-                    "inputs": {
-                        "positive": ["7", 0],
-                        "negative": ["7", 1],
-                        "control_net": ["31", 0],
-                        "image": cn_image_ref_2,
-                        "strength": controlnet_2["strength"],
-                        "start_percent": controlnet_2.get("start_percent", 0.0),
-                        "end_percent": controlnet_2.get("end_percent", 1.0),
-                    }}
-        wf["9"]["inputs"]["positive"] = ["32", 0]
-        wf["9"]["inputs"]["negative"] = ["32", 1]
+            wf["31"] = {"class_type": "ControlNetLoader",
+                        "inputs": {"control_net_name": cn_model_2}}
+            wf["32"] = {"class_type": "ControlNetApplyAdvanced",
+                        "inputs": {
+                            "positive": ["7", 0],
+                            "negative": ["7", 1],
+                            "control_net": ["31", 0],
+                            "image": cn_image_ref_2,
+                            "strength": controlnet_2["strength"],
+                            "start_percent": controlnet_2.get("start_percent", 0.0),
+                            "end_percent": controlnet_2.get("end_percent", 1.0),
+                        }}
+            wf["9"]["inputs"]["positive"] = ["32", 0]
+            wf["9"]["inputs"]["negative"] = ["32", 1]
 
-        if _load_config().get("debug_images", False):
-            if cn_image_ref_2 != img_ref:
-                wf["35"] = {"class_type": "SaveImage",
-                            "inputs": {"images": cn_image_ref_2, "filename_prefix": "spellcaster_cn_debug"}}
+            if _load_config().get("debug_images", False):
+                if cn_image_ref_2 != img_ref:
+                    wf["35"] = {"class_type": "SaveImage",
+                                "inputs": {"images": cn_image_ref_2, "filename_prefix": "spellcaster_cn_debug"}}
 
     # ── Optional ControlNet 2 (Depth/Pose for spatial guidance) ──
     if controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
         guide2 = CONTROLNET_GUIDE_MODES[controlnet_2["mode"]]
         cn_model_2 = guide2["cn_models"].get(arch, guide2["cn_models"].get("sdxl"))
-        preprocessor_2 = guide2["preprocessor"]
+        if cn_model_2:
+            preprocessor_2 = guide2["preprocessor"]
 
-        cn_image_ref_2 = img_ref
-        if preprocessor_2:
-            wf["20"] = {"class_type": preprocessor_2,
-                        "inputs": {"image": img_ref}}
-            cn_image_ref_2 = ["20", 0]
+            cn_image_ref_2 = img_ref
+            if preprocessor_2:
+                wf["20"] = {"class_type": preprocessor_2,
+                            "inputs": {"image": img_ref}}
+                cn_image_ref_2 = ["20", 0]
 
-        wf["21"] = {"class_type": "ControlNetLoader",
-                    "inputs": {"control_net_name": cn_model_2}}
-        wf["22"] = {"class_type": "ControlNetApplyAdvanced",
-                    "inputs": {
-                        "positive": ["7", 0],
-                        "negative": ["7", 1],
-                        "control_net": ["21", 0],
-                        "image": cn_image_ref_2,
-                        "strength": controlnet_2["strength"],
-                        "start_percent": controlnet_2.get("start_percent", 0.0),
-                        "end_percent": controlnet_2.get("end_percent", 1.0),
-                    }}
-        wf["9"]["inputs"]["positive"] = ["22", 0]
-        wf["9"]["inputs"]["negative"] = ["22", 1]
+            wf["21"] = {"class_type": "ControlNetLoader",
+                        "inputs": {"control_net_name": cn_model_2}}
+            wf["22"] = {"class_type": "ControlNetApplyAdvanced",
+                        "inputs": {
+                            "positive": ["7", 0],
+                            "negative": ["7", 1],
+                            "control_net": ["21", 0],
+                            "image": cn_image_ref_2,
+                            "strength": controlnet_2["strength"],
+                            "start_percent": controlnet_2.get("start_percent", 0.0),
+                            "end_percent": controlnet_2.get("end_percent", 1.0),
+                        }}
+            wf["9"]["inputs"]["positive"] = ["22", 0]
+            wf["9"]["inputs"]["negative"] = ["22", 1]
 
     return wf
 
@@ -5269,87 +5282,89 @@ def _build_supir(image_filename, supir_model, sdxl_model, prompt, seed,
     if controlnet and controlnet.get("mode", "Off") != "Off":
         guide = CONTROLNET_GUIDE_MODES[controlnet["mode"]]
         cn_model = guide["cn_models"].get("sdxl", guide["cn_models"].get("sd15"))
-        preprocessor = guide["preprocessor"]
+        if cn_model:
+            preprocessor = guide["preprocessor"]
 
-        # Load SDXL checkpoint for the refinement pass
-        wf["70"] = {"class_type": "CheckpointLoaderSimple",
-                    "inputs": {"ckpt_name": sdxl_model}}
-        wf["71"] = {"class_type": "CLIPTextEncode",
-                    "inputs": {"text": prompt if prompt.strip() else "high quality, detailed, sharp",
-                               "clip": ["70", 1]}}
-        wf["72"] = {"class_type": "CLIPTextEncode",
-                    "inputs": {"text": "blurry, noisy, artifacts, low quality",
-                               "clip": ["70", 1]}}
+            # Load SDXL checkpoint for the refinement pass
+            wf["70"] = {"class_type": "CheckpointLoaderSimple",
+                        "inputs": {"ckpt_name": sdxl_model}}
+            wf["71"] = {"class_type": "CLIPTextEncode",
+                        "inputs": {"text": prompt if prompt.strip() else "high quality, detailed, sharp",
+                                   "clip": ["70", 1]}}
+            wf["72"] = {"class_type": "CLIPTextEncode",
+                        "inputs": {"text": "blurry, noisy, artifacts, low quality",
+                                   "clip": ["70", 1]}}
 
-        # Preprocess SUPIR output for ControlNet
-        cn_image_ref = ["50", 0]  # SUPIR decoded output
-        if preprocessor:
-            wf["73"] = {"class_type": preprocessor,
-                        "inputs": {"image": ["50", 0]}}
-            cn_image_ref = ["73", 0]
-
-        wf["74"] = {"class_type": "ControlNetLoader",
-                    "inputs": {"control_net_name": cn_model}}
-        wf["75"] = {"class_type": "ControlNetApplyAdvanced",
-                    "inputs": {
-                        "positive": ["71", 0],
-                        "negative": ["72", 0],
-                        "control_net": ["74", 0],
-                        "image": cn_image_ref,
-                        "strength": controlnet["strength"],
-                        "start_percent": 0.0,
-                        "end_percent": 1.0,
-                    }}
-
-        # Encode SUPIR output to latent, sample at very low denoise, decode
-        wf["76"] = {"class_type": "VAEEncode",
-                    "inputs": {"pixels": ["50", 0], "vae": ["70", 2]}}
-        wf["77"] = {"class_type": "KSampler",
-                    "inputs": {
-                        "model": ["70", 0],
-                        "positive": ["75", 0],
-                        "negative": ["75", 1],
-                        "latent_image": ["76", 0],
-                        "seed": seed + 1,
-                        "steps": 15,
-                        "cfg": 4.0,
-                        "sampler_name": "dpmpp_2m_sde",
-                        "scheduler": "karras",
-                        "denoise": 0.12,
-                    }}
-        wf["78"] = {"class_type": "VAEDecode",
-                    "inputs": {"samples": ["77", 0], "vae": ["70", 2]}}
-
-        # Second ControlNet refinement (optional)
-        if controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
-            guide2 = CONTROLNET_GUIDE_MODES[controlnet_2["mode"]]
-            cn_model_2 = guide2["cn_models"].get("sdxl", guide2["cn_models"].get("sd15"))
-            preprocessor_2 = guide2["preprocessor"]
-
-            cn_image_ref_2 = ["50", 0]
-            if preprocessor_2:
-                wf["80"] = {"class_type": preprocessor_2,
+            # Preprocess SUPIR output for ControlNet
+            cn_image_ref = ["50", 0]  # SUPIR decoded output
+            if preprocessor:
+                wf["73"] = {"class_type": preprocessor,
                             "inputs": {"image": ["50", 0]}}
-                cn_image_ref_2 = ["80", 0]
+                cn_image_ref = ["73", 0]
 
-            wf["81"] = {"class_type": "ControlNetLoader",
-                        "inputs": {"control_net_name": cn_model_2}}
-            wf["82"] = {"class_type": "ControlNetApplyAdvanced",
+            wf["74"] = {"class_type": "ControlNetLoader",
+                        "inputs": {"control_net_name": cn_model}}
+            wf["75"] = {"class_type": "ControlNetApplyAdvanced",
                         "inputs": {
-                            "positive": ["75", 0],
-                            "negative": ["75", 1],
-                            "control_net": ["81", 0],
-                            "image": cn_image_ref_2,
-                            "strength": controlnet_2["strength"],
+                            "positive": ["71", 0],
+                            "negative": ["72", 0],
+                            "control_net": ["74", 0],
+                            "image": cn_image_ref,
+                            "strength": controlnet["strength"],
                             "start_percent": 0.0,
                             "end_percent": 1.0,
                         }}
-            # Re-wire the KSampler to use chained CN output
-            wf["77"]["inputs"]["positive"] = ["82", 0]
-            wf["77"]["inputs"]["negative"] = ["82", 1]
 
-        # Replace output to use the refined image
-        wf["60"]["inputs"]["images"] = ["78", 0]
+            # Encode SUPIR output to latent, sample at very low denoise, decode
+            wf["76"] = {"class_type": "VAEEncode",
+                        "inputs": {"pixels": ["50", 0], "vae": ["70", 2]}}
+            wf["77"] = {"class_type": "KSampler",
+                        "inputs": {
+                            "model": ["70", 0],
+                            "positive": ["75", 0],
+                            "negative": ["75", 1],
+                            "latent_image": ["76", 0],
+                            "seed": seed + 1,
+                            "steps": 15,
+                            "cfg": 4.0,
+                            "sampler_name": "dpmpp_2m_sde",
+                            "scheduler": "karras",
+                            "denoise": 0.12,
+                        }}
+            wf["78"] = {"class_type": "VAEDecode",
+                        "inputs": {"samples": ["77", 0], "vae": ["70", 2]}}
+
+            # Second ControlNet refinement (optional)
+            if controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
+                guide2 = CONTROLNET_GUIDE_MODES[controlnet_2["mode"]]
+                cn_model_2 = guide2["cn_models"].get("sdxl", guide2["cn_models"].get("sd15"))
+                if cn_model_2:
+                    preprocessor_2 = guide2["preprocessor"]
+
+                    cn_image_ref_2 = ["50", 0]
+                    if preprocessor_2:
+                        wf["80"] = {"class_type": preprocessor_2,
+                                    "inputs": {"image": ["50", 0]}}
+                        cn_image_ref_2 = ["80", 0]
+
+                    wf["81"] = {"class_type": "ControlNetLoader",
+                                "inputs": {"control_net_name": cn_model_2}}
+                    wf["82"] = {"class_type": "ControlNetApplyAdvanced",
+                                "inputs": {
+                                    "positive": ["75", 0],
+                                    "negative": ["75", 1],
+                                    "control_net": ["81", 0],
+                                    "image": cn_image_ref_2,
+                                    "strength": controlnet_2["strength"],
+                                    "start_percent": 0.0,
+                                    "end_percent": 1.0,
+                                }}
+                    # Re-wire the KSampler to use chained CN output
+                    wf["77"]["inputs"]["positive"] = ["82", 0]
+                    wf["77"]["inputs"]["negative"] = ["82", 1]
+
+            # Replace output to use the refined image
+            wf["60"]["inputs"]["images"] = ["78", 0]
 
     return wf
 
