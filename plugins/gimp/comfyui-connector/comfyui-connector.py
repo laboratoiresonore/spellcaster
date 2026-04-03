@@ -6940,6 +6940,207 @@ def _run_with_spinner(label_text, func, *args):
 #   FileChooserButton — file picker (get_filename() or get_file().get_path())
 #   Grid            — table layout for aligned parameter rows
 
+# ═══════════════════════════════════════════════════════════════════════════
+#  AutoSet — one-click optimal configuration for any dialog + model + task
+# ═══════════════════════════════════════════════════════════════════════════
+# The "A." button in every dialog calls _auto_configure() which sets all
+# widgets to known-good values for the current model architecture and task.
+
+_AUTOSET_PROMPTS = {
+    "sd15": ("photorealistic, highly detailed, sharp focus, professional, 8k",
+             "blurry, low quality, deformed, bad anatomy, watermark"),
+    "sdxl": ("photorealistic, ultra detailed, sharp focus, professional photograph, natural lighting, 8k resolution",
+             "blurry, low quality, worst quality, deformed, bad anatomy, watermark, text, cartoon"),
+    "flux1dev": ("A highly detailed professional photograph with natural lighting and sharp focus throughout",
+                 ""),
+    "flux2klein": ("Detailed professional photograph, natural light, sharp, realistic",
+                   ""),
+    "zit": ("photo, detailed, sharp", "blurry, bad"),
+    "illustrious": ("masterpiece, best quality, very aesthetic, absurdres, highly detailed",
+                    "worst quality, low quality, lowres, bad anatomy"),
+    "flux_kontext": ("A highly detailed professional photograph with natural lighting",
+                     ""),
+}
+
+_AUTOSET_CFG = {
+    "sd15": 7.0, "sdxl": 6.5, "zit": 2.0, "illustrious": 5.5,
+    "flux1dev": 3.5, "flux2klein": 1.0, "flux_kontext": 3.5,
+}
+
+_AUTOSET_STEPS = {
+    "sd15": 25, "sdxl": 30, "zit": 6, "illustrious": 28,
+    "flux1dev": 25, "flux2klein": 20, "flux_kontext": 25,
+}
+
+_AUTOSET_DENOISE = {
+    # (arch, mode) -> denoise value
+    ("sd15", "img2img"): 0.60, ("sd15", "inpaint"): 0.75,
+    ("sd15", "hallucinate"): 0.35, ("sd15", "seedv2r"): 0.40,
+    ("sd15", "colorize"): 0.72, ("sd15", "style"): 0.60,
+    ("sdxl", "img2img"): 0.60, ("sdxl", "inpaint"): 0.75,
+    ("sdxl", "hallucinate"): 0.35, ("sdxl", "seedv2r"): 0.40,
+    ("sdxl", "colorize"): 0.72, ("sdxl", "style"): 0.60,
+    ("sdxl", "supir"): 0.30,
+    ("illustrious", "img2img"): 0.55, ("illustrious", "inpaint"): 0.70,
+    ("illustrious", "hallucinate"): 0.35,
+    ("zit", "img2img"): 0.55, ("zit", "inpaint"): 0.70,
+    ("zit", "hallucinate"): 0.30,
+    ("flux1dev", "img2img"): 0.55, ("flux1dev", "inpaint"): 0.70,
+    ("flux1dev", "hallucinate"): 0.35, ("flux1dev", "style"): 0.55,
+    ("flux2klein", "img2img"): 0.55,
+}
+
+# (arch, mode) -> (cn1_key, cn1_strength, cn2_key, cn2_strength)
+# cn1_key=None means "leave CN1 alone" (e.g. colorize has built-in lineart)
+_AUTOSET_CN = {
+    ("sdxl", "img2img"):     ("Off", 0.8, "Off", 0.5),
+    ("sdxl", "inpaint"):     ("Off", 0.8, "Off", 0.5),
+    ("sdxl", "hallucinate"): ("Tile (detail) — SD1.5/SDXL/ZIT", 0.7, "Depth (spatial) — ALL architectures", 0.4),
+    ("sdxl", "seedv2r"):     ("Tile (detail) — SD1.5/SDXL/ZIT", 0.7, "Off", 0.5),
+    ("sdxl", "colorize"):    (None, None, "Depth (spatial) — ALL architectures", 0.5),
+    ("sdxl", "style"):       ("Depth (spatial) — ALL architectures", 0.6, "Off", 0.5),
+    ("sdxl", "supir"):       ("Tile (detail) — SD1.5/SDXL/ZIT", 0.6, "Off", 0.4),
+    ("flux1dev", "img2img"): ("Flux Union Pro (all-in-one) — Flux only", 0.7, "Off", 0.5),
+    ("flux1dev", "inpaint"): ("Flux Union Pro (all-in-one) — Flux only", 0.6, "Off", 0.5),
+    ("flux1dev", "hallucinate"): ("Flux Union Pro (all-in-one) — Flux only", 0.7, "Depth (spatial) — ALL architectures", 0.4),
+    ("flux1dev", "seedv2r"):  ("Flux Union Pro (all-in-one) — Flux only", 0.7, "Off", 0.5),
+    ("flux1dev", "style"):    ("Depth (spatial) — ALL architectures", 0.6, "Off", 0.5),
+    ("flux2klein", "img2img"): ("Flux Union Pro (all-in-one) — Flux only", 0.7, "Off", 0.5),
+    ("sd15", "img2img"):     ("Off", 0.8, "Off", 0.5),
+    ("sd15", "inpaint"):     ("Off", 0.8, "Off", 0.5),
+    ("sd15", "hallucinate"): ("Tile (detail) — SD1.5/SDXL/ZIT", 0.7, "Off", 0.5),
+    ("sd15", "seedv2r"):     ("Tile (detail) — SD1.5/SDXL/ZIT", 0.7, "Off", 0.5),
+    ("sd15", "colorize"):    (None, None, "Depth (spatial) — ALL architectures", 0.5),
+    ("sd15", "style"):       ("Depth (spatial) — ALL architectures", 0.6, "Off", 0.5),
+    ("zit", "img2img"):      ("ZIT Union (all modes) — ZIT only", 0.7, "Off", 0.5),
+    ("zit", "inpaint"):      ("ZIT Union (all modes) — ZIT only", 0.7, "Off", 0.5),
+    ("zit", "hallucinate"):  ("ZIT Union (all modes) — ZIT only", 0.7, "Off", 0.5),
+    ("zit", "seedv2r"):      ("ZIT Union (all modes) — ZIT only", 0.7, "Off", 0.5),
+    ("illustrious", "img2img"):     ("Off", 0.8, "Off", 0.5),
+    ("illustrious", "inpaint"):     ("Off", 0.8, "Off", 0.5),
+    ("illustrious", "hallucinate"): ("Tile (detail) — SD1.5/SDXL/ZIT", 0.7, "Depth (spatial) — ALL architectures", 0.4),
+    ("illustrious", "seedv2r"):     ("Tile (detail) — SD1.5/SDXL/ZIT", 0.7, "Off", 0.5),
+    ("illustrious", "colorize"):    (None, None, "Depth (spatial) — ALL architectures", 0.5),
+    ("illustrious", "style"):       ("Depth (spatial) — ALL architectures", 0.6, "Off", 0.5),
+}
+
+# (arch, mode) -> list of (lora_name, model_strength, clip_strength)
+_AUTOSET_LORAS = {
+    ("sdxl", "img2img"): [("SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors", 0.6, 0.6)],
+    ("sdxl", "inpaint"): [],
+    ("sdxl", "hallucinate"): [("SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors", 0.5, 0.5)],
+    ("sdxl", "seedv2r"): [("SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors", 0.5, 0.5)],
+    ("sdxl", "style"): [],
+    ("sdxl", "supir"): [],
+    ("flux1dev", "img2img"): [],
+    ("flux1dev", "inpaint"): [],
+    ("flux2klein", "img2img"): [("Flux-2-Klein\\K9bSh4rpD3tails.safetensors", 0.5, 0.5)],
+    ("sd15", "img2img"): [],
+    ("sd15", "hallucinate"): [],
+    ("zit", "img2img"): [],
+    ("illustrious", "img2img"): [],
+}
+
+
+def _auto_configure(dialog, mode="img2img"):
+    """Auto-configure all dialog widgets to optimal values for the current model + task.
+
+    Called by the 'A.' button in every dialog. Reads the current model preset,
+    determines architecture, and sets prompts, cfg, steps, ControlNet, LoRAs,
+    and denoise to known-good values.
+    """
+    # Determine architecture from the dialog's model/preset combo
+    arch = "sdxl"  # fallback
+    if hasattr(dialog, 'preset_combo'):
+        idx = dialog.preset_combo.get_active()
+        if 0 <= idx < len(MODEL_PRESETS):
+            arch = MODEL_PRESETS[idx].get("arch", "sdxl")
+    elif hasattr(dialog, '_model_combo_ref'):
+        # Non-PresetDialog tools store a reference to their model_combo
+        mc = dialog._model_combo_ref
+        idx = mc.get_active()
+        aid = mc.get_active_id()
+        if aid and aid.isdigit():
+            idx = int(aid)
+        if 0 <= idx < len(MODEL_PRESETS):
+            arch = MODEL_PRESETS[idx].get("arch", "sdxl")
+
+    # Set prompts
+    pos, neg = _AUTOSET_PROMPTS.get(arch, _AUTOSET_PROMPTS["sdxl"])
+    if hasattr(dialog, 'prompt_tv'):
+        dialog.prompt_tv.get_buffer().set_text(pos)
+    if hasattr(dialog, 'neg_tv'):
+        dialog.neg_tv.get_buffer().set_text(neg)
+
+    # Set CFG
+    if hasattr(dialog, 'cfg_spin'):
+        dialog.cfg_spin.set_value(_AUTOSET_CFG.get(arch, 6.5))
+
+    # Set steps
+    if hasattr(dialog, 'steps_spin'):
+        dialog.steps_spin.set_value(_AUTOSET_STEPS.get(arch, 30))
+
+    # Set denoise
+    dn = _AUTOSET_DENOISE.get((arch, mode))
+    if dn is not None and hasattr(dialog, 'denoise_spin') and dialog.denoise_spin:
+        dialog.denoise_spin.set_value(dn)
+
+    # Set ControlNet 1
+    cn_vals = _AUTOSET_CN.get((arch, mode))
+    if cn_vals:
+        cn1_key, cn1_str, cn2_key, cn2_str = cn_vals
+        # CN1
+        if cn1_key is not None:
+            cn1_combo = getattr(dialog, '_cn_mode_combo', None) or getattr(dialog, '_autoset_cn1_combo', None)
+            if cn1_combo:
+                cn1_combo.set_active_id(cn1_key)
+            cn1_spin = getattr(dialog, '_cn_strength_spin', None) or getattr(dialog, '_autoset_cn1_spin', None)
+            if cn1_spin and cn1_str is not None:
+                cn1_spin.set_value(cn1_str)
+        # CN2
+        cn2_combo = getattr(dialog, '_cn_mode_combo_2', None) or getattr(dialog, '_autoset_cn2_combo', None)
+        if cn2_combo:
+            cn2_combo.set_active_id(cn2_key)
+        cn2_spin = getattr(dialog, '_cn_strength_spin_2', None) or getattr(dialog, '_autoset_cn2_spin', None)
+        if cn2_spin and cn2_str is not None:
+            cn2_spin.set_value(cn2_str)
+
+    # Set LoRAs (only for dialogs with lora_rows like PresetDialog)
+    loras = _AUTOSET_LORAS.get((arch, mode), [])
+    if hasattr(dialog, 'lora_rows'):
+        # Clear all LoRA slots first
+        for combo, ms_spin, cs_spin in dialog.lora_rows:
+            combo.set_active(0)  # (none)
+            ms_spin.set_value(1.0)
+            cs_spin.set_value(1.0)
+        # Set new LoRAs
+        for i, (lname, ms, cs) in enumerate(loras):
+            if i < len(dialog.lora_rows):
+                combo, ms_spin, cs_spin = dialog.lora_rows[i]
+                # Try to set by ID; if not found, leave as (none)
+                combo.set_active_id(lname)
+                ms_spin.set_value(ms)
+                cs_spin.set_value(cs)
+
+
+def _make_autoset_button(dialog, mode="img2img"):
+    """Create a small 'A.' button that calls _auto_configure on click.
+
+    Returns a Gtk.Box containing the button, suitable for packing at the
+    top of any dialog content area.
+    """
+    auto_btn = Gtk.Button(label="A.")
+    auto_btn.set_tooltip_text(
+        "AutoSet: auto-configure ALL parameters for optimal results.\n"
+        "Sets prompts, CFG, steps, LoRAs, ControlNet, and denoise\n"
+        "based on your selected model and task.")
+    auto_btn.set_size_request(32, -1)
+    auto_btn.connect("clicked", lambda btn: _auto_configure(dialog, mode))
+    top_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+    top_row.pack_end(auto_btn, False, False, 0)
+    return top_row
+
+
 class PresetDialog(Gtk.Dialog):
     """Main generation dialog — model preset selector with prompt, params, LoRAs.
 
@@ -7289,6 +7490,9 @@ class PresetDialog(Gtk.Dialog):
         sw3 = Gtk.ScrolledWindow(); sw3.set_min_content_height(80); sw3.add(self.wf_tv)
         exp.add(sw3)
         box.pack_start(exp, False, False, 0)
+
+        # AutoSet button — tiny "A." in the top area
+        box.pack_start(_make_autoset_button(self, mode), False, False, 0)
 
         box.show_all()
         self._apply_preset(0)
@@ -9423,6 +9627,24 @@ class KleinDialog(Gtk.Dialog):
         # Runs spinner
         _add_runs_spinner(self, box)
 
+        # AutoSet button
+        def _klein_auto_set():
+            arch = "flux2klein"
+            pos, _neg = _AUTOSET_PROMPTS.get(arch, _AUTOSET_PROMPTS["sdxl"])
+            self.prompt_tv.get_buffer().set_text(pos)
+            self.steps_spin.set_value(_AUTOSET_STEPS.get(arch, 20))
+            self.denoise_spin.set_value(0.55)
+            self.guidance_spin.set_value(_AUTOSET_CFG.get(arch, 1.0))
+        _klein_auto_btn = Gtk.Button(label="A.")
+        _klein_auto_btn.set_tooltip_text(
+            "AutoSet: auto-configure ALL parameters for optimal Klein results.\n"
+            "Sets prompt, steps, denoise, and guidance to recommended values.")
+        _klein_auto_btn.set_size_request(32, -1)
+        _klein_auto_btn.connect("clicked", lambda b: _klein_auto_set())
+        _klein_top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        _klein_top.pack_end(_klein_auto_btn, False, False, 0)
+        box.pack_start(_klein_top, False, False, 0)
+
         box.show_all()
         GLib.idle_add(self._on_fetch_loras, None)
 
@@ -11007,6 +11229,34 @@ class Spellcaster(Gimp.PlugIn):
         runs_hb.pack_start(runs_spin, False, False, 0)
         runs_hb.pack_start(Gtk.Label(label="(each run gets a new seed)"), False, False, 0)
         bx.pack_start(runs_hb, False, False, 0)
+        # AutoSet button
+        def _style_auto_set():
+            idx = model_combo.get_active()
+            aid = model_combo.get_active_id()
+            if aid and aid.isdigit():
+                idx = int(aid)
+            arch = MODEL_PRESETS[idx]["arch"] if 0 <= idx < len(MODEL_PRESETS) else "sdxl"
+            pos, neg = _AUTOSET_PROMPTS.get(arch, _AUTOSET_PROMPTS["sdxl"])
+            prompt_tv.get_buffer().set_text(pos)
+            neg_tv.get_buffer().set_text(neg)
+            dn = _AUTOSET_DENOISE.get((arch, "style"), 0.60)
+            denoise_spin.set_value(dn)
+            cn = _AUTOSET_CN.get((arch, "style"))
+            if cn:
+                cn1k, cn1s, cn2k, cn2s = cn
+                if cn1k is not None:
+                    st_cn_combo.set_active_id(cn1k)
+                if cn1s is not None:
+                    st_cn_strength.set_value(cn1s)
+                st_cn_combo_2.set_active_id(cn2k)
+                st_cn_strength_2.set_value(cn2s)
+        _st_auto_btn = Gtk.Button(label="A.")
+        _st_auto_btn.set_tooltip_text("AutoSet: optimal config for this model + style transfer")
+        _st_auto_btn.set_size_request(32, -1)
+        _st_auto_btn.connect("clicked", lambda b: _style_auto_set())
+        _st_top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        _st_top.pack_end(_st_auto_btn, False, False, 0)
+        bx.pack_start(_st_top, False, False, 0)
         bx.show_all()
         last = _SESSION.get("style_transfer")
         if last:
@@ -11168,6 +11418,20 @@ class Spellcaster(Gimp.PlugIn):
         compare_check.set_tooltip_text("When enabled, imports BOTH the original and restored face\nas separate layers so you can compare them in GIMP.")
         bx.pack_start(compare_check, False, False, 0)
         bx.pack_start(Gtk.Label(label="Restores and enhances faces in the image.\nResult is imported as a new layer."), False, False, 4)
+        # AutoSet button
+        def _fr_auto_set():
+            model_combo.set_active(0)  # CodeFormer
+            det_combo.set_active(0)    # retinaface_resnet50
+            vis_spin.set_value(1.0)
+            cf_spin.set_value(0.5)
+            sharpen_spin.set_value(0.0)
+        _fr_auto_btn = Gtk.Button(label="A.")
+        _fr_auto_btn.set_tooltip_text("AutoSet: optimal config for face restoration")
+        _fr_auto_btn.set_size_request(32, -1)
+        _fr_auto_btn.connect("clicked", lambda b: _fr_auto_set())
+        _fr_top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        _fr_top.pack_end(_fr_auto_btn, False, False, 0)
+        bx.pack_start(_fr_top, False, False, 0)
         bx.show_all()
         last = _SESSION.get("face_restore")
         if last:
@@ -11311,6 +11575,21 @@ class Spellcaster(Gimp.PlugIn):
         sharpen_radius_spin.set_tooltip_text("Kernel radius for the sharpening pass.\n1 = fine detail (default), 3 = medium, 5 = coarse structure.\nHigher radius sharpens larger features.")
         hb7.pack_start(sharpen_radius_spin, True, True, 0); bx.pack_start(hb7, False, False, 0)
         bx.pack_start(Gtk.Label(label="Full restoration pipeline for old/damaged photos.\nUpscale \u2192 Face Restore \u2192 Sharpen."), False, False, 4)
+        # AutoSet button
+        def _pr_auto_set():
+            up_combo.set_active(0)
+            face_combo.set_active(0)    # CodeFormer
+            det_combo.set_active(0)     # retinaface_resnet50
+            sharpen_spin.set_value(0.5)
+            cf_spin.set_value(0.5)
+            sharpen_radius_spin.set_value(1)
+        _pr_auto_btn = Gtk.Button(label="A.")
+        _pr_auto_btn.set_tooltip_text("AutoSet: optimal config for photo restoration")
+        _pr_auto_btn.set_size_request(32, -1)
+        _pr_auto_btn.connect("clicked", lambda b: _pr_auto_set())
+        _pr_top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        _pr_top.pack_end(_pr_auto_btn, False, False, 0)
+        bx.pack_start(_pr_top, False, False, 0)
         bx.show_all()
         last = _SESSION.get("photo_restore")
         if last:
@@ -11507,6 +11786,32 @@ class Spellcaster(Gimp.PlugIn):
         runs_spin = Gtk.SpinButton.new_with_range(1, 99, 1); runs_spin.set_value(1)
         runs_hb.pack_start(runs_spin, False, False, 0)
         bx.pack_start(runs_hb, False, False, 0)
+        # AutoSet button
+        def _hall_auto_set():
+            idx = model_combo.get_active()
+            aid = model_combo.get_active_id()
+            if aid and aid.isdigit():
+                idx = int(aid)
+            arch = MODEL_PRESETS[idx]["arch"] if 0 <= idx < len(MODEL_PRESETS) else "sdxl"
+            pos, neg = _AUTOSET_PROMPTS.get(arch, _AUTOSET_PROMPTS["sdxl"])
+            prompt_tv.get_buffer().set_text(pos)
+            neg_tv.get_buffer().set_text(neg)
+            cn = _AUTOSET_CN.get((arch, "hallucinate"))
+            if cn:
+                cn1k, cn1s, cn2k, cn2s = cn
+                if cn1k is not None:
+                    cn_combo.set_active_id(cn1k)
+                if cn1s is not None:
+                    cn_strength.set_value(cn1s)
+                cn_combo_2.set_active_id(cn2k)
+                cn_strength_2.set_value(cn2s)
+        _hall_auto_btn = Gtk.Button(label="A.")
+        _hall_auto_btn.set_tooltip_text("AutoSet: optimal config for this model + detail hallucination")
+        _hall_auto_btn.set_size_request(32, -1)
+        _hall_auto_btn.connect("clicked", lambda b: _hall_auto_set())
+        _hall_top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        _hall_top.pack_end(_hall_auto_btn, False, False, 0)
+        bx.pack_start(_hall_top, False, False, 0)
         bx.show_all()
         last = _SESSION.get("detail_hallucinate")
         if last:
@@ -11731,6 +12036,32 @@ class Spellcaster(Gimp.PlugIn):
         runs_hb.pack_start(runs_spin, False, False, 0)
         runs_hb.pack_start(Gtk.Label(label="(each run gets a new seed)"), False, False, 0)
         bx.pack_start(runs_hb, False, False, 0)
+        # AutoSet button
+        def _sv2r_auto_set():
+            idx = model_combo.get_active()
+            aid = model_combo.get_active_id()
+            if aid and aid.isdigit():
+                idx = int(aid)
+            arch = MODEL_PRESETS[idx]["arch"] if 0 <= idx < len(MODEL_PRESETS) else "sdxl"
+            pos, neg = _AUTOSET_PROMPTS.get(arch, _AUTOSET_PROMPTS["sdxl"])
+            prompt_tv.get_buffer().set_text(pos)
+            neg_tv.get_buffer().set_text(neg)
+            cn = _AUTOSET_CN.get((arch, "seedv2r"))
+            if cn:
+                cn1k, cn1s, cn2k, cn2s = cn
+                if cn1k is not None:
+                    sv2r_cn_combo.set_active_id(cn1k)
+                if cn1s is not None:
+                    sv2r_cn_strength.set_value(cn1s)
+                sv2r_cn_combo_2.set_active_id(cn2k)
+                sv2r_cn_strength_2.set_value(cn2s)
+        _sv2r_auto_btn = Gtk.Button(label="A.")
+        _sv2r_auto_btn.set_tooltip_text("AutoSet: optimal config for this model + SeedV2R upscale")
+        _sv2r_auto_btn.set_size_request(32, -1)
+        _sv2r_auto_btn.connect("clicked", lambda b: _sv2r_auto_set())
+        _sv2r_top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        _sv2r_top.pack_end(_sv2r_auto_btn, False, False, 0)
+        bx.pack_start(_sv2r_top, False, False, 0)
         bx.show_all()
         # Session recall
         last = _SESSION.get("seedv2r")
@@ -11935,6 +12266,30 @@ class Spellcaster(Gimp.PlugIn):
         runs_hb.pack_start(runs_spin, False, False, 0)
         runs_hb.pack_start(Gtk.Label(label="(each run gets a new seed)"), False, False, 0)
         bx.pack_start(runs_hb, False, False, 0)
+        # AutoSet button
+        def _col_auto_set():
+            idx = model_combo.get_active()
+            aid = model_combo.get_active_id()
+            if aid and aid.isdigit():
+                idx = int(aid)
+            arch = MODEL_PRESETS[idx]["arch"] if 0 <= idx < len(MODEL_PRESETS) else "sdxl"
+            pos, neg = _AUTOSET_PROMPTS.get(arch, _AUTOSET_PROMPTS["sdxl"])
+            prompt_tv.get_buffer().set_text("vivid natural colors, " + pos)
+            neg_tv.get_buffer().set_text("black and white, grayscale, monochrome, desaturated, " + neg)
+            dn = _AUTOSET_DENOISE.get((arch, "colorize"), 0.72)
+            denoise_spin.set_value(dn)
+            cn = _AUTOSET_CN.get((arch, "colorize"))
+            if cn:
+                _cn1k, _cn1s, cn2k, cn2s = cn
+                col_cn2_combo.set_active_id(cn2k)
+                col_cn2_strength.set_value(cn2s)
+        _col_auto_btn = Gtk.Button(label="A.")
+        _col_auto_btn.set_tooltip_text("AutoSet: optimal config for this model + colorization")
+        _col_auto_btn.set_size_request(32, -1)
+        _col_auto_btn.connect("clicked", lambda b: _col_auto_set())
+        _col_top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        _col_top.pack_end(_col_auto_btn, False, False, 0)
+        bx.pack_start(_col_top, False, False, 0)
         bx.show_all()
         last = _SESSION.get("colorize")
         if last:
@@ -12156,6 +12511,17 @@ class Spellcaster(Gimp.PlugIn):
             if key and key in ICLIGHT_PRESETS:
                 prompt_tv.get_buffer().set_text(ICLIGHT_PRESETS[key])
         light_combo.connect("changed", _on_light_changed)
+        # AutoSet button
+        def _icl_auto_set():
+            steps_spin.set_value(20)
+            mult_spin.set_value(0.18)
+        _icl_auto_btn = Gtk.Button(label="A.")
+        _icl_auto_btn.set_tooltip_text("AutoSet: optimal config for IC-Light relighting")
+        _icl_auto_btn.set_size_request(32, -1)
+        _icl_auto_btn.connect("clicked", lambda b: _icl_auto_set())
+        _icl_top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        _icl_top.pack_end(_icl_auto_btn, False, False, 0)
+        bx.pack_start(_icl_top, False, False, 0)
         bx.show_all()
         last = _SESSION.get("iclight")
         if last:
@@ -12473,6 +12839,29 @@ class Spellcaster(Gimp.PlugIn):
         runs_hb.pack_start(runs_spin, False, False, 0)
         runs_hb.pack_start(Gtk.Label(label="(each run gets a new seed)"), False, False, 0)
         bx.pack_start(runs_hb, False, False, 0)
+        # AutoSet button
+        def _supir_auto_set():
+            arch = "sdxl"  # SUPIR is always SDXL-based
+            pos, _neg = _AUTOSET_PROMPTS.get(arch, _AUTOSET_PROMPTS["sdxl"])
+            prompt_tv.get_buffer().set_text(pos)
+            denoise_spin.set_value(_AUTOSET_DENOISE.get((arch, "supir"), 0.30))
+            steps_spin.set_value(45)
+            cn = _AUTOSET_CN.get((arch, "supir"))
+            if cn:
+                cn1k, cn1s, cn2k, cn2s = cn
+                if cn1k is not None:
+                    supir_cn_combo.set_active_id(cn1k)
+                if cn1s is not None:
+                    supir_cn_strength.set_value(cn1s)
+                supir_cn_combo_2.set_active_id(cn2k)
+                supir_cn_strength_2.set_value(cn2s)
+        _supir_auto_btn = Gtk.Button(label="A.")
+        _supir_auto_btn.set_tooltip_text("AutoSet: optimal config for SUPIR restoration")
+        _supir_auto_btn.set_size_request(32, -1)
+        _supir_auto_btn.connect("clicked", lambda b: _supir_auto_set())
+        _supir_top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        _supir_top.pack_end(_supir_auto_btn, False, False, 0)
+        bx.pack_start(_supir_top, False, False, 0)
         bx.show_all()
         last = _SESSION.get("supir")
         if last:
