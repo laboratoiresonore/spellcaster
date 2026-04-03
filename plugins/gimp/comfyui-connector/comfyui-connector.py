@@ -276,13 +276,19 @@ def _auto_update():
             if failed > 0:
                 msg += f"\n{failed} file(s) failed to download."
             msg += "\nRestart GIMP to use the new version."
-            GLib.idle_add(lambda: Gimp.message(msg) or False)
+            def _show_update_msg_once(m=msg):
+                Gimp.message(m)
+                return False  # GLib.idle_add: return False = don't repeat
+            GLib.idle_add(_show_update_msg_once)
     except Exception as e:
         print(f"[Spellcaster] Auto-update check failed: {e}", file=_sys.stderr)
 
 # Fire-and-forget: runs once per GIMP session, daemon=True so it
-# won't prevent GIMP from exiting
-threading.Thread(target=_auto_update, daemon=True).start()
+# won't prevent GIMP from exiting. Guard prevents re-runs on module reload.
+_auto_update_started = globals().get("_auto_update_started", False)
+if not _auto_update_started:
+    _auto_update_started = True
+    threading.Thread(target=_auto_update, daemon=True).start()
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  Configuration loading — server URL and user-saved presets
@@ -10946,6 +10952,52 @@ class Spellcaster(Gimp.PlugIn):
             "and inpaint dialog opens with this model pre-selected.\n"
             "Set to '(none)' to use the last-used model instead.")
         bx.pack_start(fav_combo, False, False, 0)
+
+        # ── My Presets (quick access to saved presets) ──
+        bx.pack_start(Gtk.Separator(), False, False, 5)
+        bx.pack_start(Gtk.Label(label="My Saved Presets:", xalign=0), False, False, 0)
+
+        # Load all user presets from all dialog types
+        presets_frame = Gtk.Frame()
+        presets_frame.set_shadow_type(Gtk.ShadowType.IN)
+        presets_scroll = Gtk.ScrolledWindow()
+        presets_scroll.set_min_content_height(120)
+        presets_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        presets_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        presets_scroll.add(presets_box)
+        presets_frame.add(presets_scroll)
+
+        all_presets = {}
+        for dialog_key in ["preset_dialog", "wan_dialog", "faceid_dialog",
+                           "klein_dialog", "klein_ref_dialog", "pulid_dialog"]:
+            saved = _load_user_presets(dialog_key)
+            for p in saved:
+                all_presets[f"{dialog_key}: {p['name']}"] = (dialog_key, p)
+
+        if all_presets:
+            for display_name, (dkey, preset) in all_presets.items():
+                row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+                lbl = Gtk.Label(label=display_name, xalign=0)
+                lbl.set_hexpand(True)
+                row.pack_start(lbl, True, True, 4)
+                del_btn = Gtk.Button(label="Delete")
+                del_btn.set_tooltip_text(f"Delete preset '{preset['name']}' from {dkey}")
+                def _make_delete_cb(dk, pname):
+                    def on_del(btn):
+                        presets = _load_user_presets(dk)
+                        presets = [p for p in presets if p.get("name") != pname]
+                        _save_user_presets(presets, dk)
+                        btn.get_parent().destroy()
+                    return on_del
+                del_btn.connect("clicked", _make_delete_cb(dkey, preset["name"]))
+                row.pack_end(del_btn, False, False, 4)
+                presets_box.pack_start(row, False, False, 0)
+        else:
+            presets_box.pack_start(
+                Gtk.Label(label="No saved presets yet. Save presets from any tool dialog."),
+                False, False, 8)
+
+        bx.pack_start(presets_frame, True, True, 0)
 
         # ── Auto-update toggle ──
         bx.pack_start(Gtk.Separator(), False, False, 5)
