@@ -557,7 +557,15 @@ def _load_config():
         return {}
 
 # Default ComfyUI server URL — overridable via config.json {"server_url": "..."}
+# Updated at runtime whenever the user successfully runs a workflow with a different URL.
 COMFYUI_DEFAULT_URL = _load_config().get("server_url", "http://127.0.0.1:8188")
+
+def _propagate_server_url(new_url):
+    """Update the session-wide default server URL after a successful workflow run."""
+    global COMFYUI_DEFAULT_URL
+    new_url = new_url.strip().rstrip("/")
+    if new_url and new_url != COMFYUI_DEFAULT_URL:
+        COMFYUI_DEFAULT_URL = new_url
 
 # ── Session state — remembers last-used settings per dialog ──────────
 # In-memory only: forgotten when GIMP restarts. Each dialog type stores
@@ -6335,7 +6343,7 @@ class PresetDialog(Gtk.Dialog):
         Uses _async_fetch to avoid blocking the dialog while the HTTP request
         runs. The connection status label doubles as a server health indicator.
         """
-        server = self.server_entry.get_text().strip()
+        server = self.server_entry.get_text().strip(); _propagate_server_url(server)
         self._lora_fetch_btn.set_label("Fetching...")
         def on_done(res):
             self._all_lora_names = res
@@ -6911,7 +6919,7 @@ class FaceSwapDialog(Gtk.Dialog):
 
     def _on_fetch_models(self, _btn):
         """Fetch swap and restore model lists from the ComfyUI server."""
-        server = self.server_entry.get_text().strip()
+        server = self.server_entry.get_text().strip(); _propagate_server_url(server)
         try:
             swap_list, restore_list = _fetch_reactor_models(server)
         except Exception:
@@ -7074,7 +7082,7 @@ class FaceSwapModelDialog(Gtk.Dialog):
         self._on_fetch_models(None)
 
     def _on_fetch_models(self, _btn):
-        server = self.server_entry.get_text().strip()
+        server = self.server_entry.get_text().strip(); _propagate_server_url(server)
         # Fetch face models
         face_models = _fetch_face_models(server)
         if face_models:
@@ -7335,7 +7343,7 @@ class WanI2VDialog(Gtk.Dialog):
         box.show_all()
 
     def _on_fetch_loras(self, _btn):
-        server = self.server_entry.get_text().strip()
+        server = self.server_entry.get_text().strip(); _propagate_server_url(server)
         try:
             self._all_wan_loras = _fetch_wan_video_loras(server)
         except Exception:
@@ -7576,7 +7584,7 @@ class MtbFaceSwapDialog(Gtk.Dialog):
         self.show()
 
     def _on_fetch(self, _btn):
-        srv = self.server_entry.get_text().strip()
+        srv = self.server_entry.get_text().strip(); _propagate_server_url(srv)
         try:
             analysis = _fetch_mtb_analysis_models(srv)
             swaps = _fetch_mtb_swap_models(srv)
@@ -8189,7 +8197,7 @@ class KleinDialog(Gtk.Dialog):
         GLib.idle_add(self._on_fetch_loras, None)
 
     def _on_fetch_loras(self, _btn):
-        server = self.server_entry.get_text().strip()
+        server = self.server_entry.get_text().strip(); _propagate_server_url(server)
         try:
             self._all_lora_names = _fetch_loras(server)
         except Exception:
@@ -9169,7 +9177,7 @@ class Spellcaster(Gimp.PlugIn):
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
-        srv = se.get_text().strip()
+        srv = se.get_text().strip(); _propagate_server_url(srv)
         preset_key = model_combo.get_active_id()
         model_name = UPSCALE_PRESETS[preset_key]
         _SESSION["upscale"] = {"model_id": preset_key}
@@ -9215,7 +9223,7 @@ class Spellcaster(Gimp.PlugIn):
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
-        srv = se.get_text().strip(); dlg.destroy()
+        srv = se.get_text().strip(); _propagate_server_url(srv); dlg.destroy()
         try:
             Gimp.progress_init("LaMa Remove: building selection mask...")
             # Build mask from GIMP's selection channel
@@ -9286,7 +9294,7 @@ class Spellcaster(Gimp.PlugIn):
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
-        srv = se.get_text().strip()
+        srv = se.get_text().strip(); _propagate_server_url(srv)
         preset_key = lut_combo.get_active_id()
         lut_name = LUT_PRESETS[preset_key]
         strength = strength_spin.get_value()
@@ -9506,7 +9514,7 @@ class Spellcaster(Gimp.PlugIn):
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
-        srv = se.get_text().strip()
+        srv = se.get_text().strip(); _propagate_server_url(srv)
         idx = model_combo.get_active()
         preset = dict(MODEL_PRESETS[idx] if idx >= 0 else MODEL_PRESETS[0])
         ipadapter_preset = ip_combo.get_active_id() or "PLUS (high strength)"
@@ -9630,7 +9638,7 @@ class Spellcaster(Gimp.PlugIn):
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
-        srv = se.get_text().strip()
+        srv = se.get_text().strip(); _propagate_server_url(srv)
         preset_key = model_combo.get_active_id()
         fr_preset = FACE_RESTORE_PRESETS[preset_key]
         facedetection = det_combo.get_active_id()
@@ -9727,7 +9735,7 @@ class Spellcaster(Gimp.PlugIn):
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
-        srv = se.get_text().strip()
+        srv = se.get_text().strip(); _propagate_server_url(srv)
         up_key = up_combo.get_active_id()
         upscale_model = RESTORE_UPSCALE_PRESETS[up_key]
         face_key = face_combo.get_active_id()
@@ -9856,7 +9864,7 @@ class Spellcaster(Gimp.PlugIn):
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
-        srv = se.get_text().strip()
+        srv = se.get_text().strip(); _propagate_server_url(srv)
         detail_key = detail_combo.get_active_id()
         h_preset = HALLUCINATE_PRESETS[detail_key]
         up_key = up_combo.get_active_id()
@@ -10018,7 +10026,7 @@ class Spellcaster(Gimp.PlugIn):
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
-        srv = se.get_text().strip()
+        srv = se.get_text().strip(); _propagate_server_url(srv)
         idx = model_combo.get_active()
         preset = dict(MODEL_PRESETS[idx] if idx >= 0 else MODEL_PRESETS[0])
         up_key = up_combo.get_active_id()
@@ -10154,7 +10162,7 @@ class Spellcaster(Gimp.PlugIn):
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
-        srv = se.get_text().strip()
+        srv = se.get_text().strip(); _propagate_server_url(srv)
         idx = model_combo.get_active()
         preset = dict(MODEL_PRESETS[idx] if idx >= 0 else MODEL_PRESETS[0])
         cn_strength = cn_spin.get_value()
@@ -10354,7 +10362,7 @@ class Spellcaster(Gimp.PlugIn):
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
-        srv = se.get_text().strip()
+        srv = se.get_text().strip(); _propagate_server_url(srv)
         idx = int(model_combo.get_active_id()) if model_combo.get_active_id() else 0
         ckpt_name = MODEL_PRESETS[idx]["ckpt"]
         multiplier = mult_spin.get_value()
@@ -10472,7 +10480,7 @@ class Spellcaster(Gimp.PlugIn):
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
-        srv = se.get_text().strip()
+        srv = se.get_text().strip(); _propagate_server_url(srv)
         idx = int(model_combo.get_active_id()) if model_combo.get_active_id() else 0
         sdxl_model = MODEL_PRESETS[idx]["ckpt"]
         denoise = denoise_spin.get_value()
@@ -10537,7 +10545,7 @@ class Spellcaster(Gimp.PlugIn):
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
-        srv = se.get_text().strip(); dlg.destroy()
+        srv = se.get_text().strip(); _propagate_server_url(srv); dlg.destroy()
         try:
             Gimp.progress_init("Remove Background: exporting image...")
             tmp = _export_image_to_tmp(image)
@@ -10583,7 +10591,7 @@ class Spellcaster(Gimp.PlugIn):
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
-        srv = se.get_text().strip(); fn = ne.get_text().strip(); dlg.destroy()
+        srv = se.get_text().strip(); _propagate_server_url(srv); fn = ne.get_text().strip(); dlg.destroy()
         try:
             Gimp.progress_init("Uploading...")
             tmp = _export_image_to_tmp(image)
