@@ -402,6 +402,152 @@ def get_latest_sha() -> str:
         return "unknown"
 
 
+def _ask_yn(prompt, default=True):
+    """Ask a yes/no question. Returns bool."""
+    hint = "[Y/n]" if default else "[y/N]"
+    try:
+        raw = input(f"  {B}{prompt} {hint}:{X} ").strip().lower()
+    except (RuntimeError, EOFError):
+        return default
+    if not raw:
+        return default
+    return raw[0] == "y"
+
+
+def apply_spellcaster_theme_gimp(gimp_plug_dir: Path):
+    """Replace GIMP splash + icons with Spellcaster branding."""
+    import shutil
+
+    # Find system splash
+    candidates = []
+    if platform.system() == "Windows":
+        for pf in [Path("C:/Program Files/GIMP 3"), Path("C:/Program Files (x86)/GIMP 3")]:
+            share = pf / "share" / "gimp" / "3.0" / "images"
+            if share.is_dir():
+                for f in share.glob("gimp-splash*.png"):
+                    candidates.append(f)
+    elif platform.system() == "Darwin":
+        for app in [Path("/Applications/GIMP-3.0.app"), Path("/Applications/GIMP.app")]:
+            share = app / "Contents" / "Resources" / "share" / "gimp" / "3.0" / "images"
+            if share.is_dir():
+                for f in share.glob("gimp-splash*.png"):
+                    candidates.append(f)
+    else:
+        for base in [Path("/usr/share/gimp/3.0/images"), Path("/usr/local/share/gimp/3.0/images")]:
+            if base.is_dir():
+                for f in base.glob("gimp-splash*.png"):
+                    candidates.append(f)
+
+    connector_dir = gimp_plug_dir / "comfyui-connector"
+
+    # Replace splash
+    banner = connector_dir / "gimp_banner.png" if connector_dir.is_dir() else None
+    if not banner or not banner.exists():
+        # Try to download it
+        banner_url = f"{GITHUB_RAW}/plugins/gimp/gimp_banner.png"
+        banner = connector_dir / "gimp_banner.png" if connector_dir.is_dir() else Path("gimp_banner.png")
+        download_file(banner_url, banner)
+
+    if banner and banner.exists():
+        for splash in candidates:
+            if splash.exists():
+                backup = splash.with_suffix(".orig" + splash.suffix)
+                try:
+                    if not backup.exists():
+                        shutil.copy2(splash, backup)
+                    shutil.copy2(banner, splash)
+                    print(f"  {G}✓ GIMP splash replaced:{X} {splash.name}")
+                except PermissionError:
+                    print(f"  {R}Permission denied — try running as Administrator{X}")
+                except OSError as e:
+                    print(f"  {R}Error: {e}{X}")
+                break
+        else:
+            if candidates:
+                print(f"  {Y}GIMP splash file not found at expected location{X}")
+    else:
+        print(f"  {Y}gimp_banner.png not available{X}")
+
+    # Replace Wilber icon
+    icon_url = f"{GITHUB_RAW}/assets/spellcaster_gimp_icon.png"
+    icon_dest = connector_dir / "spellcaster_icon.png" if connector_dir.is_dir() else None
+    if icon_dest:
+        download_file(icon_url, icon_dest)
+        print(f"  {G}✓ Wizard Wilber icon installed{X}")
+
+    # Try system icon replacement
+    for icon_name in ["gimp-logo.png", "wilber.png"]:
+        for d in candidates:
+            icon_path = d.parent / icon_name
+            if icon_path.exists() and icon_dest and icon_dest.exists():
+                backup = icon_path.with_suffix(".orig" + icon_path.suffix)
+                try:
+                    if not backup.exists():
+                        shutil.copy2(icon_path, backup)
+                    shutil.copy2(icon_dest, icon_path)
+                    print(f"  {G}✓ System icon replaced:{X} {icon_name}")
+                except (PermissionError, OSError):
+                    pass
+                break
+
+
+def apply_spellcaster_theme_darktable(dt_dir: Path):
+    """Replace Darktable splash + icons with Spellcaster branding."""
+    import shutil
+
+    # Find system splash
+    candidates = []
+    if platform.system() == "Windows":
+        for pf in [Path("C:/Program Files/darktable"), Path("C:/Program Files (x86)/darktable")]:
+            p = pf / "share" / "darktable" / "images"
+            if p.is_dir():
+                for f in p.glob("darktable-splash*"):
+                    candidates.append(f)
+    elif platform.system() == "Darwin":
+        for app in [Path("/Applications/darktable.app")]:
+            p = app / "Contents" / "Resources" / "share" / "darktable" / "images"
+            if p.is_dir():
+                for f in p.glob("darktable-splash*"):
+                    candidates.append(f)
+    else:
+        for base in [Path("/usr/share/darktable/images"), Path("/usr/local/share/darktable/images")]:
+            if base.is_dir():
+                for f in base.glob("darktable-splash*"):
+                    candidates.append(f)
+
+    # Download splash source
+    splash_src = dt_dir / "darktable_splash.jpg"
+    if not splash_src.exists():
+        download_file(f"{GITHUB_RAW}/plugins/darktable/darktable_splash.jpg", splash_src)
+
+    if splash_src.exists():
+        for splash in candidates:
+            if splash.exists():
+                backup = splash.with_suffix(".orig" + splash.suffix)
+                try:
+                    if not backup.exists():
+                        shutil.copy2(splash, backup)
+                    shutil.copy2(splash_src, splash)
+                    print(f"  {G}✓ Darktable splash replaced:{X} {splash.name}")
+                except PermissionError:
+                    print(f"  {R}Permission denied — try running as Administrator{X}")
+                except OSError as e:
+                    print(f"  {R}Error: {e}{X}")
+                break
+        else:
+            if not candidates:
+                print(f"  {Y}Darktable system splash not found{X}")
+    else:
+        print(f"  {Y}darktable_splash.jpg not available{X}")
+
+    # Download and install sparkle icon
+    icon_url = f"{GITHUB_RAW}/assets/spellcaster_darktable_icon.png"
+    icon_dest = dt_dir / "spellcaster_icon.png"
+    download_file(icon_url, icon_dest)
+    if icon_dest.exists():
+        print(f"  {G}✓ Sparkle lens icon installed{X}")
+
+
 # ─── Repair & Update ───────────────────────────────────────────────────────
 
 def repair_and_install_gimp(plug_dir: Path, server_url: str = "http://127.0.0.1:8188") -> bool:
@@ -665,6 +811,12 @@ def main():
                 print(f"    {f.name:40s} {size:>10,} bytes")
             print()
 
+        # Personalization prompt
+        if success and _ask_yn("Apply Spellcaster visual theme to GIMP? (wizard hat icon + custom splash)"):
+            print()
+            apply_spellcaster_theme_gimp(target_dir)
+            print()
+
     # ══════════════════════════════════════════════════════════════════════
     # Darktable
     # ══════════════════════════════════════════════════════════════════════
@@ -681,8 +833,12 @@ def main():
             if existing.exists():
                 print(f"  {G}✓ Found existing:{X} {existing}")
             print(f"  {B}Updating Darktable plugin in:{X} {dt_dir}")
-            update_darktable_plugin(dt_dir)
+            success = update_darktable_plugin(dt_dir)
             print()
+            if success and _ask_yn("Apply Spellcaster visual theme to Darktable? (sparkle icon + custom splash)"):
+                print()
+                apply_spellcaster_theme_darktable(dt_dir)
+                print()
 
     # ══════════════════════════════════════════════════════════════════════
     # Summary
