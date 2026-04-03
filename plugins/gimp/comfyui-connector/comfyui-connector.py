@@ -4002,7 +4002,10 @@ def _build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
                   "latent_image": ["7", 0], "seed": seed,
                   "steps": preset["steps"], "cfg": preset["cfg"],
                   "sampler_name": preset["sampler"], "scheduler": preset["scheduler"],
-                  "denoise": preset["denoise"],
+                  # Outpaint MUST use denoise=1.0: the extended area is empty
+                  # and needs full generation from noise. The mask from
+                  # ImagePadForOutpaint protects the original content.
+                  "denoise": 1.0,
               }},
         "9": {"class_type": "VAEDecode",
               "inputs": {"samples": ["8", 0], "vae": vae_ref}},
@@ -7793,9 +7796,9 @@ class PresetDialog(Gtk.Dialog):
                               "trailing_comma": True,
                               "exclude_tags": "",
                           }},
-                    # We need a SaveImage to trigger execution, but we want the STRING output
-                    "3": {"class_type": "SaveImage",
-                          "inputs": {"images": ["1", 0], "filename_prefix": "wd_tag_dummy"}},
+                    # ShowText is an output_node — its STRING value appears in history
+                    "3": {"class_type": "ShowText|pysssss",
+                          "inputs": {"text": ["2", 0]}},
                 }
 
                 # Submit and wait
