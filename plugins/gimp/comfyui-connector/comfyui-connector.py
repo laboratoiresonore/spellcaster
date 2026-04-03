@@ -6128,7 +6128,10 @@ def _filter_wan_loras(all_loras, preset_key=None):
         # Normalise to always end with backslash for matching
         if not prefix.endswith("/"):
             prefix += "/"
-    return [l for l in all_loras if l.startswith(prefix) or l.startswith(prefix.replace("/", "/"))]
+    prefix_bs = prefix.replace("/", "\\")
+    return [l for l in all_loras
+            if l.startswith(prefix) or l.startswith(prefix_bs)
+            or l.lower().startswith(prefix.lower()) or l.lower().startswith(prefix_bs.lower())]
 
 
 def _build_wan_i2v(image_filename, preset_key, prompt_text, negative_text, seed,
@@ -9128,6 +9131,14 @@ class WanI2VDialog(Gtk.Dialog):
         _add_runs_spinner(self, box)
 
         box.show_all()
+
+        # Auto-fetch LoRAs on dialog open (so user doesn't have to click Fetch)
+        try:
+            server = self.server_entry.get_text().strip()
+            self._all_wan_loras = _fetch_wan_video_loras(server)
+            self._refresh_lora_combos()
+        except Exception:
+            pass
 
     def _on_fetch_loras(self, _btn):
         server = self.server_entry.get_text().strip(); _propagate_server_url(server)
