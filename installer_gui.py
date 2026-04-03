@@ -100,8 +100,8 @@ class _ToolTip:
         self._tip.wm_overrideredirect(True)
         self._tip.wm_geometry(f"+{x}+{y}")
         label = tk.Label(self._tip, text=self.text, background="#1a1a2e", foreground="#e2dfeb",
-                         relief="solid", borderwidth=1, font=("Inter", 10),
-                         wraplength=350, justify="left", padx=8, pady=4)
+                         relief="solid", borderwidth=1, font=("Inter", 14),
+                         wraplength=500, justify="left", padx=12, pady=8)
         label.pack()
 
 
@@ -747,7 +747,17 @@ class InstallerApp(ctk.CTk):
             cb.pack(anchor="w", padx=15, pady=6)
             self.node_vars[key]._widget = cb
             provides_list = ', '.join(node.get('provides', []))
-            _ToolTip(cb, f"Custom ComfyUI node pack: {key}. Provides these node types: {provides_list}. If this checkbox is grayed out, it is required by one of your enabled Magic Profiles and cannot be unchecked independently.")
+            repo = node.get('repo', '')
+            required_by = ', '.join(node.get('required_by', []))
+            node_lines = [f"Custom Node: {key}"]
+            if provides_list:
+                node_lines.append(f"Provides: {provides_list}")
+            if required_by:
+                node_lines.append(f"Required by: {required_by}")
+            if repo:
+                node_lines.append(f"Repository: {repo}")
+            node_lines.append("Grayed out = required by an active profile and cannot be unchecked.")
+            _ToolTip(cb, "\n".join(node_lines))
 
         # --- Model checkboxes (step 3, bottom section) ---
         ctk.CTkLabel(self.gran_content, text="Arcane Weights (AI Models)",
@@ -797,11 +807,33 @@ class InstallerApp(ctk.CTk):
                                          fg_color=self.accent_color, hover_color=self.accent_hover)
                     cb.pack(side="left", padx=15)
                     self.model_vars[mkey]["widget"] = cb
-                    core_label = "This is a CORE model required by its parent profile and cannot be unchecked while that profile is active." if not model.get("optional", True) else "This is an optional model — enable it for extra capability, or skip it to save disk space."
+
+                    # Build rich tooltip with description
+                    fname = model['path'].split('/')[-1]
                     size_mb = model.get('size_mb', 0)
                     size_info = f"{size_mb/1024:.1f} GB" if size_mb > 1024 else f"{size_mb} MB"
-                    note_info = f" {model['note']}" if model.get('note') else ""
-                    _ToolTip(cb, f"Model: {model['path'].split('/')[-1]} ({size_info}).{note_info} {core_label}")
+                    note = model.get('note', '')
+                    is_core = not model.get("optional", True)
+                    lines = [f"{fname}  ({size_info})"]
+                    if note:
+                        lines.append(f"{note}")
+                    lines.append(f"Feature: {feat['label']} / {cat.replace('_', ' ').title()}")
+                    lines.append(f"Install path: ComfyUI/models/{model['path']}")
+                    if is_core:
+                        lines.append("CORE — required by its parent profile, cannot be unchecked while active.")
+                    else:
+                        lines.append("Optional — enable for extra capability, or skip to save disk space.")
+                    if page_url:
+                        lines.append(f"More info: {page_url}")
+                    else:
+                        lines.append("Hover over [No Preview] for more info.")
+                    _ToolTip(cb, "\n".join(lines))
+
+                    # Tooltip on the thumbnail too
+                    thumb_tip = f"{fname}\n{note}" if note else fname
+                    if page_url:
+                        thumb_tip += f"\nClick preview or visit: {page_url}"
+                    _ToolTip(thumb_label, thumb_tip)
 
         # Trigger initial sync for pre-selected features
         for key in self.feature_vars:
