@@ -750,6 +750,22 @@ python build_installer.py --platform linux
 # Build requires PyInstaller (auto-installed if missing)
 ```
 
+### Spellmaker (Experimental)
+
+**Spellmaker** is a standalone customization tool for power users who want to create their own presets, link custom LoRAs, import ComfyUI workflows, and modify every aspect of Spellcaster's behavior.
+
+```bash
+python spellmaker.py
+```
+
+- Edit all preset types: model, inpaint, scene, video, Wan I2V, Klein, IC-Light, custom workflows
+- LoRA picker that connects to your ComfyUI server and lists all available LoRAs
+- Import any ComfyUI workflow JSON — auto-detects type and extracts all parameters
+- Clone, edit, delete presets with a visual editor
+- Export to `spellbook.json` or inject directly into the GIMP/Darktable plugins
+
+> **Status: Experimental.** Spellmaker works but is not yet bundled into the installer. Run it from the source tree.
+
 ### Project Guidelines
 
 - **manifest.json** is the single source of truth for models, nodes, and features. Both plugins and both installers read from it.
