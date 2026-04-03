@@ -45,7 +45,7 @@ if getattr(sys, 'frozen', False):
 else:
     SCRIPT_DIR = Path(__file__).resolve().parent
 MANIFEST_PATH = SCRIPT_DIR / "manifest.json"
-VERSION = "1.0"
+VERSION = "1.1"
 DEFAULT_SERVER_URL = "http://127.0.0.1:8188"
 
 # ANSI colors — enabled on real terminals, but only on Windows when running

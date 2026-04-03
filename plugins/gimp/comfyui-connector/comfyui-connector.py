@@ -247,7 +247,7 @@ def _auto_update():
                 print(f"[Spellcaster] Failed to download {remainder}: {e}", file=_sys.stderr)
 
         # Step 5: Remove local files that no longer exist in the repo
-        protected = {"config.json", ".spellcaster_version", "user_presets.json"}
+        protected = {"config.json", ".spellcaster_version", "user_presets.json", "session_state.json"}
         for local_file in _PLUGIN_DIR.rglob("*"):
             if not local_file.is_file():
                 continue
@@ -316,8 +316,22 @@ def _propagate_server_url(new_url):
 # ── Session state — remembers last-used settings per dialog ──────────
 # In-memory only: forgotten when GIMP restarts. Each dialog type stores
 # its last-used values here so reopening the same tool pre-fills with
-# the user's previous settings. NOT saved to disk.
-_SESSION = {}
+# the user's previous settings. Persisted to session_state.json on disk.
+_SESSION_PATH = Path(__file__).parent / "session_state.json"
+
+def _load_session():
+    try:
+        return json.loads(_SESSION_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+def _save_session():
+    try:
+        _SESSION_PATH.write_text(json.dumps(_SESSION, indent=2, default=str), encoding="utf-8")
+    except Exception:
+        pass
+
+_SESSION = _load_session()
 
 # User presets persist prompt/model/LoRA combinations across sessions
 _USER_PRESETS_PATH = Path(__file__).parent / "user_presets.json"
@@ -8306,6 +8320,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         v = dlg.get_values()
         _SESSION["img2img"] = dlg._collect_session()
+        _save_session()
         dlg.destroy()
         runs = v.get("runs", 1)
         try:
@@ -8351,6 +8366,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         v = dlg.get_values()
         _SESSION["txt2img"] = dlg._collect_session()
+        _save_session()
         dlg.destroy()
         runs = v.get("runs", 1)
         try:
@@ -8394,6 +8410,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         v = dlg.get_values()
         _SESSION["inpaint"] = dlg._collect_session()
+        _save_session()
         dlg.destroy()
         runs = v.get("runs", 1)
         try:
@@ -8561,6 +8578,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         v = dlg.get_values()
         _SESSION["wan_i2v"] = dlg._collect_user_preset()
+        _save_session()
         dlg.destroy()
         runs = v.get("runs", 1)
         try:
@@ -8655,6 +8673,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         v = dlg.get_values()
         _SESSION["faceid"] = dlg._collect_user_preset()
+        _save_session()
         dlg.destroy()
         if not v["source_path"]:
             Gimp.message("No face reference image selected")
@@ -8707,6 +8726,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         v = dlg.get_values()
         _SESSION["pulid_flux"] = dlg._collect_user_preset()
+        _save_session()
         dlg.destroy()
         if not v["source_path"]:
             Gimp.message("No face reference image selected")
@@ -8760,6 +8780,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         v = dlg.get_values()
         _SESSION["klein"] = dlg._collect_user_preset()
+        _save_session()
         dlg.destroy()
         runs = v.get("runs", 1)
         try:
@@ -8805,6 +8826,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         v = dlg.get_values()
         _SESSION["klein_ref"] = dlg._collect_user_preset()
+        _save_session()
         dlg.destroy()
         if not v.get("ref_file"):
             Gimp.message("No reference image selected")
@@ -9080,6 +9102,7 @@ class Spellcaster(Gimp.PlugIn):
         preset_key = model_combo.get_active_id()
         model_name = UPSCALE_PRESETS[preset_key]
         _SESSION["upscale"] = {"model_id": preset_key}
+        _save_session()
         dlg.destroy()
         try:
             Gimp.progress_init("Upscale: exporting image...")
@@ -9198,6 +9221,7 @@ class Spellcaster(Gimp.PlugIn):
         lut_name = LUT_PRESETS[preset_key]
         strength = strength_spin.get_value()
         _SESSION["lut"] = {"lut_id": preset_key, "strength": strength}
+        _save_session()
         dlg.destroy()
         try:
             Gimp.progress_init("LUT: exporting image...")
@@ -9268,6 +9292,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         v = dlg.get_values()
         _SESSION["outpaint"] = dlg._collect_session()
+        _save_session()
         pad_left = int(left_spin.get_value())
         pad_top = int(top_spin.get_value())
         pad_right = int(right_spin.get_value())
@@ -9437,6 +9462,7 @@ class Spellcaster(Gimp.PlugIn):
             "weight": weight, "denoise": denoise,
             "runs": runs,
         }
+        _save_session()
         dlg.destroy()
         if not style_path:
             Gimp.message("No style reference image selected")
@@ -9547,6 +9573,7 @@ class Spellcaster(Gimp.PlugIn):
             "model_id": preset_key, "det_id": facedetection,
             "visibility": visibility, "codeformer_weight": codeformer_weight,
         }
+        _save_session()
         dlg.destroy()
         try:
             Gimp.progress_init("Face Restore: exporting image...")
@@ -9645,6 +9672,7 @@ class Spellcaster(Gimp.PlugIn):
             "up_id": up_key, "face_id": face_key,
             "sharpen": sharpen_amount, "codeformer_weight": codeformer_weight,
         }
+        _save_session()
         dlg.destroy()
         try:
             Gimp.progress_init("Photo Restore: exporting image...")
@@ -9783,6 +9811,7 @@ class Spellcaster(Gimp.PlugIn):
             "prompt": prompt, "negative": negative,
             "runs": runs,
         }
+        _save_session()
         dlg.destroy()
         try:
             Gimp.progress_init("Detail Hallucinate: exporting image...")
@@ -9947,6 +9976,7 @@ class Spellcaster(Gimp.PlugIn):
             "hall_idx": hall_idx, "prompt": prompt, "negative": negative,
             "runs": runs,
         }
+        _save_session()
         dlg.destroy()
         try:
             Gimp.progress_init("SeedV2R: exporting image...")
@@ -10079,6 +10109,7 @@ class Spellcaster(Gimp.PlugIn):
             "prompt": prompt, "negative": negative,
             "runs": runs,
         }
+        _save_session()
         dlg.destroy()
         try:
             Gimp.progress_init("Colorize: exporting image...")
@@ -10131,6 +10162,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         v = dlg.get_values()
         _SESSION["batch_variations"] = dlg._collect_session()
+        _save_session()
         batch_count = int(batch_spin.get_value())
         dlg.destroy()
         runs = v.get("runs", 1)
@@ -10278,6 +10310,7 @@ class Spellcaster(Gimp.PlugIn):
             "multiplier": multiplier, "steps": steps, "prompt": prompt,
             "runs": runs,
         }
+        _save_session()
         dlg.destroy()
         try:
             Gimp.progress_init("IC-Light: exporting image...")
@@ -10395,6 +10428,7 @@ class Spellcaster(Gimp.PlugIn):
             "denoise": denoise, "steps": steps, "prompt": prompt,
             "runs": runs,
         }
+        _save_session()
         dlg.destroy()
         try:
             Gimp.progress_init("SUPIR: exporting image...")

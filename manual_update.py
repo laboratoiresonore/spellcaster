@@ -30,7 +30,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-VERSION = "1.0"
+VERSION = "1.1"
 GITHUB_RAW = "https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main"
 GITHUB_API = "https://api.github.com/repos/laboratoiresonore/spellcaster/commits?sha=main&per_page=1"
 GITHUB_TREE = "https://api.github.com/repos/laboratoiresonore/spellcaster/git/trees/main?recursive=1"
