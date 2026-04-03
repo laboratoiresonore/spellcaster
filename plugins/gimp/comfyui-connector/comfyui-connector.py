@@ -4637,38 +4637,38 @@ CONTROLNET_POSE_MODELS = {
 # ── Merged ControlNet guide modes for img2img / inpaint integration ──
 CONTROLNET_GUIDE_MODES = {
     "Off": {"preprocessor": None, "cn_models": None},
-    "Canny (edges)": {
+    "Canny (edges) — SD1.5 + SDXL": {
         "preprocessor": "CannyEdgePreprocessor",
         "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors",
                        "sdxl": "SDXL\\controlnet-canny-sdxl-1.0.safetensors",
                        "zit": "SDXL\\controlnet-canny-sdxl-1.0.safetensors"},
     },
-    "Depth (spatial layout)": {
+    "Depth (spatial) — SD1.5 + SDXL": {
         "preprocessor": "MiDaS-DepthMapPreprocessor",
         "cn_models": {"sd15": "control_v11f1p_sd15_depth_fp16.safetensors",
                        "sdxl": "SDXL\\controlnet-canny-sdxl-1.0.safetensors",
                        "zit": "SDXL\\controlnet-canny-sdxl-1.0.safetensors"},
     },
-    "Lineart (drawing)": {
+    "Lineart (drawing) — SD1.5 + SDXL": {
         "preprocessor": "LineArtPreprocessor",
         "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors",
                        "sdxl": "SDXL\\controlnet-canny-sdxl-1.0.safetensors",
                        "zit": "SDXL\\controlnet-canny-sdxl-1.0.safetensors"},
     },
-    "OpenPose (body pose)": {
+    "OpenPose (body) — SD1.5 + SDXL (dedicated models)": {
         "preprocessor": "DWPreprocessor",
         "cn_models": {"sd15": "control_v11p_sd15_openpose_fp16.safetensors",
                        "sdxl": "OpenPoseXL2.safetensors",
                        "zit": "SDXL\\controlnet-canny-sdxl-1.0.safetensors"},
     },
-    "Scribble (rough sketch)": {
+    "Scribble (sketch) — SD1.5 only": {
         "preprocessor": "ScribblePreprocessor",
         "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors",
                        "sdxl": "SDXL\\controlnet-canny-sdxl-1.0.safetensors",
                        "zit": "SDXL\\controlnet-canny-sdxl-1.0.safetensors"},
     },
-    "Tile (detail upscale)": {
-        "preprocessor": None,  # no preprocessor — feeds image directly
+    "Tile (detail upscale) — SD1.5 + SDXL (dedicated models)": {
+        "preprocessor": None,
         "cn_models": {"sd15": "control_v11f1e_sd15_tile.pth",
                        "sdxl": "SDXL\\ttplanetSDXLControlnet_Tile_v20Fp16.safetensors",
                        "zit": "SDXL\\controlnet-canny-sdxl-1.0.safetensors"},
@@ -11353,7 +11353,7 @@ class Spellcaster(Gimp.PlugIn):
             "The correct model is auto-selected based on your checkpoint.")
         for key in CONTROLNET_GUIDE_MODES:
             cn_combo.append(key, key)
-        cn_combo.set_active_id("Tile (detail upscale)")
+        cn_combo.set_active_id("Tile (detail upscale) — SD1.5 + SDXL (dedicated models)")
         if cn_combo.get_active() < 0:
             cn_combo.set_active(0)
         bx.pack_start(cn_combo, False, False, 0)
