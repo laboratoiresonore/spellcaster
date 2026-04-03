@@ -12839,8 +12839,8 @@ class Spellcaster(Gimp.PlugIn):
                                   "trailing_comma": True,
                                   "exclude_tags": "",
                               }},
-                        "3": {"class_type": "SaveImage",
-                              "inputs": {"images": ["1", 0], "filename_prefix": "wd_tag_dummy"}},
+                        "3": {"class_type": "ShowText|pysssss",
+                              "inputs": {"text": ["2", 0]}},
                     }
                     supir_wd_status.set_text("Tagging...")
                     result = _api_post_json(server, "/prompt", {"prompt": wf})
