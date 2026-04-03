@@ -12184,24 +12184,11 @@ class Spellcaster(Gimp.PlugIn):
 
                 # Optional: grow/shrink the mask
                 mask_ref = ["12", 0]
-                if grow_px > 0:
+                if grow_px != 0:
                     wf["13"] = {"class_type": "GrowMask",
                                 "inputs": {"mask": mask_ref, "expand": grow_px,
                                            "tapered_corners": True}}
                     mask_ref = ["13", 0]
-                elif grow_px < 0:
-                    wf["13"] = {"class_type": "GrowMask",
-                                "inputs": {"mask": mask_ref, "expand": grow_px,
-                                           "tapered_corners": True}}
-                    mask_ref = ["13", 0]
-
-                # Optional: blur mask edges for smooth blending
-                if mask_blur > 0:
-                    wf["14"] = {"class_type": "FeatherMask",
-                                "inputs": {"mask": mask_ref, "left": mask_blur,
-                                           "top": mask_blur, "right": mask_blur,
-                                           "bottom": mask_blur}}
-                    mask_ref = ["14", 0]
 
                 # Scale image to mod-16 for Flux
                 wf["15"] = {"class_type": "ImageScaleToTotalPixels",
@@ -12225,13 +12212,12 @@ class Spellcaster(Gimp.PlugIn):
                             "inputs": {"conditioning": ["20", 0]}}
 
                 # ReferenceLatent: gives Klein full context of the existing image
-                # so the inpainted area matches lighting, style, and perspective
                 wf["22"] = {"class_type": "ReferenceLatent",
                             "inputs": {"conditioning": ["20", 0], "latent": ["17", 0]}}
                 wf["23"] = {"class_type": "ReferenceLatent",
                             "inputs": {"conditioning": ["21", 0], "latent": ["17", 0]}}
 
-                # DifferentialDiffusion: gradient-aware blending at mask edges
+                # DifferentialDiffusion for smooth mask edges (optional)
                 model_ref = ["1", 0]
                 if use_dd:
                     wf["24"] = {"class_type": "DifferentialDiffusion",
@@ -12250,7 +12236,6 @@ class Spellcaster(Gimp.PlugIn):
                 wf["33"] = {"class_type": "RandomNoise",
                             "inputs": {"noise_seed": seed}}
 
-                # Sample from the masked latent (preserves unmasked content)
                 wf["40"] = {"class_type": "SamplerCustomAdvanced",
                             "inputs": {"noise": ["33", 0], "guider": ["30", 0],
                                        "sampler": ["31", 0], "sigmas": ["32", 0],
@@ -12264,13 +12249,16 @@ class Spellcaster(Gimp.PlugIn):
                                        "filename_prefix": "spellcaster_klein_inpaint"}}
 
                 label = f"Klein Inpaint run {run_i+1}/{runs}" if runs > 1 else "Klein Inpaint"
+                _wf = wf  # capture by value for lambda closure
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
-                                             lambda: list(_run_comfyui_workflow(srv, wf, timeout=300)))
-                all_results.extend(results)
-
-            for i, (fn, sf, ft) in enumerate(all_results):
-                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                        f"Klein Inpaint #{i+1}")
+                                             lambda: list(_run_comfyui_workflow(srv, _wf, timeout=300)))
+                if not results:
+                    Gimp.message(f"Klein Inpaint: ComfyUI returned no output images.\n"
+                                 f"Check that DifferentialDiffusion node is available\n"
+                                 f"(try disabling 'Smooth edges' in Advanced options).")
+                for i, (fn, sf, ft) in enumerate(results):
+                    lbl = f"Klein Inpaint run {run_i+1} #{i+1}" if runs > 1 else f"Klein Inpaint #{i+1}"
+                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
