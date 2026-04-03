@@ -51,6 +51,19 @@ It works like any other filter in your editing software. Select an area, pick a 
 
 ---
 
+### Demo (Inpaint)
+
+<table>
+  <tr>
+    <td align="center" width="25%"><img src="assets/demo_step1_inpaint.png" alt="Step 1: Select area" width="100%"/><br/><sub><strong>1. Select Area</strong><br/>Paint a mask over the region to fix</sub></td>
+    <td align="center" width="25%"><img src="assets/demo_step2_inpaint.png" alt="Step 2: Pick preset" width="100%"/><br/><sub><strong>2. Pick Preset</strong><br/>Choose a refinement (e.g. Fix Eyes)</sub></td>
+    <td align="center" width="25%"><img src="assets/demo_step3_inpaint.png" alt="Step 3: Generate" width="100%"/><br/><sub><strong>3. Generate</strong><br/>AI regenerates only the masked area</sub></td>
+    <td align="center" width="25%"><img src="assets/demo_step4_inpaint.png" alt="Step 4: Result" width="100%"/><br/><sub><strong>4. Result</strong><br/>Seamless refinement as a new layer</sub></td>
+  </tr>
+</table>
+
+---
+
 ## The Expert-Tuned Difference
 
 > *"I spent weeks learning about samplers, schedulers, and CFG values. With Spellcaster, someone already did that work — better than I ever could."*
@@ -168,9 +181,9 @@ Every model preset in Spellcaster is the product of extensive testing across hun
 <table>
   <tr>
     <td align="center" width="25%"><img src="assets/showcase_wan_breathing.gif" alt="Living Portrait" width="100%"/><br/><sub><strong>Living Portrait</strong><br/>Breathing &bull; hair sway</sub></td>
-    <td align="center" width="25%"><img src="assets/showcase_wan_zoom.gif" alt="Camera Zoom" width="100%"/><br/><sub><strong>Camera Slow Zoom</strong><br/>Cinematic push-in</sub></td>
+    <td align="center" width="25%"><img src="assets/showcase_wan_00002.gif" alt="Camera Zoom" width="100%"/><br/><sub><strong>Camera Slow Zoom</strong><br/>Cinematic push-in</sub></td>
     <td align="center" width="25%"><img src="assets/showcase_wan_water.gif" alt="Flowing Water" width="100%"/><br/><sub><strong>Flowing Water</strong><br/>Nature motion</sub></td>
-    <td align="center" width="25%"><img src="assets/showcase_wan_turntable.gif" alt="Product Turntable" width="100%"/><br/><sub><strong>360 Turntable</strong><br/>Product spin</sub></td>
+    <td align="center" width="25%"><img src="assets/showcase_wan_00004.gif" alt="Product Turntable" width="100%"/><br/><sub><strong>360 Turntable</strong><br/>Product spin</sub></td>
   </tr>
 </table>
 
