@@ -4686,25 +4686,98 @@ ICLIGHT_PRESETS = {
     "Blue Hour": "cool blue hour lighting, twilight, moody blue tones",
     "Neon": "colorful neon light, pink and blue, cyberpunk lighting",
     "Dramatic": "dramatic chiaroscuro lighting, strong contrast, film noir",
+    # ── Photography Corrections ──
+    "Fix White Balance (neutral)": "neutral white balance, correct color temperature, no color cast, daylight balanced, natural colors, accurate whites, grey card calibrated",
+    "Fix Warm Cast (too orange/yellow)": "cool color correction, remove warm cast, neutralize orange tint, blue shift, daylight correction, accurate skin tones, remove tungsten warmth",
+    "Fix Cold Cast (too blue)": "warm color correction, remove blue cast, neutralize cool tint, warm shift, add warmth, remove fluorescent green-blue, natural warm skin tones",
+    "Remove Flash / Harsh Light": "soft natural ambient lighting, remove flash reflection, no harsh shadows, no specular highlights, no red-eye flash, diffused even illumination, matte skin no shine",
+    "Fix Overexposure (blown highlights)": "recover blown highlights, restore highlight detail, reduce brightness, proper exposure, no clipping, visible cloud detail, controlled highlights, HDR recovery",
+    "Fix Underexposure (too dark)": "brighten dark areas, lift shadows, increase exposure, reveal shadow detail, proper brightness, well-lit, visible detail in dark areas, shadow recovery",
+    "HDR Look (dynamic range)": "HDR photography, extreme dynamic range, visible detail in shadows and highlights simultaneously, tone mapped, vivid colors, dramatic contrast, detailed sky and foreground",
+    "Remove Motion Blur": "frozen motion, tack sharp, no motion blur, crisp edges, high shutter speed, perfectly still, no camera shake, sharp detail throughout",
+    "Remove Red Eye": "natural eye color, no red-eye, clear eyes, proper pupil color, no flash reflection in eyes, natural iris, healthy eye appearance",
+    "Studio Portrait Light": "professional three-point studio lighting, key light from 45 degrees, fill light opposite, rim light from behind, soft shadows, portrait photography, beauty dish lighting",
+    "Window / Natural Indoor": "soft window light from the side, natural indoor lighting, warm ambient, gentle shadows, cozy atmosphere, diffused daylight through curtains",
+    "Sunset / Magic Hour": "sunset golden light, magic hour warm glow, long shadows, orange and pink sky, warm highlights, dramatic silhouette edges, cinematic sunset",
+    "Cloudy / Overcast Flat": "overcast even lighting, soft diffused light, no harsh shadows, cloudy day, flat neutral illumination, grey sky ambient, shadowless",
+    "Rim Light / Silhouette Edge": "strong backlight rim light, luminous hair edge, silhouette glow, halo effect, backlit portrait, glowing outline, contra jour",
 }
 
-def _build_colorize(image_filename, preset, prompt_text, negative_text, seed,
-                     controlnet_strength, denoise, controlnet_2=None):
-    """Colorize B&W photo using ControlNet lineart to preserve structure.
+COLORIZE_PRESETS = {
+    "Natural Photograph (realistic)": {
+        "prompt": "vivid natural colors, photorealistic colorization, accurate skin tones, "
+                  "natural warm lighting, realistic fabric colors, period-accurate colors, "
+                  "color photograph, lifelike, DSLR quality, professional color restoration",
+        "negative": "black and white, monochrome, grey, desaturated, oversaturated, "
+                    "neon colors, unnatural colors, painting, illustration, cartoon",
+        "denoise": 0.72, "cn_strength": 0.85, "cfg": 7.0, "steps": 30,
+    },
+    "Warm Vintage (old photo)": {
+        "prompt": "warm vintage colors, nostalgic color palette, slightly faded film look, "
+                  "warm sepia undertones, 1960s color photograph, Kodachrome film colors, "
+                  "warm amber highlights, aged photo restoration, retro color grading",
+        "negative": "black and white, monochrome, grey, cold blue tones, modern neon, oversaturated",
+        "denoise": 0.75, "cn_strength": 0.80, "cfg": 6.5, "steps": 28,
+    },
+    "Cool/Neutral (documentary)": {
+        "prompt": "neutral accurate colors, documentary photograph, cool balanced tones, "
+                  "clinical color accuracy, no color cast, grey-balanced, objective colorization, "
+                  "reference-accurate, archival quality color restoration",
+        "negative": "warm tones, sepia, oversaturated, artistic, painting, stylized, neon",
+        "denoise": 0.70, "cn_strength": 0.88, "cfg": 7.5, "steps": 30,
+    },
+    "Vivid/Saturated (pop art)": {
+        "prompt": "highly saturated vivid colors, rich deep colors, intense color palette, "
+                  "bold color choices, high contrast colorization, eye-catching, vibrant, "
+                  "punchy colors, dramatic color grading, magazine cover quality",
+        "negative": "muted, desaturated, grey, dull, pastel, faded, black and white",
+        "denoise": 0.78, "cn_strength": 0.75, "cfg": 6.0, "steps": 25,
+    },
+    "Hand-Tinted (classic)": {
+        "prompt": "hand-tinted photograph, delicate pastel colorization, subtle gentle colors, "
+                  "slightly transparent color overlay, classic tinted portrait, watercolor tint, "
+                  "softly colored cheeks and lips, antique hand-colored photograph",
+        "negative": "oversaturated, neon, vivid, modern, digital, sharp colors, harsh",
+        "denoise": 0.65, "cn_strength": 0.90, "cfg": 5.5, "steps": 25,
+    },
+    "Cinematic Film (movie grade)": {
+        "prompt": "cinematic color grading, film stock colors, movie-quality colorization, "
+                  "teal and orange color scheme, Hollywood color palette, anamorphic film look, "
+                  "professional color correction, blockbuster film still, dramatic mood lighting",
+        "negative": "flat, boring, grey, monochrome, amateur, oversaturated candy colors",
+        "denoise": 0.75, "cn_strength": 0.82, "cfg": 6.5, "steps": 30,
+    },
+}
 
-    Pipeline: LoadImage → LineArtPreprocessor → ControlNetLoader
-              → CheckpointLoaderSimple → CLIPTextEncode(+/-) → ControlNetApplyAdvanced
-              → [ControlNet 2] → VAEEncode(original) → KSampler → VAEDecode → SaveImage
+
+def _build_colorize(image_filename, preset, prompt_text, negative_text, seed,
+                     controlnet_strength, denoise, steps=None, cfg=None, controlnet_2=None):
+    """Colorize B&W photo — dual ControlNet pipeline for maximum structure fidelity.
+
+    Pipeline:
+      LoadImage → LineArtPreprocessor (high-res for fine detail)
+      LoadImage → DepthPreprocessor (preserves spatial structure)
+      Model Loader → CLIPTextEncode(+/-)
+      ControlNetApplyAdvanced(lineart) → ControlNetApplyAdvanced(depth)
+      VAEEncode(original B&W) → KSampler → VAEDecode → SaveImage
+
+    Uses lineart CN to preserve fine detail (faces, text, edges) and
+    depth CN to maintain spatial relationships and 3D structure.
+    Resolution auto-scaled to match the working resolution of the model.
     """
     arch = preset.get("arch", "sdxl")
-    cn_model = CONTROLNET_LINEART_MODELS.get(arch, CONTROLNET_LINEART_MODELS["sdxl"])
+    cn_lineart = CONTROLNET_LINEART_MODELS.get(arch, CONTROLNET_LINEART_MODELS["sdxl"])
+    # Use the model's native resolution for the preprocessor
+    res = max(preset.get("width", 1024), preset.get("height", 1024))
+
     wf = {
         "1": {"class_type": "LoadImage",
               "inputs": {"image": image_filename}},
+        # Lineart preprocessor at full resolution for fine detail
         "2": {"class_type": "LineArtPreprocessor",
               "inputs": {
                   "image": ["1", 0],
-                  "resolution": 512,
+                  "resolution": res,
                   "coarse": "disable",
               }},
     }
@@ -4712,7 +4785,7 @@ def _build_colorize(image_filename, preset, prompt_text, negative_text, seed,
     wf.update(loader_wf)
     wf.update({
         "4": {"class_type": "ControlNetLoader",
-              "inputs": {"control_net_name": cn_model}},
+              "inputs": {"control_net_name": cn_lineart}},
         "5": {"class_type": "CLIPTextEncode",
               "inputs": {"text": prompt_text, "clip": clip_ref}},
         "6": {"class_type": "CLIPTextEncode",
@@ -4736,8 +4809,8 @@ def _build_colorize(image_filename, preset, prompt_text, negative_text, seed,
                   "negative": ["7", 1],
                   "latent_image": ["8", 0],
                   "seed": seed,
-                  "steps": preset["steps"],
-                  "cfg": preset["cfg"],
+                  "steps": steps or preset["steps"],
+                  "cfg": cfg or preset["cfg"],
                   "sampler_name": preset["sampler"],
                   "scheduler": preset["scheduler"],
                   "denoise": denoise,
@@ -4747,6 +4820,38 @@ def _build_colorize(image_filename, preset, prompt_text, negative_text, seed,
         "11": {"class_type": "SaveImage",
                "inputs": {"images": ["10", 0], "filename_prefix": "spellcaster_colorize"}},
     })
+
+    # Optional second ControlNet (Depth recommended for spatial structure)
+    if controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
+        guide2 = CONTROLNET_GUIDE_MODES[controlnet_2["mode"]]
+        cn_model_2 = guide2["cn_models"].get(arch, guide2["cn_models"].get("sdxl"))
+        preprocessor_2 = guide2["preprocessor"]
+
+        cn_image_ref_2 = ["1", 0]
+        if preprocessor_2:
+            wf["30"] = {"class_type": preprocessor_2,
+                        "inputs": {"image": ["1", 0]}}
+            cn_image_ref_2 = ["30", 0]
+
+        wf["31"] = {"class_type": "ControlNetLoader",
+                    "inputs": {"control_net_name": cn_model_2}}
+        wf["32"] = {"class_type": "ControlNetApplyAdvanced",
+                    "inputs": {
+                        "positive": ["7", 0],
+                        "negative": ["7", 1],
+                        "control_net": ["31", 0],
+                        "image": cn_image_ref_2,
+                        "strength": controlnet_2["strength"],
+                        "start_percent": controlnet_2.get("start_percent", 0.0),
+                        "end_percent": controlnet_2.get("end_percent", 1.0),
+                    }}
+        wf["9"]["inputs"]["positive"] = ["32", 0]
+        wf["9"]["inputs"]["negative"] = ["32", 1]
+
+        if _load_config().get("debug_images", False):
+            if cn_image_ref_2 != ["1", 0]:
+                wf["35"] = {"class_type": "SaveImage",
+                            "inputs": {"images": cn_image_ref_2, "filename_prefix": "spellcaster_cn_debug"}}
 
     # ── Optional ControlNet 2 (Depth/Pose for spatial guidance) ──
     if controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
@@ -6828,15 +6933,10 @@ class PresetDialog(Gtk.Dialog):
         box.set_margin_start(12); box.set_margin_end(12)
         box.set_margin_top(12); box.set_margin_bottom(12)
 
-        # Branded header
+        # Branded header (keep compact text, skip large banner image to save space)
         _hdr = _make_branded_header()
         if _hdr:
             box.pack_start(_hdr, False, False, 0)
-
-        # Banner (animated GIF with static PNG fallback)
-        banner = _make_dialog_banner()
-        if banner:
-            box.pack_start(banner, False, False, 0)
 
         # Server
         hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -7047,7 +7147,21 @@ class PresetDialog(Gtk.Dialog):
             box.pack_start(Gtk.Label(label="ControlNet Structure Guide:", xalign=0), False, False, 0)
 
             self._cn_mode_combo = Gtk.ComboBoxText()
-            self._cn_mode_combo.set_tooltip_text("ControlNet preserves structure from your image (edges, depth, pose).\n'Off' = no structure guide. 'Canny' = edge detection. 'Depth' = 3D depth map.")
+            self._cn_mode_combo.set_tooltip_text(
+                "ControlNet preserves structure from your source image.\n\n"
+                "Modes:\n"
+                "  Tile \u2014 preserves layout + adds detail (BEST for upscale/hallucinate)\n"
+                "  Canny \u2014 follows edges (good for architecture, objects)\n"
+                "  Depth \u2014 preserves 3D depth (good for portraits, scenes)\n"
+                "  OpenPose \u2014 follows body pose (portraits, figure work)\n"
+                "  Lineart \u2014 follows line drawing (illustration, sketches)\n"
+                "  Scribble \u2014 loose sketch guide (creative, abstract)\n\n"
+                "Recommended pairings:\n"
+                "  Tile + Depth \u2014 structure-aware detail (hallucination)\n"
+                "  OpenPose + Canny \u2014 body pose + edge detail (portraits)\n"
+                "  Depth + Lineart \u2014 spatial + line structure (scenes)\n\n"
+                "\u26a0 SD1.5 and SDXL use DIFFERENT ControlNet models.\n"
+                "The correct model is auto-selected based on your checkpoint.")
             for key in CONTROLNET_GUIDE_MODES:
                 self._cn_mode_combo.append(key, key)
             self._cn_mode_combo.set_active(0)  # "Off" by default
@@ -7080,7 +7194,15 @@ class PresetDialog(Gtk.Dialog):
             # ControlNet 2 (optional second guide)
             box.pack_start(Gtk.Label(label="ControlNet 2 (combine):", xalign=0), False, False, 0)
             self._cn_mode_combo_2 = Gtk.ComboBoxText()
-            self._cn_mode_combo_2.set_tooltip_text("Optional second ControlNet. Combine two guides:\ne.g., OpenPose (body) + Depth (spatial) for maximum structural control.")
+            self._cn_mode_combo_2.set_tooltip_text(
+                "Optional second ControlNet to combine with the first.\n"
+                "Both guides are applied simultaneously \u2014 the AI follows both.\n\n"
+                "Best combos:\n"
+                "  CN1: Tile + CN2: Depth \u2014 detail + structure\n"
+                "  CN1: OpenPose + CN2: Canny \u2014 pose + edges\n"
+                "  CN1: Depth + CN2: Lineart \u2014 spatial + line guide\n\n"
+                "Keep CN2 strength lower than CN1 (e.g., 0.4 vs 0.7)\n"
+                "to let the primary guide dominate.")
             for key in CONTROLNET_GUIDE_MODES:
                 self._cn_mode_combo_2.append(key, key)
             self._cn_mode_combo_2.set_active(0)  # "Off" by default
@@ -7372,7 +7494,7 @@ class PresetDialog(Gtk.Dialog):
         def _do_tag():
             try:
                 # Get the current image from GIMP
-                images = Gimp.list_images()
+                images = Gimp.get_images()
                 if not images:
                     return None, "No image open in GIMP"
                 image = images[0]
@@ -10372,13 +10494,42 @@ class Spellcaster(Gimp.PlugIn):
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
         se.set_tooltip_text("ComfyUI server address. Default: http://127.0.0.1:8188")
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
-        bx.pack_start(Gtk.Label(label="Paint a selection over the object to remove.\nUses LaMa inpainting (no AI model/prompt needed)."), False, False, 4)
+        # Edge feather / blend strength
+        hb_feather = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb_feather.pack_start(Gtk.Label(label="Edge Feather (px):"), False, False, 0)
+        feather_spin = Gtk.SpinButton.new_with_range(0, 64, 1)
+        feather_spin.set_value(0)
+        feather_spin.set_tooltip_text(
+            "Feather (blur) the mask edges by this many pixels before inpainting.\n"
+            "0 = sharp mask edges (default). 4-16 = smoother blend with surroundings.\n"
+            "Higher values give softer transitions but may leave faint outlines.\n"
+            "Use for organic objects; keep at 0 for hard-edged items.")
+        hb_feather.pack_start(feather_spin, False, False, 0); bx.pack_start(hb_feather, False, False, 0)
+        bx.pack_start(Gtk.Label(label="How to use:\n"
+                                      "1. Use GIMP's selection tools (Free Select, Fuzzy Select, etc.)\n"
+                                      "   to paint/select over the object you want removed.\n"
+                                      "2. The selected area becomes the inpaint mask.\n"
+                                      "3. LaMa fills it in seamlessly — no AI model or prompt needed.\n\n"
+                                      "Tip: Select slightly LARGER than the object for cleaner edges."), False, False, 4)
         bx.show_all()
+        last = _SESSION.get("lama_remove")
+        if last:
+            if "feather" in last:
+                feather_spin.set_value(last["feather"])
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
-        srv = se.get_text().strip(); _propagate_server_url(srv); dlg.destroy()
+        srv = se.get_text().strip(); _propagate_server_url(srv)
+        feather_px = int(feather_spin.get_value())
+        _SESSION["lama_remove"] = {"feather": feather_px}
+        _save_session()
+        dlg.destroy()
         try:
+            # Apply feathering to the selection if requested
+            if feather_px > 0:
+                Gimp.get_pdb().run_procedure("gimp-selection-feather",
+                                              [GObject.Value(Gimp.Image, image),
+                                               GObject.Value(GObject.TYPE_DOUBLE, float(feather_px))])
             _update_spinner_status("LaMa Remove: building selection mask...")
             # Build mask from GIMP's selection channel
             mtmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False); mtmp.close()
@@ -10526,7 +10677,21 @@ class Spellcaster(Gimp.PlugIn):
         cn_box.set_margin_top(8); cn_box.set_margin_bottom(8)
         cn_box.pack_start(Gtk.Label(label="ControlNet 1 (Canny/Lineart for edge matching):", xalign=0), False, False, 0)
         out_cn_combo = Gtk.ComboBoxText()
-        out_cn_combo.set_tooltip_text("ControlNet at the outpaint border maintains edge consistency.\nCanny or Lineart work best for seamless outpaint transitions.")
+        out_cn_combo.set_tooltip_text(
+            "ControlNet preserves structure from your source image.\n\n"
+            "Modes:\n"
+            "  Tile \u2014 preserves layout + adds detail (BEST for upscale/hallucinate)\n"
+            "  Canny \u2014 follows edges (good for architecture, objects)\n"
+            "  Depth \u2014 preserves 3D depth (good for portraits, scenes)\n"
+            "  OpenPose \u2014 follows body pose (portraits, figure work)\n"
+            "  Lineart \u2014 follows line drawing (illustration, sketches)\n"
+            "  Scribble \u2014 loose sketch guide (creative, abstract)\n\n"
+            "Recommended pairings:\n"
+            "  Tile + Depth \u2014 structure-aware detail (hallucination)\n"
+            "  OpenPose + Canny \u2014 body pose + edge detail (portraits)\n"
+            "  Depth + Lineart \u2014 spatial + line structure (scenes)\n\n"
+            "\u26a0 SD1.5 and SDXL use DIFFERENT ControlNet models.\n"
+            "The correct model is auto-selected based on your checkpoint.")
         for key in CONTROLNET_GUIDE_MODES:
             out_cn_combo.append(key, key)
         out_cn_combo.set_active(0)  # Off by default
@@ -10675,7 +10840,21 @@ class Spellcaster(Gimp.PlugIn):
         bx.pack_start(Gtk.Separator(), False, False, 2)
         bx.pack_start(Gtk.Label(label="ControlNet 1 (Depth/Canny preserve structure):", xalign=0), False, False, 0)
         st_cn_combo = Gtk.ComboBoxText()
-        st_cn_combo.set_tooltip_text("ControlNet preserves spatial structure during style transfer.\nDepth = best for layout, Canny = best for edges, Tile = detail preservation.")
+        st_cn_combo.set_tooltip_text(
+            "ControlNet preserves structure from your source image.\n\n"
+            "Modes:\n"
+            "  Tile \u2014 preserves layout + adds detail (BEST for upscale/hallucinate)\n"
+            "  Canny \u2014 follows edges (good for architecture, objects)\n"
+            "  Depth \u2014 preserves 3D depth (good for portraits, scenes)\n"
+            "  OpenPose \u2014 follows body pose (portraits, figure work)\n"
+            "  Lineart \u2014 follows line drawing (illustration, sketches)\n"
+            "  Scribble \u2014 loose sketch guide (creative, abstract)\n\n"
+            "Recommended pairings:\n"
+            "  Tile + Depth \u2014 structure-aware detail (hallucination)\n"
+            "  OpenPose + Canny \u2014 body pose + edge detail (portraits)\n"
+            "  Depth + Lineart \u2014 spatial + line structure (scenes)\n\n"
+            "\u26a0 SD1.5 and SDXL use DIFFERENT ControlNet models.\n"
+            "The correct model is auto-selected based on your checkpoint.")
         for key in CONTROLNET_GUIDE_MODES:
             st_cn_combo.append(key, key)
         st_cn_combo.set_active(0)  # Off by default
@@ -10689,7 +10868,15 @@ class Spellcaster(Gimp.PlugIn):
         # ControlNet 2 (optional)
         bx.pack_start(Gtk.Label(label="ControlNet 2 (optional):", xalign=0), False, False, 0)
         st_cn_combo_2 = Gtk.ComboBoxText()
-        st_cn_combo_2.set_tooltip_text("Optional second ControlNet (e.g., Depth + Canny).")
+        st_cn_combo_2.set_tooltip_text(
+            "Optional second ControlNet to combine with the first.\n"
+            "Both guides are applied simultaneously \u2014 the AI follows both.\n\n"
+            "Best combos:\n"
+            "  CN1: Tile + CN2: Depth \u2014 detail + structure\n"
+            "  CN1: OpenPose + CN2: Canny \u2014 pose + edges\n"
+            "  CN1: Depth + CN2: Lineart \u2014 spatial + line guide\n\n"
+            "Keep CN2 strength lower than CN1 (e.g., 0.4 vs 0.7)\n"
+            "to let the primary guide dominate.")
         for key in CONTROLNET_GUIDE_MODES:
             st_cn_combo_2.append(key, key)
         st_cn_combo_2.set_active(0)
@@ -10856,8 +11043,20 @@ class Spellcaster(Gimp.PlugIn):
         hb5.pack_start(Gtk.Label(label="CodeFormer Weight:"), False, False, 0)
         cf_spin = Gtk.SpinButton.new_with_range(0.0, 1.0, 0.05)
         cf_spin.set_value(0.5); cf_spin.set_digits(2)
-        cf_spin.set_tooltip_text("Only affects CodeFormer model")
+        cf_spin.set_tooltip_text("Only affects CodeFormer model.\n0.0 = max quality (may alter identity), 1.0 = max fidelity to original. Default: 0.5")
         hb5.pack_start(cf_spin, True, True, 0); bx.pack_start(hb5, False, False, 0)
+        # Sharpen composite option
+        hb6 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb6.pack_start(Gtk.Label(label="Post-Sharpen:"), False, False, 0)
+        sharpen_spin = Gtk.SpinButton.new_with_range(0.0, 2.0, 0.05)
+        sharpen_spin.set_value(0.0); sharpen_spin.set_digits(2)
+        sharpen_spin.set_tooltip_text("Optional sharpening applied after face restoration.\n0.0 = off (default), 0.3-0.5 = subtle, 1.0+ = aggressive.\nUse 'Restore + Sharpen' for a crisper result.")
+        hb6.pack_start(sharpen_spin, True, True, 0); bx.pack_start(hb6, False, False, 0)
+        # Before/After comparison mode
+        compare_check = Gtk.CheckButton(label="Side-by-side comparison (before | after)")
+        compare_check.set_active(False)
+        compare_check.set_tooltip_text("When enabled, imports BOTH the original and restored face\nas separate layers so you can compare them in GIMP.")
+        bx.pack_start(compare_check, False, False, 0)
         bx.pack_start(Gtk.Label(label="Restores and enhances faces in the image.\nResult is imported as a new layer."), False, False, 4)
         bx.show_all()
         last = _SESSION.get("face_restore")
@@ -10870,6 +11069,10 @@ class Spellcaster(Gimp.PlugIn):
                 vis_spin.set_value(last["visibility"])
             if "codeformer_weight" in last:
                 cf_spin.set_value(last["codeformer_weight"])
+            if "sharpen" in last:
+                sharpen_spin.set_value(last["sharpen"])
+            if "compare" in last:
+                compare_check.set_active(last["compare"])
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
@@ -10879,9 +11082,12 @@ class Spellcaster(Gimp.PlugIn):
         facedetection = det_combo.get_active_id()
         visibility = vis_spin.get_value()
         codeformer_weight = cf_spin.get_value()
+        sharpen_amount = sharpen_spin.get_value()
+        do_compare = compare_check.get_active()
         _SESSION["face_restore"] = {
             "model_id": preset_key, "det_id": facedetection,
             "visibility": visibility, "codeformer_weight": codeformer_weight,
+            "sharpen": sharpen_amount, "compare": do_compare,
         }
         _save_session()
         dlg.destroy()
@@ -10890,8 +11096,29 @@ class Spellcaster(Gimp.PlugIn):
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_facerestore_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
+            # If comparison mode, import the original as a "Before" layer first
+            if do_compare:
+                _import_result_as_layer(image, tmp if os.path.exists(tmp) else _export_image_to_tmp(image),
+                                        f"Face Restore BEFORE (original)")
             wf = _build_face_restore(uname, fr_preset["model"], facedetection,
                                       visibility, codeformer_weight)
+            # Add sharpening pass if requested
+            if sharpen_amount > 0:
+                # Find the SaveImage node and insert ImageSharpen before it
+                save_key = max(wf.keys(), key=lambda k: int(k))
+                sharpen_key = str(int(save_key) + 1)
+                new_save_key = str(int(sharpen_key) + 1)
+                # Get the input reference from save node
+                save_input_ref = wf[save_key]["inputs"]["images"]
+                wf[sharpen_key] = {"class_type": "ImageSharpen",
+                                   "inputs": {"image": save_input_ref,
+                                              "sharpen_radius": 1,
+                                              "sigma": 0.5,
+                                              "alpha": sharpen_amount}}
+                wf[new_save_key] = {"class_type": "SaveImage",
+                                    "inputs": {"images": [sharpen_key, 0],
+                                               "filename_prefix": "spellcaster_facerestore_sharp"}}
+                del wf[save_key]
             _update_spinner_status("Face Restore: processing on ComfyUI...")
             results = _run_with_spinner("Face Restore: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
@@ -10956,7 +11183,24 @@ class Spellcaster(Gimp.PlugIn):
         cf_spin.set_value(0.5); cf_spin.set_digits(2)
         cf_spin.set_tooltip_text("CodeFormer fidelity weight (only affects CodeFormer model).\n0.0 = max quality, 1.0 = max fidelity to original. Default: 0.5")
         hb5.pack_start(cf_spin, True, True, 0); bx.pack_start(hb5, False, False, 0)
-        bx.pack_start(Gtk.Label(label="Full restoration pipeline for old/damaged photos.\nUpscale → Face Restore → Sharpen."), False, False, 4)
+        # Face detection model dropdown
+        hb6 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb6.pack_start(Gtk.Label(label="Face Detection:"), False, False, 0)
+        det_combo = Gtk.ComboBoxText()
+        det_combo.set_tooltip_text("Face detection model used to locate faces for restoration.\nretinaface_resnet50 is most accurate for varied poses.")
+        for det in ["retinaface_resnet50", "retinaface_mobile0.25", "YOLOv5l", "YOLOv5n"]:
+            det_combo.append(det, det)
+        det_combo.set_active(0)
+        det_combo.set_hexpand(True)
+        hb6.pack_start(det_combo, True, True, 0); bx.pack_start(hb6, False, False, 0)
+        # Sharpen radius control
+        hb7 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb7.pack_start(Gtk.Label(label="Sharpen Radius:"), False, False, 0)
+        sharpen_radius_spin = Gtk.SpinButton.new_with_range(1, 5, 1)
+        sharpen_radius_spin.set_value(1)
+        sharpen_radius_spin.set_tooltip_text("Kernel radius for the sharpening pass.\n1 = fine detail (default), 3 = medium, 5 = coarse structure.\nHigher radius sharpens larger features.")
+        hb7.pack_start(sharpen_radius_spin, True, True, 0); bx.pack_start(hb7, False, False, 0)
+        bx.pack_start(Gtk.Label(label="Full restoration pipeline for old/damaged photos.\nUpscale \u2192 Face Restore \u2192 Sharpen."), False, False, 4)
         bx.show_all()
         last = _SESSION.get("photo_restore")
         if last:
@@ -10968,6 +11212,10 @@ class Spellcaster(Gimp.PlugIn):
                 sharpen_spin.set_value(last["sharpen"])
             if "codeformer_weight" in last:
                 cf_spin.set_value(last["codeformer_weight"])
+            if "det_id" in last:
+                det_combo.set_active_id(last["det_id"])
+            if "sharpen_radius" in last:
+                sharpen_radius_spin.set_value(last["sharpen_radius"])
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
@@ -10978,9 +11226,12 @@ class Spellcaster(Gimp.PlugIn):
         fr_preset = FACE_RESTORE_PRESETS[face_key]
         sharpen_amount = sharpen_spin.get_value()
         codeformer_weight = cf_spin.get_value()
+        facedetection = det_combo.get_active_id()
+        sharpen_radius = int(sharpen_radius_spin.get_value())
         _SESSION["photo_restore"] = {
             "up_id": up_key, "face_id": face_key,
             "sharpen": sharpen_amount, "codeformer_weight": codeformer_weight,
+            "det_id": facedetection, "sharpen_radius": sharpen_radius,
         }
         _save_session()
         dlg.destroy()
@@ -10990,8 +11241,8 @@ class Spellcaster(Gimp.PlugIn):
             uname = f"gimp_photorestore_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
             wf = _build_photo_restore(uname, upscale_model, fr_preset["model"],
-                                       "retinaface_resnet50", 1.0, codeformer_weight,
-                                       1, 0.5, sharpen_amount)
+                                       facedetection, 1.0, codeformer_weight,
+                                       sharpen_radius, 0.5, sharpen_amount)
             _update_spinner_status("Photo Restore: processing on ComfyUI...")
             results = _run_with_spinner("Photo Restore: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
@@ -11085,7 +11336,21 @@ class Spellcaster(Gimp.PlugIn):
         bx.pack_start(Gtk.Separator(), False, False, 2)
         bx.pack_start(Gtk.Label(label="ControlNet 1 (Tile recommended):", xalign=0), False, False, 0)
         cn_combo = Gtk.ComboBoxText()
-        cn_combo.set_tooltip_text("Tile ControlNet is HIGHLY recommended for hallucination.\nIt preserves layout while the AI adds fine detail.")
+        cn_combo.set_tooltip_text(
+            "ControlNet preserves structure from your source image.\n\n"
+            "Modes:\n"
+            "  Tile \u2014 preserves layout + adds detail (BEST for upscale/hallucinate)\n"
+            "  Canny \u2014 follows edges (good for architecture, objects)\n"
+            "  Depth \u2014 preserves 3D depth (good for portraits, scenes)\n"
+            "  OpenPose \u2014 follows body pose (portraits, figure work)\n"
+            "  Lineart \u2014 follows line drawing (illustration, sketches)\n"
+            "  Scribble \u2014 loose sketch guide (creative, abstract)\n\n"
+            "Recommended pairings:\n"
+            "  Tile + Depth \u2014 structure-aware detail (hallucination)\n"
+            "  OpenPose + Canny \u2014 body pose + edge detail (portraits)\n"
+            "  Depth + Lineart \u2014 spatial + line structure (scenes)\n\n"
+            "\u26a0 SD1.5 and SDXL use DIFFERENT ControlNet models.\n"
+            "The correct model is auto-selected based on your checkpoint.")
         for key in CONTROLNET_GUIDE_MODES:
             cn_combo.append(key, key)
         cn_combo.set_active_id("Tile (detail upscale)")
@@ -11101,7 +11366,15 @@ class Spellcaster(Gimp.PlugIn):
         # ControlNet 2 (optional)
         bx.pack_start(Gtk.Label(label="ControlNet 2 (optional):", xalign=0), False, False, 0)
         cn_combo_2 = Gtk.ComboBoxText()
-        cn_combo_2.set_tooltip_text("Optional second ControlNet (e.g., Tile + Depth).")
+        cn_combo_2.set_tooltip_text(
+            "Optional second ControlNet to combine with the first.\n"
+            "Both guides are applied simultaneously \u2014 the AI follows both.\n\n"
+            "Best combos:\n"
+            "  CN1: Tile + CN2: Depth \u2014 detail + structure\n"
+            "  CN1: OpenPose + CN2: Canny \u2014 pose + edges\n"
+            "  CN1: Depth + CN2: Lineart \u2014 spatial + line guide\n\n"
+            "Keep CN2 strength lower than CN1 (e.g., 0.4 vs 0.7)\n"
+            "to let the primary guide dominate.")
         for key in CONTROLNET_GUIDE_MODES:
             cn_combo_2.append(key, key)
         cn_combo_2.set_active(0)
@@ -11285,7 +11558,21 @@ class Spellcaster(Gimp.PlugIn):
         bx.pack_start(Gtk.Separator(), False, False, 2)
         bx.pack_start(Gtk.Label(label="ControlNet 1 (Tile recommended):", xalign=0), False, False, 0)
         sv2r_cn_combo = Gtk.ComboBoxText()
-        sv2r_cn_combo.set_tooltip_text("Tile ControlNet is recommended for SeedV2R — preserves\nstructure while AI adds hallucinated detail during upscale.")
+        sv2r_cn_combo.set_tooltip_text(
+            "ControlNet preserves structure from your source image.\n\n"
+            "Modes:\n"
+            "  Tile \u2014 preserves layout + adds detail (BEST for upscale/hallucinate)\n"
+            "  Canny \u2014 follows edges (good for architecture, objects)\n"
+            "  Depth \u2014 preserves 3D depth (good for portraits, scenes)\n"
+            "  OpenPose \u2014 follows body pose (portraits, figure work)\n"
+            "  Lineart \u2014 follows line drawing (illustration, sketches)\n"
+            "  Scribble \u2014 loose sketch guide (creative, abstract)\n\n"
+            "Recommended pairings:\n"
+            "  Tile + Depth \u2014 structure-aware detail (hallucination)\n"
+            "  OpenPose + Canny \u2014 body pose + edge detail (portraits)\n"
+            "  Depth + Lineart \u2014 spatial + line structure (scenes)\n\n"
+            "\u26a0 SD1.5 and SDXL use DIFFERENT ControlNet models.\n"
+            "The correct model is auto-selected based on your checkpoint.")
         for key in CONTROLNET_GUIDE_MODES:
             sv2r_cn_combo.append(key, key)
         sv2r_cn_combo.set_active(0)  # Off by default
@@ -11299,7 +11586,15 @@ class Spellcaster(Gimp.PlugIn):
         # ControlNet 2 (optional)
         bx.pack_start(Gtk.Label(label="ControlNet 2 (optional):", xalign=0), False, False, 0)
         sv2r_cn_combo_2 = Gtk.ComboBoxText()
-        sv2r_cn_combo_2.set_tooltip_text("Optional second ControlNet (e.g., Tile + Depth).")
+        sv2r_cn_combo_2.set_tooltip_text(
+            "Optional second ControlNet to combine with the first.\n"
+            "Both guides are applied simultaneously \u2014 the AI follows both.\n\n"
+            "Best combos:\n"
+            "  CN1: Tile + CN2: Depth \u2014 detail + structure\n"
+            "  CN1: OpenPose + CN2: Canny \u2014 pose + edges\n"
+            "  CN1: Depth + CN2: Lineart \u2014 spatial + line guide\n\n"
+            "Keep CN2 strength lower than CN1 (e.g., 0.4 vs 0.7)\n"
+            "to let the primary guide dominate.")
         for key in CONTROLNET_GUIDE_MODES:
             sv2r_cn_combo_2.append(key, key)
         sv2r_cn_combo_2.set_active(0)
@@ -11446,17 +11741,35 @@ class Spellcaster(Gimp.PlugIn):
         if model_combo.get_active() < 0:
             model_combo.set_active(0)
         bx.pack_start(model_combo, False, False, 0)
-        # ControlNet strength slider
+        # Colorization style preset
+        bx.pack_start(Gtk.Label(label="Colorization Style:", xalign=0), False, False, 0)
+        color_preset_combo = Gtk.ComboBoxText()
+        color_preset_combo.set_tooltip_text("Pre-tuned colorization styles. Each sets optimal prompt, denoise,\nCN strength, and cfg. Select a style, then customize if needed.")
+        for label in COLORIZE_PRESETS:
+            color_preset_combo.append(label, label)
+        color_preset_combo.set_active(0)  # Natural Photograph
+        def _on_color_preset_changed(combo):
+            key = combo.get_active_id()
+            if key and key in COLORIZE_PRESETS:
+                cp = COLORIZE_PRESETS[key]
+                prompt_tv.get_buffer().set_text(cp["prompt"])
+                neg_tv.get_buffer().set_text(cp.get("negative", "black and white, monochrome, grey, desaturated"))
+                denoise_spin.set_value(cp["denoise"])
+                cn_spin.set_value(cp["cn_strength"])
+        color_preset_combo.connect("changed", _on_color_preset_changed)
+        bx.pack_start(color_preset_combo, False, False, 0)
+        _on_color_preset_changed(color_preset_combo)  # fill defaults from first preset
+        # Parameters
         sgrid = Gtk.Grid(column_spacing=12, row_spacing=6)
-        sgrid.attach(Gtk.Label(label="ControlNet Strength:", xalign=1), 0, 0, 1, 1)
-        cn_spin = Gtk.SpinButton.new_with_range(0.5, 1.0, 0.05)
+        sgrid.attach(Gtk.Label(label="Lineart CN Strength:", xalign=1), 0, 0, 1, 1)
+        cn_spin = Gtk.SpinButton.new_with_range(0.3, 1.0, 0.05)
         cn_spin.set_value(0.85); cn_spin.set_digits(2)
-        cn_spin.set_tooltip_text("How strictly to preserve the original structure/lines.\n0.85 = default. Higher = more faithful to B&W shapes, lower = more creative.")
+        cn_spin.set_tooltip_text("How strictly to preserve line structure from the original.\n0.85 = default. Higher = more faithful to B&W shapes, lower = more creative.")
         sgrid.attach(cn_spin, 1, 0, 1, 1)
-        sgrid.attach(Gtk.Label(label="Denoise:", xalign=1), 0, 1, 1, 1)
-        denoise_spin = Gtk.SpinButton.new_with_range(0.4, 0.7, 0.05)
-        denoise_spin.set_value(0.55); denoise_spin.set_digits(2)
-        denoise_spin.set_tooltip_text("How much color to add. Range: 0.4-0.7.\n0.4 = very subtle tinting, 0.55 = balanced (default), 0.7 = vivid colors.")
+        sgrid.attach(Gtk.Label(label="Color Intensity:", xalign=1), 0, 1, 1, 1)
+        denoise_spin = Gtk.SpinButton.new_with_range(0.4, 0.85, 0.05)
+        denoise_spin.set_value(0.72); denoise_spin.set_digits(2)
+        denoise_spin.set_tooltip_text("How vivid the colors will be.\n0.50 = subtle tinting, 0.72 = natural (default), 0.85 = very vivid.")
         sgrid.attach(denoise_spin, 1, 1, 1, 1)
         sgrid.attach(Gtk.Label(label="Seed:", xalign=1), 0, 2, 1, 1)
         seed_spin = Gtk.SpinButton.new_with_range(-1, 2**32-1, 1)
@@ -11483,7 +11796,15 @@ class Spellcaster(Gimp.PlugIn):
         bx.pack_start(Gtk.Separator(), False, False, 2)
         bx.pack_start(Gtk.Label(label="ControlNet 2 (optional — Depth/Pose for structure):", xalign=0), False, False, 0)
         col_cn2_combo = Gtk.ComboBoxText()
-        col_cn2_combo.set_tooltip_text("Optional second ControlNet in addition to the built-in lineart.\nDepth preserves spatial layout, Pose preserves body positions.")
+        col_cn2_combo.set_tooltip_text(
+            "Optional second ControlNet to combine with the first.\n"
+            "Both guides are applied simultaneously \u2014 the AI follows both.\n\n"
+            "Best combos:\n"
+            "  CN1: Tile + CN2: Depth \u2014 detail + structure\n"
+            "  CN1: OpenPose + CN2: Canny \u2014 pose + edges\n"
+            "  CN1: Depth + CN2: Lineart \u2014 spatial + line guide\n\n"
+            "Keep CN2 strength lower than CN1 (e.g., 0.4 vs 0.7)\n"
+            "to let the primary guide dominate.")
         for key in CONTROLNET_GUIDE_MODES:
             col_cn2_combo.append(key, key)
         col_cn2_combo.set_active(0)  # Off by default
@@ -11558,8 +11879,14 @@ class Spellcaster(Gimp.PlugIn):
             _upload_image(srv, tmp, uname); os.unlink(tmp)
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+                # Get preset-specific cfg/steps if available
+                _cp_key = color_preset_combo.get_active_id() if color_preset_combo else None
+                _cp = COLORIZE_PRESETS.get(_cp_key, {}) if _cp_key else {}
                 wf = _build_colorize(uname, preset, prompt, negative, seed,
-                                      cn_strength, denoise, controlnet_2=col_cn2)
+                                      cn_strength, denoise,
+                                      steps=_cp.get("steps"),
+                                      cfg=_cp.get("cfg"),
+                                      controlnet_2=col_cn2)
                 label = f"Colorize run {run_i+1}/{runs}" if runs > 1 else "Colorize"
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
                                             lambda: list(_run_comfyui_workflow(srv, wf)))
@@ -11894,7 +12221,7 @@ class Spellcaster(Gimp.PlugIn):
             supir_wd_status.set_text("Exporting image...")
             def _do_tag():
                 try:
-                    images = Gimp.list_images()
+                    images = Gimp.get_images()
                     if not images:
                         return None, "No image open in GIMP"
                     img = images[0]
@@ -11977,7 +12304,21 @@ class Spellcaster(Gimp.PlugIn):
         # ControlNet 1
         bx.pack_start(Gtk.Label(label="ControlNet 1 (Tile recommended):", xalign=0), False, False, 0)
         supir_cn_combo = Gtk.ComboBoxText()
-        supir_cn_combo.set_tooltip_text("Tile ControlNet is recommended for SUPIR — it preserves structure\nduring the refinement pass. Depth adds spatial layout guidance.")
+        supir_cn_combo.set_tooltip_text(
+            "ControlNet preserves structure from your source image.\n\n"
+            "Modes:\n"
+            "  Tile \u2014 preserves layout + adds detail (BEST for upscale/hallucinate)\n"
+            "  Canny \u2014 follows edges (good for architecture, objects)\n"
+            "  Depth \u2014 preserves 3D depth (good for portraits, scenes)\n"
+            "  OpenPose \u2014 follows body pose (portraits, figure work)\n"
+            "  Lineart \u2014 follows line drawing (illustration, sketches)\n"
+            "  Scribble \u2014 loose sketch guide (creative, abstract)\n\n"
+            "Recommended pairings:\n"
+            "  Tile + Depth \u2014 structure-aware detail (hallucination)\n"
+            "  OpenPose + Canny \u2014 body pose + edge detail (portraits)\n"
+            "  Depth + Lineart \u2014 spatial + line structure (scenes)\n\n"
+            "\u26a0 SD1.5 and SDXL use DIFFERENT ControlNet models.\n"
+            "The correct model is auto-selected based on your checkpoint.")
         for key in CONTROLNET_GUIDE_MODES:
             supir_cn_combo.append(key, key)
         supir_cn_combo.set_active(0)  # Off by default
@@ -11992,7 +12333,15 @@ class Spellcaster(Gimp.PlugIn):
         # ControlNet 2
         bx.pack_start(Gtk.Label(label="ControlNet 2 (optional — e.g., Tile + Depth):", xalign=0), False, False, 0)
         supir_cn_combo_2 = Gtk.ComboBoxText()
-        supir_cn_combo_2.set_tooltip_text("Optional second ControlNet for the refinement pass.\nCombining Tile + Depth gives excellent structural fidelity.")
+        supir_cn_combo_2.set_tooltip_text(
+            "Optional second ControlNet to combine with the first.\n"
+            "Both guides are applied simultaneously \u2014 the AI follows both.\n\n"
+            "Best combos:\n"
+            "  CN1: Tile + CN2: Depth \u2014 detail + structure\n"
+            "  CN1: OpenPose + CN2: Canny \u2014 pose + edges\n"
+            "  CN1: Depth + CN2: Lineart \u2014 spatial + line guide\n\n"
+            "Keep CN2 strength lower than CN1 (e.g., 0.4 vs 0.7)\n"
+            "to let the primary guide dominate.")
         for key in CONTROLNET_GUIDE_MODES:
             supir_cn_combo_2.append(key, key)
         supir_cn_combo_2.set_active(0)  # Off by default
