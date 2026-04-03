@@ -6132,7 +6132,12 @@ class PresetDialog(Gtk.Dialog):
         self.preset_combo = Gtk.ComboBoxText()
         for i, p in enumerate(MODEL_PRESETS):
             self.preset_combo.append(str(i), p["label"])
-        self.preset_combo.set_active(0)
+        # Default to favourite model from settings, or first model
+        fav = _load_config().get("favourite_model", -1)
+        if 0 <= fav < len(MODEL_PRESETS):
+            self.preset_combo.set_active(fav)
+        else:
+            self.preset_combo.set_active(0)
         self.preset_combo.connect("changed", self._on_preset_changed)
         self.preset_combo.set_tooltip_text("Select the AI Architecture. FLUX is state-of-the-art, SDXL balances speed/quality.")
         box.pack_start(self.preset_combo, False, False, 0)
@@ -9649,7 +9654,11 @@ class Spellcaster(Gimp.PlugIn):
         model_combo.set_tooltip_text("Base checkpoint model for style transfer.\nSDXL models generally produce the best style transfer results.")
         for i, p in enumerate(MODEL_PRESETS):
             model_combo.append(str(i), p["label"])
-        model_combo.set_active(0)
+        _fav = _load_config().get("favourite_model", -1)
+        if 0 <= _fav < len(MODEL_PRESETS) and model_combo.get_active_id() is None:
+            model_combo.set_active_id(str(_fav))
+        if model_combo.get_active() < 0:
+            model_combo.set_active(0)
         bx.pack_start(model_combo, False, False, 0)
         # IPAdapter preset
         hb_ip = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -10037,7 +10046,11 @@ class Spellcaster(Gimp.PlugIn):
         model_combo.set_tooltip_text("AI model used for the detail hallucination (img2img) pass.\nMatch this to your image style (photo, anime, etc).")
         for i, p in enumerate(MODEL_PRESETS):
             model_combo.append(str(i), p["label"])
-        model_combo.set_active(0)
+        _fav = _load_config().get("favourite_model", -1)
+        if 0 <= _fav < len(MODEL_PRESETS) and model_combo.get_active_id() is None:
+            model_combo.set_active_id(str(_fav))
+        if model_combo.get_active() < 0:
+            model_combo.set_active(0)
         bx.pack_start(model_combo, False, False, 0)
         # Prompt
         bx.pack_start(Gtk.Label(label="Prompt:", xalign=0), False, False, 0)
@@ -10158,7 +10171,11 @@ class Spellcaster(Gimp.PlugIn):
         model_combo.set_tooltip_text("AI model for the img2img hallucination pass.\nMatch this to your image style for best results.")
         for i, p in enumerate(MODEL_PRESETS):
             model_combo.append(str(i), p["label"])
-        model_combo.set_active(0)
+        _fav = _load_config().get("favourite_model", -1)
+        if 0 <= _fav < len(MODEL_PRESETS) and model_combo.get_active_id() is None:
+            model_combo.set_active_id(str(_fav))
+        if model_combo.get_active() < 0:
+            model_combo.set_active(0)
         bx.pack_start(model_combo, False, False, 0)
         # Upscale model dropdown
         hb_up = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -10326,7 +10343,11 @@ class Spellcaster(Gimp.PlugIn):
         model_combo.set_tooltip_text("AI model for colorization. Realistic photo models work best.\nThe model generates colors guided by ControlNet lineart.")
         for i, p in enumerate(MODEL_PRESETS):
             model_combo.append(str(i), p["label"])
-        model_combo.set_active(0)
+        _fav = _load_config().get("favourite_model", -1)
+        if 0 <= _fav < len(MODEL_PRESETS) and model_combo.get_active_id() is None:
+            model_combo.set_active_id(str(_fav))
+        if model_combo.get_active() < 0:
+            model_combo.set_active(0)
         bx.pack_start(model_combo, False, False, 0)
         # ControlNet strength slider
         sgrid = Gtk.Grid(column_spacing=12, row_spacing=6)
@@ -10520,7 +10541,11 @@ class Spellcaster(Gimp.PlugIn):
             # Fallback: show all
             for i, p in enumerate(MODEL_PRESETS):
                 model_combo.append(str(i), p["label"])
-        model_combo.set_active(0)
+        _fav = _load_config().get("favourite_model", -1)
+        if 0 <= _fav < len(MODEL_PRESETS) and model_combo.get_active_id() is None:
+            model_combo.set_active_id(str(_fav))
+        if model_combo.get_active() < 0:
+            model_combo.set_active(0)
         bx.pack_start(model_combo, False, False, 0)
         # Lighting preset dropdown
         bx.pack_start(Gtk.Label(label="Lighting Preset:", xalign=0), False, False, 0)
@@ -10657,7 +10682,11 @@ class Spellcaster(Gimp.PlugIn):
         for i, p in enumerate(MODEL_PRESETS):
             if p["arch"] == "sdxl":
                 model_combo.append(str(i), p["label"])
-        model_combo.set_active(0)
+        _fav = _load_config().get("favourite_model", -1)
+        if 0 <= _fav < len(MODEL_PRESETS) and model_combo.get_active_id() is None:
+            model_combo.set_active_id(str(_fav))
+        if model_combo.get_active() < 0:
+            model_combo.set_active(0)
         bx.pack_start(model_combo, False, False, 0)
         # Parameters
         sgrid = Gtk.Grid(column_spacing=12, row_spacing=6)
@@ -10903,6 +10932,21 @@ class Spellcaster(Gimp.PlugIn):
             "Default: 300 seconds (5 minutes)")
         bx.pack_start(timeout_spin, False, False, 0)
 
+        # ── Favourite Model ──
+        bx.pack_start(Gtk.Separator(), False, False, 5)
+        bx.pack_start(Gtk.Label(label="Favourite Model (opens first in all dialogs):", xalign=0), False, False, 0)
+        fav_combo = Gtk.ComboBoxText()
+        fav_combo.append("-1", "(none — use last-used model)")
+        for i, p in enumerate(MODEL_PRESETS):
+            fav_combo.append(str(i), p["label"])
+        saved_fav = cfg.get("favourite_model", -1)
+        fav_combo.set_active_id(str(saved_fav))
+        fav_combo.set_tooltip_text(
+            "Choose your go-to model. When set, every img2img, txt2img,\n"
+            "and inpaint dialog opens with this model pre-selected.\n"
+            "Set to '(none)' to use the last-used model instead.")
+        bx.pack_start(fav_combo, False, False, 0)
+
         # ── Auto-update toggle ──
         bx.pack_start(Gtk.Separator(), False, False, 5)
         auto_update_cb = Gtk.CheckButton(label="Auto-update plugin from GitHub on startup")
@@ -10934,12 +10978,15 @@ class Spellcaster(Gimp.PlugIn):
         new_url = server_entry.get_text().strip().rstrip("/")
         new_timeout = int(timeout_spin.get_value())
         new_auto_update = auto_update_cb.get_active()
+        fav_id = fav_combo.get_active_id()
+        new_fav = int(fav_id) if fav_id and fav_id != "-1" else -1
         dlg.destroy()
 
         _save_config({
             "server_url": new_url,
             "timeout": new_timeout,
             "auto_update": new_auto_update,
+            "favourite_model": new_fav,
         })
         _propagate_server_url(new_url)
         Gimp.message(f"Settings saved. Server: {new_url}")
