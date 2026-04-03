@@ -12099,137 +12099,121 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
 
         try:
-            # ── Build mask from GIMP selection ────────────────────────
-            _update_spinner_status("Klein Inpaint: building selection mask...")
-            global _mask_cache
-            sel_hash = _selection_hash(image)
-            if (sel_hash
-                    and _mask_cache["selection_hash"] == sel_hash
-                    and _mask_cache["server"] == srv
-                    and _mask_cache["uploaded_name"]):
-                mname = _mask_cache["uploaded_name"]
-            else:
-                mtmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False); mtmp.close()
-                _create_selection_mask_png(mtmp.name, image)
-                mname = f"gimp_mask_{uuid.uuid4().hex[:8]}.png"
-                _upload_image(srv, mtmp.name, mname)
-                _mask_cache = {
-                    "selection_hash": sel_hash,
-                    "mask_path": mtmp.name,
-                    "uploaded_name": mname,
-                    "server": srv,
-                }
-
-            # ── Export image ──────────────────────────────────────────
-            _update_spinner_status("Klein Inpaint: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_kinp_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
-
             km = KLEIN_MODELS[klein_key]
-            all_results = []
 
-            for run_i in range(runs):
-                seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+            def _do_klein_inpaint():
+                # ── Build mask from GIMP selection ────────────────────
+                _update_spinner_status("Klein Inpaint: building selection mask...")
+                global _mask_cache
+                sel_hash = _selection_hash(image)
+                if (sel_hash
+                        and _mask_cache["selection_hash"] == sel_hash
+                        and _mask_cache["server"] == srv
+                        and _mask_cache["uploaded_name"]):
+                    mname = _mask_cache["uploaded_name"]
+                    _update_spinner_status("Klein Inpaint: reusing cached mask...")
+                else:
+                    mtmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False); mtmp.close()
+                    _create_selection_mask_png(mtmp.name, image)
+                    mname = f"gimp_mask_{uuid.uuid4().hex[:8]}.png"
+                    _upload_image(srv, mtmp.name, mname)
+                    _mask_cache = {
+                        "selection_hash": sel_hash,
+                        "mask_path": mtmp.name,
+                        "uploaded_name": mname,
+                        "server": srv,
+                    }
 
-                wf = {
-                    # Model loaders
-                    "1": {"class_type": "UNETLoader",
-                          "inputs": {"unet_name": km["unet"], "weight_dtype": "default"}},
-                    "2": {"class_type": "CLIPLoader",
-                          "inputs": {"clip_name": km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
-                                     "type": "flux2", "device": "default"}},
-                    "3": {"class_type": "VAELoader",
-                          "inputs": {"vae_name": "flux2-vae.safetensors"}},
+                # ── Export image ──────────────────────────────────────
+                _update_spinner_status("Klein Inpaint: exporting image...")
+                tmp = _export_image_to_tmp(image)
+                uname = f"gimp_kinp_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, tmp, uname); os.unlink(tmp)
 
-                    # Load source image and mask
-                    "10": {"class_type": "LoadImage",
-                           "inputs": {"image": uname}},
-                    "11": {"class_type": "LoadImage",
-                           "inputs": {"image": mname}},
+                all_results = []
+                for run_i in range(runs):
+                    seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
 
-                    # Convert mask image → MASK tensor (red channel)
-                    "12": {"class_type": "ImageToMask",
-                           "inputs": {"image": ["11", 0], "channel": "red"}},
-                }
+                    wf = {
+                        "1": {"class_type": "UNETLoader",
+                              "inputs": {"unet_name": km["unet"], "weight_dtype": "default"}},
+                        "2": {"class_type": "CLIPLoader",
+                              "inputs": {"clip_name": km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+                                         "type": "flux2", "device": "default"}},
+                        "3": {"class_type": "VAELoader",
+                              "inputs": {"vae_name": "flux2-vae.safetensors"}},
+                        "10": {"class_type": "LoadImage",
+                               "inputs": {"image": uname}},
+                        "11": {"class_type": "LoadImage",
+                               "inputs": {"image": mname}},
+                        "12": {"class_type": "ImageToMask",
+                               "inputs": {"image": ["11", 0], "channel": "red"}},
+                    }
 
-                # Optional: grow/shrink the mask
-                mask_ref = ["12", 0]
-                if grow_px != 0:
-                    wf["13"] = {"class_type": "GrowMask",
-                                "inputs": {"mask": mask_ref, "expand": grow_px,
-                                           "tapered_corners": True}}
-                    mask_ref = ["13", 0]
+                    mask_ref = ["12", 0]
+                    if grow_px != 0:
+                        wf["13"] = {"class_type": "GrowMask",
+                                    "inputs": {"mask": mask_ref, "expand": grow_px,
+                                               "tapered_corners": True}}
+                        mask_ref = ["13", 0]
 
-                # Scale image to mod-16 for Flux
-                wf["15"] = {"class_type": "ImageScaleToTotalPixels",
-                            "inputs": {"image": ["10", 0], "upscale_method": "nearest-exact",
-                                       "megapixels": 1.0, "resolution_steps": 16}}
-                wf["16"] = {"class_type": "GetImageSize",
-                            "inputs": {"image": ["15", 0]}}
+                    wf["15"] = {"class_type": "ImageScaleToTotalPixels",
+                                "inputs": {"image": ["10", 0], "upscale_method": "nearest-exact",
+                                           "megapixels": 1.0, "resolution_steps": 16}}
+                    wf["16"] = {"class_type": "GetImageSize",
+                                "inputs": {"image": ["15", 0]}}
+                    wf["17"] = {"class_type": "VAEEncode",
+                                "inputs": {"pixels": ["15", 0], "vae": ["3", 0]}}
+                    wf["18"] = {"class_type": "SetLatentNoiseMask",
+                                "inputs": {"samples": ["17", 0], "mask": mask_ref}}
+                    wf["20"] = {"class_type": "CLIPTextEncode",
+                                "inputs": {"text": prompt, "clip": ["2", 0]}}
+                    wf["21"] = {"class_type": "ConditioningZeroOut",
+                                "inputs": {"conditioning": ["20", 0]}}
+                    wf["22"] = {"class_type": "ReferenceLatent",
+                                "inputs": {"conditioning": ["20", 0], "latent": ["17", 0]}}
+                    wf["23"] = {"class_type": "ReferenceLatent",
+                                "inputs": {"conditioning": ["21", 0], "latent": ["17", 0]}}
 
-                # VAE encode the source image
-                wf["17"] = {"class_type": "VAEEncode",
-                            "inputs": {"pixels": ["15", 0], "vae": ["3", 0]}}
+                    model_ref = ["1", 0]
+                    if use_dd:
+                        wf["24"] = {"class_type": "DifferentialDiffusion",
+                                    "inputs": {"model": ["1", 0]}}
+                        model_ref = ["24", 0]
 
-                # Apply mask to the encoded latent — sampler only regenerates masked area
-                wf["18"] = {"class_type": "SetLatentNoiseMask",
-                            "inputs": {"samples": ["17", 0], "mask": mask_ref}}
+                    wf["30"] = {"class_type": "CFGGuider",
+                                "inputs": {"model": model_ref, "positive": ["22", 0],
+                                           "negative": ["23", 0], "cfg": 1.0}}
+                    wf["31"] = {"class_type": "KSamplerSelect",
+                                "inputs": {"sampler_name": "euler"}}
+                    wf["32"] = {"class_type": "Flux2Scheduler",
+                                "inputs": {"steps": steps, "denoise": denoise,
+                                           "width": ["16", 0], "height": ["16", 1]}}
+                    wf["33"] = {"class_type": "RandomNoise",
+                                "inputs": {"noise_seed": seed}}
+                    wf["40"] = {"class_type": "SamplerCustomAdvanced",
+                                "inputs": {"noise": ["33", 0], "guider": ["30", 0],
+                                           "sampler": ["31", 0], "sigmas": ["32", 0],
+                                           "latent_image": ["18", 0]}}
+                    wf["50"] = {"class_type": "VAEDecode",
+                                "inputs": {"samples": ["40", 0], "vae": ["3", 0]}}
+                    wf["60"] = {"class_type": "SaveImage",
+                                "inputs": {"images": ["50", 0],
+                                           "filename_prefix": "spellcaster_klein_inpaint"}}
 
-                # Text conditioning
-                wf["20"] = {"class_type": "CLIPTextEncode",
-                            "inputs": {"text": prompt, "clip": ["2", 0]}}
-                wf["21"] = {"class_type": "ConditioningZeroOut",
-                            "inputs": {"conditioning": ["20", 0]}}
+                    label = f"Klein Inpaint run {run_i+1}/{runs}" if runs > 1 else "Klein Inpaint"
+                    _update_spinner_status(f"{label}: processing on ComfyUI...")
+                    all_results.extend(list(_run_comfyui_workflow(srv, wf, timeout=300)))
+                return all_results
 
-                # ReferenceLatent: gives Klein full context of the existing image
-                wf["22"] = {"class_type": "ReferenceLatent",
-                            "inputs": {"conditioning": ["20", 0], "latent": ["17", 0]}}
-                wf["23"] = {"class_type": "ReferenceLatent",
-                            "inputs": {"conditioning": ["21", 0], "latent": ["17", 0]}}
-
-                # DifferentialDiffusion for smooth mask edges (optional)
-                model_ref = ["1", 0]
-                if use_dd:
-                    wf["24"] = {"class_type": "DifferentialDiffusion",
-                                "inputs": {"model": ["1", 0]}}
-                    model_ref = ["24", 0]
-
-                # Sampling pipeline
-                wf["30"] = {"class_type": "CFGGuider",
-                            "inputs": {"model": model_ref, "positive": ["22", 0],
-                                       "negative": ["23", 0], "cfg": 1.0}}
-                wf["31"] = {"class_type": "KSamplerSelect",
-                            "inputs": {"sampler_name": "euler"}}
-                wf["32"] = {"class_type": "Flux2Scheduler",
-                            "inputs": {"steps": steps, "denoise": denoise,
-                                       "width": ["16", 0], "height": ["16", 1]}}
-                wf["33"] = {"class_type": "RandomNoise",
-                            "inputs": {"noise_seed": seed}}
-
-                wf["40"] = {"class_type": "SamplerCustomAdvanced",
-                            "inputs": {"noise": ["33", 0], "guider": ["30", 0],
-                                       "sampler": ["31", 0], "sigmas": ["32", 0],
-                                       "latent_image": ["18", 0]}}
-
-                # Decode + save
-                wf["50"] = {"class_type": "VAEDecode",
-                            "inputs": {"samples": ["40", 0], "vae": ["3", 0]}}
-                wf["60"] = {"class_type": "SaveImage",
-                            "inputs": {"images": ["50", 0],
-                                       "filename_prefix": "spellcaster_klein_inpaint"}}
-
-                label = f"Klein Inpaint run {run_i+1}/{runs}" if runs > 1 else "Klein Inpaint"
-                _wf = wf  # capture by value for lambda closure
-                results = _run_with_spinner(f"{label}: processing on ComfyUI...",
-                                             lambda: list(_run_comfyui_workflow(srv, _wf, timeout=300)))
-                if not results:
-                    Gimp.message(f"Klein Inpaint: ComfyUI returned no output images.\n"
-                                 f"Check that DifferentialDiffusion node is available\n"
-                                 f"(try disabling 'Smooth edges' in Advanced options).")
-                for i, (fn, sf, ft) in enumerate(results):
-                    lbl = f"Klein Inpaint run {run_i+1} #{i+1}" if runs > 1 else f"Klein Inpaint #{i+1}"
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+            results = _run_with_spinner("Klein Inpaint: starting...", _do_klein_inpaint)
+            if not results:
+                Gimp.message("Klein Inpaint: ComfyUI returned no output images.\n"
+                             "Check the ComfyUI console for errors.\n"
+                             "Try disabling 'Smooth edges' in Advanced options.")
+            for i, (fn, sf, ft) in enumerate(results):
+                lbl = f"Klein Inpaint #{i+1}"
+                _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
