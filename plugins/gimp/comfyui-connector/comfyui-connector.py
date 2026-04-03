@@ -11926,6 +11926,13 @@ class Spellcaster(Gimp.PlugIn):
         if base_seed < 0:
             base_seed = random.randint(0, 2**32 - 1)
         runs = int(runs_spin.get_value())
+        # ControlNet params (read BEFORE dlg.destroy)
+        cn1_mode = cn_combo.get_active_id() if cn_combo else "Off"
+        cn1 = {"mode": cn1_mode, "strength": cn_strength.get_value(),
+                "start_percent": 0.0, "end_percent": 1.0} if cn1_mode != "Off" else None
+        cn2_mode = cn_combo_2.get_active_id() if cn_combo_2 else "Off"
+        cn2 = {"mode": cn2_mode, "strength": cn_strength_2.get_value(),
+                "start_percent": 0.0, "end_percent": 1.0} if cn2_mode != "Off" else None
         _SESSION["detail_hallucinate"] = {
             "detail_id": detail_key, "up_id": up_key, "model_idx": idx,
             "prompt": prompt, "negative": negative,
@@ -11940,12 +11947,6 @@ class Spellcaster(Gimp.PlugIn):
             _upload_image(srv, tmp, uname); os.unlink(tmp)
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
-                cn1_mode = cn_combo.get_active_id() if cn_combo else "Off"
-                cn1 = {"mode": cn1_mode, "strength": cn_strength.get_value(),
-                        "start_percent": 0.0, "end_percent": 1.0} if cn1_mode != "Off" else None
-                cn2_mode = cn_combo_2.get_active_id() if cn_combo_2 else "Off"
-                cn2 = {"mode": cn2_mode, "strength": cn_strength_2.get_value(),
-                        "start_percent": 0.0, "end_percent": 1.0} if cn2_mode != "Off" else None
                 wf = _build_detail_hallucinate(uname, upscale_model, preset, prompt, negative,
                                                 seed, h_preset["denoise"], h_preset["cfg"],
                                                 steps=h_preset.get("steps"),
@@ -12411,6 +12412,9 @@ class Spellcaster(Gimp.PlugIn):
         col_cn2_mode = col_cn2_combo.get_active_id() if col_cn2_combo else "Off"
         col_cn2 = {"mode": col_cn2_mode, "strength": col_cn2_strength.get_value(),
                     "start_percent": 0.0, "end_percent": 1.0} if col_cn2_mode != "Off" else None
+        # Color preset params (read BEFORE dlg.destroy)
+        _cp_key = color_preset_combo.get_active_id() if color_preset_combo else None
+        _cp = COLORIZE_PRESETS.get(_cp_key, {}) if _cp_key else {}
         _SESSION["colorize"] = {
             "model_idx": idx, "cn_strength": cn_strength, "denoise": denoise,
             "prompt": prompt, "negative": negative,
@@ -12426,9 +12430,6 @@ class Spellcaster(Gimp.PlugIn):
             _upload_image(srv, tmp, uname); os.unlink(tmp)
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
-                # Get preset-specific cfg/steps if available
-                _cp_key = color_preset_combo.get_active_id() if color_preset_combo else None
-                _cp = COLORIZE_PRESETS.get(_cp_key, {}) if _cp_key else {}
                 wf = _build_colorize(uname, preset, prompt, negative, seed,
                                       cn_strength, denoise,
                                       steps=_cp.get("steps"),
