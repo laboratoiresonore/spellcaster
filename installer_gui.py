@@ -1,7 +1,7 @@
 """
 Spellcaster Premium Installer GUI
 ==================================
-A polished 4-step wizard that transforms any machine into a generative-AI
+An 8-step wizard that transforms any machine into a generative-AI
 powerhouse — no prior knowledge required.
 
 Every preset, every model, every parameter has been hand-tuned by AI
@@ -11,11 +11,14 @@ handles every download, clone, and configuration step automatically.
 
 Built with customtkinter for a premium dark-themed UI. The wizard walks
 the user through:
-  1. System Layout   — locate ComfyUI, GIMP, Darktable dirs + server URL
-  2. Magic Profiles  — categorised feature selection matching in-app menus
-                       (Generation, Restoration, Style, Face, Video, Utility, ControlNet)
-  3. Components      — per-node / per-model granular control with CivitAI previews
-  4. Review & Deploy — installation summary + progress bar + live log
+  1. Welcome         — prerequisites check, download links for missing apps
+  2. What You Want   — natural-language use cases that pre-select features
+  3. Quick Setup     — install everything / recommended / handpick
+  4. Model Advisor   — Flux2-aware guidance, redundancy tips
+  5. System Layout   — locate ComfyUI, GIMP, Darktable dirs + server URL
+  6. Magic Profiles  — categorised feature selection matching in-app menus
+  7. Components      — per-node / per-model granular control with CivitAI previews
+  8. Review & Deploy — installation summary + progress bar + live log
 
 All heavy lifting (git clones, file copies, downloads) is delegated to
 install.py, imported here as ``builder``.
@@ -144,7 +147,7 @@ def load_image_async(url, label, size=(100, 100)):
 # ---------------------------------------------------------------------------
 
 class InstallerApp(ctk.CTk):
-    """Four-step wizard window for Spellcaster installation.
+    """Eight-step wizard window for Spellcaster installation.
 
     Every preset, model weight, sampler schedule, and CFG value has been
     hand-tuned by generative-AI professionals — the user simply picks what
@@ -199,7 +202,7 @@ class InstallerApp(ctk.CTk):
         self._build_main_frames()
         self._init_variables()
 
-        self.select_frame("paths")
+        self.select_frame("welcome")
 
     # ------------------------------------------------------------------
     # UI construction
@@ -208,14 +211,14 @@ class InstallerApp(ctk.CTk):
     def _build_sidebar(self):
         """Create the left-hand navigation panel with hardware info,
         step buttons, and a running download-size estimate."""
-        self.sidebar_frame = ctk.CTkFrame(self, width=230, corner_radius=0, fg_color=self.sidebar_color)
+        self.sidebar_frame = ctk.CTkFrame(self, width=240, corner_radius=0, fg_color=self.sidebar_color)
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
-        self.sidebar_frame.grid_rowconfigure(7, weight=1)
+        self.sidebar_frame.grid_rowconfigure(11, weight=1)
 
         logo_label = ctk.CTkLabel(self.sidebar_frame, text="Spellcaster",
                                   font=ctk.CTkFont(family="Inter", size=24, weight="bold"),
                                   text_color=self.accent_hover)
-        logo_label.grid(row=0, column=0, padx=20, pady=(20, 5))
+        logo_label.grid(row=0, column=0, padx=20, pady=(15, 3))
 
         # Hardware detection banner
         if self._vram_mb > 0:
@@ -234,49 +237,419 @@ class InstallerApp(ctk.CTk):
         hw_label = ctk.CTkLabel(self.sidebar_frame, text=hw_text,
                                 font=ctk.CTkFont(family="Inter", size=11, weight="bold"),
                                 text_color=tier_color)
-        hw_label.grid(row=1, column=0, padx=20, pady=(0, 20))
+        hw_label.grid(row=1, column=0, padx=20, pady=(0, 12))
 
         # Helper for themed buttons
-        def mk_btn(text, cmd):
-            return ctk.CTkButton(self.sidebar_frame, text=text, anchor="w", command=cmd,
-                                 fg_color="transparent", hover_color="#21153B",
-                                 text_color=self.text_main,
-                                 font=ctk.CTkFont(family="Inter", size=14, weight="bold"))
+        def mk_btn(text, cmd, row):
+            b = ctk.CTkButton(self.sidebar_frame, text=text, anchor="w", command=cmd,
+                              fg_color="transparent", hover_color="#21153B",
+                              text_color=self.text_main,
+                              font=ctk.CTkFont(family="Inter", size=13, weight="bold"),
+                              height=28)
+            b.grid(row=row, column=0, padx=12, pady=3, sticky="ew")
+            return b
 
-        self.btn_paths = mk_btn("1. System Layout", lambda: self.select_frame("paths"))
-        self.btn_paths.grid(row=2, column=0, padx=15, pady=8, sticky="ew")
-        _ToolTip(self.btn_paths, "Step 1: Set the file paths where ComfyUI, GIMP, and Darktable are installed on your system. The installer auto-detects common locations, but you can override them here.")
+        # All 8 step buttons
+        self.btn_welcome  = mk_btn("1. Welcome",         lambda: self.select_frame("welcome"),  2)
+        self.btn_usecases = mk_btn("2. What You Want",   lambda: self.select_frame("usecases"), 3)
+        self.btn_quick    = mk_btn("3. Quick Setup",     lambda: self.select_frame("quick"),    4)
+        self.btn_advisor  = mk_btn("4. Model Advisor",   lambda: self.select_frame("advisor"),  5)
+        self.btn_paths    = mk_btn("5. System Layout",   lambda: self.select_frame("paths"),    6)
+        self.btn_features = mk_btn("6. Magic Profiles",  lambda: self.select_frame("features"), 7)
+        self.btn_granular = mk_btn("7. Components",      lambda: self.select_frame("granular"), 8)
+        self.btn_install  = mk_btn("8. Review & Deploy", lambda: self.select_frame("install"),  9)
 
-        self.btn_features = mk_btn("2. Magic Profiles", lambda: self.select_frame("features"))
-        self.btn_features.grid(row=3, column=0, padx=15, pady=8, sticky="ew")
-        _ToolTip(self.btn_features, "Step 2: Choose AI capabilities organised by category (Generation, Restoration, Style, Face, Video, etc.). Each feature bundles all the models and nodes needed. Categories match the in-app menus inside GIMP and Darktable.")
+        _ToolTip(self.btn_welcome,  "Step 1: Make sure you have the required apps installed before continuing.")
+        _ToolTip(self.btn_usecases, "Step 2: Tell us what you want to do in plain English. We'll pre-select the right features for you.")
+        _ToolTip(self.btn_quick,    "Step 3: Choose to install everything, just the recommended set for your hardware, or handpick features yourself.")
+        _ToolTip(self.btn_advisor,  "Step 4: Smart model recommendations based on your GPU. If you can run Flux 2, you may not need older models.")
+        _ToolTip(self.btn_paths,    "Step 5: Set the file paths where ComfyUI, GIMP, and Darktable are installed.")
+        _ToolTip(self.btn_features, "Step 6: Fine-tune which AI features to install, organised by category.")
+        _ToolTip(self.btn_granular, "Step 7: Fine-tune individual models and custom nodes.")
+        _ToolTip(self.btn_install,  "Step 8: Review your selections and launch the installation.")
 
-        self.btn_granular = mk_btn("3. Components", lambda: self.select_frame("granular"))
-        self.btn_granular.grid(row=4, column=0, padx=15, pady=8, sticky="ew")
-        _ToolTip(self.btn_granular, "Step 3: Fine-tune individual models and custom nodes. Core components required by your selected profiles are locked; optional extras can be toggled freely.")
-
-        self.btn_install = mk_btn("4. Review & Deploy", lambda: self.select_frame("install"))
-        self.btn_install.grid(row=5, column=0, padx=15, pady=8, sticky="ew")
-        _ToolTip(self.btn_install, "Step 4: Review a summary of your selections (features, models, download size) and launch the installation. The installer clones repositories, downloads models, and configures plugins automatically.")
+        # Sidebar button map for highlight logic
+        self._sidebar_btns = {
+            "welcome": self.btn_welcome, "usecases": self.btn_usecases,
+            "quick": self.btn_quick, "advisor": self.btn_advisor,
+            "paths": self.btn_paths, "features": self.btn_features,
+            "granular": self.btn_granular, "install": self.btn_install,
+        }
 
         self.size_label = ctk.CTkLabel(self.sidebar_frame, text="Payload: 0 MB",
                                        font=ctk.CTkFont(family="Inter", size=13, weight="bold"),
                                        text_color=self.text_muted)
-        self.size_label.grid(row=8, column=0, padx=20, pady=(10, 5), sticky="s")
-        _ToolTip(self.size_label, "Estimated total download size for all selected models. Actual size may vary slightly. Make sure you have enough free disk space before starting the installation.")
+        self.size_label.grid(row=12, column=0, padx=20, pady=(10, 3), sticky="s")
 
-        # Feature count label
         self.feat_count_label = ctk.CTkLabel(self.sidebar_frame, text="0 features selected",
                                               font=ctk.CTkFont(family="Inter", size=11),
                                               text_color=self.text_muted)
-        self.feat_count_label.grid(row=9, column=0, padx=20, pady=(0, 20), sticky="s")
-        _ToolTip(self.feat_count_label, "Number of Magic Profiles currently enabled. Each profile adds a set of models and nodes. More profiles means a longer installation time.")
+        self.feat_count_label.grid(row=13, column=0, padx=20, pady=(0, 15), sticky="s")
 
     def _build_main_frames(self):
-        """Construct the four content frames (paths, features, granular, install)."""
+        """Construct the eight content frames."""
         self.frames = {}
 
-        # ---- Step 1: Paths ----
+        # ================================================================
+        # STEP 1: WELCOME — prerequisites check for absolute beginners
+        # ================================================================
+        f_welcome = ctk.CTkScrollableFrame(self, corner_radius=0, fg_color="transparent")
+        self.frames["welcome"] = f_welcome
+
+        ctk.CTkLabel(f_welcome, text="Welcome to Spellcaster",
+                     font=ctk.CTkFont(family="Inter", size=30, weight="bold"),
+                     text_color=self.accent_hover).pack(anchor="w", padx=30, pady=(35, 5))
+        ctk.CTkLabel(f_welcome, text="Spellcaster gives you AI superpowers inside GIMP and Darktable.\n"
+                     "You'll be able to create images from text, fix photos, swap faces, remove\n"
+                     "backgrounds, change lighting, and much more — all with one click.",
+                     font=ctk.CTkFont(family="Inter", size=15), text_color=self.text_muted,
+                     justify="left").pack(anchor="w", padx=30, pady=(0, 20))
+
+        # Prerequisites check
+        prereq_frame = ctk.CTkFrame(f_welcome, fg_color="#110A1F", corner_radius=12,
+                                     border_width=1, border_color="#3A2863")
+        prereq_frame.pack(fill="x", padx=30, pady=(0, 15))
+        ctk.CTkLabel(prereq_frame, text="Before we begin, you need two things installed:",
+                     font=ctk.CTkFont(family="Inter", size=16, weight="bold")).pack(anchor="w", padx=20, pady=(15, 10))
+
+        # Check what's detected
+        _has_comfy = bool(self.comfyui_path.get().strip())
+        _has_gimp = bool(self.gimp_path.get().strip())
+        _has_dt = bool(self.darktable_path.get().strip())
+        _has_editor = _has_gimp or _has_dt
+
+        prereqs = [
+            ("ComfyUI  (the AI engine that does the heavy lifting)",
+             "https://github.com/comfyanonymous/ComfyUI",
+             _has_comfy,
+             "ComfyUI is the free, open-source AI backend. It runs on your GPU and does all the actual\n"
+             "image generation. Spellcaster sends instructions to ComfyUI and displays the results.\n"
+             "Download it, unzip it, and run it once before continuing this installer."),
+            ("GIMP 3  or  Darktable  (your image editor)",
+             None, _has_editor,
+             "You need at least one of these free image editors. GIMP is like Photoshop — great for\n"
+             "creative editing. Darktable is like Lightroom — great for photo processing.\n"
+             "You can install both! Spellcaster adds AI tools to whichever ones you have."),
+        ]
+
+        for label, url, detected, explanation in prereqs:
+            row = ctk.CTkFrame(prereq_frame, fg_color=self.sidebar_color, corner_radius=8)
+            row.pack(fill="x", padx=15, pady=5)
+            status_icon = "  Detected" if detected else "  Not Found"
+            status_color = self.accent_green if detected else self.accent_red
+            ctk.CTkLabel(row, text=status_icon,
+                         font=ctk.CTkFont(family="Inter", size=13, weight="bold"),
+                         text_color=status_color, width=120).pack(side="left", padx=(10, 5), pady=8)
+            ctk.CTkLabel(row, text=label,
+                         font=ctk.CTkFont(family="Inter", size=14, weight="bold"),
+                         text_color=self.text_main).pack(side="left", padx=5, pady=8)
+            ctk.CTkLabel(prereq_frame, text=explanation,
+                         font=ctk.CTkFont(family="Inter", size=12),
+                         text_color=self.text_muted, justify="left").pack(anchor="w", padx=35, pady=(0, 8))
+
+        # Download links
+        if not _has_comfy or not _has_editor:
+            dl_frame = ctk.CTkFrame(f_welcome, fg_color="#1a0f2e", corner_radius=10,
+                                     border_width=1, border_color=self.accent_amber)
+            dl_frame.pack(fill="x", padx=30, pady=(0, 15))
+            ctk.CTkLabel(dl_frame, text="Download the missing apps first, then come back here:",
+                         font=ctk.CTkFont(family="Inter", size=14, weight="bold"),
+                         text_color=self.accent_amber).pack(anchor="w", padx=20, pady=(12, 8))
+            _dl_links = []
+            if not _has_comfy:
+                _dl_links.append(("ComfyUI", "https://github.com/comfyanonymous/ComfyUI"))
+            if not _has_gimp:
+                _dl_links.append(("GIMP 3", "https://www.gimp.org/downloads/"))
+            if not _has_dt:
+                _dl_links.append(("Darktable", "https://www.darktable.org/install/"))
+            for app_name, app_url in _dl_links:
+                link_row = ctk.CTkFrame(dl_frame, fg_color="transparent")
+                link_row.pack(fill="x", padx=20, pady=2)
+                ctk.CTkLabel(link_row, text=f"  {app_name}:",
+                             font=ctk.CTkFont(family="Inter", size=13, weight="bold"),
+                             text_color=self.text_main, width=100, anchor="w").pack(side="left")
+                link_btn = ctk.CTkButton(link_row, text=app_url,
+                                          font=ctk.CTkFont(family="Inter", size=13, underline=True),
+                                          fg_color="transparent", hover_color="#21153B",
+                                          text_color="#7c9dff", anchor="w",
+                                          command=lambda u=app_url: __import__('webbrowser').open(u))
+                link_btn.pack(side="left", padx=5)
+            ctk.CTkLabel(dl_frame, text="Or leave ComfyUI blank and set a remote server IP in Step 5 to use a network GPU.",
+                         font=ctk.CTkFont(family="Inter", size=11, slant="italic"),
+                         text_color=self.text_muted, wraplength=700).pack(anchor="w", padx=20, pady=(5, 12))
+
+        # All good message
+        if _has_comfy and _has_editor:
+            ok_frame = ctk.CTkFrame(f_welcome, fg_color="#0d1a0d", corner_radius=10,
+                                     border_width=1, border_color=self.accent_green)
+            ok_frame.pack(fill="x", padx=30, pady=(0, 15))
+            ctk.CTkLabel(ok_frame, text="Everything looks good! All required apps were detected.\nClick \"2. What You Want\" on the left to continue.",
+                         font=ctk.CTkFont(family="Inter", size=15, weight="bold"),
+                         text_color=self.accent_green, justify="left").pack(padx=20, pady=15)
+
+        # Quick explanation
+        ctk.CTkLabel(f_welcome, text="How it works:",
+                     font=ctk.CTkFont(family="Inter", size=16, weight="bold")).pack(anchor="w", padx=30, pady=(10, 5))
+        steps_text = (
+            "1.  You tell us what you want to do (fix photos? create art? swap faces?)\n"
+            "2.  We pre-select the right AI models and tools for your GPU\n"
+            "3.  You review the selection (or just click Install)\n"
+            "4.  The installer downloads everything and configures your apps\n"
+            "5.  Open GIMP or Darktable — your new AI tools are ready under Filters > Spellcaster"
+        )
+        ctk.CTkLabel(f_welcome, text=steps_text,
+                     font=ctk.CTkFont(family="Inter", size=14), text_color=self.text_muted,
+                     justify="left").pack(anchor="w", padx=40, pady=(0, 20))
+
+        # Next button
+        ctk.CTkButton(f_welcome, text="Let's Go  \u2192", height=42,
+                       font=ctk.CTkFont(family="Inter", size=16, weight="bold"),
+                       fg_color=self.accent_color, hover_color=self.accent_hover,
+                       command=lambda: self.select_frame("usecases")).pack(padx=30, pady=(5, 25), anchor="w")
+
+        # ================================================================
+        # STEP 2: WHAT YOU WANT — use-case driven feature pre-selection
+        # ================================================================
+        f_use = ctk.CTkScrollableFrame(self, corner_radius=0, fg_color="transparent")
+        self.frames["usecases"] = f_use
+
+        ctk.CTkLabel(f_use, text="What Do You Want To Do?",
+                     font=ctk.CTkFont(family="Inter", size=28, weight="bold")).pack(anchor="w", padx=30, pady=(35, 5))
+        ctk.CTkLabel(f_use, text="Check everything that sounds interesting. We'll automatically select the right\n"
+                     "AI models and tools for you. Don't worry about technical details — just pick what excites you.",
+                     font=ctk.CTkFont(family="Inter", size=14), text_color=self.text_muted,
+                     justify="left").pack(anchor="w", padx=30, pady=(0, 20))
+
+        # Use-case definitions: (label, description, features_to_enable)
+        _use_cases = [
+            ("I want to fix and enhance my photographs",
+             "Upscale low-res photos, restore old/damaged pictures, fix blurry faces,\n"
+             "remove unwanted objects, add color to black & white photos.",
+             ["img2img", "upscale", "face_restore", "photo_restore", "lama_remove", "colorize"]),
+
+            ("I want to create images from text descriptions",
+             "Type what you imagine and the AI creates it. Great for concept art,\n"
+             "illustrations, social media graphics, or just having fun.",
+             ["txt2img", "img2img", "batch_variations"]),
+
+            ("I want to change the lighting or mood of my photos",
+             "Apply cinematic film looks, relight portraits from different angles,\n"
+             "or transfer the visual style of a reference image.",
+             ["style_transfer", "lut_grading", "iclight"]),
+
+            ("I want to swap faces or preserve someone's identity in AI art",
+             "Paste a face from one photo onto another, or generate entirely new images\n"
+             "that look like a specific person. Fun for memes, gifts, and creative projects.",
+             ["face_swap_reactor", "faceid_img2img"]),
+
+            ("I want to use the latest and best AI model (Flux 2 Klein)",
+             "Flux 2 Klein is the newest, fastest, and highest-quality AI model available.\n"
+             "It can edit images, extend canvases, re-pose characters, inpaint, and blend layers.\n"
+             "Requires 6+ GB VRAM. If your GPU supports it, this replaces many older tools.",
+             ["klein_flux2"]),
+
+            ("I want to generate short videos from still images",
+             "Turn any photograph into a 2-4 second animated video clip using Wan 2.2.\n"
+             "Great for social media, animated portraits, or bringing art to life.\n"
+             "Requires 8+ GB VRAM.",
+             ["wan_i2v"]),
+
+            ("I want AI-guided precision (ControlNet)",
+             "Guide the AI using structural cues: edges, depth maps, poses, sketches.\n"
+             "Essential if you need precise control over composition and want the AI\n"
+             "to follow a specific layout or structure.",
+             ["controlnet"]),
+
+            ("I want maximum quality restoration (SUPIR / SeedV2R)",
+             "State-of-the-art AI restoration that can reconstruct incredible detail from\n"
+             "very low quality or tiny images. Heavy on VRAM (10-12+ GB) but stunning results.",
+             ["supir", "seedv2r", "detail_hallucinate"]),
+
+            ("I just want the basics to try it out",
+             "A minimal setup: image editing, upscaling, and background removal.\n"
+             "Perfect for getting started without a huge download. You can always\n"
+             "re-run the installer later to add more.",
+             ["img2img", "upscale", "rembg"]),
+        ]
+
+        self._usecase_vars = {}
+        for label, desc, features in _use_cases:
+            card = ctk.CTkFrame(f_use, fg_color="#110A1F", corner_radius=10,
+                                border_width=1, border_color="#3A2863")
+            card.pack(fill="x", padx=30, pady=5)
+            var = ctk.BooleanVar(value=False)
+            self._usecase_vars[label] = (var, features)
+            cb = ctk.CTkCheckBox(card, text=label, variable=var,
+                                  font=ctk.CTkFont(family="Inter", size=15, weight="bold"),
+                                  fg_color=self.accent_color, hover_color=self.accent_hover)
+            cb.pack(anchor="w", padx=20, pady=(12, 2))
+            ctk.CTkLabel(card, text=desc, font=ctk.CTkFont(family="Inter", size=12),
+                         text_color=self.text_muted, justify="left").pack(anchor="w", padx=45, pady=(0, 12))
+
+        # Apply + Next
+        btn_row = ctk.CTkFrame(f_use, fg_color="transparent")
+        btn_row.pack(fill="x", padx=30, pady=(15, 25))
+        ctk.CTkButton(btn_row, text="Apply Selections & Continue  \u2192", height=42,
+                       font=ctk.CTkFont(family="Inter", size=15, weight="bold"),
+                       fg_color=self.accent_color, hover_color=self.accent_hover,
+                       command=self._apply_usecases).pack(side="left")
+        ctk.CTkLabel(btn_row, text="  (you can fine-tune everything on later steps)",
+                     font=ctk.CTkFont(family="Inter", size=12, slant="italic"),
+                     text_color=self.text_muted).pack(side="left", padx=10)
+
+        # ================================================================
+        # STEP 3: QUICK SETUP — all / recommended / handpick
+        # ================================================================
+        f_quick = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
+        self.frames["quick"] = f_quick
+
+        ctk.CTkLabel(f_quick, text="Quick Setup",
+                     font=ctk.CTkFont(family="Inter", size=28, weight="bold")).pack(anchor="w", padx=30, pady=(35, 5))
+        ctk.CTkLabel(f_quick, text="How much do you want to install?",
+                     font=ctk.CTkFont(family="Inter", size=15), text_color=self.text_muted).pack(anchor="w", padx=30, pady=(0, 25))
+
+        def _make_quick_card(parent, title, desc, color, cmd):
+            card = ctk.CTkFrame(parent, fg_color="#110A1F", corner_radius=12,
+                                border_width=2, border_color=color)
+            card.pack(fill="x", padx=30, pady=8)
+            ctk.CTkButton(card, text=title, height=50,
+                           font=ctk.CTkFont(family="Inter", size=18, weight="bold"),
+                           fg_color=color, hover_color=self.accent_hover,
+                           command=cmd).pack(fill="x", padx=15, pady=(15, 5))
+            ctk.CTkLabel(card, text=desc, font=ctk.CTkFont(family="Inter", size=13),
+                         text_color=self.text_muted, justify="left",
+                         wraplength=700).pack(anchor="w", padx=20, pady=(5, 15))
+
+        _make_quick_card(f_quick,
+            "Install Everything My GPU Can Handle",
+            "Checks every feature that's compatible with your GPU. This is the largest download\n"
+            "but gives you access to every single Spellcaster tool from day one.\n"
+            "You can skip steps 4-7 and go straight to Review & Deploy.",
+            self.accent_green, self._quick_everything)
+
+        _make_quick_card(f_quick,
+            "Recommended Selection  (already applied from Step 2)",
+            "Keeps only the features you selected in Step 2 (\"What You Want\").\n"
+            "This is already applied — click here to skip ahead to Review & Deploy.\n"
+            "A balanced setup tuned for your hardware.",
+            self.accent_color, lambda: self.select_frame("advisor"))
+
+        _make_quick_card(f_quick,
+            "Nothing  \u2014  I Want to Handpick Everything",
+            "Unchecks ALL features so you start from a blank slate.\n"
+            "You'll go through Steps 4-7 and check exactly what you want.\n"
+            "For advanced users who know which models they need.",
+            "#3A2863", self._quick_nothing)
+
+        # ================================================================
+        # STEP 4: MODEL ADVISOR — Flux2-aware smart guidance
+        # ================================================================
+        f_advisor = ctk.CTkScrollableFrame(self, corner_radius=0, fg_color="transparent")
+        self.frames["advisor"] = f_advisor
+
+        ctk.CTkLabel(f_advisor, text="Model Advisor",
+                     font=ctk.CTkFont(family="Inter", size=28, weight="bold")).pack(anchor="w", padx=30, pady=(35, 5))
+        ctk.CTkLabel(f_advisor, text="Smart recommendations based on your GPU. Read through these tips,\n"
+                     "then continue to System Layout or jump straight to Review & Deploy.",
+                     font=ctk.CTkFont(family="Inter", size=14), text_color=self.text_muted,
+                     justify="left").pack(anchor="w", padx=30, pady=(0, 20))
+
+        # Dynamic advice based on VRAM
+        vram_gb = self._vram_mb / 1024 if self._vram_mb > 0 else 0
+        can_flux2 = vram_gb >= 6
+        can_flux2_good = vram_gb >= 10
+        can_wan = vram_gb >= 8
+
+        # Flux 2 advice
+        if can_flux2:
+            flux_frame = ctk.CTkFrame(f_advisor, fg_color="#0d1a0d", corner_radius=10,
+                                       border_width=1, border_color=self.accent_green)
+            flux_frame.pack(fill="x", padx=30, pady=8)
+            ctk.CTkLabel(flux_frame, text=f"Your GPU ({vram_gb:.0f} GB) can run Flux 2 Klein!",
+                         font=ctk.CTkFont(family="Inter", size=16, weight="bold"),
+                         text_color=self.accent_green).pack(anchor="w", padx=20, pady=(12, 5))
+            advice = ("Flux 2 Klein is the newest and best model available. With Klein enabled,\n"
+                      "you get a dedicated image editor, outpainter, inpainter, re-poser, and layer blender\n"
+                      "all in one architecture.\n\n")
+            if can_flux2_good:
+                advice += ("Since you have plenty of VRAM, we recommend keeping both Klein AND the older\n"
+                           "SD 1.5/SDXL models. Different models produce different artistic styles —\n"
+                           "having both gives you maximum creative flexibility.")
+            else:
+                advice += ("With 6-9 GB VRAM, Klein will work but older SD 1.5/SDXL models also run well.\n"
+                           "You can install both — Klein for quality, SDXL for variety and speed.\n"
+                           "If disk space is tight, prioritize Klein over SD 1.5.")
+            ctk.CTkLabel(flux_frame, text=advice,
+                         font=ctk.CTkFont(family="Inter", size=13),
+                         text_color=self.text_muted, justify="left").pack(anchor="w", padx=20, pady=(0, 12))
+        else:
+            noflux_frame = ctk.CTkFrame(f_advisor, fg_color="#1a0f0f", corner_radius=10,
+                                         border_width=1, border_color=self.accent_amber)
+            noflux_frame.pack(fill="x", padx=30, pady=8)
+            ctk.CTkLabel(noflux_frame, text="Flux 2 Klein needs 6+ GB VRAM",
+                         font=ctk.CTkFont(family="Inter", size=16, weight="bold"),
+                         text_color=self.accent_amber).pack(anchor="w", padx=20, pady=(12, 5))
+            ctk.CTkLabel(noflux_frame,
+                         text="Your GPU doesn't have enough VRAM for Flux 2 Klein, but don't worry!\n"
+                              "SD 1.5 and SDXL models work great on lower VRAM and still produce\n"
+                              "excellent results. The Expert tools (img2img, inpaint, outpaint) support\n"
+                              "all architectures and include 38+ presets for every style.",
+                         font=ctk.CTkFont(family="Inter", size=13),
+                         text_color=self.text_muted, justify="left").pack(anchor="w", padx=20, pady=(0, 12))
+
+        # General model advice
+        tips_frame = ctk.CTkFrame(f_advisor, fg_color="#110A1F", corner_radius=10,
+                                   border_width=1, border_color="#3A2863")
+        tips_frame.pack(fill="x", padx=30, pady=8)
+        ctk.CTkLabel(tips_frame, text="Model Tips",
+                     font=ctk.CTkFont(family="Inter", size=16, weight="bold"),
+                     text_color=self.accent_hover).pack(anchor="w", padx=20, pady=(12, 8))
+
+        tips = [
+            ("Multiple checkpoints = more variety",
+             "Each checkpoint (model) produces a different artistic style. Installing 2-3\n"
+             "gives you options: photorealistic, anime, cartoon, cinematic, etc.\n"
+             "You can switch between them from any Spellcaster dialog."),
+            ("Upscaler blending",
+             "Different upscale models have different strengths (sharp detail vs smooth restoration).\n"
+             "Spellcaster includes an Upscaler Ratio Blender that mixes two models — install at\n"
+             "least 2 upscale models (e.g. UltraSharp + Remacri) for the best results."),
+            ("ControlNet is optional but powerful",
+             "ControlNet lets you guide the AI using edges, poses, or depth maps from a reference.\n"
+             "It's not needed for basic use, but essential for precise composition control.\n"
+             "The download is relatively small — worth installing even if you don't use it right away."),
+        ]
+        if can_wan:
+            tips.append(("Video generation",
+                         f"Your GPU ({vram_gb:.0f} GB) can run Wan 2.2 for image-to-video.\n"
+                         "This is optional and the models are large (~8-14 GB), but the results are impressive.\n"
+                         "If disk space is limited, skip this for now — you can always install it later."))
+
+        for title, body in tips:
+            ctk.CTkLabel(tips_frame, text=f"\u2022  {title}",
+                         font=ctk.CTkFont(family="Inter", size=14, weight="bold"),
+                         text_color=self.text_main).pack(anchor="w", padx=20, pady=(5, 0))
+            ctk.CTkLabel(tips_frame, text=body,
+                         font=ctk.CTkFont(family="Inter", size=12),
+                         text_color=self.text_muted, justify="left").pack(anchor="w", padx=35, pady=(0, 10))
+
+        ctk.CTkFrame(tips_frame, fg_color="transparent", height=5).pack()
+
+        # Navigation
+        nav_row = ctk.CTkFrame(f_advisor, fg_color="transparent")
+        nav_row.pack(fill="x", padx=30, pady=(15, 25))
+        ctk.CTkButton(nav_row, text="Continue to System Layout  \u2192", height=42,
+                       font=ctk.CTkFont(family="Inter", size=15, weight="bold"),
+                       fg_color=self.accent_color, hover_color=self.accent_hover,
+                       command=lambda: self.select_frame("paths")).pack(side="left")
+        ctk.CTkButton(nav_row, text="Skip to Review & Deploy  \u21E5", height=42,
+                       font=ctk.CTkFont(family="Inter", size=14),
+                       fg_color="#3A2863", hover_color="#21153B",
+                       command=lambda: self.select_frame("install")).pack(side="left", padx=15)
+
+        # ================================================================
+        # STEP 5: SYSTEM LAYOUT (existing paths step)
+        # ================================================================
         f_paths = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
         self.frames["paths"] = f_paths
 
@@ -843,6 +1216,43 @@ class InstallerApp(ctk.CTk):
         self._update_size()
 
     # ------------------------------------------------------------------
+    # Use-case & quick-setup actions
+    # ------------------------------------------------------------------
+
+    def _apply_usecases(self):
+        """Apply use-case selections: enable the features checked in Step 2, then advance."""
+        # Collect all features from checked use-cases
+        wanted = set()
+        for label, (var, features) in self._usecase_vars.items():
+            if var.get():
+                wanted.update(features)
+        # Apply to feature vars
+        for fkey, fvar in self.feature_vars.items():
+            if fkey in wanted:
+                fvar.set(True)
+        self._update_size()
+        self.select_frame("quick")
+
+    def _quick_everything(self):
+        """Check every feature compatible with the user's GPU, then jump to install."""
+        for fkey, fvar in self.feature_vars.items():
+            feat = self.manifest["features"].get(fkey, {})
+            status, _ = builder.feature_compatible(feat, self._vram_mb)
+            if status in ("ok", "warn"):
+                fvar.set(True)
+            elif self._vram_mb <= 0:
+                fvar.set(True)  # no GPU detected = can't filter, enable all
+        self._update_size()
+        self.select_frame("install")
+
+    def _quick_nothing(self):
+        """Uncheck everything, then go to Magic Profiles for manual selection."""
+        for fvar in self.feature_vars.values():
+            fvar.set(False)
+        self._update_size()
+        self.select_frame("features")
+
+    # ------------------------------------------------------------------
     # Feature <-> granular synchronisation
     # ------------------------------------------------------------------
 
@@ -946,10 +1356,8 @@ class InstallerApp(ctk.CTk):
 
     def select_frame(self, name):
         """Show the frame for *name* and highlight its sidebar button."""
-        self.btn_paths.configure(fg_color="#21153B" if name == "paths" else "transparent")
-        self.btn_features.configure(fg_color="#21153B" if name == "features" else "transparent")
-        self.btn_granular.configure(fg_color="#21153B" if name == "granular" else "transparent")
-        self.btn_install.configure(fg_color="#21153B" if name == "install" else "transparent")
+        for key, btn in self._sidebar_btns.items():
+            btn.configure(fg_color="#21153B" if key == name else "transparent")
 
         for k, f in self.frames.items():
             if k == name:
@@ -957,7 +1365,7 @@ class InstallerApp(ctk.CTk):
             else:
                 f.grid_forget()
 
-        # Refresh summary whenever the user navigates to Step 4
+        # Refresh summary whenever the user navigates to Review & Deploy
         if name == "install":
             self._update_size()
 
