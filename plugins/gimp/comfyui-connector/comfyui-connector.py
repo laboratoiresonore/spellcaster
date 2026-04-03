@@ -3675,11 +3675,9 @@ def _build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
 
     ImagePadForOutpaint outputs [0]=padded image, [1]=mask for the new area.
     """
-    wf = {
-        "1": {"class_type": "CheckpointLoaderSimple",
-              "inputs": {"ckpt_name": preset["ckpt"]}},
-    }
-    wf, model_ref, clip_ref = _inject_loras(wf, loras or [], "1")
+    loader_wf, model_ref, clip_ref, vae_ref = _make_model_loader(preset, "1")
+    wf = dict(loader_wf)
+    wf, model_ref, clip_ref = _inject_loras(wf, loras or [], "1", model_ref, clip_ref)
     wf.update({
         "2": {"class_type": "CLIPTextEncode",
               "inputs": {"text": prompt_text, "clip": clip_ref}},
@@ -3697,7 +3695,7 @@ def _build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
                   "feathering": feathering,
               }},
         "6": {"class_type": "VAEEncode",
-              "inputs": {"pixels": ["5", 0], "vae": ["1", 2]}},
+              "inputs": {"pixels": ["5", 0], "vae": vae_ref}},
         "7": {"class_type": "SetLatentNoiseMask",
               "inputs": {"samples": ["6", 0], "mask": ["5", 1]}},
         "8": {"class_type": "KSampler",
@@ -3709,7 +3707,7 @@ def _build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
                   "denoise": preset["denoise"],
               }},
         "9": {"class_type": "VAEDecode",
-              "inputs": {"samples": ["8", 0], "vae": ["1", 2]}},
+              "inputs": {"samples": ["8", 0], "vae": vae_ref}},
         "10": {"class_type": "SaveImage",
                "inputs": {"images": ["9", 0], "filename_prefix": "spellcaster_outpaint"}},
     })
@@ -3728,12 +3726,12 @@ def _build_style_transfer(target_filename, style_ref_filename, preset,
               → IPAdapterAdvanced(weight_type="style transfer") → LoadImage(target)
               → CLIPTextEncode x2 → VAEEncode → KSampler → VAEDecode → SaveImage
     """
-    wf = {
-        "1": {"class_type": "CheckpointLoaderSimple",
-              "inputs": {"ckpt_name": preset["ckpt"]}},
+    loader_wf, model_ref, clip_ref, vae_ref = _make_model_loader(preset, "1")
+    wf = dict(loader_wf)
+    wf.update({
         "2": {"class_type": "IPAdapterUnifiedLoader",
               "inputs": {
-                  "model": ["1", 0],
+                  "model": model_ref,
                   "preset": ipadapter_preset,
               }},
         "3": {"class_type": "LoadImage",
@@ -3751,13 +3749,13 @@ def _build_style_transfer(target_filename, style_ref_filename, preset,
                   "embeds_scaling": "V only",
               }},
         "5": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": prompt_text, "clip": ["1", 1]}},
+              "inputs": {"text": prompt_text, "clip": clip_ref}},
         "6": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": negative_text or "blurry, deformed, bad anatomy", "clip": ["1", 1]}},
+              "inputs": {"text": negative_text or "blurry, deformed, bad anatomy", "clip": clip_ref}},
         "7": {"class_type": "LoadImage",
               "inputs": {"image": target_filename}},
         "8": {"class_type": "VAEEncode",
-              "inputs": {"pixels": ["7", 0], "vae": ["1", 2]}},
+              "inputs": {"pixels": ["7", 0], "vae": vae_ref}},
         "9": {"class_type": "KSampler",
               "inputs": {
                   "model": ["4", 0],
@@ -3772,10 +3770,10 @@ def _build_style_transfer(target_filename, style_ref_filename, preset,
                   "denoise": denoise,
               }},
         "10": {"class_type": "VAEDecode",
-               "inputs": {"samples": ["9", 0], "vae": ["1", 2]}},
+               "inputs": {"samples": ["9", 0], "vae": vae_ref}},
         "11": {"class_type": "SaveImage",
                "inputs": {"images": ["10", 0], "filename_prefix": "spellcaster_style"}},
-    }
+    })
     return wf
 
 
@@ -3889,17 +3887,19 @@ def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text
                   "upscale_model": ["2", 0],
                   "image": ["1", 0],
               }},
-        "4": {"class_type": "CheckpointLoaderSimple",
-              "inputs": {"ckpt_name": preset["ckpt"]}},
+    }
+    loader_wf, model_ref, clip_ref, vae_ref = _make_model_loader(preset, "4")
+    wf.update(loader_wf)
+    wf.update({
         "5": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": prompt_text, "clip": ["4", 1]}},
+              "inputs": {"text": prompt_text, "clip": clip_ref}},
         "6": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": negative_text, "clip": ["4", 1]}},
+              "inputs": {"text": negative_text, "clip": clip_ref}},
         "7": {"class_type": "VAEEncode",
-              "inputs": {"pixels": ["3", 0], "vae": ["4", 2]}},
+              "inputs": {"pixels": ["3", 0], "vae": vae_ref}},
         "8": {"class_type": "KSampler",
               "inputs": {
-                  "model": ["4", 0],
+                  "model": model_ref,
                   "positive": ["5", 0],
                   "negative": ["6", 0],
                   "latent_image": ["7", 0],
@@ -3911,10 +3911,10 @@ def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text
                   "denoise": denoise,
               }},
         "9": {"class_type": "VAEDecode",
-              "inputs": {"samples": ["8", 0], "vae": ["4", 2]}},
+              "inputs": {"samples": ["8", 0], "vae": vae_ref}},
         "10": {"class_type": "SaveImage",
                "inputs": {"images": ["9", 0], "filename_prefix": "spellcaster_hallucinate"}},
-    }
+    })
     return wf
 
 
@@ -4142,14 +4142,16 @@ def _build_colorize(image_filename, preset, prompt_text, negative_text, seed,
                   "resolution": 512,
                   "coarse": "disable",
               }},
-        "3": {"class_type": "CheckpointLoaderSimple",
-              "inputs": {"ckpt_name": preset["ckpt"]}},
+    }
+    loader_wf, model_ref, clip_ref, vae_ref = _make_model_loader(preset, "3")
+    wf.update(loader_wf)
+    wf.update({
         "4": {"class_type": "ControlNetLoader",
               "inputs": {"control_net_name": cn_model}},
         "5": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": prompt_text, "clip": ["3", 1]}},
+              "inputs": {"text": prompt_text, "clip": clip_ref}},
         "6": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": negative_text, "clip": ["3", 1]}},
+              "inputs": {"text": negative_text, "clip": clip_ref}},
         "7": {"class_type": "ControlNetApplyAdvanced",
               "inputs": {
                   "positive": ["5", 0],
@@ -4161,10 +4163,10 @@ def _build_colorize(image_filename, preset, prompt_text, negative_text, seed,
                   "end_percent": 1.0,
               }},
         "8": {"class_type": "VAEEncode",
-              "inputs": {"pixels": ["1", 0], "vae": ["3", 2]}},
+              "inputs": {"pixels": ["1", 0], "vae": vae_ref}},
         "9": {"class_type": "KSampler",
               "inputs": {
-                  "model": ["3", 0],
+                  "model": model_ref,
                   "positive": ["7", 0],
                   "negative": ["7", 1],
                   "latent_image": ["8", 0],
@@ -4176,17 +4178,17 @@ def _build_colorize(image_filename, preset, prompt_text, negative_text, seed,
                   "denoise": denoise,
               }},
         "10": {"class_type": "VAEDecode",
-               "inputs": {"samples": ["9", 0], "vae": ["3", 2]}},
+               "inputs": {"samples": ["9", 0], "vae": vae_ref}},
         "11": {"class_type": "SaveImage",
                "inputs": {"images": ["10", 0], "filename_prefix": "spellcaster_colorize"}},
-    }
+    })
     return wf
 
 
 # ── Generic ControlNet generation builder ─────────────────────────────
 
 def _build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
-                           ckpt_name, prompt, negative, seed, width, height,
+                           preset, prompt, negative, seed, width, height,
                            steps, cfg, sampler, scheduler, cn_strength=0.8,
                            loras=None):
     """Generic ControlNet generation: preprocessor -> ControlNet -> KSampler.
@@ -4200,10 +4202,10 @@ def _build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
               "inputs": {"image": image_filename}},
         "2": {"class_type": preprocessor_type,
               "inputs": {"image": ["1", 0]}},
-        "3": {"class_type": "CheckpointLoaderSimple",
-              "inputs": {"ckpt_name": ckpt_name}},
     }
-    wf, model_ref, clip_ref = _inject_loras(wf, loras or [], "3")
+    loader_wf, model_ref, clip_ref, vae_ref = _make_model_loader(preset, "3")
+    wf.update(loader_wf)
+    wf, model_ref, clip_ref = _inject_loras(wf, loras or [], "3", model_ref, clip_ref)
     wf.update({
         "4": {"class_type": "ControlNetLoader",
               "inputs": {"control_net_name": controlnet_model}},
@@ -4229,7 +4231,7 @@ def _build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
                   "denoise": 1.0,
               }},
         "10": {"class_type": "VAEDecode",
-               "inputs": {"samples": ["9", 0], "vae": ["3", 2]}},
+               "inputs": {"samples": ["9", 0], "vae": vae_ref}},
         "11": {"class_type": "SaveImage",
                "inputs": {"images": ["10", 0], "filename_prefix": "spellcaster_controlnet"}},
     })
@@ -4243,7 +4245,7 @@ def _build_sketch2img(image_filename, preset, prompt, negative, seed,
     cn_model = CONTROLNET_SCRIBBLE_MODELS.get(arch, CONTROLNET_SCRIBBLE_MODELS["sdxl"])
     return _build_controlnet_gen(
         image_filename, "ScribblePreprocessor", cn_model,
-        preset["ckpt"], prompt, negative, seed,
+        preset, prompt, negative, seed,
         preset["width"], preset["height"], preset["steps"], preset["cfg"],
         preset["sampler"], preset["scheduler"], cn_strength, loras)
 
@@ -4255,7 +4257,7 @@ def _build_canny2img(image_filename, preset, prompt, negative, seed,
     cn_model = CONTROLNET_CANNY_MODELS.get(arch, CONTROLNET_CANNY_MODELS["sdxl"])
     return _build_controlnet_gen(
         image_filename, "CannyEdgePreprocessor", cn_model,
-        preset["ckpt"], prompt, negative, seed,
+        preset, prompt, negative, seed,
         preset["width"], preset["height"], preset["steps"], preset["cfg"],
         preset["sampler"], preset["scheduler"], cn_strength, loras)
 
@@ -4267,7 +4269,7 @@ def _build_depth2img(image_filename, preset, prompt, negative, seed,
     cn_model = CONTROLNET_DEPTH_MODELS.get(arch, CONTROLNET_DEPTH_MODELS["sdxl"])
     return _build_controlnet_gen(
         image_filename, "MiDaS-DepthMapPreprocessor", cn_model,
-        preset["ckpt"], prompt, negative, seed,
+        preset, prompt, negative, seed,
         preset["width"], preset["height"], preset["steps"], preset["cfg"],
         preset["sampler"], preset["scheduler"], cn_strength, loras)
 
@@ -4279,7 +4281,7 @@ def _build_pose2img(image_filename, preset, prompt, negative, seed,
     cn_model = CONTROLNET_POSE_MODELS.get(arch, CONTROLNET_POSE_MODELS["sdxl"])
     return _build_controlnet_gen(
         image_filename, "DWPreprocessor", cn_model,
-        preset["ckpt"], prompt, negative, seed,
+        preset, prompt, negative, seed,
         preset["width"], preset["height"], preset["steps"], preset["cfg"],
         preset["sampler"], preset["scheduler"], cn_strength, loras)
 
@@ -4301,27 +4303,30 @@ def _build_iclight(image_filename, ckpt_name, prompt, negative, seed,
     SD-1.5/iclight_sd15_fc.safetensors in the unet folder.
     ICLightConditioning.foreground expects LATENT, not IMAGE.
     """
+    iclight_preset = {"ckpt": ckpt_name, "arch": "sd15"}
+    loader_wf, model_ref, clip_ref, vae_ref = _make_model_loader(iclight_preset, "2")
     wf = {
         "1": {"class_type": "LoadImage",
               "inputs": {"image": image_filename}},
-        "2": {"class_type": "CheckpointLoaderSimple",
-              "inputs": {"ckpt_name": ckpt_name}},
+    }
+    wf.update(loader_wf)
+    wf.update({
         # VAEEncode the foreground image to latent (ICLightConditioning expects LATENT)
         "10": {"class_type": "VAEEncode",
-               "inputs": {"pixels": ["1", 0], "vae": ["2", 2]}},
+               "inputs": {"pixels": ["1", 0], "vae": vae_ref}},
         "3": {"class_type": "LoadAndApplyICLightUnet",
               "inputs": {
-                  "model": ["2", 0],
+                  "model": model_ref,
                   "model_path": "SD-1.5\\iclight_sd15_fc.safetensors",
               }},
         "4": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": prompt, "clip": ["2", 1]}},
+              "inputs": {"text": prompt, "clip": clip_ref}},
         "5": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": negative, "clip": ["2", 1]}},
+              "inputs": {"text": negative, "clip": clip_ref}},
         "6": {"class_type": "ICLightConditioning",
               "inputs": {
                   "positive": ["4", 0], "negative": ["5", 0],
-                  "vae": ["2", 2], "foreground": ["10", 0],
+                  "vae": vae_ref, "foreground": ["10", 0],
                   "multiplier": multiplier,
               }},
         "7": {"class_type": "KSampler",
@@ -4333,10 +4338,10 @@ def _build_iclight(image_filename, ckpt_name, prompt, negative, seed,
                   "denoise": 1.0,
               }},
         "8": {"class_type": "VAEDecode",
-              "inputs": {"samples": ["7", 0], "vae": ["2", 2]}},
+              "inputs": {"samples": ["7", 0], "vae": vae_ref}},
         "9": {"class_type": "SaveImage",
               "inputs": {"images": ["8", 0], "filename_prefix": "spellcaster_iclight"}},
-    }
+    })
     return wf
 
 
@@ -4477,13 +4482,13 @@ def _build_faceid_img2img(target_filename, face_ref_filename, preset_key,
     cfg = cfg or p["cfg"]
     denoise = denoise or p["denoise"]
 
-    wf = {
-        "1": {"class_type": "CheckpointLoaderSimple",
-              "inputs": {"ckpt_name": p["ckpt"]}},
+    loader_wf, model_ref, clip_ref, vae_ref = _make_model_loader(p, "1")
+    wf = dict(loader_wf)
+    wf.update({
         # FaceID unified loader: loads IPAdapter + LoRA, applies to model
         "2": {"class_type": "IPAdapterUnifiedLoaderFaceID",
               "inputs": {
-                  "model": ["1", 0],
+                  "model": model_ref,
                   "preset": faceid_preset,
                   "lora_strength": lora_strength,
                   "provider": "CUDA",
@@ -4507,14 +4512,14 @@ def _build_faceid_img2img(target_filename, face_ref_filename, preset_key,
               }},
         # Text encoding
         "5": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": prompt_text, "clip": ["1", 1]}},
+              "inputs": {"text": prompt_text, "clip": clip_ref}},
         "6": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": negative_text or "blurry, deformed, bad anatomy", "clip": ["1", 1]}},
+              "inputs": {"text": negative_text or "blurry, deformed, bad anatomy", "clip": clip_ref}},
         # Load target image and encode to latent
         "7": {"class_type": "LoadImage",
               "inputs": {"image": target_filename}},
         "8": {"class_type": "VAEEncode",
-              "inputs": {"pixels": ["7", 0], "vae": ["1", 2]}},
+              "inputs": {"pixels": ["7", 0], "vae": vae_ref}},
         # Sample
         "9": {"class_type": "KSampler",
               "inputs": {
@@ -4531,10 +4536,10 @@ def _build_faceid_img2img(target_filename, face_ref_filename, preset_key,
               }},
         # Decode
         "11": {"class_type": "VAEDecode",
-               "inputs": {"samples": ["9", 0], "vae": ["1", 2]}},
+               "inputs": {"samples": ["9", 0], "vae": vae_ref}},
         "12": {"class_type": "SaveImage",
                "inputs": {"images": ["11", 0], "filename_prefix": "gimp_faceid"}},
-    }
+    })
     return wf
 
 
