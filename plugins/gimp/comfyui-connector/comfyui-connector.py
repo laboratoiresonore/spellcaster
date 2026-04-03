@@ -3241,6 +3241,73 @@ def _inject_loras(wf, loras, ckpt_node="1", model_ref=None, clip_ref=None):
     return wf, prev_model, prev_clip
 
 
+# ── LoRA metadata: trigger words and optimal strengths ───────────────────
+# Maps known LoRA basenames to their trigger words and recommended strengths.
+# Used by the UI to auto-fill prompt tags and strength spinners when a LoRA
+# is selected from the combo box.
+LORA_METADATA = {
+    "HandFineTuning_XL.safetensors": {"trigger": "perfect hands, detailed fingers", "strength": 0.85},
+    "hand 5.5.safetensors": {"trigger": "perfect hands, detailed fingers", "strength": 0.60},
+    "Eyes_High_Definition-000007.safetensors": {"trigger": "detailed eyes, sharp iris", "strength": 0.80},
+    "RealSkin_xxXL_v1.safetensors": {"trigger": "realistic skin texture, detailed pores", "strength": 0.70},
+    "ghibli_last.safetensors": {"trigger": "ghibli style, anime painting", "strength": 0.85},
+    "epiCPhotoXL-Derp2.safetensors": {"trigger": "epic photo, cinematic", "strength": 0.60},
+    "K9bSh4rpD3tails.safetensors": {"trigger": "sharp details, high resolution", "strength": 0.70},
+    "K9bSR3al.safetensors": {"trigger": "realistic, photorealistic", "strength": 0.70},
+    "Wonderful_Details_XL_V1a.safetensors": {"trigger": "wonderful details, intricate", "strength": 0.65},
+    "Teefs-000007.safetensors": {"trigger": "perfect teeth, natural smile", "strength": 0.90},
+    "skin texture style v4.safetensors": {"trigger": "skin texture, detailed pores", "strength": 0.75},
+    "RawCam_250_v1.safetensors": {"trigger": "raw photo, camera grain", "strength": 0.80},
+    "epicNewPhoto.safetensors": {"trigger": "epic photo, natural lighting", "strength": 0.40},
+    "SDXLFaeTastic2400.safetensors": {"trigger": "faetastic, fairy tale, fantasy art", "strength": 0.85},
+    "err0rFv1.6.safetensors": {"trigger": "glitch art, digital error", "strength": 0.85},
+    "rdtdrp.safetensors": {"trigger": "realistic details, fine textures", "strength": 0.50},
+    "epiCRealnessRC1.safetensors": {"trigger": "epic realism, photorealistic", "strength": 0.80},
+    "sd_xl_offset_example-lora_1.0.safetensors": {"trigger": "offset noise, high contrast", "strength": 0.60},
+    "polyhedron_all_sdxl-000004.safetensors": {"trigger": "polyhedron style, 3D render", "strength": 0.70},
+    "zy_AmateurStyle_v2.safetensors": {"trigger": "amateur photo style, casual snapshot", "strength": 0.85},
+    "Aliens_AILF_SDXL.safetensors": {"trigger": "alien creature, extraterrestrial", "strength": 0.85},
+    "Space_ship_concept.safetensors": {"trigger": "spaceship concept, sci-fi vehicle", "strength": 0.85},
+    "Oily skin style xl v1.safetensors": {"trigger": "oily skin, glossy skin", "strength": 0.85},
+    "Sweating my balls of mate.safetensors": {"trigger": "sweaty skin, perspiration", "strength": 0.80},
+    "ARobotGirls_Concept-12.safetensors": {"trigger": "robot girl, cyborg, mechanical parts", "strength": 0.85},
+    "BFS_head_v1_flux-klein_9b_rank128.safetensors": {"trigger": "detailed face, portrait", "strength": 0.80},
+    "flux_face_detail.safetensors": {"trigger": "detailed face, portrait", "strength": 0.70},
+    "add_detail.safetensors": {"trigger": "detailed, high quality", "strength": 0.70},
+    "flux_realism.safetensors": {"trigger": "realistic, photorealistic", "strength": 0.70},
+    "klein_slider_anatomy_9B_v1.5.safetensors": {"trigger": "correct anatomy, proportional", "strength": 0.80},
+    "FTextureTransfer_F29B_V2.1.safetensors": {"trigger": "texture transfer, detailed surface", "strength": 0.60},
+    "ultra_real_v2.safetensors": {"trigger": "ultra realistic, photorealistic", "strength": 0.70},
+    "FK4B_Image_Repair_V1.safetensors": {"trigger": "image repair, restoration", "strength": 0.80},
+    "upscale_portrait_9bklein.safetensors": {"trigger": "upscale portrait, sharp details", "strength": 0.80},
+    "hipoly_3dcg_v7-epoch-000012.safetensors": {"trigger": "3D CG, high poly render", "strength": 0.85},
+    "Flux2Klein_AnythingtoRealCharacters.safetensors": {"trigger": "realistic character, photorealistic portrait", "strength": 0.85},
+    "ColorTone_Standard.safetensors": {"trigger": "color tone, color grading", "strength": 0.70},
+    "klein_slider_glow.safetensors": {"trigger": "glowing, radiant light", "strength": 0.80},
+    "HyperdetailedRealismMJ7Pony.safetensors": {"trigger": "hyperdetailed, photorealistic", "strength": 0.80},
+    "StS_PonyXL_Detail_Slider_v1.4_iteration_3.safetensors": {"trigger": "sharp details, high resolution", "strength": 0.70},
+    "Ethereal_Gothic_Elegance.safetensors": {"trigger": "ethereal gothic, dark elegance", "strength": 0.85},
+    "dark.safetensors": {"trigger": "dark mood, moody atmosphere", "strength": 0.50},
+    "Chiaroscuro  film style pony v1.safetensors": {"trigger": "chiaroscuro, dramatic lighting", "strength": 0.85},
+    "Dramatic Lighting Slider.safetensors": {"trigger": "dramatic lighting, high contrast", "strength": 0.60},
+    "Cinematic Photography Style pony v1.safetensors": {"trigger": "cinematic photo, film still", "strength": 0.80},
+    "MetallicGoldSilver_skinbody_paint-000019.safetensors": {"trigger": "metallic skin, gold silver body paint", "strength": 0.90},
+    "OiledSkin_Zit_Turbo_V1.safetensors": {"trigger": "oily skin, glossy skin", "strength": 0.85},
+    "water_droplet_effect_zit_v1.safetensors": {"trigger": "water droplets, wet skin", "strength": 0.90},
+    "93PXB5SENBFN8NEYSRYZA1DVX0-Chrome skin.safetensors": {"trigger": "chrome skin, metallic surface", "strength": 0.90},
+    "Z-cyborg.safetensors": {"trigger": "cyborg, mechanical parts, robotic", "strength": 0.90},
+    "zy_CinematicShot_zit.safetensors": {"trigger": "cinematic shot, film still", "strength": 0.70},
+    "SonyAlpha_ZImage.safetensors": {"trigger": "Sony Alpha photo, camera raw", "strength": 0.80},
+    "600mm_Lens-V2_TriggerIs_600mm.safetensors": {"trigger": "600mm, telephoto lens, bokeh", "strength": 0.90},
+    "ZiTD3tailed4nime.safetensors": {"trigger": "detailed anime, anime style", "strength": 0.80},
+    "z-image-illustria-01.safetensors": {"trigger": "illustration style, digital art", "strength": 0.70},
+    "EFFECTSp001_zit.safetensors": {"trigger": "special effects, digital glitch", "strength": 0.70},
+    "Z-Image-Professional_Photographer_3500.safetensors": {"trigger": "professional photo, studio lighting", "strength": 0.70},
+    "feet v2.1.safetensors": {"trigger": "detailed feet, correct toes", "strength": 0.80},
+    "Tentacledv1.safetensors": {"trigger": "tentacles, organic tendrils", "strength": 0.85},
+}
+
+
 def _build_img2img(image_filename, preset, prompt_text, negative_text, seed,
                     loras=None, controlnet=None, use_wd_tagger=False):
     """Standard img2img: load checkpoint, encode image to latent, denoise, decode.
@@ -3336,6 +3403,11 @@ def _build_img2img(image_filename, preset, prompt_text, negative_text, seed,
         # Redirect KSampler to use ControlNet-wrapped conditioning
         wf["6"]["inputs"]["positive"] = ["22", 0]
         wf["6"]["inputs"]["negative"] = ["22", 1]
+
+        # Save ControlNet preprocessor output as debug image
+        if cn_image_ref != ["4", 0]:  # only if a preprocessor was used
+            wf["25"] = {"class_type": "SaveImage",
+                        "inputs": {"images": cn_image_ref, "filename_prefix": "spellcaster_cn_debug"}}
 
     return wf
 
@@ -3490,6 +3562,17 @@ def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_
         # Redirect KSampler to use ControlNet-wrapped conditioning
         wf["8"]["inputs"]["positive"] = ["22", 0]
         wf["8"]["inputs"]["negative"] = ["22", 1]
+
+        # Save ControlNet preprocessor output as debug image
+        if cn_image_ref != ["4", 0]:  # only if a preprocessor was used
+            wf["25"] = {"class_type": "SaveImage",
+                        "inputs": {"images": cn_image_ref, "filename_prefix": "spellcaster_cn_debug"}}
+
+    # NOTE: When ControlNet is active for inpaint, the preprocessor receives
+    # the FULL image (node "4") so it can analyze the complete body pose/structure.
+    # The mask (node "52") controls which area gets regenerated by KSampler.
+    # This is correct behavior — ControlNet sees full context, inpaint mask
+    # limits the region of change.
 
     return wf
 
@@ -6377,6 +6460,7 @@ class PresetDialog(Gtk.Dialog):
             cs.set_tooltip_text("CLIP strength")
             row.pack_start(cs, False, False, 0)
 
+            combo.connect("changed", self._on_lora_combo_changed, ms, cs)
             self.lora_rows.append((combo, ms, cs))
             self._lora_box.pack_start(row, False, False, 0)
         box.pack_start(self._lora_box, False, False, 0)
@@ -6507,16 +6591,42 @@ class PresetDialog(Gtk.Dialog):
             # Re-filter scene presets for the new architecture
             if self._scene_combo:
                 self._refresh_scene_combo()
-            # WD Tagger only supported for SDXL-class models
-            arch = MODEL_PRESETS[idx]["arch"] if idx >= 0 else ""
+            # WD Tagger works with all architectures (outputs text tags)
             if hasattr(self, '_wd_tagger_cb'):
-                if arch in ("sdxl", "illustrious", "zit"):
-                    self._wd_tagger_cb.set_sensitive(True)
-                    if self.mode != "txt2img":
-                        self._wd_tagger_cb.set_active(True)
-                else:
+                # WD Tagger works with all architectures (outputs text tags)
+                self._wd_tagger_cb.set_sensitive(True)
+                # Auto-enable for img2img/inpaint, disable for txt2img
+                if self.mode == "txt2img":
                     self._wd_tagger_cb.set_active(False)
                     self._wd_tagger_cb.set_sensitive(False)
+                elif self.mode in ("img2img", "inpaint"):
+                    self._wd_tagger_cb.set_active(True)
+
+    def _on_lora_combo_changed(self, combo, model_spin, clip_spin):
+        """When a LoRA is selected, look up metadata for trigger words and optimal strength."""
+        lora_id = combo.get_active_id()
+        if not lora_id or lora_id == "none":
+            return
+        # Extract basename from the LoRA path (e.g. "SDXL\\Body\\HandFineTuning_XL.safetensors" -> "HandFineTuning_XL.safetensors")
+        basename = lora_id.rsplit("\\", 1)[-1] if "\\" in lora_id else lora_id
+        if "/" in basename:
+            basename = basename.rsplit("/", 1)[-1]
+        meta = LORA_METADATA.get(basename)
+        if not meta:
+            return
+        # Set optimal strength
+        model_spin.set_value(meta["strength"])
+        clip_spin.set_value(meta["strength"])
+        # Append trigger words to prompt (avoid duplicates)
+        buf = self.prompt_tv.get_buffer()
+        start, end = buf.get_bounds()
+        current_text = buf.get_text(start, end, False)
+        trigger = meta["trigger"]
+        if trigger not in current_text:
+            if current_text and not current_text.rstrip().endswith(","):
+                buf.insert(end, f", {trigger}")
+            else:
+                buf.insert(end, f" {trigger}" if current_text else trigger)
 
     def _apply_preset(self, idx):
         """Populate all parameter widgets from a MODEL_PRESETS entry."""
@@ -6951,6 +7061,16 @@ class PresetDialog(Gtk.Dialog):
                     "strength_model": ms.get_value(),
                     "strength_clip": cs.get_value(),
                 })
+        # Multi-LoRA strength optimization: reduce each LoRA's strength
+        # when multiple are active to prevent over-saturation
+        if len(loras) == 2:
+            for l in loras:
+                l["strength_model"] *= 0.85
+                l["strength_clip"] *= 0.85
+        elif len(loras) >= 3:
+            for l in loras:
+                l["strength_model"] *= 0.75
+                l["strength_clip"] *= 0.75
         # ControlNet
         cn_mode = self._cn_mode_combo.get_active_id() if self._cn_mode_combo else "Off"
         controlnet = {
@@ -6996,7 +7116,7 @@ class PresetDialog(Gtk.Dialog):
             "controlnet": controlnet,
             "custom_workflow": custom_wf if custom_wf else None,
             "runs": int(self._runs_spin.get_value()),
-            "use_wd_tagger": self._wd_tagger_cb.get_active() if hasattr(self, '_wd_tagger_cb') else False,
+            "use_wd_tagger": (self._wd_tagger_cb.get_active() and self._wd_tagger_cb.get_sensitive()) if hasattr(self, '_wd_tagger_cb') else False,
             "style_preset": style_preset,
         }
 
@@ -8673,24 +8793,38 @@ class Spellcaster(Gimp.PlugIn):
         runs = v.get("runs", 1)
         try:
             srv = v["server"]
-            _update_spinner_status("img2img: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
-            base_seed = v["seed"]
-            for run_i in range(runs):
-                seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
-                wf = json.loads(v["custom_workflow"]) if v["custom_workflow"] else \
-                     _build_img2img(uname, v["preset"], v["prompt"], v["negative"], seed,
-                                    v.get("loras"), controlnet=v.get("controlnet"),
-                                    use_wd_tagger=v.get("use_wd_tagger", False))
-                label = f"img2img run {run_i+1}/{runs}" if runs > 1 else "img2img"
-                results = _run_with_spinner(f"{label}: processing on ComfyUI...",
-                                            lambda: list(_run_comfyui_workflow(srv, wf)))
-                for i, (fn, sf, ft) in enumerate(results):
-                    lbl = f"{v['preset'].get('label','')} run {run_i+1} #{i+1}" if runs > 1 \
-                          else f"{v['preset'].get('label','')} #{i+1}"
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+            cn_active = v.get("controlnet", {}).get("mode", "Off") != "Off"
+            def _do_all_runs():
+                _update_spinner_status("Exporting image...")
+                tmp = _export_image_to_tmp(image)
+                uname = f"gimp_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, tmp, uname); os.unlink(tmp)
+                all_results = []
+                base_seed = v["seed"]
+                for run_i in range(runs):
+                    seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+                    wf = json.loads(v["custom_workflow"]) if v["custom_workflow"] else \
+                         _build_img2img(uname, v["preset"], v["prompt"], v["negative"], seed,
+                                        v.get("loras"), controlnet=v.get("controlnet"),
+                                        use_wd_tagger=v.get("use_wd_tagger", False))
+                    label = f"Run {run_i+1}/{runs}" if runs > 1 else "img2img"
+                    _update_spinner_status(f"{label}: processing on ComfyUI...")
+                    all_results.extend(list(_run_comfyui_workflow(srv, wf)))
+                return all_results
+            results = _run_with_spinner("img2img: starting...", _do_all_runs)
+            for i, (fn, sf, ft) in enumerate(results):
+                # ControlNet debug images have the "spellcaster_cn_debug" prefix
+                if cn_active and "spellcaster_cn_debug" in fn:
+                    debug_data = _download_image(srv, fn, sf, ft)
+                    _import_result_as_layer(image, debug_data, "ControlNet Debug (invisible)")
+                    # Set the debug layer to invisible
+                    debug_layer = image.get_layers()[0]
+                    debug_layer.set_visible(False)
+                    continue
+                run_i = i // max(1, len([r for r in results if "spellcaster_cn_debug" not in r[0]]) // runs) if runs > 1 else 0
+                lbl = f"{v['preset'].get('label','')} run {run_i+1} #{i+1}" if runs > 1 \
+                      else f"{v['preset'].get('label','')} #{i+1}"
+                _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -8724,19 +8858,22 @@ class Spellcaster(Gimp.PlugIn):
         runs = v.get("runs", 1)
         try:
             srv = v["server"]
-            _update_spinner_status("txt2img: generating on ComfyUI...")
-            base_seed = v["seed"]
-            for run_i in range(runs):
-                seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
-                wf = json.loads(v["custom_workflow"]) if v["custom_workflow"] else \
-                     _build_txt2img(v["preset"], v["prompt"], v["negative"], seed, v.get("loras"))
-                label = f"txt2img run {run_i+1}/{runs}" if runs > 1 else "txt2img"
-                results = _run_with_spinner(f"{label}: processing on ComfyUI...",
-                                            lambda: list(_run_comfyui_workflow(srv, wf)))
-                for i, (fn, sf, ft) in enumerate(results):
-                    lbl = f"{v['preset'].get('label','')} run {run_i+1} #{i+1}" if runs > 1 \
-                          else f"{v['preset'].get('label','')} #{i+1}"
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+            def _do_all_runs():
+                all_results = []
+                base_seed = v["seed"]
+                for run_i in range(runs):
+                    seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+                    wf = json.loads(v["custom_workflow"]) if v["custom_workflow"] else \
+                         _build_txt2img(v["preset"], v["prompt"], v["negative"], seed, v.get("loras"))
+                    label = f"Run {run_i+1}/{runs}" if runs > 1 else "txt2img"
+                    _update_spinner_status(f"{label}: processing on ComfyUI...")
+                    all_results.extend(list(_run_comfyui_workflow(srv, wf)))
+                return all_results
+            results = _run_with_spinner("txt2img: starting...", _do_all_runs)
+            for i, (fn, sf, ft) in enumerate(results):
+                lbl = f"{v['preset'].get('label','')} run {i+1} #{i+1}" if runs > 1 \
+                      else f"{v['preset'].get('label','')} #{i+1}"
+                _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -8769,52 +8906,63 @@ class Spellcaster(Gimp.PlugIn):
             dlg.destroy()
         runs = v.get("runs", 1)
         try:
-            _update_spinner_status("Building selection mask...")
             srv = v["server"]
+            cn_active = v.get("controlnet", {}).get("mode", "Off") != "Off"
+            def _do_all_runs():
+                _update_spinner_status("Building selection mask...")
+                # Check mask cache — reuse if selection hasn't changed
+                global _mask_cache
+                sel_hash = _selection_hash(image)
+                if (sel_hash
+                        and _mask_cache["selection_hash"] == sel_hash
+                        and _mask_cache["server"] == srv
+                        and _mask_cache["uploaded_name"]):
+                    mname = _mask_cache["uploaded_name"]
+                    _update_spinner_status("Reusing cached selection mask...")
+                else:
+                    # Build mask from GIMP's actual selection channel (not just bounds)
+                    mtmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False); mtmp.close()
+                    _create_selection_mask_png(mtmp.name, image)
 
-            # Check mask cache — reuse if selection hasn't changed
-            global _mask_cache
-            sel_hash = _selection_hash(image)
-            if (sel_hash
-                    and _mask_cache["selection_hash"] == sel_hash
-                    and _mask_cache["server"] == srv
-                    and _mask_cache["uploaded_name"]):
-                mname = _mask_cache["uploaded_name"]
-                _update_spinner_status("Reusing cached selection mask...")
-            else:
-                # Build mask from GIMP's actual selection channel (not just bounds)
-                mtmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False); mtmp.close()
-                _create_selection_mask_png(mtmp.name, image)
+                    mname = f"gimp_mask_{uuid.uuid4().hex[:8]}.png"
+                    _upload_image(srv, mtmp.name, mname)
+                    _mask_cache = {
+                        "selection_hash": sel_hash,
+                        "mask_path": mtmp.name,
+                        "uploaded_name": mname,
+                        "server": srv,
+                    }
 
-                mname = f"gimp_mask_{uuid.uuid4().hex[:8]}.png"
-                _upload_image(srv, mtmp.name, mname)
-                _mask_cache = {
-                    "selection_hash": sel_hash,
-                    "mask_path": mtmp.name,
-                    "uploaded_name": mname,
-                    "server": srv,
-                }
+                _update_spinner_status("Exporting image...")
+                # Export current image
+                tmp = _export_image_to_tmp(image)
+                iname = f"gimp_inp_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, tmp, iname); os.unlink(tmp)
 
-            _update_spinner_status("Exporting image...")
-            # Export current image
-            tmp = _export_image_to_tmp(image)
-            iname = f"gimp_inp_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, iname); os.unlink(tmp)
-
-            base_seed = v["seed"]
-            for run_i in range(runs):
-                seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
-                wf = json.loads(v["custom_workflow"]) if v["custom_workflow"] else \
-                     _build_inpaint(iname, mname, v["preset"], v["prompt"], v["negative"], seed,
-                                    v.get("loras"), controlnet=v.get("controlnet"),
-                                    use_wd_tagger=v.get("use_wd_tagger", False))
-                label = f"Inpaint run {run_i+1}/{runs}" if runs > 1 else "Inpaint"
-                results = _run_with_spinner(f"{label}: processing on ComfyUI...",
-                                            lambda: list(_run_comfyui_workflow(srv, wf)))
-                for i, (fn, sf, ft) in enumerate(results):
-                    lbl = f"Inpaint {v['preset'].get('label','')} run {run_i+1} #{i+1}" if runs > 1 \
-                          else f"Inpaint {v['preset'].get('label','')} #{i+1}"
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                all_results = []
+                base_seed = v["seed"]
+                for run_i in range(runs):
+                    seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+                    wf = json.loads(v["custom_workflow"]) if v["custom_workflow"] else \
+                         _build_inpaint(iname, mname, v["preset"], v["prompt"], v["negative"], seed,
+                                        v.get("loras"), controlnet=v.get("controlnet"),
+                                        use_wd_tagger=v.get("use_wd_tagger", False))
+                    label = f"Run {run_i+1}/{runs}" if runs > 1 else "Inpaint"
+                    _update_spinner_status(f"{label}: processing on ComfyUI...")
+                    all_results.extend(list(_run_comfyui_workflow(srv, wf)))
+                return all_results
+            results = _run_with_spinner("Inpaint: starting...", _do_all_runs)
+            for i, (fn, sf, ft) in enumerate(results):
+                # ControlNet debug images have the "spellcaster_cn_debug" prefix
+                if cn_active and "spellcaster_cn_debug" in fn:
+                    debug_data = _download_image(srv, fn, sf, ft)
+                    _import_result_as_layer(image, debug_data, "ControlNet Debug (invisible)")
+                    # Set the debug layer to invisible
+                    debug_layer = image.get_layers()[0]
+                    debug_layer.set_visible(False)
+                    continue
+                lbl = f"Inpaint {v['preset'].get('label','')} #{i+1}"
+                _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
