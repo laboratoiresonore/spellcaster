@@ -63,34 +63,41 @@ _RAW_BASE      = "https://raw.githubusercontent.com/laboratoiresonore/spellcaste
 _GIMP_PLUGIN_PREFIX = "plugins/gimp/comfyui-connector/"
 
 def _install_spellcaster_theme_to_disk():
-    """Write spellcaster-theme.css into GIMP's user theme directory so it persists across sessions.
+    """Write spellcaster-theme.css as GIMP's user CSS override (gimp.css).
 
-    Copies the bundled CSS file to:
-      - Windows: %APPDATA%/GIMP/3.0/themes/Spellcaster/gtk.css
-      - Linux/macOS: ~/.config/GIMP/3.0/themes/Spellcaster/gtk.css
+    GIMP 3.x loads gimp.css from the user config directory on every startup,
+    applying it ON TOP of the selected color scheme (Dark Colors, etc.).
+    This is the correct way to customize the full application appearance.
+
+    Writes to all detected GIMP config versions (3.0, 3.2, etc.).
     """
     try:
         css_src = _PLUGIN_DIR / "spellcaster-theme.css"
         if not css_src.exists():
-            return  # CSS file not bundled yet
+            return
 
         if sys.platform == "win32":
             appdata = os.environ.get("APPDATA", "")
-            if appdata:
-                theme_dir = Path(appdata) / "GIMP" / "3.0" / "themes" / "Spellcaster"
-            else:
+            if not appdata:
                 return
+            gimp_base = Path(appdata) / "GIMP"
         else:
-            theme_dir = Path.home() / ".config" / "GIMP" / "3.0" / "themes" / "Spellcaster"
+            gimp_base = Path.home() / ".config" / "GIMP"
 
-        theme_dir.mkdir(parents=True, exist_ok=True)
-        dest = theme_dir / "gtk.css"
+        if not gimp_base.is_dir():
+            return
 
-        # Only overwrite if source is newer or dest missing
         import shutil
-        if not dest.exists() or css_src.stat().st_mtime > dest.stat().st_mtime:
-            shutil.copy2(css_src, dest)
-            print(f"Spellcaster theme installed to: {dest}")
+        installed = False
+        # Write gimp.css to ALL GIMP version directories found
+        for version_dir in gimp_base.iterdir():
+            if version_dir.is_dir() and version_dir.name[0].isdigit():
+                dest = version_dir / "gimp.css"
+                if not dest.exists() or css_src.stat().st_mtime > dest.stat().st_mtime:
+                    shutil.copy2(css_src, dest)
+                    installed = True
+        if installed:
+            print(f"[Spellcaster] Theme installed as gimp.css")
     except Exception as e:
         print(f"Note: Could not install persistent theme: {e}")
 
