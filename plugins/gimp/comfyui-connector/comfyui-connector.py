@@ -4002,10 +4002,13 @@ def _build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
                   "latent_image": ["7", 0], "seed": seed,
                   "steps": preset["steps"], "cfg": preset["cfg"],
                   "sampler_name": preset["sampler"], "scheduler": preset["scheduler"],
-                  # Outpaint MUST use denoise=1.0: the extended area is empty
-                  # and needs full generation from noise. The mask from
-                  # ImagePadForOutpaint protects the original content.
-                  "denoise": 1.0,
+                  # Outpaint uses high denoise (0.85) — NOT 1.0.
+                  # denoise=1.0 replaces the entire latent with noise (ignoring mask).
+                  # 0.85 heavily transforms the padded area while the mask + low noise
+                  # on the original area keeps it mostly unchanged.
+                  # ImagePadForOutpaint fills new pixels with feathered edge colors,
+                  # giving KSampler a starting point to generate from.
+                  "denoise": 0.85,
               }},
         "9": {"class_type": "VAEDecode",
               "inputs": {"samples": ["8", 0], "vae": vae_ref}},
@@ -11004,6 +11007,14 @@ class Spellcaster(Gimp.PlugIn):
         dlg = PresetDialog("Spellcaster — Outpaint / Extend Canvas", mode="img2img")
         dlg.w_spin.set_value(image.get_width())
         dlg.h_spin.set_value(image.get_height())
+        # Override default prompt with outpaint-specific text
+        dlg.prompt_tv.get_buffer().set_text(
+            "seamless continuation of the existing scene, matching lighting, "
+            "style, and color palette, natural extension, consistent perspective, "
+            "same quality and mood as the original image")
+        dlg.neg_tv.get_buffer().set_text(
+            "different style, inconsistent lighting, visible seam, border artifact, "
+            "blurry, low quality, mismatched colors, distorted perspective")
         last = _SESSION.get("outpaint")
         if last:
             last_no_dims = {k: v for k, v in last.items() if k not in ("width", "height")}
@@ -13079,7 +13090,9 @@ class Spellcaster(Gimp.PlugIn):
         bx.set_spacing(8); bx.set_margin_start(16); bx.set_margin_end(16)
         bx.set_margin_top(16); bx.set_margin_bottom(16)
 
-        _make_branded_header(bx)
+        _hdr = _make_branded_header()
+        if _hdr:
+            bx.pack_start(_hdr, False, False, 0)
 
         # Map dialog keys to human-readable tool names
         tool_names = {
@@ -13204,7 +13217,9 @@ class Spellcaster(Gimp.PlugIn):
         bx.set_margin_top(16); bx.set_margin_bottom(16)
 
         # Header
-        _make_branded_header(bx)
+        _hdr = _make_branded_header()
+        if _hdr:
+            bx.pack_start(_hdr, False, False, 0)
 
         # Load current config
         cfg = _load_config()
