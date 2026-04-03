@@ -2988,7 +2988,7 @@ def _create_selection_mask_png(filepath, image):
             f"Try a smaller selection or restart GIMP."
         )
 
-    Gimp.progress_set_text("Building selection mask (pixel scan)...")
+    _update_spinner_status("Building selection mask (pixel scan)...")
     rows = []
     mask_total = 0
     for y in range(height):
@@ -5621,7 +5621,7 @@ def _export_image_to_tmp(image):
 
     # --- Strategy 4: Read pixels + write PNG in pure Python -----------------
     try:
-        Gimp.progress_set_text("Reading pixels (fallback export)...")
+        _update_spinner_status("Reading pixels (fallback export)...")
         rows = []
         for y in range(h):
             row = bytearray()
@@ -5800,6 +5800,71 @@ _workflow_lock = threading.Lock()
 _workflow_queue_depth = 0  # how many requests are waiting or running
 _cancel_event = threading.Event()  # set when user clicks Cancel in spinner
 
+# ── Spinner status text ─────────────────────────────────────────────
+# Module-level variable that _run_with_spinner polls to update its label.
+# Call _update_spinner_status("...") from _run_* methods instead of
+# Gimp.progress_init / Gimp.progress_set_text so the spinner window
+# shows the current processing phase in real time.
+_spinner_label_text = ""
+
+def _update_spinner_status(text):
+    """Set the spinner window's status label from any thread."""
+    global _spinner_label_text
+    _spinner_label_text = text
+
+
+# ── Mask cache for inpaint ──────────────────────────────────────────
+# Reuses the last-generated selection mask if the selection hasn't changed,
+# avoiding redundant pixel scanning and upload.
+_mask_cache = {
+    "selection_hash": None,  # hash of selection bounds + channel data
+    "mask_path": None,       # path to cached mask PNG
+    "uploaded_name": None,   # name on ComfyUI server
+    "server": None,          # which server it was uploaded to
+}
+
+
+def _cleanup_mask_cache():
+    """Remove cached mask file from disk and reset the cache dict."""
+    global _mask_cache
+    if _mask_cache.get("mask_path") and os.path.exists(_mask_cache["mask_path"]):
+        try:
+            os.unlink(_mask_cache["mask_path"])
+        except Exception:
+            pass
+    _mask_cache = {"selection_hash": None, "mask_path": None,
+                   "uploaded_name": None, "server": None}
+
+
+def _selection_hash(image):
+    """Compute a hash of the current selection to detect changes."""
+    import hashlib
+    has_sel, x1, y1, x2, y2 = _get_selection_bounds(image)
+    if not has_sel:
+        return None
+    # Hash the bounds + image ID (unique per image)
+    key = f"{image.get_id()}:{x1},{y1},{x2},{y2}"
+    return hashlib.md5(key.encode()).hexdigest()
+
+
+# Clean stale mask cache on plugin load
+_cleanup_mask_cache()
+
+# Clean stale temp mask files from previous sessions
+import glob as _glob_mod
+for _f in _glob_mod.glob(os.path.join(tempfile.gettempdir(), "gimp_mask_*.png")):
+    try:
+        os.unlink(_f)
+    except Exception:
+        pass
+for _f in _glob_mod.glob(os.path.join(tempfile.gettempdir(), "tmp*.png")):
+    # Only delete if > 1 day old to avoid deleting active files
+    try:
+        if os.path.getmtime(_f) < time.time() - 86400:
+            os.unlink(_f)
+    except Exception:
+        pass
+
 def _run_comfyui_workflow(server, workflow, timeout=300):
     """Flush pending uploads, submit workflow to ComfyUI, wait for results.
 
@@ -5904,6 +5969,8 @@ def _run_with_spinner(label_text, func, *args):
     Uses list-boxes (result_box, error_box, done_box) as mutable containers
     to pass values between the worker thread and the GTK main loop.
     """
+    global _spinner_label_text
+    _spinner_label_text = ""  # reset live status text
     result_box = [None]
     error_box = [None]
     done_box = [False]
@@ -5962,8 +6029,13 @@ def _run_with_spinner(label_text, func, *args):
             depth = _workflow_queue_depth
             if depth > 1:
                 label.set_text(f"Queued ({depth - 1} ahead) — {label_text}")
-            elif not cancel_box[0] and label.get_text().startswith("Queued"):
-                label.set_text(label_text)
+            elif not cancel_box[0]:
+                # Pick up live status text from _update_spinner_status()
+                live = _spinner_label_text
+                if live:
+                    label.set_text(live)
+                elif label.get_text().startswith("Queued"):
+                    label.set_text(label_text)
             return True
         return False
     GLib.timeout_add(300, _pulse)
@@ -6364,6 +6436,16 @@ class PresetDialog(Gtk.Dialog):
             # Re-filter scene presets for the new architecture
             if self._scene_combo:
                 self._refresh_scene_combo()
+            # WD Tagger only supported for SDXL-class models
+            arch = MODEL_PRESETS[idx]["arch"] if idx >= 0 else ""
+            if hasattr(self, '_wd_tagger_cb'):
+                if arch in ("sdxl", "illustrious", "zit"):
+                    self._wd_tagger_cb.set_sensitive(True)
+                    if self.mode != "txt2img":
+                        self._wd_tagger_cb.set_active(True)
+                else:
+                    self._wd_tagger_cb.set_active(False)
+                    self._wd_tagger_cb.set_sensitive(False)
 
     def _apply_preset(self, idx):
         """Populate all parameter widgets from a MODEL_PRESETS entry."""
@@ -8517,7 +8599,7 @@ class Spellcaster(Gimp.PlugIn):
         runs = v.get("runs", 1)
         try:
             srv = v["server"]
-            Gimp.progress_init("img2img: exporting image...")
+            _update_spinner_status("img2img: exporting image...")
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
@@ -8568,7 +8650,7 @@ class Spellcaster(Gimp.PlugIn):
         runs = v.get("runs", 1)
         try:
             srv = v["server"]
-            Gimp.progress_init("txt2img: generating on ComfyUI...")
+            _update_spinner_status("txt2img: generating on ComfyUI...")
             base_seed = v["seed"]
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
@@ -8613,21 +8695,37 @@ class Spellcaster(Gimp.PlugIn):
             dlg.destroy()
         runs = v.get("runs", 1)
         try:
-            Gimp.progress_init("Building selection mask...")
+            _update_spinner_status("Building selection mask...")
             srv = v["server"]
 
-            # Build mask from GIMP's actual selection channel (not just bounds)
-            mtmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False); mtmp.close()
-            _create_selection_mask_png(mtmp.name, image)
+            # Check mask cache — reuse if selection hasn't changed
+            global _mask_cache
+            sel_hash = _selection_hash(image)
+            if (sel_hash
+                    and _mask_cache["selection_hash"] == sel_hash
+                    and _mask_cache["server"] == srv
+                    and _mask_cache["uploaded_name"]):
+                mname = _mask_cache["uploaded_name"]
+                _update_spinner_status("Reusing cached selection mask...")
+            else:
+                # Build mask from GIMP's actual selection channel (not just bounds)
+                mtmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False); mtmp.close()
+                _create_selection_mask_png(mtmp.name, image)
 
-            Gimp.progress_set_text("Exporting image...")
+                mname = f"gimp_mask_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, mtmp.name, mname)
+                _mask_cache = {
+                    "selection_hash": sel_hash,
+                    "mask_path": mtmp.name,
+                    "uploaded_name": mname,
+                    "server": srv,
+                }
+
+            _update_spinner_status("Exporting image...")
             # Export current image
             tmp = _export_image_to_tmp(image)
             iname = f"gimp_inp_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, iname); os.unlink(tmp)
-
-            mname = f"gimp_mask_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, mtmp.name, mname); os.unlink(mtmp.name)
 
             base_seed = v["seed"]
             for run_i in range(runs):
@@ -8664,7 +8762,7 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.message("No source face image selected")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
         try:
-            Gimp.progress_init("Face Swap: exporting images...")
+            _update_spinner_status("Face Swap: exporting images...")
             srv = v["server"]
             # Upload target (current canvas)
             tmp = _export_image_to_tmp(image)
@@ -8678,7 +8776,7 @@ class Spellcaster(Gimp.PlugIn):
             if v.get("save_face_model") and v.get("save_model_name"):
                 model_name = v["save_model_name"]
                 overwrite = v.get("save_overwrite", True)
-                Gimp.progress_set_text(f"Saving face model '{model_name}'...")
+                _update_spinner_status(f"Saving face model '{model_name}'...")
                 save_wf = _build_save_face_model(src_name, model_name, overwrite=overwrite)
                 _run_with_spinner(f"Saving face model '{model_name}'...",
                                   lambda: list(_run_comfyui_workflow(srv, save_wf)))
@@ -8696,7 +8794,7 @@ class Spellcaster(Gimp.PlugIn):
                 input_face_idx=v["input_face_idx"],
                 source_face_idx=v["source_face_idx"],
             )
-            Gimp.progress_set_text("Face Swap: processing on ComfyUI...")
+            _update_spinner_status("Face Swap: processing on ComfyUI...")
             results = _run_with_spinner("Face Swap: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
             for i, (fn, sf, ft) in enumerate(results):
@@ -8723,7 +8821,7 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.message("No face model selected")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
         try:
-            Gimp.progress_init("Face Swap (Model): exporting image...")
+            _update_spinner_status("Face Swap (Model): exporting image...")
             srv = v["server"]
             tmp = _export_image_to_tmp(image)
             tgt_name = f"gimp_fsm_{uuid.uuid4().hex[:8]}.png"
@@ -8739,7 +8837,7 @@ class Spellcaster(Gimp.PlugIn):
                 input_face_idx=v["input_face_idx"],
                 source_face_idx=v["source_face_idx"],
             )
-            Gimp.progress_set_text("Face Swap (Model): processing on ComfyUI...")
+            _update_spinner_status("Face Swap (Model): processing on ComfyUI...")
             results = _run_with_spinner("Face Swap (Model): processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
             for i, (fn, sf, ft) in enumerate(results):
@@ -8782,11 +8880,11 @@ class Spellcaster(Gimp.PlugIn):
         runs = v.get("runs", 1)
         try:
             if has_sel:
-                Gimp.progress_init("Wan I2V: exporting selection region...")
+                _update_spinner_status("Wan I2V: exporting selection region...")
                 srv = v["server"]
                 tmp, _sw, _sh = _export_selection_to_tmp(image)
             else:
-                Gimp.progress_init("Wan I2V: exporting image...")
+                _update_spinner_status("Wan I2V: exporting image...")
                 srv = v["server"]
                 tmp = _export_image_to_tmp(image)
             uname = f"gimp_wan_{uuid.uuid4().hex[:8]}.png"
@@ -8832,7 +8930,7 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.message("No source face image selected")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
         try:
-            Gimp.progress_init("Face Swap (mtb): exporting images...")
+            _update_spinner_status("Face Swap (mtb): exporting images...")
             srv = v["server"]
             # Export target (current canvas)
             tmp = _export_image_to_tmp(image)
@@ -8845,7 +8943,7 @@ class Spellcaster(Gimp.PlugIn):
                                       analysis_model=v["analysis_model"],
                                       swap_model=v["swap_model"],
                                       faces_index=v["faces_index"])
-            Gimp.progress_set_text("Face Swap (mtb): processing...")
+            _update_spinner_status("Face Swap (mtb): processing...")
             results = _run_with_spinner("Face Swap (mtb): processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
             for i, (fn, sf, ft) in enumerate(results):
@@ -8879,7 +8977,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
         runs = v.get("runs", 1)
         try:
-            Gimp.progress_init("FaceID: exporting images...")
+            _update_spinner_status("FaceID: exporting images...")
             srv = v["server"]
             tmp = _export_image_to_tmp(image)
             tgt_name = f"gimp_fid_tgt_{uuid.uuid4().hex[:8]}.png"
@@ -8932,7 +9030,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
         runs = v.get("runs", 1)
         try:
-            Gimp.progress_init("PuLID Flux: exporting images...")
+            _update_spinner_status("PuLID Flux: exporting images...")
             srv = v["server"]
             tmp = _export_image_to_tmp(image)
             tgt_name = f"gimp_pulid_tgt_{uuid.uuid4().hex[:8]}.png"
@@ -8983,7 +9081,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         runs = v.get("runs", 1)
         try:
-            Gimp.progress_init("Klein: exporting image...")
+            _update_spinner_status("Klein: exporting image...")
             srv = v["server"]
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_klein_{uuid.uuid4().hex[:8]}.png"
@@ -9032,7 +9130,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
         runs = v.get("runs", 1)
         try:
-            Gimp.progress_init("Klein+Ref: exporting images...")
+            _update_spinner_status("Klein+Ref: exporting images...")
             srv = v["server"]
             # Upload main image
             tmp = _export_image_to_tmp(image)
@@ -9127,7 +9225,7 @@ class Spellcaster(Gimp.PlugIn):
         try:
             from spellcaster_steg import embed_metadata as steg_embed
 
-            Gimp.progress_init("Embedding invisible watermark...")
+            _update_spinner_status("Embedding invisible watermark...")
 
             # Flatten and get pixel data
             flat = image.flatten()
@@ -9226,7 +9324,7 @@ class Spellcaster(Gimp.PlugIn):
         try:
             from spellcaster_steg import extract_metadata as steg_extract
 
-            Gimp.progress_init("Reading invisible watermark...")
+            _update_spinner_status("Reading invisible watermark...")
 
             drawable = image.get_active_drawable()
             w, h = drawable.get_width(), drawable.get_height()
@@ -9304,12 +9402,12 @@ class Spellcaster(Gimp.PlugIn):
         _save_session()
         dlg.destroy()
         try:
-            Gimp.progress_init("Upscale: exporting image...")
+            _update_spinner_status("Upscale: exporting image...")
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_upscale_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
             wf = _build_upscale(uname, model_name)
-            Gimp.progress_set_text("Upscale: processing on ComfyUI...")
+            _update_spinner_status("Upscale: processing on ComfyUI...")
             results = _run_with_spinner("Upscale: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
             for i, (fn, sf, ft) in enumerate(results):
@@ -9346,18 +9444,18 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         srv = se.get_text().strip(); _propagate_server_url(srv); dlg.destroy()
         try:
-            Gimp.progress_init("LaMa Remove: building selection mask...")
+            _update_spinner_status("LaMa Remove: building selection mask...")
             # Build mask from GIMP's selection channel
             mtmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False); mtmp.close()
             _create_selection_mask_png(mtmp.name, image)
-            Gimp.progress_set_text("LaMa Remove: exporting image...")
+            _update_spinner_status("LaMa Remove: exporting image...")
             tmp = _export_image_to_tmp(image)
             iname = f"gimp_lama_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, iname); os.unlink(tmp)
             mname = f"gimp_lama_mask_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, mtmp.name, mname); os.unlink(mtmp.name)
             wf = _build_lama_remove(iname, mname)
-            Gimp.progress_set_text("LaMa Remove: processing on ComfyUI...")
+            _update_spinner_status("LaMa Remove: processing on ComfyUI...")
             results = _run_with_spinner("LaMa Remove: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
             for i, (fn, sf, ft) in enumerate(results):
@@ -9423,12 +9521,12 @@ class Spellcaster(Gimp.PlugIn):
         _save_session()
         dlg.destroy()
         try:
-            Gimp.progress_init("LUT: exporting image...")
+            _update_spinner_status("LUT: exporting image...")
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_lut_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
             wf = _build_lut(uname, lut_name, strength)
-            Gimp.progress_set_text("LUT: processing on ComfyUI...")
+            _update_spinner_status("LUT: processing on ComfyUI...")
             results = _run_with_spinner("LUT: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
             for i, (fn, sf, ft) in enumerate(results):
@@ -9501,7 +9599,7 @@ class Spellcaster(Gimp.PlugIn):
         runs = v.get("runs", 1)
         try:
             srv = v["server"]
-            Gimp.progress_init("Outpaint: exporting image...")
+            _update_spinner_status("Outpaint: exporting image...")
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_outpaint_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
@@ -9667,7 +9765,7 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.message("No style reference image selected")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
         try:
-            Gimp.progress_init("Style Transfer: exporting images...")
+            _update_spinner_status("Style Transfer: exporting images...")
             # Upload target (current canvas)
             tmp = _export_image_to_tmp(image)
             tgt_name = f"gimp_style_tgt_{uuid.uuid4().hex[:8]}.png"
@@ -9775,13 +9873,13 @@ class Spellcaster(Gimp.PlugIn):
         _save_session()
         dlg.destroy()
         try:
-            Gimp.progress_init("Face Restore: exporting image...")
+            _update_spinner_status("Face Restore: exporting image...")
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_facerestore_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
             wf = _build_face_restore(uname, fr_preset["model"], facedetection,
                                       visibility, codeformer_weight)
-            Gimp.progress_set_text("Face Restore: processing on ComfyUI...")
+            _update_spinner_status("Face Restore: processing on ComfyUI...")
             results = _run_with_spinner("Face Restore: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
             for i, (fn, sf, ft) in enumerate(results):
@@ -9874,14 +9972,14 @@ class Spellcaster(Gimp.PlugIn):
         _save_session()
         dlg.destroy()
         try:
-            Gimp.progress_init("Photo Restore: exporting image...")
+            _update_spinner_status("Photo Restore: exporting image...")
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_photorestore_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
             wf = _build_photo_restore(uname, upscale_model, fr_preset["model"],
                                        "retinaface_resnet50", 1.0, codeformer_weight,
                                        1, 0.5, sharpen_amount)
-            Gimp.progress_set_text("Photo Restore: processing on ComfyUI...")
+            _update_spinner_status("Photo Restore: processing on ComfyUI...")
             results = _run_with_spinner("Photo Restore: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
             for i, (fn, sf, ft) in enumerate(results):
@@ -10013,7 +10111,7 @@ class Spellcaster(Gimp.PlugIn):
         _save_session()
         dlg.destroy()
         try:
-            Gimp.progress_init("Detail Hallucinate: exporting image...")
+            _update_spinner_status("Detail Hallucinate: exporting image...")
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_hallucinate_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
@@ -10178,7 +10276,7 @@ class Spellcaster(Gimp.PlugIn):
         _save_session()
         dlg.destroy()
         try:
-            Gimp.progress_init("SeedV2R: exporting image...")
+            _update_spinner_status("SeedV2R: exporting image...")
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_seedv2r_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
@@ -10311,7 +10409,7 @@ class Spellcaster(Gimp.PlugIn):
         _save_session()
         dlg.destroy()
         try:
-            Gimp.progress_init("Colorize: exporting image...")
+            _update_spinner_status("Colorize: exporting image...")
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_colorize_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
@@ -10367,7 +10465,7 @@ class Spellcaster(Gimp.PlugIn):
         runs = v.get("runs", 1)
         try:
             srv = v["server"]
-            Gimp.progress_init("Batch Variations: generating on ComfyUI...")
+            _update_spinner_status("Batch Variations: generating on ComfyUI...")
             base_seed = v["seed"]
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
@@ -10512,7 +10610,7 @@ class Spellcaster(Gimp.PlugIn):
         _save_session()
         dlg.destroy()
         try:
-            Gimp.progress_init("IC-Light: exporting image...")
+            _update_spinner_status("IC-Light: exporting image...")
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_iclight_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
@@ -10630,7 +10728,7 @@ class Spellcaster(Gimp.PlugIn):
         _save_session()
         dlg.destroy()
         try:
-            Gimp.progress_init("SUPIR: exporting image...")
+            _update_spinner_status("SUPIR: exporting image...")
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_supir_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
@@ -10679,12 +10777,12 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         srv = se.get_text().strip(); _propagate_server_url(srv); dlg.destroy()
         try:
-            Gimp.progress_init("Remove Background: exporting image...")
+            _update_spinner_status("Remove Background: exporting image...")
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_rembg_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
             wf = _build_rembg(uname)
-            Gimp.progress_set_text("Remove Background: processing on ComfyUI...")
+            _update_spinner_status("Remove Background: processing on ComfyUI...")
             results = _run_with_spinner("Remove Background: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
             for i, (fn, sf, ft) in enumerate(results):
@@ -10725,7 +10823,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         srv = se.get_text().strip(); _propagate_server_url(srv); fn = ne.get_text().strip(); dlg.destroy()
         try:
-            Gimp.progress_init("Uploading...")
+            _update_spinner_status("Uploading...")
             tmp = _export_image_to_tmp(image)
             r = _upload_image_sync(srv, tmp, fn); os.unlink(tmp)
             Gimp.message(f"Uploaded as: {r.get('name', fn)}")
