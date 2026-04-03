@@ -3934,7 +3934,9 @@ def _build_upscale(image_filename, model_name):
 def _build_lama_remove(image_filename, mask_filename):
     """Remove objects using LaMa inpainting — no checkpoint, no prompt needed.
 
-    Pipeline: LoadImage(image) → LoadImage(mask) → LaMaInpaint → SaveImage
+    Pipeline: LoadImage(image) → LoadImage(mask) → ImageToMask → LamaRemover → SaveImage
+    Uses LamaRemover (from ComfyUI-LaMA-Preprocessor) instead of the
+    broken LaMaInpaint (from comfyui-art-venture which crashes on recent PyTorch).
     """
     wf = {
         "1": {"class_type": "LoadImage",
@@ -3943,10 +3945,13 @@ def _build_lama_remove(image_filename, mask_filename):
               "inputs": {"image": mask_filename}},
         "5": {"class_type": "ImageToMask",
               "inputs": {"image": ["2", 0], "channel": "red"}},
-        "3": {"class_type": "LaMaInpaint",
+        "3": {"class_type": "LamaRemover",
               "inputs": {
-                  "image": ["1", 0],
-                  "mask": ["5", 0],
+                  "images": ["1", 0],
+                  "masks": ["5", 0],
+                  "mask_threshold": 0.5,
+                  "gaussblur_radius": 8,
+                  "invert_mask": False,
               }},
         "4": {"class_type": "SaveImage",
               "inputs": {"images": ["3", 0], "filename_prefix": "spellcaster_lama"}},
