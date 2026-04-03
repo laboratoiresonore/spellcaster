@@ -6098,8 +6098,8 @@ WAN_I2V_PRESETS = {
         "vae": "wan_2.1_vae.safetensors",
         "steps": 30, "second_step": 20, "cfg": 5.0, "shift": 8.0,
         "lora_prefix": "Wan/14B",
-        "high_accel_lora": "Wan\\14B\\lightx2v_wan_4steps_lora_high_noise.safetensors",
-        "low_accel_lora": "Wan\\14B\\lightx2v_wan_128_lora_low_noise.safetensors",
+        "high_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
+        "low_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
         "accel_strength": 1.0,
     },
     "Wan I2V 14B (fp8)": {
@@ -6109,6 +6109,9 @@ WAN_I2V_PRESETS = {
         "vae": "wan_2.1_vae.safetensors",
         "steps": 30, "second_step": 20, "cfg": 5.0, "shift": 8.0,
         "lora_prefix": "Wan/14B",
+        "high_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
+        "low_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
+        "accel_strength": 1.0,
     },
 }
 
