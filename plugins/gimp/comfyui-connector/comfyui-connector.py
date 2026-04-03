@@ -4637,7 +4637,7 @@ CONTROLNET_POSE_MODELS = {
 # ── Merged ControlNet guide modes for img2img / inpaint integration ──
 CONTROLNET_GUIDE_MODES = {
     "Off": {"preprocessor": None, "cn_models": None},
-    "Canny (edges) — SD1.5/SDXL/Flux": {
+    "Canny (edges) — ALL architectures": {
         "preprocessor": "CannyEdgePreprocessor",
         "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors",
                        "sdxl": "SDXL\\controlnet-canny-sdxl-1.0.safetensors",
@@ -4647,45 +4647,55 @@ CONTROLNET_GUIDE_MODES = {
                        "flux2klein": "control-lora-canny-rank256.safetensors",
                        "flux_kontext": "control-lora-canny-rank256.safetensors"},
     },
-    "Depth (spatial) — SD1.5/SDXL/Flux": {
+    "Canny LoRA (SDXL lightweight) — SDXL only": {
+        "preprocessor": "CannyEdgePreprocessor",
+        "cn_models": {"sdxl": "SDXL\\control-lora-canny-rank128.safetensors",
+                       "illustrious": "SDXL\\control-lora-canny-rank128.safetensors"},
+    },
+    "Depth (spatial) — ALL architectures": {
         "preprocessor": "MiDaS-DepthMapPreprocessor",
         "cn_models": {"sd15": "control_v11f1p_sd15_depth_fp16.safetensors",
-                       "sdxl": "SDXL\\controlnet-canny-sdxl-1.0.safetensors",
-                       "illustrious": "SDXL\\controlnet-canny-sdxl-1.0.safetensors",
+                       "sdxl": "SDXL\\control-lora-depth-rank128.safetensors",
+                       "illustrious": "SDXL\\control-lora-depth-rank128.safetensors",
                        "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors",
                        "flux1dev": "control-lora-depth-rank256.safetensors",
                        "flux2klein": "control-lora-depth-rank256.safetensors",
                        "flux_kontext": "control-lora-depth-rank256.safetensors"},
     },
-    "Lineart (drawing) — SD1.5/SDXL": {
+    "Lineart (drawing) — SD1.5/SDXL/ZIT": {
         "preprocessor": "LineArtPreprocessor",
         "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors",
                        "sdxl": "SDXL\\controlnet-canny-sdxl-1.0.safetensors",
                        "illustrious": "SDXL\\controlnet-canny-sdxl-1.0.safetensors",
                        "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
     },
-    "OpenPose (body) — SD1.5/SDXL/Flux": {
+    "OpenPose (body) — ALL architectures": {
         "preprocessor": "DWPreprocessor",
         "cn_models": {"sd15": "control_v11p_sd15_openpose_fp16.safetensors",
-                       "sdxl": "OpenPoseXL2.safetensors",
+                       "sdxl": "SDXL\\controlnet-openpose-sdxl-1.0\\diffusion_pytorch_model.safetensors",
                        "illustrious": "noobaiXLControlnet_openposeModel.safetensors",
                        "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors",
                        "flux1dev": "flux-controlnet-openpose.safetensors",
                        "flux2klein": "flux-controlnet-openpose.safetensors"},
     },
+    "OpenPose XL (community) — SDXL/Illustrious": {
+        "preprocessor": "DWPreprocessor",
+        "cn_models": {"sdxl": "OpenPoseXL2.safetensors",
+                       "illustrious": "noobaiXLControlnet_openposeModel.safetensors"},
+    },
     "Scribble (sketch) — SD1.5 only": {
         "preprocessor": "ScribblePreprocessor",
         "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors"},
     },
-    "Tile (detail) — SD1.5/SDXL": {
+    "Tile (detail) — SD1.5/SDXL/ZIT": {
         "preprocessor": None,
         "cn_models": {"sd15": "control_v11f1e_sd15_tile.pth",
                        "sdxl": "SDXL\\ttplanetSDXLControlnet_Tile_v20Fp16.safetensors",
                        "illustrious": "SDXL\\ttplanetSDXLControlnet_Tile_v20Fp16.safetensors",
                        "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
     },
-    "Flux Union Pro (all modes) — Flux only": {
-        "preprocessor": None,  # Union handles preprocessing internally
+    "Flux Union Pro (all-in-one) — Flux only": {
+        "preprocessor": None,
         "cn_models": {"flux1dev": "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors",
                        "flux2klein": "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors",
                        "flux_kontext": "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors"},
