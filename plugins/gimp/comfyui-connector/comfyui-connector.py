@@ -469,7 +469,6 @@ def _session_to_values(key, image=None):
         },
         "custom_workflow": None,
         "runs": s.get("runs", 1),
-        "use_wd_tagger": s.get("use_wd_tagger", False),
         "style_preset": style_preset,
     }
 
@@ -3365,7 +3364,7 @@ LORA_METADATA = {
 
 
 def _build_img2img(image_filename, preset, prompt_text, negative_text, seed,
-                    loras=None, controlnet=None, controlnet_2=None, use_wd_tagger=False):
+                    loras=None, controlnet=None, controlnet_2=None):
     """Standard img2img: load checkpoint, encode image to latent, denoise, decode.
 
     Pipeline: CheckpointLoaderSimple → [LoRA chain] → CLIPTextEncode(+/-)
@@ -3386,32 +3385,9 @@ def _build_img2img(image_filename, preset, prompt_text, negative_text, seed,
               "inputs": {"image": image_filename}},
     })
 
-    # WD Tagger: auto-tag the input image and prepend to user prompt
-    if use_wd_tagger:
-        wf["90"] = {"class_type": "WD14Tagger|pysssss",
-                    "inputs": {
-                        "image": ["4", 0],
-                        "model": "wd-eva02-large-tagger-v3",
-                        "threshold": 0.35,
-                        "character_threshold": 0.85,
-                        "replace_underscore": True,
-                        "trailing_comma": True,
-                        "exclude_tags": "",
-                    }}
-        wf["91"] = {"class_type": "StringConcatenate",
-                    "inputs": {
-                        "string_a": ["90", 0],
-                        "string_b": prompt_text,
-                        "delimiter": ", ",
-                    }}
-        # CLIPTextEncode will use the concatenated string
-        wf["2"] = {"class_type": "CLIPTextEncode",
-                   "inputs": {"text": ["91", 0], "clip": clip_ref}}
-    else:
-        wf["2"] = {"class_type": "CLIPTextEncode",
-                   "inputs": {"text": prompt_text, "clip": clip_ref}}
-
     wf.update({
+        "2": {"class_type": "CLIPTextEncode",
+              "inputs": {"text": prompt_text, "clip": clip_ref}},
         "3": {"class_type": "CLIPTextEncode",
               "inputs": {"text": negative_text, "clip": clip_ref}},
         "5": {"class_type": "VAEEncode",
@@ -3535,7 +3511,7 @@ def _build_txt2img(preset, prompt_text, negative_text, seed, loras=None):
     })
     return wf
 
-def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_text, seed, loras=None, controlnet=None, controlnet_2=None, use_wd_tagger=False):
+def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_text, seed, loras=None, controlnet=None, controlnet_2=None):
     """Inpainting: regenerate only the masked region of the image.
 
     Pipeline: Load image + mask → scale both to working resolution →
@@ -3554,28 +3530,7 @@ def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_
     wf["4"] = {"class_type": "LoadImage", "inputs": {"image": image_filename}}
     wf["5"] = {"class_type": "LoadImage", "inputs": {"image": mask_filename}}
 
-    # WD Tagger for inpainting: auto-tag the source image to improve context
-    if use_wd_tagger:
-        wf["80"] = {"class_type": "WD14Tagger|pysssss",
-                    "inputs": {
-                        "image": ["4", 0],
-                        "model": "wd-eva02-large-tagger-v3",
-                        "threshold": 0.35,
-                        "character_threshold": 0.85,
-                        "replace_underscore": True,
-                        "trailing_comma": True,
-                        "exclude_tags": "",
-                    }}
-        wf["81"] = {"class_type": "StringConcatenate",
-                    "inputs": {
-                        "string_a": ["80", 0],
-                        "string_b": prompt_text,
-                        "delimiter": ", ",
-                    }}
-        wf["2"] = {"class_type": "CLIPTextEncode",
-                   "inputs": {"text": ["81", 0], "clip": clip_ref}}
-    else:
-        wf["2"] = {"class_type": "CLIPTextEncode",
+    wf["2"] = {"class_type": "CLIPTextEncode",
                    "inputs": {"text": prompt_text, "clip": clip_ref}}
 
     wf.update({
@@ -6658,19 +6613,21 @@ class PresetDialog(Gtk.Dialog):
         elif mode == "txt2img":
             box.pack_start(Gtk.Label(label="Generate new image from prompt only.", xalign=0), False, False, 0)
 
-        # WD Tagger auto-tag checkbox (default ON for SDXL img2img/inpaint)
-        self._wd_tagger_cb = Gtk.CheckButton(label="WD Tagger: auto-tag image to enhance prompt")
-        default_wd = mode in ("img2img", "inpaint")  # ON by default for img2img/inpaint
-        self._wd_tagger_cb.set_active(default_wd)
-        self._wd_tagger_cb.set_tooltip_text(
-            "When enabled, WD14 Tagger analyzes your input image and automatically\n"
-            "generates descriptive tags (e.g. '1girl, brown hair, outdoors, smile').\n"
-            "These tags are prepended to your prompt, giving the AI much better\n"
-            "context about what's already in the image.\n\n"
-            "Recommended for img2img and inpaint. Not needed for txt2img.\n"
-            "Requires the WD14Tagger node (pysssss) to be installed in ComfyUI.")
+        # WD Tagger button — sends image to ComfyUI, gets tags back into prompt
         if mode != "txt2img":
-            box.pack_start(self._wd_tagger_cb, False, False, 0)
+            wd_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+            self._wd_tag_btn = Gtk.Button(label="Tag Image (WD Tagger)")
+            self._wd_tag_btn.set_tooltip_text(
+                "Sends your image to ComfyUI's WD14 Tagger and pastes the\n"
+                "detected tags into your prompt. Review and edit before generating.\n\n"
+                "Tags like: '1girl, brown hair, outdoors, smile, sunlight'\n"
+                "Requires the WD14Tagger node (pysssss) in ComfyUI.")
+            self._wd_tag_btn.connect("clicked", self._on_wd_tag_clicked)
+            wd_row.pack_start(self._wd_tag_btn, False, False, 0)
+            self._wd_status = Gtk.Label(label="")
+            self._wd_status.set_xalign(0)
+            wd_row.pack_start(self._wd_status, True, True, 0)
+            box.pack_start(wd_row, False, False, 0)
 
         # Runs spinner
         _add_runs_spinner(self, box)
@@ -6737,16 +6694,6 @@ class PresetDialog(Gtk.Dialog):
             # Re-filter scene presets for the new architecture
             if self._scene_combo:
                 self._refresh_scene_combo()
-            # WD Tagger works with all architectures (outputs text tags)
-            if hasattr(self, '_wd_tagger_cb'):
-                # WD Tagger works with all architectures (outputs text tags)
-                self._wd_tagger_cb.set_sensitive(True)
-                # Auto-enable for img2img/inpaint, disable for txt2img
-                if self.mode == "txt2img":
-                    self._wd_tagger_cb.set_active(False)
-                    self._wd_tagger_cb.set_sensitive(False)
-                elif self.mode in ("img2img", "inpaint"):
-                    self._wd_tagger_cb.set_active(True)
 
     def _on_lora_combo_changed(self, combo, model_spin, clip_spin):
         """When a LoRA is selected, look up metadata for trigger words and optimal strength."""
@@ -6916,6 +6863,112 @@ class PresetDialog(Gtk.Dialog):
             if not found:
                 # LoRA not available — skip this slot, try next recommended LoRA
                 continue
+
+    def _on_wd_tag_clicked(self, btn):
+        """Send the current GIMP image to WD14Tagger and paste tags into prompt."""
+        server = self.server_entry.get_text().strip()
+        if not server:
+            self._wd_status.set_markup('<span foreground="#FF5252">No server URL</span>')
+            return
+
+        self._wd_tag_btn.set_sensitive(False)
+        self._wd_status.set_text("Exporting image...")
+
+        def _do_tag():
+            try:
+                # Get the current image from GIMP
+                images = Gimp.list_images()
+                if not images:
+                    return None, "No image open in GIMP"
+                image = images[0]
+
+                # Export to temp file
+                tmp = _export_image_to_tmp(image)
+
+                # Upload to ComfyUI
+                self._wd_status.set_text("Uploading...")
+                uname = f"wd_tag_{uuid.uuid4().hex[:8]}.png"
+                _upload_image_sync(server, tmp, uname)
+                os.unlink(tmp)
+
+                # Build a minimal WD14Tagger-only workflow
+                wf = {
+                    "1": {"class_type": "LoadImage",
+                          "inputs": {"image": uname}},
+                    "2": {"class_type": "WD14Tagger|pysssss",
+                          "inputs": {
+                              "image": ["1", 0],
+                              "model": "wd-eva02-large-tagger-v3",
+                              "threshold": 0.35,
+                              "character_threshold": 0.85,
+                              "replace_underscore": True,
+                              "trailing_comma": True,
+                              "exclude_tags": "",
+                          }},
+                    # We need a SaveImage to trigger execution, but we want the STRING output
+                    "3": {"class_type": "SaveImage",
+                          "inputs": {"images": ["1", 0], "filename_prefix": "wd_tag_dummy"}},
+                }
+
+                # Submit and wait
+                self._wd_status.set_text("Tagging...")
+                result = _api_post_json(server, "/prompt", {"prompt": wf})
+                prompt_id = result.get("prompt_id")
+                if not prompt_id:
+                    return None, "ComfyUI did not return a prompt_id"
+
+                # Poll for completion
+                deadline = time.time() + 60
+                while time.time() < deadline:
+                    try:
+                        history = _api_get(server, f"/history/{prompt_id}")
+                        if prompt_id in history:
+                            # Extract the STRING output from node 2 (WD14Tagger)
+                            outputs = history[prompt_id].get("outputs", {})
+                            for nid, nout in outputs.items():
+                                if "text" in nout:
+                                    # Some versions return text directly
+                                    tags = nout["text"]
+                                    if isinstance(tags, list):
+                                        tags = tags[0]
+                                    return tags, None
+                                if "string" in nout:
+                                    tags = nout["string"]
+                                    if isinstance(tags, list):
+                                        tags = tags[0]
+                                    return tags, None
+                            # Fallback: tagger succeeded but we can't read STRING output
+                            # (WD14Tagger outputs STRING which doesn't appear in history)
+                            return None, "Tagger ran but tags not in history output.\nTry the WD Tagger node directly in ComfyUI."
+                    except Exception:
+                        pass
+                    time.sleep(1)
+                return None, "Tagger timed out (60s)"
+            except Exception as e:
+                return None, str(e)
+
+        def _on_done(result):
+            tags, error = result
+            self._wd_tag_btn.set_sensitive(True)
+            if error:
+                self._wd_status.set_markup(f'<span foreground="#FF5252">{error}</span>')
+            elif tags:
+                # Prepend tags to the prompt
+                buf = self.prompt_tv.get_buffer()
+                existing = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
+                if existing.strip():
+                    new_text = f"{tags}, {existing}"
+                else:
+                    new_text = tags
+                buf.set_text(new_text)
+                tag_count = len([t for t in tags.split(",") if t.strip()])
+                self._wd_status.set_markup(f'<span foreground="#00E676">{tag_count} tags added</span>')
+
+        def _on_err(e):
+            self._wd_tag_btn.set_sensitive(True)
+            self._wd_status.set_markup(f'<span foreground="#FF5252">{e}</span>')
+
+        _async_fetch(_do_tag, _on_done, _on_err)
 
     def _on_style_changed(self, combo):
         """Apply a style enhancement preset: load its LoRAs into slots."""
@@ -7280,7 +7333,6 @@ class PresetDialog(Gtk.Dialog):
             "controlnet_2": controlnet_2,
             "custom_workflow": custom_wf if custom_wf else None,
             "runs": int(self._runs_spin.get_value()),
-            "use_wd_tagger": (self._wd_tagger_cb.get_active() and self._wd_tagger_cb.get_sensitive()) if hasattr(self, '_wd_tagger_cb') else False,
             "style_preset": style_preset,
         }
 
@@ -8971,7 +9023,7 @@ class Spellcaster(Gimp.PlugIn):
                          _build_img2img(uname, v["preset"], v["prompt"], v["negative"], seed,
                                         v.get("loras"), controlnet=v.get("controlnet"),
                                         controlnet_2=v.get("controlnet_2"),
-                                        use_wd_tagger=v.get("use_wd_tagger", False))
+                                        )
                     label = f"Run {run_i+1}/{runs}" if runs > 1 else "img2img"
                     _update_spinner_status(f"{label}: processing on ComfyUI...")
                     all_results.extend(list(_run_comfyui_workflow(srv, wf)))
@@ -9112,7 +9164,7 @@ class Spellcaster(Gimp.PlugIn):
                          _build_inpaint(iname, mname, v["preset"], v["prompt"], v["negative"], seed,
                                         v.get("loras"), controlnet=v.get("controlnet"),
                                         controlnet_2=v.get("controlnet_2"),
-                                        use_wd_tagger=v.get("use_wd_tagger", False))
+                                        )
                     label = f"Run {run_i+1}/{runs}" if runs > 1 else "Inpaint"
                     _update_spinner_status(f"{label}: processing on ComfyUI...")
                     all_results.extend(list(_run_comfyui_workflow(srv, wf)))
