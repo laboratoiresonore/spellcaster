@@ -10924,80 +10924,199 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     def _run_lama_remove(self, procedure, run_mode, image, drawables, config, data):
-        """Object removal: LaMa inpainting on selection — no checkpoint, no prompt."""
+        """Smart object removal: LaMa fast fill OR AI-guided replacement."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
-        # Minimal dialog — just server URL and go
-        dlg = Gtk.Dialog(title="Spellcaster — Object Removal (LaMa)")
+        dlg = Gtk.Dialog(title="Spellcaster — Smart Object Removal")
+        dlg.set_default_size(520, -1)
         dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
-        dlg.add_button("_Remove Object", Gtk.ResponseType.OK)
+        dlg.add_button("_Remove", Gtk.ResponseType.OK)
+        _style_dialog_buttons(dlg)
         bx = dlg.get_content_area()
         bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
         bx.set_margin_top(12); bx.set_margin_bottom(12)
+
+        # Server
         hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
-        se.set_tooltip_text("ComfyUI server address. Default: http://127.0.0.1:8188")
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
-        # Edge feather / blend strength
+
+        # What to remove
+        bx.pack_start(Gtk.Label(label="What object are you removing?", xalign=0), False, False, 0)
+        obj_entry = Gtk.Entry()
+        obj_entry.set_placeholder_text("e.g., person, car, text, power lines, watermark...")
+        obj_entry.set_tooltip_text(
+            "Describe the object you want gone. This helps the AI understand\n"
+            "what should NOT be in the result and what should REPLACE it.\n\n"
+            "Examples: 'person', 'car in background', 'text overlay',\n"
+            "'power lines', 'watermark', 'trash can'\n\n"
+            "Leave blank for generic removal (LaMa mode).")
+        bx.pack_start(obj_entry, False, False, 0)
+
+        # Removal mode
+        bx.pack_start(Gtk.Label(label="Removal Method:", xalign=0), False, False, 0)
+        mode_combo = Gtk.ComboBoxText()
+        mode_combo.append("lama", "LaMa Fast (no AI model — instant, good for simple backgrounds)")
+        mode_combo.append("ai", "AI Replace (uses checkpoint — slower but much better results)")
+        mode_combo.set_active(0)
+        mode_combo.set_tooltip_text(
+            "LaMa Fast: fills the selection with surrounding patterns. Best for\n"
+            "simple backgrounds (sky, walls, ground). Instant, no prompt needed.\n\n"
+            "AI Replace: uses an AI checkpoint to intelligently generate what\n"
+            "should replace the removed object. Much better for complex scenes\n"
+            "(crowds, detailed backgrounds, textured surfaces). Slower but\n"
+            "produces seamless results guided by your object description.")
+        bx.pack_start(mode_combo, False, False, 0)
+
+        # AI Replace options (shown/hidden based on mode)
+        ai_frame = Gtk.Frame(label="AI Replace Settings")
+        ai_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        ai_box.set_margin_start(8); ai_box.set_margin_end(8)
+        ai_box.set_margin_top(8); ai_box.set_margin_bottom(8)
+
+        ai_box.pack_start(Gtk.Label(label="Checkpoint Model:", xalign=0), False, False, 0)
+        ai_model_combo = Gtk.ComboBoxText()
+        for i, p in enumerate(MODEL_PRESETS):
+            ai_model_combo.append(str(i), _model_label(p, "img2img"))
+        _fav = _load_config().get("favourite_model", -1)
+        if 0 <= _fav < len(MODEL_PRESETS):
+            ai_model_combo.set_active_id(str(_fav))
+        if ai_model_combo.get_active() < 0:
+            ai_model_combo.set_active(0)
+        ai_box.pack_start(ai_model_combo, False, False, 0)
+
+        hb_den = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb_den.pack_start(Gtk.Label(label="Denoise:"), False, False, 0)
+        ai_denoise = Gtk.SpinButton.new_with_range(0.5, 1.0, 0.05)
+        ai_denoise.set_value(0.85); ai_denoise.set_digits(2)
+        ai_denoise.set_tooltip_text("How aggressively to replace the content.\n0.85 = strong replacement (recommended). Lower = more blending.")
+        hb_den.pack_start(ai_denoise, False, False, 0)
+        ai_box.pack_start(hb_den, False, False, 0)
+
+        ai_box.pack_start(Gtk.Label(label="Replacement prompt (auto-generated, editable):", xalign=0), False, False, 0)
+        ai_prompt = Gtk.TextView(); ai_prompt.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        ai_prompt.set_size_request(-1, 50)
+        sw_p = Gtk.ScrolledWindow(); sw_p.add(ai_prompt); sw_p.set_min_content_height(50)
+        ai_box.pack_start(sw_p, False, False, 0)
+
+        ai_frame.add(ai_box)
+        bx.pack_start(ai_frame, False, False, 0)
+
+        # Auto-generate replacement prompt when object description changes
+        def _update_ai_prompt(*args):
+            obj = obj_entry.get_text().strip()
+            if not obj:
+                ai_prompt.get_buffer().set_text("clean background, seamless continuation, natural fill, matching surroundings")
+            else:
+                ai_prompt.get_buffer().set_text(
+                    f"no {obj}, clean background where the {obj} was, "
+                    f"seamless continuation of surrounding area, natural fill, "
+                    f"matching lighting and texture, no trace of {obj}")
+        obj_entry.connect("changed", _update_ai_prompt)
+        _update_ai_prompt()
+
+        # Show/hide AI frame based on mode
+        def _on_mode_changed(combo):
+            if combo.get_active_id() == "ai":
+                ai_frame.show_all()
+            else:
+                ai_frame.hide()
+            GLib.idle_add(lambda: dlg.resize(dlg.get_allocated_width(), 1) or False)
+        mode_combo.connect("changed", _on_mode_changed)
+
+        # Edge feather
         hb_feather = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         hb_feather.pack_start(Gtk.Label(label="Edge Feather (px):"), False, False, 0)
         feather_spin = Gtk.SpinButton.new_with_range(0, 64, 1)
-        feather_spin.set_value(0)
-        feather_spin.set_tooltip_text(
-            "Feather (blur) the mask edges by this many pixels before inpainting.\n"
-            "0 = sharp mask edges (default). 4-16 = smoother blend with surroundings.\n"
-            "Higher values give softer transitions but may leave faint outlines.\n"
-            "Use for organic objects; keep at 0 for hard-edged items.")
-        hb_feather.pack_start(feather_spin, False, False, 0); bx.pack_start(hb_feather, False, False, 0)
-        bx.pack_start(Gtk.Label(label="How to use:\n"
-                                      "1. Use GIMP's selection tools (Free Select, Fuzzy Select, etc.)\n"
-                                      "   to paint/select over the object you want removed.\n"
-                                      "2. The selected area becomes the inpaint mask.\n"
-                                      "3. LaMa fills it in seamlessly — no AI model or prompt needed.\n\n"
-                                      "Tip: Select slightly LARGER than the object for cleaner edges."), False, False, 4)
+        feather_spin.set_value(4)
+        feather_spin.set_tooltip_text("Soften mask edges for smoother blending. 4 = default.")
+        hb_feather.pack_start(feather_spin, False, False, 0)
+        bx.pack_start(hb_feather, False, False, 0)
+
+        # How to use
+        info_exp = Gtk.Expander(label="▸ How to use")
+        info_exp.set_expanded(False)
+        info_lbl = Gtk.Label(label=(
+            "1. Select the object with GIMP's tools (Free Select, Fuzzy Select, etc.)\n"
+            "2. Make the selection slightly LARGER than the object\n"
+            "3. Describe what you're removing in the text field above\n"
+            "4. Choose LaMa (fast, simple) or AI Replace (smart, slower)\n"
+            "5. Click Remove — result appears as a new layer"))
+        info_lbl.set_xalign(0)
+        info_exp.add(info_lbl)
+        bx.pack_start(info_exp, False, False, 0)
+
         bx.show_all()
+        ai_frame.hide()  # start hidden (LaMa mode)
+        _shrink_on_collapse(info_exp, dlg)
+
         last = _SESSION.get("lama_remove")
         if last:
             if "feather" in last:
                 feather_spin.set_value(last["feather"])
+            if "mode" in last:
+                mode_combo.set_active_id(last["mode"])
+                _on_mode_changed(mode_combo)
+            if "obj" in last:
+                obj_entry.set_text(last["obj"])
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         srv = se.get_text().strip(); _propagate_server_url(srv)
         feather_px = int(feather_spin.get_value())
-        _SESSION["lama_remove"] = {"feather": feather_px}
+        removal_mode = mode_combo.get_active_id()
+        obj_desc = obj_entry.get_text().strip()
+        # Read AI settings before destroy
+        ai_idx = ai_model_combo.get_active()
+        ai_den = ai_denoise.get_value()
+        pbuf = ai_prompt.get_buffer()
+        replacement_prompt = pbuf.get_text(pbuf.get_start_iter(), pbuf.get_end_iter(), False)
+        _SESSION["lama_remove"] = {"feather": feather_px, "mode": removal_mode, "obj": obj_desc}
         _save_session()
         dlg.destroy()
         try:
-            # Apply feathering to the selection if requested
             if feather_px > 0:
-                Gimp.get_pdb().run_procedure("gimp-selection-feather",
-                                              [GObject.Value(Gimp.Image, image),
-                                               GObject.Value(GObject.TYPE_DOUBLE, float(feather_px))])
-            _update_spinner_status("LaMa Remove: building selection mask...")
-            # Build mask from GIMP's selection channel
+                try:
+                    Gimp.get_pdb().run_procedure("gimp-selection-feather",
+                                                  [GObject.Value(Gimp.Image, image),
+                                                   GObject.Value(GObject.TYPE_DOUBLE, float(feather_px))])
+                except Exception:
+                    pass
+            _update_spinner_status("Object Removal: building selection mask...")
             mtmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False); mtmp.close()
             _create_selection_mask_png(mtmp.name, image)
-            _update_spinner_status("LaMa Remove: exporting image...")
+            _update_spinner_status("Object Removal: exporting image...")
             tmp = _export_image_to_tmp(image)
-            iname = f"gimp_lama_{uuid.uuid4().hex[:8]}.png"
+            iname = f"gimp_remove_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, iname); os.unlink(tmp)
-            mname = f"gimp_lama_mask_{uuid.uuid4().hex[:8]}.png"
+            mname = f"gimp_remove_mask_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, mtmp.name, mname); os.unlink(mtmp.name)
-            wf = _build_lama_remove(iname, mname)
-            _update_spinner_status("LaMa Remove: processing on ComfyUI...")
-            results = _run_with_spinner("LaMa Remove: processing on ComfyUI...",
+
+            if removal_mode == "ai":
+                # AI-guided replacement using inpaint pipeline
+                preset = dict(MODEL_PRESETS[ai_idx] if 0 <= ai_idx < len(MODEL_PRESETS) else MODEL_PRESETS[0])
+                neg = f"{obj_desc}, visible {obj_desc}, trace of {obj_desc}, artifacts, seam" if obj_desc else "artifacts, seam, mismatch"
+                wf = _build_inpaint(iname, mname, preset, replacement_prompt, neg,
+                                     random.randint(0, 2**32 - 1), denoise=ai_den)
+                label_text = "AI Replace"
+            else:
+                # LaMa fast removal
+                wf = _build_lama_remove(iname, mname)
+                label_text = "LaMa Remove"
+
+            _update_spinner_status(f"{label_text}: processing on ComfyUI...")
+            results = _run_with_spinner(f"{label_text}: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
             for i, (fn, sf, ft) in enumerate(results):
                 _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                        f"LaMa Object Removed #{i+1}")
+                                        f"{label_text}: {obj_desc or 'removed'} #{i+1}")
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
-            Gimp.message(f"Spellcaster LaMa Remove Error: {e}")
+            Gimp.message(f"Spellcaster Object Removal Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     def _run_lut(self, procedure, run_mode, image, drawables, config, data):
