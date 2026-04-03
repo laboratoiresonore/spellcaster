@@ -3962,7 +3962,7 @@ UPSCALE_PRESETS = {
     "8x NMKD Faces (portraits)": "8x_NMKD-Faces_160000_G.pth",
 }
 
-def _build_upscale(image_filename, model_name, upscale_factor=1.5):
+def _build_upscale(image_filename, model_name, upscale_factor=1.0):
     """Upscale image using a super-resolution model with controllable factor.
 
     Pipeline: LoadImage → UpscaleModelLoader → ImageUpscaleWithModelByFactor → SaveImage
@@ -4372,7 +4372,7 @@ def _build_photo_restore(image_filename, upscale_model, face_model, facedetectio
               "inputs": {
                   "upscale_model": ["2", 0],
                   "image": ["1", 0],
-                  "scale_by": 1.5,
+                  "scale_by": 1.0,
               }},
         "4": {"class_type": "ReActorRestoreFace",
               "inputs": {
@@ -4484,7 +4484,7 @@ HALLUCINATE_PRESETS = {
 
 def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text, negative_text,
                                seed, denoise, cfg, steps=None,
-                               upscale_factor=1.5,
+                               upscale_factor=1.0,
                                controlnet=None, controlnet_2=None):
     """Upscale + img2img at low denoise to hallucinate fine detail.
 
@@ -6134,7 +6134,7 @@ def _filter_wan_loras(all_loras, preset_key=None):
 def _build_wan_i2v(image_filename, preset_key, prompt_text, negative_text, seed,
                     width=832, height=480, length=81,
                     steps=None, cfg=None, shift=None, second_step=None,
-                    loras=None, upscale=True, upscale_factor=1.5,
+                    loras=None, upscale=True, upscale_factor=1.0,
                     interpolate=True, pingpong=False, fps=16):
     """Wan 2.2 Image-to-Video — fatberg_slim dual-model GGUF architecture.
 
@@ -6317,7 +6317,7 @@ def _build_wan_i2v(image_filename, preset_key, prompt_text, negative_text, seed,
 def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negative_text, seed,
                     width=832, height=480, length=81,
                     steps=None, cfg=None, shift=None, second_step=None,
-                    loras=None, upscale=True, upscale_factor=1.5,
+                    loras=None, upscale=True, upscale_factor=1.0,
                     interpolate=True, pingpong=False, fps=16):
     """Wan 2.2 First+Last Frame to Video — fatberg_slim dual-model architecture.
 
@@ -9068,7 +9068,7 @@ class WanI2VDialog(Gtk.Dialog):
         rtx_row.pack_start(self.upscale_check, False, False, 0)
         rtx_row.pack_start(Gtk.Label(label="Scale:"), False, False, 0)
         self.upscale_spin = Gtk.SpinButton.new_with_range(1.0, 4.0, 0.25)
-        self.upscale_spin.set_digits(2); self.upscale_spin.set_value(1.5)
+        self.upscale_spin.set_digits(2); self.upscale_spin.set_value(1.0)
         self.upscale_spin.set_tooltip_text("RTX upscale factor (e.g. 1.5 = 50% larger)")
         rtx_row.pack_start(self.upscale_spin, False, False, 0)
         pp_box.pack_start(rtx_row, False, False, 0)
@@ -12467,11 +12467,11 @@ class Spellcaster(Gimp.PlugIn):
                 # Model A upscale (1.5x factor to control output size)
                 "10": {"class_type": "UpscaleModelLoader", "inputs": {"model_name": ma_file}},
                 "11": {"class_type": "ImageUpscaleWithModelByFactor", "inputs": {
-                    "upscale_model": ["10", 0], "image": ["1", 0], "scale_by": 1.5}},
+                    "upscale_model": ["10", 0], "image": ["1", 0], "scale_by": 1.0}},
                 # Model B upscale (same factor)
                 "20": {"class_type": "UpscaleModelLoader", "inputs": {"model_name": mb_file}},
                 "21": {"class_type": "ImageUpscaleWithModelByFactor", "inputs": {
-                    "upscale_model": ["20", 0], "image": ["1", 0], "scale_by": 1.5}},
+                    "upscale_model": ["20", 0], "image": ["1", 0], "scale_by": 1.0}},
                 # Blend the two upscaled results
                 "30": {"class_type": "ImageBlend", "inputs": {
                     "image1": ["11", 0], "image2": ["21", 0],
@@ -12721,7 +12721,7 @@ class Spellcaster(Gimp.PlugIn):
         hb3 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         hb3.pack_start(Gtk.Label(label="Scale factor:"), False, False, 0)
         scale_sp = Gtk.SpinButton.new_with_range(1.0, 8.0, 0.5)
-        scale_sp.set_value(1.5); scale_sp.set_digits(1)
+        scale_sp.set_value(1.0); scale_sp.set_digits(1)
         scale_sp.set_tooltip_text("Output upscale factor.\n"
                                    "1.5x = 50% larger (fast, good for most uses)\n"
                                    "2.0x = double size\n"
@@ -13842,7 +13842,7 @@ class Spellcaster(Gimp.PlugIn):
         hb_sf = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         hb_sf.pack_start(Gtk.Label(label="Scale factor:"), False, False, 0)
         up_factor_sp = Gtk.SpinButton.new_with_range(1.0, 8.0, 0.5)
-        up_factor_sp.set_value(1.5); up_factor_sp.set_digits(1)
+        up_factor_sp.set_value(1.0); up_factor_sp.set_digits(1)
         up_factor_sp.set_tooltip_text("Output upscale factor.\n"
                                        "1.5x = 50% larger (fast, recommended)\n"
                                        "2.0x = double size\n"
