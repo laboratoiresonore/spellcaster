@@ -6289,6 +6289,158 @@ def _build_wan_i2v(image_filename, preset_key, prompt_text, negative_text, seed,
     return wf
 
 
+def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negative_text, seed,
+                    width=832, height=480, length=81,
+                    steps=None, cfg=None, shift=None, second_step=None,
+                    loras=None, upscale=True, upscale_factor=1.5,
+                    interpolate=True, pingpong=False, fps=16):
+    """Wan 2.2 First+Last Frame to Video — fatberg_slim dual-model architecture.
+
+    Same two-pass pipeline as I2V but uses WanFirstLastFrameToVideo instead of
+    WanImageToVideo, accepting both a start_image and an end_image so the AI
+    generates a smooth transition between the two keyframes.
+    """
+    p = WAN_I2V_PRESETS[preset_key]
+    steps = steps or p["steps"]
+    cfg = cfg or p["cfg"]
+    shift = shift or p["shift"]
+    second_step = second_step if second_step is not None else p.get("second_step", 20)
+
+    is_gguf_high = p["high_model"].endswith(".gguf")
+    is_gguf_low = p["low_model"].endswith(".gguf")
+
+    wf = {
+        "1": {"class_type": "CLIPLoaderGGUF",
+              "inputs": {"clip_name": p["clip"], "type": "wan"}},
+        "2": {"class_type": "UnetLoaderGGUF" if is_gguf_high else "UNETLoader",
+              "inputs": {"unet_name": p["high_model"]}},
+        "3": {"class_type": "UnetLoaderGGUF" if is_gguf_low else "UNETLoader",
+              "inputs": {"unet_name": p["low_model"]}},
+        "4": {"class_type": "VAELoader",
+              "inputs": {"vae_name": p["vae"]}},
+        "5": {"class_type": "CLIPTextEncode",
+              "inputs": {"text": prompt_text, "clip": ["1", 0]}},
+        "6": {"class_type": "CLIPTextEncode",
+              "inputs": {"text": negative_text or "", "clip": ["1", 0]}},
+        # Start frame
+        "7": {"class_type": "LoadImage",
+              "inputs": {"image": start_filename}},
+        "8": {"class_type": "ImageScale",
+              "inputs": {"image": ["7", 0], "upscale_method": "lanczos",
+                         "width": width, "height": height, "crop": "disabled"}},
+        # End frame
+        "7b": {"class_type": "LoadImage",
+               "inputs": {"image": end_filename}},
+        "8b": {"class_type": "ImageScale",
+               "inputs": {"image": ["7b", 0], "upscale_method": "lanczos",
+                          "width": width, "height": height, "crop": "disabled"}},
+    }
+
+    if not is_gguf_high:
+        wf["2"]["inputs"]["weight_dtype"] = "default"
+    if not is_gguf_low:
+        wf["3"]["inputs"]["weight_dtype"] = "default"
+
+    # ── LoRA chains (same as I2V) ────────────────────────────────────
+    high_model_ref = ["2", 0]
+    low_model_ref = ["3", 0]
+    high_lora_list, low_lora_list = [], []
+
+    if p.get("high_accel_lora"):
+        high_lora_list.append((p["high_accel_lora"], p.get("accel_strength", 1.0)))
+    if p.get("low_accel_lora"):
+        low_lora_list.append((p["low_accel_lora"], p.get("accel_strength", 1.0)))
+    if loras:
+        for lora_name, lora_str in loras:
+            high_lora_list.append((lora_name, lora_str))
+            low_lora_list.append((lora_name, lora_str))
+
+    for i, (lname, lstr) in enumerate(high_lora_list):
+        nid = str(100 + i)
+        wf[nid] = {"class_type": "LoraLoaderModelOnly",
+                    "inputs": {"model": high_model_ref,
+                               "lora_name": lname, "strength_model": lstr}}
+        high_model_ref = [nid, 0]
+
+    for i, (lname, lstr) in enumerate(low_lora_list):
+        nid = str(120 + i)
+        wf[nid] = {"class_type": "LoraLoaderModelOnly",
+                    "inputs": {"model": low_model_ref,
+                               "lora_name": lname, "strength_model": lstr}}
+        low_model_ref = [nid, 0]
+
+    # ── ModelSamplingSD3 ─────────────────────────────────────────────
+    wf["30"] = {"class_type": "ModelSamplingSD3",
+                "inputs": {"model": high_model_ref, "shift": shift}}
+    wf["31"] = {"class_type": "ModelSamplingSD3",
+                "inputs": {"model": low_model_ref, "shift": shift}}
+
+    # ── WanFirstLastFrameToVideo conditioning ────────────────────────
+    wf["40"] = {"class_type": "WanFirstLastFrameToVideo",
+                "inputs": {
+                    "width": width, "height": height, "length": length,
+                    "batch_size": 1,
+                    "positive": ["5", 0], "negative": ["6", 0],
+                    "vae": ["4", 0],
+                    "start_image": ["8", 0],
+                    "end_image": ["8b", 0],
+                }}
+
+    # ── Two-pass KSamplerAdvanced ────────────────────────────────────
+    wf["50"] = {"class_type": "KSamplerAdvanced",
+                "inputs": {
+                    "model": ["30", 0],
+                    "positive": ["40", 0], "negative": ["40", 1],
+                    "latent_image": ["40", 2],
+                    "add_noise": "enable", "noise_seed": seed,
+                    "steps": steps, "cfg": cfg,
+                    "sampler_name": "euler_ancestral", "scheduler": "simple",
+                    "start_at_step": 0, "end_at_step": second_step,
+                    "return_with_leftover_noise": "enable",
+                }}
+    wf["51"] = {"class_type": "KSamplerAdvanced",
+                "inputs": {
+                    "model": ["31", 0],
+                    "positive": ["40", 0], "negative": ["40", 1],
+                    "latent_image": ["50", 0],
+                    "add_noise": "disable", "noise_seed": seed,
+                    "steps": steps, "cfg": 1.0,
+                    "sampler_name": "euler_ancestral", "scheduler": "simple",
+                    "start_at_step": second_step, "end_at_step": 10000,
+                    "return_with_leftover_noise": "disable",
+                }}
+
+    wf["60"] = {"class_type": "VAEDecode",
+                "inputs": {"samples": ["51", 0], "vae": ["4", 0]}}
+
+    video_ref = ["60", 0]
+
+    if upscale:
+        wf["70"] = {"class_type": "RTXVideoSuperResolution",
+                    "inputs": {"images": video_ref, "resize_type": "scale by multiplier",
+                               "scale": upscale_factor, "quality": "ULTRA"}}
+        video_ref = ["70", 0]
+
+    if interpolate:
+        wf["71"] = {"class_type": "RIFE VFI",
+                    "inputs": {"frames": video_ref, "ckpt_name": "rife49.pth",
+                               "clear_cache_after_n_frames": 10, "multiplier": 2,
+                               "fast_mode": True, "ensemble": True, "scale_factor": 1.0}}
+        video_ref = ["71", 0]
+
+    output_fps = float(fps * (2 if interpolate else 1))
+
+    wf["12"] = {"class_type": "VHS_VideoCombine",
+                "inputs": {"images": video_ref, "frame_rate": output_fps,
+                           "loop_count": 0, "filename_prefix": "gimp_wan_flf",
+                           "format": "video/h264-mp4", "pingpong": pingpong,
+                           "save_output": True}}
+    wf["13"] = {"class_type": "SaveImage",
+                "inputs": {"images": ["60", 0],
+                           "filename_prefix": "gimp_wan_flf_frames"}}
+
+    return wf
+
 
 # ── Klein img2img (Flux 2 Klein) ─────────────────────────────────────────
 # Klein uses a different architecture than standard checkpoints:
@@ -9959,6 +10111,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-klein-repose": "klein_flux2",
             "spellcaster-klein-inpaint": "klein_flux2",
             "spellcaster-wan-i2v": "wan_i2v",
+            "spellcaster-wan-flf": "wan_i2v",
             "spellcaster-rembg": "rembg",
             "spellcaster-embed-watermark": None,
             "spellcaster-read-watermark": None,
@@ -10028,6 +10181,8 @@ class Spellcaster(Gimp.PlugIn):
                                            "Regenerate selected area with Klein AI — context-aware, smooth edges"),
             "spellcaster-wan-i2v": ("Wan 2.2 Image to Video...", self._run_wan_i2v,
                                     "Generate video from image using Wan 2.2"),
+            "spellcaster-wan-flf": ("Wan 2.2 First + Last Frame to Video...", self._run_wan_flf,
+                                     "Generate video transitioning between two keyframes using Wan 2.2"),
 "spellcaster-upscale": ("Upscale 4x...", self._run_upscale,
                                      "Upscale image using super-resolution model"),
             "spellcaster-lama-remove": ("Object Removal (LaMa)...", self._run_lama_remove,
@@ -10105,6 +10260,7 @@ class Spellcaster(Gimp.PlugIn):
 
             # Video
             "spellcaster-wan-i2v":           "<Image>/Filters/Spellcaster Video",
+            "spellcaster-wan-flf":           "<Image>/Filters/Spellcaster Video",
 
             # Tools & Utility
             "spellcaster-rembg":             "<Image>/Filters/Spellcaster Tools",
@@ -10503,6 +10659,162 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Wan I2V Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    def _run_wan_flf(self, procedure, run_mode, image, drawables, config, data):
+        """Wan 2.2 First+Last Frame to Video: generate video transitioning between two keyframes."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+
+        # Reuse the I2V dialog but add an end-image file chooser
+        dlg = WanI2VDialog()
+        dlg.set_title("ComfyUI - Wan 2.2 First + Last Frame to Video")
+
+        # Insert end-image file chooser into the dialog
+        box = dlg.get_content_area()
+        flf_frame = Gtk.Frame(label="  Last Frame (end image)  ")
+        flf_frame.set_shadow_type(Gtk.ShadowType.ETCHED_IN)
+        flf_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        flf_frame.add(flf_box)
+
+        flf_box.pack_start(Gtk.Label(
+            label="The AI will generate a smooth video transition from your current\n"
+                  "canvas (first frame) to the image you select below (last frame).",
+            xalign=0), False, False, 4)
+
+        hb_flf = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        end_entry = Gtk.Entry()
+        end_entry.set_placeholder_text("Select the last frame image file...")
+        end_entry.set_hexpand(True)
+        end_entry.set_tooltip_text("Path to the end/last frame image.\n"
+                                    "The generated video will smoothly transition from your\n"
+                                    "current GIMP canvas (first frame) to this image (last frame).")
+        hb_flf.pack_start(end_entry, True, True, 0)
+
+        def _browse_end(*_a):
+            fc = Gtk.FileChooserDialog(title="Select Last Frame Image",
+                                        action=Gtk.FileChooserAction.OPEN)
+            fc.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+            fc.add_button("_Open", Gtk.ResponseType.OK)
+            ff = Gtk.FileFilter()
+            ff.set_name("Images")
+            for ext in ["*.png", "*.jpg", "*.jpeg", "*.webp", "*.bmp", "*.tiff"]:
+                ff.add_pattern(ext)
+            fc.add_filter(ff)
+            if fc.run() == Gtk.ResponseType.OK:
+                end_entry.set_text(fc.get_filename())
+            fc.destroy()
+
+        browse_btn = Gtk.Button(label="Browse...")
+        browse_btn.set_tooltip_text("Open file picker to select the last/end frame image")
+        browse_btn.connect("clicked", _browse_end)
+        hb_flf.pack_start(browse_btn, False, False, 0)
+        flf_box.pack_start(hb_flf, False, False, 4)
+
+        # Also allow picking from GIMP layers
+        layers = image.get_layers()
+        if len(layers) >= 2:
+            hb_layer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+            hb_layer.pack_start(Gtk.Label(label="Or use layer:"), False, False, 0)
+            layer_combo = Gtk.ComboBoxText()
+            layer_combo.append("(none)", "(select from file above)")
+            for idx, l in enumerate(layers):
+                layer_combo.append(str(idx), l.get_name())
+            layer_combo.set_active(0)
+            layer_combo.set_tooltip_text("Instead of a file, use one of your GIMP layers as the last frame.\n"
+                                          "The current canvas (flattened) is always the first frame.")
+            hb_layer.pack_start(layer_combo, True, True, 0)
+            flf_box.pack_start(hb_layer, False, False, 4)
+        else:
+            layer_combo = None
+
+        # Insert the FLF frame near the top of the dialog (after header + server)
+        children = box.get_children()
+        # Insert after the 3rd child (header, server, model preset label)
+        insert_pos = min(3, len(children))
+        box.pack_start(flf_frame, False, False, 4)
+        box.reorder_child(flf_frame, insert_pos)
+
+        src_w, src_h = image.get_width(), image.get_height()
+        vw, vh = _wan_video_dims(src_w, src_h)
+        dlg.w_spin.set_value(vw)
+        dlg.h_spin.set_value(vh)
+        last = _SESSION.get("wan_flf")
+        if last:
+            dlg._apply_user_preset(last)
+
+        box.show_all()
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        v = dlg.get_values()
+        end_path = end_entry.get_text().strip()
+        use_layer = None
+        if layer_combo and layer_combo.get_active_id() not in (None, "(none)"):
+            use_layer = int(layer_combo.get_active_id())
+        _SESSION["wan_flf"] = dlg._collect_user_preset()
+        _save_session()
+        dlg.destroy()
+
+        if not end_path and use_layer is None:
+            Gimp.message("Please select a last frame image or pick a layer.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        runs = v.get("runs", 1)
+        try:
+            srv = v["server"]
+
+            # Export first frame (current canvas)
+            _update_spinner_status("Wan FLF: exporting first frame...")
+            tmp_start = _export_image_to_tmp(image)
+            start_name = f"gimp_flf_start_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp_start, start_name); os.unlink(tmp_start)
+
+            # Export last frame (file or layer)
+            _update_spinner_status("Wan FLF: exporting last frame...")
+            if use_layer is not None:
+                end_layer = layers[use_layer]
+                end_img = Gimp.Image.new(image.get_width(), image.get_height(), Gimp.ImageType.RGB)
+                end_copy = Gimp.Layer.new_from_drawable(end_layer, end_img)
+                end_img.insert_layer(end_copy, None, 0)
+                end_img.flatten()
+                tmp_end = _export_image_to_tmp(end_img)
+                end_img.delete()
+            else:
+                tmp_end = end_path  # Direct file path — upload as-is
+
+            end_name = f"gimp_flf_end_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp_end, end_name)
+            if use_layer is not None:
+                os.unlink(tmp_end)
+
+            base_seed = v["seed"]
+            for run_i in range(runs):
+                seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+                wf = _build_wan_flf(
+                    start_name, end_name, v["preset_key"],
+                    v["prompt"], v["negative"], seed,
+                    width=v["width"], height=v["height"], length=v["length"],
+                    steps=v["steps"], cfg=v["cfg"], shift=v["shift"],
+                    second_step=v["second_step"], loras=v["loras"],
+                    upscale=v["upscale"], upscale_factor=v["upscale_factor"],
+                    interpolate=v["interpolate"], pingpong=v["pingpong"],
+                    fps=v["fps"],
+                )
+                label = f"Wan FLF run {run_i+1}/{runs}" if runs > 1 else "Wan FLF"
+                results = _run_with_spinner(f"{label}: generating video transition on ComfyUI...",
+                                             lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
+                for i, (fn, sf, ft) in enumerate(results):
+                    lbl = f"Wan FLF run {run_i+1} #{i+1}" if runs > 1 else f"Wan FLF frame #{i+1}"
+                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            Gimp.message("First+Last Frame video generation complete!\nCheck ComfyUI output folder for the MP4 file.")
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Spellcaster Wan FLF Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     def _run_faceswap_mtb(self, procedure, run_mode, image, drawables, config, data):
@@ -11558,6 +11870,11 @@ class Spellcaster(Gimp.PlugIn):
             "Improve detail / sharpen area": {
                 "prompt_hint": "highly detailed, sharp focus, fine textures, enhanced clarity, photorealistic",
                 "denoise": 0.30, "steps": 15,
+            },
+            "Remove object from hand": {
+                "prompt_hint": "empty hand, open palm, natural hand pose, no object, correct fingers, "
+                               "matching skin tone, same lighting, hand in front of body, anatomically correct hand",
+                "denoise": 0.72, "steps": 25,
             },
             "Creative reimagine (high freedom)": {
                 "prompt_hint": "Describe your creative vision — high denoise gives Klein full artistic freedom",
