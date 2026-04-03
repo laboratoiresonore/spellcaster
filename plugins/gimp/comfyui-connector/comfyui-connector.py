@@ -12101,35 +12101,35 @@ class Spellcaster(Gimp.PlugIn):
         try:
             km = KLEIN_MODELS[klein_key]
 
+            # ── GIMP operations on main thread (before spinner) ───────
+            # GIMP's PDB is not thread-safe. Mask creation and image
+            # export use PDB calls that must run on the main thread.
+            # Do them HERE, then pass the file paths to the spinner.
+            global _mask_cache
+            sel_hash = _selection_hash(image)
+            if (sel_hash
+                    and _mask_cache["selection_hash"] == sel_hash
+                    and _mask_cache["server"] == srv
+                    and _mask_cache["uploaded_name"]):
+                mname = _mask_cache["uploaded_name"]
+            else:
+                mtmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False); mtmp.close()
+                _create_selection_mask_png(mtmp.name, image)
+                mname = f"gimp_mask_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, mtmp.name, mname)
+                _mask_cache = {
+                    "selection_hash": sel_hash,
+                    "mask_path": mtmp.name,
+                    "uploaded_name": mname,
+                    "server": srv,
+                }
+
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_kinp_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+
+            # ── Background thread: network I/O + ComfyUI workflow ─────
             def _do_klein_inpaint():
-                # ── Build mask from GIMP selection ────────────────────
-                _update_spinner_status("Klein Inpaint: building selection mask...")
-                global _mask_cache
-                sel_hash = _selection_hash(image)
-                if (sel_hash
-                        and _mask_cache["selection_hash"] == sel_hash
-                        and _mask_cache["server"] == srv
-                        and _mask_cache["uploaded_name"]):
-                    mname = _mask_cache["uploaded_name"]
-                    _update_spinner_status("Klein Inpaint: reusing cached mask...")
-                else:
-                    mtmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False); mtmp.close()
-                    _create_selection_mask_png(mtmp.name, image)
-                    mname = f"gimp_mask_{uuid.uuid4().hex[:8]}.png"
-                    _upload_image(srv, mtmp.name, mname)
-                    _mask_cache = {
-                        "selection_hash": sel_hash,
-                        "mask_path": mtmp.name,
-                        "uploaded_name": mname,
-                        "server": srv,
-                    }
-
-                # ── Export image ──────────────────────────────────────
-                _update_spinner_status("Klein Inpaint: exporting image...")
-                tmp = _export_image_to_tmp(image)
-                uname = f"gimp_kinp_{uuid.uuid4().hex[:8]}.png"
-                _upload_image(srv, tmp, uname); os.unlink(tmp)
-
                 all_results = []
                 for run_i in range(runs):
                     seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
