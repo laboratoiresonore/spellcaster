@@ -3219,6 +3219,40 @@ def _get_output_images(server, prompt_id, timeout=300):
 # Convention: node IDs are assigned by function (1-9 for core pipeline,
 # 30+ for conditioning, 50+ for sampling, 90+ for scaling, 100+ for LoRAs).
 
+# ── Model recommendation labels ──────────────────────────────────────
+# Maps (task, architecture) to recommendation. Used to tag model dropdown labels.
+_MODEL_RECOMMENDATIONS = {
+    # Generic — recommended starters per arch
+    "sdxl": "★ RECOMMENDED",
+    "flux2klein": "★ next-gen",
+    # Task-specific overrides
+    ("img2img", "sdxl"): "★ RECOMMENDED",
+    ("img2img", "flux2klein"): "★ next-gen quality",
+    ("inpaint", "sdxl"): "★ RECOMMENDED",
+    ("txt2img", "sdxl"): "★ RECOMMENDED",
+    ("txt2img", "flux2klein"): "★ next-gen quality",
+    ("hallucinate", "sdxl"): "★ RECOMMENDED for detail",
+    ("seedv2r", "sdxl"): "★ RECOMMENDED",
+    ("colorize", "sdxl"): "★ best for color",
+    ("supir", "sdxl"): "★ REQUIRED (SDXL backbone)",
+    ("style", "sdxl"): "★ RECOMMENDED",
+    ("iclight", "sd15"): "★ REQUIRED (SD1.5 only)",
+    ("face_restore", "sdxl"): "★ RECOMMENDED",
+}
+
+def _model_label(preset, task=None):
+    """Return a model preset label with a recommendation tag if applicable."""
+    label = preset["label"]
+    arch = preset.get("arch", "")
+    # Check task-specific first, then generic arch
+    tag = _MODEL_RECOMMENDATIONS.get((task, arch)) if task else None
+    if not tag:
+        tag = _MODEL_RECOMMENDATIONS.get(arch)
+    if tag:
+        return f"{label}  {tag}"
+    return label
+
+
 def _make_model_loader(preset, node_id="1"):
     """Create the correct model/CLIP/VAE loader nodes based on architecture.
 
@@ -3881,10 +3915,12 @@ def _build_lama_remove(image_filename, mask_filename):
               "inputs": {"image": image_filename}},
         "2": {"class_type": "LoadImage",
               "inputs": {"image": mask_filename}},
+        "5": {"class_type": "ImageToMask",
+              "inputs": {"image": ["2", 0], "channel": "red"}},
         "3": {"class_type": "LaMaInpaint",
               "inputs": {
                   "image": ["1", 0],
-                  "mask": ["2", 0],
+                  "mask": ["5", 0],
               }},
         "4": {"class_type": "SaveImage",
               "inputs": {"images": ["3", 0], "filename_prefix": "spellcaster_lama"}},
@@ -7188,7 +7224,7 @@ class PresetDialog(Gtk.Dialog):
         box.pack_start(Gtk.Label(label="Model Preset:", xalign=0), False, False, 0)
         self.preset_combo = Gtk.ComboBoxText()
         for i, p in enumerate(MODEL_PRESETS):
-            self.preset_combo.append(str(i), p["label"])
+            self.preset_combo.append(str(i), _model_label(p, mode))
         # Default to favourite model from settings, or first model
         fav = _load_config().get("favourite_model", -1)
         if 0 <= fav < len(MODEL_PRESETS):
@@ -11106,7 +11142,7 @@ class Spellcaster(Gimp.PlugIn):
         model_combo = Gtk.ComboBoxText()
         model_combo.set_tooltip_text("Base checkpoint model for style transfer.\nSDXL models generally produce the best style transfer results.")
         for i, p in enumerate(MODEL_PRESETS):
-            model_combo.append(str(i), p["label"])
+            model_combo.append(str(i), _model_label(p, "style"))
         _fav = _load_config().get("favourite_model", -1)
         if 0 <= _fav < len(MODEL_PRESETS) and model_combo.get_active_id() is None:
             model_combo.set_active_id(str(_fav))
@@ -11698,7 +11734,7 @@ class Spellcaster(Gimp.PlugIn):
         model_combo = Gtk.ComboBoxText()
         model_combo.set_tooltip_text("AI model used for the detail hallucination (img2img) pass.\nMatch this to your image style (photo, anime, etc).")
         for i, p in enumerate(MODEL_PRESETS):
-            model_combo.append(str(i), p["label"])
+            model_combo.append(str(i), _model_label(p, "hallucinate"))
         _fav = _load_config().get("favourite_model", -1)
         if 0 <= _fav < len(MODEL_PRESETS) and model_combo.get_active_id() is None:
             model_combo.set_active_id(str(_fav))
@@ -11907,7 +11943,7 @@ class Spellcaster(Gimp.PlugIn):
         model_combo = Gtk.ComboBoxText()
         model_combo.set_tooltip_text("AI model for the img2img hallucination pass.\nMatch this to your image style for best results.")
         for i, p in enumerate(MODEL_PRESETS):
-            model_combo.append(str(i), p["label"])
+            model_combo.append(str(i), _model_label(p, "hallucinate"))
         _fav = _load_config().get("favourite_model", -1)
         if 0 <= _fav < len(MODEL_PRESETS) and model_combo.get_active_id() is None:
             model_combo.set_active_id(str(_fav))
@@ -12175,7 +12211,7 @@ class Spellcaster(Gimp.PlugIn):
         model_combo = Gtk.ComboBoxText()
         model_combo.set_tooltip_text("AI model for colorization. Realistic photo models work best.\nThe model generates colors guided by ControlNet lineart.")
         for i, p in enumerate(MODEL_PRESETS):
-            model_combo.append(str(i), p["label"])
+            model_combo.append(str(i), _model_label(p, "seedv2r"))
         _fav = _load_config().get("favourite_model", -1)
         if 0 <= _fav < len(MODEL_PRESETS) and model_combo.get_active_id() is None:
             model_combo.set_active_id(str(_fav))
@@ -12449,12 +12485,12 @@ class Spellcaster(Gimp.PlugIn):
         sd15_indices = []
         for i, p in enumerate(MODEL_PRESETS):
             if p["arch"] == "sd15":
-                model_combo.append(str(i), p["label"])
+                model_combo.append(str(i), _model_label(p, "iclight"))
                 sd15_indices.append(i)
         if not sd15_indices:
             # Fallback: show all
             for i, p in enumerate(MODEL_PRESETS):
-                model_combo.append(str(i), p["label"])
+                model_combo.append(str(i), _model_label(p, "iclight"))
         _fav = _load_config().get("favourite_model", -1)
         if 0 <= _fav < len(MODEL_PRESETS) and model_combo.get_active_id() is None:
             model_combo.set_active_id(str(_fav))
@@ -12613,7 +12649,7 @@ class Spellcaster(Gimp.PlugIn):
         model_combo.set_tooltip_text("SDXL checkpoint model. SUPIR uses SDXL as its backbone.\nSelect the SDXL model that matches your content style.")
         for i, p in enumerate(MODEL_PRESETS):
             if p["arch"] == "sdxl":
-                model_combo.append(str(i), p["label"])
+                model_combo.append(str(i), _model_label(p, "supir"))
         _fav = _load_config().get("favourite_model", -1)
         if 0 <= _fav < len(MODEL_PRESETS) and model_combo.get_active_id() is None:
             model_combo.set_active_id(str(_fav))
@@ -13252,7 +13288,8 @@ class Spellcaster(Gimp.PlugIn):
                            "klein_dialog", "klein_ref_dialog", "pulid_dialog"]:
             saved = _load_user_presets(dialog_key)
             for p in saved:
-                all_presets[f"{dialog_key}: {p['name']}"] = (dialog_key, p)
+                pname = p.get("name", "Unnamed") if isinstance(p, dict) else "Unnamed"
+                all_presets[f"{dialog_key}: {pname}"] = (dialog_key, p)
 
         if all_presets:
             for display_name, (dkey, preset) in all_presets.items():
