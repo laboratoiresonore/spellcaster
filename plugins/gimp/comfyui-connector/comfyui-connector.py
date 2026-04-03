@@ -12255,10 +12255,8 @@ class Spellcaster(Gimp.PlugIn):
                 neg_tv.get_buffer().set_text(cp.get("negative", "black and white, monochrome, grey, desaturated"))
                 denoise_spin.set_value(cp["denoise"])
                 cn_spin.set_value(cp["cn_strength"])
-        color_preset_combo.connect("changed", _on_color_preset_changed)
         bx.pack_start(color_preset_combo, False, False, 0)
-        _on_color_preset_changed(color_preset_combo)  # fill defaults from first preset
-        # Parameters
+        # Parameters (must be created BEFORE connecting preset combo changed signal)
         sgrid = Gtk.Grid(column_spacing=12, row_spacing=6)
         sgrid.attach(Gtk.Label(label="Lineart CN Strength:", xalign=1), 0, 0, 1, 1)
         cn_spin = Gtk.SpinButton.new_with_range(0.3, 1.0, 0.05)
@@ -12348,6 +12346,9 @@ class Spellcaster(Gimp.PlugIn):
         _col_top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         _col_top.pack_end(_col_auto_btn, False, False, 0)
         bx.pack_start(_col_top, False, False, 0)
+        # Connect preset combo AFTER all widgets exist
+        color_preset_combo.connect("changed", _on_color_preset_changed)
+        _on_color_preset_changed(color_preset_combo)  # fill defaults
         bx.show_all()
         last = _SESSION.get("colorize")
         if last:
