@@ -3962,20 +3962,24 @@ UPSCALE_PRESETS = {
     "8x NMKD Faces (portraits)": "8x_NMKD-Faces_160000_G.pth",
 }
 
-def _build_upscale(image_filename, model_name):
-    """Upscale image using a super-resolution model.
+def _build_upscale(image_filename, model_name, upscale_factor=1.5):
+    """Upscale image using a super-resolution model with controllable factor.
 
-    Pipeline: LoadImage → UpscaleModelLoader → ImageUpscaleWithModel → SaveImage
+    Pipeline: LoadImage → UpscaleModelLoader → ImageUpscaleWithModelByFactor → SaveImage
+
+    upscale_factor (default 1.5): Controls output scale. Unlike the native 4x/8x
+    model output, this lets you choose any factor (e.g. 1.5x, 2x, 3x).
     """
     wf = {
         "1": {"class_type": "LoadImage",
               "inputs": {"image": image_filename}},
         "2": {"class_type": "UpscaleModelLoader",
               "inputs": {"model_name": model_name}},
-        "3": {"class_type": "ImageUpscaleWithModel",
+        "3": {"class_type": "ImageUpscaleWithModelByFactor",
               "inputs": {
                   "upscale_model": ["2", 0],
                   "image": ["1", 0],
+                  "scale_by": upscale_factor,
               }},
         "4": {"class_type": "SaveImage",
               "inputs": {"images": ["3", 0], "filename_prefix": "spellcaster_upscale"}},
@@ -4356,7 +4360,7 @@ def _build_photo_restore(image_filename, upscale_model, face_model, facedetectio
                           visibility, codeformer_weight, sharpen_radius, sigma, alpha):
     """Full photo restoration: Upscale → Face Restore → Sharpen.
 
-    Pipeline: LoadImage → UpscaleModelLoader → ImageUpscaleWithModel
+    Pipeline: LoadImage → UpscaleModelLoader → ImageUpscaleWithModelByFactor(1.5x)
               → ReActorRestoreFace → ImageSharpen → SaveImage
     """
     wf = {
@@ -4364,10 +4368,11 @@ def _build_photo_restore(image_filename, upscale_model, face_model, facedetectio
               "inputs": {"image": image_filename}},
         "2": {"class_type": "UpscaleModelLoader",
               "inputs": {"model_name": upscale_model}},
-        "3": {"class_type": "ImageUpscaleWithModel",
+        "3": {"class_type": "ImageUpscaleWithModelByFactor",
               "inputs": {
                   "upscale_model": ["2", 0],
                   "image": ["1", 0],
+                  "scale_by": 1.5,
               }},
         "4": {"class_type": "ReActorRestoreFace",
               "inputs": {
@@ -4479,16 +4484,20 @@ HALLUCINATE_PRESETS = {
 
 def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text, negative_text,
                                seed, denoise, cfg, steps=None,
+                               upscale_factor=1.5,
                                controlnet=None, controlnet_2=None):
     """Upscale + img2img at low denoise to hallucinate fine detail.
 
-    Pipeline: LoadImage → UpscaleModelLoader → ImageUpscaleWithModel
+    Pipeline: LoadImage → UpscaleModelLoader → ImageUpscaleWithModelByFactor(factor)
               → Model Loader → CLIPTextEncode(+/-)
               → [ControlNet 1] → [ControlNet 2]
               → VAEEncode → KSampler → VAEDecode → SaveImage
 
-    ControlNet (especially Tile) is highly recommended for hallucination:
-    it preserves the structure of the upscaled image while the AI adds detail.
+    upscale_factor (default 1.5): Controls the output scale. Unlike
+    ImageUpscaleWithModel which always outputs the model's native factor (4x/8x),
+    ImageUpscaleWithModelByFactor lets you specify the exact upscale ratio.
+    factor=1.5 on a 1000px image → 1500px output (instead of 4000px).
+    This prevents massive images that overwhelm VRAM and cause timeouts.
     """
     wf = {
         "1": {"class_type": "LoadImage",
@@ -4498,8 +4507,9 @@ def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text
     if upscale_model:
         wf["2"] = {"class_type": "UpscaleModelLoader",
                    "inputs": {"model_name": upscale_model}}
-        wf["3"] = {"class_type": "ImageUpscaleWithModel",
-                   "inputs": {"upscale_model": ["2", 0], "image": ["1", 0]}}
+        wf["3"] = {"class_type": "ImageUpscaleWithModelByFactor",
+                   "inputs": {"upscale_model": ["2", 0], "image": ["1", 0],
+                              "scale_by": upscale_factor}}
         img_ref = ["3", 0]
     else:
         img_ref = ["1", 0]
@@ -4664,33 +4674,17 @@ def _build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_
     }
 
     if scale_factor > 1.0 and upscale_model:
-        # Upscale with model to 4x, then scale to target dimensions
-        target_w = int(orig_width * scale_factor)
-        target_h = int(orig_height * scale_factor)
-        # Round to nearest 8 for latent compatibility
-        target_w = (target_w + 7) // 8 * 8
-        target_h = (target_h + 7) // 8 * 8
-
+        # Upscale with model using ImageUpscaleWithModelByFactor
+        # to the exact target factor (instead of always 4x then downscale)
         wf["2"] = {"class_type": "UpscaleModelLoader",
                    "inputs": {"model_name": upscale_model}}
-        wf["3"] = {"class_type": "ImageUpscaleWithModel",
+        wf["3"] = {"class_type": "ImageUpscaleWithModelByFactor",
                    "inputs": {
                        "upscale_model": ["2", 0],
                        "image": ["1", 0],
+                       "scale_by": scale_factor,
                    }}
-        if scale_factor < 4.0:
-            # Downscale from 4x to target
-            wf["3b"] = {"class_type": "ImageScale",
-                        "inputs": {
-                            "image": ["3", 0],
-                            "width": target_w,
-                            "height": target_h,
-                            "upscale_method": "lanczos",
-                            "crop": "disabled",
-                        }}
-            img_ref = ["3b", 0]
-        else:
-            img_ref = ["3", 0]
+        img_ref = ["3", 0]
     else:
         # 1x — no upscale, use original image directly
         img_ref = ["1", 0]
@@ -12470,14 +12464,14 @@ class Spellcaster(Gimp.PlugIn):
             wf = {
                 # Load source image
                 "1": {"class_type": "LoadImage", "inputs": {"image": uname}},
-                # Model A upscale
+                # Model A upscale (1.5x factor to control output size)
                 "10": {"class_type": "UpscaleModelLoader", "inputs": {"model_name": ma_file}},
-                "11": {"class_type": "ImageUpscaleWithModel", "inputs": {
-                    "upscale_model": ["10", 0], "image": ["1", 0]}},
-                # Model B upscale
+                "11": {"class_type": "ImageUpscaleWithModelByFactor", "inputs": {
+                    "upscale_model": ["10", 0], "image": ["1", 0], "scale_by": 1.5}},
+                # Model B upscale (same factor)
                 "20": {"class_type": "UpscaleModelLoader", "inputs": {"model_name": mb_file}},
-                "21": {"class_type": "ImageUpscaleWithModel", "inputs": {
-                    "upscale_model": ["20", 0], "image": ["1", 0]}},
+                "21": {"class_type": "ImageUpscaleWithModelByFactor", "inputs": {
+                    "upscale_model": ["20", 0], "image": ["1", 0], "scale_by": 1.5}},
                 # Blend the two upscaled results
                 "30": {"class_type": "ImageBlend", "inputs": {
                     "image1": ["11", 0], "image2": ["21", 0],
@@ -12723,11 +12717,23 @@ class Spellcaster(Gimp.PlugIn):
         model_combo.set_active(0)
         model_combo.set_hexpand(True)
         hb2.pack_start(model_combo, True, True, 0); bx.pack_start(hb2, False, False, 0)
+        # Scale factor
+        hb3 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb3.pack_start(Gtk.Label(label="Scale factor:"), False, False, 0)
+        scale_sp = Gtk.SpinButton.new_with_range(1.0, 8.0, 0.5)
+        scale_sp.set_value(1.5); scale_sp.set_digits(1)
+        scale_sp.set_tooltip_text("Output upscale factor.\n"
+                                   "1.5x = 50% larger (fast, good for most uses)\n"
+                                   "2.0x = double size\n"
+                                   "4.0x = full 4x upscale (slow, large output)")
+        hb3.pack_start(scale_sp, False, False, 0); bx.pack_start(hb3, False, False, 0)
         bx.pack_start(Gtk.Label(label="Upscales image using a super-resolution model.\nResult is imported as a new layer."), False, False, 4)
         bx.show_all()
         last = _SESSION.get("upscale")
         if last and "model_id" in last:
             model_combo.set_active_id(last["model_id"])
+        if last and "scale" in last:
+            scale_sp.set_value(last["scale"])
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
@@ -12738,7 +12744,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.message("Please select an upscale model (not 'none').")
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
-        _SESSION["upscale"] = {"model_id": preset_key}
+        upscale_factor = scale_sp.get_value()
+        _SESSION["upscale"] = {"model_id": preset_key, "scale": upscale_factor}
         _save_session()
         dlg.destroy()
         try:
@@ -12746,7 +12753,7 @@ class Spellcaster(Gimp.PlugIn):
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_upscale_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
-            wf = _build_upscale(uname, model_name)
+            wf = _build_upscale(uname, model_name, upscale_factor=upscale_factor)
             results = _run_with_spinner("Upscale: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
             for i, (fn, sf, ft) in enumerate(results):
@@ -13831,6 +13838,16 @@ class Spellcaster(Gimp.PlugIn):
         up_combo.set_active(0)
         up_combo.set_hexpand(True)
         hb3.pack_start(up_combo, True, True, 0); bx.pack_start(hb3, False, False, 0)
+        # Upscale factor
+        hb_sf = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb_sf.pack_start(Gtk.Label(label="Scale factor:"), False, False, 0)
+        up_factor_sp = Gtk.SpinButton.new_with_range(1.0, 8.0, 0.5)
+        up_factor_sp.set_value(1.5); up_factor_sp.set_digits(1)
+        up_factor_sp.set_tooltip_text("Output upscale factor.\n"
+                                       "1.5x = 50% larger (fast, recommended)\n"
+                                       "2.0x = double size\n"
+                                       "4.0x = full 4x (slow, may timeout on large images)")
+        hb_sf.pack_start(up_factor_sp, False, False, 0); bx.pack_start(hb_sf, False, False, 0)
         # Checkpoint model dropdown
         bx.pack_start(Gtk.Label(label="Checkpoint Model:", xalign=0), False, False, 0)
         model_combo = Gtk.ComboBoxText()
@@ -14004,10 +14021,11 @@ class Spellcaster(Gimp.PlugIn):
         cn2_mode = cn_combo_2.get_active_id() if cn_combo_2 else "Off"
         cn2 = {"mode": cn2_mode, "strength": cn_strength_2.get_value(),
                 "start_percent": 0.0, "end_percent": 1.0} if cn2_mode != "Off" else None
+        upscale_factor = up_factor_sp.get_value()
         _SESSION["detail_hallucinate"] = {
             "detail_id": detail_key, "up_id": up_key, "model_idx": idx,
             "prompt": prompt, "negative": negative,
-            "runs": runs,
+            "runs": runs, "scale": upscale_factor,
         }
         _save_session()
         dlg.destroy()
@@ -14021,6 +14039,7 @@ class Spellcaster(Gimp.PlugIn):
                 wf = _build_detail_hallucinate(uname, upscale_model, preset, prompt, negative,
                                                 seed, h_preset["denoise"], h_preset["cfg"],
                                                 steps=h_preset.get("steps"),
+                                                upscale_factor=upscale_factor,
                                                 controlnet=cn1, controlnet_2=cn2)
                 label = f"Detail Hallucinate run {run_i+1}/{runs}" if runs > 1 else "Detail Hallucinate"
                 _wf = wf
