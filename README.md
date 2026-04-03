@@ -57,7 +57,7 @@ It works like any other filter in your editing software. Select an area, pick a 
   <tr>
     <td align="center" width="25%"><img src="assets/demo_step1_inpaint.png" alt="Step 1: Select area" width="100%"/><br/><sub><strong>1. Select Area</strong><br/>Load or generate an image, add a mask over the region to fix for localized changes</sub></td>
     <td align="center" width="25%"><img src="assets/demo_step2_inpaint.png" alt="Step 2: Pick preset" width="100%"/><br/><sub><strong>2. Pick Preset</strong><br/>Choose a refinement (e.g. Restyling)</sub></td>
-    <td align="center" width="25%"><img src="assets/demo_step3_inpaint.png" alt="Step 3: Generate" width="100%"/><br/><sub><strong>3. Generate</strong><br/>AI regenerates with any model you choose, preconfigured with personalizable prompts templates</sub></td>
+    <td align="center" width="25%"><img src="assets/demo_step3_inpaint.png" alt="Step 3: Generate" width="100%"/><br/><sub><strong>3. Generate</strong><br/>AI regenerates with preconfigured, optimized and personalizable templates</sub></td>
     <td align="center" width="25%"><img src="assets/demo_step4_inpaint.png" alt="Step 4: Result" width="100%"/><br/><sub><strong>4. Result</strong><br/>Seamless refinement as a new layer that you can blend any way you like</sub></td>
   </tr>
 </table>
