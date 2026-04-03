@@ -4003,56 +4003,115 @@ def _build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
                      controlnet=None):
     """Outpaint: extend the canvas by padding and inpainting the new area.
 
-    Pipeline: LoadImage → ImagePadForOutpaint → VAEEncode → SetLatentNoiseMask
-              → [ControlNet] → KSampler → VAEDecode → SaveImage
+    Two pipelines depending on architecture:
 
-    ImagePadForOutpaint outputs [0]=padded image, [1]=mask for the new area.
+    Flux 2 Klein (★ RECOMMENDED — best outpaint quality):
+      LoadImage → ImagePadForOutpaint → VAEEncode → ReferenceLatent
+      → CLIPLoader(flux2) → CLIPTextEncode → ConditioningZeroOut
+      → ReferenceLatent(pos) + ReferenceLatent(neg) → CFGGuider
+      → Flux2Scheduler → EmptyFlux2LatentImage → SamplerCustomAdvanced
+      → VAEDecode → SaveImage
+      Uses ReferenceLatent to "show" Flux the existing content so it
+      generates seamless continuation. SetLatentNoiseMask ensures only
+      the new area is generated.
+
+    Standard (SD1.5/SDXL/etc):
+      LoadImage → ImagePadForOutpaint → VAEEncode → SetLatentNoiseMask
+      → KSampler(denoise=0.85) → VAEDecode → SaveImage
     """
+    arch = preset.get("arch", "sdxl")
+    is_klein = arch == "flux2klein"
+
     loader_wf, model_ref, clip_ref, vae_ref = _make_model_loader(preset, "1")
     wf = dict(loader_wf)
     wf, model_ref, clip_ref = _inject_loras(wf, loras or [], "1", model_ref, clip_ref)
-    wf.update({
-        "2": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": prompt_text, "clip": clip_ref}},
-        "3": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": negative_text, "clip": clip_ref}},
-        "4": {"class_type": "LoadImage",
-              "inputs": {"image": image_filename}},
-        "5": {"class_type": "ImagePadForOutpaint",
-              "inputs": {
-                  "image": ["4", 0],
-                  "left": left,
-                  "top": top,
-                  "right": right,
-                  "bottom": bottom,
-                  "feathering": feathering,
-              }},
-    })
+
+    # Common: load image and pad
+    wf["4"] = {"class_type": "LoadImage", "inputs": {"image": image_filename}}
+    wf["5"] = {"class_type": "ImagePadForOutpaint", "inputs": {
+        "image": ["4", 0], "left": left, "top": top,
+        "right": right, "bottom": bottom, "feathering": feathering,
+    }}
+
     padded_ref = _ensure_mod16(wf, ["5", 0], preset, "5s")
-    wf.update({
-        "6": {"class_type": "VAEEncode",
-              "inputs": {"pixels": padded_ref, "vae": vae_ref}},
-        "7": {"class_type": "SetLatentNoiseMask",
-              "inputs": {"samples": ["6", 0], "mask": ["5", 1]}},
-        "8": {"class_type": "KSampler",
-              "inputs": {
-                  "model": model_ref, "positive": ["2", 0], "negative": ["3", 0],
-                  "latent_image": ["7", 0], "seed": seed,
-                  "steps": preset["steps"], "cfg": preset["cfg"],
-                  "sampler_name": preset["sampler"], "scheduler": preset["scheduler"],
-                  # Outpaint uses high denoise (0.85) — NOT 1.0.
-                  # denoise=1.0 replaces the entire latent with noise (ignoring mask).
-                  # 0.85 heavily transforms the padded area while the mask + low noise
-                  # on the original area keeps it mostly unchanged.
-                  # ImagePadForOutpaint fills new pixels with feathered edge colors,
-                  # giving KSampler a starting point to generate from.
-                  "denoise": 0.85,
-              }},
-        "9": {"class_type": "VAEDecode",
-              "inputs": {"samples": ["8", 0], "vae": vae_ref}},
-        "10": {"class_type": "SaveImage",
-               "inputs": {"images": ["9", 0], "filename_prefix": "spellcaster_outpaint"}},
-    })
+
+    if is_klein:
+        # ── Flux 2 Klein outpaint pipeline ──────────────────────────────
+        # Encode the padded image to latent for the reference
+        wf["6"] = {"class_type": "VAEEncode",
+                   "inputs": {"pixels": padded_ref, "vae": vae_ref}}
+
+        # Positive conditioning with reference to the existing image latent
+        wf["2"] = {"class_type": "CLIPTextEncode",
+                   "inputs": {"text": prompt_text, "clip": clip_ref}}
+        wf["3"] = {"class_type": "ConditioningZeroOut",
+                   "inputs": {"conditioning": ["2", 0]}}
+
+        # ReferenceLatent wraps conditioning with the image latent
+        # This is KEY — it tells Flux "here's what already exists, continue it"
+        wf["20"] = {"class_type": "ReferenceLatent",
+                    "inputs": {"conditioning": ["2", 0], "latent": ["6", 0]}}
+        wf["21"] = {"class_type": "ReferenceLatent",
+                    "inputs": {"conditioning": ["3", 0], "latent": ["6", 0]}}
+
+        # Get padded image dimensions for the scheduler + empty latent
+        wf["25"] = {"class_type": "GetImageSize+",
+                    "inputs": {"image": padded_ref}}
+
+        # Flux 2 sampling pipeline
+        wf["30"] = {"class_type": "CFGGuider",
+                    "inputs": {"model": model_ref, "positive": ["20", 0],
+                               "negative": ["21", 0], "cfg": 1.0}}
+        wf["31"] = {"class_type": "KSamplerSelect",
+                    "inputs": {"sampler_name": "euler"}}
+        wf["32"] = {"class_type": "Flux2Scheduler",
+                    "inputs": {"steps": preset.get("steps", 20),
+                               "width": ["25", 0], "height": ["25", 1]}}
+        wf["33"] = {"class_type": "RandomNoise",
+                    "inputs": {"noise_seed": seed}}
+
+        # Empty latent at the padded size, masked for outpaint
+        wf["34"] = {"class_type": "EmptyFlux2LatentImage",
+                    "inputs": {"width": ["25", 0], "height": ["25", 1], "batch_size": 1}}
+        wf["35"] = {"class_type": "SetLatentNoiseMask",
+                    "inputs": {"samples": ["34", 0], "mask": ["5", 1]}}
+
+        # Sample
+        wf["40"] = {"class_type": "SamplerCustomAdvanced",
+                    "inputs": {"noise": ["33", 0], "guider": ["30", 0],
+                               "sampler": ["31", 0], "sigmas": ["32", 0],
+                               "latent_image": ["35", 0]}}
+
+        # Decode + save
+        wf["9"] = {"class_type": "VAEDecode",
+                   "inputs": {"samples": ["40", 0], "vae": vae_ref}}
+        wf["10"] = {"class_type": "SaveImage",
+                    "inputs": {"images": ["9", 0], "filename_prefix": "spellcaster_outpaint"}}
+
+    else:
+        # ── Standard outpaint pipeline (SD1.5/SDXL/etc) ────────────────
+        wf.update({
+            "2": {"class_type": "CLIPTextEncode",
+                  "inputs": {"text": prompt_text, "clip": clip_ref}},
+            "3": {"class_type": "CLIPTextEncode",
+                  "inputs": {"text": negative_text, "clip": clip_ref}},
+            "6": {"class_type": "VAEEncode",
+                  "inputs": {"pixels": padded_ref, "vae": vae_ref}},
+            "7": {"class_type": "SetLatentNoiseMask",
+                  "inputs": {"samples": ["6", 0], "mask": ["5", 1]}},
+            "8": {"class_type": "KSampler",
+                  "inputs": {
+                      "model": model_ref, "positive": ["2", 0], "negative": ["3", 0],
+                      "latent_image": ["7", 0], "seed": seed,
+                      "steps": preset["steps"], "cfg": preset["cfg"],
+                      "sampler_name": preset["sampler"], "scheduler": preset["scheduler"],
+                      "denoise": 0.85,
+                  }},
+            "9": {"class_type": "VAEDecode",
+                  "inputs": {"samples": ["8", 0], "vae": vae_ref}},
+            "10": {"class_type": "SaveImage",
+                   "inputs": {"images": ["9", 0], "filename_prefix": "spellcaster_outpaint"}},
+        })
 
     # ── ControlNet (optional — Canny/Lineart for edge consistency) ──
     if controlnet and controlnet.get("mode", "Off") != "Off":
@@ -9903,6 +9962,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-pulid-flux": "pulid_flux",
             "spellcaster-klein-img2img": "klein_flux2",
             "spellcaster-klein-img2img-ref": "klein_flux2",
+            "spellcaster-klein-outpaint": "klein_flux2",
             "spellcaster-wan-i2v": "wan_i2v",
             "spellcaster-rembg": "rembg",
             "spellcaster-embed-watermark": None,
@@ -9955,6 +10015,8 @@ class Spellcaster(Gimp.PlugIn):
                                              "Hide encrypted metadata inside image pixels (LSB steganography)"),
             "spellcaster-read-watermark": ("Read Invisible Watermark...", self._run_read_watermark,
                                             "Extract hidden metadata from a watermarked image"),
+            "spellcaster-klein-outpaint": ("Klein Outpaint (extend canvas)...", self._run_klein_outpaint,
+                                          "Extend canvas using Flux 2 Klein — best outpaint quality"),
             "spellcaster-klein-img2img-ref": ("Klein Image Editor + Reference...", self._run_klein_ref,
                                               "Edit image with Flux 2 Klein using a reference image"),
             "spellcaster-wan-i2v": ("Wan 2.2 Image to Video...", self._run_wan_i2v,
@@ -10028,6 +10090,7 @@ class Spellcaster(Gimp.PlugIn):
 
             # Klein / Flux 2
             "spellcaster-klein-img2img":     "<Image>/Filters/Spellcaster Klein",
+            "spellcaster-klein-outpaint": "<Image>/Filters/Spellcaster Klein",
             "spellcaster-klein-img2img-ref": "<Image>/Filters/Spellcaster Klein",
 
             # Video
@@ -10675,6 +10738,141 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Klein+Ref Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    def _run_klein_outpaint(self, procedure, run_mode, image, drawables, config, data):
+        """Klein Outpaint: extend canvas using Flux 2 Klein — best outpaint quality."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+        dlg = Gtk.Dialog(title="Spellcaster — Klein Outpaint")
+        dlg.set_default_size(520, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Extend", Gtk.ResponseType.OK)
+        _style_dialog_buttons(dlg)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+
+        header = _make_branded_header()
+        if header:
+            bx.pack_start(header, False, False, 0)
+
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
+        hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+
+        # Klein model selector
+        bx.pack_start(Gtk.Label(label="Klein Model:", xalign=0), False, False, 0)
+        klein_combo = Gtk.ComboBoxText()
+        klein_combo.set_tooltip_text("Flux 2 Klein model. 9B gives the best outpaint quality.")
+        for key in KLEIN_MODELS:
+            klein_combo.append(key, key)
+        klein_combo.set_active(0)
+        bx.pack_start(klein_combo, False, False, 0)
+
+        # Purpose presets (reuse from outpaint)
+        KLEIN_OUTPAINT_PRESETS = {
+            "(general extension)": "seamless continuation of the existing scene, matching lighting, style, and color palette, natural extension, consistent perspective",
+            "Complete person / body": "natural continuation of the human body, correct anatomy, matching skin tone and clothing, same pose direction, realistic proportions",
+            "Extend landscape / sky": "seamless landscape continuation, matching horizon, consistent sky, natural terrain, same vegetation, coherent depth of field",
+            "Complete cut-off object": "natural completion of the cut-off object, matching material and texture, correct proportions, seamless extension",
+            "Extend interior / room": "seamless room extension, matching wall color, consistent floor, same furniture style, correct perspective",
+            "Add more background": "smooth background extension, matching colors and blur, consistent depth of field, natural continuation",
+            "Widen panorama": "panoramic scene extension, wide angle continuation, matching horizon, consistent sky and ground",
+        }
+        bx.pack_start(Gtk.Label(label="Purpose:", xalign=0), False, False, 0)
+        purpose_combo = Gtk.ComboBoxText()
+        purpose_combo.set_tooltip_text("What you're extending — auto-fills an optimized prompt.")
+        for label in KLEIN_OUTPAINT_PRESETS:
+            purpose_combo.append(label, label)
+        purpose_combo.set_active(0)
+        bx.pack_start(purpose_combo, False, False, 0)
+
+        # Prompt
+        bx.pack_start(Gtk.Label(label="Prompt:", xalign=0), False, False, 0)
+        prompt_tv = Gtk.TextView(); prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        prompt_tv.set_size_request(-1, 60)
+        sw = Gtk.ScrolledWindow(); sw.add(prompt_tv); sw.set_min_content_height(60)
+        bx.pack_start(sw, False, False, 0)
+
+        def _on_purpose(combo):
+            key = combo.get_active_id()
+            if key and key in KLEIN_OUTPAINT_PRESETS:
+                prompt_tv.get_buffer().set_text(KLEIN_OUTPAINT_PRESETS[key])
+        purpose_combo.connect("changed", _on_purpose)
+        _on_purpose(purpose_combo)
+
+        # Padding
+        grid = Gtk.Grid(column_spacing=12, row_spacing=6)
+        grid.attach(Gtk.Label(label="Left:", xalign=1), 0, 0, 1, 1)
+        left_sp = Gtk.SpinButton.new_with_range(0, 2048, 16); left_sp.set_value(0)
+        grid.attach(left_sp, 1, 0, 1, 1)
+        grid.attach(Gtk.Label(label="Top:", xalign=1), 2, 0, 1, 1)
+        top_sp = Gtk.SpinButton.new_with_range(0, 2048, 16); top_sp.set_value(0)
+        grid.attach(top_sp, 3, 0, 1, 1)
+        grid.attach(Gtk.Label(label="Right:", xalign=1), 0, 1, 1, 1)
+        right_sp = Gtk.SpinButton.new_with_range(0, 2048, 16); right_sp.set_value(0)
+        grid.attach(right_sp, 1, 1, 1, 1)
+        grid.attach(Gtk.Label(label="Bottom:", xalign=1), 2, 1, 1, 1)
+        bottom_sp = Gtk.SpinButton.new_with_range(0, 2048, 16); bottom_sp.set_value(256)
+        grid.attach(bottom_sp, 3, 1, 1, 1)
+        grid.attach(Gtk.Label(label="Feathering:", xalign=1), 0, 2, 1, 1)
+        feather_sp = Gtk.SpinButton.new_with_range(0, 256, 1); feather_sp.set_value(40)
+        grid.attach(feather_sp, 1, 2, 1, 1)
+        grid.attach(Gtk.Label(label="Steps:", xalign=1), 2, 2, 1, 1)
+        steps_sp = Gtk.SpinButton.new_with_range(4, 50, 1); steps_sp.set_value(20)
+        grid.attach(steps_sp, 3, 2, 1, 1)
+        bx.pack_start(grid, False, False, 0)
+
+        # Seed
+        hb_seed = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb_seed.pack_start(Gtk.Label(label="Seed:"), False, False, 0)
+        seed_sp = Gtk.SpinButton.new_with_range(-1, 2**32-1, 1); seed_sp.set_value(-1)
+        hb_seed.pack_start(seed_sp, True, True, 0); bx.pack_start(hb_seed, False, False, 0)
+
+        bx.show_all()
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        srv = se.get_text().strip(); _propagate_server_url(srv)
+        klein_key = klein_combo.get_active_id() or "Klein 9B"
+        pbuf = prompt_tv.get_buffer()
+        prompt = pbuf.get_text(pbuf.get_start_iter(), pbuf.get_end_iter(), False)
+        pad_l = int(left_sp.get_value()); pad_t = int(top_sp.get_value())
+        pad_r = int(right_sp.get_value()); pad_b = int(bottom_sp.get_value())
+        feathering = int(feather_sp.get_value())
+        steps = int(steps_sp.get_value())
+        base_seed = int(seed_sp.get_value())
+        if base_seed < 0:
+            base_seed = random.randint(0, 2**32 - 1)
+        dlg.destroy()
+        try:
+            _update_spinner_status("Klein Outpaint: exporting image...")
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_klein_out_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+
+            # Build Klein-specific outpaint using the _build_outpaint with flux2klein preset
+            km = KLEIN_MODELS[klein_key]
+            preset = {
+                "arch": "flux2klein", "ckpt": km["unet"],
+                "steps": steps, "cfg": 1.0, "denoise": 1.0,
+                "sampler": "euler", "scheduler": "simple",
+            }
+            wf = _build_outpaint(uname, preset, prompt, "", base_seed,
+                                  pad_l, pad_t, pad_r, pad_b, feathering)
+            results = _run_with_spinner("Klein Outpaint: processing...",
+                                        lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
+            for i, (fn, sf, ft) in enumerate(results):
+                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+                                        f"Klein Outpaint #{i+1}")
+            Gimp.displays_flush()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Klein Outpaint Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     def _run_embed_watermark(self, procedure, run_mode, image, drawables, config, data):
