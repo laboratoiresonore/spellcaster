@@ -30,7 +30,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-VERSION = "1.2"
+VERSION = "1.3"
 GITHUB_RAW = "https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main"
 GITHUB_API = "https://api.github.com/repos/laboratoiresonore/spellcaster/commits?sha=main&per_page=1"
 GITHUB_TREE = "https://api.github.com/repos/laboratoiresonore/spellcaster/git/trees/main?recursive=1"
@@ -784,13 +784,81 @@ def update_darktable_plugin(dt_dir: Path) -> bool:
 
 # ─── Main ───────────────────────────────────────────────────────────────────
 
+def _check_self_update():
+    """Check if a newer version of this updater exists on GitHub.
+
+    Fetches the remote manual_update.py, extracts its VERSION string,
+    and compares with the local VERSION. If newer, offers to download
+    and re-launch the updated version.
+    """
+    try:
+        url = f"{GITHUB_RAW}/manual_update.py"
+        req = urllib.request.Request(url, headers={"User-Agent": "spellcaster-updater/self-check"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            remote_src = resp.read().decode("utf-8", errors="replace")
+        # Extract VERSION = "x.y" from the remote source
+        import re
+        m = re.search(r'VERSION\s*=\s*"([^"]+)"', remote_src)
+        if not m:
+            return
+        remote_ver = m.group(1)
+        if remote_ver == VERSION:
+            return  # same version
+        # Compare as tuples: "1.2" < "1.3"
+        def ver_tuple(v):
+            parts = []
+            for p in v.replace("-", ".").split("."):
+                try:
+                    parts.append(int(p))
+                except ValueError:
+                    parts.append(0)
+            return tuple(parts)
+        if ver_tuple(remote_ver) <= ver_tuple(VERSION):
+            return  # not newer
+
+        print(f"\n  {Y}A newer version of this updater is available: v{remote_ver} (you have v{VERSION}){X}")
+
+        # If running as frozen exe, download the new exe from GitHub releases
+        if getattr(sys, 'frozen', False):
+            print(f"  {B}Downloading updated updater from GitHub releases...{X}")
+            release_url = GITHUB_RAW.replace("/raw.githubusercontent.com/", "/github.com/").replace("/main", "/releases/latest/download/spellcaster-manual-update.exe")
+            # Use GitHub API to find latest release asset
+            try:
+                api_url = GITHUB_RAW.split("/raw.githubusercontent.com/")[0]
+                repo = GITHUB_RAW.split("raw.githubusercontent.com/")[1].split("/main")[0]
+                release_api = f"https://api.github.com/repos/{repo}/releases/latest"
+                req2 = urllib.request.Request(release_api, headers={"User-Agent": "spellcaster-updater"})
+                with urllib.request.urlopen(req2, timeout=15) as resp2:
+                    release = json.loads(resp2.read())
+                for asset in release.get("assets", []):
+                    if "manual-update" in asset["name"].lower():
+                        dl_url = asset["browser_download_url"]
+                        new_exe = Path(sys.executable).with_name("spellcaster-manual-update-new.exe")
+                        print(f"  {D}Downloading: {dl_url}{X}")
+                        urllib.request.urlretrieve(dl_url, new_exe)
+                        print(f"  {G}Downloaded v{remote_ver} → {new_exe}{X}")
+                        print(f"  {Y}Please close this window and run the new updater.{X}")
+                        print(f"  {D}Then delete the old one.{X}\n")
+                        return
+            except Exception as e:
+                print(f"  {D}Could not download exe: {e}{X}")
+        else:
+            # Running from source — just inform
+            print(f"  {D}Run 'git pull' to get the latest version.{X}\n")
+    except Exception:
+        pass  # Network issues — skip silently
+
+
 def main():
     banner()
 
     print(f"  {B}System:{X} {platform.system()} {platform.release()}")
     print(f"  {B}User:{X}   {Path.home()}")
     sha = get_latest_sha()
-    print(f"  {B}Latest:{X} {C}{sha}{X}\n")
+    print(f"  {B}Latest:{X} {C}{sha}{X}")
+    print(f"  {B}Updater:{X} v{VERSION}")
+    _check_self_update()
+    print()
 
     # ══════════════════════════════════════════════════════════════════════
     # GIMP
