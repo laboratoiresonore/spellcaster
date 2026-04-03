@@ -2549,13 +2549,15 @@ def _fetch_wan_video_models(server):
 def _fetch_wan_video_loras(server):
     """Fetch Wan LoRAs from the server (via LoraLoaderModelOnly).
 
-    Returns only LoRAs whose path starts with 'Wan/' — i.e. those
-    in the dedicated loras/Wan/ subfolder on the ComfyUI server.
+    Returns LoRAs in Wan-related folders. Checks both slash directions
+    since ComfyUI returns OS-native separators (backslash on Windows).
     """
     try:
         info = _api_get(server, "/object_info/LoraLoaderModelOnly")
         all_loras = info["LoraLoaderModelOnly"]["input"]["required"]["lora_name"][0]
-        return [l for l in all_loras if l.startswith("Wan/") or l.startswith("Wan/")]
+        prefixes = ["WAN\\", "WAN/", "Wan\\", "Wan/", "wan\\", "wan/",
+                     "Wan-2.2-I2V\\", "Wan-2.2-I2V/"]
+        return [l for l in all_loras if any(l.startswith(p) for p in prefixes)]
     except Exception:
         return []
 
