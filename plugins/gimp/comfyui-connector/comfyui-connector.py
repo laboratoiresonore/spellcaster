@@ -3404,8 +3404,8 @@ def _build_img2img(image_filename, preset, prompt_text, negative_text, seed,
         wf["6"]["inputs"]["positive"] = ["22", 0]
         wf["6"]["inputs"]["negative"] = ["22", 1]
 
-        # Save ControlNet preprocessor output as debug image
-        if cn_image_ref != ["4", 0]:  # only if a preprocessor was used
+        # Save ControlNet preprocessor output as debug image (if enabled)
+        if cn_image_ref != ["4", 0] and _load_config().get("debug_images", False):
             wf["25"] = {"class_type": "SaveImage",
                         "inputs": {"images": cn_image_ref, "filename_prefix": "spellcaster_cn_debug"}}
 
@@ -3563,8 +3563,8 @@ def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_
         wf["8"]["inputs"]["positive"] = ["22", 0]
         wf["8"]["inputs"]["negative"] = ["22", 1]
 
-        # Save ControlNet preprocessor output as debug image
-        if cn_image_ref != ["4", 0]:  # only if a preprocessor was used
+        # Save ControlNet preprocessor output as debug image (if enabled)
+        if cn_image_ref != ["4", 0] and _load_config().get("debug_images", False):
             wf["25"] = {"class_type": "SaveImage",
                         "inputs": {"images": cn_image_ref, "filename_prefix": "spellcaster_cn_debug"}}
 
@@ -11336,6 +11336,16 @@ class Spellcaster(Gimp.PlugIn):
             "to preserve, or if you have no internet connection.")
         bx.pack_start(auto_update_cb, False, False, 0)
 
+        # ── Debug images toggle ──
+        debug_cb = Gtk.CheckButton(label="Save ControlNet debug layers (invisible)")
+        debug_cb.set_active(cfg.get("debug_images", False))
+        debug_cb.set_tooltip_text(
+            "When enabled, ControlNet preprocessor output (canny edges, depth map,\n"
+            "pose skeleton) is saved as an invisible layer in your image.\n"
+            "Toggle the layer visibility to inspect what the AI 'sees'.\n\n"
+            "Disable to keep your layer stack clean.")
+        bx.pack_start(debug_cb, False, False, 0)
+
         # ── Info ──
         bx.pack_start(Gtk.Separator(), False, False, 5)
         info_label = Gtk.Label()
@@ -11357,6 +11367,7 @@ class Spellcaster(Gimp.PlugIn):
         new_url = server_entry.get_text().strip().rstrip("/")
         new_timeout = int(timeout_spin.get_value())
         new_auto_update = auto_update_cb.get_active()
+        new_debug = debug_cb.get_active()
         fav_id = fav_combo.get_active_id()
         new_fav = int(fav_id) if fav_id and fav_id != "-1" else -1
         dlg.destroy()
@@ -11365,6 +11376,7 @@ class Spellcaster(Gimp.PlugIn):
             "server_url": new_url,
             "timeout": new_timeout,
             "auto_update": new_auto_update,
+            "debug_images": new_debug,
             "favourite_model": new_fav,
         })
         _propagate_server_url(new_url)
