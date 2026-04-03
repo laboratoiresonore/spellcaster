@@ -4609,42 +4609,113 @@ def _build_iclight(image_filename, ckpt_name, prompt, negative, seed,
 # ── SUPIR AI Restoration builder ──────────────────────────────────────
 
 def _build_supir(image_filename, supir_model, sdxl_model, prompt, seed,
-                  denoise=0.3, steps=20, scale_by=1.0):
-    """SUPIR AI restoration using the all-in-one SUPIR_Upscale node.
+                  denoise=0.3, steps=45, scale_by=1.0):
+    """SUPIR AI restoration — full granular pipeline for maximum quality.
 
-    Much simpler than the manual pipeline — handles model loading,
-    encoding, sampling, and decoding internally.
+    Pipeline (5 stages):
+      1. SUPIR_model_loader    — loads SUPIR weights + SDXL backbone
+      2. SUPIR_first_stage     — stage-1 denoising (removes compression artifacts,
+                                  stabilizes colors before the main restoration pass)
+      3. SUPIR_conditioner     — builds rich conditioning from positive + negative prompts
+      4. SUPIR_sample          — the main restoration: EDM sampler with start/end control
+                                  ramps, restore_cfg for fidelity, tiled for large images
+      5. SUPIR_decode          — tiled VAE decode back to pixels
+
+    Compared to the all-in-one SUPIR_Upscale node, this gives:
+      - Much better detail recovery (stage-1 pre-denoising)
+      - Proper CFG ramping (starts high for structure, drops for detail)
+      - Control scale ramping (gentle start, full strength mid-pass)
+      - Tiled sampling for large images without VRAM overflow
+      - Rich negative prompt engineering
     """
+    # Negative prompt engineered for maximum restoration quality
+    neg_prompt = (
+        "painting, illustration, drawing, art, sketch, anime, cartoon, 3d render, "
+        "CG, low quality, blurry, noisy, oversmoothed, plastic skin, washed out, "
+        "oversaturated, artifacts, compression, jpeg, watermark, text, logo, "
+        "deformed, distorted, disfigured, bad anatomy, extra limbs"
+    )
+
+    # Map denoise (0.0-1.0) to control_scale range:
+    # Low denoise (0.1-0.3) = faithful restoration, high (0.5-1.0) = creative
+    control_start = max(0.0, 1.0 - denoise * 1.5)  # e.g., 0.3 denoise → 0.55 control
+    control_end = min(1.0, denoise * 2.0 + 0.4)     # e.g., 0.3 denoise → 1.0 control
+
+    # CFG ramping: start higher for structure, end lower for natural detail
+    cfg_start = 4.0 + denoise * 2.0   # e.g., 0.3 → 4.6
+    cfg_end = max(1.5, 4.0 - denoise)  # e.g., 0.3 → 3.7
+
+    # Use tiled sampler for images > 1024px
+    sampler = "TiledRestoreEDMSampler" if scale_by >= 1.5 else "RestoreEDMSampler"
+
     wf = {
+        # Stage 0: Load input image
         "1": {"class_type": "LoadImage",
               "inputs": {"image": image_filename}},
-        "2": {"class_type": "SUPIR_Upscale",
-              "inputs": {
-                  "supir_model": supir_model,
-                  "sdxl_model": sdxl_model,
-                  "image": ["1", 0],
-                  "seed": seed,
-                  "resize_method": "lanczos",
-                  "scale_by": scale_by,
-                  "steps": steps,
-                  "restoration_scale": -1.0,
-                  "cfg_scale": 4.0,
-                  "a_prompt": prompt,
-                  "n_prompt": "bad quality, blurry, messy",
-                  "s_churn": 5,
-                  "s_noise": 1.003,
-                  "control_scale": denoise,
-                  "cfg_scale_start": 4.0,
-                  "control_scale_start": 0.0,
-                  "color_fix_type": "Wavelet",
-                  "keep_model_loaded": False,
-                  "use_tiled_vae": True,
-                  "encoder_tile_size_pixels": 512,
-                  "decoder_tile_size_latent": 64,
-                  "sampler": "RestoreEDMSampler",
-              }},
-        "3": {"class_type": "SaveImage",
-              "inputs": {"images": ["2", 0], "filename_prefix": "spellcaster_supir"}},
+
+        # Stage 1: Load SUPIR model + SDXL backbone
+        "10": {"class_type": "SUPIR_model_loader",
+               "inputs": {
+                   "supir_model": supir_model,
+                   "sdxl_model": sdxl_model,
+                   "fp8_unet": False,
+                   "diffusion_dtype": "auto",
+               }},
+
+        # Stage 2: First-stage denoising (pre-cleans the image)
+        # This removes compression artifacts and stabilizes before the main pass
+        "20": {"class_type": "SUPIR_first_stage",
+               "inputs": {
+                   "SUPIR_VAE": ["10", 1],
+                   "image": ["1", 0],
+                   "use_tiled_vae": True,
+                   "encoder_tile_size": 512,
+                   "decoder_tile_size": 64,
+                   "encoder_dtype": "auto",
+               }},
+
+        # Stage 3: Build conditioning from prompts
+        "30": {"class_type": "SUPIR_conditioner",
+               "inputs": {
+                   "SUPIR_model": ["10", 0],
+                   "latents": ["20", 2],
+                   "positive_prompt": prompt if prompt.strip() else "high quality, detailed, sharp focus, professional photograph, natural colors, clean",
+                   "negative_prompt": neg_prompt,
+               }},
+
+        # Stage 4: Main restoration sampling
+        "40": {"class_type": "SUPIR_sample",
+               "inputs": {
+                   "SUPIR_model": ["10", 0],
+                   "latents": ["20", 2],
+                   "positive": ["30", 0],
+                   "negative": ["30", 1],
+                   "seed": seed,
+                   "steps": steps,
+                   "cfg_scale_start": cfg_start,
+                   "cfg_scale_end": cfg_end,
+                   "EDM_s_churn": 5,
+                   "s_noise": 1.003,
+                   "DPMPP_eta": 1.0,
+                   "control_scale_start": control_start,
+                   "control_scale_end": control_end,
+                   "restore_cfg": -1.0,
+                   "keep_model_loaded": False,
+                   "sampler": sampler,
+               }},
+
+        # Stage 5: Tiled VAE decode
+        "50": {"class_type": "SUPIR_decode",
+               "inputs": {
+                   "SUPIR_VAE": ["20", 0],
+                   "latents": ["40", 0],
+                   "use_tiled_vae": True,
+                   "decoder_tile_size": 64,
+               }},
+
+        # Output
+        "60": {"class_type": "SaveImage",
+               "inputs": {"images": ["50", 0], "filename_prefix": "spellcaster_supir"}},
     }
     return wf
 
@@ -11131,9 +11202,9 @@ class Spellcaster(Gimp.PlugIn):
         denoise_spin.set_tooltip_text("Lower = more faithful to original, higher = more restoration.\nDefault: 0.3 (conservative). Try 0.5+ for heavily degraded images.")
         sgrid.attach(denoise_spin, 1, 0, 1, 1)
         sgrid.attach(Gtk.Label(label="Steps:", xalign=1), 0, 1, 1, 1)
-        steps_spin = Gtk.SpinButton.new_with_range(10, 50, 1)
-        steps_spin.set_value(20)
-        steps_spin.set_tooltip_text("Generation steps. Default: 20. More = better quality but slower.\nSUPIR is already slow, so 20 is usually enough.")
+        steps_spin = Gtk.SpinButton.new_with_range(10, 100, 5)
+        steps_spin.set_value(45)
+        steps_spin.set_tooltip_text("Restoration steps. Default: 45 for the full pipeline.\n20 = fast preview, 45 = production quality, 70+ = maximum detail.\nMore steps give finer restoration but take longer.")
         sgrid.attach(steps_spin, 1, 1, 1, 1)
         sgrid.attach(Gtk.Label(label="Seed:", xalign=1), 0, 2, 1, 1)
         seed_spin = Gtk.SpinButton.new_with_range(-1, 2**32-1, 1)
@@ -11145,7 +11216,7 @@ class Spellcaster(Gimp.PlugIn):
         prompt_tv = Gtk.TextView(); prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         prompt_tv.set_size_request(-1, 50)
         prompt_tv.set_tooltip_text("Describe the desired quality of the restored image.\nDefault works well. Add specific terms like 'portrait' or 'landscape' for better results.")
-        prompt_tv.get_buffer().set_text("high quality, detailed, sharp focus, professional")
+        prompt_tv.get_buffer().set_text("high quality, detailed, sharp focus, professional photograph, natural colors, clean, well-lit")
         sw = Gtk.ScrolledWindow(); sw.add(prompt_tv); sw.set_min_content_height(50)
         bx.pack_start(sw, False, False, 0)
         # Runs spinner
