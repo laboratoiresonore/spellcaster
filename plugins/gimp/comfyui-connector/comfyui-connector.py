@@ -4637,41 +4637,62 @@ CONTROLNET_POSE_MODELS = {
 # ── Merged ControlNet guide modes for img2img / inpaint integration ──
 CONTROLNET_GUIDE_MODES = {
     "Off": {"preprocessor": None, "cn_models": None},
-    "Canny (edges) — SD1.5 + SDXL": {
+    "Canny (edges) — SD1.5/SDXL/Flux": {
         "preprocessor": "CannyEdgePreprocessor",
         "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors",
                        "sdxl": "SDXL\\controlnet-canny-sdxl-1.0.safetensors",
-                       "zit": "SDXL\\controlnet-canny-sdxl-1.0.safetensors"},
+                       "illustrious": "SDXL\\controlnet-canny-sdxl-1.0.safetensors",
+                       "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors",
+                       "flux1dev": "control-lora-canny-rank256.safetensors",
+                       "flux2klein": "control-lora-canny-rank256.safetensors",
+                       "flux_kontext": "control-lora-canny-rank256.safetensors"},
     },
-    "Depth (spatial) — SD1.5 + SDXL": {
+    "Depth (spatial) — SD1.5/SDXL/Flux": {
         "preprocessor": "MiDaS-DepthMapPreprocessor",
         "cn_models": {"sd15": "control_v11f1p_sd15_depth_fp16.safetensors",
                        "sdxl": "SDXL\\controlnet-canny-sdxl-1.0.safetensors",
-                       "zit": "SDXL\\controlnet-canny-sdxl-1.0.safetensors"},
+                       "illustrious": "SDXL\\controlnet-canny-sdxl-1.0.safetensors",
+                       "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors",
+                       "flux1dev": "control-lora-depth-rank256.safetensors",
+                       "flux2klein": "control-lora-depth-rank256.safetensors",
+                       "flux_kontext": "control-lora-depth-rank256.safetensors"},
     },
-    "Lineart (drawing) — SD1.5 + SDXL": {
+    "Lineart (drawing) — SD1.5/SDXL": {
         "preprocessor": "LineArtPreprocessor",
         "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors",
                        "sdxl": "SDXL\\controlnet-canny-sdxl-1.0.safetensors",
-                       "zit": "SDXL\\controlnet-canny-sdxl-1.0.safetensors"},
+                       "illustrious": "SDXL\\controlnet-canny-sdxl-1.0.safetensors",
+                       "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
     },
-    "OpenPose (body) — SD1.5 + SDXL (dedicated models)": {
+    "OpenPose (body) — SD1.5/SDXL/Flux": {
         "preprocessor": "DWPreprocessor",
         "cn_models": {"sd15": "control_v11p_sd15_openpose_fp16.safetensors",
                        "sdxl": "OpenPoseXL2.safetensors",
-                       "zit": "SDXL\\controlnet-canny-sdxl-1.0.safetensors"},
+                       "illustrious": "noobaiXLControlnet_openposeModel.safetensors",
+                       "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors",
+                       "flux1dev": "flux-controlnet-openpose.safetensors",
+                       "flux2klein": "flux-controlnet-openpose.safetensors"},
     },
     "Scribble (sketch) — SD1.5 only": {
         "preprocessor": "ScribblePreprocessor",
-        "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors",
-                       "sdxl": "SDXL\\controlnet-canny-sdxl-1.0.safetensors",
-                       "zit": "SDXL\\controlnet-canny-sdxl-1.0.safetensors"},
+        "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors"},
     },
-    "Tile (detail upscale) — SD1.5 + SDXL (dedicated models)": {
+    "Tile (detail) — SD1.5/SDXL": {
         "preprocessor": None,
         "cn_models": {"sd15": "control_v11f1e_sd15_tile.pth",
                        "sdxl": "SDXL\\ttplanetSDXLControlnet_Tile_v20Fp16.safetensors",
-                       "zit": "SDXL\\controlnet-canny-sdxl-1.0.safetensors"},
+                       "illustrious": "SDXL\\ttplanetSDXLControlnet_Tile_v20Fp16.safetensors",
+                       "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
+    },
+    "Flux Union Pro (all modes) — Flux only": {
+        "preprocessor": None,  # Union handles preprocessing internally
+        "cn_models": {"flux1dev": "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors",
+                       "flux2klein": "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors",
+                       "flux_kontext": "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors"},
+    },
+    "ZIT Union (all modes) — ZIT only": {
+        "preprocessor": None,
+        "cn_models": {"zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
     },
 }
 
@@ -12647,8 +12668,14 @@ class Spellcaster(Gimp.PlugIn):
         """Spellcaster Settings: configure server URL, defaults, and preferences."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
-        GimpUi.init("spellcaster")
-        _apply_spellcaster_theme()
+        try:
+            GimpUi.init("spellcaster")
+        except Exception:
+            pass
+        try:
+            _apply_spellcaster_theme()
+        except Exception:
+            pass
         dlg = Gtk.Dialog(title="Spellcaster Settings")
         dlg.set_default_size(520, -1)
         dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
