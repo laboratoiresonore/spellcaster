@@ -359,13 +359,36 @@ def _session_to_values(key, image=None):
     seed = s.get("seed", -1)
     if seed < 0:
         seed = random.randint(0, 2**32 - 1)
+    # Style preset recall
+    style_preset = None
+    prompt_text = s.get("prompt", preset.get("prompt_hint", ""))
+    negative_text = s.get("negative", preset.get("negative_hint", ""))
+    loras = s.get("loras", [])
+    style_idx = s.get("style_idx", 0)
+    if style_idx and 0 < style_idx < len(IMG2IMG_STYLE_PRESETS):
+        style_preset = IMG2IMG_STYLE_PRESETS[style_idx]
+        if style_preset["prompt"]:
+            prompt_text = (prompt_text + ", " + style_preset["prompt"]) if prompt_text else style_preset["prompt"]
+        if style_preset["negative"]:
+            negative_text = (negative_text + ", " + style_preset["negative"]) if negative_text else style_preset["negative"]
+        arch = preset.get("arch", "sdxl")
+        style_loras = style_preset["loras"].get(arch, [])
+        existing_names = {l["name"] for l in loras} if isinstance(loras, list) and loras else set()
+        for lora_path, model_str, clip_str in style_loras:
+            if lora_path not in existing_names:
+                loras.append({
+                    "name": lora_path,
+                    "strength_model": model_str,
+                    "strength_clip": clip_str,
+                })
+
     return {
         "server": COMFYUI_DEFAULT_URL,
         "preset": preset,
-        "prompt": s.get("prompt", preset.get("prompt_hint", "")),
-        "negative": s.get("negative", preset.get("negative_hint", "")),
+        "prompt": prompt_text,
+        "negative": negative_text,
         "seed": seed,
-        "loras": s.get("loras", []),
+        "loras": loras,
         "controlnet": {
             "mode": s.get("cn_mode", "Off"),
             "strength": s.get("cn_strength", 0.8),
@@ -375,6 +398,7 @@ def _session_to_values(key, image=None):
         "custom_workflow": None,
         "runs": s.get("runs", 1),
         "use_wd_tagger": s.get("use_wd_tagger", False),
+        "style_preset": style_preset,
     }
 
 _SESSION = _load_session()
@@ -2514,6 +2538,13 @@ INPAINT_REFINEMENTS = [
         },
     },
 ]
+
+# Style presets usable across img2img, txt2img, and inpaint
+# References the ✦ presets from INPAINT_REFINEMENTS (style/effect based, not body-part fixes)
+IMG2IMG_STYLE_PRESETS = [
+    {"label": "(none — no style)", "prompt": "", "negative": "", "denoise": None,
+     "cfg_boost": 0, "steps_override": None, "loras": {}},
+] + [p for p in INPAINT_REFINEMENTS if p["label"].startswith("\u2726")]
 
 
 def _filter_loras_for_arch(all_loras, arch):
@@ -6070,6 +6101,22 @@ class PresetDialog(Gtk.Dialog):
             self._scene_combo.connect("changed", self._on_scene_changed)
             box.pack_start(self._scene_combo, False, False, 0)
 
+        # ── Style Enhancement Preset dropdown (img2img & txt2img) ─────
+        self._style_combo = None
+        if mode in ("img2img", "txt2img"):
+            box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 4)
+            box.pack_start(Gtk.Label(label="Style Enhancement:", xalign=0), False, False, 0)
+            self._style_combo = Gtk.ComboBoxText()
+            self._style_combo.set_tooltip_text(
+                "Apply a style/effect preset on top of your prompt.\n"
+                "Appends style-specific prompt text and loads matching LoRAs.\n"
+                "Select '(none)' to use your own prompt only.")
+            for i, sp in enumerate(IMG2IMG_STYLE_PRESETS):
+                self._style_combo.append(str(i), sp["label"])
+            self._style_combo.set_active(0)
+            self._style_combo.connect("changed", self._on_style_changed)
+            box.pack_start(self._style_combo, False, False, 0)
+
         # Inpaint refinement dropdown (only in inpaint mode)
         self._refinement_combo = None
         if mode == "inpaint":
@@ -6283,10 +6330,12 @@ class PresetDialog(Gtk.Dialog):
             self._all_lora_names = res
             self._conn_label.set_markup('<span color="green">● Connected</span>')
             self._refresh_lora_combos()
+            self._check_style_preset_availability()
         def on_err(e):
             self._all_lora_names = []
             self._conn_label.set_markup(f'<span color="red">⚠ Cannot connect to {server}</span>')
             self._refresh_lora_combos()
+            self._check_style_preset_availability()
         _async_fetch(lambda: _fetch_loras(server), on_done, on_err)
 
     def _refresh_lora_combos(self):
@@ -6337,6 +6386,12 @@ class PresetDialog(Gtk.Dialog):
         # Re-apply refinement if one is active (to update LoRAs for new arch)
         if self._refinement_combo and self._refinement_combo.get_active() > 0:
             self._on_refinement_changed(self._refinement_combo)
+        # Re-apply style preset if one is active (to update LoRAs for new arch)
+        if self._style_combo and self._style_combo.get_active() > 0:
+            self._on_style_changed(self._style_combo)
+        # Update style preset availability labels for new arch
+        if self._all_lora_names:
+            self._check_style_preset_availability()
 
     # ── Scene / Subject preset helpers ────────────────────────────────
 
@@ -6452,6 +6507,73 @@ class PresetDialog(Gtk.Dialog):
             if not found:
                 # LoRA not available — skip this slot, try next recommended LoRA
                 continue
+
+    def _on_style_changed(self, combo):
+        """Apply a style enhancement preset: load its LoRAs into slots."""
+        sidx = combo.get_active()
+        if sidx <= 0:
+            return  # "(none)" — don't touch anything
+        sp = IMG2IMG_STYLE_PRESETS[sidx]
+
+        # Auto-select matching LoRAs for current model architecture
+        midx = self.preset_combo.get_active()
+        arch = MODEL_PRESETS[midx]["arch"] if midx >= 0 else "sdxl"
+        rec_loras = sp["loras"].get(arch, [])
+
+        # Clear all LoRA slots first
+        for combo_w, ms, cs in self.lora_rows:
+            combo_w.set_active(0)  # "(none)"
+            ms.set_value(1.0)
+            cs.set_value(1.0)
+
+        # Fill LoRA slots with style's LoRAs (if they exist on the server)
+        slot = 0
+        for lora_path, model_str, clip_str in rec_loras:
+            if slot >= len(self.lora_rows):
+                break
+            combo_w, ms, cs = self.lora_rows[slot]
+            found = False
+            for j, lname in enumerate(self._lora_names):
+                if lname == lora_path:
+                    combo_w.set_active(j + 1)  # +1 because index 0 is "(none)"
+                    ms.set_value(model_str)
+                    cs.set_value(clip_str)
+                    found = True
+                    slot += 1
+                    break
+            if not found:
+                continue
+
+    def _check_style_preset_availability(self):
+        """Mark style presets whose LoRAs are missing on the server.
+
+        Updates the style dropdown labels with a '(missing LoRA)' suffix
+        when a preset's LoRAs for the current architecture are not available
+        in self._all_lora_names.
+        """
+        if not self._style_combo:
+            return
+        midx = self.preset_combo.get_active()
+        arch = MODEL_PRESETS[midx]["arch"] if midx >= 0 else "sdxl"
+        active = self._style_combo.get_active()
+        self._style_combo.remove_all()
+        for i, sp in enumerate(IMG2IMG_STYLE_PRESETS):
+            label = sp["label"]
+            if i > 0:
+                # Check if this preset's LoRAs for the current arch are available
+                rec_loras = sp["loras"].get(arch, [])
+                if rec_loras:
+                    all_found = all(
+                        any(lname == lp for lname in self._all_lora_names)
+                        for lp, _ms, _cs in rec_loras
+                    )
+                    if not all_found:
+                        label = label + "  (missing LoRA)"
+            self._style_combo.append(str(i), label)
+        if 0 <= active < len(IMG2IMG_STYLE_PRESETS):
+            self._style_combo.set_active(active)
+        else:
+            self._style_combo.set_active(0)
 
     def _refresh_user_preset_combo(self):
         self._user_preset_combo.remove_all()
@@ -6595,6 +6717,9 @@ class PresetDialog(Gtk.Dialog):
         # Scene preset
         if self._scene_combo:
             data["scene_idx"] = self._scene_combo.get_active()
+        # Style preset
+        if self._style_combo:
+            data["style_idx"] = self._style_combo.get_active()
         return data
 
     def _apply_session(self, p):
@@ -6636,6 +6761,11 @@ class PresetDialog(Gtk.Dialog):
         # Scene preset
         if self._scene_combo and "scene_idx" in p:
             self._scene_combo.set_active(p["scene_idx"])
+        # Style preset
+        if self._style_combo and "style_idx" in p:
+            sidx = p["style_idx"]
+            if 0 <= sidx < len(IMG2IMG_STYLE_PRESETS):
+                self._style_combo.set_active(sidx)
         if "runs" in p:
             self._runs_spin.set_value(p["runs"])
 
@@ -6676,17 +6806,45 @@ class PresetDialog(Gtk.Dialog):
             "start_percent": self._cn_start_spin.get_value() if self._cn_start_spin else 0.0,
             "end_percent": self._cn_end_spin.get_value() if self._cn_end_spin else 1.0,
         }
+        # Style preset — merge style prompt/negative/LoRAs when selected
+        style_preset = None
+        if self._style_combo and self._style_combo.get_active() > 0:
+            style_preset = IMG2IMG_STYLE_PRESETS[self._style_combo.get_active()]
+
+        prompt_text = self._buf_text(self.prompt_tv)
+        negative_text = self._buf_text(self.neg_tv)
+
+        if style_preset:
+            # Append style prompt/negative to user text
+            if style_preset["prompt"]:
+                prompt_text = (prompt_text + ", " + style_preset["prompt"]) if prompt_text else style_preset["prompt"]
+            if style_preset["negative"]:
+                negative_text = (negative_text + ", " + style_preset["negative"]) if negative_text else style_preset["negative"]
+            # Merge style LoRAs with manually selected LoRAs
+            midx = self.preset_combo.get_active()
+            arch = MODEL_PRESETS[midx]["arch"] if midx >= 0 else "sdxl"
+            style_loras = style_preset["loras"].get(arch, [])
+            existing_names = {l["name"] for l in loras}
+            for lora_path, model_str, clip_str in style_loras:
+                if lora_path not in existing_names:
+                    loras.append({
+                        "name": lora_path,
+                        "strength_model": model_str,
+                        "strength_clip": clip_str,
+                    })
+
         return {
             "server": self.server_entry.get_text().strip(),
             "preset": preset,
-            "prompt": self._buf_text(self.prompt_tv),
-            "negative": self._buf_text(self.neg_tv),
+            "prompt": prompt_text,
+            "negative": negative_text,
             "seed": seed,
             "loras": loras,
             "controlnet": controlnet,
             "custom_workflow": custom_wf if custom_wf else None,
             "runs": int(self._runs_spin.get_value()),
             "use_wd_tagger": self._wd_tagger_cb.get_active() if hasattr(self, '_wd_tagger_cb') else False,
+            "style_preset": style_preset,
         }
 
 # ═══════════════════════════════════════════════════════════════════════════
