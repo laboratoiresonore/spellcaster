@@ -338,6 +338,45 @@ def _save_session():
     except Exception:
         pass
 
+def _session_to_values(key, image=None):
+    """Reconstruct a get_values()-compatible dict from saved session state.
+
+    Used by WITH_LAST_VALS (GIMP Repeat) to re-run without showing the dialog.
+    Returns None if no session data exists for this key.
+    """
+    s = _SESSION.get(key)
+    if not s:
+        return None
+    idx = s.get("model_preset_idx", 0)
+    preset = dict(MODEL_PRESETS[idx] if 0 <= idx < len(MODEL_PRESETS) else MODEL_PRESETS[0])
+    preset["steps"] = s.get("steps", preset["steps"])
+    preset["cfg"] = s.get("cfg", preset["cfg"])
+    preset["denoise"] = s.get("denoise", preset.get("denoise", 0.6))
+    preset["width"] = s.get("width", image.get_width() if image else preset.get("width", 1024))
+    preset["height"] = s.get("height", image.get_height() if image else preset.get("height", 1024))
+    preset["sampler"] = s.get("sampler", preset["sampler"])
+    preset["scheduler"] = s.get("scheduler", preset["scheduler"])
+    seed = s.get("seed", -1)
+    if seed < 0:
+        seed = random.randint(0, 2**32 - 1)
+    return {
+        "server": COMFYUI_DEFAULT_URL,
+        "preset": preset,
+        "prompt": s.get("prompt", preset.get("prompt_hint", "")),
+        "negative": s.get("negative", preset.get("negative_hint", "")),
+        "seed": seed,
+        "loras": s.get("loras", []),
+        "controlnet": {
+            "mode": s.get("cn_mode", "Off"),
+            "strength": s.get("cn_strength", 0.8),
+            "start_percent": s.get("cn_start", 0.0),
+            "end_percent": s.get("cn_end", 1.0),
+        },
+        "custom_workflow": None,
+        "runs": s.get("runs", 1),
+        "use_wd_tagger": s.get("use_wd_tagger", False),
+    }
+
 _SESSION = _load_session()
 
 # User presets persist prompt/model/LoRA combinations across sessions
@@ -8314,23 +8353,30 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_img2img(self, procedure, run_mode, image, drawables, config, data):
         """Image-to-image: send current canvas through a model preset."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
-        GimpUi.init("spellcaster")
-        dlg = PresetDialog("Spellcaster — Image to Image", mode="img2img")
-        dlg.w_spin.set_value(image.get_width())
-        dlg.h_spin.set_value(image.get_height())
-        last = _SESSION.get("img2img")
-        if last:
-            last_no_dims = {k: v for k, v in last.items() if k not in ("width", "height")}
-            dlg._apply_session(last_no_dims)
-        if dlg.run() != Gtk.ResponseType.OK:
+
+        # WITH_LAST_VALS (Ctrl+F "Repeat"): skip dialog, use saved session
+        if run_mode == Gimp.RunMode.WITH_LAST_VALS:
+            v = _session_to_values("img2img", image)
+            if not v:
+                return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        else:
+            GimpUi.init("spellcaster")
+            dlg = PresetDialog("Spellcaster — Image to Image", mode="img2img")
+            dlg.w_spin.set_value(image.get_width())
+            dlg.h_spin.set_value(image.get_height())
+            last = _SESSION.get("img2img")
+            if last:
+                last_no_dims = {k: v for k, v in last.items() if k not in ("width", "height")}
+                dlg._apply_session(last_no_dims)
+            if dlg.run() != Gtk.ResponseType.OK:
+                dlg.destroy()
+                return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+            v = dlg.get_values()
+            _SESSION["img2img"] = dlg._collect_session()
+            _save_session()
             dlg.destroy()
-            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
-        v = dlg.get_values()
-        _SESSION["img2img"] = dlg._collect_session()
-        _save_session()
-        dlg.destroy()
         runs = v.get("runs", 1)
         try:
             srv = v["server"]
@@ -8361,22 +8407,27 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_txt2img(self, procedure, run_mode, image, drawables, config, data):
         """Text-to-image: generate from prompt only (no input image)."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
-        GimpUi.init("spellcaster")
-        dlg = PresetDialog("Spellcaster — Text to Image", mode="txt2img")
-        dlg.w_spin.set_value(image.get_width())
-        dlg.h_spin.set_value(image.get_height())
-        last = _SESSION.get("txt2img")
-        if last:
-            dlg._apply_session(last)
-        if dlg.run() != Gtk.ResponseType.OK:
+        if run_mode == Gimp.RunMode.WITH_LAST_VALS:
+            v = _session_to_values("txt2img", image)
+            if not v:
+                return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        else:
+            GimpUi.init("spellcaster")
+            dlg = PresetDialog("Spellcaster — Text to Image", mode="txt2img")
+            dlg.w_spin.set_value(image.get_width())
+            dlg.h_spin.set_value(image.get_height())
+            last = _SESSION.get("txt2img")
+            if last:
+                dlg._apply_session(last)
+            if dlg.run() != Gtk.ResponseType.OK:
+                dlg.destroy()
+                return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+            v = dlg.get_values()
+            _SESSION["txt2img"] = dlg._collect_session()
+            _save_session()
             dlg.destroy()
-            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
-        v = dlg.get_values()
-        _SESSION["txt2img"] = dlg._collect_session()
-        _save_session()
-        dlg.destroy()
         runs = v.get("runs", 1)
         try:
             srv = v["server"]
@@ -8402,25 +8453,27 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_inpaint(self, procedure, run_mode, image, drawables, config, data):
         """Inpaint: regenerate only the selected area using a mask from GIMP's selection."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
-        GimpUi.init("spellcaster")
-
-        dlg = PresetDialog("Spellcaster — Inpaint Selection", mode="inpaint")
-        # Working resolution for the sampler — full image dims, NOT selection dims.
-        # The mask controls which area gets inpainted; ImageScale handles resolution.
-        dlg.w_spin.set_value(image.get_width()); dlg.h_spin.set_value(image.get_height())
-        last = _SESSION.get("inpaint")
-        if last:
-            last_no_dims = {k: v for k, v in last.items() if k not in ("width", "height")}
-            dlg._apply_session(last_no_dims)
-        if dlg.run() != Gtk.ResponseType.OK:
+        if run_mode == Gimp.RunMode.WITH_LAST_VALS:
+            v = _session_to_values("inpaint", image)
+            if not v:
+                return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        else:
+            GimpUi.init("spellcaster")
+            dlg = PresetDialog("Spellcaster — Inpaint Selection", mode="inpaint")
+            dlg.w_spin.set_value(image.get_width()); dlg.h_spin.set_value(image.get_height())
+            last = _SESSION.get("inpaint")
+            if last:
+                last_no_dims = {k: v for k, v in last.items() if k not in ("width", "height")}
+                dlg._apply_session(last_no_dims)
+            if dlg.run() != Gtk.ResponseType.OK:
+                dlg.destroy()
+                return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+            v = dlg.get_values()
+            _SESSION["inpaint"] = dlg._collect_session()
+            _save_session()
             dlg.destroy()
-            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
-        v = dlg.get_values()
-        _SESSION["inpaint"] = dlg._collect_session()
-        _save_session()
-        dlg.destroy()
         runs = v.get("runs", 1)
         try:
             Gimp.progress_init("Building selection mask...")
@@ -8462,7 +8515,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_faceswap(self, procedure, run_mode, image, drawables, config, data):
         """Face swap via ReActor: paste a face from a source image onto the canvas."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = FaceSwapDialog()
@@ -8521,7 +8574,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_faceswap_model(self, procedure, run_mode, image, drawables, config, data):
         """Face swap using a saved face model from the server (no source image file)."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = FaceSwapModelDialog()
@@ -8564,7 +8617,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_wan_i2v(self, procedure, run_mode, image, drawables, config, data):
         """Wan 2.2 image-to-video: generate video from canvas or selection."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
 
@@ -8630,7 +8683,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_faceswap_mtb(self, procedure, run_mode, image, drawables, config, data):
         """Face swap via mtb facetools: direct swap from source image."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = MtbFaceSwapDialog()
@@ -8670,7 +8723,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_faceid(self, procedure, run_mode, image, drawables, config, data):
         """IPAdapter FaceID img2img: regenerate image preserving face identity."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = FaceIDDialog()
@@ -8723,7 +8776,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_pulid_flux(self, procedure, run_mode, image, drawables, config, data):
         """PuLID Flux: generate with Flux model while preserving face identity."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = PulidFluxDialog()
@@ -8777,7 +8830,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_klein(self, procedure, run_mode, image, drawables, config, data):
         """Klein img2img: edit image with Flux 2 Klein distilled model."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = KleinDialog("Spellcaster — Klein Image Editor", with_reference=False)
@@ -8823,7 +8876,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_klein_ref(self, procedure, run_mode, image, drawables, config, data):
         """Klein img2img + reference: edit image with a structure/style reference."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = KleinDialog("Spellcaster — Klein Editor + Reference", with_reference=True)
@@ -8877,7 +8930,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_embed_watermark(self, procedure, run_mode, image, drawables, config, data):
         """Embed invisible encrypted metadata into the current image using LSB steganography."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
 
@@ -9007,7 +9060,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_read_watermark(self, procedure, run_mode, image, drawables, config, data):
         """Read and display hidden metadata from a watermarked image."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
 
@@ -9074,7 +9127,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_upscale(self, procedure, run_mode, image, drawables, config, data):
         """Upscale 4x: super-resolution using an upscale model."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
         # Minimal dialog — dropdown for model preset + server URL
@@ -9134,7 +9187,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_lama_remove(self, procedure, run_mode, image, drawables, config, data):
         """Object removal: LaMa inpainting on selection — no checkpoint, no prompt."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
         # Minimal dialog — just server URL and go
@@ -9182,7 +9235,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_lut(self, procedure, run_mode, image, drawables, config, data):
         """Color grading: apply a cinematic LUT to the image."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = Gtk.Dialog(title="Spellcaster — Color Grading (LUT)")
@@ -9253,7 +9306,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_outpaint(self, procedure, run_mode, image, drawables, config, data):
         """Outpaint: extend canvas by generating new content at the edges."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = PresetDialog("Spellcaster — Outpaint / Extend Canvas", mode="img2img")
@@ -9337,7 +9390,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_style_transfer(self, procedure, run_mode, image, drawables, config, data):
         """Style transfer: apply the visual style of a reference image using IPAdapter."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
         # Dialog similar to FaceID — model preset + file chooser + sliders
@@ -9508,7 +9561,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_face_restore(self, procedure, run_mode, image, drawables, config, data):
         """Face restore: enhance and restore faces using ReActorRestoreFace."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = Gtk.Dialog(title="Spellcaster — Face Restore")
@@ -9606,7 +9659,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_photo_restore(self, procedure, run_mode, image, drawables, config, data):
         """Photo restoration pipeline: upscale + face restore + sharpen."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = Gtk.Dialog(title="Spellcaster — Photo Restoration Pipeline")
@@ -9706,7 +9759,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_detail_hallucinate(self, procedure, run_mode, image, drawables, config, data):
         """Detail hallucination: upscale + low-denoise img2img to add AI detail."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = Gtk.Dialog(title="Spellcaster — Detail Hallucination")
@@ -9847,7 +9900,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_seedv2r(self, procedure, run_mode, image, drawables, config, data):
         """SeedV2R Upscale: upscale + img2img with user-controlled scale and hallucination."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = Gtk.Dialog(title="Spellcaster — SeedV2R Upscale")
@@ -10015,7 +10068,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_colorize(self, procedure, run_mode, image, drawables, config, data):
         """Colorize B&W photo using ControlNet lineart + img2img."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = Gtk.Dialog(title="Spellcaster — Colorize B&W Photo")
@@ -10144,7 +10197,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_batch_variations(self, procedure, run_mode, image, drawables, config, data):
         """Batch Variations: generate multiple txt2img outputs by setting batch_size > 1."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = PresetDialog("Spellcaster — Batch Variations (txt2img)", mode="txt2img")
@@ -10202,7 +10255,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_iclight(self, procedure, run_mode, image, drawables, config, data):
         """IC-Light Relighting: change lighting direction on any photo (SD1.5 only)."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = Gtk.Dialog(title="Spellcaster — IC-Light Relighting")
@@ -10345,7 +10398,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_supir(self, procedure, run_mode, image, drawables, config, data):
         """SUPIR AI Restoration: restore and enhance images using SUPIR model."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = Gtk.Dialog(title="Spellcaster — SUPIR AI Restoration")
@@ -10467,7 +10520,7 @@ class Spellcaster(Gimp.PlugIn):
         Uses the validated isnet-general-use model with alpha_matting=false.
         Result is a new layer with transparent background.
         """
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
         # Minimal dialog — just server URL and Go button
@@ -10509,7 +10562,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_send(self, procedure, run_mode, image, drawables, config, data):
         """Upload current canvas to ComfyUI's input folder (no generation)."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = Gtk.Dialog(title="Upload to Spellcaster")
@@ -10547,7 +10600,7 @@ class Spellcaster(Gimp.PlugIn):
 
     def _run_settings(self, procedure, run_mode, image, drawables, config, data):
         """Spellcaster Settings: configure server URL, defaults, and preferences."""
-        if run_mode != Gimp.RunMode.INTERACTIVE:
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
         _apply_spellcaster_theme()
