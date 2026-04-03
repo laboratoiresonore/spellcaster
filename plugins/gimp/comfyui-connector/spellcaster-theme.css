@@ -1,0 +1,1619 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  Spellcaster Premium GTK3 Theme for GIMP 3
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ *  A complete dark-purple reskin for the ENTIRE GIMP application.
+ *  Place in ~/.config/GIMP/3.0/themes/Spellcaster/ as gtkrc (or gtk.css)
+ *  or load programmatically via Gtk.CssProvider.
+ *
+ *  Palette:
+ *    Base BG      #0B0715   Deep purple-black
+ *    Secondary BG #150D26   Panels, sidebars
+ *    Tertiary     #1A1030   Inputs, cards
+ *    Border       #3A2863   Subtle purple
+ *    Text primary #E2DFEB   Light lavender
+ *    Text muted   #8B7FA8   Muted purple
+ *    Accent       #D122E3   Neon pink / magenta
+ *    Accent hover #E84DF7   Bright pink
+ *    Success      #00E676   Green
+ *    Warning      #FFB300   Amber
+ *    Error        #FF5252   Red
+ *    Selection    rgba(209, 34, 227, 0.3)
+ */
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  1. GLOBAL DEFAULTS
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+* {
+    -gtk-icon-style: symbolic;
+    outline-color: rgba(209, 34, 227, 0.5);
+    outline-offset: -2px;
+    -GtkWidget-link-color: #D122E3;
+    -GtkWidget-visited-link-color: #8B7FA8;
+}
+
+/* ── Window & Dialog ────────────────────────────────────────────────────── */
+
+window,
+dialog,
+messagedialog,
+aboutdialog,
+filechooserdialog,
+colorchooserdialog,
+fontchooserdialog,
+GimpWindow,
+GimpImageWindow {
+    background-color: #0B0715;
+    color: #E2DFEB;
+}
+
+window decoration {
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6),
+                0 0 1px rgba(209, 34, 227, 0.15);
+    margin: 8px;
+    border-radius: 8px;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  2. HEADER BAR & TITLE BAR
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+headerbar,
+.titlebar {
+    background-color: #110A20;
+    background-image: none;
+    border-bottom: 1px solid #3A2863;
+    color: #E2DFEB;
+    padding: 4px 8px;
+    min-height: 36px;
+    box-shadow: inset 0 -1px 0 rgba(209, 34, 227, 0.15);
+}
+
+headerbar .title,
+.titlebar .title {
+    color: #D122E3;
+    font-weight: bold;
+}
+
+headerbar .subtitle,
+.titlebar .subtitle {
+    color: #8B7FA8;
+    font-size: smaller;
+}
+
+headerbar button,
+.titlebar button {
+    background-color: transparent;
+    border: 1px solid transparent;
+    color: #E2DFEB;
+    min-height: 24px;
+    min-width: 24px;
+}
+
+headerbar button:hover,
+.titlebar button:hover {
+    background-color: rgba(209, 34, 227, 0.2);
+    border-color: #D122E3;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  3. TOOLBAR
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+toolbar,
+.toolbar,
+.inline-toolbar {
+    background-color: #110A20;
+    background-image: none;
+    border-bottom: 1px solid #21153B;
+    padding: 2px;
+}
+
+toolbar button,
+.toolbar button,
+.inline-toolbar button {
+    background-color: transparent;
+    background-image: none;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: #E2DFEB;
+    padding: 4px;
+    margin: 1px;
+    transition: all 150ms ease-in-out;
+}
+
+toolbar button:hover,
+.toolbar button:hover {
+    background-color: rgba(209, 34, 227, 0.15);
+    border-color: #3A2863;
+}
+
+toolbar button:active,
+.toolbar button:active,
+toolbar button:checked,
+.toolbar button:checked {
+    background-color: rgba(209, 34, 227, 0.25);
+    border-color: #D122E3;
+    box-shadow: inset 0 0 4px rgba(209, 34, 227, 0.3);
+}
+
+toolbar separator,
+.toolbar separator {
+    background-color: #3A2863;
+    min-width: 1px;
+    min-height: 1px;
+    margin: 4px 2px;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  4. TYPOGRAPHY / LABELS
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+label,
+.label {
+    color: #E2DFEB;
+    font-family: "Segoe UI", "Inter", "Cantarell", sans-serif;
+}
+
+label:disabled,
+.label:disabled {
+    color: #5A4A7A;
+}
+
+label.header-label,
+label.spellcaster-title {
+    font-size: 16px;
+    font-weight: bold;
+    color: #D122E3;
+    margin-bottom: 8px;
+}
+
+label.spellcaster-subtitle {
+    font-size: 11px;
+    color: #8B7FA8;
+    margin-bottom: 6px;
+}
+
+label.section-header {
+    font-size: 14px;
+    font-weight: bold;
+    color: #B060D0;
+    padding: 4px 0px;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  5. BUTTONS
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+button {
+    background-image: none;
+    background-color: #1A1030;
+    color: #E2DFEB;
+    border-radius: 6px;
+    border: 1px solid #3A2863;
+    padding: 6px 14px;
+    font-weight: 500;
+    transition: all 200ms ease-in-out;
+    min-height: 24px;
+}
+
+button:hover {
+    background-color: #D122E3;
+    color: #FFFFFF;
+    border-color: #D122E3;
+    box-shadow: 0 0 12px rgba(209, 34, 227, 0.5);
+}
+
+button:active {
+    background-color: #A01AB5;
+    border-color: #A01AB5;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+button:disabled {
+    background-color: #110A20;
+    color: #5A4A7A;
+    border-color: #21153B;
+    box-shadow: none;
+}
+
+button:checked {
+    background-color: #D122E3;
+    color: #FFFFFF;
+    border-color: #E84DF7;
+}
+
+/* Primary / suggested action */
+button.suggested-action,
+button.spellcaster-primary {
+    background-color: #D122E3;
+    color: #FFFFFF;
+    border: 1px solid #E84DF7;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(209, 34, 227, 0.35);
+}
+
+button.suggested-action:hover,
+button.spellcaster-primary:hover {
+    background-color: #E84DF7;
+    box-shadow: 0 4px 16px rgba(209, 34, 227, 0.55);
+}
+
+button.suggested-action:active,
+button.spellcaster-primary:active {
+    background-color: #A01AB5;
+}
+
+/* Destructive / cancel */
+button.destructive-action {
+    background-color: #2A1A3E;
+    color: #A090B8;
+    border: 1px solid #3A2863;
+}
+
+button.destructive-action:hover {
+    background-color: #FF5252;
+    color: #FFFFFF;
+    border-color: #FF5252;
+    box-shadow: 0 0 10px rgba(255, 82, 82, 0.4);
+}
+
+/* Flat buttons */
+button.flat,
+modelbutton {
+    background-color: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 4px 8px;
+}
+
+button.flat:hover,
+modelbutton:hover {
+    background-color: rgba(209, 34, 227, 0.15);
+}
+
+/* Link buttons */
+button.link {
+    color: #D122E3;
+    background: transparent;
+    border: none;
+}
+
+button.link:hover {
+    color: #E84DF7;
+    text-decoration: underline;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  6. TEXT INPUTS — entry, spinbutton, textview
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+entry,
+spinbutton,
+.entry {
+    background-color: #1A1030;
+    background-image: none;
+    color: #E2DFEB;
+    border-radius: 4px;
+    border: 1px solid #3A2863;
+    padding: 6px 8px;
+    caret-color: #D122E3;
+    min-height: 24px;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+entry:focus,
+spinbutton:focus,
+.entry:focus {
+    border-color: #D122E3;
+    box-shadow: 0 0 8px rgba(209, 34, 227, 0.4),
+                inset 0 0 2px rgba(209, 34, 227, 0.15);
+}
+
+entry:disabled,
+spinbutton:disabled {
+    background-color: #0B0715;
+    color: #5A4A7A;
+    border-color: #21153B;
+}
+
+entry selection,
+textview text selection,
+spinbutton selection {
+    background-color: rgba(209, 34, 227, 0.3);
+    color: #FFFFFF;
+}
+
+entry placeholder,
+.entry placeholder {
+    color: #5A4A7A;
+    font-style: italic;
+}
+
+textview,
+textview text {
+    background-color: #1A1030;
+    color: #E2DFEB;
+    caret-color: #D122E3;
+}
+
+textview border {
+    background-color: #150D26;
+}
+
+spinbutton button {
+    background-color: #150D26;
+    border: none;
+    color: #D122E3;
+    min-width: 24px;
+    padding: 0;
+}
+
+spinbutton button:hover {
+    background-color: #D122E3;
+    color: #FFFFFF;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  7. COMBOBOX & DROPDOWN
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+combobox button,
+comboboxtext button {
+    background-color: #1A1030;
+    background-image: none;
+    border: 1px solid #3A2863;
+    color: #E2DFEB;
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+combobox button:hover,
+comboboxtext button:hover {
+    border-color: #D122E3;
+    box-shadow: 0 0 6px rgba(209, 34, 227, 0.3);
+}
+
+combobox arrow,
+comboboxtext arrow {
+    color: #D122E3;
+    min-width: 16px;
+    min-height: 16px;
+}
+
+combobox window.popup,
+comboboxtext window.popup {
+    background-color: #150D26;
+    border: 1px solid #3A2863;
+    border-radius: 4px;
+}
+
+combobox cellview,
+comboboxtext cellview {
+    color: #E2DFEB;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  8. NOTEBOOK (TABS)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+notebook {
+    background-color: #0B0715;
+}
+
+notebook header {
+    background-color: #110A20;
+    border-color: #21153B;
+    padding: 0;
+}
+
+notebook header.top {
+    border-bottom: 2px solid #21153B;
+    box-shadow: inset 0 -1px 0 rgba(209, 34, 227, 0.08);
+}
+
+notebook header.bottom {
+    border-top: 2px solid #21153B;
+}
+
+notebook header.left {
+    border-right: 2px solid #21153B;
+}
+
+notebook header.right {
+    border-left: 2px solid #21153B;
+}
+
+notebook header tab {
+    background-color: #150D26;
+    color: #8B7FA8;
+    border: 1px solid #21153B;
+    border-bottom: none;
+    padding: 6px 16px;
+    border-radius: 6px 6px 0 0;
+    margin: 0 1px;
+    transition: all 150ms ease;
+}
+
+notebook header tab:checked {
+    background-color: #1A1030;
+    color: #D122E3;
+    border-color: #3A2863;
+    border-bottom: 3px solid #D122E3;
+    font-weight: bold;
+    box-shadow: 0 -2px 8px rgba(209, 34, 227, 0.15);
+}
+
+notebook header tab:hover:not(:checked) {
+    background-color: #1E1435;
+    color: #E2DFEB;
+    border-color: #3A2863;
+}
+
+notebook stack {
+    background-color: #0B0715;
+}
+
+notebook header button.flat {
+    min-width: 20px;
+    min-height: 20px;
+    padding: 0;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  9. TREEVIEW & ICONVIEW
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+treeview,
+iconview {
+    background-color: #0B0715;
+    color: #E2DFEB;
+    border: none;
+}
+
+treeview:selected,
+iconview:selected {
+    background-color: rgba(209, 34, 227, 0.3);
+    color: #FFFFFF;
+}
+
+treeview:hover {
+    background-color: rgba(209, 34, 227, 0.08);
+}
+
+treeview header button {
+    background-color: #150D26;
+    background-image: none;
+    color: #8B7FA8;
+    border: none;
+    border-bottom: 1px solid #3A2863;
+    border-right: 1px solid #21153B;
+    font-weight: bold;
+    padding: 6px 10px;
+}
+
+treeview header button:hover {
+    background-color: #1A1030;
+    color: #D122E3;
+}
+
+treeview.separator {
+    color: #21153B;
+    min-height: 1px;
+}
+
+treeview expander {
+    color: #8B7FA8;
+    min-width: 16px;
+    min-height: 16px;
+}
+
+treeview expander:hover {
+    color: #D122E3;
+}
+
+treeview expander:checked {
+    color: #D122E3;
+}
+
+iconview:selected {
+    border-radius: 4px;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  10. SCROLLBAR
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+scrollbar {
+    background-color: transparent;
+    border: none;
+}
+
+scrollbar trough {
+    background-color: #0B0715;
+    border: none;
+    border-radius: 8px;
+}
+
+scrollbar slider {
+    background-color: #3A2863;
+    border-radius: 8px;
+    min-width: 6px;
+    min-height: 6px;
+    border: 2px solid transparent;
+    transition: all 200ms ease;
+}
+
+scrollbar slider:hover {
+    background-color: #5A3A8A;
+    min-width: 10px;
+}
+
+scrollbar slider:active {
+    background-color: #D122E3;
+    box-shadow: 0 0 6px rgba(209, 34, 227, 0.5);
+}
+
+scrollbar.overlay-indicator:not(.dragging):not(.hovering) slider {
+    min-width: 4px;
+    min-height: 4px;
+    background-color: rgba(209, 34, 227, 0.4);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  11. MENU BAR & MENUS
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+menubar {
+    background-color: #110A20;
+    background-image: none;
+    border-bottom: 1px solid #21153B;
+    color: #E2DFEB;
+    padding: 0;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+menubar > menuitem {
+    color: #C0B8D0;
+    padding: 6px 10px;
+    transition: all 150ms ease;
+}
+
+menubar > menuitem:hover {
+    background-color: rgba(209, 34, 227, 0.2);
+    color: #FFFFFF;
+    box-shadow: inset 0 -2px 0 #D122E3;
+}
+
+menu,
+.menu,
+.context-menu {
+    background-color: #150D26;
+    border: 1px solid #3A2863;
+    border-radius: 6px;
+    padding: 4px 0;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5),
+                0 0 1px rgba(209, 34, 227, 0.2);
+}
+
+menu menuitem,
+.menu menuitem {
+    color: #E2DFEB;
+    padding: 6px 16px;
+    min-height: 24px;
+    transition: background-color 100ms ease;
+}
+
+menu menuitem:hover,
+.menu menuitem:hover {
+    background-color: rgba(209, 34, 227, 0.2);
+    color: #FFFFFF;
+}
+
+menu menuitem:disabled,
+.menu menuitem:disabled {
+    color: #5A4A7A;
+}
+
+menu menuitem accelerator,
+.menu menuitem accelerator {
+    color: #5A4A7A;
+}
+
+menu separator,
+.menu separator {
+    background-color: #21153B;
+    min-height: 1px;
+    margin: 4px 8px;
+}
+
+menu arrow,
+.menu arrow {
+    color: #8B7FA8;
+}
+
+menu menuitem check,
+menu menuitem radio {
+    min-width: 14px;
+    min-height: 14px;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  12. POPOVER
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+popover,
+popover.background {
+    background-color: #150D26;
+    border: 1px solid #D122E3;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5),
+                0 0 16px rgba(209, 34, 227, 0.15);
+    padding: 8px;
+}
+
+popover label {
+    color: #E2DFEB;
+}
+
+popover separator {
+    background-color: #3A2863;
+}
+
+popover modelbutton {
+    padding: 6px 12px;
+    border-radius: 4px;
+}
+
+popover modelbutton:hover {
+    background-color: rgba(209, 34, 227, 0.2);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  13. SCALE (SLIDERS)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+scale {
+    color: #E2DFEB;
+    padding: 8px 0;
+}
+
+scale trough {
+    background-color: #21153B;
+    border-radius: 4px;
+    min-height: 6px;
+    min-width: 6px;
+    border: none;
+}
+
+scale trough highlight {
+    background-color: #D122E3;
+    background-image: linear-gradient(90deg, #D122E3, #E84DF7);
+    border-radius: 4px;
+    min-height: 6px;
+}
+
+scale slider {
+    background-color: #D122E3;
+    background-image: none;
+    border-radius: 50%;
+    min-width: 18px;
+    min-height: 18px;
+    border: 2px solid #E84DF7;
+    box-shadow: 0 0 6px rgba(209, 34, 227, 0.5);
+    transition: all 200ms ease;
+}
+
+scale slider:hover {
+    background-color: #E84DF7;
+    box-shadow: 0 0 12px rgba(209, 34, 227, 0.7);
+    min-width: 20px;
+    min-height: 20px;
+}
+
+scale slider:active {
+    background-color: #A01AB5;
+    box-shadow: 0 0 16px rgba(209, 34, 227, 0.8);
+}
+
+scale slider:disabled {
+    background-color: #3A2863;
+    border-color: #21153B;
+    box-shadow: none;
+}
+
+scale marks mark indicator {
+    color: #3A2863;
+}
+
+scale marks mark label {
+    color: #8B7FA8;
+    font-size: smaller;
+}
+
+scale.color trough {
+    min-height: 10px;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  14. SWITCH, CHECKBUTTON, RADIOBUTTON
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+switch {
+    background-color: #21153B;
+    background-image: none;
+    border-radius: 12px;
+    border: 1px solid #3A2863;
+    min-width: 44px;
+    min-height: 22px;
+    transition: all 200ms ease;
+}
+
+switch:checked {
+    background-color: #D122E3;
+    border-color: #E84DF7;
+    box-shadow: 0 0 8px rgba(209, 34, 227, 0.4);
+}
+
+switch slider {
+    background-color: #E2DFEB;
+    border-radius: 50%;
+    min-width: 18px;
+    min-height: 18px;
+    border: none;
+    transition: all 200ms ease;
+}
+
+switch:checked slider {
+    background-color: #FFFFFF;
+}
+
+checkbutton,
+radiobutton {
+    color: #E2DFEB;
+}
+
+checkbutton check,
+radiobutton radio {
+    background-color: #1A1030;
+    background-image: none;
+    border: 2px solid #3A2863;
+    border-radius: 3px;
+    min-width: 18px;
+    min-height: 18px;
+    transition: all 150ms ease;
+    -gtk-icon-source: none;
+}
+
+radiobutton radio {
+    border-radius: 50%;
+}
+
+checkbutton check:checked,
+radiobutton radio:checked {
+    background-color: #D122E3;
+    border-color: #D122E3;
+    color: #FFFFFF;
+    box-shadow: 0 0 6px rgba(209, 34, 227, 0.4);
+}
+
+checkbutton check:hover,
+radiobutton radio:hover {
+    border-color: #D122E3;
+    box-shadow: 0 0 4px rgba(209, 34, 227, 0.3);
+}
+
+checkbutton check:disabled,
+radiobutton radio:disabled {
+    background-color: #0B0715;
+    border-color: #21153B;
+}
+
+checkbutton check:indeterminate {
+    background-color: #5A3A8A;
+    border-color: #D122E3;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  15. PROGRESS BAR
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+progressbar {
+    color: #E2DFEB;
+}
+
+progressbar text {
+    color: #FFFFFF;
+    font-weight: bold;
+    font-size: smaller;
+}
+
+progressbar trough {
+    background-color: #150D26;
+    border-radius: 6px;
+    border: 1px solid #3A2863;
+    min-height: 10px;
+}
+
+progressbar progress {
+    background-color: #D122E3;
+    background-image: linear-gradient(90deg, #D122E3 0%, #E84DF7 50%, #D122E3 100%);
+    border-radius: 6px;
+    box-shadow: 0 0 8px rgba(209, 34, 227, 0.4);
+}
+
+levelbar trough {
+    background-color: #150D26;
+    border: 1px solid #3A2863;
+    border-radius: 4px;
+}
+
+levelbar block.filled {
+    background-color: #D122E3;
+    border-radius: 4px;
+}
+
+levelbar block.empty {
+    background-color: #21153B;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  16. SEPARATOR
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+separator {
+    background-color: #21153B;
+    min-height: 1px;
+    min-width: 1px;
+}
+
+separator.wide {
+    min-height: 1px;
+    min-width: 1px;
+    margin: 4px 0;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  17. TOOLTIP
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+tooltip,
+tooltip.background {
+    background-color: #1A1030;
+    color: #E2DFEB;
+    border: 1px solid #D122E3;
+    border-radius: 6px;
+    padding: 6px 10px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5),
+                0 0 8px rgba(209, 34, 227, 0.2);
+}
+
+tooltip label {
+    color: #E2DFEB;
+}
+
+tooltip * {
+    color: #E2DFEB;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  18. FRAME, BOX, GRID
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+frame,
+frame > border {
+    border-color: #3A2863;
+    border-radius: 4px;
+}
+
+frame > border {
+    background-color: transparent;
+}
+
+frame > label {
+    color: #8B7FA8;
+    font-weight: bold;
+}
+
+box,
+grid {
+    background-color: transparent;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  19. SCROLLED WINDOW
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+scrolledwindow {
+    background-color: #0B0715;
+    border: none;
+}
+
+scrolledwindow viewport {
+    background-color: #0B0715;
+}
+
+scrolledwindow overshoot.top {
+    background-image: radial-gradient(ellipse at top, rgba(209, 34, 227, 0.15), transparent 70%);
+}
+
+scrolledwindow overshoot.bottom {
+    background-image: radial-gradient(ellipse at bottom, rgba(209, 34, 227, 0.15), transparent 70%);
+}
+
+scrolledwindow undershoot.top {
+    background-image: linear-gradient(to bottom, rgba(11, 7, 21, 0.8), transparent);
+}
+
+scrolledwindow undershoot.bottom {
+    background-image: linear-gradient(to top, rgba(11, 7, 21, 0.8), transparent);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  20. PANED (SPLIT HANDLES)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+paned > separator {
+    background-color: #21153B;
+    min-width: 4px;
+    min-height: 4px;
+    transition: background-color 200ms ease;
+}
+
+paned > separator:hover {
+    background-color: #D122E3;
+    box-shadow: 0 0 6px rgba(209, 34, 227, 0.4);
+}
+
+paned > separator:active {
+    background-color: #E84DF7;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  21. FILE CHOOSER
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+filechooser {
+    background-color: #0B0715;
+}
+
+filechooser .path-bar button {
+    background-color: #150D26;
+    border: 1px solid #3A2863;
+    color: #E2DFEB;
+    border-radius: 4px;
+}
+
+filechooser .path-bar button:hover {
+    background-color: rgba(209, 34, 227, 0.2);
+    border-color: #D122E3;
+}
+
+filechooser .path-bar button:checked {
+    background-color: #D122E3;
+    color: #FFFFFF;
+}
+
+placessidebar {
+    background-color: #110A20;
+    border-right: 1px solid #21153B;
+}
+
+placessidebar row {
+    color: #C0B8D0;
+    padding: 4px 8px;
+    border-radius: 4px;
+    margin: 1px 4px;
+}
+
+placessidebar row:selected {
+    background-color: rgba(209, 34, 227, 0.25);
+    color: #FFFFFF;
+}
+
+placessidebar row:hover {
+    background-color: rgba(209, 34, 227, 0.1);
+}
+
+placessidebar row image {
+    color: #8B7FA8;
+}
+
+placessidebar row:selected image {
+    color: #D122E3;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  22. INFOBAR
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+infobar {
+    background-color: #150D26;
+    border: 1px solid #3A2863;
+    border-radius: 4px;
+}
+
+infobar.info {
+    border-color: #D122E3;
+}
+
+infobar.warning {
+    border-color: #FFB300;
+    background-color: rgba(255, 179, 0, 0.1);
+}
+
+infobar.error {
+    border-color: #FF5252;
+    background-color: rgba(255, 82, 82, 0.1);
+}
+
+infobar.question {
+    border-color: #00E676;
+}
+
+infobar label {
+    color: #E2DFEB;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  23. STATUSBAR
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+statusbar {
+    background-color: #110A20;
+    color: #8B7FA8;
+    border-top: 1px solid #21153B;
+    padding: 2px 8px;
+    font-size: smaller;
+}
+
+statusbar label {
+    color: #8B7FA8;
+}
+
+statusbar frame {
+    border: none;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  24. STACK & STACKSWITCHER
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+stack {
+    background-color: #0B0715;
+}
+
+stackswitcher button {
+    background-color: #150D26;
+    border: 1px solid #21153B;
+    color: #8B7FA8;
+    padding: 6px 14px;
+    transition: all 150ms ease;
+}
+
+stackswitcher button:checked {
+    background-color: #1A1030;
+    color: #D122E3;
+    border-color: #D122E3;
+    border-bottom: 3px solid #D122E3;
+    font-weight: bold;
+}
+
+stackswitcher button:hover:not(:checked) {
+    background-color: #1A1030;
+    color: #E2DFEB;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  25. DIALOG ACTION AREA
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+dialog .dialog-action-area {
+    padding: 8px 12px;
+    border-top: 1px solid #21153B;
+}
+
+dialog .dialog-action-area button {
+    min-width: 100px;
+    min-height: 36px;
+    font-size: 14px;
+    margin: 4px;
+}
+
+messagedialog .dialog-action-area button {
+    min-width: 80px;
+}
+
+messagedialog label {
+    color: #E2DFEB;
+}
+
+messagedialog label:first-child {
+    font-weight: bold;
+    font-size: 14px;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  26. IMAGE / DRAWING AREA
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+image {
+    color: #8B7FA8;
+}
+
+image:disabled {
+    color: #3A2863;
+}
+
+drawingarea {
+    background-color: #0B0715;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  27. EXPANDER
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+expander title {
+    color: #E2DFEB;
+    padding: 4px;
+    border-radius: 4px;
+}
+
+expander title:hover {
+    background-color: rgba(209, 34, 227, 0.1);
+}
+
+expander arrow {
+    color: #8B7FA8;
+    min-width: 16px;
+    min-height: 16px;
+}
+
+expander arrow:checked {
+    color: #D122E3;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  28. SIDEBAR / LIST BOX
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+list,
+listbox {
+    background-color: #0B0715;
+    border: none;
+}
+
+list row,
+listbox row {
+    padding: 4px 8px;
+    border-radius: 4px;
+    margin: 1px 2px;
+}
+
+list row:selected,
+listbox row:selected {
+    background-color: rgba(209, 34, 227, 0.25);
+    color: #FFFFFF;
+}
+
+list row:hover,
+listbox row:hover {
+    background-color: rgba(209, 34, 227, 0.08);
+}
+
+list row:active,
+listbox row:active {
+    background-color: rgba(209, 34, 227, 0.35);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  29. GIMP-SPECIFIC WIDGETS
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* GimpDock — dockable dialogs container */
+GimpDock,
+.gimp-dock {
+    background-color: #0B0715;
+    border: none;
+}
+
+/* GimpToolbox — the left toolbox panel */
+GimpToolbox,
+.gimp-toolbox {
+    background-color: #110A20;
+    border-right: 1px solid #21153B;
+    padding: 4px;
+}
+
+GimpToolbox button,
+.gimp-toolbox button {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 3px;
+    margin: 1px;
+    min-width: 28px;
+    min-height: 28px;
+}
+
+GimpToolbox button:hover,
+.gimp-toolbox button:hover {
+    background-color: rgba(209, 34, 227, 0.15);
+    border-color: #3A2863;
+}
+
+GimpToolbox button:checked,
+.gimp-toolbox button:checked,
+GimpToolbox button:active,
+.gimp-toolbox button:active {
+    background-color: rgba(209, 34, 227, 0.25);
+    border-color: #D122E3;
+    box-shadow: inset 0 0 4px rgba(209, 34, 227, 0.3);
+}
+
+/* GimpCanvas — the main drawing canvas background */
+GimpCanvas,
+.gimp-canvas {
+    background-color: #0D0818;
+}
+
+/* GimpColorArea — foreground/background color swatches */
+GimpColorArea,
+.gimp-color-area {
+    border: 2px solid #3A2863;
+    border-radius: 3px;
+}
+
+GimpColorArea:hover,
+.gimp-color-area:hover {
+    border-color: #D122E3;
+    box-shadow: 0 0 6px rgba(209, 34, 227, 0.4);
+}
+
+/* Dockable dialog tabs */
+GimpDock notebook header tab {
+    padding: 4px 10px;
+    font-size: smaller;
+}
+
+/* Layer/channel list */
+GimpDock treeview {
+    background-color: #0B0715;
+}
+
+GimpDock treeview:selected {
+    background-color: rgba(209, 34, 227, 0.3);
+}
+
+/* GIMP Ruler */
+GimpRuler,
+.gimp-ruler {
+    background-color: #110A20;
+    color: #5A4A7A;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  30. COLOR CHOOSER & COLOR BUTTON
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+colorswatch {
+    border: 1px solid #3A2863;
+    border-radius: 3px;
+}
+
+colorswatch:hover {
+    border-color: #D122E3;
+    box-shadow: 0 0 4px rgba(209, 34, 227, 0.3);
+}
+
+colorswatch:selected {
+    border: 2px solid #D122E3;
+}
+
+colorchooser #add-color-button {
+    background-color: #1A1030;
+    border: 1px dashed #3A2863;
+}
+
+colorchooser #add-color-button:hover {
+    border-color: #D122E3;
+    background-color: rgba(209, 34, 227, 0.1);
+}
+
+colorchooser .color-swatch overlay {
+    border-radius: 3px;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  31. SEARCH BAR / SEARCH ENTRY
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+searchbar {
+    background-color: #110A20;
+    border-bottom: 1px solid #21153B;
+    padding: 4px 8px;
+}
+
+searchbar entry {
+    background-color: #1A1030;
+}
+
+searchbar entry image {
+    color: #8B7FA8;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  32. SPELLCASTER BRANDED HEADER (plugin dialogs)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+.spellcaster-header-box {
+    padding: 6px 12px;
+    background-color: #110A20;
+    border-bottom: 2px solid #D122E3;
+    margin-bottom: 6px;
+    box-shadow: 0 2px 8px rgba(209, 34, 227, 0.15);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  33. SELECTION HANDLES & DRAG FEEDBACK
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+.rubberband,
+rubberband {
+    border: 1px solid #D122E3;
+    background-color: rgba(209, 34, 227, 0.15);
+}
+
+.dnd {
+    border: 2px solid #D122E3;
+    background-color: rgba(209, 34, 227, 0.1);
+}
+
+.osd {
+    background-color: rgba(21, 13, 38, 0.9);
+    border: 1px solid #3A2863;
+    border-radius: 6px;
+    color: #E2DFEB;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  34. SYMBOLIC ICON RECOLORING
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+image,
+.image {
+    -gtk-icon-style: symbolic;
+}
+
+window image,
+dialog image {
+    color: #8B7FA8;
+}
+
+*:hover > image,
+*:hover > .image {
+    color: #D122E3;
+}
+
+*:disabled > image,
+*:disabled > .image {
+    color: #3A2863;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  35. FONT CHOOSER
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+fontchooser list {
+    background-color: #0B0715;
+}
+
+fontchooser list row {
+    color: #E2DFEB;
+}
+
+fontchooser list row:selected {
+    background-color: rgba(209, 34, 227, 0.3);
+}
+
+fontchooser entry {
+    background-color: #1A1030;
+}
+
+fontchooser spinbutton {
+    background-color: #1A1030;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  36. ASSISTANT / WIZARD DIALOGS
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+assistant .sidebar {
+    background-color: #110A20;
+    border-right: 1px solid #21153B;
+}
+
+assistant .sidebar label {
+    color: #8B7FA8;
+    padding: 8px 12px;
+}
+
+assistant .sidebar label.highlight {
+    color: #D122E3;
+    font-weight: bold;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  37. ERROR / WARNING / SUCCESS STATES
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+.error {
+    color: #FF5252;
+}
+
+.warning {
+    color: #FFB300;
+}
+
+.success {
+    color: #00E676;
+}
+
+entry.error {
+    border-color: #FF5252;
+    box-shadow: 0 0 4px rgba(255, 82, 82, 0.3);
+}
+
+entry.warning {
+    border-color: #FFB300;
+    box-shadow: 0 0 4px rgba(255, 179, 0, 0.3);
+}
+
+label.error {
+    color: #FF5252;
+}
+
+label.warning {
+    color: #FFB300;
+}
+
+label.success {
+    color: #00E676;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  38. CALENDAR
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+calendar {
+    background-color: #0B0715;
+    color: #E2DFEB;
+    border: 1px solid #3A2863;
+}
+
+calendar:header {
+    background-color: #110A20;
+    color: #D122E3;
+}
+
+calendar:selected {
+    background-color: #D122E3;
+    color: #FFFFFF;
+    border-radius: 50%;
+}
+
+calendar.highlight {
+    color: #E84DF7;
+}
+
+calendar:indeterminate {
+    color: #5A4A7A;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  39. MISCELLANEOUS
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Dim non-sensitive areas */
+*:disabled {
+    -gtk-icon-filter: opacity(0.5);
+}
+
+/* Linked buttons (e.g. path bar, mode toggles) */
+.linked > button {
+    border-radius: 0;
+    border-right-width: 0;
+}
+
+.linked > button:first-child {
+    border-radius: 4px 0 0 4px;
+}
+
+.linked > button:last-child {
+    border-radius: 0 4px 4px 0;
+    border-right-width: 1px;
+}
+
+.linked > button:only-child {
+    border-radius: 4px;
+    border-right-width: 1px;
+}
+
+/* Inline action entries (search, filter) */
+entry.flat {
+    background-color: transparent;
+    border: none;
+}
+
+/* Dim image for background area */
+viewport {
+    background-color: #0B0715;
+}
+
+/* Sidebar panels */
+.sidebar {
+    background-color: #110A20;
+    border-right: 1px solid #21153B;
+}
+
+/* Content area */
+.content-area {
+    background-color: #0B0715;
+}
+
+/* Action bar at dialog bottom */
+actionbar {
+    background-color: #110A20;
+    border-top: 1px solid #21153B;
+    padding: 4px 8px;
+}
+
+/* Reveal transition containers */
+revealer > * {
+    background-color: transparent;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  END OF SPELLCASTER PREMIUM THEME
+ * ═══════════════════════════════════════════════════════════════════════════ */

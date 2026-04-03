@@ -43,6 +43,7 @@ DARKTABLE_PLUGIN_PREFIX = "plugins/darktable/"
 GIMP_PLUGIN_FILES = [
     "plugins/gimp/comfyui-connector/comfyui-connector.py",
     "plugins/gimp/comfyui-connector/spellcaster_steg.py",
+    "plugins/gimp/comfyui-connector/spellcaster-theme.css",
     "plugins/gimp/comfyui-connector/gimp_banner.png",
     "plugins/gimp/comfyui-connector/installer_background.png",
 ]
@@ -50,6 +51,7 @@ GIMP_PLUGIN_FILES = [
 DARKTABLE_PLUGIN_FILES = [
     "plugins/darktable/comfyui_connector.lua",
     "plugins/darktable/spellcaster_steg.py",
+    "plugins/darktable/spellcaster-darktable.css",
     "plugins/darktable/splash.py",
     "plugins/darktable/darktable_splash.jpg",
     "plugins/darktable/installer_background.png",
@@ -414,9 +416,56 @@ def _ask_yn(prompt, default=True):
     return raw[0] == "y"
 
 
-def apply_spellcaster_theme_gimp(gimp_plug_dir: Path):
-    """Replace GIMP splash + icons with Spellcaster branding."""
+def _install_gimp_css_theme(gimp_plug_dir: Path):
+    """Install the Spellcaster GTK3 CSS theme into GIMP's user theme directory.
+
+    Copies spellcaster-theme.css to:
+      - Windows: %APPDATA%/GIMP/3.0/themes/Spellcaster/gtk.css
+      - macOS:   ~/Library/Application Support/GIMP/3.0/themes/Spellcaster/gtk.css
+      - Linux:   ~/.config/GIMP/3.0/themes/Spellcaster/gtk.css
+    """
     import shutil
+
+    connector_dir = gimp_plug_dir / "comfyui-connector"
+    css_src = connector_dir / "spellcaster-theme.css"
+
+    # Download CSS if not present locally
+    if not css_src.exists():
+        css_url = f"{GITHUB_RAW}/plugins/gimp/comfyui-connector/spellcaster-theme.css"
+        download_file(css_url, css_src)
+
+    if not css_src.exists():
+        print(f"  {Y}spellcaster-theme.css not available{X}")
+        return
+
+    # Determine GIMP user theme directory
+    if platform.system() == "Windows":
+        appdata = os.environ.get("APPDATA", "")
+        if appdata:
+            theme_dir = Path(appdata) / "GIMP" / "3.0" / "themes" / "Spellcaster"
+        else:
+            print(f"  {Y}Cannot determine APPDATA for GIMP theme install{X}")
+            return
+    elif platform.system() == "Darwin":
+        theme_dir = Path.home() / "Library" / "Application Support" / "GIMP" / "3.0" / "themes" / "Spellcaster"
+    else:
+        theme_dir = Path.home() / ".config" / "GIMP" / "3.0" / "themes" / "Spellcaster"
+
+    try:
+        theme_dir.mkdir(parents=True, exist_ok=True)
+        dest = theme_dir / "gtk.css"
+        shutil.copy2(css_src, dest)
+        print(f"  {G}✓ GIMP Spellcaster theme installed:{X} {dest}")
+    except OSError as e:
+        print(f"  {R}Error installing GIMP theme: {e}{X}")
+
+
+def apply_spellcaster_theme_gimp(gimp_plug_dir: Path):
+    """Replace GIMP splash + icons with Spellcaster branding and install CSS theme."""
+    import shutil
+
+    # --- Install the persistent CSS theme ---
+    _install_gimp_css_theme(gimp_plug_dir)
 
     # Find system splash
     candidates = []
@@ -491,9 +540,60 @@ def apply_spellcaster_theme_gimp(gimp_plug_dir: Path):
                 break
 
 
-def apply_spellcaster_theme_darktable(dt_dir: Path):
-    """Replace Darktable splash + icons with Spellcaster branding."""
+def _install_darktable_css_theme(dt_dir: Path):
+    """Install the Spellcaster CSS theme into Darktable's user themes directory.
+
+    Copies spellcaster-darktable.css to:
+      - Windows: %APPDATA%/darktable/themes/spellcaster-darktable.css
+      - macOS:   ~/Library/Application Support/darktable/themes/spellcaster-darktable.css
+      - Linux:   ~/.config/darktable/themes/spellcaster-darktable.css
+    """
     import shutil
+
+    css_src = dt_dir / "spellcaster-darktable.css"
+
+    # Download CSS if not present locally
+    if not css_src.exists():
+        css_url = f"{GITHUB_RAW}/plugins/darktable/spellcaster-darktable.css"
+        download_file(css_url, css_src)
+
+    if not css_src.exists():
+        print(f"  {Y}spellcaster-darktable.css not available{X}")
+        return
+
+    # Determine Darktable user themes directory
+    if platform.system() == "Windows":
+        appdata = os.environ.get("APPDATA", "")
+        if appdata:
+            themes_dir = Path(appdata) / "darktable" / "themes"
+        else:
+            # Fallback: try LocalAppData
+            local = os.environ.get("LOCALAPPDATA", "")
+            if local:
+                themes_dir = Path(local) / "darktable" / "themes"
+            else:
+                print(f"  {Y}Cannot determine APPDATA for Darktable theme install{X}")
+                return
+    elif platform.system() == "Darwin":
+        themes_dir = Path.home() / "Library" / "Application Support" / "darktable" / "themes"
+    else:
+        themes_dir = Path.home() / ".config" / "darktable" / "themes"
+
+    try:
+        themes_dir.mkdir(parents=True, exist_ok=True)
+        dest = themes_dir / "spellcaster-darktable.css"
+        shutil.copy2(css_src, dest)
+        print(f"  {G}✓ Darktable Spellcaster theme installed:{X} {dest}")
+    except OSError as e:
+        print(f"  {R}Error installing Darktable theme: {e}{X}")
+
+
+def apply_spellcaster_theme_darktable(dt_dir: Path):
+    """Replace Darktable splash + icons with Spellcaster branding and install CSS theme."""
+    import shutil
+
+    # --- Install the persistent CSS theme ---
+    _install_darktable_css_theme(dt_dir)
 
     # Find system splash
     candidates = []
