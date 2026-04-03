@@ -268,7 +268,67 @@ def _auto_update():
                 except Exception:
                     pass
 
-        # Step 6: Record version and notify user
+        # Step 6: Re-apply appearance assets if user opted in
+        cfg = _load_config()
+        if cfg.get("apply_theme", cfg.get("auto_update", True)):
+            # Re-install gimp.css to all GIMP config dirs
+            _install_spellcaster_theme_to_disk()
+
+            # Update the banner GIF in the parent plugins/gimp/ directory
+            banner_gif = _PLUGIN_DIR / "gimp_banner.gif"
+            if not banner_gif.exists():
+                banner_gif = _PLUGIN_DIR.parent / "gimp_banner.gif"
+            parent_banner = _PLUGIN_DIR.parent / "gimp_banner.gif"
+            if banner_gif.exists() and banner_gif != parent_banner:
+                import shutil
+                try:
+                    shutil.copy2(banner_gif, parent_banner)
+                except Exception:
+                    pass
+
+            # Re-apply system splash if the banner PNG exists
+            banner_png = _PLUGIN_DIR.parent / "gimp_banner.png"
+            if not banner_png.exists():
+                banner_png = _PLUGIN_DIR / "gimp_banner.png"
+            if banner_png.exists():
+                # Find and replace GIMP system splash
+                import shutil
+                splash_candidates = []
+                if _sys.platform == "win32":
+                    for pf in [Path("C:/Program Files/GIMP 3"), Path("C:/Program Files (x86)/GIMP 3")]:
+                        share = pf / "share" / "gimp" / "3.0" / "images"
+                        if share.is_dir():
+                            for f in share.glob("gimp-splash*.png"):
+                                splash_candidates.append(f)
+                for splash in splash_candidates:
+                    if splash.exists():
+                        try:
+                            backup = splash.with_suffix(".orig" + splash.suffix)
+                            if not backup.exists():
+                                shutil.copy2(splash, backup)
+                            shutil.copy2(banner_png, splash)
+                        except (PermissionError, OSError):
+                            pass
+                        break
+
+            # Re-apply custom icon
+            icon_src = _PLUGIN_DIR / "spellcaster_icon.png"
+            if icon_src.exists():
+                if _sys.platform == "win32":
+                    for pf in [Path("C:/Program Files/GIMP 3"), Path("C:/Program Files (x86)/GIMP 3")]:
+                        for icon_name in ["gimp-logo.png", "wilber.png"]:
+                            icon_path = pf / "share" / "gimp" / "3.0" / "images" / icon_name
+                            if icon_path.exists():
+                                try:
+                                    import shutil
+                                    backup = icon_path.with_suffix(".orig" + icon_path.suffix)
+                                    if not backup.exists():
+                                        shutil.copy2(icon_path, backup)
+                                    shutil.copy2(icon_src, icon_path)
+                                except (PermissionError, OSError):
+                                    pass
+
+        # Step 7: Record version and notify user
         if updated > 0:
             _VERSION_FILE.write_text(latest_sha)
             sha7 = latest_sha[:7]
