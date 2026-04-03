@@ -1045,7 +1045,10 @@ class InstallerApp(ctk.CTk):
                     self.log("WARNING: GIMP plugin source directory not found")
 
             import json
-            conf = {"server_url": self.server_url.get()}
+            conf = {
+                "server_url": self.server_url.get(),
+                "apply_theme": self.apply_theme.get(),
+            }
             if gimp_dest.is_dir():
                 with open(gimp_dest / "config.json", "w", encoding="utf-8") as f:
                     json.dump(conf, f)
