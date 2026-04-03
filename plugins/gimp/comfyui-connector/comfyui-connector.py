@@ -560,12 +560,24 @@ def _load_config():
 # Updated at runtime whenever the user successfully runs a workflow with a different URL.
 COMFYUI_DEFAULT_URL = _load_config().get("server_url", "http://127.0.0.1:8188")
 
+def _save_config(data):
+    """Write config.json to the plugin directory, merging with existing config."""
+    cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+    existing = _load_config()
+    existing.update(data)
+    try:
+        with open(cfg_path, "w", encoding="utf-8") as f:
+            json.dump(existing, f, indent=2)
+    except Exception:
+        pass
+
 def _propagate_server_url(new_url):
-    """Update the session-wide default server URL after a successful workflow run."""
+    """Update the session-wide default server URL and persist to config.json."""
     global COMFYUI_DEFAULT_URL
     new_url = new_url.strip().rstrip("/")
     if new_url and new_url != COMFYUI_DEFAULT_URL:
         COMFYUI_DEFAULT_URL = new_url
+        _save_config({"server_url": new_url})
 
 # ── Session state — remembers last-used settings per dialog ──────────
 # In-memory only: forgotten when GIMP restarts. Each dialog type stores
@@ -8363,6 +8375,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-batch-variations",
             "spellcaster-iclight", "spellcaster-supir",
             "spellcaster-seedv2r",
+            "spellcaster-settings",
         ]
 
     def do_create_procedure(self, name):
@@ -8423,6 +8436,8 @@ class Spellcaster(Gimp.PlugIn):
                                    "Restore and enhance images using SUPIR AI model"),
             "spellcaster-seedv2r": ("SeedV2R Upscale...", self._run_seedv2r,
                                      "Upscale with AI detail hallucination and scale control"),
+            "spellcaster-settings": ("Settings...", self._run_settings,
+                                      "Configure Spellcaster: server URL, defaults, and preferences"),
         }
         label, callback, doc = menu_map[name]
         # ImageProcedure.new binds a Python callback to a GIMP procedure.
@@ -10651,6 +10666,118 @@ class Spellcaster(Gimp.PlugIn):
         except Exception as e:
             Gimp.message(f"Upload Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    def _run_settings(self, procedure, run_mode, image, drawables, config, data):
+        """Spellcaster Settings: configure server URL, defaults, and preferences."""
+        if run_mode != Gimp.RunMode.INTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+        _apply_spellcaster_theme()
+        dlg = Gtk.Dialog(title="Spellcaster Settings")
+        dlg.set_default_size(520, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Save", Gtk.ResponseType.OK)
+        dlg.set_default_response(Gtk.ResponseType.OK)
+        _style_dialog_buttons(dlg)
+        bx = dlg.get_content_area()
+        bx.set_spacing(10); bx.set_margin_start(16); bx.set_margin_end(16)
+        bx.set_margin_top(16); bx.set_margin_bottom(16)
+
+        # Header
+        _make_branded_header(bx)
+
+        # Load current config
+        cfg = _load_config()
+
+        # ── Server URL ──
+        bx.pack_start(Gtk.Label(label="ComfyUI Server URL:", xalign=0), False, False, 0)
+        server_entry = Gtk.Entry()
+        server_entry.set_text(cfg.get("server_url", COMFYUI_DEFAULT_URL))
+        server_entry.set_tooltip_text(
+            "The URL of your ComfyUI server. This is saved permanently and used\n"
+            "as the default for all Spellcaster dialogs.\n\n"
+            "Local:  http://127.0.0.1:8188\n"
+            "LAN:    http://192.168.x.x:8188\n"
+            "Remote: http://your-server:8188")
+        bx.pack_start(server_entry, False, False, 0)
+
+        # Test connection button
+        test_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        test_btn = Gtk.Button(label="Test Connection")
+        test_status = Gtk.Label(label="")
+        test_btn.set_tooltip_text("Send a test request to the ComfyUI server to verify connectivity.")
+        def on_test(btn):
+            url = server_entry.get_text().strip().rstrip("/")
+            test_status.set_text("Testing...")
+            try:
+                req = urllib.request.Request(f"{url}/system_stats", method="GET")
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    data = json.loads(resp.read())
+                    vram = data.get("devices", [{}])[0].get("vram_total", 0)
+                    gpu = data.get("devices", [{}])[0].get("name", "Unknown")
+                    if vram:
+                        test_status.set_markup(f'<span foreground="#00E676">Connected: {gpu} ({vram//1024//1024//1024} GB)</span>')
+                    else:
+                        test_status.set_markup('<span foreground="#00E676">Connected</span>')
+            except Exception as e:
+                test_status.set_markup(f'<span foreground="#FF5252">Failed: {e}</span>')
+        test_btn.connect("clicked", on_test)
+        test_row.pack_start(test_btn, False, False, 0)
+        test_row.pack_start(test_status, True, True, 0)
+        bx.pack_start(test_row, False, False, 0)
+
+        # ── Default timeout ──
+        bx.pack_start(Gtk.Separator(), False, False, 5)
+        bx.pack_start(Gtk.Label(label="Default Timeout (seconds):", xalign=0), False, False, 0)
+        timeout_adj = Gtk.Adjustment(value=cfg.get("timeout", 300), lower=30, upper=3600, step_increment=30)
+        timeout_spin = Gtk.SpinButton(adjustment=timeout_adj, digits=0)
+        timeout_spin.set_tooltip_text(
+            "Maximum time to wait for ComfyUI to finish a generation.\n"
+            "Increase for slow hardware or complex workflows (e.g. video).\n"
+            "Default: 300 seconds (5 minutes)")
+        bx.pack_start(timeout_spin, False, False, 0)
+
+        # ── Auto-update toggle ──
+        bx.pack_start(Gtk.Separator(), False, False, 5)
+        auto_update_cb = Gtk.CheckButton(label="Auto-update plugin from GitHub on startup")
+        auto_update_cb.set_active(cfg.get("auto_update", True))
+        auto_update_cb.set_tooltip_text(
+            "When enabled, Spellcaster checks GitHub for updates every time\n"
+            "GIMP starts. Disable if you have custom modifications you want\n"
+            "to preserve, or if you have no internet connection.")
+        bx.pack_start(auto_update_cb, False, False, 0)
+
+        # ── Info ──
+        bx.pack_start(Gtk.Separator(), False, False, 5)
+        info_label = Gtk.Label()
+        info_label.set_markup(
+            f'<span size="small" foreground="#888888">'
+            f'Config file: {os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")}\n'
+            f'Current session URL: {COMFYUI_DEFAULT_URL}\n'
+            f'Plugin version: Spellcaster v1.0'
+            f'</span>')
+        info_label.set_xalign(0)
+        bx.pack_start(info_label, False, False, 0)
+
+        bx.show_all()
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        # Save settings
+        new_url = server_entry.get_text().strip().rstrip("/")
+        new_timeout = int(timeout_spin.get_value())
+        new_auto_update = auto_update_cb.get_active()
+        dlg.destroy()
+
+        _save_config({
+            "server_url": new_url,
+            "timeout": new_timeout,
+            "auto_update": new_auto_update,
+        })
+        _propagate_server_url(new_url)
+        Gimp.message(f"Settings saved. Server: {new_url}")
+        return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
 
 # ═══════════════════════════════════════════════════════════════════════════
