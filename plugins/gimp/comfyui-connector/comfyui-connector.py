@@ -185,6 +185,29 @@ def _style_dialog_buttons(dialog):
 
 _apply_spellcaster_theme()
 
+def _apply_staged_updates():
+    """On startup, apply any .update files staged by a previous auto-update.
+
+    On Windows, the running .py file cannot be replaced while GIMP has it loaded.
+    The auto-updater writes the new version as 'filename.update' instead.
+    This function (called before the updater runs) detects those staged files
+    and performs the replacement before the old code is imported.
+    """
+    try:
+        for staged in _PLUGIN_DIR.rglob("*.update"):
+            target = staged.with_suffix("")  # remove .update suffix
+            try:
+                if target.exists():
+                    target.unlink()
+                staged.rename(target)
+            except Exception:
+                pass  # Will retry on next startup
+    except Exception:
+        pass
+
+_apply_staged_updates()
+
+
 def _auto_update():
     """Check GitHub for a newer commit and download ALL plugin files dynamically.
 
@@ -198,9 +221,10 @@ def _auto_update():
       2. Compare with local .spellcaster_version
       3. If different: GET /git/trees/main?recursive=1
       4. Filter for files under plugins/gimp/comfyui-connector/
-      5. Download each via raw.githubusercontent.com (atomic tmp→rename)
-      6. Remove local files that no longer exist in the repo
-      7. Write new SHA to .spellcaster_version
+      5. Download each via raw.githubusercontent.com
+      6. If direct replace fails (Windows file locking), stage as .update
+      7. Remove local files that no longer exist in the repo
+      8. Write new SHA to .spellcaster_version
     """
     import sys as _sys
     _ua = "spellcaster-gimp/2.0"
@@ -233,10 +257,10 @@ def _auto_update():
 
         # Step 4: Download all remote files (supports subdirectories)
         updated = 0
+        staged = 0
         failed = 0
         remote_filenames = set()
         for rel_path in remote_files:
-            # Preserve subdirectory structure relative to plugin dir
             remainder = rel_path[len(_GIMP_PLUGIN_PREFIX):]
             remote_filenames.add(remainder)
             try:
@@ -247,8 +271,14 @@ def _auto_update():
                 req_dl = urllib.request.Request(url, headers={"User-Agent": _ua})
                 with urllib.request.urlopen(req_dl, timeout=60) as r2:
                     tmp.write_bytes(r2.read())
-                tmp.replace(dest)
-                updated += 1
+                try:
+                    tmp.replace(dest)
+                    updated += 1
+                except PermissionError:
+                    # Windows: file is locked by GIMP — stage for next startup
+                    stage_path = dest.with_suffix(dest.suffix + ".update")
+                    tmp.replace(stage_path)
+                    staged += 1
             except Exception as e:
                 failed += 1
                 print(f"[Spellcaster] Failed to download {remainder}: {e}", file=_sys.stderr)
@@ -260,7 +290,8 @@ def _auto_update():
                 continue
             rel = local_file.relative_to(_PLUGIN_DIR).as_posix()
             if rel in protected or local_file.name in protected \
-               or local_file.name.endswith(".pyc"):
+               or local_file.name.endswith(".pyc") \
+               or local_file.name.endswith(".update"):
                 continue
             if rel not in remote_filenames:
                 try:
@@ -328,17 +359,23 @@ def _auto_update():
                                 except (PermissionError, OSError):
                                     pass
 
-        # Step 7: Record version and notify user
-        if updated > 0:
+        # Step 8: Record version and notify user
+        if updated > 0 or staged > 0:
             _VERSION_FILE.write_text(latest_sha)
             sha7 = latest_sha[:7]
-            msg = f"Spellcaster updated to {sha7} ({updated} files)."
+            msg = f"Spellcaster updated to {sha7} ({updated} files"
+            if staged > 0:
+                msg += f", {staged} staged for next restart"
+            msg += ")."
             if failed > 0:
                 msg += f"\n{failed} file(s) failed to download."
-            msg += "\nRestart GIMP to use the new version."
+            if staged > 0:
+                msg += "\nRestart GIMP to apply all updates (some files were in use)."
+            else:
+                msg += "\nRestart GIMP to use the new version."
             def _show_update_msg_once(m=msg):
                 Gimp.message(m)
-                return False  # GLib.idle_add: return False = don't repeat
+                return False
             GLib.idle_add(_show_update_msg_once)
     except Exception as e:
         print(f"[Spellcaster] Auto-update check failed: {e}", file=_sys.stderr)
@@ -4078,29 +4115,39 @@ def _build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
         wf["31"] = {"class_type": "KSamplerSelect",
                     "inputs": {"sampler_name": "euler"}}
         wf["32"] = {"class_type": "Flux2Scheduler",
-                    "inputs": {"steps": preset.get("steps", 20), "denoise": 0.90,
+                    "inputs": {"steps": preset.get("steps", 20), "denoise": 1.0,
                                "width": ["25", 0], "height": ["25", 1]}}
         wf["33"] = {"class_type": "RandomNoise",
                     "inputs": {"noise_seed": seed}}
 
-        # Use the VAE-encoded padded image as the starting latent with
-        # the outpaint mask.  At denoise < 1.0, the sampler partially
-        # noises only the masked (new/padded) area and the original
-        # content in the unmasked region is preserved through the latent.
+        # Use VAE-encoded padded image with SetLatentNoiseMask.
+        # denoise=1.0 fully regenerates the masked (padded) area from noise.
+        # The mask from ImagePadForOutpaint marks the new area for generation.
         wf["35"] = {"class_type": "SetLatentNoiseMask",
                     "inputs": {"samples": ["6", 0], "mask": ["5", 1]}}
 
-        # Sample — the noise mask ensures only padded area is regenerated
+        # Sample — generates the extension using ReferenceLatent context
         wf["40"] = {"class_type": "SamplerCustomAdvanced",
                     "inputs": {"noise": ["33", 0], "guider": ["30", 0],
                                "sampler": ["31", 0], "sigmas": ["32", 0],
                                "latent_image": ["35", 0]}}
 
-        # Decode + save
+        # Decode the AI-generated result
         wf["9"] = {"class_type": "VAEDecode",
                    "inputs": {"samples": ["40", 0], "vae": vae_ref}}
+
+        # Composite: paste the original padded image back over the AI result
+        # using the INVERTED mask. This ensures the original content area is
+        # pixel-perfect (not touched by the AI) and only the extension comes
+        # from the generated output. Solves gray bleed in both directions.
+        wf["9m"] = {"class_type": "InvertMask",
+                    "inputs": {"mask": ["5", 1]}}
+        wf["9c"] = {"class_type": "ImageCompositeMasked",
+                    "inputs": {"destination": ["9", 0], "source": padded_ref,
+                               "mask": ["9m", 0], "x": 0, "y": 0,
+                               "resize_source": False}}
         wf["10"] = {"class_type": "SaveImage",
-                    "inputs": {"images": ["9", 0], "filename_prefix": "spellcaster_outpaint"}}
+                    "inputs": {"images": ["9c", 0], "filename_prefix": "spellcaster_outpaint"}}
 
     else:
         # ── Standard outpaint pipeline (SD1.5/SDXL/etc) ────────────────
