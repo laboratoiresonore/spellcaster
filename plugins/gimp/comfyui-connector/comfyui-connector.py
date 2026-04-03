@@ -3874,6 +3874,7 @@ def _build_rembg(image_filename):
 # ── Upscale 4x (model-based super resolution) ────────────────────────
 
 UPSCALE_PRESETS = {
+    "(none — no upscale)": None,
     "4x UltraSharp (general)": "4x-UltraSharp.pth",
     "4x RealESRGAN (photo)": "RealESRGAN_x4plus.pth",
     "4x NMKD Superscale (sharp)": "4x_NMKD-Superscale-SP_178000_G.pth",
@@ -4358,14 +4359,17 @@ def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text
     wf = {
         "1": {"class_type": "LoadImage",
               "inputs": {"image": image_filename}},
-        "2": {"class_type": "UpscaleModelLoader",
-              "inputs": {"model_name": upscale_model}},
-        "3": {"class_type": "ImageUpscaleWithModel",
-              "inputs": {
-                  "upscale_model": ["2", 0],
-                  "image": ["1", 0],
-              }},
     }
+    # Upscale is optional — skip if no upscale model selected
+    if upscale_model:
+        wf["2"] = {"class_type": "UpscaleModelLoader",
+                   "inputs": {"model_name": upscale_model}}
+        wf["3"] = {"class_type": "ImageUpscaleWithModel",
+                   "inputs": {"upscale_model": ["2", 0], "image": ["1", 0]}}
+        img_ref = ["3", 0]
+    else:
+        img_ref = ["1", 0]
+
     loader_wf, model_ref, clip_ref, vae_ref = _make_model_loader(preset, "4")
     wf.update(loader_wf)
     wf.update({
@@ -4374,7 +4378,7 @@ def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text
         "6": {"class_type": "CLIPTextEncode",
               "inputs": {"text": negative_text, "clip": clip_ref}},
         "7": {"class_type": "VAEEncode",
-              "inputs": {"pixels": ["3", 0], "vae": vae_ref}},
+              "inputs": {"pixels": img_ref, "vae": vae_ref}},
         "8": {"class_type": "KSampler",
               "inputs": {
                   "model": model_ref,
@@ -4401,11 +4405,11 @@ def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text
         cn_model = guide["cn_models"].get(arch, guide["cn_models"].get("sdxl"))
         preprocessor = guide["preprocessor"]
 
-        # ControlNet processes the UPSCALED image (node 3), not the original
-        cn_image_ref = ["3", 0]
+        # ControlNet processes the (optionally upscaled) image
+        cn_image_ref = img_ref
         if preprocessor:
             wf["20"] = {"class_type": preprocessor,
-                        "inputs": {"image": ["3", 0]}}
+                        "inputs": {"image": img_ref}}
             cn_image_ref = ["20", 0]
 
         wf["21"] = {"class_type": "ControlNetLoader",
@@ -4435,7 +4439,7 @@ def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text
         cn_model_2 = guide2["cn_models"].get(arch, guide2["cn_models"].get("sdxl"))
         preprocessor_2 = guide2["preprocessor"]
 
-        cn_image_ref_2 = ["3", 0]
+        cn_image_ref_2 = img_ref
         if preprocessor_2:
             wf["30"] = {"class_type": preprocessor_2,
                         "inputs": {"image": ["3", 0]}}
@@ -4522,7 +4526,7 @@ def _build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_
               "inputs": {"image": image_filename}},
     }
 
-    if scale_factor > 1.0:
+    if scale_factor > 1.0 and upscale_model:
         # Upscale with model to 4x, then scale to target dimensions
         target_w = int(orig_width * scale_factor)
         target_h = int(orig_height * scale_factor)
@@ -10829,6 +10833,10 @@ class Spellcaster(Gimp.PlugIn):
         srv = se.get_text().strip(); _propagate_server_url(srv)
         preset_key = model_combo.get_active_id()
         model_name = UPSCALE_PRESETS[preset_key]
+        if not model_name:
+            Gimp.message("Please select an upscale model (not 'none').")
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         _SESSION["upscale"] = {"model_id": preset_key}
         _save_session()
         dlg.destroy()
