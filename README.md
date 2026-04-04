@@ -23,7 +23,14 @@
   <a href="#-faq">FAQ</a>
 </p>
 
----
+<p align="center">
+Follow us for more creative experiments:
+<a href="https://www.instagram.com/lelaboratoiresonore/">Instagram</a>
+<a href="https://www.youtube.com/@LeLaboratoireSonore">Youtube</a>
+<a href="https://www.facebook.com/laboratoire.sonore.2025">Facebook</a>
+<a href="https://www.twitch.tv/laboratoiresonore">Twitch</a></p><br/>
+     <br/><br/>
+
 
 ## What Is Spellcaster?
 
@@ -461,11 +468,13 @@ Body & detail fix, artistic styles, accelerators — across SDXL, Flux, Klein, Z
 <p align="center">
   <img src="plugins/darktable/darktable_splash.jpg " alt="Spellcaster" width="400" />
   <br/><br/>
-  <strong>From zero to AI mastery in one install.</strong><br/>
-  <sub>   <strong> Experimentally yours, <a href="https://www.laboratoiresonore.com/">laboratoire sonore</a></sub>
- Follow us on social media and become a test subject for our future creative experiments... 
-  <sub> <a href="https://www.instagram.com/lelaboratoiresonore/">Instagram</a></sub>
-  <sub> <a href="https://www.youtube.com/@LeLaboratoireSonore">Youtube</a></sub>
-  <sub> <a href="https://www.facebook.com/laboratoire.sonore.2025">Facebook</a></sub>
-  <sub> <a href="https://www.twitch.tv/laboratoiresonore">Twitch</a></sub></strong><br/>
+  <strong>From zero to AI mastery in one install.
+      <br/><br/>Experimentally yours, <a href="https://www.laboratoiresonore.com/">le laboratoire sonore</a>, Arkyn Glyph</strong><br/>
+<p align="center">
+Follow us for more creative experiments:
+<a href="https://www.instagram.com/lelaboratoiresonore/">Instagram</a>
+<a href="https://www.youtube.com/@LeLaboratoireSonore">Youtube</a>
+<a href="https://www.facebook.com/laboratoire.sonore.2025">Facebook</a>
+<a href="https://www.twitch.tv/laboratoiresonore">Twitch</a></p><br/>
+     <br/><br/>
 </p>
