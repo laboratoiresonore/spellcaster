@@ -10438,6 +10438,36 @@ class Spellcaster(Gimp.PlugIn):
                 procs.append(name)  # no config = register everything
             elif feature in installed:
                 procs.append(name)  # feature was installed
+
+        # ── Dynamic preset menu entries ──────────────────────────────
+        # Read user_presets.json and register one procedure per saved preset
+        # so they appear as a submenu under "My Spellcaster Presets"
+        _tool_labels = {
+            "preset_dialog": "Expert (img2img/inpaint)",
+            "wan_i2v": "Wan I2V Video",
+            "faceid": "FaceID",
+            "klein": "Klein Editor",
+            "pulid_flux": "PuLID Flux",
+        }
+        import re as _re
+        self._dynamic_presets = {}  # name → (dialog_key, preset_data)
+        try:
+            all_data = json.loads(_USER_PRESETS_PATH.read_text(encoding="utf-8")) \
+                       if _USER_PRESETS_PATH.exists() else {}
+            if isinstance(all_data, list):
+                all_data = {"preset_dialog": all_data}
+            for dialog_key, preset_list in all_data.items():
+                tool_label = _tool_labels.get(dialog_key, dialog_key)
+                for idx, preset in enumerate(preset_list):
+                    pname = preset.get("name", f"Preset {idx+1}")
+                    # Sanitize for procedure name (lowercase, alphanum + dash only)
+                    safe = _re.sub(r'[^a-z0-9]', '-', pname.lower()).strip('-')[:30]
+                    proc_name = f"spellcaster-upreset-{safe}-{idx}"
+                    self._dynamic_presets[proc_name] = (dialog_key, preset, pname, tool_label)
+                    procs.append(proc_name)
+        except Exception:
+            pass  # presets file missing or corrupt — skip
+
         return procs
 
     def do_create_procedure(self, name):
@@ -10529,6 +10559,41 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-my-presets": ("My Spellcaster Presets...", self._run_my_presets,
                                        "Quick access to your saved prompt/settings presets"),
         }
+
+        # ── Handle dynamic user preset procedures ────────────────────
+        if name in self._dynamic_presets:
+            dialog_key, preset_data, pname, tool_label = self._dynamic_presets[name]
+            label = f"{pname}  ({tool_label})"
+            doc = f"Load saved preset: {pname}"
+
+            def _make_preset_runner(dk, pdata):
+                def _runner(proc, rm, img, drawables, cfg, data):
+                    # Load preset into session
+                    session_key = {"preset_dialog": "img2img"}.get(dk, dk)
+                    _SESSION[session_key] = pdata
+                    _save_session()
+                    # Open the corresponding tool dialog (pre-filled from session)
+                    tool_proc = {
+                        "preset_dialog": "spellcaster-img2img",
+                        "wan_i2v": "spellcaster-wan-i2v",
+                        "faceid": "spellcaster-faceid-img2img",
+                        "klein": "spellcaster-klein-img2img",
+                        "pulid_flux": "spellcaster-pulid-flux",
+                    }.get(dk)
+                    if tool_proc:
+                        Gimp.get_pdb().lookup_procedure(tool_proc).run(
+                            Gimp.get_pdb().lookup_procedure(tool_proc).create_config())
+                    return proc.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+                return _runner
+
+            callback = _make_preset_runner(dialog_key, preset_data)
+            proc = Gimp.ImageProcedure.new(self, name, Gimp.PDBProcType.PLUGIN, callback, None)
+            proc.set_menu_label(label)
+            proc.set_documentation(doc, doc, name)
+            proc.set_attribution("Spellcaster", "Spellcaster", "2025")
+            proc.add_menu_path("<Image>/Filters/My Spellcaster Presets")
+            return proc
+
         label, callback, doc = menu_map[name]
 
         # Menu path mapping — organise tools into logical submenus
