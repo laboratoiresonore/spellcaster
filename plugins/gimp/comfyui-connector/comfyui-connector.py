@@ -10304,6 +10304,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-video-upscale": "wan_i2v",
             "spellcaster-video-reactor": "wan_i2v",
             "spellcaster-rembg": "rembg",
+            "spellcaster-gif-stitch": None,
             "spellcaster-embed-watermark": None,
             "spellcaster-read-watermark": None,
             "spellcaster-layer-blend-ratio": None,
@@ -10356,6 +10357,8 @@ class Spellcaster(Gimp.PlugIn):
                                                "Blend two layers by a controllable ratio (e.g. 40%/60%)"),
             "spellcaster-upscale-blend": ("Upscaler Ratio Blender...", self._run_upscale_blend,
                                            "Upscale with two models and blend results (e.g. 40% ESRGAN + 60% Remacri)"),
+            "spellcaster-gif-stitch": ("GIF Stitcher (chain GIFs)...", self._run_gif_stitch,
+                                       "Chain multiple GIF animations into one seamless video"),
             "spellcaster-embed-watermark": ("Embed Invisible Watermark...", self._run_embed_watermark,
                                              "Hide encrypted metadata inside image pixels (LSB steganography)"),
             "spellcaster-read-watermark": ("Read Invisible Watermark...", self._run_read_watermark,
@@ -10463,6 +10466,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-rembg":             "<Image>/Filters/Spellcaster Tools",
             "spellcaster-layer-blend-ratio": "<Image>/Filters/Spellcaster Tools",
             "spellcaster-upscale-blend":     "<Image>/Filters/Spellcaster Tools",
+            "spellcaster-gif-stitch":        "<Image>/Filters/Spellcaster Tools",
             "spellcaster-embed-watermark":   "<Image>/Filters/Spellcaster Tools",
             "spellcaster-read-watermark":    "<Image>/Filters/Spellcaster Tools",
             "spellcaster-send-image":        "<Image>/Filters/Spellcaster Tools",
@@ -12936,6 +12940,267 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Upscaler Blend Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── GIF Stitcher ──────────────────────────────────────────────────
+    def _run_gif_stitch(self, procedure, run_mode, image, drawables, config, data):
+        """Stitch multiple GIF files into one seamless animation."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+
+        dlg = Gtk.Dialog(title="Spellcaster — GIF Stitcher")
+        dlg.set_default_size(560, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Stitch", Gtk.ResponseType.OK)
+        bx = dlg.get_content_area()
+        bx.set_spacing(6); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(10); bx.set_margin_bottom(10)
+
+        _hdr = _make_branded_header()
+        if _hdr: bx.pack_start(_hdr, False, False, 0)
+
+        bx.pack_start(Gtk.Label(
+            label="Chain multiple GIF files into one seamless animation.\n"
+                  "Add GIFs in order — they will play sequentially.\n"
+                  "The result is a new image with all frames as layers."),
+            False, False, 4)
+
+        # GIF file list
+        gif_store = Gtk.ListStore(str)  # filepath
+        tree = Gtk.TreeView(model=gif_store)
+        tree.set_headers_visible(True)
+        tree.set_reorderable(True)  # drag to reorder
+        col = Gtk.TreeViewColumn("GIF Files (drag to reorder)", Gtk.CellRendererText(), text=0)
+        col.set_expand(True)
+        tree.append_column(col)
+        sw = Gtk.ScrolledWindow()
+        sw.set_min_content_height(150)
+        sw.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        sw.add(tree)
+        bx.pack_start(sw, True, True, 0)
+
+        # Add / Remove buttons
+        btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        add_btn = Gtk.Button(label="Add GIF...")
+        add_btn.set_tooltip_text("Add a GIF file to the stitch queue")
+        def _on_add(*_a):
+            fc = Gtk.FileChooserDialog(title="Select GIF File",
+                                        action=Gtk.FileChooserAction.OPEN)
+            fc.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+            fc.add_button("_Open", Gtk.ResponseType.OK)
+            fc.set_select_multiple(True)
+            ff = Gtk.FileFilter()
+            ff.set_name("GIF Images")
+            ff.add_pattern("*.gif")
+            fc.add_filter(ff)
+            if fc.run() == Gtk.ResponseType.OK:
+                for path in fc.get_filenames():
+                    gif_store.append([path])
+            fc.destroy()
+        add_btn.connect("clicked", _on_add)
+        btn_row.pack_start(add_btn, False, False, 0)
+
+        remove_btn = Gtk.Button(label="Remove Selected")
+        remove_btn.set_tooltip_text("Remove the selected GIF from the queue")
+        def _on_remove(*_a):
+            sel = tree.get_selection()
+            model, it = sel.get_selected()
+            if it:
+                model.remove(it)
+        remove_btn.connect("clicked", _on_remove)
+        btn_row.pack_start(remove_btn, False, False, 0)
+
+        clear_btn = Gtk.Button(label="Clear All")
+        def _on_clear(*_a):
+            gif_store.clear()
+        clear_btn.connect("clicked", _on_clear)
+        btn_row.pack_start(clear_btn, False, False, 0)
+        bx.pack_start(btn_row, False, False, 0)
+
+        # Options
+        grid = Gtk.Grid(column_spacing=8, row_spacing=4)
+        grid.attach(Gtk.Label(label="Frame delay (ms):"), 0, 0, 1, 1)
+        delay_sp = Gtk.SpinButton.new_with_range(10, 1000, 10)
+        delay_sp.set_value(100)
+        delay_sp.set_tooltip_text("Delay between frames in milliseconds.\n"
+                                   "100ms = 10 FPS, 50ms = 20 FPS, 33ms = 30 FPS")
+        grid.attach(delay_sp, 1, 0, 1, 1)
+
+        grid.attach(Gtk.Label(label="Output FPS:"), 2, 0, 1, 1)
+        fps_label = Gtk.Label(label="10")
+        grid.attach(fps_label, 3, 0, 1, 1)
+        def _update_fps(*_a):
+            fps_label.set_text(f"{1000 / max(1, delay_sp.get_value()):.0f}")
+        delay_sp.connect("value-changed", _update_fps)
+
+        export_check = Gtk.CheckButton(label="Auto-export as GIF")
+        export_check.set_active(True)
+        export_check.set_tooltip_text("Automatically export the stitched result as a GIF file.\n"
+                                       "The file will be saved next to the first input GIF.")
+        grid.attach(export_check, 0, 1, 2, 1)
+
+        mp4_check = Gtk.CheckButton(label="Also export MP4")
+        mp4_check.set_active(True)
+        mp4_check.set_tooltip_text("Send stitched frames to ComfyUI to encode as MP4 video.\n"
+                                    "Requires a running ComfyUI server.")
+        grid.attach(mp4_check, 2, 1, 2, 1)
+
+        # Server (for MP4 export)
+        hb_srv = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb_srv.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
+        srv_e.set_tooltip_text("ComfyUI server (for MP4 export only)")
+        hb_srv.pack_start(srv_e, True, True, 0)
+        grid.attach(hb_srv, 0, 2, 4, 1)
+        bx.pack_start(grid, False, False, 4)
+
+        bx.show_all()
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        # Collect GIF paths in order
+        gif_paths = []
+        it = gif_store.get_iter_first()
+        while it:
+            gif_paths.append(gif_store.get_value(it, 0))
+            it = gif_store.iter_next(it)
+        delay = int(delay_sp.get_value())
+        auto_export = export_check.get_active()
+        export_mp4 = mp4_check.get_active()
+        srv = srv_e.get_text().strip()
+        dlg.destroy()
+
+        if len(gif_paths) < 2:
+            Gimp.message("Please add at least 2 GIF files to stitch.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        try:
+            # Load all GIFs and collect their frames
+            all_frames = []
+            max_w, max_h = 0, 0
+
+            for gif_path in gif_paths:
+                gfile = Gio.File.new_for_path(gif_path)
+                gif_img = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, gfile)
+                layers = gif_img.get_layers()
+                # GIMP stores GIF frames as layers (bottom = first frame)
+                # Reverse so we iterate first→last
+                for layer in reversed(layers):
+                    w, h = layer.get_width(), layer.get_height()
+                    max_w = max(max_w, w)
+                    max_h = max(max_h, h)
+                    all_frames.append((gif_img, layer))
+
+            if not all_frames:
+                Gimp.message("No frames found in the GIF files.")
+                return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+            # Create new image with all frames
+            result = Gimp.Image.new(max_w, max_h, Gimp.ImageBaseType.RGB)
+
+            for i, (src_img, src_layer) in enumerate(all_frames):
+                new_layer = Gimp.Layer.new_from_drawable(src_layer, result)
+                new_layer.set_name(f"Frame {i+1} ({delay}ms)")
+                result.insert_layer(new_layer, None, 0)
+                # Scale to canvas if different size
+                if new_layer.get_width() != max_w or new_layer.get_height() != max_h:
+                    new_layer.scale(max_w, max_h, False)
+
+            # Clean up source images
+            src_images = set(img for img, _ in all_frames)
+            for src in src_images:
+                src.delete()
+
+            # Display the result
+            Gimp.Display.new(result)
+            Gimp.displays_flush()
+
+            # Auto-export as GIF
+            if auto_export:
+                out_path = gif_paths[0].rsplit(".", 1)[0] + "_stitched.gif"
+                gfile_out = Gio.File.new_for_path(out_path)
+                try:
+                    # Flatten to indexed for GIF export
+                    dup = result.duplicate()
+                    _pdb_run('gimp-image-convert-indexed', {
+                        'image': dup, 'dither-type': 0, 'palette-type': 0,
+                        'num-cols': 255, 'alpha-dither': False,
+                        'remove-unused': False, 'palette': "",
+                    })
+                    Gimp.file_save(Gimp.RunMode.NONINTERACTIVE, dup,
+                                   list(dup.get_layers()), gfile_out)
+                    dup.delete()
+                    Gimp.message(f"GIF stitched! {len(all_frames)} frames.\nExported to: {out_path}")
+                except Exception as e:
+                    Gimp.message(f"Stitched {len(all_frames)} frames as layers.\n"
+                                 f"Auto-export failed: {e}\n"
+                                 f"Use File > Export As to save as GIF manually.")
+            else:
+                Gimp.message(f"GIF stitched! {len(all_frames)} frames as layers.\n"
+                             f"Use File > Export As to save as GIF.")
+
+            # MP4 export via ComfyUI
+            if export_mp4:
+                try:
+                    _propagate_server_url(srv)
+                    # Export each frame as temp PNG and upload
+                    frame_names = []
+                    dup_mp4 = result.duplicate()
+                    dup_mp4.flatten()
+                    # Re-get the original result with all layers as frames
+                    result_layers = result.get_layers()
+                    for i, layer in enumerate(reversed(result_layers)):
+                        tmp_img = Gimp.Image.new(max_w, max_h, Gimp.ImageBaseType.RGB)
+                        tmp_layer = Gimp.Layer.new_from_drawable(layer, tmp_img)
+                        tmp_img.insert_layer(tmp_layer, None, 0)
+                        tmp_img.flatten()
+                        tmp_path = _export_image_to_tmp(tmp_img)
+                        tmp_img.delete()
+                        fname = f"gimp_stitch_frame_{i:04d}.png"
+                        _upload_image(srv, tmp_path, fname)
+                        os.unlink(tmp_path)
+                        frame_names.append(fname)
+                    dup_mp4.delete()
+
+                    # Build workflow: LoadImageBatch → VHS_VideoCombine
+                    out_fps = 1000.0 / max(1, delay)
+                    wf = {}
+                    # Load first frame, then use batch
+                    for i, fname in enumerate(frame_names):
+                        wf[str(200 + i)] = {"class_type": "LoadImage",
+                                             "inputs": {"image": fname}}
+
+                    # Use ImageBatch to combine all frames
+                    if len(frame_names) >= 2:
+                        wf["300"] = {"class_type": "ImageBatch",
+                                     "inputs": {"image1": ["200", 0], "image2": ["201", 0]}}
+                        batch_ref = ["300", 0]
+                        for i in range(2, len(frame_names)):
+                            nid = str(300 + i - 1)
+                            wf[nid] = {"class_type": "ImageBatch",
+                                        "inputs": {"image1": batch_ref,
+                                                   "image2": [str(200 + i), 0]}}
+                            batch_ref = [nid, 0]
+                    else:
+                        batch_ref = ["200", 0]
+
+                    wf["400"] = {"class_type": "VHS_VideoCombine",
+                                 "inputs": {"images": batch_ref, "frame_rate": out_fps,
+                                            "loop_count": 0, "filename_prefix": "gimp_gif_stitch",
+                                            "format": "video/h264-mp4", "pingpong": False,
+                                            "save_output": True}}
+                    _run_with_spinner("Encoding MP4...",
+                                       lambda: list(_run_comfyui_workflow(srv, wf, timeout=300)))
+                    Gimp.message(f"MP4 exported! Check ComfyUI output folder.\n"
+                                 f"{len(frame_names)} frames at {out_fps:.0f} FPS.")
+                except Exception as e:
+                    Gimp.message(f"MP4 export failed: {e}\nGIF stitch was successful.")
+
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"GIF Stitch Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     def _run_embed_watermark(self, procedure, run_mode, image, drawables, config, data):
