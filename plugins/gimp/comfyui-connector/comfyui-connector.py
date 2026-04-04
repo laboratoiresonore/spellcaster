@@ -6124,26 +6124,24 @@ WAN_I2V_PRESETS = {
     "Wan I2V 14B (GGUF Q4)": {
         "high_model": "Wan\\wan2.2_i2v_high_noise_14B_Q4_K_S.gguf",
         "low_model": "Wan\\wan2.2_i2v_low_noise_14B_Q4_K_S.gguf",
-        "clip": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
-        "clip_type": "CLIPLoader",
+        "clip": "umt5-xxl-encoder-Q8_0.gguf",
         "vae": "wan_2.1_vae.safetensors",
-        "steps": 20, "second_step": 10, "cfg": 3.5, "shift": 5.0,
+        "steps": 20, "second_step": 10, "cfg": 1, "shift": None,
         "lora_prefix": "Wan",
-        "high_accel_lora": "Wan-2.2-I2V\\Lightning\\Wan2.2-Lightning_I2V-A14B-4steps-lora_HIGH_fp16.safetensors",
-        "low_accel_lora": "Wan-2.2-I2V\\Lightning\\Wan2.2-Lightning_I2V-A14B-4steps-lora_LOW_fp16.safetensors",
-        "accel_strength": 1.0,
+        "high_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
+        "low_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
+        "accel_strength": 1.5,
     },
     "Wan I2V 14B (fp8)": {
         "high_model": "Wan\\wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
         "low_model": "Wan\\wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
-        "clip": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
-        "clip_type": "CLIPLoader",
+        "clip": "umt5-xxl-encoder-Q8_0.gguf",
         "vae": "wan_2.1_vae.safetensors",
-        "steps": 20, "second_step": 10, "cfg": 3.5, "shift": 5.0,
+        "steps": 20, "second_step": 10, "cfg": 1, "shift": None,
         "lora_prefix": "Wan",
-        "high_accel_lora": "Wan-2.2-I2V\\Lightning\\Wan2.2-Lightning_I2V-A14B-4steps-lora_HIGH_fp16.safetensors",
-        "low_accel_lora": "Wan-2.2-I2V\\Lightning\\Wan2.2-Lightning_I2V-A14B-4steps-lora_LOW_fp16.safetensors",
-        "accel_strength": 1.0,
+        "high_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
+        "low_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
+        "accel_strength": 1.5,
     },
 }
 
@@ -6218,38 +6216,46 @@ def _find_wan_lora_pair(lora_name, all_loras):
     return lora_name, lora_name
 
 
-def _build_wan_i2v(image_filename, preset_key, prompt_text, negative_text, seed,
-                    width=832, height=480, length=81,
-                    steps=None, cfg=None, shift=None, second_step=None,
-                    turbo=True, loras=None, loras_high=None, loras_low=None,
-                    all_server_loras=None,
-                    upscale=True, upscale_factor=2.0,
-                    interpolate=True, pingpong=False, fps=16):
-    """Wan 2.2 Image-to-Video — dual-model architecture with Lightning turbo.
+def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, seed,
+                      width=832, height=480, length=81,
+                      steps=None, cfg=None, second_step=None,
+                      turbo=True, loop=False,
+                      loras_high=None, loras_low=None,
+                      all_server_loras=None,
+                      rtx_scale=2.5, interpolate=True,
+                      pingpong=False, fps=16,
+                      end_image_filename=None):
+    """Wan 2.2 video generation — canon dual-model architecture.
 
-    Pipeline:
-      CLIPLoader(fp8) → CLIPTextEncode (pos/neg)
-      UnetLoaderGGUF × 2 (high/low noise)
-      → [Lightning LoRA if turbo] → [content LoRAs] → ModelSamplingSD3(shift=5)
-      VAELoader + LoadImage → WanImageToVideo → conditioning + latent
-      KSamplerAdvanced pass 1 (high noise, cfg=1, euler, steps 0→split)
-      KSamplerAdvanced pass 2 (low noise, cfg=1, euler, steps split→end)
-      VAEDecode → [RTXVideoSuperResolution] → CreateVideo → SaveVideo
+    Supports three modes via parameters:
+      - I2V:  image_filename set, loop=False, end_image_filename=None
+              → WanImageToVideo (single start image)
+      - Loop: image_filename set, loop=True
+              → WanFirstLastFrameToVideo (same image for start+end = seamless loop)
+      - FLF:  image_filename set, end_image_filename set
+              → WanFirstLastFrameToVideo (different start+end images)
+
+    Pipeline (from proven canon workflow):
+      CLIPLoaderGGUF(umt5 Q8) → CLIPTextEncode (pos/neg)
+      UnetLoaderGGUF × 2 (high/low) → [accel LoRAs 1.5str] → [content LoRAs]
+      VAELoader + LoadImage → WanImageToVideo or WanFirstLastFrameToVideo
+      KSamplerAdvanced pass 1 (high, cfg from preset, euler_ancestral)
+      KSamplerAdvanced pass 2 (low, cfg=1, euler_ancestral)
+      VAEDecode → RIFE VFI 2× → RTXVideoSuperResolution
+      → VHS_VideoCombine (MP4) + VHS_VideoCombine (GIF for GIMP)
     """
     p = WAN_I2V_PRESETS[preset_key]
     steps = steps or p["steps"]
-    cfg = cfg or p["cfg"]
-    shift = shift or p["shift"]
+    cfg = cfg if cfg is not None else p["cfg"]
     second_step = second_step if second_step is not None else p.get("second_step", 10)
 
     is_gguf_high = p["high_model"].endswith(".gguf")
     is_gguf_low = p["low_model"].endswith(".gguf")
+    use_flf = loop or (end_image_filename is not None)
 
     # ── Model loaders ────────────────────────────────────────────────
-    # Use CLIPLoader (not GGUF) with fp8 scaled encoder for better quality
-    clip_type = p.get("clip_type", "CLIPLoader")
     wf = {
-        "1": {"class_type": clip_type,
+        "1": {"class_type": "CLIPLoaderGGUF",
               "inputs": {"clip_name": p["clip"], "type": "wan"}},
         "2": {"class_type": "UnetLoaderGGUF" if is_gguf_high else "UNETLoader",
               "inputs": {"unet_name": p["high_model"]}},
@@ -6264,105 +6270,90 @@ def _build_wan_i2v(image_filename, preset_key, prompt_text, negative_text, seed,
         "7": {"class_type": "LoadImage",
               "inputs": {"image": image_filename}},
     }
-
-    # CLIPLoader needs device param, CLIPLoaderGGUF does not
-    if clip_type == "CLIPLoader":
-        wf["1"]["inputs"]["device"] = "default"
-    # UNETLoader needs weight_dtype, GGUF does not
     if not is_gguf_high:
         wf["2"]["inputs"]["weight_dtype"] = "default"
     if not is_gguf_low:
         wf["3"]["inputs"]["weight_dtype"] = "default"
 
-    # ── LoRA chains ──────────────────────────────────────────────────
-    # Order: raw model → Lightning accel (if turbo) → content LoRAs → ModelSamplingSD3
-    high_model_ref = ["2", 0]
-    low_model_ref = ["3", 0]
+    # End image for FLF mode
+    if end_image_filename and not loop:
+        wf["7b"] = {"class_type": "LoadImage",
+                    "inputs": {"image": end_image_filename}}
 
-    # Lightning accelerator LoRAs (turbo only) — applied first
+    # ── LoRA chains ──────────────────────────────────────────────────
+    high_ref = ["2", 0]
+    low_ref = ["3", 0]
+
+    # Accelerator LoRAs (turbo) — strength from preset (default 1.5)
     if turbo:
         if p.get("high_accel_lora"):
             wf["100"] = {"class_type": "LoraLoaderModelOnly",
-                         "inputs": {"model": high_model_ref,
+                         "inputs": {"model": high_ref,
                                     "lora_name": p["high_accel_lora"],
-                                    "strength_model": p.get("accel_strength", 1.0)}}
-            high_model_ref = ["100", 0]
+                                    "strength_model": p.get("accel_strength", 1.5)}}
+            high_ref = ["100", 0]
         if p.get("low_accel_lora"):
             wf["120"] = {"class_type": "LoraLoaderModelOnly",
-                         "inputs": {"model": low_model_ref,
+                         "inputs": {"model": low_ref,
                                     "lora_name": p["low_accel_lora"],
-                                    "strength_model": p.get("accel_strength", 1.0)}}
-            low_model_ref = ["120", 0]
+                                    "strength_model": p.get("accel_strength", 1.5)}}
+            low_ref = ["120", 0]
 
-    # User content LoRAs — chained AFTER accelerator (separate high/low)
-    hi_start = 101 if turbo else 100
-    lo_start = 121 if turbo else 120
+    # User content LoRAs
+    hi_n = 101 if turbo else 100
+    lo_n = 121 if turbo else 120
     if loras_high:
-        for i, (lname, lstr) in enumerate(loras_high):
-            nid = str(hi_start + i)
+        for i, (ln, ls) in enumerate(loras_high):
+            nid = str(hi_n + i)
             wf[nid] = {"class_type": "LoraLoaderModelOnly",
-                        "inputs": {"model": high_model_ref,
-                                   "lora_name": lname, "strength_model": lstr}}
-            high_model_ref = [nid, 0]
+                        "inputs": {"model": high_ref, "lora_name": ln, "strength_model": ls}}
+            high_ref = [nid, 0]
     if loras_low:
-        for i, (lname, lstr) in enumerate(loras_low):
-            nid = str(lo_start + i)
+        for i, (ln, ls) in enumerate(loras_low):
+            nid = str(lo_n + i)
             wf[nid] = {"class_type": "LoraLoaderModelOnly",
-                        "inputs": {"model": low_model_ref,
-                                   "lora_name": lname, "strength_model": lstr}}
-            low_model_ref = [nid, 0]
-    # Legacy auto-pair
-    if loras and not loras_high and not loras_low:
-        _server_loras = all_server_loras or []
-        for i, (lname, lstr) in enumerate(loras):
-            h, l = _find_wan_lora_pair(lname, _server_loras)
-            nid_h = str(hi_start + i)
-            wf[nid_h] = {"class_type": "LoraLoaderModelOnly",
-                          "inputs": {"model": high_model_ref,
-                                     "lora_name": h, "strength_model": lstr}}
-            high_model_ref = [nid_h, 0]
-            nid_l = str(lo_start + i)
-            wf[nid_l] = {"class_type": "LoraLoaderModelOnly",
-                          "inputs": {"model": low_model_ref,
-                                     "lora_name": l, "strength_model": lstr}}
-            low_model_ref = [nid_l, 0]
+                        "inputs": {"model": low_ref, "lora_name": ln, "strength_model": ls}}
+            low_ref = [nid, 0]
 
-    # ── ModelSamplingSD3 (shift) ─────────────────────────────────────
-    wf["30"] = {"class_type": "ModelSamplingSD3",
-                "inputs": {"model": high_model_ref, "shift": shift}}
-    wf["31"] = {"class_type": "ModelSamplingSD3",
-                "inputs": {"model": low_model_ref, "shift": shift}}
+    # ── Conditioning (WanImageToVideo or WanFirstLastFrameToVideo) ───
+    if use_flf:
+        end_ref = ["7", 0] if loop else ["7b", 0]
+        wf["40"] = {"class_type": "WanFirstLastFrameToVideo",
+                    "inputs": {
+                        "width": width, "height": height, "length": length,
+                        "batch_size": 1,
+                        "positive": ["5", 0], "negative": ["6", 0],
+                        "vae": ["4", 0],
+                        "start_image": ["7", 0], "end_image": end_ref,
+                    }}
+    else:
+        wf["40"] = {"class_type": "WanImageToVideo",
+                    "inputs": {
+                        "width": width, "height": height, "length": length,
+                        "batch_size": 1,
+                        "positive": ["5", 0], "negative": ["6", 0],
+                        "vae": ["4", 0], "start_image": ["7", 0],
+                    }}
 
-    # ── WanImageToVideo conditioning ─────────────────────────────────
-    wf["40"] = {"class_type": "WanImageToVideo",
-                "inputs": {
-                    "width": width, "height": height, "length": length,
-                    "batch_size": 1,
-                    "positive": ["5", 0], "negative": ["6", 0],
-                    "vae": ["4", 0], "start_image": ["7", 0],
-                }}
-
-    # ── Two-pass KSamplerAdvanced (both cfg=1, euler, simple) ────────
+    # ── Two-pass KSamplerAdvanced (euler_ancestral, no ModelSamplingSD3) ──
     wf["50"] = {"class_type": "KSamplerAdvanced",
                 "inputs": {
-                    "model": ["30", 0],
-                    "positive": ["40", 0], "negative": ["40", 1],
+                    "model": high_ref, "positive": ["40", 0], "negative": ["40", 1],
                     "latent_image": ["40", 2],
                     "add_noise": "enable", "noise_seed": seed,
-                    "steps": steps, "cfg": 1,
-                    "sampler_name": "euler", "scheduler": "simple",
+                    "steps": steps, "cfg": cfg,
+                    "sampler_name": "euler_ancestral", "scheduler": "simple",
                     "start_at_step": 0, "end_at_step": second_step,
                     "return_with_leftover_noise": "enable",
                 }}
     wf["51"] = {"class_type": "KSamplerAdvanced",
                 "inputs": {
-                    "model": ["31", 0],
-                    "positive": ["40", 0], "negative": ["40", 1],
+                    "model": low_ref, "positive": ["40", 0], "negative": ["40", 1],
                     "latent_image": ["50", 0],
-                    "add_noise": "disable", "noise_seed": seed,
+                    "add_noise": "disable", "noise_seed": 0,
                     "steps": steps, "cfg": 1,
-                    "sampler_name": "euler", "scheduler": "simple",
-                    "start_at_step": second_step, "end_at_step": steps,
+                    "sampler_name": "euler_ancestral", "scheduler": "simple",
+                    "start_at_step": second_step, "end_at_step": 10000,
                     "return_with_leftover_noise": "disable",
                 }}
 
@@ -6372,193 +6363,62 @@ def _build_wan_i2v(image_filename, preset_key, prompt_text, negative_text, seed,
 
     video_ref = ["60", 0]
 
-    # ── RTX Video Super Resolution (V3 dynamic combo format) ─────────
-    if upscale and upscale_factor > 1.0:
-        wf["70"] = {"class_type": "RTXVideoSuperResolution",
-                    "inputs": {"images": video_ref,
-                               "resize_type": "scale by multiplier",
-                               "resize_type.scale": upscale_factor,
-                               "quality": "ULTRA"}}
+    # ── RIFE frame interpolation (2×) ────────────────────────────────
+    if interpolate:
+        wf["70"] = {"class_type": "RIFE VFI",
+                    "inputs": {"frames": video_ref, "ckpt_name": "rife49.pth",
+                               "clear_cache_after_n_frames": 32, "multiplier": 2,
+                               "fast_mode": False, "ensemble": True, "scale_factor": 1,
+                               "dtype": "float32", "torch_compile": False,
+                               "batch_size": 1}}
         video_ref = ["70", 0]
 
-    # ── Video output ─────────────────────────────────────────────────
-    output_fps = float(fps)
-    wf["80"] = {"class_type": "CreateVideo",
-                "inputs": {"fps": output_fps, "images": video_ref}}
-    wf["81"] = {"class_type": "SaveVideo",
-                "inputs": {"filename_prefix": "gimp_wan_i2v",
-                           "format": "auto", "codec": "auto",
-                           "video": ["80", 0]}}
+    # ── RTX Video Super Resolution ───────────────────────────────────
+    if rtx_scale > 1.0:
+        wf["75"] = {"class_type": "RTXVideoSuperResolution",
+                    "inputs": {"images": video_ref,
+                               "resize_type": "scale by multiplier",
+                               "resize_type.scale": rtx_scale,
+                               "quality": "ULTRA"}}
+        video_ref = ["75", 0]
 
-    # First frame PNG for GIMP to import as a layer
-    wf["13"] = {"class_type": "SaveImage",
+    # ── Output ───────────────────────────────────────────────────────
+    output_fps = float(fps * (2 if interpolate else 1))
+    prefix = "gimp_wan_loop" if loop else ("gimp_wan_flf" if use_flf else "gimp_wan_i2v")
+
+    # MP4 for the user
+    wf["80"] = {"class_type": "VHS_VideoCombine",
+                "inputs": {"images": video_ref, "frame_rate": output_fps,
+                           "loop_count": 0, "filename_prefix": prefix,
+                           "format": "video/h264-mp4", "pingpong": pingpong,
+                           "save_output": True}}
+
+    # First frame PNG for GIMP
+    wf["82"] = {"class_type": "SaveImage",
                 "inputs": {"images": ["60", 0],
-                           "filename_prefix": "gimp_wan_i2v_frame"}}
+                           "filename_prefix": f"{prefix}_frame"}}
 
     return wf
 
 
 def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negative_text, seed,
                     width=832, height=480, length=81,
-                    steps=None, cfg=None, shift=None, second_step=None,
-                    turbo=True, loras=None, loras_high=None, loras_low=None,
+                    steps=None, cfg=None, second_step=None,
+                    turbo=True, loras_high=None, loras_low=None,
                     all_server_loras=None,
-                    upscale=True, upscale_factor=1.0,
-                    interpolate=True, pingpong=False, fps=16):
-    """Wan 2.2 First+Last Frame to Video — fatberg_slim dual-model architecture.
-
-    Same two-pass pipeline as I2V but uses WanFirstLastFrameToVideo instead of
-    WanImageToVideo, accepting both a start_image and an end_image so the AI
-    generates a smooth transition between the two keyframes.
-    """
-    p = WAN_I2V_PRESETS[preset_key]
-    steps = steps or p["steps"]
-    cfg = cfg or p["cfg"]
-    shift = shift or p["shift"]
-    second_step = second_step if second_step is not None else p.get("second_step", 20)
-
-    is_gguf_high = p["high_model"].endswith(".gguf")
-    is_gguf_low = p["low_model"].endswith(".gguf")
-
-    clip_type = p.get("clip_type", "CLIPLoader")
-    wf = {
-        "1": {"class_type": clip_type,
-              "inputs": {"clip_name": p["clip"], "type": "wan"}},
-        "2": {"class_type": "UnetLoaderGGUF" if is_gguf_high else "UNETLoader",
-              "inputs": {"unet_name": p["high_model"]}},
-        "3": {"class_type": "UnetLoaderGGUF" if is_gguf_low else "UNETLoader",
-              "inputs": {"unet_name": p["low_model"]}},
-        "4": {"class_type": "VAELoader",
-              "inputs": {"vae_name": p["vae"]}},
-        "5": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": prompt_text, "clip": ["1", 0]}},
-        "6": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": negative_text or "", "clip": ["1", 0]}},
-        "7": {"class_type": "LoadImage",
-              "inputs": {"image": start_filename}},
-        "7b": {"class_type": "LoadImage",
-               "inputs": {"image": end_filename}},
-    }
-
-    if clip_type == "CLIPLoader":
-        wf["1"]["inputs"]["device"] = "default"
-    if not is_gguf_high:
-        wf["2"]["inputs"]["weight_dtype"] = "default"
-    if not is_gguf_low:
-        wf["3"]["inputs"]["weight_dtype"] = "default"
-
-    # ── LoRA chains (same architecture as I2V) ───────────────────────
-    high_model_ref = ["2", 0]
-    low_model_ref = ["3", 0]
-
-    if turbo:
-        if p.get("high_accel_lora"):
-            wf["100"] = {"class_type": "LoraLoaderModelOnly",
-                         "inputs": {"model": high_model_ref,
-                                    "lora_name": p["high_accel_lora"],
-                                    "strength_model": p.get("accel_strength", 1.0)}}
-            high_model_ref = ["100", 0]
-        if p.get("low_accel_lora"):
-            wf["120"] = {"class_type": "LoraLoaderModelOnly",
-                         "inputs": {"model": low_model_ref,
-                                    "lora_name": p["low_accel_lora"],
-                                    "strength_model": p.get("accel_strength", 1.0)}}
-            low_model_ref = ["120", 0]
-
-    hi_start = 101 if turbo else 100
-    lo_start = 121 if turbo else 120
-    if loras_high:
-        for i, (lname, lstr) in enumerate(loras_high):
-            nid = str(hi_start + i)
-            wf[nid] = {"class_type": "LoraLoaderModelOnly",
-                        "inputs": {"model": high_model_ref,
-                                   "lora_name": lname, "strength_model": lstr}}
-            high_model_ref = [nid, 0]
-    if loras_low:
-        for i, (lname, lstr) in enumerate(loras_low):
-            nid = str(lo_start + i)
-            wf[nid] = {"class_type": "LoraLoaderModelOnly",
-                        "inputs": {"model": low_model_ref,
-                                   "lora_name": lname, "strength_model": lstr}}
-            low_model_ref = [nid, 0]
-    if loras and not loras_high and not loras_low:
-        _server_loras = all_server_loras or []
-        for i, (lname, lstr) in enumerate(loras):
-            h, l = _find_wan_lora_pair(lname, _server_loras)
-            nid_h = str(hi_start + i)
-            wf[nid_h] = {"class_type": "LoraLoaderModelOnly",
-                          "inputs": {"model": high_model_ref,
-                                     "lora_name": h, "strength_model": lstr}}
-            high_model_ref = [nid_h, 0]
-            nid_l = str(lo_start + i)
-            wf[nid_l] = {"class_type": "LoraLoaderModelOnly",
-                          "inputs": {"model": low_model_ref,
-                                     "lora_name": l, "strength_model": lstr}}
-            low_model_ref = [nid_l, 0]
-
-    wf["30"] = {"class_type": "ModelSamplingSD3",
-                "inputs": {"model": high_model_ref, "shift": shift}}
-    wf["31"] = {"class_type": "ModelSamplingSD3",
-                "inputs": {"model": low_model_ref, "shift": shift}}
-
-    wf["40"] = {"class_type": "WanFirstLastFrameToVideo",
-                "inputs": {
-                    "width": width, "height": height, "length": length,
-                    "batch_size": 1,
-                    "positive": ["5", 0], "negative": ["6", 0],
-                    "vae": ["4", 0],
-                    "start_image": ["7", 0],
-                    "end_image": ["7b", 0],
-                }}
-
-    wf["50"] = {"class_type": "KSamplerAdvanced",
-                "inputs": {
-                    "model": ["30", 0],
-                    "positive": ["40", 0], "negative": ["40", 1],
-                    "latent_image": ["40", 2],
-                    "add_noise": "enable", "noise_seed": seed,
-                    "steps": steps, "cfg": 1,
-                    "sampler_name": "euler", "scheduler": "simple",
-                    "start_at_step": 0, "end_at_step": second_step,
-                    "return_with_leftover_noise": "enable",
-                }}
-    wf["51"] = {"class_type": "KSamplerAdvanced",
-                "inputs": {
-                    "model": ["31", 0],
-                    "positive": ["40", 0], "negative": ["40", 1],
-                    "latent_image": ["50", 0],
-                    "add_noise": "disable", "noise_seed": seed,
-                    "steps": steps, "cfg": 1,
-                    "sampler_name": "euler", "scheduler": "simple",
-                    "start_at_step": second_step, "end_at_step": steps,
-                    "return_with_leftover_noise": "disable",
-                }}
-
-    wf["60"] = {"class_type": "VAEDecode",
-                "inputs": {"samples": ["51", 0], "vae": ["4", 0]}}
-
-    video_ref = ["60", 0]
-
-    if upscale and upscale_factor > 1.0:
-        wf["70"] = {"class_type": "RTXVideoSuperResolution",
-                    "inputs": {"images": video_ref,
-                               "resize_type": "scale by multiplier",
-                               "resize_type.scale": upscale_factor,
-                               "quality": "ULTRA"}}
-        video_ref = ["70", 0]
-
-    output_fps = float(fps)
-    wf["80"] = {"class_type": "CreateVideo",
-                "inputs": {"fps": output_fps, "images": video_ref}}
-    wf["81"] = {"class_type": "SaveVideo",
-                "inputs": {"filename_prefix": "gimp_wan_flf",
-                           "format": "auto", "codec": "auto",
-                           "video": ["80", 0]}}
-    wf["13"] = {"class_type": "SaveImage",
-                "inputs": {"images": ["60", 0],
-                           "filename_prefix": "gimp_wan_flf_frame"}}
-
-    return wf
+                    rtx_scale=2.5, interpolate=True, pingpong=False, fps=16):
+    """Thin wrapper: delegates to _build_wan_video with end_image_filename."""
+    return _build_wan_video(
+        start_filename, preset_key, prompt_text, negative_text, seed,
+        width=width, height=height, length=length,
+        steps=steps, cfg=cfg, second_step=second_step,
+        turbo=turbo, loop=False,
+        loras_high=loras_high, loras_low=loras_low,
+        all_server_loras=all_server_loras,
+        rtx_scale=rtx_scale, interpolate=interpolate,
+        pingpong=pingpong, fps=fps,
+        end_image_filename=end_filename,
+    )
 
 
 # ── Video Upscale (V2R) ──────────────────────────────────────────────────
@@ -9325,8 +9185,8 @@ class WanI2VDialog(Gtk.Dialog):
         rtx_row.pack_start(self.upscale_check, False, False, 0)
         rtx_row.pack_start(Gtk.Label(label="Scale:"), False, False, 0)
         self.upscale_spin = Gtk.SpinButton.new_with_range(1.0, 4.0, 0.25)
-        self.upscale_spin.set_digits(2); self.upscale_spin.set_value(1.0)
-        self.upscale_spin.set_tooltip_text("RTX upscale factor (e.g. 1.5 = 50% larger)")
+        self.upscale_spin.set_digits(2); self.upscale_spin.set_value(2.5)
+        self.upscale_spin.set_tooltip_text("RTX upscale factor. 2.5 = recommended (from canon workflow).")
         rtx_row.pack_start(self.upscale_spin, False, False, 0)
         pp_box.pack_start(rtx_row, False, False, 0)
 
@@ -9340,6 +9200,10 @@ class WanI2VDialog(Gtk.Dialog):
         self.pingpong_check.set_active(False)
         self.pingpong_check.set_tooltip_text("Play video forward then backward for seamless looping")
         row2.pack_start(self.pingpong_check, False, False, 0)
+        self.loop_check = Gtk.CheckButton(label="Loop Video")
+        self.loop_check.set_active(False)
+        self.loop_check.set_tooltip_text("Generate a seamless looping video.\nUses the same image as both first and last frame\nso the video loops perfectly.")
+        row2.pack_start(self.loop_check, False, False, 0)
         pp_box.pack_start(row2, False, False, 0)
 
         pp_frame.add(pp_box)
@@ -9501,6 +9365,7 @@ class WanI2VDialog(Gtk.Dialog):
             "second_step": int(self.second_step_spin.get_value()),
             "seed": int(self.seed_spin.get_value()),
             "turbo": self.turbo_check.get_active(),
+            "loop": self.loop_check.get_active(),
             "upscale": self.upscale_check.get_active(),
             "upscale_factor": self.upscale_spin.get_value(),
             "interpolate": self.interpolate_check.get_active(),
@@ -9527,6 +9392,7 @@ class WanI2VDialog(Gtk.Dialog):
         self.second_step_spin.set_value(p.get("second_step", 20))
         self.seed_spin.set_value(p.get("seed", -1))
         self.turbo_check.set_active(p.get("turbo", True))
+        self.loop_check.set_active(p.get("loop", False))
         self.upscale_check.set_active(p.get("upscale", True))
         self.upscale_spin.set_value(p.get("upscale_factor", 1.5))
         self.interpolate_check.set_active(p.get("interpolate", True))
@@ -9566,7 +9432,8 @@ class WanI2VDialog(Gtk.Dialog):
             "second_step": int(self.second_step_spin.get_value()),
             "seed": seed,
             "turbo": self.turbo_check.get_active(),
-            "loras": None,  # deprecated — use loras_high/loras_low
+            "loop": self.loop_check.get_active(),
+            "loras": None,
             "loras_high": loras_high or None,
             "loras_low": loras_low or None,
             "upscale": self.upscale_check.get_active(),
@@ -10966,16 +10833,18 @@ class Spellcaster(Gimp.PlugIn):
             src = "selection" if has_sel else "full image"
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
-                wf = _build_wan_i2v(
+                wf = _build_wan_video(
                     uname, v["preset_key"], v["prompt"], v["negative"], seed,
                     width=v["width"], height=v["height"], length=v["length"],
-                    steps=v["steps"], cfg=v["cfg"], shift=v["shift"],
+                    steps=v["steps"], cfg=v["cfg"],
                     second_step=v["second_step"], turbo=v.get("turbo", True),
+                    loop=v.get("loop", False),
                     loras_high=v.get("loras_high"),
                     loras_low=v.get("loras_low"),
                     all_server_loras=v.get("all_server_loras"),
-                    upscale=v["upscale"], upscale_factor=v["upscale_factor"],
-                    interpolate=v["interpolate"], pingpong=v["pingpong"],
+                    rtx_scale=v.get("upscale_factor", 2.5),
+                    interpolate=v.get("interpolate", True),
+                    pingpong=v.get("pingpong", False),
                     fps=v["fps"],
                 )
                 label = f"Wan I2V run {run_i+1}/{runs}" if runs > 1 else "Wan I2V"
@@ -11130,13 +10999,14 @@ class Spellcaster(Gimp.PlugIn):
                     start_name, end_name, v["preset_key"],
                     v["prompt"], v["negative"], seed,
                     width=v["width"], height=v["height"], length=v["length"],
-                    steps=v["steps"], cfg=v["cfg"], shift=v["shift"],
+                    steps=v["steps"], cfg=v["cfg"],
                     second_step=v["second_step"], turbo=v.get("turbo", True),
                     loras_high=v.get("loras_high"),
                     loras_low=v.get("loras_low"),
                     all_server_loras=v.get("all_server_loras"),
-                    upscale=v["upscale"], upscale_factor=v["upscale_factor"],
-                    interpolate=v["interpolate"], pingpong=v["pingpong"],
+                    rtx_scale=v.get("upscale_factor", 2.5),
+                    interpolate=v.get("interpolate", True),
+                    pingpong=v.get("pingpong", False),
                     fps=v["fps"],
                 )
                 label = f"Wan FLF run {run_i+1}/{runs}" if runs > 1 else "Wan FLF"
