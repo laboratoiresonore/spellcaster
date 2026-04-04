@@ -6189,7 +6189,8 @@ def _find_wan_lora_pair(lora_name, all_loras):
 def _build_wan_i2v(image_filename, preset_key, prompt_text, negative_text, seed,
                     width=832, height=480, length=81,
                     steps=None, cfg=None, shift=None, second_step=None,
-                    turbo=True, loras=None, all_server_loras=None,
+                    turbo=True, loras=None, loras_high=None, loras_low=None,
+                    all_server_loras=None,
                     upscale=True, upscale_factor=1.0,
                     interpolate=True, pingpong=False, fps=16):
     """Wan 2.2 Image-to-Video — fatberg_slim dual-model GGUF architecture.
@@ -6260,18 +6261,20 @@ def _build_wan_i2v(image_filename, preset_key, prompt_text, negative_text, seed,
         if p.get("low_accel_lora"):
             low_lora_list.append((p["low_accel_lora"], p.get("accel_strength", 1.0)))
 
-    # User-selected content LoRAs — auto-pair high/low noise variants.
-    # The user picks ONE LoRA from the combo; we automatically find its
-    # high/low counterpart from the full server list so the correct
-    # variant is applied to each model.
-    _server_loras = all_server_loras or []
-    if loras:
+    # User-selected content LoRAs — separate high/low noise slots
+    if loras_high:
+        for lora_name, lora_str in loras_high:
+            high_lora_list.append((lora_name, lora_str))
+    if loras_low:
+        for lora_name, lora_str in loras_low:
+            low_lora_list.append((lora_name, lora_str))
+    # Legacy: if old-style loras list is passed, auto-pair
+    if loras and not loras_high and not loras_low:
+        _server_loras = all_server_loras or []
         for lora_name, lora_str in loras:
             high_lora, low_lora = _find_wan_lora_pair(lora_name, _server_loras)
-            if not any(n == high_lora for n, _ in high_lora_list):
-                high_lora_list.append((high_lora, lora_str))
-            if not any(n == low_lora for n, _ in low_lora_list):
-                low_lora_list.append((low_lora, lora_str))
+            high_lora_list.append((high_lora, lora_str))
+            low_lora_list.append((low_lora, lora_str))
 
     # Chain LoRAs for high-noise model (nodes 100+)
     for i, (lname, lstr) in enumerate(high_lora_list):
@@ -6381,7 +6384,8 @@ def _build_wan_i2v(image_filename, preset_key, prompt_text, negative_text, seed,
 def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negative_text, seed,
                     width=832, height=480, length=81,
                     steps=None, cfg=None, shift=None, second_step=None,
-                    turbo=True, loras=None, all_server_loras=None,
+                    turbo=True, loras=None, loras_high=None, loras_low=None,
+                    all_server_loras=None,
                     upscale=True, upscale_factor=1.0,
                     interpolate=True, pingpong=False, fps=16):
     """Wan 2.2 First+Last Frame to Video — fatberg_slim dual-model architecture.
@@ -6441,14 +6445,18 @@ def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negati
             high_lora_list.append((p["high_accel_lora"], p.get("accel_strength", 1.0)))
         if p.get("low_accel_lora"):
             low_lora_list.append((p["low_accel_lora"], p.get("accel_strength", 1.0)))
-    _server_loras = all_server_loras or []
-    if loras:
+    if loras_high:
+        for lora_name, lora_str in loras_high:
+            high_lora_list.append((lora_name, lora_str))
+    if loras_low:
+        for lora_name, lora_str in loras_low:
+            low_lora_list.append((lora_name, lora_str))
+    if loras and not loras_high and not loras_low:
+        _server_loras = all_server_loras or []
         for lora_name, lora_str in loras:
             high_lora, low_lora = _find_wan_lora_pair(lora_name, _server_loras)
-            if not any(n == high_lora for n, _ in high_lora_list):
-                high_lora_list.append((high_lora, lora_str))
-            if not any(n == low_lora for n, _ in low_lora_list):
-                low_lora_list.append((low_lora, lora_str))
+            high_lora_list.append((high_lora, lora_str))
+            low_lora_list.append((low_lora, lora_str))
 
     for i, (lname, lstr) in enumerate(high_lora_list):
         nid = str(100 + i)
@@ -9178,35 +9186,45 @@ class WanI2VDialog(Gtk.Dialog):
         pp_frame.add(pp_box)
         box.pack_start(pp_frame, False, False, 0)
 
-        # LoRA section
-        lora_frame = Gtk.Frame(label="LoRAs")
+        # LoRA section — 3 high-noise slots + 3 low-noise slots
+        lora_frame = Gtk.Frame(label="LoRAs (3 high-noise + 3 low-noise)")
         lora_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         lora_box.set_margin_start(8); lora_box.set_margin_end(8)
         lora_box.set_margin_top(4); lora_box.set_margin_bottom(8)
 
         self._lora_fetch_btn = Gtk.Button(label="Fetch Wan LoRAs")
-        self._lora_fetch_btn.set_tooltip_text("Download available Wan video LoRAs from the server.\nLoRAs add motion styles like camera pans, zooms, etc.")
+        self._lora_fetch_btn.set_tooltip_text("Download available Wan video LoRAs from the server.\nWan 2.2 uses PAIRED LoRAs: one for the high-noise model, one for the low-noise model.\nPick the high-noise variant in the top 3 slots and the matching low-noise variant in the bottom 3.")
         self._lora_fetch_btn.connect("clicked", self._on_fetch_loras)
         lora_box.pack_start(self._lora_fetch_btn, False, False, 0)
 
-        self.lora_rows = []
-        for i in range(3):
-            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-            combo = Gtk.ComboBoxText()
-            combo.append("none", "(none)")
-            combo.set_active(0)
-            combo.set_hexpand(True)
-            combo.set_tooltip_text("Select a video LoRA for motion style (camera, subject movement).\nLeave as (none) to skip.")
-            row.pack_start(combo, True, True, 0)
+        def _make_lora_slots(parent, label_text, tooltip, count=3):
+            parent.pack_start(Gtk.Label(label=label_text, xalign=0), False, False, 2)
+            rows = []
+            for i in range(count):
+                row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+                combo = Gtk.ComboBoxText()
+                combo.append("none", "(none)")
+                combo.set_active(0)
+                combo.set_hexpand(True)
+                combo.set_tooltip_text(tooltip)
+                row.pack_start(combo, True, True, 0)
+                row.pack_start(Gtk.Label(label="Str:"), False, False, 0)
+                strength = Gtk.SpinButton.new_with_range(-2.0, 2.0, 0.05)
+                strength.set_digits(2); strength.set_value(1.0)
+                strength.set_tooltip_text("LoRA strength. 1.0 = full effect.")
+                row.pack_start(strength, False, False, 0)
+                parent.pack_start(row, False, False, 0)
+                rows.append((combo, strength))
+            return rows
 
-            row.pack_start(Gtk.Label(label="Str:"), False, False, 0)
-            strength = Gtk.SpinButton.new_with_range(-2.0, 2.0, 0.05)
-            strength.set_digits(2); strength.set_value(1.0)
-            strength.set_tooltip_text("LoRA strength. 1.0 = full effect.\nLower for subtlety, higher for exaggeration.")
-            row.pack_start(strength, False, False, 0)
-
-            lora_box.pack_start(row, False, False, 0)
-            self.lora_rows.append((combo, strength))
+        self.lora_rows_high = _make_lora_slots(
+            lora_box, "High-noise model LoRAs:",
+            "LoRA applied to the HIGH-noise model (first sampling pass).\nPick the 'high' or 'HIGH' variant of your LoRA here.")
+        self.lora_rows_low = _make_lora_slots(
+            lora_box, "Low-noise model LoRAs:",
+            "LoRA applied to the LOW-noise model (second sampling pass).\nPick the 'low' or 'LOW' variant of your LoRA here.")
+        # Keep combined list for refresh_lora_combos compatibility
+        self.lora_rows = self.lora_rows_high + self.lora_rows_low
 
         lora_frame.add(lora_box)
         box.pack_start(lora_frame, False, False, 0)
@@ -9276,22 +9294,33 @@ class WanI2VDialog(Gtk.Dialog):
         if vp["pingpong"] is not None:
             self.pingpong_check.set_active(vp["pingpong"])
 
-        # Auto-select recommended LoRAs if any & lora list is populated
+        # Auto-select recommended LoRAs — route high/low to correct slots
         if vp["loras"] and self._wan_loras:
-            for slot_idx, (lora_name, lora_str) in enumerate(vp["loras"]):
-                if slot_idx >= len(self.lora_rows):
-                    break
-                row_combo, row_strength = self.lora_rows[slot_idx]
-                # Find matching lora in combo
-                found = False
-                for j, name in enumerate(self._wan_loras):
-                    if name == lora_name or name.endswith(lora_name):
-                        row_combo.set_active(j + 1)  # +1 for "(none)" entry
-                        row_strength.set_value(lora_str)
-                        found = True
-                        break
-                if not found:
-                    row_combo.set_active(0)
+            def _set_lora_in_rows(rows, lora_name, lora_str):
+                """Find lora_name in the combo items and select it."""
+                for row_combo, row_strength in rows:
+                    if row_combo.get_active_id() == "none":
+                        for j, name in enumerate(self._wan_loras):
+                            if name == lora_name or name.endswith(lora_name):
+                                row_combo.set_active(j + 1)
+                                row_strength.set_value(lora_str)
+                                return True
+                        return False
+                return False
+
+            for lora_name, lora_str in vp["loras"]:
+                # Determine if this is a high or low noise LoRA
+                name_lower = lora_name.lower()
+                is_high = any(m in name_lower for m in ["high", "_h_", "_h."])
+                is_low = any(m in name_lower for m in ["low", "_l_", "_l."])
+                if is_high:
+                    _set_lora_in_rows(self.lora_rows_high, lora_name, lora_str)
+                elif is_low:
+                    _set_lora_in_rows(self.lora_rows_low, lora_name, lora_str)
+                else:
+                    # Unknown — try high first, then low
+                    if not _set_lora_in_rows(self.lora_rows_high, lora_name, lora_str):
+                        _set_lora_in_rows(self.lora_rows_low, lora_name, lora_str)
 
     def _buf_text(self, tv):
         buf = tv.get_buffer()
@@ -9351,11 +9380,16 @@ class WanI2VDialog(Gtk.Dialog):
         if seed < 0:
             seed = random.randint(0, 2**32 - 1)
 
-        loras = []
-        for combo, strength in self.lora_rows:
+        loras_high = []
+        for combo, strength in self.lora_rows_high:
             lid = combo.get_active_id()
             if lid and lid != "none":
-                loras.append((lid, strength.get_value()))
+                loras_high.append((lid, strength.get_value()))
+        loras_low = []
+        for combo, strength in self.lora_rows_low:
+            lid = combo.get_active_id()
+            if lid and lid != "none":
+                loras_low.append((lid, strength.get_value()))
 
         return {
             "server": self.server_entry.get_text().strip(),
@@ -9373,7 +9407,9 @@ class WanI2VDialog(Gtk.Dialog):
             "second_step": int(self.second_step_spin.get_value()),
             "seed": seed,
             "turbo": self.turbo_check.get_active(),
-            "loras": loras if loras else None,
+            "loras": None,  # deprecated — use loras_high/loras_low
+            "loras_high": loras_high or None,
+            "loras_low": loras_low or None,
             "upscale": self.upscale_check.get_active(),
             "upscale_factor": self.upscale_spin.get_value(),
             "interpolate": self.interpolate_check.get_active(),
@@ -10770,7 +10806,9 @@ class Spellcaster(Gimp.PlugIn):
                     width=v["width"], height=v["height"], length=v["length"],
                     steps=v["steps"], cfg=v["cfg"], shift=v["shift"],
                     second_step=v["second_step"], turbo=v.get("turbo", True),
-                    loras=v["loras"], all_server_loras=v.get("all_server_loras"),
+                    loras_high=v.get("loras_high"),
+                    loras_low=v.get("loras_low"),
+                    all_server_loras=v.get("all_server_loras"),
                     upscale=v["upscale"], upscale_factor=v["upscale_factor"],
                     interpolate=v["interpolate"], pingpong=v["pingpong"],
                     fps=v["fps"],
@@ -10927,7 +10965,9 @@ class Spellcaster(Gimp.PlugIn):
                     width=v["width"], height=v["height"], length=v["length"],
                     steps=v["steps"], cfg=v["cfg"], shift=v["shift"],
                     second_step=v["second_step"], turbo=v.get("turbo", True),
-                    loras=v["loras"], all_server_loras=v.get("all_server_loras"),
+                    loras_high=v.get("loras_high"),
+                    loras_low=v.get("loras_low"),
+                    all_server_loras=v.get("all_server_loras"),
                     upscale=v["upscale"], upscale_factor=v["upscale_factor"],
                     interpolate=v["interpolate"], pingpong=v["pingpong"],
                     fps=v["fps"],
