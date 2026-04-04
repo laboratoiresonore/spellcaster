@@ -6364,7 +6364,10 @@ def _build_wan_i2v(image_filename, preset_key, prompt_text, negative_text, seed,
                     "inputs": {"frames": video_ref, "ckpt_name": "rife49.pth",
                                "clear_cache_after_n_frames": 10, "multiplier": 2,
                                "fast_mode": True, "ensemble": True,
-                               "scale_factor": 1.0}}
+                               "scale_factor": 1.0,
+                               "dtype": "float16",
+                               "torch_compile": False,
+                               "batch_size": 1}}
         video_ref = ["71", 0]
 
     # Output FPS: double if RIFE 2× interpolation is active
@@ -6534,7 +6537,9 @@ def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negati
         wf["71"] = {"class_type": "RIFE VFI",
                     "inputs": {"frames": video_ref, "ckpt_name": "rife49.pth",
                                "clear_cache_after_n_frames": 10, "multiplier": 2,
-                               "fast_mode": True, "ensemble": True, "scale_factor": 1.0}}
+                               "fast_mode": True, "ensemble": True, "scale_factor": 1.0,
+                               "dtype": "float16", "torch_compile": False,
+                               "batch_size": 1}}
         video_ref = ["71", 0]
 
     output_fps = float(fps * (2 if interpolate else 1))
