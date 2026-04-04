@@ -10041,7 +10041,7 @@ class MtbFaceSwapDialog(Gtk.Dialog):
         fetch_btn.connect("clicked", self._on_fetch)
         box.pack_start(fetch_btn, False, False, 0)
 
-        self.show()
+        box.show_all()
 
     def _on_fetch(self, _btn):
         srv = self.server_entry.get_text().strip(); _propagate_server_url(srv)
@@ -10227,7 +10227,7 @@ class FaceIDDialog(Gtk.Dialog):
         # Runs spinner
         _add_runs_spinner(self, box)
 
-        self.show()
+        box.show_all()
 
     def _buf_text(self, tv):
         buf = tv.get_buffer()
@@ -10420,7 +10420,7 @@ class PulidFluxDialog(Gtk.Dialog):
         # Runs spinner
         _add_runs_spinner(self, box)
 
-        self.show()
+        box.show_all()
 
     def _buf_text(self, tv):
         buf = tv.get_buffer()
