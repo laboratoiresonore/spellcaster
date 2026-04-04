@@ -45,7 +45,12 @@ GIMP_PLUGIN_FILES = [
     "plugins/gimp/comfyui-connector/spellcaster_steg.py",
     "plugins/gimp/comfyui-connector/spellcaster-theme.css",
     "plugins/gimp/comfyui-connector/gimp_banner.png",
+    "plugins/gimp/comfyui-connector/gimp_banner.gif",
     "plugins/gimp/comfyui-connector/installer_background.png",
+    "plugins/gimp/comfyui-connector/readme_banner.png",
+    "plugins/gimp/comfyui-connector/spellcaster_hero.png",
+    "plugins/gimp/comfyui-connector/spinner.gif",
+    "plugins/gimp/comfyui-connector/wizard_banner.gif",
 ]
 
 DARKTABLE_PLUGIN_FILES = [
@@ -66,9 +71,9 @@ else:
 
 
 def discover_remote_files(prefix: str) -> list[str]:
-    """Dynamically discover all files under *prefix* in the repo via GitHub Tree API.
+    """Dynamically discover ALL files under *prefix* in the repo via GitHub Tree API.
 
-    Returns a list of full repo-relative paths (e.g. "plugins/darktable/splash.py").
+    Returns a list of full repo-relative paths including subdirectories.
     Falls back to None if the API is unavailable so callers can use static lists.
     """
     try:
@@ -78,9 +83,8 @@ def discover_remote_files(prefix: str) -> list[str]:
         files = []
         for item in tree.get("tree", []):
             if item["type"] == "blob" and item["path"].startswith(prefix):
-                # Only include top-level files (skip subdirectory files)
                 remainder = item["path"][len(prefix):]
-                if "/" not in remainder:
+                if remainder:  # skip empty (the prefix dir itself)
                     files.append(item["path"])
         return files if files else None
     except Exception:
@@ -702,7 +706,7 @@ def repair_and_install_gimp(plug_dir: Path, server_url: str = "http://127.0.0.1:
     # Remove stale local files not present in the remote list
     if remote_files:
         remote_filenames = {Path(p).name for p in remote_files}
-        protected = {"config.json", ".spellcaster_version"}
+        protected = {"config.json"}  # only protect user config, force-update everything else
         for local_file in correct_dir.iterdir():
             if (local_file.is_file() and local_file.name not in protected
                     and not local_file.name.endswith(".pyc")
@@ -712,6 +716,21 @@ def repair_and_install_gimp(plug_dir: Path, server_url: str = "http://127.0.0.1:
                     print(f"    {Y}Removed stale:{X} {local_file.name}")
                 except Exception:
                     pass
+
+    # Step 2b: Clean up stale staged updates and version file
+    for stale in correct_dir.glob("*.update"):
+        try:
+            stale.unlink()
+            print(f"    {Y}Removed stale staged update:{X} {stale.name}")
+        except Exception:
+            pass
+    ver_file = correct_dir / ".spellcaster_version"
+    if ver_file.exists():
+        try:
+            ver_file.unlink()
+            print(f"    {Y}Removed version file (forces fresh sync on next GIMP start){X}")
+        except Exception:
+            pass
 
     # Step 3: Write config.json
     config_path = correct_dir / "config.json"
@@ -767,7 +786,7 @@ def update_darktable_plugin(dt_dir: Path) -> bool:
     # Remove stale local files
     if remote_files:
         remote_filenames = {Path(p).name for p in remote_files}
-        protected = {"config.json", ".spellcaster_version"}
+        protected = {"config.json"}  # only protect user config, force-update everything else
         for local_file in dt_dir.iterdir():
             if (local_file.is_file() and local_file.name not in protected
                     and not local_file.name.endswith(".pyc")
