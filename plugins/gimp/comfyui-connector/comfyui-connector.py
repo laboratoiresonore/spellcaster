@@ -3256,6 +3256,9 @@ def _get_output_images(server, prompt_id, timeout=300):
     for node_id, node_output in result.get("outputs", {}).items():
         for img in node_output.get("images", []):
             images.append((img["filename"], img.get("subfolder", ""), img.get("type", "output")))
+        # VHS_VideoCombine outputs appear under "gifs" key (despite format)
+        for gif in node_output.get("gifs", []):
+            images.append((gif["filename"], gif.get("subfolder", ""), gif.get("type", "output")))
     return images
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -7143,7 +7146,10 @@ def _run_comfyui_workflow(server, workflow, timeout=300):
     try:
         with _workflow_lock:
             _flush_pending_uploads()
-            result = _api_post_json(server, "/prompt", {"prompt": workflow})
+            result = _api_post_json(server, "/prompt", {
+                "prompt": workflow,
+                "extra_pnginfo": {"workflow": workflow},
+            })
             prompt_id = result.get("prompt_id")
             if not prompt_id:
                 raise RuntimeError(f"ComfyUI did not return a prompt_id: {result}")
