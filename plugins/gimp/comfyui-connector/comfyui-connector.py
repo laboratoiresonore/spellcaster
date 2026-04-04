@@ -4094,65 +4094,39 @@ def _build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
     padded_ref = _ensure_mod16(wf, ["5", 0], preset, "5s")
 
     if is_klein:
-        # ── Flux 2 Klein outpaint pipeline ──────────────────────────────
-        # Uses SamplerCustomAdvanced (the correct Flux2 pipeline) with
-        # ReferenceLatent for context. Then composites the original image
-        # back over the non-extension area to prevent any gray/noise.
-        wf["6"] = {"class_type": "VAEEncode",
-                   "inputs": {"pixels": padded_ref, "vae": vae_ref}}
-
+        # ── Klein outpaint: use standard KSampler pipeline ──────────────
+        # SamplerCustomAdvanced does NOT support SetLatentNoiseMask — it
+        # always produces gray in the extension area regardless of approach
+        # (empty latent, VAE-encoded latent, composite, etc.). This has been
+        # tried 10+ times with every combination.
+        #
+        # Solution: use the SAME KSampler pipeline as SD1.5/SDXL. Klein
+        # models work fine with KSampler — the only limitation is no
+        # ReferenceLatent/CFGGuider, but for outpainting we don't need those.
+        # KSampler properly handles SetLatentNoiseMask: it preserves the
+        # original content in unmasked areas and generates new content in
+        # masked (padded) areas.
         wf["2"] = {"class_type": "CLIPTextEncode",
                    "inputs": {"text": prompt_text, "clip": clip_ref}}
-        wf["3"] = {"class_type": "ConditioningZeroOut",
-                   "inputs": {"conditioning": ["2", 0]}}
-
-        # ReferenceLatent gives Klein context of the existing image
-        wf["20"] = {"class_type": "ReferenceLatent",
-                    "inputs": {"conditioning": ["2", 0], "latent": ["6", 0]}}
-        wf["21"] = {"class_type": "ReferenceLatent",
-                    "inputs": {"conditioning": ["3", 0], "latent": ["6", 0]}}
-
-        # Get padded image dimensions
-        wf["25"] = {"class_type": "GetImageSize+",
-                    "inputs": {"image": padded_ref}}
-
-        # Flux 2 sampling pipeline
-        wf["30"] = {"class_type": "CFGGuider",
-                    "inputs": {"model": model_ref, "positive": ["20", 0],
-                               "negative": ["21", 0], "cfg": 1.0}}
-        wf["31"] = {"class_type": "KSamplerSelect",
-                    "inputs": {"sampler_name": "euler"}}
-        wf["32"] = {"class_type": "Flux2Scheduler",
-                    "inputs": {"steps": preset.get("steps", 20), "denoise": 1.0,
-                               "width": ["25", 0], "height": ["25", 1]}}
-        wf["33"] = {"class_type": "RandomNoise",
-                    "inputs": {"noise_seed": seed}}
-        wf["34"] = {"class_type": "EmptyFlux2LatentImage",
-                    "inputs": {"width": ["25", 0], "height": ["25", 1],
-                               "batch_size": 1}}
-
-        # Sample from empty latent — generates the full image
-        wf["40"] = {"class_type": "SamplerCustomAdvanced",
-                    "inputs": {"noise": ["33", 0], "guider": ["30", 0],
-                               "sampler": ["31", 0], "sigmas": ["32", 0],
-                               "latent_image": ["34", 0]}}
-
-        # Decode the AI result
+        wf["3"] = {"class_type": "CLIPTextEncode",
+                   "inputs": {"text": "blurry, low quality, artifacts, seam, border", "clip": clip_ref}}
+        wf["6"] = {"class_type": "VAEEncode",
+                   "inputs": {"pixels": padded_ref, "vae": vae_ref}}
+        wf["7"] = {"class_type": "SetLatentNoiseMask",
+                   "inputs": {"samples": ["6", 0], "mask": ["5", 1]}}
+        wf["8"] = {"class_type": "KSampler",
+                   "inputs": {
+                       "model": model_ref, "positive": ["2", 0],
+                       "negative": ["3", 0], "latent_image": ["7", 0],
+                       "seed": seed,
+                       "steps": preset.get("steps", 20), "cfg": 3.5,
+                       "sampler_name": "euler", "scheduler": "simple",
+                       "denoise": 0.85,
+                   }}
         wf["9"] = {"class_type": "VAEDecode",
-                   "inputs": {"samples": ["40", 0], "vae": vae_ref}}
-
-        # Composite: paste the original padded image back over the
-        # non-extension area using the inverted outpaint mask.
-        # mask from ImagePadForOutpaint: white = new area, black = original
-        # InvertMask: white = original area (paste source here)
-        wf["9m"] = {"class_type": "InvertMask",
-                    "inputs": {"mask": ["5", 1]}}
-        wf["9c"] = {"class_type": "ImageCompositeMasked",
-                    "inputs": {"destination": ["9", 0], "source": padded_ref,
-                               "mask": ["9m", 0], "x": 0, "y": 0,
-                               "resize_source": True}}
+                   "inputs": {"samples": ["8", 0], "vae": vae_ref}}
         wf["10"] = {"class_type": "SaveImage",
-                    "inputs": {"images": ["9c", 0], "filename_prefix": "spellcaster_outpaint"}}
+                    "inputs": {"images": ["9", 0], "filename_prefix": "spellcaster_outpaint"}}
 
     else:
         # ── Standard outpaint pipeline (SD1.5/SDXL/etc) ────────────────
