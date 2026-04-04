@@ -3208,31 +3208,59 @@ def _download_image(server, filename, subfolder="", folder_type="output"):
 def _wait_for_prompt(server, prompt_id, timeout=300):
     """Poll ComfyUI's /history endpoint until the prompt finishes or times out.
 
-    ComfyUI doesn't support webhooks/SSE for prompt completion in the simple
-    API mode, so we poll every 1.5 seconds. The prompt_id appears in the
-    history dict once generation is complete.
-
-    Checks _cancel_event between polls — if set, attempts to cancel the
-    prompt on the server and raises InterruptedError.
+    Smart timeout: the deadline extends automatically when there's a
+    legitimate reason the job isn't done yet:
+      - Queue has items ahead of our job (pending or running)
+      - Our job is actively running (it's in queue_running)
+    Only times out if the job is stuck with no queue activity for the
+    full timeout duration.
     """
     deadline = time.time() + timeout
-    while time.time() < deadline:
+    while True:
+        now = time.time()
+
         # Check for user cancellation
         if _cancel_event.is_set():
-            # Try to cancel the prompt on ComfyUI server
             try:
                 _api_post_json(server, "/queue", {"delete": [prompt_id]})
             except Exception:
                 pass
             raise InterruptedError("Generation cancelled by user")
+
+        # Check if done
         try:
             history = _api_get(server, f"/history/{prompt_id}")
             if prompt_id in history:
                 return history[prompt_id]
         except Exception:
             pass
+
+        # Smart timeout: check if there's a legitimate reason to keep waiting
+        try:
+            q = _api_get(server, "/queue")
+            running = q.get("queue_running", [])
+            pending = q.get("queue_pending", [])
+
+            # Is our job in the running list?
+            our_running = any(len(item) > 1 and item[1] == prompt_id for item in running)
+            # Is our job in the pending list?
+            our_pending = any(len(item) > 1 and item[1] == prompt_id for item in pending)
+            # Are there other jobs ahead of ours?
+            queue_busy = len(running) > 0 or len(pending) > 0
+
+            if our_running or our_pending or queue_busy:
+                # Job is legitimately waiting or running — extend deadline
+                deadline = max(deadline, now + timeout)
+                _update_spinner_status(
+                    f"{'Running' if our_running else 'Queued'}"
+                    f" ({len(running)} running, {len(pending)} pending)")
+        except Exception:
+            pass  # can't reach server — use existing deadline
+
+        if now > deadline:
+            raise TimeoutError(f"ComfyUI prompt {prompt_id} timed out after {timeout}s of inactivity")
+
         time.sleep(1.5)
-    raise TimeoutError(f"ComfyUI prompt {prompt_id} did not finish within {timeout}s")
 
 def _get_output_images(server, prompt_id, timeout=300):
     """Wait for a prompt to finish and collect all output image references.
