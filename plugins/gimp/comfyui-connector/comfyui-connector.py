@@ -9471,15 +9471,15 @@ class MtbFaceSwapDialog(Gtk.Dialog):
 
         # Server
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        row.append(Gtk.Label(label="Server:"))
-        self.server_entry = Gtk.Entry(text=server_url, hexpand=True)
+        row.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        self.server_entry = Gtk.Entry(); self.server_entry.set_text(server_url); self.server_entry.set_hexpand(True)
         self.server_entry.set_tooltip_text("ComfyUI server address. Default: http://127.0.0.1:8188")
-        row.append(self.server_entry)
-        box.append(row)
+        row.pack_start(self.server_entry, False, False, 0)
+        box.pack_start(row, False, False, 0)
 
         # Source face image file chooser
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        row.append(Gtk.Label(label="Source Face Image:"))
+        row.pack_start(Gtk.Label(label="Source Face Image:"), False, False, 0)
         self.source_chooser = Gtk.FileChooserButton(title="Select source face image")
         self.source_chooser.set_tooltip_text("Select an image containing the face you want to paste onto the canvas.")
         ff = Gtk.FileFilter()
@@ -9491,46 +9491,46 @@ class MtbFaceSwapDialog(Gtk.Dialog):
         ff.add_pattern("*.jpeg")
         self.source_chooser.add_filter(ff)
         self.source_chooser.set_hexpand(True)
-        row.append(self.source_chooser)
-        box.append(row)
+        row.pack_start(self.source_chooser, False, False, 0)
+        box.pack_start(row, False, False, 0)
 
         # Analysis model
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        row.append(Gtk.Label(label="Analysis Model:"))
+        row.pack_start(Gtk.Label(label="Analysis Model:"), False, False, 0)
         self.analysis_combo = Gtk.ComboBoxText()
         self.analysis_combo.set_tooltip_text("Face detection model. buffalo_l is the most accurate.\nSmaller models (buffalo_m, buffalo_sc) are faster but less reliable.")
         for m in ["buffalo_l", "antelopev2", "buffalo_m", "buffalo_sc"]:
             self.analysis_combo.append(m, m)
         self.analysis_combo.set_active_id("buffalo_l")
         self.analysis_combo.set_hexpand(True)
-        row.append(self.analysis_combo)
-        box.append(row)
+        row.pack_start(self.analysis_combo, False, False, 0)
+        box.pack_start(row, False, False, 0)
 
         # Swap model
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        row.append(Gtk.Label(label="Swap Model:"))
+        row.pack_start(Gtk.Label(label="Swap Model:"), False, False, 0)
         self.swap_combo = Gtk.ComboBoxText()
         self.swap_combo.set_tooltip_text("Face swap model. inswapper_128 is standard.\nfp16 variant uses less VRAM but may be slightly less accurate.")
         for m in ["inswapper_128.onnx", "inswapper_128_fp16.onnx"]:
             self.swap_combo.append(m, m)
         self.swap_combo.set_active_id("inswapper_128.onnx")
         self.swap_combo.set_hexpand(True)
-        row.append(self.swap_combo)
-        box.append(row)
+        row.pack_start(self.swap_combo, False, False, 0)
+        box.pack_start(row, False, False, 0)
 
         # Face index
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        row.append(Gtk.Label(label="Face Index:"))
-        self.face_idx = Gtk.Entry(text="0")
+        row.pack_start(Gtk.Label(label="Face Index:"), False, False, 0)
+        self.face_idx = Gtk.Entry(); self.face_idx.set_text("0")
         self.face_idx.set_tooltip_text("0 = first face, comma-separated for multiple")
         self.face_idx.set_hexpand(True)
-        row.append(self.face_idx)
-        box.append(row)
+        row.pack_start(self.face_idx, False, False, 0)
+        box.pack_start(row, False, False, 0)
 
         # Fetch models from server
         fetch_btn = Gtk.Button(label="Fetch Models from Server")
         fetch_btn.connect("clicked", self._on_fetch)
-        box.append(fetch_btn)
+        box.pack_start(fetch_btn, False, False, 0)
 
         self.show()
 
@@ -9593,27 +9593,27 @@ class FaceIDDialog(Gtk.Dialog):
 
         # Server
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        row.append(Gtk.Label(label="Server:"))
-        self.server_entry = Gtk.Entry(text=server_url, hexpand=True)
+        row.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        self.server_entry = Gtk.Entry(); self.server_entry.set_text(server_url); self.server_entry.set_hexpand(True)
         self.server_entry.set_tooltip_text("ComfyUI server address. Default: http://127.0.0.1:8188")
-        row.append(self.server_entry)
-        box.append(row)
+        row.pack_start(self.server_entry, False, False, 0)
+        box.pack_start(row, False, False, 0)
 
         # Model preset
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        row.append(Gtk.Label(label="Model Preset:"))
+        row.pack_start(Gtk.Label(label="Model Preset:"), False, False, 0)
         self.preset_combo = Gtk.ComboBoxText()
         self.preset_combo.set_tooltip_text("Base checkpoint model for generation.\nSD1.5 and SDXL are supported depending on the FaceID type.")
         for key in FACEID_PRESETS:
             self.preset_combo.append(key, key)
         self.preset_combo.set_active(0)
         self.preset_combo.set_hexpand(True)
-        row.append(self.preset_combo)
-        box.append(row)
+        row.pack_start(self.preset_combo, False, False, 0)
+        box.pack_start(row, False, False, 0)
 
         # FaceID preset
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        row.append(Gtk.Label(label="FaceID Type:"))
+        row.pack_start(Gtk.Label(label="FaceID Type:"), False, False, 0)
         self.faceid_combo = Gtk.ComboBoxText()
         self.faceid_combo.set_tooltip_text("FaceID variant to use. FACEID PLUS V2 is recommended for most cases.\nPORTRAIT modes give stronger face transfer. Some are model-specific.")
         for p in ["FACEID", "FACEID PLUS - SD1.5 only", "FACEID PLUS V2",
@@ -9621,12 +9621,12 @@ class FaceIDDialog(Gtk.Dialog):
             self.faceid_combo.append(p, p)
         self.faceid_combo.set_active_id("FACEID PLUS V2")
         self.faceid_combo.set_hexpand(True)
-        row.append(self.faceid_combo)
-        box.append(row)
+        row.pack_start(self.faceid_combo, False, False, 0)
+        box.pack_start(row, False, False, 0)
 
         # Source face image
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        row.append(Gtk.Label(label="Face Reference:"))
+        row.pack_start(Gtk.Label(label="Face Reference:"), False, False, 0)
         self.source_chooser = Gtk.FileChooserButton(title="Select face reference image")
         self.source_chooser.set_tooltip_text("Select a photo of the face you want to preserve in the generated image.\nUse a clear, front-facing photo for best results.")
         ff = Gtk.FileFilter()
@@ -9638,26 +9638,26 @@ class FaceIDDialog(Gtk.Dialog):
         ff.add_pattern("*.jpeg")
         self.source_chooser.add_filter(ff)
         self.source_chooser.set_hexpand(True)
-        row.append(self.source_chooser)
-        box.append(row)
+        row.pack_start(self.source_chooser, False, False, 0)
+        box.pack_start(row, False, False, 0)
 
         # Prompt
-        box.append(Gtk.Label(label="Prompt:", xalign=0))
+        box.pack_start(Gtk.Label(label="Prompt:", xalign=0), False, False, 0)
         self.prompt_tv = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR)
         self.prompt_tv.set_size_request(-1, 60)
         self.prompt_tv.set_tooltip_text("Describe the scene around the face. The face identity comes from the reference image.\nExample: 'elegant portrait, studio lighting, professional photo'")
         sw = Gtk.ScrolledWindow(child=self.prompt_tv, vexpand=False)
         sw.set_min_content_height(60)
-        box.append(sw)
+        box.pack_start(sw, False, False, 0)
 
         # Negative
-        box.append(Gtk.Label(label="Negative:", xalign=0))
+        box.pack_start(Gtk.Label(label="Negative:", xalign=0), False, False, 0)
         self.neg_tv = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR)
         self.neg_tv.set_size_request(-1, 40)
         self.neg_tv.set_tooltip_text("Describe what you do NOT want (e.g. 'blurry, distorted').")
         sw2 = Gtk.ScrolledWindow(child=self.neg_tv, vexpand=False)
         sw2.set_min_content_height(40)
-        box.append(sw2)
+        box.pack_start(sw2, False, False, 0)
         self.neg_tv.get_buffer().set_text("blurry, deformed, bad anatomy, disfigured")
 
         # Spinners grid
@@ -9710,7 +9710,7 @@ class FaceIDDialog(Gtk.Dialog):
         self.seed_spin.set_tooltip_text("-1 = random")
         grid.attach(self.seed_spin, 1, r, 1, 1)
 
-        box.append(grid)
+        box.pack_start(grid, False, False, 0)
 
         # ── User saved presets ──────────────────────────────────────────
         _add_preset_ui(self, box, "faceid")
@@ -9822,15 +9822,15 @@ class PulidFluxDialog(Gtk.Dialog):
 
         # Server
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        row.append(Gtk.Label(label="Server:"))
-        self.server_entry = Gtk.Entry(text=server_url, hexpand=True)
+        row.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        self.server_entry = Gtk.Entry(); self.server_entry.set_text(server_url); self.server_entry.set_hexpand(True)
         self.server_entry.set_tooltip_text("ComfyUI server address. Default: http://127.0.0.1:8188")
-        row.append(self.server_entry)
-        box.append(row)
+        row.pack_start(self.server_entry, False, False, 0)
+        box.pack_start(row, False, False, 0)
 
         # Flux model
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        row.append(Gtk.Label(label="Flux Model:"))
+        row.pack_start(Gtk.Label(label="Flux Model:"), False, False, 0)
         self.model_combo = Gtk.ComboBoxText()
         self.model_combo.set_tooltip_text("Flux checkpoint model for generation.\nRequires a Flux-compatible model file on the server.")
         for m in PULID_FLUX_MODELS:
@@ -9838,12 +9838,12 @@ class PulidFluxDialog(Gtk.Dialog):
             self.model_combo.append(m, label)
         self.model_combo.set_active(0)
         self.model_combo.set_hexpand(True)
-        row.append(self.model_combo)
-        box.append(row)
+        row.pack_start(self.model_combo, False, False, 0)
+        box.pack_start(row, False, False, 0)
 
         # Face reference image
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        row.append(Gtk.Label(label="Face Reference:"))
+        row.pack_start(Gtk.Label(label="Face Reference:"), False, False, 0)
         self.source_chooser = Gtk.FileChooserButton(title="Select face reference image")
         self.source_chooser.set_tooltip_text("Select a clear, front-facing photo of the face to preserve.\nThe face identity will be transferred into the generated image.")
         ff = Gtk.FileFilter()
@@ -9855,17 +9855,17 @@ class PulidFluxDialog(Gtk.Dialog):
         ff.add_pattern("*.jpeg")
         self.source_chooser.add_filter(ff)
         self.source_chooser.set_hexpand(True)
-        row.append(self.source_chooser)
-        box.append(row)
+        row.pack_start(self.source_chooser, False, False, 0)
+        box.pack_start(row, False, False, 0)
 
         # Prompt
-        box.append(Gtk.Label(label="Prompt:", xalign=0))
+        box.pack_start(Gtk.Label(label="Prompt:", xalign=0), False, False, 0)
         self.prompt_tv = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR)
         self.prompt_tv.set_size_request(-1, 60)
         self.prompt_tv.set_tooltip_text("Describe the scene. The face comes from the reference image.\nExample: 'portrait photo, natural lighting, smiling'")
         sw = Gtk.ScrolledWindow(child=self.prompt_tv, vexpand=False)
         sw.set_min_content_height(60)
-        box.append(sw)
+        box.pack_start(sw, False, False, 0)
 
         # Spinners
         grid = Gtk.Grid(column_spacing=12, row_spacing=6)
@@ -9903,7 +9903,7 @@ class PulidFluxDialog(Gtk.Dialog):
         self.seed_spin.set_tooltip_text("-1 = random")
         grid.attach(self.seed_spin, 1, r, 1, 1)
 
-        box.append(grid)
+        box.pack_start(grid, False, False, 0)
 
         # ── User saved presets ──────────────────────────────────────────
         _add_preset_ui(self, box, "pulid_flux")
@@ -16056,13 +16056,13 @@ class Spellcaster(Gimp.PlugIn):
             bx.pack_start(_hdr, False, False, 0)
 
         # Map dialog keys to human-readable tool names
+        # Keys MUST match what _add_preset_ui uses in each dialog
         tool_names = {
             "preset_dialog": "img2img / txt2img / Inpaint",
-            "wan_dialog": "Wan I2V Video",
-            "faceid_dialog": "FaceID",
-            "klein_dialog": "Klein Editor",
-            "klein_ref_dialog": "Klein + Reference",
-            "pulid_dialog": "PuLID Flux",
+            "wan_i2v": "Wan I2V Video",
+            "faceid": "FaceID",
+            "klein": "Klein Editor",
+            "pulid_flux": "PuLID Flux",
         }
 
         scroll = Gtk.ScrolledWindow()
@@ -16111,14 +16111,17 @@ class Spellcaster(Gimp.PlugIn):
                 load_btn.set_tooltip_text(f"Load this preset into {tool_label} and open the tool")
                 def _make_load_cb(dk, p):
                     def on_load(btn):
-                        # Store preset into session so the tool dialog picks it up
-                        _SESSION[dk.replace("_dialog", "")] = p
+                        # Store preset into session for the correct tool
+                        session_key = {
+                            "preset_dialog": "img2img",
+                            "wan_i2v": "wan_i2v",
+                            "faceid": "faceid",
+                            "klein": "klein",
+                            "pulid_flux": "pulid_flux",
+                        }.get(dk, dk)
+                        _SESSION[session_key] = p
                         _save_session()
                         dlg.destroy()
-                        # Run the corresponding tool
-                        if dk == "preset_dialog":
-                            Gimp.get_pdb().run_procedure("gimp-script-fu-console-eval",
-                                [GObject.Value(Gimp.RunMode, Gimp.RunMode.INTERACTIVE)])
                     return on_load
                 load_btn.connect("clicked", _make_load_cb(dialog_key, preset))
                 row.pack_end(load_btn, False, False, 0)
