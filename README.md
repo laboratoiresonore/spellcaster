@@ -462,5 +462,10 @@ Body & detail fix, artistic styles, accelerators — across SDXL, Flux, Klein, Z
   <img src="plugins/darktable/darktable_splash.jpg " alt="Spellcaster" width="400" />
   <br/><br/>
   <strong>From zero to AI mastery in one install.</strong><br/>
-  <sub>Made with love by <a href="https://github.com/laboratoiresonore">laboratoiresonore</a></sub>
+  <sub>Made with love by le <a href="https://www.laboratoiresonore.com/">laboratoire sonore</a></sub>
+  <strong> Follow us! </strong><br/>
+  <sub> <a href="https://www.laboratoiresonore.com/">Instagram</a></sub>
+  <sub> <a href="https://www.laboratoiresonore.com/">Youtube</a></sub>
+  <sub> <a href="https://www.facebook.com/laboratoire.sonore.2025)">Facebook</a></sub>
+  <sub> <a href="https://www.laboratoiresonore.com/">Twitch</a></sub>
 </p>
