@@ -17121,6 +17121,70 @@ class Spellcaster(Gimp.PlugIn):
             "Disable to keep your layer stack clean.")
         bx.pack_start(debug_cb, False, False, 0)
 
+        # ── Repair / Update Now ──
+        bx.pack_start(Gtk.Separator(), False, False, 5)
+        update_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        update_btn = Gtk.Button(label="Repair / Update Now")
+        update_status = Gtk.Label(label="")
+        update_btn.set_tooltip_text(
+            "Force-download ALL plugin files from GitHub right now.\n"
+            "Fixes bricked installations, missing files, or stale versions.\n"
+            "Equivalent to running the manual updater .exe.")
+        def _on_update(btn):
+            import sys as _sys
+            update_status.set_text("Updating...")
+            btn.set_sensitive(False)
+            try:
+                _ua = "spellcaster-gimp/repair"
+                req_tree = urllib.request.Request(_GITHUB_TREE, headers={"User-Agent": _ua})
+                with urllib.request.urlopen(req_tree, timeout=15) as r:
+                    tree = json.loads(r.read())
+                remote_files = []
+                for item in tree.get("tree", []):
+                    if item["type"] == "blob" and item["path"].startswith(_GIMP_PLUGIN_PREFIX):
+                        remainder = item["path"][len(_GIMP_PLUGIN_PREFIX):]
+                        if remainder:
+                            remote_files.append(item["path"])
+                if not remote_files:
+                    update_status.set_markup('<span foreground="#FF5252">No files found on server</span>')
+                    btn.set_sensitive(True)
+                    return
+                updated = 0
+                for rel_path in remote_files:
+                    remainder = rel_path[len(_GIMP_PLUGIN_PREFIX):]
+                    try:
+                        url = f"{_RAW_BASE}/{rel_path}"
+                        dest = _PLUGIN_DIR / remainder
+                        dest.parent.mkdir(parents=True, exist_ok=True)
+                        tmp = dest.with_suffix(dest.suffix + ".tmp")
+                        req_dl = urllib.request.Request(url, headers={"User-Agent": _ua})
+                        with urllib.request.urlopen(req_dl, timeout=60) as r2:
+                            tmp.write_bytes(r2.read())
+                        try:
+                            tmp.replace(dest)
+                            updated += 1
+                        except PermissionError:
+                            stage = dest.with_suffix(dest.suffix + ".update")
+                            tmp.replace(stage)
+                            updated += 1
+                    except Exception as e:
+                        print(f"[Repair] Failed: {remainder}: {e}", file=_sys.stderr)
+                # Delete version file to force re-check
+                ver = _PLUGIN_DIR / ".spellcaster_version"
+                if ver.exists():
+                    try: ver.unlink()
+                    except Exception: pass
+                update_status.set_markup(
+                    f'<span foreground="#00E676">Updated {updated}/{len(remote_files)} files.\n'
+                    f'Restart GIMP to apply.</span>')
+            except Exception as e:
+                update_status.set_markup(f'<span foreground="#FF5252">Error: {e}</span>')
+            btn.set_sensitive(True)
+        update_btn.connect("clicked", _on_update)
+        update_row.pack_start(update_btn, False, False, 0)
+        update_row.pack_start(update_status, True, True, 0)
+        bx.pack_start(update_row, False, False, 0)
+
         # ── Info ──
         bx.pack_start(Gtk.Separator(), False, False, 5)
         info_label = Gtk.Label()
