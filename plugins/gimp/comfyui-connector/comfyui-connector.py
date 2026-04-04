@@ -6377,12 +6377,13 @@ def _build_wan_i2v(image_filename, preset_key, prompt_text, negative_text, seed,
     video_ref = ["60", 0]
 
     # ── Optional post-processing ─────────────────────────────────────
-    if upscale:
-        wf["70"] = {"class_type": "RTXVideoSuperResolution",
-                    "inputs": {"images": video_ref,
-                               "resize_type": "scale by multiplier",
-                               "scale": upscale_factor,
-                               "quality": "ULTRA"}}
+    if upscale and upscale_factor > 1.0:
+        # Use ImageScaleBy as a reliable upscale (RTXVideoSuperResolution
+        # uses COMFY_DYNAMICCOMBO_V3 which has API compat issues)
+        wf["70"] = {"class_type": "ImageScaleBy",
+                    "inputs": {"image": video_ref,
+                               "upscale_method": "lanczos",
+                               "scale_by": upscale_factor}}
         video_ref = ["70", 0]
 
     if interpolate:
@@ -6406,12 +6407,10 @@ def _build_wan_i2v(image_filename, preset_key, prompt_text, negative_text, seed,
                            "format": "video/h264-mp4", "pingpong": pingpong,
                            "save_output": True}}
 
-    # GIF for GIMP to import as animated layer
-    wf["14"] = {"class_type": "VHS_VideoCombine",
-                "inputs": {"images": video_ref, "frame_rate": output_fps,
-                           "loop_count": 0, "filename_prefix": "gimp_wan_i2v_gif",
-                           "format": "image/gif", "pingpong": pingpong,
-                           "save_output": True}}
+    # First frame PNG for GIMP to import as a layer
+    wf["13"] = {"class_type": "SaveImage",
+                "inputs": {"images": ["60", 0],
+                           "filename_prefix": "gimp_wan_i2v_frame"}}
 
     return wf
 
@@ -6553,10 +6552,11 @@ def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negati
 
     video_ref = ["60", 0]
 
-    if upscale:
-        wf["70"] = {"class_type": "RTXVideoSuperResolution",
-                    "inputs": {"images": video_ref, "resize_type": "scale by multiplier",
-                               "scale": upscale_factor, "quality": "ULTRA"}}
+    if upscale and upscale_factor > 1.0:
+        wf["70"] = {"class_type": "ImageScaleBy",
+                    "inputs": {"image": video_ref,
+                               "upscale_method": "lanczos",
+                               "scale_by": upscale_factor}}
         video_ref = ["70", 0]
 
     if interpolate:
@@ -6576,12 +6576,10 @@ def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negati
                            "loop_count": 0, "filename_prefix": "gimp_wan_flf",
                            "format": "video/h264-mp4", "pingpong": pingpong,
                            "save_output": True}}
-    # GIF for GIMP
-    wf["14"] = {"class_type": "VHS_VideoCombine",
-                "inputs": {"images": video_ref, "frame_rate": output_fps,
-                           "loop_count": 0, "filename_prefix": "gimp_wan_flf_gif",
-                           "format": "image/gif", "pingpong": pingpong,
-                           "save_output": True}}
+    # First frame PNG for GIMP
+    wf["13"] = {"class_type": "SaveImage",
+                "inputs": {"images": ["60", 0],
+                           "filename_prefix": "gimp_wan_flf_frame"}}
 
     return wf
 
@@ -10859,13 +10857,13 @@ class Spellcaster(Gimp.PlugIn):
                 results = _run_with_spinner(f"{label}: generating video from {src} on ComfyUI...",
                                             lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
                 for i, (fn, sf, ft) in enumerate(results):
-                    # Import only GIF files into GIMP (skip MP4 and PNG frames)
-                    if fn.lower().endswith(".gif"):
-                        lbl = f"Wan I2V run {run_i+1}" if runs > 1 else "Wan I2V"
+                    # Import PNG frames into GIMP, skip MP4/GIF video files
+                    if fn.lower().endswith(".png"):
+                        lbl = f"Wan I2V run {run_i+1} #{i+1}" if runs > 1 else f"Wan I2V frame #{i+1}"
                         _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
             Gimp.displays_flush()
             Gimp.progress_end()
-            Gimp.message("Video generation complete!\nGIF imported as a layer in GIMP.\nMP4 saved in ComfyUI output folder.")
+            Gimp.message("Video generation complete!\nFirst frame imported as a layer.\nMP4 saved in ComfyUI output folder.")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Wan I2V Error: {e}")
@@ -11020,12 +11018,12 @@ class Spellcaster(Gimp.PlugIn):
                 results = _run_with_spinner(f"{label}: generating video transition on ComfyUI...",
                                              lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
                 for i, (fn, sf, ft) in enumerate(results):
-                    if fn.lower().endswith(".gif"):
-                        lbl = f"Wan FLF run {run_i+1}" if runs > 1 else "Wan FLF"
+                    if fn.lower().endswith(".png"):
+                        lbl = f"Wan FLF run {run_i+1} #{i+1}" if runs > 1 else f"Wan FLF frame #{i+1}"
                         _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
             Gimp.displays_flush()
             Gimp.progress_end()
-            Gimp.message("First+Last Frame video complete!\nGIF imported as a layer in GIMP.\nMP4 saved in ComfyUI output folder.")
+            Gimp.message("First+Last Frame video complete!\nFirst frame imported as a layer.\nMP4 saved in ComfyUI output folder.")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Wan FLF Error: {e}")
