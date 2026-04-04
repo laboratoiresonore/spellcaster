@@ -5840,6 +5840,29 @@ WAN_VIDEO_PRESETS = [
         "pingpong": None,  # None = don't override
         "loras": [],
     },
+    # ── Quality Tier Presets ────────────────────────────────────────────
+    {
+        "label": "Quality Mode — Maximum Detail",
+        "prompt": "",
+        "negative": "",
+        "cfg_override": 1.0,
+        "steps_override": 30,
+        "length_override": None,
+        "pingpong": None,
+        "shift_override": 8.0,
+        "loras": [],
+    },
+    {
+        "label": "Action Mode — Physical Contact (shift 10)",
+        "prompt": "",
+        "negative": "",
+        "cfg_override": 1.0,
+        "steps_override": 20,
+        "length_override": None,
+        "pingpong": None,
+        "shift_override": 10.0,
+        "loras": [],
+    },
     # ── Subtle Life / Living Portrait ────────────────────────────────────
     {
         "label": "Living Portrait — subtle breathing & blinks",
@@ -6209,7 +6232,7 @@ WAN_I2V_PRESETS = {
         "low_model": "Wan\\wan2.2_i2v_low_noise_14B_Q4_K_S.gguf",
         "clip": "umt5-xxl-encoder-Q8_0.gguf",
         "vae": "wan_2.1_vae.safetensors",
-        "steps": 20, "second_step": 10, "cfg": 1, "shift": None,
+        "steps": 20, "second_step": 10, "cfg": 1, "shift": 8.0,
         "lora_prefix": "Wan",
         "high_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
         "low_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
@@ -6220,7 +6243,7 @@ WAN_I2V_PRESETS = {
         "low_model": "Wan\\wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
         "clip": "umt5-xxl-encoder-Q8_0.gguf",
         "vae": "wan_2.1_vae.safetensors",
-        "steps": 20, "second_step": 10, "cfg": 1, "shift": None,
+        "steps": 20, "second_step": 10, "cfg": 1, "shift": 8.0,
         "lora_prefix": "Wan",
         "high_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
         "low_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
@@ -6301,7 +6324,7 @@ def _find_wan_lora_pair(lora_name, all_loras):
 
 def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, seed,
                       width=832, height=480, length=81,
-                      steps=None, cfg=None, second_step=None,
+                      steps=None, cfg=None, shift=None, second_step=None,
                       turbo=True, loop=False,
                       loras_high=None, loras_low=None,
                       all_server_loras=None,
@@ -6330,6 +6353,7 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
     p = WAN_I2V_PRESETS[preset_key]
     steps = steps or p["steps"]
     cfg = cfg if cfg is not None else p["cfg"]
+    shift = shift if shift is not None else p.get("shift")
     second_step = second_step if second_step is not None else p.get("second_step", 10)
 
     is_gguf_high = p["high_model"].endswith(".gguf")
@@ -6397,6 +6421,17 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
             wf[nid] = {"class_type": "LoraLoaderModelOnly",
                         "inputs": {"model": low_ref, "lora_name": ln, "strength_model": ls}}
             low_ref = [nid, 0]
+
+    # ── ModelSamplingSD3 (shift) — override noise schedule when set ──
+    # Shift controls temporal coherence: higher = better for action/contact
+    # Default None = skip (use model's built-in schedule)
+    if shift is not None and shift > 0:
+        wf["30"] = {"class_type": "ModelSamplingSD3",
+                    "inputs": {"model": high_ref, "shift": shift}}
+        wf["31"] = {"class_type": "ModelSamplingSD3",
+                    "inputs": {"model": low_ref, "shift": shift}}
+        high_ref = ["30", 0]
+        low_ref = ["31", 0]
 
     # ── Conditioning (WanImageToVideo or WanFirstLastFrameToVideo) ───
     if use_flf:
@@ -6534,7 +6569,7 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
 
 def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negative_text, seed,
                     width=832, height=480, length=81,
-                    steps=None, cfg=None, second_step=None,
+                    steps=None, cfg=None, shift=None, second_step=None,
                     turbo=True, loras_high=None, loras_low=None,
                     all_server_loras=None,
                     rtx_scale=2.5, interpolate=True, pingpong=False, fps=16):
@@ -6542,7 +6577,7 @@ def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negati
     return _build_wan_video(
         start_filename, preset_key, prompt_text, negative_text, seed,
         width=width, height=height, length=length,
-        steps=steps, cfg=cfg, second_step=second_step,
+        steps=steps, cfg=cfg, shift=shift, second_step=second_step,
         turbo=turbo, loop=False,
         loras_high=loras_high, loras_low=loras_low,
         all_server_loras=all_server_loras,
@@ -9592,7 +9627,7 @@ class WanI2VDialog(Gtk.Dialog):
 
         grid.attach(Gtk.Label(label="Shift:", xalign=1), 0, 3, 1, 1)
         self.shift_spin = Gtk.SpinButton.new_with_range(0.0, 100.0, 0.5)
-        self.shift_spin.set_digits(1); self.shift_spin.set_value(5.0)
+        self.shift_spin.set_digits(1); self.shift_spin.set_value(8.0)
         self.shift_spin.set_tooltip_text("Noise shift parameter. Default: 8.0.\nControls the noise schedule distribution. Higher values can improve temporal coherence.")
         grid.attach(self.shift_spin, 1, 3, 1, 1)
 
@@ -9774,6 +9809,8 @@ class WanI2VDialog(Gtk.Dialog):
             self.steps_spin.set_value(vp["steps_override"])
         if vp["length_override"] is not None:
             self.length_spin.set_value(vp["length_override"])
+        if vp.get("shift_override") is not None:
+            self.shift_spin.set_value(vp["shift_override"])
         if vp["pingpong"] is not None:
             self.pingpong_check.set_active(vp["pingpong"])
 
@@ -9847,7 +9884,7 @@ class WanI2VDialog(Gtk.Dialog):
         self.length_spin.set_value(p.get("length", 81))
         self.fps_spin.set_value(p.get("fps", 16))
         self.cfg_spin.set_value(p.get("cfg", 1.0))
-        self.shift_spin.set_value(p.get("shift", 5.0))
+        self.shift_spin.set_value(p.get("shift", 8.0))
         self.seed_spin.set_value(p.get("seed", -1))
         # Restore turbo FIRST, then steps — turbo toggle overrides steps
         is_turbo = p.get("turbo", True)
@@ -11312,7 +11349,7 @@ class Spellcaster(Gimp.PlugIn):
                 wf = _build_wan_video(
                     uname, v["preset_key"], v["prompt"], v["negative"], seed,
                     width=v["width"], height=v["height"], length=v["length"],
-                    steps=v["steps"], cfg=v["cfg"],
+                    steps=v["steps"], cfg=v["cfg"], shift=v.get("shift"),
                     second_step=v["second_step"], turbo=v.get("turbo", True),
                     loop=v.get("loop", False),
                     loras_high=v.get("loras_high"),
@@ -11475,7 +11512,7 @@ class Spellcaster(Gimp.PlugIn):
                     start_name, end_name, v["preset_key"],
                     v["prompt"], v["negative"], seed,
                     width=v["width"], height=v["height"], length=v["length"],
-                    steps=v["steps"], cfg=v["cfg"],
+                    steps=v["steps"], cfg=v["cfg"], shift=v.get("shift"),
                     second_step=v["second_step"], turbo=v.get("turbo", True),
                     loras_high=v.get("loras_high"),
                     loras_low=v.get("loras_low"),
@@ -13760,7 +13797,8 @@ class Spellcaster(Gimp.PlugIn):
                         wf = _build_wan_video(
                             current_start, v["preset_key"], v["prompt"], v["negative"], seed,
                             width=v["width"], height=v["height"], length=v["length"],
-                            steps=v["steps"], cfg=v["cfg"], second_step=v["second_step"],
+                            steps=v["steps"], cfg=v["cfg"], shift=v.get("shift"),
+                            second_step=v["second_step"],
                             turbo=v.get("turbo", True), loop=False,
                             loras_high=v.get("loras_high"), loras_low=v.get("loras_low"),
                             all_server_loras=v.get("all_server_loras"),
@@ -13772,7 +13810,8 @@ class Spellcaster(Gimp.PlugIn):
                         wf = _build_wan_video(
                             current_start, v["preset_key"], v["prompt"], v["negative"], seed,
                             width=v["width"], height=v["height"], length=v["length"],
-                            steps=v["steps"], cfg=v["cfg"], second_step=v["second_step"],
+                            steps=v["steps"], cfg=v["cfg"], shift=v.get("shift"),
+                            second_step=v["second_step"],
                             turbo=v.get("turbo", True), loop=(mode == "loop"),
                             loras_high=v.get("loras_high"), loras_low=v.get("loras_low"),
                             all_server_loras=v.get("all_server_loras"),
