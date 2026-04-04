@@ -7473,21 +7473,48 @@ def _make_dialog_banner():
         return _make_banner_image(360)
 
 
-_spinner_win = None       # singleton spinner window
-_spinner_jobs_box = None  # vertical box for job rows
-_spinner_pb = None        # shared progress bar
-_spinner_job_count = 0    # how many active jobs
+_spinner_win = None        # singleton spinner window
+_spinner_jobs_box = None   # vertical box for job rows
+_spinner_pb = None         # shared progress bar
+_spinner_status_lbl = None # shared status bar (queue info, VRAM, elapsed)
+_spinner_job_count = 0     # how many active jobs
+_spinner_start_time = 0    # when the first job started
+
+
+def _fetch_comfy_status(server):
+    """Fetch queue + system status from ComfyUI for the spinner display."""
+    try:
+        q = _api_get(server, "/queue")
+        running = len(q.get("queue_running", []))
+        pending = len(q.get("queue_pending", []))
+    except Exception:
+        running, pending = 0, 0
+    try:
+        stats = _api_get(server, "/system_stats")
+        devices = stats.get("devices", [{}])
+        if devices:
+            d = devices[0]
+            vram_total = d.get("vram_total", 0) / (1024**3)
+            vram_free = d.get("vram_free", 0) / (1024**3)
+            gpu_name = d.get("name", "").split(":")[0].strip()
+            gpu_name = gpu_name.replace("cuda:0 ", "")
+        else:
+            vram_total = vram_free = 0
+            gpu_name = ""
+    except Exception:
+        vram_total = vram_free = 0
+        gpu_name = ""
+    return running, pending, gpu_name, vram_total, vram_free
 
 
 def _run_with_spinner(label_text, func, *args):
     """Run func(*args) in a background thread while showing a progress window.
 
-    If a spinner window is already open (from a previous queued job),
-    the new job's status is added as a new row in the existing window
-    instead of creating a second window. When all jobs finish, the
-    window closes.
+    Singleton spinner with rich ComfyUI status: queue depth, GPU name,
+    VRAM usage, elapsed time. Multiple jobs stack as rows.
     """
-    global _spinner_label_text, _spinner_win, _spinner_jobs_box, _spinner_pb, _spinner_job_count
+    global _spinner_label_text, _spinner_win, _spinner_jobs_box, _spinner_pb
+    global _spinner_status_lbl, _spinner_job_count, _spinner_start_time
     _spinner_label_text = ""
     result_box = [None]
     error_box = [None]
@@ -7496,10 +7523,14 @@ def _run_with_spinner(label_text, func, *args):
     _cancel_event.clear()
     loop = GLib.MainLoop()
 
+    # Detect server URL for status polling
+    cfg = _load_config()
+    _status_server = cfg.get("server_url", COMFYUI_DEFAULT_URL)
+
     # ── Create or reuse the spinner window ────────────────────────────
     if _spinner_win is None or not _spinner_win.get_visible():
         win = Gtk.Window(title="Spellcaster")
-        win.set_default_size(320, -1)
+        win.set_default_size(380, -1)
         win.set_deletable(False)
         win.set_position(Gtk.WindowPosition.CENTER)
         win.override_background_color(Gtk.StateFlags.NORMAL,
@@ -7519,6 +7550,18 @@ def _run_with_spinner(label_text, func, *args):
         pb.set_margin_top(8)
         vbox.pack_start(pb, False, False, 0)
 
+        # Status bar — queue info, GPU, VRAM, elapsed
+        status_lbl = Gtk.Label(label="Connecting...")
+        status_lbl.set_margin_start(16); status_lbl.set_margin_end(16)
+        status_lbl.set_margin_top(4)
+        status_lbl.set_xalign(0)
+        status_lbl.set_line_wrap(True)
+        try:
+            status_lbl.set_markup('<span size="small" foreground="#8E889D">Connecting...</span>')
+        except Exception:
+            pass
+        vbox.pack_start(status_lbl, False, False, 0)
+
         jobs_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         jobs_box.set_margin_start(16); jobs_box.set_margin_end(16)
         jobs_box.set_margin_top(8); jobs_box.set_margin_bottom(16)
@@ -7528,7 +7571,9 @@ def _run_with_spinner(label_text, func, *args):
         _spinner_win = win
         _spinner_jobs_box = jobs_box
         _spinner_pb = pb
+        _spinner_status_lbl = status_lbl
         _spinner_job_count = 0
+        _spinner_start_time = time.time()
         win.show_all()
     else:
         win = _spinner_win
@@ -7552,13 +7597,37 @@ def _run_with_spinner(label_text, func, *args):
     job_row.show_all()
     _spinner_job_count += 1
 
+    # Status update counter (poll every ~3 seconds, not every pulse)
+    _status_counter = [0]
+
     def _pulse():
         if not done_box[0]:
             if _spinner_pb:
                 _spinner_pb.pulse()
+            # Update job label with live status
             live = _spinner_label_text
             if live and not cancel_box[0]:
                 job_label.set_text(live)
+            # Poll ComfyUI status every ~3s (every 10th pulse at 300ms)
+            _status_counter[0] += 1
+            if _status_counter[0] % 10 == 0 and _spinner_status_lbl:
+                try:
+                    running, pending, gpu, vt, vf = _fetch_comfy_status(_status_server)
+                    elapsed = int(time.time() - _spinner_start_time)
+                    mins, secs = divmod(elapsed, 60)
+                    parts = []
+                    if running > 0 or pending > 0:
+                        parts.append(f"Queue: {running} running, {pending} pending")
+                    if gpu:
+                        vram_pct = int((1 - vf / max(vt, 1)) * 100) if vt > 0 else 0
+                        parts.append(f"{gpu} — VRAM {vram_pct}% used ({vf:.1f}/{vt:.1f} GB free)")
+                    parts.append(f"Elapsed: {mins}m {secs:02d}s" if mins else f"Elapsed: {secs}s")
+                    parts.append(f"Jobs: {_spinner_job_count}")
+                    status_text = "  |  ".join(parts)
+                    _spinner_status_lbl.set_markup(
+                        f'<span size="small" foreground="#8E889D">{status_text}</span>')
+                except Exception:
+                    pass
             return True
         return False
     GLib.timeout_add(300, _pulse)
@@ -7583,7 +7652,6 @@ def _run_with_spinner(label_text, func, *args):
     except Exception:
         pass
 
-    # Close window when all jobs are done
     if _spinner_job_count <= 0:
         try:
             _spinner_win.destroy()
@@ -7592,6 +7660,7 @@ def _run_with_spinner(label_text, func, *args):
         _spinner_win = None
         _spinner_jobs_box = None
         _spinner_pb = None
+        _spinner_status_lbl = None
         _spinner_job_count = 0
 
     if cancel_box[0]:
