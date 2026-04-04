@@ -6129,7 +6129,7 @@ WAN_I2V_PRESETS = {
         "steps": 20, "second_step": 10, "cfg": 1, "shift": None,
         "lora_prefix": "Wan",
         "high_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
-        "low_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
+        "low_accel_lora": "Wan-2.2-I2V\\Lightning\\lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors",
         "accel_strength": 1.5,
     },
     "Wan I2V 14B (fp8)": {
@@ -6140,7 +6140,7 @@ WAN_I2V_PRESETS = {
         "steps": 20, "second_step": 10, "cfg": 1, "shift": None,
         "lora_prefix": "Wan",
         "high_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
-        "low_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
+        "low_accel_lora": "Wan-2.2-I2V\\Lightning\\lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors",
         "accel_strength": 1.5,
     },
 }
@@ -9494,12 +9494,19 @@ class WanI2VDialog(Gtk.Dialog):
         self.h_spin.set_value(p.get("height", 480))
         self.length_spin.set_value(p.get("length", 81))
         self.fps_spin.set_value(p.get("fps", 16))
-        self.steps_spin.set_value(p.get("steps", 30))
-        self.cfg_spin.set_value(p.get("cfg", 5.0))
+        self.cfg_spin.set_value(p.get("cfg", 1.0))
         self.shift_spin.set_value(p.get("shift", 5.0))
-        self.second_step_spin.set_value(p.get("second_step", 20))
         self.seed_spin.set_value(p.get("seed", -1))
-        self.turbo_check.set_active(p.get("turbo", True))
+        # Restore turbo FIRST, then steps — turbo toggle overrides steps
+        is_turbo = p.get("turbo", True)
+        self.turbo_check.set_active(is_turbo)
+        if is_turbo:
+            # Force turbo steps regardless of saved values
+            self.steps_spin.set_value(6)
+            self.second_step_spin.set_value(3)
+        else:
+            self.steps_spin.set_value(p.get("steps", 20))
+            self.second_step_spin.set_value(p.get("second_step", 10))
         self.loop_check.set_active(p.get("loop", False))
         self.upscale_check.set_active(p.get("upscale", True))
         self.upscale_spin.set_value(p.get("upscale_factor", 1.5))
