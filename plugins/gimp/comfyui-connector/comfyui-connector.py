@@ -12123,8 +12123,9 @@ class Spellcaster(Gimp.PlugIn):
                     lora_name=v["lora_name"], lora_strength=v["lora_strength"],
                 )
                 label = f"Klein run {run_i+1}/{runs}" if runs > 1 else "Klein"
+                _wf = wf
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
-                                            lambda: list(_run_comfyui_workflow(srv, wf)))
+                                            lambda: list(_run_comfyui_workflow(srv, _wf)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"Klein {v['klein_model']} run {run_i+1} #{i+1}" if runs > 1 \
                           else f"Klein {v['klein_model']} #{i+1}"
@@ -12322,8 +12323,9 @@ class Spellcaster(Gimp.PlugIn):
                 wf = _build_outpaint(uname, preset, prompt, "", seed,
                                       pad_l, pad_t, pad_r, pad_b, feathering)
                 label = f"Klein Outpaint run {run_i+1}/{runs}" if runs > 1 else "Klein Outpaint"
+                _wf = wf
                 results = _run_with_spinner(f"{label}: processing...",
-                                            lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
+                                            lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
                 for i, (fn, sf, ft) in enumerate(results):
                     _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
                                             f"Klein Outpaint run {run_i+1} #{i+1}" if runs > 1 else f"Klein Outpaint #{i+1}")
@@ -14899,8 +14901,9 @@ class Spellcaster(Gimp.PlugIn):
                                       pad_left, pad_top, pad_right, pad_bottom, feathering,
                                       v.get("loras"), controlnet=out_cn1)
                 label = f"Outpaint run {run_i+1}/{runs}" if runs > 1 else "Outpaint"
+                _wf = wf
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
-                                            lambda: list(_run_comfyui_workflow(srv, wf)))
+                                            lambda: list(_run_comfyui_workflow(srv, _wf)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"Outpaint {v['preset'].get('label','')} run {run_i+1} #{i+1}" if runs > 1 \
                           else f"Outpaint {v['preset'].get('label','')} #{i+1}"
@@ -16258,8 +16261,9 @@ class Spellcaster(Gimp.PlugIn):
                                       cfg=_cp.get("cfg"),
                                       controlnet_2=col_cn2)
                 label = f"Colorize run {run_i+1}/{runs}" if runs > 1 else "Colorize"
+                _wf = wf
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
-                                            lambda: list(_run_comfyui_workflow(srv, wf)))
+                                            lambda: list(_run_comfyui_workflow(srv, _wf)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"Colorized run {run_i+1} #{i+1}" if runs > 1 else f"Colorized #{i+1}"
                     _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
@@ -16316,8 +16320,9 @@ class Spellcaster(Gimp.PlugIn):
                     if node.get("class_type") == "EmptyLatentImage":
                         node["inputs"]["batch_size"] = batch_count
                 label = f"Batch Variations run {run_i+1}/{runs}" if runs > 1 else "Batch Variations"
+                _wf = wf
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
-                                            lambda: list(_run_comfyui_workflow(srv, wf)))
+                                            lambda: list(_run_comfyui_workflow(srv, _wf)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"Variation run {run_i+1} #{i+1}" if runs > 1 else f"Variation #{i+1}"
                     _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
@@ -16474,8 +16479,9 @@ class Spellcaster(Gimp.PlugIn):
                 wf = _build_iclight(uname, ckpt_name, prompt, "", seed,
                                      multiplier, steps)
                 label = f"IC-Light run {run_i+1}/{runs}" if runs > 1 else "IC-Light"
+                _wf = wf
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
-                                            lambda: list(_run_comfyui_workflow(srv, wf)))
+                                            lambda: list(_run_comfyui_workflow(srv, _wf)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"IC-Light run {run_i+1} #{i+1}" if runs > 1 else f"IC-Light #{i+1}"
                     _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
@@ -16929,8 +16935,9 @@ class Spellcaster(Gimp.PlugIn):
                                    prompt, seed, denoise, steps, scale_by=scale,
                                    controlnet=cn1, controlnet_2=cn2)
                 label = f"SUPIR run {run_i+1}/{runs}" if runs > 1 else "SUPIR"
+                _wf = wf
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
-                                            lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
+                                            lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"SUPIR Restored run {run_i+1} #{i+1}" if runs > 1 else f"SUPIR Restored #{i+1}"
                     _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
