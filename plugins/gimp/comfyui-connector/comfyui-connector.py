@@ -6937,8 +6937,7 @@ def _export_image_to_tmp(image):
 
     w = dup.get_width()
     h = dup.get_height()
-    # Try JPEG first (much faster), fall back to PNG
-    tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+    tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
     tmp.close()
     # CRITICAL: Gio.File only works with forward slashes on Windows
     tmp_path = tmp.name.replace("/", "/")
@@ -6955,6 +6954,33 @@ def _export_image_to_tmp(image):
             return os.path.getsize(tmp.name) > 100
         except Exception:
             return False
+
+    # --- Strategy 0: JPEG fast export (5-10x faster than PNG) ----------------
+    # Try exporting as JPEG first — much faster compression. ComfyUI re-encodes
+    # through VAE anyway, so the lossy compression is irrelevant.
+    try:
+        jpg_tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+        jpg_tmp.close()
+        jpg_gfile = Gio.File.new_for_path(jpg_tmp.name)
+        pdb = Gimp.get_pdb()
+        jpeg_proc = pdb.lookup_procedure('file-jpeg-export') or pdb.lookup_procedure('file-jpeg-save')
+        if jpeg_proc:
+            _pdb_run(jpeg_proc.get_name(), {
+                'run-mode': Gimp.RunMode.NONINTERACTIVE,
+                'image': dup,
+                'file': jpg_gfile,
+            })
+            if os.path.getsize(jpg_tmp.name) > 100:
+                _cleanup_dup()
+                os.unlink(tmp.name)  # remove unused PNG temp
+                return jpg_tmp.name
+        os.unlink(jpg_tmp.name)
+    except Exception as e:
+        errors.append(f"JPEG fast export: {e}")
+        try:
+            os.unlink(jpg_tmp.name)
+        except Exception:
+            pass
 
     # --- Strategy 1: Gimp.file_save (Python API) ----------------------------
     try:
