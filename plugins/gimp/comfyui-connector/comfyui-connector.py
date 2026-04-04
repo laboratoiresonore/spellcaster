@@ -6561,6 +6561,146 @@ def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negati
     return wf
 
 
+# ── Video Upscale (V2R) ──────────────────────────────────────────────────
+
+def _build_video_upscale(video_name, upscale_model="4x-UltraSharp.pth",
+                          upscale_factor=1.0, rtx_scale=2.0, fps=16):
+    """Upscale a video: load frames → model upscale → RTX super-res → save.
+
+    Pipeline: VHS_LoadVideo → TS_Video_Upscale_With_Model(factor)
+              → RTXVideoSuperResolution(scale) → CreateVideo → SaveVideo
+              + SaveImage (first frame for GIMP)
+    """
+    wf = {
+        "1": {"class_type": "VHS_LoadVideo",
+              "inputs": {"video": video_name, "force_rate": 0, "force_size": "Disabled",
+                         "custom_width": 0, "custom_height": 0,
+                         "frame_load_cap": 0, "skip_first_frames": 0,
+                         "select_every_nth": 1}},
+    }
+
+    video_ref = ["1", 0]  # IMAGE batch from VHS_LoadVideo
+
+    # Model-based upscale (optional — skip if factor ≤ 1)
+    if upscale_factor > 1.0 and upscale_model:
+        wf["10"] = {"class_type": "TS_Video_Upscale_With_Model",
+                    "inputs": {"model_name": upscale_model, "images": video_ref,
+                               "upscale_method": "lanczos", "factor": upscale_factor,
+                               "device_strategy": "auto"}}
+        video_ref = ["10", 0]
+
+    # RTX Video Super Resolution
+    if rtx_scale > 1.0:
+        wf["20"] = {"class_type": "RTXVideoSuperResolution",
+                    "inputs": {"images": video_ref,
+                               "resize_type": "scale by multiplier",
+                               "resize_type.scale": rtx_scale,
+                               "quality": "ULTRA"}}
+        video_ref = ["20", 0]
+
+    # Output video
+    wf["30"] = {"class_type": "CreateVideo",
+                "inputs": {"fps": float(fps), "images": video_ref}}
+    wf["31"] = {"class_type": "SaveVideo",
+                "inputs": {"filename_prefix": "gimp_video_upscale",
+                           "format": "auto", "codec": "auto",
+                           "video": ["30", 0]}}
+    # First frame for GIMP
+    wf["32"] = {"class_type": "SaveImage",
+                "inputs": {"images": video_ref,
+                           "filename_prefix": "gimp_video_upscale_frame"}}
+    return wf
+
+
+# ── Video Upscale + ReActor Face Swap ────────────────────────────────────
+
+def _build_video_reactor(video_name, face_models, upscale_model="4x-UltraSharp.pth",
+                          upscale_factor=1.0, rtx_scale=2.0, fps=16,
+                          face_restore_visibility=0.5, codeformer_weight=0.95):
+    """Upscale + face swap a video.
+
+    Pipeline: VHS_LoadVideo → TS_Video_Upscale_With_Model(factor)
+              → RTXVideoSuperResolution(scale)
+              → ReActorFaceSwap (per face model) → ReActorRestoreFace
+              → CreateVideo → SaveVideo + SaveImage (first frame)
+
+    face_models: list of face model filenames (e.g. ["person1.safetensors", "person2.safetensors"])
+                 Each gets applied as a separate face swap index.
+    """
+    wf = {
+        "1": {"class_type": "VHS_LoadVideo",
+              "inputs": {"video": video_name, "force_rate": 0, "force_size": "Disabled",
+                         "custom_width": 0, "custom_height": 0,
+                         "frame_load_cap": 0, "skip_first_frames": 0,
+                         "select_every_nth": 1}},
+    }
+
+    video_ref = ["1", 0]
+
+    # Model-based upscale
+    if upscale_factor > 1.0 and upscale_model:
+        wf["10"] = {"class_type": "TS_Video_Upscale_With_Model",
+                    "inputs": {"model_name": upscale_model, "images": video_ref,
+                               "upscale_method": "lanczos", "factor": upscale_factor,
+                               "device_strategy": "auto"}}
+        video_ref = ["10", 0]
+
+    # RTX upscale
+    if rtx_scale > 1.0:
+        wf["20"] = {"class_type": "RTXVideoSuperResolution",
+                    "inputs": {"images": video_ref,
+                               "resize_type": "scale by multiplier",
+                               "resize_type.scale": rtx_scale,
+                               "quality": "ULTRA"}}
+        video_ref = ["20", 0]
+
+    # Load face models + face swap chain
+    img_ref = video_ref
+    for i, fm_name in enumerate(face_models):
+        fm_nid = str(40 + i)
+        swap_nid = str(50 + i)
+        wf[fm_nid] = {"class_type": "ReActorLoadFaceModel",
+                       "inputs": {"face_model": fm_name}}
+        wf[swap_nid] = {"class_type": "ReActorFaceSwap",
+                         "inputs": {
+                             "enabled": True,
+                             "input_image": img_ref,
+                             "swap_model": "inswapper_128.onnx",
+                             "facedetection": "retinaface_resnet50",
+                             "face_restore_model": "codeformer-v0.1.0.pth",
+                             "face_restore_visibility": face_restore_visibility,
+                             "codeformer_weight": codeformer_weight,
+                             "detect_gender_input": "no",
+                             "detect_gender_source": "no",
+                             "input_faces_index": str(i),
+                             "source_faces_index": "0",
+                             "console_log_level": 1,
+                             "face_model": [fm_nid, 0],
+                         }}
+        img_ref = [swap_nid, 0]
+
+    # Face restore pass on final result
+    wf["60"] = {"class_type": "ReActorRestoreFace",
+                "inputs": {"image": img_ref,
+                           "facedetection": "retinaface_resnet50",
+                           "model": "codeformer-v0.1.0.pth",
+                           "visibility": face_restore_visibility,
+                           "codeformer_weight": codeformer_weight}}
+    img_ref = ["60", 0]
+
+    # Output video
+    wf["70"] = {"class_type": "CreateVideo",
+                "inputs": {"fps": float(fps), "images": img_ref}}
+    wf["71"] = {"class_type": "SaveVideo",
+                "inputs": {"filename_prefix": "gimp_video_reactor",
+                           "format": "auto", "codec": "auto",
+                           "video": ["70", 0]}}
+    wf["72"] = {"class_type": "SaveImage",
+                "inputs": {"images": img_ref,
+                           "filename_prefix": "gimp_video_reactor_frame"}}
+    return wf
+
+
 # ── Klein img2img (Flux 2 Klein) ─────────────────────────────────────────
 # Klein uses a different architecture than standard checkpoints:
 # UNETLoader (not CheckpointLoaderSimple), CLIPLoader with type="flux2",
@@ -10294,6 +10434,8 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-klein-inpaint": "klein_flux2",
             "spellcaster-wan-i2v": "wan_i2v",
             "spellcaster-wan-flf": "wan_i2v",
+            "spellcaster-video-upscale": "wan_i2v",
+            "spellcaster-video-reactor": "wan_i2v",
             "spellcaster-rembg": "rembg",
             "spellcaster-embed-watermark": None,
             "spellcaster-read-watermark": None,
@@ -10365,6 +10507,10 @@ class Spellcaster(Gimp.PlugIn):
                                     "Generate video from image using Wan 2.2"),
             "spellcaster-wan-flf": ("Wan 2.2 First + Last Frame to Video...", self._run_wan_flf,
                                      "Generate video transitioning between two keyframes using Wan 2.2"),
+            "spellcaster-video-upscale": ("Video Upscale (RTX + Model)...", self._run_video_upscale,
+                                           "Upscale a video with model + RTX super-resolution"),
+            "spellcaster-video-reactor": ("Video Face Swap + Upscale...", self._run_video_reactor,
+                                           "Upscale a video and swap faces using ReActor"),
 "spellcaster-upscale": ("Upscale 4x...", self._run_upscale,
                                      "Upscale image using super-resolution model"),
             "spellcaster-lama-remove": ("Object Removal (LaMa)...", self._run_lama_remove,
@@ -10443,6 +10589,8 @@ class Spellcaster(Gimp.PlugIn):
             # Video
             "spellcaster-wan-i2v":           "<Image>/Filters/Spellcaster Video",
             "spellcaster-wan-flf":           "<Image>/Filters/Spellcaster Video",
+            "spellcaster-video-upscale":     "<Image>/Filters/Spellcaster Video",
+            "spellcaster-video-reactor":     "<Image>/Filters/Spellcaster Video",
 
             # Tools & Utility
             "spellcaster-rembg":             "<Image>/Filters/Spellcaster Tools",
@@ -11004,6 +11152,269 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Wan FLF Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Video Upscale (V2R) ────────────────────────────────────────────
+    def _run_video_upscale(self, procedure, run_mode, image, drawables, config, data):
+        """Upscale a video file using model + RTX super-resolution."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+
+        dlg = Gtk.Dialog(title="Spellcaster — Video Upscale")
+        dlg.set_default_size(500, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Upscale Video", Gtk.ResponseType.OK)
+        bx = dlg.get_content_area()
+        bx.set_spacing(6); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(10); bx.set_margin_bottom(10)
+
+        _hdr = _make_branded_header()
+        if _hdr: bx.pack_start(_hdr, False, False, 0)
+
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
+        hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+
+        bx.pack_start(Gtk.Label(label="Select a video file from ComfyUI's input folder.\n"
+                                      "The video will be upscaled frame-by-frame and re-encoded."),
+                       False, False, 4)
+
+        # Video file (from ComfyUI input folder)
+        hv = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hv.pack_start(Gtk.Label(label="Video:"), False, False, 0)
+        video_combo = Gtk.ComboBoxText()
+        video_combo.set_tooltip_text("Video file in ComfyUI's input folder.\nUpload a video there first, or use one from a previous generation.")
+        video_combo.set_hexpand(True)
+        hv.pack_start(video_combo, True, True, 0); bx.pack_start(hv, False, False, 0)
+
+        # Fetch videos from server
+        try:
+            srv = srv_e.get_text().strip()
+            info = _api_get(srv, "/object_info/VHS_LoadVideo")
+            vids = info["VHS_LoadVideo"]["input"]["required"]["video"][0]
+            for v in vids:
+                video_combo.append(v, v)
+            if vids:
+                video_combo.set_active(0)
+        except Exception:
+            pass
+
+        # Upscale model
+        hu = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hu.pack_start(Gtk.Label(label="Upscale Model:"), False, False, 0)
+        up_combo = Gtk.ComboBoxText()
+        up_combo.append("(none)", "(none — RTX only)")
+        for label in UPSCALE_PRESETS:
+            if UPSCALE_PRESETS[label]:
+                up_combo.append(label, label)
+        up_combo.set_active(0)
+        up_combo.set_tooltip_text("Optional model-based upscale before RTX.\nUse for maximum quality.")
+        hu.pack_start(up_combo, True, True, 0); bx.pack_start(hu, False, False, 0)
+
+        # Scale factors
+        grid = Gtk.Grid(column_spacing=8, row_spacing=4)
+        grid.attach(Gtk.Label(label="Model factor:"), 0, 0, 1, 1)
+        model_factor_sp = Gtk.SpinButton.new_with_range(1.0, 4.0, 0.5)
+        model_factor_sp.set_value(1.0); model_factor_sp.set_digits(1)
+        model_factor_sp.set_tooltip_text("Upscale factor for the model pass.\n1.0 = skip model upscale.")
+        grid.attach(model_factor_sp, 1, 0, 1, 1)
+
+        grid.attach(Gtk.Label(label="RTX factor:"), 2, 0, 1, 1)
+        rtx_sp = Gtk.SpinButton.new_with_range(1.0, 4.0, 0.5)
+        rtx_sp.set_value(2.0); rtx_sp.set_digits(1)
+        rtx_sp.set_tooltip_text("RTX Video Super Resolution factor.\n2.0 = double resolution.")
+        grid.attach(rtx_sp, 3, 0, 1, 1)
+
+        grid.attach(Gtk.Label(label="FPS:"), 0, 1, 1, 1)
+        fps_sp = Gtk.SpinButton.new_with_range(1, 60, 1)
+        fps_sp.set_value(16)
+        grid.attach(fps_sp, 1, 1, 1, 1)
+        bx.pack_start(grid, False, False, 4)
+
+        bx.show_all()
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        srv = srv_e.get_text().strip(); _propagate_server_url(srv)
+        video_name = video_combo.get_active_id()
+        up_key = up_combo.get_active_id()
+        up_model = UPSCALE_PRESETS.get(up_key) if up_key != "(none)" else None
+        model_factor = model_factor_sp.get_value()
+        rtx_scale = rtx_sp.get_value()
+        fps = int(fps_sp.get_value())
+        dlg.destroy()
+
+        if not video_name:
+            Gimp.message("No video selected.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        try:
+            wf = _build_video_upscale(video_name, upscale_model=up_model,
+                                       upscale_factor=model_factor, rtx_scale=rtx_scale, fps=fps)
+            results = _run_with_spinner("Video Upscale: processing...",
+                                         lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
+            for fn, sf, ft in results:
+                if fn.lower().endswith(".png"):
+                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+                                            "Video Upscale frame")
+            Gimp.displays_flush()
+            Gimp.message("Video upscale complete! Check ComfyUI output folder.")
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Video Upscale Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Video Upscale + ReActor Face Swap ────────────────────────────
+    def _run_video_reactor(self, procedure, run_mode, image, drawables, config, data):
+        """Upscale a video + swap faces using ReActor."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+
+        dlg = Gtk.Dialog(title="Spellcaster — Video Upscale + Face Swap")
+        dlg.set_default_size(520, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Process Video", Gtk.ResponseType.OK)
+        bx = dlg.get_content_area()
+        bx.set_spacing(6); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(10); bx.set_margin_bottom(10)
+
+        _hdr = _make_branded_header()
+        if _hdr: bx.pack_start(_hdr, False, False, 0)
+
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
+        hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+
+        bx.pack_start(Gtk.Label(label="Upscale + face swap a video.\n"
+                                      "Faces are swapped using saved ReActor face models."),
+                       False, False, 4)
+
+        # Video file
+        hv = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hv.pack_start(Gtk.Label(label="Video:"), False, False, 0)
+        video_combo = Gtk.ComboBoxText()
+        video_combo.set_hexpand(True)
+        hv.pack_start(video_combo, True, True, 0); bx.pack_start(hv, False, False, 0)
+
+        # Face models (2 slots)
+        bx.pack_start(Gtk.Label(label="Face Models (saved ReActor .safetensors):"), False, False, 2)
+        face_combos = []
+
+        # Fetch videos + face models from server
+        face_model_list = []
+        try:
+            srv = srv_e.get_text().strip()
+            info = _api_get(srv, "/object_info/VHS_LoadVideo")
+            vids = info["VHS_LoadVideo"]["input"]["required"]["video"][0]
+            for v in vids:
+                video_combo.append(v, v)
+            if vids:
+                video_combo.set_active(0)
+
+            info2 = _api_get(srv, "/object_info/ReActorLoadFaceModel")
+            face_model_list = info2["ReActorLoadFaceModel"]["input"]["required"]["face_model"][0]
+        except Exception:
+            pass
+
+        for slot in range(2):
+            hf = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+            hf.pack_start(Gtk.Label(label=f"Face {slot+1}:"), False, False, 0)
+            fc = Gtk.ComboBoxText()
+            fc.append("(none)", f"(none — skip face {slot+1})")
+            for fm in face_model_list:
+                fc.append(fm, fm)
+            fc.set_active(0)
+            fc.set_hexpand(True)
+            fc.set_tooltip_text(f"Saved face model for face index {slot}.\nLeave as (none) to skip.")
+            hf.pack_start(fc, True, True, 0); bx.pack_start(hf, False, False, 0)
+            face_combos.append(fc)
+
+        # Upscale + restore settings
+        grid = Gtk.Grid(column_spacing=8, row_spacing=4)
+        grid.attach(Gtk.Label(label="Upscale Model:"), 0, 0, 1, 1)
+        up_combo = Gtk.ComboBoxText()
+        up_combo.append("(none)", "(none)")
+        for label in UPSCALE_PRESETS:
+            if UPSCALE_PRESETS[label]:
+                up_combo.append(label, label)
+        up_combo.set_active(0)
+        grid.attach(up_combo, 1, 0, 1, 1)
+
+        grid.attach(Gtk.Label(label="Model factor:"), 2, 0, 1, 1)
+        mf_sp = Gtk.SpinButton.new_with_range(1.0, 4.0, 0.5)
+        mf_sp.set_value(1.0); mf_sp.set_digits(1)
+        grid.attach(mf_sp, 3, 0, 1, 1)
+
+        grid.attach(Gtk.Label(label="RTX factor:"), 0, 1, 1, 1)
+        rtx_sp = Gtk.SpinButton.new_with_range(1.0, 4.0, 0.5)
+        rtx_sp.set_value(2.0); rtx_sp.set_digits(1)
+        grid.attach(rtx_sp, 1, 1, 1, 1)
+
+        grid.attach(Gtk.Label(label="FPS:"), 2, 1, 1, 1)
+        fps_sp = Gtk.SpinButton.new_with_range(1, 60, 1)
+        fps_sp.set_value(16)
+        grid.attach(fps_sp, 3, 1, 1, 1)
+
+        grid.attach(Gtk.Label(label="Restore vis:"), 0, 2, 1, 1)
+        vis_sp = Gtk.SpinButton.new_with_range(0.0, 1.0, 0.05)
+        vis_sp.set_value(0.5); vis_sp.set_digits(2)
+        vis_sp.set_tooltip_text("Face restore visibility. Higher = more restore effect.")
+        grid.attach(vis_sp, 1, 2, 1, 1)
+
+        grid.attach(Gtk.Label(label="CF weight:"), 2, 2, 1, 1)
+        cf_sp = Gtk.SpinButton.new_with_range(0.0, 1.0, 0.05)
+        cf_sp.set_value(0.95); cf_sp.set_digits(2)
+        cf_sp.set_tooltip_text("CodeFormer fidelity weight. Higher = more faithful to original.")
+        grid.attach(cf_sp, 3, 2, 1, 1)
+        bx.pack_start(grid, False, False, 4)
+
+        bx.show_all()
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        srv = srv_e.get_text().strip(); _propagate_server_url(srv)
+        video_name = video_combo.get_active_id()
+        selected_faces = [fc.get_active_id() for fc in face_combos
+                          if fc.get_active_id() and fc.get_active_id() != "(none)"]
+        up_key = up_combo.get_active_id()
+        up_model = UPSCALE_PRESETS.get(up_key) if up_key != "(none)" else None
+        model_factor = mf_sp.get_value()
+        rtx_scale = rtx_sp.get_value()
+        fps = int(fps_sp.get_value())
+        vis = vis_sp.get_value()
+        cfw = cf_sp.get_value()
+        dlg.destroy()
+
+        if not video_name:
+            Gimp.message("No video selected.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        if not selected_faces:
+            Gimp.message("Select at least one face model.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        try:
+            wf = _build_video_reactor(video_name, selected_faces, upscale_model=up_model,
+                                       upscale_factor=model_factor, rtx_scale=rtx_scale, fps=fps,
+                                       face_restore_visibility=vis, codeformer_weight=cfw)
+            results = _run_with_spinner("Video ReActor: processing...",
+                                         lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
+            for fn, sf, ft in results:
+                if fn.lower().endswith(".png"):
+                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+                                            "Video ReActor frame")
+            Gimp.displays_flush()
+            Gimp.message("Video face swap + upscale complete!\nCheck ComfyUI output folder.")
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Video ReActor Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     def _run_faceswap_mtb(self, procedure, run_mode, image, drawables, config, data):
