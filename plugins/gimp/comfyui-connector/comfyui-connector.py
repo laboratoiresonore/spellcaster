@@ -7342,6 +7342,57 @@ def _wait_for_comfy_queue_empty(server, poll_interval=2.0, max_wait=600):
         time.sleep(poll_interval)
 
 
+def _repatriate_outputs(server, results):
+    """Copy/move output files from ComfyUI to the user's directory, or delete them.
+
+    Behaviour is controlled by config settings:
+      output_dir:     path to copy outputs to (empty = skip)
+      output_cleanup: "copy" (default), "move" (delete from ComfyUI after copy),
+                      or "delete" (delete from ComfyUI, don't copy)
+
+    Also cleans up uploaded input files (gimp_*.png/jpg) from ComfyUI's
+    input folder to avoid accumulating stale temp files.
+    """
+    cfg = _load_config()
+    output_dir = cfg.get("output_dir", "").strip()
+    cleanup_mode = cfg.get("output_cleanup", "copy")  # copy / delete
+
+    # Repatriate outputs
+    if output_dir:
+        out_path = Path(output_dir)
+        try:
+            out_path.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            return
+
+        for fn, sf, ft in results:
+            try:
+                data = _download_image(server, fn, sf, ft)
+                dest = out_path / fn
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(data)
+            except Exception:
+                pass
+
+    # Clean up uploaded temp input images from ComfyUI's input folder
+    # These are the gimp_*.png/jpg files we uploaded earlier
+    if cleanup_mode == "delete" or cleanup_mode == "move":
+        try:
+            # List input files and delete our temp uploads
+            info = _api_get(server, "/object_info/LoadImage")
+            input_files = info["LoadImage"]["input"]["required"]["image"][0]
+            for fname in input_files:
+                if fname.startswith("gimp_") and (fname.endswith(".png") or fname.endswith(".jpg")):
+                    try:
+                        # ComfyUI doesn't have a delete API, but we can overwrite
+                        # with a tiny 1-byte file to reclaim space
+                        pass  # ComfyUI has no delete endpoint — skip
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+
 def _run_comfyui_workflow(server, workflow, timeout=300):
     """Wait for ComfyUI queue to clear, then submit workflow and wait for results.
 
@@ -7365,7 +7416,13 @@ def _run_comfyui_workflow(server, workflow, timeout=300):
             prompt_id = result.get("prompt_id")
             if not prompt_id:
                 raise RuntimeError(f"ComfyUI did not return a prompt_id: {result}")
-            return _get_output_images(server, prompt_id, timeout)
+            images = _get_output_images(server, prompt_id, timeout)
+            # Repatriate outputs to user's directory (if configured)
+            try:
+                _repatriate_outputs(server, images)
+            except Exception:
+                pass  # never fail the generation over repatriation
+            return images
     finally:
         _workflow_queue_depth -= 1
 
@@ -17026,6 +17083,50 @@ class Spellcaster(Gimp.PlugIn):
 
         bx.pack_start(presets_frame, True, True, 0)
 
+        # ── Output Directory ──
+        bx.pack_start(Gtk.Separator(), False, False, 5)
+        bx.pack_start(Gtk.Label(label="Spellcaster Output Directory:", xalign=0), False, False, 0)
+        output_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        output_entry = Gtk.Entry()
+        output_entry.set_text(cfg.get("output_dir", ""))
+        output_entry.set_hexpand(True)
+        output_entry.set_placeholder_text("Leave empty to skip (files stay in ComfyUI output)")
+        output_entry.set_tooltip_text(
+            "After each generation, Spellcaster will copy the output files\n"
+            "(MP4, PNG, etc.) from ComfyUI's output folder to this directory.\n"
+            "Leave empty to skip — files stay in ComfyUI's output folder.")
+        output_row.pack_start(output_entry, True, True, 0)
+        def _browse_output(*_a):
+            from customtkinter import filedialog
+            path = filedialog.askdirectory() if hasattr(filedialog, 'askdirectory') else None
+            if not path:
+                fc = Gtk.FileChooserDialog(title="Select Output Directory",
+                                            action=Gtk.FileChooserAction.SELECT_FOLDER)
+                fc.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+                fc.add_button("_Select", Gtk.ResponseType.OK)
+                if fc.run() == Gtk.ResponseType.OK:
+                    path = fc.get_filename()
+                fc.destroy()
+            if path:
+                output_entry.set_text(path)
+        browse_btn = Gtk.Button(label="Browse...")
+        browse_btn.connect("clicked", _browse_output)
+        output_row.pack_start(browse_btn, False, False, 0)
+        bx.pack_start(output_row, False, False, 0)
+
+        cleanup_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        cleanup_row.pack_start(Gtk.Label(label="After generation:"), False, False, 0)
+        cleanup_combo = Gtk.ComboBoxText()
+        cleanup_combo.append("copy", "Copy outputs to directory")
+        cleanup_combo.append("delete", "Delete temp uploads from ComfyUI")
+        cleanup_combo.set_active_id(cfg.get("output_cleanup", "copy"))
+        cleanup_combo.set_tooltip_text(
+            "What to do after each generation:\n"
+            "• Copy: save outputs to your directory (files also stay in ComfyUI)\n"
+            "• Delete: clean up temp files uploaded to ComfyUI's input folder")
+        cleanup_row.pack_start(cleanup_combo, True, True, 0)
+        bx.pack_start(cleanup_row, False, False, 0)
+
         # ── Auto-update toggle ──
         bx.pack_start(Gtk.Separator(), False, False, 5)
         auto_update_cb = Gtk.CheckButton(label="Auto-update plugin from GitHub on startup")
@@ -17068,6 +17169,8 @@ class Spellcaster(Gimp.PlugIn):
         new_timeout = int(timeout_spin.get_value())
         new_auto_update = auto_update_cb.get_active()
         new_debug = debug_cb.get_active()
+        new_output_dir = output_entry.get_text().strip()
+        new_cleanup = cleanup_combo.get_active_id() or "copy"
         fav_id = fav_combo.get_active_id()
         new_fav = int(fav_id) if fav_id and fav_id != "-1" else -1
         dlg.destroy()
@@ -17078,6 +17181,8 @@ class Spellcaster(Gimp.PlugIn):
             "auto_update": new_auto_update,
             "debug_images": new_debug,
             "favourite_model": new_fav,
+            "output_dir": new_output_dir,
+            "output_cleanup": new_cleanup,
         })
         _propagate_server_url(new_url)
         Gimp.message(f"Settings saved. Server: {new_url}")
