@@ -6421,6 +6421,110 @@ def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negati
     )
 
 
+# ── Klein Headswap ───────────────────────────────────────────────────────
+
+def _build_klein_headswap(target_filename, source_filename, klein_model_key,
+                           prompt, seed, denoise=0.35, steps=20,
+                           face_model=None, face_restore_vis=0.7, codeformer_weight=0.8):
+    """Klein headswap: ReActor face swap + Klein img2img refinement.
+
+    Pipeline:
+      LoadImage(target) → ReActorFaceSwap(source face) → ReActorRestoreFace
+      → VAEEncode → Klein ReferenceLatent img2img (low denoise to harmonize)
+      → VAEDecode → SaveImage
+
+    The low-denoise Klein pass integrates the swapped face naturally — matching
+    lighting, skin tone, and style with the rest of the image.
+    """
+    km = KLEIN_MODELS[klein_model_key]
+
+    wf = {
+        # Load target image (canvas) and source face image
+        "1": {"class_type": "LoadImage", "inputs": {"image": target_filename}},
+        "2": {"class_type": "LoadImage", "inputs": {"image": source_filename}},
+
+        # Face swap via ReActor
+        "10": {"class_type": "ReActorFaceSwap",
+               "inputs": {
+                   "enabled": True,
+                   "input_image": ["1", 0],
+                   "source_image": ["2", 0],
+                   "swap_model": "inswapper_128.onnx",
+                   "facedetection": "retinaface_resnet50",
+                   "face_restore_model": "codeformer-v0.1.0.pth",
+                   "face_restore_visibility": face_restore_vis,
+                   "codeformer_weight": codeformer_weight,
+                   "detect_gender_input": "no",
+                   "detect_gender_source": "no",
+                   "input_faces_index": "0",
+                   "source_faces_index": "0",
+                   "console_log_level": 1,
+               }},
+    }
+
+    # If a saved face model is provided, use it instead of source_image
+    if face_model:
+        wf["3"] = {"class_type": "ReActorLoadFaceModel",
+                    "inputs": {"face_model": face_model}}
+        wf["10"]["inputs"].pop("source_image", None)
+        wf["10"]["inputs"]["face_model"] = ["3", 0]
+
+    # Klein refinement pass — harmonize the swapped face
+    wf.update({
+        "20": {"class_type": "UNETLoader",
+               "inputs": {"unet_name": km["unet"], "weight_dtype": "default"}},
+        "21": {"class_type": "CLIPLoader",
+               "inputs": {"clip_name": km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+                          "type": "flux2", "device": "default"}},
+        "22": {"class_type": "VAELoader",
+               "inputs": {"vae_name": "flux2-vae.safetensors"}},
+        "23": {"class_type": "CLIPTextEncode",
+               "inputs": {"text": prompt, "clip": ["21", 0]}},
+        "24": {"class_type": "ConditioningZeroOut",
+               "inputs": {"conditioning": ["23", 0]}},
+
+        # Scale swapped image + encode
+        "30": {"class_type": "ImageScaleToTotalPixels",
+               "inputs": {"image": ["10", 0], "upscale_method": "nearest-exact",
+                          "megapixels": 1.0, "resolution_steps": 16}},
+        "31": {"class_type": "GetImageSize",
+               "inputs": {"image": ["30", 0]}},
+        "32": {"class_type": "VAEEncode",
+               "inputs": {"pixels": ["30", 0], "vae": ["22", 0]}},
+
+        # ReferenceLatent for context
+        "33": {"class_type": "ReferenceLatent",
+               "inputs": {"conditioning": ["23", 0], "latent": ["32", 0]}},
+        "34": {"class_type": "ReferenceLatent",
+               "inputs": {"conditioning": ["24", 0], "latent": ["32", 0]}},
+
+        # Sampling
+        "40": {"class_type": "CFGGuider",
+               "inputs": {"model": ["20", 0], "positive": ["33", 0],
+                          "negative": ["34", 0], "cfg": 1.0}},
+        "41": {"class_type": "KSamplerSelect",
+               "inputs": {"sampler_name": "euler"}},
+        "42": {"class_type": "Flux2Scheduler",
+               "inputs": {"steps": steps, "denoise": denoise,
+                          "width": ["31", 0], "height": ["31", 1]}},
+        "43": {"class_type": "RandomNoise",
+               "inputs": {"noise_seed": seed}},
+        "44": {"class_type": "EmptyFlux2LatentImage",
+               "inputs": {"width": ["31", 0], "height": ["31", 1], "batch_size": 1}},
+        "50": {"class_type": "SamplerCustomAdvanced",
+               "inputs": {"noise": ["43", 0], "guider": ["40", 0],
+                          "sampler": ["41", 0], "sigmas": ["42", 0],
+                          "latent_image": ["44", 0]}},
+
+        "60": {"class_type": "VAEDecode",
+               "inputs": {"samples": ["50", 0], "vae": ["22", 0]}},
+        "70": {"class_type": "SaveImage",
+               "inputs": {"images": ["60", 0],
+                          "filename_prefix": "spellcaster_headswap"}},
+    })
+    return wf
+
+
 # ── Video Upscale (V2R) ──────────────────────────────────────────────────
 
 def _build_video_upscale(video_name, upscale_model="4x-UltraSharp.pth",
@@ -10298,6 +10402,8 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-klein-outpaint": "klein_flux2",
             "spellcaster-klein-blend": "klein_flux2",
             "spellcaster-klein-repose": "klein_flux2",
+            "spellcaster-klein-headswap": "klein_flux2",
+            "spellcaster-klein-headswap-face": "klein_flux2",
             "spellcaster-klein-inpaint": "klein_flux2",
             "spellcaster-wan-i2v": "wan_i2v",
             "spellcaster-wan-flf": "wan_i2v",
@@ -10371,6 +10477,10 @@ class Spellcaster(Gimp.PlugIn):
                                          "Blend foreground into background using AI-powered harmonization"),
             "spellcaster-klein-repose": ("Klein Re-poser...", self._run_klein_repose,
                                           "Change character pose or position using Flux 2 Klein"),
+            "spellcaster-klein-headswap": ("Klein Headswap...", self._run_klein_headswap,
+                                            "Face swap + Klein AI refinement for natural integration"),
+            "spellcaster-klein-headswap-face": ("Klein Headswap (Face Swap)...", self._run_klein_headswap,
+                                                  "Swap a face and refine with Klein AI — under Face menu"),
             "spellcaster-klein-inpaint": ("Klein Inpaint Selection...", self._run_klein_inpaint,
                                            "Regenerate selected area with Klein AI — context-aware, smooth edges"),
             "spellcaster-wan-i2v": ("Wan 2.2 Image to Video...", self._run_wan_i2v,
@@ -10454,6 +10564,8 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-klein-img2img-ref": "<Image>/Filters/Spellcaster Klein",
             "spellcaster-klein-blend":    "<Image>/Filters/Spellcaster Klein",
             "spellcaster-klein-repose":   "<Image>/Filters/Spellcaster Klein",
+            "spellcaster-klein-headswap": "<Image>/Filters/Spellcaster Klein",
+            "spellcaster-klein-headswap-face": "<Image>/Filters/Spellcaster Face",
             "spellcaster-klein-inpaint":  "<Image>/Filters/Spellcaster Klein",
 
             # Video
@@ -11436,6 +11548,186 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster PuLID Flux Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Klein Headswap ────────────────────────────────────────────────
+    def _run_klein_headswap(self, procedure, run_mode, image, drawables, config, data):
+        """Klein Headswap: face swap + Klein refinement for natural integration."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+
+        dlg = Gtk.Dialog(title="Spellcaster — Klein Headswap")
+        dlg.set_default_size(520, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Swap", Gtk.ResponseType.OK)
+        bx = dlg.get_content_area()
+        bx.set_spacing(6); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(10); bx.set_margin_bottom(10)
+
+        _hdr = _make_branded_header()
+        if _hdr: bx.pack_start(_hdr, False, False, 0)
+
+        bx.pack_start(Gtk.Label(
+            label="Swap a face onto the current image, then refine with Klein AI\n"
+                  "to match lighting, skin tone, and style naturally."),
+            False, False, 4)
+
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
+        hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+
+        # Klein model
+        hm = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hm.pack_start(Gtk.Label(label="Klein Model:"), False, False, 0)
+        klein_combo = Gtk.ComboBoxText()
+        for k in KLEIN_MODELS: klein_combo.append(k, k)
+        klein_combo.set_active_id("Klein 9B")
+        hm.pack_start(klein_combo, True, True, 0); bx.pack_start(hm, False, False, 0)
+
+        # Face source: file OR saved model
+        bx.pack_start(Gtk.Label(label="Face Source:", xalign=0), False, False, 2)
+
+        # File chooser for face image
+        hf = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hf.pack_start(Gtk.Label(label="Image:"), False, False, 0)
+        face_entry = Gtk.Entry()
+        face_entry.set_placeholder_text("Browse for a face image...")
+        face_entry.set_hexpand(True)
+        face_entry.set_tooltip_text("Image file containing the face to swap.\nThe face will be detected automatically.")
+        hf.pack_start(face_entry, True, True, 0)
+        def _browse_face(*_a):
+            fc = Gtk.FileChooserDialog(title="Select Face Image",
+                                        action=Gtk.FileChooserAction.OPEN)
+            fc.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+            fc.add_button("_Open", Gtk.ResponseType.OK)
+            ff = Gtk.FileFilter(); ff.set_name("Images")
+            for ext in ["*.png", "*.jpg", "*.jpeg", "*.webp"]: ff.add_pattern(ext)
+            fc.add_filter(ff)
+            if fc.run() == Gtk.ResponseType.OK:
+                face_entry.set_text(fc.get_filename())
+            fc.destroy()
+        browse_btn = Gtk.Button(label="Browse...")
+        browse_btn.connect("clicked", _browse_face)
+        hf.pack_start(browse_btn, False, False, 0)
+        bx.pack_start(hf, False, False, 0)
+
+        # OR saved face model
+        hfm = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hfm.pack_start(Gtk.Label(label="OR Model:"), False, False, 0)
+        fm_combo = Gtk.ComboBoxText()
+        fm_combo.append("(none)", "(none — use image above)")
+        fm_combo.set_active(0)
+        fm_combo.set_tooltip_text("Use a saved ReActor face model instead of an image.\nLeave as (none) to use the image file above.")
+        try:
+            srv = srv_e.get_text().strip()
+            info = _api_get(srv, "/object_info/ReActorLoadFaceModel")
+            for fm in info["ReActorLoadFaceModel"]["input"]["required"]["face_model"][0]:
+                fm_combo.append(fm, fm)
+        except Exception:
+            pass
+        hfm.pack_start(fm_combo, True, True, 0); bx.pack_start(hfm, False, False, 0)
+
+        # Prompt for Klein refinement
+        bx.pack_start(Gtk.Label(label="Prompt (for Klein refinement):", xalign=0), False, False, 2)
+        sw = Gtk.ScrolledWindow(); sw.set_min_content_height(60)
+        prompt_tv = Gtk.TextView(); prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        prompt_tv.get_buffer().set_text("photorealistic face, natural skin, matching lighting and color temperature, seamless integration, same style")
+        prompt_tv.set_tooltip_text("Describes how Klein should refine the swapped face.\nFocuses on making the swap look natural.")
+        sw.add(prompt_tv); bx.pack_start(sw, True, True, 0)
+
+        # Settings
+        grid = Gtk.Grid(column_spacing=8, row_spacing=4)
+        grid.attach(Gtk.Label(label="Denoise:"), 0, 0, 1, 1)
+        denoise_sp = Gtk.SpinButton.new_with_range(0.10, 0.80, 0.05)
+        denoise_sp.set_value(0.35); denoise_sp.set_digits(2)
+        denoise_sp.set_tooltip_text("How much Klein refines the swap.\n0.20 = subtle touch-up\n0.35 = balanced (default)\n0.50 = stronger integration")
+        grid.attach(denoise_sp, 1, 0, 1, 1)
+
+        grid.attach(Gtk.Label(label="Steps:"), 2, 0, 1, 1)
+        steps_sp = Gtk.SpinButton.new_with_range(8, 40, 1)
+        steps_sp.set_value(20)
+        grid.attach(steps_sp, 3, 0, 1, 1)
+
+        grid.attach(Gtk.Label(label="Seed:"), 0, 1, 1, 1)
+        seed_sp = Gtk.SpinButton.new_with_range(-1, 2**32, 1)
+        seed_sp.set_value(-1)
+        grid.attach(seed_sp, 1, 1, 1, 1)
+
+        grid.attach(Gtk.Label(label="Runs:"), 2, 1, 1, 1)
+        runs_sp = Gtk.SpinButton.new_with_range(1, 99, 1)
+        runs_sp.set_value(1)
+        grid.attach(runs_sp, 3, 1, 1, 1)
+
+        grid.attach(Gtk.Label(label="Restore vis:"), 0, 2, 1, 1)
+        vis_sp = Gtk.SpinButton.new_with_range(0.0, 1.0, 0.05)
+        vis_sp.set_value(0.7); vis_sp.set_digits(2)
+        grid.attach(vis_sp, 1, 2, 1, 1)
+
+        grid.attach(Gtk.Label(label="CF weight:"), 2, 2, 1, 1)
+        cf_sp = Gtk.SpinButton.new_with_range(0.0, 1.0, 0.05)
+        cf_sp.set_value(0.8); cf_sp.set_digits(2)
+        grid.attach(cf_sp, 3, 2, 1, 1)
+        bx.pack_start(grid, False, False, 4)
+
+        bx.show_all()
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        srv = srv_e.get_text().strip(); _propagate_server_url(srv)
+        klein_key = klein_combo.get_active_id() or "Klein 9B"
+        face_path = face_entry.get_text().strip()
+        face_model = fm_combo.get_active_id()
+        if face_model == "(none)": face_model = None
+        pbuf = prompt_tv.get_buffer()
+        prompt = pbuf.get_text(pbuf.get_start_iter(), pbuf.get_end_iter(), False)
+        denoise = denoise_sp.get_value()
+        steps = int(steps_sp.get_value())
+        runs = int(runs_sp.get_value())
+        base_seed = int(seed_sp.get_value())
+        if base_seed < 0: base_seed = random.randint(0, 2**32 - 1)
+        vis = vis_sp.get_value()
+        cfw = cf_sp.get_value()
+        dlg.destroy()
+
+        if not face_path and not face_model:
+            Gimp.message("Select a face image or a saved face model.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        try:
+            # Export target (current canvas) on main thread
+            tmp = _export_image_to_tmp(image)
+            tgt_name = f"gimp_hs_tgt_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, tgt_name); os.unlink(tmp)
+
+            # Upload source face image (if file, not model)
+            src_name = None
+            if face_path and not face_model:
+                src_name = f"gimp_hs_src_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, face_path, src_name)
+
+            for run_i in range(runs):
+                seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+                wf = _build_klein_headswap(
+                    tgt_name, src_name, klein_key, prompt, seed,
+                    denoise=denoise, steps=steps,
+                    face_model=face_model,
+                    face_restore_vis=vis, codeformer_weight=cfw)
+                label = f"Klein Headswap run {run_i+1}/{runs}" if runs > 1 else "Klein Headswap"
+                _wf = wf
+                results = _run_with_spinner(f"{label}: processing...",
+                                             lambda: list(_run_comfyui_workflow(srv, _wf, timeout=300)))
+                for i, (fn, sf, ft) in enumerate(results):
+                    lbl = f"Klein Headswap run {run_i+1} #{i+1}" if runs > 1 else f"Klein Headswap #{i+1}"
+                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Klein Headswap Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     def _run_klein(self, procedure, run_mode, image, drawables, config, data):
