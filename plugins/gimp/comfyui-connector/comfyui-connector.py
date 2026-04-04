@@ -8208,7 +8208,7 @@ class PresetDialog(Gtk.Dialog):
 
                 # Submit and wait
                 self._wd_status.set_text("Tagging...")
-                result = _api_post_json(server, "/prompt", {"prompt": wf})
+                result = _api_post_json(server, "/prompt", {"prompt": wf, "extra_pnginfo": {"workflow": wf}})
                 prompt_id = result.get("prompt_id")
                 if not prompt_id:
                     return None, "ComfyUI did not return a prompt_id"
@@ -15142,7 +15142,7 @@ class Spellcaster(Gimp.PlugIn):
                               "inputs": {"text": ["2", 0]}},
                     }
                     supir_wd_status.set_text("Tagging...")
-                    result = _api_post_json(server, "/prompt", {"prompt": wf})
+                    result = _api_post_json(server, "/prompt", {"prompt": wf, "extra_pnginfo": {"workflow": wf}})
                     prompt_id = result.get("prompt_id")
                     if not prompt_id:
                         return None, "ComfyUI did not return a prompt_id"
