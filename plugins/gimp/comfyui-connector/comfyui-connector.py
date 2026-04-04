@@ -62,6 +62,11 @@ _GITHUB_TREE   = "https://api.github.com/repos/laboratoiresonore/spellcaster/git
 _RAW_BASE      = "https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main"
 _GIMP_PLUGIN_PREFIX = "plugins/gimp/comfyui-connector/"
 
+def _github_headers():
+    """Return HTTP headers for GitHub API/raw requests.
+    SFW: just User-Agent. NSFW build patches this to add Authorization."""
+    return {"User-Agent": "spellcaster-gimp/2.0"}
+
 def _install_spellcaster_theme_to_disk():
     """Write spellcaster-theme.css as GIMP's user CSS override (gimp.css).
 
@@ -227,12 +232,12 @@ def _auto_update():
       8. Write new SHA to .spellcaster_version
     """
     import sys as _sys
-    _ua = "spellcaster-gimp/2.0"
+    _hdrs = _github_headers()
 
     try:
         # Step 1: Check latest commit SHA
         local_sha = _VERSION_FILE.read_text().strip() if _VERSION_FILE.exists() else ""
-        req = urllib.request.Request(_GITHUB_API, headers={"User-Agent": _ua})
+        req = urllib.request.Request(_GITHUB_API, headers=_hdrs)
         with urllib.request.urlopen(req, timeout=8) as r:
             latest_sha = json.loads(r.read())[0]["sha"]
 
@@ -240,7 +245,7 @@ def _auto_update():
             return
 
         # Step 2: Fetch full repo tree to discover ALL plugin files
-        req_tree = urllib.request.Request(_GITHUB_TREE, headers={"User-Agent": _ua})
+        req_tree = urllib.request.Request(_GITHUB_TREE, headers=_hdrs)
         with urllib.request.urlopen(req_tree, timeout=15) as r:
             tree = json.loads(r.read())
 
@@ -268,14 +273,13 @@ def _auto_update():
                 dest = _PLUGIN_DIR / remainder
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 tmp = dest.with_suffix(dest.suffix + ".tmp")
-                req_dl = urllib.request.Request(url, headers={"User-Agent": _ua})
+                req_dl = urllib.request.Request(url, headers=_hdrs)
                 with urllib.request.urlopen(req_dl, timeout=60) as r2:
                     tmp.write_bytes(r2.read())
                 try:
                     tmp.replace(dest)
                     updated += 1
                 except PermissionError:
-                    # Windows: file is locked by GIMP — stage for next startup
                     stage_path = dest.with_suffix(dest.suffix + ".update")
                     tmp.replace(stage_path)
                     staged += 1
@@ -17135,8 +17139,8 @@ class Spellcaster(Gimp.PlugIn):
             update_status.set_text("Updating...")
             btn.set_sensitive(False)
             try:
-                _ua = "spellcaster-gimp/repair"
-                req_tree = urllib.request.Request(_GITHUB_TREE, headers={"User-Agent": _ua})
+                _hdrs = _github_headers()
+                req_tree = urllib.request.Request(_GITHUB_TREE, headers=_hdrs)
                 with urllib.request.urlopen(req_tree, timeout=15) as r:
                     tree = json.loads(r.read())
                 remote_files = []
@@ -17157,7 +17161,7 @@ class Spellcaster(Gimp.PlugIn):
                         dest = _PLUGIN_DIR / remainder
                         dest.parent.mkdir(parents=True, exist_ok=True)
                         tmp = dest.with_suffix(dest.suffix + ".tmp")
-                        req_dl = urllib.request.Request(url, headers={"User-Agent": _ua})
+                        req_dl = urllib.request.Request(url, headers=_hdrs)
                         with urllib.request.urlopen(req_dl, timeout=60) as r2:
                             tmp.write_bytes(r2.read())
                         try:
