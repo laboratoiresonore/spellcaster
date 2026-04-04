@@ -3806,12 +3806,57 @@ FACE_RESTORE_MODELS = [
 ]
 
 
+# Face swap quality presets — from basic to state-of-the-art
+FACESWAP_QUALITY_PRESETS = {
+    "Ultra (double-pass HyperSwap 256 + ReSwapper 256)": {
+        "pass1_model": "hyperswap_1c_256.onnx",
+        "pass1_restore": "codeformer-v0.1.0.pth",
+        "pass1_vis": 0.8, "pass1_cf": 0.6,
+        "pass2_model": "reswapper_256.onnx",
+        "pass2_restore": "GPEN-BFR-2048.onnx",
+        "pass2_vis": 0.7, "pass2_cf": 0.5,
+        "double_pass": True,
+    },
+    "High (ReSwapper 256 + GPEN-2048)": {
+        "pass1_model": "reswapper_256.onnx",
+        "pass1_restore": "GPEN-BFR-2048.onnx",
+        "pass1_vis": 0.8, "pass1_cf": 0.5,
+        "double_pass": False,
+    },
+    "Standard (InSwapper 128 + CodeFormer)": {
+        "pass1_model": "inswapper_128.onnx",
+        "pass1_restore": "codeformer-v0.1.0.pth",
+        "pass1_vis": 1.0, "pass1_cf": 0.5,
+        "double_pass": False,
+    },
+    "Fast (InSwapper fp16 + GFPGAN)": {
+        "pass1_model": "inswapper_128_fp16.onnx",
+        "pass1_restore": "GFPGANv1.4.pth",
+        "pass1_vis": 1.0, "pass1_cf": 0.5,
+        "double_pass": False,
+    },
+}
+
+
 def _build_faceswap(target_filename, source_filename, swap_model="inswapper_128.onnx",
                      face_restore_model="codeformer-v0.1.0.pth",
                      face_restore_vis=1.0, codeformer_weight=0.5,
                      detect_gender_input="no", detect_gender_source="no",
-                     input_face_idx="0", source_face_idx="0"):
-    """ReActorFaceSwap: paste the face from source_image onto target_image."""
+                     input_face_idx="0", source_face_idx="0",
+                     quality_preset=None):
+    """ReActorFaceSwap with optional double-pass for state-of-the-art quality.
+
+    quality_preset: key from FACESWAP_QUALITY_PRESETS. When set, overrides
+    swap_model and face_restore_model with the preset's optimized settings.
+    Double-pass presets run two consecutive swaps for maximum quality.
+    """
+    if quality_preset and quality_preset in FACESWAP_QUALITY_PRESETS:
+        qp = FACESWAP_QUALITY_PRESETS[quality_preset]
+        swap_model = qp["pass1_model"]
+        face_restore_model = qp["pass1_restore"]
+        face_restore_vis = qp["pass1_vis"]
+        codeformer_weight = qp["pass1_cf"]
+
     wf = {
         "1": {"class_type": "LoadImage",
               "inputs": {"image": target_filename}},
@@ -3833,9 +3878,41 @@ def _build_faceswap(target_filename, source_filename, swap_model="inswapper_128.
                   "source_faces_index": source_face_idx,
                   "console_log_level": 1,
               }},
-        "4": {"class_type": "SaveImage",
-              "inputs": {"images": ["3", 0], "filename_prefix": "gimp_faceswap"}},
     }
+
+    result_ref = ["3", 0]
+
+    # Double-pass: run a second swap with a different model for refinement
+    if quality_preset and quality_preset in FACESWAP_QUALITY_PRESETS:
+        qp = FACESWAP_QUALITY_PRESETS[quality_preset]
+        if qp.get("double_pass"):
+            wf["5"] = {"class_type": "ReActorFaceSwap",
+                       "inputs": {
+                           "enabled": True,
+                           "input_image": ["3", 0],
+                           "source_image": ["2", 0],
+                           "swap_model": qp["pass2_model"],
+                           "facedetection": "retinaface_resnet50",
+                           "face_restore_model": qp["pass2_restore"],
+                           "face_restore_visibility": qp["pass2_vis"],
+                           "codeformer_weight": qp["pass2_cf"],
+                           "detect_gender_input": detect_gender_input,
+                           "detect_gender_source": detect_gender_source,
+                           "input_faces_index": input_face_idx,
+                           "source_faces_index": source_face_idx,
+                           "console_log_level": 1,
+                       }}
+            result_ref = ["5", 0]
+
+    # Final restore pass for extra quality
+    wf["8"] = {"class_type": "ReActorRestoreFace",
+               "inputs": {"image": result_ref,
+                          "facedetection": "retinaface_resnet50",
+                          "model": "codeformer-v0.1.0.pth",
+                          "visibility": 0.6, "codeformer_weight": 0.7}}
+
+    wf["4"] = {"class_type": "SaveImage",
+               "inputs": {"images": ["8", 0], "filename_prefix": "gimp_faceswap"}}
     return wf
 
 
@@ -9005,6 +9082,26 @@ class FaceSwapDialog(Gtk.Dialog):
         hb.pack_start(self.server_entry, True, True, 0)
         box.pack_start(hb, False, False, 0)
 
+        # Quality preset
+        box.pack_start(Gtk.Label(label="Quality Preset:", xalign=0), False, False, 0)
+        self.quality_combo = Gtk.ComboBoxText()
+        self.quality_combo.append("(custom)", "(custom — use settings below)")
+        for k in FACESWAP_QUALITY_PRESETS:
+            self.quality_combo.append(k, k)
+        self.quality_combo.set_active_id("Ultra (double-pass HyperSwap 256 + ReSwapper 256)")
+        self.quality_combo.set_tooltip_text(
+            "State-of-the-art quality presets:\n\n"
+            "Ultra: Double-pass — HyperSwap 256px + ReSwapper 256px + GPEN-2048 restore\n"
+            "  Best quality, two consecutive swaps for maximum likeness\n\n"
+            "High: ReSwapper 256px + GPEN-2048 restore\n"
+            "  Very good quality, single pass at 256px resolution\n\n"
+            "Standard: InSwapper 128px + CodeFormer\n"
+            "  The classic reliable swap\n\n"
+            "Fast: InSwapper fp16 + GFPGAN\n"
+            "  Fastest, slightly lower quality\n\n"
+            "Custom: use the model dropdowns below")
+        box.pack_start(self.quality_combo, False, False, 0)
+
         # Source face file chooser
         box.pack_start(Gtk.Label(label="Source Face Image:", xalign=0), False, False, 0)
         self.face_chooser = Gtk.FileChooserButton(title="Select face source image")
@@ -9166,9 +9263,12 @@ class FaceSwapDialog(Gtk.Dialog):
 
     def get_values(self):
         face_file = self.face_chooser.get_filename()
+        qp = self.quality_combo.get_active_id()
+        quality_preset = qp if qp and qp != "(custom)" else None
         return {
             "server": self.server_entry.get_text().strip(),
             "face_file": face_file,
+            "quality_preset": quality_preset,
             "swap_model": self.swap_combo.get_active_id() or FACE_SWAP_MODELS[0],
             "face_restore_model": self.restore_combo.get_active_id() or "codeformer-v0.1.0.pth",
             "face_restore_vis": self.restore_vis.get_value(),
@@ -11080,6 +11180,7 @@ class Spellcaster(Gimp.PlugIn):
                 detect_gender_source=v["detect_gender_source"],
                 input_face_idx=v["input_face_idx"],
                 source_face_idx=v["source_face_idx"],
+                quality_preset=v.get("quality_preset"),
             )
             _update_spinner_status("Face Swap: processing on ComfyUI...")
             results = _run_with_spinner("Face Swap: processing on ComfyUI...",
