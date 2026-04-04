@@ -7271,20 +7271,44 @@ for _f in _glob_mod.glob(os.path.join(tempfile.gettempdir(), "tmp*.png")):
     except Exception:
         pass
 
+def _wait_for_comfy_queue_empty(server, poll_interval=2.0, max_wait=600):
+    """Wait until ComfyUI's queue has no running or pending items.
+
+    Polls /queue every poll_interval seconds. Returns when the queue is
+    empty (no items from ANY client — ComfyUI UI, other plugins, etc.).
+    This ensures Spellcaster doesn't cut in line ahead of other work.
+    """
+    deadline = time.time() + max_wait
+    while time.time() < deadline:
+        try:
+            q = _api_get(server, "/queue")
+            running = len(q.get("queue_running", []))
+            pending = len(q.get("queue_pending", []))
+            if running == 0 and pending == 0:
+                return  # queue is empty — safe to submit
+            _update_spinner_status(f"Waiting for ComfyUI queue ({running} running, {pending} pending)...")
+        except Exception:
+            return  # can't reach server — proceed anyway
+        if _cancel_event.is_set():
+            raise InterruptedError("Cancelled while waiting for queue")
+        time.sleep(poll_interval)
+
+
 def _run_comfyui_workflow(server, workflow, timeout=300):
-    """Flush pending uploads, submit workflow to ComfyUI, wait for results.
+    """Wait for ComfyUI queue to clear, then submit workflow and wait for results.
 
-    This is the main execution entry point — called from a background thread
-    (via _run_with_spinner) to avoid freezing GIMP's UI.
+    Respects ComfyUI's queue: waits until no other jobs are running or
+    pending before submitting. This prevents cutting in line ahead of
+    jobs from the ComfyUI UI or other clients.
 
-    Uses a global lock to serialize requests: if another generation is
-    already running, this call blocks until it finishes. This prevents
-    overloading ComfyUI with simultaneous prompts.
+    Uses a global lock to serialize Spellcaster's own requests too.
     """
     global _workflow_queue_depth
     _workflow_queue_depth += 1
     try:
         with _workflow_lock:
+            # Wait for ComfyUI's queue to be empty before submitting
+            _wait_for_comfy_queue_empty(server)
             _flush_pending_uploads()
             result = _api_post_json(server, "/prompt", {
                 "prompt": workflow,
