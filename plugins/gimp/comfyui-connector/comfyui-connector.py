@@ -10496,11 +10496,13 @@ class Spellcaster(Gimp.PlugIn):
         try:
             srv = v["server"]
             cn_active = v.get("controlnet", {}).get("mode", "Off") != "Off"
+
+            # GIMP export on main thread (PDB not thread-safe)
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+
             def _do_all_runs():
-                _update_spinner_status("Exporting image...")
-                tmp = _export_image_to_tmp(image)
-                uname = f"gimp_{uuid.uuid4().hex[:8]}.png"
-                _upload_image(srv, tmp, uname); os.unlink(tmp)
                 all_results = []
                 base_seed = v["seed"]
                 for run_i in range(runs):
@@ -10611,37 +10613,33 @@ class Spellcaster(Gimp.PlugIn):
         try:
             srv = v["server"]
             cn_active = v.get("controlnet", {}).get("mode", "Off") != "Off"
+
+            # ── GIMP operations on main thread (before spinner) ───────
+            global _mask_cache
+            sel_hash = _selection_hash(image)
+            if (sel_hash
+                    and _mask_cache["selection_hash"] == sel_hash
+                    and _mask_cache["server"] == srv
+                    and _mask_cache["uploaded_name"]):
+                mname = _mask_cache["uploaded_name"]
+            else:
+                mtmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False); mtmp.close()
+                _create_selection_mask_png(mtmp.name, image)
+                mname = f"gimp_mask_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, mtmp.name, mname)
+                _mask_cache = {
+                    "selection_hash": sel_hash,
+                    "mask_path": mtmp.name,
+                    "uploaded_name": mname,
+                    "server": srv,
+                }
+
+            tmp = _export_image_to_tmp(image)
+            iname = f"gimp_inp_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, iname); os.unlink(tmp)
+
+            # ── Background thread: network I/O + ComfyUI workflows ────
             def _do_all_runs():
-                _update_spinner_status("Building selection mask...")
-                # Check mask cache — reuse if selection hasn't changed
-                global _mask_cache
-                sel_hash = _selection_hash(image)
-                if (sel_hash
-                        and _mask_cache["selection_hash"] == sel_hash
-                        and _mask_cache["server"] == srv
-                        and _mask_cache["uploaded_name"]):
-                    mname = _mask_cache["uploaded_name"]
-                    _update_spinner_status("Reusing cached selection mask...")
-                else:
-                    # Build mask from GIMP's actual selection channel (not just bounds)
-                    mtmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False); mtmp.close()
-                    _create_selection_mask_png(mtmp.name, image)
-
-                    mname = f"gimp_mask_{uuid.uuid4().hex[:8]}.png"
-                    _upload_image(srv, mtmp.name, mname)
-                    _mask_cache = {
-                        "selection_hash": sel_hash,
-                        "mask_path": mtmp.name,
-                        "uploaded_name": mname,
-                        "server": srv,
-                    }
-
-                _update_spinner_status("Exporting image...")
-                # Export current image
-                tmp = _export_image_to_tmp(image)
-                iname = f"gimp_inp_{uuid.uuid4().hex[:8]}.png"
-                _upload_image(srv, tmp, iname); os.unlink(tmp)
-
                 all_results = []
                 base_seed = v["seed"]
                 for run_i in range(runs):
