@@ -6189,7 +6189,7 @@ def _find_wan_lora_pair(lora_name, all_loras):
 def _build_wan_i2v(image_filename, preset_key, prompt_text, negative_text, seed,
                     width=832, height=480, length=81,
                     steps=None, cfg=None, shift=None, second_step=None,
-                    loras=None, all_server_loras=None,
+                    turbo=True, loras=None, all_server_loras=None,
                     upscale=True, upscale_factor=1.0,
                     interpolate=True, pingpong=False, fps=16):
     """Wan 2.2 Image-to-Video — fatberg_slim dual-model GGUF architecture.
@@ -6246,18 +6246,19 @@ def _build_wan_i2v(image_filename, preset_key, prompt_text, negative_text, seed,
         wf["3"]["inputs"]["weight_dtype"] = "default"
 
     # ── LoRA chains ──────────────────────────────────────────────────
-    # Accelerator LoRAs (noise-specific) first, then user content LoRAs
+    # Accelerator LoRAs (noise-specific, turbo only) first, then user content LoRAs
     high_model_ref = ["2", 0]
     low_model_ref = ["3", 0]
 
     high_lora_list = []
     low_lora_list = []
 
-    # Preset accelerator LoRAs (lightx2v etc.)
-    if p.get("high_accel_lora"):
-        high_lora_list.append((p["high_accel_lora"], p.get("accel_strength", 1.0)))
-    if p.get("low_accel_lora"):
-        low_lora_list.append((p["low_accel_lora"], p.get("accel_strength", 1.0)))
+    # Preset accelerator LoRAs — only when turbo mode is enabled
+    if turbo:
+        if p.get("high_accel_lora"):
+            high_lora_list.append((p["high_accel_lora"], p.get("accel_strength", 1.0)))
+        if p.get("low_accel_lora"):
+            low_lora_list.append((p["low_accel_lora"], p.get("accel_strength", 1.0)))
 
     # User-selected content LoRAs — auto-pair high/low noise variants.
     # The user picks ONE LoRA from the combo; we automatically find its
@@ -6380,7 +6381,7 @@ def _build_wan_i2v(image_filename, preset_key, prompt_text, negative_text, seed,
 def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negative_text, seed,
                     width=832, height=480, length=81,
                     steps=None, cfg=None, shift=None, second_step=None,
-                    loras=None, all_server_loras=None,
+                    turbo=True, loras=None, all_server_loras=None,
                     upscale=True, upscale_factor=1.0,
                     interpolate=True, pingpong=False, fps=16):
     """Wan 2.2 First+Last Frame to Video — fatberg_slim dual-model architecture.
@@ -6435,10 +6436,11 @@ def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negati
     low_model_ref = ["3", 0]
     high_lora_list, low_lora_list = [], []
 
-    if p.get("high_accel_lora"):
-        high_lora_list.append((p["high_accel_lora"], p.get("accel_strength", 1.0)))
-    if p.get("low_accel_lora"):
-        low_lora_list.append((p["low_accel_lora"], p.get("accel_strength", 1.0)))
+    if turbo:
+        if p.get("high_accel_lora"):
+            high_lora_list.append((p["high_accel_lora"], p.get("accel_strength", 1.0)))
+        if p.get("low_accel_lora"):
+            low_lora_list.append((p["low_accel_lora"], p.get("accel_strength", 1.0)))
     _server_loras = all_server_loras or []
     if loras:
         for lora_name, lora_str in loras:
@@ -9120,6 +9122,26 @@ class WanI2VDialog(Gtk.Dialog):
         self.seed_spin.set_tooltip_text("-1 = random seed each time.\nSet a specific number to reproduce the exact same video.")
         grid.attach(self.seed_spin, 1, 4, 2, 1)
 
+        # Turbo mode (LightX2V accelerator)
+        self.turbo_check = Gtk.CheckButton(label="Turbo (LightX2V 4-step)")
+        self.turbo_check.set_active(True)
+        self.turbo_check.set_tooltip_text(
+            "Enable LightX2V accelerator LoRAs for ~4x faster generation.\n"
+            "Uses 4 total steps (2 per model) instead of 30.\n"
+            "Quality is slightly lower but generation is near-instant.\n\n"
+            "Disable for maximum quality at the cost of much longer generation.")
+        def _on_turbo_toggle(cb):
+            if cb.get_active():
+                self.steps_spin.set_value(4)
+                self.second_step_spin.set_value(2)
+            else:
+                self.steps_spin.set_value(30)
+                self.second_step_spin.set_value(20)
+        self.turbo_check.connect("toggled", _on_turbo_toggle)
+        grid.attach(self.turbo_check, 0, 5, 4, 1)
+        # Apply turbo defaults
+        _on_turbo_toggle(self.turbo_check)
+
         box.pack_start(grid, False, False, 0)
 
         # Post-processing & output options
@@ -9290,6 +9312,7 @@ class WanI2VDialog(Gtk.Dialog):
             "shift": self.shift_spin.get_value(),
             "second_step": int(self.second_step_spin.get_value()),
             "seed": int(self.seed_spin.get_value()),
+            "turbo": self.turbo_check.get_active(),
             "upscale": self.upscale_check.get_active(),
             "upscale_factor": self.upscale_spin.get_value(),
             "interpolate": self.interpolate_check.get_active(),
@@ -9315,6 +9338,7 @@ class WanI2VDialog(Gtk.Dialog):
         self.shift_spin.set_value(p.get("shift", 8.0))
         self.second_step_spin.set_value(p.get("second_step", 20))
         self.seed_spin.set_value(p.get("seed", -1))
+        self.turbo_check.set_active(p.get("turbo", True))
         self.upscale_check.set_active(p.get("upscale", True))
         self.upscale_spin.set_value(p.get("upscale_factor", 1.5))
         self.interpolate_check.set_active(p.get("interpolate", True))
@@ -9348,6 +9372,7 @@ class WanI2VDialog(Gtk.Dialog):
             "shift": self.shift_spin.get_value(),
             "second_step": int(self.second_step_spin.get_value()),
             "seed": seed,
+            "turbo": self.turbo_check.get_active(),
             "loras": loras if loras else None,
             "upscale": self.upscale_check.get_active(),
             "upscale_factor": self.upscale_spin.get_value(),
@@ -10744,8 +10769,8 @@ class Spellcaster(Gimp.PlugIn):
                     uname, v["preset_key"], v["prompt"], v["negative"], seed,
                     width=v["width"], height=v["height"], length=v["length"],
                     steps=v["steps"], cfg=v["cfg"], shift=v["shift"],
-                    second_step=v["second_step"], loras=v["loras"],
-                    all_server_loras=v.get("all_server_loras"),
+                    second_step=v["second_step"], turbo=v.get("turbo", True),
+                    loras=v["loras"], all_server_loras=v.get("all_server_loras"),
                     upscale=v["upscale"], upscale_factor=v["upscale_factor"],
                     interpolate=v["interpolate"], pingpong=v["pingpong"],
                     fps=v["fps"],
@@ -10901,8 +10926,8 @@ class Spellcaster(Gimp.PlugIn):
                     v["prompt"], v["negative"], seed,
                     width=v["width"], height=v["height"], length=v["length"],
                     steps=v["steps"], cfg=v["cfg"], shift=v["shift"],
-                    second_step=v["second_step"], loras=v["loras"],
-                    all_server_loras=v.get("all_server_loras"),
+                    second_step=v["second_step"], turbo=v.get("turbo", True),
+                    loras=v["loras"], all_server_loras=v.get("all_server_loras"),
                     upscale=v["upscale"], upscale_factor=v["upscale_factor"],
                     interpolate=v["interpolate"], pingpong=v["pingpong"],
                     fps=v["fps"],
