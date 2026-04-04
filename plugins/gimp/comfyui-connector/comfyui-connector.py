@@ -7473,85 +7473,92 @@ def _make_dialog_banner():
         return _make_banner_image(360)
 
 
+_spinner_win = None       # singleton spinner window
+_spinner_jobs_box = None  # vertical box for job rows
+_spinner_pb = None        # shared progress bar
+_spinner_job_count = 0    # how many active jobs
+
+
 def _run_with_spinner(label_text, func, *args):
     """Run func(*args) in a background thread while showing a progress window.
 
-    Creates a GTK window with the Spellcaster banner and a pulsing progress
-    bar, runs the function in a daemon thread, and blocks the caller via
-    GLib.MainLoop until the function completes. This keeps GTK responsive
-    (the progress bar animates) while the potentially slow ComfyUI operation
-    runs in the background.
-
-    Uses list-boxes (result_box, error_box, done_box) as mutable containers
-    to pass values between the worker thread and the GTK main loop.
+    If a spinner window is already open (from a previous queued job),
+    the new job's status is added as a new row in the existing window
+    instead of creating a second window. When all jobs finish, the
+    window closes.
     """
-    global _spinner_label_text
-    _spinner_label_text = ""  # reset live status text
+    global _spinner_label_text, _spinner_win, _spinner_jobs_box, _spinner_pb, _spinner_job_count
+    _spinner_label_text = ""
     result_box = [None]
     error_box = [None]
     done_box = [False]
-    cancel_box = [False]  # set True when user clicks Cancel
-    _cancel_event.clear()  # reset from any previous cancellation
+    cancel_box = [False]
+    _cancel_event.clear()
     loop = GLib.MainLoop()
 
-    win = Gtk.Window(title="Spellcaster")
-    win.set_default_size(300, -1)
-    win.set_deletable(False)
-    win.set_position(Gtk.WindowPosition.CENTER)
-    win.override_background_color(Gtk.StateFlags.NORMAL,
-                                   __import__('gi.repository.Gdk', fromlist=['Gdk']).RGBA(0.1, 0.1, 0.1, 1))
+    # ── Create or reuse the spinner window ────────────────────────────
+    if _spinner_win is None or not _spinner_win.get_visible():
+        win = Gtk.Window(title="Spellcaster")
+        win.set_default_size(320, -1)
+        win.set_deletable(False)
+        win.set_position(Gtk.WindowPosition.CENTER)
+        win.override_background_color(Gtk.StateFlags.NORMAL,
+                                       __import__('gi.repository.Gdk', fromlist=['Gdk']).RGBA(0.1, 0.1, 0.1, 1))
 
-    vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-
-    # Use animated spinner GIF if available, fall back to static hero image
-    spinner_img = _make_spinner_image()
-    if spinner_img:
-        vbox.pack_start(spinner_img, False, False, 0)
-    else:
-        banner = _make_banner_image(200, use_hero=True)
-        if banner:
-            vbox.pack_start(banner, False, False, 0)
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        spinner_img = _make_spinner_image()
+        if spinner_img:
+            vbox.pack_start(spinner_img, False, False, 0)
         else:
-            vbox.pack_start(Gtk.Label(label="Spellcaster"), True, True, 0)
+            banner = _make_banner_image(200, use_hero=True)
+            if banner:
+                vbox.pack_start(banner, False, False, 0)
 
-    bottom = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-    bottom.set_margin_start(16); bottom.set_margin_end(16)
-    bottom.set_margin_top(15); bottom.set_margin_bottom(20)
-    label = Gtk.Label(label=label_text)
-    label.get_style_context().add_class("header-label")
-    pb = Gtk.ProgressBar(); pb.set_pulse_step(0.08)
-    bottom.pack_start(label, False, False, 0)
-    bottom.pack_start(pb, False, False, 0)
+        pb = Gtk.ProgressBar(); pb.set_pulse_step(0.08)
+        pb.set_margin_start(16); pb.set_margin_end(16)
+        pb.set_margin_top(8)
+        vbox.pack_start(pb, False, False, 0)
 
-    # Cancel button
+        jobs_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        jobs_box.set_margin_start(16); jobs_box.set_margin_end(16)
+        jobs_box.set_margin_top(8); jobs_box.set_margin_bottom(16)
+        vbox.pack_start(jobs_box, False, False, 0)
+
+        win.add(vbox)
+        _spinner_win = win
+        _spinner_jobs_box = jobs_box
+        _spinner_pb = pb
+        _spinner_job_count = 0
+        win.show_all()
+    else:
+        win = _spinner_win
+
+    # ── Add this job's row to the window ──────────────────────────────
+    job_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    job_label = Gtk.Label(label=label_text, xalign=0)
+    job_label.set_hexpand(True)
+    job_label.set_line_wrap(True)
+    job_row.pack_start(job_label, True, True, 0)
     cancel_btn = Gtk.Button(label="Cancel")
-    cancel_btn.set_tooltip_text("Cancel the current generation")
+    cancel_btn.set_size_request(60, -1)
     def _on_cancel(_btn):
         cancel_box[0] = True
-        _cancel_event.set()  # signal the worker thread to stop polling
-        label.set_text("Cancelling...")
+        _cancel_event.set()
+        job_label.set_text("Cancelling...")
         cancel_btn.set_sensitive(False)
     cancel_btn.connect("clicked", _on_cancel)
-    bottom.pack_start(cancel_btn, False, False, 4)
-
-    vbox.pack_start(bottom, False, False, 0)
-
-    win.add(vbox); win.show_all()
+    job_row.pack_start(cancel_btn, False, False, 0)
+    _spinner_jobs_box.pack_start(job_row, False, False, 0)
+    job_row.show_all()
+    _spinner_job_count += 1
 
     def _pulse():
         if not done_box[0]:
-            pb.pulse()
-            # Show queue position if other jobs are waiting
-            depth = _workflow_queue_depth
-            if depth > 1:
-                label.set_text(f"Queued ({depth - 1} ahead) — {label_text}")
-            elif not cancel_box[0]:
-                # Pick up live status text from _update_spinner_status()
-                live = _spinner_label_text
-                if live:
-                    label.set_text(live)
-                elif label.get_text().startswith("Queued"):
-                    label.set_text(label_text)
+            if _spinner_pb:
+                _spinner_pb.pulse()
+            live = _spinner_label_text
+            if live and not cancel_box[0]:
+                job_label.set_text(live)
             return True
         return False
     GLib.timeout_add(300, _pulse)
@@ -7568,12 +7575,27 @@ def _run_with_spinner(label_text, func, *args):
     thread = threading.Thread(target=_worker, daemon=True)
     thread.start()
     loop.run()
-    win.destroy()
 
-    # If cancelled, try to interrupt ComfyUI (delete the queued prompt)
+    # ── Clean up this job's row ───────────────────────────────────────
+    _spinner_job_count -= 1
+    try:
+        job_row.destroy()
+    except Exception:
+        pass
+
+    # Close window when all jobs are done
+    if _spinner_job_count <= 0:
+        try:
+            _spinner_win.destroy()
+        except Exception:
+            pass
+        _spinner_win = None
+        _spinner_jobs_box = None
+        _spinner_pb = None
+        _spinner_job_count = 0
+
     if cancel_box[0]:
         raise InterruptedError("Generation cancelled by user")
-
     if error_box[0]:
         raise error_box[0]
     return result_box[0]
