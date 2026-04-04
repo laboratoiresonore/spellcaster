@@ -10986,7 +10986,7 @@ class Spellcaster(Gimp.PlugIn):
             _update_spinner_status("Wan FLF: exporting last frame...")
             if use_layer is not None:
                 end_layer = layers[use_layer]
-                end_img = Gimp.Image.new(image.get_width(), image.get_height(), Gimp.ImageType.RGB)
+                end_img = Gimp.Image.new(image.get_width(), image.get_height(), Gimp.ImageBaseType.RGB)
                 end_copy = Gimp.Layer.new_from_drawable(end_layer, end_img)
                 end_img.insert_layer(end_copy, None, 0)
                 end_img.flatten()
@@ -11610,7 +11610,7 @@ class Spellcaster(Gimp.PlugIn):
             bg_layer = layers[bg_idx]
 
             # Export foreground layer as a temporary image
-            fg_img = Gimp.Image.new(image.get_width(), image.get_height(), Gimp.ImageType.RGB)
+            fg_img = Gimp.Image.new(image.get_width(), image.get_height(), Gimp.ImageBaseType.RGB)
             fg_copy = Gimp.Layer.new_from_drawable(fg_layer, fg_img)
             fg_img.insert_layer(fg_copy, None, 0)
             fg_img.flatten()
@@ -11618,7 +11618,7 @@ class Spellcaster(Gimp.PlugIn):
             fg_img.delete()
 
             # Export background layer as a temporary image
-            bg_img = Gimp.Image.new(image.get_width(), image.get_height(), Gimp.ImageType.RGB)
+            bg_img = Gimp.Image.new(image.get_width(), image.get_height(), Gimp.ImageBaseType.RGB)
             bg_copy = Gimp.Layer.new_from_drawable(bg_layer, bg_img)
             bg_img.insert_layer(bg_copy, None, 0)
             bg_img.flatten()
@@ -12500,12 +12500,12 @@ class Spellcaster(Gimp.PlugIn):
         try:
             _update_spinner_status("Layer Blend: exporting layers...")
             # Export Layer A
-            a_img = Gimp.Image.new(image.get_width(), image.get_height(), Gimp.ImageType.RGB)
+            a_img = Gimp.Image.new(image.get_width(), image.get_height(), Gimp.ImageBaseType.RGB)
             a_copy = Gimp.Layer.new_from_drawable(layers[la_idx], a_img)
             a_img.insert_layer(a_copy, None, 0); a_img.flatten()
             a_tmp = _export_image_to_tmp(a_img); a_img.delete()
             # Export Layer B
-            b_img = Gimp.Image.new(image.get_width(), image.get_height(), Gimp.ImageType.RGB)
+            b_img = Gimp.Image.new(image.get_width(), image.get_height(), Gimp.ImageBaseType.RGB)
             b_copy = Gimp.Layer.new_from_drawable(layers[lb_idx], b_img)
             b_img.insert_layer(b_copy, None, 0); b_img.flatten()
             b_tmp = _export_image_to_tmp(b_img); b_img.delete()
