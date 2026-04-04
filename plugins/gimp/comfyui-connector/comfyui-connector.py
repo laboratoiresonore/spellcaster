@@ -6362,8 +6362,17 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
                 "inputs": {"samples": ["51", 0], "vae": ["4", 0]}}
 
     video_ref = ["60", 0]
+    prefix = "gimp_wan_loop" if loop else ("gimp_wan_flf" if use_flf else "gimp_wan_i2v")
 
-    # ── RIFE frame interpolation (2×) ────────────────────────────────
+    # ── Canon post-processing pipeline ───────────────────────────────
+    # Step 1: Raw MP4 at base FPS (16)
+    wf["80"] = {"class_type": "VHS_VideoCombine",
+                "inputs": {"images": video_ref, "frame_rate": float(fps),
+                           "loop_count": 0, "filename_prefix": f"{prefix}_raw",
+                           "format": "video/h264-mp4", "pingpong": False,
+                           "save_output": True, "pix_fmt": "yuv420p", "crf": 19}}
+
+    # Step 2: RIFE pass 1 — 2× interpolation (float32, ensemble, quality)
     if interpolate:
         wf["70"] = {"class_type": "RIFE VFI",
                     "inputs": {"frames": video_ref, "ckpt_name": "rife49.pth",
@@ -6373,7 +6382,37 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
                                "batch_size": 1}}
         video_ref = ["70", 0]
 
-    # ── RTX Video Super Resolution ───────────────────────────────────
+    # Step 3: ReActor face swap (uses first frame as face source)
+    # This preserves the face from the input image across all frames
+    wf["71"] = {"class_type": "ReActorFaceSwap",
+                "inputs": {
+                    "enabled": True,
+                    "input_image": video_ref,
+                    "source_image": ["7", 0],  # first frame = face source
+                    "swap_model": "inswapper_128.onnx",
+                    "facedetection": "retinaface_resnet50",
+                    "face_restore_model": "codeformer-v0.1.0.pth",
+                    "face_restore_visibility": 0.5,
+                    "codeformer_weight": 0.5,
+                    "detect_gender_input": "no",
+                    "detect_gender_source": "no",
+                    "input_faces_index": "1",
+                    "source_faces_index": "0",
+                    "console_log_level": 0,
+                }}
+    video_ref = ["71", 0]
+
+    # Step 4: RIFE pass 2 — 2× interpolation (float16, fast mode)
+    if interpolate:
+        wf["72"] = {"class_type": "RIFE VFI",
+                    "inputs": {"frames": video_ref, "ckpt_name": "rife49.pth",
+                               "clear_cache_after_n_frames": 10, "multiplier": 2,
+                               "fast_mode": True, "ensemble": True, "scale_factor": 1,
+                               "dtype": "float16", "torch_compile": False,
+                               "batch_size": 1}}
+        video_ref = ["72", 0]
+
+    # Step 5: RTX Video Super Resolution
     if rtx_scale > 1.0:
         wf["75"] = {"class_type": "RTXVideoSuperResolution",
                     "inputs": {"images": video_ref,
@@ -6382,22 +6421,29 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
                                "quality": "ULTRA"}}
         video_ref = ["75", 0]
 
-    # ── Output ───────────────────────────────────────────────────────
-    output_fps = float(fps * (2 if interpolate else 1))
-    prefix = "gimp_wan_loop" if loop else ("gimp_wan_flf" if use_flf else "gimp_wan_i2v")
-
-    # MP4 for the user
-    wf["80"] = {"class_type": "VHS_VideoCombine",
-                "inputs": {"images": video_ref, "frame_rate": output_fps,
-                           "loop_count": 0, "filename_prefix": prefix,
-                           "format": "video/h264-mp4", "pingpong": pingpong,
+    # Step 6: Final MP4 at full FPS (pingpong option)
+    final_fps = float(fps * (4 if interpolate else 1))  # 2× RIFE × 2 = 4× base FPS
+    wf["83"] = {"class_type": "VHS_VideoCombine",
+                "inputs": {"images": video_ref, "frame_rate": final_fps,
+                           "loop_count": 0, "filename_prefix": f"{prefix}_final",
+                           "format": "video/h264-mp4", "pix_fmt": "yuv420p",
+                           "crf": 17, "pingpong": pingpong,
                            "save_output": True}}
 
-    # Extract LAST frame only (not entire batch) for GIMP
-    wf["81"] = {"class_type": "ImageFromBatch+",
+    # Also output upscaled + interpolated MP4 at 32 FPS (before RTX)
+    if interpolate:
+        wf["84"] = {"class_type": "VHS_VideoCombine",
+                    "inputs": {"images": ["70", 0], "frame_rate": float(fps * 2),
+                               "loop_count": 0, "filename_prefix": f"{prefix}_32fps",
+                               "format": "video/h264-mp4", "pix_fmt": "yuv420p",
+                               "crf": 18, "pingpong": False,
+                               "save_output": True}}
+
+    # Extract LAST frame for GIMP
+    wf["85"] = {"class_type": "ImageFromBatch+",
                 "inputs": {"images": ["60", 0], "start": length - 1, "length": 1}}
-    wf["82"] = {"class_type": "SaveImage",
-                "inputs": {"images": ["81", 0],
+    wf["86"] = {"class_type": "SaveImage",
+                "inputs": {"images": ["85", 0],
                            "filename_prefix": f"{prefix}_lastframe"}}
 
     return wf
