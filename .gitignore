@@ -37,6 +37,18 @@ Desktop.ini
 temp.txt
 temp2.txt
 
+# User data — personal presets, session state, config
+user_presets.json
+session_state.json
+config.json
+*.spellcaster_version
+
+# Generated content not in assets/
+*.mp4
+*.gif
+!assets/*.mp4
+!assets/*.gif
+
 # NSFW builds — never push to public repo
 nsfw/
 *_nsfw*
