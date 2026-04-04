@@ -10407,6 +10407,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-klein-inpaint": "klein_flux2",
             "spellcaster-wan-i2v": "wan_i2v",
             "spellcaster-wan-flf": "wan_i2v",
+            "spellcaster-wan-director": "wan_i2v",
             "spellcaster-video-upscale": "wan_i2v",
             "spellcaster-video-reactor": "wan_i2v",
             "spellcaster-rembg": "rembg",
@@ -10487,6 +10488,8 @@ class Spellcaster(Gimp.PlugIn):
                                     "Generate video from image using Wan 2.2"),
             "spellcaster-wan-flf": ("Wan 2.2 First + Last Frame to Video...", self._run_wan_flf,
                                      "Generate video transitioning between two keyframes using Wan 2.2"),
+            "spellcaster-wan-director": ("Wan Director (multi-step video)...", self._run_wan_director,
+                                        "Plan, generate, and assemble multi-step video sequences with variations"),
             "spellcaster-video-upscale": ("Video Upscale (RTX + Model)...", self._run_video_upscale,
                                            "Upscale a video with model + RTX super-resolution"),
             "spellcaster-video-reactor": ("Video Face Swap + Upscale...", self._run_video_reactor,
@@ -10571,6 +10574,7 @@ class Spellcaster(Gimp.PlugIn):
             # Video
             "spellcaster-wan-i2v":           "<Image>/Filters/Spellcaster Video",
             "spellcaster-wan-flf":           "<Image>/Filters/Spellcaster Video",
+            "spellcaster-wan-director":      "<Image>/Filters/Spellcaster Video",
             "spellcaster-video-upscale":     "<Image>/Filters/Spellcaster Video",
             "spellcaster-video-reactor":     "<Image>/Filters/Spellcaster Video",
 
@@ -13232,6 +13236,358 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Upscaler Blend Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Wan Director ─────────────────────────────────────────────────
+    def _run_wan_director(self, procedure, run_mode, image, drawables, config, data):
+        """Wan Director: multi-step video pipeline with variations and editing room."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+
+        # ═══════════════════════════════════════════════════════════════
+        # DIALOG 1: PLAN — steps, loops, modes, variations
+        # ═══════════════════════════════════════════════════════════════
+        plan_dlg = Gtk.Dialog(title="Spellcaster — Wan Director: Plan")
+        plan_dlg.set_default_size(520, -1)
+        plan_dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        plan_dlg.add_button("_Next: Configure Steps", Gtk.ResponseType.OK)
+        bx = plan_dlg.get_content_area()
+        bx.set_spacing(6); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(10); bx.set_margin_bottom(10)
+
+        _hdr = _make_branded_header()
+        if _hdr: bx.pack_start(_hdr, False, False, 0)
+
+        bx.pack_start(Gtk.Label(
+            label="Plan your video sequence. Each step generates a clip.\n"
+                  "Steps are chained: the last frame of each clip becomes\n"
+                  "the first frame of the next. Up to 3 variations per step."),
+            False, False, 4)
+
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
+        hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+
+        grid = Gtk.Grid(column_spacing=8, row_spacing=6)
+        grid.attach(Gtk.Label(label="Number of steps:"), 0, 0, 1, 1)
+        steps_sp = Gtk.SpinButton.new_with_range(1, 5, 1)
+        steps_sp.set_value(3)
+        steps_sp.set_tooltip_text("How many video clips to generate in sequence (1-5)")
+        grid.attach(steps_sp, 1, 0, 1, 1)
+
+        grid.attach(Gtk.Label(label="Variations per step:"), 2, 0, 1, 1)
+        vars_sp = Gtk.SpinButton.new_with_range(1, 3, 1)
+        vars_sp.set_value(2)
+        vars_sp.set_tooltip_text("How many different versions to generate per step (1-3).\nYou'll pick the best one in the editing room.")
+        grid.attach(vars_sp, 3, 0, 1, 1)
+
+        grid.attach(Gtk.Label(label="Loop each clip:"), 0, 1, 1, 1)
+        loop_sp = Gtk.SpinButton.new_with_range(1, 10, 1)
+        loop_sp.set_value(1)
+        loop_sp.set_tooltip_text("Play each selected clip N times in the final cut.\n1 = no loop, 2 = play twice, etc.")
+        grid.attach(loop_sp, 1, 1, 1, 1)
+        bx.pack_start(grid, False, False, 4)
+
+        # Per-step mode selector
+        bx.pack_start(Gtk.Label(label="Mode per step:", xalign=0), False, False, 2)
+        mode_combos = []
+        modes_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+
+        def _rebuild_mode_rows(*_a):
+            for child in modes_box.get_children():
+                modes_box.remove(child)
+            mode_combos.clear()
+            n = int(steps_sp.get_value())
+            for s in range(n):
+                row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+                row.pack_start(Gtk.Label(label=f"Step {s+1}:"), False, False, 0)
+                combo = Gtk.ComboBoxText()
+                combo.append("i2v", "Image to Video")
+                combo.append("loop", "Looping Video")
+                combo.append("flf", "First + Last Frame")
+                combo.set_active_id("i2v")
+                combo.set_tooltip_text(f"Generation mode for step {s+1}")
+                row.pack_start(combo, True, True, 0)
+                modes_box.pack_start(row, False, False, 0)
+                mode_combos.append(combo)
+            modes_box.show_all()
+
+        steps_sp.connect("value-changed", _rebuild_mode_rows)
+        _rebuild_mode_rows()
+        bx.pack_start(modes_box, False, False, 0)
+
+        bx.show_all()
+        if plan_dlg.run() != Gtk.ResponseType.OK:
+            plan_dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        srv = srv_e.get_text().strip(); _propagate_server_url(srv)
+        num_steps = int(steps_sp.get_value())
+        num_vars = int(vars_sp.get_value())
+        loop_count = int(loop_sp.get_value())
+        step_modes = [c.get_active_id() or "i2v" for c in mode_combos]
+        plan_dlg.destroy()
+
+        # ═══════════════════════════════════════════════════════════════
+        # DIALOG 2..N: PER-STEP CONFIGURATION
+        # ═══════════════════════════════════════════════════════════════
+        step_configs = []
+        for step_idx in range(num_steps):
+            mode = step_modes[step_idx]
+            title = f"Wan Director — Step {step_idx+1}/{num_steps} ({mode.upper()})"
+            step_dlg = WanI2VDialog()
+            step_dlg.set_title(title)
+
+            # For FLF mode, add end-image file chooser
+            end_entry = None
+            if mode == "flf":
+                flf_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+                flf_box.pack_start(Gtk.Label(label="Last frame image for this step:"), False, False, 2)
+                hfe = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+                end_entry = Gtk.Entry()
+                end_entry.set_placeholder_text("Browse for end frame...")
+                end_entry.set_hexpand(True)
+                hfe.pack_start(end_entry, True, True, 0)
+                def _browse_end(e=end_entry):
+                    def _cb(*_a):
+                        fc = Gtk.FileChooserDialog(title="Select End Frame",
+                                                    action=Gtk.FileChooserAction.OPEN)
+                        fc.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+                        fc.add_button("_Open", Gtk.ResponseType.OK)
+                        if fc.run() == Gtk.ResponseType.OK:
+                            e.set_text(fc.get_filename())
+                        fc.destroy()
+                    return _cb
+                bb = Gtk.Button(label="Browse...")
+                bb.connect("clicked", _browse_end(end_entry))
+                hfe.pack_start(bb, False, False, 0)
+                flf_box.pack_start(hfe, False, False, 0)
+                flf_box.show_all()
+                content = step_dlg.get_content_area()
+                content.pack_start(flf_box, False, False, 4)
+                content.reorder_child(flf_box, 3)
+
+            step_dlg.set_title(title)
+            content = step_dlg.get_content_area()
+            content.show_all()
+
+            if step_dlg.run() != Gtk.ResponseType.OK:
+                step_dlg.destroy()
+                return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+            v = step_dlg.get_values()
+            v["mode"] = mode
+            v["end_image_path"] = end_entry.get_text().strip() if end_entry else None
+            step_configs.append(v)
+            step_dlg.destroy()
+
+        # ═══════════════════════════════════════════════════════════════
+        # EXECUTION: Generate all steps × variations
+        # ═══════════════════════════════════════════════════════════════
+        try:
+            # Export start image (current canvas) on main thread
+            tmp = _export_image_to_tmp(image)
+            start_name = f"gimp_director_start_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, start_name); os.unlink(tmp)
+
+            # all_results[step][variation] = list of (fn, sf, ft)
+            all_results = []
+            # last_frames[step][variation] = filename of last frame
+            last_frames = []
+            current_start = start_name
+
+            for step_idx in range(num_steps):
+                v = step_configs[step_idx]
+                mode = v["mode"]
+                step_results = []
+                step_last_frames = []
+
+                # Upload end image for FLF if provided
+                end_name = None
+                if mode == "flf" and v.get("end_image_path"):
+                    end_name = f"gimp_dir_end_{step_idx}_{uuid.uuid4().hex[:8]}.png"
+                    _upload_image(srv, v["end_image_path"], end_name)
+
+                for var_idx in range(num_vars):
+                    seed = random.randint(0, 2**32 - 1)
+
+                    if mode == "flf" and end_name:
+                        wf = _build_wan_video(
+                            current_start, v["preset_key"], v["prompt"], v["negative"], seed,
+                            width=v["width"], height=v["height"], length=v["length"],
+                            steps=v["steps"], cfg=v["cfg"], second_step=v["second_step"],
+                            turbo=v.get("turbo", True), loop=False,
+                            loras_high=v.get("loras_high"), loras_low=v.get("loras_low"),
+                            all_server_loras=v.get("all_server_loras"),
+                            rtx_scale=v.get("upscale_factor", 2.5),
+                            interpolate=v.get("interpolate", True),
+                            pingpong=False, fps=v["fps"],
+                            end_image_filename=end_name)
+                    else:
+                        wf = _build_wan_video(
+                            current_start, v["preset_key"], v["prompt"], v["negative"], seed,
+                            width=v["width"], height=v["height"], length=v["length"],
+                            steps=v["steps"], cfg=v["cfg"], second_step=v["second_step"],
+                            turbo=v.get("turbo", True), loop=(mode == "loop"),
+                            loras_high=v.get("loras_high"), loras_low=v.get("loras_low"),
+                            all_server_loras=v.get("all_server_loras"),
+                            rtx_scale=v.get("upscale_factor", 2.5),
+                            interpolate=v.get("interpolate", True),
+                            pingpong=False, fps=v["fps"])
+
+                    label = f"Step {step_idx+1} Var {var_idx+1}"
+                    _wf = wf
+                    results = _run_with_spinner(
+                        f"Director: {label} ({mode})...",
+                        lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
+                    step_results.append(results)
+
+                    # Find the PNG frame for chaining to next step
+                    png_frames = [fn for fn, sf, ft in results if fn.lower().endswith(".png")]
+                    step_last_frames.append(png_frames[0] if png_frames else None)
+
+                all_results.append(step_results)
+                last_frames.append(step_last_frames)
+
+                # For the next step, use the first variation's last frame as start
+                # (user will choose in the editing room, but we need something to chain)
+                if step_last_frames[0]:
+                    # Upload the frame back as input for the next step
+                    frame_data = _download_image(srv, step_last_frames[0], "", "output")
+                    next_start = f"gimp_dir_chain_{step_idx}_{uuid.uuid4().hex[:8]}.png"
+                    tmp_chain = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                    tmp_chain.write(frame_data); tmp_chain.close()
+                    _upload_image(srv, tmp_chain.name, next_start)
+                    os.unlink(tmp_chain.name)
+                    current_start = next_start
+
+            # ═══════════════════════════════════════════════════════════
+            # EDITING ROOM: Pick best variation per step
+            # ═══════════════════════════════════════════════════════════
+            edit_dlg = Gtk.Dialog(title="Spellcaster — Wan Director: Editing Room")
+            edit_dlg.set_default_size(600, -1)
+            edit_dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+            edit_dlg.add_button("_Assemble Final Video", Gtk.ResponseType.OK)
+            ebx = edit_dlg.get_content_area()
+            ebx.set_spacing(6); ebx.set_margin_start(12); ebx.set_margin_end(12)
+            ebx.set_margin_top(10); ebx.set_margin_bottom(10)
+
+            _hdr2 = _make_branded_header()
+            if _hdr2: ebx.pack_start(_hdr2, False, False, 0)
+
+            ebx.pack_start(Gtk.Label(
+                label="Choose the best variation for each step.\n"
+                      "The selected clips will be stitched into the final video."),
+                False, False, 4)
+
+            choice_combos = []
+            for step_idx in range(num_steps):
+                row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+                row.pack_start(Gtk.Label(label=f"Step {step_idx+1} ({step_modes[step_idx]}):"),
+                               False, False, 0)
+                combo = Gtk.ComboBoxText()
+                for var_idx in range(num_vars):
+                    n_files = len(all_results[step_idx][var_idx])
+                    combo.append(str(var_idx), f"Variation {var_idx+1} ({n_files} outputs)")
+                combo.set_active(0)
+                row.pack_start(combo, True, True, 0)
+
+                # Preview button — imports first frame of selected variation
+                def _make_preview(si, c):
+                    def _preview(*_a):
+                        vi = int(c.get_active_id() or "0")
+                        pngs = [fn for fn, sf, ft in all_results[si][vi] if fn.lower().endswith(".png")]
+                        if pngs:
+                            _import_result_as_layer(image, _download_image(srv, pngs[0], "", "output"),
+                                                    f"Director Step {si+1} Var {vi+1} preview")
+                            Gimp.displays_flush()
+                    return _preview
+                prev_btn = Gtk.Button(label="Preview")
+                prev_btn.connect("clicked", _make_preview(step_idx, combo))
+                row.pack_start(prev_btn, False, False, 0)
+
+                ebx.pack_start(row, False, False, 0)
+                choice_combos.append(combo)
+
+            ebx.show_all()
+            if edit_dlg.run() != Gtk.ResponseType.OK:
+                edit_dlg.destroy()
+                return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+            chosen = [int(c.get_active_id() or "0") for c in choice_combos]
+            edit_dlg.destroy()
+
+            # ═══════════════════════════════════════════════════════════
+            # FINAL ASSEMBLY: Stitch chosen clips → GIF + MP4
+            # ═══════════════════════════════════════════════════════════
+            # Collect all PNG frames from chosen variations, in order, with loop repeat
+            all_frame_names = []
+            for step_idx in range(num_steps):
+                var_idx = chosen[step_idx]
+                pngs = [fn for fn, sf, ft in all_results[step_idx][var_idx]
+                        if fn.lower().endswith(".png")]
+                for _ in range(loop_count):
+                    all_frame_names.extend(pngs)
+
+            if not all_frame_names:
+                Gimp.message("No frames to assemble. Check that video generation produced output.")
+                return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+            # Import all frames as GIMP layers
+            for i, fn in enumerate(all_frame_names):
+                frame_data = _download_image(srv, fn, "", "output")
+                _import_result_as_layer(image, frame_data, f"Director Frame {i+1}")
+
+            # Build MP4 via ComfyUI: upload frames → ImageBatch → VHS_VideoCombine
+            frame_upload_names = []
+            for i, fn in enumerate(all_frame_names):
+                frame_data = _download_image(srv, fn, "", "output")
+                upload_name = f"gimp_dir_final_{i:04d}.png"
+                tmp_f = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                tmp_f.write(frame_data); tmp_f.close()
+                _upload_image(srv, tmp_f.name, upload_name)
+                os.unlink(tmp_f.name)
+                frame_upload_names.append(upload_name)
+
+            if len(frame_upload_names) >= 2:
+                assemble_wf = {}
+                for i, fn in enumerate(frame_upload_names):
+                    assemble_wf[str(200 + i)] = {"class_type": "LoadImage",
+                                                   "inputs": {"image": fn}}
+                assemble_wf["300"] = {"class_type": "ImageBatch",
+                                       "inputs": {"image1": ["200", 0], "image2": ["201", 0]}}
+                batch_ref = ["300", 0]
+                for i in range(2, len(frame_upload_names)):
+                    nid = str(300 + i - 1)
+                    assemble_wf[nid] = {"class_type": "ImageBatch",
+                                         "inputs": {"image1": batch_ref,
+                                                    "image2": [str(200 + i), 0]}}
+                    batch_ref = [nid, 0]
+
+                out_fps = float(step_configs[0].get("fps", 16))
+                assemble_wf["400"] = {"class_type": "VHS_VideoCombine",
+                                       "inputs": {"images": batch_ref, "frame_rate": out_fps,
+                                                  "loop_count": 0,
+                                                  "filename_prefix": "gimp_wan_director_final",
+                                                  "format": "video/h264-mp4",
+                                                  "pingpong": False, "save_output": True}}
+
+                _run_with_spinner("Director: assembling final video...",
+                                   lambda: list(_run_comfyui_workflow(srv, assemble_wf, timeout=300)))
+
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            total_frames = len(all_frame_names)
+            Gimp.message(f"Wan Director complete!\n"
+                         f"{num_steps} steps, {total_frames} frames assembled.\n"
+                         f"All frames imported as GIMP layers.\n"
+                         f"MP4 saved in ComfyUI output folder.")
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Wan Director Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     # ── GIF Stitcher ──────────────────────────────────────────────────
