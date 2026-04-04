@@ -6393,10 +6393,12 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
                            "format": "video/h264-mp4", "pingpong": pingpong,
                            "save_output": True}}
 
-    # First frame PNG for GIMP
+    # Extract LAST frame only (not entire batch) for GIMP
+    wf["81"] = {"class_type": "ImageFromBatch+",
+                "inputs": {"images": ["60", 0], "start": length - 1, "length": 1}}
     wf["82"] = {"class_type": "SaveImage",
-                "inputs": {"images": ["60", 0],
-                           "filename_prefix": f"{prefix}_frame"}}
+                "inputs": {"images": ["81", 0],
+                           "filename_prefix": f"{prefix}_lastframe"}}
 
     return wf
 
@@ -11019,13 +11021,13 @@ class Spellcaster(Gimp.PlugIn):
                 results = _run_with_spinner(f"{label}: generating video from {src} on ComfyUI...",
                                             lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
                 for i, (fn, sf, ft) in enumerate(results):
-                    # Import PNG frames into GIMP, skip MP4/GIF video files
-                    if fn.lower().endswith(".png"):
-                        lbl = f"Wan I2V run {run_i+1} #{i+1}" if runs > 1 else f"Wan I2V frame #{i+1}"
+                    # Only import the last-frame PNG, skip MP4 and batch frames
+                    if fn.lower().endswith(".png") and "lastframe" in fn.lower():
+                        lbl = f"Wan I2V last frame"
                         _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
             Gimp.displays_flush()
             Gimp.progress_end()
-            Gimp.message("Video generation complete!\nFirst frame imported as a layer.\nMP4 saved in ComfyUI output folder.")
+            Gimp.message("Video generation complete!\nLast frame imported as a layer.\nMP4 saved in ComfyUI output folder.")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Wan I2V Error: {e}")
@@ -11181,12 +11183,12 @@ class Spellcaster(Gimp.PlugIn):
                 results = _run_with_spinner(f"{label}: generating video transition on ComfyUI...",
                                              lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
                 for i, (fn, sf, ft) in enumerate(results):
-                    if fn.lower().endswith(".png"):
-                        lbl = f"Wan FLF run {run_i+1} #{i+1}" if runs > 1 else f"Wan FLF frame #{i+1}"
-                        _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                    if fn.lower().endswith(".png") and "lastframe" in fn.lower():
+                        _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+                                                "Wan FLF last frame")
             Gimp.displays_flush()
             Gimp.progress_end()
-            Gimp.message("First+Last Frame video complete!\nFirst frame imported as a layer.\nMP4 saved in ComfyUI output folder.")
+            Gimp.message("First+Last Frame video complete!\nLast frame imported as a layer.\nMP4 saved in ComfyUI output folder.")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Wan FLF Error: {e}")
