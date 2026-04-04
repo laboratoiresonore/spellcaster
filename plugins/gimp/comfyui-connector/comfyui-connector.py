@@ -9686,6 +9686,11 @@ class WanI2VDialog(Gtk.Dialog):
             if lid and lid != "none":
                 loras_low.append((lid, strength.get_value()))
 
+        # Force turbo steps at output — regardless of what the spinner shows
+        is_turbo = self.turbo_check.get_active()
+        out_steps = 6 if is_turbo else int(self.steps_spin.get_value())
+        out_split = 3 if is_turbo else int(self.second_step_spin.get_value())
+
         return {
             "server": self.server_entry.get_text().strip(),
             "all_server_loras": list(self._all_wan_loras),
@@ -9696,12 +9701,12 @@ class WanI2VDialog(Gtk.Dialog):
             "height": int(self.h_spin.get_value()),
             "length": int(self.length_spin.get_value()),
             "fps": int(self.fps_spin.get_value()),
-            "steps": int(self.steps_spin.get_value()),
+            "steps": out_steps,
             "cfg": self.cfg_spin.get_value(),
             "shift": self.shift_spin.get_value(),
-            "second_step": int(self.second_step_spin.get_value()),
+            "second_step": out_split,
             "seed": seed,
-            "turbo": self.turbo_check.get_active(),
+            "turbo": is_turbo,
             "loop": self.loop_check.get_active(),
             "loras": None,
             "loras_high": loras_high or None,
