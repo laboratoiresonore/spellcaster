@@ -63,7 +63,6 @@ ensure_dependencies()
 import customtkinter as ctk
 from PIL import Image
 import requests
-import io
 
 # Import actual installation logic (git clone, file copy, download helpers)
 import install as builder
@@ -170,6 +169,7 @@ class InstallerApp(ctk.CTk):
         self.model_vars = {}    # {composite_key: {var, data, feature, widget}}
         self.node_vars = {}     # {node_key: BooleanVar}
         self.lut_path = ctk.StringVar(value="")          # optional LUT import folder
+        self.output_dir = ctk.StringVar(value="")        # Spellcaster output repatriation folder
         self.apply_theme = ctk.BooleanVar(value=False)   # replace system splash screens
 
         self.title("Spellcaster Premium Setup")
@@ -822,6 +822,27 @@ class InstallerApp(ctk.CTk):
         server_entry.pack(side="left", padx=10)
         _ToolTip(server_entry, "The URL where ComfyUI's API server is running. Default is http://127.0.0.1:8188. Only change this if you run ComfyUI on a different port or on a remote machine.")
 
+        # Output directory row
+        out_row = ctk.CTkFrame(f_paths, fg_color="transparent")
+        out_row.pack(fill="x", padx=30, pady=12)
+        ctk.CTkLabel(out_row, text="Output Directory:", width=170, anchor="w",
+                     font=ctk.CTkFont(family="Inter", size=13, weight="bold")).pack(side="left")
+        out_entry = ctk.CTkEntry(out_row, textvariable=self.output_dir, width=350,
+                     border_color="#3A2863", fg_color="#100B1A",
+                     placeholder_text="Optional — where Spellcaster saves its outputs")
+        out_entry.pack(side="left", padx=10)
+        _ToolTip(out_entry, "After each AI generation, Spellcaster copies the output files (images, videos) from ComfyUI to this folder. Leave blank to keep files only in ComfyUI's output folder.")
+        out_browse = ctk.CTkButton(out_row, text="Browse", width=80,
+                      command=lambda: self._browse_dir(self.output_dir),
+                      fg_color=self.sidebar_color, hover_color="#3A2863",
+                      border_width=1, border_color="#3A2863")
+        out_browse.pack(side="left")
+        _ToolTip(out_browse, "Open a folder picker to select your Spellcaster output directory.")
+        ctk.CTkLabel(f_paths,
+                     text="💡 Generated images and videos will be automatically copied here after each generation.",
+                     font=ctk.CTkFont(family="Inter", size=11), text_color=self.text_muted,
+                     wraplength=700, justify="left").pack(anchor="w", padx=30, pady=(0, 8))
+
         # Help panel: show download links for missing apps
         missing = []
         if not self.comfyui_path.get().strip():
@@ -1459,6 +1480,7 @@ class InstallerApp(ctk.CTk):
                 "server_url": self.server_url.get(),
                 "apply_theme": self.apply_theme.get(),
                 "installed_features": installed_features,
+                "output_dir": self.output_dir.get().strip(),
             }
             if gimp_dest.is_dir():
                 with open(gimp_dest / "config.json", "w", encoding="utf-8") as f:
@@ -1700,7 +1722,7 @@ class InstallerApp(ctk.CTk):
         # ---- Done ----
         elapsed = time.time() - t_start
         self._set_file_progress("Deployment complete!")
-        self._set_progress(100)
+        self._set_progress(1.0)
         self.log(f"\n{'='*56}")
         self.log(f"  DEPLOYMENT COMPLETE in {elapsed:.0f}s")
         self.log(f"  Plugins: {stats['plugins']}  |  Nodes: {stats['nodes']}")
@@ -1753,10 +1775,16 @@ class InstallerApp(ctk.CTk):
             return
 
         total_models = len(models_to_dl)
+        civitai_key = getattr(self.args, 'civitai_key', '') or ''
+        hf_token = getattr(self.args, 'hf_token', '') or ''
 
         for i, m in enumerate(models_to_dl, 1):
-            dest = comfy_path / "models" / m["path"]
-            fname = m['path'].split('/')[-1]
+            rel_path = m["path"]
+            if rel_path.startswith("custom_nodes/"):
+                dest = comfy_path / rel_path
+            else:
+                dest = comfy_path / "models" / rel_path
+            fname = rel_path.split('/')[-1]
             size_mb = m.get('size_mb', 0)
 
             self._set_file_progress(f"Phase 3/3: Model {i}/{total_models} - {fname}")
@@ -1769,14 +1797,17 @@ class InstallerApp(ctk.CTk):
 
             self.log(f"  [{i}/{total_models}] Downloading {fname} ({size_mb} MB)...")
             dest.parent.mkdir(parents=True, exist_ok=True)
-            import urllib.request
 
             success = False
             for attempt in range(1, 3):
                 try:
-                    urllib.request.urlretrieve(m["url"], dest)
-                    success = True
-                    break
+                    if builder.download_file(m["url"], dest,
+                                             civitai_key=civitai_key,
+                                             hf_token=hf_token):
+                        success = True
+                        break
+                    else:
+                        raise RuntimeError("download_file returned False")
                 except Exception as e:
                     if attempt == 1:
                         self.log(f"    Attempt 1 failed: {e}")
