@@ -9267,8 +9267,8 @@ class WanI2VDialog(Gtk.Dialog):
             "Disable for maximum quality at the cost of much longer generation.")
         def _on_turbo_toggle(cb):
             if cb.get_active():
-                self.steps_spin.set_value(4)
-                self.second_step_spin.set_value(2)
+                self.steps_spin.set_value(6)
+                self.second_step_spin.set_value(3)
             else:
                 self.steps_spin.set_value(20)
                 self.second_step_spin.set_value(10)
