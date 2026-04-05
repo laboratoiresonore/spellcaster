@@ -3199,11 +3199,24 @@ def _write_grayscale_png(filepath, width, height, pixel_rows):
         f.write(_png_chunk(b'IEND', b''))
 
 def _download_image(server, filename, subfolder="", folder_type="output"):
-    """Download a generated image from ComfyUI's /view endpoint as raw bytes."""
+    """Download a generated image/video from ComfyUI's /view endpoint as raw bytes.
+
+    Uses a longer timeout for large files (video MP4s can be 50-200MB).
+    Retries once on timeout/network errors (Windows semaphore timeout WinError 121).
+    """
     params = urllib.parse.urlencode({"filename": filename, "subfolder": subfolder, "type": folder_type})
     url = f"{server.rstrip('/')}/view?{params}"
-    with urllib.request.urlopen(urllib.request.Request(url), timeout=60) as resp:
-        return resp.read()
+    # Video files need much longer timeout than images
+    dl_timeout = 300 if any(filename.lower().endswith(ext) for ext in (".mp4", ".gif", ".webm", ".avi")) else 120
+    for attempt in range(2):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url), timeout=dl_timeout) as resp:
+                return resp.read()
+        except (OSError, urllib.error.URLError) as e:
+            if attempt == 0:
+                time.sleep(2)  # brief pause before retry
+                continue
+            raise RuntimeError(f"Download failed after retry: {filename} — {e}") from e
 
 def _wait_for_prompt(server, prompt_id, timeout=300):
     """Poll ComfyUI's /history endpoint until the prompt finishes or times out.
