@@ -516,6 +516,7 @@ def _download_and_extract_github_zip(repo_url: str, dest: Path) -> bool:
                 # GitHub ZIPs always have a single top-level dir: "reponame-branch/"
                 # Strip it so files land directly in dest/
                 top = zf.namelist()[0].split('/')[0] + '/'
+                dest_resolved = dest.resolve()
                 for member in zf.infolist():
                     if member.filename == top:
                         continue
@@ -524,6 +525,10 @@ def _download_and_extract_github_zip(repo_url: str, dest: Path) -> bool:
                         if not rel:
                             continue
                         tp = dest / rel
+                        # Path traversal guard — reject entries that escape dest
+                        if not tp.resolve().parts[:len(dest_resolved.parts)] == dest_resolved.parts:
+                            print(f"  {C_YELLOW}⚠ Skipping suspicious path: {rel}{C_RESET}")
+                            continue
                         if member.is_dir():
                             tp.mkdir(parents=True, exist_ok=True)
                         else:
