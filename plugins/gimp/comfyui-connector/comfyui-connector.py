@@ -5943,6 +5943,32 @@ WAN_VIDEO_PRESETS = [
         "shift_override": 5.0,
         "loras": [],
     },
+    {
+        "label": "POV / Close-Up — smooth skin, no crunch",
+        "prompt": "",
+        "negative": "crunchy, pixelated, noisy skin, orange peel texture, plastic skin, "
+                    "oversaturated, harsh artifacts, distorted",
+        "cfg_override": 2.0,
+        "steps_override": 30,
+        "second_step_override": 10,
+        "length_override": None,
+        "pingpong": None,
+        "shift_override": 5.0,
+        "loras": [],
+    },
+    {
+        "label": "Physical Contact — Intense (shift 12, cfg 1)",
+        "prompt": "",
+        "negative": "floating, disconnected, merged bodies, blob, distorted limbs, "
+                    "extra fingers, missing limbs, blurry, static",
+        "cfg_override": 1.0,
+        "steps_override": 25,
+        "second_step_override": 10,
+        "length_override": None,
+        "pingpong": None,
+        "shift_override": 12.0,
+        "loras": [],
+    },
     # ── Subtle Life / Living Portrait ────────────────────────────────────
     {
         "label": "Living Portrait — subtle breathing & blinks",
@@ -6479,6 +6505,7 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
                       teacache=False, tiled_vae=False,
                       ip_adapter_image=None, ip_adapter_weight=0.5,
                       ip_adapter_start=0.0, ip_adapter_end=1.0,
+                      motion_mask=None,
                       pingpong=False, fps=16,
                       end_image_filename=None):
     """Wan 2.2 video generation — canon dual-model architecture.
@@ -6687,11 +6714,25 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
                         "vae": ["4", 0], "start_image": ["7", 0],
                     }}
 
+    # ── Motion Region Mask (optional) ────────────────────────────────
+    # Paint a selection in GIMP → white = full motion, black = static.
+    # Applied to the latent via SetLatentNoiseMask so static regions
+    # preserve the start image while motion regions get fully denoised.
+    latent_ref = ["40", 2]
+    if motion_mask:
+        wf["45"] = {"class_type": "LoadImage",
+                    "inputs": {"image": motion_mask}}
+        wf["46"] = {"class_type": "ImageToMask",
+                    "inputs": {"image": ["45", 0], "channel": "red"}}
+        wf["47"] = {"class_type": "SetLatentNoiseMask",
+                    "inputs": {"samples": latent_ref, "mask": ["46", 0]}}
+        latent_ref = ["47", 0]
+
     # ── Two-pass KSamplerAdvanced (euler_ancestral, no ModelSamplingSD3) ──
     wf["50"] = {"class_type": "KSamplerAdvanced",
                 "inputs": {
                     "model": high_ref, "positive": ["40", 0], "negative": ["40", 1],
-                    "latent_image": ["40", 2],
+                    "latent_image": latent_ref,
                     "add_noise": "enable", "noise_seed": seed,
                     "steps": steps, "cfg": cfg,
                     "sampler_name": "euler_ancestral", "scheduler": "simple",
@@ -6807,6 +6848,7 @@ def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negati
                     teacache=False, tiled_vae=False,
                     ip_adapter_image=None, ip_adapter_weight=0.5,
                     ip_adapter_start=0.0, ip_adapter_end=1.0,
+                    motion_mask=None,
                     pingpong=False, fps=16):
     """Thin wrapper: delegates to _build_wan_video with end_image_filename."""
     return _build_wan_video(
@@ -6821,6 +6863,7 @@ def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negati
         teacache=teacache, tiled_vae=tiled_vae,
         ip_adapter_image=ip_adapter_image, ip_adapter_weight=ip_adapter_weight,
         ip_adapter_start=ip_adapter_start, ip_adapter_end=ip_adapter_end,
+        motion_mask=motion_mask,
         pingpong=pingpong, fps=fps,
         end_image_filename=end_filename,
     )
@@ -10169,6 +10212,19 @@ class WanI2VDialog(Gtk.Dialog):
         ipa_frame.add(ipa_box)
         box.pack_start(ipa_frame, False, False, 0)
 
+        # ── Motion Region Mask ─────────────────────────────────────────
+        self.motion_mask_check = Gtk.CheckButton(
+            label="Use GIMP Selection as Motion Mask (white=motion, black=static)")
+        self.motion_mask_check.set_active(False)
+        self.motion_mask_check.set_tooltip_text(
+            "Paint a selection in GIMP to define motion regions.\n\n"
+            "Selected area (white) = full motion / denoising.\n"
+            "Unselected area (black) = static / preserved from start image.\n\n"
+            "Use this to prevent multi-character 'blob merge' — mask one\n"
+            "character as static and the other as high-motion.\n"
+            "Also useful for keeping backgrounds frozen while animating a subject.")
+        box.pack_start(self.motion_mask_check, False, False, 0)
+
         # LoRA section — 3 high-noise slots + 3 low-noise slots
         lora_frame = Gtk.Frame(label="LoRAs (3 high-noise + 3 low-noise)")
         lora_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -10348,6 +10404,7 @@ class WanI2VDialog(Gtk.Dialog):
             "ip_adapter_weight": self.ipa_weight.get_value(),
             "ip_adapter_start": self.ipa_start.get_value(),
             "ip_adapter_end": self.ipa_end.get_value(),
+            "motion_mask": self.motion_mask_check.get_active(),
             "pingpong": self.pingpong_check.get_active(),
             "runs": int(self._runs_spin.get_value()),
         }
@@ -10390,6 +10447,7 @@ class WanI2VDialog(Gtk.Dialog):
         self.ipa_weight.set_value(p.get("ip_adapter_weight", 0.5))
         self.ipa_start.set_value(p.get("ip_adapter_start", 0.0))
         self.ipa_end.set_value(p.get("ip_adapter_end", 1.0))
+        self.motion_mask_check.set_active(p.get("motion_mask", False))
         self.pingpong_check.set_active(p.get("pingpong", False))
         if "runs" in p:
             self._runs_spin.set_value(p["runs"])
@@ -10456,6 +10514,7 @@ class WanI2VDialog(Gtk.Dialog):
             "ip_adapter_weight": self.ipa_weight.get_value(),
             "ip_adapter_start": self.ipa_start.get_value(),
             "ip_adapter_end": self.ipa_end.get_value(),
+            "motion_mask": self.motion_mask_check.get_active(),
             "pingpong": self.pingpong_check.get_active(),
             "runs": int(self._runs_spin.get_value()),
         }
@@ -11864,7 +11923,16 @@ class Spellcaster(Gimp.PlugIn):
                     _upload_image(srv, v["ip_adapter_file"], ipa_ref_name)
                     ipa_image = ipa_ref_name
                 else:
-                    ipa_image = "__start_image__"  # use the start image as reference
+                    ipa_image = "__start_image__"
+
+            # Motion mask: export GIMP selection as motion region mask
+            motion_mask_name = None
+            if v.get("motion_mask") and has_sel:
+                mtmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False); mtmp.close()
+                _create_selection_mask_png(mtmp.name, image)
+                motion_mask_name = f"gimp_motion_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, mtmp.name, motion_mask_name)
+                os.unlink(mtmp.name)
 
             base_seed = v["seed"]
             src = "selection" if has_sel else "full image"
@@ -11890,6 +11958,7 @@ class Spellcaster(Gimp.PlugIn):
                     ip_adapter_weight=v.get("ip_adapter_weight", 0.5),
                     ip_adapter_start=v.get("ip_adapter_start", 0.0),
                     ip_adapter_end=v.get("ip_adapter_end", 1.0),
+                    motion_mask=motion_mask_name,
                     pingpong=v.get("pingpong", False),
                     fps=v["fps"],
                 )
