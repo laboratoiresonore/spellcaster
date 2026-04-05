@@ -4645,6 +4645,60 @@ HALLUCINATE_PRESETS = {
                     "selective focus, lens blur, tilt shift, soft background, "
                     "foreground blur, defocused, f/1.4, f/1.8, wide aperture",
     },
+
+    # ── Additional purpose-specific presets ──────────────────────────────
+    "Vehicle & Machine — paint & chrome": {
+        "denoise": 0.32, "cfg": 5.0, "steps": 25,
+        "prompt": "ultra detailed vehicle, mirror-finish chrome reflections, metallic paint flake, "
+                  "clear coat depth, visible panel gaps, rubber tire texture, headlight lens detail, "
+                  "automotive photography, showroom quality, 8K",
+        "negative": "toy car, miniature, plastic, matte finish, blurry, cartoon, low quality",
+    },
+    "Water & Wet Surfaces — droplets & sheen": {
+        "denoise": 0.30, "cfg": 5.0, "steps": 25,
+        "prompt": "ultra detailed water droplets, wet surface glistening, condensation beads, "
+                  "rain-slicked surface, water reflections, wet skin sheen, dewy morning, "
+                  "macro water detail, photorealistic, cinematic",
+        "negative": "dry surface, no water, matte, dull, blurry, painting, low quality",
+    },
+    "Old Photo Restoration — clarity & grain": {
+        "denoise": 0.25, "cfg": 4.0, "steps": 20,
+        "prompt": "restored vintage photograph, sharp clarity recovered from old photo, "
+                  "preserved authentic film grain, natural aging patina, enhanced detail, "
+                  "historically accurate restoration, archival quality",
+        "negative": "modern, digital look, oversaturated, AI look, plastic, "
+                    "completely different image, wrong era",
+    },
+    "Sci-Fi & Tech — circuits & surfaces": {
+        "denoise": 0.35, "cfg": 5.5, "steps": 28,
+        "prompt": "ultra detailed technology surface, visible circuit traces, LED indicator lights, "
+                  "brushed aluminum panels, carbon fiber weave texture, holographic display detail, "
+                  "sci-fi prop quality, product design render, 8K",
+        "negative": "blurry tech, smooth plastic, toy, cheap, cartoon, low quality",
+    },
+    "Bokeh Enhancement — creamy background blur": {
+        "denoise": 0.28, "cfg": 4.5, "steps": 25,
+        "prompt": "beautiful smooth bokeh background, creamy out of focus highlights, "
+                  "hexagonal bokeh shapes, shallow depth of field f/1.4, "
+                  "sharp subject with dreamy blurred background, portrait photography",
+        "negative": "everything in focus, deep depth of field, f/16, sharp background, "
+                    "busy background, no bokeh, flat image",
+    },
+    "Night Scene — lights & neon": {
+        "denoise": 0.32, "cfg": 5.0, "steps": 25,
+        "prompt": "ultra detailed night scene, neon sign reflections on wet pavement, "
+                  "streetlight halos, car headlight bokeh, rain-slicked roads glowing, "
+                  "cinematic night photography, cyberpunk atmosphere, urban noir, 8K",
+        "negative": "daytime, bright, overexposed, flat lighting, blurry, cartoon, low quality",
+    },
+    "Hands & Fingers — anatomical fix": {
+        "denoise": 0.22, "cfg": 3.5, "steps": 20,
+        "prompt": "anatomically perfect human hands, correct finger count, natural hand proportions, "
+                  "detailed knuckles, visible fingernails, realistic skin wrinkles on hands, "
+                  "perfect five fingers per hand, natural hand pose",
+        "negative": "extra fingers, missing fingers, fused fingers, six fingers, four fingers, "
+                    "deformed hands, floating fingers, wrong anatomy, claws",
+    },
 }
 
 def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text, negative_text,
@@ -5109,6 +5163,49 @@ COLORIZE_PRESETS = {
                   "professional color correction, blockbuster film still, dramatic mood lighting",
         "negative": "flat, boring, grey, monochrome, amateur, oversaturated candy colors",
         "denoise": 0.75, "cn_strength": 0.82, "cfg": 6.5, "steps": 30,
+    },
+    "Film Noir (dark & contrasty)": {
+        "prompt": "film noir color palette, deep shadows, moody low-key lighting, "
+                  "desaturated muted tones with selective warm highlights, dramatic chiaroscuro, "
+                  "1940s crime film atmosphere, smoky bar lighting, venetian blind shadows",
+        "negative": "bright, cheerful, oversaturated, vivid, neon, flat, evenly lit",
+        "denoise": 0.72, "cn_strength": 0.85, "cfg": 7.0, "steps": 30,
+    },
+    "Kodachrome (1970s warmth)": {
+        "prompt": "Kodachrome film stock colors, rich warm reds and golden yellows, "
+                  "slightly boosted saturation, 1970s photography look, warm skin tones, "
+                  "deep green foliage, characteristic Kodachrome color signature, analog film",
+        "negative": "cool tones, blue cast, desaturated, modern digital, black and white, grey",
+        "denoise": 0.73, "cn_strength": 0.82, "cfg": 6.5, "steps": 28,
+    },
+    "Cross-Processed (retro experimental)": {
+        "prompt": "cross-processed film colors, shifted color palette, green-tinted shadows, "
+                  "magenta highlights, experimental analog film processing, lomography style, "
+                  "unusual color shifts, creative analog look, indie film aesthetic",
+        "negative": "natural colors, accurate, neutral, black and white, monochrome",
+        "denoise": 0.78, "cn_strength": 0.75, "cfg": 6.0, "steps": 25,
+    },
+    "Autochrome (1900s soft pastel)": {
+        "prompt": "autochrome color palette, early 1900s color photography, soft pastel colors, "
+                  "dreamy gentle tones, pointillist color texture, muted warm palette, "
+                  "historic autochrome Lumiere process, antique delicate colorization",
+        "negative": "sharp digital, oversaturated, vivid, neon, modern, harsh contrast",
+        "denoise": 0.68, "cn_strength": 0.88, "cfg": 5.5, "steps": 28,
+    },
+    "Technicolor (golden age Hollywood)": {
+        "prompt": "Technicolor three-strip film process, rich saturated primary colors, "
+                  "golden age Hollywood color palette, vivid reds and deep blues, "
+                  "lush green tones, Wizard of Oz color intensity, classic film glamour",
+        "negative": "muted, desaturated, grey, dull, modern, digital, flat",
+        "denoise": 0.76, "cn_strength": 0.80, "cfg": 6.5, "steps": 28,
+    },
+    "Military / War Archive": {
+        "prompt": "realistic wartime colorization, accurate military uniform colors, "
+                  "period-correct vehicle paint, olive drab and khaki tones, "
+                  "muddy battlefield palette, historically accurate war photography restoration, "
+                  "documentary archive quality",
+        "negative": "bright, cheerful, oversaturated, neon, cartoon, fantasy, modern",
+        "denoise": 0.70, "cn_strength": 0.88, "cfg": 7.0, "steps": 30,
     },
 }
 
@@ -6299,6 +6396,258 @@ WAN_VIDEO_PRESETS = [
         "negative": "static, frozen, stuffed animal, toy, "
                     "distorted, morphing, extra limbs, blurry",
         "cfg_override": 5.0,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": True,
+        "loras": [],
+    },
+    # ── Emotion / Expression Transitions ─────────────────────────────────
+    {
+        "label": "Emotion — laughter building",
+        "prompt": "person gradually breaking into genuine laughter, smile widening, "
+                  "eyes crinkling with joy, natural laugh building from slight smile "
+                  "to full laughing, photorealistic, cinematic close-up, warm lighting",
+        "negative": "static, frozen, grotesque, exaggerated, unnatural, "
+                    "distorted face, morphing, jerky",
+        "cfg_override": 5.0,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": False,
+        "shift_override": 1.0,
+        "loras": [],
+    },
+    {
+        "label": "Emotion — surprise / shock reaction",
+        "prompt": "person reacting with genuine surprise, eyebrows raising, "
+                  "eyes widening, mouth slightly opening, natural shock reaction, "
+                  "photorealistic, cinematic, dramatic lighting",
+        "negative": "static, frozen, exaggerated cartoon, unnatural, "
+                    "distorted, morphing, blurry",
+        "cfg_override": 5.0,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": False,
+        "shift_override": 3.0,
+        "loras": [],
+    },
+    {
+        "label": "Emotion — tears welling up",
+        "prompt": "person with eyes slowly filling with tears, emotional moment, "
+                  "glistening eyes, single tear rolling down cheek, vulnerable expression, "
+                  "photorealistic, cinematic close-up, soft lighting",
+        "negative": "sobbing, ugly crying, static, frozen, "
+                    "distorted, morphing, blurry",
+        "cfg_override": 5.5,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": False,
+        "shift_override": 1.0,
+        "loras": [],
+    },
+    {
+        "label": "Emotion — seductive glance",
+        "prompt": "person giving a slow seductive look, bedroom eyes, "
+                  "slight lip bite, confident alluring expression, subtle head tilt, "
+                  "photorealistic, cinematic, moody dramatic lighting",
+        "negative": "grotesque, distorted face, exaggerated, cartoon, "
+                    "static, frozen, blurry, morphing",
+        "cfg_override": 5.0,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": False,
+        "shift_override": 1.0,
+        "loras": [],
+    },
+    # ── Hair & Fabric Physics ────────────────────────────────────────────
+    {
+        "label": "Hair — dramatic wind blow",
+        "prompt": "hair blowing dramatically in strong wind, flowing strands, "
+                  "dynamic hair movement, wind-swept look, individual hair strands visible, "
+                  "photorealistic, fashion photography, cinematic",
+        "negative": "static hair, helmet hair, wig, unnatural, "
+                    "distorted, blurry, morphing face",
+        "cfg_override": 5.0,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": True,
+        "shift_override": 5.0,
+        "loras": [],
+    },
+    {
+        "label": "Fabric — dress flowing in wind",
+        "prompt": "elegant dress fabric flowing and billowing in gentle breeze, "
+                  "silk material catching light, natural fabric physics, graceful draping, "
+                  "fashion photoshoot, photorealistic, cinematic lighting",
+        "negative": "static fabric, stiff, plastic, frozen, "
+                    "distorted, morphing, blurry",
+        "cfg_override": 5.0,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": True,
+        "shift_override": 5.0,
+        "loras": [],
+    },
+    # ── Weather & Time Effects ───────────────────────────────────────────
+    {
+        "label": "Weather — rain falling on window",
+        "prompt": "raindrops falling and streaming down window glass, water droplets, "
+                  "rain rivulets, bokeh lights through wet glass, cozy rainy day, "
+                  "photorealistic, cinematic, shallow depth of field",
+        "negative": "static, frozen, flood, hurricane, "
+                    "distorted, blurry, glitching",
+        "cfg_override": 5.0,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": True,
+        "loras": [],
+    },
+    {
+        "label": "Weather — snow gently falling",
+        "prompt": "soft snowflakes gently falling, peaceful winter snowfall, "
+                  "individual snowflakes visible, serene winter atmosphere, "
+                  "photorealistic, cinematic, cold blue lighting",
+        "negative": "blizzard, avalanche, static, frozen frame, "
+                    "distorted, blurry, glitching",
+        "cfg_override": 5.0,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": True,
+        "loras": [],
+    },
+    {
+        "label": "Time — sunrise / golden hour timelapse",
+        "prompt": "sunrise timelapse, golden light slowly flooding the scene, "
+                  "warm orange and pink colors spreading across sky, long shadows shortening, "
+                  "photorealistic landscape, cinematic, 4K",
+        "negative": "static sky, sudden change, flickering, "
+                    "distorted, glitching, blurry",
+        "cfg_override": 5.0,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": False,
+        "loras": [],
+    },
+    # ── Interaction & Touch ──────────────────────────────────────────────
+    {
+        "label": "Touch — hand reaching toward camera",
+        "prompt": "hand slowly reaching toward the camera lens, gentle approach, "
+                  "natural finger movement, soft gesture, intimate close-up, "
+                  "photorealistic, cinematic, shallow depth of field",
+        "negative": "extra fingers, deformed hand, missing fingers, "
+                    "jerky, distorted, blurry, morphing",
+        "cfg_override": 3.0,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": False,
+        "shift_override": 8.0,
+        "loras": [],
+    },
+    {
+        "label": "Touch — caressing face / cheek",
+        "prompt": "hand gently caressing the side of face, tender touch on cheek, "
+                  "intimate gesture, soft skin contact, natural hand movement, "
+                  "photorealistic, cinematic, warm soft lighting",
+        "negative": "slapping, hitting, extra fingers, deformed, "
+                    "jerky, distorted, merged limbs, blurry",
+        "cfg_override": 2.0,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": False,
+        "shift_override": 10.0,
+        "loras": [],
+    },
+    {
+        "label": "Touch — two hands intertwining",
+        "prompt": "two hands slowly intertwining fingers, gentle hand holding, "
+                  "intimate connection, natural finger interlocking, romantic gesture, "
+                  "photorealistic, cinematic close-up, warm lighting",
+        "negative": "extra fingers, merged hands, deformed, blob, "
+                    "jerky, distorted, blurry, morphing",
+        "cfg_override": 2.0,
+        "steps_override": 25,
+        "length_override": 81,
+        "pingpong": False,
+        "shift_override": 12.0,
+        "loras": [],
+    },
+    # ── Full-Body Motion ─────────────────────────────────────────────────
+    {
+        "label": "Dance — slow graceful movement",
+        "prompt": "person performing slow graceful dance, flowing arm movements, "
+                  "elegant body motion, contemporary dance, expressive gesture, "
+                  "photorealistic, cinematic, dramatic studio lighting",
+        "negative": "jerky, robotic, frozen, distorted limbs, "
+                    "extra limbs, blurry, morphing",
+        "cfg_override": 5.0,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": False,
+        "shift_override": 8.0,
+        "loras": [],
+    },
+    {
+        "label": "Sport — boxing / martial arts punch",
+        "prompt": "person throwing a powerful punch in slow motion, martial arts strike, "
+                  "dynamic body rotation, muscle tension visible, action freeze frame, "
+                  "photorealistic, cinematic, dramatic lighting, shallow DOF",
+        "negative": "static, frozen, distorted limbs, extra arms, "
+                    "blurry, morphing, jerky",
+        "cfg_override": 5.0,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": False,
+        "shift_override": 10.0,
+        "loras": [],
+    },
+    # ── Underwater & Liquid ──────────────────────────────────────────────
+    {
+        "label": "Underwater — hair floating in water",
+        "prompt": "hair floating weightlessly underwater, slow motion submerged, "
+                  "dreamy underwater movement, bubbles rising, light rays through water, "
+                  "photorealistic, cinematic, teal blue lighting",
+        "negative": "static, dry, above water, distorted, "
+                    "blurry, morphing, glitching",
+        "cfg_override": 5.5,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": True,
+        "loras": [],
+    },
+    {
+        "label": "Liquid — pouring / splashing in slow-mo",
+        "prompt": "liquid pouring in ultra slow motion, smooth fluid dynamics, "
+                  "beautiful splash formation, droplets suspended in air, "
+                  "high speed photography look, photorealistic, studio lighting",
+        "negative": "static, frozen, flood, messy, "
+                    "distorted, blurry, glitching",
+        "cfg_override": 5.5,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": True,
+        "loras": [],
+    },
+    # ── Sci-Fi / Fantasy ─────────────────────────────────────────────────
+    {
+        "label": "Fantasy — magic spell / energy glow",
+        "prompt": "magical energy forming in hands, glowing particles, "
+                  "swirling magic spell effect, ethereal light, mystical power, "
+                  "fantasy art, cinematic, dramatic volumetric lighting",
+        "negative": "static, dull, dark, no effect, "
+                    "distorted, morphing, blurry",
+        "cfg_override": 6.0,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": True,
+        "loras": [],
+    },
+    {
+        "label": "Sci-Fi — hologram / digital glitch",
+        "prompt": "holographic display flickering to life, digital interface, "
+                  "futuristic hologram with subtle scan lines, sci-fi UI animation, "
+                  "cyberpunk aesthetic, cinematic, neon blue and pink lighting",
+        "negative": "static, dull, realistic, no effect, "
+                    "distorted face, morphing, blurry",
+        "cfg_override": 6.0,
         "steps_override": 30,
         "length_override": 81,
         "pingpong": True,
