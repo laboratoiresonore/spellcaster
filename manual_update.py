@@ -91,6 +91,85 @@ def discover_remote_files(prefix: str) -> list[str]:
         return None
 
 
+def _invalidate_gimp_plugin_cache():
+    """Delete GIMP's pluginrc cache to force a full plugin re-scan.
+
+    GIMP 3 caches procedure lists from do_query_procedures. When new
+    menu items are added, GIMP won't see them until the cache is deleted.
+    This is the #1 cause of 'new menu items not appearing after update'.
+    """
+    cache_paths = []
+    if platform.system() == "Windows":
+        appdata = os.environ.get("APPDATA", "")
+        if appdata:
+            cache_paths.append(Path(appdata) / "GIMP" / "3.0" / "pluginrc")
+            cache_paths.append(Path(appdata) / "GIMP" / "2.99" / "pluginrc")
+    elif platform.system() == "Darwin":
+        cache_paths.append(Path.home() / "Library" / "Application Support" / "GIMP" / "3.0" / "pluginrc")
+    else:
+        cache_paths.append(Path.home() / ".config" / "GIMP" / "3.0" / "pluginrc")
+        cache_paths.append(Path.home() / ".config" / "GIMP" / "2.99" / "pluginrc")
+
+    deleted = False
+    for p in cache_paths:
+        if p.exists():
+            try:
+                p.unlink()
+                print(f"    {G}✓{X} Deleted GIMP plugin cache: {p.name}")
+                deleted = True
+            except OSError:
+                print(f"    {Y}Could not delete {p} — GIMP may be running{X}")
+    if not deleted:
+        print(f"    {Y}No GIMP plugin cache found (OK if first install){X}")
+
+
+def _find_gimp_executable() -> str | None:
+    """Find the GIMP 3 executable on this system."""
+    if platform.system() == "Windows":
+        for pf in [Path("C:/Program Files/GIMP 3"), Path("C:/Program Files (x86)/GIMP 3")]:
+            exe = pf / "bin" / "gimp-3.0.exe"
+            if exe.exists():
+                return str(exe)
+            # Also check without version suffix
+            for g in pf.glob("bin/gimp*.exe"):
+                if "console" not in g.name.lower() and "script" not in g.name.lower():
+                    return str(g)
+    elif platform.system() == "Darwin":
+        for app in ["/Applications/GIMP-3.0.app", "/Applications/GIMP.app"]:
+            if Path(app).exists():
+                return f"open -a '{app}'"
+    else:
+        for name in ["gimp-3.0", "gimp3", "gimp"]:
+            if shutil.which(name):
+                return name
+    return None
+
+
+def restart_gimp():
+    """Offer to restart GIMP after update. Launches GIMP and exits updater."""
+    gimp_exe = _find_gimp_executable()
+    if not gimp_exe:
+        print(f"\n  {Y}Could not find GIMP executable for auto-restart.{X}")
+        print(f"  Please restart GIMP manually to apply updates.")
+        return
+
+    print(f"\n  {G}Found GIMP:{X} {gimp_exe}")
+    if _ask_yn("Restart GIMP now?", default=True):
+        print(f"\n  {C}Launching GIMP...{X}")
+        try:
+            if platform.system() == "Windows":
+                subprocess.Popen([gimp_exe], creationflags=subprocess.DETACHED_PROCESS)
+            elif platform.system() == "Darwin":
+                os.system(gimp_exe)
+            else:
+                subprocess.Popen([gimp_exe], start_new_session=True)
+            print(f"  {G}✓ GIMP launched. This updater will now exit.{X}")
+            sys.exit(0)
+        except Exception as e:
+            print(f"  {R}Failed to launch GIMP: {e}{X}")
+            print(f"  Please restart GIMP manually.")
+
+
 def banner():
     print(f"""
 {B}{C}╔══════════════════════════════════════════════════╗
@@ -732,6 +811,10 @@ def repair_and_install_gimp(plug_dir: Path, server_url: str = "http://127.0.0.1:
         except Exception:
             pass
 
+    # Step 2c: Delete GIMP's pluginrc cache to force procedure re-scan.
+    # Without this, GIMP won't see new menu items until the cache expires.
+    _invalidate_gimp_plugin_cache()
+
     # Step 3: Write config.json
     config_path = correct_dir / "config.json"
     if not config_path.exists():
@@ -1033,12 +1116,19 @@ def main():
     print(f"{B}{'═' * 50}{X}")
     print(f"{B}  UPDATE COMPLETE — version {sha}{X}")
     print(f"{B}{'═' * 50}{X}")
-    print(f"\n  {B}Next steps:{X}")
-    print(f"    1. {B}Restart GIMP 3{X} completely (close all windows first)")
-    print(f"    2. Go to {B}Filters > Spellcaster{X}")
-    print(f"    3. If still not visible, check {B}Filters > Script-Fu > Console{X}")
-    print(f"       and look for error messages about comfyui-connector")
-    print(f"    4. Make sure ComfyUI is running on your server")
+    print(f"\n  {G}Plugin cache cleared — GIMP will re-scan all plugins on next start.{X}")
+    print(f"  {G}All files updated to latest version from GitHub.{X}")
+    print()
+
+    # Offer to restart GIMP
+    restart_gimp()
+
+    # If restart was declined or failed
+    print(f"\n  {B}Manual steps:{X}")
+    print(f"    1. Close GIMP completely (all windows)")
+    print(f"    2. Reopen GIMP")
+    print(f"    3. Go to {B}Filters > Spellcaster{X}")
+    print(f"    4. New menus: {B}Spellcaster Magic Studios{X} (Casting, Body, Wardrobe, etc.)")
     print()
 
     if platform.system() == "Windows":
