@@ -10798,20 +10798,33 @@ class WanI2VDialog(Gtk.Dialog):
         pp_frame.add(pp_box)
         box.pack_start(pp_frame, False, False, 0)
 
-        # ── IP-Adapter WAN — face/style identity lock ──────────────────
-        ipa_frame = Gtk.Frame(label="  IP-Adapter — Face/Style Identity  ")
+        # ── Face Identity Lock (IP-Adapter WAN = PuLID equivalent for Wan) ──
+        ipa_frame = Gtk.Frame(label="  Face Identity Lock (Wan equivalent of PuLID)  ")
         ipa_frame.set_shadow_type(Gtk.ShadowType.ETCHED_IN)
         ipa_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         ipa_box.set_margin_start(8); ipa_box.set_margin_end(8)
         ipa_box.set_margin_top(4); ipa_box.set_margin_bottom(8)
 
-        self.ipa_check = Gtk.CheckButton(label="Enable IP-Adapter (lock face/style into generation)")
+        self.ipa_check = Gtk.CheckButton(label="Enable Face Identity Lock (IP-Adapter WAN)")
         self.ipa_check.set_active(False)
         self.ipa_check.set_tooltip_text(
-            "Inject a reference face/style DURING generation (not post-processing).\n"
-            "The AI will generate frames that natively match the reference identity.\n\n"
-            "Much better face consistency than ReActor face swap (post-processing).\n"
-            "Requires ComfyUI-IPAdapterWAN + ip-adapter.bin + siglip CLIP vision model.")
+            "Face Identity Lock — the Wan equivalent of PuLID for Flux.\n\n"
+            "Injects a reference face identity DURING video generation\n"
+            "(not pasted on afterward like ReActor). The AI generates frames\n"
+            "that natively match the reference person's face.\n\n"
+            "HOW IT COMPARES:\n"
+            "  PuLID        → for Flux/SDXL image generation (separate tool)\n"
+            "  IP-Adapter WAN → for Wan video generation (THIS feature)\n"
+            "  ReActor       → post-processing face paste (checkbox above)\n\n"
+            "WHY NOT PuLID?\n"
+            "  PuLID uses Flux-specific architecture (InsightFace + EVA-CLIP)\n"
+            "  that is incompatible with Wan's UMT5 text encoder and dual-model\n"
+            "  pipeline. IP-Adapter WAN patches Wan's attention blocks directly.\n\n"
+            "BEST PRACTICE: Enable this for identity + ReActor face swap for cleanup.\n\n"
+            "REQUIRES on ComfyUI server:\n"
+            "  - ComfyUI-IPAdapterWAN custom node\n"
+            "  - models/ipadapter/ip-adapter.bin (InstantX SD3.5-Large)\n"
+            "  - models/clip_vision/siglip_vision_patch14_384.safetensors")
         ipa_box.pack_start(self.ipa_check, False, False, 0)
 
         # Reference source selector
