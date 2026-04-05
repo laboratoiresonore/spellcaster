@@ -6223,6 +6223,8 @@ WAN_VIDEO_PRESETS = [
         "loras": [],
     },
     # ── Camera Motion ────────────────────────────────────────────────────
+    # Camera presets include recommended LoRA hints. If the LoRA exists on
+    # the server, it's auto-selected. If not found, silently skipped.
     {
         "label": "Camera — slow zoom in",
         "prompt": "slow cinematic zoom in, camera slowly pushing forward, "
@@ -6234,7 +6236,10 @@ WAN_VIDEO_PRESETS = [
         "steps_override": 30,
         "length_override": 81,
         "pingpong": False,
-        "loras": [],
+        "loras": [
+            ("WAN\\wan2.2_camera_zoom_in_high_noise.safetensors", 0.8),
+            ("WAN\\wan2.2_camera_zoom_in_low_noise.safetensors", 0.8),
+        ],
     },
     {
         "label": "Camera — slow orbit / rotate",
@@ -6247,7 +6252,10 @@ WAN_VIDEO_PRESETS = [
         "steps_override": 30,
         "length_override": 81,
         "pingpong": True,
-        "loras": [],
+        "loras": [
+            ("WAN\\wan2.2_camera_orbit_high_noise.safetensors", 0.8),
+            ("WAN\\wan2.2_camera_orbit_low_noise.safetensors", 0.8),
+        ],
     },
     {
         "label": "Camera — slow pan left/right",
@@ -6260,7 +6268,10 @@ WAN_VIDEO_PRESETS = [
         "steps_override": 30,
         "length_override": 81,
         "pingpong": True,
-        "loras": [],
+        "loras": [
+            ("WAN\\wan2.2_camera_pan_high_noise.safetensors", 0.8),
+            ("WAN\\wan2.2_camera_pan_low_noise.safetensors", 0.8),
+        ],
     },
     # ── Nature / Environment ─────────────────────────────────────────────
     {
@@ -8955,19 +8966,51 @@ _AUTOSET_CN = {
 
 # (arch, mode) -> list of (lora_name, model_strength, clip_strength)
 _AUTOSET_LORAS = {
+    # ── SDXL: Wonderful Details XL is the community gold standard ──
     ("sdxl", "img2img"): [("SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors", 0.6, 0.6)],
-    ("sdxl", "inpaint"): [],
+    ("sdxl", "txt2img"): [("SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors", 0.5, 0.5)],
+    ("sdxl", "inpaint"): [("SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors", 0.3, 0.3)],
     ("sdxl", "hallucinate"): [("SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors", 0.5, 0.5)],
     ("sdxl", "seedv2r"): [("SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors", 0.5, 0.5)],
     ("sdxl", "style"): [],
     ("sdxl", "supir"): [],
-    ("flux1dev", "img2img"): [],
+    # ── Flux: Sharp Details for Klein, Realism for Dev ──
+    ("flux1dev", "img2img"): [("Flux\\xlabs_flux_realism_lora_comfyui.safetensors", 0.5, 0.5)],
+    ("flux1dev", "txt2img"): [("Flux\\xlabs_flux_realism_lora_comfyui.safetensors", 0.5, 0.5)],
     ("flux1dev", "inpaint"): [],
     ("flux2klein", "img2img"): [("Flux-2-Klein\\K9bSh4rpD3tails.safetensors", 0.5, 0.5)],
-    ("sd15", "img2img"): [],
-    ("sd15", "hallucinate"): [],
+    ("flux2klein", "txt2img"): [("Flux-2-Klein\\K9bSh4rpD3tails.safetensors", 0.5, 0.5)],
+    # ── SD1.5: add_detail is the classic ──
+    ("sd15", "img2img"): [("SD15\\add_detail.safetensors", 0.5, 0.5)],
+    ("sd15", "txt2img"): [("SD15\\add_detail.safetensors", 0.5, 0.5)],
+    ("sd15", "hallucinate"): [("SD15\\add_detail.safetensors", 0.5, 0.5)],
+    # ── Illustrious/ZIT: use SDXL detail LoRAs (compatible) ──
+    ("illustrious", "img2img"): [("SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors", 0.4, 0.4)],
+    ("illustrious", "txt2img"): [("SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors", 0.4, 0.4)],
     ("zit", "img2img"): [],
-    ("illustrious", "img2img"): [],
+    ("zit", "txt2img"): [],
+}
+
+# ── Realism LoRA Recommendations ─────────────────────────────────────────
+# Well-known community LoRAs that dramatically boost photorealism per arch.
+# These are checked against the server LoRA list — if not found, silently skipped.
+DETAIL_LORAS = {
+    "sdxl": [
+        ("SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors", 0.5, "Wonderful Details XL — micro-detail, pores, texture"),
+        ("SDXL\\Detail\\add-detail-xl.safetensors", 0.5, "Add Detail XL — classic detail enhancer"),
+        ("SDXL\\RealismLoRA_SDXL.safetensors", 0.4, "Realism LoRA — photorealism boost"),
+    ],
+    "flux1dev": [
+        ("Flux\\xlabs_flux_realism_lora_comfyui.safetensors", 0.5, "XLabs Realism — photorealism for Flux"),
+        ("Flux\\flux_realism_lora.safetensors", 0.4, "Flux Realism LoRA — community standard"),
+    ],
+    "flux2klein": [
+        ("Flux-2-Klein\\K9bSh4rpD3tails.safetensors", 0.5, "K9b Sharp Details — Klein detail enhancer"),
+    ],
+    "sd15": [
+        ("SD15\\add_detail.safetensors", 0.5, "Add Detail — the original detail LoRA"),
+        ("SD15\\more_details.safetensors", 0.4, "More Details — complementary to add_detail"),
+    ],
 }
 
 
