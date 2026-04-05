@@ -12079,6 +12079,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-wan-i2v": "wan_i2v",
             "spellcaster-wan-flf": "wan_i2v",
             "spellcaster-wan-director": "wan_i2v",
+            "spellcaster-wan-director-duo": "wan_i2v",
             "spellcaster-video-upscale": "wan_i2v",
             "spellcaster-video-reactor": "wan_i2v",
             "spellcaster-seedvr2-video": "seedv2r",
@@ -12163,6 +12164,8 @@ class Spellcaster(Gimp.PlugIn):
                                      "Generate video transitioning between two keyframes using Wan 2.2"),
             "spellcaster-wan-director": ("Wan Director (multi-step video)...", self._run_wan_director,
                                         "Plan, generate, and assemble multi-step video sequences with variations"),
+            "spellcaster-wan-director-duo": ("Wan Director — Two Actors...", self._run_wan_director_duo,
+                                              "Multi-step video with two characters and dual face tracking"),
             "spellcaster-video-upscale": ("Video Upscale (RTX + Model)...", self._run_video_upscale,
                                            "Upscale a video with model + RTX super-resolution"),
             "spellcaster-video-reactor": ("Video Face Swap + Upscale...", self._run_video_reactor,
@@ -12251,6 +12254,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-wan-i2v":           "<Image>/Filters/Spellcaster Video",
             "spellcaster-wan-flf":           "<Image>/Filters/Spellcaster Video",
             "spellcaster-wan-director":      "<Image>/Filters/Spellcaster Video",
+            "spellcaster-wan-director-duo":  "<Image>/Filters/Spellcaster Video",
             "spellcaster-video-upscale":     "<Image>/Filters/Spellcaster Video",
             "spellcaster-video-reactor":     "<Image>/Filters/Spellcaster Video",
             "spellcaster-seedvr2-video":    "<Image>/Filters/Spellcaster Video",
@@ -12843,6 +12847,394 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Wan FLF Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Wan Director — Two Actors ──────────────────────────────────────
+    def _run_wan_director_duo(self, procedure, run_mode, image, drawables, config, data):
+        """Wan Director for two-actor scenes with dual face tracking."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+
+        # ── Duo Director Script Presets ──────────────────────────────
+        DUO_SCRIPTS = {
+            "(blank — manual setup)": None,
+            "Conversation: Two People Talking (3 steps)": {
+                "description": "Face-to-face dialogue: establish → Actor A speaks → Actor B responds",
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "steps": [
+                    {"mode": "i2v", "prompt": "two people facing each other in conversation, establishing shot, both visible, natural body language, photorealistic, cinematic",
+                     "negative": "merged faces, blob, distorted, blurry", "shift": 5.0, "cfg": 1.0, "length": 81},
+                    {"mode": "i2v", "prompt": "close-up on first person speaking, expressive gestures, natural mouth movement, the other person listening in background, cinematic",
+                     "negative": "merged faces, distorted, blurry", "shift": 3.0, "cfg": 2.0, "length": 81},
+                    {"mode": "i2v", "prompt": "close-up on second person responding, nodding, reactive expression, first person visible in soft focus background, cinematic",
+                     "negative": "merged faces, distorted, blurry", "shift": 3.0, "cfg": 2.0, "length": 81},
+                ],
+            },
+            "Dance: Couple Slow Dance (3 steps)": {
+                "description": "Romantic dance: approach → dance together → dip/finale",
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "steps": [
+                    {"mode": "i2v", "prompt": "two people approaching each other, extending hands, about to dance, romantic atmosphere, photorealistic, cinematic lighting",
+                     "negative": "merged bodies, blob, distorted, blurry", "shift": 8.0, "cfg": 1.0, "length": 81},
+                    {"mode": "loop", "prompt": "couple slow dancing together, gentle swaying, hands on waist and shoulder, romantic, photorealistic, cinematic",
+                     "negative": "merged blob, distorted limbs, extra arms, blurry", "shift": 10.0, "cfg": 1.0, "length": 81},
+                    {"mode": "i2v", "prompt": "dance dip finale, one person leaning back supported by partner, romantic climax, dramatic pose, photorealistic, cinematic",
+                     "negative": "falling, dropping, merged, distorted, blurry", "shift": 10.0, "cfg": 1.0, "length": 81},
+                ],
+            },
+            "Drama: Confrontation (3 steps)": {
+                "description": "Tense scene: stare-down → argument → one walks away",
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "steps": [
+                    {"mode": "i2v", "prompt": "two people in tense stare-down, facing each other, intense eye contact, dramatic tension, photorealistic, cinematic noir lighting",
+                     "negative": "smiling, happy, merged, distorted, blurry", "shift": 3.0, "cfg": 2.0, "length": 81},
+                    {"mode": "i2v", "prompt": "heated argument, aggressive gestures, one person pointing, the other defensive, intense confrontation, photorealistic, dramatic",
+                     "negative": "calm, merged bodies, distorted, blurry", "shift": 8.0, "cfg": 1.5, "length": 81},
+                    {"mode": "i2v", "prompt": "one person turning away and walking off, the other standing stunned, aftermath of argument, photorealistic, cinematic",
+                     "negative": "both static, merged, distorted, blurry", "shift": 5.0, "cfg": 1.5, "length": 81},
+                ],
+            },
+            "Action: Two-Person Fight (3 steps)": {
+                "description": "Combat: stance-off → exchange blows → victor",
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "steps": [
+                    {"mode": "i2v", "prompt": "two fighters in combat stances facing each other, martial arts, tension before strike, photorealistic, cinematic action",
+                     "negative": "relaxed, merged, distorted limbs, blurry", "shift": 10.0, "cfg": 1.0, "length": 81},
+                    {"mode": "i2v", "prompt": "rapid exchange of punches and blocks, dynamic martial arts combat, both fighters engaged, cinematic slow motion action",
+                     "negative": "static, merged blob, distorted, blurry", "shift": 12.0, "cfg": 1.0, "length": 81},
+                    {"mode": "i2v", "prompt": "one fighter delivering final strike, the other reeling back, decisive blow, dramatic action climax, cinematic",
+                     "negative": "both standing, merged, distorted, blurry", "shift": 12.0, "cfg": 1.0, "length": 81},
+                ],
+            },
+            # ── NSFW_DIRECTOR_DUO_INJECTION_POINT ──
+        }
+
+        # ═══════════════════════════════════════════════════════════════
+        # DIALOG 1: ACTOR SETUP — face references + script selection
+        # ═══════════════════════════════════════════════════════════════
+        setup_dlg = Gtk.Dialog(title="Spellcaster — Wan Director: Two Actors Setup")
+        setup_dlg.set_default_size(580, -1)
+        setup_dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        setup_dlg.add_button("_Next: Plan Sequence", Gtk.ResponseType.OK)
+        setup_dlg.set_default_response(Gtk.ResponseType.OK)
+        _style_dialog_buttons(setup_dlg)
+        bx = setup_dlg.get_content_area()
+        bx.set_spacing(6); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(10); bx.set_margin_bottom(10)
+
+        _hdr = _make_branded_header()
+        if _hdr: bx.pack_start(_hdr, False, False, 0)
+
+        bx.pack_start(Gtk.Label(
+            label="Two-Actor Director generates multi-step video with two characters.\n"
+                  "Upload a reference face for each actor. ReActor will track and\n"
+                  "re-inject the correct face on each character between steps.\n\n"
+                  "FACE MAPPING: Actor A = closer/larger face. Actor B = farther/smaller.\n"
+                  "Position your actors accordingly in the start image.",
+            xalign=0), False, False, 4)
+
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
+        hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+
+        # Actor A face reference
+        a_frame = Gtk.Frame(label="  Actor A (closer/left/larger face)  ")
+        a_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        a_box.set_margin_start(8); a_box.set_margin_end(8)
+        a_box.set_margin_top(4); a_box.set_margin_bottom(8)
+        a_src_combo = Gtk.ComboBoxText()
+        a_src_combo.append("canvas", "Use face from canvas (start image)")
+        a_src_combo.append("file", "Upload separate face photo...")
+        a_src_combo.set_active_id("canvas")
+        a_src_combo.set_tooltip_text(
+            "Actor A face reference.\n\n"
+            "'Canvas' = uses the start image. Best if Actor A's face is clearly\n"
+            "visible and is the FIRST (leftmost/closest) face detected.\n\n"
+            "'Upload' = pick a dedicated headshot of Actor A for best matching.")
+        a_box.pack_start(a_src_combo, False, False, 0)
+        a_chooser = Gtk.FileChooserButton(title="Actor A face reference")
+        a_chooser.set_action(Gtk.FileChooserAction.OPEN)
+        ff = Gtk.FileFilter(); ff.set_name("Images"); ff.add_pattern("*.png"); ff.add_pattern("*.jpg"); ff.add_pattern("*.jpeg")
+        a_chooser.add_filter(ff)
+        a_chooser.set_sensitive(False)
+        a_box.pack_start(a_chooser, False, False, 0)
+        def _a_src_changed(c): a_chooser.set_sensitive(c.get_active_id() == "file")
+        a_src_combo.connect("changed", _a_src_changed)
+        a_frame.add(a_box); bx.pack_start(a_frame, False, False, 0)
+
+        # Actor B face reference
+        b_frame = Gtk.Frame(label="  Actor B (farther/right/smaller face)  ")
+        b_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        b_box.set_margin_start(8); b_box.set_margin_end(8)
+        b_box.set_margin_top(4); b_box.set_margin_bottom(8)
+        b_chooser = Gtk.FileChooserButton(title="Actor B face reference")
+        b_chooser.set_action(Gtk.FileChooserAction.OPEN)
+        b_chooser.add_filter(ff)
+        b_chooser.set_tooltip_text(
+            "Actor B face reference — REQUIRED.\n\n"
+            "Upload a clear headshot of the second actor.\n"
+            "This face will be mapped to the SECOND detected face\n"
+            "(right/farther/smaller) in each generated frame.")
+        b_box.pack_start(Gtk.Label(label="Upload Actor B face photo:", xalign=0), False, False, 0)
+        b_box.pack_start(b_chooser, False, False, 0)
+        b_frame.add(b_box); bx.pack_start(b_frame, False, False, 0)
+
+        # Face mapping strategy
+        map_frame = Gtk.Frame(label="  Face Tracking Strategy  ")
+        map_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        map_box.set_margin_start(8); map_box.set_margin_end(8)
+        map_box.set_margin_top(4); map_box.set_margin_bottom(8)
+        map_combo = Gtk.ComboBoxText()
+        map_combo.append("left-right", "Left → Right (Actor A is left, B is right)")
+        map_combo.append("size", "Larger → Smaller (Actor A is closer/bigger)")
+        map_combo.set_active_id("left-right")
+        map_combo.set_tooltip_text(
+            "How ReActor identifies which face is Actor A vs Actor B.\n\n"
+            "Left→Right: Actor A = leftmost face, Actor B = rightmost.\n"
+            "  Best for side-by-side scenes, conversations, facing each other.\n\n"
+            "Larger→Smaller: Actor A = closest/biggest face, Actor B = farther.\n"
+            "  Best for POV scenes or depth-separated compositions.\n\n"
+            "TIP: Position your actors in the start image to match this strategy.")
+        map_box.pack_start(map_combo, False, False, 0)
+        map_frame.add(map_box); bx.pack_start(map_frame, False, False, 0)
+
+        # Script template
+        bx.pack_start(Gtk.Label(label="Script Template:", xalign=0), False, False, 0)
+        script_combo = Gtk.ComboBoxText()
+        script_combo.set_tooltip_text(
+            "Pre-made two-actor sequences — auto-fills steps, modes, prompts.\n"
+            "Select a template, then customize in the per-step dialogs.")
+        for label in DUO_SCRIPTS:
+            script_combo.append(label, label)
+        script_combo.set_active(0)
+        bx.pack_start(script_combo, False, False, 0)
+
+        # Plan controls
+        grid = Gtk.Grid(column_spacing=8, row_spacing=6)
+        grid.attach(Gtk.Label(label="Steps:"), 0, 0, 1, 1)
+        steps_sp = Gtk.SpinButton.new_with_range(1, 5, 1); steps_sp.set_value(3)
+        steps_sp.set_tooltip_text("Number of video clips in the sequence (1-5)")
+        grid.attach(steps_sp, 1, 0, 1, 1)
+        grid.attach(Gtk.Label(label="Variations:"), 2, 0, 1, 1)
+        vars_sp = Gtk.SpinButton.new_with_range(1, 3, 1); vars_sp.set_value(2)
+        vars_sp.set_tooltip_text("Versions per step — pick the best in editing room")
+        grid.attach(vars_sp, 3, 0, 1, 1)
+
+        reinject_check = Gtk.CheckButton(label="Re-inject both faces between steps")
+        reinject_check.set_active(True)
+        reinject_check.set_tooltip_text(
+            "After each step, run TWO ReActor passes on the chain frame:\n"
+            "  Pass 1: Swap face index 0 with Actor A reference\n"
+            "  Pass 2: Swap face index 1 with Actor B reference\n\n"
+            "This prevents face drift across multi-step sequences.\n"
+            "The face mapping strategy above determines which index is which.")
+        grid.attach(reinject_check, 0, 1, 4, 1)
+        bx.pack_start(grid, False, False, 4)
+
+        # Per-step modes
+        mode_combos = []
+        modes_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        def _rebuild_modes(*_a):
+            for child in modes_box.get_children(): modes_box.remove(child)
+            mode_combos.clear()
+            for s in range(int(steps_sp.get_value())):
+                row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+                row.pack_start(Gtk.Label(label=f"Step {s+1}:"), False, False, 0)
+                c = Gtk.ComboBoxText()
+                c.append("i2v", "Image to Video"); c.append("loop", "Looping Video"); c.append("flf", "First + Last Frame")
+                c.set_active_id("i2v")
+                row.pack_start(c, True, True, 0); modes_box.pack_start(row, False, False, 0); mode_combos.append(c)
+            modes_box.show_all()
+        steps_sp.connect("value-changed", _rebuild_modes); _rebuild_modes()
+        bx.pack_start(modes_box, False, False, 0)
+
+        # Script auto-fill
+        def _on_duo_script(combo):
+            key = combo.get_active_id()
+            script = DUO_SCRIPTS.get(key) if key else None
+            if not script: return
+            steps_sp.set_value(script["num_steps"]); vars_sp.set_value(script["variations"])
+            reinject_check.set_active(True)
+            GLib.idle_add(lambda: [mode_combos[i].set_active_id(s["mode"]) for i, s in enumerate(script["steps"]) if i < len(mode_combos)])
+        script_combo.connect("changed", _on_duo_script)
+
+        bx.show_all()
+        if setup_dlg.run() != Gtk.ResponseType.OK:
+            setup_dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        srv = srv_e.get_text().strip(); _propagate_server_url(srv)
+        num_steps = int(steps_sp.get_value())
+        num_vars = int(vars_sp.get_value())
+        face_reinject = reinject_check.get_active()
+        face_order = map_combo.get_active_id() or "left-right"
+        a_source = a_src_combo.get_active_id()
+        a_file = a_chooser.get_filename()
+        b_file = b_chooser.get_filename()
+        step_modes = [c.get_active_id() or "i2v" for c in mode_combos]
+        sel_script_key = script_combo.get_active_id()
+        sel_script = DUO_SCRIPTS.get(sel_script_key) if sel_script_key else None
+        setup_dlg.destroy()
+
+        if not b_file:
+            Gimp.message("Actor B face reference is required.")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+        # ═══════════════════════════════════════════════════════════════
+        # DIALOG 2..N: PER-STEP CONFIG (reuses WanI2VDialog)
+        # ═══════════════════════════════════════════════════════════════
+        step_configs = []
+        for step_idx in range(num_steps):
+            mode = step_modes[step_idx]
+            step_dlg = WanI2VDialog()
+            step_dlg.set_title(f"Two Actors — Step {step_idx+1}/{num_steps} ({mode.upper()})")
+            # Pre-fill from script
+            if sel_script and step_idx < len(sel_script["steps"]):
+                sp = sel_script["steps"][step_idx]
+                step_dlg.prompt_tv.get_buffer().set_text(sp.get("prompt", ""))
+                step_dlg.neg_tv.get_buffer().set_text(sp.get("negative", ""))
+                if sp.get("shift") is not None: step_dlg.shift_spin.set_value(sp["shift"])
+                if sp.get("cfg") is not None: step_dlg.cfg_spin.set_value(sp["cfg"])
+                if sp.get("length") is not None: step_dlg.length_spin.set_value(sp["length"])
+
+            content = step_dlg.get_content_area()
+            content.show_all()
+            if step_dlg.run() != Gtk.ResponseType.OK:
+                step_dlg.destroy()
+                return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+            v = step_dlg.get_values(); v["mode"] = mode
+            step_configs.append(v); step_dlg.destroy()
+
+        # ═══════════════════════════════════════════════════════════════
+        # EXECUTION — generate + dual face re-injection between steps
+        # ═══════════════════════════════════════════════════════════════
+        try:
+            # Export start image
+            tmp = _export_image_to_tmp(image)
+            start_name = f"gimp_duo_start_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, start_name); os.unlink(tmp)
+
+            # Upload Actor A face ref
+            if a_source == "file" and a_file:
+                a_ref_name = f"gimp_duo_faceA_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, a_file, a_ref_name)
+            else:
+                a_ref_name = start_name  # use start image as Actor A face
+
+            # Upload Actor B face ref
+            b_ref_name = f"gimp_duo_faceB_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, b_file, b_ref_name)
+
+            current_start = start_name
+            all_results = []
+
+            for step_idx in range(num_steps):
+                v = step_configs[step_idx]
+                mode = v["mode"]
+                step_results = []
+
+                for var_idx in range(num_vars):
+                    seed = random.randint(0, 2**32 - 1)
+                    wf = _build_wan_video(
+                        current_start, v["preset_key"], v["prompt"], v["negative"], seed,
+                        width=v["width"], height=v["height"], length=v["length"],
+                        steps=v["steps"], cfg=v["cfg"], shift=v.get("shift"),
+                        second_step=v["second_step"],
+                        turbo=v.get("turbo", True), loop=(mode == "loop"),
+                        loras_high=v.get("loras_high"), loras_low=v.get("loras_low"),
+                        all_server_loras=v.get("all_server_loras"),
+                        server_url=srv,
+                        rtx_scale=v.get("upscale_factor", 2.5),
+                        interpolate=v.get("interpolate", True),
+                        face_swap=False,  # we handle face swap manually with dual actors
+                        teacache=v.get("teacache", False),
+                        tiled_vae=v.get("tiled_vae", False),
+                        pingpong=False, fps=v["fps"])
+
+                    label = f"Duo Step {step_idx+1} Var {var_idx+1}"
+                    _wf = wf
+                    results = _run_with_spinner(
+                        f"Director Duo: {label} ({mode})...",
+                        lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
+                    step_results.append(results)
+
+                all_results.append(step_results)
+
+                # Chain to next step: get last frame from first variation
+                png_frames = [fn for fn, sf, ft in step_results[0] if fn.lower().endswith(".png")]
+                if png_frames and step_idx < num_steps - 1:
+                    frame_data = _download_image(srv, png_frames[0], "", "output")
+                    next_start = f"gimp_duo_chain_{step_idx}_{uuid.uuid4().hex[:8]}.png"
+                    tmp_chain = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                    tmp_chain.write(frame_data); tmp_chain.close()
+                    _upload_image(srv, tmp_chain.name, next_start)
+                    os.unlink(tmp_chain.name)
+
+                    # Dual face re-injection
+                    if face_reinject:
+                        face_input_order = "left-right" if face_order == "left-right" else "large-small"
+                        try:
+                            # Pass 1: Actor A → face index 0
+                            wf_a = _build_faceswap(
+                                next_start, a_ref_name,
+                                swap_model="inswapper_128.onnx",
+                                face_restore_model="codeformer-v0.1.0.pth",
+                                face_restore_vis=0.7, codeformer_weight=0.5,
+                                input_face_idx="0", source_face_idx="0")
+                            res_a = _run_with_spinner(
+                                f"Step {step_idx+1}: re-inject Actor A face...",
+                                lambda: list(_run_comfyui_workflow(srv, wf_a, timeout=120)))
+                            # Get the result and upload for Pass 2
+                            for fn, sf, ft in res_a:
+                                if fn.lower().endswith(".png"):
+                                    a_data = _download_image(srv, fn, sf, ft)
+                                    a_out = f"gimp_duo_reA_{step_idx}_{uuid.uuid4().hex[:8]}.png"
+                                    tmp_a = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                                    tmp_a.write(a_data); tmp_a.close()
+                                    _upload_image(srv, tmp_a.name, a_out)
+                                    os.unlink(tmp_a.name)
+
+                                    # Pass 2: Actor B → face index 1
+                                    wf_b = _build_faceswap(
+                                        a_out, b_ref_name,
+                                        swap_model="inswapper_128.onnx",
+                                        face_restore_model="codeformer-v0.1.0.pth",
+                                        face_restore_vis=0.7, codeformer_weight=0.5,
+                                        input_face_idx="1", source_face_idx="0")
+                                    res_b = _run_with_spinner(
+                                        f"Step {step_idx+1}: re-inject Actor B face...",
+                                        lambda: list(_run_comfyui_workflow(srv, wf_b, timeout=120)))
+                                    for fn2, sf2, ft2 in res_b:
+                                        if fn2.lower().endswith(".png"):
+                                            b_data = _download_image(srv, fn2, sf2, ft2)
+                                            b_out = f"gimp_duo_reB_{step_idx}_{uuid.uuid4().hex[:8]}.png"
+                                            tmp_b = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                                            tmp_b.write(b_data); tmp_b.close()
+                                            _upload_image(srv, tmp_b.name, b_out)
+                                            os.unlink(tmp_b.name)
+                                            next_start = b_out
+                                    break
+                        except Exception:
+                            pass  # face reinject failed — continue without
+
+                    current_start = next_start
+
+            # Import last frames
+            for step_idx, step_results in enumerate(all_results):
+                for var_idx, results in enumerate(step_results):
+                    for fn, sf, ft in results:
+                        if fn.lower().endswith(".png") and "lastframe" in fn.lower():
+                            lbl = f"Duo S{step_idx+1}V{var_idx+1}"
+                            _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            Gimp.message("Two-Actor Director complete!\nLast frames imported. MP4s in ComfyUI output folder.")
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Director Duo Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     # ── Video Upscale (V2R) ────────────────────────────────────────────
