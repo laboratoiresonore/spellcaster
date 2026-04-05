@@ -15224,11 +15224,128 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
 
+        # ── Director Script Presets ──────────────────────────────────
+        DIRECTOR_SCRIPTS = {
+            "(blank — manual setup)": None,
+            # ── Cinematic / Story ────────────────────────────────────
+            "Cinematic: Dramatic Reveal (3 steps)": {
+                "description": "Camera slowly reveals subject: wide shot → medium → close-up",
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "face_reinject": True,
+                "steps": [
+                    {"mode": "i2v", "prompt": "slow cinematic wide shot establishing the scene, subject small in frame, atmospheric, professional cinematography, 4K",
+                     "negative": "shaky, fast movement, distorted, blurry", "shift": 5.0, "cfg": 1.0, "length": 81},
+                    {"mode": "i2v", "prompt": "smooth dolly in to medium shot, subject becoming clearer, cinematic camera movement, professional focus pull",
+                     "negative": "shaky, jerky, distorted, blurry", "shift": 5.0, "cfg": 1.0, "length": 81},
+                    {"mode": "i2v", "prompt": "intimate close-up portrait, subtle micro-expressions, shallow depth of field, cinematic lighting, detailed skin texture",
+                     "negative": "wide shot, distorted face, blurry, jerky", "shift": 1.0, "cfg": 2.0, "length": 81},
+                ],
+            },
+            "Cinematic: Walk & Talk (3 steps)": {
+                "description": "Person walking while talking/gesturing, scene progresses",
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "face_reinject": True,
+                "steps": [
+                    {"mode": "i2v", "prompt": "person starts walking forward naturally, confident stride, natural arm swing, cinematic tracking shot, photorealistic",
+                     "negative": "static, floating, moonwalk, distorted limbs, blurry", "shift": 8.0, "cfg": 1.0, "length": 81},
+                    {"mode": "i2v", "prompt": "person continues walking, making expressive hand gestures while talking, natural body language, cinematic side view",
+                     "negative": "static, frozen, distorted, extra limbs, blurry", "shift": 8.0, "cfg": 1.0, "length": 81},
+                    {"mode": "i2v", "prompt": "person stops walking, turns to face camera, subtle smile, confident pose, cinematic lighting, photorealistic",
+                     "negative": "continued walking, distorted, blurry, jerky", "shift": 3.0, "cfg": 1.0, "length": 81},
+                ],
+            },
+            "Cinematic: Emotion Arc (4 steps)": {
+                "description": "Emotional journey: neutral → tension → climax → resolution",
+                "num_steps": 4, "variations": 2, "loop_count": 1,
+                "face_reinject": True,
+                "steps": [
+                    {"mode": "i2v", "prompt": "person with calm neutral expression, subtle breathing, peaceful idle, photorealistic portrait, soft lighting",
+                     "negative": "exaggerated, distorted, blurry", "shift": 1.0, "cfg": 2.0, "length": 81},
+                    {"mode": "i2v", "prompt": "expression slowly shifting to concern, brow furrowing, tension building, subtle worry, photorealistic, cinematic",
+                     "negative": "smiling, happy, distorted, blurry", "shift": 1.0, "cfg": 2.0, "length": 81},
+                    {"mode": "i2v", "prompt": "emotional climax, eyes welling with tears, intense vulnerable expression, photorealistic close-up, dramatic lighting",
+                     "negative": "neutral, calm, distorted, blurry", "shift": 1.0, "cfg": 2.0, "length": 81},
+                    {"mode": "i2v", "prompt": "gradual relief, tension releasing, gentle warm smile emerging, eyes brightening, photorealistic, warm lighting",
+                     "negative": "crying, sad, distorted, blurry", "shift": 1.0, "cfg": 2.0, "length": 81},
+                ],
+            },
+            # ── Action / VFX ─────────────────────────────────────────
+            "Action: Fight Sequence (3 steps)": {
+                "description": "Martial arts fight: stance → attack → impact",
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "face_reinject": True,
+                "steps": [
+                    {"mode": "i2v", "prompt": "person takes martial arts fighting stance, weight shifting, fists raising, intense focus, photorealistic, cinematic",
+                     "negative": "static, relaxed, distorted, blurry", "shift": 10.0, "cfg": 1.0, "length": 81},
+                    {"mode": "i2v", "prompt": "powerful punch thrown in slow motion, body rotating, dynamic motion blur, martial arts strike, cinematic action",
+                     "negative": "static, slow, distorted limbs, blurry", "shift": 10.0, "cfg": 1.0, "length": 81},
+                    {"mode": "i2v", "prompt": "impact reaction, dramatic slow motion, shockwave effect, person recovering stance, cinematic action photography",
+                     "negative": "static, frozen, distorted, blurry", "shift": 10.0, "cfg": 1.0, "length": 81},
+                ],
+            },
+            "VFX: Transformation Sequence (3 steps)": {
+                "description": "Subject transforms: normal → energy build → new form",
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "face_reinject": False,
+                "steps": [
+                    {"mode": "i2v", "prompt": "person standing calmly, subtle energy particles beginning to appear, faint glow, photorealistic, cinematic",
+                     "negative": "static, no effects, distorted, blurry", "shift": 5.0, "cfg": 1.0, "length": 81},
+                    {"mode": "i2v", "prompt": "intense energy building around person, glowing aura intensifying, particles swirling, hair floating, dramatic VFX, cinematic",
+                     "negative": "calm, no energy, distorted, blurry", "shift": 8.0, "cfg": 1.0, "length": 81},
+                    {"mode": "i2v", "prompt": "explosive transformation complete, radiant energy form, powerful new appearance, dramatic lighting burst, cinematic VFX climax",
+                     "negative": "normal, no change, distorted, blurry", "shift": 8.0, "cfg": 1.0, "length": 81},
+                ],
+            },
+            # ── Product / Commercial ─────────────────────────────────
+            "Product: Unboxing Reveal (3 steps)": {
+                "description": "Product reveal: box → opening → hero shot",
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "face_reinject": False,
+                "steps": [
+                    {"mode": "i2v", "prompt": "elegant product box on clean surface, dramatic studio lighting, anticipation building, slow camera approach, commercial quality",
+                     "negative": "cheap, cluttered, distorted, blurry", "shift": 5.0, "cfg": 5.0, "length": 81},
+                    {"mode": "i2v", "prompt": "box opening to reveal product inside, satisfying unboxing motion, premium packaging, studio lighting, commercial photography",
+                     "negative": "closed, static, distorted, blurry", "shift": 5.0, "cfg": 5.0, "length": 81},
+                    {"mode": "i2v", "prompt": "product hero shot with sparkling light effects, slow rotation, premium presentation, lens flare, commercial advertisement quality",
+                     "negative": "dull, static, distorted, blurry, cheap", "shift": 5.0, "cfg": 5.0, "length": 81},
+                ],
+            },
+            # ── Nature / Timelapse ───────────────────────────────────
+            "Nature: Day Cycle (4 steps)": {
+                "description": "Full day cycle: dawn → midday → sunset → night",
+                "num_steps": 4, "variations": 1, "loop_count": 1,
+                "face_reinject": False,
+                "steps": [
+                    {"mode": "i2v", "prompt": "dawn breaking, first golden light of day, pink and orange sky, morning mist clearing, photorealistic landscape, cinematic",
+                     "negative": "midday, dark, distorted, blurry", "shift": 3.0, "cfg": 5.0, "length": 81},
+                    {"mode": "i2v", "prompt": "bright midday sunlight, clear blue sky, full daylight, sharp shadows, vivid colors, photorealistic landscape",
+                     "negative": "dark, sunset, distorted, blurry", "shift": 3.0, "cfg": 5.0, "length": 81},
+                    {"mode": "i2v", "prompt": "golden hour sunset, warm orange and red sky, long dramatic shadows, silhouettes, photorealistic landscape, cinematic",
+                     "negative": "midday, bright, distorted, blurry", "shift": 3.0, "cfg": 5.0, "length": 81},
+                    {"mode": "i2v", "prompt": "night falling, stars appearing, moonlight, blue hour to darkness, peaceful nocturnal scene, photorealistic",
+                     "negative": "daylight, bright sun, distorted, blurry", "shift": 3.0, "cfg": 5.0, "length": 81},
+                ],
+            },
+            # ── Living Portrait ──────────────────────────────────────
+            "Portrait: Living Photo Loop (2 steps)": {
+                "description": "Still photo comes alive with subtle movement, then loops",
+                "num_steps": 2, "variations": 2, "loop_count": 3,
+                "face_reinject": True,
+                "steps": [
+                    {"mode": "i2v", "prompt": "person subtly breathing, gentle micro-movements, natural blinking, lifelike idle animation, photorealistic, cinematic",
+                     "negative": "static, frozen, jerky, exaggerated, blurry", "shift": 1.0, "cfg": 2.0, "length": 81},
+                    {"mode": "loop", "prompt": "gentle smile forming, slight head movement, hair swaying softly, natural living portrait, photorealistic, seamless loop",
+                     "negative": "static, jerky, exaggerated, distorted, blurry", "shift": 1.0, "cfg": 2.0, "length": 81},
+                ],
+            },
+            # ── NSFW_DIRECTOR_INJECTION_POINT ──
+        }
+
         # ═══════════════════════════════════════════════════════════════
         # DIALOG 1: PLAN — steps, loops, modes, variations
         # ═══════════════════════════════════════════════════════════════
         plan_dlg = Gtk.Dialog(title="Spellcaster — Wan Director: Plan")
-        plan_dlg.set_default_size(520, -1)
+        plan_dlg.set_default_size(560, -1)
         plan_dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
         plan_dlg.add_button("_Next: Configure Steps", Gtk.ResponseType.OK)
         bx = plan_dlg.get_content_area()
@@ -15243,6 +15360,20 @@ class Spellcaster(Gimp.PlugIn):
                   "Steps are chained: the last frame of each clip becomes\n"
                   "the first frame of the next. Up to 3 variations per step."),
             False, False, 4)
+
+        # Script template selector
+        bx.pack_start(Gtk.Label(label="Script Template:", xalign=0), False, False, 0)
+        script_combo = Gtk.ComboBoxText()
+        script_combo.set_tooltip_text(
+            "Pre-made multi-step sequences — auto-fills steps, modes, and prompts.\n\n"
+            "Select a template to get started quickly. You can modify every\n"
+            "setting in the per-step dialogs that follow.\n\n"
+            "Templates include optimized shift, CFG, and prompt for each step.\n"
+            "Face re-injection keeps identity consistent across all steps.")
+        for label in DIRECTOR_SCRIPTS:
+            script_combo.append(label, label)
+        script_combo.set_active(0)
+        bx.pack_start(script_combo, False, False, 0)
 
         # Server
         hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -15268,12 +15399,103 @@ class Spellcaster(Gimp.PlugIn):
         loop_sp.set_value(1)
         loop_sp.set_tooltip_text("Play each selected clip N times in the final cut.\n1 = no loop, 2 = play twice, etc.")
         grid.attach(loop_sp, 1, 1, 1, 1)
+
+        # Face re-injection toggle
+        face_reinject_check = Gtk.CheckButton(label="Re-inject face each step")
+        face_reinject_check.set_active(True)
+        face_reinject_check.set_tooltip_text(
+            "Face Re-injection — preserves identity across Director steps.\n\n"
+            "After each step, the face from your original start image is\n"
+            "swapped onto the last frame BEFORE it's used as input for the\n"
+            "next step. This prevents face drift across long sequences.\n\n"
+            "Uses ReActor face swap between steps (not during generation).\n"
+            "Disable if your scene has no face or if using IP-Adapter identity lock.")
+        grid.attach(face_reinject_check, 2, 1, 2, 1)
         bx.pack_start(grid, False, False, 4)
 
         # Per-step mode selector
         bx.pack_start(Gtk.Label(label="Mode per step:", xalign=0), False, False, 2)
         mode_combos = []
         modes_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+
+        # Script template auto-fill
+        def _on_script_changed(combo):
+            key = combo.get_active_id()
+            if not key or key == "(blank — manual setup)":
+                return
+            script = DIRECTOR_SCRIPTS.get(key)
+            if not script:
+                return
+            steps_sp.set_value(script["num_steps"])
+            vars_sp.set_value(script["variations"])
+            loop_sp.set_value(script["loop_count"])
+            face_reinject_check.set_active(script.get("face_reinject", True))
+            # Update mode combos (after rebuild triggers)
+            GLib.idle_add(lambda: _apply_script_modes(script))
+        def _apply_script_modes(script):
+            for i, step in enumerate(script["steps"]):
+                if i < len(mode_combos):
+                    mode_combos[i].set_active_id(step["mode"])
+        script_combo.connect("changed", _on_script_changed)
+
+        # Export / Import buttons
+        io_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        def _on_export_script(_btn):
+            fc = Gtk.FileChooserDialog(title="Export Director Script",
+                                        action=Gtk.FileChooserAction.SAVE)
+            fc.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+            fc.add_button("_Save", Gtk.ResponseType.OK)
+            fc.set_do_overwrite_confirmation(True)
+            fc.set_current_name("director_script.json")
+            ff = Gtk.FileFilter(); ff.set_name("JSON files"); ff.add_pattern("*.json")
+            fc.add_filter(ff)
+            if fc.run() == Gtk.ResponseType.OK:
+                path = fc.get_filename()
+                export_data = {
+                    "type": "spellcaster_director_script",
+                    "version": 1,
+                    "num_steps": int(steps_sp.get_value()),
+                    "variations": int(vars_sp.get_value()),
+                    "loop_count": int(loop_sp.get_value()),
+                    "face_reinject": face_reinject_check.get_active(),
+                    "modes": [c.get_active_id() or "i2v" for c in mode_combos],
+                }
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(export_data, f, indent=2, ensure_ascii=False)
+            fc.destroy()
+        def _on_import_script(_btn):
+            fc = Gtk.FileChooserDialog(title="Import Director Script",
+                                        action=Gtk.FileChooserAction.OPEN)
+            fc.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+            fc.add_button("_Open", Gtk.ResponseType.OK)
+            ff = Gtk.FileFilter(); ff.set_name("JSON files"); ff.add_pattern("*.json")
+            fc.add_filter(ff)
+            if fc.run() == Gtk.ResponseType.OK:
+                try:
+                    with open(fc.get_filename(), "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    if data.get("type") == "spellcaster_director_script":
+                        steps_sp.set_value(data.get("num_steps", 3))
+                        vars_sp.set_value(data.get("variations", 2))
+                        loop_sp.set_value(data.get("loop_count", 1))
+                        face_reinject_check.set_active(data.get("face_reinject", True))
+                        GLib.idle_add(lambda: [
+                            mode_combos[i].set_active_id(m)
+                            for i, m in enumerate(data.get("modes", []))
+                            if i < len(mode_combos)
+                        ])
+                except Exception as e:
+                    Gimp.message(f"Failed to import script: {e}")
+            fc.destroy()
+        exp_btn = Gtk.Button(label="Export Script...")
+        exp_btn.set_tooltip_text("Save the current Director plan as a JSON file for sharing or reuse.")
+        exp_btn.connect("clicked", _on_export_script)
+        io_row.pack_start(exp_btn, True, True, 0)
+        imp_btn = Gtk.Button(label="Import Script...")
+        imp_btn.set_tooltip_text("Load a previously saved Director script from a JSON file.")
+        imp_btn.connect("clicked", _on_import_script)
+        io_row.pack_start(imp_btn, True, True, 0)
+        bx.pack_start(io_row, False, False, 4)
 
         def _rebuild_mode_rows(*_a):
             for child in modes_box.get_children():
@@ -15308,7 +15530,13 @@ class Spellcaster(Gimp.PlugIn):
         num_vars = int(vars_sp.get_value())
         loop_count = int(loop_sp.get_value())
         step_modes = [c.get_active_id() or "i2v" for c in mode_combos]
+        face_reinject = face_reinject_check.get_active()
+        selected_script_key = script_combo.get_active_id()
+        selected_script = DIRECTOR_SCRIPTS.get(selected_script_key) if selected_script_key else None
         plan_dlg.destroy()
+
+        # Also include script data in export (enriched with per-step prompts)
+        _exported_step_data = []
 
         # ═══════════════════════════════════════════════════════════════
         # DIALOG 2..N: PER-STEP CONFIGURATION
@@ -15319,6 +15547,18 @@ class Spellcaster(Gimp.PlugIn):
             title = f"Wan Director — Step {step_idx+1}/{num_steps} ({mode.upper()})"
             step_dlg = WanI2VDialog()
             step_dlg.set_title(title)
+
+            # Pre-fill from script template if available
+            if selected_script and step_idx < len(selected_script["steps"]):
+                sp = selected_script["steps"][step_idx]
+                step_dlg.prompt_tv.get_buffer().set_text(sp.get("prompt", ""))
+                step_dlg.neg_tv.get_buffer().set_text(sp.get("negative", ""))
+                if sp.get("shift") is not None:
+                    step_dlg.shift_spin.set_value(sp["shift"])
+                if sp.get("cfg") is not None:
+                    step_dlg.cfg_spin.set_value(sp["cfg"])
+                if sp.get("length") is not None:
+                    step_dlg.length_spin.set_value(sp["length"])
 
             # For FLF mode, add end-image file chooser
             end_entry = None
@@ -15442,15 +15682,43 @@ class Spellcaster(Gimp.PlugIn):
                 last_frames.append(step_last_frames)
 
                 # For the next step, use the first variation's last frame as start
-                # (user will choose in the editing room, but we need something to chain)
                 if step_last_frames[0]:
-                    # Upload the frame back as input for the next step
                     frame_data = _download_image(srv, step_last_frames[0], "", "output")
                     next_start = f"gimp_dir_chain_{step_idx}_{uuid.uuid4().hex[:8]}.png"
                     tmp_chain = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
                     tmp_chain.write(frame_data); tmp_chain.close()
                     _upload_image(srv, tmp_chain.name, next_start)
                     os.unlink(tmp_chain.name)
+
+                    # Face re-injection: swap original face onto chain frame
+                    # before using it as the next step's start image
+                    if face_reinject and step_idx < num_steps - 1:
+                        try:
+                            reinject_wf = _build_faceswap(
+                                next_start, start_name,
+                                swap_model="inswapper_128.onnx",
+                                face_restore_model="codeformer-v0.1.0.pth",
+                                face_restore_vis=0.8,
+                                codeformer_weight=0.5,
+                                input_face_idx="0", source_face_idx="0",
+                            )
+                            reinject_results = _run_with_spinner(
+                                f"Step {step_idx+1}: re-injecting face for next step...",
+                                lambda: list(_run_comfyui_workflow(srv, reinject_wf, timeout=120)))
+                            # Use the face-reinjected image as the chain frame
+                            for fn, sf, ft in reinject_results:
+                                if fn.lower().endswith(".png"):
+                                    reinject_data = _download_image(srv, fn, sf, ft)
+                                    reinject_name = f"gimp_dir_reinject_{step_idx}_{uuid.uuid4().hex[:8]}.png"
+                                    tmp_ri = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                                    tmp_ri.write(reinject_data); tmp_ri.close()
+                                    _upload_image(srv, tmp_ri.name, reinject_name)
+                                    os.unlink(tmp_ri.name)
+                                    next_start = reinject_name
+                                    break
+                        except Exception:
+                            pass  # face reinject failed — continue without it
+
                     current_start = next_start
 
             # ═══════════════════════════════════════════════════════════
