@@ -408,6 +408,11 @@ def _load_config():
 # Updated at runtime whenever the user successfully runs a workflow with a different URL.
 COMFYUI_DEFAULT_URL = _load_config().get("server_url", "http://127.0.0.1:8188")
 
+# Workflow timeout: 0 = disabled (wait forever), >0 = seconds.
+# Default: disabled. Users generating massive tiled videos on slow GPUs
+# should never be interrupted by an arbitrary timeout.
+WORKFLOW_TIMEOUT = _load_config().get("workflow_timeout", 0)
+
 def _save_config(data):
     """Write config.json to the plugin directory, merging with existing config."""
     cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
@@ -3227,8 +3232,14 @@ def _wait_for_prompt(server, prompt_id, timeout=300):
       - Our job is actively running (it's in queue_running)
     Only times out if the job is stuck with no queue activity for the
     full timeout duration.
+
+    If WORKFLOW_TIMEOUT == 0 (default), timeouts are completely disabled —
+    the function waits forever (only user cancel can stop it).
     """
-    deadline = time.time() + timeout
+    # Global override: 0 = wait forever
+    effective_timeout = WORKFLOW_TIMEOUT if WORKFLOW_TIMEOUT > 0 else timeout
+    no_timeout = (WORKFLOW_TIMEOUT == 0)
+    deadline = time.time() + effective_timeout
     while True:
         now = time.time()
 
@@ -3263,15 +3274,15 @@ def _wait_for_prompt(server, prompt_id, timeout=300):
 
             if our_running or our_pending or queue_busy:
                 # Job is legitimately waiting or running — extend deadline
-                deadline = max(deadline, now + timeout)
+                deadline = max(deadline, now + effective_timeout)
                 _update_spinner_status(
                     f"{'Running' if our_running else 'Queued'}"
                     f" ({len(running)} running, {len(pending)} pending)")
         except Exception:
             pass  # can't reach server — use existing deadline
 
-        if now > deadline:
-            raise TimeoutError(f"ComfyUI prompt {prompt_id} timed out after {timeout}s of inactivity")
+        if not no_timeout and now > deadline:
+            raise TimeoutError(f"ComfyUI prompt {prompt_id} timed out after {effective_timeout}s of inactivity")
 
         time.sleep(1.5)
 
@@ -19580,16 +19591,35 @@ class Spellcaster(Gimp.PlugIn):
         test_row.pack_start(test_status, True, True, 0)
         bx.pack_start(test_row, False, False, 0)
 
-        # ── Default timeout ──
+        # ── Workflow Timeout ──
         bx.pack_start(Gtk.Separator(), False, False, 5)
-        bx.pack_start(Gtk.Label(label="Default Timeout (seconds):", xalign=0), False, False, 0)
-        timeout_adj = Gtk.Adjustment(value=cfg.get("timeout", 300), lower=30, upper=3600, step_increment=30)
-        timeout_spin = Gtk.SpinButton(adjustment=timeout_adj, digits=0)
+        timeout_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        timeout_check = Gtk.CheckButton(label="Enable workflow timeout")
+        cur_timeout = cfg.get("workflow_timeout", 0)
+        timeout_check.set_active(cur_timeout > 0)
+        timeout_check.set_tooltip_text(
+            "Workflow Timeout — limits how long Spellcaster waits for ComfyUI.\n\n"
+            "DISABLED (default): Wait forever. The generation runs until it\n"
+            "  completes or you press Cancel. Best for tiled video on slow GPUs,\n"
+            "  massive frame counts, or multi-step Director sequences.\n\n"
+            "ENABLED: Abort after the specified number of seconds if ComfyUI\n"
+            "  appears stuck (no queue activity). Smart timeout still extends\n"
+            "  the deadline when jobs are legitimately running or queued.\n\n"
+            "TIP: Leave disabled unless you need a safety net for runaway jobs.")
+        timeout_row.pack_start(timeout_check, False, False, 0)
+        timeout_row.pack_start(Gtk.Label(label="Max seconds:"), False, False, 0)
+        timeout_spin = Gtk.SpinButton.new_with_range(30, 7200, 30)
+        timeout_spin.set_value(cur_timeout if cur_timeout > 0 else 600)
+        timeout_spin.set_sensitive(cur_timeout > 0)
         timeout_spin.set_tooltip_text(
-            "Maximum time to wait for ComfyUI to finish a generation.\n"
-            "Increase for slow hardware or complex workflows (e.g. video).\n"
-            "Default: 300 seconds (5 minutes)")
-        bx.pack_start(timeout_spin, False, False, 0)
+            "Timeout in seconds (only applies when enabled).\n"
+            "600 = 10 min, 1800 = 30 min, 3600 = 1 hour.\n"
+            "Smart timeout extends this when jobs are actively running.")
+        timeout_row.pack_start(timeout_spin, False, False, 0)
+        def _on_timeout_toggle(cb):
+            timeout_spin.set_sensitive(cb.get_active())
+        timeout_check.connect("toggled", _on_timeout_toggle)
+        bx.pack_start(timeout_row, False, False, 0)
 
         # ── Favourite Model ──
         bx.pack_start(Gtk.Separator(), False, False, 5)
@@ -19800,7 +19830,7 @@ class Spellcaster(Gimp.PlugIn):
 
         # Save settings
         new_url = server_entry.get_text().strip().rstrip("/")
-        new_timeout = int(timeout_spin.get_value())
+        new_timeout = int(timeout_spin.get_value()) if timeout_check.get_active() else 0
         new_auto_update = auto_update_cb.get_active()
         new_debug = debug_cb.get_active()
         new_output_dir = output_entry.get_text().strip()
@@ -19809,9 +19839,13 @@ class Spellcaster(Gimp.PlugIn):
         new_fav = int(fav_id) if fav_id and fav_id != "-1" else -1
         dlg.destroy()
 
+        # Apply timeout globally for this session
+        global WORKFLOW_TIMEOUT
+        WORKFLOW_TIMEOUT = new_timeout
+
         _save_config({
             "server_url": new_url,
-            "timeout": new_timeout,
+            "workflow_timeout": new_timeout,
             "auto_update": new_auto_update,
             "debug_images": new_debug,
             "favourite_model": new_fav,
