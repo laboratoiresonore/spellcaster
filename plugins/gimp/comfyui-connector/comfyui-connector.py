@@ -6477,6 +6477,8 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
                       rtx_scale=2.5, interpolate=True,
                       face_swap=True, save_raw=False,
                       teacache=False, tiled_vae=False,
+                      ip_adapter_image=None, ip_adapter_weight=0.5,
+                      ip_adapter_start=0.0, ip_adapter_end=1.0,
                       pingpong=False, fps=16,
                       end_image_filename=None):
     """Wan 2.2 video generation — canon dual-model architecture.
@@ -6619,6 +6621,40 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
                                "cache_device": "offload_device",
                                "wan_coefficients": "enabled"}}
         low_ref = ["91", 0]
+
+    # ── IP-Adapter WAN (optional) — inject face/style identity into model ──
+    # Patches both HIGH and LOW models so identity is baked into generation,
+    # not pasted on afterward. Requires ComfyUI-IPAdapterWAN custom node +
+    # ip-adapter.bin + siglip_vision_patch14_384.safetensors on server.
+    if ip_adapter_image:
+        wf["95"] = {"class_type": "CLIPVisionLoader",
+                    "inputs": {"clip_name": "siglip_vision_patch14_384.safetensors"}}
+        wf["96"] = {"class_type": "CLIPVisionEncode",
+                    "inputs": {"image": ["7", 0],  # use start image as face ref by default
+                               "clip_vision": ["95", 0]}}
+        wf["97"] = {"class_type": "IPAdapterWANLoader",
+                    "inputs": {"ipadapter": "ip-adapter.bin", "provider": "cuda"}}
+        # If a separate reference image was uploaded, use that instead
+        if ip_adapter_image != "__start_image__":
+            wf["98"] = {"class_type": "LoadImage",
+                        "inputs": {"image": ip_adapter_image}}
+            wf["96"]["inputs"]["image"] = ["98", 0]
+        # Patch HIGH model
+        wf["99a"] = {"class_type": "ApplyIPAdapterWAN",
+                     "inputs": {"model": high_ref, "ipadapter": ["97", 0],
+                                "image_embed": ["96", 0],
+                                "weight": ip_adapter_weight,
+                                "start_percent": ip_adapter_start,
+                                "end_percent": ip_adapter_end}}
+        high_ref = ["99a", 0]
+        # Patch LOW model
+        wf["99b"] = {"class_type": "ApplyIPAdapterWAN",
+                     "inputs": {"model": low_ref, "ipadapter": ["97", 0],
+                                "image_embed": ["96", 0],
+                                "weight": ip_adapter_weight,
+                                "start_percent": ip_adapter_start,
+                                "end_percent": ip_adapter_end}}
+        low_ref = ["99b", 0]
 
     # ── ModelSamplingSD3 (shift) — override noise schedule when set ──
     # Shift controls temporal coherence: higher = better for action/contact
@@ -6769,6 +6805,8 @@ def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negati
                     rtx_scale=2.5, interpolate=True,
                     face_swap=True, save_raw=False,
                     teacache=False, tiled_vae=False,
+                    ip_adapter_image=None, ip_adapter_weight=0.5,
+                    ip_adapter_start=0.0, ip_adapter_end=1.0,
                     pingpong=False, fps=16):
     """Thin wrapper: delegates to _build_wan_video with end_image_filename."""
     return _build_wan_video(
@@ -6781,6 +6819,8 @@ def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negati
         rtx_scale=rtx_scale, interpolate=interpolate,
         face_swap=face_swap, save_raw=save_raw,
         teacache=teacache, tiled_vae=tiled_vae,
+        ip_adapter_image=ip_adapter_image, ip_adapter_weight=ip_adapter_weight,
+        ip_adapter_start=ip_adapter_start, ip_adapter_end=ip_adapter_end,
         pingpong=pingpong, fps=fps,
         end_image_filename=end_filename,
     )
@@ -10059,6 +10099,76 @@ class WanI2VDialog(Gtk.Dialog):
         pp_frame.add(pp_box)
         box.pack_start(pp_frame, False, False, 0)
 
+        # ── IP-Adapter WAN — face/style identity lock ──────────────────
+        ipa_frame = Gtk.Frame(label="  IP-Adapter — Face/Style Identity  ")
+        ipa_frame.set_shadow_type(Gtk.ShadowType.ETCHED_IN)
+        ipa_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        ipa_box.set_margin_start(8); ipa_box.set_margin_end(8)
+        ipa_box.set_margin_top(4); ipa_box.set_margin_bottom(8)
+
+        self.ipa_check = Gtk.CheckButton(label="Enable IP-Adapter (lock face/style into generation)")
+        self.ipa_check.set_active(False)
+        self.ipa_check.set_tooltip_text(
+            "Inject a reference face/style DURING generation (not post-processing).\n"
+            "The AI will generate frames that natively match the reference identity.\n\n"
+            "Much better face consistency than ReActor face swap (post-processing).\n"
+            "Requires ComfyUI-IPAdapterWAN + ip-adapter.bin + siglip CLIP vision model.")
+        ipa_box.pack_start(self.ipa_check, False, False, 0)
+
+        # Reference source selector
+        ipa_src_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        ipa_src_row.pack_start(Gtk.Label(label="Reference:"), False, False, 0)
+        self.ipa_source_combo = Gtk.ComboBoxText()
+        self.ipa_source_combo.append("start", "Use start image (canvas)")
+        self.ipa_source_combo.append("file", "Upload separate reference...")
+        self.ipa_source_combo.set_active_id("start")
+        self.ipa_source_combo.set_tooltip_text(
+            "Which image provides the face/style identity.\n"
+            "'Start image' = use your canvas/selection (default).\n"
+            "'Upload separate' = pick a dedicated face reference image.")
+        ipa_src_row.pack_start(self.ipa_source_combo, True, True, 0)
+        ipa_box.pack_start(ipa_src_row, False, False, 0)
+
+        # File chooser for separate reference
+        self.ipa_file_chooser = Gtk.FileChooserButton(title="Select face reference image")
+        self.ipa_file_chooser.set_action(Gtk.FileChooserAction.OPEN)
+        ff = Gtk.FileFilter(); ff.set_name("Images")
+        ff.add_pattern("*.png"); ff.add_pattern("*.jpg"); ff.add_pattern("*.jpeg"); ff.add_pattern("*.webp")
+        self.ipa_file_chooser.add_filter(ff)
+        self.ipa_file_chooser.set_sensitive(False)
+        ipa_box.pack_start(self.ipa_file_chooser, False, False, 0)
+
+        def _on_ipa_source_changed(combo):
+            self.ipa_file_chooser.set_sensitive(combo.get_active_id() == "file")
+        self.ipa_source_combo.connect("changed", _on_ipa_source_changed)
+
+        # Weight + timing controls
+        ipa_grid = Gtk.Grid(column_spacing=8, row_spacing=4)
+        ipa_grid.attach(Gtk.Label(label="Weight:", xalign=1), 0, 0, 1, 1)
+        self.ipa_weight = Gtk.SpinButton.new_with_range(0.0, 2.0, 0.05)
+        self.ipa_weight.set_digits(2); self.ipa_weight.set_value(0.5)
+        self.ipa_weight.set_tooltip_text(
+            "How strongly the reference face/style influences generation.\n"
+            "0.3–0.5 = subtle likeness. 0.7–1.0 = strong identity lock.\n"
+            "Too high can reduce motion quality.")
+        ipa_grid.attach(self.ipa_weight, 1, 0, 1, 1)
+
+        ipa_grid.attach(Gtk.Label(label="Start %:", xalign=1), 2, 0, 1, 1)
+        self.ipa_start = Gtk.SpinButton.new_with_range(0.0, 1.0, 0.05)
+        self.ipa_start.set_digits(2); self.ipa_start.set_value(0.0)
+        self.ipa_start.set_tooltip_text("When to start applying IP-Adapter (0.0 = from beginning).")
+        ipa_grid.attach(self.ipa_start, 3, 0, 1, 1)
+
+        ipa_grid.attach(Gtk.Label(label="End %:", xalign=1), 4, 0, 1, 1)
+        self.ipa_end = Gtk.SpinButton.new_with_range(0.0, 1.0, 0.05)
+        self.ipa_end.set_digits(2); self.ipa_end.set_value(1.0)
+        self.ipa_end.set_tooltip_text("When to stop applying IP-Adapter (1.0 = through the end).")
+        ipa_grid.attach(self.ipa_end, 5, 0, 1, 1)
+        ipa_box.pack_start(ipa_grid, False, False, 0)
+
+        ipa_frame.add(ipa_box)
+        box.pack_start(ipa_frame, False, False, 0)
+
         # LoRA section — 3 high-noise slots + 3 low-noise slots
         lora_frame = Gtk.Frame(label="LoRAs (3 high-noise + 3 low-noise)")
         lora_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -10234,6 +10344,10 @@ class WanI2VDialog(Gtk.Dialog):
             "save_raw": self.save_raw_check.get_active(),
             "teacache": self.teacache_check.get_active(),
             "tiled_vae": self.tiled_vae_check.get_active(),
+            "ip_adapter": self.ipa_check.get_active(),
+            "ip_adapter_weight": self.ipa_weight.get_value(),
+            "ip_adapter_start": self.ipa_start.get_value(),
+            "ip_adapter_end": self.ipa_end.get_value(),
             "pingpong": self.pingpong_check.get_active(),
             "runs": int(self._runs_spin.get_value()),
         }
@@ -10272,6 +10386,10 @@ class WanI2VDialog(Gtk.Dialog):
         self.save_raw_check.set_active(p.get("save_raw", False))
         self.teacache_check.set_active(p.get("teacache", False))
         self.tiled_vae_check.set_active(p.get("tiled_vae", False))
+        self.ipa_check.set_active(p.get("ip_adapter", False))
+        self.ipa_weight.set_value(p.get("ip_adapter_weight", 0.5))
+        self.ipa_start.set_value(p.get("ip_adapter_start", 0.0))
+        self.ipa_end.set_value(p.get("ip_adapter_end", 1.0))
         self.pingpong_check.set_active(p.get("pingpong", False))
         if "runs" in p:
             self._runs_spin.set_value(p["runs"])
@@ -10332,6 +10450,12 @@ class WanI2VDialog(Gtk.Dialog):
             "save_raw": self.save_raw_check.get_active(),
             "teacache": self.teacache_check.get_active(),
             "tiled_vae": self.tiled_vae_check.get_active(),
+            "ip_adapter": self.ipa_check.get_active(),
+            "ip_adapter_source": self.ipa_source_combo.get_active_id() or "start",
+            "ip_adapter_file": self.ipa_file_chooser.get_filename(),
+            "ip_adapter_weight": self.ipa_weight.get_value(),
+            "ip_adapter_start": self.ipa_start.get_value(),
+            "ip_adapter_end": self.ipa_end.get_value(),
             "pingpong": self.pingpong_check.get_active(),
             "runs": int(self._runs_spin.get_value()),
         }
@@ -11731,6 +11855,17 @@ class Spellcaster(Gimp.PlugIn):
                 tmp = _export_image_to_tmp(image)
             uname = f"gimp_wan_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
+
+            # IP-Adapter: upload reference image if using a separate file
+            ipa_image = None
+            if v.get("ip_adapter"):
+                if v.get("ip_adapter_source") == "file" and v.get("ip_adapter_file"):
+                    ipa_ref_name = f"gimp_ipa_{uuid.uuid4().hex[:8]}.png"
+                    _upload_image(srv, v["ip_adapter_file"], ipa_ref_name)
+                    ipa_image = ipa_ref_name
+                else:
+                    ipa_image = "__start_image__"  # use the start image as reference
+
             base_seed = v["seed"]
             src = "selection" if has_sel else "full image"
             for run_i in range(runs):
@@ -11751,6 +11886,10 @@ class Spellcaster(Gimp.PlugIn):
                     save_raw=v.get("save_raw", False),
                     teacache=v.get("teacache", False),
                     tiled_vae=v.get("tiled_vae", False),
+                    ip_adapter_image=ipa_image,
+                    ip_adapter_weight=v.get("ip_adapter_weight", 0.5),
+                    ip_adapter_start=v.get("ip_adapter_start", 0.0),
+                    ip_adapter_end=v.get("ip_adapter_end", 1.0),
                     pingpong=v.get("pingpong", False),
                     fps=v["fps"],
                 )
