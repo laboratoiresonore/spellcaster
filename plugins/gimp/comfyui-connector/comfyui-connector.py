@@ -3948,8 +3948,21 @@ def _build_faceswap_model(target_filename, face_model_name, swap_model="inswappe
                            face_restore_model="codeformer-v0.1.0.pth",
                            face_restore_vis=1.0, codeformer_weight=0.5,
                            detect_gender_input="no", detect_gender_source="no",
-                           input_face_idx="0", source_face_idx="0"):
-    """ReActor face swap using a saved face model instead of a source image."""
+                           input_face_idx="0", source_face_idx="0",
+                           quality_preset=None):
+    """ReActor face swap using a saved face model instead of a source image.
+
+    quality_preset: key from FACESWAP_QUALITY_PRESETS. When set, overrides
+    swap_model, face_restore_model, etc. Supports double-pass (Ultra).
+    """
+    # Apply quality preset overrides
+    if quality_preset and quality_preset in FACESWAP_QUALITY_PRESETS:
+        qp = FACESWAP_QUALITY_PRESETS[quality_preset]
+        swap_model = qp["pass1_model"]
+        face_restore_model = qp["pass1_restore"]
+        face_restore_vis = qp["pass1_vis"]
+        codeformer_weight = qp["pass1_cf"]
+
     wf = {
         "1": {"class_type": "LoadImage",
               "inputs": {"image": target_filename}},
@@ -3989,9 +4002,48 @@ def _build_faceswap_model(target_filename, face_model_name, swap_model="inswappe
         "10": {"class_type": "SaveImage",
                "inputs": {"images": ["3", 0], "filename_prefix": "gimp_faceswap_model"}},
     }
-    # Connect options and boost to the swap node
     wf["3"]["inputs"]["options"] = ["4", 0]
     wf["3"]["inputs"]["face_boost"] = ["5", 0]
+
+    # Double-pass: second swap with different model + restore for Ultra quality
+    if quality_preset and quality_preset in FACESWAP_QUALITY_PRESETS:
+        qp = FACESWAP_QUALITY_PRESETS[quality_preset]
+        if qp.get("double_pass"):
+            wf["20"] = {"class_type": "ReActorFaceSwapOpt",
+                        "inputs": {
+                            "enabled": True,
+                            "input_image": ["3", 0],
+                            "face_model": ["2", 0],
+                            "swap_model": qp["pass2_model"],
+                            "facedetection": "retinaface_resnet50",
+                            "face_restore_model": qp["pass2_restore"],
+                            "face_restore_visibility": qp["pass2_vis"],
+                            "codeformer_weight": qp["pass2_cf"],
+                        }}
+            wf["21"] = {"class_type": "ReActorOptions",
+                        "inputs": {
+                            "input_faces_order": "left-right",
+                            "input_faces_index": input_face_idx,
+                            "detect_gender_input": detect_gender_input,
+                            "source_faces_order": "left-right",
+                            "source_faces_index": source_face_idx,
+                            "detect_gender_source": detect_gender_source,
+                            "console_log_level": 1,
+                            "restore_swapped_only": True,
+                        }}
+            wf["22"] = {"class_type": "ReActorFaceBoost",
+                        "inputs": {
+                            "enabled": True,
+                            "boost_model": qp["pass2_restore"],
+                            "interpolation": "Bicubic",
+                            "visibility": 1.0,
+                            "codeformer_weight": qp["pass2_cf"],
+                            "restore_with_main_after": False,
+                        }}
+            wf["20"]["inputs"]["options"] = ["21", 0]
+            wf["20"]["inputs"]["face_boost"] = ["22", 0]
+            wf["10"]["inputs"]["images"] = ["20", 0]
+
     return wf
 
 
@@ -6272,6 +6324,51 @@ def _resolve_server_path(hardcoded, server_list):
     return hardcoded
 
 
+# ── Server path resolution cache ─────────────────────────────────────
+# Cache object_info responses to avoid 4+ API calls per workflow build.
+# Invalidated when the server URL changes.
+_path_cache = {"server": None, "unets": [], "clips": [], "vaes": [], "loras": []}
+
+def _get_cached_server_lists(server_url):
+    """Fetch and cache model/LoRA lists from ComfyUI's object_info API.
+
+    Returns (unets, clips, vaes, loras). Caches per server URL —
+    only re-fetches if the server changes.
+    """
+    global _path_cache
+    if _path_cache["server"] == server_url:
+        return _path_cache["unets"], _path_cache["clips"], _path_cache["vaes"], _path_cache["loras"]
+
+    unets, clips, vaes, loras = [], [], [], []
+    try:
+        info = _api_get(server_url, "/object_info/UnetLoaderGGUF")
+        unets = info["UnetLoaderGGUF"]["input"]["required"]["unet_name"][0]
+    except Exception:
+        try:
+            info = _api_get(server_url, "/object_info/UNETLoader")
+            unets = info["UNETLoader"]["input"]["required"]["unet_name"][0]
+        except Exception:
+            pass
+    try:
+        info = _api_get(server_url, "/object_info/CLIPLoaderGGUF")
+        clips = info["CLIPLoaderGGUF"]["input"]["required"]["clip_name"][0]
+    except Exception:
+        pass
+    try:
+        info = _api_get(server_url, "/object_info/VAELoader")
+        vaes = info["VAELoader"]["input"]["required"]["vae_name"][0]
+    except Exception:
+        pass
+    try:
+        info = _api_get(server_url, "/object_info/LoraLoaderModelOnly")
+        loras = info["LoraLoaderModelOnly"]["input"]["required"]["lora_name"][0]
+    except Exception:
+        pass
+
+    _path_cache = {"server": server_url, "unets": unets, "clips": clips, "vaes": vaes, "loras": loras}
+    return unets, clips, vaes, loras
+
+
 def _filter_wan_loras(all_loras, preset_key=None):
     """Return ALL Wan-related LoRAs from the server list.
 
@@ -6350,6 +6447,7 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
                       loras_high=None, loras_low=None,
                       all_server_loras=None, server_url=None,
                       rtx_scale=2.5, interpolate=True,
+                      face_swap=True, save_raw=False,
                       pingpong=False, fps=16,
                       end_image_filename=None):
     """Wan 2.2 video generation — canon dual-model architecture.
@@ -6383,40 +6481,26 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
         steps = 6
         second_step = 3
 
-    # ── Resolve model/LoRA paths against server ────────────────────────
+    # ── Resolve model/LoRA paths against server (cached) ────────────────
     # ComfyUI auto-corrects paths on save/reload — strips subfolders,
-    # normalizes separators, changes case. Hardcoded preset paths may not
-    # match the server's canonical paths. Resolve by matching filenames.
+    # normalizes separators. Use cached server lists (1 batch fetch, not 4).
     high_model = p["high_model"]
     low_model = p["low_model"]
     clip_name = p["clip"]
     vae_name = p["vae"]
-    if server_url:
-        try:
-            loader_type = "UnetLoaderGGUF" if p["high_model"].endswith(".gguf") else "UNETLoader"
-            info = _api_get(server_url, f"/object_info/{loader_type}")
-            all_unets = info[loader_type]["input"]["required"]["unet_name"][0]
-            high_model = _resolve_server_path(p["high_model"], all_unets)
-            low_model = _resolve_server_path(p["low_model"], all_unets)
-        except Exception:
-            pass
-        try:
-            info = _api_get(server_url, "/object_info/CLIPLoaderGGUF")
-            all_clips = info["CLIPLoaderGGUF"]["input"]["required"]["clip_name"][0]
-            clip_name = _resolve_server_path(p["clip"], all_clips)
-        except Exception:
-            pass
-        try:
-            info = _api_get(server_url, "/object_info/VAELoader")
-            all_vaes = info["VAELoader"]["input"]["required"]["vae_name"][0]
-            vae_name = _resolve_server_path(p["vae"], all_vaes)
-        except Exception:
-            pass
-
-    # Resolve turbo LoRA paths against server LoRA list
     high_accel_lora = p.get("high_accel_lora")
     low_accel_lora = p.get("low_accel_lora")
-    if all_server_loras:
+    if server_url:
+        unets, clips, vaes, loras = _get_cached_server_lists(server_url)
+        high_model = _resolve_server_path(p["high_model"], unets)
+        low_model = _resolve_server_path(p["low_model"], unets)
+        clip_name = _resolve_server_path(p["clip"], clips)
+        vae_name = _resolve_server_path(p["vae"], vaes)
+        if high_accel_lora:
+            high_accel_lora = _resolve_server_path(high_accel_lora, loras)
+        if low_accel_lora:
+            low_accel_lora = _resolve_server_path(low_accel_lora, loras)
+    elif all_server_loras:
         if high_accel_lora:
             high_accel_lora = _resolve_server_path(high_accel_lora, all_server_loras)
         if low_accel_lora:
@@ -6548,55 +6632,55 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
     video_ref = ["60", 0]
     prefix = "gimp_wan_loop" if loop else ("gimp_wan_flf" if use_flf else "gimp_wan_i2v")
 
-    # ── Canon post-processing pipeline ───────────────────────────────
-    # Step 1: Raw MP4 at base FPS (16)
-    wf["80"] = {"class_type": "VHS_VideoCombine",
-                "inputs": {"images": video_ref, "frame_rate": float(fps),
-                           "loop_count": 0, "filename_prefix": f"{prefix}_raw",
-                           "format": "video/h264-mp4", "pingpong": False,
-                           "save_output": True, "pix_fmt": "yuv420p", "crf": 19}}
+    # ── Optimized post-processing pipeline ───────────────────────────
+    # Pipeline order optimized for speed and VRAM:
+    #   1. [optional] ReActor on RAW frames (fewer frames = faster)
+    #   2. RIFE 4× in single pass (float16, combined multiplier)
+    #   3. [optional] RTX Video Super Resolution
+    #   4. Final MP4 encode (single output, not 3)
 
-    # Step 2: RIFE pass 1 — 2× interpolation (float32, ensemble, quality)
+    # Step 1 (optional): Raw MP4 for debugging — skip by default
+    if save_raw:
+        wf["80"] = {"class_type": "VHS_VideoCombine",
+                    "inputs": {"images": video_ref, "frame_rate": float(fps),
+                               "loop_count": 0, "filename_prefix": f"{prefix}_raw",
+                               "format": "video/h264-mp4", "pingpong": False,
+                               "save_output": True, "pix_fmt": "yuv420p", "crf": 19}}
+
+    # Step 2 (optional): ReActor face swap on RAW frames BEFORE interpolation
+    # Running on 81 raw frames instead of 324 interpolated = 4× faster
+    if face_swap:
+        wf["71"] = {"class_type": "ReActorFaceSwap",
+                    "inputs": {
+                        "enabled": True,
+                        "input_image": video_ref,
+                        "source_image": ["7", 0],
+                        "swap_model": "inswapper_128.onnx",
+                        "facedetection": "retinaface_resnet50",
+                        "face_restore_model": "codeformer-v0.1.0.pth",
+                        "face_restore_visibility": 0.5,
+                        "codeformer_weight": 0.5,
+                        "detect_gender_input": "no",
+                        "detect_gender_source": "no",
+                        "input_faces_index": "1",
+                        "source_faces_index": "0",
+                        "console_log_level": 0,
+                    }}
+        video_ref = ["71", 0]
+
+    # Step 3: RIFE 4× interpolation — single pass with multiplier=4
+    # float16 saves 50% VRAM vs float32 with negligible quality loss.
+    # clear_cache=10 to stay safe on 8GB GPUs.
     if interpolate:
         wf["70"] = {"class_type": "RIFE VFI",
                     "inputs": {"frames": video_ref, "ckpt_name": "rife49.pth",
-                               "clear_cache_after_n_frames": 32, "multiplier": 2,
-                               "fast_mode": False, "ensemble": True, "scale_factor": 1,
-                               "dtype": "float32", "torch_compile": False,
-                               "batch_size": 1}}
-        video_ref = ["70", 0]
-
-    # Step 3: ReActor face swap (uses first frame as face source)
-    # This preserves the face from the input image across all frames
-    wf["71"] = {"class_type": "ReActorFaceSwap",
-                "inputs": {
-                    "enabled": True,
-                    "input_image": video_ref,
-                    "source_image": ["7", 0],  # first frame = face source
-                    "swap_model": "inswapper_128.onnx",
-                    "facedetection": "retinaface_resnet50",
-                    "face_restore_model": "codeformer-v0.1.0.pth",
-                    "face_restore_visibility": 0.5,
-                    "codeformer_weight": 0.5,
-                    "detect_gender_input": "no",
-                    "detect_gender_source": "no",
-                    "input_faces_index": "1",
-                    "source_faces_index": "0",
-                    "console_log_level": 0,
-                }}
-    video_ref = ["71", 0]
-
-    # Step 4: RIFE pass 2 — 2× interpolation (float16, fast mode)
-    if interpolate:
-        wf["72"] = {"class_type": "RIFE VFI",
-                    "inputs": {"frames": video_ref, "ckpt_name": "rife49.pth",
-                               "clear_cache_after_n_frames": 10, "multiplier": 2,
+                               "clear_cache_after_n_frames": 10, "multiplier": 4,
                                "fast_mode": True, "ensemble": True, "scale_factor": 1,
                                "dtype": "float16", "torch_compile": False,
                                "batch_size": 1}}
-        video_ref = ["72", 0]
+        video_ref = ["70", 0]
 
-    # Step 5: RTX Video Super Resolution
+    # Step 4: RTX Video Super Resolution
     if rtx_scale > 1.0:
         wf["75"] = {"class_type": "RTXVideoSuperResolution",
                     "inputs": {"images": video_ref,
@@ -6605,23 +6689,14 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
                                "quality": "ULTRA"}}
         video_ref = ["75", 0]
 
-    # Step 6: Final MP4 at full FPS (pingpong option)
-    final_fps = float(fps * (4 if interpolate else 1))  # 2× RIFE × 2 = 4× base FPS
+    # Step 5: Final MP4 — single encode (eliminated redundant raw + 32fps outputs)
+    final_fps = float(fps * (4 if interpolate else 1))
     wf["83"] = {"class_type": "VHS_VideoCombine",
                 "inputs": {"images": video_ref, "frame_rate": final_fps,
                            "loop_count": 0, "filename_prefix": f"{prefix}_final",
                            "format": "video/h264-mp4", "pix_fmt": "yuv420p",
                            "crf": 17, "pingpong": pingpong,
                            "save_output": True}}
-
-    # Also output upscaled + interpolated MP4 at 32 FPS (before RTX)
-    if interpolate:
-        wf["84"] = {"class_type": "VHS_VideoCombine",
-                    "inputs": {"images": ["70", 0], "frame_rate": float(fps * 2),
-                               "loop_count": 0, "filename_prefix": f"{prefix}_32fps",
-                               "format": "video/h264-mp4", "pix_fmt": "yuv420p",
-                               "crf": 18, "pingpong": False,
-                               "save_output": True}}
 
     # Extract LAST frame for GIMP
     wf["85"] = {"class_type": "ImageFromBatch+",
@@ -6638,7 +6713,9 @@ def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negati
                     steps=None, cfg=None, shift=None, second_step=None,
                     turbo=True, loras_high=None, loras_low=None,
                     all_server_loras=None, server_url=None,
-                    rtx_scale=2.5, interpolate=True, pingpong=False, fps=16):
+                    rtx_scale=2.5, interpolate=True,
+                    face_swap=True, save_raw=False,
+                    pingpong=False, fps=16):
     """Thin wrapper: delegates to _build_wan_video with end_image_filename."""
     return _build_wan_video(
         start_filename, preset_key, prompt_text, negative_text, seed,
@@ -6648,6 +6725,7 @@ def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negati
         loras_high=loras_high, loras_low=loras_low,
         all_server_loras=all_server_loras, server_url=server_url,
         rtx_scale=rtx_scale, interpolate=interpolate,
+        face_swap=face_swap, save_raw=save_raw,
         pingpong=pingpong, fps=fps,
         end_image_filename=end_filename,
     )
@@ -9453,6 +9531,26 @@ class FaceSwapModelDialog(Gtk.Dialog):
         self._fetch_btn.connect("clicked", self._on_fetch_models)
         box.pack_start(self._fetch_btn, False, False, 0)
 
+        # Quality preset
+        box.pack_start(Gtk.Label(label="Quality Preset:", xalign=0), False, False, 0)
+        self.quality_combo = Gtk.ComboBoxText()
+        self.quality_combo.append("(custom)", "(custom — use settings below)")
+        for k in FACESWAP_QUALITY_PRESETS:
+            self.quality_combo.append(k, k)
+        self.quality_combo.set_active_id("Ultra (double-pass HyperSwap 256 + ReSwapper 256)")
+        self.quality_combo.set_tooltip_text(
+            "State-of-the-art quality presets:\n\n"
+            "Ultra: Double-pass — HyperSwap 256px + ReSwapper 256px + GPEN-2048 restore\n"
+            "  Best quality, two consecutive swaps for maximum likeness\n\n"
+            "High: ReSwapper 256px + GPEN-2048 restore\n"
+            "  Very good quality, single pass at 256px resolution\n\n"
+            "Standard: InSwapper 128px + CodeFormer\n"
+            "  The classic reliable swap\n\n"
+            "Fast: InSwapper fp16 + GFPGAN\n"
+            "  Fastest, slightly lower quality\n\n"
+            "Custom: use the model dropdowns below")
+        box.pack_start(self.quality_combo, False, False, 0)
+
         # Face model selector
         box.pack_start(Gtk.Label(label="Face Model:", xalign=0), False, False, 0)
         self.face_model_combo = Gtk.ComboBoxText()
@@ -9559,9 +9657,12 @@ class FaceSwapModelDialog(Gtk.Dialog):
         self._fetch_btn.set_label(f"{n_face} face models loaded")
 
     def get_values(self):
+        qp = self.quality_combo.get_active_id()
+        quality_preset = qp if qp and qp != "(custom)" else None
         return {
             "server": self.server_entry.get_text().strip(),
             "face_model": self.face_model_combo.get_active_id(),
+            "quality_preset": quality_preset,
             "swap_model": self.swap_combo.get_active_id() or FACE_SWAP_MODELS[0],
             "face_restore_model": self.restore_combo.get_active_id() or "codeformer-v0.1.0.pth",
             "face_restore_vis": self.restore_vis.get_value(),
@@ -9751,21 +9852,33 @@ class WanI2VDialog(Gtk.Dialog):
         rtx_row.pack_start(self.upscale_spin, False, False, 0)
         pp_box.pack_start(rtx_row, False, False, 0)
 
-        # Row 2: RIFE interpolation + ping pong
+        # Row 2: RIFE interpolation + face swap + ping pong + loop
         row2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        self.interpolate_check = Gtk.CheckButton(label="RIFE 2× Interpolation")
+        self.interpolate_check = Gtk.CheckButton(label="RIFE 4× Interpolation")
         self.interpolate_check.set_active(True)
-        self.interpolate_check.set_tooltip_text("Apply RIFE VFI 2× frame interpolation (doubles FPS)")
+        self.interpolate_check.set_tooltip_text("Apply RIFE VFI 4× frame interpolation (16→64 FPS).\nSingle pass at float16 — fast and VRAM-friendly.")
         row2.pack_start(self.interpolate_check, False, False, 0)
+        self.face_swap_check = Gtk.CheckButton(label="Face Swap")
+        self.face_swap_check.set_active(True)
+        self.face_swap_check.set_tooltip_text("Apply ReActor face swap to preserve face from input image.\nRuns on raw frames before interpolation for speed.\nDisable if no face in scene or for faster generation.")
+        row2.pack_start(self.face_swap_check, False, False, 0)
+        pp_box.pack_start(row2, False, False, 0)
+
+        # Row 3: Ping pong + loop + save raw
+        row3 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         self.pingpong_check = Gtk.CheckButton(label="Ping Pong")
         self.pingpong_check.set_active(False)
         self.pingpong_check.set_tooltip_text("Play video forward then backward for seamless looping")
-        row2.pack_start(self.pingpong_check, False, False, 0)
+        row3.pack_start(self.pingpong_check, False, False, 0)
         self.loop_check = Gtk.CheckButton(label="Loop Video")
         self.loop_check.set_active(False)
         self.loop_check.set_tooltip_text("Generate a seamless looping video.\nUses the same image as both first and last frame\nso the video loops perfectly.")
-        row2.pack_start(self.loop_check, False, False, 0)
-        pp_box.pack_start(row2, False, False, 0)
+        row3.pack_start(self.loop_check, False, False, 0)
+        self.save_raw_check = Gtk.CheckButton(label="Save Raw")
+        self.save_raw_check.set_active(False)
+        self.save_raw_check.set_tooltip_text("Also save the raw un-interpolated MP4 (for debugging)")
+        row3.pack_start(self.save_raw_check, False, False, 0)
+        pp_box.pack_start(row3, False, False, 0)
 
         pp_frame.add(pp_box)
         box.pack_start(pp_frame, False, False, 0)
@@ -9932,6 +10045,8 @@ class WanI2VDialog(Gtk.Dialog):
             "upscale": self.upscale_check.get_active(),
             "upscale_factor": self.upscale_spin.get_value(),
             "interpolate": self.interpolate_check.get_active(),
+            "face_swap": self.face_swap_check.get_active(),
+            "save_raw": self.save_raw_check.get_active(),
             "pingpong": self.pingpong_check.get_active(),
             "runs": int(self._runs_spin.get_value()),
         }
@@ -9966,6 +10081,8 @@ class WanI2VDialog(Gtk.Dialog):
         self.upscale_check.set_active(p.get("upscale", True))
         self.upscale_spin.set_value(p.get("upscale_factor", 1.5))
         self.interpolate_check.set_active(p.get("interpolate", True))
+        self.face_swap_check.set_active(p.get("face_swap", True))
+        self.save_raw_check.set_active(p.get("save_raw", False))
         self.pingpong_check.set_active(p.get("pingpong", False))
         if "runs" in p:
             self._runs_spin.set_value(p["runs"])
@@ -10014,6 +10131,8 @@ class WanI2VDialog(Gtk.Dialog):
             "upscale": self.upscale_check.get_active(),
             "upscale_factor": self.upscale_spin.get_value(),
             "interpolate": self.interpolate_check.get_active(),
+            "face_swap": self.face_swap_check.get_active(),
+            "save_raw": self.save_raw_check.get_active(),
             "pingpong": self.pingpong_check.get_active(),
             "runs": int(self._runs_spin.get_value()),
         }
@@ -11355,6 +11474,7 @@ class Spellcaster(Gimp.PlugIn):
                 detect_gender_source=v["detect_gender_source"],
                 input_face_idx=v["input_face_idx"],
                 source_face_idx=v["source_face_idx"],
+                quality_preset=v.get("quality_preset"),
             )
             _update_spinner_status("Face Swap (Model): processing on ComfyUI...")
             results = _run_with_spinner("Face Swap (Model): processing on ComfyUI...",
@@ -11424,6 +11544,8 @@ class Spellcaster(Gimp.PlugIn):
                     server_url=srv,
                     rtx_scale=v.get("upscale_factor", 2.5),
                     interpolate=v.get("interpolate", True),
+                    face_swap=v.get("face_swap", True),
+                    save_raw=v.get("save_raw", False),
                     pingpong=v.get("pingpong", False),
                     fps=v["fps"],
                 )
@@ -11588,6 +11710,8 @@ class Spellcaster(Gimp.PlugIn):
                     server_url=srv,
                     rtx_scale=v.get("upscale_factor", 2.5),
                     interpolate=v.get("interpolate", True),
+                    face_swap=v.get("face_swap", True),
+                    save_raw=v.get("save_raw", False),
                     pingpong=v.get("pingpong", False),
                     fps=v["fps"],
                 )
@@ -13875,6 +13999,7 @@ class Spellcaster(Gimp.PlugIn):
                             server_url=srv,
                             rtx_scale=v.get("upscale_factor", 2.5),
                             interpolate=v.get("interpolate", True),
+                            face_swap=v.get("face_swap", True),
                             pingpong=False, fps=v["fps"],
                             end_image_filename=end_name)
                     else:
@@ -13889,6 +14014,7 @@ class Spellcaster(Gimp.PlugIn):
                             server_url=srv,
                             rtx_scale=v.get("upscale_factor", 2.5),
                             interpolate=v.get("interpolate", True),
+                            face_swap=v.get("face_swap", True),
                             pingpong=False, fps=v["fps"])
 
                     label = f"Step {step_idx+1} Var {var_idx+1}"
