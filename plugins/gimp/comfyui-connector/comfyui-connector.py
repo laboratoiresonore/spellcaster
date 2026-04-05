@@ -12107,6 +12107,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-video-upscale": "wan_i2v",
             "spellcaster-video-reactor": "wan_i2v",
             "spellcaster-seedvr2-video": "seedv2r",
+            "spellcaster-photobooth": "face_swap_reactor",
             "spellcaster-rembg": "rembg",
             "spellcaster-gif-stitch": None,
             "spellcaster-embed-watermark": None,
@@ -12156,6 +12157,8 @@ class Spellcaster(Gimp.PlugIn):
                                        "Generate with Flux preserving face identity via PuLID"),
             "spellcaster-klein-img2img": ("Klein Image Editor...", self._run_klein,
                                           "Edit image with Flux 2 Klein model"),
+            "spellcaster-photobooth": ("Photobooth (Face Model Maker)...", self._run_photobooth,
+                                       "Generate passport photos and save as ReActor face model"),
             "spellcaster-rembg": ("Remove Background...", self._run_rembg,
                                    "Remove image background using AI (transparent PNG)"),
             "spellcaster-layer-blend-ratio": ("Layer Blend by Ratio...", self._run_layer_blend_ratio,
@@ -12284,6 +12287,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-seedvr2-video":    "<Image>/Filters/Spellcaster Video",
 
             # Tools & Utility
+            "spellcaster-photobooth":        "<Image>/Filters/Spellcaster Tools",
             "spellcaster-rembg":             "<Image>/Filters/Spellcaster Tools",
             "spellcaster-layer-blend-ratio": "<Image>/Filters/Spellcaster Tools",
             "spellcaster-upscale-blend":     "<Image>/Filters/Spellcaster Tools",
@@ -19317,6 +19321,286 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster SUPIR Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Photobooth (Face Model Maker) ─────────────────────────────────
+    def _run_photobooth(self, procedure, run_mode, image, drawables, config, data):
+        """Photobooth: generate clean passport-style photos from a reference face,
+        then save the best as a ReActor face model for future face swaps."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+
+        # ═══════════════════════════════════════════════════════════════
+        # DIALOG 1: Upload face references + settings
+        # ═══════════════════════════════════════════════════════════════
+        dlg = Gtk.Dialog(title="Spellcaster — Photobooth (Face Model Maker)")
+        dlg.set_default_size(540, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Generate Passport Photos", Gtk.ResponseType.OK)
+        dlg.set_default_response(Gtk.ResponseType.OK)
+        _style_dialog_buttons(dlg)
+        bx = dlg.get_content_area()
+        bx.set_spacing(6); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(10); bx.set_margin_bottom(10)
+
+        _hdr = _make_branded_header()
+        if _hdr: bx.pack_start(_hdr, False, False, 0)
+
+        bx.pack_start(Gtk.Label(
+            label="Photobooth generates clean passport-style headshots from your\n"
+                  "reference photos. Pick the best result and save it as a\n"
+                  "ReActor face model for use in all face swap tools.\n\n"
+                  "For best results, provide a clear photo with the face\n"
+                  "well-lit and facing the camera.",
+            xalign=0), False, False, 4)
+
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
+        hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+
+        # Face source selector
+        src_frame = Gtk.Frame(label="  Face Reference  ")
+        src_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        src_box.set_margin_start(8); src_box.set_margin_end(8)
+        src_box.set_margin_top(4); src_box.set_margin_bottom(8)
+
+        src_combo = Gtk.ComboBoxText()
+        src_combo.append("canvas", "Use current canvas / selection")
+        src_combo.append("file", "Upload a photo file...")
+        src_combo.set_active_id("canvas")
+        src_combo.set_tooltip_text(
+            "Where to get the face reference.\n\n"
+            "'Canvas' uses whatever is currently open in GIMP.\n"
+            "'Upload' lets you pick a photo from disk.\n\n"
+            "TIP: A clear front-facing photo with good lighting works best.")
+        src_box.pack_start(src_combo, False, False, 0)
+
+        file_chooser = Gtk.FileChooserButton(title="Select face photo")
+        file_chooser.set_action(Gtk.FileChooserAction.OPEN)
+        ff = Gtk.FileFilter(); ff.set_name("Images")
+        ff.add_pattern("*.png"); ff.add_pattern("*.jpg"); ff.add_pattern("*.jpeg"); ff.add_pattern("*.webp")
+        file_chooser.add_filter(ff)
+        file_chooser.set_sensitive(False)
+        src_box.pack_start(file_chooser, False, False, 0)
+        def _on_src(c): file_chooser.set_sensitive(c.get_active_id() == "file")
+        src_combo.connect("changed", _on_src)
+        src_frame.add(src_box); bx.pack_start(src_frame, False, False, 0)
+
+        # Gender hint (helps ReActor + prompt)
+        gender_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        gender_row.pack_start(Gtk.Label(label="Subject:"), False, False, 0)
+        gender_combo = Gtk.ComboBoxText()
+        gender_combo.append("woman", "Woman")
+        gender_combo.append("man", "Man")
+        gender_combo.append("person", "Person (neutral)")
+        gender_combo.set_active_id("woman")
+        gender_combo.set_tooltip_text("Helps generate an appropriate base headshot for the face swap.")
+        gender_row.pack_start(gender_combo, True, True, 0)
+        bx.pack_start(gender_row, False, False, 0)
+
+        # Model name
+        name_frame = Gtk.Frame(label="  Save As  ")
+        name_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        name_box.set_margin_start(8); name_box.set_margin_end(8)
+        name_box.set_margin_top(4); name_box.set_margin_bottom(8)
+        name_entry = Gtk.Entry()
+        name_entry.set_text("my_face")
+        name_entry.set_tooltip_text(
+            "Name for the saved face model file.\n\n"
+            "Use a descriptive name like 'john_doe' or 'actress_main'.\n"
+            "This name appears in all Face Swap dialogs when selecting models.\n\n"
+            "NOTE: The new model will NOT appear in dropdown lists until\n"
+            "the ComfyUI server is restarted. The model file is saved\n"
+            "immediately, but ComfyUI caches its model list at startup.")
+        name_box.pack_start(Gtk.Label(label="Model name:", xalign=0), False, False, 0)
+        name_box.pack_start(name_entry, False, False, 0)
+
+        restart_label = Gtk.Label(xalign=0)
+        restart_label.set_markup(
+            '<span foreground="#FFA726" size="small">'
+            'The saved model will only appear in face swap dropdowns\n'
+            'after restarting the ComfyUI server.</span>')
+        name_box.pack_start(restart_label, False, False, 2)
+        name_frame.add(name_box); bx.pack_start(name_frame, False, False, 0)
+
+        bx.show_all()
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        srv = srv_e.get_text().strip(); _propagate_server_url(srv)
+        face_source = src_combo.get_active_id()
+        face_file = file_chooser.get_filename()
+        gender = gender_combo.get_active_id() or "person"
+        model_name = name_entry.get_text().strip() or "photobooth_face"
+        dlg.destroy()
+
+        # ═══════════════════════════════════════════════════════════════
+        # EXECUTION: Generate passport photos + selection loop
+        # ═══════════════════════════════════════════════════════════════
+        try:
+            # Upload face reference
+            if face_source == "file" and face_file:
+                ref_name = f"gimp_pb_ref_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, face_file, ref_name)
+            else:
+                tmp = _export_image_to_tmp(image)
+                ref_name = f"gimp_pb_ref_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, tmp, ref_name); os.unlink(tmp)
+
+            chosen_image = None
+
+            while chosen_image is None:
+                # Generate 3 passport-style photos by face-swapping onto
+                # clean headshot bases at 3 different seeds
+                results_data = []
+                for i in range(3):
+                    seed = random.randint(0, 2**32 - 1)
+                    # Robust passport photo pipeline:
+                    #   1. LoadImage (reference face)
+                    #   2. ReActorFaceSwap (self-swap to normalize + restore)
+                    #      Uses different restore models per variant for diversity
+                    #   3. ReActorFaceBoost (enhance face detail post-swap)
+                    #   4. ReActorOptions (configure face detection ordering)
+                    #   5. SaveImage (output)
+                    #
+                    # Self-swap with strong face restore produces a clean,
+                    # well-lit, artifact-free version of the face. The 3
+                    # variants use different codeformer weights for diversity.
+                    cf_weights = [0.2, 0.5, 0.8]  # low=sharper, high=more faithful
+                    restore_models = [
+                        "codeformer-v0.1.0.pth",
+                        "GPEN-BFR-2048.onnx",
+                        "codeformer-v0.1.0.pth",
+                    ]
+                    wf = {
+                        "1": {"class_type": "LoadImage",
+                              "inputs": {"image": ref_name}},
+                        "3": {"class_type": "ReActorFaceSwapOpt",
+                              "inputs": {
+                                  "enabled": True,
+                                  "input_image": ["1", 0],
+                                  "source_image": ["1", 0],
+                                  "swap_model": "inswapper_128.onnx",
+                                  "facedetection": "retinaface_resnet50",
+                                  "face_restore_model": restore_models[i],
+                                  "face_restore_visibility": 1.0,
+                                  "codeformer_weight": cf_weights[i],
+                              }},
+                        "4": {"class_type": "ReActorOptions",
+                              "inputs": {
+                                  "input_faces_order": "left-right",
+                                  "input_faces_index": "0",
+                                  "detect_gender_input": "no",
+                                  "source_faces_order": "left-right",
+                                  "source_faces_index": "0",
+                                  "detect_gender_source": "no",
+                                  "console_log_level": 1,
+                                  "restore_swapped_only": True,
+                              }},
+                        "5": {"class_type": "ReActorFaceBoost",
+                              "inputs": {
+                                  "enabled": True,
+                                  "boost_model": restore_models[i],
+                                  "interpolation": "Bicubic",
+                                  "visibility": 1.0,
+                                  "codeformer_weight": cf_weights[i],
+                                  "restore_with_main_after": False,
+                              }},
+                        "10": {"class_type": "SaveImage",
+                               "inputs": {"images": ["3", 0],
+                                          "filename_prefix": f"photobooth_{model_name}_{i}"}},
+                    }
+                    wf["3"]["inputs"]["options"] = ["4", 0]
+                    wf["3"]["inputs"]["face_boost"] = ["5", 0]
+                    _wf = wf
+                    res = _run_with_spinner(
+                        f"Photobooth: generating variant {i+1}/3...",
+                        lambda: list(_run_comfyui_workflow(srv, _wf)))
+                    for fn, sf, ft in res:
+                        if fn.lower().endswith(".png"):
+                            img_data = _download_image(srv, fn, sf, ft)
+                            results_data.append((fn, sf, ft, img_data))
+                            break
+
+                if not results_data:
+                    Gimp.message("Photobooth: no images were generated. Check server connection.")
+                    return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+                # Import all variants as layers so user can see them
+                for i, (fn, sf, ft, img_data) in enumerate(results_data):
+                    _import_result_as_layer(image, img_data, f"Photobooth #{i+1}")
+                Gimp.displays_flush()
+
+                # ═══════════════════════════════════════════════════════
+                # DIALOG 2: Pick the best or generate more
+                # ═══════════════════════════════════════════════════════
+                pick_dlg = Gtk.Dialog(title="Photobooth — Pick the Best Likeness")
+                pick_dlg.set_default_size(400, -1)
+                pick_dlg.add_button("Generate 3 More", Gtk.ResponseType.REJECT)
+                pick_dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+                pick_dlg.add_button("_Save This Face Model", Gtk.ResponseType.OK)
+                _style_dialog_buttons(pick_dlg)
+                pbx = pick_dlg.get_content_area()
+                pbx.set_spacing(8); pbx.set_margin_start(12); pbx.set_margin_end(12)
+                pbx.set_margin_top(10); pbx.set_margin_bottom(10)
+
+                pbx.pack_start(Gtk.Label(
+                    label="3 passport photos have been added as layers in GIMP.\n"
+                          "Review them and select which one best captures the likeness.\n\n"
+                          "The selected variant will be saved as a ReActor face model.",
+                    xalign=0), False, False, 4)
+
+                pbx.pack_start(Gtk.Label(label="Best variant:", xalign=0), False, False, 0)
+                pick_combo = Gtk.ComboBoxText()
+                for i in range(len(results_data)):
+                    pick_combo.append(str(i), f"Variant #{i+1}")
+                pick_combo.set_active(0)
+                pick_combo.set_tooltip_text("Select the variant that looks most like the real person.")
+                pbx.pack_start(pick_combo, False, False, 0)
+
+                pbx.show_all()
+                resp = pick_dlg.run()
+                pick_idx = int(pick_combo.get_active_id() or "0")
+                pick_dlg.destroy()
+
+                if resp == Gtk.ResponseType.CANCEL:
+                    return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+                elif resp == Gtk.ResponseType.OK:
+                    chosen_image = results_data[pick_idx]
+                # else REJECT → loop generates 3 more
+
+            # ═══════════════════════════════════════════════════════════
+            # SAVE: Build ReActor face model from chosen image
+            # ═══════════════════════════════════════════════════════════
+            fn, sf, ft, _ = chosen_image
+            # The image is already on the server (was saved by SaveImage)
+            # Upload the chosen result as input for the face model builder
+            chosen_name = f"gimp_pb_chosen_{uuid.uuid4().hex[:8]}.png"
+            tmp_chosen = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+            tmp_chosen.write(chosen_image[3]); tmp_chosen.close()
+            _upload_image(srv, tmp_chosen.name, chosen_name)
+            os.unlink(tmp_chosen.name)
+
+            save_wf = _build_save_face_model(chosen_name, model_name, overwrite=True)
+            _run_with_spinner(
+                f"Saving face model '{model_name}'...",
+                lambda: list(_run_comfyui_workflow(srv, save_wf)))
+
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            Gimp.message(
+                f"Face model '{model_name}' saved successfully!\n\n"
+                f"IMPORTANT: The new model will appear in Face Swap dropdowns\n"
+                f"only after you restart the ComfyUI server.\n\n"
+                f"The model file is saved at:\n"
+                f"  ComfyUI/models/reactor/faces/{model_name}.safetensors")
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Photobooth Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     def _run_rembg(self, procedure, run_mode, image, drawables, config, data):
