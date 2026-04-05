@@ -9956,7 +9956,13 @@ class WanI2VDialog(Gtk.Dialog):
         # Model preset
         box.pack_start(Gtk.Label(label="Model Preset:", xalign=0), False, False, 0)
         self.preset_combo = Gtk.ComboBoxText()
-        self.preset_combo.set_tooltip_text("Wan 2.2 video model variant.\nDifferent presets trade off quality vs. speed and VRAM usage.")
+        self.preset_combo.set_tooltip_text(
+            "Wan 2.2 video model variant — determines which UNET weights to load.\n\n"
+            "GGUF Q4: Quantized 4-bit model. Fits in 8-12GB VRAM, fastest load,\n"
+            "  slightly lower quality. Best for quick iterations and low-VRAM GPUs.\n\n"
+            "fp8: 8-bit floating point. Better quality than Q4, needs ~14GB VRAM.\n"
+            "  Good balance of quality and VRAM for 16GB+ GPUs.\n\n"
+            "Each preset also defines the matching turbo LoRAs and default settings.")
         for key in WAN_I2V_PRESETS:
             self.preset_combo.append(key, key)
         self.preset_combo.set_active(0)
@@ -9966,7 +9972,17 @@ class WanI2VDialog(Gtk.Dialog):
         # Video prompt preset (template)
         box.pack_start(Gtk.Label(label="Prompt Template:", xalign=0), False, False, 0)
         self._video_preset_combo = Gtk.ComboBoxText()
-        self._video_preset_combo.set_tooltip_text("Ready-made motion templates that auto-fill prompt and settings.\nSelect one to get started quickly, or use manual prompt.")
+        self._video_preset_combo.set_tooltip_text(
+            "Ready-made motion templates — auto-fill prompt, negative, and settings.\n\n"
+            "Quality/Action/Portrait Modes: Empty prompt, optimized shift + CFG.\n"
+            "  Fill in your own prompt — these just set the best technical params.\n\n"
+            "Turbo Quality: Uses 2H+4L step split (proven better than 3/3).\n\n"
+            "POV / Close-Up: Low CFG (2.0) prevents crunchy skin artifacts.\n\n"
+            "Physical Contact — Intense: High shift (12) for body interactions.\n\n"
+            "Living Portraits: Subtle animation — breathing, blinking, hair.\n"
+            "Camera presets: Zoom, orbit, pan with pingpong.\n"
+            "Nature presets: Water, clouds, fire with looping.\n\n"
+            "Select '(none)' for full manual control.")
         for i, vp in enumerate(WAN_VIDEO_PRESETS):
             self._video_preset_combo.append(str(i), vp["label"])
         self._video_preset_combo.set_active(0)
@@ -10024,26 +10040,60 @@ class WanI2VDialog(Gtk.Dialog):
         grid.attach(Gtk.Label(label="Steps:", xalign=1), 0, 2, 1, 1)
         self.steps_spin = Gtk.SpinButton.new_with_range(1, 100, 1)
         self.steps_spin.set_value(30)
-        self.steps_spin.set_tooltip_text("Denoising steps per frame. Default: 30.\nMore steps = better quality but slower generation.")
+        self.steps_spin.set_tooltip_text(
+            "Total denoising steps (shared between HIGH and LOW models).\n\n"
+            "Turbo ON:  6 steps total (auto-set). 2-3 for HIGH, 3-4 for LOW.\n"
+            "Turbo OFF: 20-30 steps for maximum quality (much slower).\n\n"
+            "The Steps value is the TOTAL — it's split between the two models\n"
+            "at the 'Switch Step' point. More steps = finer detail but slower.")
         grid.attach(self.steps_spin, 1, 2, 1, 1)
 
         grid.attach(Gtk.Label(label="CFG:", xalign=1), 2, 2, 1, 1)
         self.cfg_spin = Gtk.SpinButton.new_with_range(0.0, 30.0, 0.5)
         self.cfg_spin.set_digits(1); self.cfg_spin.set_value(5.0)
-        self.cfg_spin.set_tooltip_text("CFG Scale: How strictly to follow the prompt. Default: 5.0.\nHigher = more literal prompt following, lower = more creative.")
+        self.cfg_spin.set_tooltip_text(
+            "CFG Scale — prompt adherence vs. creative freedom.\n\n"
+            "1.0: Minimal guidance. Best for Wan turbo (default in presets).\n"
+            "2.0-3.0: Good for close-ups/POV. Prevents crunchy skin artifacts.\n"
+            "5.0: Standard. Good general-purpose value.\n"
+            "7.0+: Strong prompt following. Risk of oversaturation.\n\n"
+            "WARNING: CFG above 5.0 with Wan can cause orange peel / plastic\n"
+            "skin texture. For NSFW or skin-heavy content, keep at 1.0-3.0.")
         grid.attach(self.cfg_spin, 3, 2, 1, 1)
 
         grid.attach(Gtk.Label(label="Shift:", xalign=1), 0, 3, 1, 1)
         self.shift_spin = Gtk.SpinButton.new_with_range(0.0, 100.0, 0.5)
         self.shift_spin.set_digits(1); self.shift_spin.set_value(8.0)
-        self.shift_spin.set_tooltip_text("Noise shift parameter. Default: 8.0.\nControls the noise schedule distribution. Higher values can improve temporal coherence.")
+        self.shift_spin.set_tooltip_text(
+            "Noise Shift — controls the noise schedule distribution.\n"
+            "This is one of the MOST important parameters for Wan quality.\n\n"
+            "  1.0: Maximum scene complexity + face detail. Best for portraits.\n"
+            "       More dramatic motion, less temporal stability.\n\n"
+            "  3.0: High detail, good coherence. Quality Mode default.\n\n"
+            "  5.0: Balanced. Good general-purpose starting point.\n\n"
+            "  8.0: Standard Wan default. Stable, smooth motion.\n\n"
+            " 10.0: High temporal coherence. Use for physical contact scenes.\n"
+            "       Prioritizes limb/body interaction over fine detail.\n\n"
+            " 12.0: Maximum stability. For intense multi-body contact.\n"
+            "       Prevents 'floating limbs' and 'blob merge' artifacts.\n\n"
+            "RULE OF THUMB:\n"
+            "  Portraits/faces → low shift (1-3)\n"
+            "  General motion  → medium shift (5-8)\n"
+            "  Physical contact → high shift (10-12)")
         grid.attach(self.shift_spin, 1, 3, 1, 1)
 
         grid.attach(Gtk.Label(label="Switch Step:", xalign=1), 2, 3, 1, 1)
         self.second_step_spin = Gtk.SpinButton.new_with_range(1, 100, 1)
         self.second_step_spin.set_value(20)
         self.second_step_spin.set_tooltip_text(
-            "Step at which sampling switches from high-noise to low-noise model")
+            "Switch Step — when sampling switches from HIGH to LOW noise model.\n\n"
+            "Wan 2.2 uses a dual-model architecture:\n"
+            "  Pass 1 (step 0 → Switch Step): HIGH-noise model creates structure.\n"
+            "  Pass 2 (Switch Step → end):    LOW-noise model refines detail.\n\n"
+            "Turbo defaults: Steps=6, Switch=3 (3 HIGH + 3 LOW).\n"
+            "Turbo Quality: Steps=6, Switch=2 (2 HIGH + 4 LOW = more refinement).\n"
+            "Non-turbo:     Steps=20-30, Switch=10.\n\n"
+            "More LOW steps = finer detail. More HIGH steps = stronger structure.")
         grid.attach(self.second_step_spin, 3, 3, 1, 1)
 
         grid.attach(Gtk.Label(label="Seed:", xalign=1), 0, 4, 1, 1)
@@ -10056,10 +10106,14 @@ class WanI2VDialog(Gtk.Dialog):
         self.turbo_check = Gtk.CheckButton(label="Turbo (LightX2V 4-step)")
         self.turbo_check.set_active(True)
         self.turbo_check.set_tooltip_text(
-            "Enable LightX2V accelerator LoRAs for ~4x faster generation.\n"
-            "Uses 4 total steps (2 per model) instead of 30.\n"
-            "Quality is slightly lower but generation is near-instant.\n\n"
-            "Disable for maximum quality at the cost of much longer generation.")
+            "Turbo Mode — LightX2V accelerator LoRAs for ~4x faster generation.\n\n"
+            "ON:  6 total steps (3 HIGH + 3 LOW). ~3-5 min on 16GB GPU.\n"
+            "     Uses specialized turbo LoRAs that distill 30 steps into 6.\n"
+            "     Quality is 80-90% of full — excellent for iteration.\n\n"
+            "OFF: 20-30 total steps. ~15-30 min. Maximum quality.\n"
+            "     No accelerator LoRAs — pure model output.\n\n"
+            "TIP: Use the 'Turbo Quality' video preset for the best turbo\n"
+            "config: 2 HIGH + 4 LOW steps with shift=5 (proven better than 3/3).")
         def _on_turbo_toggle(cb):
             if cb.get_active():
                 self.steps_spin.set_value(6)
@@ -10074,17 +10128,29 @@ class WanI2VDialog(Gtk.Dialog):
         self.teacache_check = Gtk.CheckButton(label="TeaCache")
         self.teacache_check.set_active(False)
         self.teacache_check.set_tooltip_text(
-            "Apply TeaCache — caches transformer blocks during sampling.\n"
-            "20-50% faster with minimal quality loss at conservative settings.\n"
-            "Requires ComfyUI_Patches_ll custom node installed on server.")
+            "TeaCache — intelligent transformer block caching during sampling.\n\n"
+            "HOW IT WORKS: Some transformer blocks produce nearly identical\n"
+            "output between steps. TeaCache detects this and reuses cached\n"
+            "results instead of recomputing, saving 20-50% generation time.\n\n"
+            "QUALITY: Conservative threshold (0.20). Virtually no visible\n"
+            "quality loss. Safe to leave on for all generations.\n\n"
+            "REQUIRES: ComfyUI_Patches_ll custom node on your ComfyUI server.\n"
+            "If not installed, the generation will fail with a node-not-found error.")
         grid.attach(self.teacache_check, 2, 5, 1, 1)
 
         # Tiled VAE decode
         self.tiled_vae_check = Gtk.CheckButton(label="Tiled VAE")
         self.tiled_vae_check.set_active(False)
         self.tiled_vae_check.set_tooltip_text(
-            "Use tiled VAE decoding — prevents OOM on large/long videos.\n"
-            "Slightly slower but uses much less VRAM for decode.")
+            "Tiled VAE Decode — processes video in small tiles instead of all at once.\n\n"
+            "WHY: The Wan VAE decoder converts latents → pixels. For long videos\n"
+            "(81+ frames) or high resolution, this can OOM your GPU.\n"
+            "Tiled decode breaks it into 256px tiles with 64px overlap.\n\n"
+            "WHEN TO USE:\n"
+            "  - Always safe to enable (just slightly slower)\n"
+            "  - Essential if you get OOM errors during 'VAE Decode' step\n"
+            "  - Recommended for 8-12GB GPUs or videos > 81 frames\n"
+            "  - 16GB+ GPUs can usually leave this off for speed")
         grid.attach(self.tiled_vae_check, 3, 5, 1, 1)
 
         # Apply turbo defaults
@@ -10102,12 +10168,22 @@ class WanI2VDialog(Gtk.Dialog):
         rtx_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         self.upscale_check = Gtk.CheckButton(label="RTX Upscale")
         self.upscale_check.set_active(True)
-        self.upscale_check.set_tooltip_text("Apply RTXVideoSuperResolution upscale")
+        self.upscale_check.set_tooltip_text(
+            "RTX Video Super Resolution — AI upscaling using NVIDIA's RTX model.\n\n"
+            "Upscales the final video after interpolation. Uses the GPU's\n"
+            "tensor cores for fast, high-quality upscaling.\n\n"
+            "Requires: Nvidia_RTX_Nodes_ComfyUI custom node on server.\n"
+            "Disable if your server doesn't have an NVIDIA GPU or the node.")
         rtx_row.pack_start(self.upscale_check, False, False, 0)
         rtx_row.pack_start(Gtk.Label(label="Scale:"), False, False, 0)
         self.upscale_spin = Gtk.SpinButton.new_with_range(1.0, 4.0, 0.25)
         self.upscale_spin.set_digits(2); self.upscale_spin.set_value(2.5)
-        self.upscale_spin.set_tooltip_text("RTX upscale factor. 2.5 = recommended (from canon workflow).")
+        self.upscale_spin.set_tooltip_text(
+            "RTX upscale multiplier. Applied to the final video resolution.\n\n"
+            "1.5×: Light upscale. Fast, minimal VRAM.\n"
+            "2.0×: Double resolution (e.g. 480p → 960p).\n"
+            "2.5×: Recommended (canon workflow default). 480p → 1200p.\n"
+            "4.0×: Maximum. 480p → 1920p (4K-ish). Very VRAM heavy.")
         rtx_row.pack_start(self.upscale_spin, False, False, 0)
         pp_box.pack_start(rtx_row, False, False, 0)
 
@@ -10115,11 +10191,27 @@ class WanI2VDialog(Gtk.Dialog):
         row2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         self.interpolate_check = Gtk.CheckButton(label="RIFE 4× Interpolation")
         self.interpolate_check.set_active(True)
-        self.interpolate_check.set_tooltip_text("Apply RIFE VFI 4× frame interpolation (16→64 FPS).\nSingle pass at float16 — fast and VRAM-friendly.")
+        self.interpolate_check.set_tooltip_text(
+            "RIFE 4× Frame Interpolation — smooths video by generating 3 extra\n"
+            "frames between each real frame. Turns 16 FPS → 64 FPS.\n\n"
+            "Uses RIFE VFI (rife49.pth) in a single float16 pass.\n"
+            "Runs AFTER face swap (if enabled) for efficiency.\n\n"
+            "Disable for raw output at base FPS, or if you'll upscale separately.")
         row2.pack_start(self.interpolate_check, False, False, 0)
         self.face_swap_check = Gtk.CheckButton(label="Face Swap")
         self.face_swap_check.set_active(True)
-        self.face_swap_check.set_tooltip_text("Apply ReActor face swap to preserve face from input image.\nRuns on raw frames before interpolation for speed.\nDisable if no face in scene or for faster generation.")
+        self.face_swap_check.set_tooltip_text(
+            "ReActor Face Swap — post-processing face consistency.\n\n"
+            "Uses the start image as face source. Detects the face in each\n"
+            "generated frame and swaps it with the original face.\n\n"
+            "Runs on RAW frames (before RIFE interpolation) for speed:\n"
+            "  81 raw frames vs 324 interpolated = 4× faster.\n\n"
+            "DISABLE if:\n"
+            "  - No face in the scene (landscape, object, etc.)\n"
+            "  - Using IP-Adapter instead (better quality, see below)\n"
+            "  - You want faster generation\n\n"
+            "TIP: For best face quality, use IP-Adapter (below) for identity\n"
+            "during generation + this face swap for final cleanup.")
         row2.pack_start(self.face_swap_check, False, False, 0)
         pp_box.pack_start(row2, False, False, 0)
 
@@ -10127,7 +10219,11 @@ class WanI2VDialog(Gtk.Dialog):
         row3 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         self.pingpong_check = Gtk.CheckButton(label="Ping Pong")
         self.pingpong_check.set_active(False)
-        self.pingpong_check.set_tooltip_text("Play video forward then backward for seamless looping")
+        self.pingpong_check.set_tooltip_text(
+            "Ping Pong — plays the video forward then backward.\n\n"
+            "Creates a seamless loop effect without needing matched\n"
+            "first/last frames. The video plays A→B→A→B endlessly.\n\n"
+            "Great for: breathing, swaying, subtle motion loops.")
         row3.pack_start(self.pingpong_check, False, False, 0)
         self.loop_check = Gtk.CheckButton(label="Loop Video")
         self.loop_check.set_active(False)
@@ -10135,7 +10231,11 @@ class WanI2VDialog(Gtk.Dialog):
         row3.pack_start(self.loop_check, False, False, 0)
         self.save_raw_check = Gtk.CheckButton(label="Save Raw")
         self.save_raw_check.set_active(False)
-        self.save_raw_check.set_tooltip_text("Also save the raw un-interpolated MP4 (for debugging)")
+        self.save_raw_check.set_tooltip_text(
+            "Save Raw MP4 — saves the un-interpolated video at base FPS.\n\n"
+            "Useful for debugging: if the final video looks wrong, check\n"
+            "the raw to see if the problem is in generation or post-processing.\n"
+            "The raw file appears in ComfyUI's output folder alongside the final.")
         row3.pack_start(self.save_raw_check, False, False, 0)
         pp_box.pack_start(row3, False, False, 0)
 
@@ -10213,17 +10313,47 @@ class WanI2VDialog(Gtk.Dialog):
         box.pack_start(ipa_frame, False, False, 0)
 
         # ── Motion Region Mask ─────────────────────────────────────────
+        mask_frame = Gtk.Frame(label="  Motion Region Mask  ")
+        mask_frame.set_shadow_type(Gtk.ShadowType.ETCHED_IN)
+        mask_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        mask_box.set_margin_start(8); mask_box.set_margin_end(8)
+        mask_box.set_margin_top(4); mask_box.set_margin_bottom(8)
+
         self.motion_mask_check = Gtk.CheckButton(
-            label="Use GIMP Selection as Motion Mask (white=motion, black=static)")
+            label="Use GIMP Selection as Motion Mask")
         self.motion_mask_check.set_active(False)
         self.motion_mask_check.set_tooltip_text(
-            "Paint a selection in GIMP to define motion regions.\n\n"
-            "Selected area (white) = full motion / denoising.\n"
-            "Unselected area (black) = static / preserved from start image.\n\n"
-            "Use this to prevent multi-character 'blob merge' — mask one\n"
-            "character as static and the other as high-motion.\n"
-            "Also useful for keeping backgrounds frozen while animating a subject.")
-        box.pack_start(self.motion_mask_check, False, False, 0)
+            "Motion Region Mask — control WHICH parts of the video move.\n\n"
+            "HOW IT WORKS:\n"
+            "  1. Paint a selection in GIMP (any selection tool: brush, lasso, etc.)\n"
+            "  2. Check this box\n"
+            "  3. Generate\n\n"
+            "WHAT HAPPENS:\n"
+            "  Selected area (white)   = FULL MOTION — AI generates freely\n"
+            "  Unselected area (black) = STATIC — preserved from start image\n\n"
+            "USE CASES:\n"
+            "  - Freeze background, animate only the subject\n"
+            "  - Two characters: mask one as static, one as moving\n"
+            "    (prevents the 'blob merge' where bodies fuse together)\n"
+            "  - Animate face/upper body, keep legs/furniture frozen\n"
+            "  - Lock a prop or object in place during action\n\n"
+            "TECHNICAL: Exports GIMP selection as a mask image, uploads to\n"
+            "ComfyUI, applies via SetLatentNoiseMask on the conditioning\n"
+            "latent before sampling. White = denoise, black = preserve.\n\n"
+            "REQUIRES: An active GIMP selection. If no selection exists,\n"
+            "this option is ignored (full frame gets motion).")
+        mask_box.pack_start(self.motion_mask_check, False, False, 0)
+
+        mask_info = Gtk.Label(
+            label="Paint a selection in GIMP before generating:\n"
+                  "  White (selected)   = moves freely    |    Black (unselected) = stays frozen",
+            xalign=0)
+        mask_info.set_sensitive(False)
+        mask_info.set_margin_start(24)
+        mask_box.pack_start(mask_info, False, False, 0)
+
+        mask_frame.add(mask_box)
+        box.pack_start(mask_frame, False, False, 0)
 
         # LoRA section — 3 high-noise slots + 3 low-noise slots
         lora_frame = Gtk.Frame(label="LoRAs (3 high-noise + 3 low-noise)")
