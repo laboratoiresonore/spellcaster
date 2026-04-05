@@ -5894,14 +5894,15 @@ WAN_VIDEO_PRESETS = [
     },
     # ── Quality Tier Presets ────────────────────────────────────────────
     {
-        "label": "Quality Mode — Maximum Detail",
+        "label": "Quality Mode — Maximum Detail (shift 3, slow)",
         "prompt": "",
         "negative": "",
         "cfg_override": 1.0,
         "steps_override": 30,
+        "second_step_override": 10,
         "length_override": None,
         "pingpong": None,
-        "shift_override": 8.0,
+        "shift_override": 3.0,
         "loras": [],
     },
     {
@@ -5910,9 +5911,36 @@ WAN_VIDEO_PRESETS = [
         "negative": "",
         "cfg_override": 1.0,
         "steps_override": 20,
+        "second_step_override": 8,
         "length_override": None,
         "pingpong": None,
         "shift_override": 10.0,
+        "loras": [],
+    },
+    {
+        "label": "Portrait Mode — Face Detail (shift 1, complex)",
+        "prompt": "",
+        "negative": "",
+        "cfg_override": 1.0,
+        "steps_override": 30,
+        "second_step_override": 10,
+        "length_override": None,
+        "pingpong": None,
+        "shift_override": 1.0,
+        "loras": [],
+    },
+    {
+        "label": "Turbo Quality — 2H+4L steps (best turbo)",
+        "prompt": "",
+        "negative": "",
+        "cfg_override": 1.0,
+        "steps_override": None,
+        "second_step_override": None,
+        "turbo_override": True,
+        "turbo_split_override": (2, 4),
+        "length_override": None,
+        "pingpong": None,
+        "shift_override": 5.0,
         "loras": [],
     },
     # ── Subtle Life / Living Portrait ────────────────────────────────────
@@ -6448,6 +6476,7 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
                       all_server_loras=None, server_url=None,
                       rtx_scale=2.5, interpolate=True,
                       face_swap=True, save_raw=False,
+                      teacache=False, tiled_vae=False,
                       pingpong=False, fps=16,
                       end_image_filename=None):
     """Wan 2.2 video generation — canon dual-model architecture.
@@ -6476,10 +6505,12 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
     second_step = second_step if second_step is not None else p.get("second_step", 10)
 
     # ── Belt-and-suspenders turbo enforcement ─────────────────────────
-    # Even if the caller passes wrong steps, force turbo values here
+    # Turbo must stay within sane bounds. Allow custom splits (e.g. 2H+4L=6).
     if turbo:
-        steps = 6
-        second_step = 3
+        if not (2 <= steps <= 10):
+            steps = 6
+        if not (1 <= second_step < steps):
+            second_step = min(3, steps - 1)
 
     # ── Resolve model/LoRA paths against server (cached) ────────────────
     # ComfyUI auto-corrects paths on save/reload — strips subfolders,
@@ -6572,6 +6603,23 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
                         "inputs": {"model": low_ref, "lora_name": ln, "strength_model": ls}}
             low_ref = [nid, 0]
 
+    # ── TeaCache (optional) — speeds up sampling via smart block caching ──
+    # ApplyTeaCachePatch from ComfyUI_Patches_ll. Conservative thresh (0.20)
+    # for quality; wan_coefficients="enabled" for temporal stability.
+    if teacache:
+        wf["90"] = {"class_type": "ApplyTeaCachePatch",
+                    "inputs": {"model": high_ref,
+                               "rel_l1_thresh": 0.20,
+                               "cache_device": "offload_device",
+                               "wan_coefficients": "enabled"}}
+        high_ref = ["90", 0]
+        wf["91"] = {"class_type": "ApplyTeaCachePatch",
+                    "inputs": {"model": low_ref,
+                               "rel_l1_thresh": 0.20,
+                               "cache_device": "offload_device",
+                               "wan_coefficients": "enabled"}}
+        low_ref = ["91", 0]
+
     # ── ModelSamplingSD3 (shift) — override noise schedule when set ──
     # Shift controls temporal coherence: higher = better for action/contact
     # Default None = skip (use model's built-in schedule)
@@ -6626,8 +6674,13 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
                 }}
 
     # ── VAE Decode ───────────────────────────────────────────────────
-    wf["60"] = {"class_type": "VAEDecode",
-                "inputs": {"samples": ["51", 0], "vae": ["4", 0]}}
+    if tiled_vae:
+        wf["60"] = {"class_type": "VAEDecodeTiled",
+                    "inputs": {"samples": ["51", 0], "vae": ["4", 0],
+                               "tile_size": 256, "overlap": 64}}
+    else:
+        wf["60"] = {"class_type": "VAEDecode",
+                    "inputs": {"samples": ["51", 0], "vae": ["4", 0]}}
 
     video_ref = ["60", 0]
     prefix = "gimp_wan_loop" if loop else ("gimp_wan_flf" if use_flf else "gimp_wan_i2v")
@@ -6715,6 +6768,7 @@ def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negati
                     all_server_loras=None, server_url=None,
                     rtx_scale=2.5, interpolate=True,
                     face_swap=True, save_raw=False,
+                    teacache=False, tiled_vae=False,
                     pingpong=False, fps=16):
     """Thin wrapper: delegates to _build_wan_video with end_image_filename."""
     return _build_wan_video(
@@ -6726,6 +6780,7 @@ def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negati
         all_server_loras=all_server_loras, server_url=server_url,
         rtx_scale=rtx_scale, interpolate=interpolate,
         face_swap=face_swap, save_raw=save_raw,
+        teacache=teacache, tiled_vae=tiled_vae,
         pingpong=pingpong, fps=fps,
         end_image_filename=end_filename,
     )
@@ -9827,7 +9882,25 @@ class WanI2VDialog(Gtk.Dialog):
                 self.steps_spin.set_value(20)
                 self.second_step_spin.set_value(10)
         self.turbo_check.connect("toggled", _on_turbo_toggle)
-        grid.attach(self.turbo_check, 0, 5, 4, 1)
+        grid.attach(self.turbo_check, 0, 5, 2, 1)
+
+        # TeaCache (requires ComfyUI_Patches_ll custom node)
+        self.teacache_check = Gtk.CheckButton(label="TeaCache")
+        self.teacache_check.set_active(False)
+        self.teacache_check.set_tooltip_text(
+            "Apply TeaCache — caches transformer blocks during sampling.\n"
+            "20-50% faster with minimal quality loss at conservative settings.\n"
+            "Requires ComfyUI_Patches_ll custom node installed on server.")
+        grid.attach(self.teacache_check, 2, 5, 1, 1)
+
+        # Tiled VAE decode
+        self.tiled_vae_check = Gtk.CheckButton(label="Tiled VAE")
+        self.tiled_vae_check.set_active(False)
+        self.tiled_vae_check.set_tooltip_text(
+            "Use tiled VAE decoding — prevents OOM on large/long videos.\n"
+            "Slightly slower but uses much less VRAM for decode.")
+        grid.attach(self.tiled_vae_check, 3, 5, 1, 1)
+
         # Apply turbo defaults
         _on_turbo_toggle(self.turbo_check)
 
@@ -9982,10 +10055,19 @@ class WanI2VDialog(Gtk.Dialog):
         self.neg_tv.get_buffer().set_text(vp["negative"])
 
         # Apply optional overrides (respect turbo — never override steps when turbo is on)
+        is_turbo = self.turbo_check.get_active()
         if vp["cfg_override"] is not None:
             self.cfg_spin.set_value(vp["cfg_override"])
-        if vp["steps_override"] is not None and not self.turbo_check.get_active():
+        if vp.get("steps_override") is not None and not is_turbo:
             self.steps_spin.set_value(vp["steps_override"])
+        if vp.get("second_step_override") is not None and not is_turbo:
+            self.second_step_spin.set_value(vp["second_step_override"])
+        if vp.get("turbo_override") is not None:
+            self.turbo_check.set_active(vp["turbo_override"])
+        if vp.get("turbo_split_override") and (is_turbo or vp.get("turbo_override")):
+            hi, lo = vp["turbo_split_override"]
+            self.steps_spin.set_value(hi + lo)
+            self.second_step_spin.set_value(hi)
         if vp["length_override"] is not None:
             self.length_spin.set_value(vp["length_override"])
         if vp.get("shift_override") is not None:
@@ -10047,6 +10129,8 @@ class WanI2VDialog(Gtk.Dialog):
             "interpolate": self.interpolate_check.get_active(),
             "face_swap": self.face_swap_check.get_active(),
             "save_raw": self.save_raw_check.get_active(),
+            "teacache": self.teacache_check.get_active(),
+            "tiled_vae": self.tiled_vae_check.get_active(),
             "pingpong": self.pingpong_check.get_active(),
             "runs": int(self._runs_spin.get_value()),
         }
@@ -10083,6 +10167,8 @@ class WanI2VDialog(Gtk.Dialog):
         self.interpolate_check.set_active(p.get("interpolate", True))
         self.face_swap_check.set_active(p.get("face_swap", True))
         self.save_raw_check.set_active(p.get("save_raw", False))
+        self.teacache_check.set_active(p.get("teacache", False))
+        self.tiled_vae_check.set_active(p.get("tiled_vae", False))
         self.pingpong_check.set_active(p.get("pingpong", False))
         if "runs" in p:
             self._runs_spin.set_value(p["runs"])
@@ -10103,9 +10189,17 @@ class WanI2VDialog(Gtk.Dialog):
             if lid and lid != "none":
                 loras_low.append((lid, strength.get_value()))
 
-        # Force turbo steps at output — regardless of what the spinner shows
+        # Force turbo steps at output — but allow custom turbo splits (e.g. 2H+4L=6)
         is_turbo = self.turbo_check.get_active()
-        out_steps = 6 if is_turbo else int(self.steps_spin.get_value())
+        if is_turbo:
+            # Read from spinners — presets may have set custom split (e.g. 2+4)
+            spinner_steps = int(self.steps_spin.get_value())
+            spinner_split = int(self.second_step_spin.get_value())
+            # Sanity: turbo total must be <= 10, split must be < total
+            out_steps = min(spinner_steps, 10) if 2 <= spinner_steps <= 10 else 6
+            out_split = min(spinner_split, out_steps - 1) if 1 <= spinner_split < out_steps else 3
+        else:
+            out_steps = int(self.steps_spin.get_value())
         out_split = 3 if is_turbo else int(self.second_step_spin.get_value())
 
         return {
@@ -10133,6 +10227,8 @@ class WanI2VDialog(Gtk.Dialog):
             "interpolate": self.interpolate_check.get_active(),
             "face_swap": self.face_swap_check.get_active(),
             "save_raw": self.save_raw_check.get_active(),
+            "teacache": self.teacache_check.get_active(),
+            "tiled_vae": self.tiled_vae_check.get_active(),
             "pingpong": self.pingpong_check.get_active(),
             "runs": int(self._runs_spin.get_value()),
         }
@@ -11546,6 +11642,8 @@ class Spellcaster(Gimp.PlugIn):
                     interpolate=v.get("interpolate", True),
                     face_swap=v.get("face_swap", True),
                     save_raw=v.get("save_raw", False),
+                    teacache=v.get("teacache", False),
+                    tiled_vae=v.get("tiled_vae", False),
                     pingpong=v.get("pingpong", False),
                     fps=v["fps"],
                 )
@@ -11712,6 +11810,8 @@ class Spellcaster(Gimp.PlugIn):
                     interpolate=v.get("interpolate", True),
                     face_swap=v.get("face_swap", True),
                     save_raw=v.get("save_raw", False),
+                    teacache=v.get("teacache", False),
+                    tiled_vae=v.get("tiled_vae", False),
                     pingpong=v.get("pingpong", False),
                     fps=v["fps"],
                 )
@@ -14000,6 +14100,8 @@ class Spellcaster(Gimp.PlugIn):
                             rtx_scale=v.get("upscale_factor", 2.5),
                             interpolate=v.get("interpolate", True),
                             face_swap=v.get("face_swap", True),
+                            teacache=v.get("teacache", False),
+                            tiled_vae=v.get("tiled_vae", False),
                             pingpong=False, fps=v["fps"],
                             end_image_filename=end_name)
                     else:
@@ -14015,6 +14117,8 @@ class Spellcaster(Gimp.PlugIn):
                             rtx_scale=v.get("upscale_factor", 2.5),
                             interpolate=v.get("interpolate", True),
                             face_swap=v.get("face_swap", True),
+                            teacache=v.get("teacache", False),
+                            tiled_vae=v.get("tiled_vae", False),
                             pingpong=False, fps=v["fps"])
 
                     label = f"Step {step_idx+1} Var {var_idx+1}"
