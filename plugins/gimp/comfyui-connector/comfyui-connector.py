@@ -16155,6 +16155,154 @@ class Spellcaster(Gimp.PlugIn):
                      "negative": "static, jerky, exaggerated, distorted, blurry", "shift": 1.0, "cfg": 2.0, "length": 81},
                 ],
             },
+            # ══════════════════════════════════════════════════════════
+            # ── MOTION DIRECTION GUIDES (FLF Technique) ──────────────
+            # These use First+Last Frame mode to DIRECT character movement.
+            # The user creates the end position in GIMP, and Wan animates
+            # the transition. This is the simplest way to control motion.
+            # ══════════════════════════════════════════════════════════
+            "GUIDE: Walk Across Screen (FLF)": {
+                "description":
+                    "MOTION DIRECTION — Make your character walk across the screen.\n\n"
+                    "HOW TO USE (do this BEFORE clicking Generate):\n"
+                    "  1. Your canvas is the START frame (character on the left)\n"
+                    "  2. Duplicate the layer (Layer > Duplicate Layer)\n"
+                    "  3. Use the Move tool to slide the character to the RIGHT\n"
+                    "  4. Flatten (Image > Flatten Image)\n"
+                    "  5. Export this as your END frame (File > Export As > PNG)\n"
+                    "  6. Undo back to the original (Ctrl+Z until character is on the left)\n"
+                    "  7. Now run this script — Step 1 will ask for the end frame file\n\n"
+                    "Wan will animate the character walking from left to right!",
+                "num_steps": 1, "variations": 3, "loop_count": 1,
+                "face_reinject": True,
+                "steps": [
+                    {"mode": "flf", "prompt": "person walking naturally from left to right, smooth confident stride, natural arm swing, photorealistic, cinematic tracking shot",
+                     "negative": "static, teleporting, jerky, distorted limbs, blurry", "shift": 8.0, "cfg": 1.0, "length": 81},
+                ],
+            },
+            "GUIDE: Sit Down (FLF)": {
+                "description":
+                    "MOTION DIRECTION — Make your character sit down.\n\n"
+                    "HOW TO USE:\n"
+                    "  1. Your canvas = START (character standing)\n"
+                    "  2. Duplicate layer, use Scale/Transform to lower the character\n"
+                    "     and adjust posture to a sitting position\n"
+                    "  3. Export the sitting version as END frame PNG\n"
+                    "  4. Undo back to standing\n"
+                    "  5. Run this script — provide end frame in Step 1\n\n"
+                    "TIP: Don't need it perfect — Wan fills in the motion!",
+                "num_steps": 1, "variations": 3, "loop_count": 1,
+                "face_reinject": True,
+                "steps": [
+                    {"mode": "flf", "prompt": "person gracefully sitting down, smooth lowering motion, natural body mechanics, photorealistic, cinematic",
+                     "negative": "falling, collapsing, jerky, distorted, blurry", "shift": 8.0, "cfg": 1.0, "length": 81},
+                ],
+            },
+            "GUIDE: Stand Up (FLF)": {
+                "description":
+                    "MOTION DIRECTION — Make your character stand up.\n\n"
+                    "HOW TO USE:\n"
+                    "  1. Your canvas = START (character sitting)\n"
+                    "  2. Duplicate, transform to standing position\n"
+                    "  3. Export standing version as END frame\n"
+                    "  4. Undo back to sitting, run this script\n\n"
+                    "Wan animates the transition smoothly!",
+                "num_steps": 1, "variations": 3, "loop_count": 1,
+                "face_reinject": True,
+                "steps": [
+                    {"mode": "flf", "prompt": "person standing up from seated position, smooth rising motion, natural body mechanics, confident posture, photorealistic",
+                     "negative": "jumping, teleporting, jerky, distorted, blurry", "shift": 8.0, "cfg": 1.0, "length": 81},
+                ],
+            },
+            "GUIDE: Turn Around (FLF)": {
+                "description":
+                    "MOTION DIRECTION — Make your character turn around.\n\n"
+                    "HOW TO USE:\n"
+                    "  1. Your canvas = START (character facing camera)\n"
+                    "  2. Use Flip (Image > Transform > Flip Horizontally)\n"
+                    "     or find/create a back-view image of the character\n"
+                    "  3. Export as END frame\n"
+                    "  4. Undo back to front-facing, run this script\n\n"
+                    "TIP: A simple horizontal flip works surprisingly well\n"
+                    "for a 180° turn animation!",
+                "num_steps": 1, "variations": 3, "loop_count": 1,
+                "face_reinject": False,
+                "steps": [
+                    {"mode": "flf", "prompt": "person smoothly turning around, natural rotation, body pivoting, graceful turn, photorealistic, cinematic",
+                     "negative": "static, jerky, spinning, distorted, blurry", "shift": 5.0, "cfg": 1.0, "length": 81},
+                ],
+            },
+            "GUIDE: Zoom to Close-Up (FLF)": {
+                "description":
+                    "MOTION DIRECTION — Dramatic zoom from wide to close-up.\n\n"
+                    "HOW TO USE:\n"
+                    "  1. Your canvas = START (wide shot, full body or scene)\n"
+                    "  2. Use the Crop tool to crop just the face/upper body\n"
+                    "  3. Scale it back to the canvas size (Image > Scale Image)\n"
+                    "  4. Export as END frame\n"
+                    "  5. Undo back to wide shot, run this script\n\n"
+                    "Wan will animate a smooth camera zoom-in!",
+                "num_steps": 1, "variations": 3, "loop_count": 1,
+                "face_reinject": True,
+                "steps": [
+                    {"mode": "flf", "prompt": "smooth cinematic zoom in, camera pushing forward, wide shot transitioning to intimate close-up, professional dolly shot, photorealistic",
+                     "negative": "static, jump cut, jerky, distorted, blurry", "shift": 5.0, "cfg": 1.0, "length": 81},
+                ],
+            },
+            "GUIDE: Raise Arms / Celebrate (FLF)": {
+                "description":
+                    "MOTION DIRECTION — Character raises arms in celebration.\n\n"
+                    "HOW TO USE:\n"
+                    "  1. Your canvas = START (arms at sides)\n"
+                    "  2. Use GIMP's Warp Transform or just paint/edit the arms\n"
+                    "     into a raised position (doesn't need to be perfect)\n"
+                    "  3. Export as END frame\n"
+                    "  4. Undo, run this script\n\n"
+                    "TIP: Even a rough edit works — Wan's motion model\n"
+                    "will generate natural-looking arm movement!",
+                "num_steps": 1, "variations": 3, "loop_count": 1,
+                "face_reinject": True,
+                "steps": [
+                    {"mode": "flf", "prompt": "person raising arms overhead in celebration, joyful victory pose, arms lifting up, natural body movement, photorealistic, cinematic",
+                     "negative": "static, arms down, jerky, distorted, extra limbs, blurry", "shift": 8.0, "cfg": 1.0, "length": 81},
+                ],
+            },
+            "GUIDE: Lie Down (FLF)": {
+                "description":
+                    "MOTION DIRECTION — Character lies down from standing/sitting.\n\n"
+                    "HOW TO USE:\n"
+                    "  1. Your canvas = START (standing or sitting)\n"
+                    "  2. Rotate the character 90° (Image > Transform > Rotate 90° CW)\n"
+                    "     or create a lying-down version\n"
+                    "  3. Export as END frame\n"
+                    "  4. Undo, run this script\n\n"
+                    "TIP: Works best with a bed/couch visible in the scene.",
+                "num_steps": 1, "variations": 3, "loop_count": 1,
+                "face_reinject": True,
+                "steps": [
+                    {"mode": "flf", "prompt": "person gracefully lying down, smooth lowering to bed, natural body settling, relaxed final position, photorealistic, cinematic",
+                     "negative": "falling, collapsing, jerky, distorted, blurry", "shift": 8.0, "cfg": 1.0, "length": 81},
+                ],
+            },
+            "GUIDE: Multi-Step Walk + Sit (2 FLF steps)": {
+                "description":
+                    "ADVANCED MOTION DIRECTION — Walk then sit (2-step sequence).\n\n"
+                    "HOW TO USE:\n"
+                    "  Step 1 (walk): Create END frame with character moved to chair\n"
+                    "  Step 2 (sit):  The Director auto-chains the last frame.\n"
+                    "     Just describe sitting down — Wan figures out the motion.\n\n"
+                    "This demonstrates chaining FLF steps for complex movement!\n"
+                    "Step 1 uses FLF (you provide end frame).\n"
+                    "Step 2 uses I2V (auto-chained from step 1's last frame).",
+                "num_steps": 2, "variations": 2, "loop_count": 1,
+                "face_reinject": True,
+                "steps": [
+                    {"mode": "flf", "prompt": "person walking toward a chair, natural stride, approaching seat, photorealistic, cinematic tracking shot",
+                     "negative": "static, teleporting, jerky, distorted, blurry", "shift": 8.0, "cfg": 1.0, "length": 81},
+                    {"mode": "i2v", "prompt": "person sitting down in the chair, smooth lowering motion, settling into seat, relaxed posture, photorealistic, cinematic",
+                     "negative": "standing, walking, jerky, distorted, blurry", "shift": 8.0, "cfg": 1.0, "length": 81},
+                ],
+            },
             # ── NSFW_DIRECTOR_INJECTION_POINT ──
         }
 
@@ -16183,14 +16331,45 @@ class Spellcaster(Gimp.PlugIn):
         script_combo = Gtk.ComboBoxText()
         script_combo.set_tooltip_text(
             "Pre-made multi-step sequences — auto-fills steps, modes, and prompts.\n\n"
-            "Select a template to get started quickly. You can modify every\n"
-            "setting in the per-step dialogs that follow.\n\n"
-            "Templates include optimized shift, CFG, and prompt for each step.\n"
+            "CINEMATIC SCRIPTS: Multi-step stories with optimized settings.\n"
+            "  Dramatic Reveal, Walk & Talk, Emotion Arc, Fight, VFX, etc.\n\n"
+            "MOTION GUIDES (GUIDE: ...): Tutorials for directing character movement.\n"
+            "  These use First+Last Frame (FLF) mode — the simplest way to\n"
+            "  CONTROL exactly where your character moves:\n\n"
+            "  HOW FLF MOTION DIRECTION WORKS:\n"
+            "  1. Your canvas is the START position\n"
+            "  2. You create an END position in GIMP (move/transform the character)\n"
+            "  3. Wan animates the transition between start and end\n\n"
+            "  Select any 'GUIDE:' script for step-by-step GIMP instructions.\n"
+            "  Even rough edits work — Wan fills in natural motion!\n\n"
             "Face re-injection keeps identity consistent across all steps.")
         for label in DIRECTOR_SCRIPTS:
             script_combo.append(label, label)
         script_combo.set_active(0)
         bx.pack_start(script_combo, False, False, 0)
+
+        # Script description / instructions panel
+        script_desc_frame = Gtk.Frame()
+        script_desc_sw = Gtk.ScrolledWindow()
+        script_desc_sw.set_min_content_height(100)
+        script_desc_sw.set_max_content_height(180)
+        script_desc_label = Gtk.Label(label="Select a script template above to see instructions.", xalign=0, yalign=0)
+        script_desc_label.set_line_wrap(True)
+        script_desc_label.set_margin_start(8); script_desc_label.set_margin_end(8)
+        script_desc_label.set_margin_top(6); script_desc_label.set_margin_bottom(6)
+        script_desc_label.set_selectable(True)
+        script_desc_sw.add(script_desc_label)
+        script_desc_frame.add(script_desc_sw)
+        bx.pack_start(script_desc_frame, False, False, 0)
+
+        def _update_script_desc(combo):
+            key = combo.get_active_id()
+            script = DIRECTOR_SCRIPTS.get(key) if key else None
+            if script and script.get("description"):
+                script_desc_label.set_text(script["description"])
+            else:
+                script_desc_label.set_text("Select a script template above to see instructions.")
+        script_combo.connect("changed", _update_script_desc)
 
         # Server
         hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
