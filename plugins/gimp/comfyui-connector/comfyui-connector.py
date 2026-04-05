@@ -7030,6 +7030,109 @@ def _build_video_reactor(video_name, face_models, upscale_model="4x-UltraSharp.p
     return wf
 
 
+# ── SeedVR2 Video Upscaler ───────────────────────────────────────────────
+
+SEEDVR2_VIDEO_PRESETS = {
+    "Faithful — minimal hallucination": {
+        "resolution": 768, "max_resolution": 1536,
+        "input_noise_scale": 0.0, "latent_noise_scale": 0.0,
+        "batch_size": 4, "temporal_overlap": 2,
+    },
+    "Subtle — light enhancement": {
+        "resolution": 1024, "max_resolution": 2048,
+        "input_noise_scale": 0.05, "latent_noise_scale": 0.05,
+        "batch_size": 4, "temporal_overlap": 2,
+    },
+    "Moderate — add fine detail": {
+        "resolution": 1024, "max_resolution": 2048,
+        "input_noise_scale": 0.10, "latent_noise_scale": 0.10,
+        "batch_size": 4, "temporal_overlap": 2,
+    },
+    "Strong — reimagine details": {
+        "resolution": 1024, "max_resolution": 2048,
+        "input_noise_scale": 0.20, "latent_noise_scale": 0.15,
+        "batch_size": 2, "temporal_overlap": 2,
+    },
+    "Ultra — maximum hallucination": {
+        "resolution": 1280, "max_resolution": 2560,
+        "input_noise_scale": 0.30, "latent_noise_scale": 0.20,
+        "batch_size": 2, "temporal_overlap": 2,
+    },
+}
+
+# VRAM budget → max safe resolution + batch_size
+SEEDVR2_VRAM_PROFILES = {
+    8:  {"max_resolution": 1024, "batch_size": 2},
+    10: {"max_resolution": 1280, "batch_size": 2},
+    12: {"max_resolution": 1536, "batch_size": 3},
+    16: {"max_resolution": 2048, "batch_size": 4},
+    24: {"max_resolution": 2560, "batch_size": 6},
+}
+
+
+def _build_seedvr2_video_upscale(video_name, seed=-1,
+                                  resolution=1024, max_resolution=2048,
+                                  batch_size=4, uniform_batch_size=True,
+                                  color_correction=True, temporal_overlap=2,
+                                  input_noise_scale=0.0, latent_noise_scale=0.0,
+                                  vae_model="seedvr2_vae.safetensors",
+                                  vae_tiled=True, fps=16):
+    """SeedVR2 AI video upscaler — enhances video quality with optional hallucination.
+
+    Pipeline: VHS_LoadVideo → SeedVR2LoadVAEModel → SeedVR2VideoUpscaler
+              → VHS_VideoCombine (MP4) + SaveImage (first frame for GIMP)
+    """
+    if seed < 0:
+        seed = random.randint(0, 2**32 - 1)
+
+    wf = {
+        # Load video
+        "1": {"class_type": "VHS_LoadVideo",
+              "inputs": {"video": video_name, "force_rate": 0, "force_size": "Disabled",
+                         "custom_width": 0, "custom_height": 0,
+                         "frame_load_cap": 0, "skip_first_frames": 0,
+                         "select_every_nth": 1}},
+        # Load SeedVR2 VAE
+        "2": {"class_type": "SeedVR2LoadVAEModel",
+              "inputs": {"model": vae_model, "device": "cuda",
+                         "encode_tiled": vae_tiled, "encode_tile_size": 256,
+                         "encode_tile_overlap": 64,
+                         "decode_tiled": vae_tiled, "decode_tile_size": 256,
+                         "decode_tile_overlap": 64,
+                         "tile_debug": False, "offload_device": "cpu",
+                         "cache_model": True, "torch_compile_args": ""}},
+        # SeedVR2 Video Upscaler
+        "3": {"class_type": "SeedVR2VideoUpscaler",
+              "inputs": {"image": ["1", 0],
+                         "dit": ["1", 0],
+                         "vae": ["2", 0],
+                         "seed": seed,
+                         "resolution": resolution,
+                         "max_resolution": max_resolution,
+                         "batch_size": batch_size,
+                         "uniform_batch_size": uniform_batch_size,
+                         "color_correction": color_correction,
+                         "temporal_overlap": temporal_overlap,
+                         "prepend_frames": 0,
+                         "input_noise_scale": input_noise_scale,
+                         "latent_noise_scale": latent_noise_scale,
+                         "offload_device": "cpu",
+                         "enable_debug": False}},
+        # Output MP4
+        "10": {"class_type": "VHS_VideoCombine",
+               "inputs": {"images": ["3", 0], "frame_rate": float(fps),
+                           "loop_count": 0, "filename_prefix": "seedvr2_upscale",
+                           "format": "video/h264-mp4", "pix_fmt": "yuv420p",
+                           "crf": 17, "pingpong": False,
+                           "save_output": True}},
+        # First frame for GIMP
+        "11": {"class_type": "SaveImage",
+               "inputs": {"images": ["3", 0],
+                           "filename_prefix": "seedvr2_upscale_frame"}},
+    }
+    return wf
+
+
 # ── Klein img2img (Flux 2 Klein) ─────────────────────────────────────────
 # Klein uses a different architecture than standard checkpoints:
 # UNETLoader (not CheckpointLoaderSimple), CLIPLoader with type="flux2",
@@ -11096,6 +11199,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-wan-director": "wan_i2v",
             "spellcaster-video-upscale": "wan_i2v",
             "spellcaster-video-reactor": "wan_i2v",
+            "spellcaster-seedvr2-video": "seedv2r",
             "spellcaster-rembg": "rembg",
             "spellcaster-gif-stitch": None,
             "spellcaster-embed-watermark": None,
@@ -11181,6 +11285,8 @@ class Spellcaster(Gimp.PlugIn):
                                            "Upscale a video with model + RTX super-resolution"),
             "spellcaster-video-reactor": ("Video Face Swap + Upscale...", self._run_video_reactor,
                                            "Upscale a video and swap faces using ReActor"),
+            "spellcaster-seedvr2-video": ("SeedVR2 Video Upscale...", self._run_seedvr2_video,
+                                           "AI video upscaler with hallucination control"),
 "spellcaster-upscale": ("Upscale 4x...", self._run_upscale,
                                      "Upscale image using super-resolution model"),
             "spellcaster-lama-remove": ("Object Removal (LaMa)...", self._run_lama_remove,
@@ -11265,6 +11371,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-wan-director":      "<Image>/Filters/Spellcaster Video",
             "spellcaster-video-upscale":     "<Image>/Filters/Spellcaster Video",
             "spellcaster-video-reactor":     "<Image>/Filters/Spellcaster Video",
+            "spellcaster-seedvr2-video":    "<Image>/Filters/Spellcaster Video",
 
             # Tools & Utility
             "spellcaster-rembg":             "<Image>/Filters/Spellcaster Tools",
@@ -12092,6 +12199,212 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Video ReActor Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    def _run_seedvr2_video(self, procedure, run_mode, image, drawables, config, data):
+        """SeedVR2 AI Video Upscaler with hallucination control."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+
+        dlg = Gtk.Dialog(title="Spellcaster — SeedVR2 Video Upscale")
+        dlg.set_default_size(540, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Upscale Video", Gtk.ResponseType.OK)
+        dlg.set_default_response(Gtk.ResponseType.OK)
+        _style_dialog_buttons(dlg)
+        bx = dlg.get_content_area()
+        bx.set_spacing(6); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(10); bx.set_margin_bottom(10)
+
+        _hdr = _make_branded_header()
+        if _hdr: bx.pack_start(_hdr, False, False, 0)
+
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
+        hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+
+        bx.pack_start(Gtk.Label(
+            label="AI video upscaler — enhances resolution and detail.\n"
+                  "Hallucination presets control how much new detail is invented.",
+            xalign=0), False, False, 4)
+
+        # Video file picker
+        hv = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hv.pack_start(Gtk.Label(label="Video:"), False, False, 0)
+        video_combo = Gtk.ComboBoxText()
+        video_combo.set_tooltip_text("Video file from ComfyUI's input folder.")
+        video_combo.set_hexpand(True)
+        hv.pack_start(video_combo, True, True, 0); bx.pack_start(hv, False, False, 0)
+
+        # Fetch videos
+        try:
+            srv = srv_e.get_text().strip()
+            info = _api_get(srv, "/object_info/VHS_LoadVideo")
+            vids = info["VHS_LoadVideo"]["input"]["required"]["video"][0]
+            for v in vids:
+                video_combo.append(v, v)
+            if vids:
+                video_combo.set_active(0)
+        except Exception:
+            pass
+
+        # Hallucination preset
+        bx.pack_start(Gtk.Label(label="Hallucination Level:", xalign=0), False, False, 0)
+        hall_combo = Gtk.ComboBoxText()
+        hall_combo.set_tooltip_text(
+            "Controls how much new detail the AI invents:\n\n"
+            "Faithful: no hallucination — pure upscale, preserves original exactly\n"
+            "Subtle: light noise injection for mild sharpening\n"
+            "Moderate: adds fine detail (hair, pores, texture)\n"
+            "Strong: reimagines details with creative freedom\n"
+            "Ultra: maximum hallucination — dramatic enhancement")
+        for k in SEEDVR2_VIDEO_PRESETS:
+            hall_combo.append(k, k)
+        hall_combo.set_active_id("Moderate — add fine detail")
+        bx.pack_start(hall_combo, False, False, 0)
+
+        # Parameters grid
+        grid = Gtk.Grid(column_spacing=8, row_spacing=4)
+
+        grid.attach(Gtk.Label(label="Resolution:", xalign=1), 0, 0, 1, 1)
+        res_sp = Gtk.SpinButton.new_with_range(256, 4096, 128)
+        res_sp.set_value(1024)
+        res_sp.set_tooltip_text("Target output resolution (longest side).")
+        grid.attach(res_sp, 1, 0, 1, 1)
+
+        grid.attach(Gtk.Label(label="Max Resolution:", xalign=1), 2, 0, 1, 1)
+        maxres_sp = Gtk.SpinButton.new_with_range(512, 4096, 128)
+        maxres_sp.set_value(2048)
+        maxres_sp.set_tooltip_text("Maximum allowed resolution. Prevents OOM on large videos.")
+        grid.attach(maxres_sp, 3, 0, 1, 1)
+
+        grid.attach(Gtk.Label(label="Batch Size:", xalign=1), 0, 1, 1, 1)
+        batch_sp = Gtk.SpinButton.new_with_range(1, 16, 1)
+        batch_sp.set_value(4)
+        batch_sp.set_tooltip_text("Frames processed at once. Lower = less VRAM, slower.")
+        grid.attach(batch_sp, 1, 1, 1, 1)
+
+        grid.attach(Gtk.Label(label="Temporal Overlap:", xalign=1), 2, 1, 1, 1)
+        overlap_sp = Gtk.SpinButton.new_with_range(0, 8, 1)
+        overlap_sp.set_value(2)
+        overlap_sp.set_tooltip_text("Frame overlap between batches. Higher = smoother transitions.")
+        grid.attach(overlap_sp, 3, 1, 1, 1)
+
+        grid.attach(Gtk.Label(label="Input Noise:", xalign=1), 0, 2, 1, 1)
+        in_noise_sp = Gtk.SpinButton.new_with_range(0.0, 1.0, 0.01)
+        in_noise_sp.set_value(0.10); in_noise_sp.set_digits(2)
+        in_noise_sp.set_tooltip_text("Noise added to input. 0=faithful, higher=more hallucination.")
+        grid.attach(in_noise_sp, 1, 2, 1, 1)
+
+        grid.attach(Gtk.Label(label="Latent Noise:", xalign=1), 2, 2, 1, 1)
+        lat_noise_sp = Gtk.SpinButton.new_with_range(0.0, 1.0, 0.01)
+        lat_noise_sp.set_value(0.10); lat_noise_sp.set_digits(2)
+        lat_noise_sp.set_tooltip_text("Noise in latent space. 0=faithful, higher=more creative.")
+        grid.attach(lat_noise_sp, 3, 2, 1, 1)
+
+        grid.attach(Gtk.Label(label="FPS:", xalign=1), 0, 3, 1, 1)
+        fps_sp = Gtk.SpinButton.new_with_range(1, 120, 1)
+        fps_sp.set_value(16)
+        fps_sp.set_tooltip_text("Output video FPS.")
+        grid.attach(fps_sp, 1, 3, 1, 1)
+
+        grid.attach(Gtk.Label(label="Seed:", xalign=1), 2, 3, 1, 1)
+        seed_sp = Gtk.SpinButton.new_with_range(-1, 2**32 - 1, 1)
+        seed_sp.set_value(-1)
+        seed_sp.set_tooltip_text("-1 = random seed.")
+        grid.attach(seed_sp, 3, 3, 1, 1)
+
+        tiled_check = Gtk.CheckButton(label="Tiled VAE (less VRAM)")
+        tiled_check.set_active(True)
+        tiled_check.set_tooltip_text("Use tiled encoding/decoding. Recommended for all but tiny videos.")
+        grid.attach(tiled_check, 0, 4, 2, 1)
+
+        color_check = Gtk.CheckButton(label="Color Correction")
+        color_check.set_active(True)
+        color_check.set_tooltip_text("Preserve original color palette after upscaling.")
+        grid.attach(color_check, 2, 4, 2, 1)
+
+        bx.pack_start(grid, False, False, 4)
+
+        # Preset → fill params
+        def _on_hall_changed(combo):
+            key = combo.get_active_id()
+            if key and key in SEEDVR2_VIDEO_PRESETS:
+                p = SEEDVR2_VIDEO_PRESETS[key]
+                res_sp.set_value(p["resolution"])
+                maxres_sp.set_value(p["max_resolution"])
+                in_noise_sp.set_value(p["input_noise_scale"])
+                lat_noise_sp.set_value(p["latent_noise_scale"])
+                batch_sp.set_value(p["batch_size"])
+                overlap_sp.set_value(p["temporal_overlap"])
+        hall_combo.connect("changed", _on_hall_changed)
+
+        # Auto VRAM button — detect GPU and set safe defaults
+        def _on_auto_vram(_btn):
+            try:
+                stats = _api_get(srv_e.get_text().strip(), "/system_stats")
+                vram_gb = stats["devices"][0].get("vram_total", 0) / (1024**3)
+                # Find closest VRAM profile
+                best_profile = SEEDVR2_VRAM_PROFILES[8]  # fallback
+                for gb in sorted(SEEDVR2_VRAM_PROFILES.keys()):
+                    if vram_gb >= gb:
+                        best_profile = SEEDVR2_VRAM_PROFILES[gb]
+                maxres_sp.set_value(best_profile["max_resolution"])
+                batch_sp.set_value(best_profile["batch_size"])
+                gpu_name = stats["devices"][0].get("name", "").replace("cuda:0 ", "")
+                _auto_btn.set_label(f"Auto: {gpu_name} ({vram_gb:.0f}GB)")
+            except Exception:
+                _auto_btn.set_label("Auto: failed to detect GPU")
+        _auto_btn = Gtk.Button(label="Auto-detect VRAM limits")
+        _auto_btn.set_tooltip_text("Query the ComfyUI server's GPU and set safe resolution/batch limits.")
+        _auto_btn.connect("clicked", _on_auto_vram)
+        bx.pack_start(_auto_btn, False, False, 0)
+
+        bx.show_all()
+
+        # Auto-detect on open
+        _on_auto_vram(None)
+
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        srv = srv_e.get_text().strip(); _propagate_server_url(srv)
+        video_name = video_combo.get_active_id()
+        dlg.destroy()
+
+        if not video_name:
+            Gimp.message("No video selected.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        try:
+            wf = _build_seedvr2_video_upscale(
+                video_name,
+                seed=int(seed_sp.get_value()),
+                resolution=int(res_sp.get_value()),
+                max_resolution=int(maxres_sp.get_value()),
+                batch_size=int(batch_sp.get_value()),
+                color_correction=color_check.get_active(),
+                temporal_overlap=int(overlap_sp.get_value()),
+                input_noise_scale=in_noise_sp.get_value(),
+                latent_noise_scale=lat_noise_sp.get_value(),
+                vae_tiled=tiled_check.get_active(),
+                fps=int(fps_sp.get_value()),
+            )
+            results = _run_with_spinner("SeedVR2 Video Upscale: processing...",
+                                         lambda: list(_run_comfyui_workflow(srv, wf, timeout=1200)))
+            for fn, sf, ft in results:
+                if fn.lower().endswith(".png"):
+                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+                                            "SeedVR2 Video frame")
+            Gimp.displays_flush()
+            Gimp.message("SeedVR2 Video Upscale complete!\nCheck ComfyUI output folder for the upscaled MP4.")
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"SeedVR2 Video Upscale Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     def _run_faceswap_mtb(self, procedure, run_mode, image, drawables, config, data):

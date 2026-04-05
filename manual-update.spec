@@ -16,9 +16,9 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
-pex = PEX(a.pure)
+pyz = PYZ(a.pure)
 exe = EXE(
-    pex,
+    pyz,
     a.scripts,
     a.binaries,
     a.datas,
