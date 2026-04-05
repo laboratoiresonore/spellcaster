@@ -413,6 +413,84 @@ COMFYUI_DEFAULT_URL = _load_config().get("server_url", "http://127.0.0.1:8188")
 # should never be interrupted by an arbitrary timeout.
 WORKFLOW_TIMEOUT = _load_config().get("workflow_timeout", 0)
 
+# ── Realism Quality Boost System ─────────────────────────────────────────
+# Proven quality tokens from the photorealistic AI community (CivitAI,
+# Reddit r/StableDiffusion, r/ComfyUIResources). Append/prepend to user
+# prompts for dramatically better photorealism with zero user effort.
+
+QUALITY_BOOST_POSITIVE = {
+    "sd15":         "masterpiece, best quality, highly detailed, photorealistic, sharp focus, "
+                    "professional photograph, DSLR, 8K UHD, soft natural lighting, film grain",
+    "sdxl":         "masterpiece, best quality, highly detailed, photorealistic, 8K UHD, "
+                    "DSLR, Fujifilm XT3, sharp focus, professional photograph, natural lighting, film grain",
+    "flux1dev":     "photorealistic, highly detailed, sharp focus, professional photograph, "
+                    "8K UHD, natural lighting, Fujifilm XT3, film grain, depth of field",
+    "flux2klein":   "photorealistic, highly detailed, sharp focus, professional photograph, "
+                    "8K UHD, natural lighting, depth of field",
+    "illustrious":  "masterpiece, best quality, highly detailed, photorealistic, sharp focus, "
+                    "professional photograph, 8K UHD, natural lighting",
+    "zit":          "photorealistic, highly detailed, sharp focus, 8K UHD, professional, natural lighting",
+}
+
+QUALITY_BOOST_NEGATIVE = {
+    "sd15":         "(worst quality, low quality:1.4), bad anatomy, bad hands, text, error, "
+                    "missing fingers, extra digit, fewer digits, cropped, jpeg artifacts, "
+                    "signature, watermark, username, blurry, deformed, disfigured, mutated, "
+                    "extra limbs, duplicate, morbid, poorly drawn hands, poorly drawn face, "
+                    "mutation, ugly, disgusting, amateur",
+    "sdxl":         "(worst quality, low quality:1.4), bad anatomy, bad hands, text, error, "
+                    "missing fingers, extra digit, fewer digits, cropped, jpeg artifacts, "
+                    "signature, watermark, blurry, deformed, disfigured, mutated, ugly, "
+                    "extra limbs, duplicate, poorly drawn face, amateur, 3d render, cartoon",
+    "flux1dev":     "blurry, low quality, bad anatomy, deformed, disfigured, ugly, "
+                    "watermark, text, signature, extra limbs, missing fingers, amateur, "
+                    "3d render, cartoon, illustration, painting",
+    "flux2klein":   "blurry, low quality, bad anatomy, deformed, disfigured, ugly, "
+                    "watermark, text, extra limbs, amateur, cartoon",
+    "illustrious":  "(worst quality, low quality:1.4), bad anatomy, bad hands, text, "
+                    "watermark, blurry, deformed, ugly, extra limbs, amateur",
+    "zit":          "blurry, low quality, bad anatomy, deformed, ugly, watermark, text, amateur",
+}
+
+# Skin-specific anti-artifact prompts (for NSFW / skin-heavy content)
+SKIN_REALISM_POSITIVE = (
+    "natural skin texture, visible pores, subsurface scattering, realistic skin tone, "
+    "natural skin imperfections, peach fuzz, moles, freckles"
+)
+SKIN_REALISM_NEGATIVE = (
+    "plastic skin, orange peel texture, waxy skin, airbrushed, porcelain doll, "
+    "mannequin, smooth plastic, crunchy artifacts, oversaturated skin"
+)
+
+
+def _boost_prompt(prompt, arch="sdxl", skin_realism=False):
+    """Prepend quality tokens to a prompt for better photorealism.
+
+    arch: architecture key (sd15, sdxl, flux1dev, etc.)
+    skin_realism: if True, also adds skin-specific realism tokens.
+    """
+    prefix = QUALITY_BOOST_POSITIVE.get(arch, QUALITY_BOOST_POSITIVE["sdxl"])
+    if skin_realism:
+        prefix = prefix + ", " + SKIN_REALISM_POSITIVE
+    if prompt.strip():
+        return prefix + ", " + prompt
+    return prefix
+
+
+def _boost_negative(negative, arch="sdxl", skin_realism=False):
+    """Prepend quality-boost negative tokens to a negative prompt.
+
+    arch: architecture key (sd15, sdxl, flux1dev, etc.)
+    skin_realism: if True, also adds skin-specific anti-artifact tokens.
+    """
+    prefix = QUALITY_BOOST_NEGATIVE.get(arch, QUALITY_BOOST_NEGATIVE["sdxl"])
+    if skin_realism:
+        prefix = prefix + ", " + SKIN_REALISM_NEGATIVE
+    if negative.strip():
+        return prefix + ", " + negative
+    return prefix
+
+
 def _save_config(data):
     """Write config.json to the plugin directory, merging with existing config."""
     cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
@@ -20115,14 +20193,19 @@ class Spellcaster(Gimp.PlugIn):
                 _upload_image(srv, tmp, ref_name); os.unlink(tmp)
 
             preset = dict(MODEL_PRESETS[model_idx] if 0 <= model_idx < len(MODEL_PRESETS) else MODEL_PRESETS[0])
+            # Quality boost: prepend proven realism tokens
+            arch = preset.get("arch", "sdxl")
+            boosted_prompt = _boost_prompt(prompt, arch, skin_realism=True)
+            boosted_negative = _boost_negative(negative, arch, skin_realism=True)
+
             chosen = None
 
             while chosen is None:
                 results_data = []
                 for i in range(3):
                     seed = random.randint(0, 2**32 - 1)
-                    # Step 1: txt2img body
-                    wf_body = _build_txt2img(preset, prompt, negative, seed)
+                    # Step 1: txt2img body (with quality boost)
+                    wf_body = _build_txt2img(preset, boosted_prompt, boosted_negative, seed)
                     _wf = wf_body
                     body_res = _run_with_spinner(
                         f"Body Factory: generating body {i+1}/3...",
@@ -20637,14 +20720,16 @@ class Spellcaster(Gimp.PlugIn):
                 _import_result_as_layer(image, open(tmp if os.path.exists(tmp) else "", "rb").read() if False else
                                         _download_image(srv, bg_name, "", "input"), "Studio Set BG")
             else:
-                # Generate background — pick best of 3
+                # Generate background — pick best of 3 (with quality boost)
                 bg_prompt = SCENE_BG_PRESETS[bg_key]
                 preset = dict(MODEL_PRESETS[bg_model_idx] if 0 <= bg_model_idx < len(MODEL_PRESETS) else MODEL_PRESETS[0])
+                arch = preset.get("arch", "sdxl")
+                bg_boosted = _boost_prompt(bg_prompt, arch)
+                bg_neg = _boost_negative("people, person, human, figure, text, watermark, deformed", arch)
                 bg_results = []
                 for i in range(3):
                     seed = random.randint(0, 2**32 - 1)
-                    wf = _build_txt2img(preset, bg_prompt,
-                                        "people, person, human, figure, text, watermark, deformed", seed)
+                    wf = _build_txt2img(preset, bg_boosted, bg_neg, seed)
                     _wf = wf
                     res = _run_with_spinner(f"Studio Set: generating background {i+1}/3...",
                                              lambda: list(_run_comfyui_workflow(srv, _wf)))
