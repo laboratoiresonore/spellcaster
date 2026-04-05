@@ -19977,6 +19977,18 @@ class Spellcaster(Gimp.PlugIn):
         gender_row.pack_start(gender_combo, True, True, 0)
         bx.pack_start(gender_row, False, False, 0)
 
+        # Generation model (for txt2img base headshots)
+        bx.pack_start(Gtk.Label(label="Generation Model:", xalign=0), False, False, 0)
+        model_combo = Gtk.ComboBoxText()
+        model_combo.set_tooltip_text(
+            "Which AI model generates the base headshots.\n"
+            "The face swap happens AFTER generation, so the base just\n"
+            "needs good lighting and anatomy. SDXL or Flux recommended.")
+        for i, p in enumerate(MODEL_PRESETS):
+            model_combo.append(str(i), p.get("label", p.get("checkpoint", f"Model {i}")))
+        model_combo.set_active(0)
+        bx.pack_start(model_combo, False, False, 0)
+
         # Model name
         name_frame = Gtk.Frame(label="  Save As  ")
         name_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -20011,6 +20023,7 @@ class Spellcaster(Gimp.PlugIn):
         face_source = src_combo.get_active_id()
         face_file = file_chooser.get_filename()
         gender = gender_combo.get_active_id() or "person"
+        model_idx = int(model_combo.get_active_id() or "0")
         model_name = name_entry.get_text().strip() or "photobooth_face"
         dlg.destroy()
 
@@ -20027,76 +20040,67 @@ class Spellcaster(Gimp.PlugIn):
                 ref_name = f"gimp_pb_ref_{uuid.uuid4().hex[:8]}.png"
                 _upload_image(srv, tmp, ref_name); os.unlink(tmp)
 
+            preset = dict(MODEL_PRESETS[model_idx] if 0 <= model_idx < len(MODEL_PRESETS) else MODEL_PRESETS[0])
+            arch = preset.get("arch", "sdxl")
+
+            # Headshot prompts — 3 different lighting/angle combos for variety
+            headshot_prompts = [
+                f"professional headshot portrait of a {gender}, neutral grey background, "
+                f"soft studio lighting from the left, head and shoulders, looking at camera, "
+                f"natural expression, photorealistic, 8K, shallow depth of field, passport photo",
+                f"clean portrait of a {gender}, white background, bright even lighting, "
+                f"head and shoulders, slight smile, facing camera directly, photorealistic, "
+                f"8K, professional ID photo, studio photography",
+                f"elegant headshot of a {gender}, dark background, dramatic Rembrandt lighting, "
+                f"head and shoulders, confident expression, slight angle, photorealistic, "
+                f"8K, cinematic portrait, professional actor headshot",
+            ]
+            headshot_negative = (
+                "full body, wide shot, cartoon, illustration, painting, deformed face, "
+                "bad anatomy, blurry, text, watermark, multiple people, group, extra limbs"
+            )
+
             chosen_image = None
 
             while chosen_image is None:
-                # Generate 3 passport-style photos by face-swapping onto
-                # clean headshot bases at 3 different seeds
                 results_data = []
                 for i in range(3):
                     seed = random.randint(0, 2**32 - 1)
-                    # Robust passport photo pipeline:
-                    #   1. LoadImage (reference face)
-                    #   2. ReActorFaceSwap (self-swap to normalize + restore)
-                    #      Uses different restore models per variant for diversity
-                    #   3. ReActorFaceBoost (enhance face detail post-swap)
-                    #   4. ReActorOptions (configure face detection ordering)
-                    #   5. SaveImage (output)
-                    #
-                    # Self-swap with strong face restore produces a clean,
-                    # well-lit, artifact-free version of the face. The 3
-                    # variants use different codeformer weights for diversity.
-                    cf_weights = [0.2, 0.5, 0.8]  # low=sharper, high=more faithful
-                    restore_models = [
-                        "codeformer-v0.1.0.pth",
-                        "GPEN-BFR-2048.onnx",
-                        "codeformer-v0.1.0.pth",
-                    ]
-                    wf = {
-                        "1": {"class_type": "LoadImage",
-                              "inputs": {"image": ref_name}},
-                        "3": {"class_type": "ReActorFaceSwapOpt",
-                              "inputs": {
-                                  "enabled": True,
-                                  "input_image": ["1", 0],
-                                  "source_image": ["1", 0],
-                                  "swap_model": "inswapper_128.onnx",
-                                  "facedetection": "retinaface_resnet50",
-                                  "face_restore_model": restore_models[i],
-                                  "face_restore_visibility": 1.0,
-                                  "codeformer_weight": cf_weights[i],
-                              }},
-                        "4": {"class_type": "ReActorOptions",
-                              "inputs": {
-                                  "input_faces_order": "left-right",
-                                  "input_faces_index": "0",
-                                  "detect_gender_input": "no",
-                                  "source_faces_order": "left-right",
-                                  "source_faces_index": "0",
-                                  "detect_gender_source": "no",
-                                  "console_log_level": 1,
-                                  "restore_swapped_only": True,
-                              }},
-                        "5": {"class_type": "ReActorFaceBoost",
-                              "inputs": {
-                                  "enabled": True,
-                                  "boost_model": restore_models[i],
-                                  "interpolation": "Bicubic",
-                                  "visibility": 1.0,
-                                  "codeformer_weight": cf_weights[i],
-                                  "restore_with_main_after": False,
-                              }},
-                        "10": {"class_type": "SaveImage",
-                               "inputs": {"images": ["3", 0],
-                                          "filename_prefix": f"photobooth_{model_name}_{i}"}},
-                    }
-                    wf["3"]["inputs"]["options"] = ["4", 0]
-                    wf["3"]["inputs"]["face_boost"] = ["5", 0]
-                    _wf = wf
-                    res = _run_with_spinner(
-                        f"Photobooth: generating variant {i+1}/3...",
-                        lambda: list(_run_comfyui_workflow(srv, _wf)))
-                    for fn, sf, ft in res:
+                    prompt = _boost_prompt(headshot_prompts[i], arch, skin_realism=True)
+                    negative = _boost_negative(headshot_negative, arch, skin_realism=True)
+
+                    # Step 1: txt2img a clean headshot base (different seed each = different result)
+                    wf_head = _build_txt2img(preset, prompt, negative, seed)
+                    _wf1 = wf_head
+                    head_res = _run_with_spinner(
+                        f"Photobooth: generating headshot {i+1}/3...",
+                        lambda: list(_run_comfyui_workflow(srv, _wf1)))
+
+                    head_fn = None
+                    for fn, sf, ft in head_res:
+                        if fn.lower().endswith(".png"):
+                            head_fn = fn; break
+                    if not head_fn:
+                        continue
+
+                    # Step 2: face swap the user's face onto the generated headshot
+                    head_data = _download_image(srv, head_fn, "", "output")
+                    head_name = f"gimp_pb_head_{i}_{uuid.uuid4().hex[:8]}.png"
+                    tmp_h = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                    tmp_h.write(head_data); tmp_h.close()
+                    _upload_image(srv, tmp_h.name, head_name); os.unlink(tmp_h.name)
+
+                    wf_swap = _build_faceswap(
+                        head_name, ref_name,
+                        swap_model="inswapper_128.onnx",
+                        face_restore_model="codeformer-v0.1.0.pth",
+                        face_restore_vis=0.8, codeformer_weight=0.5,
+                        quality_preset="High (ReSwapper 256 + GPEN-2048)")
+                    _wf2 = wf_swap
+                    swap_res = _run_with_spinner(
+                        f"Photobooth: swapping face {i+1}/3...",
+                        lambda: list(_run_comfyui_workflow(srv, _wf2)))
+                    for fn, sf, ft in swap_res:
                         if fn.lower().endswith(".png"):
                             img_data = _download_image(srv, fn, sf, ft)
                             results_data.append((fn, sf, ft, img_data))
