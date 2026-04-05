@@ -6251,6 +6251,27 @@ WAN_I2V_PRESETS = {
     },
 }
 
+def _resolve_server_path(hardcoded, server_list):
+    """Match a hardcoded model/LoRA path to the actual server-reported path.
+
+    ComfyUI auto-corrects paths on save/reload — stripping subfolders,
+    changing separators (backslash ↔ forward slash), normalizing case.
+    This function finds the correct server path by matching the FILENAME
+    portion, ignoring folder structure and separator differences.
+
+    Returns the server path if found, otherwise the original hardcoded path.
+    """
+    if not server_list:
+        return hardcoded
+    # Normalize for comparison: lowercase, unify separators
+    hc_base = hardcoded.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    for sp in server_list:
+        sp_base = sp.replace("\\", "/").rsplit("/", 1)[-1].lower()
+        if sp_base == hc_base:
+            return sp
+    return hardcoded
+
+
 def _filter_wan_loras(all_loras, preset_key=None):
     """Return ALL Wan-related LoRAs from the server list.
 
@@ -6327,7 +6348,7 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
                       steps=None, cfg=None, shift=None, second_step=None,
                       turbo=True, loop=False,
                       loras_high=None, loras_low=None,
-                      all_server_loras=None,
+                      all_server_loras=None, server_url=None,
                       rtx_scale=2.5, interpolate=True,
                       pingpong=False, fps=16,
                       end_image_filename=None):
@@ -6356,20 +6377,65 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
     shift = shift if shift is not None else p.get("shift")
     second_step = second_step if second_step is not None else p.get("second_step", 10)
 
-    is_gguf_high = p["high_model"].endswith(".gguf")
-    is_gguf_low = p["low_model"].endswith(".gguf")
+    # ── Belt-and-suspenders turbo enforcement ─────────────────────────
+    # Even if the caller passes wrong steps, force turbo values here
+    if turbo:
+        steps = 6
+        second_step = 3
+
+    # ── Resolve model/LoRA paths against server ────────────────────────
+    # ComfyUI auto-corrects paths on save/reload — strips subfolders,
+    # normalizes separators, changes case. Hardcoded preset paths may not
+    # match the server's canonical paths. Resolve by matching filenames.
+    high_model = p["high_model"]
+    low_model = p["low_model"]
+    clip_name = p["clip"]
+    vae_name = p["vae"]
+    if server_url:
+        try:
+            loader_type = "UnetLoaderGGUF" if p["high_model"].endswith(".gguf") else "UNETLoader"
+            info = _api_get(server_url, f"/object_info/{loader_type}")
+            all_unets = info[loader_type]["input"]["required"]["unet_name"][0]
+            high_model = _resolve_server_path(p["high_model"], all_unets)
+            low_model = _resolve_server_path(p["low_model"], all_unets)
+        except Exception:
+            pass
+        try:
+            info = _api_get(server_url, "/object_info/CLIPLoaderGGUF")
+            all_clips = info["CLIPLoaderGGUF"]["input"]["required"]["clip_name"][0]
+            clip_name = _resolve_server_path(p["clip"], all_clips)
+        except Exception:
+            pass
+        try:
+            info = _api_get(server_url, "/object_info/VAELoader")
+            all_vaes = info["VAELoader"]["input"]["required"]["vae_name"][0]
+            vae_name = _resolve_server_path(p["vae"], all_vaes)
+        except Exception:
+            pass
+
+    # Resolve turbo LoRA paths against server LoRA list
+    high_accel_lora = p.get("high_accel_lora")
+    low_accel_lora = p.get("low_accel_lora")
+    if all_server_loras:
+        if high_accel_lora:
+            high_accel_lora = _resolve_server_path(high_accel_lora, all_server_loras)
+        if low_accel_lora:
+            low_accel_lora = _resolve_server_path(low_accel_lora, all_server_loras)
+
+    is_gguf_high = high_model.endswith(".gguf")
+    is_gguf_low = low_model.endswith(".gguf")
     use_flf = loop or (end_image_filename is not None)
 
     # ── Model loaders ────────────────────────────────────────────────
     wf = {
         "1": {"class_type": "CLIPLoaderGGUF",
-              "inputs": {"clip_name": p["clip"], "type": "wan"}},
+              "inputs": {"clip_name": clip_name, "type": "wan"}},
         "2": {"class_type": "UnetLoaderGGUF" if is_gguf_high else "UNETLoader",
-              "inputs": {"unet_name": p["high_model"]}},
+              "inputs": {"unet_name": high_model}},
         "3": {"class_type": "UnetLoaderGGUF" if is_gguf_low else "UNETLoader",
-              "inputs": {"unet_name": p["low_model"]}},
+              "inputs": {"unet_name": low_model}},
         "4": {"class_type": "VAELoader",
-              "inputs": {"vae_name": p["vae"]}},
+              "inputs": {"vae_name": vae_name}},
         "5": {"class_type": "CLIPTextEncode",
               "inputs": {"text": prompt_text, "clip": ["1", 0]}},
         "6": {"class_type": "CLIPTextEncode",
@@ -6391,18 +6457,18 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
     high_ref = ["2", 0]
     low_ref = ["3", 0]
 
-    # Accelerator LoRAs (turbo) — strength from preset (default 1.5)
+    # Accelerator LoRAs (turbo) — use server-resolved paths
     if turbo:
-        if p.get("high_accel_lora"):
+        if high_accel_lora:
             wf["100"] = {"class_type": "LoraLoaderModelOnly",
                          "inputs": {"model": high_ref,
-                                    "lora_name": p["high_accel_lora"],
+                                    "lora_name": high_accel_lora,
                                     "strength_model": p.get("accel_strength", 1.5)}}
             high_ref = ["100", 0]
-        if p.get("low_accel_lora"):
+        if low_accel_lora:
             wf["120"] = {"class_type": "LoraLoaderModelOnly",
                          "inputs": {"model": low_ref,
-                                    "lora_name": p["low_accel_lora"],
+                                    "lora_name": low_accel_lora,
                                     "strength_model": p.get("accel_strength", 1.5)}}
             low_ref = ["120", 0]
 
@@ -6571,7 +6637,7 @@ def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negati
                     width=832, height=480, length=81,
                     steps=None, cfg=None, shift=None, second_step=None,
                     turbo=True, loras_high=None, loras_low=None,
-                    all_server_loras=None,
+                    all_server_loras=None, server_url=None,
                     rtx_scale=2.5, interpolate=True, pingpong=False, fps=16):
     """Thin wrapper: delegates to _build_wan_video with end_image_filename."""
     return _build_wan_video(
@@ -6580,7 +6646,7 @@ def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negati
         steps=steps, cfg=cfg, shift=shift, second_step=second_step,
         turbo=turbo, loop=False,
         loras_high=loras_high, loras_low=loras_low,
-        all_server_loras=all_server_loras,
+        all_server_loras=all_server_loras, server_url=server_url,
         rtx_scale=rtx_scale, interpolate=interpolate,
         pingpong=pingpong, fps=fps,
         end_image_filename=end_filename,
@@ -9802,10 +9868,10 @@ class WanI2VDialog(Gtk.Dialog):
         self.prompt_tv.get_buffer().set_text(vp["prompt"])
         self.neg_tv.get_buffer().set_text(vp["negative"])
 
-        # Apply optional overrides
+        # Apply optional overrides (respect turbo — never override steps when turbo is on)
         if vp["cfg_override"] is not None:
             self.cfg_spin.set_value(vp["cfg_override"])
-        if vp["steps_override"] is not None:
+        if vp["steps_override"] is not None and not self.turbo_check.get_active():
             self.steps_spin.set_value(vp["steps_override"])
         if vp["length_override"] is not None:
             self.length_spin.set_value(vp["length_override"])
@@ -11355,14 +11421,16 @@ class Spellcaster(Gimp.PlugIn):
                     loras_high=v.get("loras_high"),
                     loras_low=v.get("loras_low"),
                     all_server_loras=v.get("all_server_loras"),
+                    server_url=srv,
                     rtx_scale=v.get("upscale_factor", 2.5),
                     interpolate=v.get("interpolate", True),
                     pingpong=v.get("pingpong", False),
                     fps=v["fps"],
                 )
                 label = f"Wan I2V run {run_i+1}/{runs}" if runs > 1 else "Wan I2V"
+                _wf = wf
                 results = _run_with_spinner(f"{label}: generating video from {src} on ComfyUI...",
-                                            lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
+                                            lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
                 for i, (fn, sf, ft) in enumerate(results):
                     # Only import the last-frame PNG, skip MP4 and batch frames
                     if fn.lower().endswith(".png") and "lastframe" in fn.lower():
@@ -11517,14 +11585,16 @@ class Spellcaster(Gimp.PlugIn):
                     loras_high=v.get("loras_high"),
                     loras_low=v.get("loras_low"),
                     all_server_loras=v.get("all_server_loras"),
+                    server_url=srv,
                     rtx_scale=v.get("upscale_factor", 2.5),
                     interpolate=v.get("interpolate", True),
                     pingpong=v.get("pingpong", False),
                     fps=v["fps"],
                 )
                 label = f"Wan FLF run {run_i+1}/{runs}" if runs > 1 else "Wan FLF"
+                _wf = wf
                 results = _run_with_spinner(f"{label}: generating video transition on ComfyUI...",
-                                             lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
+                                             lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
                 for i, (fn, sf, ft) in enumerate(results):
                     if fn.lower().endswith(".png") and "lastframe" in fn.lower():
                         _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
@@ -13802,6 +13872,7 @@ class Spellcaster(Gimp.PlugIn):
                             turbo=v.get("turbo", True), loop=False,
                             loras_high=v.get("loras_high"), loras_low=v.get("loras_low"),
                             all_server_loras=v.get("all_server_loras"),
+                            server_url=srv,
                             rtx_scale=v.get("upscale_factor", 2.5),
                             interpolate=v.get("interpolate", True),
                             pingpong=False, fps=v["fps"],
@@ -13815,6 +13886,7 @@ class Spellcaster(Gimp.PlugIn):
                             turbo=v.get("turbo", True), loop=(mode == "loop"),
                             loras_high=v.get("loras_high"), loras_low=v.get("loras_low"),
                             all_server_loras=v.get("all_server_loras"),
+                            server_url=srv,
                             rtx_scale=v.get("upscale_factor", 2.5),
                             interpolate=v.get("interpolate", True),
                             pingpong=False, fps=v["fps"])
