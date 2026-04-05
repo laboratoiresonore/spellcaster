@@ -163,17 +163,36 @@ def find_default_comfyui() -> str:
 
     Validates candidates by looking for main.py (older ComfyUI) or
     comfy/cli_args.py (newer ComfyUI refactored layout).
+
+    Also probes ComfyUI Portable distributions, which place ComfyUI/ as a
+    subdirectory alongside python_embeded/ inside a *portable* wrapper folder.
     """
     home = Path.home()
     if platform.system() == "Windows":
         candidates = [
             home / "ComfyUI",
             Path("C:/ComfyUI"),
+            Path("C:/ComfyUI_windows_portable/ComfyUI"),
             home / "Desktop" / "ComfyUI",
             home / "Documents" / "ComfyUI",
             Path("D:/ComfyUI"),
             Path("E:/ComfyUI"),
         ]
+        # Glob for portable distributions on common drives and user folders
+        for drive in ["C:", "D:", "E:"]:
+            drive_root = Path(drive + "/")
+            if drive_root.exists():
+                try:
+                    for d in drive_root.glob("ComfyUI*portable*/ComfyUI"):
+                        candidates.append(d)
+                except PermissionError:
+                    pass
+        for user_dir in ["Desktop", "Downloads", "Documents"]:
+            try:
+                for d in (home / user_dir).glob("ComfyUI*portable*/ComfyUI"):
+                    candidates.append(d)
+            except (PermissionError, OSError):
+                pass
     elif platform.system() == "Darwin":
         candidates = [
             home / "ComfyUI",
@@ -414,7 +433,7 @@ def download_file(url: str, dest: Path, dry_run: bool = False,
     print(f"  {C_DIM}From: {url}{C_RESET}")
     try:
         req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=300) as resp:
             total = int(resp.headers.get("Content-Length", 0))
             downloaded = 0
             with open(dest, "wb") as f:
@@ -530,9 +549,10 @@ def get_comfy_python(comfyui_path: Path) -> str:
 
     Search order:
     1. Embedded Python (Windows portable builds ship python_embeded/)
-    2. Virtual environment (venv/ or .venv/, cross-platform)
-    3. System Python via PATH (for PyInstaller-frozen installer builds)
-    4. Current interpreter as last resort
+    2. Embedded Python as sibling (portable layout: python_embeded/ next to ComfyUI/)
+    3. Virtual environment (venv/ or .venv/, cross-platform)
+    4. System Python via PATH (for PyInstaller-frozen installer builds)
+    5. Current interpreter as last resort
     """
     if not comfyui_path:
         return sys.executable
@@ -540,6 +560,11 @@ def get_comfy_python(comfyui_path: Path) -> str:
     embed = comfyui_path / "python_embeded" / "python.exe"
     if embed.exists():
         return str(embed)
+    # Portable layout variant: python_embeded/ is a sibling of ComfyUI/
+    # e.g., ComfyUI_windows_portable/python_embeded/ alongside .../ComfyUI/
+    embed_sibling = comfyui_path.parent / "python_embeded" / "python.exe"
+    if embed_sibling.exists():
+        return str(embed_sibling)
     # Check common venv locations (Windows uses Scripts/, Unix uses bin/)
     for venv in ["venv", ".venv"]:
         for rel in [("Scripts", "python.exe"), ("bin", "python3"), ("bin", "python")]:
@@ -915,6 +940,8 @@ def step_system_detection(args) -> tuple[str, int]:
     args._vram_mb  = vram_mb
     args._vram_tier = tier
     return gpu_name, vram_mb
+
+
 def step_detect_server(args) -> str:
     """Step 0: Determine ComfyUI server URL."""
     print(f"\n{C_BOLD}{'═' * 50}{C_RESET}")
@@ -1028,7 +1055,7 @@ def step_detect_paths(args) -> dict:
             if ask_yn("  Install GIMP plugin here?", auto_yes=args.yes):
                 gimp_path = Path(default_gimp)
             else:
-                if ask_yn("  Install GIMP plugin to a different path?", default=False):
+                if ask_yn("  Install GIMP plugin to a different path?", default=False, auto_yes=args.yes):
                     gimp_path = ask_path("  Enter GIMP 3 plug-ins directory")
         else:
             print(f"  {C_YELLOW}GIMP 3 plug-ins directory not found automatically.{C_RESET}")
@@ -1062,7 +1089,7 @@ def step_detect_paths(args) -> dict:
             if ask_yn("  Install Darktable plugin here?", auto_yes=args.yes):
                 dt_path = Path(default_dt)
             else:
-                if ask_yn("  Install Darktable plugin to a different path?", default=False):
+                if ask_yn("  Install Darktable plugin to a different path?", default=False, auto_yes=args.yes):
                     dt_path = ask_path("  Enter darktable lua/contrib directory")
         else:
             print(f"  {C_YELLOW}Darktable lua/contrib directory not found automatically.{C_RESET}")
