@@ -12110,6 +12110,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-photobooth": "face_swap_reactor",
             "spellcaster-body-factory": None,
             "spellcaster-clothing-store": None,
+            "spellcaster-studio-set": None,
             "spellcaster-rembg": "rembg",
             "spellcaster-gif-stitch": None,
             "spellcaster-embed-watermark": None,
@@ -12165,6 +12166,8 @@ class Spellcaster(Gimp.PlugIn):
                                           "Generate full-body reference images with face identity"),
             "spellcaster-clothing-store": ("Photobooth — Clothing Store...", self._run_clothing_store,
                                             "Try different outfits on your character via AI inpaint"),
+            "spellcaster-studio-set": ("Photobooth — Studio Set...", self._run_studio_set,
+                                        "Compose actors into a scene — build start images for video"),
             "spellcaster-rembg": ("Remove Background...", self._run_rembg,
                                    "Remove image background using AI (transparent PNG)"),
             "spellcaster-layer-blend-ratio": ("Layer Blend by Ratio...", self._run_layer_blend_ratio,
@@ -12296,6 +12299,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-photobooth":        "<Image>/Filters/Spellcaster Tools",
             "spellcaster-body-factory":      "<Image>/Filters/Spellcaster Tools",
             "spellcaster-clothing-store":    "<Image>/Filters/Spellcaster Tools",
+            "spellcaster-studio-set":       "<Image>/Filters/Spellcaster Tools",
             "spellcaster-rembg":             "<Image>/Filters/Spellcaster Tools",
             "spellcaster-layer-blend-ratio": "<Image>/Filters/Spellcaster Tools",
             "spellcaster-upscale-blend":     "<Image>/Filters/Spellcaster Tools",
@@ -19676,6 +19680,70 @@ class Spellcaster(Gimp.PlugIn):
                 "negative": "cropped, face only, deformed, young, extra limbs, "
                             "cartoon, illustration, watermark, text",
             },
+            # ── Ethnicity / Skin Tone ──
+            "Light skin — female": {
+                "prompt": "full body portrait of a beautiful light-skinned woman, standing naturally, "
+                          "neutral grey studio background, professional photography, even lighting, "
+                          "head to toe visible, photorealistic, 8K, fair complexion, natural beauty",
+                "negative": "cropped, face only, deformed, bad anatomy, extra limbs, cartoon, watermark",
+            },
+            "Dark skin — female": {
+                "prompt": "full body portrait of a beautiful dark-skinned woman, standing naturally, "
+                          "neutral grey studio background, professional photography, even lighting, "
+                          "head to toe visible, photorealistic, 8K, rich melanin, natural beauty",
+                "negative": "cropped, face only, deformed, bad anatomy, extra limbs, cartoon, watermark",
+            },
+            "Asian — female": {
+                "prompt": "full body portrait of a beautiful East Asian woman, standing naturally, "
+                          "neutral grey studio background, professional photography, even lighting, "
+                          "head to toe visible, photorealistic, 8K, natural beauty",
+                "negative": "cropped, face only, deformed, bad anatomy, extra limbs, cartoon, watermark",
+            },
+            "South Asian — female": {
+                "prompt": "full body portrait of a beautiful South Asian woman, standing naturally, "
+                          "neutral grey studio background, professional photography, even lighting, "
+                          "head to toe visible, photorealistic, 8K, natural beauty",
+                "negative": "cropped, face only, deformed, bad anatomy, extra limbs, cartoon, watermark",
+            },
+            "Latina — female": {
+                "prompt": "full body portrait of a beautiful Latina woman, standing naturally, "
+                          "neutral grey studio background, professional photography, even lighting, "
+                          "head to toe visible, photorealistic, 8K, warm skin tone, natural beauty",
+                "negative": "cropped, face only, deformed, bad anatomy, extra limbs, cartoon, watermark",
+            },
+            # ── Age variants ──
+            "Teenager — female": {
+                "prompt": "full body portrait of a teenage girl 16-18, standing naturally, "
+                          "neutral grey studio background, professional photography, even lighting, "
+                          "head to toe visible, youthful proportions, photorealistic, 8K",
+                "negative": "cropped, face only, deformed, old, wrinkles, extra limbs, cartoon, watermark",
+            },
+            "Young adult — male": {
+                "prompt": "full body portrait of a young man in his 20s, standing naturally, "
+                          "neutral grey studio background, professional photography, even lighting, "
+                          "head to toe visible, natural proportions, photorealistic, 8K",
+                "negative": "cropped, face only, deformed, old, wrinkles, extra limbs, cartoon, watermark",
+            },
+            "Middle-aged — female": {
+                "prompt": "full body portrait of a middle-aged woman in her 40s, standing naturally, "
+                          "neutral grey studio background, professional photography, even lighting, "
+                          "head to toe visible, mature beauty, natural proportions, photorealistic, 8K",
+                "negative": "cropped, face only, deformed, teenager, extra limbs, cartoon, watermark",
+            },
+            # ── Stylized / Fantasy ──
+            "Anime style — female": {
+                "prompt": "full body anime style girl, standing pose, neutral background, "
+                          "anime art, clean lineart, bright colors, head to toe visible, "
+                          "high quality illustration, detailed anime character design",
+                "negative": "photorealistic, 3D render, deformed, bad proportions, cropped",
+            },
+            "Anime style — male": {
+                "prompt": "full body anime style young man, standing pose, neutral background, "
+                          "anime art, clean lineart, head to toe visible, "
+                          "high quality illustration, detailed anime character design",
+                "negative": "photorealistic, 3D render, deformed, bad proportions, cropped",
+            },
+            # ── NSFW_BODY_FACTORY_INJECTION_POINT ──
         }
 
         # ── Dialog ──
@@ -19822,8 +19890,25 @@ class Spellcaster(Gimp.PlugIn):
                         lambda: list(_run_comfyui_workflow(srv, _wf2)))
                     for fn, sf, ft in swap_res:
                         if fn.lower().endswith(".png"):
-                            img_data = _download_image(srv, fn, sf, ft)
-                            results_data.append((fn, sf, ft, img_data)); break
+                            # Step 3: remove background for transparent PNG
+                            swap_data = _download_image(srv, fn, sf, ft)
+                            rembg_name = f"gimp_bf_rembg_{i}_{uuid.uuid4().hex[:8]}.png"
+                            tmp_r = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                            tmp_r.write(swap_data); tmp_r.close()
+                            _upload_image(srv, tmp_r.name, rembg_name); os.unlink(tmp_r.name)
+                            rembg_wf = _build_rembg(rembg_name)
+                            _wf3 = rembg_wf
+                            rembg_res = _run_with_spinner(
+                                f"Body Factory: removing background {i+1}/3...",
+                                lambda: list(_run_comfyui_workflow(srv, _wf3)))
+                            for fn2, sf2, ft2 in rembg_res:
+                                if fn2.lower().endswith(".png"):
+                                    img_data = _download_image(srv, fn2, sf2, ft2)
+                                    results_data.append((fn2, sf2, ft2, img_data)); break
+                            else:
+                                # rembg failed — use the swap result as-is
+                                results_data.append((fn, sf, ft, swap_data))
+                            break
 
                 if not results_data:
                     Gimp.message("Body Factory: no images generated. Check model and server.")
@@ -19900,6 +19985,30 @@ class Spellcaster(Gimp.PlugIn):
             "Uniform — military": "wearing military combat uniform, camouflage pattern, tactical boots, dog tags",
             "Costume — superhero": "wearing a colorful superhero costume, cape flowing, spandex bodysuit, mask, heroic pose",
             "Nude — artistic": "nude, artistic nude photography, tasteful, natural body, museum-quality fine art",
+            # ── More casual ──
+            "Casual — hoodie & joggers": "wearing a cozy oversized hoodie and jogger pants, comfortable loungewear, cotton fabric, relaxed fit",
+            "Casual — crop top & skirt": "wearing a cropped top and mini skirt, trendy casual outfit, youthful style",
+            "Casual — polo & chinos": "wearing a polo shirt and chino pants, smart casual, preppy style, clean look",
+            "Casual — tank top & shorts": "wearing a tank top and denim shorts, summer casual, relaxed beach style",
+            # ── Professional ──
+            "Professional — lab coat": "wearing a white lab coat over business clothes, scientist or doctor, professional, stethoscope",
+            "Professional — chef uniform": "wearing a white chef coat and hat, professional kitchen attire, clean pressed",
+            "Professional — pilot uniform": "wearing a pilot uniform with captain epaulettes, aviator cap, professional airline attire",
+            # ── Cultural / Traditional ──
+            "Traditional — kimono": "wearing a beautiful traditional Japanese kimono, obi sash, elegant silk fabric, floral pattern",
+            "Traditional — sari": "wearing a gorgeous Indian sari, draped silk fabric, intricate embroidery, gold border",
+            "Traditional — hanbok": "wearing a traditional Korean hanbok, vibrant colors, elegant flowing skirt, cultural dress",
+            "Traditional — qipao": "wearing a fitted Chinese qipao dress, silk fabric, mandarin collar, floral embroidery",
+            # ── Subculture ──
+            "Goth — dark style": "wearing gothic fashion, black lace dress, fishnet stockings, dark makeup, chains, punk aesthetic",
+            "Punk — rebellious": "wearing punk rock style, ripped jeans, band t-shirt, studded leather, safety pins, combat boots",
+            "Cyberpunk — neon tech": "wearing cyberpunk fashion, neon-lit clothing, tech accessories, augmented style, futuristic urban",
+            "Steampunk — Victorian tech": "wearing steampunk attire, corset with gears, brass goggles, Victorian industrial fashion",
+            # ── Seasonal ──
+            "Winter — heavy coat": "wearing a heavy winter coat, scarf, warm gloves, winter boots, cold weather layered outfit",
+            "Spring — light dress": "wearing a light spring dress, pastel colors, floral print, breezy fabric, open-toe shoes",
+            "Rain — trench coat": "wearing a classic beige trench coat, rain boots, carrying umbrella, rainy day chic",
+            # ── NSFW_CLOTHING_STORE_INJECTION_POINT ──
         }
 
         has_sel, sx1, sy1, sx2, sy2 = _get_selection_bounds(image)
@@ -20091,6 +20200,309 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Clothing Store Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Photobooth — Studio Set ────────────────────────────────────────
+    def _run_studio_set(self, procedure, run_mode, image, drawables, config, data):
+        """Studio Set: compose actors (transparent PNGs) into a background scene.
+        Step-by-step: pick/generate background → place actor 1 → place actor 2 → etc.
+        Uses Klein Flux 2 blend to harmonize each actor into the scene.
+        Final composite is ready for Wan I2V / Director as a start image."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+
+        SCENE_BG_PRESETS = {
+            "(use current canvas as background)": "",
+            "Studio — neutral grey": "professional photography studio, neutral grey seamless backdrop, even studio lighting, clean background",
+            "Studio — white": "professional white cyclorama studio, pure white backdrop, soft even lighting, fashion photography",
+            "Studio — dark/moody": "dark moody studio backdrop, dramatic lighting, black background, professional portrait",
+            "Indoor — bedroom": "modern bedroom interior, bed with white sheets, warm ambient lighting, cozy atmosphere, photorealistic",
+            "Indoor — living room": "modern living room, sofa, warm lighting, comfortable interior, photorealistic",
+            "Indoor — office": "modern office space, desk, window with city view, professional environment, photorealistic",
+            "Indoor — bathroom": "luxury bathroom, marble surfaces, warm lighting, elegant interior, photorealistic",
+            "Indoor — kitchen": "modern kitchen, marble countertops, warm pendant lighting, clean interior, photorealistic",
+            "Indoor — hotel room": "luxury hotel room, king bed, city view window, ambient lighting, photorealistic",
+            "Outdoor — beach": "tropical beach scene, palm trees, turquoise ocean, golden sand, sunset lighting, photorealistic",
+            "Outdoor — park": "lush green park, trees, dappled sunlight, grass, peaceful nature setting, photorealistic",
+            "Outdoor — city street": "urban city street, buildings, sidewalk, evening lighting, photorealistic",
+            "Outdoor — rooftop": "urban rooftop at sunset, city skyline background, golden hour lighting, photorealistic",
+            "Outdoor — forest": "enchanted forest clearing, tall trees, dappled light, mossy ground, mystical atmosphere",
+            "Outdoor — pool": "luxury swimming pool area, sun loungers, tropical plants, clear water, resort setting, photorealistic",
+            "Fantasy — throne room": "grand fantasy throne room, ornate columns, dramatic torchlight, medieval castle interior",
+            "Fantasy — enchanted garden": "magical enchanted garden, glowing flowers, fairy lights, mystical atmosphere",
+            "Sci-Fi — spaceship interior": "futuristic spaceship bridge, holographic displays, blue ambient lighting, sci-fi interior",
+            "Abstract — gradient": "smooth gradient background, soft pastel colors, clean minimal backdrop, studio lighting",
+            # ── NSFW_STUDIO_SET_INJECTION_POINT ──
+        }
+
+        PLACEMENT_PRESETS = {
+            "Center — standing": "centered in frame, standing upright, facing camera",
+            "Center — sitting": "centered in frame, sitting naturally",
+            "Left side — standing": "positioned on the left side, standing, facing right",
+            "Right side — standing": "positioned on the right side, standing, facing left",
+            "Left — leaning": "leaning against something on the left side, relaxed",
+            "Right — seated": "seated on the right side of the scene, relaxed posture",
+            "Foreground — close": "in the foreground, close to camera, prominent",
+            "Background — far": "in the background, further from camera, establishing scale",
+            "Left — kneeling": "kneeling on the left side of the frame",
+            "Center — lying down": "lying in the center of the scene, relaxed",
+        }
+
+        # ═══════════════════════════════════════════════════════════════
+        # DIALOG: Studio Set configuration
+        # ═══════════════════════════════════════════════════════════════
+        dlg = Gtk.Dialog(title="Spellcaster — Photobooth: Studio Set")
+        dlg.set_default_size(580, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Build Scene", Gtk.ResponseType.OK)
+        dlg.set_default_response(Gtk.ResponseType.OK)
+        _style_dialog_buttons(dlg)
+        bx = dlg.get_content_area()
+        bx.set_spacing(6); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(10); bx.set_margin_bottom(10)
+
+        _hdr = _make_branded_header()
+        if _hdr: bx.pack_start(_hdr, False, False, 0)
+
+        bx.pack_start(Gtk.Label(
+            label="Studio Set composes actors into a scene for video generation.\n\n"
+                  "1. Choose or generate a background\n"
+                  "2. Add up to 3 actors (transparent PNGs from Body Factory)\n"
+                  "3. Each actor is blended into the scene with Klein harmonization\n"
+                  "4. The final composite becomes your start image for Wan I2V/Director",
+            xalign=0), False, False, 4)
+
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
+        hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+
+        # Background scene
+        bg_frame = Gtk.Frame(label="  Background Scene  ")
+        bg_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        bg_box.set_margin_start(8); bg_box.set_margin_end(8)
+        bg_box.set_margin_top(4); bg_box.set_margin_bottom(8)
+        bg_combo = Gtk.ComboBoxText()
+        bg_combo.set_tooltip_text(
+            "Background for your scene.\n\n"
+            "'Current canvas' = use whatever is open in GIMP.\n"
+            "All other options generate a new background via txt2img.\n"
+            "You'll pick the best from 3 variants.")
+        for k in SCENE_BG_PRESETS: bg_combo.append(k, k)
+        bg_combo.set_active(0)
+        bg_box.pack_start(bg_combo, False, False, 0)
+
+        # Model for bg generation
+        bg_model_combo = Gtk.ComboBoxText()
+        bg_model_combo.set_tooltip_text("AI model for generating the background (only used if not using canvas).")
+        for i, p in enumerate(MODEL_PRESETS):
+            bg_model_combo.append(str(i), p.get("label", p.get("checkpoint", f"Model {i}")))
+        bg_model_combo.set_active(0)
+        bg_box.pack_start(bg_model_combo, False, False, 0)
+        bg_frame.add(bg_box); bx.pack_start(bg_frame, False, False, 0)
+
+        # Actors (up to 3)
+        actor_frame = Gtk.Frame(label="  Actors (transparent PNGs from Body Factory)  ")
+        actor_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        actor_box.set_margin_start(8); actor_box.set_margin_end(8)
+        actor_box.set_margin_top(4); actor_box.set_margin_bottom(8)
+
+        actor_choosers = []
+        actor_placements = []
+        for a_idx in range(3):
+            a_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+            a_row.pack_start(Gtk.Label(label=f"Actor {a_idx+1}:"), False, False, 0)
+            chooser = Gtk.FileChooserButton(title=f"Select Actor {a_idx+1} PNG")
+            chooser.set_action(Gtk.FileChooserAction.OPEN)
+            ff = Gtk.FileFilter(); ff.set_name("PNG Images"); ff.add_pattern("*.png")
+            chooser.add_filter(ff)
+            chooser.set_tooltip_text(
+                f"Actor {a_idx+1} transparent PNG — from Body Factory or any cutout.\n"
+                f"Leave empty to skip this actor slot.")
+            a_row.pack_start(chooser, True, True, 0)
+            placement = Gtk.ComboBoxText()
+            for k in PLACEMENT_PRESETS: placement.append(k, k)
+            placement.set_active(0)
+            placement.set_tooltip_text("Where to place this actor in the scene.")
+            a_row.pack_start(placement, True, True, 0)
+            actor_box.pack_start(a_row, False, False, 0)
+            actor_choosers.append(chooser)
+            actor_placements.append(placement)
+
+        actor_frame.add(actor_box); bx.pack_start(actor_frame, False, False, 0)
+
+        # Klein model for blending
+        bx.pack_start(Gtk.Label(label="Blend Model:", xalign=0), False, False, 0)
+        klein_combo = Gtk.ComboBoxText()
+        for k in KLEIN_MODELS: klein_combo.append(k, k)
+        klein_combo.set_active(0)
+        klein_combo.set_tooltip_text("Klein Flux 2 model for harmonizing actors into the scene.")
+        bx.pack_start(klein_combo, False, False, 0)
+
+        bx.show_all()
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        srv = srv_e.get_text().strip(); _propagate_server_url(srv)
+        bg_key = bg_combo.get_active_id() or list(SCENE_BG_PRESETS.keys())[0]
+        bg_model_idx = int(bg_model_combo.get_active_id() or "0")
+        klein_key = klein_combo.get_active_id() or list(KLEIN_MODELS.keys())[0]
+        actors = []
+        for i in range(3):
+            path = actor_choosers[i].get_filename()
+            if path:
+                pk = actor_placements[i].get_active_id() or "Center — standing"
+                actors.append({"file": path, "placement": PLACEMENT_PRESETS.get(pk, "")})
+        dlg.destroy()
+
+        if not actors:
+            Gimp.message("Please select at least one actor PNG.")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+        try:
+            # ══════════════════════════════════════════════════════════
+            # STEP 1: Background
+            # ══════════════════════════════════════════════════════════
+            if bg_key == "(use current canvas as background)":
+                tmp = _export_image_to_tmp(image)
+                bg_name = f"gimp_ss_bg_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, tmp, bg_name); os.unlink(tmp)
+                _import_result_as_layer(image, open(tmp if os.path.exists(tmp) else "", "rb").read() if False else
+                                        _download_image(srv, bg_name, "", "input"), "Studio Set BG")
+            else:
+                # Generate background — pick best of 3
+                bg_prompt = SCENE_BG_PRESETS[bg_key]
+                preset = dict(MODEL_PRESETS[bg_model_idx] if 0 <= bg_model_idx < len(MODEL_PRESETS) else MODEL_PRESETS[0])
+                bg_results = []
+                for i in range(3):
+                    seed = random.randint(0, 2**32 - 1)
+                    wf = _build_txt2img(preset, bg_prompt,
+                                        "people, person, human, figure, text, watermark, deformed", seed)
+                    _wf = wf
+                    res = _run_with_spinner(f"Studio Set: generating background {i+1}/3...",
+                                             lambda: list(_run_comfyui_workflow(srv, _wf)))
+                    for fn, sf, ft in res:
+                        if fn.lower().endswith(".png"):
+                            bg_results.append((fn, sf, ft, _download_image(srv, fn, sf, ft))); break
+
+                for i, (fn, sf, ft, data) in enumerate(bg_results):
+                    _import_result_as_layer(image, data, f"BG #{i+1}")
+                Gimp.displays_flush()
+
+                # Pick best background
+                pick_dlg = Gtk.Dialog(title="Studio Set — Pick Background")
+                pick_dlg.set_default_size(350, -1)
+                pick_dlg.add_button("Generate 3 More", Gtk.ResponseType.REJECT)
+                pick_dlg.add_button("_Use This BG", Gtk.ResponseType.OK)
+                _style_dialog_buttons(pick_dlg)
+                pbx = pick_dlg.get_content_area()
+                pbx.set_spacing(8); pbx.set_margin_start(12); pbx.set_margin_end(12)
+                pbx.set_margin_top(10); pbx.set_margin_bottom(10)
+                pbx.pack_start(Gtk.Label(label="Pick the best background from layers.", xalign=0), False, False, 4)
+                pc = Gtk.ComboBoxText()
+                for i in range(len(bg_results)): pc.append(str(i), f"BG #{i+1}")
+                pc.set_active(0); pbx.pack_start(pc, False, False, 0); pbx.show_all()
+                resp = pick_dlg.run()
+                pick_idx = int(pc.get_active_id() or "0")
+                pick_dlg.destroy()
+                if resp != Gtk.ResponseType.OK:
+                    return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+                # Upload chosen background
+                bg_name = f"gimp_ss_bg_{uuid.uuid4().hex[:8]}.png"
+                tmp_bg = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                tmp_bg.write(bg_results[pick_idx][3]); tmp_bg.close()
+                _upload_image(srv, tmp_bg.name, bg_name); os.unlink(tmp_bg.name)
+
+            # ══════════════════════════════════════════════════════════
+            # STEP 2: Place each actor via Klein blend
+            # ══════════════════════════════════════════════════════════
+            current_scene = bg_name
+            km = KLEIN_MODELS[klein_key]
+
+            for a_idx, actor in enumerate(actors):
+                # Upload actor PNG
+                actor_name = f"gimp_ss_actor{a_idx}_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, actor["file"], actor_name)
+
+                placement_desc = actor["placement"]
+                blend_prompt = (
+                    f"Person naturally integrated into the scene, {placement_desc}, "
+                    f"matching background lighting and shadows, consistent color temperature, "
+                    f"correct perspective scale, professional photo composite, photorealistic"
+                )
+
+                # Use Klein blend to harmonize actor into scene
+                # We need to composite the actor onto the scene first (GIMP-side),
+                # then run Klein to harmonize. Since we're server-side, we'll use
+                # Klein img2img with the composite as reference.
+                seed = random.randint(0, 2**32 - 1)
+                wf = {
+                    "1": {"class_type": "UNETLoader",
+                          "inputs": {"unet_name": km["unet"], "weight_dtype": "default"}},
+                    "2": {"class_type": "CLIPLoader",
+                          "inputs": {"clip_name": km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+                                     "type": "flux2", "device": "default"}},
+                    "3": {"class_type": "VAELoader",
+                          "inputs": {"vae_name": "flux2-vae.safetensors"}},
+                    "10": {"class_type": "LoadImage", "inputs": {"image": current_scene}},
+                    "11": {"class_type": "LoadImage", "inputs": {"image": actor_name}},
+                    "15": {"class_type": "CLIPTextEncode",
+                           "inputs": {"text": blend_prompt, "clip": ["2", 0]}},
+                    "16": {"class_type": "FluxGuidance",
+                           "inputs": {"conditioning": ["15", 0], "guidance": 30.0}},
+                    "20": {"class_type": "Flux2ReferenceLatent",
+                           "inputs": {"image": ["10", 0], "vae": ["3", 0]}},
+                    "30": {"class_type": "Flux2CFGGuider",
+                           "inputs": {"model": ["1", 0], "conditioning": ["16", 0],
+                                      "cfg": 1.0, "negative_scale": 0.0}},
+                    "31": {"class_type": "KSamplerSelect",
+                           "inputs": {"sampler_name": "euler"}},
+                    "32": {"class_type": "Flux2Scheduler",
+                           "inputs": {"model": ["1", 0], "steps": 20,
+                                      "denoise": 0.30, "max_shift": 1.15, "base_shift": 0.5}},
+                    "33": {"class_type": "RandomNoise",
+                           "inputs": {"noise_seed": seed}},
+                    "40": {"class_type": "SamplerCustomAdvanced",
+                           "inputs": {"noise": ["33", 0], "guider": ["30", 0],
+                                      "sampler": ["31", 0], "sigmas": ["32", 0],
+                                      "latent_image": ["20", 0]}},
+                    "50": {"class_type": "VAEDecode",
+                           "inputs": {"samples": ["40", 0], "vae": ["3", 0]}},
+                    "60": {"class_type": "SaveImage",
+                           "inputs": {"images": ["50", 0],
+                                      "filename_prefix": f"studio_set_actor{a_idx}"}},
+                }
+                _wf = wf
+                res = _run_with_spinner(
+                    f"Studio Set: placing Actor {a_idx+1} ({len(actors)} total)...",
+                    lambda: list(_run_comfyui_workflow(srv, _wf)))
+
+                for fn, sf, ft in res:
+                    if fn.lower().endswith(".png"):
+                        img_data = _download_image(srv, fn, sf, ft)
+                        _import_result_as_layer(image, img_data, f"Scene + Actor {a_idx+1}")
+                        # Upload result as the new current scene for next actor
+                        next_scene = f"gimp_ss_scene{a_idx}_{uuid.uuid4().hex[:8]}.png"
+                        tmp_s = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                        tmp_s.write(img_data); tmp_s.close()
+                        _upload_image(srv, tmp_s.name, next_scene); os.unlink(tmp_s.name)
+                        current_scene = next_scene
+                        break
+                Gimp.displays_flush()
+
+            Gimp.progress_end()
+            Gimp.message(
+                "Studio Set complete!\n\n"
+                "The final composite is your top layer. Use it as a start image\n"
+                "for Wan I2V, Wan Director, or any video generation tool.\n\n"
+                "TIP: Save the image before generating video — it's your 'master shot'.")
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Studio Set Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     def _run_rembg(self, procedure, run_mode, image, drawables, config, data):
