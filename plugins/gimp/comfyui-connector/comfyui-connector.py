@@ -6653,6 +6653,213 @@ WAN_VIDEO_PRESETS = [
         "pingpong": True,
         "loras": [],
     },
+    # ── VFX / Explosions / Fire ──────────────────────────────────────────
+    {
+        "label": "VFX — explosion shockwave",
+        "prompt": "massive fiery explosion, expanding shockwave ring, "
+                  "debris flying outward, intense orange fireball, "
+                  "Hollywood blockbuster explosion, volumetric fire and smoke, "
+                  "slow motion detonation, photorealistic VFX, cinematic 4K",
+        "negative": "static, cartoon, cheap CGI, no fire, no smoke, "
+                    "distorted, blurry, flickering",
+        "cfg_override": 5.5,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": False,
+        "shift_override": 8.0,
+        "loras": [],
+    },
+    {
+        "label": "VFX — fire engulfing object",
+        "prompt": "raging fire engulfing and consuming, intense flames spreading, "
+                  "realistic fire dynamics, orange and yellow flames with blue base, "
+                  "heat shimmer, embers rising, smoke billowing, photorealistic fire, "
+                  "cinematic, dramatic lighting",
+        "negative": "static fire, cartoon flame, painted, fake fire, "
+                    "distorted, blurry, no flame",
+        "cfg_override": 5.5,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": True,
+        "shift_override": 5.0,
+        "loras": [],
+    },
+    {
+        "label": "VFX — thick smoke / smoldering",
+        "prompt": "thick smoke billowing and rolling, dense grey smoke plumes, "
+                  "smoldering aftermath, slow churning smoke clouds, volumetric haze, "
+                  "atmospheric smoke tendrils, photorealistic, cinematic, dramatic",
+        "negative": "static, clear sky, no smoke, cartoon, "
+                    "distorted, blurry, flickering",
+        "cfg_override": 5.0,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": True,
+        "shift_override": 5.0,
+        "loras": [],
+    },
+    {
+        "label": "VFX — lightning / electrical arc",
+        "prompt": "crackling lightning bolt, bright electrical arc, "
+                  "forked lightning striking, plasma energy discharge, "
+                  "electric blue-white flash, thunder illumination, "
+                  "photorealistic, cinematic, dramatic dark sky",
+        "negative": "static, dull, no flash, no electricity, "
+                    "cartoon, distorted, blurry",
+        "cfg_override": 6.0,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": False,
+        "shift_override": 5.0,
+        "loras": [],
+    },
+    {
+        "label": "VFX — sparks & welding shower",
+        "prompt": "shower of bright sparks flying, welding sparks cascading, "
+                  "molten metal particles, bright orange-white spark trails, "
+                  "industrial sparks fountain, photorealistic, cinematic, "
+                  "dramatic close-up, shallow depth of field",
+        "negative": "static, no sparks, dark, dull, "
+                    "cartoon, distorted, blurry",
+        "cfg_override": 5.5,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": True,
+        "shift_override": 5.0,
+        "loras": [],
+    },
+    {
+        "label": "VFX — energy beam / laser",
+        "prompt": "powerful energy beam firing, bright concentrated laser, "
+                  "particle beam with scattered light, volumetric light shaft, "
+                  "sci-fi weapon discharge, photorealistic energy weapon effect, "
+                  "cinematic, dramatic lighting, lens flare",
+        "negative": "static, dull, no beam, cheap CGI, "
+                    "cartoon, distorted, blurry",
+        "cfg_override": 6.0,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": False,
+        "shift_override": 5.0,
+        "loras": [],
+    },
+    {
+        "label": "VFX — water splash / impact",
+        "prompt": "dramatic water splash in ultra slow motion, liquid crown formation, "
+                  "water droplets suspended in air, high-speed splash capture, "
+                  "crystal clear water dynamics, photorealistic, studio lighting, "
+                  "cinematic macro, 4K",
+        "negative": "static water, frozen, no splash, dry, "
+                    "cartoon, distorted, blurry",
+        "cfg_override": 5.5,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": True,
+        "shift_override": 5.0,
+        "loras": [],
+    },
+    {
+        "label": "VFX — glass shattering slow-mo",
+        "prompt": "glass shattering in extreme slow motion, fragments flying apart, "
+                  "crystalline shards catching light, dramatic breakage pattern, "
+                  "high-speed glass explosion, photorealistic, cinematic, "
+                  "dramatic studio lighting",
+        "negative": "static, unbroken, no shatter, cheap, "
+                    "cartoon, distorted, blurry, melting",
+        "cfg_override": 6.0,
+        "steps_override": 35,
+        "length_override": 81,
+        "pingpong": False,
+        "shift_override": 8.0,
+        "loras": [],
+    },
+    {
+        "label": "VFX — portal / dimensional rift",
+        "prompt": "swirling dimensional portal opening, energy vortex spiraling inward, "
+                  "glowing otherworldly gateway, particles being drawn into rift, "
+                  "sci-fi portal with electric edges, photorealistic VFX, cinematic, "
+                  "dramatic volumetric lighting, deep space colors",
+        "negative": "static, flat circle, boring, cheap CGI, "
+                    "cartoon, distorted, blurry",
+        "cfg_override": 6.0,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": True,
+        "shift_override": 5.0,
+        "loras": [],
+    },
+    {
+        "label": "VFX — disintegration / particle dissolve",
+        "prompt": "subject slowly disintegrating into floating particles, "
+                  "Thanos snap dissolve effect, body breaking apart into dust motes, "
+                  "glowing embers drifting away, dramatic particle death effect, "
+                  "photorealistic VFX, cinematic, moody lighting",
+        "negative": "static, solid, no dissolve, cheap CGI, "
+                    "cartoon, distorted, blurry, sudden",
+        "cfg_override": 6.0,
+        "steps_override": 35,
+        "length_override": 81,
+        "pingpong": False,
+        "shift_override": 5.0,
+        "loras": [],
+    },
+    {
+        "label": "VFX — rising phoenix / fire wings",
+        "prompt": "majestic fire wings unfurling from person's back, phoenix rising effect, "
+                  "flaming wing spread, embers and sparks trailing, mythical fire rebirth, "
+                  "dramatic fiery aura, photorealistic fantasy VFX, cinematic, epic lighting",
+        "negative": "static, no fire, no wings, cheap, cartoon, "
+                    "distorted, blurry, silly",
+        "cfg_override": 6.0,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": False,
+        "shift_override": 8.0,
+        "loras": [],
+    },
+    {
+        "label": "VFX — aurora borealis / northern lights",
+        "prompt": "aurora borealis dancing across night sky, shimmering green and purple curtains, "
+                  "northern lights undulating, ethereal sky glow, magnetic field visualization, "
+                  "starry night with aurora, photorealistic landscape, cinematic, 4K",
+        "negative": "static sky, daytime, no aurora, clouds blocking, "
+                    "cartoon, distorted, blurry",
+        "cfg_override": 5.5,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": True,
+        "shift_override": 3.0,
+        "loras": [],
+    },
+    {
+        "label": "VFX — meteor shower / falling stars",
+        "prompt": "meteor shower streaking across night sky, multiple shooting stars, "
+                  "bright meteor trails, fiery atmospheric entry, spectacular celestial event, "
+                  "starry night photography, photorealistic, cinematic, long exposure look",
+        "negative": "static, daytime, no meteors, blank sky, "
+                    "cartoon, distorted, blurry",
+        "cfg_override": 5.5,
+        "steps_override": 30,
+        "length_override": 81,
+        "pingpong": False,
+        "shift_override": 3.0,
+        "loras": [],
+    },
+    {
+        "label": "VFX — nuclear / mushroom cloud",
+        "prompt": "massive mushroom cloud forming, nuclear detonation expanding upward, "
+                  "roiling fire cloud with shockwave ring, apocalyptic explosion, "
+                  "towering pyrocumulus column, photorealistic, cinematic wide shot, "
+                  "dramatic sky, epic scale",
+        "negative": "small explosion, firecracker, static, cartoon, "
+                    "distorted, blurry, toy",
+        "cfg_override": 6.0,
+        "steps_override": 35,
+        "length_override": 81,
+        "pingpong": False,
+        "shift_override": 8.0,
+        "loras": [],
+    },
 ]
 
 
