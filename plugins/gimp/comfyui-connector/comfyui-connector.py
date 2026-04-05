@@ -13771,6 +13771,13 @@ class Spellcaster(Gimp.PlugIn):
             "Extend interior / room": "seamless room extension, matching wall color, consistent floor, same furniture style, correct perspective",
             "Add more background": "smooth background extension, matching colors and blur, consistent depth of field, natural continuation",
             "Widen panorama": "panoramic scene extension, wide angle continuation, matching horizon, consistent sky and ground",
+            "Add floor / ground": "natural ground surface below subject, matching floor material, correct shadows, consistent perspective, seamless edge blending",
+            "Add ceiling / sky above": "natural continuation upward, ceiling or sky matching scene context, correct lighting direction, consistent atmosphere",
+            "Reveal hidden subject": "extending to reveal more of a partially visible person or object, natural body continuation, matching pose and proportions",
+            "Add reflection surface": "reflective surface below, mirror-like floor or water reflection, matching lighting, symmetrical reflection of subject",
+            "Cinematic widescreen crop": "extending sides for cinematic 2.39:1 aspect ratio, matching scene content, letterbox-style wide composition",
+            "Add foreground elements": "natural foreground elements, depth-appropriate objects, bokeh foreground blur, matching scene context and lighting",
+            "Environmental storytelling": "extending scene to reveal environmental context, narrative elements, props and details that tell a story, matching art direction",
         }
         bx.pack_start(Gtk.Label(label="Purpose:", xalign=0), False, False, 0)
         purpose_combo = Gtk.ComboBoxText()
@@ -13958,6 +13965,36 @@ class Spellcaster(Gimp.PlugIn):
             "Minimal (just compose, barely touch)": {
                 "prompt": "Clean composite, minimal changes, preserve both elements as-is, slight edge blending only",
                 "denoise": 0.12, "steps": 12,
+            },
+            "Product on Surface": {
+                "prompt": "Product naturally placed on surface, matching surface reflections, "
+                          "correct shadow underneath, consistent studio lighting, "
+                          "professional product photography composite, marketing quality",
+                "denoise": 0.28, "steps": 22,
+            },
+            "Double Exposure Effect": {
+                "prompt": "Artistic double exposure blending, two images merging dreamlike, "
+                          "transparent overlay effect, creative film technique, "
+                          "artistic mixed media, editorial fashion photography style",
+                "denoise": 0.45, "steps": 28,
+            },
+            "Style Transfer Blend": {
+                "prompt": "Apply the artistic style of the reference layer to the entire scene, "
+                          "matching brushwork, color palette, and mood, stylistic consistency, "
+                          "artistic reinterpretation while preserving composition",
+                "denoise": 0.50, "steps": 30,
+            },
+            "Reflection / Mirror": {
+                "prompt": "Create natural mirror reflection of the composited layer, "
+                          "matching perspective, slight surface distortion, "
+                          "correct reflection angle, matching lighting in reflection",
+                "denoise": 0.30, "steps": 22,
+            },
+            "Day to Night Composite": {
+                "prompt": "Transform scene lighting to nighttime while integrating all elements, "
+                          "moonlight and artificial light sources, warm window glow, "
+                          "dark sky, matching all elements to night conditions",
+                "denoise": 0.40, "steps": 28,
             },
         }
 
@@ -14564,6 +14601,55 @@ class Spellcaster(Gimp.PlugIn):
             "Creative reimagine (high freedom)": {
                 "prompt_hint": "Describe your creative vision — high denoise gives Klein full artistic freedom",
                 "denoise": 0.98, "steps": 30,
+            },
+            # ── Additional tasks ──
+            "Add tattoo / body art": {
+                "prompt_hint": "Describe the tattoo, e.g. 'intricate black ink sleeve tattoo, fine line botanical design'",
+                "denoise": 0.65, "steps": 22,
+            },
+            "Add makeup / cosmetics": {
+                "prompt_hint": "Describe the makeup, e.g. 'glamorous evening makeup, smoky eyes, red lips, contoured cheeks'",
+                "denoise": 0.50, "steps": 20,
+            },
+            "Age face (younger / older)": {
+                "prompt_hint": "Describe target age, e.g. 'elderly face, deep wrinkles, grey hair, age spots, wise eyes'",
+                "denoise": 0.55, "steps": 22,
+            },
+            "Change eye color": {
+                "prompt_hint": "Describe new eyes, e.g. 'vivid bright green eyes, detailed iris, clear whites, sharp pupil'",
+                "denoise": 0.45, "steps": 18,
+            },
+            "Add glasses / sunglasses": {
+                "prompt_hint": "Describe the eyewear, e.g. 'thin gold wire-frame glasses, round vintage style, clean glass'",
+                "denoise": 0.60, "steps": 20,
+            },
+            "Add jewelry / accessories": {
+                "prompt_hint": "Describe the accessory, e.g. 'diamond necklace, sparkling gems, gold chain, elegant'",
+                "denoise": 0.65, "steps": 22,
+            },
+            "Repair damaged / torn area": {
+                "prompt_hint": "Reconstruct damaged area, restore original content, seamless repair, matching surroundings",
+                "denoise": 0.75, "steps": 25,
+            },
+            "Add scar / wound (VFX)": {
+                "prompt_hint": "Describe the VFX wound, e.g. 'realistic healing scar across cheek, raised pink tissue'",
+                "denoise": 0.55, "steps": 20,
+            },
+            "Change season / time of day": {
+                "prompt_hint": "Describe new conditions, e.g. 'autumn scene, golden orange leaves, warm afternoon light'",
+                "denoise": 0.75, "steps": 25,
+            },
+            "Convert to sketch / artwork": {
+                "prompt_hint": "pencil sketch, hand-drawn line art, crosshatch shading, fine graphite lines on paper",
+                "denoise": 0.88, "steps": 25,
+            },
+            "Add water / wet effect": {
+                "prompt_hint": "wet glistening surface, water droplets, rain-soaked, reflective wet sheen, puddle reflections",
+                "denoise": 0.50, "steps": 20,
+            },
+            "Change skin tone / ethnicity": {
+                "prompt_hint": "Describe target appearance while keeping facial structure and expression identical",
+                "denoise": 0.55, "steps": 22,
             },
             "(custom — manual settings)": {
                 "prompt_hint": "",
@@ -18129,6 +18215,46 @@ class Spellcaster(Gimp.PlugIn):
                 "prompt": "clean anime illustration, sharp lineart, vivid colors, "
                           "smooth color fills, crisp edges, high quality anime artwork, no artifacts",
                 "denoise": 0.30, "steps": 45,
+            },
+            "Food / Culinary photography": {
+                "prompt": "appetizing food photography, sharp detail, vibrant fresh colors, "
+                          "glistening sauce, crisp garnish, professional food styling, studio lighting",
+                "denoise": 0.30, "steps": 45,
+            },
+            "Vehicle / Automotive": {
+                "prompt": "sharp automotive photography, detailed paint reflection, crisp chrome, "
+                          "clean panel lines, professional car photography, showroom lighting",
+                "denoise": 0.28, "steps": 45,
+            },
+            "Wildlife / Animal": {
+                "prompt": "sharp wildlife photography, detailed fur texture, clear eyes, "
+                          "natural habitat, professional nature photography, 8k detail",
+                "denoise": 0.32, "steps": 50,
+            },
+            "Night / Astrophotography": {
+                "prompt": "clean night photo, sharp stars, no light pollution noise, "
+                          "clear Milky Way detail, professional astrophotography, noise-free dark sky",
+                "denoise": 0.40, "steps": 55,
+            },
+            "Old film scan / negative": {
+                "prompt": "clean digitized film scan, removed dust and scratches, no film grain, "
+                          "correct color balance from negative, sharp focus, archival restoration quality",
+                "denoise": 0.42, "steps": 55,
+            },
+            "Underwater / Aquatic": {
+                "prompt": "clear underwater photograph, sharp detail through water, corrected blue-green cast, "
+                          "vibrant coral and marine life, professional underwater photography",
+                "denoise": 0.35, "steps": 50,
+            },
+            "Fashion / Editorial": {
+                "prompt": "sharp fashion photography, detailed fabric texture, perfect skin, "
+                          "professional editorial quality, studio lighting, magazine cover detail",
+                "denoise": 0.25, "steps": 40,
+            },
+            "Screenshot / Game capture": {
+                "prompt": "sharp screenshot, clean UI elements, crisp text, no compression artifacts, "
+                          "smooth gradients, high resolution game capture, anti-aliased edges",
+                "denoise": 0.22, "steps": 30,
             },
         }
 
