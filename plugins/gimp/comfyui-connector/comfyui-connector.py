@@ -12108,6 +12108,8 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-video-reactor": "wan_i2v",
             "spellcaster-seedvr2-video": "seedv2r",
             "spellcaster-photobooth": "face_swap_reactor",
+            "spellcaster-body-factory": None,
+            "spellcaster-clothing-store": None,
             "spellcaster-rembg": "rembg",
             "spellcaster-gif-stitch": None,
             "spellcaster-embed-watermark": None,
@@ -12159,6 +12161,10 @@ class Spellcaster(Gimp.PlugIn):
                                           "Edit image with Flux 2 Klein model"),
             "spellcaster-photobooth": ("Photobooth (Face Model Maker)...", self._run_photobooth,
                                        "Generate passport photos and save as ReActor face model"),
+            "spellcaster-body-factory": ("Photobooth — Body Factory...", self._run_body_factory,
+                                          "Generate full-body reference images with face identity"),
+            "spellcaster-clothing-store": ("Photobooth — Clothing Store...", self._run_clothing_store,
+                                            "Try different outfits on your character via AI inpaint"),
             "spellcaster-rembg": ("Remove Background...", self._run_rembg,
                                    "Remove image background using AI (transparent PNG)"),
             "spellcaster-layer-blend-ratio": ("Layer Blend by Ratio...", self._run_layer_blend_ratio,
@@ -12288,6 +12294,8 @@ class Spellcaster(Gimp.PlugIn):
 
             # Tools & Utility
             "spellcaster-photobooth":        "<Image>/Filters/Spellcaster Tools",
+            "spellcaster-body-factory":      "<Image>/Filters/Spellcaster Tools",
+            "spellcaster-clothing-store":    "<Image>/Filters/Spellcaster Tools",
             "spellcaster-rembg":             "<Image>/Filters/Spellcaster Tools",
             "spellcaster-layer-blend-ratio": "<Image>/Filters/Spellcaster Tools",
             "spellcaster-upscale-blend":     "<Image>/Filters/Spellcaster Tools",
@@ -19601,6 +19609,488 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Photobooth Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Photobooth — Body Factory ──────────────────────────────────────
+    def _run_body_factory(self, procedure, run_mode, image, drawables, config, data):
+        """Generate full-body reference images from a face reference, then apply
+        the face via ReActor. Produces consistent character sheets for video work."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+
+        BODY_PRESETS = {
+            "Slim / Athletic — female": {
+                "prompt": "full body portrait of a beautiful slim athletic woman, standing naturally, "
+                          "neutral grey studio background, professional photography, even studio lighting, "
+                          "head to toe visible, natural proportions, photorealistic, 8K, fashion model physique",
+                "negative": "cropped, close-up, face only, deformed, bad anatomy, extra limbs, "
+                            "obese, muscular, cartoon, illustration, watermark, text",
+            },
+            "Slim / Athletic — male": {
+                "prompt": "full body portrait of a handsome slim athletic man, standing naturally, "
+                          "neutral grey studio background, professional photography, even studio lighting, "
+                          "head to toe visible, natural proportions, photorealistic, 8K, fitness model physique",
+                "negative": "cropped, close-up, face only, deformed, bad anatomy, extra limbs, "
+                            "obese, cartoon, illustration, watermark, text",
+            },
+            "Curvy / Voluptuous — female": {
+                "prompt": "full body portrait of a beautiful curvy voluptuous woman, standing naturally, "
+                          "neutral grey studio background, professional photography, even studio lighting, "
+                          "head to toe visible, hourglass figure, natural proportions, photorealistic, 8K",
+                "negative": "cropped, face only, deformed, bad anatomy, extra limbs, "
+                            "extremely thin, cartoon, illustration, watermark, text",
+            },
+            "Muscular / Fit — male": {
+                "prompt": "full body portrait of a muscular fit man, standing naturally, "
+                          "neutral grey studio background, professional photography, even studio lighting, "
+                          "head to toe visible, athletic build, defined muscles, photorealistic, 8K",
+                "negative": "cropped, face only, deformed, bad anatomy, extra limbs, "
+                            "obese, thin, cartoon, illustration, watermark, text",
+            },
+            "Petite — female": {
+                "prompt": "full body portrait of a petite woman, standing naturally, "
+                          "neutral grey studio background, professional photography, even studio lighting, "
+                          "head to toe visible, small frame, delicate proportions, photorealistic, 8K",
+                "negative": "cropped, face only, deformed, bad anatomy, extra limbs, "
+                            "tall, muscular, cartoon, illustration, watermark, text",
+            },
+            "Average build — neutral": {
+                "prompt": "full body portrait of a person with average build, standing naturally, "
+                          "neutral grey studio background, professional photography, even studio lighting, "
+                          "head to toe visible, natural proportions, photorealistic, 8K",
+                "negative": "cropped, face only, deformed, bad anatomy, extra limbs, "
+                            "extreme body type, cartoon, illustration, watermark, text",
+            },
+            "Elderly — female": {
+                "prompt": "full body portrait of an elegant elderly woman, standing naturally, "
+                          "neutral grey studio background, professional photography, even studio lighting, "
+                          "head to toe visible, natural aging, dignified posture, photorealistic, 8K",
+                "negative": "cropped, face only, deformed, young, extra limbs, "
+                            "cartoon, illustration, watermark, text",
+            },
+            "Elderly — male": {
+                "prompt": "full body portrait of a distinguished elderly man, standing naturally, "
+                          "neutral grey studio background, professional photography, even studio lighting, "
+                          "head to toe visible, natural aging, dignified posture, photorealistic, 8K",
+                "negative": "cropped, face only, deformed, young, extra limbs, "
+                            "cartoon, illustration, watermark, text",
+            },
+        }
+
+        # ── Dialog ──
+        dlg = Gtk.Dialog(title="Spellcaster — Photobooth: Body Factory")
+        dlg.set_default_size(560, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Generate Bodies", Gtk.ResponseType.OK)
+        dlg.set_default_response(Gtk.ResponseType.OK)
+        _style_dialog_buttons(dlg)
+        bx = dlg.get_content_area()
+        bx.set_spacing(6); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(10); bx.set_margin_bottom(10)
+
+        _hdr = _make_branded_header()
+        if _hdr: bx.pack_start(_hdr, False, False, 0)
+
+        bx.pack_start(Gtk.Label(
+            label="Body Factory generates full-body reference images and swaps\n"
+                  "your character's face onto them. Use these as start images\n"
+                  "for Wan I2V, Director, and other video tools.\n\n"
+                  "Step 1: Provide a face reference (canvas or file)\n"
+                  "Step 2: Pick a body type\n"
+                  "Step 3: Review 3 variants, pick the best or generate more",
+            xalign=0), False, False, 4)
+
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
+        hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+
+        # Face source
+        bx.pack_start(Gtk.Label(label="Face Reference:", xalign=0), False, False, 0)
+        src_combo = Gtk.ComboBoxText()
+        src_combo.append("canvas", "Use current canvas")
+        src_combo.append("file", "Upload photo...")
+        src_combo.set_active_id("canvas")
+        src_combo.set_tooltip_text("The face to swap onto the generated body.")
+        bx.pack_start(src_combo, False, False, 0)
+        face_chooser = Gtk.FileChooserButton(title="Face reference")
+        face_chooser.set_action(Gtk.FileChooserAction.OPEN)
+        ff = Gtk.FileFilter(); ff.set_name("Images"); ff.add_pattern("*.png"); ff.add_pattern("*.jpg"); ff.add_pattern("*.jpeg")
+        face_chooser.add_filter(ff); face_chooser.set_sensitive(False)
+        bx.pack_start(face_chooser, False, False, 0)
+        def _on_src(c): face_chooser.set_sensitive(c.get_active_id() == "file")
+        src_combo.connect("changed", _on_src)
+
+        # Model preset (for txt2img generation)
+        bx.pack_start(Gtk.Label(label="Generation Model:", xalign=0), False, False, 0)
+        model_combo = Gtk.ComboBoxText()
+        model_combo.set_tooltip_text(
+            "Which AI model generates the body. Pick one you have installed.\n"
+            "SDXL or Flux recommended for best full-body quality.")
+        for i, p in enumerate(MODEL_PRESETS):
+            model_combo.append(str(i), p.get("label", p.get("checkpoint", f"Model {i}")))
+        model_combo.set_active(0)
+        bx.pack_start(model_combo, False, False, 0)
+
+        # Body type preset
+        bx.pack_start(Gtk.Label(label="Body Type:", xalign=0), False, False, 0)
+        body_combo = Gtk.ComboBoxText()
+        body_combo.set_tooltip_text("Pre-made body descriptions. The prompt is editable below.")
+        for k in BODY_PRESETS: body_combo.append(k, k)
+        body_combo.set_active(0)
+        bx.pack_start(body_combo, False, False, 0)
+
+        # Editable prompt
+        bx.pack_start(Gtk.Label(label="Prompt (editable):", xalign=0), False, False, 0)
+        sw = Gtk.ScrolledWindow(); sw.set_min_content_height(80)
+        prompt_tv = Gtk.TextView(); prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        prompt_tv.set_tooltip_text("Describe the body you want. Modify freely — the preset is just a starting point.")
+        first_key = list(BODY_PRESETS.keys())[0]
+        prompt_tv.get_buffer().set_text(BODY_PRESETS[first_key]["prompt"])
+        sw.add(prompt_tv); bx.pack_start(sw, False, False, 0)
+
+        def _on_body(combo):
+            key = combo.get_active_id()
+            if key and key in BODY_PRESETS:
+                prompt_tv.get_buffer().set_text(BODY_PRESETS[key]["prompt"])
+        body_combo.connect("changed", _on_body)
+
+        bx.show_all()
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        srv = srv_e.get_text().strip(); _propagate_server_url(srv)
+        face_source = src_combo.get_active_id()
+        face_file = face_chooser.get_filename()
+        model_idx = int(model_combo.get_active_id() or "0")
+        body_key = body_combo.get_active_id() or first_key
+        buf = prompt_tv.get_buffer()
+        prompt = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
+        negative = BODY_PRESETS.get(body_key, BODY_PRESETS[first_key])["negative"]
+        dlg.destroy()
+
+        try:
+            # Upload face ref
+            if face_source == "file" and face_file:
+                ref_name = f"gimp_bf_ref_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, face_file, ref_name)
+            else:
+                tmp = _export_image_to_tmp(image)
+                ref_name = f"gimp_bf_ref_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, tmp, ref_name); os.unlink(tmp)
+
+            preset = dict(MODEL_PRESETS[model_idx] if 0 <= model_idx < len(MODEL_PRESETS) else MODEL_PRESETS[0])
+            chosen = None
+
+            while chosen is None:
+                results_data = []
+                for i in range(3):
+                    seed = random.randint(0, 2**32 - 1)
+                    # Step 1: txt2img body
+                    wf_body = _build_txt2img(preset, prompt, negative, seed)
+                    _wf = wf_body
+                    body_res = _run_with_spinner(
+                        f"Body Factory: generating body {i+1}/3...",
+                        lambda: list(_run_comfyui_workflow(srv, _wf)))
+
+                    # Get the generated body image
+                    body_fn = None
+                    for fn, sf, ft in body_res:
+                        if fn.lower().endswith(".png"):
+                            body_fn = fn; break
+                    if not body_fn: continue
+
+                    # Step 2: swap face onto body
+                    body_img_name = f"gimp_bf_body_{i}_{uuid.uuid4().hex[:8]}.png"
+                    body_data = _download_image(srv, body_fn, "", "output")
+                    tmp_b = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                    tmp_b.write(body_data); tmp_b.close()
+                    _upload_image(srv, tmp_b.name, body_img_name); os.unlink(tmp_b.name)
+
+                    wf_swap = _build_faceswap(
+                        body_img_name, ref_name,
+                        swap_model="inswapper_128.onnx",
+                        face_restore_model="codeformer-v0.1.0.pth",
+                        face_restore_vis=0.8, codeformer_weight=0.5,
+                        quality_preset="High (ReSwapper 256 + GPEN-2048)")
+                    _wf2 = wf_swap
+                    swap_res = _run_with_spinner(
+                        f"Body Factory: swapping face {i+1}/3...",
+                        lambda: list(_run_comfyui_workflow(srv, _wf2)))
+                    for fn, sf, ft in swap_res:
+                        if fn.lower().endswith(".png"):
+                            img_data = _download_image(srv, fn, sf, ft)
+                            results_data.append((fn, sf, ft, img_data)); break
+
+                if not results_data:
+                    Gimp.message("Body Factory: no images generated. Check model and server.")
+                    return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+                for i, (fn, sf, ft, img_data) in enumerate(results_data):
+                    _import_result_as_layer(image, img_data, f"Body #{i+1}")
+                Gimp.displays_flush()
+
+                # Pick dialog
+                pick_dlg = Gtk.Dialog(title="Body Factory — Pick the Best")
+                pick_dlg.set_default_size(400, -1)
+                pick_dlg.add_button("Generate 3 More", Gtk.ResponseType.REJECT)
+                pick_dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+                pick_dlg.add_button("_Use This Body", Gtk.ResponseType.OK)
+                _style_dialog_buttons(pick_dlg)
+                pbx = pick_dlg.get_content_area()
+                pbx.set_spacing(8); pbx.set_margin_start(12); pbx.set_margin_end(12)
+                pbx.set_margin_top(10); pbx.set_margin_bottom(10)
+                pbx.pack_start(Gtk.Label(
+                    label="3 full-body images have been added as layers.\n"
+                          "Pick the best one — it will remain as your active layer\n"
+                          "for use as a start image in video generation tools.",
+                    xalign=0), False, False, 4)
+                pick_combo = Gtk.ComboBoxText()
+                for i in range(len(results_data)): pick_combo.append(str(i), f"Body #{i+1}")
+                pick_combo.set_active(0)
+                pbx.pack_start(pick_combo, False, False, 0)
+                pbx.show_all()
+                resp = pick_dlg.run()
+                pick_idx = int(pick_combo.get_active_id() or "0")
+                pick_dlg.destroy()
+
+                if resp == Gtk.ResponseType.CANCEL:
+                    return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+                elif resp == Gtk.ResponseType.OK:
+                    chosen = results_data[pick_idx]
+
+            Gimp.displays_flush(); Gimp.progress_end()
+            Gimp.message("Body Factory complete!\nThe selected body is your top layer — use it as a start image for Wan I2V or Director.")
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Body Factory Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Photobooth — Clothing Store ──────────────────────────────────────
+    def _run_clothing_store(self, procedure, run_mode, image, drawables, config, data):
+        """Clothing Store: change outfits on a character using Klein inpaint.
+        Requires GIMP selection around the clothing area to replace."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+
+        OUTFIT_PRESETS = {
+            "(custom — describe your outfit)": "",
+            "Casual — jeans & t-shirt": "wearing casual blue jeans and a plain white t-shirt, relaxed everyday outfit, cotton fabric",
+            "Casual — summer dress": "wearing a flowing summer dress, floral pattern, light fabric, feminine casual style",
+            "Formal — business suit": "wearing a tailored dark business suit, white dress shirt, silk tie, professional attire",
+            "Formal — evening gown": "wearing an elegant black evening gown, floor-length, satin fabric, formal event attire",
+            "Athletic — sportswear": "wearing athletic sportswear, form-fitting yoga pants and sports bra, moisture-wicking fabric",
+            "Athletic — gym outfit": "wearing gym workout clothes, tank top and shorts, athletic sneakers, fitness attire",
+            "Streetwear — urban": "wearing trendy streetwear, oversized hoodie, baggy pants, sneakers, urban fashion",
+            "Leather — jacket": "wearing a classic black leather jacket, white undershirt, leather pants, edgy rock style",
+            "Lingerie — elegant": "wearing elegant lingerie, lace bra and panties, delicate fabric, intimate apparel",
+            "Lingerie — silk robe": "wearing a silk kimono robe, loosely tied, luxurious fabric, intimate boudoir style",
+            "Swimwear — bikini": "wearing a stylish bikini, two-piece swimwear, beach-ready, sun-kissed",
+            "Swimwear — one-piece": "wearing a sleek one-piece swimsuit, modern cut, pool-side fashion",
+            "Historical — Victorian": "wearing a Victorian-era dress, corset bodice, full skirt, lace collar, period costume",
+            "Historical — 1920s flapper": "wearing a 1920s flapper dress, sequined, fringe details, art deco style",
+            "Fantasy — armor": "wearing ornate fantasy armor, polished metal plates, leather straps, heroic warrior attire",
+            "Fantasy — wizard robes": "wearing flowing wizard robes, mystical patterns, deep purple and gold, fantasy mage attire",
+            "Sci-Fi — space suit": "wearing a futuristic space suit, sleek helmet, reflective visor, sci-fi astronaut attire",
+            "Uniform — nurse / medical": "wearing medical scrubs, stethoscope, professional healthcare uniform, clean pressed",
+            "Uniform — military": "wearing military combat uniform, camouflage pattern, tactical boots, dog tags",
+            "Costume — superhero": "wearing a colorful superhero costume, cape flowing, spandex bodysuit, mask, heroic pose",
+            "Nude — artistic": "nude, artistic nude photography, tasteful, natural body, museum-quality fine art",
+        }
+
+        has_sel, sx1, sy1, sx2, sy2 = _get_selection_bounds(image)
+
+        dlg = Gtk.Dialog(title="Spellcaster — Photobooth: Clothing Store")
+        dlg.set_default_size(540, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Try On Outfit", Gtk.ResponseType.OK)
+        dlg.set_default_response(Gtk.ResponseType.OK)
+        _style_dialog_buttons(dlg)
+        bx = dlg.get_content_area()
+        bx.set_spacing(6); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(10); bx.set_margin_bottom(10)
+
+        _hdr = _make_branded_header()
+        if _hdr: bx.pack_start(_hdr, False, False, 0)
+
+        if has_sel:
+            bx.pack_start(Gtk.Label(
+                label="Clothing Store replaces the outfit in your selected area.\n"
+                      "The AI will generate new clothing while preserving the face,\n"
+                      "body shape, pose, and background.\n\n"
+                      "Selection detected — the clothing area is ready to replace.",
+                xalign=0), False, False, 4)
+        else:
+            warn_label = Gtk.Label(xalign=0)
+            warn_label.set_markup(
+                '<span foreground="#FFA726">No selection detected!\n\n'
+                'For best results, use a GIMP selection tool to select\n'
+                'the clothing/outfit area you want to replace.\n'
+                'Without a selection, the entire image will be processed.</span>')
+            bx.pack_start(warn_label, False, False, 4)
+
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
+        hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+
+        # Klein model
+        bx.pack_start(Gtk.Label(label="Klein Model:", xalign=0), False, False, 0)
+        klein_combo = Gtk.ComboBoxText()
+        for k in KLEIN_MODELS: klein_combo.append(k, k)
+        klein_combo.set_active(0)
+        klein_combo.set_tooltip_text("Flux 2 Klein model for inpainting. 9B = best quality, 4B = faster.")
+        bx.pack_start(klein_combo, False, False, 0)
+
+        # Outfit preset
+        bx.pack_start(Gtk.Label(label="Outfit:", xalign=0), False, False, 0)
+        outfit_combo = Gtk.ComboBoxText()
+        outfit_combo.set_tooltip_text("Pre-made outfit descriptions. Pick one or write your own below.")
+        for k in OUTFIT_PRESETS: outfit_combo.append(k, k)
+        outfit_combo.set_active(0)
+        bx.pack_start(outfit_combo, False, False, 0)
+
+        # Editable prompt
+        bx.pack_start(Gtk.Label(label="Outfit description:", xalign=0), False, False, 0)
+        sw = Gtk.ScrolledWindow(); sw.set_min_content_height(60)
+        prompt_tv = Gtk.TextView(); prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        prompt_tv.set_tooltip_text("Describe the outfit. Be specific about fabric, color, and style.")
+        sw.add(prompt_tv); bx.pack_start(sw, False, False, 0)
+
+        def _on_outfit(combo):
+            key = combo.get_active_id()
+            if key and key in OUTFIT_PRESETS and OUTFIT_PRESETS[key]:
+                prompt_tv.get_buffer().set_text(OUTFIT_PRESETS[key])
+        outfit_combo.connect("changed", _on_outfit)
+
+        # Denoise (how much to change)
+        dn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        dn_row.pack_start(Gtk.Label(label="Change strength:"), False, False, 0)
+        dn_spin = Gtk.SpinButton.new_with_range(0.3, 1.0, 0.05)
+        dn_spin.set_digits(2); dn_spin.set_value(0.85)
+        dn_spin.set_tooltip_text(
+            "How much to change the selected area.\n"
+            "0.85 = strong change (full outfit replacement)\n"
+            "0.50 = moderate (blend with existing clothing)\n"
+            "0.30 = subtle (color/texture shift only)")
+        dn_row.pack_start(dn_spin, False, False, 0)
+        bx.pack_start(dn_row, False, False, 0)
+
+        # Runs
+        _add_runs_spinner(dlg, bx)
+
+        bx.show_all()
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        srv = srv_e.get_text().strip(); _propagate_server_url(srv)
+        klein_key = klein_combo.get_active_id() or list(KLEIN_MODELS.keys())[0]
+        buf = prompt_tv.get_buffer()
+        prompt = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
+        denoise = dn_spin.get_value()
+        runs = int(dlg._runs_spin.get_value()) if hasattr(dlg, '_runs_spin') else 1
+        dlg.destroy()
+
+        if not prompt.strip():
+            Gimp.message("Please describe the outfit you want.")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+        try:
+            srv = srv.strip()
+            km = KLEIN_MODELS[klein_key]
+
+            # Export image + mask
+            if has_sel:
+                mtmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False); mtmp.close()
+                _create_selection_mask_png(mtmp.name, image)
+                mname = f"gimp_cs_mask_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, mtmp.name, mname); os.unlink(mtmp.name)
+
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_cs_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+
+            for run_i in range(runs):
+                seed = random.randint(0, 2**32 - 1)
+                # Use Klein inpaint pipeline
+                wf = {
+                    "1": {"class_type": "UNETLoader",
+                          "inputs": {"unet_name": km["unet"], "weight_dtype": "default"}},
+                    "2": {"class_type": "CLIPLoader",
+                          "inputs": {"clip_name": km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+                                     "type": "flux2", "device": "default"}},
+                    "3": {"class_type": "VAELoader",
+                          "inputs": {"vae_name": "flux2-vae.safetensors"}},
+                    "10": {"class_type": "LoadImage", "inputs": {"image": uname}},
+                }
+
+                if has_sel:
+                    wf["11"] = {"class_type": "LoadImage", "inputs": {"image": mname}}
+                    wf["12"] = {"class_type": "ImageToMask",
+                                "inputs": {"image": ["11", 0], "channel": "red"}}
+                    mask_ref = ["12", 0]
+                else:
+                    # No selection — inpaint full image
+                    wf["12"] = {"class_type": "SolidMask",
+                                "inputs": {"value": 1.0, "width": 1024, "height": 1024}}
+                    mask_ref = ["12", 0]
+
+                img_size_ref = ["10", 0]
+                wf.update({
+                    "13": {"class_type": "GetImageSize+",
+                           "inputs": {"image": img_size_ref}},
+                    "15": {"class_type": "CLIPTextEncode",
+                           "inputs": {"text": prompt, "clip": ["2", 0]}},
+                    "16": {"class_type": "FluxGuidance",
+                           "inputs": {"conditioning": ["15", 0], "guidance": 30.0}},
+                    "20": {"class_type": "Flux2ReferenceLatent",
+                           "inputs": {"image": img_size_ref, "vae": ["3", 0]}},
+                    "21": {"class_type": "SetLatentNoiseMask",
+                           "inputs": {"samples": ["20", 0], "mask": mask_ref}},
+                    "22": {"class_type": "DifferentialDiffusion",
+                           "inputs": {"model": ["1", 0]}},
+                    "30": {"class_type": "Flux2CFGGuider",
+                           "inputs": {"model": ["22", 0], "conditioning": ["16", 0],
+                                      "cfg": 1.0, "negative_scale": 0.0}},
+                    "31": {"class_type": "KSamplerSelect",
+                           "inputs": {"sampler_name": "euler"}},
+                    "32": {"class_type": "Flux2Scheduler",
+                           "inputs": {"model": ["1", 0], "steps": 25,
+                                      "denoise": denoise, "max_shift": 1.15, "base_shift": 0.5}},
+                    "33": {"class_type": "RandomNoise",
+                           "inputs": {"noise_seed": seed}},
+                    "40": {"class_type": "SamplerCustomAdvanced",
+                           "inputs": {"noise": ["33", 0], "guider": ["30", 0],
+                                      "sampler": ["31", 0], "sigmas": ["32", 0],
+                                      "latent_image": ["21", 0]}},
+                    "50": {"class_type": "VAEDecode",
+                           "inputs": {"samples": ["40", 0], "vae": ["3", 0]}},
+                    "60": {"class_type": "SaveImage",
+                           "inputs": {"images": ["50", 0],
+                                      "filename_prefix": "spellcaster_clothing_store"}},
+                })
+
+                _wf = wf
+                results = _run_with_spinner(
+                    f"Clothing Store: trying outfit {run_i+1}/{runs}...",
+                    lambda: list(_run_comfyui_workflow(srv, _wf)))
+                for fn_i, (fn, sf, ft) in enumerate(results):
+                    if fn.lower().endswith(".png"):
+                        lbl = f"Outfit run {run_i+1} #{fn_i+1}" if runs > 1 else f"Outfit #{fn_i+1}"
+                        _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                Gimp.displays_flush()
+
+            Gimp.progress_end()
+            Gimp.message("Clothing Store complete!\nNew outfits added as layers.")
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Clothing Store Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     def _run_rembg(self, procedure, run_mode, image, drawables, config, data):
