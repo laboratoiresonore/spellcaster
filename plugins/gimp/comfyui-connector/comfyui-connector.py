@@ -12104,6 +12104,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-wan-flf": "wan_i2v",
             "spellcaster-wan-director": "wan_i2v",
             "spellcaster-wan-director-duo": "wan_i2v",
+            "spellcaster-wan-director-trio": "wan_i2v",
             "spellcaster-video-upscale": "wan_i2v",
             "spellcaster-video-reactor": "wan_i2v",
             "spellcaster-seedvr2-video": "seedv2r",
@@ -12202,6 +12203,8 @@ class Spellcaster(Gimp.PlugIn):
                                         "Action! — direct a multi-step video sequence with one actor"),
             "spellcaster-wan-director-duo": ("6. Director's Chair (Duo)...", self._run_wan_director_duo,
                                               "Action! — direct a multi-step video with two actors and dual face tracking"),
+            "spellcaster-wan-director-trio": ("7. Director's Chair (Trio)...", self._run_wan_director_trio,
+                                               "Action! — direct a multi-step video with three actors and triple face tracking"),
             "spellcaster-video-upscale": ("Video Upscale (RTX + Model)...", self._run_video_upscale,
                                            "Upscale a video with model + RTX super-resolution"),
             "spellcaster-video-reactor": ("Video Face Swap + Upscale...", self._run_video_reactor,
@@ -12291,6 +12294,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-wan-flf":           "<Image>/Filters/Spellcaster Video",
             "spellcaster-wan-director":      "<Image>/Filters/Spellcaster Magic Studios",
             "spellcaster-wan-director-duo":  "<Image>/Filters/Spellcaster Magic Studios",
+            "spellcaster-wan-director-trio": "<Image>/Filters/Spellcaster Magic Studios",
             "spellcaster-video-upscale":     "<Image>/Filters/Spellcaster Video",
             "spellcaster-video-reactor":     "<Image>/Filters/Spellcaster Video",
             "spellcaster-seedvr2-video":    "<Image>/Filters/Spellcaster Video",
@@ -13275,6 +13279,266 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Director Duo Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Wan Director — Three Actors ────────────────────────────────────
+    def _run_wan_director_trio(self, procedure, run_mode, image, drawables, config, data):
+        """Wan Director for three-actor scenes with triple face tracking."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+
+        TRIO_SCRIPTS = {
+            "(blank — manual setup)": None,
+            "Conversation: Three-Way Discussion (3 steps)": {
+                "description": "Group talk: establish all three → A speaks → B and C react",
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "steps": [
+                    {"mode": "i2v", "prompt": "three people in conversation, group discussion, all visible, natural body language, photorealistic, cinematic wide shot",
+                     "negative": "merged faces, blob, distorted, blurry", "shift": 5.0, "cfg": 1.0, "length": 81},
+                    {"mode": "i2v", "prompt": "first person speaking animatedly, gesturing, the other two listening and reacting, group dynamics, cinematic",
+                     "negative": "merged faces, distorted, blurry", "shift": 5.0, "cfg": 1.0, "length": 81},
+                    {"mode": "i2v", "prompt": "second and third person responding, animated reactions, natural group conversation, all three engaged, cinematic",
+                     "negative": "merged faces, distorted, blurry", "shift": 5.0, "cfg": 1.0, "length": 81},
+                ],
+            },
+            "Action: Three-Way Standoff (3 steps)": {
+                "description": "Mexican standoff: tension → first move → resolution",
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "steps": [
+                    {"mode": "i2v", "prompt": "three people in a tense triangular standoff, intense eye contact, dramatic tension, cinematic wide shot, photorealistic",
+                     "negative": "relaxed, merged, distorted, blurry", "shift": 5.0, "cfg": 1.5, "length": 81},
+                    {"mode": "i2v", "prompt": "one person makes the first move, the other two react, dramatic action, cinematic slow motion, photorealistic",
+                     "negative": "static, merged, distorted, blurry", "shift": 10.0, "cfg": 1.0, "length": 81},
+                    {"mode": "i2v", "prompt": "dramatic resolution, two against one, alliance formed, cinematic climax, photorealistic, dramatic lighting",
+                     "negative": "static, merged, distorted, blurry", "shift": 8.0, "cfg": 1.0, "length": 81},
+                ],
+            },
+            "Comedy: Two Reacting to One (3 steps)": {
+                "description": "Comedy bit: one does something funny → two react",
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "steps": [
+                    {"mode": "i2v", "prompt": "three friends together, one person about to do something, mischievous expression, the others watching, photorealistic",
+                     "negative": "merged, distorted, blurry", "shift": 3.0, "cfg": 2.0, "length": 81},
+                    {"mode": "i2v", "prompt": "one person doing something funny or surprising, exaggerated action, the other two starting to react, cinematic comedy",
+                     "negative": "static, merged, distorted, blurry", "shift": 8.0, "cfg": 1.0, "length": 81},
+                    {"mode": "i2v", "prompt": "two people bursting into laughter, one person proud or embarrassed, comedic reaction shot, photorealistic",
+                     "negative": "serious, merged, distorted, blurry", "shift": 3.0, "cfg": 2.0, "length": 81},
+                ],
+            },
+            "Music: Band Performance (3 steps)": {
+                "description": "Band playing: setup → performance → finale",
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "steps": [
+                    {"mode": "i2v", "prompt": "three musicians on stage, preparing instruments, stage lighting, concert atmosphere, photorealistic, cinematic",
+                     "negative": "merged, distorted, blurry", "shift": 5.0, "cfg": 1.0, "length": 81},
+                    {"mode": "loop", "prompt": "three musicians performing together, playing instruments, head bobbing to rhythm, stage performance, photorealistic",
+                     "negative": "static, merged, distorted, blurry", "shift": 8.0, "cfg": 1.0, "length": 81},
+                    {"mode": "i2v", "prompt": "band finale, dramatic final note, arms raised, triumphant ending, stage lighting burst, cinematic",
+                     "negative": "static, merged, distorted, blurry", "shift": 8.0, "cfg": 1.0, "length": 81},
+                ],
+            },
+            # ── NSFW_DIRECTOR_TRIO_INJECTION_POINT ──
+        }
+
+        # Setup dialog
+        setup_dlg = Gtk.Dialog(title="Spellcaster — Director's Chair: Three Actors")
+        setup_dlg.set_default_size(600, -1)
+        setup_dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        setup_dlg.add_button("_Next: Plan Sequence", Gtk.ResponseType.OK)
+        setup_dlg.set_default_response(Gtk.ResponseType.OK)
+        _style_dialog_buttons(setup_dlg)
+        bx = setup_dlg.get_content_area()
+        bx.set_spacing(6); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(10); bx.set_margin_bottom(10)
+
+        _hdr = _make_branded_header()
+        if _hdr: bx.pack_start(_hdr, False, False, 0)
+
+        bx.pack_start(Gtk.Label(
+            label="Three-Actor Director — multi-step video with three characters.\n\n"
+                  "FACE MAPPING: Faces detected left-to-right.\n"
+                  "  Actor A = leftmost | Actor B = middle | Actor C = rightmost\n"
+                  "Position your actors accordingly in the start image.",
+            xalign=0), False, False, 4)
+
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
+        hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+
+        # 3 actor face references
+        actor_labels = ["Actor A (leftmost)", "Actor B (middle)", "Actor C (rightmost)"]
+        actor_defaults = ["canvas", "file", "file"]
+        actor_src_combos = []
+        actor_choosers = []
+        for i, (label, default) in enumerate(zip(actor_labels, actor_defaults)):
+            frame = Gtk.Frame(label=f"  {label}  ")
+            fb = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            fb.set_margin_start(8); fb.set_margin_end(8); fb.set_margin_top(4); fb.set_margin_bottom(8)
+            src = Gtk.ComboBoxText()
+            src.append("canvas", "Use face from canvas"); src.append("file", "Upload face photo...")
+            src.set_active_id(default); fb.pack_start(src, False, False, 0)
+            ch = Gtk.FileChooserButton(title=f"{label} face")
+            ch.set_action(Gtk.FileChooserAction.OPEN)
+            ff = Gtk.FileFilter(); ff.set_name("Images"); ff.add_pattern("*.png"); ff.add_pattern("*.jpg"); ff.add_pattern("*.jpeg")
+            ch.add_filter(ff); ch.set_sensitive(default == "file"); fb.pack_start(ch, False, False, 0)
+            _s, _c = src, ch
+            src.connect("changed", lambda c, _cc=_c: _cc.set_sensitive(c.get_active_id() == "file"))
+            frame.add(fb); bx.pack_start(frame, False, False, 0)
+            actor_src_combos.append(src); actor_choosers.append(ch)
+
+        # Script + plan
+        bx.pack_start(Gtk.Label(label="Script Template:", xalign=0), False, False, 0)
+        script_combo = Gtk.ComboBoxText()
+        for k in TRIO_SCRIPTS: script_combo.append(k, k)
+        script_combo.set_active(0); bx.pack_start(script_combo, False, False, 0)
+
+        grid = Gtk.Grid(column_spacing=8, row_spacing=6)
+        grid.attach(Gtk.Label(label="Steps:"), 0, 0, 1, 1)
+        steps_sp = Gtk.SpinButton.new_with_range(1, 5, 1); steps_sp.set_value(3); grid.attach(steps_sp, 1, 0, 1, 1)
+        grid.attach(Gtk.Label(label="Variations:"), 2, 0, 1, 1)
+        vars_sp = Gtk.SpinButton.new_with_range(1, 3, 1); vars_sp.set_value(2); grid.attach(vars_sp, 3, 0, 1, 1)
+        reinject_check = Gtk.CheckButton(label="Re-inject all 3 faces between steps")
+        reinject_check.set_active(True)
+        reinject_check.set_tooltip_text("Three sequential ReActor passes per chain frame:\n  face[0]←A | face[1]←B | face[2]←C")
+        grid.attach(reinject_check, 0, 1, 4, 1); bx.pack_start(grid, False, False, 4)
+
+        mode_combos = []
+        modes_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        def _rebuild(*_a):
+            for child in modes_box.get_children(): modes_box.remove(child)
+            mode_combos.clear()
+            for s in range(int(steps_sp.get_value())):
+                row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+                row.pack_start(Gtk.Label(label=f"Step {s+1}:"), False, False, 0)
+                c = Gtk.ComboBoxText()
+                c.append("i2v", "Image to Video"); c.append("loop", "Looping"); c.append("flf", "First+Last Frame")
+                c.set_active_id("i2v"); row.pack_start(c, True, True, 0); modes_box.pack_start(row, False, False, 0); mode_combos.append(c)
+            modes_box.show_all()
+        steps_sp.connect("value-changed", _rebuild); _rebuild()
+        bx.pack_start(modes_box, False, False, 0)
+
+        def _on_script(combo):
+            key = combo.get_active_id()
+            s = TRIO_SCRIPTS.get(key) if key else None
+            if not s: return
+            steps_sp.set_value(s["num_steps"]); vars_sp.set_value(s["variations"])
+            GLib.idle_add(lambda: [mode_combos[i].set_active_id(st["mode"]) for i, st in enumerate(s["steps"]) if i < len(mode_combos)])
+        script_combo.connect("changed", _on_script)
+
+        bx.show_all()
+        if setup_dlg.run() != Gtk.ResponseType.OK:
+            setup_dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        srv = srv_e.get_text().strip(); _propagate_server_url(srv)
+        num_steps = int(steps_sp.get_value()); num_vars = int(vars_sp.get_value())
+        face_reinject = reinject_check.get_active()
+        step_modes = [c.get_active_id() or "i2v" for c in mode_combos]
+        sel_script = TRIO_SCRIPTS.get(script_combo.get_active_id())
+        actor_info = [{"source": actor_src_combos[i].get_active_id(), "file": actor_choosers[i].get_filename()} for i in range(3)]
+        setup_dlg.destroy()
+
+        # Per-step config
+        step_configs = []
+        for step_idx in range(num_steps):
+            mode = step_modes[step_idx]
+            step_dlg = WanI2VDialog()
+            step_dlg.set_title(f"Three Actors — Step {step_idx+1}/{num_steps} ({mode.upper()})")
+            if sel_script and step_idx < len(sel_script["steps"]):
+                sp = sel_script["steps"][step_idx]
+                step_dlg.prompt_tv.get_buffer().set_text(sp.get("prompt", ""))
+                step_dlg.neg_tv.get_buffer().set_text(sp.get("negative", ""))
+                if sp.get("shift") is not None: step_dlg.shift_spin.set_value(sp["shift"])
+                if sp.get("cfg") is not None: step_dlg.cfg_spin.set_value(sp["cfg"])
+            step_dlg.get_content_area().show_all()
+            if step_dlg.run() != Gtk.ResponseType.OK:
+                step_dlg.destroy()
+                return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+            v = step_dlg.get_values(); v["mode"] = mode; step_configs.append(v); step_dlg.destroy()
+
+        # Execution
+        try:
+            tmp = _export_image_to_tmp(image)
+            start_name = f"gimp_trio_start_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, start_name); os.unlink(tmp)
+
+            ref_names = []
+            for i, af in enumerate(actor_info):
+                if af["source"] == "file" and af["file"]:
+                    rn = f"gimp_trio_face{i}_{uuid.uuid4().hex[:8]}.png"
+                    _upload_image(srv, af["file"], rn); ref_names.append(rn)
+                else:
+                    ref_names.append(start_name)
+
+            current_start = start_name
+            all_results = []
+
+            for step_idx in range(num_steps):
+                v = step_configs[step_idx]; mode = v["mode"]; step_results = []
+                for var_idx in range(num_vars):
+                    seed = random.randint(0, 2**32 - 1)
+                    wf = _build_wan_video(
+                        current_start, v["preset_key"], v["prompt"], v["negative"], seed,
+                        width=v["width"], height=v["height"], length=v["length"],
+                        steps=v["steps"], cfg=v["cfg"], shift=v.get("shift"),
+                        second_step=v["second_step"], turbo=v.get("turbo", True), loop=(mode == "loop"),
+                        loras_high=v.get("loras_high"), loras_low=v.get("loras_low"),
+                        all_server_loras=v.get("all_server_loras"), server_url=srv,
+                        rtx_scale=v.get("upscale_factor", 2.5), interpolate=v.get("interpolate", True),
+                        face_swap=False, teacache=v.get("teacache", False),
+                        tiled_vae=v.get("tiled_vae", False), pingpong=False, fps=v["fps"])
+                    _wf = wf
+                    results = _run_with_spinner(f"Trio S{step_idx+1}V{var_idx+1} ({mode})...",
+                                                 lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
+                    step_results.append(results)
+                all_results.append(step_results)
+
+                # Chain + triple face re-injection
+                png_frames = [fn for fn, sf, ft in step_results[0] if fn.lower().endswith(".png")]
+                if png_frames and step_idx < num_steps - 1:
+                    frame_data = _download_image(srv, png_frames[0], "", "output")
+                    next_start = f"gimp_trio_chain_{step_idx}_{uuid.uuid4().hex[:8]}.png"
+                    tmp_c = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                    tmp_c.write(frame_data); tmp_c.close()
+                    _upload_image(srv, tmp_c.name, next_start); os.unlink(tmp_c.name)
+
+                    if face_reinject:
+                        current_img = next_start
+                        for ai in range(3):
+                            try:
+                                wf_r = _build_faceswap(current_img, ref_names[ai],
+                                    swap_model="inswapper_128.onnx", face_restore_model="codeformer-v0.1.0.pth",
+                                    face_restore_vis=0.7, codeformer_weight=0.5,
+                                    input_face_idx=str(ai), source_face_idx="0")
+                                _wr = wf_r
+                                rr = _run_with_spinner(f"Step {step_idx+1}: re-inject Actor {chr(65+ai)}...",
+                                                        lambda: list(_run_comfyui_workflow(srv, _wr, timeout=120)))
+                                for fn, sf, ft in rr:
+                                    if fn.lower().endswith(".png"):
+                                        rd = _download_image(srv, fn, sf, ft)
+                                        rn = f"gimp_trio_re{ai}_{step_idx}_{uuid.uuid4().hex[:8]}.png"
+                                        tmp_r = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                                        tmp_r.write(rd); tmp_r.close()
+                                        _upload_image(srv, tmp_r.name, rn); os.unlink(tmp_r.name)
+                                        current_img = rn; break
+                            except Exception:
+                                pass
+                        next_start = current_img
+                    current_start = next_start
+
+            for si, sr in enumerate(all_results):
+                for vi, results in enumerate(sr):
+                    for fn, sf, ft in results:
+                        if fn.lower().endswith(".png") and "lastframe" in fn.lower():
+                            _import_result_as_layer(image, _download_image(srv, fn, sf, ft), f"Trio S{si+1}V{vi+1}")
+            Gimp.displays_flush(); Gimp.progress_end()
+            Gimp.message("Three-Actor Director complete!\nMP4s in ComfyUI output folder.")
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Director Trio Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     # ── Video Upscale (V2R) ────────────────────────────────────────────
