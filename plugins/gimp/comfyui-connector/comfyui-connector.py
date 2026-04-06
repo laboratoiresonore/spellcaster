@@ -11552,7 +11552,23 @@ class WanI2VDialog(Gtk.Dialog):
         return buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
 
     def _collect_user_preset(self):
-        """Collect current widget values into a dict for preset storage."""
+        """Collect current widget values into a dict for preset storage.
+
+        Captures EVERY user-configurable setting so presets are complete.
+        LoRA selections are saved by name+strength for both high and low slots.
+        """
+        # Collect LoRA selections
+        loras_high_saved = []
+        for combo, strength in self.lora_rows_high:
+            lid = combo.get_active_id()
+            if lid and lid != "none":
+                loras_high_saved.append((lid, strength.get_value()))
+        loras_low_saved = []
+        for combo, strength in self.lora_rows_low:
+            lid = combo.get_active_id()
+            if lid and lid != "none":
+                loras_low_saved.append((lid, strength.get_value()))
+
         return {
             "preset_key": self.preset_combo.get_active_id(),
             "prompt": self._buf_text(self.prompt_tv),
@@ -11579,12 +11595,16 @@ class WanI2VDialog(Gtk.Dialog):
             "ip_adapter_weight": self.ipa_weight.get_value(),
             "ip_adapter_start": self.ipa_start.get_value(),
             "ip_adapter_end": self.ipa_end.get_value(),
+            "ip_adapter_source": self.ipa_source_combo.get_active_id() or "start",
             "motion_mask": self.motion_mask_check.get_active(),
             "seedvr2_upscale": self.seedvr2_check.get_active(),
             "seedvr2_resolution": int(self.seedvr2_res.get_value()),
             "seedvr2_noise": self.seedvr2_noise.get_value(),
             "pingpong": self.pingpong_check.get_active(),
             "runs": int(self._runs_spin.get_value()),
+            # LoRA selections (saved by name so they can be re-selected on load)
+            "loras_high": loras_high_saved,
+            "loras_low": loras_low_saved,
         }
 
     def _apply_user_preset(self, p):
@@ -11630,8 +11650,32 @@ class WanI2VDialog(Gtk.Dialog):
         self.seedvr2_res.set_value(p.get("seedvr2_resolution", 1024))
         self.seedvr2_noise.set_value(p.get("seedvr2_noise", 0.10))
         self.pingpong_check.set_active(p.get("pingpong", False))
+        if p.get("ip_adapter_source"):
+            self.ipa_source_combo.set_active_id(p["ip_adapter_source"])
         if "runs" in p:
             self._runs_spin.set_value(p["runs"])
+
+        # Restore LoRA selections (match by name in current server list)
+        saved_high = p.get("loras_high", [])
+        saved_low = p.get("loras_low", [])
+        if saved_high and self._wan_loras:
+            for slot_idx, (lora_name, lora_str) in enumerate(saved_high):
+                if slot_idx < len(self.lora_rows_high):
+                    combo, strength = self.lora_rows_high[slot_idx]
+                    for j, name in enumerate(self._wan_loras):
+                        if name == lora_name:
+                            combo.set_active(j + 1)  # +1 for "(none)" entry
+                            strength.set_value(lora_str)
+                            break
+        if saved_low and self._wan_loras:
+            for slot_idx, (lora_name, lora_str) in enumerate(saved_low):
+                if slot_idx < len(self.lora_rows_low):
+                    combo, strength = self.lora_rows_low[slot_idx]
+                    for j, name in enumerate(self._wan_loras):
+                        if name == lora_name:
+                            combo.set_active(j + 1)
+                            strength.set_value(lora_str)
+                            break
 
     def get_values(self):
         seed = int(self.seed_spin.get_value())
@@ -12448,8 +12492,8 @@ class KleinDialog(Gtk.Dialog):
         return buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
 
     def _collect_user_preset(self):
-        """Collect current widget values into a dict for preset storage."""
-        return {
+        """Collect ALL current widget values into a dict for preset storage."""
+        d = {
             "klein_model": self.klein_combo.get_active_id(),
             "prompt": self._buf_text(self.prompt_tv),
             "seed": int(self.seed_spin.get_value()),
@@ -12460,9 +12504,20 @@ class KleinDialog(Gtk.Dialog):
             "enhancer_contrast": self.enh_contrast.get_value(),
             "runs": int(self._runs_spin.get_value()),
         }
+        # LoRA selection (if available)
+        if hasattr(self, 'lora_combo') and self.lora_combo:
+            d["lora_name"] = self.lora_combo.get_active_id() or ""
+        if hasattr(self, 'lora_strength_spin') and self.lora_strength_spin:
+            d["lora_strength"] = self.lora_strength_spin.get_value()
+        # Reference settings (if with_reference mode)
+        if hasattr(self, 'ref_strength_spin') and self.ref_strength_spin:
+            d["ref_strength"] = self.ref_strength_spin.get_value()
+        if hasattr(self, 'text_ref_balance_spin') and self.text_ref_balance_spin:
+            d["text_ref_balance"] = self.text_ref_balance_spin.get_value()
+        return d
 
     def _apply_user_preset(self, p):
-        """Restore widget values from a preset dict."""
+        """Restore ALL widget values from a preset dict."""
         if "klein_model" in p:
             self.klein_combo.set_active_id(p["klein_model"])
         self.prompt_tv.get_buffer().set_text(p.get("prompt", ""))
@@ -12474,6 +12529,16 @@ class KleinDialog(Gtk.Dialog):
         self.enh_contrast.set_value(p.get("enhancer_contrast", KLEIN_DEFAULTS["enhancer_contrast"]))
         if "runs" in p:
             self._runs_spin.set_value(p["runs"])
+        # Restore LoRA selection
+        if "lora_name" in p and hasattr(self, 'lora_combo') and self.lora_combo:
+            self.lora_combo.set_active_id(p["lora_name"])
+        if "lora_strength" in p and hasattr(self, 'lora_strength_spin') and self.lora_strength_spin:
+            self.lora_strength_spin.set_value(p["lora_strength"])
+        # Restore reference settings
+        if "ref_strength" in p and hasattr(self, 'ref_strength_spin') and self.ref_strength_spin:
+            self.ref_strength_spin.set_value(p["ref_strength"])
+        if "text_ref_balance" in p and hasattr(self, 'text_ref_balance_spin') and self.text_ref_balance_spin:
+            self.text_ref_balance_spin.set_value(p["text_ref_balance"])
 
     def get_values(self):
         seed = int(self.seed_spin.get_value())
