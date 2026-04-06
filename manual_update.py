@@ -135,22 +135,23 @@ def _invalidate_gimp_plugin_cache():
 
 
 def _find_gimp_executable() -> str | None:
-    """Find the GIMP 3 executable on this system."""
+    """Find the GIMP 3 executable on this system (3.2 preferred, then 3.0)."""
     if platform.system() == "Windows":
         for pf in [Path("C:/Program Files/GIMP 3"), Path("C:/Program Files (x86)/GIMP 3")]:
-            exe = pf / "bin" / "gimp-3.0.exe"
-            if exe.exists():
-                return str(exe)
+            for exe_name in ["gimp-3.2.exe", "gimp-3.0.exe"]:
+                exe = pf / "bin" / exe_name
+                if exe.exists():
+                    return str(exe)
             # Also check without version suffix
             for g in pf.glob("bin/gimp*.exe"):
                 if "console" not in g.name.lower() and "script" not in g.name.lower():
                     return str(g)
     elif platform.system() == "Darwin":
-        for app in ["/Applications/GIMP-3.0.app", "/Applications/GIMP.app"]:
+        for app in ["/Applications/GIMP-3.2.app", "/Applications/GIMP-3.0.app", "/Applications/GIMP.app"]:
             if Path(app).exists():
                 return f"open -a '{app}'"
     else:
-        for name in ["gimp-3.0", "gimp3", "gimp"]:
+        for name in ["gimp-3.2", "gimp-3.0", "gimp3", "gimp"]:
             if shutil.which(name):
                 return name
     return None
@@ -212,7 +213,7 @@ def _ask_gimp_for_plugin_dirs() -> list[Path]:
         if gimp_path:
             gimp_bins.append(gimp_path)
     else:
-        for name in ["gimp-3.0", "gimp-2.99", "gimp3", "gimp"]:
+        for name in ["gimp-3.2", "gimp-3.0", "gimp-2.99", "gimp3", "gimp"]:
             p = shutil.which(name)
             if p:
                 gimp_bins.append(p)
@@ -514,10 +515,13 @@ def _ask_yn(prompt, default=True):
 def _install_gimp_css_theme(gimp_plug_dir: Path):
     """Install the Spellcaster GTK3 CSS theme into GIMP's user theme directory.
 
-    Copies spellcaster-theme.css to:
-      - Windows: %APPDATA%/GIMP/3.0/themes/Spellcaster/gtk.css
-      - macOS:   ~/Library/Application Support/GIMP/3.0/themes/Spellcaster/gtk.css
-      - Linux:   ~/.config/GIMP/3.0/themes/Spellcaster/gtk.css
+    Copies spellcaster-theme.css to the active GIMP version's theme directory.
+    Probes for 3.2, 3.0, and any other 3.x version present.
+
+    Example paths:
+      - Windows: %APPDATA%/GIMP/3.2/themes/Spellcaster/gtk.css
+      - macOS:   ~/Library/Application Support/GIMP/3.2/themes/Spellcaster/gtk.css
+      - Linux:   ~/.config/GIMP/3.2/themes/Spellcaster/gtk.css
     """
     import shutil
 
@@ -533,19 +537,37 @@ def _install_gimp_css_theme(gimp_plug_dir: Path):
         print(f"  {Y}spellcaster-theme.css not available{X}")
         return
 
-    # Determine GIMP user theme directory
+    # Determine GIMP config root and find the active version directory
+    def _find_gimp_ver_dir(gimp_root: Path) -> Path | None:
+        """Return the highest 3.x version dir that exists, or None."""
+        if not gimp_root.is_dir():
+            return None
+        vers = sorted(
+            [d for d in gimp_root.iterdir() if d.is_dir() and d.name.startswith("3.")],
+            key=lambda d: d.name, reverse=True
+        )
+        return vers[0] if vers else None
+
+    gimp_root = None
     if platform.system() == "Windows":
         appdata = os.environ.get("APPDATA", "")
         if appdata:
-            theme_dir = Path(appdata) / "GIMP" / "3.0" / "themes" / "Spellcaster"
+            gimp_root = Path(appdata) / "GIMP"
         else:
             print(f"  {Y}Cannot determine APPDATA for GIMP theme install{X}")
             return
     elif platform.system() == "Darwin":
-        theme_dir = Path.home() / "Library" / "Application Support" / "GIMP" / "3.0" / "themes" / "Spellcaster"
+        gimp_root = Path.home() / "Library" / "Application Support" / "GIMP"
     else:
-        theme_dir = Path.home() / ".config" / "GIMP" / "3.0" / "themes" / "Spellcaster"
+        gimp_root = Path.home() / ".config" / "GIMP"
 
+    # Use the plug-ins dir parent to infer version, then fall back to scanning
+    ver_dir = gimp_plug_dir.parent if gimp_plug_dir.parent.name.startswith("3.") else _find_gimp_ver_dir(gimp_root)
+    if ver_dir is None:
+        # Last resort: use 3.2 (newest)
+        ver_dir = gimp_root / "3.2"
+
+    theme_dir = ver_dir / "themes" / "Spellcaster"
     try:
         theme_dir.mkdir(parents=True, exist_ok=True)
         dest = theme_dir / "gtk.css"
@@ -562,25 +584,28 @@ def apply_spellcaster_theme_gimp(gimp_plug_dir: Path):
     # --- Install the persistent CSS theme ---
     _install_gimp_css_theme(gimp_plug_dir)
 
-    # Find system splash
+    # Find system splash — probe 3.2 first, then 3.0
     candidates = []
     if platform.system() == "Windows":
         for pf in [Path("C:/Program Files/GIMP 3"), Path("C:/Program Files (x86)/GIMP 3")]:
-            share = pf / "share" / "gimp" / "3.0" / "images"
-            if share.is_dir():
-                for f in share.glob("gimp-splash*.png"):
-                    candidates.append(f)
+            for ver in ["3.2", "3.0"]:
+                share = pf / "share" / "gimp" / ver / "images"
+                if share.is_dir():
+                    for f in share.glob("gimp-splash*.png"):
+                        candidates.append(f)
     elif platform.system() == "Darwin":
-        for app in [Path("/Applications/GIMP-3.0.app"), Path("/Applications/GIMP.app")]:
-            share = app / "Contents" / "Resources" / "share" / "gimp" / "3.0" / "images"
-            if share.is_dir():
-                for f in share.glob("gimp-splash*.png"):
-                    candidates.append(f)
+        for app_name in ["GIMP-3.2.app", "GIMP-3.0.app", "GIMP.app"]:
+            for ver in ["3.2", "3.0"]:
+                share = Path(f"/Applications/{app_name}/Contents/Resources/share/gimp/{ver}/images")
+                if share.is_dir():
+                    for f in share.glob("gimp-splash*.png"):
+                        candidates.append(f)
     else:
-        for base in [Path("/usr/share/gimp/3.0/images"), Path("/usr/local/share/gimp/3.0/images")]:
-            if base.is_dir():
-                for f in base.glob("gimp-splash*.png"):
-                    candidates.append(f)
+        for ver in ["3.2", "3.0"]:
+            for base in [Path(f"/usr/share/gimp/{ver}/images"), Path(f"/usr/local/share/gimp/{ver}/images")]:
+                if base.is_dir():
+                    for f in base.glob("gimp-splash*.png"):
+                        candidates.append(f)
 
     connector_dir = gimp_plug_dir / "comfyui-connector"
 
@@ -998,11 +1023,11 @@ def main():
         print(f"  {B}Enter the path to your GIMP 3 plug-ins directory manually{X}")
         print(f"  {D}(or press Enter to skip):{X}")
         if platform.system() == "Windows":
-            print(f"  {D}Example: C:\\Users\\YourName\\AppData\\Roaming\\GIMP\\3.0\\plug-ins{X}")
+            print(f"  {D}Example: C:\\Users\\YourName\\AppData\\Roaming\\GIMP\\3.2\\plug-ins  (or 3.0){X}")
         elif platform.system() == "Darwin":
-            print(f"  {D}Example: ~/Library/Application Support/GIMP/3.0/plug-ins{X}")
+            print(f"  {D}Example: ~/Library/Application Support/GIMP/3.2/plug-ins  (or 3.0){X}")
         else:
-            print(f"  {D}Example: ~/.config/GIMP/3.0/plug-ins{X}")
+            print(f"  {D}Example: ~/.config/GIMP/3.2/plug-ins  (or 3.0){X}")
 
         try:
             raw = input(f"\n  {B}Path:{X} ").strip()

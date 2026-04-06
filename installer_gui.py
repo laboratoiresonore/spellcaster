@@ -785,7 +785,7 @@ class InstallerApp(ctk.CTk):
                      entry_tip="Root folder of your ComfyUI installation (contains 'models', 'custom_nodes', etc.). The installer auto-detects this if ComfyUI is in a standard location. All models and nodes will be installed here.",
                      browse_tip="Open a folder picker to locate your ComfyUI installation directory.")
         add_path_row(f_paths, "GIMP 3 Plugins Dir:", self.gimp_path,
-                     entry_tip="GIMP 3 plug-ins directory where the ComfyUI connector will be installed. Usually auto-detected. On Windows this is typically under AppData/Roaming/GIMP/3.0/plug-ins.",
+                     entry_tip="GIMP 3 plug-ins directory where the ComfyUI connector will be installed. Usually auto-detected. On Windows this is typically under AppData/Roaming/GIMP/3.2/plug-ins (or 3.0 for older GIMP).",
                      browse_tip="Open a folder picker to locate your GIMP 3 plug-ins directory.")
         add_path_row(f_paths, "Darktable lua Dir:", self.darktable_path,
                      entry_tip="Darktable Lua scripts directory where the ComfyUI connector will be installed. Usually auto-detected. On Linux this is typically ~/.config/darktable/lua/.",
