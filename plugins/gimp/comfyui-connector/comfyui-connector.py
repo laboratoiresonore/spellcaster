@@ -57,9 +57,21 @@ from pathlib import Path
 # ═══════════════════════════════════════════════════════════════════════════
 _PLUGIN_DIR    = Path(__file__).parent
 _VERSION_FILE  = _PLUGIN_DIR / ".spellcaster_version"
-_GITHUB_API    = "https://api.github.com/repos/laboratoiresonore/spellcaster/commits?sha=main&per_page=1"
-_GITHUB_TREE   = "https://api.github.com/repos/laboratoiresonore/spellcaster/git/trees/main?recursive=1"
-_RAW_BASE      = "https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main"
+
+# ── Build variant ─────────────────────────────────────────────────────
+# SFW build uses the public repo; NSFW build patches this to "nsfw"
+# and pulls from the private spellcaster_NSFW repo instead.
+# ── NSFW_BUILD_VARIANT_INJECTION_POINT ──
+_BUILD_VARIANT = "sfw"
+
+if _BUILD_VARIANT == "nsfw":
+    _GITHUB_REPO = "laboratoiresonore/spellcaster_NSFW"
+else:
+    _GITHUB_REPO = "laboratoiresonore/spellcaster"
+
+_GITHUB_API    = f"https://api.github.com/repos/{_GITHUB_REPO}/commits?sha=main&per_page=1"
+_GITHUB_TREE   = f"https://api.github.com/repos/{_GITHUB_REPO}/git/trees/main?recursive=1"
+_RAW_BASE      = f"https://raw.githubusercontent.com/{_GITHUB_REPO}/main"
 _GIMP_PLUGIN_PREFIX = "plugins/gimp/comfyui-connector/"
 
 
@@ -16557,15 +16569,17 @@ class Spellcaster(Gimp.PlugIn):
                                            "tapered_corners": True}}
                     mask_ref = ["13", 0]
 
-                # Flux 2 Klein inpaint pipeline (Flux2ReferenceLatent + Flux2CFGGuider)
+                # Flux 2 Klein inpaint pipeline (standard nodes)
                 wf["14"] = {"class_type": "GetImageSize+",
                             "inputs": {"image": ["10", 0]}}
                 wf["15"] = {"class_type": "CLIPTextEncode",
                             "inputs": {"text": prompt, "clip": ["2", 0]}}
                 wf["16"] = {"class_type": "FluxGuidance",
                             "inputs": {"conditioning": ["15", 0], "guidance": 30.0}}
-                wf["20"] = {"class_type": "Flux2ReferenceLatent",
-                            "inputs": {"image": ["10", 0], "vae": ["3", 0]}}
+                wf["19"] = {"class_type": "ConditioningZeroOut",
+                            "inputs": {"conditioning": ["16", 0]}}
+                wf["20"] = {"class_type": "VAEEncode",
+                            "inputs": {"pixels": ["10", 0], "vae": ["3", 0]}}
                 wf["21"] = {"class_type": "SetLatentNoiseMask",
                             "inputs": {"samples": ["20", 0], "mask": mask_ref}}
                 model_ref = ["1", 0]
@@ -16573,9 +16587,9 @@ class Spellcaster(Gimp.PlugIn):
                     wf["22"] = {"class_type": "DifferentialDiffusion",
                                 "inputs": {"model": ["1", 0]}}
                     model_ref = ["22", 0]
-                wf["30"] = {"class_type": "Flux2CFGGuider",
-                            "inputs": {"model": model_ref, "conditioning": ["16", 0],
-                                       "cfg": 1.0, "negative_scale": 0.0}}
+                wf["30"] = {"class_type": "CFGGuider",
+                            "inputs": {"model": model_ref, "positive": ["16", 0],
+                                       "negative": ["19", 0], "cfg": 1.0}}
                 wf["31"] = {"class_type": "KSamplerSelect",
                             "inputs": {"sampler_name": "euler"}}
                 wf["32"] = {"class_type": "Flux2Scheduler",
@@ -20917,11 +20931,13 @@ class Spellcaster(Gimp.PlugIn):
                                "inputs": {"text": bg_prompts[i], "clip": ["2", 0]}},
                         "16": {"class_type": "FluxGuidance",
                                "inputs": {"conditioning": ["15", 0], "guidance": 30.0}},
-                        "20": {"class_type": "Flux2ReferenceLatent",
-                               "inputs": {"image": ["10", 0], "vae": ["3", 0]}},
-                        "30": {"class_type": "Flux2CFGGuider",
-                               "inputs": {"model": ["1", 0], "conditioning": ["16", 0],
-                                          "cfg": 1.0, "negative_scale": 0.0}},
+                        "17": {"class_type": "ConditioningZeroOut",
+                               "inputs": {"conditioning": ["16", 0]}},
+                        "20": {"class_type": "VAEEncode",
+                               "inputs": {"pixels": ["10", 0], "vae": ["3", 0]}},
+                        "30": {"class_type": "CFGGuider",
+                               "inputs": {"model": ["1", 0], "positive": ["16", 0],
+                                          "negative": ["17", 0], "cfg": 1.0}},
                         "31": {"class_type": "KSamplerSelect",
                                "inputs": {"sampler_name": "euler"}},
                         "32": {"class_type": "Flux2Scheduler",
@@ -21574,15 +21590,17 @@ class Spellcaster(Gimp.PlugIn):
                            "inputs": {"text": prompt, "clip": ["2", 0]}},
                     "16": {"class_type": "FluxGuidance",
                            "inputs": {"conditioning": ["15", 0], "guidance": 30.0}},
-                    "20": {"class_type": "Flux2ReferenceLatent",
-                           "inputs": {"image": img_size_ref, "vae": ["3", 0]}},
+                    "17": {"class_type": "ConditioningZeroOut",
+                           "inputs": {"conditioning": ["16", 0]}},
+                    "20": {"class_type": "VAEEncode",
+                           "inputs": {"pixels": img_size_ref, "vae": ["3", 0]}},
                     "21": {"class_type": "SetLatentNoiseMask",
                            "inputs": {"samples": ["20", 0], "mask": mask_ref}},
                     "22": {"class_type": "DifferentialDiffusion",
                            "inputs": {"model": ["1", 0]}},
-                    "30": {"class_type": "Flux2CFGGuider",
-                           "inputs": {"model": ["22", 0], "conditioning": ["16", 0],
-                                      "cfg": 1.0, "negative_scale": 0.0}},
+                    "30": {"class_type": "CFGGuider",
+                           "inputs": {"model": ["22", 0], "positive": ["16", 0],
+                                      "negative": ["17", 0], "cfg": 1.0}},
                     "31": {"class_type": "KSamplerSelect",
                            "inputs": {"sampler_name": "euler"}},
                     "32": {"class_type": "Flux2Scheduler",
@@ -21872,11 +21890,13 @@ class Spellcaster(Gimp.PlugIn):
                            "inputs": {"text": blend_prompt, "clip": ["2", 0]}},
                     "16": {"class_type": "FluxGuidance",
                            "inputs": {"conditioning": ["15", 0], "guidance": 30.0}},
-                    "20": {"class_type": "Flux2ReferenceLatent",
-                           "inputs": {"image": ["10", 0], "vae": ["3", 0]}},
-                    "30": {"class_type": "Flux2CFGGuider",
-                           "inputs": {"model": ["1", 0], "conditioning": ["16", 0],
-                                      "cfg": 1.0, "negative_scale": 0.0}},
+                    "17": {"class_type": "ConditioningZeroOut",
+                           "inputs": {"conditioning": ["16", 0]}},
+                    "20": {"class_type": "VAEEncode",
+                           "inputs": {"pixels": ["10", 0], "vae": ["3", 0]}},
+                    "30": {"class_type": "CFGGuider",
+                           "inputs": {"model": ["1", 0], "positive": ["16", 0],
+                                      "negative": ["17", 0], "cfg": 1.0}},
                     "31": {"class_type": "KSamplerSelect",
                            "inputs": {"sampler_name": "euler"}},
                     "32": {"class_type": "Flux2Scheduler",

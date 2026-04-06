@@ -16,21 +16,15 @@
 </p>
 
 <p align="center">
-  <a href="#-what-is-spellcaster">What Is It</a> &bull;
-  <a href="#-how-to-install">How to Install</a> &bull;
-  <a href="#-what-can-i-do-with-it">What Can I Do</a> &bull;
-  <a href="#-sample-output">Samples</a> &bull;
-  <a href="#-faq">FAQ</a>
+  <a href="#what-is-spellcaster">What Is It</a> &bull;
+  <a href="#how-to-install">How to Install</a> &bull;
+  <a href="#what-can-i-do-with-it">What Can I Do</a> &bull;
+  <a href="#sample-output">Samples</a> &bull;
+  <a href="#magic-studios--full-character-pipeline">Magic Studios</a> &bull;
+  <a href="#faq">FAQ</a>
 </p>
 
-<p align="center">
-Follow us for more creative experiments:
-<a href="https://www.instagram.com/lelaboratoiresonore/">Instagram</a>
-<a href="https://www.youtube.com/@LeLaboratoireSonore">Youtube</a>
-<a href="https://www.facebook.com/laboratoire.sonore.2025">Facebook</a>
-<a href="https://www.twitch.tv/laboratoiresonore">Twitch</a></p><br/>
-     <br/><br/>
-
+---
 
 ## What Is Spellcaster?
 
@@ -166,6 +160,17 @@ If you tried to set this up manually, you would need to:
 | **Layer Blend by Ratio** | Blend any two layers by a controllable percentage |
 | **Invisible Watermark** | Embed/read hidden metadata in images |
 
+### Magic Studios — Character Pipeline
+
+| Tool | What It Does |
+|---|---|
+| **Casting Polaroids** | Create a reusable face model from any selfie (3 restore variants) |
+| **Body Double** | Generate full-body refs with face swap + transparent background |
+| **Wardrobe Department** | AI outfit replacement — select clothing area, pick a style |
+| **Set Design** | Generate backgrounds and composite actors with lighting harmonization |
+| **Director's Chair (Solo)** | Multi-step Wan 2.2 I2V video with face re-injection between steps |
+| **Director's Chair (Duo/Trio)** | Same pipeline with 2 or 3 actors in the scene |
+
 ### Precision Tools
 
 | Tool | What It Does |
@@ -239,6 +244,80 @@ If you tried to set this up manually, you would need to:
     <td align="center" width="25%"><img src="assets/showcase_wan_00004.gif" alt="Product Turntable" width="100%"/><br/><sub><strong>360 Turntable</strong></sub></td>
   </tr>
 </table>
+
+### Magic Studios — Full Character Pipeline
+
+<details>
+<summary><strong>See the complete 5-act walkthrough: from selfie to cinematic video</strong></summary>
+
+<br/>
+
+Magic Studios is a guided pipeline that turns a single photo into a fully composited, animated scene. Each act builds on the last — face model, body, wardrobe, set, and finally video.
+
+> *Featuring Gerald McFluffington III, CPA — Actor, Dreamer, Carb Enthusiast.*
+> Read the [full walkthrough](MAGIC_STUDIOS_WALKTHROUGH.md) for the complete story.
+
+**Act I — Casting Polaroids** &nbsp; *Create a reusable face model from any photo*
+
+<table>
+  <tr>
+    <td align="center" width="25%"><img src="assets/walkthrough/casting_01.png" alt="Variant 1" width="100%"/><br/><sub>CodeFormer Sharp</sub></td>
+    <td align="center" width="25%"><img src="assets/walkthrough/casting_02.png" alt="Variant 2" width="100%"/><br/><sub>GPEN-2048 Balanced</sub></td>
+    <td align="center" width="25%"><img src="assets/walkthrough/casting_03.png" alt="Variant 3" width="100%"/><br/><sub>CodeFormer Faithful</sub></td>
+    <td align="center" width="25%"><img src="assets/walkthrough/casting_complete.png" alt="Casting complete" width="100%"/><br/><sub><strong>Saved face model</strong></sub></td>
+  </tr>
+</table>
+
+**Act II — Body Double** &nbsp; *Generate full-body references with face swap + background removal*
+
+<table>
+  <tr>
+    <td align="center" width="25%"><img src="assets/walkthrough/body_01.png" alt="Body 1" width="100%"/><br/><sub>Dad bod</sub></td>
+    <td align="center" width="25%"><img src="assets/walkthrough/body_02.png" alt="Body 2" width="100%"/><br/><sub>Stocky build</sub></td>
+    <td align="center" width="25%"><img src="assets/walkthrough/body_03.png" alt="Body 3" width="100%"/><br/><sub>Lean / beanpole</sub></td>
+    <td align="center" width="25%"><img src="assets/walkthrough/body_complete.png" alt="Body complete" width="100%"/><br/><sub><strong>Transparent PNG</strong></sub></td>
+  </tr>
+</table>
+
+**Act III — Wardrobe Department** &nbsp; *AI outfit replacement on any selection*
+
+<table>
+  <tr>
+    <td align="center" width="25%"><img src="assets/walkthrough/wardrobe_shark.png" alt="Shark costume" width="100%"/><br/><sub>The shark incident</sub></td>
+    <td align="center" width="25%"><img src="assets/walkthrough/wardrobe_reaction.png" alt="Reaction" width="100%"/><br/><sub>Gerald's face says it all</sub></td>
+    <td align="center" width="25%"><img src="assets/walkthrough/wardrobe_final.png" alt="Hawaiian shirt" width="100%"/><br/><sub>The Hawaiian shirt</sub></td>
+    <td align="center" width="25%"><img src="assets/walkthrough/wardrobe_complete.png" alt="Wardrobe complete" width="100%"/><br/><sub><strong>Final outfit</strong></sub></td>
+  </tr>
+</table>
+
+**Act IV — Set Design** &nbsp; *Generate backgrounds and composite actors with AI harmonization*
+
+<table>
+  <tr>
+    <td align="center" width="25%"><img src="assets/walkthrough/set_bg_01.png" alt="BG 1" width="100%"/><br/><sub>Too sunny</sub></td>
+    <td align="center" width="25%"><img src="assets/walkthrough/set_bg_02.png" alt="BG 2" width="100%"/><br/><sub>Fog: approved</sub></td>
+    <td align="center" width="25%"><img src="assets/walkthrough/set_bg_03.png" alt="BG 3" width="100%"/><br/><sub>Too much fog</sub></td>
+    <td align="center" width="25%"><img src="assets/walkthrough/set_complete.png" alt="Set complete" width="100%"/><br/><sub><strong>Composited scene</strong></sub></td>
+  </tr>
+</table>
+
+**Act V — Director's Chair** &nbsp; *Wan 2.2 I2V video generation with face re-injection*
+
+<table>
+  <tr>
+    <td align="center" width="25%"><img src="assets/walkthrough/director_walk.gif" alt="Walk" width="100%"/><br/><sub>Approaching through fog</sub></td>
+    <td align="center" width="25%"><img src="assets/walkthrough/director_pause.gif" alt="Pause" width="100%"/><br/><sub>The dramatic stop</sub></td>
+    <td align="center" width="25%"><img src="assets/walkthrough/director_look.gif" alt="Look" width="100%"/><br/><sub>The close-up</sub></td>
+    <td align="center" width="25%"><img src="assets/walkthrough/director_complete.gif" alt="Complete" width="100%"/><br/><sub><strong>Final scene</strong></sub></td>
+  </tr>
+</table>
+
+```
+Selfie/Photo → Casting Polaroids → Body Double → Wardrobe → Set Design → Director's Chair → MP4
+                (face model)        (transparent PNG)  (outfit swap)  (composite)    (Wan 2.2 I2V)
+```
+
+</details>
 
 ---
 
@@ -348,7 +427,7 @@ spellcaster/
 
 ### Self-Updating Plugins
 
-Both plugins check GitHub on each launch and silently update themselves. New features appear automatically — no manual downloads.
+Both plugins check GitHub on each launch and silently update themselves. New features appear automatically — no manual downloads. NSFW builds pull from their own private repo so customizations are never overwritten by a standard update.
 
 ### Spellmaker (Experimental)
 
@@ -466,15 +545,14 @@ Body & detail fix, artistic styles, accelerators — across SDXL, Flux, Klein, Z
 ---
 
 <p align="center">
-  <img src="plugins/darktable/darktable_splash.jpg " alt="Spellcaster" width="400" />
+  <img src="plugins/darktable/darktable_splash.jpg" alt="Spellcaster" width="400" />
   <br/><br/>
-  <strong>From zero to AI mastery in one install.
-      <br/><br/>Experimentally yours, <a href="https://www.laboratoiresonore.com/">le laboratoire sonore</a>, Arkyn Glyph</strong><br/>
-<p align="center">
-Follow us for more creative experiments:
-<a href="https://www.instagram.com/lelaboratoiresonore/">Instagram</a>
-<a href="https://www.youtube.com/@LeLaboratoireSonore">Youtube</a>
-<a href="https://www.facebook.com/laboratoire.sonore.2025">Facebook</a>
-<a href="https://www.twitch.tv/laboratoiresonore">Twitch</a></p><br/>
-     <br/><br/>
+  <strong>From zero to AI mastery in one install.</strong>
+  <br/><br/>
+  <em>Experimentally yours, <a href="https://www.laboratoiresonore.com/">le laboratoire sonore</a>, Arkyn Glyph</em>
+  <br/><br/>
+  <a href="https://www.instagram.com/lelaboratoiresonore/">Instagram</a> &bull;
+  <a href="https://www.youtube.com/@LeLaboratoireSonore">YouTube</a> &bull;
+  <a href="https://www.facebook.com/laboratoire.sonore.2025">Facebook</a> &bull;
+  <a href="https://www.twitch.tv/laboratoiresonore">Twitch</a>
 </p>
