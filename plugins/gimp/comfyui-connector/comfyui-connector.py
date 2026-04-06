@@ -197,7 +197,10 @@ def _apply_staged_updates():
     The auto-updater writes the new version as 'filename.update' instead.
     This function (called before the updater runs) detects those staged files
     and performs the replacement before the old code is imported.
+
+    Also deletes pluginrc to ensure new menu items are discovered.
     """
+    applied = 0
     try:
         for staged in _PLUGIN_DIR.rglob("*.update"):
             target = staged.with_suffix("")  # remove .update suffix
@@ -205,10 +208,31 @@ def _apply_staged_updates():
                 if target.exists():
                     target.unlink()
                 staged.rename(target)
+                applied += 1
             except Exception:
-                pass  # Will retry on next startup
+                # Retry with copy+delete (more robust on Windows)
+                try:
+                    import shutil
+                    shutil.copy2(staged, target)
+                    staged.unlink()
+                    applied += 1
+                except Exception:
+                    pass
     except Exception:
         pass
+
+    # If we applied staged updates, delete pluginrc so GIMP re-scans
+    if applied > 0:
+        try:
+            import sys as _sys
+            if _sys.platform == "win32":
+                appdata = os.environ.get("APPDATA", "")
+                if appdata:
+                    pluginrc = Path(appdata) / "GIMP" / "3.0" / "pluginrc"
+                    if pluginrc.exists():
+                        pluginrc.unlink()
+        except Exception:
+            pass
 
 _apply_staged_updates()
 
@@ -218,18 +242,17 @@ def _auto_update():
 
     Uses the GitHub Tree API to discover every file under the plugin directory,
     so new files, renamed files, and removed files are handled automatically.
-    This means the updater can absorb arbitrarily large updates — new modules,
-    assets, whatever gets added to the repo.
 
     Flow:
       1. GET /commits → latest SHA (quick, 1 API call)
-      2. Compare with local .spellcaster_version
+      2. Compare with local .spellcaster_version (supports both 7-char and 40-char)
       3. If different: GET /git/trees/main?recursive=1
       4. Filter for files under plugins/gimp/comfyui-connector/
       5. Download each via raw.githubusercontent.com
       6. If direct replace fails (Windows file locking), stage as .update
       7. Remove local files that no longer exist in the repo
-      8. Write new SHA to .spellcaster_version
+      8. Delete GIMP pluginrc cache (forces menu re-scan on next restart)
+      9. Write new SHA to .spellcaster_version
     """
     import sys as _sys
     _hdrs = _github_headers()
@@ -238,15 +261,16 @@ def _auto_update():
         # Step 1: Check latest commit SHA
         local_sha = _VERSION_FILE.read_text().strip() if _VERSION_FILE.exists() else ""
         req = urllib.request.Request(_GITHUB_API, headers=_hdrs)
-        with urllib.request.urlopen(req, timeout=8) as r:
+        with urllib.request.urlopen(req, timeout=15) as r:
             latest_sha = json.loads(r.read())[0]["sha"]
 
-        if latest_sha == local_sha:
+        # Compare: support both 7-char truncated and 40-char full SHA
+        if latest_sha == local_sha or latest_sha[:7] == local_sha[:7]:
             return
 
         # Step 2: Fetch full repo tree to discover ALL plugin files
         req_tree = urllib.request.Request(_GITHUB_TREE, headers=_hdrs)
-        with urllib.request.urlopen(req_tree, timeout=15) as r:
+        with urllib.request.urlopen(req_tree, timeout=30) as r:
             tree = json.loads(r.read())
 
         # Step 3: Filter for files in our plugin directory (including subdirectories)
@@ -363,7 +387,27 @@ def _auto_update():
                                 except (PermissionError, OSError):
                                     pass
 
-        # Step 8: Record version and notify user
+        # Step 7b: Delete GIMP pluginrc cache — forces re-scan of procedures
+        # Without this, new menu items won't appear until pluginrc is deleted manually
+        try:
+            if _sys.platform == "win32":
+                appdata = os.environ.get("APPDATA", "")
+                if appdata:
+                    pluginrc = Path(appdata) / "GIMP" / "3.0" / "pluginrc"
+                    if pluginrc.exists():
+                        pluginrc.unlink()
+            elif _sys.platform == "darwin":
+                pluginrc = Path.home() / "Library" / "Application Support" / "GIMP" / "3.0" / "pluginrc"
+                if pluginrc.exists():
+                    pluginrc.unlink()
+            else:
+                pluginrc = Path.home() / ".config" / "GIMP" / "3.0" / "pluginrc"
+                if pluginrc.exists():
+                    pluginrc.unlink()
+        except Exception:
+            pass  # pluginrc deletion is best-effort
+
+        # Step 8: Record version (always write full SHA for reliable comparison)
         if updated > 0 or staged > 0:
             _VERSION_FILE.write_text(latest_sha)
             sha7 = latest_sha[:7]
@@ -377,10 +421,15 @@ def _auto_update():
                 msg += "\nRestart GIMP to apply all updates (some files were in use)."
             else:
                 msg += "\nRestart GIMP to use the new version."
+            msg += "\nPlugin cache cleared — new menus will appear on restart."
             def _show_update_msg_once(m=msg):
-                Gimp.message(m)
+                try:
+                    Gimp.message(m)
+                except Exception:
+                    pass  # GIMP UI may not be ready yet
                 return False
-            GLib.idle_add(_show_update_msg_once)
+            # Delay the message slightly to ensure GIMP's UI is ready
+            GLib.timeout_add(3000, _show_update_msg_once)
     except Exception as e:
         print(f"[Spellcaster] Auto-update check failed: {e}", file=_sys.stderr)
 
