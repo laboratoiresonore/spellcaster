@@ -3970,15 +3970,20 @@ FACESWAP_QUALITY_PRESETS = {
 
 def _build_faceswap(target_filename, source_filename, swap_model="inswapper_128.onnx",
                      face_restore_model="codeformer-v0.1.0.pth",
-                     face_restore_vis=1.0, codeformer_weight=0.5,
+                     face_restore_vis=1.0, codeformer_weight=0.7,
                      detect_gender_input="no", detect_gender_source="no",
                      input_face_idx="0", source_face_idx="0",
                      quality_preset=None):
-    """ReActorFaceSwap with optional double-pass for state-of-the-art quality.
+    """ReActorFaceSwapOpt with Options + FaceBoost + optional double-pass.
+
+    Uses the full ReActor quality pipeline:
+      ReActorFaceSwapOpt (swap with inline restore)
+      + ReActorOptions (face ordering, gender filter, restore-swapped-only)
+      + ReActorFaceBoost (additional face enhancement pass)
+      + optional double-pass (Ultra preset: two different swap models)
 
     quality_preset: key from FACESWAP_QUALITY_PRESETS. When set, overrides
     swap_model and face_restore_model with the preset's optimized settings.
-    Double-pass presets run two consecutive swaps for maximum quality.
     """
     if quality_preset and quality_preset in FACESWAP_QUALITY_PRESETS:
         qp = FACESWAP_QUALITY_PRESETS[quality_preset]
@@ -3992,7 +3997,7 @@ def _build_faceswap(target_filename, source_filename, swap_model="inswapper_128.
               "inputs": {"image": target_filename}},
         "2": {"class_type": "LoadImage",
               "inputs": {"image": source_filename}},
-        "3": {"class_type": "ReActorFaceSwap",
+        "3": {"class_type": "ReActorFaceSwapOpt",
               "inputs": {
                   "enabled": True,
                   "input_image": ["1", 0],
@@ -4002,13 +4007,30 @@ def _build_faceswap(target_filename, source_filename, swap_model="inswapper_128.
                   "face_restore_model": face_restore_model,
                   "face_restore_visibility": face_restore_vis,
                   "codeformer_weight": codeformer_weight,
-                  "detect_gender_input": detect_gender_input,
-                  "detect_gender_source": detect_gender_source,
+              }},
+        "4": {"class_type": "ReActorOptions",
+              "inputs": {
+                  "input_faces_order": "left-right",
                   "input_faces_index": input_face_idx,
+                  "detect_gender_input": detect_gender_input,
+                  "source_faces_order": "left-right",
                   "source_faces_index": source_face_idx,
+                  "detect_gender_source": detect_gender_source,
                   "console_log_level": 1,
+                  "restore_swapped_only": True,
+              }},
+        "5": {"class_type": "ReActorFaceBoost",
+              "inputs": {
+                  "enabled": True,
+                  "boost_model": face_restore_model,
+                  "interpolation": "Bicubic",
+                  "visibility": 1.0,
+                  "codeformer_weight": codeformer_weight,
+                  "restore_with_main_after": False,
               }},
     }
+    wf["3"]["inputs"]["options"] = ["4", 0]
+    wf["3"]["inputs"]["face_boost"] = ["5", 0]
 
     result_ref = ["3", 0]
 
@@ -4016,33 +4038,43 @@ def _build_faceswap(target_filename, source_filename, swap_model="inswapper_128.
     if quality_preset and quality_preset in FACESWAP_QUALITY_PRESETS:
         qp = FACESWAP_QUALITY_PRESETS[quality_preset]
         if qp.get("double_pass"):
-            wf["5"] = {"class_type": "ReActorFaceSwap",
-                       "inputs": {
-                           "enabled": True,
-                           "input_image": ["3", 0],
-                           "source_image": ["2", 0],
-                           "swap_model": qp["pass2_model"],
-                           "facedetection": "retinaface_resnet50",
-                           "face_restore_model": qp["pass2_restore"],
-                           "face_restore_visibility": qp["pass2_vis"],
-                           "codeformer_weight": qp["pass2_cf"],
-                           "detect_gender_input": detect_gender_input,
-                           "detect_gender_source": detect_gender_source,
-                           "input_faces_index": input_face_idx,
-                           "source_faces_index": source_face_idx,
-                           "console_log_level": 1,
-                       }}
-            result_ref = ["5", 0]
+            wf["20"] = {"class_type": "ReActorFaceSwapOpt",
+                        "inputs": {
+                            "enabled": True,
+                            "input_image": ["3", 0],
+                            "source_image": ["2", 0],
+                            "swap_model": qp["pass2_model"],
+                            "facedetection": "retinaface_resnet50",
+                            "face_restore_model": qp["pass2_restore"],
+                            "face_restore_visibility": qp["pass2_vis"],
+                            "codeformer_weight": qp["pass2_cf"],
+                        }}
+            wf["21"] = {"class_type": "ReActorOptions",
+                        "inputs": {
+                            "input_faces_order": "left-right",
+                            "input_faces_index": input_face_idx,
+                            "detect_gender_input": detect_gender_input,
+                            "source_faces_order": "left-right",
+                            "source_faces_index": source_face_idx,
+                            "detect_gender_source": detect_gender_source,
+                            "console_log_level": 1,
+                            "restore_swapped_only": True,
+                        }}
+            wf["22"] = {"class_type": "ReActorFaceBoost",
+                        "inputs": {
+                            "enabled": True,
+                            "boost_model": qp["pass2_restore"],
+                            "interpolation": "Bicubic",
+                            "visibility": 1.0,
+                            "codeformer_weight": qp["pass2_cf"],
+                            "restore_with_main_after": False,
+                        }}
+            wf["20"]["inputs"]["options"] = ["21", 0]
+            wf["20"]["inputs"]["face_boost"] = ["22", 0]
+            result_ref = ["20", 0]
 
-    # Final restore pass for extra quality
-    wf["8"] = {"class_type": "ReActorRestoreFace",
-               "inputs": {"image": result_ref,
-                          "facedetection": "retinaface_resnet50",
-                          "model": "codeformer-v0.1.0.pth",
-                          "visibility": 0.6, "codeformer_weight": 0.7}}
-
-    wf["4"] = {"class_type": "SaveImage",
-               "inputs": {"images": ["8", 0], "filename_prefix": "gimp_faceswap"}}
+    wf["10"] = {"class_type": "SaveImage",
+                "inputs": {"images": result_ref, "filename_prefix": "gimp_faceswap"}}
     return wf
 
 
@@ -7449,22 +7481,39 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
     # Step 2 (optional): ReActor face swap on RAW frames BEFORE interpolation
     # Running on 81 raw frames instead of 324 interpolated = 4× faster
     if face_swap:
-        wf["71"] = {"class_type": "ReActorFaceSwap",
+        wf["71"] = {"class_type": "ReActorFaceSwapOpt",
                     "inputs": {
                         "enabled": True,
                         "input_image": video_ref,
                         "source_image": ["7", 0],
-                        "swap_model": "inswapper_128.onnx",
+                        "swap_model": "reswapper_256.onnx",
                         "facedetection": "retinaface_resnet50",
                         "face_restore_model": "codeformer-v0.1.0.pth",
-                        "face_restore_visibility": 0.5,
-                        "codeformer_weight": 0.5,
-                        "detect_gender_input": "no",
-                        "detect_gender_source": "no",
-                        "input_faces_index": "1",
-                        "source_faces_index": "0",
-                        "console_log_level": 0,
+                        "face_restore_visibility": 1.0,
+                        "codeformer_weight": 0.7,
                     }}
+        wf["71o"] = {"class_type": "ReActorOptions",
+                     "inputs": {
+                         "input_faces_order": "left-right",
+                         "input_faces_index": "0",
+                         "detect_gender_input": "no",
+                         "source_faces_order": "left-right",
+                         "source_faces_index": "0",
+                         "detect_gender_source": "no",
+                         "console_log_level": 0,
+                         "restore_swapped_only": True,
+                     }}
+        wf["71b"] = {"class_type": "ReActorFaceBoost",
+                     "inputs": {
+                         "enabled": True,
+                         "boost_model": "codeformer-v0.1.0.pth",
+                         "interpolation": "Bicubic",
+                         "visibility": 1.0,
+                         "codeformer_weight": 0.7,
+                         "restore_with_main_after": False,
+                     }}
+        wf["71"]["inputs"]["options"] = ["71o", 0]
+        wf["71"]["inputs"]["face_boost"] = ["71b", 0]
         video_ref = ["71", 0]
 
     # Step 3: RIFE 4× interpolation — single pass with multiplier=4
@@ -13345,9 +13394,7 @@ class Spellcaster(Gimp.PlugIn):
                             # Pass 1: Actor A → face index 0
                             wf_a = _build_faceswap(
                                 next_start, a_ref_name,
-                                swap_model="inswapper_128.onnx",
-                                face_restore_model="codeformer-v0.1.0.pth",
-                                face_restore_vis=0.7, codeformer_weight=0.5,
+                                quality_preset="High (ReSwapper 256 + GPEN-2048)",
                                 input_face_idx="0", source_face_idx="0")
                             res_a = _run_with_spinner(
                                 f"Step {step_idx+1}: re-inject Actor A face...",
@@ -13365,9 +13412,7 @@ class Spellcaster(Gimp.PlugIn):
                                     # Pass 2: Actor B → face index 1
                                     wf_b = _build_faceswap(
                                         a_out, b_ref_name,
-                                        swap_model="inswapper_128.onnx",
-                                        face_restore_model="codeformer-v0.1.0.pth",
-                                        face_restore_vis=0.7, codeformer_weight=0.5,
+                                        quality_preset="High (ReSwapper 256 + GPEN-2048)",
                                         input_face_idx="1", source_face_idx="0")
                                     res_b = _run_with_spinner(
                                         f"Step {step_idx+1}: re-inject Actor B face...",
@@ -13631,8 +13676,7 @@ class Spellcaster(Gimp.PlugIn):
                         for ai in range(3):
                             try:
                                 wf_r = _build_faceswap(current_img, ref_names[ai],
-                                    swap_model="inswapper_128.onnx", face_restore_model="codeformer-v0.1.0.pth",
-                                    face_restore_vis=0.7, codeformer_weight=0.5,
+                                    quality_preset="High (ReSwapper 256 + GPEN-2048)",
                                     input_face_idx=str(ai), source_face_idx="0")
                                 _wr = wf_r
                                 rr = _run_with_spinner(f"Step {step_idx+1}: re-inject Actor {chr(65+ai)}...",
@@ -16692,10 +16736,7 @@ class Spellcaster(Gimp.PlugIn):
                         try:
                             reinject_wf = _build_faceswap(
                                 next_start, start_name,
-                                swap_model="inswapper_128.onnx",
-                                face_restore_model="codeformer-v0.1.0.pth",
-                                face_restore_vis=0.8,
-                                codeformer_weight=0.5,
+                                quality_preset="High (ReSwapper 256 + GPEN-2048)",
                                 input_face_idx="0", source_face_idx="0",
                             )
                             reinject_results = _run_with_spinner(
