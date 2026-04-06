@@ -3,6 +3,11 @@ build/
 dist/
 *.spec.bak
 
+# Virtual environments (created by build scripts)
+.build-venv/
+.venv/
+venv/
+
 # Python
 __pycache__/
 *.py[cod]

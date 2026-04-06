@@ -12,7 +12,7 @@ Usage:
     python install.py --yes                    # Auto-accept all defaults
     python install.py --server-url http://192.168.1.50:8188  # Remote ComfyUI
     python install.py --features img2img,inpaint,face_swap_reactor
-    python install.py --comfyui ~/ComfyUI --gimp ~/.config/GIMP/3.0/plug-ins
+    python install.py --comfyui ~/ComfyUI --gimp ~/.config/GIMP/3.2/plug-ins
     python install.py --skip-models            # Plugins + nodes only
     python install.py --skip-nodes             # Plugins + models only
     python install.py --help
@@ -249,7 +249,9 @@ def find_default_gimp() -> str:
                 if d.is_dir() and (d.name.startswith("3.") or d.name.startswith("2.99")):
                     candidates.append(d / "plug-ins")
         candidates += [
+            app_support / "3.2" / "plug-ins",
             app_support / "3.0" / "plug-ins",
+            home / ".config" / "GIMP" / "3.2" / "plug-ins",
             home / ".config" / "GIMP" / "3.0" / "plug-ins",
         ]
     else:
@@ -272,9 +274,12 @@ def find_default_gimp() -> str:
                 if d.is_dir() and (d.name.startswith("3.") or d.name.startswith("2.99")):
                     candidates.append(d / "plug-ins")
         candidates += [
+            home / ".config" / "GIMP" / "3.2" / "plug-ins",
             home / ".config" / "GIMP" / "3.0" / "plug-ins",
             home / ".config" / "GIMP" / "2.99" / "plug-ins",
+            flatpak_gimp / "3.2" / "plug-ins",
             flatpak_gimp / "3.0" / "plug-ins",
+            snap_gimp / "3.2" / "plug-ins",
             snap_gimp / "3.0" / "plug-ins",
         ]
 
@@ -686,6 +691,34 @@ _AI_TEMPLATES = [
 _AI_TEMPLATE_MARKER = "Spellcaster AI"
 
 
+def _delete_gimp_pluginrc():
+    """Delete pluginrc from ALL GIMP versions to force procedure re-scan on next start."""
+    home = Path.home()
+    roots = []
+    if platform.system() == "Windows":
+        appdata = os.environ.get("APPDATA", "")
+        if appdata:
+            roots.append(Path(appdata) / "GIMP")
+    elif platform.system() == "Darwin":
+        roots.append(home / "Library" / "Application Support" / "GIMP")
+    else:
+        roots.append(home / ".config" / "GIMP")
+        roots.append(home / ".var" / "app" / "org.gimp.GIMP" / "config" / "GIMP")
+
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for d in root.iterdir():
+            if d.is_dir() and (d.name.startswith("3") or d.name.startswith("2.99")):
+                rc = d / "pluginrc"
+                if rc.exists():
+                    try:
+                        rc.unlink()
+                        print(f"  {C_GREEN}✓ Deleted GIMP {d.name} plugin cache{C_RESET}")
+                    except Exception:
+                        pass
+
+
 def install_gimp_ai_templates(gimp_plugins_dir: Path, dry_run: bool = False) -> bool:
     """Append AI generation templates to GIMP's templaterc file.
 
@@ -1067,11 +1100,11 @@ def step_detect_paths(args) -> dict:
             if ask_yn("  Install the GIMP plugin?", auto_yes=args.yes):
                 print(f"  {C_DIM}Typical locations:{C_RESET}")
                 if platform.system() == "Windows":
-                    print(f"    Windows: %APPDATA%\\GIMP\\3.0\\plug-ins")
+                    print(f"    Windows: %APPDATA%\\GIMP\\3.0\\plug-ins  (or 3.2 for GIMP 3.2+)")
                 elif platform.system() == "Darwin":
-                    print(f"    macOS:   ~/Library/Application Support/GIMP/3.0/plug-ins")
+                    print(f"    macOS:   ~/Library/Application Support/GIMP/3.0/plug-ins  (or 3.2)")
                 else:
-                    print(f"    Linux:   ~/.config/GIMP/3.0/plug-ins")
+                    print(f"    Linux:   ~/.config/GIMP/3.0/plug-ins  (or 3.2 for GIMP 3.2+)")
                 gimp_path = ask_path("  Enter GIMP 3 plug-ins directory", must_exist=False)
                 if not gimp_path.exists():
                     gimp_path.mkdir(parents=True, exist_ok=True)
@@ -1599,6 +1632,10 @@ def step_install_plugins(paths: dict, server_url: str, dry_run: bool = False):
                     print(f"    {expected_script}")
                     print(f"    GIMP will not detect this plugin.")
 
+            # Delete pluginrc cache so GIMP re-scans procedures on next start
+            # Scans ALL GIMP versions (3.0, 3.2, etc.)
+            _delete_gimp_pluginrc()
+
             # Install AI canvas size templates into GIMP's template list
             install_gimp_ai_templates(paths["gimp"], dry_run)
 
@@ -1652,33 +1689,34 @@ def _find_gimp_system_splash() -> Path | None:
     candidates: list[Path] = []
     if platform.system() == "Windows":
         for pf in [Path("C:/Program Files/GIMP 3"), Path("C:/Program Files (x86)/GIMP 3")]:
-            share = pf / "share/gimp/3.0/images"
-            if share.is_dir():
-                for f in share.glob("gimp-splash*.png"):
-                    candidates.append(f)
-                if not candidates:
-                    candidates.append(share / "gimp-splash.png")
+            for ver in ["3.2", "3.0"]:
+                share = pf / f"share/gimp/{ver}/images"
+                if share.is_dir():
+                    for f in share.glob("gimp-splash*.png"):
+                        candidates.append(f)
+                    if not candidates:
+                        candidates.append(share / "gimp-splash.png")
     elif platform.system() == "Darwin":
-        for app in [
-            Path("/Applications/GIMP-3.0.app/Contents/Resources/share/gimp/3.0/images"),
-            Path("/Applications/GIMP.app/Contents/Resources/share/gimp/3.0/images"),
-        ]:
-            if app.is_dir():
-                for f in app.glob("gimp-splash*.png"):
-                    candidates.append(f)
-                if not candidates:
-                    candidates.append(app / "gimp-splash.png")
+        for app_name in ["GIMP-3.2.app", "GIMP-3.0.app", "GIMP.app"]:
+            for ver in ["3.2", "3.0"]:
+                app = Path(f"/Applications/{app_name}/Contents/Resources/share/gimp/{ver}/images")
+                if app.is_dir():
+                    for f in app.glob("gimp-splash*.png"):
+                        candidates.append(f)
+                    if not candidates:
+                        candidates.append(app / "gimp-splash.png")
     else:  # Linux
-        for base in [
-            Path("/usr/share/gimp/3.0/images"),
-            Path("/usr/local/share/gimp/3.0/images"),
-            Path("/app/share/gimp/3.0/images"),  # Flatpak
-        ]:
-            if base.is_dir():
-                for f in base.glob("gimp-splash*.png"):
-                    candidates.append(f)
-                if not candidates:
-                    candidates.append(base / "gimp-splash.png")
+        for ver in ["3.2", "3.0"]:
+            for base in [
+                Path(f"/usr/share/gimp/{ver}/images"),
+                Path(f"/usr/local/share/gimp/{ver}/images"),
+                Path(f"/app/share/gimp/{ver}/images"),  # Flatpak
+            ]:
+                if base.is_dir():
+                    for f in base.glob("gimp-splash*.png"):
+                        candidates.append(f)
+                    if not candidates:
+                        candidates.append(base / "gimp-splash.png")
     for c in candidates:
         if c.exists():
             return c
@@ -1690,14 +1728,18 @@ def _find_gimp_system_icon(icon_name: str = "gimp-logo.png") -> Path | None:
     search_dirs = []
     if platform.system() == "Windows":
         for pf in [Path("C:/Program Files/GIMP 3"), Path("C:/Program Files (x86)/GIMP 3")]:
-            search_dirs.append(pf / "share/gimp/3.0/images")
+            for ver in ["3.2", "3.0"]:
+                search_dirs.append(pf / f"share/gimp/{ver}/images")
             search_dirs.append(pf / "share/icons/hicolor/256x256/apps")
             search_dirs.append(pf / "share/icons/hicolor/48x48/apps")
     elif platform.system() == "Darwin":
-        for app in [Path("/Applications/GIMP-3.0.app"), Path("/Applications/GIMP.app")]:
-            search_dirs.append(app / "Contents/Resources/share/gimp/3.0/images")
+        for app_name in ["GIMP-3.2.app", "GIMP-3.0.app", "GIMP.app"]:
+            for ver in ["3.2", "3.0"]:
+                search_dirs.append(Path(f"/Applications/{app_name}/Contents/Resources/share/gimp/{ver}/images"))
     else:
-        search_dirs += [Path("/usr/share/gimp/3.0/images"), Path("/usr/share/icons/hicolor/256x256/apps")]
+        for ver in ["3.2", "3.0"]:
+            search_dirs.append(Path(f"/usr/share/gimp/{ver}/images"))
+        search_dirs.append(Path("/usr/share/icons/hicolor/256x256/apps"))
     for d in search_dirs:
         candidate = d / icon_name
         if candidate.exists():
@@ -1970,7 +2012,7 @@ def build_arg_parser():
               python install.py --cli --yes
               python install.py --server-url http://192.168.1.50:8188
               python install.py --features img2img,inpaint,face_swap_reactor
-              python install.py --comfyui ~/ComfyUI --gimp ~/.config/GIMP/3.0/plug-ins
+              python install.py --comfyui ~/ComfyUI --gimp ~/.config/GIMP/3.2/plug-ins
               python install.py --dry-run
         """)
     )
