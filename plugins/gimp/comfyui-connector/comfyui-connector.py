@@ -776,6 +776,60 @@ def _add_runs_spinner(dialog, box):
     box.pack_start(hb, False, False, 0)
 
 
+def _add_mask_mode_checkbox(dialog, box):
+    """Add a 'Generate as Mask (transparent)' checkbox to any image dialog.
+
+    When enabled, the result is post-processed through rembg to remove
+    the background and produce a transparent PNG with alpha channel.
+    Useful for creating cutouts, overlays, compositing elements, etc.
+    """
+    dialog._mask_mode_check = Gtk.CheckButton(label="Generate as Transparent Mask (remove background)")
+    dialog._mask_mode_check.set_active(False)
+    dialog._mask_mode_check.set_tooltip_text(
+        "Transparent Mask Mode — auto-removes background after generation.\n\n"
+        "When enabled, the AI generates the image normally, then runs\n"
+        "background removal (rembg) to produce a transparent PNG.\n\n"
+        "USE CASES:\n"
+        "  - Create character cutouts for compositing\n"
+        "  - Generate objects/props with transparent background\n"
+        "  - Make overlay elements for video scenes\n"
+        "  - Extract subjects for Studio Set actor placement\n"
+        "  - Create stickers, overlays, collage elements\n\n"
+        "The result is imported as a layer with alpha channel.\n"
+        "Requires: rembg custom node on your ComfyUI server.")
+    box.pack_start(dialog._mask_mode_check, False, False, 0)
+
+
+def _apply_mask_mode(server, image, img_data, layer_name, mask_enabled):
+    """Import image data as layer, optionally with background removed.
+
+    If mask_enabled is True, runs rembg on the result first to produce
+    a transparent PNG, then imports that as the layer.
+
+    Returns True if successful.
+    """
+    if mask_enabled:
+        # Upload the image, run rembg, get transparent result
+        try:
+            rembg_input = f"gimp_masktmp_{uuid.uuid4().hex[:8]}.png"
+            tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+            tmp.write(img_data); tmp.close()
+            _upload_image(server, tmp.name, rembg_input)
+            os.unlink(tmp.name)
+            wf = _build_rembg(rembg_input)
+            results = list(_run_comfyui_workflow(server, wf))
+            for fn, sf, ft in results:
+                if fn.lower().endswith(".png"):
+                    img_data = _download_image(server, fn, sf, ft)
+                    layer_name = f"{layer_name} (transparent)"
+                    break
+        except Exception:
+            pass  # rembg failed — import as-is
+
+    _import_result_as_layer(image, img_data, layer_name)
+    return True
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  MODEL PRESETS — one img2img workflow per checkpoint, tuned per arch
 # ═══════════════════════════════════════════════════════════════════════════
@@ -4219,6 +4273,35 @@ def _build_save_face_model(source_filename, model_name, overwrite=True):
 
 
 # ── mtb Face Swap (direct swap) ────────────────────────────────────────
+
+def _rembg_post_process(server, filename, subfolder="", folder_type="output"):
+    """Run rembg on an already-generated image and return transparent PNG bytes.
+
+    Downloads the image from ComfyUI, uploads it back as input, runs rembg,
+    and returns the transparent result bytes. Used by the 'Generate as Mask'
+    feature across all image generation tools.
+
+    Returns transparent PNG bytes, or None on failure.
+    """
+    try:
+        # Download the generated image
+        img_data = _download_image(server, filename, subfolder, folder_type)
+        # Upload as input for rembg
+        rembg_input = f"gimp_rembg_{uuid.uuid4().hex[:8]}.png"
+        tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        tmp.write(img_data); tmp.close()
+        _upload_image(server, tmp.name, rembg_input)
+        os.unlink(tmp.name)
+        # Run rembg
+        wf = _build_rembg(rembg_input)
+        results = list(_run_comfyui_workflow(server, wf))
+        for fn, sf, ft in results:
+            if fn.lower().endswith(".png"):
+                return _download_image(server, fn, sf, ft)
+    except Exception:
+        pass
+    return None
+
 
 def _build_rembg(image_filename):
     """Remove background using Image Rembg node. Returns transparent PNG.
@@ -9671,6 +9754,9 @@ class PresetDialog(Gtk.Dialog):
             wd_row.pack_start(self._wd_status, True, True, 0)
             box.pack_start(wd_row, False, False, 0)
 
+        # Transparent mask mode
+        _add_mask_mode_checkbox(self, box)
+
         # Runs spinner
         _add_runs_spinner(self, box)
 
@@ -10378,6 +10464,7 @@ class PresetDialog(Gtk.Dialog):
             "controlnet": controlnet,
             "controlnet_2": controlnet_2,
             "custom_workflow": custom_wf if custom_wf else None,
+            "mask_mode": self._mask_mode_check.get_active() if hasattr(self, '_mask_mode_check') else False,
             "runs": int(self._runs_spin.get_value()),
             "style_preset": style_preset,
         }
@@ -12740,6 +12827,7 @@ class Spellcaster(Gimp.PlugIn):
                 _wf = wf
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
                                             lambda: list(_run_comfyui_workflow(srv, _wf)))
+                mask_mode = v.get("mask_mode", False)
                 for i, (fn, sf, ft) in enumerate(results):
                     if cn_active and "spellcaster_cn_debug" in fn:
                         _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
@@ -12748,7 +12836,7 @@ class Spellcaster(Gimp.PlugIn):
                         continue
                     lbl = f"{v['preset'].get('label','')} run {run_i+1} #{i+1}" if runs > 1 \
                           else f"{v['preset'].get('label','')} #{i+1}"
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, mask_mode)
                 Gimp.displays_flush()  # show each run immediately
             Gimp.displays_flush()
             Gimp.progress_end()
@@ -12792,10 +12880,11 @@ class Spellcaster(Gimp.PlugIn):
                 _wf = wf
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
                                             lambda: list(_run_comfyui_workflow(srv, _wf)))
+                mask_mode = v.get("mask_mode", False)
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"{v['preset'].get('label','')} run {run_i+1} #{i+1}" if runs > 1 \
                           else f"{v['preset'].get('label','')} #{i+1}"
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, mask_mode)
                 Gimp.displays_flush()
             Gimp.displays_flush()
             Gimp.progress_end()
@@ -12867,6 +12956,7 @@ class Spellcaster(Gimp.PlugIn):
                 _wf = wf
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
                                             lambda: list(_run_comfyui_workflow(srv, _wf)))
+                mask_mode = v.get("mask_mode", False)
                 for i, (fn, sf, ft) in enumerate(results):
                     if cn_active and "spellcaster_cn_debug" in fn:
                         _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
@@ -12875,7 +12965,7 @@ class Spellcaster(Gimp.PlugIn):
                         continue
                     lbl = f"Inpaint {v['preset'].get('label','')} run {run_i+1} #{i+1}" if runs > 1 \
                           else f"Inpaint {v['preset'].get('label','')} #{i+1}"
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, mask_mode)
                 Gimp.displays_flush()  # show each run immediately
             Gimp.displays_flush()
             Gimp.progress_end()
