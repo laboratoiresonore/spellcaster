@@ -98,17 +98,28 @@ def _invalidate_gimp_plugin_cache():
     menu items are added, GIMP won't see them until the cache is deleted.
     This is the #1 cause of 'new menu items not appearing after update'.
     """
+    # Scan ALL GIMP versions (3.0, 3.2, 2.99, etc.) not just hardcoded ones
     cache_paths = []
     if platform.system() == "Windows":
         appdata = os.environ.get("APPDATA", "")
         if appdata:
-            cache_paths.append(Path(appdata) / "GIMP" / "3.0" / "pluginrc")
-            cache_paths.append(Path(appdata) / "GIMP" / "2.99" / "pluginrc")
+            gimp_base = Path(appdata) / "GIMP"
+            if gimp_base.is_dir():
+                for d in gimp_base.iterdir():
+                    if d.is_dir() and (d.name.startswith("3") or d.name.startswith("2.99")):
+                        cache_paths.append(d / "pluginrc")
     elif platform.system() == "Darwin":
-        cache_paths.append(Path.home() / "Library" / "Application Support" / "GIMP" / "3.0" / "pluginrc")
+        gimp_base = Path.home() / "Library" / "Application Support" / "GIMP"
+        if gimp_base.is_dir():
+            for d in gimp_base.iterdir():
+                if d.is_dir() and (d.name.startswith("3") or d.name.startswith("2.99")):
+                    cache_paths.append(d / "pluginrc")
     else:
-        cache_paths.append(Path.home() / ".config" / "GIMP" / "3.0" / "pluginrc")
-        cache_paths.append(Path.home() / ".config" / "GIMP" / "2.99" / "pluginrc")
+        gimp_base = Path.home() / ".config" / "GIMP"
+        if gimp_base.is_dir():
+            for d in gimp_base.iterdir():
+                if d.is_dir() and (d.name.startswith("3") or d.name.startswith("2.99")):
+                    cache_paths.append(d / "pluginrc")
 
     deleted = False
     for p in cache_paths:
@@ -278,17 +289,18 @@ def find_all_gimp_plugin_dirs() -> list[Path]:
             for snap_rev in sorted(snap_base.iterdir(), reverse=True):
                 scan_gimp_root(snap_rev / ".config" / "GIMP")
 
-    # ── Strategy 2: Hardcoded common paths ──
+    # ── Strategy 2: Hardcoded common paths (fallback if scan missed them) ──
     if platform.system() == "Windows":
-        add(home / "AppData" / "Roaming" / "GIMP" / "3.0" / "plug-ins")
-        add(home / "AppData" / "Roaming" / "GIMP" / "2.99" / "plug-ins")
+        for ver in ["3.2", "3.0", "2.99"]:
+            add(home / "AppData" / "Roaming" / "GIMP" / ver / "plug-ins")
     elif platform.system() == "Darwin":
-        add(home / "Library" / "Application Support" / "GIMP" / "3.0" / "plug-ins")
-        add(home / ".config" / "GIMP" / "3.0" / "plug-ins")
+        for ver in ["3.2", "3.0", "2.99"]:
+            add(home / "Library" / "Application Support" / "GIMP" / ver / "plug-ins")
     else:
-        add(home / ".config" / "GIMP" / "3.0" / "plug-ins")
-        add(home / ".config" / "GIMP" / "2.99" / "plug-ins")
+        for ver in ["3.2", "3.0", "2.99"]:
+            add(home / ".config" / "GIMP" / ver / "plug-ins")
         add(home / ".var" / "app" / "org.gimp.GIMP" / "config" / "GIMP" / "3.0" / "plug-ins")
+        add(home / ".var" / "app" / "org.gimp.GIMP" / "config" / "GIMP" / "3.2" / "plug-ins")
 
     # ── Strategy 3: Brute-force search for GIMP directories ──
     if platform.system() == "Windows":
