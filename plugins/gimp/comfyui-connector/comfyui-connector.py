@@ -7609,24 +7609,41 @@ def _build_klein_headswap(target_filename, source_filename, klein_model_key,
         "1": {"class_type": "LoadImage", "inputs": {"image": target_filename}},
         "2": {"class_type": "LoadImage", "inputs": {"image": source_filename}},
 
-        # Face swap via ReActor
-        "10": {"class_type": "ReActorFaceSwap",
+        # Face swap via ReActor (full quality pipeline)
+        "10": {"class_type": "ReActorFaceSwapOpt",
                "inputs": {
                    "enabled": True,
                    "input_image": ["1", 0],
                    "source_image": ["2", 0],
-                   "swap_model": "inswapper_128.onnx",
+                   "swap_model": "reswapper_256.onnx",
                    "facedetection": "retinaface_resnet50",
                    "face_restore_model": "codeformer-v0.1.0.pth",
                    "face_restore_visibility": face_restore_vis,
                    "codeformer_weight": codeformer_weight,
-                   "detect_gender_input": "no",
-                   "detect_gender_source": "no",
-                   "input_faces_index": "0",
-                   "source_faces_index": "0",
-                   "console_log_level": 1,
                }},
+        "10o": {"class_type": "ReActorOptions",
+                "inputs": {
+                    "input_faces_order": "left-right",
+                    "input_faces_index": "0",
+                    "detect_gender_input": "no",
+                    "source_faces_order": "left-right",
+                    "source_faces_index": "0",
+                    "detect_gender_source": "no",
+                    "console_log_level": 1,
+                    "restore_swapped_only": True,
+                }},
+        "10b": {"class_type": "ReActorFaceBoost",
+                "inputs": {
+                    "enabled": True,
+                    "boost_model": "codeformer-v0.1.0.pth",
+                    "interpolation": "Bicubic",
+                    "visibility": 1.0,
+                    "codeformer_weight": codeformer_weight,
+                    "restore_with_main_after": False,
+                }},
     }
+    wf["10"]["inputs"]["options"] = ["10o", 0]
+    wf["10"]["inputs"]["face_boost"] = ["10b", 0]
 
     # If a saved face model is provided, use it instead of source_image
     if face_model:
@@ -7746,7 +7763,7 @@ def _build_video_upscale(video_name, upscale_model="4x-UltraSharp.pth",
 
 def _build_video_reactor(video_name, face_models, upscale_model="4x-UltraSharp.pth",
                           upscale_factor=1.0, rtx_scale=2.0, fps=16,
-                          face_restore_visibility=0.5, codeformer_weight=0.95):
+                          face_restore_visibility=1.0, codeformer_weight=0.7):
     """Upscale + face swap a video.
 
     Pipeline: VHS_LoadVideo → TS_Video_Upscale_With_Model(factor)
@@ -7784,39 +7801,52 @@ def _build_video_reactor(video_name, face_models, upscale_model="4x-UltraSharp.p
                                "quality": "ULTRA"}}
         video_ref = ["20", 0]
 
-    # Load face models + face swap chain
+    # Load face models + face swap chain (full quality pipeline per model)
     img_ref = video_ref
     for i, fm_name in enumerate(face_models):
         fm_nid = str(40 + i)
         swap_nid = str(50 + i)
+        opt_nid = f"{swap_nid}o"
+        boost_nid = f"{swap_nid}b"
         wf[fm_nid] = {"class_type": "ReActorLoadFaceModel",
                        "inputs": {"face_model": fm_name}}
-        wf[swap_nid] = {"class_type": "ReActorFaceSwap",
+        wf[swap_nid] = {"class_type": "ReActorFaceSwapOpt",
                          "inputs": {
                              "enabled": True,
                              "input_image": img_ref,
-                             "swap_model": "inswapper_128.onnx",
+                             "swap_model": "reswapper_256.onnx",
                              "facedetection": "retinaface_resnet50",
                              "face_restore_model": "codeformer-v0.1.0.pth",
                              "face_restore_visibility": face_restore_visibility,
                              "codeformer_weight": codeformer_weight,
-                             "detect_gender_input": "no",
-                             "detect_gender_source": "no",
-                             "input_faces_index": str(i),
-                             "source_faces_index": "0",
-                             "console_log_level": 1,
                              "face_model": [fm_nid, 0],
                          }}
+        wf[opt_nid] = {"class_type": "ReActorOptions",
+                        "inputs": {
+                            "input_faces_order": "left-right",
+                            "input_faces_index": str(i),
+                            "detect_gender_input": "no",
+                            "source_faces_order": "left-right",
+                            "source_faces_index": "0",
+                            "detect_gender_source": "no",
+                            "console_log_level": 1,
+                            "restore_swapped_only": True,
+                        }}
+        wf[boost_nid] = {"class_type": "ReActorFaceBoost",
+                          "inputs": {
+                              "enabled": True,
+                              "boost_model": "codeformer-v0.1.0.pth",
+                              "interpolation": "Bicubic",
+                              "visibility": 1.0,
+                              "codeformer_weight": codeformer_weight,
+                              "restore_with_main_after": False,
+                          }}
+        wf[swap_nid]["inputs"]["options"] = [opt_nid, 0]
+        wf[swap_nid]["inputs"]["face_boost"] = [boost_nid, 0]
         img_ref = [swap_nid, 0]
 
-    # Face restore pass on final result
-    wf["60"] = {"class_type": "ReActorRestoreFace",
-                "inputs": {"image": img_ref,
-                           "facedetection": "retinaface_resnet50",
-                           "model": "codeformer-v0.1.0.pth",
-                           "visibility": face_restore_visibility,
-                           "codeformer_weight": codeformer_weight}}
-    img_ref = ["60", 0]
+    # Note: ReActorFaceBoost handles restore per-swap above, so no
+    # separate ReActorRestoreFace pass needed (it would double-blur).
 
     # Output video
     wf["70"] = {"class_type": "CreateVideo",
