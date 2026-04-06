@@ -53,6 +53,8 @@ config.json
 *.gif
 !assets/*.mp4
 !assets/*.gif
+!assets/**/*.mp4
+!assets/**/*.gif
 
 # NSFW builds — never push to public repo
 nsfw/
