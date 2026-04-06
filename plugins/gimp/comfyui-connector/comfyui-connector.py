@@ -1434,6 +1434,83 @@ ARCH_LORA_PREFIXES = {
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  Turbo / Acceleration LoRA Configs — per-architecture fast generation
+# ═══════════════════════════════════════════════════════════════════════════
+# Each architecture maps to its best acceleration LoRA + optimal settings.
+# Sources: ByteDance Hyper-SD (https://huggingface.co/ByteDance/Hyper-SD)
+#          FLUX.2-dev-Turbo (https://huggingface.co/fal/FLUX.2-dev-Turbo)
+#
+# The 8-step CFG-preserved variants are used for SD1.5/SDXL because they
+# still support classifier-free guidance (negative prompts work properly).
+# Standard 2/4-step variants require cfg≈0 and break negative prompts.
+
+TURBO_CONFIGS = {
+    "sd15": {
+        "label": "Hyper-SD15 8-step",
+        "lora": "Hyper-SD15-8steps-CFG-lora.safetensors",
+        "strength_model": 1.0,
+        "strength_clip": 1.0,
+        "sampler": "ddim",
+        "scheduler": "sgm_uniform",
+        "steps": 8,
+        "cfg": 5.0,
+        "denoise": None,  # keep preset default
+    },
+    "sdxl": {
+        "label": "Hyper-SDXL 8-step",
+        "lora": "Hyper-SDXL-8steps-CFG-lora.safetensors",
+        "strength_model": 1.0,
+        "strength_clip": 1.0,
+        "sampler": "ddim",
+        "scheduler": "sgm_uniform",
+        "steps": 8,
+        "cfg": 5.0,
+        "denoise": None,
+    },
+    "illustrious": {
+        "label": "Hyper-SDXL 8-step",        # Illustrious is SDXL-based
+        "lora": "Hyper-SDXL-8steps-CFG-lora.safetensors",
+        "strength_model": 1.0,
+        "strength_clip": 1.0,
+        "sampler": "ddim",
+        "scheduler": "sgm_uniform",
+        "steps": 8,
+        "cfg": 5.0,
+        "denoise": None,
+    },
+    "flux1dev": {
+        "label": "Hyper-FLUX 8-step",
+        "lora": "Hyper-FLUX.1-dev-8steps-lora.safetensors",
+        "strength_model": 0.125,
+        "strength_clip": 0.125,
+        "sampler": "euler",
+        "scheduler": "simple",
+        "steps": 8,
+        "cfg": 3.5,
+        "denoise": None,
+    },
+    "flux_kontext": {
+        "label": "Hyper-FLUX 8-step",
+        "lora": "Hyper-FLUX.1-dev-8steps-lora.safetensors",
+        "strength_model": 0.125,
+        "strength_clip": 0.125,
+        "sampler": "euler",
+        "scheduler": "simple",
+        "steps": 8,
+        "cfg": 3.5,
+        "denoise": None,
+    },
+    # ZIT and flux2klein are already fast (4 steps) — no turbo needed.
+    # Wan I2V has its own LightX2V acceleration in WAN_I2V_PRESETS.
+}
+
+
+def _get_turbo_config(arch):
+    """Return the turbo config for an architecture, or None if unsupported."""
+    return TURBO_CONFIGS.get(arch)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  Scene / Subject Presets — beginner-friendly prompt templates per category
 # ═══════════════════════════════════════════════════════════════════════════
 # Keyed by (architecture, category). When a user picks a scene preset,
@@ -6071,10 +6148,12 @@ def _build_faceid_img2img(target_filename, face_ref_filename, preset_key,
                            prompt_text, negative_text, seed,
                            faceid_preset="FACEID PLUS V2",
                            lora_strength=0.6, weight=0.85, weight_v2=1.0,
-                           denoise=None, steps=None, cfg=None):
+                           denoise=None, steps=None, cfg=None,
+                           turbo_loras=None, turbo=False):
     """IPAdapter FaceID img2img — re-generates target image preserving face identity from reference.
 
     Pipeline: CheckpointLoaderSimple → MODEL, CLIP, VAE
+              [Optional: LoraLoader(s) for turbo acceleration]
               IPAdapterUnifiedLoaderFaceID(MODEL, preset) → MODEL (with FaceID LoRA), IPADAPTER
               LoadImage(face_ref) → face reference
               IPAdapterFaceID(MODEL, IPADAPTER, face_image) → MODEL (conditioned on face)
@@ -6090,9 +6169,25 @@ def _build_faceid_img2img(target_filename, face_ref_filename, preset_key,
     steps = steps or p["steps"]
     cfg = cfg or p["cfg"]
     denoise = denoise or p["denoise"]
+    sampler = p["sampler"]
+    scheduler = p["scheduler"]
+
+    # Apply turbo sampler/scheduler overrides
+    if turbo and turbo_loras:
+        # Determine arch from preset key
+        arch = "sd15" if preset_key.startswith("SD1.5") else "sdxl"
+        tc = _get_turbo_config(arch)
+        if tc:
+            sampler = tc["sampler"]
+            scheduler = tc["scheduler"]
 
     loader_wf, model_ref, clip_ref, vae_ref = _make_model_loader(p, "1")
     wf = dict(loader_wf)
+
+    # Inject turbo LoRAs between model loader and IPAdapter
+    if turbo_loras:
+        wf, model_ref, clip_ref = _inject_loras(wf, turbo_loras, model_ref=model_ref, clip_ref=clip_ref)
+
     wf.update({
         # FaceID unified loader: loads IPAdapter + LoRA, applies to model
         "2": {"class_type": "IPAdapterUnifiedLoaderFaceID",
@@ -6139,8 +6234,8 @@ def _build_faceid_img2img(target_filename, face_ref_filename, preset_key,
                   "seed": seed,
                   "steps": steps,
                   "cfg": cfg,
-                  "sampler_name": p["sampler"],
-                  "scheduler": p["scheduler"],
+                  "sampler_name": sampler,
+                  "scheduler": scheduler,
                   "denoise": denoise,
               }},
         # Decode
@@ -6157,23 +6252,36 @@ def _build_faceid_img2img(target_filename, face_ref_filename, preset_key,
 PULID_FLUX_MODELS = [
     "Flux\\FLUX1 Dev fp8.safetensors",
     "Flux\\flux1-dev-kontext_fp8_scaled.safetensors",
+    "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
+    "A-Flux\\Flux2\\flux-2-klein-4b.safetensors",
 ]
+
+def _is_flux2_model(model_name):
+    """Return True if model_name is a Flux.2 (Klein) model requiring PuLID-Flux2 nodes."""
+    lower = model_name.lower()
+    return "flux2" in lower or "flux-2" in lower or "klein" in lower
 
 def _build_pulid_flux(target_filename, face_ref_filename,
                        prompt_text, negative_text, seed,
                        flux_model="Flux\\FLUX1 Dev fp8.safetensors",
                        pulid_model="pulid_flux_v0.9.1.safetensors",
                        strength=0.9, steps=20, guidance=3.5,
-                       denoise=0.65, width=1024, height=1024):
+                       denoise=0.65, width=1024, height=1024,
+                       turbo_loras=None, turbo=False):
     """PuLID Flux — preserves face identity from reference while generating with Flux.
 
+    Auto-detects Flux.2 (Klein) models and uses the correct node family:
+      Flux.1-dev → PulidFluxModelLoader / PulidFluxEvaClipLoader /
+                    PulidFluxInsightFaceLoader / ApplyPulidFlux
+      Flux.2     → PuLIDModelLoader / PuLIDEVACLIPLoader /
+                    PuLIDInsightFaceLoader / ApplyPuLIDFlux2
+
     Pipeline: UNETLoader(flux) → MODEL
-              PulidFluxModelLoader → PULIDFLUX
-              PulidFluxEvaClipLoader → EVA_CLIP
-              PulidFluxInsightFaceLoader → FACEANALYSIS
+              DualCLIPLoader or CLIPLoader → CLIP
+              [Optional: LoraLoader(s) for turbo acceleration]
+              PuLID loaders → PULID, EVA_CLIP, FACEANALYSIS
               LoadImage(face_ref) → face reference
-              ApplyPulidFlux(MODEL, PULIDFLUX, EVA_CLIP, FACEANALYSIS, face_image) → MODEL
-              DualCLIPLoader(clip_l, t5xxl, flux) → CLIP
+              ApplyPulidFlux/ApplyPuLIDFlux2(MODEL, PULID, ...) → MODEL
               CLIPTextEncode(prompt) → CONDITIONING
               LoadImage(target) → IMAGE
               VAELoader → VAE
@@ -6182,50 +6290,102 @@ def _build_pulid_flux(target_filename, face_ref_filename,
               VAEDecode → IMAGE
               SaveImage
     """
+    is_flux2 = _is_flux2_model(flux_model)
+
+    # --- Model + CLIP loaders differ between Flux1 and Flux2 ---
     wf = {
-        # Load Flux UNET
         "1": {"class_type": "UNETLoader",
               "inputs": {
                   "unet_name": flux_model,
                   "weight_dtype": "default",
               }},
-        # PuLID model components (using Pulid* lowercase node family)
-        "2": {"class_type": "PulidFluxModelLoader",
-              "inputs": {"pulid_file": pulid_model}},
-        "3": {"class_type": "PulidFluxEvaClipLoader",
-              "inputs": {}},
-        "4": {"class_type": "PulidFluxInsightFaceLoader",
-              "inputs": {"provider": "CUDA"}},
-        # Load face reference
-        "5": {"class_type": "LoadImage",
-              "inputs": {"image": face_ref_filename}},
-        # Apply PuLID face identity to model
-        "6": {"class_type": "ApplyPulidFlux",
-              "inputs": {
-                  "model": ["1", 0],
-                  "pulid_flux": ["2", 0],
-                  "eva_clip": ["3", 0],
-                  "face_analysis": ["4", 0],
-                  "image": ["5", 0],
-                  "weight": strength,
-                  "start_at": 0.0,
-                  "end_at": 1.0,
-              }},
-        # Text encoding (Flux uses DualCLIPLoader: clip_name1=clip_l, clip_name2=t5)
-        "7": {"class_type": "DualCLIPLoader",
-              "inputs": {
-                  "clip_name1": "clip_l.safetensors",
-                  "clip_name2": "t5xxl_fp8_e4m3fn.safetensors",
-                  "type": "flux",
-              }},
+    }
+
+    if is_flux2:
+        # Flux2 Klein uses CLIPLoader with qwen CLIP (architecture-matched)
+        clip_name = "qwen_3_8b_fp8mixed.safetensors"
+        if "klein-4b" in flux_model.lower() or "klein_4b" in flux_model.lower():
+            clip_name = "qwen_3_4b_fp8mixed.safetensors"
+        wf["7"] = {"class_type": "CLIPLoader",
+                   "inputs": {
+                       "clip_name": clip_name,
+                       "type": "flux2",
+                       "device": "default",
+                   }}
+    else:
+        # Flux1 uses DualCLIPLoader (clip_l + t5xxl)
+        wf["7"] = {"class_type": "DualCLIPLoader",
+                   "inputs": {
+                       "clip_name1": "clip_l.safetensors",
+                       "clip_name2": "t5xxl_fp8_e4m3fn.safetensors",
+                       "type": "flux",
+                   }}
+
+    model_ref = ["1", 0]
+    clip_ref = ["7", 0]
+
+    # Inject turbo LoRAs between loaders and PuLID/text encoding
+    if turbo_loras:
+        wf, model_ref, clip_ref = _inject_loras(wf, turbo_loras, model_ref=model_ref, clip_ref=clip_ref)
+
+    # --- PuLID node family differs between Flux1 and Flux2 ---
+    if is_flux2:
+        # ComfyUI-PuLID-Flux2: PuLIDModelLoader → PULID_MODEL, ApplyPuLIDFlux2
+        wf.update({
+            "2": {"class_type": "PuLIDModelLoader",
+                  "inputs": {"pulid_file": pulid_model}},
+            "3": {"class_type": "PuLIDEVACLIPLoader",
+                  "inputs": {}},
+            "4": {"class_type": "PuLIDInsightFaceLoader",
+                  "inputs": {"provider": "CUDA"}},
+            "5": {"class_type": "LoadImage",
+                  "inputs": {"image": face_ref_filename}},
+            "6": {"class_type": "ApplyPuLIDFlux2",
+                  "inputs": {
+                      "model": model_ref,
+                      "pulid_model": ["2", 0],
+                      "strength": strength,
+                      "eva_clip": ["3", 0],
+                      "face_analysis": ["4", 0],
+                      "image": ["5", 0],
+                  }},
+        })
+    else:
+        # ComfyUI-PuLID-Flux: PulidFluxModelLoader → PULIDFLUX, ApplyPulidFlux
+        wf.update({
+            "2": {"class_type": "PulidFluxModelLoader",
+                  "inputs": {"pulid_file": pulid_model}},
+            "3": {"class_type": "PulidFluxEvaClipLoader",
+                  "inputs": {}},
+            "4": {"class_type": "PulidFluxInsightFaceLoader",
+                  "inputs": {"provider": "CUDA"}},
+            "5": {"class_type": "LoadImage",
+                  "inputs": {"image": face_ref_filename}},
+            "6": {"class_type": "ApplyPulidFlux",
+                  "inputs": {
+                      "model": model_ref,
+                      "pulid_flux": ["2", 0],
+                      "eva_clip": ["3", 0],
+                      "face_analysis": ["4", 0],
+                      "image": ["5", 0],
+                      "weight": strength,
+                      "start_at": 0.0,
+                      "end_at": 1.0,
+                  }},
+        })
+
+    # --- VAE name differs: Flux2 uses flux2-vae, Flux1 uses ae ---
+    vae_name = "flux2-vae.safetensors" if is_flux2 else "ae.safetensors"
+
+    wf.update({
         "8": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": prompt_text, "clip": ["7", 0]}},
+              "inputs": {"text": prompt_text, "clip": clip_ref}},
         # Target image for img2img
         "9": {"class_type": "LoadImage",
               "inputs": {"image": target_filename}},
         # VAE
         "10": {"class_type": "VAELoader",
-               "inputs": {"vae_name": "ae.safetensors"}},
+               "inputs": {"vae_name": vae_name}},
         "11": {"class_type": "VAEEncode",
                "inputs": {"pixels": ["9", 0], "vae": ["10", 0]}},
         # Sample
@@ -6247,7 +6407,7 @@ def _build_pulid_flux(target_filename, face_ref_filename,
                "inputs": {"samples": ["12", 0], "vae": ["10", 0]}},
         "14": {"class_type": "SaveImage",
                "inputs": {"images": ["13", 0], "filename_prefix": "gimp_pulid_flux"}},
-    }
+    })
     return wf
 
 
@@ -9552,6 +9712,24 @@ class PresetDialog(Gtk.Dialog):
         self._refresh_user_preset_combo()
         # ────────────────────────────────────────────────────────────────
 
+        # ── Turbo mode checkbox ───────────────────────────────────────
+        self.turbo_check = Gtk.CheckButton(label="⚡ Turbo (Hyper-SD 8-step)")
+        self.turbo_check.set_active(False)
+        self.turbo_check.set_tooltip_text(
+            "Turbo Mode — Hyper-SD accelerator LoRAs for ~3x faster generation.\n\n"
+            "ON:  8 steps with specialized CFG-preserving turbo LoRA.\n"
+            "     Quality is 85-95% of full — excellent for iteration.\n"
+            "     Negative prompts still work (8-step CFG variant).\n\n"
+            "OFF: Normal steps from preset (20-50). Maximum quality.\n\n"
+            "Supports: SD1.5, SDXL, Illustrious, Flux Dev, Flux Kontext.\n"
+            "Not needed for: ZIT (already 4 steps), Klein Flux2 (already 4 steps).")
+        self.turbo_check.connect("toggled", self._on_turbo_toggle)
+        box.pack_start(self.turbo_check, False, False, 0)
+        # Store original preset values so we can restore on turbo-off
+        self._turbo_saved = None
+        self._update_turbo_availability()
+        # ────────────────────────────────────────────────────────────────
+
         # ── Scene / Subject Preset dropdown ───────────────────────────
         self._scene_combo = None
         if mode in ("txt2img", "img2img"):
@@ -9898,7 +10076,11 @@ class PresetDialog(Gtk.Dialog):
     def _on_preset_changed(self, combo):
         idx = combo.get_active()
         if idx >= 0:
+            # Deactivate turbo when changing presets (user can re-enable)
+            self._turbo_saved = None
+            self.turbo_check.set_active(False)
             self._apply_preset(idx)
+            self._update_turbo_availability()
             # Re-filter LoRAs for the new architecture
             if self._all_lora_names:
                 self._refresh_lora_combos()
@@ -9959,6 +10141,55 @@ class PresetDialog(Gtk.Dialog):
         # Update style preset availability labels for new arch
         if self._all_lora_names:
             self._check_style_preset_availability()
+
+    # ── Turbo mode helpers ────────────────────────────────────────────
+
+    def _current_arch(self):
+        """Return the architecture string for the currently selected preset."""
+        idx = self.preset_combo.get_active()
+        if idx < 0:
+            return "sdxl"
+        return MODEL_PRESETS[idx]["arch"]
+
+    def _update_turbo_availability(self):
+        """Enable/disable turbo checkbox based on whether current arch has a turbo config."""
+        arch = self._current_arch()
+        tc = _get_turbo_config(arch)
+        if tc:
+            self.turbo_check.set_sensitive(True)
+            self.turbo_check.set_label(f"⚡ Turbo ({tc['label']})")
+        else:
+            self.turbo_check.set_sensitive(False)
+            self.turbo_check.set_active(False)
+            self.turbo_check.set_label("⚡ Turbo (not available for this model)")
+
+    def _on_turbo_toggle(self, cb):
+        """Apply or revert turbo overrides when the checkbox is toggled."""
+        arch = self._current_arch()
+        tc = _get_turbo_config(arch)
+        if not tc:
+            return
+        if cb.get_active():
+            # Save current spinner values so we can restore on turbo-off
+            self._turbo_saved = {
+                "steps": int(self.steps_spin.get_value()),
+                "cfg": self.cfg_spin.get_value(),
+                "sampler": self.sampler_entry.get_text(),
+                "scheduler": self.scheduler_entry.get_text(),
+            }
+            # Apply turbo overrides
+            self.steps_spin.set_value(tc["steps"])
+            self.cfg_spin.set_value(tc["cfg"])
+            self.sampler_entry.set_text(tc["sampler"])
+            self.scheduler_entry.set_text(tc["scheduler"])
+        else:
+            # Restore previous values
+            if self._turbo_saved:
+                self.steps_spin.set_value(self._turbo_saved["steps"])
+                self.cfg_spin.set_value(self._turbo_saved["cfg"])
+                self.sampler_entry.set_text(self._turbo_saved["sampler"])
+                self.scheduler_entry.set_text(self._turbo_saved["scheduler"])
+                self._turbo_saved = None
 
     # ── Scene / Subject preset helpers ────────────────────────────────
 
@@ -10533,6 +10764,20 @@ class PresetDialog(Gtk.Dialog):
                         "strength_clip": clip_str,
                     })
 
+        # Turbo mode — prepend acceleration LoRA
+        is_turbo = self.turbo_check.get_active()
+        if is_turbo:
+            arch = preset.get("arch", "sdxl")
+            tc = _get_turbo_config(arch)
+            if tc:
+                turbo_lora = {
+                    "name": tc["lora"],
+                    "strength_model": tc["strength_model"],
+                    "strength_clip": tc["strength_clip"],
+                }
+                # Prepend turbo LoRA (must be first in chain)
+                loras.insert(0, turbo_lora)
+
         return {
             "server": self.server_entry.get_text().strip(),
             "preset": preset,
@@ -10546,6 +10791,7 @@ class PresetDialog(Gtk.Dialog):
             "mask_mode": self._mask_mode_check.get_active() if hasattr(self, '_mask_mode_check') else False,
             "runs": int(self._runs_spin.get_value()),
             "style_preset": style_preset,
+            "turbo": is_turbo,
         }
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -12095,6 +12341,18 @@ class FaceIDDialog(Gtk.Dialog):
 
         box.pack_start(grid, False, False, 0)
 
+        # ── Turbo mode ──────────────────────────────────────────────────
+        self.turbo_check = Gtk.CheckButton(label="⚡ Turbo (Hyper-SD 8-step)")
+        self.turbo_check.set_active(False)
+        self.turbo_check.set_tooltip_text(
+            "Turbo Mode — Hyper-SD accelerator LoRA for ~3x faster generation.\n\n"
+            "ON:  8 steps with optimized sampler/scheduler.\n"
+            "     Quality is 85-95% of full — excellent for iteration.\n\n"
+            "OFF: Normal steps (25-30). Maximum quality.")
+        self.turbo_check.connect("toggled", self._on_turbo_toggle)
+        box.pack_start(self.turbo_check, False, False, 0)
+        self._turbo_saved = None
+
         # ── User saved presets ──────────────────────────────────────────
         _add_preset_ui(self, box, "faceid")
 
@@ -12102,6 +12360,32 @@ class FaceIDDialog(Gtk.Dialog):
         _add_runs_spinner(self, box)
 
         box.show_all()
+
+    def _faceid_arch(self):
+        """Determine architecture from the current FaceID preset key."""
+        key = self.preset_combo.get_active_id() or ""
+        if key.startswith("SD1.5"):
+            return "sd15"
+        return "sdxl"
+
+    def _on_turbo_toggle(self, cb):
+        """Apply or revert turbo overrides."""
+        arch = self._faceid_arch()
+        tc = _get_turbo_config(arch)
+        if not tc:
+            return
+        if cb.get_active():
+            self._turbo_saved = {
+                "steps": int(self.steps_spin.get_value()),
+                "cfg": self.cfg_spin.get_value(),
+            }
+            self.steps_spin.set_value(tc["steps"])
+            self.cfg_spin.set_value(tc["cfg"])
+        else:
+            if self._turbo_saved:
+                self.steps_spin.set_value(self._turbo_saved["steps"])
+                self.cfg_spin.set_value(self._turbo_saved["cfg"])
+                self._turbo_saved = None
 
     def _buf_text(self, tv):
         buf = tv.get_buffer()
@@ -12160,6 +12444,18 @@ class FaceIDDialog(Gtk.Dialog):
         f = self.source_chooser.get_file()
         if f:
             source_path = f.get_path()
+        is_turbo = self.turbo_check.get_active()
+        # Build turbo LoRA list for injection
+        turbo_loras = []
+        if is_turbo:
+            arch = self._faceid_arch()
+            tc = _get_turbo_config(arch)
+            if tc:
+                turbo_loras.append({
+                    "name": tc["lora"],
+                    "strength_model": tc["strength_model"],
+                    "strength_clip": tc["strength_clip"],
+                })
         return {
             "server": self.server_entry.get_text().strip(),
             "preset_key": self.preset_combo.get_active_id(),
@@ -12175,6 +12471,8 @@ class FaceIDDialog(Gtk.Dialog):
             "cfg": self.cfg_spin.get_value(),
             "seed": seed,
             "runs": int(self._runs_spin.get_value()),
+            "turbo": is_turbo,
+            "turbo_loras": turbo_loras,
         }
 
 
@@ -12288,6 +12586,19 @@ class PulidFluxDialog(Gtk.Dialog):
 
         box.pack_start(grid, False, False, 0)
 
+        # ── Turbo mode ──────────────────────────────────────────────────
+        tc = _get_turbo_config("flux1dev")
+        self.turbo_check = Gtk.CheckButton(label=f"⚡ Turbo ({tc['label']})")
+        self.turbo_check.set_active(False)
+        self.turbo_check.set_tooltip_text(
+            "Turbo Mode — Hyper-FLUX accelerator LoRA for ~2.5x faster generation.\n\n"
+            "ON:  8 steps with Hyper-FLUX LoRA (strength 0.125).\n"
+            "     Quality is 85-95% of full — excellent for iteration.\n\n"
+            "OFF: Normal 20 steps. Maximum quality.")
+        self.turbo_check.connect("toggled", self._on_turbo_toggle)
+        box.pack_start(self.turbo_check, False, False, 0)
+        self._turbo_saved = None
+
         # ── User saved presets ──────────────────────────────────────────
         _add_preset_ui(self, box, "pulid_flux")
 
@@ -12295,6 +12606,29 @@ class PulidFluxDialog(Gtk.Dialog):
         _add_runs_spinner(self, box)
 
         box.show_all()
+
+    def _pulid_arch(self):
+        """Return turbo architecture key based on the selected Flux model."""
+        model = self.model_combo.get_active_id() or ""
+        return "flux_kontext" if _is_flux2_model(model) else "flux1dev"
+
+    def _on_turbo_toggle(self, cb):
+        """Apply or revert turbo overrides for Flux models."""
+        tc = _get_turbo_config(self._pulid_arch())
+        if not tc:
+            return
+        if cb.get_active():
+            self._turbo_saved = {
+                "steps": int(self.steps_spin.get_value()),
+                "guidance": self.guidance_spin.get_value(),
+            }
+            self.steps_spin.set_value(tc["steps"])
+            self.guidance_spin.set_value(tc["cfg"])
+        else:
+            if self._turbo_saved:
+                self.steps_spin.set_value(self._turbo_saved["steps"])
+                self.guidance_spin.set_value(self._turbo_saved["guidance"])
+                self._turbo_saved = None
 
     def _buf_text(self, tv):
         buf = tv.get_buffer()
@@ -12344,6 +12678,16 @@ class PulidFluxDialog(Gtk.Dialog):
         f = self.source_chooser.get_file()
         if f:
             source_path = f.get_path()
+        is_turbo = self.turbo_check.get_active()
+        turbo_loras = []
+        if is_turbo:
+            tc = _get_turbo_config(self._pulid_arch())
+            if tc:
+                turbo_loras.append({
+                    "name": tc["lora"],
+                    "strength_model": tc["strength_model"],
+                    "strength_clip": tc["strength_clip"],
+                })
         return {
             "server": self.server_entry.get_text().strip(),
             "flux_model": self.model_combo.get_active_id(),
@@ -12355,6 +12699,8 @@ class PulidFluxDialog(Gtk.Dialog):
             "guidance": self.guidance_spin.get_value(),
             "seed": seed,
             "runs": int(self._runs_spin.get_value()),
+            "turbo": is_turbo,
+            "turbo_loras": turbo_loras,
         }
 
 
@@ -14716,6 +15062,8 @@ class Spellcaster(Gimp.PlugIn):
                     lora_strength=v["lora_strength"],
                     weight=v["weight"], weight_v2=v["weight_v2"],
                     denoise=v["denoise"], steps=v["steps"], cfg=v["cfg"],
+                    turbo_loras=v.get("turbo_loras"),
+                    turbo=v.get("turbo", False),
                 )
                 label = f"FaceID run {run_i+1}/{runs}" if runs > 1 else "FaceID"
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
@@ -14771,6 +15119,8 @@ class Spellcaster(Gimp.PlugIn):
                     steps=v["steps"],
                     guidance=v["guidance"],
                     denoise=v["denoise"],
+                    turbo_loras=v.get("turbo_loras"),
+                    turbo=v.get("turbo", False),
                 )
                 label = f"PuLID Flux run {run_i+1}/{runs}" if runs > 1 else "PuLID Flux"
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
