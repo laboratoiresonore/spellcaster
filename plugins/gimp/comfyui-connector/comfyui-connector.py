@@ -62,6 +62,46 @@ _GITHUB_TREE   = "https://api.github.com/repos/laboratoiresonore/spellcaster/git
 _RAW_BASE      = "https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main"
 _GIMP_PLUGIN_PREFIX = "plugins/gimp/comfyui-connector/"
 
+
+def _find_all_gimp_pluginrc_paths():
+    """Find ALL pluginrc files across any GIMP version (3.0, 3.2, etc.).
+
+    Scans for GIMP/3.x directories on all platforms. Returns list of Path objects.
+    """
+    candidates = []
+    if platform.system() == "Windows":
+        appdata = os.environ.get("APPDATA", "")
+        if appdata:
+            gimp_base = Path(appdata) / "GIMP"
+            if gimp_base.is_dir():
+                for d in gimp_base.iterdir():
+                    if d.is_dir() and d.name.startswith("3"):
+                        rc = d / "pluginrc"
+                        candidates.append(rc)
+    elif platform.system() == "Darwin":
+        gimp_base = Path.home() / "Library" / "Application Support" / "GIMP"
+        if gimp_base.is_dir():
+            for d in gimp_base.iterdir():
+                if d.is_dir() and d.name.startswith("3"):
+                    candidates.append(d / "pluginrc")
+    else:
+        gimp_base = Path.home() / ".config" / "GIMP"
+        if gimp_base.is_dir():
+            for d in gimp_base.iterdir():
+                if d.is_dir() and d.name.startswith("3"):
+                    candidates.append(d / "pluginrc")
+    return candidates
+
+
+def _delete_all_gimp_pluginrc():
+    """Delete pluginrc from ALL GIMP versions to force procedure re-scan."""
+    for rc in _find_all_gimp_pluginrc_paths():
+        if rc.exists():
+            try:
+                rc.unlink()
+            except Exception:
+                pass
+
 def _github_headers():
     """Return HTTP headers for GitHub API/raw requests.
     SFW: just User-Agent. NSFW build patches this to add Authorization."""
@@ -223,16 +263,7 @@ def _apply_staged_updates():
 
     # If we applied staged updates, delete pluginrc so GIMP re-scans
     if applied > 0:
-        try:
-            import sys as _sys
-            if _sys.platform == "win32":
-                appdata = os.environ.get("APPDATA", "")
-                if appdata:
-                    pluginrc = Path(appdata) / "GIMP" / "3.0" / "pluginrc"
-                    if pluginrc.exists():
-                        pluginrc.unlink()
-        except Exception:
-            pass
+        _delete_all_gimp_pluginrc()
 
 _apply_staged_updates()
 
@@ -388,24 +419,8 @@ def _auto_update():
                                     pass
 
         # Step 7b: Delete GIMP pluginrc cache — forces re-scan of procedures
-        # Without this, new menu items won't appear until pluginrc is deleted manually
-        try:
-            if _sys.platform == "win32":
-                appdata = os.environ.get("APPDATA", "")
-                if appdata:
-                    pluginrc = Path(appdata) / "GIMP" / "3.0" / "pluginrc"
-                    if pluginrc.exists():
-                        pluginrc.unlink()
-            elif _sys.platform == "darwin":
-                pluginrc = Path.home() / "Library" / "Application Support" / "GIMP" / "3.0" / "pluginrc"
-                if pluginrc.exists():
-                    pluginrc.unlink()
-            else:
-                pluginrc = Path.home() / ".config" / "GIMP" / "3.0" / "pluginrc"
-                if pluginrc.exists():
-                    pluginrc.unlink()
-        except Exception:
-            pass  # pluginrc deletion is best-effort
+        # Scans ALL GIMP versions (3.0, 3.2, etc.) not just 3.0
+        _delete_all_gimp_pluginrc()
 
         # Step 8: Record version (always write full SHA for reliable comparison)
         if updated > 0 or staged > 0:
