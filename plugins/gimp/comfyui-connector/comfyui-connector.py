@@ -16176,39 +16176,38 @@ class Spellcaster(Gimp.PlugIn):
                                 "inputs": {"mask": mask_ref, "expand": grow_px,
                                            "tapered_corners": True}}
                     mask_ref = ["13", 0]
-                wf["15"] = {"class_type": "ImageScaleToTotalPixels",
-                            "inputs": {"image": ["10", 0], "upscale_method": "nearest-exact",
-                                       "megapixels": 1.0, "resolution_steps": 16}}
-                wf["16"] = {"class_type": "GetImageSize", "inputs": {"image": ["15", 0]}}
-                wf["17"] = {"class_type": "VAEEncode",
-                            "inputs": {"pixels": ["15", 0], "vae": ["3", 0]}}
-                wf["18"] = {"class_type": "SetLatentNoiseMask",
-                            "inputs": {"samples": ["17", 0], "mask": mask_ref}}
-                wf["20"] = {"class_type": "CLIPTextEncode",
+
+                # Flux 2 Klein inpaint pipeline (Flux2ReferenceLatent + Flux2CFGGuider)
+                wf["14"] = {"class_type": "GetImageSize+",
+                            "inputs": {"image": ["10", 0]}}
+                wf["15"] = {"class_type": "CLIPTextEncode",
                             "inputs": {"text": prompt, "clip": ["2", 0]}}
-                wf["21"] = {"class_type": "ConditioningZeroOut",
-                            "inputs": {"conditioning": ["20", 0]}}
-                wf["22"] = {"class_type": "ReferenceLatent",
-                            "inputs": {"conditioning": ["20", 0], "latent": ["17", 0]}}
-                wf["23"] = {"class_type": "ReferenceLatent",
-                            "inputs": {"conditioning": ["21", 0], "latent": ["17", 0]}}
+                wf["16"] = {"class_type": "FluxGuidance",
+                            "inputs": {"conditioning": ["15", 0], "guidance": 30.0}}
+                wf["20"] = {"class_type": "Flux2ReferenceLatent",
+                            "inputs": {"image": ["10", 0], "vae": ["3", 0]}}
+                wf["21"] = {"class_type": "SetLatentNoiseMask",
+                            "inputs": {"samples": ["20", 0], "mask": mask_ref}}
                 model_ref = ["1", 0]
                 if use_dd:
-                    wf["24"] = {"class_type": "DifferentialDiffusion",
+                    wf["22"] = {"class_type": "DifferentialDiffusion",
                                 "inputs": {"model": ["1", 0]}}
-                    model_ref = ["24", 0]
-                wf["30"] = {"class_type": "CFGGuider",
-                            "inputs": {"model": model_ref, "positive": ["22", 0],
-                                       "negative": ["23", 0], "cfg": 1.0}}
-                wf["31"] = {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "euler"}}
+                    model_ref = ["22", 0]
+                wf["30"] = {"class_type": "Flux2CFGGuider",
+                            "inputs": {"model": model_ref, "conditioning": ["16", 0],
+                                       "cfg": 1.0, "negative_scale": 0.0}}
+                wf["31"] = {"class_type": "KSamplerSelect",
+                            "inputs": {"sampler_name": "euler"}}
                 wf["32"] = {"class_type": "Flux2Scheduler",
-                            "inputs": {"steps": steps, "denoise": denoise,
-                                       "width": ["16", 0], "height": ["16", 1]}}
-                wf["33"] = {"class_type": "RandomNoise", "inputs": {"noise_seed": seed}}
+                            "inputs": {"model": ["1", 0], "steps": steps,
+                                       "denoise": denoise,
+                                       "max_shift": 1.15, "base_shift": 0.5}}
+                wf["33"] = {"class_type": "RandomNoise",
+                            "inputs": {"noise_seed": seed}}
                 wf["40"] = {"class_type": "SamplerCustomAdvanced",
                             "inputs": {"noise": ["33", 0], "guider": ["30", 0],
                                        "sampler": ["31", 0], "sigmas": ["32", 0],
-                                       "latent_image": ["18", 0]}}
+                                       "latent_image": ["21", 0]}}
                 wf["50"] = {"class_type": "VAEDecode",
                             "inputs": {"samples": ["40", 0], "vae": ["3", 0]}}
                 wf["60"] = {"class_type": "SaveImage",
