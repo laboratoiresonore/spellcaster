@@ -1761,48 +1761,6 @@ local function detect_wan_lora_noise(lora_name)
   return "both"
 end
 
-local function find_wan_lora_pair(lora_name, target_noise)
-  -- Given a LoRA name and target noise level ("high" or "low"),
-  -- find the matching paired LoRA from cached_wan_loras.
-  local basename = lora_name:match("\\([^\\]+)$") or lora_name:match("/([^/]+)$") or lora_name
-
-  -- Build swap pairs
-  local swaps
-  if target_noise == "low" then
-    swaps = {{"high_noise", "low_noise"}, {"highnoise", "lownoise"},
-             {"_high_", "_low_"}, {"_high.", "_low."},
-             {"HIGH", "LOW"}, {"High", "Low"}, {"high", "low"}}
-  else
-    swaps = {{"low_noise", "high_noise"}, {"lownoise", "highnoise"},
-             {"_low_", "_high_"}, {"_low.", "_high."},
-             {"LOW", "HIGH"}, {"Low", "High"}, {"low", "high"}}
-  end
-
-  local candidates = {}
-  for _, pair in ipairs(swaps) do
-    local old, new = pair[1], pair[2]
-    if basename:lower():find(old:lower(), 1, true) then
-      local swapped = basename:gsub(old:gsub("%%", "%%%%"), new)
-      candidates[swapped:lower()] = true
-      -- Also try case-insensitive sub
-      local i, j = basename:lower():find(old:lower(), 1, true)
-      if i then
-        local swapped2 = basename:sub(1, i - 1) .. new .. basename:sub(j + 1)
-        candidates[swapped2:lower()] = true
-      end
-    end
-  end
-
-  -- Search cached LoRAs for a match
-  for _, server_lora in ipairs(cached_wan_loras) do
-    local s_base = server_lora:match("\\([^\\]+)$") or server_lora:match("/([^/]+)$") or server_lora
-    if candidates[s_base:lower()] then
-      return server_lora
-    end
-  end
-  return nil
-end
-
 local function wan_lora_concept_key(lora_name)
   -- Strip noise tokens from LoRA filename to get a concept key for pair grouping.
   local base = lora_name:match("\\([^\\]+)$") or lora_name:match("/([^/]+)$") or lora_name
@@ -1815,48 +1773,6 @@ local function wan_lora_concept_key(lora_name)
   end
   low = low:gsub("_+", "_"):gsub("^_", ""):gsub("_$", "")
   return low
-end
-
-local function group_wan_lora_pairs(lora_names)
-  -- Group LoRAs into high/low noise pairs by concept key.
-  -- Returns list of {display=str, high=path|nil, low=path|nil}
-  local groups = {}   -- concept_key → {high, low, both}
-  local order = {}    -- preserve first-seen order
-  for _, lname in ipairs(lora_names) do
-    local noise = detect_wan_lora_noise(lname)
-    local key = wan_lora_concept_key(lname)
-    if not groups[key] then
-      groups[key] = {high = nil, low = nil, both = nil}
-      table.insert(order, key)
-    end
-    if noise == "high" then
-      groups[key].high = lname
-    elseif noise == "low" then
-      groups[key].low = lname
-    else
-      groups[key].both = lname
-    end
-  end
-
-  local pairs_list = {}
-  for _, key in ipairs(order) do
-    local g = groups[key]
-    local function short(p) return p:match("\\([^\\]+)$") or p:match("/([^/]+)$") or p end
-    if g.high and g.low then
-      table.insert(pairs_list, {display = short(g.high) .. "  +  " .. short(g.low),
-                                 high = g.high, low = g.low})
-    elseif g.both then
-      table.insert(pairs_list, {display = short(g.both),
-                                 high = g.both, low = g.both})
-    elseif g.high then
-      table.insert(pairs_list, {display = short(g.high) .. " (high only)",
-                                 high = g.high, low = nil})
-    elseif g.low then
-      table.insert(pairs_list, {display = short(g.low) .. " (low only)",
-                                 high = nil, low = g.low})
-    end
-  end
-  return pairs_list
 end
 
 -- Cached pair list for the current preset (used by send buttons)
@@ -2812,36 +2728,6 @@ local CN_MODEL_MAP = {
   scribble = {sd15 = "control_v11p_sd15_lineart_fp16.safetensors", sdxl = "SDXL\\controlnet-canny-sdxl-1.0.safetensors", zit = "SDXL\\controlnet-canny-sdxl-1.0.safetensors"},
   tile     = {sd15 = "control_v11f1e_sd15_tile.pth", sdxl = "SDXL\\ttplanetSDXLControlnet_Tile_v20Fp16.safetensors", zit = "SDXL\\controlnet-canny-sdxl-1.0.safetensors"},
 }
-
-local function build_controlnet_json(uploaded_name, preprocessor, controlnet_model, ckpt, prompt, negative, seed, width, height, steps, cfg, sampler, scheduler, cn_strength)
-  local esc_ckpt = json_escape(ckpt)
-  local esc_prompt = json_escape(prompt)
-  local esc_neg = json_escape(negative)
-  local esc_cn = json_escape(controlnet_model)
-
-  return string.format([[
-{"prompt":{
-  "1":{"class_type":"LoadImage","inputs":{"image":"%s"}},
-  "2":{"class_type":"%s","inputs":{"image":["1",0]}},
-  "3":{"class_type":"CheckpointLoaderSimple","inputs":{"ckpt_name":"%s"}},
-  "4":{"class_type":"ControlNetLoader","inputs":{"control_net_name":"%s"}},
-  "5":{"class_type":"CLIPTextEncode","inputs":{"text":"%s","clip":["3",1]}},
-  "6":{"class_type":"CLIPTextEncode","inputs":{"text":"%s","clip":["3",1]}},
-  "7":{"class_type":"ControlNetApplyAdvanced","inputs":{"positive":["5",0],"negative":["6",0],"control_net":["4",0],"image":["2",0],"strength":%s,"start_percent":0.0,"end_percent":1.0}},
-  "8":{"class_type":"EmptyLatentImage","inputs":{"width":%d,"height":%d,"batch_size":1}},
-  "9":{"class_type":"KSampler","inputs":{"model":["3",0],"positive":["7",0],"negative":["7",1],"latent_image":["8",0],"seed":%d,"steps":%d,"cfg":%s,"sampler_name":"%s","scheduler":"%s","denoise":1.0}},
-  "10":{"class_type":"VAEDecode","inputs":{"samples":["9",0],"vae":["3",2]}},
-  "11":{"class_type":"SaveImage","inputs":{"images":["10",0],"filename_prefix":"darktable_controlnet"}}
-}}]], shell_esc(uploaded_name),
-     preprocessor,
-     esc_ckpt, esc_cn,
-     esc_prompt, esc_neg,
-     string.format("%.2f", cn_strength),
-     width, height,
-     seed, steps,
-     string.format("%.1f", cfg),
-     sampler, scheduler)
-end
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- IC-Light Relighting workflow builder

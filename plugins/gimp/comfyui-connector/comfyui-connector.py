@@ -5771,54 +5771,6 @@ def _build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
     return wf
 
 
-def _build_sketch2img(image_filename, preset, prompt, negative, seed,
-                       cn_strength=0.8, loras=None):
-    """ControlNet Sketch to Image using ScribblePreprocessor."""
-    arch = preset.get("arch", "sdxl")
-    cn_model = CONTROLNET_SCRIBBLE_MODELS.get(arch, CONTROLNET_SCRIBBLE_MODELS["sdxl"])
-    return _build_controlnet_gen(
-        image_filename, "ScribblePreprocessor", cn_model,
-        preset, prompt, negative, seed,
-        preset["width"], preset["height"], preset["steps"], preset["cfg"],
-        preset["sampler"], preset["scheduler"], cn_strength, loras)
-
-
-def _build_canny2img(image_filename, preset, prompt, negative, seed,
-                      cn_strength=0.8, loras=None):
-    """ControlNet Canny Edge to Image using CannyEdgePreprocessor."""
-    arch = preset.get("arch", "sdxl")
-    cn_model = CONTROLNET_CANNY_MODELS.get(arch, CONTROLNET_CANNY_MODELS["sdxl"])
-    return _build_controlnet_gen(
-        image_filename, "CannyEdgePreprocessor", cn_model,
-        preset, prompt, negative, seed,
-        preset["width"], preset["height"], preset["steps"], preset["cfg"],
-        preset["sampler"], preset["scheduler"], cn_strength, loras)
-
-
-def _build_depth2img(image_filename, preset, prompt, negative, seed,
-                      cn_strength=0.8, loras=None):
-    """ControlNet Depth to Image using MiDaS-DepthMapPreprocessor."""
-    arch = preset.get("arch", "sdxl")
-    cn_model = CONTROLNET_DEPTH_MODELS.get(arch, CONTROLNET_DEPTH_MODELS["sdxl"])
-    return _build_controlnet_gen(
-        image_filename, "MiDaS-DepthMapPreprocessor", cn_model,
-        preset, prompt, negative, seed,
-        preset["width"], preset["height"], preset["steps"], preset["cfg"],
-        preset["sampler"], preset["scheduler"], cn_strength, loras)
-
-
-def _build_pose2img(image_filename, preset, prompt, negative, seed,
-                     cn_strength=0.8, loras=None):
-    """ControlNet Pose to Image using DWPreprocessor (DWPose)."""
-    arch = preset.get("arch", "sdxl")
-    cn_model = CONTROLNET_POSE_MODELS.get(arch, CONTROLNET_POSE_MODELS["sdxl"])
-    return _build_controlnet_gen(
-        image_filename, "DWPreprocessor", cn_model,
-        preset, prompt, negative, seed,
-        preset["width"], preset["height"], preset["steps"], preset["cfg"],
-        preset["sampler"], preset["scheduler"], cn_strength, loras)
-
-
 # ── IC-Light Relighting builder ───────────────────────────────────────
 
 def _build_iclight(image_filename, ckpt_name, prompt, negative, seed,
@@ -22320,18 +22272,15 @@ class Spellcaster(Gimp.PlugIn):
             "Leave empty to skip — files stay in ComfyUI's output folder.")
         output_row.pack_start(output_entry, True, True, 0)
         def _browse_output(*_a):
-            from customtkinter import filedialog
-            path = filedialog.askdirectory() if hasattr(filedialog, 'askdirectory') else None
-            if not path:
-                fc = Gtk.FileChooserDialog(title="Select Output Directory",
-                                            action=Gtk.FileChooserAction.SELECT_FOLDER)
-                fc.add_button("_Cancel", Gtk.ResponseType.CANCEL)
-                fc.add_button("_Select", Gtk.ResponseType.OK)
-                if fc.run() == Gtk.ResponseType.OK:
-                    path = fc.get_filename()
-                fc.destroy()
-            if path:
-                output_entry.set_text(path)
+            fc = Gtk.FileChooserDialog(title="Select Output Directory",
+                                        action=Gtk.FileChooserAction.SELECT_FOLDER)
+            fc.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+            fc.add_button("_Select", Gtk.ResponseType.OK)
+            if fc.run() == Gtk.ResponseType.OK:
+                path = fc.get_filename()
+                if path:
+                    output_entry.set_text(path)
+            fc.destroy()
         browse_btn = Gtk.Button(label="Browse...")
         browse_btn.connect("clicked", _browse_output)
         output_row.pack_start(browse_btn, False, False, 0)
@@ -22349,6 +22298,40 @@ class Spellcaster(Gimp.PlugIn):
             "• Delete: clean up temp files uploaded to ComfyUI's input folder")
         cleanup_row.pack_start(cleanup_combo, True, True, 0)
         bx.pack_start(cleanup_row, False, False, 0)
+
+        def _clean_inputs_now(*_a):
+            """Manually purge all gimp_* temp uploads from ComfyUI's input folder."""
+            srv = server_entry.get_text().strip() or "http://127.0.0.1:8188"
+            try:
+                info = _api_get(srv, "/object_info/LoadImage")
+                input_files = info["LoadImage"]["input"]["required"]["image"][0]
+                cleaned = 0
+                for fname in input_files:
+                    if fname.startswith("gimp_") and (fname.endswith(".png") or fname.endswith(".jpg")):
+                        try:
+                            url = f"{srv.rstrip('/')}/upload/image"
+                            boundary = uuid.uuid4().hex
+                            body = (
+                                f"--{boundary}\r\n"
+                                f'Content-Disposition: form-data; name="image"; filename="{fname}"\r\n'
+                                f"Content-Type: image/png\r\n\r\n"
+                            ).encode() + _TINY_PNG + f"\r\n--{boundary}--\r\n".encode()
+                            req = urllib.request.Request(url, data=body,
+                                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+                                method="POST")
+                            urllib.request.urlopen(req, timeout=10)
+                            cleaned += 1
+                        except Exception:
+                            pass
+                Gimp.message(f"Cleaned {cleaned} temp input file(s) from ComfyUI server.")
+            except Exception as e:
+                Gimp.message(f"Could not clean inputs: {e}")
+        clean_btn = Gtk.Button(label="Clean Server Inputs Now")
+        clean_btn.set_tooltip_text(
+            "Overwrite all gimp_* temp uploads on the ComfyUI server\n"
+            "with 1x1 pixel PNGs to reclaim disk space.")
+        clean_btn.connect("clicked", _clean_inputs_now)
+        bx.pack_start(clean_btn, False, False, 0)
 
         # ── Auto-update toggle ──
         bx.pack_start(Gtk.Separator(), False, False, 5)
