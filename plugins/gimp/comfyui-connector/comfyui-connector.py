@@ -8497,6 +8497,82 @@ def _import_result_as_layer(image, image_data, layer_name="ComfyUI Result"):
     os.unlink(tmp.name)
     Gimp.displays_flush()
 
+
+def _import_video_results(image, server, results):
+    """Import video generation results: GIF as layer, open MP4 in player.
+
+    Scans results for:
+      - PNG (lastframe) -> import as layer
+      - GIF -> save locally, import first frame as layer
+      - MP4 -> save locally, open in system video player
+    """
+    cfg = _load_config()
+    output_dir = cfg.get("output_dir", "").strip()
+    saved_files = []
+
+    for fn, sf, ft in results:
+        fn_lower = fn.lower()
+
+        if fn_lower.endswith(".png") and "lastframe" in fn_lower:
+            try:
+                _import_result_as_layer(image, _download_image(server, fn, sf, ft),
+                                        "Wan Video last frame")
+            except Exception:
+                pass
+
+        elif fn_lower.endswith(".gif"):
+            try:
+                gif_data = _download_image(server, fn, sf, ft)
+                if output_dir:
+                    dest = Path(output_dir) / fn
+                else:
+                    dest = Path(tempfile.gettempdir()) / fn
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(gif_data)
+                saved_files.append(str(dest))
+
+                # Import first frame as layer in GIMP
+                file = Gio.File.new_for_path(str(dest))
+                gif_image = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, file)
+                gif_layers = gif_image.get_layers()
+                if gif_layers:
+                    layer = gif_layers[0].copy()
+                    image.insert_layer(layer, None, 0)
+                    layer.set_name("Wan Video GIF")
+                    if layer.get_width() != image.get_width() or layer.get_height() != image.get_height():
+                        layer.scale(image.get_width(), image.get_height(), False)
+                gif_image.delete()
+            except Exception:
+                pass
+
+        elif fn_lower.endswith(".mp4") or fn_lower.endswith(".webm"):
+            try:
+                video_data = _download_image(server, fn, sf, ft)
+                if output_dir:
+                    dest = Path(output_dir) / fn
+                else:
+                    dest = Path(tempfile.gettempdir()) / fn
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(video_data)
+                saved_files.append(str(dest))
+
+                # Open in system default video player
+                try:
+                    if platform.system() == "Windows":
+                        os.startfile(str(dest))
+                    elif platform.system() == "Darwin":
+                        subprocess.Popen(["open", str(dest)])
+                    else:
+                        subprocess.Popen(["xdg-open", str(dest)])
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+    Gimp.displays_flush()
+    return saved_files
+
+
 # ── Workflow queue serialization ──────────────────────────────────────
 # ComfyUI can queue prompts internally, but submitting many at once
 # causes VRAM spikes and unpredictable ordering. This lock ensures we
@@ -8626,23 +8702,53 @@ def _repatriate_outputs(server, results):
             except Exception:
                 pass
 
-    # Clean up uploaded temp input images from ComfyUI's input folder
-    # These are the gimp_*.png/jpg files we uploaded earlier
-    if cleanup_mode == "delete" or cleanup_mode == "move":
-        try:
-            # List input files and delete our temp uploads
-            info = _api_get(server, "/object_info/LoadImage")
-            input_files = info["LoadImage"]["input"]["required"]["image"][0]
-            for fname in input_files:
-                if fname.startswith("gimp_") and (fname.endswith(".png") or fname.endswith(".jpg")):
-                    try:
-                        # ComfyUI doesn't have a delete API, but we can overwrite
-                        # with a tiny 1-byte file to reclaim space
-                        pass  # ComfyUI has no delete endpoint — skip
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+    # Clean up uploaded temp input images from ComfyUI's input folder.
+    # Upload a 1x1 transparent PNG over each gimp_* file to reclaim space,
+    # then delete output files from server if cleanup mode is "move" or "delete".
+    _cleanup_server_temps(server, results, cleanup_mode)
+
+
+# 1x1 transparent pixel PNG (89 bytes) — used to overwrite temp uploads
+_TINY_PNG = (
+    b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01'
+    b'\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89'
+    b'\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01'
+    b'\r\n\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
+)
+
+
+def _cleanup_server_temps(server, results, cleanup_mode):
+    """Clean up temp files from the ComfyUI server after generation.
+
+    - Overwrites gimp_* input files with a 1x1 pixel to reclaim space
+    - Deletes output files from server if cleanup_mode is "move" or "delete"
+    """
+    if cleanup_mode not in ("move", "delete"):
+        return
+
+    # Overwrite our temp input uploads with tiny PNGs
+    try:
+        info = _api_get(server, "/object_info/LoadImage")
+        input_files = info["LoadImage"]["input"]["required"]["image"][0]
+        for fname in input_files:
+            if fname.startswith("gimp_") and (fname.endswith(".png") or fname.endswith(".jpg")):
+                try:
+                    # Upload a 1x1 pixel over the temp file to reclaim space
+                    url = f"{server.rstrip('/')}/upload/image"
+                    boundary = uuid.uuid4().hex
+                    body = (
+                        f"--{boundary}\r\n"
+                        f'Content-Disposition: form-data; name="image"; filename="{fname}"\r\n'
+                        f"Content-Type: image/png\r\n\r\n"
+                    ).encode() + _TINY_PNG + f"\r\n--{boundary}--\r\n".encode()
+                    req = urllib.request.Request(url, data=body,
+                        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+                        method="POST")
+                    urllib.request.urlopen(req, timeout=10)
+                except Exception:
+                    pass
+    except Exception:
+        pass
 
 
 def _run_comfyui_workflow(server, workflow, timeout=300):
@@ -10897,11 +11003,17 @@ class WanI2VDialog(Gtk.Dialog):
             "config: 2 HIGH + 4 LOW steps with shift=5 (proven better than 3/3).")
         def _on_turbo_toggle(cb):
             if cb.get_active():
+                # Turbo ON: full optimal turbo preset
                 self.steps_spin.set_value(6)
                 self.second_step_spin.set_value(3)
+                self.cfg_spin.set_value(1.0)
+                self.shift_spin.set_value(8.0)
             else:
+                # Turbo OFF: quality preset defaults
                 self.steps_spin.set_value(20)
                 self.second_step_spin.set_value(10)
+                self.cfg_spin.set_value(1.0)
+                self.shift_spin.set_value(3.0)
         self.turbo_check.connect("toggled", _on_turbo_toggle)
         grid.attach(self.turbo_check, 0, 5, 2, 1)
 
@@ -12914,14 +13026,13 @@ class Spellcaster(Gimp.PlugIn):
                 _wf = wf
                 results = _run_with_spinner(f"{label}: generating video from {src} on ComfyUI...",
                                             lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
-                for i, (fn, sf, ft) in enumerate(results):
-                    # Only import the last-frame PNG, skip MP4 and batch frames
-                    if fn.lower().endswith(".png") and "lastframe" in fn.lower():
-                        lbl = f"Wan I2V last frame"
-                        _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                saved = _import_video_results(image, srv, results)
             Gimp.displays_flush()
             Gimp.progress_end()
-            Gimp.message("Video generation complete!\nLast frame imported as a layer.\nMP4 saved in ComfyUI output folder.")
+            msg = "Video generation complete!\nLast frame imported as layer."
+            if saved:
+                msg += f"\nFiles saved: {', '.join(saved)}"
+            Gimp.message(msg)
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Wan I2V Error: {e}")
@@ -13082,13 +13193,13 @@ class Spellcaster(Gimp.PlugIn):
                 _wf = wf
                 results = _run_with_spinner(f"{label}: generating video transition on ComfyUI...",
                                              lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
-                for i, (fn, sf, ft) in enumerate(results):
-                    if fn.lower().endswith(".png") and "lastframe" in fn.lower():
-                        _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                                "Wan FLF last frame")
+                saved = _import_video_results(image, srv, results)
             Gimp.displays_flush()
             Gimp.progress_end()
-            Gimp.message("First+Last Frame video complete!\nLast frame imported as a layer.\nMP4 saved in ComfyUI output folder.")
+            msg = "First+Last Frame video complete!\nLast frame imported as layer."
+            if saved:
+                msg += f"\nFiles saved: {', '.join(saved)}"
+            Gimp.message(msg)
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Wan FLF Error: {e}")
