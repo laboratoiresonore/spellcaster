@@ -58,16 +58,7 @@ from pathlib import Path
 _PLUGIN_DIR    = Path(__file__).parent
 _VERSION_FILE  = _PLUGIN_DIR / ".spellcaster_version"
 
-# ── Build variant ─────────────────────────────────────────────────────
-# SFW build uses the public repo; NSFW build patches this to "nsfw"
-# and pulls from the private spellcaster_NSFW repo instead.
-# ── NSFW_BUILD_VARIANT_INJECTION_POINT ──
-_BUILD_VARIANT = "sfw"
-
-if _BUILD_VARIANT == "nsfw":
-    _GITHUB_REPO = "laboratoiresonore/spellcaster_NSFW"
-else:
-    _GITHUB_REPO = "laboratoiresonore/spellcaster"
+_GITHUB_REPO = "laboratoiresonore/spellcaster"
 
 _GITHUB_API    = f"https://api.github.com/repos/{_GITHUB_REPO}/commits?sha=main&per_page=1"
 _GITHUB_TREE   = f"https://api.github.com/repos/{_GITHUB_REPO}/git/trees/main?recursive=1"
@@ -115,8 +106,7 @@ def _delete_all_gimp_pluginrc():
                 pass
 
 def _github_headers():
-    """Return HTTP headers for GitHub API/raw requests.
-    SFW: just User-Agent. NSFW build patches this to add Authorization."""
+    """Return HTTP headers for GitHub API/raw requests."""
     return {"User-Agent": "spellcaster-gimp/2.0"}
 
 def _install_spellcaster_theme_to_disk():
@@ -13898,7 +13888,6 @@ class Spellcaster(Gimp.PlugIn):
                      "negative": "both standing, merged, distorted, blurry", "shift": 12.0, "cfg": 1.0, "length": 81},
                 ],
             },
-            # ── NSFW_DIRECTOR_DUO_INJECTION_POINT ──
         }
 
         # ═══════════════════════════════════════════════════════════════
@@ -14281,7 +14270,6 @@ class Spellcaster(Gimp.PlugIn):
                      "negative": "static, merged, distorted, blurry", "shift": 8.0, "cfg": 1.0, "length": 81},
                 ],
             },
-            # ── NSFW_DIRECTOR_TRIO_INJECTION_POINT ──
         }
 
         # Setup dialog
@@ -17123,7 +17111,6 @@ class Spellcaster(Gimp.PlugIn):
                      "negative": "standing, walking, jerky, distorted, blurry", "shift": 8.0, "cfg": 1.0, "length": 81},
                 ],
             },
-            # ── NSFW_DIRECTOR_INJECTION_POINT ──
         }
 
         # ═══════════════════════════════════════════════════════════════
@@ -21122,7 +21109,6 @@ class Spellcaster(Gimp.PlugIn):
                           "high quality illustration, detailed anime character design",
                 "negative": "photorealistic, 3D render, deformed, bad proportions, cropped",
             },
-            # ── NSFW_BODY_FACTORY_INJECTION_POINT ──
         }
 
         # ── Dialog ──
@@ -21392,7 +21378,6 @@ class Spellcaster(Gimp.PlugIn):
             "Winter — heavy coat": "wearing a heavy winter coat, scarf, warm gloves, winter boots, cold weather layered outfit",
             "Spring — light dress": "wearing a light spring dress, pastel colors, floral print, breezy fabric, open-toe shoes",
             "Rain — trench coat": "wearing a classic beige trench coat, rain boots, carrying umbrella, rainy day chic",
-            # ── NSFW_CLOTHING_STORE_INJECTION_POINT ──
         }
 
         has_sel, sx1, sy1, sx2, sy2 = _get_selection_bounds(image)
@@ -21619,7 +21604,6 @@ class Spellcaster(Gimp.PlugIn):
             "Fantasy — enchanted garden": "magical enchanted garden, glowing flowers, fairy lights, mystical atmosphere",
             "Sci-Fi — spaceship interior": "futuristic spaceship bridge, holographic displays, blue ambient lighting, sci-fi interior",
             "Abstract — gradient": "smooth gradient background, soft pastel colors, clean minimal backdrop, studio lighting",
-            # ── NSFW_STUDIO_SET_INJECTION_POINT ──
         }
 
         PLACEMENT_PRESETS = {
