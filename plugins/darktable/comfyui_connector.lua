@@ -645,6 +645,45 @@ local function filter_loras_for_arch(all_loras, arch)
   return filtered
 end
 
+-- ── Turbo acceleration configs per architecture ──────────────────────
+-- Hyper-SD LoRAs (ByteDance) — 8-step CFG-preserving variants.
+-- These support negative prompts (cfg 5-8). ZIT and flux2klein
+-- are already fast (4 steps) so no turbo config is needed.
+local TURBO_CONFIGS = {
+  sd15 = {
+    label = "Hyper-SD15 8-step",
+    lora  = "Hyper-SD15-8steps-CFG-lora.safetensors",
+    strength_model = 1.0, strength_clip = 1.0,
+    sampler = "ddim", scheduler = "sgm_uniform",
+    steps = 8, cfg = 5.0,
+  },
+  sdxl = {
+    label = "Hyper-SDXL 8-step",
+    lora  = "Hyper-SDXL-8steps-CFG-lora.safetensors",
+    strength_model = 1.0, strength_clip = 1.0,
+    sampler = "ddim", scheduler = "sgm_uniform",
+    steps = 8, cfg = 5.0,
+  },
+  flux1dev = {
+    label = "Hyper-FLUX 8-step",
+    lora  = "Hyper-FLUX.1-dev-8steps-lora.safetensors",
+    strength_model = 0.125, strength_clip = 0.125,
+    sampler = "euler", scheduler = "simple",
+    steps = 8, cfg = 3.5,
+  },
+  flux_kontext = {
+    label = "Hyper-FLUX 8-step",
+    lora  = "Hyper-FLUX.1-dev-8steps-lora.safetensors",
+    strength_model = 0.125, strength_clip = 0.125,
+    sampler = "euler", scheduler = "simple",
+    steps = 8, cfg = 3.5,
+  },
+}
+
+local function get_turbo_config(arch)
+  return TURBO_CONFIGS[arch]
+end
+
 -- ═══════════════════════════════════════════════════════════════════════
 -- Preferences (stored in darktablerc)
 -- ═══════════════════════════════════════════════════════════════════════
@@ -837,20 +876,33 @@ end
 -- Node ID convention: 1-10 = core pipeline, 90+ = utility (scale/size), 100+ = LoRA chain.
 local function build_img2img_json(image_filename, preset, prompt, negative, seed,
                                    lora_name, lora_strength, scale_w, scale_h,
-                                   cn_mode, cn_strength, cn_preprocessor, cn_model)
+                                   cn_mode, cn_strength, cn_preprocessor, cn_model,
+                                   turbo_config)
   local esc_prompt = json_escape(prompt)
   local esc_neg = json_escape(negative)
   local esc_ckpt = json_escape(preset.ckpt)
 
-  -- Build LoRA node and references if a LoRA is selected
-  local lora_node = ""
+  -- Build LoRA chain: turbo LoRA first (node 99), then user LoRA (node 100)
+  local lora_nodes = ""
   local model_ref = '["1",0]'
   local clip_ref = '["1",1]'
+
+  -- Turbo acceleration LoRA (prepended before user LoRA)
+  if turbo_config then
+    local esc_turbo = json_escape(turbo_config.lora)
+    lora_nodes = string.format(
+      ',"99":{"class_type":"LoraLoader","inputs":{"model":%s,"clip":%s,"lora_name":"%s","strength_model":%.3f,"strength_clip":%.3f}}',
+      model_ref, clip_ref, esc_turbo, turbo_config.strength_model, turbo_config.strength_clip)
+    model_ref = '["99",0]'
+    clip_ref = '["99",1]'
+  end
+
+  -- User-selected LoRA
   if lora_name and lora_name ~= "" and lora_name ~= "(none)" then
     local esc_lora = json_escape(lora_name)
-    lora_node = string.format(
-      ',"100":{"class_type":"LoraLoader","inputs":{"model":["1",0],"clip":["1",1],"lora_name":"%s","strength_model":%.2f,"strength_clip":%.2f}}',
-      esc_lora, lora_strength or 1.0, lora_strength or 1.0)
+    lora_nodes = lora_nodes .. string.format(
+      ',"100":{"class_type":"LoraLoader","inputs":{"model":%s,"clip":%s,"lora_name":"%s","strength_model":%.2f,"strength_clip":%.2f}}',
+      model_ref, clip_ref, esc_lora, lora_strength or 1.0, lora_strength or 1.0)
     model_ref = '["100",0]'
     clip_ref = '["100",1]'
   end
@@ -881,6 +933,18 @@ local function build_img2img_json(image_filename, preset, prompt, negative, seed
     neg_ref = '["22",1]'
   end
 
+  -- Apply turbo overrides if active
+  local steps = preset.steps
+  local cfg = preset.cfg
+  local sampler = preset.sampler
+  local scheduler = preset.scheduler
+  if turbo_config then
+    steps = turbo_config.steps
+    cfg = turbo_config.cfg
+    sampler = turbo_config.sampler
+    scheduler = turbo_config.scheduler
+  end
+
   return string.format([[
 {"prompt":{
   "1":{"class_type":"CheckpointLoaderSimple","inputs":{"ckpt_name":"%s"}}%s%s,
@@ -898,14 +962,14 @@ local function build_img2img_json(image_filename, preset, prompt, negative, seed
   "95":{"class_type":"ImageScale","inputs":{"image":["7",0],"upscale_method":"lanczos","width":["90",0],"height":["90",1],"crop":"disabled"}},
   "8":{"class_type":"SaveImage","inputs":{"images":["95",0],"filename_prefix":"darktable_comfy"}}
 }}]],
-    esc_ckpt, lora_node, cn_nodes,
+    esc_ckpt, lora_nodes, cn_nodes,
     esc_prompt, clip_ref,
     esc_neg, clip_ref,
     image_filename,
     scale_w, scale_h,
     model_ref, pos_ref, neg_ref,
-    seed, preset.steps, preset.cfg,
-    preset.sampler, preset.scheduler, preset.denoise)
+    seed, steps, cfg,
+    sampler, scheduler, preset.denoise)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════
@@ -1444,6 +1508,18 @@ local WAN_I2V_MODELS = {
     low_accel_lora  = "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
     accel_strength  = 1.0,
   },
+  {
+    label = "Wan Enhanced NSFW SVI (fp8)",
+    high_model = "Wan\\wan22EnhancedNSFWSVICamera_nsfwV2FP8H.safetensors",
+    low_model  = "Wan\\wan22EnhancedNSFWSVICamera_nsfwV2FP8L.safetensors",
+    clip       = "umt5-xxl-encoder-Q8_0.gguf",
+    vae        = "wan_2.1_vae.safetensors",
+    steps = 30, second_step = 20, cfg = 5.0, shift = 8.0,
+    lora_prefixes   = {"WAN\\", "Wan-2.2-I2V\\"},
+    high_accel_lora = "WAN\\SVI_v2_PRO_Wan2.2-I2V-A14B_HIGH_lora_rank_128_fp16.safetensors",
+    low_accel_lora  = "WAN\\SVI_v2_PRO_Wan2.2-I2V-A14B_LOW_lora_rank_128_fp16.safetensors",
+    accel_strength  = 1.0,
+  },
 }
 
 -- ── Wan Video Prompt Presets ────────────────────────────────────────────
@@ -1576,6 +1652,47 @@ local WAN_VIDEO_PRESETS = {
     prompt = "cute pet with subtle breathing, gentle ear twitches, natural animal idle motion, soft blinking, whisker movement, photorealistic animal portrait, cinematic, warm lighting",
     negative = "static, frozen, stuffed animal, toy, distorted, morphing, extra limbs, blurry",
     cfg_override = 5.0, steps_override = 30, length_override = 81, pingpong = true, loras = {} },
+
+  -- NSFW_WAN_INJECTION_POINT --
+
+  -- NSFW Wan Video Presets (auto-injected)
+  { label = "NSFW: Kissing",
+    prompt = "passionate kissing, lips touching, romantic embrace, intimate close-up", negative = "ugly, deformed, bad anatomy",
+    high_lora = "Wan-2.2-I2V\\KISSHIGH.safetensors", low_lora = "Wan-2.2-I2V\\KISSLOW.safetensors", strength = 1.0 },
+  { label = "NSFW: Wriggling",
+    prompt = "wriggling motion, squirming, body movement, sensual movement", negative = "static, frozen, stiff",
+    high_lora = "Wan-2.2-I2V\\wriggling_i2v_high_e010.safetensors", low_lora = "Wan-2.2-I2V\\wriggling_i2v_low_e020.safetensors", strength = 1.0 },
+  { label = "NSFW: Oral (insertion)",
+    prompt = "oral, mouth, insertion, close-up", negative = "ugly, deformed",
+    high_lora = "Wan-2.2-I2V\\NSFW\\wan2.2-i2v-high-oral-insertion-v1.0.safetensors", low_lora = "Wan-2.2-I2V\\NSFW\\wan2.2-i2v-low-oral-insertion-v1.0.safetensors", strength = 1.0 },
+  { label = "NSFW: Double Blowjob",
+    prompt = "double blowjob, two women, oral, POV", negative = "ugly, deformed, bad anatomy",
+    high_lora = "Wan-2.2-I2V\\WAN-2.2-I2V-Double-Blowjob-HIGH-v1.safetensors", low_lora = "Wan-2.2-I2V\\WAN-2.2-I2V-Double-Blowjob-LOW-v1.safetensors", strength = 1.0 },
+  { label = "NSFW: Anal",
+    prompt = "anal, penetration, from behind", negative = "ugly, deformed, bad anatomy",
+    high_lora = "Wan-2.2-I2V\\NSFW\\wan22_i2v_anal_v1_high_noise.safetensors", low_lora = "Wan-2.2-I2V\\NSFW\\wan22_i2v_anal_v1_low_noise.safetensors", strength = 1.0 },
+  { label = "NSFW: Footjob v1",
+    prompt = "footjob, feet, toes, foot fetish", negative = "ugly, deformed",
+    high_lora = "Wan-2.2-I2V\\NSFW\\wan2.2_i2v_highnoise_footjob_v1.0.safetensors", low_lora = "Wan-2.2-I2V\\NSFW\\wan2.2_i2v_lownoise_footjob_v1.0.safetensors", strength = 1.0 },
+  { label = "NSFW: Footjob v2",
+    prompt = "footjob, feet wrapping, toe grip", negative = "ugly, deformed",
+    high_lora = "Wan-2.2-I2V\\NSFW\\wan22_i2v_footjob_v2_ab_high.safetensors", low_lora = "Wan-2.2-I2V\\NSFW\\wan22_i2v_footjob_v2_ab_low.safetensors", strength = 1.0 },
+  { label = "NSFW: Foot Worship / Toe Sucking",
+    prompt = "foot worship, toe sucking, licking toes, foot fetish", negative = "ugly, deformed",
+    high_lora = "Wan-2.2-I2V\\NSFW\\wan2.2_i2v_highnoise_FOOT_WORSHIP_TOE_SUCKING_v1.0.safetensors", low_lora = "Wan-2.2-I2V\\NSFW\\wan2.2_i2v_lownoise_FOOT_WORSHIP_TOE_SUCKING_v1.0.safetensors", strength = 1.0 },
+  { label = "NSFW: Feet Up v3",
+    prompt = "feet up, legs raised, soles visible", negative = "ugly, deformed",
+    high_lora = "Wan-2.2-I2V\\NSFW\\wan22_i2v_feetup_V3_high_noise.safetensors", low_lora = "Wan-2.2-I2V\\NSFW\\wan22_i2v_feetup_V3_low_noise.safetensors", strength = 1.0 },
+  { label = "NSFW: Cumshot Aesthetics",
+    prompt = "cumshot, facial, cum on body, aesthetic", negative = "ugly, deformed",
+    high_lora = "Wan-2.2-I2V\\NSFW\\23High noise-Cumshot Aesthetics.safetensors", low_lora = "Wan-2.2-I2V\\NSFW\\56Low noise-Cumshot Aesthetics.safetensors", strength = 1.0 },
+  { label = "NSFW: Cum v2",
+    prompt = "cum, ejaculation, thick cum", negative = "ugly, deformed",
+    high_lora = "WAN\\Wan22_CumV2_High.safetensors", low_lora = "Wan-2.2-I2V\\Concept\\Wan22_CumV2_Low.safetensors", strength = 1.0 },
+  { label = "NSFW: General NSFW",
+    prompt = "nsfw, explicit, sexual", negative = "ugly, deformed, bad anatomy",
+    high_lora = "Wan-2.2-I2V\\NSFW\\NSFW-22-H-e8.safetensors", low_lora = "Wan-2.2-I2V\\NSFW\\NSFW-22-L-e8.safetensors", strength = 1.0 },
+
 }
 
 local cached_wan_loras = {}     -- all Wan\ loras from server
@@ -1973,13 +2090,14 @@ local function build_klein_img2img_json(image_filename, klein_model, prompt, see
 end
 
 -- ═══════════════════════════════════════════════════════════════════════
--- PuLID Flux workflow (PulidFlux* node family)
+-- PuLID Flux2 workflow (ComfyUI-PuLID-Flux2 node family)
 -- ═══════════════════════════════════════════════════════════════════════
 -- PuLID (Pure and Lightning ID customization) transfers face identity
 -- from a reference image onto a generated image. Unlike face swap, it
 -- works at the model attention level (similar to IP-Adapter) rather
--- than post-processing face replacement. Runs on Flux architecture
--- with Klein 9B as the base UNET for fast generation.
+-- than post-processing face replacement. Uses PuLID-Flux2 nodes
+-- (PuLIDModelLoader, PuLIDEVACLIPLoader, PuLIDInsightFaceLoader,
+-- ApplyPuLIDFlux2) designed for Flux.2 architecture (Klein 4B/9B).
 
 local function build_pulid_flux_json(image_filename, face_filename, prompt, seed,
                                       strength, steps, guidance, scale_w, scale_h)
@@ -1988,16 +2106,16 @@ local function build_pulid_flux_json(image_filename, face_filename, prompt, seed
   return string.format([[
 {"prompt":{
   "1":{"class_type":"UNETLoader","inputs":{"unet_name":"A-Flux\\Flux2\\flux-2-klein-9b.safetensors","weight_dtype":"default"}},
-  "2":{"class_type":"PulidFluxModelLoader","inputs":{"pulid_file":"pulid_flux_v0.9.1.safetensors"}},
-  "3":{"class_type":"PulidFluxEvaClipLoader","inputs":{"provider":"cpu"}},
-  "4":{"class_type":"PulidFluxInsightFaceLoader","inputs":{"provider":"CPU"}},
+  "2":{"class_type":"PuLIDModelLoader","inputs":{"pulid_file":"pulid_flux_v0.9.1.safetensors"}},
+  "3":{"class_type":"PuLIDEVACLIPLoader","inputs":{}},
+  "4":{"class_type":"PuLIDInsightFaceLoader","inputs":{"provider":"CUDA"}},
   "5":{"class_type":"CLIPLoader","inputs":{"clip_name":"qwen_3_8b_fp8mixed.safetensors","type":"flux2","device":"default"}},
   "6":{"class_type":"VAELoader","inputs":{"vae_name":"flux2-vae.safetensors"}},
   "7":{"class_type":"CLIPTextEncode","inputs":{"text":"%s","clip":["5",0]}},
   "8":{"class_type":"ConditioningZeroOut","inputs":{"conditioning":["7",0]}},
   "9":{"class_type":"LoadImage","inputs":{"image":"%s"}},
   "15":{"class_type":"LoadImage","inputs":{"image":"%s"}},
-  "16":{"class_type":"ApplyPulidFlux","inputs":{"model":["1",0],"pulid_flux":["2",0],"eva_clip":["3",0],"face_analysis":["4",0],"image":["15",0],"weight":%.2f,"start_at":0.0,"end_at":1.0}},
+  "16":{"class_type":"ApplyPuLIDFlux2","inputs":{"model":["1",0],"pulid_model":["2",0],"strength":%.2f,"eva_clip":["3",0],"face_analysis":["4",0],"image":["15",0]}},
   "90":{"class_type":"ImageScale","inputs":{"image":["9",0],"upscale_method":"lanczos","width":%d,"height":%d,"crop":"disabled"}},
   "11":{"class_type":"ImageScaleToTotalPixels","inputs":{"image":["90",0],"upscale_method":"nearest-exact","megapixels":1.0,"resolution_steps":1}},
   "12":{"class_type":"GetImageSize","inputs":{"image":["11",0]}},
@@ -2457,6 +2575,66 @@ local INPAINT_REFINEMENTS = {
     denoise = 0.65, cfg_boost = 0.5, steps_override = 30,
     loras = { sdxl = { {"SDXL\\Style\\epiCRealnessRC1.safetensors", 0.8, 0.8} },
               flux2klein = { {"Flux-2-Klein\\Character\\Flux2Klein_AnythingtoRealCharacters.safetensors", 0.85, 0.85}, {"Flux-2-Klein\\K9bSR3al.safetensors", 0.5, 0.5} } } },
+
+  -- NSFW_INJECTION_POINT --
+
+  -- NSFW Inpaint Presets (auto-injected)
+  { label = "* NSFW Unlock (Flux)",
+    prompt = "nsfw, nude, naked, explicit, uncensored",
+    negative = "clothed, censored, covered, safe for work",
+    denoise = 0.72, cfg_boost = 1.0, steps_override = 28,
+    loras = { flux1dev = { {"Flux-1-Dev\NSFW\aidmaNSFWunlock-FLUX-V0.2.safetensors", 0.85, 0.85} }, flux2klein = { {"Flux-1-Dev\NSFW\NSFW-klein.safetensors", 0.85, 0.85} } } },
+  { label = "* Female Nudity (Klein 9B)",
+    prompt = "female nudity, nude woman, naked body, uncensored, beautiful body",
+    negative = "clothed, censored, ugly, deformed",
+    denoise = 0.7, cfg_boost = 1.0, steps_override = 25,
+    loras = { flux2klein = { {"Flux-1-Dev\SEXGOD_FemaleNudity_Klein9b_v2.safetensors", 0.9, 0.9} } } },
+  { label = "* Petite Body (Flux)",
+    prompt = "petite body, slim, small frame, delicate, young adult woman",
+    negative = "muscular, overweight, masculine, child",
+    denoise = 0.65, cfg_boost = 0.5, steps_override = 25,
+    loras = { flux1dev = { {"Flux-1-Dev\NSFW\NSFW_Flux_Petite-000002.safetensors", 0.8, 0.8} } } },
+  { label = "* Sideboob Emphasis",
+    prompt = "sideboob, side view, partial nudity, sensual pose",
+    negative = "fully clothed, censored, ugly",
+    denoise = 0.6, cfg_boost = 0.5, steps_override = 25,
+    loras = { flux1dev = { {"Flux-1-Dev\NSFW\FluxSideboob.safetensors", 0.75, 0.75} } } },
+  { label = "* POV Blowjob A (Klein)",
+    prompt = "pov blowjob, oral, close-up, first person view",
+    negative = "ugly, deformed, bad anatomy",
+    denoise = 0.75, cfg_boost = 1.0, steps_override = 28,
+    loras = { flux2klein = { {"Flux-2-Klein\POV_blowjobV1_A.safetensors", 0.85, 0.85} } } },
+  { label = "* POV Blowjob B (Klein)",
+    prompt = "pov blowjob, oral, from above, first person",
+    negative = "ugly, deformed, bad anatomy",
+    denoise = 0.75, cfg_boost = 1.0, steps_override = 28,
+    loras = { flux2klein = { {"Flux-2-Klein\POV_blowjobV1_B.safetensors", 0.85, 0.85} } } },
+  { label = "* Cum Effect (Klein)",
+    prompt = "cum, ejaculation, cum on face, cum on body",
+    negative = "clean, dry, ugly, deformed",
+    denoise = 0.72, cfg_boost = 1.0, steps_override = 28,
+    loras = { flux2klein = { {"Flux-2-Klein\PornMaster_cum_flux-2-klein-9b_V1.safetensors", 0.8, 0.8} } } },
+  { label = "* Thick Cum (Klein)",
+    prompt = "thick cum, heavy cum, cum dripping, messy",
+    negative = "clean, dry, ugly",
+    denoise = 0.72, cfg_boost = 1.0, steps_override = 28,
+    loras = { flux2klein = { {"Flux-2-Klein\thick_cum_v1_f2k_9b_000002750.safetensors", 0.8, 0.8} } } },
+  { label = "* Realistic Feet (SDXL)",
+    prompt = "realistic feet, detailed toes, foot focus, barefoot, natural feet",
+    negative = "bad feet, extra toes, deformed, ugly",
+    denoise = 0.68, cfg_boost = 0.5, steps_override = 25,
+    loras = { sdxl = { {"SDXL\NSFW\RealFeet_xl_v1.safetensors", 0.8, 0.8} } } },
+  { label = "* Foot Detail (Flux)",
+    prompt = "detailed feet, foot focus, toes, soles, barefoot, close-up",
+    negative = "bad feet, deformed, ugly, shoes",
+    denoise = 0.65, cfg_boost = 0.5, steps_override = 25,
+    loras = { flux1dev = { {"Flux-1-Dev\NSFW\flux-lora-foot.safetensors", 0.8, 0.8} }, illustrious = { {"Illustrious-Pony\detailed foot focus style illustriousXL v1.safetensors", 0.8, 0.8} } } },
+  { label = "* Klein NSFW v2",
+    prompt = "nsfw, explicit, nude, uncensored, high quality",
+    negative = "clothed, censored, ugly, deformed",
+    denoise = 0.7, cfg_boost = 1.0, steps_override = 25,
+    loras = { flux2klein = { {"Flux-1-Dev\NSFW\Flux Klein - NSFW v2.safetensors", 0.85, 0.85} } } },
+
 }
 
 -- ═══════════════════════════════════════════════════════════════════════
@@ -2973,7 +3151,8 @@ end
 
 -- ── img2img processing ─────────────────────────────────────────────────
 local function process_image(image, preset, prompt, negative, lora_name, lora_strength,
-                              cn_mode, cn_strength, cn_preprocessor, cn_model)
+                              cn_mode, cn_strength, cn_preprocessor, cn_model,
+                              turbo_config)
   local server = get_server()
 
   dt.print(string.format(_("Exporting for %s..."), preset.label))
@@ -2993,7 +3172,8 @@ local function process_image(image, preset, prompt, negative, lora_name, lora_st
   local scale_w, scale_h = compute_scale_dims(orig_w, orig_h, max_res)
   local wf_json = build_img2img_json(upload_name, preset, prompt, negative, seed,
                                       lora_name, lora_strength, scale_w, scale_h,
-                                      cn_mode, cn_strength, cn_preprocessor, cn_model)
+                                      cn_mode, cn_strength, cn_preprocessor, cn_model,
+                                      turbo_config)
 
   dt.print(_("Queuing prompt..."))
   local resp = curl_post_json(server .. "/prompt", wf_json)
@@ -4300,6 +4480,18 @@ local fetch_lora_btn = dt.new_widget("button") {
   end
 }
 
+local turbo_check = dt.new_widget("check_button") {
+  label = _("⚡ Turbo (Hyper-SD 8-step)"),
+  tooltip = _("Turbo Mode — Hyper-SD accelerator LoRA for ~3x faster generation.\n\n"
+    .. "ON:  8 steps with specialized CFG-preserving turbo LoRA.\n"
+    .. "     Quality is 85-95% of full — excellent for iteration.\n"
+    .. "     Negative prompts still work (8-step CFG variant).\n\n"
+    .. "OFF: Normal steps from preset (20-50). Maximum quality.\n\n"
+    .. "Supports: SD1.5, SDXL, Illustrious, Flux Dev, Flux Kontext.\n"
+    .. "Not needed for: ZIT (already 4 steps), Klein Flux2 (already 4 steps)."),
+  value = false,
+}
+
 max_res_slider = dt.new_widget("slider") {
   label = _("Max Processing Res"),
   tooltip = _("Max longest-side resolution for ComfyUI processing. Images larger than this are downscaled before processing and restored to original size afterward."),
@@ -4385,6 +4577,12 @@ local send_btn = dt.new_widget("button") {
     -- Resolve ControlNet guide parameters
     local cn_mode, cn_str, cn_preprocessor, cn_model_name = resolve_cn_params(p)
 
+    -- Resolve turbo acceleration
+    local tc = nil
+    if turbo_check.value then
+      tc = get_turbo_config(get_current_arch())
+    end
+
     local runs = math.floor(img2img_runs_slider.value)
     for i, img in ipairs(images) do
       for run_i = 1, runs do
@@ -4394,7 +4592,7 @@ local send_btn = dt.new_widget("button") {
           dt.print(string.format(_("Image %d/%d"), i, #images))
         end
         local ok, err = pcall(process_image, img, p, prompt, negative, lora_name, lora_str,
-                               cn_mode, cn_str, cn_preprocessor, cn_model_name)
+                               cn_mode, cn_str, cn_preprocessor, cn_model_name, tc)
         if not ok then
           dt.print(_("Error: ") .. tostring(err))
           dt.print_error("Spellcaster img2img error: " .. tostring(err))
@@ -6622,6 +6820,7 @@ local img2img_preset_combo, img2img_preset_load, img2img_preset_save, img2img_pr
         denoise      = denoise_slider.value,
         cn_mode      = cn_guide_selector.selected,
         cn_strength  = cn_strength_slider.value,
+        turbo        = turbo_check.value,
       }
     end,
     function(p)  -- apply
@@ -6632,6 +6831,7 @@ local img2img_preset_combo, img2img_preset_load, img2img_preset_save, img2img_pr
       if p.denoise      then denoise_slider.value       = p.denoise      end
       if p.cn_mode      then cn_guide_selector.selected = p.cn_mode      end
       if p.cn_strength  then cn_strength_slider.value   = p.cn_strength  end
+      if p.turbo ~= nil then turbo_check.value          = p.turbo        end
     end)
 
 -- ── Wan I2V presets ─────────────────────────────────────────────────
@@ -6839,6 +7039,7 @@ local module_widget = dt.new_widget("box") {
   fetch_lora_btn,
   lora_selector,
   lora_strength_slider,
+  turbo_check,
   dt.new_widget("label") { label = _("ControlNet Guide (optional):") },
   cn_guide_selector,
   cn_strength_slider,
@@ -7316,9 +7517,9 @@ local function spellcaster_auto_update()
   local mv  = (sep == "\\") and "move /y" or "mv -f"  -- platform-appropriate rename
   local plugin_dir = debug.getinfo(1, "S").source:sub(2):match("(.*[/\\])") or ("." .. sep)
   local version_file = plugin_dir .. ".spellcaster_version"
-  local api_url  = "https://api.github.com/repos/laboratoiresonore/spellcaster/commits?sha=main&per_page=1"
-  local tree_url = "https://api.github.com/repos/laboratoiresonore/spellcaster/git/trees/main?recursive=1"
-  local raw_base = "https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main"
+  local api_url  = "https://api.github.com/repos/laboratoiresonore/spellcaster_NSFW/commits?sha=main&per_page=1"
+  local tree_url = "https://api.github.com/repos/laboratoiresonore/spellcaster_NSFW/git/trees/main?recursive=1"
+  local raw_base = "https://raw.githubusercontent.com/laboratoiresonore/spellcaster_NSFW/main"
   local dt_prefix = "plugins/darktable/"
 
   -- Read local SHA (fast path: if matches remote, no downloads needed)
