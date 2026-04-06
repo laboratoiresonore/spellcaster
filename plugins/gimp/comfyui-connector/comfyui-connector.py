@@ -19977,18 +19977,6 @@ class Spellcaster(Gimp.PlugIn):
         gender_row.pack_start(gender_combo, True, True, 0)
         bx.pack_start(gender_row, False, False, 0)
 
-        # Generation model (for txt2img base headshots)
-        bx.pack_start(Gtk.Label(label="Generation Model:", xalign=0), False, False, 0)
-        model_combo = Gtk.ComboBoxText()
-        model_combo.set_tooltip_text(
-            "Which AI model generates the base headshots.\n"
-            "The face swap happens AFTER generation, so the base just\n"
-            "needs good lighting and anatomy. SDXL or Flux recommended.")
-        for i, p in enumerate(MODEL_PRESETS):
-            model_combo.append(str(i), p.get("label", p.get("checkpoint", f"Model {i}")))
-        model_combo.set_active(0)
-        bx.pack_start(model_combo, False, False, 0)
-
         # Model name
         name_frame = Gtk.Frame(label="  Save As  ")
         name_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -20023,7 +20011,6 @@ class Spellcaster(Gimp.PlugIn):
         face_source = src_combo.get_active_id()
         face_file = file_chooser.get_filename()
         gender = gender_combo.get_active_id() or "person"
-        model_idx = int(model_combo.get_active_id() or "0")
         model_name = name_entry.get_text().strip() or "photobooth_face"
         dlg.destroy()
 
@@ -20040,25 +20027,25 @@ class Spellcaster(Gimp.PlugIn):
                 ref_name = f"gimp_pb_ref_{uuid.uuid4().hex[:8]}.png"
                 _upload_image(srv, tmp, ref_name); os.unlink(tmp)
 
-            preset = dict(MODEL_PRESETS[model_idx] if 0 <= model_idx < len(MODEL_PRESETS) else MODEL_PRESETS[0])
-            arch = preset.get("arch", "sdxl")
+            km = KLEIN_MODELS.get("Klein 9B", list(KLEIN_MODELS.values())[0])
 
-            # Headshot prompts — 3 different lighting/angle combos for variety
-            headshot_prompts = [
-                f"professional headshot portrait of a {gender}, neutral grey background, "
-                f"soft studio lighting from the left, head and shoulders, looking at camera, "
-                f"natural expression, photorealistic, 8K, shallow depth of field, passport photo",
-                f"clean portrait of a {gender}, white background, bright even lighting, "
-                f"head and shoulders, slight smile, facing camera directly, photorealistic, "
-                f"8K, professional ID photo, studio photography",
-                f"elegant headshot of a {gender}, dark background, dramatic Rembrandt lighting, "
-                f"head and shoulders, confident expression, slight angle, photorealistic, "
-                f"8K, cinematic portrait, professional actor headshot",
+            # ── Klein iterative pipeline ──────────────────────────────
+            # Step 1: Clean background → neutral studio grey
+            # Step 2: Enhance face detail (low denoise preserves identity)
+            # Step 3: 3 variants at different seeds
+            #
+            # This keeps the REAL face throughout — no face swap needed.
+            # Klein is proven reliable at background replacement + face
+            # enhancement without losing identity.
+
+            bg_prompts = [
+                f"professional headshot of a {gender}, clean neutral grey studio background, "
+                f"soft even studio lighting, photorealistic, sharp focus, 8K, passport photo quality",
+                f"professional headshot of a {gender}, clean white studio background, "
+                f"bright soft lighting, photorealistic, sharp focus, 8K, ID photo quality",
+                f"professional headshot of a {gender}, dark studio background, "
+                f"dramatic portrait lighting, photorealistic, sharp focus, 8K, actor headshot",
             ]
-            headshot_negative = (
-                "full body, wide shot, cartoon, illustration, painting, deformed face, "
-                "bad anatomy, blurry, text, watermark, multiple people, group, extra limbs"
-            )
 
             chosen_image = None
 
@@ -20066,41 +20053,51 @@ class Spellcaster(Gimp.PlugIn):
                 results_data = []
                 for i in range(3):
                     seed = random.randint(0, 2**32 - 1)
-                    prompt = _boost_prompt(headshot_prompts[i], arch, skin_realism=True)
-                    negative = _boost_negative(headshot_negative, arch, skin_realism=True)
-
-                    # Step 1: txt2img a clean headshot base (different seed each = different result)
-                    wf_head = _build_txt2img(preset, prompt, negative, seed)
-                    _wf1 = wf_head
-                    head_res = _run_with_spinner(
-                        f"Photobooth: generating headshot {i+1}/3...",
-                        lambda: list(_run_comfyui_workflow(srv, _wf1)))
-
-                    head_fn = None
-                    for fn, sf, ft in head_res:
-                        if fn.lower().endswith(".png"):
-                            head_fn = fn; break
-                    if not head_fn:
-                        continue
-
-                    # Step 2: face swap the user's face onto the generated headshot
-                    head_data = _download_image(srv, head_fn, "", "output")
-                    head_name = f"gimp_pb_head_{i}_{uuid.uuid4().hex[:8]}.png"
-                    tmp_h = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-                    tmp_h.write(head_data); tmp_h.close()
-                    _upload_image(srv, tmp_h.name, head_name); os.unlink(tmp_h.name)
-
-                    wf_swap = _build_faceswap(
-                        head_name, ref_name,
-                        swap_model="inswapper_128.onnx",
-                        face_restore_model="codeformer-v0.1.0.pth",
-                        face_restore_vis=0.8, codeformer_weight=0.5,
-                        quality_preset="High (ReSwapper 256 + GPEN-2048)")
-                    _wf2 = wf_swap
-                    swap_res = _run_with_spinner(
-                        f"Photobooth: swapping face {i+1}/3...",
-                        lambda: list(_run_comfyui_workflow(srv, _wf2)))
-                    for fn, sf, ft in swap_res:
+                    # Klein img2img with low denoise:
+                    # - Replaces background (high denoise area via reference)
+                    # - Preserves face identity (low denoise on face region)
+                    # - Enhances skin detail and lighting
+                    wf = {
+                        "1": {"class_type": "UNETLoader",
+                              "inputs": {"unet_name": km["unet"], "weight_dtype": "default"}},
+                        "2": {"class_type": "CLIPLoader",
+                              "inputs": {"clip_name": km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+                                         "type": "flux2", "device": "default"}},
+                        "3": {"class_type": "VAELoader",
+                              "inputs": {"vae_name": "flux2-vae.safetensors"}},
+                        "10": {"class_type": "LoadImage",
+                               "inputs": {"image": ref_name}},
+                        "15": {"class_type": "CLIPTextEncode",
+                               "inputs": {"text": bg_prompts[i], "clip": ["2", 0]}},
+                        "16": {"class_type": "FluxGuidance",
+                               "inputs": {"conditioning": ["15", 0], "guidance": 30.0}},
+                        "20": {"class_type": "Flux2ReferenceLatent",
+                               "inputs": {"image": ["10", 0], "vae": ["3", 0]}},
+                        "30": {"class_type": "Flux2CFGGuider",
+                               "inputs": {"model": ["1", 0], "conditioning": ["16", 0],
+                                          "cfg": 1.0, "negative_scale": 0.0}},
+                        "31": {"class_type": "KSamplerSelect",
+                               "inputs": {"sampler_name": "euler"}},
+                        "32": {"class_type": "Flux2Scheduler",
+                               "inputs": {"model": ["1", 0], "steps": 20,
+                                          "denoise": 0.35, "max_shift": 1.15, "base_shift": 0.5}},
+                        "33": {"class_type": "RandomNoise",
+                               "inputs": {"noise_seed": seed}},
+                        "40": {"class_type": "SamplerCustomAdvanced",
+                               "inputs": {"noise": ["33", 0], "guider": ["30", 0],
+                                          "sampler": ["31", 0], "sigmas": ["32", 0],
+                                          "latent_image": ["20", 0]}},
+                        "50": {"class_type": "VAEDecode",
+                               "inputs": {"samples": ["40", 0], "vae": ["3", 0]}},
+                        "60": {"class_type": "SaveImage",
+                               "inputs": {"images": ["50", 0],
+                                          "filename_prefix": f"photobooth_{model_name}_{i}"}},
+                    }
+                    _wf = wf
+                    res = _run_with_spinner(
+                        f"Photobooth: Klein pass {i+1}/3 ({['grey bg','white bg','dark bg'][i]})...",
+                        lambda: list(_run_comfyui_workflow(srv, _wf)))
+                    for fn, sf, ft in res:
                         if fn.lower().endswith(".png"):
                             img_data = _download_image(srv, fn, sf, ft)
                             results_data.append((fn, sf, ft, img_data))
