@@ -34,10 +34,12 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
-      - name: Install PyInstaller
-        run: pip install pyinstaller
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pyinstaller customtkinter pillow requests darkdetect
 
       - name: Install tkinter (Linux)
         if: matrix.os == 'ubuntu-latest'
@@ -47,9 +49,11 @@ jobs:
         if: matrix.onedir != true
         run: python build_installer.py --platform ${{ matrix.platform }} --update-tool
 
-      - name: Build installer (macOS app bundle)
+      - name: Build installer (macOS app bundle + single binary)
         if: matrix.onedir == true
-        run: python build_installer.py --platform macos --onedir --update-tool
+        run: |
+          python build_installer.py --platform macos --onedir
+          python build_installer.py --platform macos --update-tool
 
       - name: Zip macOS app bundle
         if: matrix.os == 'macos-latest'
