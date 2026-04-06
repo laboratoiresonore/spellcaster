@@ -9039,8 +9039,14 @@ def _run_with_spinner(label_text, func, *args):
     cfg = _load_config()
     _status_server = cfg.get("server_url", COMFYUI_DEFAULT_URL)
 
-    # ── Create or reuse the spinner window ────────────────────────────
-    if _spinner_win is None or not _spinner_win.get_visible():
+    # ── Create or reuse the singleton spinner window ────────────────
+    _win_alive = False
+    if _spinner_win is not None:
+        try:
+            _win_alive = _spinner_win.get_visible() or _spinner_win.get_realized()
+        except Exception:
+            _win_alive = False
+    if not _win_alive:
         win = Gtk.Window(title="Spellcaster")
         win.set_default_size(380, -1)
         win.set_deletable(False)
@@ -9165,15 +9171,24 @@ def _run_with_spinner(label_text, func, *args):
         pass
 
     if _spinner_job_count <= 0:
-        try:
-            _spinner_win.destroy()
-        except Exception:
-            pass
-        _spinner_win = None
-        _spinner_jobs_box = None
-        _spinner_pb = None
-        _spinner_status_lbl = None
-        _spinner_job_count = 0
+        # Don't destroy immediately — hide and schedule delayed cleanup.
+        # This prevents window flicker when sequential jobs run
+        # (e.g. Body Factory: generate → face swap → rembg).
+        # If a new job starts within 2 seconds, the window is reused.
+        def _delayed_cleanup():
+            global _spinner_win, _spinner_jobs_box, _spinner_pb, _spinner_status_lbl, _spinner_job_count
+            if _spinner_job_count <= 0 and _spinner_win is not None:
+                try:
+                    _spinner_win.destroy()
+                except Exception:
+                    pass
+                _spinner_win = None
+                _spinner_jobs_box = None
+                _spinner_pb = None
+                _spinner_status_lbl = None
+                _spinner_job_count = 0
+            return False  # don't repeat
+        GLib.timeout_add(2000, _delayed_cleanup)
 
     if cancel_box[0]:
         raise InterruptedError("Generation cancelled by user")
