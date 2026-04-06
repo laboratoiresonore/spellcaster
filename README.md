@@ -18,29 +18,19 @@
 <p align="center">
   <a href="#what-is-spellcaster">What Is It</a> &bull;
   <a href="#how-to-install">How to Install</a> &bull;
-  <a href="#what-can-i-do-with-it">What Can I Do</a> &bull;
+  <a href="#complete-feature-reference">Features</a> &bull;
+  <a href="#supported-architectures--models">Models</a> &bull;
   <a href="#sample-output">Samples</a> &bull;
   <a href="#magic-studios--full-character-pipeline">Magic Studios</a> &bull;
-  <a href="#faq">FAQ</a>
+  <a href="#faq">FAQ</a> &bull;
+  <a href="#for-developers--power-users">Dev Guide</a>
 </p>
 
 ---
 
 ## What Is Spellcaster?
 
-**Spellcaster adds AI tools to GIMP and Darktable** — the two most popular free image editors. Once installed, you'll find a new "Spellcaster" menu with 30+ tools that let you:
-
-- **Create images from text descriptions** — type what you imagine, get a picture
-- **Fix and enhance photos** — sharpen blurry images, restore old photos, fix faces
-- **Remove anything from a photo** — paint over an object and it disappears
-- **Swap faces** between photos
-- **Change the lighting** on any portrait
-- **Remove backgrounds** with one click
-- **Generate short videos** from still images
-- **Extend a photo** beyond its borders
-- **Re-pose characters** — change how someone is standing or sitting
-- **Blend layers** with AI-powered harmonization
-- ...and much more
+**Spellcaster adds 60+ AI tools to GIMP and Darktable** — the two most popular free image editors. Once installed, you'll find a new "Spellcaster" menu with tools that let you create images from text, fix and enhance photos, swap faces, generate short videos, remove backgrounds, change lighting, extend canvases, re-pose characters, blend layers with AI harmonization, and much more.
 
 **You don't need to understand AI, machine learning, or any technical concepts.** Every tool comes with pre-configured settings that professionals have spent hundreds of hours perfecting. Your first result will look like your hundredth.
 
@@ -50,22 +40,18 @@
 
 Spellcaster connects your image editor (GIMP or Darktable) to an AI engine called [ComfyUI](https://github.com/comfyanonymous/ComfyUI) that runs on your computer's graphics card. You never need to touch ComfyUI directly — Spellcaster handles everything behind the scenes.
 
-Here's what actually happens when you click a button:
-
 1. You select an area or pick a preset in GIMP/Darktable
 2. Spellcaster exports the image and sends it to ComfyUI
 3. Your GPU processes the image using AI models
 4. The result appears as a new layer in your editor
 
-**The installer handles all the complexity.** It detects your GPU, downloads the right AI models, installs everything, and configures your apps. You just run it and click "Install."
+**The installer handles all the complexity** — GPU detection, model downloads, extension installs, and preset configuration. You just run it and click "Install."
 
 ---
 
 ## How to Install
 
 ### What You Need First
-
-You need two free apps installed before running the Spellcaster installer:
 
 | App | What It Is | Download |
 |---|---|---|
@@ -91,93 +77,321 @@ You need two free apps installed before running the Spellcaster installer:
 </p>
 
 1. **Download** the installer for your system above
-2. **Run it.** The installer walks you through 8 simple steps:
-   - It checks that ComfyUI and GIMP/Darktable are installed
-   - It asks you what you want to do (fix photos? create art? swap faces?) in plain English
-   - It figures out what your GPU can handle and pre-selects the best options
-   - It downloads everything automatically
+2. **Run it.** The installer walks you through 8 simple steps — it checks your setup, asks what you want to do in plain English, detects your GPU, and downloads everything automatically
 3. **Open GIMP or Darktable.** Go to `Filters > Spellcaster` — all your new AI tools are there
 4. **Pick any tool and click Generate.** That's it. Every preset is already optimized for great results.
-
-### What the Installer Does For You
-
-If you tried to set this up manually, you would need to:
-- Research which AI models work with your GPU
-- Figure out which model format to download (GGUF? fp8? fp16?)
-- Download 5-30 GB of model files from multiple sources
-- Install and configure 15+ ComfyUI extensions
-- Learn what samplers, schedulers, CFG scales, and denoise values are
-- Spend hours testing different combinations to get good results
-
-**The installer does all of this in one click.** It detects your GPU's capabilities, picks the right model variants, downloads everything, installs the extensions, and configures every preset with settings that took professionals hundreds of hours to optimize.
 
 > **Plugin not showing up?** Download the [**Manual Update & Repair tool**](https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-manual-update.exe) — it finds and fixes broken installations automatically.
 
 ---
 
-## What Can I Do With It?
+## Complete Feature Reference
 
 ### Generation — Create and Edit Images
 
-| Tool | What It Does |
-|---|---|
-| **Image-to-Image** | Transform any photo using AI — change styles, add detail, reimagine |
-| **Text-to-Image** | Type a description and get an image (25 scene presets) |
-| **Inpainting** | Paint over any area to regenerate it (44 expert presets) |
-| **Outpaint** | Extend your image beyond its borders in any direction |
-| **Batch Variations** | Generate 2-8 different versions with one click |
-| **Klein Image Editor** | Next-gen Flux 2 Klein model — best quality available |
-| **Klein Re-poser** | Change character poses and positions (26 poses, 8 camera angles) |
-| **Klein Inpaint** | AI-fill any selection with context-aware smooth edges (17 task presets) |
-| **Klein Outpaint** | Extend canvas using Klein — highest quality outpainting |
-| **Klein Layer Blender** | Blend layers with AI-powered lighting/shadow harmonization |
+<details>
+<summary><strong>Image-to-Image, Text-to-Image, Inpainting, Outpainting</strong> — core generation tools</summary>
+
+| Tool | What It Does | Details |
+|---|---|---|
+| **Image-to-Image** | Transform any photo using AI — change styles, add detail, reimagine | Per-model presets, LoRA injection, dual ControlNet support |
+| **Text-to-Image** | Type a description and get an image | 25 scene presets across 6 model families, quality boost tokens auto-injected |
+| **Inpainting** | Paint over any area to regenerate it | 44 expert presets with body-part-tuned denoise (hands=0.78, eyes=0.65, skin=0.45) |
+| **Outpaint** | Extend your image beyond its borders in any direction | Configurable padding per side |
+| **Batch Variations** | Generate 2-8 different versions with one click | Seed increments for reproducible variation |
+
+</details>
+
+<details>
+<summary><strong>Flux 2 Klein — Next-Gen Editing</strong> — 7 tools powered by the distilled Flux 2 model</summary>
+
+| Tool | What It Does | Details |
+|---|---|---|
+| **Klein Image Editor** | Best-quality img2img available | 4B and 9B model variants, 4-20 steps |
+| **Klein + Reference** | Klein editing guided by a reference image | Structure and style transfer from reference |
+| **Klein Inpaint** | Context-aware selection fill with smooth edges | 17 task presets |
+| **Klein Outpaint** | Highest quality canvas extension | Seamless border continuation |
+| **Klein Layer Blender** | AI-powered layer harmonization | Lighting and shadow matching between layers |
+| **Klein Re-poser** | Change character poses and positions | 26 poses, 8 camera angles |
+| **Klein Head Swap** | Face swap with Klein refinement pass | Hybrid pipeline: ReActor swap → Klein blend |
+
+</details>
+
+<details>
+<summary><strong>ControlNet Suite</strong> — guide AI using edges, depth, poses, or sketches</summary>
+
+| Preprocessor | What It Detects | Use For |
+|---|---|---|
+| **Canny Edge** | Hard edges and outlines | Preserving structure while changing style |
+| **MiDaS Depth** | Depth map from 2D image | Maintaining spatial relationships |
+| **OpenPose / DWPose** | Body skeleton and joints | Pose guidance and character positioning |
+| **Scribble** | Rough sketch lines | Turning doodles into polished art |
+| **LineArt** | Clean line drawings | Coloring and rendering line work |
+| **Tile** | Grid-based detail preservation | Upscaling with structure preservation |
+
+Dual ControlNet support in img2img and inpaint workflows. Models auto-selected per architecture (SD1.5, SDXL, ZIT, Flux Union Pro).
+
+</details>
 
 ### Fix and Enhance Photos
 
-| Tool | What It Does |
+<details>
+<summary><strong>Upscaling, Restoration, Color</strong> — 8 tools to repair and enhance any photo</summary>
+
+| Tool | What It Does | Details |
+|---|---|---|
+| **AI Upscale** | Make any image larger and sharper | 6 upscale models (UltraSharp, RealESRGAN, Remacri, NMKD, Anime, Faces) |
+| **Face Restore** | Fix blurry or damaged faces | CodeFormer with adjustable fidelity weight |
+| **Photo Restoration** | One-click pipeline: upscale + face fix + sharpen | Multi-stage combined workflow |
+| **Detail Hallucination** | Add fine texture detail that wasn't there | Upscale + low-denoise img2img pass |
+| **SUPIR Restoration** | State-of-the-art AI photo repair | Dedicated SUPIR model, tunable denoise |
+| **SeedV2R Upscaler** | Specialized upscaling with hallucination control | None/light/high hallucination modes, 2x-4x scales |
+| **Colorize B&W** | Add natural color to black-and-white photographs | ControlNet-guided colorization |
+| **Upscaler Ratio Blender** | Blend two upscale models (e.g. 40% sharp + 60% smooth) | Parametric two-model mixing |
+
+</details>
+
+### Face & Identity
+
+<details>
+<summary><strong>Face Swap, FaceID, PuLID</strong> — 6 tools for face manipulation and identity preservation</summary>
+
+| Tool | What It Does | Details |
+|---|---|---|
+| **Face Swap (ReActor)** | Paste a face from one photo onto another | Direct source-to-target with optional face restoration |
+| **Face Swap (Model)** | Swap using a saved face model library | Build reusable face models from any photo |
+| **Face Swap (mtb)** | Alternative face swap engine | antelopev2/buffalo_l analysis models, multi-face indexing |
+| **FaceID (IPAdapter)** | Generate images that look like a specific person | FACEID, FACEID PLUS V2, FACEID PORTRAIT presets, dual weight control |
+| **PuLID Flux** | Flux-native identity preservation | Attention-level face transfer (not post-processing), works with Klein 4B/9B |
+| **Face Restore** | Enhance and repair faces | CodeFormer with adjustable strength |
+
+</details>
+
+### Style, Lighting & Effects
+
+<details>
+<summary><strong>Style Transfer, Relighting, Color Grading</strong> — visual transformation tools</summary>
+
+| Tool | What It Does | Details |
+|---|---|---|
+| **Style Transfer** | Copy the visual style of any reference image | IPAdapter-based, adjustable strength |
+| **IC-Light Relighting** | Change lighting direction on any photo | 10 presets: Left/Right/Top/Bottom light, Back light, Front Soft, Golden Hour, Blue Hour, Neon, Dramatic |
+| **Color Grading (LUT)** | Apply cinematic film looks | 3D LUT application with strength control |
+
+</details>
+
+### Video Generation
+
+<details>
+<summary><strong>Wan 2.2 Image-to-Video + Post-Processing</strong> — turn any still into a video clip</summary>
+
+| Tool | What It Does | Details |
+|---|---|---|
+| **Wan 2.2 Image-to-Video** | Turn any photo into a 2-5 second video clip | Dual-UNET 14B (GGUF Q4 or fp8), 26 motion presets |
+| **Wan First+Last Frame** | Generate a video transition between two images | Interpolation with start/end frame control |
+| **Director's Chair (Solo)** | Multi-step video sequence with face re-injection | Chain multiple Wan I2V steps with ReActor between |
+| **Director's Chair (Duo)** | Same pipeline with 2 actors tracked | Dual face re-injection per step |
+| **Director's Chair (Trio)** | Same pipeline with 3 actors tracked | Triple face re-injection per step |
+| **Video Upscale** | Enhance video resolution and frame rate | RTX Super-Resolution + RIFE 2x interpolation |
+| **Video Face Swap** | Face swap across video frames | ReActor on video + upscale |
+| **SeedVR2 Video Upscale** | Advanced video upscaling with hallucination control | Tunable quality enhancement |
+| **GIF Stitch** | Chain multiple GIFs into seamless video | Concatenation with loop control |
+
+**Motion presets include**: breathing/living portrait, hair sway, expression shifts, eye movement, camera zoom/pan/orbit, nature elements (wind, water, fire), walking, turning, and more. Pingpong looping for seamless loops. LightX2V acceleration LoRAs reduce 30 steps to 4.
+
+</details>
+
+### Utility & Housekeeping
+
+<details>
+<summary><strong>Background Removal, Object Removal, Watermarks, Blending</strong> — precision tools</summary>
+
+| Tool | What It Does | Details |
+|---|---|---|
+| **Remove Background** | One-click transparent PNG | rembg model |
+| **Object Removal (LaMa)** | Paint over anything to erase it — no prompt needed | LaMa inpainting |
+| **Layer Blend by Ratio** | Blend any two layers by a controllable percentage | Parametric layer mixing |
+| **Embed Watermark** | Hide invisible metadata in images | LSB steganography |
+| **Read Watermark** | Extract hidden metadata from watermarked images | LSB steganography reader |
+| **Send to Server** | Upload image to ComfyUI input folder | Manual upload tool |
+| **Clean Server Inputs** | Purge temp uploads from ComfyUI to reclaim disk space | Overwrites gimp_* files with 1x1 pixel PNGs |
+
+</details>
+
+### Magic Studios — Full Character Pipeline
+
+<details>
+<summary><strong>6 tools that chain together: selfie → face model → body → outfit → set → video</strong></summary>
+
+| Tool | What It Does | Details |
+|---|---|---|
+| **Casting Polaroids** | Create a reusable face model from any photo | 3 face restore variants (CodeFormer Sharp, GPEN-2048, CodeFormer Faithful) |
+| **Body Double** | Generate full-body references | Face swap + transparent background removal |
+| **Wardrobe Department** | AI outfit replacement | Select clothing area, describe target style |
+| **Set Design** | Generate backgrounds and composite actors | Klein-quality harmonization of lighting and shadows |
+| **Director's Chair (Solo)** | Multi-step Wan 2.2 I2V with face re-injection | Chain video steps to build a scene |
+| **Director's Chair (Duo/Trio)** | Same pipeline with 2 or 3 actors | Multi-actor face tracking across video steps |
+
+```
+Selfie → Casting Polaroids → Body Double → Wardrobe → Set Design → Director's Chair → MP4
+          (face model)        (transparent)   (outfit)    (composite)   (Wan 2.2 I2V)
+```
+
+</details>
+
+### Settings & Configuration
+
+<details>
+<summary><strong>Server, output, cleanup, auto-update, model favorites</strong></summary>
+
+| Setting | What It Controls |
 |---|---|
-| **AI Upscale** | Make any image larger and sharper (6 upscale models) |
-| **Face Restore** | Fix blurry or damaged faces automatically |
-| **Photo Restoration** | One-click pipeline: upscale + face fix + sharpen |
-| **Detail Hallucination** | Add fine texture detail that wasn't there before |
-| **SUPIR Restoration** | State-of-the-art AI photo repair |
-| **Object Removal** | Paint over anything to erase it — no prompt needed |
-| **Colorize B&W** | Add natural color to black-and-white photographs |
-| **Upscaler Ratio Blender** | Blend two upscale models (e.g. 40% sharp + 60% smooth) |
+| **ComfyUI Server URL** | Where to send workflows (local or remote, persisted) |
+| **Workflow Timeout** | How long to wait for a result (0 = infinite) |
+| **Output Directory** | Where to copy finished images (Browse button with GTK picker) |
+| **Cleanup Mode** | Copy or delete temp uploads after generation |
+| **Auto-Update** | Check GitHub on launch and silently update plugin files |
+| **Model Favorites** | Pin preferred checkpoints to top of every dialog |
+| **Clean Server Inputs** | One-click purge of all gimp_* temp files from ComfyUI |
+| **Debug Image Export** | Save intermediate workflow images for troubleshooting |
 
-### Style, Face & Video
+</details>
 
-| Tool | What It Does |
+---
+
+## Supported Architectures & Models
+
+<details>
+<summary><strong>SD 1.5</strong> — 3 checkpoints, classic architecture</summary>
+
+| Checkpoint | Style | Resolution | Steps | CFG |
+|---|---|---|---|---|
+| Juggernaut Reborn | Realistic | 512×512 | 20 | 7.0 |
+| Realistic Vision v5.1 | Photo | 512×768 | 25 | 7.5 |
+| SD 1.5 Base | General | 512×512 | 20 | 7.0 |
+
+Turbo acceleration: Hyper-SD15 8-step LoRA. Supports all ControlNet preprocessors.
+
+</details>
+
+<details>
+<summary><strong>SDXL</strong> — 12 checkpoints across realistic, anime, and cartoon styles</summary>
+
+**Realistic**: Juggernaut XL v9, Juggernaut XL Ragnarok, JibMix Realistic, ZavyChroma XL, CyberRealistic Pony, AlbedoBase XL, SDXL Base 1.0
+
+**Anime**: NoobAI-XL v1.1, Nova Anime XL v1.70, Wai Illustrious SDXL
+
+**Cartoon/3D**: Modern Disney XL v3, Nova Cartoon XL v6
+
+Resolution: 1024×1024 base. Steps: 25-30. CFG: 5.0-7.0. Turbo acceleration: Hyper-SDXL 8-step LoRA.
+
+</details>
+
+<details>
+<summary><strong>Illustrious</strong> — 2 checkpoints, semi-realistic to artistic</summary>
+
+| Checkpoint | Style | Steps | CFG |
+|---|---|---|---|
+| IlustReal v5 | Semi-realistic | 28 | 5.5 |
+| Sloppy Messy Mix v1 | Artistic | 28 | 5.0 |
+
+Pony-based architecture. Supports Illustrious\ and Illustrious-Pony\ LoRAs.
+
+</details>
+
+<details>
+<summary><strong>Z-Image-Turbo (ZIT)</strong> — 5 presets, fast 4-12 step distilled SDXL</summary>
+
+| Preset | Steps | CFG | Sampler |
+|---|---|---|---|
+| Photo | 6 | 2.0 | euler |
+| Portrait | 8 | 2.5 | euler |
+| Cinematic | 8 | 2.5 | dpmpp_2m |
+| Anime/Illustration | 6 | 2.0 | euler |
+| Quality | 12 | 3.0 | dpmpp_2m |
+
+Already distilled — no turbo acceleration needed.
+
+</details>
+
+<details>
+<summary><strong>Flux 1 Dev</strong> — 10 presets including Schnell (4-step) and Kontext (instruction editing)</summary>
+
+**Standard**: Photo/Realistic, Portrait, Landscape, Anime, Cinematic, Artistic, Detail/Upscale Pass
+
+**Fast**: Schnell (4-step, no guidance)
+
+**Inpaint**: Fill/Inpaint, Light Touch
+
+**Kontext** (8 presets): Edit/Modify, Replace Element, Style Transfer, Background Swap, Portrait Retouch, Localized Inpaint, Preserve/Light Touch — instruction-based editing via natural language.
+
+Turbo acceleration: Hyper-FLUX 8-step LoRA (strength 0.125).
+
+</details>
+
+<details>
+<summary><strong>Flux 2 Klein</strong> — 6 presets, ultra-fast distilled Flux (4-20 steps)</summary>
+
+| Preset | Model | Steps | Resolution |
+|---|---|---|---|
+| 4B Fast | Klein 4B fp8 | 4 | 1024×1024 |
+| 9B Photo Quality | Klein 9B | 20 | 1024×1024 |
+| 9B Portrait | Klein 9B | 20 | 896×1152 |
+| 9B Artistic/Painterly | Klein 9B | 20 | 1024×1024 |
+| 9B Cinematic | Klein 9B | 20 | 1280×720 |
+| 9B Inpaint/Refinement | Klein 9B | 20 | adaptive |
+
+VAE/CLIP pairings: 9B → qwen_3_8b, 4B → qwen_3_4b. Supports PuLID face identity and reference image conditioning. Uses Flux2Scheduler with max_shift/base_shift control.
+
+</details>
+
+<details>
+<summary><strong>Wan 2.2 — Image-to-Video</strong> — dual-UNET 14B model</summary>
+
+| Variant | Format | VRAM | Quality |
+|---|---|---|---|
+| 14B GGUF Q4 | Quantized | ~8 GB | Good |
+| 14B fp8 | Half-precision | ~16 GB | Best |
+
+Dual-UNET architecture: high-noise and low-noise models with configurable switchover point. Supports content LoRAs (applied to both UNETs) and acceleration LoRAs (noise-specific: LightX2V reduces 30 steps to 4). Post-processing: RTX Super-Resolution + RIFE 2x frame interpolation. Output: MP4 + GIF with optional pingpong looping.
+
+</details>
+
+---
+
+## LoRA System
+
+<details>
+<summary><strong>90+ curated LoRAs with architecture-aware filtering and turbo acceleration</strong></summary>
+
+### Architecture-Based Filtering
+
+LoRAs are auto-filtered by the active model architecture so you only see compatible options:
+
+| Architecture | LoRA Folders |
 |---|---|
-| **Style Transfer** | Copy the visual style of any reference image |
-| **Color Grading** | Apply cinematic film looks (LUT presets) |
-| **IC-Light Relighting** | Change lighting direction on any photo (14 presets) |
-| **Face Swap** | Paste a face from one photo onto another |
-| **FaceID / PuLID** | Generate new images that look like a specific person |
-| **Wan 2.2 Image to Video** | Turn any photo into a 2-5 second video clip (26 motion presets) |
-| **Wan 2.2 First+Last Frame** | Generate a video transition between two images |
-| **Remove Background** | One-click transparent PNG |
-| **Layer Blend by Ratio** | Blend any two layers by a controllable percentage |
-| **Invisible Watermark** | Embed/read hidden metadata in images |
+| SD 1.5 | All LoRAs (no restriction) |
+| SDXL | SDXL\, Illustrious\, Illustrious-Pony\, Pony\ |
+| ZIT | Z-Image-Turbo\ |
+| Illustrious | Illustrious\, Illustrious-Pony\ |
+| Flux 2 Klein | Flux-2-Klein\ |
+| Flux 1 Dev | Flux-1-Dev\ |
+| Flux Kontext | Flux-1-Dev\ (compatible) |
 
-### Magic Studios — Character Pipeline
+### Turbo Acceleration LoRAs
 
-| Tool | What It Does |
-|---|---|
-| **Casting Polaroids** | Create a reusable face model from any selfie (3 restore variants) |
-| **Body Double** | Generate full-body refs with face swap + transparent background |
-| **Wardrobe Department** | AI outfit replacement — select clothing area, pick a style |
-| **Set Design** | Generate backgrounds and composite actors with lighting harmonization |
-| **Director's Chair (Solo)** | Multi-step Wan 2.2 I2V video with face re-injection between steps |
-| **Director's Chair (Duo/Trio)** | Same pipeline with 2 or 3 actors in the scene |
+| Accelerator | Architecture | Effect |
+|---|---|---|
+| Hyper-SD15 8-step | SD 1.5 | Reduces steps from 20-25 → 8 |
+| Hyper-SDXL 8-step | SDXL | Reduces steps from 25-30 → 8 |
+| Hyper-FLUX 8-step | Flux 1 Dev / Kontext | Reduces steps with 0.125 strength |
+| LightX2V | Wan 2.2 | Reduces video steps from 30 → 4, noise-specific pairing |
 
-### Precision Tools
+### Style/Detail Presets
 
-| Tool | What It Does |
-|---|---|
-| **ControlNet** | Guide AI using edges, depth maps, poses, or sketches |
-| **AutoSet** | One-click auto-configure any dialog for the current image |
-| **WD Tagger** | AI reads your image and suggests prompt tags |
+50+ curated LoRA presets organized by category: artistic styles (Anime, Ghibli, Glitch), effects (Slime, Freckles, Hyperdetail), character styles, 3D/CG rendering — each with architecture-specific paths and tuned strength, denoise, and CFG overrides.
+
+</details>
 
 ---
 
@@ -312,11 +526,6 @@ Magic Studios is a guided pipeline that turns a single photo into a fully compos
   </tr>
 </table>
 
-```
-Selfie/Photo → Casting Polaroids → Body Double → Wardrobe → Set Design → Director's Chair → MP4
-                (face model)        (transparent PNG)  (outfit swap)  (composite)    (Wan 2.2 I2V)
-```
-
 </details>
 
 ---
@@ -337,26 +546,61 @@ Selfie/Photo → Casting Polaroids → Body Double → Wardrobe → Set Design �
 
 ## FAQ
 
-**Do I need to know anything about AI?**
+<details>
+<summary><strong>Do I need to know anything about AI?</strong></summary>
+
 No. Every tool comes with presets that handle all the technical settings. Just pick what sounds right and click Generate.
 
-**How much disk space do I need?**
+</details>
+
+<details>
+<summary><strong>How much disk space do I need?</strong></summary>
+
 A basic setup is about 5 GB. A full installation with all models can be 30-50 GB. The installer tells you exactly how much before downloading.
 
-**What GPU do I need?**
-Any NVIDIA GPU with 4+ GB VRAM works for basic features. 8 GB unlocks most features. 12+ GB unlocks everything. The installer detects your GPU and only shows compatible features.
+</details>
 
-**Can I use this without a GPU?**
+<details>
+<summary><strong>What GPU do I need?</strong></summary>
+
+Any NVIDIA GPU with 4+ GB VRAM works for basic features. 8 GB unlocks most features. 12+ GB unlocks everything including full-precision Wan 2.2 video. The installer detects your GPU and only shows compatible features.
+
+</details>
+
+<details>
+<summary><strong>Can I use this without a GPU?</strong></summary>
+
 Yes — you can connect to a remote ComfyUI server running on another computer on your network. The installer has a remote server mode.
 
-**Is this free?**
+</details>
+
+<details>
+<summary><strong>Is this free?</strong></summary>
+
 Yes. Spellcaster, GIMP, Darktable, and ComfyUI are all free and open-source. The AI models are also free. There are no subscriptions or hidden costs.
 
-**How does this compare to Photoshop's AI tools?**
+</details>
+
+<details>
+<summary><strong>How does this compare to Photoshop's AI tools?</strong></summary>
+
 Similar capabilities (generative fill, object removal, upscaling, style transfer) but runs locally, is free, and gives you more control with 100+ expert presets.
 
-**What if the plugin doesn't show up after installation?**
+</details>
+
+<details>
+<summary><strong>What if the plugin doesn't show up after installation?</strong></summary>
+
 Download the [Manual Update & Repair tool](https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-manual-update.exe) — it automatically finds and fixes broken installations.
+
+</details>
+
+<details>
+<summary><strong>What's the difference between the GIMP and Darktable plugins?</strong></summary>
+
+Both share the same core AI capabilities. The GIMP plugin adds selection-based workflows (paint a mask, then regenerate), layer-level operations, Magic Studios, and the full Klein editing suite. The Darktable plugin integrates with the lighttable workflow — select photos, process, and auto-import results back into your library.
+
+</details>
 
 ---
 
@@ -394,40 +638,77 @@ Every model preset is the product of extensive testing. Here's what Spellcaster 
 | What Spellcaster handles | What you'd have to learn |
 |---|---|
 | Optimal sampler + scheduler per model | Trial and error across 20+ combos |
-| Correct CFG range per architecture | SD1.5=7.0, SDXL=5-6, ZIT=1-3, Flux=3.5 |
+| Correct CFG range per architecture | SD1.5=7.0, SDXL=5-6, ZIT=1-3, Flux=3.5, Klein=1.0 |
 | Architecture-specific prompt structure | Quality tags vs descriptions vs natural language |
 | Negative prompt engineering | 50+ patterns tuned per model family |
-| Resolution constraints | SD1.5=512, SDXL=1024, Flux=mod-16 |
+| Resolution constraints | SD1.5=512, SDXL=1024, ZIT=1024, Flux=mod-16 |
 | LoRA selection + strength per task | Which LoRA, at what strength, for which model |
 | Inpaint denoise by body part | Hands=0.78, eyes=0.65, skin=0.45 |
+| VAE/CLIP pairings for Klein | 9B→qwen_3_8b, 4B→qwen_3_4b |
+| Wan dual-UNET switchover | High-noise vs low-noise model handoff timing |
 
 ### Architecture
 
 ```
 spellcaster/
-+-- install.py                  # CLI installer
-+-- installer_gui.py            # GUI installer (8-step wizard)
-+-- manual_update.py            # Repair & update tool
-+-- manifest.json               # Master config: features, nodes, models
-+-- spellmaker.py               # Preset customization tool
-+-- plugins/
-|   +-- gimp/comfyui-connector/ # GIMP 3 plugin (~14,000 lines)
-|   +-- darktable/              # Darktable Lua plugin (~7,400 lines)
-+-- assets/                     # Showcase images, icons, splash art
+├── install.py                  # CLI installer (97K)
+├── installer_gui.py            # GUI installer — 8-step wizard (105K)
+├── manual_update.py            # Repair & update tool (51K)
+├── manifest.json               # Master config: features, nodes, models (38K)
+├── spellmaker.py               # Preset customization tool (89K)
+├── build_installer.py          # PyInstaller build script
+├── generate_showcase.py        # Showcase asset generator
+├── generate_walkthrough.py     # Magic Studios walkthrough generator
+├── plugins/
+│   ├── gimp/comfyui-connector/ # GIMP 3 plugin (~22,500 lines)
+│   │   ├── comfyui-connector.py
+│   │   ├── spellcaster-theme.css
+│   │   ├── spellcaster_steg.py # Steganography module
+│   │   └── spinner.gif
+│   └── darktable/              # Darktable Lua plugin (~7,500 lines)
+│       └── comfyui_connector.lua
+└── assets/                     # Showcase images, walkthrough, icons
 ```
 
-### How It Works Internally
+### How the GIMP Plugin Works Internally
 
-1. **Select** — Paint a selection or pick a tool in GIMP/Darktable
-2. **Export** — Image exported as a temporary PNG
-3. **Upload** — Sent to ComfyUI server via HTTP
-4. **AI Process** — ComfyUI runs the workflow with tuned parameters on your GPU
-5. **Download** — Result fetched back
-6. **Import** — Appears as a new layer in your editor
+<details>
+<summary><strong>Execution pipeline</strong></summary>
+
+1. **Export** — Canvas/selection exported to PNG using a custom pure-Python PNG writer (no PIL dependency)
+2. **Upload** — Multipart HTTP POST to ComfyUI `/upload/image`
+3. **Build** — ComfyUI workflow JSON (node graph) constructed from preset parameters
+4. **Submit** — POST to `/prompt` endpoint
+5. **Poll** — `/history/{prompt_id}` polled with configurable timeout and spinner UI
+6. **Download** — Result fetched via `/view` endpoint
+7. **Import** — Loaded as a new GIMP layer with optional blending
+8. **Cleanup** — Temp uploads deleted or copied to output directory
+
+All HTTP via pure urllib — zero external dependencies. Custom GTK3 UI with branded CSS theme, spinner overlays, expandable sections, and real-time LoRA filtering.
+
+</details>
+
+<details>
+<summary><strong>How the Darktable Plugin Works Internally</strong></summary>
+
+Uses Darktable's native `dt.database.export()` to export selected images to PNG temp files, uploads via curl (Lua has no built-in HTTP), builds workflow JSON as formatted strings, polls for completion, and auto-imports results back into the Darktable library. All UI rendered via `dt.register_lib()` as a right-center lighttable panel. Full gettext i18n support.
+
+</details>
 
 ### Self-Updating Plugins
 
-Both plugins check GitHub on each launch and silently update themselves. New features appear automatically — no manual downloads. NSFW builds pull from their own private repo so customizations are never overwritten by a standard update.
+Both plugins check GitHub on each launch and silently update themselves. New features appear automatically — no manual downloads.
+
+<details>
+<summary><strong>Update system details</strong></summary>
+
+The update system uses GitHub's API to compare the local version hash against the latest commit. If different, it fetches the file tree and downloads changed files incrementally.
+
+**NSFW variant handling**: The plugin source contains a `_BUILD_VARIANT` injection point. SFW builds (default) pull from the public `laboratoiresonore/spellcaster` repo. NSFW builds have this patched to `"nsfw"` at build time, routing all updates to the private `laboratoiresonore/spellcaster_NSFW` repo — so NSFW-specific customizations are never overwritten by a standard update.
+
+On Windows, in-use files are staged with a `.update` suffix and applied on next launch. The updater also clears GIMP's pluginrc to force menu re-scanning.
+
+</details>
 
 ### Spellmaker (Experimental)
 
@@ -463,7 +744,7 @@ The installer auto-detects your GPU and downloads the right model variants.
 ### Checkpoints (25+ models)
 
 <details>
-<summary>SD 1.5, SDXL, Illustrious, ZIT, Flux 1 Dev, Flux 2 Klein</summary>
+<summary><strong>SD 1.5, SDXL, Illustrious, ZIT, Flux 1 Dev, Flux 2 Klein</strong></summary>
 
 **SD 1.5** (6 GB): Juggernaut Reborn, Realistic Vision v5.1, SD 1.5 Base
 
@@ -502,23 +783,23 @@ Body & detail fix, artistic styles, accelerators — across SDXL, Flux, Klein, Z
 <details>
 <summary><h2>Custom Nodes (auto-installed)</h2></summary>
 
-| Node | Purpose |
+| Node Pack | Purpose |
 |---|---|
 | ComfyUI-GGUF | Load quantized models for low VRAM |
-| ComfyUI-VideoHelperSuite | Video composition |
-| ComfyUI-Frame-Interpolation | RIFE smooth video |
+| ComfyUI-VideoHelperSuite | Video composition and output |
+| ComfyUI-Frame-Interpolation | RIFE smooth frame interpolation |
 | comfyui-reactor-node | Face swap + face restore |
-| comfyui-mtb | MTB face swap |
+| comfyui-mtb | MTB face swap alternative |
 | ComfyUI_IPAdapter_plus | FaceID + style transfer |
-| PuLID_ComfyUI | Identity preservation |
+| PuLID_ComfyUI | Flux-native identity preservation |
 | ComfyUI-KJNodes | Image size utilities |
 | ComfyUI-RTXVideoSuperResolution | NVIDIA RTX video upscaling |
 | ComfyUI-REMBG | Background removal |
 | ComfyUI-LaMa | Object removal |
 | ComfyUI_essentials | LUT color grading |
-| comfyui_controlnet_aux | ControlNet preprocessors |
-| ComfyUI-IC-Light | Relighting |
-| ComfyUI-SUPIR | SUPIR restoration |
+| comfyui_controlnet_aux | ControlNet preprocessors (Canny, Depth, Pose, etc.) |
+| ComfyUI-IC-Light | Directional relighting |
+| ComfyUI-SUPIR | SUPIR AI restoration |
 
 </details>
 
@@ -529,10 +810,14 @@ Body & detail fix, artistic styles, accelerators — across SDXL, Flux, Klein, Z
 |---|---|
 | Plugin not visible in GIMP | Run the [Manual Update & Repair tool](https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-manual-update.exe) |
 | "Node not found" error | Re-run the installer to install missing extensions |
-| "Cannot connect to server" | Make sure ComfyUI is running |
-| Out of VRAM | Switch to a smaller model (the installer can help you pick) |
+| "Cannot connect to server" | Make sure ComfyUI is running (`http://127.0.0.1:8188`) |
+| Out of VRAM | Switch to a smaller model or GGUF variant |
 | All runs produce same result | Set seed to -1 for random results |
 | Download fails (403) | Add your CivitAI or HuggingFace token in the installer |
+| Klein results look wrong | Check VAE/CLIP pairings: 9B→qwen_3_8b, 4B→qwen_3_4b |
+| Video generation fails | Ensure both high-noise and low-noise Wan models are installed |
+| Temp files filling disk | Use Settings → Clean Server Inputs to purge gimp_* uploads |
+| Browse button doesn't work | Update plugin — fixed in latest version |
 
 </details>
 
