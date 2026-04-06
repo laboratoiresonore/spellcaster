@@ -7353,13 +7353,14 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
     # ── IP-Adapter WAN (optional) — inject face/style identity into model ──
     # Patches both HIGH and LOW models so identity is baked into generation,
     # not pasted on afterward. Requires ComfyUI-IPAdapterWAN custom node +
-    # ip-adapter.bin + siglip_vision_patch14_384.safetensors on server.
+    # ip-adapter.bin + siglip2_so400m_patch16_naflex.safetensors on server.
     if ip_adapter_image:
         wf["95"] = {"class_type": "CLIPVisionLoader",
-                    "inputs": {"clip_name": "siglip_vision_patch14_384.safetensors"}}
+                    "inputs": {"clip_name": "siglip2_so400m_patch16_naflex.safetensors"}}
         wf["96"] = {"class_type": "CLIPVisionEncode",
                     "inputs": {"image": ["7", 0],  # use start image as face ref by default
-                               "clip_vision": ["95", 0]}}
+                               "clip_vision": ["95", 0],
+                               "crop": "center"}}
         wf["97"] = {"class_type": "IPAdapterWANLoader",
                     "inputs": {"ipadapter": "ip-adapter.bin", "provider": "cuda"}}
         # If a separate reference image was uploaded, use that instead
@@ -11048,7 +11049,7 @@ class WanI2VDialog(Gtk.Dialog):
             "REQUIRES on ComfyUI server:\n"
             "  - ComfyUI-IPAdapterWAN custom node\n"
             "  - models/ipadapter/ip-adapter.bin (InstantX SD3.5-Large)\n"
-            "  - models/clip_vision/siglip_vision_patch14_384.safetensors")
+            "  - models/clip_vision/siglip2_so400m_patch16_naflex.safetensors")
         ipa_box.pack_start(self.ipa_check, False, False, 0)
 
         # Reference source selector
