@@ -10811,7 +10811,7 @@ class WanI2VDialog(Gtk.Dialog):
 
     def __init__(self, server_url=COMFYUI_DEFAULT_URL):
         super().__init__(title="ComfyUI - Wan 2.2 Image to Video")
-        self.set_default_size(560, -1)
+        self.set_default_size(680, 800)
         self.add_button("_Cancel", Gtk.ResponseType.CANCEL)
         self.add_button("_Generate", Gtk.ResponseType.OK)
         self.set_default_response(Gtk.ResponseType.OK)
@@ -10820,10 +10820,17 @@ class WanI2VDialog(Gtk.Dialog):
         self._all_wan_loras = []
         self._wan_loras = []
 
-        box = self.get_content_area()
-        box.set_spacing(8)
+        # Scrollable content for smaller screens
+        content_area = self.get_content_area()
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_propagate_natural_height(True)
+        scroll.set_max_content_height(900)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         box.set_margin_start(12); box.set_margin_end(12)
         box.set_margin_top(12); box.set_margin_bottom(12)
+        scroll.add(box)
+        content_area.pack_start(scroll, True, True, 0)
 
         # Branded header
         _hdr = _make_branded_header()
@@ -11304,6 +11311,43 @@ class WanI2VDialog(Gtk.Dialog):
         lora_frame.add(lora_box)
         box.pack_start(lora_frame, False, False, 0)
 
+        # ── SeedVR2 Video Upscale (optional post-generation) ──────────
+        sv2r_frame = Gtk.Frame(label="  SeedVR2 AI Upscale (after generation)  ")
+        sv2r_frame.set_shadow_type(Gtk.ShadowType.ETCHED_IN)
+        sv2r_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        sv2r_box.set_margin_start(8); sv2r_box.set_margin_end(8)
+        sv2r_box.set_margin_top(4); sv2r_box.set_margin_bottom(8)
+
+        self.seedvr2_check = Gtk.CheckButton(label="Run SeedVR2 upscale on the final video")
+        self.seedvr2_check.set_active(False)
+        self.seedvr2_check.set_tooltip_text(
+            "SeedVR2 AI Video Upscaler — runs AFTER Wan generation.\n\n"
+            "Enhances resolution and detail of the generated video using\n"
+            "SeedVR2's diffusion-based upscaler. Can add fine texture,\n"
+            "fix compression artifacts, and sharpen the output.\n\n"
+            "REQUIRES: ComfyUI-SeedVR2_VideoUpscaler on your server.\n"
+            "Adds significant processing time (2-10 min depending on video).\n\n"
+            "Hallucination: 0.0 = faithful upscale, 0.2 = add fine detail.")
+        sv2r_box.pack_start(self.seedvr2_check, False, False, 0)
+
+        sv2r_grid = Gtk.Grid(column_spacing=8, row_spacing=4)
+        sv2r_grid.attach(Gtk.Label(label="Resolution:", xalign=1), 0, 0, 1, 1)
+        self.seedvr2_res = Gtk.SpinButton.new_with_range(512, 4096, 128)
+        self.seedvr2_res.set_value(1024)
+        self.seedvr2_res.set_tooltip_text("Target output resolution (longest side).")
+        sv2r_grid.attach(self.seedvr2_res, 1, 0, 1, 1)
+
+        sv2r_grid.attach(Gtk.Label(label="Noise:", xalign=1), 2, 0, 1, 1)
+        self.seedvr2_noise = Gtk.SpinButton.new_with_range(0.0, 0.5, 0.05)
+        self.seedvr2_noise.set_digits(2); self.seedvr2_noise.set_value(0.10)
+        self.seedvr2_noise.set_tooltip_text(
+            "Hallucination amount. 0.0 = faithful, 0.1 = subtle detail, 0.2+ = creative.")
+        sv2r_grid.attach(self.seedvr2_noise, 3, 0, 1, 1)
+        sv2r_box.pack_start(sv2r_grid, False, False, 0)
+
+        sv2r_frame.add(sv2r_box)
+        box.pack_start(sv2r_frame, False, False, 0)
+
         # ── User saved presets ──────────────────────────────────────────
         _add_preset_ui(self, box, "wan_i2v")
 
@@ -11441,6 +11485,9 @@ class WanI2VDialog(Gtk.Dialog):
             "ip_adapter_start": self.ipa_start.get_value(),
             "ip_adapter_end": self.ipa_end.get_value(),
             "motion_mask": self.motion_mask_check.get_active(),
+            "seedvr2_upscale": self.seedvr2_check.get_active(),
+            "seedvr2_resolution": int(self.seedvr2_res.get_value()),
+            "seedvr2_noise": self.seedvr2_noise.get_value(),
             "pingpong": self.pingpong_check.get_active(),
             "runs": int(self._runs_spin.get_value()),
         }
@@ -11484,6 +11531,9 @@ class WanI2VDialog(Gtk.Dialog):
         self.ipa_start.set_value(p.get("ip_adapter_start", 0.0))
         self.ipa_end.set_value(p.get("ip_adapter_end", 1.0))
         self.motion_mask_check.set_active(p.get("motion_mask", False))
+        self.seedvr2_check.set_active(p.get("seedvr2_upscale", False))
+        self.seedvr2_res.set_value(p.get("seedvr2_resolution", 1024))
+        self.seedvr2_noise.set_value(p.get("seedvr2_noise", 0.10))
         self.pingpong_check.set_active(p.get("pingpong", False))
         if "runs" in p:
             self._runs_spin.set_value(p["runs"])
@@ -11551,6 +11601,9 @@ class WanI2VDialog(Gtk.Dialog):
             "ip_adapter_start": self.ipa_start.get_value(),
             "ip_adapter_end": self.ipa_end.get_value(),
             "motion_mask": self.motion_mask_check.get_active(),
+            "seedvr2_upscale": self.seedvr2_check.get_active(),
+            "seedvr2_resolution": int(self.seedvr2_res.get_value()),
+            "seedvr2_noise": self.seedvr2_noise.get_value(),
             "pingpong": self.pingpong_check.get_active(),
             "runs": int(self._runs_spin.get_value()),
         }
@@ -13026,10 +13079,42 @@ class Spellcaster(Gimp.PlugIn):
                 _wf = wf
                 results = _run_with_spinner(f"{label}: generating video from {src} on ComfyUI...",
                                             lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
+
+                # Optional SeedVR2 upscale on the generated video
+                if v.get("seedvr2_upscale"):
+                    # Find the MP4 in results
+                    for fn, sf, ft in results:
+                        if fn.lower().endswith(".mp4"):
+                            # Upload the MP4 back as input for SeedVR2
+                            mp4_data = _download_image(srv, fn, sf, ft)
+                            sv2r_input = f"gimp_sv2r_{uuid.uuid4().hex[:8]}.mp4"
+                            tmp_mp4 = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+                            tmp_mp4.write(mp4_data); tmp_mp4.close()
+                            _upload_image(srv, tmp_mp4.name, sv2r_input); os.unlink(tmp_mp4.name)
+
+                            sv2r_wf = _build_seedvr2_video_upscale(
+                                sv2r_input,
+                                seed=random.randint(0, 2**32 - 1),
+                                resolution=v.get("seedvr2_resolution", 1024),
+                                max_resolution=v.get("seedvr2_resolution", 1024) * 2,
+                                input_noise_scale=v.get("seedvr2_noise", 0.10),
+                                latent_noise_scale=v.get("seedvr2_noise", 0.10),
+                                fps=v["fps"] * (4 if v.get("interpolate", True) else 1),
+                            )
+                            _sv2r_wf = sv2r_wf
+                            sv2r_results = _run_with_spinner(
+                                f"{label}: SeedVR2 upscaling video...",
+                                lambda: list(_run_comfyui_workflow(srv, _sv2r_wf, timeout=1200)))
+                            # Replace results with upscaled versions
+                            results = list(results) + list(sv2r_results)
+                            break
+
                 saved = _import_video_results(image, srv, results)
             Gimp.displays_flush()
             Gimp.progress_end()
             msg = "Video generation complete!\nLast frame imported as layer."
+            if v.get("seedvr2_upscale"):
+                msg += "\nSeedVR2 upscale applied."
             if saved:
                 msg += f"\nFiles saved: {', '.join(saved)}"
             Gimp.message(msg)
