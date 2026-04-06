@@ -10641,6 +10641,9 @@ class FaceSwapDialog(Gtk.Dialog):
         save_frame.add(save_box)
         box.pack_start(save_frame, False, False, 0)
 
+        # Transparent mask mode
+        _add_mask_mode_checkbox(self, box)
+
         box.show_all()
 
         # Auto-fetch models on dialog open
@@ -10702,6 +10705,7 @@ class FaceSwapDialog(Gtk.Dialog):
             "save_face_model": self.save_model_check.get_active(),
             "save_model_name": self.save_model_name.get_text().strip(),
             "save_overwrite": self.overwrite_check.get_active(),
+            "mask_mode": self._mask_mode_check.get_active() if hasattr(self, '_mask_mode_check') else False,
         }
 
 
@@ -10836,6 +10840,9 @@ class FaceSwapModelDialog(Gtk.Dialog):
         grid3.attach(self.gender_source, 1, 1, 1, 1)
         box.pack_start(grid3, False, False, 0)
 
+        # Transparent mask mode
+        _add_mask_mode_checkbox(self, box)
+
         box.show_all()
         self._on_fetch_models(None)
 
@@ -10886,6 +10893,7 @@ class FaceSwapModelDialog(Gtk.Dialog):
             "source_face_idx": self.source_idx.get_text().strip() or "0",
             "detect_gender_input": self.gender_input.get_active_id() or "no",
             "detect_gender_source": self.gender_source.get_active_id() or "no",
+            "mask_mode": self._mask_mode_check.get_active() if hasattr(self, '_mask_mode_check') else False,
         }
 
 
@@ -12830,13 +12838,12 @@ class Spellcaster(Gimp.PlugIn):
                 mask_mode = v.get("mask_mode", False)
                 for i, (fn, sf, ft) in enumerate(results):
                     if cn_active and "spellcaster_cn_debug" in fn:
-                        _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                                "ControlNet Debug (invisible)")
+                        _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), "ControlNet Debug (invisible)", False)
                         image.get_layers()[0].set_visible(False)
                         continue
                     lbl = f"{v['preset'].get('label','')} run {run_i+1} #{i+1}" if runs > 1 \
                           else f"{v['preset'].get('label','')} #{i+1}"
-                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, mask_mode)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, mask_mode, False)
                 Gimp.displays_flush()  # show each run immediately
             Gimp.displays_flush()
             Gimp.progress_end()
@@ -12884,7 +12891,7 @@ class Spellcaster(Gimp.PlugIn):
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"{v['preset'].get('label','')} run {run_i+1} #{i+1}" if runs > 1 \
                           else f"{v['preset'].get('label','')} #{i+1}"
-                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, mask_mode)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, mask_mode, False)
                 Gimp.displays_flush()
             Gimp.displays_flush()
             Gimp.progress_end()
@@ -12959,13 +12966,12 @@ class Spellcaster(Gimp.PlugIn):
                 mask_mode = v.get("mask_mode", False)
                 for i, (fn, sf, ft) in enumerate(results):
                     if cn_active and "spellcaster_cn_debug" in fn:
-                        _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                                "ControlNet Debug (invisible)")
+                        _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), "ControlNet Debug (invisible)", False)
                         image.get_layers()[0].set_visible(False)
                         continue
                     lbl = f"Inpaint {v['preset'].get('label','')} run {run_i+1} #{i+1}" if runs > 1 \
                           else f"Inpaint {v['preset'].get('label','')} #{i+1}"
-                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, mask_mode)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, mask_mode, False)
                 Gimp.displays_flush()  # show each run immediately
             Gimp.displays_flush()
             Gimp.progress_end()
@@ -13025,8 +13031,8 @@ class Spellcaster(Gimp.PlugIn):
             results = _run_with_spinner("Face Swap: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
             for i, (fn, sf, ft) in enumerate(results):
-                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                        f"FaceSwap #{i+1}")
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
+                                  f"FaceSwap #{i+1}", v.get("mask_mode", False))
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -13069,8 +13075,8 @@ class Spellcaster(Gimp.PlugIn):
             results = _run_with_spinner("Face Swap (Model): processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
             for i, (fn, sf, ft) in enumerate(results):
-                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                        f"FaceSwap Model #{i+1}")
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
+                                  f"FaceSwap Model #{i+1}", v.get("mask_mode", False))
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -13755,7 +13761,7 @@ class Spellcaster(Gimp.PlugIn):
                     for fn, sf, ft in results:
                         if fn.lower().endswith(".png") and "lastframe" in fn.lower():
                             lbl = f"Duo S{step_idx+1}V{var_idx+1}"
-                            _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                            _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
             Gimp.message("Two-Actor Director complete!\nLast frames imported. MP4s in ComfyUI output folder.")
@@ -14015,7 +14021,7 @@ class Spellcaster(Gimp.PlugIn):
                 for vi, results in enumerate(sr):
                     for fn, sf, ft in results:
                         if fn.lower().endswith(".png") and "lastframe" in fn.lower():
-                            _import_result_as_layer(image, _download_image(srv, fn, sf, ft), f"Trio S{si+1}V{vi+1}")
+                            _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"Trio S{si+1}V{vi+1}", False)
             Gimp.displays_flush(); Gimp.progress_end()
             Gimp.message("Three-Actor Director complete!\nMP4s in ComfyUI output folder.")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -14128,8 +14134,7 @@ class Spellcaster(Gimp.PlugIn):
                                          lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
             for fn, sf, ft in results:
                 if fn.lower().endswith(".png"):
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                            "Video Upscale frame")
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), "Video Upscale frame", False)
             Gimp.displays_flush()
             Gimp.message("Video upscale complete! Check ComfyUI output folder.")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -14277,8 +14282,7 @@ class Spellcaster(Gimp.PlugIn):
                                          lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
             for fn, sf, ft in results:
                 if fn.lower().endswith(".png"):
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                            "Video ReActor frame")
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), "Video ReActor frame", False)
             Gimp.displays_flush()
             Gimp.message("Video face swap + upscale complete!\nCheck ComfyUI output folder.")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -14483,8 +14487,7 @@ class Spellcaster(Gimp.PlugIn):
                                          lambda: list(_run_comfyui_workflow(srv, wf, timeout=1200)))
             for fn, sf, ft in results:
                 if fn.lower().endswith(".png"):
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                            "SeedVR2 Video frame")
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), "SeedVR2 Video frame", False)
             Gimp.displays_flush()
             Gimp.message("SeedVR2 Video Upscale complete!\nCheck ComfyUI output folder for the upscaled MP4.")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -14523,8 +14526,7 @@ class Spellcaster(Gimp.PlugIn):
             results = _run_with_spinner("Face Swap (mtb): processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
             for i, (fn, sf, ft) in enumerate(results):
-                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                        f"FaceSwap mtb #{i+1}")
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"FaceSwap mtb #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -14577,7 +14579,7 @@ class Spellcaster(Gimp.PlugIn):
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"FaceID {v['preset_key']} run {run_i+1} #{i+1}" if runs > 1 \
                           else f"FaceID {v['preset_key']} #{i+1}"
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -14631,7 +14633,7 @@ class Spellcaster(Gimp.PlugIn):
                                             lambda: list(_run_comfyui_workflow(srv, wf)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"PuLID Flux run {run_i+1} #{i+1}" if runs > 1 else f"PuLID Flux #{i+1}"
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -14811,7 +14813,7 @@ class Spellcaster(Gimp.PlugIn):
                                              lambda: list(_run_comfyui_workflow(srv, _wf, timeout=300)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"Klein Headswap run {run_i+1} #{i+1}" if runs > 1 else f"Klein Headswap #{i+1}"
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -14858,7 +14860,7 @@ class Spellcaster(Gimp.PlugIn):
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"Klein {v['klein_model']} run {run_i+1} #{i+1}" if runs > 1 \
                           else f"Klein {v['klein_model']} #{i+1}"
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -14912,7 +14914,7 @@ class Spellcaster(Gimp.PlugIn):
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"Klein+Ref {v['klein_model']} run {run_i+1} #{i+1}" if runs > 1 \
                           else f"Klein+Ref {v['klein_model']} #{i+1}"
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -15063,8 +15065,7 @@ class Spellcaster(Gimp.PlugIn):
                 results = _run_with_spinner(f"{label}: processing...",
                                             lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
                 for i, (fn, sf, ft) in enumerate(results):
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                            f"Klein Outpaint run {run_i+1} #{i+1}" if runs > 1 else f"Klein Outpaint #{i+1}")
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"Klein Outpaint run {run_i+1} #{i+1}" if runs > 1 else f"Klein Outpaint #{i+1}", False)
             Gimp.displays_flush()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
@@ -15358,7 +15359,7 @@ class Spellcaster(Gimp.PlugIn):
                                             lambda: list(_run_comfyui_workflow(srv, wf, timeout=300)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"Klein Blend run {run_i+1} #{i+1}" if runs > 1 else f"Klein Blend #{i+1}"
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
@@ -15709,7 +15710,7 @@ class Spellcaster(Gimp.PlugIn):
                                              lambda: list(_run_comfyui_workflow(srv, wf, timeout=300)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"Klein Repose run {run_i+1} #{i+1}" if runs > 1 else f"Klein Repose #{i+1}"
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -16108,7 +16109,7 @@ class Spellcaster(Gimp.PlugIn):
                     Gimp.message("Klein Inpaint: no output. Check ComfyUI console.")
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"Klein Inpaint run {run_i+1} #{i+1}" if runs > 1 else f"Klein Inpaint #{i+1}"
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
                 Gimp.displays_flush()  # show each run immediately
             Gimp.displays_flush()
             Gimp.progress_end()
@@ -16241,8 +16242,7 @@ class Spellcaster(Gimp.PlugIn):
             results = _run_with_spinner("Layer Blend: processing...",
                                          lambda: list(_run_comfyui_workflow(srv, wf)))
             for i, (fn, sf, ft) in enumerate(results):
-                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                        f"Blend {100 - ratio*100:.0f}A/{ratio*100:.0f}B #{i+1}")
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"Blend {100 - ratio*100:.0f}A/{ratio*100:.0f}B #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -16385,7 +16385,7 @@ class Spellcaster(Gimp.PlugIn):
             results = _run_with_spinner("Upscale Blend: upscaling with two models and blending...",
                                          lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
             for i, (fn, sf, ft) in enumerate(results):
-                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
                                         f"Upscale {100 - ratio*100:.0f}%{ma_key.split('(')[0].strip()}"
                                         f" + {ratio*100:.0f}%{mb_key.split('(')[0].strip()} #{i+1}")
             Gimp.displays_flush()
@@ -17726,8 +17726,7 @@ class Spellcaster(Gimp.PlugIn):
             results = _run_with_spinner("Upscale: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
             for i, (fn, sf, ft) in enumerate(results):
-                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                        f"Upscale {preset_key} #{i+1}")
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"Upscale {preset_key} #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -17922,8 +17921,7 @@ class Spellcaster(Gimp.PlugIn):
             results = _run_with_spinner(f"{label_text}: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
             for i, (fn, sf, ft) in enumerate(results):
-                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                        f"{label_text}: {obj_desc or 'removed'} #{i+1}")
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"{label_text}: {obj_desc or 'removed'} #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -17993,8 +17991,7 @@ class Spellcaster(Gimp.PlugIn):
             results = _run_with_spinner("LUT: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
             for i, (fn, sf, ft) in enumerate(results):
-                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                        f"LUT {preset_key} #{i+1}")
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"LUT {preset_key} #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -18176,7 +18173,7 @@ class Spellcaster(Gimp.PlugIn):
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"Outpaint {v['preset'].get('label','')} run {run_i+1} #{i+1}" if runs > 1 \
                           else f"Outpaint {v['preset'].get('label','')} #{i+1}"
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -18462,7 +18459,7 @@ class Spellcaster(Gimp.PlugIn):
                                             lambda: list(_run_comfyui_workflow(srv, wf)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"Style Transfer run {run_i+1} #{i+1}" if runs > 1 else f"Style Transfer #{i+1}"
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -18613,8 +18610,7 @@ class Spellcaster(Gimp.PlugIn):
             results = _run_with_spinner("Face Restore: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
             for i, (fn, sf, ft) in enumerate(results):
-                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                        f"Face Restore {preset_key} #{i+1}")
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"Face Restore {preset_key} #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -18751,8 +18747,7 @@ class Spellcaster(Gimp.PlugIn):
             results = _run_with_spinner("Photo Restore: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
             for i, (fn, sf, ft) in enumerate(results):
-                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                        f"Photo Restore #{i+1}")
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"Photo Restore #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -19018,7 +19013,7 @@ class Spellcaster(Gimp.PlugIn):
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"Detail Hallucinate {detail_key} run {run_i+1} #{i+1}" if runs > 1 \
                           else f"Detail Hallucinate {detail_key} #{i+1}"
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -19300,7 +19295,7 @@ class Spellcaster(Gimp.PlugIn):
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"SeedV2R {hall_preset['label']} {_scale_label} run {run_i+1} #{i+1}" if runs > 1 \
                           else f"SeedV2R {hall_preset['label']} {_scale_label} #{i+1}"
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -19535,7 +19530,7 @@ class Spellcaster(Gimp.PlugIn):
                                             lambda: list(_run_comfyui_workflow(srv, _wf)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"Colorized run {run_i+1} #{i+1}" if runs > 1 else f"Colorized #{i+1}"
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -19594,7 +19589,7 @@ class Spellcaster(Gimp.PlugIn):
                                             lambda: list(_run_comfyui_workflow(srv, _wf)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"Variation run {run_i+1} #{i+1}" if runs > 1 else f"Variation #{i+1}"
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -19753,7 +19748,7 @@ class Spellcaster(Gimp.PlugIn):
                                             lambda: list(_run_comfyui_workflow(srv, _wf)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"IC-Light run {run_i+1} #{i+1}" if runs > 1 else f"IC-Light #{i+1}"
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -20249,7 +20244,7 @@ class Spellcaster(Gimp.PlugIn):
                                             lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"SUPIR Restored run {run_i+1} #{i+1}" if runs > 1 else f"SUPIR Restored #{i+1}"
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -21120,7 +21115,7 @@ class Spellcaster(Gimp.PlugIn):
                 for fn_i, (fn, sf, ft) in enumerate(results):
                     if fn.lower().endswith(".png"):
                         lbl = f"Outfit run {run_i+1} #{fn_i+1}" if runs > 1 else f"Outfit #{fn_i+1}"
-                        _import_result_as_layer(image, _download_image(srv, fn, sf, ft), lbl)
+                        _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
                 Gimp.displays_flush()
 
             Gimp.progress_end()
@@ -21472,8 +21467,7 @@ class Spellcaster(Gimp.PlugIn):
             results = _run_with_spinner("Remove Background: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
             for i, (fn, sf, ft) in enumerate(results):
-                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                        f"Background Removed #{i+1}")
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"Background Removed #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
