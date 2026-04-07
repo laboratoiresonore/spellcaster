@@ -520,9 +520,10 @@ def _auto_update():
                 req_dl = urllib.request.Request(url, headers=_hdrs)
                 with urllib.request.urlopen(req_dl, timeout=60) as r2:
                     blob = r2.read()
-                    # Strip NTFS null-byte padding that can corrupt text files
+                    # Scrub ALL NTFS null-byte corruption from text files
+                    # (NTFS can embed nulls mid-file AND append trailing nulls)
                     if remainder.endswith((".py", ".css", ".json", ".md", ".txt")):
-                        blob = blob.rstrip(b"\x00")
+                        blob = blob.replace(b"\x00", b"")
                     tmp.write_bytes(blob)
                 try:
                     tmp.replace(dest)
