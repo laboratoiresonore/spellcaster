@@ -30,7 +30,7 @@
 
 ## What Is Spellcaster?
 
-**Spellcaster adds 47 AI tools to GIMP and Darktable** — the two most popular free image editors. Create images from text, fix and enhance photos, swap faces, generate short videos, remove backgrounds, change lighting, extend canvases, re-pose characters, blend layers with AI harmonization — and that's just the built-in stuff.
+**Spellcaster adds 49 AI tools to GIMP and Darktable** — the two most popular free image editors. Create images from text, fix and enhance photos, swap faces, generate short videos, remove backgrounds, change lighting, extend canvases, re-pose characters, blend layers with AI harmonization — and that's just the built-in stuff.
 
 **You don't need to understand AI, machine learning, or any technical concepts.** Every tool comes with pre-configured settings that professionals have spent hundreds of hours perfecting. Your first result will look like your hundredth.
 
@@ -216,7 +216,9 @@ Dual ControlNet support in img2img and inpaint workflows. Models auto-selected p
 ### Video Generation
 
 <details>
-<summary><strong>Wan 2.2 Image-to-Video + Post-Processing</strong> — turn any still into a video clip</summary>
+<summary><strong>Wan 2.2 Image-to-Video + LTX2.2 Text/Image-to-Video + Post-Processing</strong> — turn any still or text prompt into a video clip</summary>
+
+#### Wan 2.2 (Image-to-Video)
 
 | Tool | What It Does | Details |
 |---|---|---|
@@ -225,12 +227,27 @@ Dual ControlNet support in img2img and inpaint workflows. Models auto-selected p
 | **Director's Chair (Solo)** | Multi-step video sequence with face re-injection | Chain multiple Wan I2V steps with ReActor between |
 | **Director's Chair (Duo)** | Same pipeline with 2 actors tracked | Dual face re-injection per step |
 | **Director's Chair (Trio)** | Same pipeline with 3 actors tracked | Triple face re-injection per step |
-| **Video Upscale** | Enhance video resolution and frame rate | RTX Super-Resolution + RIFE 2x interpolation |
-| **Video Face Swap** | Face swap across video frames | ReActor on video + upscale |
-| **SeedVR2 Video Upscale** | Advanced video upscaling with hallucination control | Tunable quality enhancement |
-| **GIF Stitch** | Chain multiple GIFs into seamless video | Concatenation with loop control |
 
 **Motion presets include**: breathing/living portrait, hair sway, expression shifts, eye movement, camera zoom/pan/orbit, nature elements (wind, water, fire), walking, turning, and more. Pingpong looping for seamless loops. LightX2V acceleration LoRAs reduce 30 steps to 4.
+
+#### LTX2.2 (Text-to-Video + Image-to-Video)
+
+| Tool | What It Does | Details |
+|---|---|---|
+| **LTX2.2 Text-to-Video** | Generate video from a text prompt — no input image needed | phr00t merge model (fp8_e4m3fn), 8-step LCM schedule, 80 prompt templates (55 SFW + 25 NSFW) |
+| **LTX2.2 Image-to-Video** | Animate any photo with text guidance | Same pipeline with image conditioning and adjustable strength |
+
+**Hardware-aware quality presets**: 8 presets including Auto-Detect — queries ComfyUI `/system_stats` to classify your GPU tier and auto-selects optimal resolution, duration, and post-processing chain. Supports LoRA injection (distilled, motion-track, union-control), ChunkFeedForward VRAM optimization, and the full post-processing stack below.
+
+#### Video Post-Processing (shared)
+
+| Tool | What It Does | Details |
+|---|---|---|
+| **RIFE Frame Interpolation** | Double frame rate for smoother playback | rife47/rife49 models, 2x multiplier |
+| **RTX Video Super Resolution** | NVIDIA hardware-accelerated upscale | 2x scale, LOW/MEDIUM/HIGH/ULTRA quality (RTX 40/50 series) |
+| **SeedVR2 Video Upscale** | AI video upscaling with hallucination control | 3B DiT model (fp8), batch processing, color correction, tunable quality |
+| **Video Face Swap** | Face swap across video frames | ReActor on video + upscale |
+| **GIF Stitch** | Chain multiple GIFs into seamless video | Concatenation with loop control |
 
 </details>
 
@@ -493,6 +510,21 @@ Dual-UNET architecture: high-noise and low-noise models with configurable switch
 
 </details>
 
+<details>
+<summary><strong>LTX2.2 — Text-to-Video + Image-to-Video</strong> — phr00t merge pipeline</summary>
+
+| Component | Model | Format | VRAM |
+|---|---|---|---|
+| Diffusion model | ltx2-phr00tmerge-nsfw-v62 | fp8_e4m3fn | ~10 GB |
+| CLIP 1 | gemma_3_12B_it_fp8_scaled | fp8 | shared |
+| CLIP 2 | ltx-2-19b-embeddings_connector_distill_bf16 | bf16 | shared |
+| Video VAE | LTX2_video_vae_bf16 | bf16 | shared |
+| Audio VAE | LTX2_audio_vae_bf16 | bf16 | shared |
+
+Pipeline: UNETLoader → BasicGuider (no CFG) → LTXVNormalizingSampler → KSamplerSelect(lcm) → ManualSigmas 8-step schedule → LTX2 VAEs → VAEDecodeTiled. Frame rate: 20fps native (40fps with RIFE). Supports 3 LoRAs: distilled (22B-distilled-lora-384), motion-track control, union control. Hardware auto-detection classifies GPU into 5 tiers and selects optimal resolution/duration/post-processing.
+
+</details>
+
 ---
 
 ## LoRA System
@@ -513,6 +545,7 @@ LoRAs are auto-filtered by the active model architecture so you only see compati
 | Flux 2 Klein | Flux-2-Klein\ |
 | Flux 1 Dev | Flux-1-Dev\ |
 | Flux Kontext | Flux-1-Dev\ (compatible) |
+| LTX2.2 | ltxv\, ltxv\ltx2\ |
 
 ### Turbo Acceleration LoRAs
 
@@ -522,6 +555,9 @@ LoRAs are auto-filtered by the active model architecture so you only see compati
 | Hyper-SDXL 8-step | SDXL | Reduces steps from 25-30 → 8 |
 | Hyper-FLUX 8-step | Flux 1 Dev / Kontext | Reduces steps with 0.125 strength |
 | LightX2V | Wan 2.2 | Reduces video steps from 30 → 4, noise-specific pairing |
+| LTX2.2 Distilled | LTX2.2 | 22B distilled LoRA (384-dim), fast inference |
+| LTX2.2 Motion Track | LTX2.2 | Motion tracking control with ref0.5 |
+| LTX2.2 Union Control | LTX2.2 | Union control conditioning with ref0.5 |
 
 ### Style/Detail Presets
 
@@ -584,7 +620,7 @@ LoRAs are auto-filtered by the active model architecture so you only see compati
 </table>
 </details>
 
-### Video — Wan 2.2
+### Video — Wan 2.2 + LTX2.2
 
 <table>
   <tr>
@@ -676,7 +712,7 @@ Magic Studios is a guided pipeline that turns a single photo into a fully compos
 | **A Photoshop refugee** | All the AI tools you're used to, free and open-source |
 | **An illustrator** | 25 art presets from photorealism to anime to Disney 3D |
 | **Someone with old photos** | One-click restoration: upscale + face fix + colorize |
-| **A video creator** | Turn any still image into a short animated clip |
+| **A video creator** | Turn any still image or text prompt into a short animated clip (Wan 2.2 + LTX2.2) |
 | **An existing ComfyUI user** | Run your workflows from GIMP, skip the browser UI, keep your existing setup |
 | **A tinkerer** | Import workflows, build custom presets, connect remote GPUs |
 | **Privacy-conscious** | Everything runs locally — no cloud, no subscriptions |
@@ -709,7 +745,7 @@ A basic setup is about 5 GB. A full installation with all models can be 30-50 GB
 <details>
 <summary><strong>What GPU do I need?</strong></summary>
 
-Any NVIDIA GPU with 4+ GB VRAM works for basic features. 8 GB unlocks most features. 12+ GB unlocks everything including full-precision Wan 2.2 video. The installer detects your GPU and only shows compatible features.
+Any NVIDIA GPU with 4+ GB VRAM works for basic features. 8 GB unlocks most features including LTX2.2 video generation. 12+ GB unlocks everything including full-precision Wan 2.2 video. 16+ GB enables RTX Video Super Resolution and SeedVR2 upscaling. The installer detects your GPU and only shows compatible features. LTX2.2 includes hardware auto-detection that tailors resolution, duration, and post-processing to your specific GPU.
 
 </details>
 
@@ -820,6 +856,8 @@ Every model preset is the product of extensive testing. Here's what Spellcaster 
 | Inpaint denoise by body part | Hands=0.78, eyes=0.65, skin=0.45 |
 | VAE/CLIP pairings for Klein | 9B→qwen_3_8b, 4B→qwen_3_4b |
 | Wan dual-UNET switchover | High-noise vs low-noise model handoff timing |
+| LTX2.2 pipeline config | Correct loader, VAE pairing, sigma schedule, sampler selection |
+| LTX2.2 hardware auto-detect | GPU tier classification, optimal resolution/duration/post-processing chain |
 
 ### Signal Bridge & Scaffold
 
@@ -983,9 +1021,11 @@ The installer auto-detects your GPU and downloads the right model variants.
 
 SD1.5 (Lineart, Depth, OpenPose, Tile), SDXL (Canny, OpenPose, Tile), ZIT Union
 
-### Video Models (Wan 2.2)
+### Video Models (Wan 2.2 + LTX2.2)
 
-Q4 GGUF (8 GB) and fp8 (16 GB) variants, UMT5-XXL encoder, Wan VAE
+**Wan 2.2**: Q4 GGUF (8 GB) and fp8 (16 GB) variants, UMT5-XXL encoder, Wan VAE
+
+**LTX2.2**: ltx2-phr00tmerge-nsfw-v62 (fp8_e4m3fn), gemma_3_12B_it_fp8_scaled (CLIP 1), ltx-2-19b-embeddings_connector_distill_bf16 (CLIP 2), LTX2_video_vae_bf16, LTX2_audio_vae_bf16. Optional: SeedVR2 DiT 3B (fp8) + VAE for video upscaling.
 
 ### 90+ LoRAs
 
@@ -1006,7 +1046,9 @@ Body & detail fix, artistic styles, accelerators — across SDXL, Flux, Klein, Z
 | ComfyUI_IPAdapter_plus | FaceID + style transfer |
 | PuLID_ComfyUI | Flux-native identity preservation |
 | ComfyUI-KJNodes | Image size utilities |
-| ComfyUI-RTXVideoSuperResolution | NVIDIA RTX video upscaling |
+| ComfyUI-RTXVideoSuperResolution | NVIDIA RTX video upscaling (Wan 2.2 + LTX2.2) |
+| ComfyUI-LTXVideo | LTX2.2 video generation nodes (LTXVConditioning, LTXVNormalizingSampler, etc.) |
+| ComfyUI-SeedVR2_VideoUpscaler | SeedVR2 AI video upscaling with hallucination control |
 | ComfyUI-REMBG | Background removal |
 | ComfyUI-LaMa | Object removal |
 | ComfyUI_essentials | LUT color grading |
@@ -1029,7 +1071,9 @@ Body & detail fix, artistic styles, accelerators — across SDXL, Flux, Klein, Z
 | All runs produce same result | Set seed to -1 for random results |
 | Download fails (403) | Add your CivitAI or HuggingFace token in the installer |
 | Klein results look wrong | Check VAE/CLIP pairings: 9B→qwen_3_8b, 4B→qwen_3_4b |
-| Video generation fails | Ensure both high-noise and low-noise Wan models are installed |
+| Wan video generation fails | Ensure both high-noise and low-noise Wan models are installed |
+| LTX2.2 video is garbled | Must use LTX2 VAEs (NOT LTX23) — LTX2_video_vae_bf16 + LTX2_audio_vae_bf16 |
+| LTX2.2 video is noisy | Use UNETLoader (fp8_e4m3fn), not DiffusionModelLoaderKJ |
 | Temp files filling disk | Use Settings → Clean Server Inputs to purge gimp_* uploads |
 | Custom workflow import fails | Make sure the JSON is an API export or standard LiteGraph format |
 | Presets not saving | Check that the plugin directory is writable (not read-only) |
