@@ -142,7 +142,7 @@ The installer is an 8-step guided wizard. It's designed so you never have to mak
 |---|---|---|
 | **Klein Image Editor** | Best-quality img2img available | 4B and 9B model variants, 4-20 steps |
 | **Klein + Reference** | Klein editing guided by a reference image | Structure and style transfer from reference |
-| **Klein Inpaint** | Context-aware selection fill with smooth edges | 17 task presets |
+| **Klein Inpaint** | Context-aware selection fill with smooth edges | 29 task presets, optional LoRA |
 | **Klein Outpaint** | Highest quality canvas extension | Seamless border continuation |
 | **Klein Layer Blender** | AI-powered layer harmonization | Lighting and shadow matching between layers |
 | **Klein Re-poser** | Change character poses and positions | 26 poses, 8 camera angles |
@@ -283,7 +283,7 @@ Presets remember everything: model, prompt, LoRAs, denoise, steps, dimensions â€
 |---|---|---|
 | **Casting Polaroids** | Create a reusable face model from any photo | 3 face restore variants (CodeFormer Sharp, GPEN-2048, CodeFormer Faithful) |
 | **Body Double** | Generate full-body references | Face swap + transparent background removal |
-| **Wardrobe Department** | AI outfit replacement | Select clothing area, describe target style |
+| **Wardrobe Department** | AI outfit replacement | 40 outfit presets, session memory |
 | **Set Design** | Generate backgrounds and composite actors | Klein-quality harmonization of lighting and shadows |
 | **Director's Chair (Solo)** | Multi-step Wan 2.2 I2V with face re-injection | Chain video steps to build a scene |
 | **Director's Chair (Duo)** | Same pipeline with 2 actors | Dual face tracking across video steps |
@@ -562,6 +562,10 @@ LoRAs are auto-filtered by the active model architecture so you only see compati
 ### Style/Detail Presets
 
 50+ curated LoRA presets organized by category: artistic styles (Anime, Ghibli, Glitch), effects (Slime, Freckles, Hyperdetail), character styles, 3D/CG rendering â€” each with architecture-specific paths and tuned strength, denoise, and CFG overrides.
+
+### LoRA Support Across Tools
+
+LoRAs can be injected into all major generation pipelines: img2img, txt2img, inpaint, outpaint, style transfer, detail hallucination, SeedV2R, colorize, ICLight, and all 6 Klein builders. Klein Inpaint task presets can auto-select a recommended LoRA with tuned strength. Body-part-specific refinement presets (hands, eyes, face, teeth, skin, feet) include per-architecture LoRA recommendations that auto-fill when selected.
 
 </details>
 

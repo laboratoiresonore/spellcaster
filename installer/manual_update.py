@@ -42,6 +42,10 @@ DARKTABLE_PLUGIN_PREFIX = "plugins/darktable/"
 # Static fallback lists (used when Tree API is unavailable)
 GIMP_PLUGIN_FILES = [
     "plugins/gimp/comfyui-connector/comfyui-connector.py",
+    "plugins/gimp/comfyui-connector/_workflows_v2.py",
+    "plugins/gimp/comfyui-connector/_composites.py",
+    "plugins/gimp/comfyui-connector/_nodes.py",
+    "plugins/gimp/comfyui-connector/_architectures.py",
     "plugins/gimp/comfyui-connector/spellcaster_steg.py",
     "plugins/gimp/comfyui-connector/spellcaster-theme.css",
     "plugins/gimp/comfyui-connector/gimp_banner.png",
