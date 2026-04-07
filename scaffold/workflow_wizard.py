@@ -66,7 +66,26 @@ LOW_PRIORITY_PATTERNS = {
 
 
 def _input_priority(name: str, inp: ParsedInput) -> int:
-    """Return priority 0 (highest) to 3 (lowest) for a tunable input."""
+    """Return priority 0 (highest) to 3 (lowest) for a tunable input.
+
+    The WorkflowWizard uses this to sort parameters and present the most
+    important ones first (up to max_params=25). Users almost always want to
+    change prompts, seeds, and model names, but rarely care about internal
+    wiring or output filenames.
+
+    Priority levels:
+      0 = Must show (prompts, seeds, models, LoRAs, media)
+      1 = Should show (dimensions, sampler settings, intensities)
+      2 = Nice to show (everything else)
+      3 = Can skip (internal, output names, hardware flags)
+
+    Args:
+        name: Input parameter name (e.g., "positive", "seed", "steps")
+        inp: ParsedInput object with value and metadata
+
+    Returns:
+        int: 0 (highest priority) to 3 (lowest priority)
+    """
     low = name.lower()
 
     for pat in HIGH_PRIORITY_PATTERNS:
@@ -81,7 +100,7 @@ def _input_priority(name: str, inp: ParsedInput) -> int:
         if pat in low:
             return 3
 
-    # Model files are always interesting
+    # Model files are always interesting (safetensors, ckpt, etc.)
     if isinstance(inp.value, str) and inp.value.endswith(
         (".safetensors", ".ckpt", ".gguf", ".pt", ".bin")
     ):
@@ -98,7 +117,25 @@ def smart_tunable_params(wf: ParsedWorkflow,
                           max_params: int = 25) -> List[Tuple[str, str, ParsedInput]]:
     """Return the most important tunable parameters, capped at max_params.
 
-    Returns list of (node_id, input_name, ParsedInput) sorted by priority.
+    This is the "smart" menu builder — instead of showing hundreds of parameters,
+    it filters to the ones power users actually want to tweak. Uses priority
+    scoring from _input_priority() to rank parameters by importance.
+
+    For example, in a txt2img workflow with 200+ tunable parameters, this will
+    show the top 25:
+      - Positive/negative prompts (priority 0)
+      - Seed (priority 0)
+      - Model name (priority 0)
+      - Width, height, steps (priority 1)
+      - etc.
+
+    Args:
+        wf: ParsedWorkflow to extract parameters from
+        max_params: Cap the results at this many parameters (default: 25)
+
+    Returns:
+        List of (node_id, input_name, ParsedInput) sorted by priority.
+        Less important parameters are dropped to respect max_params.
     """
     all_tunable: List[Tuple[int, str, str, ParsedInput]] = []
 
@@ -621,7 +658,21 @@ class WorkflowWizard:
 # ── Helpers ─────────────────────────────────────────────────────────────
 
 def _format_value(val: Any, max_len: int = 50) -> str:
-    """Format a value for display in menus."""
+    """Format a value for display in menus.
+
+    Converts Python values to user-friendly display strings:
+      - None → "(empty)"
+      - True/False → "yes"/"no"
+      - Strings longer than max_len → truncated with "..."
+      - Everything else → str() representation
+
+    Args:
+        val: Value to format
+        max_len: Maximum string length before truncation (default: 50)
+
+    Returns:
+        Human-readable string for menu display
+    """
     if val is None:
         return "(empty)"
     if isinstance(val, bool):
@@ -634,7 +685,24 @@ def _format_value(val: Any, max_len: int = 50) -> str:
 
 
 def _parse_input_value(inp: ParsedInput, text: str) -> Any:
-    """Parse user input for a specific ParsedInput."""
+    """Parse user input for a specific ParsedInput.
+
+    Converts text input into the appropriate Python type based on the
+    ParsedInput's input_type (INT, FLOAT, STRING, BOOLEAN, COMBO).
+
+    For choice parameters, accepts either:
+      - Numeric index (1-based) into the choices list
+      - Exact match of a choice name (case-insensitive)
+
+    For numeric types, clamps to min/max if specified.
+
+    Args:
+        inp: ParsedInput specifying the expected type and constraints
+        text: User's text input
+
+    Returns:
+        Parsed value in the appropriate type, or None if parsing failed
+    """
     low = text.lower().strip()
     itype = inp.input_type.upper()
 

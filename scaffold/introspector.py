@@ -1,13 +1,55 @@
 """
-Node introspector — auto-discovers Spellcaster node classes and extracts
-every parameter, type, default, range, and tooltip into structured specs.
+Node Introspector — runtime discovery of Spellcaster nodes and their capabilities.
 
-Works two ways:
-  1. Live import (when running inside ComfyUI or with it importable)
-  2. AST parse (standalone — reads .py files without importing)
+This module is the foundation of the auto-discovery system. It walks through
+Spellcaster node classes and extracts every detail that the wizard and LLM
+need to present menus and validate user input:
+  - Node class name and display name
+  - Node description
+  - Required vs. optional parameters
+  - Parameter types (INT, FLOAT, STRING, BOOLEAN, CHOICE)
+  - Parameter ranges (min/max/step)
+  - Default values
+  - Choices (for dropdown/combo parameters)
+  - Tooltips and help text
 
-This means the scaffold can generate menus even on a machine that
-doesn't have ComfyUI installed.
+DISCOVERY MODES:
+  1. **Live Import** (inside ComfyUI environment):
+     - Imports the parent package directly
+     - Calls cls.INPUT_TYPES() on live class objects
+     - Gives the most complete and accurate information
+     - Used when ComfyUI is installed and importable
+
+  2. **AST Parse** (standalone, no dependencies):
+     - Reads .py files and parses them with Python's AST module
+     - Extracts class definitions and INPUT_TYPES without importing
+     - Works on machines without ComfyUI installed
+     - Fallback when live import fails
+
+OUTPUT:
+  A dict of {class_name: NodeSpec} where NodeSpec contains:
+    - Display name and description
+    - List of required parameters (ParamSpec)
+    - List of optional parameters (ParamSpec)
+    - Return types
+    - Node category
+
+USAGE:
+    from scaffold.introspector import discover_nodes
+
+    # Auto-discover all Spellcaster nodes (tries live first, falls back to AST)
+    nodes = discover_nodes()
+
+    # Iterate over all nodes
+    for class_key, spec in nodes.items():
+        print(f"{spec.display_name}")
+        for param in spec.all_user_params:
+            print(f"  - {param.name}: {param.type}")
+
+This introspection data feeds into:
+  - prompt_builder: Generates the system prompt
+  - wizard: Populates the main menu
+  - workflow_parser: Validates workflow node references
 """
 
 from __future__ import annotations
@@ -163,21 +205,33 @@ def _parse_input_group(group: dict, required: bool) -> List[ParamSpec]:
 
 
 def _parse_one_param(name: str, spec, required: bool) -> Optional[ParamSpec]:
-    """Parse a single ComfyUI INPUT_TYPES entry into a ParamSpec."""
+    """Parse a single ComfyUI INPUT_TYPES entry into a ParamSpec.
+
+    ComfyUI INPUT_TYPES defines parameters in several formats:
+      - String: "INT", "FLOAT", "STRING", etc. (builtin types)
+      - Tuple: (type, {options}) with type="FLOAT" and opts like min, max, default
+      - List: ["opt1", "opt2", ...] (choice/combo parameter)
+
+    This function normalizes all these into a standardized ParamSpec.
+    """
     if isinstance(spec, tuple) and len(spec) >= 1:
+        # Tuple format: (type, {options})
         type_or_list = spec[0]
         opts = spec[1] if len(spec) > 1 and isinstance(spec[1], dict) else {}
     elif isinstance(spec, list):
-        # Choice list like ["linear", "dampen", ...]
+        # List format: ["choice1", "choice2", ...] = combo/dropdown
         return ParamSpec(
             name=name, type="Choice", choices=spec, required=required,
             default=spec[0] if spec else None,
         )
     elif isinstance(spec, str):
+        # Simple string type
         return ParamSpec(name=name, type=spec, required=required)
     else:
+        # Fallback for unknown formats
         return ParamSpec(name=name, type=str(spec), required=required)
 
+    # Handle tuple with choice list: (["opt1", "opt2", ...], {opts})
     if isinstance(type_or_list, list):
         return ParamSpec(
             name=name, type="Choice", choices=type_or_list, required=required,
@@ -185,6 +239,7 @@ def _parse_one_param(name: str, spec, required: bool) -> Optional[ParamSpec]:
             tooltip=opts.get("tooltip"),
         )
 
+    # Handle tuple with scalar type: ("FLOAT", {min: 0, max: 100, ...})
     return ParamSpec(
         name=name,
         type=type_or_list,
@@ -464,18 +519,45 @@ def _extract_dict_from_source(source: str, var_name: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def discover_nodes() -> Dict[str, NodeSpec]:
-    """Discover all Spellcaster nodes. Tries live import first, falls back to AST."""
+    """Discover all Spellcaster nodes.
+
+    Attempts two strategies:
+      1. **Live Import**: Try to import the parent package and introspect
+         live class objects. This is the best method when ComfyUI is installed.
+      2. **AST Parse**: Fall back to parsing .py files with AST if live import fails.
+         This works standalone without any dependencies.
+
+    Returns:
+        Dict[class_key, NodeSpec] with all discovered Spellcaster nodes.
+        If both methods fail, returns an empty dict (no crash).
+
+    This is called once at SpellcasterScaffold initialization to populate
+    the main menu and system prompt.
+    """
     try:
+        # Try to import the package and introspect live classes
         specs = _discover_live()
         if specs:
             return specs
     except Exception:
+        # Live import failed — proceed to AST fallback
         pass
+    # Fall back to static AST parsing (no imports needed)
     return _discover_ast()
 
 
 def dump_manifest(path: Optional[str] = None) -> str:
-    """Dump all discovered nodes as JSON (for external tools to consume)."""
+    """Dump all discovered nodes as JSON (for external tools to consume).
+
+    Useful for debugging, documenting, or exposing node specs to other tools
+    that don't have Python available.
+
+    Args:
+        path: Optional file path to write JSON to. If None, returns as string.
+
+    Returns:
+        JSON string representation of all discovered nodes.
+    """
     specs = discover_nodes()
     data = {k: v.to_dict() for k, v in specs.items()}
     text = json.dumps(data, indent=2, default=str)

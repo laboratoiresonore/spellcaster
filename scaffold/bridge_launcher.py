@@ -1,28 +1,55 @@
 """
-Bridge Launcher — makes Signal Bridge accessible from Spellcaster tools.
+Bridge Launcher — integrates Spellcaster scaffold with Signal Bridge infrastructure.
 
-This module provides a BridgeLauncher class that:
-  - Reads and validates Signal Bridge config
-  - Provides access to scaffold workflows via get_scaffold_for_workflow()
-  - Lists available workflows with list_workflows()
-  - Generates system prompts for specific scaffolds
-  - Integrates with SpellcasterScaffold via register_with_spellcaster()
-  - Launches the JSX settings GUI in the default browser
+CONTEXT:
+  Signal Bridge is a legal agent framework that routes messages between various
+  AI platforms and ComfyUI. This module provides the integration layer:
+  - Reads Signal Bridge config (phone_number, signal_cli_path, webui_url, etc.)
+  - Exposes Spellcaster workflows (txt2img, inpaint, detail, reference, etc.)
+  - Maps workflows to appropriate enhancement nodes
+  - Generates tailored system prompts for each workflow
+  - Integrates privacy settings with the ComfyUI runner
 
-Also provides load_character_card(platform) to get character cards for
-integration with various AI platforms (SillyTavern, OpenWebUI, etc).
+WHAT IT DOES:
+  1. **Config Management**: Validates and loads signal_bridge_config.json
+  2. **Workflow Registry**: Pre-defines workflow scaffolds (txt2img, inpaint, etc.)
+     that map to FLUX.2 Klein enhancement nodes
+  3. **Prompt Generation**: Creates specialized system prompts for each workflow
+     so the LLM knows which nodes are available
+  4. **Node Discovery**: Auto-discovers Spellcaster nodes and makes them available
+  5. **Character Cards**: Exports character card templates for SillyTavern, OpenWebUI,
+     LM Studio, etc. so Spellcaster can be integrated as a plugin
+  6. **Settings GUI**: Launches the JSX-based configuration interface in the browser
 
-Usage:
-    from bridge_launcher import BridgeLauncher
+KEY CLASSES:
+  - BridgeLauncher: Main integration class
+
+USAGE:
+    from scaffold.bridge_launcher import BridgeLauncher
+
+    # Load bridge config and discover nodes
     launcher = BridgeLauncher(config_path="signal_bridge_config.json")
-    launcher.launch_settings_gui()
+
+    # List available workflows
+    print(launcher.list_workflows())  # ["txt2img", "inpaint", "detail", ...]
+
+    # Get system prompt for a specific workflow
     prompt = launcher.get_system_prompt_for_workflow("txt2img")
 
-CLI:
-    python bridge_launcher.py --gui
-    python bridge_launcher.py --card tavern
-    python bridge_launcher.py --list
-    python bridge_launcher.py --prompt txt2img
+    # Launch the settings GUI
+    launcher.launch_settings_gui()
+
+    # Get character card for SillyTavern integration
+    card = load_character_card("sillytavern")
+
+    # Register with SpellcasterScaffold
+    launcher.register_with_spellcaster(scaffold_instance)
+
+CLI USAGE:
+    python bridge_launcher.py --gui              # Launch settings
+    python bridge_launcher.py --card tavern      # Get character card
+    python bridge_launcher.py --list             # List workflows
+    python bridge_launcher.py --prompt txt2img   # Get system prompt
 """
 
 from __future__ import annotations

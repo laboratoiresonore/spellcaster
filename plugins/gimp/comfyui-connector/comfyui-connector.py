@@ -5,23 +5,190 @@
 #  Spellcaster — AI Superpowers for GIMP 3
 # ═══════════════════════════════════════════════════════════════════════════
 #
-# Spellcaster lets artists run AI image generation workflows
-# directly from the GIMP canvas. Supports:
+# Spellcaster lets artists run AI image generation workflows directly from the
+# GIMP canvas. Supports:
 #   - img2img, txt2img, inpainting with 35+ model presets
 #   - Face swap (ReActor, mtb, IPAdapter FaceID, PuLID Flux)
 #   - Wan 2.2 image-to-video generation
 #   - Flux 2 Klein distilled img2img
 #   - Custom workflow JSON pass-through
+#   - 40+ advanced effects (upscale, restore, colorize, style transfer, etc.)
 #
-# Architecture:
-#   1. Export GIMP canvas/selection to temp PNG
-#   2. Upload to ComfyUI server via HTTP multipart POST
-#   3. Build a ComfyUI workflow JSON (node graph) from presets
-#   4. Submit workflow, poll for completion, download result
-#   5. Import result as a new GIMP layer
+# Core 5-Stage Pipeline:
+#   1. DIALOG   — build a GTK dialog, collect user parameters
+#   2. EXPORT   — export GIMP canvas/selection to temp PNG
+#   3. UPLOAD   — HTTP POST the PNG to ComfyUI's input folder
+#   4. BUILD    — construct a workflow JSON (node graph) via _workflows_v2
+#   5. EXECUTE  — submit workflow, poll for completion, download result,
+#                 import as new GIMP layer, clean up temp files
 #
 # All HTTP communication uses stdlib urllib (no pip installs needed).
 # GTK dialogs use GObject Introspection bindings for GIMP 3's GTK 3 API.
+#
+# ═══════════════════════════════════════════════════════════════════════════
+#  FILE MAP — Navigation Index (search for section headers by line number)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# IMPORTS & CONFIG
+#    27    GObject Introspection version locks
+#    55    v2 workflow builder imports
+#    75    Auto-updater (background GitHub sync)
+#   480    Configuration loading (server URL, user presets)
+#   502    KLEIN_MODELS registry (Flux 2 Klein model variants)
+#   514    Realism Quality Boost System (auto-append quality tokens)
+#   611    Session state (last-used settings memory)
+#   740    Reusable preset UI helpers (save/load/delete)
+#   856    Spinner helper (threaded progress dialog)
+#
+# DATA TABLES
+#   931    MODEL_PRESETS — one img2img config per checkpoint
+#  1449    ARCH_LORA_PREFIXES — architecture → LoRA folder mapping
+#  1470    TURBO_LORA_CONFIGS — acceleration LoRA per architecture
+#  1547    SCENE_PRESETS — beginner-friendly prompt templates
+#  2084    INPAINT_REFINEMENTS — body-part-specific inpaint presets
+#  2418    CREATIVE_RENDERS — stylistic effect presets
+#
+# HTTP & WORKFLOW LAYER
+#  2995    HTTP helpers (upload, download, websocket, polling)
+#  3629    Workflow builder adapters (bridge to _workflows_v2.py)
+#
+# GTK DIALOGS
+#  4999    Dialog system overview
+#  5015    AutoSet — one-click optimal configuration
+#  5256    PresetDialog (main img2img/txt2img/inpaint UI)
+#  6421    FaceSwapDialog
+#  6661    FaceSwapModelDialog
+#  6849    WanI2VDialog (image-to-video)
+#  7700    MtbFaceSwapDialog
+#  7822    FaceIDDialog (IPAdapter)
+#  8103    PulidFluxDialog
+#  8331    KleinDialog (Flux 2 Klein img2img)
+#
+# GIMP PLUG-IN CLASS
+#  8619    Spellcaster(Gimp.PlugIn) — registers all menu entries
+#  8743    class Spellcaster — procedure registration + dispatch
+#
+# WORKFLOW METHODS (each is a complete 5-stage pipeline)
+#  9017    _run_img2img          — img2img through model presets
+#  9081    _run_txt2img          — text-to-image (no input)
+#  9129    _run_inpaint          — selection-masked regeneration
+#  9209    _run_faceswap         — ReActor face swap (source image)
+#  9269    _run_faceswap_model   — ReActor face swap (saved model)
+#  9313    _run_wan_i2v          — Wan 2.2 image-to-video
+#  9448    _run_wan_flf          — Wan first+last frame video
+#  9616    _run_wan_director_duo — two-actor video pipeline
+#  9999    _run_wan_director_trio— three-actor video pipeline
+# 10257    _run_video_upscale    — video upscale + RTX SR
+# 10370    _run_video_reactor    — video upscale + face swap
+# 10517    _run_seedvr2_video    — SeedVR2 AI video upscaler
+# 10722    _run_faceswap_mtb     — mtb face swap
+# 10761    _run_faceid           — IPAdapter FaceID img2img
+# 10816    _run_pulid_flux       — PuLID Flux identity preservation
+# 10873    _run_klein_headswap   — Klein face swap + refinement
+# 11052    _run_klein            — Klein img2img
+# 11099    _run_klein_ref        — Klein img2img + reference image
+# 11153    _run_klein_outpaint   — Klein canvas extension
+# 11303    _run_klein_blend      — Klein AI layer blending
+# 11569    _run_klein_repose     — Klein pose/position change
+# 11878    _run_klein_inpaint    — Klein selection inpaint
+# 12228    _run_layer_blend_ratio— simple layer blend by ratio
+# 12352    _run_upscale_blend    — dual-model upscale + blend
+# 12480    _run_wan_director     — multi-step video pipeline + editing room
+# 13269    _run_gif_stitch       — GIF file stitching
+# 13508    _run_embed_watermark  — LSB steganographic metadata
+# 13638    _run_read_watermark   — read hidden watermark metadata
+# 13705    _run_upscale          — 4x super-resolution
+# 13780    _run_lama_remove      — LaMa object removal
+# 13975    _run_lut              — cinematic LUT color grading
+# 14045    _run_outpaint         — canvas extension
+# 14227    _run_style_transfer   — IPAdapter style transfer
+# 14513    _run_face_restore     — face enhancement
+# 14664    _run_photo_restore    — full restoration pipeline
+# 14801    _run_detail_hallucinate— upscale + AI detail
+# 15067    _run_seedv2r          — SeedV2R upscale + img2img
+# 15349    _run_colorize         — B&W colorization
+# 15584    _run_batch_variations — batch txt2img
+# 15643    _run_iclight          — IC-Light relighting
+# 15802    _run_supir            — SUPIR AI restoration
+#
+# MAGIC STUDIOS (multi-step pipelines)
+# 16299    _run_photobooth       — passport-style face model maker
+# 16544    _run_body_factory     — full-body character sheet
+# 16887    _run_clothing_store   — outfit changer via Klein inpaint
+# 17086    _run_studio_set       — actor compositing into scene
+#
+# UTILITIES
+# 17358    _run_rembg            — background removal
+# 17403    _run_send             — upload canvas to ComfyUI
+# 17441    _run_my_presets       — saved preset browser
+# 17563    _run_bridge           — Travelling Wizard / scaffold
+# 17727    _run_settings         — server URL + preferences
+#
+# GIMP ENTRY POINT
+# 18091    Gimp.main() call
+#
+# ═══════════════════════════════════════════════════════════════════════════
+#  DEPENDENCY GRAPH
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# comfyui-connector.py  (this file — GTK UI + GIMP integration)
+#     ├── _workflows_v2.py     (pure workflow JSON builders)
+#     │   ├── _nodes.py        (NodeFactory — ComfyUI node DSL)
+#     │   ├── _architectures.py (model architecture detection)
+#     │   └── _composites.py   (multi-node composite patterns)
+#     ├── spellcaster_steg.py  (steganography — watermark embed/read)
+#     └── travelling-wizard/   (scaffold editor UI)
+#         ├── gimp-comfy-ai.py (GIMP PlugIn registration)
+#         ├── wizard.py        (chat UI + ComfyUI runner)
+#         └── settings.py      (bridge configuration dialog)
+#
+# ═══════════════════════════════════════════════════════════════════════════
+#  WORKFLOW METHOD PATTERN
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Every _run_*() method follows the same 5-stage pattern:
+#
+#   1. DIALOG
+#      - Build GTK dialog to collect user parameters (prompts, scales, etc.)
+#      - Handle user clicks (OK, Cancel) with callbacks
+#      - Extract validated parameters into a dict
+#
+#   2. EXPORT
+#      - Get active GIMP drawable (layer or selection)
+#      - Export to temp PNG file in system temp dir
+#      - Capture any selection as alpha mask if needed
+#
+#   3. UPLOAD
+#      - HTTP POST temp PNG to ComfyUI input folder
+#      - Returns remote filename on ComfyUI server
+#
+#   4. BUILD
+#      - Call builder function from _workflows_v2 (e.g., build_img2img)
+#      - Pass user parameters, model config, ComfyUI paths
+#      - Returns complete workflow JSON (node graph)
+#
+#   5. EXECUTE
+#      - Submit workflow JSON to ComfyUI /api/prompt
+#      - Get back prompt_id for polling
+#      - Poll /api/history/{prompt_id} until done
+#      - Download result image from ComfyUI output
+#      - Import as new GIMP layer, set blend mode, opacity
+#      - Clean up temp files and close dialogs
+#
+# ═══════════════════════════════════════════════════════════════════════════
+#  KEY GLOBALS
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# COMFYUI_SERVER — hostname:port (loaded from ~/.spellcaster_config.json)
+# LAST_SETTINGS — dict preserving user's last-used dialog parameters per tool
+# MODEL_PRESETS — dict mapping model name → {checkpoint, vae, clip, ...}
+# ARCH_LORA_PREFIXES — dict mapping architecture → LoRA folder path
+# TURBO_LORA_CONFIGS — dict mapping architecture → turbo/acceleration LoRA
+# SCENE_PRESETS — dict of beginner-friendly prompt templates by category
+# INPAINT_REFINEMENTS — dict mapping body part → inpaint preset + negative
+# CREATIVE_RENDERS — dict mapping style → prompt template + model config
+# REALISM_QUALITY_TOKENS — list of auto-appended quality suffixes per model
+# KLEIN_MODELS — dict mapping Klein model size → CLIP/VAE version pairs
 #
 
 # ── GObject Introspection version locks ────────────────────────────────

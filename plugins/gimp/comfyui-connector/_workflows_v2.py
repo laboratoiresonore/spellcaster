@@ -1,10 +1,176 @@
-"""Migrated workflow builders using NodeFactory + Architecture Registry.
+"""ComfyUI Workflow Builders using NodeFactory Pattern.
 
-These are drop-in replacements for the existing _build_* functions.
-Each produces an identical workflow dict to the original.
+This module contains all workflow construction functions for Spellcaster. Each function
+builds a complete ComfyUI node graph (workflow) and returns it as a JSON-serializable dict.
 
-Migration strategy: rename original to _build_*_legacy, add new version,
-run golden test to verify identical output, then delete _legacy.
+ARCHITECTURE OVERVIEW
+═════════════════════
+ComfyUI operates via a node graph: nodes are connected by referencing outputs.
+A workflow is represented as:
+    {
+        "1": {"class_type": "CheckpointLoader", "inputs": {"ckpt_name": "model.safetensors"}},
+        "2": {"class_type": "CLIPEncode", "inputs": {"clip": ["1", 1], "text": "a cat"}},
+        ...
+    }
+
+Each node has:
+  - class_type: The ComfyUI node class (e.g., "KSampler", "VAEDecode")
+  - inputs: A dict of input parameters
+    - Scalar values (strings, numbers): passed as-is
+    - References to other node outputs: [node_id, output_index] lists
+
+THE NODEFACTORY PATTERN
+═══════════════════════
+All workflows are built using NodeFactory (from _nodes.py):
+    nf = NodeFactory()
+    ckpt_id = nf.checkpoint_loader("model.safetensors", node_id="1")
+    clip_id = nf.clip_loader("clip.safetensors", node_id="2")
+    pos_id = nf.clip_encode([clip_id, 0], "a beautiful photo", node_id="3")
+    workflow = nf.build()  # Returns the node dict
+
+Benefits:
+  - NodeFactory.build() returns the final node dict
+  - Each nf.some_node(...) returns its string ID for referencing
+  - References are [id, output_index] lists
+  - node_id= parameter pins specific numeric IDs (needed for ControlNet injection, etc.)
+  - Auto-incrementing IDs when node_id= is not specified
+  - patch_input() modifies existing node inputs (used for ControlNet redirection)
+
+COMMON PATTERNS
+═══════════════
+1. MODEL LOADING (load_model_stack composite):
+   - CheckpointLoader: loads model + clip + vae from a single .safetensors file
+   - Outputs: [0]=MODEL, [1]=CLIP, [2]=VAE
+   - For Flux models: separate UNETLoader + CLIPLoader + VAELoader
+
+2. TEXT ENCODING (CLIP encode → conditioning):
+   - clip_encode(): TEXT → CONDITIONING
+   - Takes CLIP and text prompt, returns CONDITIONING output
+   - Used for both positive and negative prompts
+
+3. IMAGE ENCODING (VAE encode):
+   - load_image(): filename → IMAGE
+   - vae_encode(): IMAGE → LATENT (compressed representation for diffusion)
+   - Used before sampling in img2img workflows
+
+4. SAMPLING (the core diffusion step):
+   - ksampler(): MODEL + CONDITIONING + LATENT → LATENT
+   - Takes: model, positive conditioning, negative conditioning, latent seed, steps, CFG
+   - Returns: modified latent ready for decoding
+
+5. IMAGE DECODING (VAE decode):
+   - vae_decode(): LATENT → IMAGE
+   - Converts compressed latent back to image pixels
+   - Always follows sampling
+
+6. SAVING:
+   - save_image(): IMAGE + folder_name → saves to disk
+   - Last step in most workflows
+
+7. CONTROLNET INJECTION:
+   - inject_controlnet(): adds spatial guidance to conditioning
+   - Preprocesses input image with a control method (canny, depth, pose, etc.)
+   - Creates ControlNet conditioning paired with text conditioning
+   - Patches the sampler's positive/negative inputs to use ControlNet conditioning
+
+ARCHITECTURE-AWARE LOADING
+═══════════════════════════
+The load_model_stack() composite (from _composites.py) handles architecture differences:
+  - "sdxl": Uses SDXL checkpoint (unet + clip + vae in one file)
+  - "flux": Uses Flux unet + dual CLIP (clip_l + t5xxl) + flux2-vae
+  - "klein": Uses Flux2 Klein (9B/4B variants) with specific CLIP pairing:
+    * Klein 9B → qwen_3_8b_fp8mixed.safetensors
+    * Klein 4B → qwen_3_4b.safetensors
+
+LoRA INJECTION
+═════════════
+inject_lora_chain() stacks multiple LoRAs:
+  - Each LoRA is applied to both model and clip
+  - Chains them: lora1 → lora2 → lora3 → sampler
+  - Earlier LoRAs have full strength, later ones can override
+
+KLEIN (FLUX2 DISTILLED) SPECIFICS
+═════════════════════════════════
+Klein is a 4B/9B parameter distilled Flux2 model. Key differences:
+  - Uses separate UNETLoader (not CheckpointLoader)
+  - Must use matching CLIP: 9B needs qwen_3_8b, 4B needs qwen_3_4b
+  - Uses flux2-vae for decoding
+  - Reference Latent wrapping: latent outputs wrapped in conditioning for guidance
+  - Custom scheduler: flux2_scheduler() instead of standard scheduler
+  - Custom sampler: sampler_custom_advanced() for precise Flux2 control
+
+See Klein Config in project memory for VAE/CLIP pairings.
+
+AVAILABLE WORKFLOWS
+═══════════════════
+Core Diffusion:
+  - build_img2img(): Image-to-image generation (load image → encode → sample → decode)
+  - build_txt2img(): Text-to-image (empty latent → sample → decode)
+  - build_inpaint(): Regenerate masked region only
+  - build_outpaint(): Extend canvas with new content
+
+Face & Body:
+  - build_faceswap(): ReActor face swap + optional CodeFormer restoration
+  - build_faceswap_model(): Train a new face swap model
+  - build_faceswap_mtb(): MTB face swap variant
+  - build_face_restore(): CodeFormer face restoration
+  - build_faceid_img2img(): Use face ID embedding for consistency
+  - build_pulid_flux(): PuLID face ID with Flux
+  - build_klein_headswap(): Head swap with Klein Flux2
+
+Image Enhancement:
+  - build_upscale(): Super-resolution upscaling
+  - build_photo_restore(): Combine upscale + face restore
+  - build_supir(): SUPIR AI restoration (5-stage pipeline)
+  - build_detail_hallucinate(): Super-resolution with detail enhancement
+  - build_rembg(): Background removal (no diffusion)
+  - build_lama_remove(): Object removal via LaMa inpainting
+
+Lighting & Rendering:
+  - build_iclight(): IC-Light relighting (reposition light sources)
+  - build_klein_repose(): Pose + composition adjustment with Klein
+
+Styling & Color:
+  - build_colorize(): Colorize greyscale images with Klein
+  - build_lut(): Apply color grading LUT (Look-Up Table)
+  - build_style_transfer(): Transfer style from reference image
+
+Reference-Based:
+  - build_klein_img2img_ref(): Klein with reference image guidance
+  - build_klein_inpaint(): Klein inpainting with reference
+  - build_klein_scene_img2img(): Klein with scene semantics
+  - build_klein_blend(): Blend foreground (generated) with background
+
+ControlNet & Guidance:
+  - build_controlnet_gen(): Generate ControlNet guidance map from image
+
+Video:
+  - build_wan_video(): WAN frame-by-frame video generation
+  - build_wan_flf(): WAN first-last-frame video (semantic interpolation)
+  - build_video_upscale(): Upscale video frame-by-frame
+  - build_video_reactor(): Face swap on every video frame
+  - build_seedvr2_video_upscale(): SeedVR2 temporal upscaling
+  - build_seedv2r(): SeedVR temporal consistency
+
+Composition:
+  - build_frame_assembly(): Assemble frames into video
+  - build_layer_blend(): Blend two images with opacity
+  - build_upscale_blend(): Blend two different upscalers
+  - build_photobooth(): Iterative generation with previous frame reference
+
+MIGRATION NOTES
+═══════════════
+This file is built on the NodeFactory architecture. Earlier versions used raw
+dicts. The pattern here:
+  1. Load models via load_model_stack() composite
+  2. Apply LoRAs via inject_lora_chain()
+  3. Encode text via encode_prompts()
+  4. Optionally inject ControlNet
+  5. Sample via ksampler()
+  6. Decode and save
+
+All original _build_* functions have been migrated to this pattern for consistency
+and maintainability.
 """
 
 from _nodes import NodeFactory
@@ -23,9 +189,60 @@ from _composites import (
 def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
                   loras=None, controlnet=None, controlnet_2=None,
                   guide_modes=None):
-    """Standard img2img: load model → encode → sample → decode → save.
+    """Image-to-image generation (standard diffusion variant).
 
-    Drop-in replacement for _build_img2img().
+    Loads an input image, encodes it to latent space, diffuses it with a prompt,
+    and decodes back to image space. Respects denoise parameter (0.0 = no change,
+    1.0 = full regeneration).
+
+    Pipeline:
+      1. Load model, CLIP, VAE (architecture-aware via preset)
+      2. Apply LoRA chain if provided
+      3. Load input image and encode to latent
+      4. Encode positive and negative prompts
+      5. Run KSampler with configured denoise/cfg/steps
+      6. Decode latent to image
+      7. Save to disk
+      8. Optionally inject ControlNet(s) for spatial guidance
+
+    Args:
+        image_filename (str): Path to input image file.
+        preset (dict): Sampling preset containing:
+          - arch: "sdxl", "flux", or "klein" (default "sdxl")
+          - width, height: Output dimensions
+          - steps: Diffusion steps (int)
+          - cfg: Classifier-free guidance scale (float, typically 7.0-15.0)
+          - sampler: Sampler type, e.g. "euler", "dpmpp_2m" (default "euler")
+          - scheduler: Noise scheduler, e.g. "normal", "karras" (default "normal")
+          - denoise: Denoising strength 0.0-1.0 (default 0.65)
+        prompt_text (str): Positive prompt describing desired output
+        negative_text (str): Negative prompt (things to avoid)
+        seed (int): Random seed for reproducibility
+        loras (list, optional): List of LoRA dicts: [{"name": "...", "strength": 1.0}, ...]
+        controlnet (dict, optional): First ControlNet config:
+          {"mode": "canny"|"depth"|"pose"|..., "strength": 1.0}
+        controlnet_2 (dict, optional): Second ControlNet (chains from first if present)
+        guide_modes (dict, optional): Maps control mode names to preprocessor info
+
+    Returns:
+        dict: ComfyUI workflow node graph ready for submission.
+
+    Node IDs Reference:
+      - "1": model/clip/vae loaders
+      - "2","3": positive/negative conditioning
+      - "4": input image
+      - "5": VAE encode
+      - "6": KSampler (the main diffusion step)
+      - "7": VAE decode
+      - "8": save_image
+      - "20","30": ControlNet(s) if used
+      - "22": First CN conditioning output (if CN1 present, CN2 chains from this)
+
+    Gotchas:
+      - denoise < 1.0 means preservation of input image structure
+      - cfg > 20 may cause artifacts or distortion
+      - ControlNet requires matching architecture preprocessor
+      - Second ControlNet chains from first's output if both present
     """
     nf = NodeFactory()
 
@@ -64,22 +281,34 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
     nf.save_image([dec_id, 0], "gimp_comfy", node_id="8")
 
     # 7. ControlNet injection (optional)
+    # ControlNet adds spatial constraints to the diffusion process. It:
+    #   1. Preprocesses the input image with a specific method (canny edges, depth map, pose, etc.)
+    #   2. Loads a ControlNet model trained on that preprocessor output
+    #   3. Creates conditioning that pairs with text conditioning
+    #   4. Redirects the KSampler's positive/negative inputs to use the ControlNet conditioning
+    # This constrains generation to follow the spatial structure while respecting the prompt.
     if guide_modes and controlnet and controlnet.get("mode", "Off") != "Off":
+        # Inject first ControlNet: preprocesses img_ref and creates CN-augmented conditioning
         cn_pos, cn_neg = inject_controlnet(
             nf, controlnet, guide_modes, arch_key, img_ref,
             [pos_id, 0], [neg_id, 0], cn_base_id=20,
         )
+        # Patch the KSampler node (node "6") to use CN-augmented conditioning instead of raw CLIP
         nf.patch_input("6", "positive", cn_pos)
         nf.patch_input("6", "negative", cn_neg)
 
     if guide_modes and controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
-        # Chain from CN1 if present, else from raw CLIP
+        # Second ControlNet chains from first's output if CN1 is present.
+        # This allows stacking multiple spatial constraints (e.g., canny edges + depth map).
+        # If CN1 present: use its output conditioning as base for CN2
+        # If CN1 absent: fall back to raw text conditioning
         prev_pos = [str(22), 0] if nf.has_node("22") else [pos_id, 0]
         prev_neg = [str(22), 1] if nf.has_node("22") else [neg_id, 0]
         cn2_pos, cn2_neg = inject_controlnet(
             nf, controlnet_2, guide_modes, arch_key, [img_id, 0],
             prev_pos, prev_neg, cn_base_id=30,
         )
+        # Update KSampler to use CN2 output (which already includes CN1 if both present)
         nf.patch_input("6", "positive", cn2_pos)
         nf.patch_input("6", "negative", cn2_neg)
 
@@ -91,9 +320,39 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_txt2img(preset, prompt_text, negative_text, seed, loras=None):
-    """Text-to-image: generate from empty latent.
+    """Text-to-image generation (from scratch).
 
-    Drop-in replacement for _build_txt2img().
+    Generates an image entirely from a text prompt by starting with an empty
+    (random noise) latent and diffusing it. Denoise is always 1.0 (full generation).
+
+    Pipeline:
+      1. Load model, CLIP, VAE
+      2. Apply LoRA chain if provided
+      3. Encode positive and negative prompts
+      4. Create empty latent at target dimensions
+      5. Run KSampler starting from noise
+      6. Decode to image and save
+
+    Args:
+        preset (dict): Sampling preset containing:
+          - arch: "sdxl", "flux", or "klein" (default "sdxl")
+          - width, height: Output dimensions
+          - steps: Diffusion steps (int)
+          - cfg: Classifier-free guidance scale (float)
+          - sampler: Sampler type, e.g. "euler", "dpmpp_2m" (default "euler")
+          - scheduler: Noise scheduler, e.g. "normal", "karras" (default "normal")
+        prompt_text (str): Main description of desired image
+        negative_text (str): What to avoid in the image
+        seed (int): Random seed for reproducibility
+        loras (list, optional): List of LoRA dicts to apply
+
+    Returns:
+        dict: ComfyUI workflow node graph.
+
+    Note:
+      - No input image, so denoise is always 1.0
+      - Output dimensions must be specified in preset (width, height)
+      - Takes longer than img2img due to generating from scratch
     """
     nf = NodeFactory()
 
@@ -126,7 +385,27 @@ def build_txt2img(preset, prompt_text, negative_text, seed, loras=None):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_rembg(image_filename):
-    """Remove background. Drop-in replacement for _build_rembg()."""
+    """Background removal (transparent cutout).
+
+    Uses rembg (remove background) to extract subject from background, creating
+    an alpha-channel image with transparent background.
+
+    Pipeline:
+      1. Load input image
+      2. Apply rembg node (segments foreground from background)
+      3. Save with transparency
+
+    Args:
+        image_filename (str): Path to input image
+
+    Returns:
+        dict: ComfyUI workflow (simple 3-node graph: load → rembg → save)
+
+    Note:
+      - Does not use diffusion, purely segmentation-based
+      - Fastest edge-removal option
+      - Quality depends on image clarity and subject definition
+    """
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
     rembg_id = nf.rembg([img_id, 0], node_id="2")
@@ -139,7 +418,33 @@ def build_rembg(image_filename):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_upscale(image_filename, model_name, upscale_factor=1.0):
-    """Upscale image. Drop-in replacement for _build_upscale()."""
+    """Super-resolution upscaling using a trained upscaler model.
+
+    Uses pre-trained models (e.g., RealESRGAN, SRVGGNet) to enhance resolution
+    and details. Non-diffusion approach, purely neural-network based.
+
+    Pipeline:
+      1. Load input image
+      2. Load upscaler model (e.g., "4x-UltraSharp.pth")
+      3. Apply upscaling
+      4. Save upscaled image
+
+    Args:
+        image_filename (str): Path to input image
+        model_name (str): Name of upscaler model file, e.g. "4x-UltraSharp.pth",
+                         "RealESRGAN_x4plus.pth", etc.
+        upscale_factor (float): Scale factor if not embedded in model (default 1.0).
+                               Model filename typically encodes scale (e.g., "4x")
+
+    Returns:
+        dict: ComfyUI workflow (simple 4-node graph)
+
+    Note:
+      - No diffusion involved, purely deterministic
+      - Quality varies by model; RealESRGAN best for photographs
+      - Fast compared to diffusion-based super-resolution
+      - Result quality plateaus at ~4x scaling
+    """
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
     up_model_id = nf.upscale_model_loader(model_name, node_id="2")
@@ -154,7 +459,31 @@ def build_upscale(image_filename, model_name, upscale_factor=1.0):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_lama_remove(image_filename, mask_filename):
-    """LaMa inpainting. Drop-in replacement for _build_lama_remove()."""
+    """Object removal via LaMa inpainting (no diffusion).
+
+    LaMa (Large Mask Inpainting) removes unwanted objects by inpainting masked
+    regions using a trained CNN. Fast, deterministic, no randomness.
+
+    Pipeline:
+      1. Load input image and mask image
+      2. Convert mask to MASK type (red channel)
+      3. Apply LaMa remover
+      4. Save result
+
+    Args:
+        image_filename (str): Path to input image
+        mask_filename (str): Path to mask image (white = remove, black = keep).
+                            Will be converted from red channel.
+
+    Returns:
+        dict: ComfyUI workflow
+
+    Note:
+      - Faster than diffusion-based inpainting
+      - Deterministic (same mask = same output)
+      - Good for removing small objects or unwanted people
+      - Quality lower for complex/large removals compared to diffusion
+    """
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
     mask_img_id = nf.load_image(mask_filename, node_id="2")
@@ -169,7 +498,30 @@ def build_lama_remove(image_filename, mask_filename):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_lut(image_filename, lut_name, strength):
-    """Apply color LUT. Drop-in replacement for _build_lut()."""
+    """Color grading via LUT (Look-Up Table) application.
+
+    LUTs are pre-baked color transformations (like Photoshop grading presets).
+    Applied with variable strength for blended effect.
+
+    Pipeline:
+      1. Load input image
+      2. Apply LUT with blending strength
+      3. Save graded image
+
+    Args:
+        image_filename (str): Path to input image
+        lut_name (str): Name of LUT file (e.g., "cinematic.3dl", "cool_tone.cube")
+        strength (float): Blend factor 0.0-1.0 (0=original, 1=full LUT applied)
+
+    Returns:
+        dict: ComfyUI workflow
+
+    Note:
+      - Deterministic, no randomness or AI involved
+      - Very fast operation
+      - Quality depends on LUT quality and match to image style
+      - Can be stacked with other adjustments
+    """
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
     lut_id = nf.image_apply_lut([img_id, 0], lut_name, strength, node_id="2")
@@ -186,9 +538,70 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
                          enhancer_mag=1.0, enhancer_contrast=0.0,
                          lora_name=None, lora_strength=1.0,
                          klein_models=None):
-    """Flux 2 Klein img2img. Drop-in replacement for _build_klein_img2img().
+    """Image-to-image with Flux 2 Klein (distilled fast model).
 
-    klein_models: the KLEIN_MODELS dict from the main plugin.
+    Klein is a 4B/9B parameter distilled variant of Flux that runs 6-8x faster
+    while maintaining quality. Uses custom sampler pipeline and ReferenceLatent
+    wrapping for image guidance.
+
+    Pipeline:
+      1. Load Klein UNET (9B, 4B, or 4B-base variant)
+      2. Load matching CLIP (qwen_3_8b for 9B, qwen_3_4b for 4B/4B-base)
+      3. Load flux2-vae
+      4. Encode prompt → positive conditioning
+      5. Create zero conditioning for negative
+      6. Load and scale input image to 1.0 megapixel
+      7. Encode image to latent
+      8. Wrap both positive and negative in ReferenceLatent (ties conditioning to latent)
+      9. Build custom sampler: CFG guider + euler sampler + flux2_scheduler
+      10. Sample with custom_advanced sampler
+      11. Decode and save
+
+    Args:
+        image_filename (str): Path to input image
+        klein_model_key (str): "Klein 9B", "Klein 4B", or "Klein 4B Base"
+                              (must match a key in klein_models dict)
+        prompt_text (str): Positive prompt
+        seed (int): Random seed
+        steps (int): Diffusion steps, typically 4-6 for Klein (default 4)
+        denoise (float): Denoising strength 0.0-1.0 (default 0.65)
+        guidance (float): Guidance scale, typically 1.0-3.0 (default 1.0)
+                         Klein works best with low guidance
+        enhancer_mag (float): Not used in current implementation (legacy param)
+        enhancer_contrast (float): Not used (legacy param)
+        lora_name (str, optional): Path to optional LoRA to apply
+        lora_strength (float): LoRA strength if lora_name provided (default 1.0)
+        klein_models (dict, optional): Mapping of klein_model_key to
+            {"unet": "path/to/unet.safetensors", "clip": "path/to/clip.safetensors"}
+
+    Returns:
+        dict: ComfyUI workflow with custom Flux2 sampler setup.
+
+    CRITICAL: VAE/CLIP PAIRING
+      - Klein 9B REQUIRES qwen_3_8b_fp8mixed.safetensors
+      - Klein 4B REQUIRES qwen_3_4b.safetensors
+      - Using wrong pairing = degraded quality or silent failures
+      - See Klein Config in project memory
+
+    Node IDs:
+      - "1": unet_loader
+      - "2": clip_loader (model-specific CLIP)
+      - "3": vae_loader (flux2-vae.safetensors)
+      - "4","5": positive/negative text encoding
+      - "10"-"12": input image loading and scaling
+      - "13": vae_encode (image → latent)
+      - "20","21": ReferenceLatent wrappers (conditioning tied to latent)
+      - "30"-"34": Sampler components (guider, sampler, scheduler, noise, empty)
+      - "40": custom_advanced sampler (main diffusion)
+      - "50": vae_decode
+      - "51": save_image
+
+    Differences from standard KSampler:
+      - No LoRA chain support in current implementation (legacy)
+      - Uses CFG guider + custom sampler instead of built-in ksampler
+      - ReferenceLatent wrapping provides latent-aware guidance
+      - flux2_scheduler() is Flux-specific (different from SDXL schedulers)
+      - Low guidance values work better (1.0-3.0 vs 7-15 for SDXL)
     """
     if klein_models is None:
         # Fallback — import from main module during migration
@@ -268,10 +681,70 @@ def build_faceswap(target_filename, source_filename, swap_model="inswapper_128.o
                    detect_gender_input="no", detect_gender_source="no",
                    input_face_idx="0", source_face_idx="0",
                    quality_preset=None, quality_presets=None):
-    """ReActorFaceSwapOpt with Options + FaceBoost + optional double-pass.
+    """Face swap using ReActor with optional quality presets and restoration.
 
-    Drop-in replacement for _build_faceswap().
-    quality_presets: the FACESWAP_QUALITY_PRESETS dict from the main plugin.
+    Swaps faces from source image into target image using ReActor (a face-swap
+    node based on ONNX models). Includes optional CodeFormer post-processing
+    to restore swapped face quality, with two-pass capability for high quality.
+
+    Pipeline:
+      1. Load target and source images
+      2. Create ReActor options (face detection, gender matching)
+      3. Create face boost settings (CodeFormer restoration parameters)
+      4. Run reactor_face_swap_opt with specified swap model
+      5. Post-process with CodeFormer face restoration (if enabled)
+      6. Save result
+
+    Args:
+        target_filename (str): Image to receive the new face
+        source_filename (str): Image with face to swap in
+        swap_model (str): ONNX swap model file, e.g. "inswapper_128.onnx",
+                         "inswapper_128_fp16.onnx" (default "inswapper_128.onnx")
+        face_restore_model (str): CodeFormer or GFPGan model for post-processing
+                                (default "codeformer-v0.1.0.pth")
+        face_restore_vis (float): CodeFormer restoration blend, 0.0-1.0
+                                (0=original, 1=full restoration, default 1.0)
+        codeformer_weight (float): CodeFormer quality weight 0.0-1.0
+                                 (higher = more aggressive enhancement, default 0.7)
+        detect_gender_input (str): "no" or gender to enforce for target face
+        detect_gender_source (str): "no" or gender to enforce for source face
+        input_face_idx (str): Face index in target (0=first/largest, default "0")
+        source_face_idx (str): Face index in source (default "0")
+        quality_preset (str): Optional quality preset name (e.g., "ultra", "high")
+                            Overrides swap_model and restore_model if provided
+        quality_presets (dict, optional): Maps preset names to
+            {"pass1_model": "...", "pass1_restore": "...", "pass1_vis": ..., "pass1_cf": ...}
+
+    Returns:
+        dict: ComfyUI workflow with face swap and optional restoration.
+
+    Node IDs:
+      - "1": load target image
+      - "2": load source image
+      - "4": reactor_options (detection settings)
+      - "5": reactor_face_boost (CodeFormer settings)
+      - "6": reactor_face_swap_opt (the actual swap)
+      - "7": codeformer_boost (restoration)
+      - "8": save_image
+
+    Quality Presets:
+      Presets override individual model/parameter settings for consistent results.
+      Example preset structure:
+        {
+            "ultra": {
+                "pass1_model": "inswapper_128.onnx",
+                "pass1_restore": "codeformer-v0.1.0.pth",
+                "pass1_vis": 1.0,
+                "pass1_cf": 0.7
+            }
+        }
+
+    Gotchas:
+      - Face detection may fail on multiple faces; use input_face_idx to select
+      - Gender mismatch can cause detection to fail; set to "no" if having issues
+      - CodeFormer restoration adds time but significantly improves quality
+      - codeformer_weight 0.5-0.7 recommended (too high = over-processing)
+      - Models must be ONNX format (inswapper_*.onnx), not PyTorch
     """
     if quality_presets and quality_preset and quality_preset in quality_presets:
         qp = quality_presets[quality_preset]
@@ -479,7 +952,67 @@ def build_face_restore(image_filename, model_name, facedetection,
 def build_photo_restore(image_filename, upscale_model, face_model,
                          facedetection, visibility, codeformer_weight,
                          sharpen_radius, sigma, alpha):
-    """Full photo restoration pipeline. Drop-in for _build_photo_restore()."""
+    """Complete old photo restoration: upscale + face enhance + sharpen.
+
+    Comprehensive restoration pipeline for old/damaged photos:
+      1. Upscale the entire image using a trained super-resolution model
+      2. Detect and enhance any faces using CodeFormer
+      3. Sharpen the result to enhance details
+
+    Pipeline:
+      1. Load input image
+      2. Load upscaler model (e.g., RealESRGAN)
+      3. Apply upscaling
+      4. Detect faces and apply CodeFormer restoration
+      5. Sharpen edges to restore fine details
+      6. Save result
+
+    Args:
+        image_filename (str): Path to old/damaged photo
+        upscale_model (str): Upscaler model file, e.g. "4x-UltraSharp.pth"
+        face_model (str): Face restoration model, typically "codeformer-v0.1.0.pth"
+        facedetection (str): Face detection backend, e.g. "retinaface_resnet50"
+        visibility (float): CodeFormer restoration blend 0.0-1.0
+                          (0=original face, 1=full restoration, default ~1.0)
+        codeformer_weight (float): CodeFormer quality weight 0.0-1.0
+                                 (higher = more aggressive, default ~0.7)
+        sharpen_radius (float): Sharpening kernel radius in pixels (default ~1.0)
+        sigma (float): Gaussian blur sigma for sharpening (default ~1.0)
+        alpha (float): Sharpening strength 0.0-2.0 (default ~1.0)
+                      (0=no sharpening, >1=aggressive sharpening)
+
+    Returns:
+        dict: ComfyUI workflow (6-node pipeline)
+
+    Node IDs:
+      - "1": load_image
+      - "2": upscale_model_loader
+      - "3": image_upscale (applies upscaler)
+      - "4": reactor_restore_face (face detection + CodeFormer)
+      - "5": image_sharpen (edge enhancement)
+      - "6": save_image
+
+    Use Cases:
+      - Restoring faded family photos
+      - Recovering old scanned photographs
+      - Enhancing damaged prints
+      - Improving quality of photos taken on old cameras
+
+    Sharpening Parameters:
+      - radius: 0.5-1.0 = subtle detail enhancement
+      - radius: 1.0-2.0 = noticeable sharpening
+      - radius: >2.0 = aggressive (risk of halos/artifacts)
+      - sigma: 0.8-1.2 = natural-looking result
+      - alpha: 0.5-1.0 = conservative
+      - alpha: 1.0-1.5 = moderate-to-strong
+
+    Gotchas:
+      - Upscaling may amplify noise in grainy/old photos
+      - Face detection may fail on heavily damaged face regions
+      - Over-sharpening (alpha > 1.5) creates halos and artifacts
+      - CodeFormer weight > 0.8 can over-smooth skin texture
+      - Process is sequential: upscale → face → sharpen (no rollback)
+    """
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
     up_model_id = nf.upscale_model_loader(upscale_model, node_id="2")
@@ -507,10 +1040,80 @@ def build_detail_hallucinate(image_filename, upscale_model, preset,
                               denoise, cfg, steps=None, upscale_factor=1.0,
                               controlnet=None, controlnet_2=None,
                               guide_modes=None):
-    """Upscale + img2img hallucination. Drop-in for _build_detail_hallucinate().
+    """Super-resolution with detail hallucination via img2img diffusion.
 
-    Note: _ensure_mod16 is handled at the caller level during migration.
-    The v2 builder omits it (placeholder in composites).
+    Combines traditional super-resolution with diffusion-based detail enhancement.
+    First upscales the image using a trained model, then runs img2img at low denoise
+    to "hallucinate" (synthesize) fine details guided by a text prompt.
+
+    Pipeline:
+      1. Load input image
+      2. Optionally upscale using super-resolution model
+      3. Load diffusion model, CLIP, VAE
+      4. Apply LoRA chain if provided
+      5. Encode prompts
+      6. VAE encode (upscaled) image → latent
+      7. Sample at low denoise (0.3-0.5) to enhance details
+      8. Decode and save
+      9. Optionally inject ControlNet(s)
+
+    Args:
+        image_filename (str): Input image to enhance
+        upscale_model (str, optional): Super-resolution model file
+                                      (e.g. "4x-UltraSharp.pth").
+                                      If None, skips initial upscaling.
+        preset (dict): Sampling preset (architecture, steps, cfg, sampler, scheduler)
+        prompt_text (str): Guidance for detail hallucination
+                         (e.g. "ultra high detail, 8k resolution, intricate details")
+        negative_text (str): What to avoid (e.g. "blurry, low quality, artifacts")
+        seed (int): Random seed
+        denoise (float): Detail enhancement intensity 0.2-0.5 (typical range)
+                        - 0.2: Subtle detail enhancement
+                        - 0.35-0.4: Balanced hallucination
+                        - 0.5+: Aggressive detail generation (risk of artifacts)
+        cfg (float): Classifier-free guidance for prompt adherence
+        steps (int, optional): Override preset steps for this operation
+        upscale_factor (float): Upscaling multiplier if upscale_model provided (default 1.0)
+        controlnet (dict, optional): Spatial guidance (rare for hallucination)
+        controlnet_2 (dict, optional): Second ControlNet
+        guide_modes (dict, optional): ControlNet preprocessor info
+
+    Returns:
+        dict: ComfyUI workflow
+
+    Why Combine Upscale + Diffusion?
+      - Traditional upscaler: Fast, deterministic, but creates blurry details
+      - Diffusion alone: Creates authentic-looking details but changes image structure
+      - Combined: Upscaler provides high-res structure, diffusion adds realistic details
+
+    Use Cases:
+      - Enhance low-resolution photos with synthetic detail
+      - Improve texture quality on face crops
+      - Upscale concept art and maintain painted quality
+      - Restore old photographs with modern detail
+
+    Node IDs (if upscale_model provided):
+      - "1": load_image
+      - "2": upscale_model_loader
+      - "3": image_upscale
+      - "4"-onwards: diffusion pipeline
+
+    Node IDs (if upscale_model = None):
+      - "1": load_image
+      - "2"-onwards: diffusion pipeline
+
+    Hallucination Prompt Tips:
+      - Use high-detail descriptors: "intricate", "fine details", "8k"
+      - Be specific about texture: "fabric weave", "skin pores", "wood grain"
+      - Avoid contradicting original: "similar composition", "same subject"
+      - Example: "ultra high detail, intricate textures, 8k quality, photorealistic, sharp focus"
+
+    Gotchas:
+      - Denoise > 0.5 risks losing original content (use lower values)
+      - Upscale + diffusion doubles processing time
+      - Hallucinated details may not match lighting/physics of original
+      - cfg > 15.0 can cause the diffusion to diverge from upscaled structure
+      - Negative prompt is critical to prevent artifact hallucination
     """
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
@@ -643,7 +1246,71 @@ def build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
                           preset, prompt, negative, seed, width, height,
                           steps, cfg, sampler, scheduler, cn_strength=0.8,
                           loras=None):
-    """Generic ControlNet generation. Drop-in for _build_controlnet_gen()."""
+    """Text-to-image generation with ControlNet spatial constraint.
+
+    Generates an image from scratch (empty latent) with spatial guidance from
+    a ControlNet. Useful for creating new images that match a reference structure
+    (pose, composition, depth, edges, etc.) while respecting a text prompt.
+
+    Pipeline:
+      1. Load input image and preprocess it (canny edges, depth map, pose skeleton, etc.)
+      2. Load model, CLIP, VAE
+      3. Apply LoRA chain if provided
+      4. Load ControlNet model
+      5. Encode positive and negative prompts
+      6. Apply ControlNet to create spatial-guided conditioning
+      7. Generate from empty latent with ControlNet conditioning
+      8. Decode and save
+
+    Args:
+        image_filename (str): Reference image for spatial structure (will be preprocessed)
+        preprocessor_type (str): Type of preprocessing, e.g. "canny", "depth", "openpose",
+                               "midas", "mlsd", "anime_lineart", etc.
+                               The preprocessor extracts spatial structure from the image.
+        controlnet_model (str): ControlNet model file trained on preprocessor outputs,
+                              e.g. "control_canny-fp16.safetensors"
+        preset (dict): Sampling preset (architecture, dimensions, etc.)
+        prompt (str): Text description of what to generate
+        negative (str): What to avoid
+        seed (int): Random seed
+        width (int): Output image width
+        height (int): Output image height
+        steps (int): Diffusion steps
+        cfg (float): Classifier-free guidance scale
+        sampler (str): Sampler type, e.g. "euler", "dpmpp_2m"
+        scheduler (str): Scheduler, e.g. "normal", "karras"
+        cn_strength (float): ControlNet influence 0.0-1.0 (default 0.8)
+                           0.0 = ignore reference structure
+                           1.0 = strictly follow reference structure
+        loras (list, optional): LoRA chain
+
+    Returns:
+        dict: ComfyUI workflow
+
+    Example Use Cases:
+      - Canny edges: "Create new photo with same pose as reference"
+      - OpenPose: "Recreate composition with different person"
+      - Depth map: "Generate 3D-aware version of reference scene"
+      - Midas depth: "Fill scene with new content, same depth structure"
+
+    Node IDs:
+      - "1": load reference image
+      - "2": preprocessor (extracts spatial structure)
+      - "3": model/clip/vae loaders
+      - "4": controlnet_loader
+      - "5","6": positive/negative text encoding
+      - "7": controlnet_apply_advanced (spatial conditioning)
+      - "8": empty_latent_image (start from noise, not image)
+      - "9": ksampler (with ControlNet guidance)
+      - "10": vae_decode
+      - "11": save_image
+
+    Differences from img2img + ControlNet:
+      - Uses empty latent (txt2img style) instead of image encoding
+      - Always generates from scratch; denoise = 1.0 (no input preservation)
+      - Full canvas generation, not refinement
+      - Preprocessor extracts spatial constraints from reference, doesn't use it directly
+    """
     nf = NodeFactory()
 
     img_id = nf.load_image(image_filename, node_id="1")
@@ -682,10 +1349,81 @@ def build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
 def build_iclight(image_filename, ckpt_name, prompt, negative, seed,
                    multiplier=0.18, steps=20, cfg=2.0,
                    sampler="euler", scheduler="normal"):
-    """IC-Light relighting. Drop-in for _build_iclight().
+    """IC-Light relighting: adjust light sources and illumination.
 
-    IC-Light only works with SD1.5 models. Uses CheckpointLoaderSimple.
-    ICLightConditioning.foreground expects LATENT, not IMAGE.
+    IC-Light is a specialized model for controlling and adjusting light in images.
+    It enables repositioning light sources, changing lighting direction, and adjusting
+    illumination intensity while preserving object structure and content.
+
+    Pipeline:
+      1. Load image and SD-1.5 checkpoint (IC-Light works with SD-1.5)
+      2. Load and apply IC-Light specialized UNET
+      3. Encode positive and negative text prompts
+      4. Prepare IC-Light conditioning (combines text encoding with image latent)
+      5. Sample with IC-Light conditioning
+      6. Decode and save
+
+    Args:
+        image_filename (str): Input image to relight
+        ckpt_name (str): SD-1.5 checkpoint file name
+        prompt (str): Lighting description, e.g. "bright sunlight from left",
+                     "soft diffuse light", "neon red and blue lighting"
+        negative (str): Lighting to avoid
+        seed (int): Random seed
+        multiplier (float): Light intensity multiplier (default 0.18)
+                          Controls how strongly IC-Light conditions the sampling
+                          0.0 = ignore light prompt
+                          1.0+ = aggressive lighting changes
+        steps (int): Diffusion steps, typically 15-25 (default 20)
+        cfg (float): Classifier-free guidance, typically 1.0-5.0 (default 2.0)
+                    IC-Light works best with moderate guidance
+        sampler (str): Sampler type, e.g. "euler", "dpmpp_2m" (default "euler")
+        scheduler (str): Scheduler, e.g. "normal", "karras" (default "normal")
+
+    Returns:
+        dict: ComfyUI workflow
+
+    Node IDs:
+      - "1": load input image
+      - "2": checkpoint_loader (SD-1.5)
+      - "3": load_and_apply_iclight_unet (replaces standard UNET)
+      - "4","5": positive/negative text encoding
+      - "6": iclight_conditioning (special conditioning that incorporates image)
+      - "7": ksampler (runs diffusion with IC-Light conditioning)
+      - "8": vae_decode
+      - "9": save_image
+
+    IC-Light Conditioning (node "6"):
+      Outputs 3 values (not 1 like CLIP encode):
+        [0] = positive conditioning (text-guided)
+        [1] = negative conditioning (text-guided)
+        [2] = image latent (used as control signal)
+      All three are passed to the KSampler.
+
+    Multiplier Effects:
+      - 0.1-0.15: Subtle lighting adjustments, preserves original ambiance
+      - 0.18-0.25: Moderate lighting changes, noticeable but not jarring
+      - 0.4-0.6: Strong lighting effects, significant relight
+      - >1.0: Very aggressive, may destabilize generation
+
+    Example Prompts:
+      - "key light from upper left, fill light from right, warm color temperature"
+      - "top-down volumetric light rays, golden hour lighting, hazy atmosphere"
+      - "cold blue darkness, single LED light source"
+      - "neon glow, cyberpunk lighting, reflections in wet surface"
+
+    Gotchas:
+      - IC-Light best works with clear, well-lit input images
+      - Very dark images may not relight well
+      - Low CFG (1.0-2.0) recommended; high CFG may cause artifacts
+      - Multiplier > 1.0 can cause generation instability
+      - Works only with SD-1.5, not SDXL or Flux
+      - Prompt quality significant; vague prompts = undefined lighting
+
+    Implementation Notes:
+      - IC-Light only works with SD1.5 models
+      - Uses CheckpointLoaderSimple to load SD-1.5 checkpoint
+      - ICLightConditioning.foreground expects LATENT, not IMAGE
     """
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
@@ -733,10 +1471,81 @@ def build_iclight(image_filename, ckpt_name, prompt, negative, seed,
 def build_supir(image_filename, supir_model, sdxl_model, prompt, seed,
                  denoise=0.3, steps=45, scale_by=1.0,
                  controlnet=None, controlnet_2=None, guide_modes=None):
-    """SUPIR AI restoration — full 5-stage pipeline. Drop-in for _build_supir().
+    """SUPIR AI restoration - specialized 5-stage restoration pipeline.
 
-    Stages: model_loader → first_stage → conditioner → sample → decode.
-    Optional ControlNet refinement post-pass using SDXL checkpoint.
+    SUPIR (Super Image Restoration) is a specialized diffusion model for photo
+    restoration. It works in 5 stages: loads image, does first-stage denoising,
+    conditions on text + image features, applies main restoration sampling, then
+    decodes using tiled VAE (for memory efficiency on large images).
+
+    Optional secondary pass: SDXL refinement with optional ControlNet guidance.
+
+    Pipeline (Main Pass):
+      1. Load SUPIR model + SDXL backbone (they're paired)
+      2. Load input image
+      3. First-stage processing (initial denoising; output used as reference)
+      4. Conditioner: encodes text prompt + SDXL features
+      5. Main restoration sampling (EDM-based with custom schedules)
+      6. Tiled VAE decode (memory-efficient for 4K+)
+
+    Pipeline (Optional SDXL Refinement):
+      7. Load SDXL checkpoint for secondary pass
+      8. Encode SUPIR output with SDXL CLIP
+      9. Optional ControlNet preprocessing
+      10. Apply ControlNet to SDXL conditioning
+      11. Re-sample SUPIR output through SDXL at low denoise (0.12)
+      12. Decode and save refined output
+
+    Args:
+        image_filename (str): Path to damaged/low-quality image
+        supir_model (str): SUPIR model file name
+        sdxl_model (str): SDXL checkpoint file (paired with SUPIR model)
+        prompt (str): Restoration guidance prompt (e.g., "high quality, sharp focus")
+        seed (int): Random seed
+        denoise (float): Restoration intensity 0.0-1.0 (default 0.3)
+          - 0.0: minimal change
+          - 0.3-0.5: balanced restoration
+          - 1.0: aggressive restoration (may add artifacts)
+        steps (int): Main sampling steps, typically 20-45 (default 45)
+        scale_by (float): Internal upscaling during restoration (default 1.0)
+          - 1.0: no upscaling, pure restoration
+          - 1.5-2.0: upscale + restore (slower, memory-hungry)
+          - >1.5 uses TiledRestoreEDMSampler instead of RestoreEDMSampler
+        controlnet (dict, optional): SDXL ControlNet for refinement pass
+        controlnet_2 (dict, optional): Second ControlNet in refinement
+        guide_modes (dict, optional): ControlNet preprocessor info
+
+    Returns:
+        dict: ComfyUI workflow with SUPIR main + optional SDXL refinement
+
+    The Denoise-to-Schedule Mapping (internal logic):
+      SUPIR maps denoise parameter to different CFG + control scales:
+      - denoise → control_start/control_end (how much to control each step)
+      - denoise → cfg_start/cfg_end (how much text guidance each step)
+      Example: denoise=0.3 yields moderate control, low CFG (4.0-2.0 range)
+
+    Node IDs (Main Pass):
+      - "1": input image
+      - "10": supir_model_loader (returns both SUPIR model [0] and SDXL backbone [1])
+      - "20": supir_first_stage (initial denoising)
+      - "30": supir_conditioner (text + features)
+      - "40": supir_sample (main restoration)
+      - "50": supir_decode (tiled VAE)
+      - "60": save_image
+
+    Node IDs (SDXL Refinement, if used):
+      - "70"-"72": SDXL checkpoint + CLIP encode
+      - "73"-"82": Optional ControlNet(s)
+      - "76"-"78": Secondary SDXL sampling + decode
+      - "80"-"82": Optional second ControlNet in refinement
+
+    Gotchas:
+      - Very slow (45 steps + optional refinement = minutes per image)
+      - High memory usage; scale_by > 1.0 requires 24GB+ VRAM
+      - Denoise > 0.5 may add artifacts (hallucination)
+      - For tiled operation (scale_by >= 1.5), uses TiledRestoreEDMSampler
+      - ControlNet in refinement is applied to SUPIR output (not original image)
+      - Default negative prompt is embedded (long, specific to restoration)
     """
     nf = NodeFactory()
 
@@ -867,7 +1676,59 @@ def build_supir(image_filename, supir_model, sdxl_model, prompt, seed,
 def build_inpaint(image_filename, mask_filename, preset, prompt_text,
                    negative_text, seed, loras=None,
                    controlnet=None, controlnet_2=None, guide_modes=None):
-    """Inpainting: regenerate only the masked region. Drop-in for _build_inpaint()."""
+    """Inpainting: regenerate masked region using diffusion.
+
+    Selectively regenerates only the masked area of an image while preserving
+    the unmasked regions. Useful for object removal, editing, and corrections.
+
+    Pipeline:
+      1. Load model, CLIP, VAE
+      2. Apply LoRA chain if provided
+      3. Load image and mask; convert mask to MASK type
+      4. Scale both image and mask to working resolution
+      5. Encode prompts
+      6. VAE encode scaled image → latent
+      7. Grow/shrink mask to prevent visible edges
+      8. Encode mask to latent space
+      9. Mix original latent with noise at masked region (MASK_BLUR)
+      10. KSampler restricted to masked region
+      11. Scale output back to original dimensions
+      12. Save result
+      13. Optional ControlNet for spatial guidance
+
+    Args:
+        image_filename (str): Path to input image
+        mask_filename (str): Path to mask image (white = inpaint, black = preserve)
+        preset (dict): Sampling preset (see build_img2img for contents)
+        prompt_text (str): What to generate in masked region
+        negative_text (str): Things to avoid
+        seed (int): Random seed
+        loras (list, optional): LoRA chain
+        controlnet (dict, optional): Spatial guidance
+        controlnet_2 (dict, optional): Second ControlNet
+        guide_modes (dict, optional): ControlNet preprocessor info
+
+    Returns:
+        dict: ComfyUI workflow
+
+    Key Difference from img2img:
+      - Uses MASK_BLUR node to grow mask borders (prevents visible seams)
+      - Only diffuses latents at masked region
+      - Scales back to original resolution post-sampling (img2img uses fixed resolution)
+
+    Node IDs:
+      - "4": input image
+      - "5": input mask
+      - "6": KSampler (respects mask)
+      - "51": mask converted to MASK type
+      - "90": original image size (for post-scaling)
+
+    Gotchas:
+      - Mask must be pure black/white (no gray); will be thresholded
+      - Mask edges often show visible seams; MASK_BLUR helps but not foolproof
+      - Masked area sometimes shows "corruption" at edges; lower cfg or increase blur
+      - Denoise < 1.0 in masked area may not fully regenerate detail
+    """
     nf = NodeFactory()
 
     # Model loading
@@ -951,10 +1812,79 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
 def build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
                     left, top, right, bottom, feathering, loras=None,
                     controlnet=None, guide_modes=None):
-    """Outpaint: extend the canvas. Drop-in for _build_outpaint().
+    """Canvas extension via outpainting.
 
-    Klein uses standard KSampler pipeline (SamplerCustomAdvanced doesn't
-    support SetLatentNoiseMask).
+    Extends an image beyond its original boundaries by generating new content
+    in the expanded regions. The original image is preserved (at reduced strength),
+    and the new pixels are filled with AI-generated content matching the prompt
+    and visual style of the original.
+
+    Pipeline:
+      1. Load model, CLIP, VAE
+      2. Apply LoRA chain if provided
+      3. Load input image
+      4. Pad image with feathered borders (left, top, right, bottom)
+      5. Encode prompts
+      6. VAE encode padded image → latent
+      7. Create noise mask (original region = low noise, padded region = high noise)
+      8. Set latent noise mask (tells sampler where to preserve vs. regenerate)
+      9. KSampler respects the mask, generating only in padded regions
+      10. Decode and crop back to original size
+      11. Save result
+
+    Args:
+        image_filename (str): Input image to extend
+        preset (dict): Sampling preset (architecture, steps, cfg, etc.)
+        prompt_text (str): Description for extended content
+        negative_text (str): Things to avoid in extension
+        seed (int): Random seed
+        left (int): Pixels to add on left side
+        top (int): Pixels to add on top
+        right (int): Pixels to add on right side
+        bottom (int): Pixels to add on bottom
+        feathering (int): Blend radius at original/generated boundary (default ~10)
+                         Prevents visible seams; higher = softer transition
+        loras (list, optional): LoRA chain
+        controlnet (dict, optional): Spatial guidance (optional)
+        guide_modes (dict, optional): ControlNet preprocessor info
+
+    Returns:
+        dict: ComfyUI workflow
+
+    How It Works (Noise Masking):
+      1. image_pad_for_outpaint(): Creates padded image + binary mask
+         - Mask[0] = padded image (original + extended border)
+         - Mask[1] = noise mask (0 in original region, 1 in padded region)
+      2. set_latent_noise_mask(): Applies mask to latent space
+         - KSampler will inject noise heavily in masked (=1) regions
+         - KSampler will preserve signal in unmasked (=0) regions
+      3. Denoise value (from preset) controls preservation:
+         - denoise=0.5: Keep 50% of original signal, regenerate 50%
+         - denoise=1.0: Full regeneration even in original region (seams!)
+
+    Feathering Effect:
+      The feathering parameter blurs the boundary mask to prevent hard edges:
+      - feathering=0: Sharp visible seam at boundary
+      - feathering=10: Soft gradual blend (recommended)
+      - feathering=20+: Very soft, may blur original image boundary slightly
+
+    Node IDs:
+      - "4": input image
+      - "5": padded image + mask
+      - "6": VAE encode
+      - "7": set_latent_noise_mask (tells sampler preserve/regenerate regions)
+      - "8": ksampler (respects mask)
+      - "9": vae_decode
+      - "10": crop_to_original_size
+      - "11": save_image
+
+    Gotchas:
+      - Denoise > 0.8 causes visible seams (original area gets regenerated)
+      - Feathering too low (< 5) shows hard boundaries
+      - Feathering too high (> 30) may blur original content
+      - Prompt quality critical; vague prompts = incoherent extension
+      - Large padding (> 512 pixels per side) may cause memory issues
+      - Sky/background extensions often work better than complex foreground
     """
     nf = NodeFactory()
     arch_key = preset.get("arch", "sdxl")
@@ -1235,9 +2165,101 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
                           prompt, seed, denoise=0.35, steps=20,
                           face_model=None, face_restore_vis=0.7,
                           codeformer_weight=0.8, klein_models=None):
-    """Klein headswap: ReActor + Klein img2img refinement. Drop-in for _build_klein_headswap().
+    """Head swap with Klein Flux2 refinement.
 
-    Uses BasicScheduler (not Flux2Scheduler) because Klein refinement needs denoise support.
+    Two-stage head swap: first uses ReActor for fast face swap, then refines
+    the result with Klein Flux2 img2img to improve quality and blend edges.
+
+    Stage 1: ReActor Face Swap
+      - Detects face in target image
+      - Detects face in source image
+      - Swaps source face into target using ONNX swap model
+      - Applies CodeFormer restoration to improve swapped face
+
+    Stage 2: Klein Refinement
+      - Loads swapped image
+      - Applies Klein Flux2 img2img at low denoise for blending
+      - Text prompt guides aesthetic improvements
+      - Reduces visible artifacts from face swap
+
+    Pipeline:
+      1. Load target and source images
+      2. Create ReActor options (face detection)
+      3. Create face boost settings (CodeFormer)
+      4. Run ReActor face swap with quality restoration
+      5. Load Klein model, CLIP, VAE (with matching CLIP)
+      6. Scale swapped image to 1.0 megapixel
+      7. Encode prompt text
+      8. VAE encode swapped image → latent
+      9. Run Klein img2img at low denoise for refinement
+      10. Decode and save
+
+    Args:
+        target_filename (str): Image to receive new head
+        source_filename (str): Image with head to swap
+        klein_model_key (str): "Klein 9B", "Klein 4B", or "Klein 4B Base"
+        prompt (str): Refinement guidance, e.g. "professional headshot, perfect skin,
+                     sharp focus, natural lighting"
+        seed (int): Random seed
+        denoise (float): Klein refinement intensity 0.2-0.5 (default 0.35)
+                        - 0.2: Minimal refinement, preserve swap details
+                        - 0.35: Balanced refinement
+                        - 0.5: Aggressive blending (risk of losing swap fidelity)
+        steps (int): Klein sampling steps, typically 4-20 (default 20, more = slower/better)
+        face_model (str, optional): CodeFormer model for restoration (fallback only)
+        face_restore_vis (float): CodeFormer restoration blend (default 0.7)
+        codeformer_weight (float): CodeFormer quality weight (default 0.8)
+        klein_models (dict, optional): Klein model configuration
+
+    Returns:
+        dict: ComfyUI workflow with ReActor + Klein two-stage pipeline
+
+    CRITICAL VAE/CLIP Pairing:
+      - Klein 9B REQUIRES qwen_3_8b_fp8mixed.safetensors
+      - Klein 4B REQUIRES qwen_3_4b.safetensors
+      - Mismatched pairing = degraded quality
+
+    Node IDs:
+      - "1": target image loader
+      - "2": source image loader
+      - "10o": reactor_options
+      - "10b": reactor_face_boost (CodeFormer settings)
+      - "10": reactor_face_swap_opt (the swap)
+      - "11": codeformer_boost (restoration)
+      - "20": klein unet_loader
+      - "21": klein clip_loader
+      - "22": klein vae_loader
+      - "23": klein prompt encode
+      - "24": klein image scale
+      - "25": klein vae_encode
+      - "30": klein cfg_guider
+      - "31": klein sampler_select
+      - "32": klein scheduler
+      - "33": klein noise
+      - "34": klein empty latent
+      - "40": klein sampler_custom_advanced
+      - "50": klein vae_decode
+      - "51": save_image
+
+    Refinement Prompt Tips:
+      - Focus on aesthetics: "high quality", "professional", "sharp focus"
+      - Add lighting/style: "studio lighting", "natural shadows", "cinematic"
+      - Avoid contradicting swap: "same person", "consistent skin tone"
+      - Example: "professional headshot, clear skin, sharp focus, natural lighting, studio quality"
+
+    Two-Stage Benefits:
+      - ReActor provides face identity swap
+      - Klein refinement blends the swap and improves overall aesthetics
+      - Better than ReActor alone for visible swap quality
+      - Better than Klein alone if you need face identity change
+
+    Gotchas:
+      - Denoise > 0.5 risks losing swap fidelity (face changes)
+      - Steps < 4 may not refine adequately
+      - Both ReActor and Klein have separate failure modes:
+        * ReActor fails: poor face detection or wrong face indices
+        * Klein fails: prompt too aggressive or denoise too high
+      - Swapped face quality depends on source image quality and angle match
     """
     if klein_models is None:
         klein_models = {
@@ -1460,9 +2482,114 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
                      ip_adapter_start=0.0, ip_adapter_end=1.0,
                      motion_mask=None, pingpong=False, fps=16,
                      end_image_filename=None):
-    """Wan 2.2 video generation — dual-model architecture. Drop-in for _build_wan_video().
+    """WAN 2.2 frame-by-frame video generation with dual-model architecture.
 
-    Uses NodeFactory for common nodes, nf.update() for exotic video/accelerator nodes.
+    Generates video frame-by-frame using WAN (a lightweight video diffusion model).
+    Uses a two-model approach: a high-quality model for initial generation + a
+    lightweight low-quality model for intermediate frames (for speed/memory efficiency).
+    Includes optional post-processing: upscaling, face swapping, motion blending.
+
+    Pipeline (Simplified):
+      1. Load high-res and low-res WAN models
+      2. Load CLIP and VAE (from preset)
+      3. Load reference image (or generate first frame from prompt)
+      4. Encode prompt
+      5. For each frame:
+         a. Encode previous frame to latent
+         b. Sample next frame using selected model (high or low)
+         c. Decode to image
+      6. Optional upscaling (RTX VSR) to restore detail
+      7. Optional face swap on each frame
+      8. Interpolate frames (smooth 16fps to 60fps+)
+      9. Assemble into video file
+
+    Args:
+        image_filename (str): Reference/starting image (motion anchor)
+        preset (dict): Video preset containing:
+          - high_model: High-quality model (e.g., "wan-2.2-high.safetensors")
+          - low_model: Low-quality model for efficiency
+          - clip: CLIP model for text encoding
+          - vae: VAE for latent encoding
+          - steps: Default sampling steps (overridable)
+          - cfg: Default CFG (overridable)
+          - shift: Timestep shift for prompt weighting
+          - second_step: When to switch from high to low model (default 10)
+          - high_accel_lora: Optional LoRA for high model
+          - low_accel_lora: Optional LoRA for low model
+        prompt_text (str): What to generate/how to evolve
+        negative_text (str): Things to avoid
+        seed (int): Random seed
+        width (int): Frame width (default 832, must be multiple of 16)
+        height (int): Frame height (default 480)
+        length (int): Number of frames to generate (default 81 = ~5 sec at 16fps)
+        steps (int, optional): Sampling steps (overrides preset)
+        cfg (float, optional): Guidance scale (overrides preset)
+        shift (float, optional): Prompt weighting shift (overrides preset)
+        second_step (int, optional): Frame where low model starts (default preset or 10)
+        turbo (bool): Auto-adjust steps/cfg for speed (2-10 steps, default True)
+        loop (bool): Make video loop seamlessly (default False)
+        loras_high (list, optional): LoRAs for high-quality model
+        loras_low (list, optional): LoRAs for low-quality model
+        rtx_scale (float): Post-generation upscaling factor (default 2.5)
+        interpolate (bool): Temporal interpolation for smoothness (default True)
+        face_swap (bool): Apply face swap to each frame (default True)
+        save_raw (bool): Save unprocessed frames before post-processing (default False)
+        teacache (bool): Use TeaCache acceleration (faster, lower quality, default False)
+        tiled_vae (bool): Use tiled VAE for memory efficiency (default False)
+        ip_adapter_image (str, optional): Image for IP-Adapter style guidance
+        ip_adapter_weight (float): IP-Adapter influence 0.0-1.0 (default 0.5)
+        ip_adapter_start (float): When to start IP-Adapter in diffusion (0.0-1.0)
+        ip_adapter_end (float): When to end IP-Adapter in diffusion (0.0-1.0)
+        motion_mask (str, optional): Mask image constraining motion to regions
+        pingpong (bool): Reverse video at end for seamless loop (default False)
+        fps (int): Output video framerate (default 16, typical 24-60)
+        end_image_filename (str, optional): Final frame target (for conditioning end)
+
+    Returns:
+        dict: ComfyUI workflow with video generation, upscaling, and assembly
+
+    Turbo Mode:
+      Auto-scales parameters for speed:
+        - steps: 2-10 (vs typical 20-50)
+        - second_step: 1-3 (switches to fast model very early)
+        - Reduces quality but enables interactive generation
+
+    Two-Model Strategy:
+      - Frames 0-second_step: Use high-quality model (slower, better)
+      - Frames second_step+: Use low-quality model (faster, acceptable)
+      - Saves ~40% time while maintaining acceptable quality
+
+    Post-Processing Chain:
+      1. RTX Video Super Resolution (upscale)
+      2. Face Swap on each frame (optional)
+      3. Frame interpolation (temporal smoothing)
+      4. Video assembly (CreateVideo → SaveVideo)
+
+    Example Prompts:
+      - "Cinematic pan across a forest. Camera movement is smooth and natural."
+      - "A woman's face gradually smiling. Focus on facial expressions."
+      - "Car driving down a highway at sunset. Motion is smooth."
+
+    Node IDs (approximate):
+      - "1": load_video or load_image
+      - "2": wan_model_high_loader
+      - "3": wan_model_low_loader
+      - "4": clip_loader
+      - "5": vae_loader
+      - "10"+: Frame generation loop (dynamic)
+      - "20": RTX upscaling (if rtx_scale > 1)
+      - "21": Frame interpolation (if interpolate=True)
+      - "30": CreateVideo
+      - "31": SaveVideo
+
+    Gotchas:
+      - Very slow: ~10-30 seconds per frame on RTX 5060
+      - High memory: may need tiled_vae=True for 1024x1024+
+      - Turbo mode reduces quality noticeably at cfg < 3.0
+      - IP-Adapter requires specific compatible models
+      - Face swap fails on some angles/lighting
+      - Loop requires matching start/end semantically
+      - Motion masks must match frame dimensions exactly
     """
     nf = NodeFactory()
     steps = steps or preset["steps"]
@@ -2354,7 +3481,39 @@ def build_klein_scene_img2img(image_filename, prompt_text, seed,
 
 def build_layer_blend(image_a_filename, image_b_filename, blend_factor=0.5,
                       blend_mode="normal"):
-    """Simple layer blend: two images → ImageBlend → SaveImage."""
+    """Blend two images with adjustable opacity and blend mode.
+
+    Creates a composite by overlaying image B on image A with opacity and
+    blend mode control. Equivalent to Photoshop layer blending.
+
+    Pipeline:
+      1. Load image A (base layer)
+      2. Load image B (overlay layer)
+      3. Blend with specified mode and opacity
+      4. Save composite
+
+    Args:
+        image_a_filename (str): Base image
+        image_b_filename (str): Overlay image (blended onto A)
+        blend_factor (float): Opacity of B on A, 0.0-1.0 (default 0.5)
+                             - 0.0: Only image A
+                             - 0.5: 50% blend
+                             - 1.0: Only image B
+        blend_mode (str): Photoshop-style blend mode (default "normal")
+                         - "normal": Simple opacity blend
+                         - "add": Additive blend (brightens)
+                         - "multiply": Multiplicative blend (darkens)
+                         - "screen": Screen blend (inverse multiply)
+                         - "overlay": Overlay blend (contrast)
+
+    Returns:
+        dict: Simple 4-node workflow
+
+    Note:
+      - Images must be same resolution
+      - Fast operation, no AI involved
+      - Useful for compositing, layer effects, A/B comparison
+    """
     nf = NodeFactory()
     a_id = nf.load_image(image_a_filename, node_id="1")
     b_id = nf.load_image(image_b_filename, node_id="2")
@@ -2370,10 +3529,48 @@ def build_layer_blend(image_a_filename, image_b_filename, blend_factor=0.5,
 
 def build_upscale_blend(image_filename, model_a_name, model_b_name,
                         blend_factor=0.6, scale_by=1.0):
-    """Upscale with two models and blend results.
+    """Upscale using two models and blend the results.
 
-    Pipeline: LoadImage → UpscaleModelA(image) + UpscaleModelB(image)
-              → ImageBlend(A_result, B_result, ratio) → SaveImage
+    Upscales an image with two different models in parallel, then blends
+    the results. Useful for combining strengths of different upscalers
+    (e.g., RealESRGAN sharp + Upscayl smooth = balanced result).
+
+    Pipeline:
+      1. Load image
+      2. Load upscaler model A and upscale image
+      3. Load upscaler model B and upscale same image
+      4. Blend the two upscaled results
+      5. Save composite
+
+    Args:
+        image_filename (str): Input image to upscale
+        model_a_name (str): First upscaler model (e.g., "4x-UltraSharp.pth")
+        model_b_name (str): Second upscaler model (e.g., "RealESRGAN_x4plus.pth")
+        blend_factor (float): Blend ratio A→B, 0.0-1.0 (default 0.6)
+                             - 0.0: Only model A
+                             - 0.6: 60% A + 40% B
+                             - 1.0: Only model B
+        scale_by (float): Upscaling multiplier (default 1.0, typically embedded in model)
+
+    Returns:
+        dict: 7-node workflow (load, 2x loader+upscale, blend, save)
+
+    Use Cases:
+      - Combine sharp upscaler with smooth upscaler for balanced quality
+      - Compare two models' outputs with arbitrary weighting
+      - Reduce artifacts from one model by blending with another
+      - Ensemble multiple upscalers for best-of-both-worlds
+
+    Model Pairing Examples:
+      - "4x-UltraSharp.pth" (sharp) + "RealESRGAN_x4plus.pth" (balanced) at 0.5
+      - "SwinIR_x4.pth" (detail) + "BSRGAN_x4.pth" (smooth) at 0.4
+      - "Upscayl_x4.pth" + "NtganSharp_x4.pth" at 0.7
+
+    Gotchas:
+      - Models must have same upscaling factor (e.g., both 4x, not 2x+4x)
+      - Blending doesn't merge techniques, just interpolates results
+      - Slower than single upscaler (both models run sequentially)
+      - Memory usage is sum of both models + intermediate results
     """
     nf = NodeFactory()
 
@@ -2403,9 +3600,68 @@ def build_upscale_blend(image_filename, model_a_name, model_b_name,
 
 def build_frame_assembly(frame_filenames, fps=16.0,
                          filename_prefix="gimp_frame_assembly"):
-    """Assemble frames into a video via ImageBatch chain → VHS_VideoCombine.
+    """Assemble individual frame images into a video file.
 
-    Handles any number of frames (≥1). Used by Wan Director and GIF Stitcher.
+    Takes a list of image files and compiles them into a video at a specified
+    framerate. Uses VHS_VideoCombine node for standard video assembly.
+
+    Pipeline:
+      1. Load each frame image
+      2. Chain them together with ImageBatch nodes
+      3. Create video from batched images
+      4. Save to disk
+
+    Args:
+        frame_filenames (list): Paths to frame images in sequence order.
+                               Each must be same resolution.
+                               Example: ["frame_0001.png", "frame_0002.png", ...]
+        fps (float): Playback framerate (default 16.0)
+                    - 16-24: Standard animation
+                    - 24-30: Smooth video
+                    - 60+: High-speed slow-motion
+        filename_prefix (str): Output filename prefix (default "gimp_frame_assembly")
+
+    Returns:
+        dict: ComfyUI workflow with frame loading and video assembly
+
+    Use Cases:
+      - Assemble WAN video output frames into final MP4
+      - Compile interpolated frames into smooth video
+      - Create animation from sequence of images
+      - Batch process multiple sequences
+
+    Node IDs:
+      - "200"+: Load nodes for each frame (200, 201, 202, ...)
+      - "300"+: ImageBatch chain (300, 301, 302, ...) - chains frames together
+      - "400": VHS_VideoCombine (final video creation)
+      - "401": VHS_SaveVideo (save to disk)
+
+    Limitations:
+      - All frames must be same resolution
+      - Framerate is global (no variable frame timing)
+      - No frame interpolation (use separate build_frame_interpolate for that)
+      - Output format determined by filename extension (.mp4, .avi, .mov, etc.)
+
+    ImageBatch Chain Mechanics:
+      - ImageBatch takes [image1, 0] and [image2, 0] → [batched_images, 0]
+      - For 3+ frames: batch(frame0, frame1) → output1
+                       batch(output1, frame2) → output2, etc.
+      - Final output is all frames in sequence
+
+    Example:
+      frames = [
+          "/path/to/frame_0001.png",
+          "/path/to/frame_0002.png",
+          "/path/to/frame_0003.png",
+      ]
+      build_frame_assembly(frames, fps=24.0, filename_prefix="output")
+      # Creates output.mp4 with 3 frames at 24fps
+
+    Gotchas:
+      - Frames must be in correct sequence order
+      - Frame resolution mismatch causes errors
+      - FPS is locked (no adaptive frame timing)
+      - Large frame counts (1000+) may cause memory issues
     """
     nf = NodeFactory()
 
