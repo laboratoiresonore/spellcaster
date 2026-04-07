@@ -211,6 +211,7 @@ import uuid
 import time
 import random
 import struct          # for pure-Python PNG writer (IHDR/IDAT chunk packing)
+import platform
 import zlib            # for PNG IDAT compression and CRC32 checksums
 
 import urllib.request
@@ -675,66 +676,8 @@ WORKFLOW_TIMEOUT = _load_config().get("workflow_timeout", 0)
 # ── Klein (Flux 2 distilled) model registry ─────────────────────────────
 # Used by all Klein-based workflows: img2img, repose, blend, headswap,
 # inpaint, outpaint, photobooth, body factory.
-KLEIN_MODELS = {
-    "Klein 9B":      {"unet": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
-                      "clip": "qwen_3_8b_fp8mixed.safetensors"},
-    "Klein 4B":      {"unet": "A-Flux\\flux-2-klein-4b-fp8.safetensors",
-                      "clip": "qwen_3_4b.safetensors"},
-    "Klein Base 4B": {"unet": "A-Flux\\flux-2-klein-base-4b-fp8.safetensors",
-                      "clip": "qwen_3_4b.safetensors"},
-}
-
-# ── Face-swap model fallback lists ────────────────────────────────────────
-# Used when the ComfyUI server is unreachable (UI populates combos from
-# _fetch_reactor_models at runtime, but these keep the dialog functional).
-FACE_SWAP_MODELS = [
-    "inswapper_128.onnx",
-    "inswapper_128_fp16.onnx",
-    "reswapper_256.onnx",
-    "hyperswap_256.onnx",
-]
-
-FACE_RESTORE_MODELS = [
-    "GFPGANv1.4.pth",
-    "codeformer-v0.1.0.pth",
-    "GPEN-BFR-2048.onnx",
-]
 
 # ── Face-swap quality presets ─────────────────────────────────────────────
-# Predefined swap+restore combos for the Studio quality combo boxes.
-# Keys match the IDs in the Gtk.ComboBoxText (set_active_id).
-# "double_pass" triggers a second ReActor pass for maximum likeness.
-FACESWAP_QUALITY_PRESETS = {
-    "Ultra (double-pass HyperSwap 256 + ReSwapper 256)": {
-        "pass1_model":   "hyperswap_256.onnx",
-        "pass1_restore": "GPEN-BFR-2048.onnx",
-        "pass1_vis":     1.0,
-        "pass1_cf":      0.7,
-        "double_pass":   True,
-        "pass2_model":   "reswapper_256.onnx",
-        "pass2_restore": "GPEN-BFR-2048.onnx",
-        "pass2_vis":     1.0,
-        "pass2_cf":      0.7,
-    },
-    "High (ReSwapper 256 + GPEN-2048)": {
-        "pass1_model":   "reswapper_256.onnx",
-        "pass1_restore": "GPEN-BFR-2048.onnx",
-        "pass1_vis":     1.0,
-        "pass1_cf":      0.7,
-    },
-    "Standard (InSwapper 128 + CodeFormer)": {
-        "pass1_model":   "inswapper_128.onnx",
-        "pass1_restore": "codeformer-v0.1.0.pth",
-        "pass1_vis":     1.0,
-        "pass1_cf":      0.5,
-    },
-    "Fast (InSwapper fp16 + GFPGAN)": {
-        "pass1_model":   "inswapper_128_fp16.onnx",
-        "pass1_restore": "GFPGANv1.4.pth",
-        "pass1_vis":     1.0,
-        "pass1_cf":      0.5,
-    },
-}
 
 # ── Realism Quality Boost System ─────────────────────────────────────────
 # Proven quality tokens from the photorealistic AI community (CivitAI,
@@ -5451,34 +5394,37 @@ def _build_style_transfer(target_filename, style_ref_filename, preset,
                            prompt_text, negative_text, seed,
                            ipadapter_preset="PLUS (high strength)",
                            weight=0.8, denoise=0.6,
-                           controlnet=None, controlnet_2=None):
+                           controlnet=None, controlnet_2=None, loras=None):
     """→ Delegated to v2 builder."""
     return build_style_transfer(target_filename, style_ref_filename, preset,
                                 prompt_text, negative_text, seed,
                                 ipadapter_preset=ipadapter_preset,
                                 weight=weight, denoise=denoise,
                                 controlnet=controlnet, controlnet_2=controlnet_2,
-                                guide_modes=CONTROLNET_GUIDE_MODES)
+                                guide_modes=CONTROLNET_GUIDE_MODES,
+                                loras=loras)
 
 def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text, negative_text,
                               seed, denoise, cfg, steps=None, scale_factor=2.0,
                               orig_width=512, orig_height=512,
-                              controlnet=None, controlnet_2=None):
+                              controlnet=None, controlnet_2=None, loras=None):
     """→ Delegated to v2 builder."""
     return build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text, negative_text,
                                     seed, denoise, cfg, steps=steps, scale_factor=scale_factor,
                                     orig_width=orig_width, orig_height=orig_height,
                                     controlnet=controlnet, controlnet_2=controlnet_2,
-                                    guide_modes=CONTROLNET_GUIDE_MODES)
+                                    guide_modes=CONTROLNET_GUIDE_MODES,
+                                    loras=loras)
 
 def _build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_text,
                     seed, denoise, cfg, steps, scale_factor, orig_width, orig_height,
-                    controlnet=None, controlnet_2=None):
+                    controlnet=None, controlnet_2=None, loras=None):
     """→ Delegated to v2 builder."""
     return build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_text,
                          seed, denoise, cfg, steps, scale_factor, orig_width, orig_height,
                          controlnet=controlnet, controlnet_2=controlnet_2,
-                         guide_modes=CONTROLNET_GUIDE_MODES)
+                         guide_modes=CONTROLNET_GUIDE_MODES,
+                         loras=loras)
 
 def _build_faceid_img2img(target_filename, face_ref_filename, preset_key,
                            prompt_text, negative_text, seed,
@@ -8939,6 +8885,14 @@ class PresetDialog(Gtk.Dialog):
         if self.denoise_spin:
             data["denoise"] = self.denoise_spin.get_value()
         data["runs"] = int(self._runs_spin.get_value())
+        # LoRA selections
+        loras_saved = []
+        for combo, ms, cs in self.lora_rows:
+            lid = combo.get_active_id()
+            if lid and lid != "none":
+                loras_saved.append({"id": lid, "ms": ms.get_value(), "cs": cs.get_value()})
+        if loras_saved:
+            data["loras"] = loras_saved
         # ControlNet
         if self._cn_mode_combo:
             data["cn_mode"] = self._cn_mode_combo.get_active_id()
@@ -8984,6 +8938,22 @@ class PresetDialog(Gtk.Dialog):
             self.sampler_entry.set_text(p["sampler"])
         if "scheduler" in p:
             self.scheduler_entry.set_text(p["scheduler"])
+        # LoRA selections
+        if "loras" in p and self.lora_rows:
+            saved_loras = p["loras"]
+            for slot_idx, (combo, ms, cs) in enumerate(self.lora_rows):
+                if slot_idx < len(saved_loras):
+                    lora_def = saved_loras[slot_idx]
+                    lora_id = lora_def.get("id")
+                    if lora_id:
+                        # Find the LoRA in the combo and set it
+                        for j in range(combo.get_model().iter_n_children(None)):
+                            model_iter = combo.get_model().iter_nth_child(None, j)
+                            if combo.get_model().get_value(model_iter, 0) == lora_id:
+                                combo.set_active_iter(model_iter)
+                                ms.set_value(lora_def.get("ms", 0.5))
+                                cs.set_value(lora_def.get("cs", 0.5))
+                                break
         # ControlNet
         if self._cn_mode_combo and "cn_mode" in p:
             self._cn_mode_combo.set_active_id(p["cn_mode"])
@@ -17574,6 +17544,27 @@ class Spellcaster(Gimp.PlugIn):
         st_cn_box.pack_start(st_cn_str_hb_2, False, False, 0)
         st_cn_exp.add(st_cn_box)
         bx.pack_start(st_cn_exp, False, False, 0)
+        # ── LoRA (collapsible) ──────────────────────────────────────────────────
+        lora_exp = Gtk.Expander(label="▸ LoRA")
+        _shrink_on_collapse(lora_exp, dlg)
+        lora_exp.set_expanded(False)
+        lora_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        lora_box.set_margin_start(4); lora_box.set_margin_top(4)
+        lora_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        lora_hb.pack_start(Gtk.Label(label="LoRA:"), False, False, 0)
+        lora_combo = Gtk.ComboBoxText()
+        lora_combo.append("none", "(none)")
+        lora_combo.set_active_id("none")
+        lora_hb.pack_start(lora_combo, True, True, 0)
+        lora_box.pack_start(lora_hb, False, False, 0)
+        lora_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        lora_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
+        lora_str_spin = Gtk.SpinButton.new_with_range(0.0, 2.0, 0.05)
+        lora_str_spin.set_digits(2); lora_str_spin.set_value(0.5)
+        lora_str_hb.pack_start(lora_str_spin, False, False, 0)
+        lora_box.pack_start(lora_str_hb, False, False, 0)
+        lora_exp.add(lora_box)
+        bx.pack_start(lora_exp, False, False, 0)
         # ── Advanced (collapsible) ───────────────────────────────────────
         st_adv_exp = Gtk.Expander(label="\u25b8 Advanced")
         _shrink_on_collapse(st_adv_exp, dlg)
@@ -17660,6 +17651,10 @@ class Spellcaster(Gimp.PlugIn):
                 st_cn_strength_2.set_value(last["cn2_str"])
             if "runs" in last:
                 runs_spin.set_value(last["runs"])
+            if "lora_id" in last and last["lora_id"]:
+                lora_combo.set_active_id(last["lora_id"])
+            if "lora_str" in last:
+                lora_str_spin.set_value(last["lora_str"])
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
@@ -17688,6 +17683,15 @@ class Spellcaster(Gimp.PlugIn):
         st_cn2_mode = st_cn_combo_2.get_active_id() if st_cn_combo_2 else "Off"
         st_cn2 = {"mode": st_cn2_mode, "strength": st_cn_strength_2.get_value(),
                    "start_percent": 0.0, "end_percent": 1.0} if st_cn2_mode != "Off" else None
+        # ── Collect LoRA ──────────────────────────────────────────────
+        _lora_id = lora_combo.get_active_id()
+        _lora_name = _lora_id if _lora_id and _lora_id != "none" else None
+        _lora_str = lora_str_spin.get_value()
+        loras = None
+        if _lora_name:
+            loras = [{"name": _lora_name,
+                       "strength_model": _lora_str,
+                       "strength_clip": _lora_str}]
         _SESSION["style_transfer"] = {
             "model_idx": idx, "ip_id": ipadapter_preset,
             "prompt": prompt, "negative": negative,
@@ -17695,6 +17699,7 @@ class Spellcaster(Gimp.PlugIn):
             "cn1_id": st_cn1_mode, "cn1_str": st_cn_strength.get_value(),
             "cn2_id": st_cn2_mode, "cn2_str": st_cn_strength_2.get_value(),
             "runs": runs,
+            "lora_id": _lora_id or "", "lora_str": _lora_str,
         }
         _save_session()
         dlg.destroy()
@@ -17718,6 +17723,7 @@ class Spellcaster(Gimp.PlugIn):
                     ipadapter_preset=ipadapter_preset,
                     weight=weight, denoise=denoise,
                     controlnet=st_cn1, controlnet_2=st_cn2,
+                    loras=loras,
                 )
                 label = f"Style Transfer run {run_i+1}/{runs}" if runs > 1 else "Style Transfer"
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
@@ -17810,6 +17816,7 @@ class Spellcaster(Gimp.PlugIn):
         _fr_top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         _fr_top.pack_end(_fr_auto_btn, False, False, 0)
         bx.pack_start(_fr_top, False, False, 0)
+        # ── LoRA (collapsible) ──────────────────────────────────────────────────
         bx.show_all()
         last = _SESSION.get("face_restore")
         if last:
@@ -18167,6 +18174,27 @@ class Spellcaster(Gimp.PlugIn):
         hall_cn_exp.add(hall_cn_box)
         bx.pack_start(hall_cn_exp, False, False, 0)
         # ── Advanced (collapsible) ───────────────────────────────────────
+        # ── LoRA (collapsible) ──────────────────────────────────────────────────
+        lora_exp = Gtk.Expander(label="▸ LoRA")
+        _shrink_on_collapse(lora_exp, dlg)
+        lora_exp.set_expanded(False)
+        lora_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        lora_box.set_margin_start(4); lora_box.set_margin_top(4)
+        lora_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        lora_hb.pack_start(Gtk.Label(label="LoRA:"), False, False, 0)
+        lora_combo = Gtk.ComboBoxText()
+        lora_combo.append("none", "(none)")
+        lora_combo.set_active_id("none")
+        lora_hb.pack_start(lora_combo, True, True, 0)
+        lora_box.pack_start(lora_hb, False, False, 0)
+        lora_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        lora_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
+        lora_str_spin = Gtk.SpinButton.new_with_range(0.0, 2.0, 0.05)
+        lora_str_spin.set_digits(2); lora_str_spin.set_value(0.5)
+        lora_str_hb.pack_start(lora_str_spin, False, False, 0)
+        lora_box.pack_start(lora_str_hb, False, False, 0)
+        lora_exp.add(lora_box)
+        bx.pack_start(lora_exp, False, False, 0)
         hall_adv_exp = Gtk.Expander(label="\u25b8 Advanced")
         _shrink_on_collapse(hall_adv_exp, dlg)
         hall_adv_exp.set_expanded(False)
@@ -18226,6 +18254,10 @@ class Spellcaster(Gimp.PlugIn):
                 neg_tv.get_buffer().set_text(last["negative"])
             if "runs" in last:
                 runs_spin.set_value(last["runs"])
+            if "lora_id" in last and last["lora_id"]:
+                lora_combo.set_active_id(last["lora_id"])
+            if "lora_str" in last:
+                lora_str_spin.set_value(last["lora_str"])
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
@@ -18252,10 +18284,20 @@ class Spellcaster(Gimp.PlugIn):
         cn2 = {"mode": cn2_mode, "strength": cn_strength_2.get_value(),
                 "start_percent": 0.0, "end_percent": 1.0} if cn2_mode != "Off" else None
         upscale_factor = up_factor_sp.get_value()
+        # ── Collect LoRA ──────────────────────────────────────────────
+        _lora_id = lora_combo.get_active_id()
+        _lora_name = _lora_id if _lora_id and _lora_id != "none" else None
+        _lora_str = lora_str_spin.get_value()
+        loras = None
+        if _lora_name:
+            loras = [{"name": _lora_name,
+                       "strength_model": _lora_str,
+                       "strength_clip": _lora_str}]
         _SESSION["detail_hallucinate"] = {
             "detail_id": detail_key, "up_id": up_key, "model_idx": idx,
             "prompt": prompt, "negative": negative,
             "runs": runs, "scale": upscale_factor,
+            "lora_id": _lora_id or "", "lora_str": _lora_str,
         }
         _save_session()
         dlg.destroy()
@@ -18270,7 +18312,8 @@ class Spellcaster(Gimp.PlugIn):
                                                 seed, h_preset["denoise"], h_preset["cfg"],
                                                 steps=h_preset.get("steps"),
                                                 upscale_factor=upscale_factor,
-                                                controlnet=cn1, controlnet_2=cn2)
+                                                controlnet=cn1, controlnet_2=cn2,
+                                                loras=loras)
                 label = f"Detail Hallucinate run {run_i+1}/{runs}" if runs > 1 else "Detail Hallucinate"
                 _wf = wf
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
@@ -18423,6 +18466,27 @@ class Spellcaster(Gimp.PlugIn):
         sv2r_cn_box.pack_start(sv2r_cn_str_hb_2, False, False, 0)
         sv2r_cn_exp.add(sv2r_cn_box)
         bx.pack_start(sv2r_cn_exp, False, False, 0)
+        # ── LoRA (collapsible) ──────────────────────────────────────────────────
+        lora_exp = Gtk.Expander(label="▸ LoRA")
+        _shrink_on_collapse(lora_exp, dlg)
+        lora_exp.set_expanded(False)
+        lora_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        lora_box.set_margin_start(4); lora_box.set_margin_top(4)
+        lora_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        lora_hb.pack_start(Gtk.Label(label="LoRA:"), False, False, 0)
+        lora_combo = Gtk.ComboBoxText()
+        lora_combo.append("none", "(none)")
+        lora_combo.set_active_id("none")
+        lora_hb.pack_start(lora_combo, True, True, 0)
+        lora_box.pack_start(lora_hb, False, False, 0)
+        lora_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        lora_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
+        lora_str_spin = Gtk.SpinButton.new_with_range(0.0, 2.0, 0.05)
+        lora_str_spin.set_digits(2); lora_str_spin.set_value(0.5)
+        lora_str_hb.pack_start(lora_str_spin, False, False, 0)
+        lora_box.pack_start(lora_str_hb, False, False, 0)
+        lora_exp.add(lora_box)
+        bx.pack_start(lora_exp, False, False, 0)
         # ── Advanced (collapsible) ───────────────────────────────────────
         sv2r_adv_exp = Gtk.Expander(label="\u25b8 Advanced")
         _shrink_on_collapse(sv2r_adv_exp, dlg)
@@ -18504,6 +18568,10 @@ class Spellcaster(Gimp.PlugIn):
                 sv2r_cn_strength_2.set_value(last["cn2_str"])
             if "runs" in last:
                 runs_spin.set_value(last["runs"])
+            if "lora_id" in last and last["lora_id"]:
+                lora_combo.set_active_id(last["lora_id"])
+            if "lora_str" in last:
+                lora_str_spin.set_value(last["lora_str"])
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
@@ -18531,12 +18599,22 @@ class Spellcaster(Gimp.PlugIn):
         sv2r_cn2_mode = sv2r_cn_combo_2.get_active_id() if sv2r_cn_combo_2 else "Off"
         sv2r_cn2 = {"mode": sv2r_cn2_mode, "strength": sv2r_cn_strength_2.get_value(),
                      "start_percent": 0.0, "end_percent": 1.0} if sv2r_cn2_mode != "Off" else None
+        # ── Collect LoRA ──────────────────────────────────────────────
+        _lora_id = lora_combo.get_active_id()
+        _lora_name = _lora_id if _lora_id and _lora_id != "none" else None
+        _lora_str = lora_str_spin.get_value()
+        loras = None
+        if _lora_name:
+            loras = [{"name": _lora_name,
+                       "strength_model": _lora_str,
+                       "strength_clip": _lora_str}]
         _SESSION["seedv2r"] = {
             "model_idx": idx, "up_id": up_key, "scale_idx": scale_idx,
             "hall_idx": hall_idx, "prompt": prompt, "negative": negative,
             "cn1_id": sv2r_cn1_mode, "cn1_str": sv2r_cn_strength.get_value(),
             "cn2_id": sv2r_cn2_mode, "cn2_str": sv2r_cn_strength_2.get_value(),
             "runs": runs,
+            "lora_id": _lora_id or "", "lora_str": _lora_str,
         }
         _save_session()
         dlg.destroy()
@@ -18552,7 +18630,8 @@ class Spellcaster(Gimp.PlugIn):
                 wf = _build_seedv2r(uname, upscale_model, preset, prompt, negative,
                                      seed, hall_preset["denoise"], hall_preset["cfg"],
                                      hall_preset["steps"], scale_factor, orig_w, orig_h,
-                                     controlnet=sv2r_cn1, controlnet_2=sv2r_cn2)
+                                     controlnet=sv2r_cn1, controlnet_2=sv2r_cn2,
+                                     loras=loras)
                 label = f"SeedV2R run {run_i+1}/{runs}" if runs > 1 else "SeedV2R"
                 _wf = wf
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
@@ -18675,6 +18754,27 @@ class Spellcaster(Gimp.PlugIn):
         col_cn_box.pack_start(col_cn2_str_hb, False, False, 0)
         col_cn_exp.add(col_cn_box)
         bx.pack_start(col_cn_exp, False, False, 0)
+        # ── LoRA (collapsible) ──────────────────────────────────────────────────
+        lora_exp = Gtk.Expander(label="▸ LoRA")
+        _shrink_on_collapse(lora_exp, dlg)
+        lora_exp.set_expanded(False)
+        lora_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        lora_box.set_margin_start(4); lora_box.set_margin_top(4)
+        lora_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        lora_hb.pack_start(Gtk.Label(label="LoRA:"), False, False, 0)
+        lora_combo = Gtk.ComboBoxText()
+        lora_combo.append("none", "(none)")
+        lora_combo.set_active_id("none")
+        lora_hb.pack_start(lora_combo, True, True, 0)
+        lora_box.pack_start(lora_hb, False, False, 0)
+        lora_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        lora_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
+        lora_str_spin = Gtk.SpinButton.new_with_range(0.0, 2.0, 0.05)
+        lora_str_spin.set_digits(2); lora_str_spin.set_value(0.5)
+        lora_str_hb.pack_start(lora_str_spin, False, False, 0)
+        lora_box.pack_start(lora_str_hb, False, False, 0)
+        lora_exp.add(lora_box)
+        bx.pack_start(lora_exp, False, False, 0)
         # ── Advanced (collapsible) ───────────────────────────────────────
         col_adv_exp = Gtk.Expander(label="\u25b8 Advanced")
         _shrink_on_collapse(col_adv_exp, dlg)
@@ -18746,6 +18846,10 @@ class Spellcaster(Gimp.PlugIn):
                 col_cn2_strength.set_value(last["cn2_str"])
             if "runs" in last:
                 runs_spin.set_value(last["runs"])
+            if "lora_id" in last and last["lora_id"]:
+                lora_combo.set_active_id(last["lora_id"])
+            if "lora_str" in last:
+                lora_str_spin.set_value(last["lora_str"])
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
@@ -18769,11 +18873,21 @@ class Spellcaster(Gimp.PlugIn):
         # Color preset params (read BEFORE dlg.destroy)
         _cp_key = color_preset_combo.get_active_id() if color_preset_combo else None
         _cp = COLORIZE_PRESETS.get(_cp_key, {}) if _cp_key else {}
+        # ── Collect LoRA ──────────────────────────────────────────────
+        _lora_id = lora_combo.get_active_id()
+        _lora_name = _lora_id if _lora_id and _lora_id != "none" else None
+        _lora_str = lora_str_spin.get_value()
+        loras = None
+        if _lora_name:
+            loras = [{"name": _lora_name,
+                       "strength_model": _lora_str,
+                       "strength_clip": _lora_str}]
         _SESSION["colorize"] = {
             "model_idx": idx, "cn_strength": cn_strength, "denoise": denoise,
             "prompt": prompt, "negative": negative,
             "cn2_id": col_cn2_mode, "cn2_str": col_cn2_strength.get_value(),
             "runs": runs,
+            "lora_id": _lora_id or "", "lora_str": _lora_str,
         }
         _save_session()
         dlg.destroy()
@@ -18788,7 +18902,8 @@ class Spellcaster(Gimp.PlugIn):
                                       cn_strength, denoise,
                                       steps=_cp.get("steps"),
                                       cfg=_cp.get("cfg"),
-                                      controlnet_2=col_cn2)
+                                      controlnet_2=col_cn2,
+                                      loras=loras)
                 label = f"Colorize run {run_i+1}/{runs}" if runs > 1 else "Colorize"
                 _wf = wf
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
@@ -18961,6 +19076,27 @@ class Spellcaster(Gimp.PlugIn):
         _icl_top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         _icl_top.pack_end(_icl_auto_btn, False, False, 0)
         bx.pack_start(_icl_top, False, False, 0)
+        # ── LoRA (collapsible) ──────────────────────────────────────────────────
+        lora_exp = Gtk.Expander(label="▸ LoRA")
+        _shrink_on_collapse(lora_exp, dlg)
+        lora_exp.set_expanded(False)
+        lora_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        lora_box.set_margin_start(4); lora_box.set_margin_top(4)
+        lora_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        lora_hb.pack_start(Gtk.Label(label="LoRA:"), False, False, 0)
+        lora_combo = Gtk.ComboBoxText()
+        lora_combo.append("none", "(none)")
+        lora_combo.set_active_id("none")
+        lora_hb.pack_start(lora_combo, True, True, 0)
+        lora_box.pack_start(lora_hb, False, False, 0)
+        lora_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        lora_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
+        lora_str_spin = Gtk.SpinButton.new_with_range(0.0, 2.0, 0.05)
+        lora_str_spin.set_digits(2); lora_str_spin.set_value(0.5)
+        lora_str_hb.pack_start(lora_str_spin, False, False, 0)
+        lora_box.pack_start(lora_str_hb, False, False, 0)
+        lora_exp.add(lora_box)
+        bx.pack_start(lora_exp, False, False, 0)
         bx.show_all()
         last = _SESSION.get("iclight")
         if last:
@@ -18976,6 +19112,10 @@ class Spellcaster(Gimp.PlugIn):
                 prompt_tv.get_buffer().set_text(last["prompt"])
             if "runs" in last:
                 runs_spin.set_value(last["runs"])
+            if "lora_id" in last and last["lora_id"]:
+                lora_combo.set_active_id(last["lora_id"])
+            if "lora_str" in last:
+                lora_str_spin.set_value(last["lora_str"])
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
@@ -18990,11 +19130,21 @@ class Spellcaster(Gimp.PlugIn):
         runs = int(runs_spin.get_value())
         pbuf = prompt_tv.get_buffer()
         prompt = pbuf.get_text(pbuf.get_start_iter(), pbuf.get_end_iter(), False)
+        # ── Collect LoRA ──────────────────────────────────────────────
+        _lora_id = lora_combo.get_active_id()
+        _lora_name = _lora_id if _lora_id and _lora_id != "none" else None
+        _lora_str = lora_str_spin.get_value()
+        loras = None
+        if _lora_name:
+            loras = [{"name": _lora_name,
+                       "strength_model": _lora_str,
+                       "strength_clip": _lora_str}]
         _SESSION["iclight"] = {
             "model_id": model_combo.get_active_id(),
             "light_id": light_combo.get_active_id(),
             "multiplier": multiplier, "steps": steps, "prompt": prompt,
             "runs": runs,
+            "lora_id": _lora_id or "", "lora_str": _lora_str,
         }
         _save_session()
         dlg.destroy()
@@ -19006,7 +19156,7 @@ class Spellcaster(Gimp.PlugIn):
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = build_iclight(uname, ckpt_name, prompt, "", seed,
-                                     multiplier, steps)
+                                     multiplier, steps, loras=loras)
                 label = f"IC-Light run {run_i+1}/{runs}" if runs > 1 else "IC-Light"
                 _wf = wf
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
@@ -19436,6 +19586,7 @@ class Spellcaster(Gimp.PlugIn):
                 steps_spin.set_value(tp["steps"])
         task_combo.connect("changed", _on_task_changed)
         _on_task_changed(task_combo)  # fill from initial selection
+        # ── LoRA (collapsible) ──────────────────────────────────────────────────
         bx.show_all()
         last = _SESSION.get("supir")
         if last:
