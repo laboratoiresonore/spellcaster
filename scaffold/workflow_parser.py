@@ -332,15 +332,23 @@ class ParsedWorkflow:
 
 _WORKFLOW_SIGNATURES = [
     # (label, required_any, required_all)
+    # ── Video generation (order matters: most-specific first) ──
+    ("LTX2 Image-to-Video", {"ltxvimgtovideo"}, set()),
+    ("LTX2 Text-to-Video", {"ltxvbasesampler", "ltxvapplystg", "ltxvscheduler"}, set()),
     ("Text-to-Video", {"wan", "cogvideo", "animatediff", "txt2vid"}, set()),
     ("Image-to-Video", {"img2vid", "i2v", "clipvisionencode"}, {"video"}),
     ("Video-to-Video", {"vid2vid", "loadvideo", "getvideo"}, {"savevideo", "createvideo", "vhs_videocombine"}),
+    # ── Video upscale ──
+    ("Video Upscale (SeedVR2)", {"seedvr2videoupscaler"}, set()),
+    ("Video Upscale (RTX)", {"rtxvideosuperresolution"}, {"vhs_videocombine"}),
+    # ── Image tasks ──
     ("Face Swap", {"reactorfaceswap", "faceswap", "insightface"}, set()),
     ("Inpainting", {"inpaint", "setlatentnoisemask", "vaeencodeinpaint"}, set()),
     ("Upscale", {"imageupscalewithmodel", "upscale", "ultimatesdupscale"}, set()),
     ("ControlNet", {"controlnetapply", "controlnetloader", "controlnetapplyadvanced"}, set()),
     ("Image-to-Image", {"loadimage", "vaeencode"}, {"ksampler", "ksampleradvanced", "samplercustomadvanced"}),
     ("Text-to-Image", {"emptylatentimage", "emptysd3latentimage", "emptyflux2latentimage"}, set()),
+    # ── Other ──
     ("Audio/Music", {"audio", "music", "song", "tts"}, set()),
     ("Captioning", {"joycaption", "wd14tagger", "florence2", "qwenvl"}, set()),
     ("Style Transfer", {"styletransfer", "ipadapter", "applystyle"}, set()),
@@ -955,8 +963,11 @@ def discover_workflows(search_dirs: Optional[List[Union[str, Path]]] = None,
 
 
 def _default_search_dirs() -> List[Path]:
-    """Find ComfyUI's user workflow directories."""
+    """Find ComfyUI's user workflow directories and bundled scaffold workflows."""
     candidates = [
+        # Bundled workflow templates shipped with Spellcaster scaffold
+        Path(__file__).resolve().parent / "workflows",
+        # ComfyUI user workflow directories
         Path(__file__).resolve().parent.parent.parent / "ComfyUI" / "user" / "default" / "workflows",
         Path.home() / "ComfyUI" / "user" / "default" / "workflows",
     ]

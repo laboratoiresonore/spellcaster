@@ -47,6 +47,7 @@ HIGH_PRIORITY_PATTERNS = {
     "ckpt_name", "unet_name", "model_name",          # models
     "lora_name",                                     # LoRAs
     "image", "video",                                # media inputs
+    "num_frames", "frame_rate",                      # video timing
 }
 
 # Inputs that are adjustable but usually fine at defaults
@@ -55,6 +56,10 @@ MEDIUM_PRIORITY_PATTERNS = {
     "steps", "cfg", "denoise",                       # sampler
     "sampler_name", "scheduler",                     # sampler choice
     "strength", "weight", "scale",                   # intensities
+    "stg", "rescale",                                # LTX2 STG guidance
+    "scale_factor",                                  # video upscale
+    "resolution", "max_resolution",                  # SeedVR2 upscale
+    "multiplier",                                    # RIFE interpolation
 }
 
 # Inputs that are rarely changed (internal wiring, filenames, etc.)
@@ -62,6 +67,10 @@ LOW_PRIORITY_PATTERNS = {
     "filename_prefix", "save_",                      # output names
     "device", "dtype",                               # hardware
     "overwrite", "preview",                          # flags
+    "spatial_tiles", "spatial_overlap",              # tiled VAE internals
+    "temporal_tile_length", "temporal_overlap",      # tiled VAE internals
+    "dim_threshold", "chunks",                       # VRAM chunking
+    "block_indices",                                 # STG block selection
 }
 
 

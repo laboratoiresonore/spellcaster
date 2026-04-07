@@ -75,10 +75,17 @@ INTENTS = [
     },
     {
         "key": "video",
-        "label": "Video generation or upscaling",
-        "description": "Animate from image, upscale video, face swap video",
+        "label": "Generate video (LTX2, WAN, animate from image)",
+        "description": "Text-to-video, image-to-video, LTX 2.3, WAN 2.2, distilled fast mode",
         "route": "workflow",
         "workflow_hint": "video",
+    },
+    {
+        "key": "video_upscale",
+        "label": "Upscale or enhance video",
+        "description": "SeedVR2 AI upscale, RTX super resolution, RIFE frame interpolation",
+        "route": "workflow",
+        "workflow_hint": "upscale",
     },
     {
         "key": "workflow",

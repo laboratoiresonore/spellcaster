@@ -1,0 +1,73 @@
+{
+  "_meta": {
+    "title": "SeedVR2 — AI Video Upscale",
+    "description": "AI-powered video upscaling with SeedVR2. Maintains temporal consistency across frames with color correction and tiled VAE processing.",
+    "author": "Spellcaster",
+    "version": "1.0",
+    "category": "Video Upscale"
+  },
+  "1": {
+    "class_type": "VHS_LoadVideo",
+    "inputs": {
+      "video": "input_video.mp4",
+      "force_rate": 0,
+      "force_size": "Disabled",
+      "custom_width": 0,
+      "custom_height": 0,
+      "frame_load_cap": 0,
+      "skip_first_frames": 0,
+      "select_every_nth": 1
+    }
+  },
+  "2": {
+    "class_type": "SeedVR2LoadVAEModel",
+    "inputs": {
+      "model": "seedvr2_vae.safetensors",
+      "device": "cuda",
+      "encode_tiled": true,
+      "encode_tile_size": 256,
+      "encode_tile_overlap": 64,
+      "decode_tiled": true,
+      "decode_tile_size": 256,
+      "decode_tile_overlap": 64,
+      "tile_debug": false,
+      "offload_device": "cpu",
+      "cache_model": true,
+      "torch_compile_args": ""
+    }
+  },
+  "3": {
+    "class_type": "SeedVR2VideoUpscaler",
+    "inputs": {
+      "image": ["1", 0],
+      "dit": ["1", 0],
+      "vae": ["2", 0],
+      "seed": 42,
+      "resolution": 1024,
+      "max_resolution": 2048,
+      "batch_size": 4,
+      "uniform_batch_size": true,
+      "color_correction": true,
+      "temporal_overlap": 2,
+      "prepend_frames": 0,
+      "input_noise_scale": 0.0,
+      "latent_noise_scale": 0.0,
+      "offload_device": "cpu",
+      "enable_debug": false
+    }
+  },
+  "10": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": ["3", 0],
+      "frame_rate": 16,
+      "loop_count": 0,
+      "filename_prefix": "seedvr2_upscale",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 17,
+      "pingpong": false,
+      "save_output": true
+    }
+  }
+}

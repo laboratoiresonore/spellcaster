@@ -256,6 +256,147 @@ PRESETS: Dict[str, Dict[str, Dict[str, Any]]] = {
             "mode": "manual",
         },
     },
+
+    # ══════════════════════════════════════════════════════════════════
+    #  LTX 2.3 Video presets
+    # ══════════════════════════════════════════════════════════════════
+
+    # -- STGGuider presets (LTX2 guidance tuning) --
+    "STGGuider": {
+        "Standard quality": {
+            "cfg": 4.0,
+            "stg": 1.0,
+            "rescale": 0.7,
+        },
+        "High coherence": {
+            "cfg": 5.5,
+            "stg": 1.2,
+            "rescale": 0.8,
+        },
+        "Creative / loose": {
+            "cfg": 2.5,
+            "stg": 0.6,
+            "rescale": 0.5,
+        },
+        "Distilled (fast mode)": {
+            "cfg": 1.0,
+            "stg": 0.0,
+            "rescale": 0.0,
+        },
+        "Prompt-heavy": {
+            "cfg": 7.0,
+            "stg": 0.8,
+            "rescale": 0.7,
+        },
+    },
+
+    # -- LTXVScheduler presets --
+    "LTXVScheduler": {
+        "Standard (30 steps)": {
+            "steps": 30,
+            "max_shift": 2.05,
+            "base_shift": 0.95,
+            "stretch": True,
+            "terminal": 0.1,
+        },
+        "Quality (50 steps)": {
+            "steps": 50,
+            "max_shift": 2.05,
+            "base_shift": 0.95,
+            "stretch": True,
+            "terminal": 0.1,
+        },
+        "Fast (15 steps)": {
+            "steps": 15,
+            "max_shift": 2.05,
+            "base_shift": 0.95,
+            "stretch": True,
+            "terminal": 0.1,
+        },
+        "Distilled (8 steps)": {
+            "steps": 8,
+            "max_shift": 2.05,
+            "base_shift": 0.95,
+            "stretch": True,
+            "terminal": 0.1,
+        },
+        "Two-stage re-denoise": {
+            "steps": 10,
+            "max_shift": 2.05,
+            "base_shift": 0.95,
+            "stretch": True,
+            "terminal": 0.1,
+        },
+    },
+
+    # -- LTXVBaseSampler presets (resolution + frame count) --
+    "LTXVBaseSampler": {
+        "Standard (768x512, 1 sec)": {
+            "width": 768,
+            "height": 512,
+            "num_frames": 25,
+        },
+        "Wide (960x512, 1 sec)": {
+            "width": 960,
+            "height": 512,
+            "num_frames": 25,
+        },
+        "Portrait (512x768, 1 sec)": {
+            "width": 512,
+            "height": 768,
+            "num_frames": 25,
+        },
+        "Extended (768x512, 2 sec)": {
+            "width": 768,
+            "height": 512,
+            "num_frames": 49,
+        },
+        "Long (768x512, 3 sec)": {
+            "width": 768,
+            "height": 512,
+            "num_frames": 73,
+        },
+        "Half-res for 2-stage (384x256, 1 sec)": {
+            "width": 384,
+            "height": 256,
+            "num_frames": 25,
+        },
+    },
+
+    # -- SeedVR2VideoUpscaler presets --
+    "SeedVR2VideoUpscaler": {
+        "Standard upscale": {
+            "resolution": 1024,
+            "max_resolution": 2048,
+            "batch_size": 4,
+            "color_correction": True,
+            "temporal_overlap": 2,
+        },
+        "High quality": {
+            "resolution": 2048,
+            "max_resolution": 4096,
+            "batch_size": 2,
+            "color_correction": True,
+            "temporal_overlap": 4,
+        },
+        "Fast preview": {
+            "resolution": 720,
+            "max_resolution": 1080,
+            "batch_size": 8,
+            "color_correction": True,
+            "temporal_overlap": 1,
+        },
+    },
+
+    # -- RTXVideoSuperResolution presets --
+    "RTXVideoSuperResolution": {
+        "2x upscale": {
+            "scale_factor": 2,
+        },
+        "4x upscale": {
+            "scale_factor": 4,
+        },
+    },
 }
 
 
