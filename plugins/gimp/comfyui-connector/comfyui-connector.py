@@ -499,6 +499,18 @@ COMFYUI_DEFAULT_URL = _load_config().get("server_url", "http://127.0.0.1:8188")
 # should never be interrupted by an arbitrary timeout.
 WORKFLOW_TIMEOUT = _load_config().get("workflow_timeout", 0)
 
+# ── Klein (Flux 2 distilled) model registry ─────────────────────────────
+# Used by all Klein-based workflows: img2img, repose, blend, headswap,
+# inpaint, outpaint, photobooth, body factory.
+KLEIN_MODELS = {
+    "Klein 9B":      {"unet": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
+                      "clip": "qwen_3_8b_fp8mixed.safetensors"},
+    "Klein 4B":      {"unet": "A-Flux\\flux-2-klein-4b-fp8.safetensors",
+                      "clip": "qwen_3_4b.safetensors"},
+    "Klein Base 4B": {"unet": "A-Flux\\flux-2-klein-base-4b-fp8.safetensors",
+                      "clip": "qwen_3_4b.safetensors"},
+}
+
 # ── Realism Quality Boost System ─────────────────────────────────────────
 # Proven quality tokens from the photorealistic AI community (CivitAI,
 # Reddit r/StableDiffusion, r/ComfyUIResources). Append/prepend to user
