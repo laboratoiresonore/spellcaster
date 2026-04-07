@@ -620,6 +620,10 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
             },
         }
 
+    # Convert single lora_name/lora_strength to loras list format
+    if lora_name and not loras:
+        loras = [{"name": lora_name, "strength": lora_strength}]
+
     km = klein_models[klein_model_key]
     nf = NodeFactory()
 
@@ -2107,8 +2111,11 @@ def build_pulid_flux(target_filename, face_ref_filename,
 
 def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
                              prompt_text, seed, steps=4, denoise=0.65,
-                             guidance=1.0, loras=None, klein_models=None):
-    """Klein img2img with separate reference image. Drop-in for _build_klein_img2img_ref().
+                             guidance=1.0, enhancer_mag=1.0, enhancer_contrast=0.0,
+                             ref_strength=1.0, text_ref_balance=0.5,
+                             loras=None, lora_name=None, lora_strength=1.0,
+                             klein_models=None):
+    """Klein img2img with separate reference image.
 
     Same pipeline as build_klein_img2img but uses the reference image
     as the ReferenceLatent source instead of the main input image.
@@ -2122,6 +2129,10 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
             "Klein Base 4B": {"unet": "A-Flux\\flux-2-klein-base-4b-fp8.safetensors",
                               "clip": "qwen_3_4b.safetensors"},
         }
+
+    # Convert single lora_name/lora_strength to loras list format
+    if lora_name and not loras:
+        loras = [{"name": lora_name, "strength": lora_strength}]
 
     km = klein_models[klein_model_key]
     nf = NodeFactory()
