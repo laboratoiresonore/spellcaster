@@ -12122,11 +12122,46 @@ class Spellcaster(Gimp.PlugIn):
         grid.attach(cf_sp, 3, 2, 1, 1)
         bx.pack_start(grid, False, False, 4)
 
+        # ── User Presets (save/load) ──────────────────────────────────
+        bx.pack_start(Gtk.Separator(), False, False, 4)
+        def _collect_user_preset():
+            pbuf = prompt_tv.get_buffer()
+            return {
+                "klein_model": klein_combo.get_active_id() or "Klein 9B",
+                "face_path": face_entry.get_text().strip(),
+                "face_model": fm_combo.get_active_id() or "(none)",
+                "prompt": pbuf.get_text(pbuf.get_start_iter(), pbuf.get_end_iter(), False),
+                "denoise": denoise_sp.get_value(),
+                "steps": int(steps_sp.get_value()),
+                "seed": int(seed_sp.get_value()),
+                "runs": int(runs_sp.get_value()),
+                "restore_vis": vis_sp.get_value(),
+                "cf_weight": cf_sp.get_value(),
+            }
+        def _apply_user_preset(p):
+            if "klein_model" in p: klein_combo.set_active_id(p["klein_model"])
+            if "face_path" in p: face_entry.set_text(p["face_path"])
+            if "face_model" in p and p["face_model"] != "(none)":
+                fm_combo.set_active_id(p["face_model"])
+            if "prompt" in p: prompt_tv.get_buffer().set_text(p["prompt"])
+            if "denoise" in p: denoise_sp.set_value(p["denoise"])
+            if "steps" in p: steps_sp.set_value(p["steps"])
+            if "seed" in p: seed_sp.set_value(p["seed"])
+            if "runs" in p: runs_sp.set_value(p["runs"])
+            if "restore_vis" in p: vis_sp.set_value(p["restore_vis"])
+            if "cf_weight" in p: cf_sp.set_value(p["cf_weight"])
+        dlg._collect_user_preset = _collect_user_preset
+        dlg._apply_user_preset = _apply_user_preset
+        _add_preset_ui(dlg, bx, "klein_headswap")
+        _last = _SESSION.get("klein_headswap")
+        if _last: _apply_user_preset(_last)
+
         bx.show_all()
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
 
+        _SESSION["klein_headswap"] = _collect_user_preset(); _save_session()
         srv = srv_e.get_text().strip(); _propagate_server_url(srv)
         klein_key = klein_combo.get_active_id() or "Klein 9B"
         face_path = face_entry.get_text().strip()
@@ -12386,10 +12421,46 @@ class Spellcaster(Gimp.PlugIn):
         hb_seed.pack_start(runs_sp, False, False, 0)
         bx.pack_start(hb_seed, False, False, 0)
 
+        # ── User Presets (save/load) ──────────────────────────────────
+        bx.pack_start(Gtk.Separator(), False, False, 4)
+        def _collect_user_preset():
+            pbuf = prompt_tv.get_buffer()
+            return {
+                "klein_model": klein_combo.get_active_id() or "Klein 9B",
+                "purpose": purpose_combo.get_active_id() or "(general extension)",
+                "prompt": pbuf.get_text(pbuf.get_start_iter(), pbuf.get_end_iter(), False),
+                "pad_left": int(left_sp.get_value()),
+                "pad_top": int(top_sp.get_value()),
+                "pad_right": int(right_sp.get_value()),
+                "pad_bottom": int(bottom_sp.get_value()),
+                "feathering": int(feather_sp.get_value()),
+                "steps": int(steps_sp.get_value()),
+                "seed": int(seed_sp.get_value()),
+                "runs": int(runs_sp.get_value()),
+            }
+        def _apply_user_preset(p):
+            if "klein_model" in p: klein_combo.set_active_id(p["klein_model"])
+            if "purpose" in p: purpose_combo.set_active_id(p["purpose"])
+            if "prompt" in p: prompt_tv.get_buffer().set_text(p["prompt"])
+            if "pad_left" in p: left_sp.set_value(p["pad_left"])
+            if "pad_top" in p: top_sp.set_value(p["pad_top"])
+            if "pad_right" in p: right_sp.set_value(p["pad_right"])
+            if "pad_bottom" in p: bottom_sp.set_value(p["pad_bottom"])
+            if "feathering" in p: feather_sp.set_value(p["feathering"])
+            if "steps" in p: steps_sp.set_value(p["steps"])
+            if "seed" in p: seed_sp.set_value(p["seed"])
+            if "runs" in p: runs_sp.set_value(p["runs"])
+        dlg._collect_user_preset = _collect_user_preset
+        dlg._apply_user_preset = _apply_user_preset
+        _add_preset_ui(dlg, bx, "klein_outpaint")
+        _last = _SESSION.get("klein_outpaint")
+        if _last: _apply_user_preset(_last)
+
         bx.show_all()
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        _SESSION["klein_outpaint"] = _collect_user_preset(); _save_session()
         srv = se.get_text().strip(); _propagate_server_url(srv)
         klein_key = klein_combo.get_active_id() or "Klein 9B"
         pbuf = prompt_tv.get_buffer()
@@ -12621,11 +12692,45 @@ class Spellcaster(Gimp.PlugIn):
         hb_seed.pack_start(runs_sp, False, False, 0)
         bx.pack_start(hb_seed, False, False, 0)
 
+        # ── User Presets (save/load) ──────────────────────────────────
+        bx.pack_start(Gtk.Separator(), False, False, 4)
+        def _collect_user_preset():
+            pbuf = prompt_tv.get_buffer()
+            return {
+                "klein_model": klein_combo.get_active_id() or "Klein 9B",
+                "mode": mode_combo.get_active_id() or "Natural Integration (harmonize lighting)",
+                "prompt": pbuf.get_text(pbuf.get_start_iter(), pbuf.get_end_iter(), False),
+                "opacity": opacity_sp.get_value(),
+                "scale": scale_sp.get_value(),
+                "pos_x": int(pos_x.get_value()),
+                "pos_y": int(pos_y.get_value()),
+                "blend_mode": blend_combo.get_active_id() or "normal",
+                "seed": int(seed_sp.get_value()),
+                "runs": int(runs_sp.get_value()),
+            }
+        def _apply_user_preset(p):
+            if "klein_model" in p: klein_combo.set_active_id(p["klein_model"])
+            if "mode" in p: mode_combo.set_active_id(p["mode"])
+            if "prompt" in p: prompt_tv.get_buffer().set_text(p["prompt"])
+            if "opacity" in p: opacity_sp.set_value(p["opacity"])
+            if "scale" in p: scale_sp.set_value(p["scale"])
+            if "pos_x" in p: pos_x.set_value(p["pos_x"])
+            if "pos_y" in p: pos_y.set_value(p["pos_y"])
+            if "blend_mode" in p: blend_combo.set_active_id(p["blend_mode"])
+            if "seed" in p: seed_sp.set_value(p["seed"])
+            if "runs" in p: runs_sp.set_value(p["runs"])
+        dlg._collect_user_preset = _collect_user_preset
+        dlg._apply_user_preset = _apply_user_preset
+        _add_preset_ui(dlg, bx, "klein_blend")
+        _last = _SESSION.get("klein_blend")
+        if _last: _apply_user_preset(_last)
+
         bx.show_all()
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
 
+        _SESSION["klein_blend"] = _collect_user_preset(); _save_session()
         srv = se.get_text().strip(); _propagate_server_url(srv)
         fg_idx = int(fg_combo.get_active_id() or "0")
         bg_idx = int(bg_combo.get_active_id() or "1")
@@ -12960,12 +13065,50 @@ class Spellcaster(Gimp.PlugIn):
             combo.connect("changed", _rebuild_prompt)
         _rebuild_prompt()  # initial fill
 
+        # ── User Presets (save/load) ──────────────────────────────────
+        bx.pack_start(Gtk.Separator(), False, False, 4)
+        def _collect_user_preset():
+            pbuf = prompt_tv.get_buffer()
+            return {
+                "klein_model": klein_combo.get_active_id() or "Klein 9B",
+                "character": char_combo.get_active_id() or "Single character",
+                "pose": pose_combo.get_active_id() or "Standing relaxed",
+                "position": pos_combo.get_active_id() or "Keep current position",
+                "camera": cam_combo.get_active_id() or "Keep current angle",
+                "interaction": multi_combo.get_active_id() or "(none)",
+                "style": style_combo.get_active_id() or "Keep original style",
+                "denoise": denoise_sp.get_value(),
+                "steps": int(steps_sp.get_value()),
+                "seed": int(seed_sp.get_value()),
+                "runs": int(runs_sp.get_value()),
+                "prompt": pbuf.get_text(pbuf.get_start_iter(), pbuf.get_end_iter(), False),
+            }
+        def _apply_user_preset(p):
+            if "klein_model" in p: klein_combo.set_active_id(p["klein_model"])
+            if "character" in p: char_combo.set_active_id(p["character"])
+            if "pose" in p: pose_combo.set_active_id(p["pose"])
+            if "position" in p: pos_combo.set_active_id(p["position"])
+            if "camera" in p: cam_combo.set_active_id(p["camera"])
+            if "interaction" in p: multi_combo.set_active_id(p["interaction"])
+            if "style" in p: style_combo.set_active_id(p["style"])
+            if "denoise" in p: denoise_sp.set_value(p["denoise"])
+            if "steps" in p: steps_sp.set_value(p["steps"])
+            if "seed" in p: seed_sp.set_value(p["seed"])
+            if "runs" in p: runs_sp.set_value(p["runs"])
+            if "prompt" in p: prompt_tv.get_buffer().set_text(p["prompt"])
+        dlg._collect_user_preset = _collect_user_preset
+        dlg._apply_user_preset = _apply_user_preset
+        _add_preset_ui(dlg, bx, "klein_repose")
+        _last = _SESSION.get("klein_repose")
+        if _last: _apply_user_preset(_last)
+
         bx.show_all()
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
 
         # Collect values
+        _SESSION["klein_repose"] = _collect_user_preset(); _save_session()
         srv = srv_e.get_text().strip(); _propagate_server_url(srv)
         klein_key = klein_combo.get_active_id() or "Klein 9B"
         pbuf = prompt_tv.get_buffer()
@@ -13277,12 +13420,46 @@ class Spellcaster(Gimp.PlugIn):
         task_combo.connect("changed", _on_task_changed)
         _on_task_changed()  # initial fill
 
+        # ── User Presets (save/load) ──────────────────────────────────
+        bx.pack_start(Gtk.Separator(), False, False, 4)
+        def _collect_user_preset():
+            pbuf = prompt_tv.get_buffer()
+            return {
+                "klein_model": klein_combo.get_active_id() or "Klein 9B",
+                "task": task_combo.get_active_id() or "Replace object (describe the replacement)",
+                "prompt": pbuf.get_text(pbuf.get_start_iter(), pbuf.get_end_iter(), False),
+                "denoise": denoise_sp.get_value(),
+                "steps": int(steps_sp.get_value()),
+                "seed": int(seed_sp.get_value()),
+                "runs": int(runs_sp.get_value()),
+                "mask_blur": int(blur_sp.get_value()),
+                "grow_px": int(grow_sp.get_value()),
+                "use_dd": dd_check.get_active(),
+            }
+        def _apply_user_preset(p):
+            if "klein_model" in p: klein_combo.set_active_id(p["klein_model"])
+            if "task" in p: task_combo.set_active_id(p["task"])
+            if "prompt" in p: prompt_tv.get_buffer().set_text(p["prompt"])
+            if "denoise" in p: denoise_sp.set_value(p["denoise"])
+            if "steps" in p: steps_sp.set_value(p["steps"])
+            if "seed" in p: seed_sp.set_value(p["seed"])
+            if "runs" in p: runs_sp.set_value(p["runs"])
+            if "mask_blur" in p: blur_sp.set_value(p["mask_blur"])
+            if "grow_px" in p: grow_sp.set_value(p["grow_px"])
+            if "use_dd" in p: dd_check.set_active(p["use_dd"])
+        dlg._collect_user_preset = _collect_user_preset
+        dlg._apply_user_preset = _apply_user_preset
+        _add_preset_ui(dlg, bx, "klein_inpaint")
+        _last = _SESSION.get("klein_inpaint")
+        if _last: _apply_user_preset(_last)
+
         bx.show_all()
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
 
         # Collect values
+        _SESSION["klein_inpaint"] = _collect_user_preset(); _save_session()
         srv = srv_e.get_text().strip(); _propagate_server_url(srv)
         klein_key = klein_combo.get_active_id() or "Klein 9B"
         pbuf = prompt_tv.get_buffer()
