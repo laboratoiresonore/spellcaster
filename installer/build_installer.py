@@ -24,9 +24,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Absolute path to the spellcaster/ directory (where this script lives).
-# All relative paths (manifest.json, assets/, plugins/) are resolved from here.
+# Absolute path to the installer/ directory (where this script lives).
 HERE = Path(__file__).resolve().parent
+# Repo root — one level up.  Assets, plugins, and dist live there.
+REPO_ROOT = HERE.parent
 
 
 def ensure_pyinstaller():
@@ -77,19 +78,21 @@ def build(target_platform: str, onedir: bool = False):
         # Format: "source<sep>dest_folder_inside_bundle"
         "--add-data", f"manifest.json{sep}.",       # install manifest (copied to bundle root)
         "--add-data", f"installer_gui.py{sep}.",    # GUI source (loaded dynamically by install.py)
-        "--add-data", f"plugins{sep}plugins",       # plugin directory tree
+        "--add-data", f"{REPO_ROOT / 'plugins'}{sep}plugins",  # plugin directory tree (repo root)
+        "--distpath", str(REPO_ROOT / "dist"),      # output to repo-root dist/
+        "--workpath", str(REPO_ROOT / "build"),     # build artefacts in repo-root build/
     ]
 
-    # Conditionally bundle the assets/ folder (icons, images) if it exists
-    if "assets" in [p.name for p in HERE.iterdir()]:
-        common += ["--add-data", f"assets{sep}assets"]
+    # Conditionally bundle the assets/ folder (icons, images) if it exists at repo root
+    if (REPO_ROOT / "assets").is_dir():
+        common += ["--add-data", f"{REPO_ROOT / 'assets'}{sep}assets"]
 
     # ----- Platform-specific flags -------------------------------------------------
 
     if target_platform == "windows":
         print("Building Windows installer…")
         icon_flag = []
-        icon_path = HERE / "assets" / "spellcaster.ico"  # Windows requires .ico format
+        icon_path = REPO_ROOT / "assets" / "spellcaster.ico"  # Windows requires .ico format
         if icon_path.exists():
             icon_flag = ["--icon", str(icon_path)]
 
@@ -104,7 +107,7 @@ def build(target_platform: str, onedir: bool = False):
     elif target_platform == "macos":
         print("Building macOS installer…")
         icon_flag = []
-        icon_path = HERE / "assets" / "spellcaster.icns"  # macOS requires .icns format
+        icon_path = REPO_ROOT / "assets" / "spellcaster.icns"  # macOS requires .icns format
         if icon_path.exists():
             icon_flag = ["--icon", str(icon_path)]
 
@@ -153,13 +156,13 @@ def build(target_platform: str, onedir: bool = False):
     print("Command:", " ".join(str(c) for c in cmd))
     print()
 
-    # Run PyInstaller from the spellcaster/ directory so relative data paths resolve
+    # Run PyInstaller from the installer/ directory so local data paths resolve
     result = subprocess.run(cmd, cwd=str(HERE))
 
     # ----- Post-build summary ------------------------------------------------------
     if result.returncode == 0:
         print(f"\nBuild complete: {output}")
-        print(f"  Full path: {HERE / output}")
+        print(f"  Full path: {REPO_ROOT / output}")
 
         # Print platform-specific distribution hints
         if target_platform == "macos" and onedir:
@@ -188,10 +191,12 @@ def build_manual_update():
         "--onefile",
         "--console",
         "--name", "spellcaster-manual-update",
+        "--distpath", str(REPO_ROOT / "dist"),
+        "--workpath", str(REPO_ROOT / "build"),
         "manual_update.py",
     ]
     # Add icon on Windows if available
-    icon_path = HERE / "assets" / "spellcaster.ico"
+    icon_path = REPO_ROOT / "assets" / "spellcaster.ico"
     if icon_path.exists():
         cmd += ["--icon", str(icon_path)]
 

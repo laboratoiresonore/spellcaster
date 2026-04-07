@@ -5,16 +5,17 @@
 
 from pathlib import Path
 HERE = Path(SPEC).resolve().parent  # noqa: F821
+REPO_ROOT = HERE.parent
 
 datas = [
     (str(HERE / 'manifest.json'), '.'),
     (str(HERE / 'installer_gui.py'), '.'),
-    (str(HERE / 'plugins'), 'plugins'),
+    (str(REPO_ROOT / 'plugins'), 'plugins'),
 ]
-if (HERE / 'assets').exists():
-    datas.append((str(HERE / 'assets'), 'assets'))
+if (REPO_ROOT / 'assets').exists():
+    datas.append((str(REPO_ROOT / 'assets'), 'assets'))
 
-icon = str(HERE / 'assets' / 'spellcaster.icns') if (HERE / 'assets' / 'spellcaster.icns').exists() else None
+icon = str(REPO_ROOT / 'assets' / 'spellcaster.icns') if (REPO_ROOT / 'assets' / 'spellcaster.icns').exists() else None
 
 a = Analysis(
     [str(HERE / 'install.py')],

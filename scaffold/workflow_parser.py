@@ -27,6 +27,7 @@ Zero external dependencies beyond stdlib + urllib.
 from __future__ import annotations
 
 import json
+import os
 import re
 import urllib.request
 import urllib.error
@@ -881,8 +882,11 @@ def _default_search_dirs() -> List[Path]:
     candidates = [
         Path(__file__).resolve().parent.parent.parent / "ComfyUI" / "user" / "default" / "workflows",
         Path.home() / "ComfyUI" / "user" / "default" / "workflows",
-        Path("/sessions/optimistic-blissful-turing/mnt/ComfyUI/user/default/workflows"),
     ]
+    # Also check COMFYUI_PATH env var if set
+    env_path = os.environ.get("COMFYUI_PATH")
+    if env_path:
+        candidates.append(Path(env_path) / "user" / "default" / "workflows")
     return [p for p in candidates if p.exists()]
 
 
