@@ -620,6 +620,10 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
             },
         }
 
+    # Convert single lora_name/lora_strength to loras list format
+    if lora_name and not loras:
+        loras = [{"name": lora_name, "strength": lora_strength}]
+
     km = klein_models[klein_model_key]
     nf = NodeFactory()
 
@@ -2088,8 +2092,11 @@ def build_pulid_flux(target_filename, face_ref_filename,
 
 def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
                              prompt_text, seed, steps=4, denoise=0.65,
-                             guidance=1.0, klein_models=None):
-    """Klein img2img with separate reference image. Drop-in for _build_klein_img2img_ref().
+                             guidance=1.0, enhancer_mag=1.0, enhancer_contrast=0.0,
+                             ref_strength=1.0, text_ref_balance=0.5,
+                             loras=None, lora_name=None, lora_strength=1.0,
+                             klein_models=None):
+    """Klein img2img with separate reference image.
 
     Same pipeline as build_klein_img2img but uses the reference image
     as the ReferenceLatent source instead of the main input image.
@@ -2104,6 +2111,10 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
                               "clip": "qwen_3_4b.safetensors"},
         }
 
+    # Convert single lora_name/lora_strength to loras list format
+    if lora_name and not loras:
+        loras = [{"name": lora_name, "strength": lora_strength}]
+
     km = klein_models[klein_model_key]
     nf = NodeFactory()
 
@@ -2115,6 +2126,11 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
     )
     vae_id = nf.vae_loader("flux2-vae.safetensors", node_id="3")
 
+    # Apply LoRA chain
+    if loras:
+        unet_id, clip_id = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
+        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
+        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
     # Text conditioning
     pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="4")
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="5")

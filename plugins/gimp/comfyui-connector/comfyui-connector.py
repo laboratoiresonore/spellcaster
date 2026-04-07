@@ -9093,6 +9093,8 @@ class WanI2VDialog(Gtk.Dialog):
         self.seedvr2_res.set_value(p.get("seedvr2_resolution", 1024))
         self.seedvr2_noise.set_value(p.get("seedvr2_noise", 0.10))
         self.pingpong_check.set_active(p.get("pingpong", False))
+        self.i2v_check.set_active(p.get("i2v", False))
+        self.i2v_strength_spin.set_value(p.get("i2v_strength", 1.0))
         if p.get("ip_adapter_source"):
             self.ipa_source_combo.set_active_id(p["ip_adapter_source"])
         if "runs" in p:
@@ -10301,13 +10303,13 @@ class KleinDialog(Gtk.Dialog):
         # LoRA selection (if available)
         if hasattr(self, 'lora_combo') and self.lora_combo:
             d["lora_name"] = self.lora_combo.get_active_id() or ""
-        if hasattr(self, 'lora_strength_spin') and self.lora_strength_spin:
-            d["lora_strength"] = self.lora_strength_spin.get_value()
+        if hasattr(self, 'lora_str_spin') and self.lora_str_spin:
+            d["lora_strength"] = self.lora_str_spin.get_value()
         # Reference settings (if with_reference mode)
-        if hasattr(self, 'ref_strength_spin') and self.ref_strength_spin:
-            d["ref_strength"] = self.ref_strength_spin.get_value()
-        if hasattr(self, 'text_ref_balance_spin') and self.text_ref_balance_spin:
-            d["text_ref_balance"] = self.text_ref_balance_spin.get_value()
+        if hasattr(self, 'ref_strength') and self.ref_strength:
+            d["ref_strength"] = self.ref_strength.get_value()
+        if hasattr(self, 'text_ref_bal') and self.text_ref_bal:
+            d["text_ref_balance"] = self.text_ref_bal.get_value()
         return d
 
     def _apply_user_preset(self, p):
@@ -10326,13 +10328,13 @@ class KleinDialog(Gtk.Dialog):
         # Restore LoRA selection
         if "lora_name" in p and hasattr(self, 'lora_combo') and self.lora_combo:
             self.lora_combo.set_active_id(p["lora_name"])
-        if "lora_strength" in p and hasattr(self, 'lora_strength_spin') and self.lora_strength_spin:
-            self.lora_strength_spin.set_value(p["lora_strength"])
+        if "lora_strength" in p and hasattr(self, 'lora_str_spin') and self.lora_str_spin:
+            self.lora_str_spin.set_value(p["lora_strength"])
         # Restore reference settings
-        if "ref_strength" in p and hasattr(self, 'ref_strength_spin') and self.ref_strength_spin:
-            self.ref_strength_spin.set_value(p["ref_strength"])
-        if "text_ref_balance" in p and hasattr(self, 'text_ref_balance_spin') and self.text_ref_balance_spin:
-            self.text_ref_balance_spin.set_value(p["text_ref_balance"])
+        if "ref_strength" in p and hasattr(self, 'ref_strength') and self.ref_strength:
+            self.ref_strength.set_value(p["ref_strength"])
+        if "text_ref_balance" in p and hasattr(self, 'text_ref_bal') and self.text_ref_bal:
+            self.text_ref_bal.set_value(p["text_ref_balance"])
 
     def get_values(self):
         seed = int(self.seed_spin.get_value())
