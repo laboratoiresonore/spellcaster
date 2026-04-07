@@ -1906,3 +1906,527 @@ def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_t
         nf.patch_input("8", "negative", cn2_neg)
 
     return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Photobooth — Klein headshot generation → ReActor identity → face restore
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_photobooth(ref_filename, prompt_text, seed,
+                     klein_model_key="Klein 9B", steps=20, guidance=30.0,
+                     swap_model="reswapper_256.onnx",
+                     face_restore_model="codeformer-v0.1.0.pth",
+                     face_restore_vis=0.9, codeformer_weight=0.6,
+                     klein_models=None):
+    """Photobooth: generate passport-style headshots with extreme character fidelity.
+
+    Three-stage single-workflow pipeline:
+
+    1. **Klein ReferenceLatent generation** — generates a clean studio headshot
+       guided by the reference photo. Prompt controls background/lighting/pose,
+       ReferenceLatent provides structural guidance from the input face.
+       This produces a well-composed headshot that RESEMBLES the person.
+
+    2. **ReActor face swap** — transplants the EXACT face from the original
+       reference onto the Klein output. This restores character fidelity
+       that Klein may have drifted. Uses reswapper_256 + FaceBoost.
+
+    3. **Face restore** — CodeFormer final pass for artifact cleanup and
+       skin detail enhancement.
+
+    The result is a clean passport-style headshot with the person's real face.
+    """
+    if klein_models is None:
+        klein_models = {
+            "Klein 9B": {"unet": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
+                         "clip": "qwen_3_8b_fp8mixed.safetensors"},
+            "Klein 4B": {"unet": "A-Flux\\flux-2-klein-4b-fp8.safetensors",
+                         "clip": "qwen_3_4b.safetensors"},
+            "Klein Base 4B": {"unet": "A-Flux\\flux-2-klein-base-4b-fp8.safetensors",
+                              "clip": "qwen_3_4b.safetensors"},
+        }
+
+    km = klein_models[klein_model_key]
+    nf = NodeFactory()
+
+    # ── Load reference image (shared: Klein input + ReActor source) ──
+    ref_id = nf.load_image(ref_filename, node_id="1")
+
+    # ══════════════════════════════════════════════════════════════════
+    # Stage 1: Klein ReferenceLatent generation — clean headshot base
+    # ══════════════════════════════════════════════════════════════════
+    unet_id = nf.unet_loader(km["unet"], "default", node_id="10")
+    clip_id = nf.clip_loader(
+        km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+        clip_type="flux2", device="default", node_id="11",
+    )
+    vae_id = nf.vae_loader("flux2-vae.safetensors", node_id="12")
+
+    # Text conditioning
+    pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="13")
+    neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="14")
+
+    # Encode reference for ReferenceLatent conditioning
+    scaled_id = nf.image_scale_to_total_pixels([ref_id, 0], megapixels=1.0,
+                                                node_id="15")
+    size_id = nf.get_image_size([scaled_id, 0], node_id="16")
+    latent_id = nf.vae_encode([scaled_id, 0], [vae_id, 0], node_id="17")
+
+    # ReferenceLatent wrapping
+    ref_pos_id = nf.reference_latent([pos_id, 0], [latent_id, 0], node_id="18")
+    ref_neg_id = nf.reference_latent([neg_id, 0], [latent_id, 0], node_id="19")
+
+    # Sampling (Flux2Scheduler — full generation from noise)
+    guider_id = nf.cfg_guider([unet_id, 0], [ref_pos_id, 0], [ref_neg_id, 0],
+                              guidance, node_id="20")
+    sampler_id = nf.ksampler_select("euler", node_id="21")
+    sched_id = nf.flux2_scheduler(steps, [size_id, 0], [size_id, 1],
+                                   node_id="22")
+    noise_id = nf.random_noise(seed, node_id="23")
+    empty_id = nf.empty_flux2_latent_image([size_id, 0], [size_id, 1],
+                                            batch_size=1, node_id="24")
+
+    sample_id = nf.sampler_custom_advanced(
+        [noise_id, 0], [guider_id, 0], [sampler_id, 0],
+        [sched_id, 0], [empty_id, 0], node_id="30",
+    )
+
+    klein_out = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="31")
+
+    # ══════════════════════════════════════════════════════════════════
+    # Stage 2: ReActor — restore identity from original reference
+    # ══════════════════════════════════════════════════════════════════
+    opts_id = nf.reactor_options(node_id="40o")
+    boost_id = nf.reactor_face_boost(
+        boost_model=face_restore_model,
+        codeformer_weight=codeformer_weight, node_id="40b",
+    )
+    swap_id = nf.reactor_face_swap_opt(
+        [klein_out, 0],     # target: the Klein headshot
+        [ref_id, 0],        # source: the original reference face
+        swap_model=swap_model,
+        face_restore_model=face_restore_model,
+        face_restore_visibility=face_restore_vis,
+        codeformer_weight=codeformer_weight,
+        options_ref=[opts_id, 0],
+        face_boost_ref=[boost_id, 0],
+        node_id="40",
+    )
+
+    # ══════════════════════════════════════════════════════════════════
+    # Stage 3: Face restore — final quality pass
+    # ══════════════════════════════════════════════════════════════════
+    restore_id = nf.reactor_restore_face(
+        [swap_id, 0],
+        model=face_restore_model,
+        facedetection="retinaface_resnet50",
+        visibility=1.0,
+        codeformer_weight=0.5,
+        node_id="50",
+    )
+
+    nf.save_image([restore_id, 0], "photobooth", node_id="60")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Klein Re-poser — ReferenceLatent + BasicScheduler (denoise control)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_klein_repose(image_filename, klein_model_key, prompt_text, seed,
+                       steps=20, denoise=0.65, guidance=1.0,
+                       klein_models=None):
+    """Klein Re-poser: change character pose using ReferenceLatent + BasicScheduler.
+
+    Same as build_klein_img2img but uses BasicScheduler with denoise instead of
+    Flux2Scheduler. This allows partial regeneration (controlled by denoise) while
+    keeping ReferenceLatent structural guidance from the input image.
+    """
+    if klein_models is None:
+        klein_models = {
+            "Klein 9B": {"unet": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
+                         "clip": "qwen_3_8b_fp8mixed.safetensors"},
+            "Klein 4B": {"unet": "A-Flux\\flux-2-klein-4b-fp8.safetensors",
+                         "clip": "qwen_3_4b.safetensors"},
+            "Klein Base 4B": {"unet": "A-Flux\\flux-2-klein-base-4b-fp8.safetensors",
+                              "clip": "qwen_3_4b.safetensors"},
+        }
+
+    km = klein_models[klein_model_key]
+    nf = NodeFactory()
+
+    # Model loaders
+    unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
+    clip_id = nf.clip_loader(
+        km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+        clip_type="flux2", device="default", node_id="2",
+    )
+    vae_id = nf.vae_loader("flux2-vae.safetensors", node_id="3")
+
+    # Text conditioning
+    pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="4")
+    neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="5")
+
+    # Input image processing
+    img_id = nf.load_image(image_filename, node_id="10")
+    scaled_id = nf.image_scale_to_total_pixels([img_id, 0], megapixels=1.0,
+                                                node_id="11")
+    size_id = nf.get_image_size([scaled_id, 0], node_id="12")
+    latent_id = nf.vae_encode([scaled_id, 0], [vae_id, 0], node_id="13")
+
+    # ReferenceLatent wrapping
+    ref_pos_id = nf.reference_latent([pos_id, 0], [latent_id, 0], node_id="20")
+    ref_neg_id = nf.reference_latent([neg_id, 0], [latent_id, 0], node_id="21")
+
+    # Sampler setup — BasicScheduler with denoise (unlike Flux2Scheduler)
+    guider_id = nf.cfg_guider([unet_id, 0], [ref_pos_id, 0], [ref_neg_id, 0],
+                              guidance, node_id="30")
+    sampler_id = nf.ksampler_select("euler", node_id="31")
+    sched_id = nf.basic_scheduler([unet_id, 0], steps, denoise,
+                                   scheduler="simple", node_id="32")
+    noise_id = nf.random_noise(seed, node_id="33")
+    empty_id = nf.empty_flux2_latent_image([size_id, 0], [size_id, 1],
+                                            batch_size=1, node_id="34")
+
+    # Sample
+    sample_id = nf.sampler_custom_advanced(
+        [noise_id, 0], [guider_id, 0], [sampler_id, 0],
+        [sched_id, 0], [empty_id, 0], node_id="40",
+    )
+
+    # Decode and save
+    dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="50")
+    nf.save_image([dec_id, 0], "spellcaster_repose", node_id="60")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Klein Blend — AILab_ImageCombiner pre-compositing + Klein ReferenceLatent
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
+                      blend_mode="normal", opacity=1.0, scale=1.0,
+                      position_x=0.5, position_y=0.5,
+                      klein_model_key="Klein 9B", steps=20, denoise=0.25,
+                      guidance=1.0, klein_models=None):
+    """Klein Blend: composite foreground onto background, then harmonize with Klein.
+
+    Pipeline: LoadImage(FG) + LoadImage(BG) → AILab_ImageCombiner → Klein
+    ReferenceLatent + BasicScheduler (low denoise for subtle integration).
+    """
+    if klein_models is None:
+        klein_models = {
+            "Klein 9B": {"unet": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
+                         "clip": "qwen_3_8b_fp8mixed.safetensors"},
+            "Klein 4B": {"unet": "A-Flux\\flux-2-klein-4b-fp8.safetensors",
+                         "clip": "qwen_3_4b.safetensors"},
+            "Klein Base 4B": {"unet": "A-Flux\\flux-2-klein-base-4b-fp8.safetensors",
+                              "clip": "qwen_3_4b.safetensors"},
+        }
+
+    km = klein_models[klein_model_key]
+    nf = NodeFactory()
+
+    # Load foreground and background
+    fg_id = nf.load_image(fg_filename, node_id="1")
+    bg_id = nf.load_image(bg_filename, node_id="2")
+
+    # Composite (use _add directly — AILab_ImageCombiner has individual inputs)
+    combine_id = nf._add("AILab_ImageCombiner", {
+        "foreground": [fg_id, 0], "background": [bg_id, 0],
+        "mode": blend_mode, "foreground_opacity": opacity,
+        "foreground_scale": scale, "position_x": position_x, "position_y": position_y,
+    }, node_id="3")
+
+    # Klein model loaders
+    unet_id = nf.unet_loader(km["unet"], "default", node_id="10")
+    clip_id = nf.clip_loader(
+        km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+        clip_type="flux2", device="default", node_id="11",
+    )
+    vae_id = nf.vae_loader("flux2-vae.safetensors", node_id="12")
+
+    # Text conditioning
+    pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="13")
+    neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="14")
+
+    # Prepare composited image
+    scaled_id = nf.image_scale_to_total_pixels([combine_id, 0], megapixels=1.0,
+                                                node_id="15")
+    size_id = nf.get_image_size([scaled_id, 0], node_id="16")
+    latent_id = nf.vae_encode([scaled_id, 0], [vae_id, 0], node_id="17")
+
+    # ReferenceLatent wrapping
+    ref_pos_id = nf.reference_latent([pos_id, 0], [latent_id, 0], node_id="20")
+    ref_neg_id = nf.reference_latent([neg_id, 0], [latent_id, 0], node_id="21")
+
+    # Sampler — BasicScheduler with low denoise
+    guider_id = nf.cfg_guider([unet_id, 0], [ref_pos_id, 0], [ref_neg_id, 0],
+                              guidance, node_id="30")
+    sampler_id = nf.ksampler_select("euler", node_id="31")
+    sched_id = nf.basic_scheduler([unet_id, 0], steps, denoise,
+                                   scheduler="simple", node_id="32")
+    noise_id = nf.random_noise(seed, node_id="33")
+    empty_id = nf.empty_flux2_latent_image([size_id, 0], [size_id, 1],
+                                            batch_size=1, node_id="34")
+
+    sample_id = nf.sampler_custom_advanced(
+        [noise_id, 0], [guider_id, 0], [sampler_id, 0],
+        [sched_id, 0], [empty_id, 0], node_id="40",
+    )
+
+    dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="50")
+    nf.save_image([dec_id, 0], "spellcaster_blend", node_id="60")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Klein Inpaint — mask-based with FluxGuidance + SetLatentNoiseMask
+#                  + optional GrowMask + optional DifferentialDiffusion
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_klein_inpaint(image_filename, mask_filename, prompt_text, seed,
+                        klein_model_key="Klein 9B", steps=25, denoise=0.92,
+                        guidance=30.0, grow_px=0, use_differential_diffusion=False,
+                        use_solid_mask=False, solid_mask_width=1024,
+                        solid_mask_height=1024,
+                        klein_models=None):
+    """Klein Inpaint: regenerate masked area using FluxGuidance + SetLatentNoiseMask.
+
+    Supports two mask sources:
+    - Image mask (mask_filename → ImageToMask) — for selection-based inpainting
+    - Solid mask (use_solid_mask=True) — for full-image inpainting (clothing store)
+
+    Optional GrowMask expands the mask boundary.
+    Optional DifferentialDiffusion enables smooth mask-edge blending.
+    """
+    if klein_models is None:
+        klein_models = {
+            "Klein 9B": {"unet": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
+                         "clip": "qwen_3_8b_fp8mixed.safetensors"},
+            "Klein 4B": {"unet": "A-Flux\\flux-2-klein-4b-fp8.safetensors",
+                         "clip": "qwen_3_4b.safetensors"},
+            "Klein Base 4B": {"unet": "A-Flux\\flux-2-klein-base-4b-fp8.safetensors",
+                              "clip": "qwen_3_4b.safetensors"},
+        }
+
+    km = klein_models[klein_model_key]
+    nf = NodeFactory()
+
+    # Model loaders
+    unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
+    clip_id = nf.clip_loader(
+        km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+        clip_type="flux2", device="default", node_id="2",
+    )
+    vae_id = nf.vae_loader("flux2-vae.safetensors", node_id="3")
+
+    # Source image
+    img_id = nf.load_image(image_filename, node_id="10")
+
+    # Mask — either from image file or solid
+    if use_solid_mask:
+        mask_id = nf.solid_mask(value=1.0, width=solid_mask_width,
+                                height=solid_mask_height, node_id="12")
+        mask_ref = [mask_id, 0]
+    else:
+        mask_img_id = nf.load_image(mask_filename, node_id="11")
+        mask_conv_id = nf.image_to_mask([mask_img_id, 0], "red", node_id="12")
+        mask_ref = [mask_conv_id, 0]
+
+    # Optional mask expansion
+    if grow_px != 0:
+        grow_id = nf.grow_mask(mask_ref, grow_px, tapered_corners=True,
+                               node_id="13")
+        mask_ref = [grow_id, 0]
+
+    # Image size + text conditioning
+    size_id = nf.get_image_size_plus([img_id, 0], node_id="14")
+    pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="15")
+    guided_id = nf.flux_guidance([pos_id, 0], guidance, node_id="16")
+    neg_id = nf.conditioning_zero_out([guided_id, 0], node_id="19")
+
+    # VAE encode + SetLatentNoiseMask
+    enc_id = nf.vae_encode([img_id, 0], [vae_id, 0], node_id="20")
+    masked_latent_id = nf.set_latent_noise_mask([enc_id, 0], mask_ref,
+                                                  node_id="21")
+
+    # Optional DifferentialDiffusion
+    model_ref = [unet_id, 0]
+    if use_differential_diffusion:
+        dd_id = nf.differential_diffusion([unet_id, 0], node_id="22")
+        model_ref = [dd_id, 0]
+
+    # Sampler
+    guider_id = nf.cfg_guider(model_ref, [guided_id, 0], [neg_id, 0],
+                              1.0, node_id="30")
+    sampler_id = nf.ksampler_select("euler", node_id="31")
+    sched_id = nf.basic_scheduler([unet_id, 0], steps, denoise,
+                                   scheduler="simple", node_id="32")
+    noise_id = nf.random_noise(seed, node_id="33")
+
+    sample_id = nf.sampler_custom_advanced(
+        [noise_id, 0], [guider_id, 0], [sampler_id, 0],
+        [sched_id, 0], [masked_latent_id, 0], node_id="40",
+    )
+
+    dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="50")
+    nf.save_image([dec_id, 0], "spellcaster_klein_inpaint", node_id="60")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Klein Scene img2img — actual img2img (VAEEncode → latent_image)
+#                        NO ReferenceLatent, uses FluxGuidance + BasicScheduler
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_klein_scene_img2img(image_filename, prompt_text, seed,
+                               klein_model_key="Klein 9B", steps=20,
+                               denoise=0.30, guidance=30.0,
+                               klein_models=None):
+    """Klein scene img2img: harmonize a composited scene.
+
+    Unlike build_klein_img2img which uses ReferenceLatent (generates from noise
+    with reference guidance), this uses actual img2img: VAEEncode → latent_image
+    with BasicScheduler denoise. The input image IS the starting latent.
+
+    Used by Studio Set to blend actors into scenes with low denoise.
+    """
+    if klein_models is None:
+        klein_models = {
+            "Klein 9B": {"unet": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
+                         "clip": "qwen_3_8b_fp8mixed.safetensors"},
+            "Klein 4B": {"unet": "A-Flux\\flux-2-klein-4b-fp8.safetensors",
+                         "clip": "qwen_3_4b.safetensors"},
+            "Klein Base 4B": {"unet": "A-Flux\\flux-2-klein-base-4b-fp8.safetensors",
+                              "clip": "qwen_3_4b.safetensors"},
+        }
+
+    km = klein_models[klein_model_key]
+    nf = NodeFactory()
+
+    # Model loaders
+    unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
+    clip_id = nf.clip_loader(
+        km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+        clip_type="flux2", device="default", node_id="2",
+    )
+    vae_id = nf.vae_loader("flux2-vae.safetensors", node_id="3")
+
+    # Source images (scene + actor — actor not used in workflow but loaded for context)
+    scene_id = nf.load_image(image_filename, node_id="10")
+
+    # Text conditioning with FluxGuidance
+    pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="15")
+    guided_id = nf.flux_guidance([pos_id, 0], guidance, node_id="16")
+    neg_id = nf.conditioning_zero_out([guided_id, 0], node_id="17")
+
+    # VAEEncode input → latent (actual img2img, not ReferenceLatent)
+    enc_id = nf.vae_encode([scene_id, 0], [vae_id, 0], node_id="20")
+    size_id = nf.get_image_size([scene_id, 0], node_id="25")
+
+    # Sampler — BasicScheduler with denoise
+    guider_id = nf.cfg_guider([unet_id, 0], [guided_id, 0], [neg_id, 0],
+                              1.0, node_id="30")
+    sampler_id = nf.ksampler_select("euler", node_id="31")
+    sched_id = nf.basic_scheduler([unet_id, 0], steps, denoise,
+                                   scheduler="simple", node_id="32")
+    noise_id = nf.random_noise(seed, node_id="33")
+
+    sample_id = nf.sampler_custom_advanced(
+        [noise_id, 0], [guider_id, 0], [sampler_id, 0],
+        [sched_id, 0], [enc_id, 0], node_id="40",
+    )
+
+    dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="50")
+    nf.save_image([dec_id, 0], "studio_set", node_id="60")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Layer Blend — simple two-image blend
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_layer_blend(image_a_filename, image_b_filename, blend_factor=0.5,
+                      blend_mode="normal"):
+    """Simple layer blend: two images → ImageBlend → SaveImage."""
+    nf = NodeFactory()
+    a_id = nf.load_image(image_a_filename, node_id="1")
+    b_id = nf.load_image(image_b_filename, node_id="2")
+    blend_id = nf.image_blend([a_id, 0], [b_id, 0], blend_factor, blend_mode,
+                               node_id="3")
+    nf.save_image([blend_id, 0], "spellcaster_blend_ratio", node_id="4")
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Upscale Blend — dual model upscale + blend
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_upscale_blend(image_filename, model_a_name, model_b_name,
+                        blend_factor=0.6, scale_by=1.0):
+    """Upscale with two models and blend results.
+
+    Pipeline: LoadImage → UpscaleModelA(image) + UpscaleModelB(image)
+              → ImageBlend(A_result, B_result, ratio) → SaveImage
+    """
+    nf = NodeFactory()
+
+    img_id = nf.load_image(image_filename, node_id="1")
+
+    # Model A upscale
+    up_a_id = nf.upscale_model_loader(model_a_name, node_id="10")
+    up_a_img_id = nf.image_upscale_with_model_by_factor(
+        [up_a_id, 0], [img_id, 0], scale_by, node_id="11")
+
+    # Model B upscale
+    up_b_id = nf.upscale_model_loader(model_b_name, node_id="20")
+    up_b_img_id = nf.image_upscale_with_model_by_factor(
+        [up_b_id, 0], [img_id, 0], scale_by, node_id="21")
+
+    # Blend
+    blend_id = nf.image_blend([up_a_img_id, 0], [up_b_img_id, 0],
+                               blend_factor, "normal", node_id="30")
+    nf.save_image([blend_id, 0], "spellcaster_upblend", node_id="40")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Frame Assembly — dynamic LoadImage chain → ImageBatch → VHS_VideoCombine
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_frame_assembly(frame_filenames, fps=16.0,
+                         filename_prefix="gimp_frame_assembly"):
+    """Assemble frames into a video via ImageBatch chain → VHS_VideoCombine.
+
+    Handles any number of frames (≥1). Used by Wan Director and GIF Stitcher.
+    """
+    nf = NodeFactory()
+
+    # Load all frames
+    for i, fn in enumerate(frame_filenames):
+        nf.load_image(fn, node_id=str(200 + i))
+
+    # ImageBatch chain
+    if len(frame_filenames) >= 2:
+        batch_id = nf.image_batch([str(200), 0], [str(201), 0], node_id="300")
+        batch_ref = [batch_id, 0]
+        for i in range(2, len(frame_filenames)):
+            nid = str(300 + i - 1)
+            batch_id = nf.image_batch(batch_ref, [str(200 + i), 0], node_id=nid)
+            batch_ref = [batch_id, 0]
+    else:
+        batch_ref = [str(200), 0]
+
+    # Video output
+    nf.vhs_video_combine(batch_ref, frame_rate=float(fps), loop_count=0,
+                          filename_prefix=filename_prefix,
+                          format_type="video/h264-mp4", node_id="400")
+
+    return nf.build()
