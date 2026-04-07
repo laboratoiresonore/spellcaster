@@ -682,6 +682,58 @@ KLEIN_MODELS = {
                       "clip": "qwen_3_4b.safetensors"},
 }
 
+# ── Face-swap model fallback lists ────────────────────────────────────────
+# Used when the ComfyUI server is unreachable (UI populates combos from
+# _fetch_reactor_models at runtime, but these keep the dialog functional).
+FACE_SWAP_MODELS = [
+    "inswapper_128.onnx",
+    "inswapper_128_fp16.onnx",
+    "reswapper_256.onnx",
+    "hyperswap_256.onnx",
+]
+
+FACE_RESTORE_MODELS = [
+    "GFPGANv1.4.pth",
+    "codeformer-v0.1.0.pth",
+    "GPEN-BFR-2048.onnx",
+]
+
+# ── Face-swap quality presets ─────────────────────────────────────────────
+# Predefined swap+restore combos for the Studio quality combo boxes.
+# Keys match the IDs in the Gtk.ComboBoxText (set_active_id).
+# "double_pass" triggers a second ReActor pass for maximum likeness.
+FACESWAP_QUALITY_PRESETS = {
+    "Ultra (double-pass HyperSwap 256 + ReSwapper 256)": {
+        "pass1_model":   "hyperswap_256.onnx",
+        "pass1_restore": "GPEN-BFR-2048.onnx",
+        "pass1_vis":     1.0,
+        "pass1_cf":      0.7,
+        "double_pass":   True,
+        "pass2_model":   "reswapper_256.onnx",
+        "pass2_restore": "GPEN-BFR-2048.onnx",
+        "pass2_vis":     1.0,
+        "pass2_cf":      0.7,
+    },
+    "High (ReSwapper 256 + GPEN-2048)": {
+        "pass1_model":   "reswapper_256.onnx",
+        "pass1_restore": "GPEN-BFR-2048.onnx",
+        "pass1_vis":     1.0,
+        "pass1_cf":      0.7,
+    },
+    "Standard (InSwapper 128 + CodeFormer)": {
+        "pass1_model":   "inswapper_128.onnx",
+        "pass1_restore": "codeformer-v0.1.0.pth",
+        "pass1_vis":     1.0,
+        "pass1_cf":      0.5,
+    },
+    "Fast (InSwapper fp16 + GFPGAN)": {
+        "pass1_model":   "inswapper_128_fp16.onnx",
+        "pass1_restore": "GFPGANv1.4.pth",
+        "pass1_vis":     1.0,
+        "pass1_cf":      0.5,
+    },
+}
+
 # ── Realism Quality Boost System ─────────────────────────────────────────
 # Proven quality tokens from the photorealistic AI community (CivitAI,
 # Reddit r/StableDiffusion, r/ComfyUIResources). Append/prepend to user
@@ -10325,6 +10377,7 @@ class Spellcaster(Gimp.PlugIn):
                 input_face_idx=v["input_face_idx"],
                 source_face_idx=v["source_face_idx"],
                 quality_preset=v.get("quality_preset"),
+                quality_presets=FACESWAP_QUALITY_PRESETS,
             )
             _update_spinner_status("Face Swap: processing on ComfyUI...")
             results = _run_with_spinner("Face Swap: processing on ComfyUI...",
@@ -10369,6 +10422,7 @@ class Spellcaster(Gimp.PlugIn):
                 input_face_idx=v["input_face_idx"],
                 source_face_idx=v["source_face_idx"],
                 quality_preset=v.get("quality_preset"),
+                quality_presets=FACESWAP_QUALITY_PRESETS,
             )
             _update_spinner_status("Face Swap (Model): processing on ComfyUI...")
             results = _run_with_spinner("Face Swap (Model): processing on ComfyUI...",
@@ -11016,6 +11070,7 @@ class Spellcaster(Gimp.PlugIn):
                             wf_a = build_faceswap(
                                 next_start, a_ref_name,
                                 quality_preset="High (ReSwapper 256 + GPEN-2048)",
+                                quality_presets=FACESWAP_QUALITY_PRESETS,
                                 input_face_idx="0", source_face_idx="0")
                             res_a = _run_with_spinner(
                                 f"Step {step_idx+1}: re-inject Actor A face...",
@@ -11034,6 +11089,7 @@ class Spellcaster(Gimp.PlugIn):
                                     wf_b = build_faceswap(
                                         a_out, b_ref_name,
                                         quality_preset="High (ReSwapper 256 + GPEN-2048)",
+                                        quality_presets=FACESWAP_QUALITY_PRESETS,
                                         input_face_idx="1", source_face_idx="0")
                                     res_b = _run_with_spinner(
                                         f"Step {step_idx+1}: re-inject Actor B face...",
@@ -11297,6 +11353,7 @@ class Spellcaster(Gimp.PlugIn):
                             try:
                                 wf_r = build_faceswap(current_img, ref_names[ai],
                                     quality_preset="High (ReSwapper 256 + GPEN-2048)",
+                                    quality_presets=FACESWAP_QUALITY_PRESETS,
                                     input_face_idx=str(ai), source_face_idx="0")
                                 _wr = wf_r
                                 rr = _run_with_spinner(f"Step {step_idx+1}: re-inject Actor {chr(65+ai)}...",
@@ -13275,7 +13332,7 @@ class Spellcaster(Gimp.PlugIn):
                 wf = build_klein_inpaint(
                     uname, mname, prompt, seed,
                     klein_model_key=klein_key, steps=steps, denoise=denoise,
-                    guidance=30.0, grow_px=grow_px,
+                    guidance=1.0, grow_px=grow_px,
                     use_differential_diffusion=use_dd,
                     klein_models=KLEIN_MODELS,
                 )
@@ -14207,6 +14264,7 @@ class Spellcaster(Gimp.PlugIn):
                             reinject_wf = build_faceswap(
                                 next_start, start_name,
                                 quality_preset="High (ReSwapper 256 + GPEN-2048)",
+                                quality_presets=FACESWAP_QUALITY_PRESETS,
                                 input_face_idx="0", source_face_idx="0",
                             )
                             reinject_results = _run_with_spinner(
@@ -17523,7 +17581,7 @@ class Spellcaster(Gimp.PlugIn):
                     wf = build_photobooth(
                         ref_name, bg_prompts[i], seed,
                         klein_model_key=klein_key,
-                        steps=20, guidance=30.0,
+                        steps=20, guidance=1.0,
                         klein_models=KLEIN_MODELS,
                     )
                     _wf = wf
@@ -17885,7 +17943,8 @@ class Spellcaster(Gimp.PlugIn):
                         swap_model="inswapper_128.onnx",
                         face_restore_model="codeformer-v0.1.0.pth",
                         face_restore_vis=0.8, codeformer_weight=0.5,
-                        quality_preset="High (ReSwapper 256 + GPEN-2048)")
+                        quality_preset="High (ReSwapper 256 + GPEN-2048)",
+                        quality_presets=FACESWAP_QUALITY_PRESETS)
                     _wf2 = wf_swap
                     swap_res = _run_with_spinner(
                         f"Body Factory: swapping face {i+1}/3...",
@@ -18131,7 +18190,7 @@ class Spellcaster(Gimp.PlugIn):
                 wf = build_klein_inpaint(
                     uname, mname if has_sel else None, prompt, seed,
                     klein_model_key=klein_key, steps=25, denoise=denoise,
-                    guidance=30.0, grow_px=0,
+                    guidance=1.0, grow_px=0,
                     use_differential_diffusion=True,
                     use_solid_mask=not has_sel,
                     solid_mask_width=1024, solid_mask_height=1024,
@@ -18322,8 +18381,7 @@ class Spellcaster(Gimp.PlugIn):
                 tmp = _export_image_to_tmp(image)
                 bg_name = f"gimp_ss_bg_{uuid.uuid4().hex[:8]}.png"
                 _upload_image(srv, tmp, bg_name); os.unlink(tmp)
-                _import_result_as_layer(image, open(tmp if os.path.exists(tmp) else "", "rb").read() if False else
-                                        _download_image(srv, bg_name, "", "input"), "Studio Set BG")
+                _import_result_as_layer(image, _download_image(srv, bg_name, "", "input"), "Studio Set BG")
             else:
                 # Generate background — pick best of 3 (with quality boost)
                 bg_prompt = SCENE_BG_PRESETS[bg_key]
@@ -18397,7 +18455,7 @@ class Spellcaster(Gimp.PlugIn):
                 wf = build_klein_scene_img2img(
                     current_scene, blend_prompt, seed,
                     klein_model_key=klein_key, steps=20, denoise=0.30,
-                    guidance=30.0, klein_models=KLEIN_MODELS,
+                    guidance=1.0, klein_models=KLEIN_MODELS,
                 )
                 _wf = wf
                 res = _run_with_spinner(
