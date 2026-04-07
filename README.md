@@ -915,9 +915,7 @@ Both plugins check GitHub on each launch and silently update themselves. New fea
 <details>
 <summary><strong>Update system details</strong></summary>
 
-The update system uses GitHub's API to compare the local version hash against the latest commit. If different, it fetches the file tree and downloads changed files incrementally.
-
-**NSFW variant handling**: The plugin source contains a `_BUILD_VARIANT` injection point. SFW builds (default) pull from the public `laboratoiresonore/spellcaster` repo. NSFW builds have this patched to `"nsfw"` at build time, routing all updates to the private `laboratoiresonore/spellcaster_NSFW` repo — so NSFW-specific customizations are never overwritten by a standard update.
+The update system uses GitHub's API to compare the local version hash against the latest commit. If different, it fetches the file tree and downloads changed files incrementally. The plugin source contains a `_BUILD_VARIANT` injection point that controls which repo updates pull from.
 
 On Windows, in-use files are staged with a `.update` suffix and applied on next launch. The updater also clears GIMP's pluginrc to force menu re-scanning.
 

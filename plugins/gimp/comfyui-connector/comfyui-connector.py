@@ -717,7 +717,7 @@ QUALITY_BOOST_NEGATIVE = {
     "zit":          "blurry, low quality, bad anatomy, deformed, ugly, watermark, text, amateur",
 }
 
-# Skin-specific anti-artifact prompts (for NSFW / skin-heavy content)
+# Skin-specific anti-artifact prompts (for skin-heavy content)
 SKIN_REALISM_POSITIVE = (
     "natural skin texture, visible pores, subsurface scattering, realistic skin tone, "
     "natural skin imperfections, peach fuzz, moles, freckles"
@@ -8064,7 +8064,7 @@ class WanI2VDialog(Gtk.Dialog):
             "5.0: Standard. Good general-purpose value.\n"
             "7.0+: Strong prompt following. Risk of oversaturation.\n\n"
             "WARNING: CFG above 5.0 with Wan can cause orange peel / plastic\n"
-            "skin texture. For NSFW or skin-heavy content, keep at 1.0-3.0.")
+            "skin texture. For skin-heavy content, keep at 1.0-3.0.")
         grid.attach(self.cfg_spin, 3, 2, 1, 1)
 
         grid.attach(Gtk.Label(label="Shift:", xalign=1), 0, 3, 1, 1)
