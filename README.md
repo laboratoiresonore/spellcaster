@@ -469,7 +469,7 @@ LoRAs are auto-filtered by the active model architecture so you only see compati
 Magic Studios is a guided pipeline that turns a single photo into a fully composited, animated scene. Each act builds on the last — face model, body, wardrobe, set, and finally video.
 
 > *Featuring Gerald McFluffington III, CPA — Actor, Dreamer, Carb Enthusiast.*
-> Read the [full walkthrough](MAGIC_STUDIOS_WALKTHROUGH.md) for the complete story.
+> Read the [full walkthrough](docs/MAGIC_STUDIOS_WALKTHROUGH.md) for the complete story.
 
 **Act I — Casting Polaroids** &nbsp; *Create a reusable face model from any photo*
 
@@ -612,21 +612,21 @@ Both share the same core AI capabilities. The GIMP plugin adds selection-based w
 ```bash
 git clone https://github.com/laboratoiresonore/spellcaster
 cd spellcaster
-python install.py          # Interactive GUI wizard
-python install.py --cli    # Force terminal mode
+python installer/install.py          # Interactive GUI wizard
+python installer/install.py --cli    # Force terminal mode
 ```
 
 <details>
 <summary><strong>CLI flags for scripted & headless installs</strong></summary>
 
 ```bash
-python install.py --yes                    # Accept all defaults
-python install.py --civitai-key YOUR_TOKEN # Authenticated downloads
-python install.py --server-url http://192.168.1.50:8188  # Remote server
-python install.py --features img2img,inpaint,upscale     # Cherry-pick
-python install.py --comfyui ~/ComfyUI --gimp ~/.config/GIMP/3.0/plug-ins
-python install.py --skip-models            # Plugins + nodes only
-python install.py --dry-run                # Preview without changes
+python installer/install.py --yes                    # Accept all defaults
+python installer/install.py --civitai-key YOUR_TOKEN # Authenticated downloads
+python installer/install.py --server-url http://192.168.1.50:8188  # Remote server
+python installer/install.py --features img2img,inpaint,upscale     # Cherry-pick
+python installer/install.py --comfyui ~/ComfyUI --gimp ~/.config/GIMP/3.0/plug-ins
+python installer/install.py --skip-models            # Plugins + nodes only
+python installer/install.py --dry-run                # Preview without changes
 ```
 
 </details>
@@ -647,27 +647,74 @@ Every model preset is the product of extensive testing. Here's what Spellcaster 
 | VAE/CLIP pairings for Klein | 9B→qwen_3_8b, 4B→qwen_3_4b |
 | Wan dual-UNET switchover | High-noise vs low-noise model handoff timing |
 
+### Signal Bridge & Scaffold
+
+Spellcaster includes a **chatbot-driven interface** (the "scaffold") that lets any tool-enabled LLM drive ComfyUI through a numbered-menu text conversation. This powers the **Signal Bridge** — a system where remote users on messaging platforms (Signal, etc.) can request image generation from an AI assistant without ever touching ComfyUI directly.
+
+The scaffold auto-discovers every Spellcaster node and ComfyUI workflow on disk, builds step-by-step wizards, and handles the full lifecycle: intent routing, parameter collection, workflow construction, execution, result delivery, and cleanup.
+
+**Privacy cleanup** is a core feature for remote deployments. When enabled (the default), the scaffold automatically deletes all uploaded input images and generated output images from the ComfyUI server after delivering them to the user. This uses the [ComfyUI-api-tools](https://github.com/brantje/ComfyUI-api-tools) extension's DELETE endpoints. The user is notified both before execution ("your images will be deleted") and after ("2 files deleted from the server"). Privacy settings are configurable per-deployment via the Signal Bridge settings GUI (`installer/signal_bridge_settings.jsx`).
+
+<details>
+<summary><strong>Scaffold architecture</strong></summary>
+
+The scaffold has three wizard layers that can be used independently or together:
+
+- **MetaWizard** — top-level intent router. The user says "make this more cinematic" and the meta wizard figures out they need Flux2KleinEnhancer with a Strong preset, not a txt2img workflow. Routes to the correct sub-wizard automatically.
+- **SpellcasterWizard** — drives Spellcaster enhancement nodes (Flux2KleinEnhancer, DetailController, RefLatentController, etc.) with preset support and step-by-step parameter collection.
+- **WorkflowWizard** — drives *any* ComfyUI workflow on disk. Parses `.json` workflow files, extracts user-configurable parameters, and builds numbered-menu wizards on the fly.
+
+The **ComfyUIRunner** handles all server communication: image upload, workflow submission, result polling, image download, and privacy cleanup. It's the only component that talks to ComfyUI and is designed to be used standalone or through the wizard stack.
+
+The **BridgeLauncher** bridges Signal Bridge configuration with the scaffold, applying privacy settings and providing character cards for various LLM platforms (SillyTavern, OpenWebUI, LM Studio, KoboldCpp).
+
+</details>
+
 ### Architecture
 
 ```
 spellcaster/
-├── install.py                  # CLI installer (97K)
-├── installer_gui.py            # GUI installer — 8-step wizard (105K)
-├── manual_update.py            # Repair & update tool (51K)
-├── manifest.json               # Master config: features, nodes, models (38K)
-├── spellmaker.py               # Preset customization tool (89K)
-├── build_installer.py          # PyInstaller build script
-├── generate_showcase.py        # Showcase asset generator
-├── generate_walkthrough.py     # Magic Studios walkthrough generator
+├── README.md
+├── LICENSE
+├── spellcaster-installer.exe       # Windows installer (download & run)
+├── spellcaster-manual-update.exe   # Windows repair/update tool
+├── installer/                      # Installer source & build scripts
+│   ├── install.py                  #   CLI installer (97K)
+│   ├── installer_gui.py            #   GUI installer — 8-step wizard (105K)
+│   ├── manual_update.py            #   Repair & update tool (51K)
+│   ├── manifest.json               #   Master config: features, nodes, models
+│   ├── build_installer.py          #   PyInstaller build script
+│   ├── build_linux.sh              #   Linux build convenience script
+│   ├── build_macos.sh              #   macOS build convenience script
+│   └── signal_bridge_settings.jsx  #   Signal Bridge settings GUI
 ├── plugins/
-│   ├── gimp/comfyui-connector/ # GIMP 3 plugin (~22,500 lines)
+│   ├── gimp/comfyui-connector/     # GIMP 3 plugin (~22,500 lines)
 │   │   ├── comfyui-connector.py
 │   │   ├── spellcaster-theme.css
-│   │   ├── spellcaster_steg.py # Steganography module
-│   │   └── spinner.gif
-│   └── darktable/              # Darktable Lua plugin (~7,500 lines)
+│   │   ├── spellcaster_steg.py     # Steganography module
+│   │   ├── spinner.gif
+│   │   └── travelling-wizard/      # Scaffold editor (GIMP integration)
+│   └── darktable/                  # Darktable Lua plugin (~7,500 lines)
 │       └── comfyui_connector.lua
-└── assets/                     # Showcase images, walkthrough, icons
+├── scaffold/                       # Chatbot-driven ComfyUI interface
+│   ├── __init__.py                 #   SpellcasterScaffold entry point
+│   ├── meta_wizard.py              #   Intent router — top-level wizard
+│   ├── wizard.py                   #   Spellcaster enhancement wizard
+│   ├── workflow_wizard.py          #   Universal ComfyUI workflow wizard
+│   ├── workflow_parser.py          #   Parses any .json ComfyUI workflow
+│   ├── comfyui_runner.py           #   Server comms + privacy cleanup
+│   ├── bridge_launcher.py          #   Signal Bridge integration
+│   ├── introspector.py             #   Auto-discovers Spellcaster nodes
+│   ├── prompt_builder.py           #   LLM system prompt generator
+│   └── presets.py                  #   Enhancement preset definitions
+├── tools/                          # Standalone utilities
+│   ├── generate_showcase.py        #   Showcase asset generator
+│   ├── generate_walkthrough.py     #   Magic Studios walkthrough generator
+│   └── spellmaker.py               #   Preset customization tool (89K)
+├── docs/                           # Documentation
+│   ├── MAGIC_STUDIOS_WALKTHROUGH.md
+│   └── REFACTORING_AUDIT.md
+└── assets/                         # Showcase images, walkthrough, icons
 ```
 
 ### How the GIMP Plugin Works Internally
@@ -715,14 +762,14 @@ On Windows, in-use files are staged with a `.update` suffix and applied on next 
 Power users can create custom presets, link LoRAs, and import ComfyUI workflows:
 
 ```bash
-python spellmaker.py
+python tools/spellmaker.py
 ```
 
 ### Building the Installer
 
 ```bash
-python build_installer.py                  # Auto-detect OS
-python build_installer.py --update-tool    # Also build repair tool
+python installer/build_installer.py                  # Auto-detect OS
+python installer/build_installer.py --update-tool    # Also build repair tool
 ```
 
 </details>
@@ -800,6 +847,7 @@ Body & detail fix, artistic styles, accelerators — across SDXL, Flux, Klein, Z
 | comfyui_controlnet_aux | ControlNet preprocessors (Canny, Depth, Pose, etc.) |
 | ComfyUI-IC-Light | Directional relighting |
 | ComfyUI-SUPIR | SUPIR AI restoration |
+| ComfyUI-api-tools | REST API for image upload/download/delete (used by scaffold privacy cleanup) |
 
 </details>
 

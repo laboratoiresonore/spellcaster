@@ -28,6 +28,9 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 
+# Linters / formatters
+.ruff_cache/
+
 # IDEs
 .vscode/
 .idea/
@@ -39,8 +42,12 @@ Desktop.ini
 *.bak
 *.swp
 *~
-temp.txt
-temp2.txt
+
+# Compiled installers at root (built from installer/ dir, too large for git)
+*.exe
+
+# Loose test images at root
+selfie*.png
 
 # User data — personal presets, session state, config
 user_presets.json
@@ -55,6 +62,15 @@ config.json
 !assets/*.gif
 !assets/**/*.mp4
 !assets/**/*.gif
+
+# Signal Bridge — machine-specific config with IPs, API keys, paths
+signal_bridge_config.json
+signal_bridge_*.log
+
+# Machine-specific settings — never commit local network config
+local_settings.json
+.env
+.env.*
 
 # NSFW builds — never push to public repo
 nsfw/

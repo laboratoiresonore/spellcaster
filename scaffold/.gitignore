@@ -1,0 +1,12 @@
+# Scaffold — machine-specific settings
+# Cached workflow discoveries (contain local paths)
+workflow_cache/
+*.workflow_cache
+
+# Session state (wizard sessions are ephemeral)
+sessions/
+*.session
+
+# Any local config overrides
+local_config.json
+local_config.py

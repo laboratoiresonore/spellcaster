@@ -1,0 +1,12 @@
+# Travelling Wizard — machine-specific GIMP plugin settings
+# User config with local ComfyUI server URL, node IDs, paths
+user_config.json
+local_settings.json
+
+# Cached workflow data from local ComfyUI instance
+workflow_cache/
+*.workflow_cache
+
+# GIMP plugin state
+*.pyc
+__pycache__/
