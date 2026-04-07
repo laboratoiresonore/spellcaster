@@ -11,35 +11,195 @@
     comfyui_connector.lua  --  Spellcaster Darktable Plugin
     ========================================================
 
+    COMPREHENSIVE MODULE OVERVIEW
+    ===============================
     Bridge between Darktable (photo editor) and ComfyUI (AI image/video server).
+    Provides access to 20+ AI image/video workflows via an intuitive Lua plugin UI.
 
-    Architecture overview:
-      1. User selects images in Darktable lighttable view
-      2. Plugin exports them to PNG temp files
-      3. Uploads via ComfyUI's REST API (curl-based HTTP)
-      4. Submits a JSON workflow (built programmatically per task type)
-      5. Polls /history endpoint until results appear
-      6. Downloads output images/videos and imports them into Darktable
+    ARCHITECTURE
+    ============
+    Data Flow:
+      1. User selects image(s) in Darktable lighttable view
+      2. Plugin exports selected image(s) to temporary PNG files
+      3. Constructs workflow-specific JSON (see section: Workflow JSON builders)
+      4. Uploads JSON + images via ComfyUI REST API (curl-based HTTP)
+      5. Polls /history endpoint until ComfyUI finishes processing
+      6. Downloads output image(s) or video(s)
+      7. Imports results back into Darktable collection
 
-    Supported workflows:
-      - img2img     : SD1.5 / SDXL / Illustrious checkpoint-based image transformation
-      - Inpaint     : Mask-guided regeneration of image regions (SetLatentNoiseMask)
-      - Face Swap   : ReActor (saved model + direct) and mtb facetools
-      - FaceID      : IPAdapter-based face identity transfer
-      - PuLID Flux  : Face identity transfer using PuLID on Flux architecture
-      - Klein Flux2 : Distilled Flux2 img2img (with optional reference image)
-      - Wan I2V     : Wan 2.2 image-to-video generation (dual-UNET high/low noise)
+    HTTP Communication: curl via shell escaping (see section: HTTP communication)
+      - No native Lua HTTP library (Lua sandbox in Darktable)
+      - curl avoids platform-specific C module loading fragility
+      - Temp files hold JSON/images to avoid shell quoting hell
+      - All requests: write file → curl → read response → cleanup
 
-    Why curl instead of a Lua HTTP library?
-      Darktable's embedded Lua has no built-in HTTP support and loading
-      native C modules (luasocket, lua-curl) is fragile across platforms.
-      curl is universally available (built into Windows 10+, macOS, Linux)
-      and avoids all dependency issues. The tradeoff is shell escaping
-      overhead and temp-file I/O, but this is negligible for the small
-      payloads involved (~1-50KB JSON, single image uploads).
+    Supported Workflows (20+ operations):
+      IMAGE TRANSFORMATION:
+        - img2img     : SD1.5 / SDXL / Illustrious checkpoint-based image-to-image
+        - Inpaint     : Mask-guided regeneration of image regions (SetLatentNoiseMask)
+        - LUT         : Lookup-table color grading application
+        - Style Transfer : Style reference image → style on target (perceptual loss)
 
-    REQUIREMENTS: curl, a running ComfyUI server.
-    Enable via script_manager in lighttable.
+      FACE OPERATIONS:
+        - Face Swap   : ReActor (saved model + direct) and mtb facetools
+        - FaceID      : IPAdapter-based face identity transfer
+        - PuLID Flux  : Face identity transfer using PuLID on Flux architecture
+        - Face Restore : CodeFormer + upscale for damaged faces
+
+      ADVANCED GENERATION:
+        - Klein Flux2 : Distilled Flux2 img2img (with optional reference image)
+        - Wan I2V     : Wan 2.2 image-to-video (dual-UNET high/low noise schedules)
+        - Outpaint    : Expand image canvas (AddDiffusion boundary expansion)
+        - Detail Hallucinate : ControlNet-based detail enhancement
+        - Colorize    : Grayscale → color (T2I ControlNet)
+
+      QUALITY/RESTORATION:
+        - Photo Restore : Upscale + face restore + optional sharpening
+        - Upscale     : 2x-4x with RealESRGAN/other models
+        - RemBG       : Transparent background removal
+        - LAMA Inpaint : AI-powered object removal via mask
+        - SUPIR       : Super-resolution with SDXL refinement
+        - SeedV2R      : Seed-based variation with upscale
+
+      BATCH:
+        - Batch Txt2Img : Generate variations from prompt (no input image)
+        - Batch Variations : Multiple seeds/variations on single input
+        - ICLight      : Relighting with intensity control
+
+    FILE MAP (approximate line numbers)
+    ===================================
+      ~2-8      : GPL license header
+      ~10-43    : Module overview and README
+      ~45-78    : Darktable API bootstrap + gettext i18n setup
+      ~79-583   : MODEL_PRESETS (18+ checkpoint configs + metadata)
+      ~585-615  : scene_arch() — map model arch to scene prompt library
+      ~616-628  : ARCH_LORA_PREFIXES — architecture → LoRA folder filters
+      ~629-682  : Helper functions (starts_with, filter_loras_for_arch, get_turbo_config)
+      ~687-702  : Preferences (server_url, timeout_override from darktablerc)
+      ~703-818  : HTTP via curl (get_server, tmp_dir, shell_esc, curl_*, json_val, fetch_all_loras)
+      ~820-975  : img2img + ControlNet workflow builders
+      ~976-1115 : Face Swap builders (ReActor model-based, direct, save, fetch models)
+      ~1116-1180: Background removal, upscale, LUT, LAMA inpaint builders
+      ~1181-1265: Outpaint, style transfer, face restore builders
+      ~1266-1420: Photo restore, detail hallucinate, colorize, mtb faceswap builders
+      ~1420-1652: Wan I2V builder and video-dimension computation
+      ~1652-1750: Wan LoRA helpers (fetch, filter, noise detection, concept keys)
+      ~1750-1920: Klein Flux2 builder (with optional reference image support)
+      ~1920-2055: PuLID Flux + FaceID builders
+      ~2055-2460: Klein reference + inpaint builders
+      ~2460-2650: Batch txt2img, ICLight, SUPIR builders
+      ~2650-2810: SeedV2R, processing locks (prevent concurrent runs)
+      ~2810-2900: Image export, splash screen, result polling
+      ~2900-3900: Process* wrappers (img2img → process_image, etc.)
+      ~3900-3960: Preset save/load (serialize to darktablerc)
+      ~3960-4850: UI widget builders (sliders, combos, buttons, text boxes)
+      ~4850-4950: Wan I2V specific UI (lora combos for 3 steps)
+      ~4950-7200: Main UI construction + control callbacks
+      ~7200-7300: Install/destroy/restart (script_manager lifecycle)
+
+    KEY DATA STRUCTURES
+    ===================
+    MODEL_PRESETS (table, ~80 entries)
+      - Checkpoint config bundles (ckpt path, steps, CFG, sampler, scheduler, hints)
+      - Each has: label, arch ("sd15"/"sdxl"/"flux2klein"/etc.), ckpt, steps, cfg,
+                  denoise, sampler, scheduler, prompt_hint, negative_hint
+      - Architecture determines compatible LoRAs and scene prompts
+
+    SCENE_PRESETS (referenced but not shown; used for prompt templates)
+      - Maps (scene_name, architecture) → prompt template
+      - Architecture keys: "sd15", "sdxl", "sdxl_anime", "sdxl_cartoon", "flux"
+      - Allows one scene prompt to work across multiple architectures
+
+    Workflow JSON (string-based, not Lua tables)
+      - ComfyUI workflows are JSON DAGs with node_id → {class_type, inputs}
+      - Built as formatted strings (no JSON library in Darktable Lua)
+      - Nodes reference outputs via ["node_id", index] arrays
+      - Common structure: LoadImage → Scale down → Process → Scale up → SaveImage
+
+    REQUIREMENTS
+    ============
+      - curl (built into Windows 10+, macOS, Linux)
+      - Running ComfyUI server (192.168.x.x:8188 or configured via preferences)
+      - Supported checkpoint files (.safetensors) on ComfyUI's models/checkpoints/
+      - LoRA files (if using model-specific LoRAs)
+
+    Enable via script_manager in Darktable lighttable view.
+
+    USAGE WALKTHROUGH (TYPICAL WORKFLOW)
+    ====================================
+    1. START DARKTABLE + ENABLE SPELLCASTER
+       - Open Darktable → Preferences → Lua → check "Spellcaster" → restart
+       - "Spellcaster" panel appears in lighttable view (right side)
+
+    2. VERIFY COMFYUI IS RUNNING
+       - Start ComfyUI server (address shown in preferences, default: 127.0.0.1:8188)
+       - Test: click "Send Test Message" button
+
+    3. SELECT IMAGES IN LIGHTTABLE
+       - Collection mode: click on one or more images (highlighted border)
+       - Selection shows: "1 image" / "3 images" in dt status bar
+
+    4. CHOOSE WORKFLOW (example: img2img)
+       - Model: pick "SDXL - Juggernaut" (or any preset)
+       - Prompt: "a portrait, professional lighting, detailed face"
+       - Negative: "blurry, low quality" (optional)
+       - Scene Preset: "(custom)" or pick a template
+       - LoRA: "Fetch LoRAs" button → pick one or leave as "(none)"
+       - Send → workflow uploads image, processes on ComfyUI, downloads result
+
+    5. IMPORT RESULTS
+       - Result appears in Darktable automatically after processing finishes
+       - New image in collection (labeled with workflow name)
+       - Check history view to see all generated versions
+
+    6. ADVANCED: CONFIGURE SETTINGS
+       - Preferences → Lua → comfyui_connector:
+         * Server URL: http://192.168.x.x:8188 (adjust to your setup)
+         * Timeout: 300 (seconds, for images) / 600 (for video)
+       - Max Resolution: slider to limit GPU memory usage (0 = no scaling)
+
+    ARCHITECTURE DECISIONS EXPLAINED
+    ================================
+    Q: Why build workflows as JSON strings instead of Lua tables?
+    A: - No JSON library in Darktable's embedded Lua
+       - String templates show the ComfyUI node DAG visually (easier debug)
+       - Static structure per workflow type; only values change
+
+    Q: Why use curl instead of a Lua HTTP library?
+    A: - Darktable Lua sandbox can't reliably load native C modules (luasocket, lua-curl)
+       - curl is universally available (Windows 10+, macOS, Linux)
+       - Temp files avoid shell command-line length limits and escaping hell
+
+    Q: How are prompts "prepped" by model hints?
+    A: - USER enters: "a girl"
+       - MODEL PRESET has prompt_hint: "photorealistic, detailed, sharp focus"
+       - FINAL prompt: "photorealistic, detailed, sharp focus, a girl"
+       - This steers the model toward its trained strength (photo vs. anime vs. cartoon)
+
+    Q: Why downscale/upscale around processing?
+    A: - Keeps GPU memory bounded (configurable max_res slider)
+       - SD/SDXL operate at 8x8 latent granularity → scale to multiples of 8
+       - Aspect ratio preserved mathematically (scale one dimension, then math.floor)
+       - Output is upscaled back to original resolution (preserves quality)
+
+    DEBUGGING TIPS
+    ==============
+    • Check Darktable → Preferences → Lua → comfyui_connector
+      Server URL and timeout should match your ComfyUI setup
+    • Ensure ComfyUI is running: http://192.168.x.x:8188 (or your IP:port)
+    • Test connection: "Send Test Message" button
+    • Check Darktable message log (bottom bar): shows export/upload/processing steps
+    • Look at ComfyUI web terminal for detailed node execution logs
+    • For video (Wan I2V), timeout may need to increase to 10+ minutes
+
+    CODE STRUCTURE NOTES FOR DEVELOPERS
+    ===================================
+    • Adding a new workflow? Copy an existing build_*_json() function
+    • Add corresponding process_*() wrapper (orchestrates export/upload/poll/import)
+    • Add UI controls in the widget section (~line 4970)
+    • Add button clicked_callback that calls process_*()
+    • Test with small images first (compute is slow, ~minutes per image)
+    • Workflow builders are at lines ~1085 (img2img), ~1300 (faceswap), etc.
 ]]
 
 -- ═══════════════════════════════════════════════════════════════════════
@@ -717,28 +877,53 @@ dt.preferences.register(MODULE_NAME, "timeout", "integer",
 -- This avoids embedding large JSON in shell command strings and
 -- sidesteps platform-specific quoting issues.
 
+-- ═══════════════════════════════════════════════════════════════════════
+-- SERVER CONFIGURATION
+-- ═══════════════════════════════════════════════════════════════════════
+
 local sep = "/"
 
+-- @return string : ComfyUI server URL from preferences (e.g. "http://192.168.x.x:8188")
+-- Stores in Darktable's darktablerc file (editable via Preferences → Lua → comfyui_connector)
 local function get_server()
   return dt.preferences.read(MODULE_NAME, "server_url", "string")
 end
 
+-- @return string : Platform-specific temp directory
+-- Tries: TEMP (Windows) → TMP (Windows/POSIX) → TMPDIR (POSIX) → /tmp (fallback)
 local function tmp_dir()
   return os.getenv("TEMP") or os.getenv("TMP") or os.getenv("TMPDIR") or "/tmp"
 end
 
+-- SHELL ESCAPING FOR CURL COMMANDS
+-- ==================================
 -- Security: strip double-quotes from strings before embedding in shell commands.
 -- This prevents shell injection via user-controlled values (file paths, URLs).
 -- Not a full sanitizer, but sufficient because all values are either:
 --   (a) internal temp paths we control, or
 --   (b) user-entered paths that get wrapped in double-quotes in the command.
+-- Usage: curl -s -o "outfile" "URL" where URL=shell_esc(user_url)
+-- @param s : string to escape (or nil)
+-- @return string : escaped version (empty if nil)
 local function shell_esc(s)
   if not s then return "" end
   return tostring(s):gsub('"', '')
 end
 
+-- CURL HTTP OPERATIONS
+-- ═════════════════════════════════════════════════════════════════════════
+-- All HTTP uses curl (not a Lua library) invoked via os.execute().
+-- Temp files hold request/response bodies to avoid shell escaping JSON.
+
 -- GET request: fetch a URL and return the response body as a string.
--- Returns nil if the request fails or the response cannot be read.
+-- @param url : ComfyUI API endpoint (e.g. "http://server:8188/api/object_info")
+-- @return string or nil : response JSON (nil if curl fails or file can't be read)
+-- Pattern:
+--   1. Create temp file name with timestamp to avoid collisions
+--   2. Execute: curl -s -o "tmpfile" "url"
+--   3. Read tmpfile into string variable
+--   4. Delete tmpfile
+-- Used by: fetch_all_loras(), fetch_face_models(), fetch_swap_models(), etc.
 local function curl_get(url)
   local tmp = tmp_dir() .. sep .. "comfyui_resp_" .. os.time() .. ".json"
   os.execute(string.format('curl -s -o "%s" "%s"', shell_esc(tmp), shell_esc(url)))
@@ -748,9 +933,20 @@ local function curl_get(url)
   return c
 end
 
--- POST JSON: write the JSON body to a temp file and use curl's @file syntax.
--- This avoids embedding potentially large JSON strings in the shell command,
--- which would break on special characters and hit command-line length limits.
+-- POST JSON workflow to ComfyUI and return response.
+-- Writes JSON body to temp file, then uses curl's @file syntax to read it.
+-- This avoids embedding large JSON in shell commands (which breaks on special chars
+-- and hits command-line length limits on some platforms).
+-- @param url : ComfyUI API endpoint (e.g. "http://server:8188/prompt")
+-- @param json_str : complete workflow JSON as a string (already formatted, no escaping needed)
+-- @return string or nil : response JSON from ComfyUI (contains prompt_id on success)
+-- Pattern:
+--   1. Create two temp files: tb (body input) and tr (response output)
+--   2. Write json_str to tb
+--   3. Execute: curl -X POST -d @"tb" -o "tr" "url"
+--   4. Read tr into return value, delete both temp files
+-- Response format: {"prompt_id":"<uuid>","number":"<int>","..."}
+-- Used by: process_image, process_wan_i2v, all AI workflows
 local function curl_post_json(url, json_str)
   local tb = tmp_dir() .. sep .. "comfyui_body_" .. os.time() .. ".json"
   local tr = tmp_dir() .. sep .. "comfyui_presp_" .. os.time() .. ".json"
@@ -764,7 +960,18 @@ local function curl_post_json(url, json_str)
 end
 
 -- Upload an image file to ComfyUI's /upload/image endpoint via multipart form.
--- The "overwrite=true" flag lets us reuse filenames without conflicts.
+-- ComfyUI expects the form field name "image" and reads the filename from the upload.
+-- The "overwrite=true" flag lets us reuse filenames without generating unique names.
+-- @param url : ComfyUI /upload/image endpoint (e.g. "http://server:8188/upload/image")
+-- @param filepath : path to local PNG file exported from Darktable (e.g. "/tmp/dt_export_xyz.png")
+-- @param filename : how to name the file on ComfyUI (e.g. "dt_export_xyz.png")
+-- @return string or nil : response JSON (contains "name"/"subfolder" on success)
+-- Pattern:
+--   1. Create temp file tr for response
+--   2. Execute: curl -F "image=@filepath" -F "overwrite=true" -o "tr" "url"
+--   3. Read tr, delete it, return response
+-- Response format: {"name":"filename","subfolder":"input","type":"input"}
+-- Used by: export_to_temp + process_image (upload step)
 local function curl_upload(url, filepath, filename)
   local tr = tmp_dir() .. sep .. "comfyui_up_" .. os.time() .. ".json"
   os.execute(string.format(
@@ -777,32 +984,60 @@ local function curl_upload(url, filepath, filename)
 end
 
 -- Download a file (image or video) from ComfyUI's /view endpoint.
+-- ComfyUI stores all outputs in a folder tree; this fetches them to local disk.
+-- @param url : ComfyUI /view endpoint (e.g. "http://server:8188/view?filename=output_xyz.png")
+-- @param out : local path where file should be saved (e.g. "/tmp/output_xyz.png")
+-- Pattern:
+--   1. Execute: curl -s -o "out" "url"
+--   2. Return (no response body to read; curl handles file writing)
+-- Used by: result polling + importing into Darktable (see wait_result, process_image)
 local function curl_download(url, out)
   os.execute(string.format('curl -s -o "%s" "%s"', shell_esc(out), shell_esc(url)))
 end
 
--- Minimal JSON value extractor: pull a single string value by key name.
--- Avoids a full JSON parser dependency for the simple responses we handle
--- (prompt_id, filename, subfolder, sha). Not suitable for nested objects.
+-- SIMPLE JSON VALUE EXTRACTION
+-- ═════════════════════════════════════════════════════════════════════════
+-- Minimal parser to avoid adding a JSON library dependency.
+-- Uses regex pattern matching for simple "key": "value" pairs (string values only).
+-- Not suitable for nested objects, arrays, or numeric values.
+
+-- Extract a single string value from JSON response by key name.
+-- @param s : JSON response string (or nil)
+-- @param key : the key to extract (e.g. "prompt_id", "name", "filename")
+-- @return string or nil : the value (without quotes) or nil if key not found
+-- Example: json_val('{"prompt_id":"abc123","number":5}', "prompt_id") → "abc123"
+-- Pattern: matches "key" : "value" with optional whitespace, captures the value part
 local function json_val(s, key)
   return s and s:match('"' .. key .. '"%s*:%s*"([^"]*)"')
 end
 
--- ── LoRA caching ───────────────────────────────────────────────────────
+-- ───────────────────────────────────────────────────────────────────────
+-- LoRA CACHING
+-- ───────────────────────────────────────────────────────────────────────
 -- LoRA lists are fetched once from ComfyUI's /object_info endpoint and
 -- cached in memory. The UI filters this cached list by architecture
 -- whenever the user switches model presets, avoiding repeated HTTP calls.
-local cached_all_loras = {}   -- full server list (unfiltered)
-local cached_loras = {}       -- currently displayed (filtered by arch)
+local cached_all_loras = {}   -- full server list (unfiltered, fetched by fetch_all_loras)
+local cached_loras = {}       -- currently displayed (filtered by architecture via filter_loras_for_arch)
 
+-- Fetch all available LoRAs from ComfyUI and cache them in memory.
+-- ComfyUI exposes LoRA metadata via /object_info/LoraLoader endpoint.
+-- The response is JSON with "lora_name": ["name1", "name2", ...] structure.
+-- @return table : array of LoRA filenames (e.g. {"Hyper-SD15-8steps-CFG-lora.safetensors", ...})
+-- Side effects: populates cached_all_loras (used by refresh_lora_selector when filtering by arch)
+-- HTTP: GET /object_info/LoraLoader → parse "lora_name" field → extract quoted names
+-- Called by: fetch_lora_btn.clicked_callback (in UI section)
 local function fetch_all_loras()
   local server = get_server()
   local r = curl_get(server .. "/object_info/LoraLoader")
   if not r then return {} end
   local names = {}
   -- Parse the lora_name array from the JSON
+  -- ComfyUI returns: {"lora_name": ["file1.safetensors", "file2.safetensors", ...], "inputs": {...}}
+  -- We extract the JSON array portion (quoted names separated by commas)
   local list_str = r:match('"lora_name"%s*:%s*%[(%[.-%])%s*,')
   if list_str then
+    -- Extract each quoted string from the JSON array
     for name in list_str:gmatch('"([^"]*)"') do
       table.insert(names, name)
     end
@@ -811,6 +1046,11 @@ local function fetch_all_loras()
   return names
 end
 
+-- Get the architecture string of the currently selected model preset.
+-- Used by UI to filter compatible LoRAs, scenes, and ControlNets.
+-- @return string : architecture ID ("sd15", "sdxl", "flux1dev", "flux2klein", etc.)
+-- Fallback: "sdxl" if no model preset is selected (should not happen in normal use)
+-- Called by: refresh_lora_selector, refresh_scene_selector, get_turbo_config
 local function get_current_arch()
   local idx = model_selector and model_selector.selected or 1
   local preset = MODEL_PRESETS[idx]
@@ -818,50 +1058,94 @@ local function get_current_arch()
 end
 
 -- ═══════════════════════════════════════════════════════════════════════
--- Workflow JSON builders
+-- WORKFLOW JSON BUILDERS
 -- ═══════════════════════════════════════════════════════════════════════
--- ComfyUI workflows are DAGs of processing nodes. Each node has a
--- string ID, a class_type (ComfyUI node name), and an inputs table.
--- Node-to-node connections use ["node_id", output_index] references.
+-- ComfyUI workflows are JSON objects describing DAGs of processing nodes.
+-- Each node has:
+--   - A unique string ID (e.g., "1", "42", "99")
+--   - A class_type (ComfyUI node name, e.g., "LoadImage", "KSampler", "SaveImage")
+--   - An inputs dict with parameter values and inter-node connections
 --
--- These builder functions construct workflow JSON as formatted strings
--- rather than Lua tables because:
---   (a) Lua's table-to-JSON would need a serializer library
---   (b) String templates make the node graph visually obvious
---   (c) The JSON structure is static per workflow type (only values change)
+-- Node-to-node connections use ["node_id", output_index] arrays to reference
+-- outputs from earlier nodes (e.g., ["1", 0] means "output 0 of node 1").
 --
--- Common pattern across all workflows:
---   LoadImage → ImageScale (down) → process → ImageScale (back up) → SaveImage
--- The scale-down/up preserves original resolution while keeping GPU memory
--- bounded by max_res_slider.
+-- WHY STRING-BASED BUILDERS (NOT LUA TABLES)?
+-- ============================================
+-- (a) Lua's embedded Lua in Darktable has no JSON library
+-- (b) String templates make the node DAG structure visually obvious (easier debug)
+-- (c) The JSON structure is static per workflow type; only specific values change
+-- (d) We can use string.format() to inject values without Lua table serialization
+--
+-- COMMON PATTERN ACROSS WORKFLOWS
+-- ================================
+--   1. LoadImage (node 4) → read original image dimensions
+--   2. ImageScale (node 90) → downscale to max_res to save GPU memory
+--   3. Process (nodes 1-3, KSampler/etc.) → AI processing at reduced res
+--   4. ImageScale (node 91) → upscale back to original dimensions
+--   5. SaveImage (node 8) → write output PNG file
+--
+-- The downscale is computed to preserve aspect ratio and round to multiples of 8
+-- (because SD/SDXL VAE latent space has 8x8 pixel granularity).
+-- Without this, a 1024x768 image would become 1016x760, changing aspect ratio.
+
+-- JSON VALUE ESCAPING
+-- ═══════════════════════════════════════════════════════════════════════
+-- JSON requires escaping special characters inside double-quoted strings.
+-- Order matters: escape backslashes first, then everything else.
 
 -- Escape a string for safe embedding inside a JSON double-quoted value.
--- Handles backslashes first (\ -> \\), then double-quotes (" -> \").
+-- Converts Lua string → JSON string (handles backslashes, quotes, newlines, tabs).
+-- @param s : Lua string (may contain unescaped JSON special chars)
+-- @return string : escaped version safe for JSON embedding
+-- Examples:
+--   "hello\nworld" → "hello\\nworld" (preserves literal newline as \n in JSON)
+--   'path\\to\\file' → 'path\\\\to\\\\file' (Windows paths get doubled backslashes)
+--   'say "hi"' → 'say \\"hi\\"' (quotes escaped for JSON)
+-- IMPORTANT: backslash must be escaped first, or we'd double-escape everything
 local function json_escape(s)
-  s = s:gsub("\\", "\\\\")   -- backslash must be first
-  s = s:gsub('"', '\\"')
-  s = s:gsub("\n", "\\n")
-  s = s:gsub("\r", "\\r")
-  s = s:gsub("\t", "\\t")
+  s = s:gsub("\\", "\\\\")   -- backslash must be first (catches existing escapes too)
+  s = s:gsub('"', '\\"')      -- double-quote → \"
+  s = s:gsub("\n", "\\n")     -- literal newline → \n escape sequence
+  s = s:gsub("\r", "\\r")     -- literal carriage return → \r escape sequence
+  s = s:gsub("\t", "\\t")     -- literal tab → \t escape sequence
   return s
 end
 
--- Compute proportional downscale dimensions fitting within max_res,
--- rounding to multiples of 8 because SD/SDXL operate in latent space
--- where each pixel represents an 8x8 block of actual pixels.
+-- IMAGE DIMENSION UTILITIES
+-- ═══════════════════════════════════════════════════════════════════════
+-- Compute proportional downscale dimensions fitting within max_res.
+-- Rounds to multiples of 8 because SD/SDXL operate in latent space
+-- where each "pixel" in latent space represents an 8x8 block in image space.
+-- This ensures the latent representation respects the original aspect ratio.
+--
+-- @param orig_w, orig_h : original image dimensions (pixels)
+-- @param max_res : maximum dimension (e.g., 768, 1024); 0 = no scaling
+-- @return new_w, new_h : downscaled dimensions (multiples of 8)
+-- Examples:
+--   compute_scale_dims(1024, 768, 512) → (512, 384) [max dimension fits in 512]
+--   compute_scale_dims(1920, 1080, 1024) → (1024, 576)
+--   compute_scale_dims(640, 480, 0) → (640, 480) [no scaling]
 local function compute_scale_dims(orig_w, orig_h, max_res)
   if max_res <= 0 or (orig_w <= max_res and orig_h <= max_res) then
     return orig_w, orig_h
   end
+  -- Scale the larger dimension down to max_res, keeping aspect ratio
   local scale = max_res / math.max(orig_w, orig_h)
+  -- Round to multiples of 8 (SD/SDXL latent space granularity)
   local new_w = math.floor(orig_w * scale / 8) * 8
   local new_h = math.floor(orig_h * scale / 8) * 8
+  -- Clamp to minimum 8x8 (would be nonsensical but prevents zero dimensions)
   if new_w < 8 then new_w = 8 end
   if new_h < 8 then new_h = 8 end
   return new_w, new_h
 end
 
--- Read image dimensions safely (darktable image object)
+-- Read image dimensions from a Darktable image object.
+-- Darktable images are loaded in the lighttable view; each has width/height properties.
+-- @param image : Darktable image object (or nil)
+-- @return w, h : width and height in pixels
+-- Fallback: 4096x4096 if image is nil or dimensions are invalid (<=0)
+-- Used by: build_*_json functions to determine if scaling is needed
 local function get_image_dims(image)
   local w = (image and image.width) or 4096
   local h = (image and image.height) or 4096
@@ -870,10 +1154,57 @@ local function get_image_dims(image)
   return w, h
 end
 
--- Build an img2img workflow: Load checkpoint -> encode prompt -> load image ->
--- scale down -> VAE encode -> KSampler (denoise) -> VAE decode -> scale back up -> save.
--- Optional LoRA node (ID "100") is inserted between checkpoint and sampler.
--- Node ID convention: 1-10 = core pipeline, 90+ = utility (scale/size), 100+ = LoRA chain.
+-- BUILD IMG2IMG WORKFLOW JSON
+-- ═══════════════════════════════════════════════════════════════════════
+-- Construct the JSON DAG for an image-to-image diffusion workflow.
+-- This is the most common and versatile workflow: transform an existing image
+-- using a prompt and a model checkpoint.
+--
+-- WORKFLOW DAG (node IDs):
+--   Node 1: CheckpointLoaderSimple (loads .safetensors model)
+--   Nodes 2-3: CLIPTextEncode (positive & negative prompts)
+--   Node 4: LoadImage (read the input image file)
+--   Node 90: GetImageSize (get original dimensions)
+--   Node 91: ImageScale (downscale to max_res to save GPU memory)
+--   Node 5: VAEEncode (compress image to latent space)
+--   Node 6: KSampler (the main diffusion loop)
+--   Node 7: VAEDecode (decompress latent back to image)
+--   Node 92: ImageScale (upscale back to original dimensions)
+--   Node 8: SaveImage (save result PNG)
+--   Nodes 99-100: LoRA chain (optional model fine-tuning)
+--   Nodes 20-22: ControlNet chain (optional guidance via reference image)
+--
+-- PARAMETERS:
+--   @param image_filename : name of uploaded image on ComfyUI (e.g. "dt_export_xyz.png")
+--   @param preset : MODEL_PRESETS entry with ckpt path, steps, cfg, sampler, scheduler
+--   @param prompt, negative : user text prompts (will be json_escape'd)
+--   @param seed : RNG seed (negative = random each run)
+--   @param lora_name, lora_strength : optional LoRA fine-tuning (or "" for none)
+--   @param scale_w, scale_h : downscaled dimensions (computed by compute_scale_dims)
+--   @param cn_mode, cn_strength : ControlNet mode ("off"/"reference"/etc.) and blend strength
+--   @param cn_preprocessor, cn_model : optional ControlNet processor and model names
+--   @param turbo_config : optional turbo LoRA for 8-step acceleration (or nil)
+--
+-- RETURN: JSON string (entire workflow object, ready to POST to /prompt endpoint)
+--
+-- NODE CHAINING STRATEGY:
+--   - Outputs referenced via ["node_id", output_index] arrays
+--   - Turbo LoRA (node 99) chains before user LoRA (node 100)
+--   - LoRA outputs update model/clip references for KSampler
+--   - ControlNet (nodes 20-22) optionally preprocesses image and applies guidance
+--   - Image scaling happens before/after VAE to preserve aspect ratio
+--
+-- TURBO MODE:
+--   Hyper-SD15 / Hyper-SDXL LoRAs enable 8-step generation instead of 20-30 steps.
+--   This prepends an automatic LoRA before user-selected ones.
+--
+-- CONTROLNET (optional):
+--   Adds nodes for:
+--     - Optional preprocessor (e.g., LineArt, DepthAnything) → node 20
+--     - ControlNetLoader → node 21
+--     - ControlNetApplyAdvanced (applies guidance) → node 22
+--   If enabled, nodes 2-3 outputs are replaced with nodes 22's outputs in KSampler.
+--
 local function build_img2img_json(image_filename, preset, prompt, negative, seed,
                                    lora_name, lora_strength, scale_w, scale_h,
                                    cn_mode, cn_strength, cn_preprocessor, cn_model,
@@ -1000,6 +1331,8 @@ local function fetch_face_models()
   return models
 end
 
+-- Fetch swap models (detection/replacement backends) from ComfyUI.
+-- @return table : array of swap model names (e.g. ["inswapper_128.onnx", ...])
 local function fetch_swap_models()
   local server = get_server()
   local r = curl_get(server .. "/object_info/ReActorFaceSwap")
@@ -1015,6 +1348,28 @@ local function fetch_swap_models()
   return models
 end
 
+-- BUILD FACESWAP WORKFLOW (saved face model)
+-- ═══════════════════════════════════════════════════════════════════════
+-- ReActor approach: uses a pre-saved face embedding file (learned from prior photo).
+-- Swaps all detected faces in target image with the reference face identity.
+--
+-- WORKFLOW NODES:
+--   Node 1: LoadImage (target image)
+--   Node 90: GetImageSize (original dimensions)
+--   Node 91: ImageScale (downscale)
+--   Node 2: ReActorLoadFaceModel (loads saved face embedding from disk)
+--   Node 3: ReActorFaceSwapOpt (main swap + CodeFormer restoration)
+--   Node 4: ReActorOptions (face detection / ordering config)
+--   Node 5: ReActorFaceBoost (post-swap face enhancement)
+--   Node 95: ImageScale (upscale back to original size)
+--   Node 10: SaveImage (output)
+--
+-- @param image_filename : target image name on ComfyUI
+-- @param face_model_name : saved face embedding file (e.g. "john_doe.pt")
+-- @param swap_model : detection backend (e.g. "inswapper_128.onnx")
+-- @param scale_w, scale_h : downscaled dimensions
+-- @return string : complete workflow JSON
+--
 local function build_faceswap_model_json(image_filename, face_model_name, swap_model, scale_w, scale_h)
   local esc_face = json_escape(face_model_name)
   local esc_swap = json_escape(swap_model)
@@ -1073,15 +1428,22 @@ local function build_faceswap_direct_json(target_filename, source_filename,
 }}]], target_filename, source_filename, scale_w, scale_h, esc_swap)
 end
 
+-- BUILD SAVE FACE MODEL WORKFLOW (ReActor)
 -- ═══════════════════════════════════════════════════════════════════════
--- Save Face Model (ReActor)
--- ═══════════════════════════════════════════════════════════════════════
--- Builds a face embedding from a source image and saves it as a
--- .safetensors face model on the ComfyUI server. Uses
--- ReActorBuildFaceModel to extract the face embedding, then
--- ReActorSaveFaceModel to persist it. Saved models appear in the
--- "Face Model" dropdown after clicking Fetch.
-
+-- Extract and save a face embedding from a source image (learn a face).
+-- This workflow encodes the face identity into a .pt/.safetensors file
+-- on the ComfyUI server, which can then be used with build_faceswap_model_json.
+--
+-- WORKFLOW:
+--   Node 1: LoadImage (source image with the face to encode)
+--   Node 2: ReActorBuildFaceModel (extract face embedding via neural net)
+--   Node 3: ReActorSaveFaceModel (persist to disk)
+--
+-- @param image_filename : source image name on ComfyUI
+-- @param model_name : filename for saved model (user-provided, e.g. "john_doe.pt")
+-- @param overwrite : boolean (true = overwrite existing, false = skip if exists)
+-- @return string : complete workflow JSON
+--
 local function build_save_face_model_json(image_filename, model_name, overwrite)
   local esc_name = json_escape(model_name)
   return string.format([[
@@ -1092,13 +1454,25 @@ local function build_save_face_model_json(image_filename, model_name, overwrite)
 }}]], image_filename, overwrite and "overwrite" or "skip-if-exists", esc_name)
 end
 
+-- BUILD REMOVE BACKGROUND WORKFLOW (rembg isnet-general-use)
 -- ═══════════════════════════════════════════════════════════════════════
--- Remove Background (rembg) — isnet-general-use, validated settings
--- ═══════════════════════════════════════════════════════════════════════
--- Simplest workflow: LoadImage → Image Rembg → SaveImage.
--- Settings hardcoded from validated Spellcaster REMBG pipeline.
--- DO NOT CHANGE — alpha_matting=true causes color fringing on edges.
-
+-- Remove background via semantic segmentation. Produces PNG with transparency.
+--
+-- WORKFLOW:
+--   Node 1: LoadImage (input image)
+--   Node 2: Image Rembg (background removal)
+--   Node 3: SaveImage (output with alpha channel)
+--
+-- Settings are hardcoded from validated Spellcaster pipeline (DO NOT CHANGE):
+--   - transparency: true (output has alpha channel)
+--   - model: "isnet-general-use" (general-purpose, not anime/portrait-specific)
+--   - post_processing: false (no edge smoothing; can cause artifacts)
+--   - alpha_matting: false (IMPORTANT: true causes color fringing on edges)
+--   - alpha_matting_threshold settings: unused but present for completeness
+--
+-- @param image_filename : input image name on ComfyUI
+-- @return string : complete workflow JSON
+--
 local function build_rembg_json(image_filename)
   return string.format([[
 {"prompt":{
@@ -1113,12 +1487,23 @@ local function build_rembg_json(image_filename)
 }}]], shell_esc(image_filename))
 end
 
+-- BUILD UPSCALE WORKFLOW (4x super-resolution)
 -- ═══════════════════════════════════════════════════════════════════════
--- Upscale 4x workflow builder
--- ═══════════════════════════════════════════════════════════════════════
--- Uses UpscaleModelLoader + ImageUpscaleWithModel for model-based 4x
--- upscaling. No checkpoints or samplers needed — pure super-resolution.
-
+-- Model-based 4x upscaling via RealESRGAN or other upscale models.
+-- NO checkpoints, NO samplers — purely deterministic upsampling.
+--
+-- WORKFLOW:
+--   Node 1: LoadImage (input image)
+--   Node 2: UpscaleModelLoader (load .pth upscale model from disk)
+--   Node 3: ImageUpscaleWithModel (apply upscale)
+--   Node 4: SaveImage (output)
+--
+-- Available models: RealESRGAN (photo), UltraSharp (detail), Anime (anime)
+--
+-- @param image_filename : input image name on ComfyUI
+-- @param model_name : upscale model filename (e.g. "RealESRGAN_x4plus.pth")
+-- @return string : complete workflow JSON
+--
 local UPSCALE_MODELS = {
   { label = "4x UltraSharp",        file = "4x-UltraSharp.pth" },
   { label = "4x RealESRGAN",        file = "RealESRGAN_x4plus.pth" },
@@ -1137,13 +1522,24 @@ local function build_upscale_json(image_filename, model_name)
 }}]], shell_esc(image_filename), shell_esc(model_name))
 end
 
+-- BUILD OBJECT REMOVAL WORKFLOW (LaMa Inpaint)
 -- ═══════════════════════════════════════════════════════════════════════
--- Object Removal (LaMa Inpaint) workflow builder
--- ═══════════════════════════════════════════════════════════════════════
--- LaMa (Large Mask Inpainting) removes objects using a mask image.
--- The mask's alpha channel (LoadImage output[1]) defines the removal area.
--- No checkpoint needed — LaMa is a self-contained inpainting model.
-
+-- AI-powered object removal using LaMa (Large Mask Inpainting).
+-- Restores masked areas using context from surrounding pixels.
+--
+-- WORKFLOW:
+--   Node 1: LoadImage (target image with unwanted objects)
+--   Node 2: LoadImage (mask image: white = remove, black = keep)
+--   Node 3: LaMaInpaint (inpainting model removes masked regions)
+--   Node 4: SaveImage (output)
+--
+-- The mask image should have transparency or separate alpha channel.
+-- LoadImage output[1] extracts the alpha channel for the mask.
+--
+-- @param image_filename : input image name on ComfyUI
+-- @param mask_filename : mask image name on ComfyUI (alpha channel = removal area)
+-- @return string : complete workflow JSON
+--
 local function build_lama_json(image_filename, mask_filename)
   return string.format([[
 {"prompt":{
@@ -1154,12 +1550,28 @@ local function build_lama_json(image_filename, mask_filename)
 }}]], shell_esc(image_filename), shell_esc(mask_filename))
 end
 
+-- BUILD COLOR GRADING WORKFLOW (LUT-based)
 -- ═══════════════════════════════════════════════════════════════════════
--- Color Grading / LUT workflow builder
--- ═══════════════════════════════════════════════════════════════════════
--- Applies a .cube LUT file via ImageApplyLUT+ node for cinematic color
--- grading. Strength controls blend between original and graded image.
-
+-- Apply cinematic color grading via .cube lookup tables.
+-- LUTs are industry-standard for color grading (Kodak, Fujifilm, DCI-P3, ACES).
+--
+-- WORKFLOW:
+--   Node 1: LoadImage (input image)
+--   Node 2: ImageApplyLUT (apply .cube LUT for color transformation)
+--   Node 3: SaveImage (output with graded colors)
+--
+-- Strength (0.0-1.0) blends between original and graded:
+--   strength=0.0 → original image (no effect)
+--   strength=1.0 → fully graded image
+--   strength=0.5 → 50% blend
+--
+-- Presets include: Kodak 2383 (warm cinema), Fujifilm 3513DI (cool cinema), ACES (HDR)
+--
+-- @param image_filename : input image name on ComfyUI
+-- @param lut_file : .cube LUT filename (e.g. "Kodak_2383_Cinema.cube")
+-- @param strength : blend strength (0.0 to 1.0)
+-- @return string : complete workflow JSON
+--
 local LUT_PRESETS = {
   { label = "Kodak 2383 Cinema",      file = "Rec709_Kodak_2383_D65.cube" },
   { label = "Fujifilm 3513DI Cinema",  file = "Rec709_Fujifilm_3513DI_D65.cube" },
@@ -2816,8 +3228,19 @@ local function release_processing_lock()
   _processing = false
 end
 
--- Export a darktable image to a temporary PNG file for upload.
--- Returns (file_path, file_name) or (nil, nil) on failure.
+-- IMAGE EXPORT & RESULT POLLING
+-- ═══════════════════════════════════════════════════════════════════════
+-- Darktable → ComfyUI requires exporting to temp files (PNG format with 8-bit color).
+-- ComfyUI processing is async; we poll /history until results appear.
+
+-- Export a Darktable image to a temporary PNG file for ComfyUI upload.
+-- Uses 8-bit PNG (standard format for AI models).
+-- @param image : Darktable image object from lighttable view
+-- @return path, fname : tuple of (local file path, filename for upload) or (nil, nil) on failure
+-- Usage:
+--   local path, fname = export_to_temp(dt.database[1])
+--   local resp = curl_upload(..., path, fname)  -- upload to ComfyUI
+-- Filenames are unique: "dt_comfy_<timestamp>_<random>.png" to avoid collisions
 local function export_to_temp(image)
   local dir = tmp_dir()
   local fname = "dt_comfy_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
@@ -2825,25 +3248,32 @@ local function export_to_temp(image)
   local exp = dt.new_format("png")
   exp.bpp = 8
   exp:write_image(image, path)
-  -- verify file was written
+  -- verify file was written (prevents returning invalid path)
   local f = io.open(path, "r")
   if not f then return nil, nil end
   f:close()
   return path, fname
 end
 
--- ── Splash screen (visual progress indicator) ──────────────────────────
--- While ComfyUI processes a workflow (which can take minutes for video),
--- a Tkinter splash window is shown via an external Python process.
--- Communication uses a lock file: the splash stays open while the file
--- exists and closes when it's deleted. This avoids any IPC complexity.
+-- SPLASH SCREEN (visual progress indicator during processing)
+-- ═══════════════════════════════════════════════════════════════════════
+-- While ComfyUI processes workflows (which can take 10+ minutes for video),
+-- a Python Tkinter splash window shows progress and prevents UI freezing.
+-- Communication: the splash stays open while a lock file exists, closes when deleted.
+-- This avoids IPC complexity (no pipes, sockets, or shared memory needed).
 
+-- Launch a splash screen process that displays until the lock file is deleted.
+-- @return string : path to lock file (used to signal splash process to exit)
+-- Locates splash.py relative to this Lua plugin directory.
+-- On Windows: uses pythonw (no console window) + start /B (background process)
+-- On Unix: uses python3 + & (background shell process)
 local function launch_splash()
   local lock_file = tmp_dir() .. sep .. "comfyui_splash_" .. os.time() .. "_" .. math.random(1000,9999) .. ".lock"
   local f = io.open(lock_file, "w")
   if f then f:write("1"); f:close() end
 
   -- Locate splash.py relative to this Lua file's directory
+  -- debug.getinfo(1, "S").source gives the current file path with @ prefix
   local script_dir = debug.getinfo(1, "S").source:match("@?(.*[/\\])") or ""
   local splash_script = script_dir .. "splash.py"
 
@@ -2856,16 +3286,42 @@ local function launch_splash()
   return lock_file
 end
 
+-- Signal the splash screen process to exit by deleting the lock file.
+-- The splash Python process checks for file existence in a loop.
+-- @param lock_file : path to lock file created by launch_splash()
 local function kill_splash(lock_file)
-  -- Deleting the lock file signals the splash Python process to exit
   if lock_file then
     os.remove(lock_file)
   end
 end
 
--- Poll ComfyUI's /history endpoint until the workflow completes or times out.
--- Returns a list of output filenames (PNG/JPG only) or nil on timeout.
--- Shows a splash screen during the wait and polls every 2 seconds.
+-- RESULT POLLING FROM COMFYUI
+-- ═══════════════════════════════════════════════════════════════════════
+-- ComfyUI is async: /prompt returns immediately with a prompt_id (UUID).
+-- Workflow execution happens in background; we poll /history/<prompt_id>
+-- until the entry appears (indicating all nodes finished).
+--
+-- Polling strategy:
+--   - Check /history every 2 seconds (dt.control.sleep(2000))
+--   - Timeout is user-configurable (default 300s = 5 min, typical for images)
+--   - For videos (Wan I2V), use longer timeout (600s = 10 min)
+--   - Splash screen stays open during polling
+
+-- Poll ComfyUI's /history endpoint until workflow completes or times out.
+-- Filters results to return only PNG/JPG image files (ignores videos, metadata).
+-- @param prompt_id : UUID returned from /prompt endpoint
+-- @param timeout_override : max seconds to wait (nil = use preferences setting)
+-- @return table or nil : array of output filenames (e.g. ["output_xyz.png"]) or nil on timeout
+-- Usage:
+--   local prompt_id = json_val(curl_post_json(...), "prompt_id")  -- submit workflow
+--   local filenames = wait_result(prompt_id)  -- poll until done
+--   if filenames then curl_download(...filename...) end
+-- Polling loop:
+--   1. GET /history/<prompt_id> → parse JSON
+--   2. Look for "filename" fields in response
+--   3. Filter to .png / .jpg extensions only
+--   4. If any found, return list
+--   5. Otherwise sleep 2s and retry
 local function wait_result(prompt_id, timeout_override)
   local server = get_server()
   local timeout = timeout_override or dt.preferences.read(MODULE_NAME, "timeout", "integer")
@@ -2882,9 +3338,9 @@ local function wait_result(prompt_id, timeout_override)
           table.insert(fnames, fn)
         end
       end
-      if #fnames > 0 then 
+      if #fnames > 0 then
         kill_splash(lock_file)
-        return fnames 
+        return fnames
       end
     end
     dt.control.sleep(2000)
@@ -2896,6 +3352,9 @@ end
 -- Extended result poller for Wan I2V: returns ALL output files including
 -- videos (MP4, WebM) and GIFs, not just images. Each entry includes
 -- the subfolder path needed to construct the correct /view download URL.
+-- @param prompt_id : UUID from /prompt endpoint
+-- @param timeout_override : max seconds to wait (default 600s = 10min for video)
+-- @return table or nil : array of {filename, subfolder} dicts or nil on timeout
 local function wait_result_all(prompt_id, timeout_override)
   local server = get_server()
   local timeout = timeout_override or 600
@@ -2929,32 +3388,65 @@ local function wait_result_all(prompt_id, timeout_override)
   return nil
 end
 
--- ── img2img processing ─────────────────────────────────────────────────
+-- ═══════════════════════════════════════════════════════════════════════
+-- IMG2IMG PROCESSING WRAPPER
+-- ═══════════════════════════════════════════════════════════════════════
+-- High-level orchestration for image-to-image workflows.
+-- Coordinates: export → upload → build workflow → submit → poll → import result
+--
+-- This is a wrapper over build_img2img_json that handles the full pipeline:
+-- 1. Export selected Darktable image to temp PNG
+-- 2. Upload PNG to ComfyUI (multipart form)
+-- 3. Build workflow JSON (img2img + optional LoRA/ControlNet)
+-- 4. POST workflow to ComfyUI /prompt endpoint
+-- 5. Poll /history until result appears
+-- 6. Download output image and import back to Darktable
+--
+-- @param image : Darktable image object
+-- @param preset : MODEL_PRESETS entry (ckpt, steps, cfg, etc.)
+-- @param prompt, negative : text prompts from UI
+-- @param lora_name, lora_strength : optional LoRA and its blend strength
+-- @param cn_mode, cn_strength, cn_preprocessor, cn_model : optional ControlNet config
+-- @param turbo_config : optional Hyper-SD/SDXL turbo LoRA config (or nil)
+--
+-- Progress updates: dt.print() at each major step (export, upload, processing, import)
+--
+-- On any error: dt.print() error message and early return (no crash)
+--
 local function process_image(image, preset, prompt, negative, lora_name, lora_strength,
                               cn_mode, cn_strength, cn_preprocessor, cn_model,
                               turbo_config)
   local server = get_server()
 
+  -- STEP 1: Export the selected Darktable image to a temp PNG file
   dt.print(string.format(_("Exporting for %s..."), preset.label))
   local path, fname = export_to_temp(image)
   if not path then
     dt.print(_("Export failed")); return
   end
 
+  -- STEP 2: Upload temp PNG to ComfyUI's /upload/image endpoint
+  -- ComfyUI stores it in ComfyUI/input/ directory with our provided filename
   dt.print(_("Uploading to ComfyUI..."))
   local upload_name = "dt_" .. os.time() .. "_" .. math.random(10000,99999) .. ".png"
   curl_upload(server .. "/upload/image", path, upload_name)
   os.remove(path)
 
+  -- STEP 3: Determine scaling and random seed
   local seed = math.random(0, 2^31 - 1)
   local orig_w, orig_h = get_image_dims(image)
   local max_res = max_res_slider.value
   local scale_w, scale_h = compute_scale_dims(orig_w, orig_h, max_res)
+
+  -- STEP 4: Build the workflow JSON DAG (img2img pattern)
   local wf_json = build_img2img_json(upload_name, preset, prompt, negative, seed,
                                       lora_name, lora_strength, scale_w, scale_h,
                                       cn_mode, cn_strength, cn_preprocessor, cn_model,
                                       turbo_config)
 
+  -- STEP 5: Submit workflow to ComfyUI
+  -- Response contains {"prompt_id": "<uuid>", "number": <int>, ...}
+  -- We extract prompt_id to poll for results
   dt.print(_("Queuing prompt..."))
   local resp = curl_post_json(server .. "/prompt", wf_json)
   local pid = json_val(resp, "prompt_id")
@@ -2962,6 +3454,7 @@ local function process_image(image, preset, prompt, negative, lora_name, lora_st
     dt.print(_("Failed to queue prompt")); return
   end
 
+  -- STEP 6: Poll until workflow finishes (shows splash screen during wait)
   dt.print(string.format(_("Processing with %s..."), preset.label))
   local results = wait_result(pid)
   if not results then
@@ -7223,41 +7716,84 @@ local module_widget = dt.new_widget("box") {
   seedv2r_send_btn,
 }
 
+-- ═══════════════════════════════════════════════════════════════════════
+-- DARKTABLE MODULE REGISTRATION & LIFECYCLE
+-- ═══════════════════════════════════════════════════════════════════════
+-- Darktable's plugin lifecycle: scripts are loaded on startup and must
+-- register UI modules. The plugin must respond to script_manager events
+-- (destroy/restart) to appear/disappear when toggled in the preferences.
+--
+-- KEY CONCEPTS:
+-- 1. module_widget is a vertical box (dt.new_widget("box")) containing all UI controls
+-- 2. dt.register_lib() attaches the module to a lighttable panel (right-center, pos 99)
+-- 3. Widgets are created at file load time, but only attached to the UI when needed
+-- 4. The module starts invisible if the plugin isn't enabled in preferences
+--
+-- REGISTRATION LOGIC:
+--   - If already in lighttable view: register immediately
+--   - Otherwise: wait for view-changed event before registering
+--   This prevents errors from registering modules in non-target views.
+--
+-- LIFECYCLE CALLBACKS:
+--   - destroy() : called when user disables plugin in preferences
+--     Sets visible = false (keeps module in memory, avoids re-creating widgets)
+--   - restart() : called when user re-enables plugin
+--     Sets visible = true (restores visibility instantly)
+--   - destroy_method = "hide" : tells script_manager to use hide/show, not delete/recreate
+--
+-- THREAD-SAFETY:
+--   module_installed flag prevents double-registration if somehow called twice
+
 local module_installed = false
 
+-- Register the Spellcaster module with Darktable.
+-- Adds a new panel in the lighttable view (right side, position 99) containing
+-- all workflow controls. The panel is expandable and resetable (collapse/restore).
+--
+-- @see module_widget for the UI container (created above)
 local function install_module()
   if not module_installed then
     dt.register_lib(
-      MODULE_NAME,
-      _("Spellcaster"),
-      true,   -- expandable
-      true,   -- resetable
-      {[dt.gui.views.lighttable] = {"DT_UI_CONTAINER_PANEL_RIGHT_CENTER", 99}},
-      module_widget,
-      nil,    -- view_enter
-      nil     -- view_leave
+      MODULE_NAME,                                          -- internal key ("comfyui_connector")
+      _("Spellcaster"),                                     -- display name (translated)
+      true,                                                 -- expandable (user can collapse)
+      true,                                                 -- resetable (user can restore defaults)
+      {[dt.gui.views.lighttable] = {"DT_UI_CONTAINER_PANEL_RIGHT_CENTER", 99}},  -- position: right panel, priority 99
+      module_widget,                                        -- the actual UI widget (box of controls)
+      nil,                                                  -- view_enter callback (unused)
+      nil                                                   -- view_leave callback (unused)
     )
     module_installed = true
   end
 end
 
+-- Hide the module (called when user disables via preferences).
+-- Uses "hide" strategy (keep in memory) rather than delete, so re-enabling is instant.
 local function destroy()
   dt.gui.libs[MODULE_NAME].visible = false
 end
 
+-- Show the module (called when user re-enables via preferences).
+-- Instant because widgets are still in memory.
 local function restart()
   dt.gui.libs[MODULE_NAME].visible = true
 end
 
--- Darktable plugins can only register UI modules when the target view is active.
--- If we're already in lighttable, register immediately. Otherwise, defer until
--- the user switches from darkroom to lighttable (view-changed event).
+-- ───────────────────────────────────────────────────────────────────────
+-- DEFERRED REGISTRATION: Darktable only allows UI registration in the
+-- target view. If we're not in lighttable yet, wait for the user to
+-- switch to lighttable before registering the module.
+-- ───────────────────────────────────────────────────────────────────────
 if dt.gui.current_view().id == "lighttable" then
+  -- Already in lighttable: register immediately
   install_module()
 else
+  -- Not in lighttable yet: register when view changes to lighttable
   dt.register_event(
     MODULE_NAME, "view-changed",
     function(event, old_view, new_view)
+      -- Only install when transitioning FROM darkroom TO lighttable
+      -- (avoids re-registering if lighttable → darkroom → lighttable)
       if new_view.name == "lighttable" and old_view.name == "darkroom" then
         install_module()
       end
@@ -7265,13 +7801,22 @@ else
   )
 end
 
--- Wire up lifecycle callbacks for script_manager.
--- "hide" destroy_method means the module stays registered but becomes invisible,
--- making show/restart instant without re-creating all widgets.
+-- ───────────────────────────────────────────────────────────────────────
+-- SCRIPT_MANAGER LIFECYCLE CALLBACKS
+-- ───────────────────────────────────────────────────────────────────────
+-- These callbacks allow script_manager (Darktable's plugin manager) to
+-- control the Spellcaster module visibility without destroying/recreating widgets.
+--
+-- When user enables/disables the plugin in Preferences → Lua → Spellcaster:
+--   - script_manager calls destroy() → module becomes invisible
+--   - script_manager calls restart() → module becomes visible again
+--
+-- The "hide" destroy_method is efficient: all widgets remain in memory,
+-- so toggling is instant (no widget reconstruction overhead).
 script_data.destroy = destroy
 script_data.restart = restart
-script_data.destroy_method = "hide"
-script_data.show = restart
+script_data.destroy_method = "hide"    -- Use hide/show strategy, not delete/recreate
+script_data.show = restart              -- Alias for restart() when re-enabling
 
 dt.print(_("Spellcaster loaded - img2img, inpaint, face swap, Wan I2V, Klein Flux2, PuLID Flux, FaceID, Klein+Ref, batch, ControlNet, IC-Light, SUPIR"))
 
