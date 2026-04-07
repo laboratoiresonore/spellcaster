@@ -18151,125 +18151,420 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
 
+        # ── Architecture-aware prompt adaptation ─────────────────────────
+        # Body presets are written in Klein 2 natural prose (optimal for
+        # Flux 2 Klein CFG=1.0). For SDXL/SD1.5/Illustrious, we auto-
+        # reformat with weighted keywords and quality tags. The user can
+        # still edit the result in the prompt box.
+        _SDXL_PREFIX = "(masterpiece, best quality:1.4), (photorealistic:1.3), "
+        _SDXL_SUFFIX = ", sharp focus, 8K UHD, detailed skin texture, professional studio lighting"
+        _SDXL_NEG_PREFIX = "(worst quality, low quality:1.4), "
+        _SDXL_NEG_SUFFIX = ", deformed, disfigured, amateur, poorly drawn"
+
+        def _adapt_body_prompt(prompt, negative, arch):
+            """Reformat a Klein-optimized body prompt for the target architecture."""
+            if arch in ("sd15", "sdxl", "illustrious"):
+                # Strip Klein prose style, add SDXL quality weighting
+                p = prompt.replace("Full body photograph of", "full body portrait of")
+                p = p.replace("Sharp focus, 50mm lens.", "").strip().rstrip(",")
+                p = _SDXL_PREFIX + p + _SDXL_SUFFIX
+                n = _SDXL_NEG_PREFIX + negative + _SDXL_NEG_SUFFIX
+                return p, n
+            # Flux 1 Dev, Klein, Kontext, ZIT — natural prose works fine
+            return prompt, negative
+
         BODY_PRESETS = {
+            # ═══════════════════════════════════════════════════════════════
+            #  BODY TYPES — Female
+            #  Prompts written as Klein 2 natural prose (CFG 1.0).
+            #  Auto-adapted for SDXL/SD1.5 with weighted keywords.
+            # ═══════════════════════════════════════════════════════════════
             "Slim / Athletic — female": {
-                "prompt": "full body portrait of a beautiful slim athletic woman, standing naturally, "
-                          "neutral grey studio background, professional photography, even studio lighting, "
-                          "head to toe visible, natural proportions, photorealistic, 8K, fashion model physique",
-                "negative": "cropped, close-up, face only, deformed, bad anatomy, extra limbs, "
-                            "obese, muscular, cartoon, illustration, watermark, text",
+                "prompt": "Full body photograph of a slim athletic woman standing in a relaxed natural pose, "
+                          "head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic skin texture, natural proportions, "
+                          "lean toned physique like a yoga instructor. Sharp focus, 50mm lens.",
+                "negative": "cropped, close-up, face only, bad anatomy, extra limbs, missing limbs, "
+                            "obese, cartoon, illustration, watermark, text, blurry",
             },
-            "Slim / Athletic — male": {
-                "prompt": "full body portrait of a handsome slim athletic man, standing naturally, "
-                          "neutral grey studio background, professional photography, even studio lighting, "
-                          "head to toe visible, natural proportions, photorealistic, 8K, fitness model physique",
-                "negative": "cropped, close-up, face only, deformed, bad anatomy, extra limbs, "
-                            "obese, cartoon, illustration, watermark, text",
-            },
-            "Curvy / Voluptuous — female": {
-                "prompt": "full body portrait of a beautiful curvy voluptuous woman, standing naturally, "
-                          "neutral grey studio background, professional photography, even studio lighting, "
-                          "head to toe visible, hourglass figure, natural proportions, photorealistic, 8K",
-                "negative": "cropped, face only, deformed, bad anatomy, extra limbs, "
-                            "extremely thin, cartoon, illustration, watermark, text",
-            },
-            "Muscular / Fit — male": {
-                "prompt": "full body portrait of a muscular fit man, standing naturally, "
-                          "neutral grey studio background, professional photography, even studio lighting, "
-                          "head to toe visible, athletic build, defined muscles, photorealistic, 8K",
-                "negative": "cropped, face only, deformed, bad anatomy, extra limbs, "
-                            "obese, thin, cartoon, illustration, watermark, text",
+            "Curvy / Hourglass — female": {
+                "prompt": "Full body photograph of a curvy woman with an hourglass figure, "
+                          "standing naturally with relaxed shoulders, head to toe framing against "
+                          "a plain neutral grey studio backdrop. Even soft studio lighting, "
+                          "realistic skin texture, full natural curves, wide hips, narrow waist. "
+                          "Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, extremely thin, "
+                            "cartoon, illustration, watermark, text, blurry",
             },
             "Petite — female": {
-                "prompt": "full body portrait of a petite woman, standing naturally, "
-                          "neutral grey studio background, professional photography, even studio lighting, "
-                          "head to toe visible, small frame, delicate proportions, photorealistic, 8K",
-                "negative": "cropped, face only, deformed, bad anatomy, extra limbs, "
-                            "tall, muscular, cartoon, illustration, watermark, text",
+                "prompt": "Full body photograph of a petite woman with a small delicate frame, "
+                          "standing naturally, head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic skin texture, short stature around 5 feet tall, "
+                          "proportionate limbs, gentle posture. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, tall, muscular, "
+                            "cartoon, illustration, watermark, text, blurry",
             },
-            "Average build — neutral": {
-                "prompt": "full body portrait of a person with average build, standing naturally, "
-                          "neutral grey studio background, professional photography, even studio lighting, "
-                          "head to toe visible, natural proportions, photorealistic, 8K",
-                "negative": "cropped, face only, deformed, bad anatomy, extra limbs, "
-                            "extreme body type, cartoon, illustration, watermark, text",
+            "Plus-size — female": {
+                "prompt": "Full body photograph of a plus-size woman with a soft full figure, "
+                          "standing confidently with relaxed posture, head to toe framing against "
+                          "a plain neutral grey studio backdrop. Even soft studio lighting, "
+                          "realistic skin texture, natural body fat distribution, comfortable in her skin. "
+                          "Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, extremely thin, "
+                            "cartoon, illustration, watermark, text, blurry",
             },
-            "Elderly — female": {
-                "prompt": "full body portrait of an elegant elderly woman, standing naturally, "
-                          "neutral grey studio background, professional photography, even studio lighting, "
-                          "head to toe visible, natural aging, dignified posture, photorealistic, 8K",
-                "negative": "cropped, face only, deformed, young, extra limbs, "
-                            "cartoon, illustration, watermark, text",
+            "Tall / Statuesque — female": {
+                "prompt": "Full body photograph of a tall statuesque woman with long legs, "
+                          "standing elegantly, head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic skin texture, fashion-model height around 5 foot 10, "
+                          "elongated proportions, graceful posture. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, short, stocky, "
+                            "cartoon, illustration, watermark, text, blurry",
             },
-            "Elderly — male": {
-                "prompt": "full body portrait of a distinguished elderly man, standing naturally, "
-                          "neutral grey studio background, professional photography, even studio lighting, "
-                          "head to toe visible, natural aging, dignified posture, photorealistic, 8K",
-                "negative": "cropped, face only, deformed, young, extra limbs, "
-                            "cartoon, illustration, watermark, text",
+            "Muscular / Fit — female": {
+                "prompt": "Full body photograph of a muscular fit woman with visible muscle definition, "
+                          "standing in a strong natural pose, head to toe framing against "
+                          "a plain neutral grey studio backdrop. Even soft studio lighting, "
+                          "realistic skin texture, toned arms and legs, athletic build like a CrossFit athlete. "
+                          "Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, obese, very thin, "
+                            "cartoon, illustration, watermark, text, blurry",
             },
-            # ── Ethnicity / Skin Tone ──
+            # ═══════════════════════════════════════════════════════════════
+            #  BODY TYPES — Male
+            # ═══════════════════════════════════════════════════════════════
+            "Slim / Athletic — male": {
+                "prompt": "Full body photograph of a slim athletic man standing in a relaxed natural pose, "
+                          "head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic skin texture, natural proportions, "
+                          "lean fit physique like a runner. Sharp focus, 50mm lens.",
+                "negative": "cropped, close-up, face only, bad anatomy, extra limbs, "
+                            "obese, cartoon, illustration, watermark, text, blurry",
+            },
+            "Muscular / Fit — male": {
+                "prompt": "Full body photograph of a muscular fit man with well-defined muscles, "
+                          "standing in a strong natural pose, head to toe framing against "
+                          "a plain neutral grey studio backdrop. Even soft studio lighting, "
+                          "realistic skin texture, athletic build, broad shoulders, V-taper torso. "
+                          "Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, obese, very thin, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            "Heavyset / Large — male": {
+                "prompt": "Full body photograph of a heavyset large man with a broad sturdy build, "
+                          "standing naturally with relaxed posture, head to toe framing against "
+                          "a plain neutral grey studio backdrop. Even soft studio lighting, "
+                          "realistic skin texture, barrel chest, thick arms and legs, stocky frame. "
+                          "Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, very thin, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            "Lean / Slim — male": {
+                "prompt": "Full body photograph of a lean slim man with a wiry build, "
+                          "standing naturally, head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic skin texture, narrow frame, "
+                          "visible collarbone, long limbs, ectomorph body type. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, obese, muscular, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            "Tall / Athletic — male": {
+                "prompt": "Full body photograph of a tall athletic man standing confidently, "
+                          "head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic skin texture, basketball-player height around 6 foot 3, "
+                          "long legs, lean muscular build, good posture. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, short, stocky, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            "Average build — male": {
+                "prompt": "Full body photograph of a man with an average everyday build in his 30s, "
+                          "standing naturally with hands at his sides, head to toe framing against "
+                          "a plain neutral grey studio backdrop. Even soft studio lighting, "
+                          "realistic skin texture, medium height, neither muscular nor thin, "
+                          "ordinary proportions. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, extreme body type, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            # ═══════════════════════════════════════════════════════════════
+            #  AGE VARIANTS
+            # ═══════════════════════════════════════════════════════════════
+            "Young adult 20s — female": {
+                "prompt": "Full body photograph of a young woman in her early 20s standing naturally, "
+                          "head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic skin texture, youthful complexion, "
+                          "natural slim proportions, casual relaxed posture. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, old, wrinkles, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            "Young adult 20s — male": {
+                "prompt": "Full body photograph of a young man in his early 20s standing naturally, "
+                          "head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic skin texture, youthful face, "
+                          "natural lean proportions, casual relaxed posture. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, old, wrinkles, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            "Middle-aged 40s — female": {
+                "prompt": "Full body photograph of a woman in her mid 40s standing naturally with confidence, "
+                          "head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic skin texture with subtle laugh lines, "
+                          "mature natural beauty, average build, dignified posture. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, teenager, child, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            "Middle-aged 40s — male": {
+                "prompt": "Full body photograph of a man in his mid 40s standing naturally, "
+                          "head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic skin texture with subtle age lines, "
+                          "slightly greying temples, average build, relaxed confident posture. "
+                          "Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, teenager, child, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            "Elderly 60s+ — female": {
+                "prompt": "Full body photograph of an elegant elderly woman in her 60s standing with dignity, "
+                          "head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic aged skin with natural wrinkles, "
+                          "grey hair, slight stoop, graceful posture. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, young, smooth skin, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            "Elderly 60s+ — male": {
+                "prompt": "Full body photograph of a distinguished elderly man in his 60s standing with composure, "
+                          "head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic aged skin with natural wrinkles, "
+                          "grey hair, slightly weathered hands, upright posture. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, young, smooth skin, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            # ═══════════════════════════════════════════════════════════════
+            #  CLOTHING / CONTEXT PRESETS
+            #  These describe what the person is wearing — useful for
+            #  generating video-ready body references in specific contexts.
+            # ═══════════════════════════════════════════════════════════════
+            "Business suit — female": {
+                "prompt": "Full body photograph of a woman wearing a tailored dark navy business suit, "
+                          "white blouse, closed-toe heels, standing with professional posture, "
+                          "head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic fabric texture, sharp creases. "
+                          "Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, casual clothes, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            "Business suit — male": {
+                "prompt": "Full body photograph of a man wearing a well-fitted charcoal business suit, "
+                          "white dress shirt, silk tie, polished Oxford shoes, standing with professional posture, "
+                          "head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic fabric texture, sharp creases. "
+                          "Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, casual clothes, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            "Casual streetwear — female": {
+                "prompt": "Full body photograph of a woman wearing casual streetwear, "
+                          "oversized graphic tee, high-waisted jeans, white sneakers, "
+                          "standing relaxed with one hand in pocket, head to toe framing against "
+                          "a plain neutral grey studio backdrop. Even soft studio lighting, "
+                          "realistic fabric wrinkles and texture. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, formal clothes, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            "Casual streetwear — male": {
+                "prompt": "Full body photograph of a man wearing casual streetwear, "
+                          "fitted plain t-shirt, slim dark jeans, clean white sneakers, "
+                          "standing relaxed with natural posture, head to toe framing against "
+                          "a plain neutral grey studio backdrop. Even soft studio lighting, "
+                          "realistic fabric wrinkles and texture. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, formal clothes, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            "Summer dress — female": {
+                "prompt": "Full body photograph of a woman wearing a flowing floral summer dress "
+                          "with thin straps, sandals, standing naturally with a slight breeze in the fabric, "
+                          "head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic lightweight fabric movement. "
+                          "Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, winter clothes, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            "Activewear / Gym — female": {
+                "prompt": "Full body photograph of a fit woman wearing athletic activewear, "
+                          "sports bra and high-waisted leggings, cross-training shoes, "
+                          "standing in a confident athletic stance, head to toe framing against "
+                          "a plain neutral grey studio backdrop. Even soft studio lighting, "
+                          "realistic stretchy fabric texture, visible muscle tone. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, formal clothes, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            "Activewear / Gym — male": {
+                "prompt": "Full body photograph of a fit man wearing gym activewear, "
+                          "fitted tank top and athletic shorts, training shoes, "
+                          "standing in a confident athletic stance, head to toe framing against "
+                          "a plain neutral grey studio backdrop. Even soft studio lighting, "
+                          "realistic fabric texture, visible muscle definition. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, formal clothes, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            "Evening gown — female": {
+                "prompt": "Full body photograph of a woman wearing an elegant floor-length evening gown "
+                          "in deep red satin, high heels, standing with graceful posture, "
+                          "head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic shimmering satin fabric, elegant draping. "
+                          "Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, casual clothes, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            "Leather jacket — male": {
+                "prompt": "Full body photograph of a man wearing a fitted black leather biker jacket, "
+                          "dark jeans, black boots, standing with a slightly edgy confident posture, "
+                          "head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic worn leather texture and metal zippers. "
+                          "Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, formal suit, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            "Winter coat — female": {
+                "prompt": "Full body photograph of a woman wearing a long wool winter coat in camel beige, "
+                          "scarf, knee-high boots, standing with hands in coat pockets, "
+                          "head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic heavy wool texture. "
+                          "Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, summer clothes, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            "Hoodie and joggers — neutral": {
+                "prompt": "Full body photograph of a person wearing a comfortable oversized grey hoodie "
+                          "and black jogger pants with white sneakers, standing in a relaxed slouchy pose, "
+                          "head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic soft cotton fabric texture. "
+                          "Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, formal clothes, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            # ═══════════════════════════════════════════════════════════════
+            #  SKIN TONE / ETHNICITY
+            # ═══════════════════════════════════════════════════════════════
             "Light skin — female": {
-                "prompt": "full body portrait of a beautiful light-skinned woman, standing naturally, "
-                          "neutral grey studio background, professional photography, even lighting, "
-                          "head to toe visible, photorealistic, 8K, fair complexion, natural beauty",
-                "negative": "cropped, face only, deformed, bad anatomy, extra limbs, cartoon, watermark",
+                "prompt": "Full body photograph of a woman with light fair skin and a slim build, "
+                          "standing naturally, head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic pale skin texture with natural undertones, "
+                          "visible veins on wrists. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, cartoon, watermark, blurry",
             },
             "Dark skin — female": {
-                "prompt": "full body portrait of a beautiful dark-skinned woman, standing naturally, "
-                          "neutral grey studio background, professional photography, even lighting, "
-                          "head to toe visible, photorealistic, 8K, rich melanin, natural beauty",
-                "negative": "cropped, face only, deformed, bad anatomy, extra limbs, cartoon, watermark",
+                "prompt": "Full body photograph of a woman with deep dark brown skin and a natural build, "
+                          "standing naturally, head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic rich melanin skin with natural highlights, "
+                          "beautiful dark complexion. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, cartoon, watermark, blurry",
             },
-            "Asian — female": {
-                "prompt": "full body portrait of a beautiful East Asian woman, standing naturally, "
-                          "neutral grey studio background, professional photography, even lighting, "
-                          "head to toe visible, photorealistic, 8K, natural beauty",
-                "negative": "cropped, face only, deformed, bad anatomy, extra limbs, cartoon, watermark",
+            "East Asian — female": {
+                "prompt": "Full body photograph of an East Asian woman with a slender build, "
+                          "standing naturally, head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic smooth skin texture, "
+                          "straight black hair, natural beauty. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, cartoon, watermark, blurry",
             },
             "South Asian — female": {
-                "prompt": "full body portrait of a beautiful South Asian woman, standing naturally, "
-                          "neutral grey studio background, professional photography, even lighting, "
-                          "head to toe visible, photorealistic, 8K, natural beauty",
-                "negative": "cropped, face only, deformed, bad anatomy, extra limbs, cartoon, watermark",
+                "prompt": "Full body photograph of a South Asian woman with warm brown skin, "
+                          "standing naturally, head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic warm skin tone, "
+                          "dark hair, natural beauty. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, cartoon, watermark, blurry",
             },
-            "Latina — female": {
-                "prompt": "full body portrait of a beautiful Latina woman, standing naturally, "
-                          "neutral grey studio background, professional photography, even lighting, "
-                          "head to toe visible, photorealistic, 8K, warm skin tone, natural beauty",
-                "negative": "cropped, face only, deformed, bad anatomy, extra limbs, cartoon, watermark",
+            "Latin American — female": {
+                "prompt": "Full body photograph of a Latin American woman with warm olive skin, "
+                          "standing naturally, head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic sun-kissed warm skin texture, "
+                          "dark wavy hair, natural curves. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, cartoon, watermark, blurry",
             },
-            # ── Age variants ──
-            "Teenager — female": {
-                "prompt": "full body portrait of a teenage girl 16-18, standing naturally, "
-                          "neutral grey studio background, professional photography, even lighting, "
-                          "head to toe visible, youthful proportions, photorealistic, 8K",
-                "negative": "cropped, face only, deformed, old, wrinkles, extra limbs, cartoon, watermark",
+            "Middle Eastern — female": {
+                "prompt": "Full body photograph of a Middle Eastern woman with olive-toned skin, "
+                          "standing naturally, head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic warm olive skin texture, "
+                          "dark hair, natural beauty. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, cartoon, watermark, blurry",
             },
-            "Young adult — male": {
-                "prompt": "full body portrait of a young man in his 20s, standing naturally, "
-                          "neutral grey studio background, professional photography, even lighting, "
-                          "head to toe visible, natural proportions, photorealistic, 8K",
-                "negative": "cropped, face only, deformed, old, wrinkles, extra limbs, cartoon, watermark",
+            "Dark skin — male": {
+                "prompt": "Full body photograph of a man with deep dark brown skin and an athletic build, "
+                          "standing naturally, head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic rich melanin skin with natural highlights. "
+                          "Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, cartoon, watermark, blurry",
             },
-            "Middle-aged — female": {
-                "prompt": "full body portrait of a middle-aged woman in her 40s, standing naturally, "
-                          "neutral grey studio background, professional photography, even lighting, "
-                          "head to toe visible, mature beauty, natural proportions, photorealistic, 8K",
-                "negative": "cropped, face only, deformed, teenager, extra limbs, cartoon, watermark",
+            "East Asian — male": {
+                "prompt": "Full body photograph of an East Asian man with a lean build, "
+                          "standing naturally, head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic smooth skin texture, "
+                          "straight black hair, natural proportions. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, cartoon, watermark, blurry",
             },
-            # ── Stylized / Fantasy ──
+            # ═══════════════════════════════════════════════════════════════
+            #  POSE VARIANTS
+            #  Different standing poses for variety in body reference sheets.
+            # ═══════════════════════════════════════════════════════════════
+            "Hands on hips — female": {
+                "prompt": "Full body photograph of a confident woman standing with both hands on her hips, "
+                          "feet shoulder-width apart, head to toe framing against "
+                          "a plain neutral grey studio backdrop. Even soft studio lighting, "
+                          "realistic skin texture, assertive natural posture. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, extra hands, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            "Arms crossed — male": {
+                "prompt": "Full body photograph of a man standing with arms crossed over his chest, "
+                          "feet shoulder-width apart, slight lean, head to toe framing against "
+                          "a plain neutral grey studio backdrop. Even soft studio lighting, "
+                          "realistic skin texture, confident casual posture. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, extra arms, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            "Three-quarter turn — female": {
+                "prompt": "Full body photograph of a woman standing in a three-quarter turn facing slightly left, "
+                          "body angled 45 degrees from camera, head turned toward lens, "
+                          "head to toe framing against a plain neutral grey studio backdrop. "
+                          "Even soft studio lighting, realistic skin texture. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, back to camera, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            "Walking pose — male": {
+                "prompt": "Full body photograph of a man captured mid-stride walking toward the camera, "
+                          "one foot slightly forward, natural arm swing, head to toe framing against "
+                          "a plain neutral grey studio backdrop. Even soft studio lighting, "
+                          "realistic motion and fabric movement. Sharp focus, 50mm lens.",
+                "negative": "cropped, face only, bad anatomy, extra limbs, static stiff pose, "
+                            "cartoon, illustration, watermark, text, blurry",
+            },
+            # ═══════════════════════════════════════════════════════════════
+            #  STYLIZED / NON-PHOTOREALISTIC
+            #  Klein 2 defaults to photo — must be explicit about style.
+            # ═══════════════════════════════════════════════════════════════
             "Anime style — female": {
-                "prompt": "full body anime style girl, standing pose, neutral background, "
-                          "anime art, clean lineart, bright colors, head to toe visible, "
-                          "high quality illustration, detailed anime character design",
-                "negative": "photorealistic, 3D render, deformed, bad proportions, cropped",
+                "prompt": "Full body anime illustration of a young woman in a standing pose, "
+                          "head to toe visible, clean lineart, vivid cel-shaded colors, "
+                          "neutral flat background, detailed anime character design, "
+                          "large expressive eyes, flowing hair, balanced proportions.",
+                "negative": "photorealistic, 3D render, bad proportions, cropped, blurry",
             },
             "Anime style — male": {
-                "prompt": "full body anime style young man, standing pose, neutral background, "
-                          "anime art, clean lineart, head to toe visible, "
-                          "high quality illustration, detailed anime character design",
-                "negative": "photorealistic, 3D render, deformed, bad proportions, cropped",
+                "prompt": "Full body anime illustration of a young man in a standing pose, "
+                          "head to toe visible, clean lineart, vivid cel-shaded colors, "
+                          "neutral flat background, detailed anime character design, "
+                          "sharp features, balanced proportions.",
+                "negative": "photorealistic, 3D render, bad proportions, cropped, blurry",
+            },
+            "Oil painting — female": {
+                "prompt": "Full body oil painting of a woman standing in a classical pose, "
+                          "head to toe visible, rich warm tones, visible brushwork, "
+                          "dramatic chiaroscuro lighting against a dark amber background, "
+                          "gallery-quality fine art portrait in the style of John Singer Sargent.",
+                "negative": "photorealistic, photograph, 3D render, blurry, cropped",
+            },
+            "Comic book style — male": {
+                "prompt": "Full body comic book illustration of a man in a heroic standing pose, "
+                          "head to toe visible, bold black ink outlines, flat cel-shaded colors, "
+                          "dynamic proportions, neutral background, clean graphic novel style.",
+                "negative": "photorealistic, photograph, 3D render, blurry, cropped, watermark",
             },
         }
 
@@ -18343,14 +18638,25 @@ class Spellcaster(Gimp.PlugIn):
         prompt_tv = Gtk.TextView(); prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         prompt_tv.set_tooltip_text("Describe the body you want. Modify freely — the preset is just a starting point.")
         first_key = list(BODY_PRESETS.keys())[0]
-        prompt_tv.get_buffer().set_text(BODY_PRESETS[first_key]["prompt"])
+        # Set initial prompt adapted for the default model's architecture
+        _init_arch = MODEL_PRESETS[0].get("arch", "sdxl") if MODEL_PRESETS else "sdxl"
+        _init_p, _ = _adapt_body_prompt(BODY_PRESETS[first_key]["prompt"],
+                                         BODY_PRESETS[first_key]["negative"], _init_arch)
+        prompt_tv.get_buffer().set_text(_init_p)
         sw.add(prompt_tv); bx.pack_start(sw, False, False, 0)
 
-        def _on_body(combo):
-            key = combo.get_active_id()
-            if key and key in BODY_PRESETS:
-                prompt_tv.get_buffer().set_text(BODY_PRESETS[key]["prompt"])
-        body_combo.connect("changed", _on_body)
+        def _update_body_prompt(*_args):
+            """Update the prompt box based on body type + model arch."""
+            key = body_combo.get_active_id()
+            if not key or key not in BODY_PRESETS:
+                return
+            midx = int(model_combo.get_active_id() or "0")
+            arch = MODEL_PRESETS[midx].get("arch", "sdxl") if 0 <= midx < len(MODEL_PRESETS) else "sdxl"
+            adapted_p, _ = _adapt_body_prompt(
+                BODY_PRESETS[key]["prompt"], BODY_PRESETS[key]["negative"], arch)
+            prompt_tv.get_buffer().set_text(adapted_p)
+        body_combo.connect("changed", _update_body_prompt)
+        model_combo.connect("changed", _update_body_prompt)
 
         # Candidates per batch
         cand_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -18377,7 +18683,11 @@ class Spellcaster(Gimp.PlugIn):
         num_candidates = int(cand_spin.get_value())
         buf = prompt_tv.get_buffer()
         prompt = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
-        negative = BODY_PRESETS.get(body_key, BODY_PRESETS[first_key])["negative"]
+        raw_neg = BODY_PRESETS.get(body_key, BODY_PRESETS[first_key])["negative"]
+        # Adapt negative for the selected model's architecture
+        _bf_preset = dict(MODEL_PRESETS[model_idx] if 0 <= model_idx < len(MODEL_PRESETS) else MODEL_PRESETS[0])
+        _bf_arch = _bf_preset.get("arch", "sdxl")
+        _, negative = _adapt_body_prompt(prompt, raw_neg, _bf_arch)
         dlg.destroy()
 
         try:
