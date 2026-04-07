@@ -7,7 +7,6 @@
 <p align="center">
   <strong>AI superpowers for your photos and art — no experience needed.</strong><br/>
   Use it from GIMP, from Darktable, or just tell an AI chatbot what you want.
-   <a href="https://www.reddit.com/r/Spellcaster_Studio/"> Subreddit to report bugs / feedback / suggestions</a> 
 </p>
 
 <p align="center">
