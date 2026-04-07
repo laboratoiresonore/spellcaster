@@ -22,6 +22,7 @@
   <a href="#supported-architectures--models">Models</a> &bull;
   <a href="#sample-output">Samples</a> &bull;
   <a href="#magic-studios--full-character-pipeline">Magic Studios</a> &bull;
+  <a href="#bring-your-own-workflows">Your Workflows</a> &bull;
   <a href="#faq">FAQ</a> &bull;
   <a href="#for-developers--power-users">Dev Guide</a>
 </p>
@@ -30,9 +31,11 @@
 
 ## What Is Spellcaster?
 
-**Spellcaster adds 60+ AI tools to GIMP and Darktable** — the two most popular free image editors. Once installed, you'll find a new "Spellcaster" menu with tools that let you create images from text, fix and enhance photos, swap faces, generate short videos, remove backgrounds, change lighting, extend canvases, re-pose characters, blend layers with AI harmonization, and much more.
+**Spellcaster adds 47 AI tools to GIMP and Darktable** — the two most popular free image editors. Once installed, you'll find a new "Spellcaster" menu with tools that let you create images from text, fix and enhance photos, swap faces, generate short videos, remove backgrounds, change lighting, extend canvases, re-pose characters, blend layers with AI harmonization, and much more.
 
 **You don't need to understand AI, machine learning, or any technical concepts.** Every tool comes with pre-configured settings that professionals have spent hundreds of hours perfecting. Your first result will look like your hundredth.
+
+**Already use ComfyUI?** Spellcaster can import your existing workflows and run them straight from GIMP — no need to rebuild anything. See [Bring Your Own Workflows](#bring-your-own-workflows).
 
 ---
 
@@ -77,11 +80,35 @@ Spellcaster connects your image editor (GIMP or Darktable) to an AI engine calle
 </p>
 
 1. **Download** the installer for your system above
-2. **Run it.** The installer walks you through 8 simple steps — it checks your setup, asks what you want to do in plain English, detects your GPU, and downloads everything automatically
+2. **Run it.** The installer walks you through everything (see below)
 3. **Open GIMP or Darktable.** Go to `Filters > Spellcaster` — all your new AI tools are there
 4. **Pick any tool and click Generate.** That's it. Every preset is already optimized for great results.
 
 > **Plugin not showing up?** Download the [**Manual Update & Repair tool**](https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-manual-update.exe) — it finds and fixes broken installations automatically.
+
+### What the Installer Does For You
+
+The installer is an 8-step guided wizard. It's designed so you never have to make a decision you don't understand.
+
+<details>
+<summary><strong>See the full walkthrough</strong></summary>
+
+| Step | What Happens | What You Do |
+|---|---|---|
+| **1. Welcome** | Checks your system for prerequisites (GIMP, Darktable, ComfyUI) | Click download links for anything missing |
+| **2. What Do You Want?** | Asks you in plain English: *"I want to enhance photos"*, *"I want to generate videos"*, etc. | Check the boxes that sound like you |
+| **3. Quick Setup** | Offers three paths: *Install Everything*, *Recommended*, or *Let Me Pick* | Pick whichever you're comfortable with |
+| **4. Model Advisor** | Explains which AI models are redundant so you don't waste disk space | Read the tips or just click Next |
+| **5. System Layout** | Auto-detects where ComfyUI, GIMP, and Darktable are installed | Confirm or browse to correct paths |
+| **6. Feature Profiles** | Shows features organized by category, matching the in-app menu layout | Review what's selected |
+| **7. Components** | Lists every model and extension with size estimates and preview thumbnails | Uncheck anything you don't want |
+| **8. Install** | Downloads models, installs extensions, patches plugins, configures everything | Watch the progress bar |
+
+**The installer detects your GPU** and only shows features your hardware can run. If you have 4 GB of VRAM, you won't see options that need 16 GB. No guesswork.
+
+**Remote server mode**: Don't have a GPU? The installer can connect to a ComfyUI server running on another computer on your network. Just enter the IP address — everything else works the same.
+
+</details>
 
 ---
 
@@ -218,10 +245,16 @@ Dual ControlNet support in img2img and inpaint workflows. Models auto-selected p
 
 </details>
 
+### My Presets — Save and Recall Your Favorites
+
+Every dialog in Spellcaster has a **Save Preset** button. Name your settings, and they appear in the **My Presets** panel — a quick-access menu that lives at the top of the Filters menu.
+
+Presets remember everything: model, prompt, LoRAs, denoise, steps, dimensions — so you can recreate any result instantly. Works across img2img, Klein, Wan video, FaceID, PuLID, and all other tools.
+
 ### Magic Studios — Full Character Pipeline
 
 <details>
-<summary><strong>6 tools that chain together: selfie → face model → body → outfit → set → video</strong></summary>
+<summary><strong>7 tools that chain together: selfie → face model → body → outfit → set → video</strong></summary>
 
 | Tool | What It Does | Details |
 |---|---|---|
@@ -230,7 +263,8 @@ Dual ControlNet support in img2img and inpaint workflows. Models auto-selected p
 | **Wardrobe Department** | AI outfit replacement | Select clothing area, describe target style |
 | **Set Design** | Generate backgrounds and composite actors | Klein-quality harmonization of lighting and shadows |
 | **Director's Chair (Solo)** | Multi-step Wan 2.2 I2V with face re-injection | Chain video steps to build a scene |
-| **Director's Chair (Duo/Trio)** | Same pipeline with 2 or 3 actors | Multi-actor face tracking across video steps |
+| **Director's Chair (Duo)** | Same pipeline with 2 actors | Dual face tracking across video steps |
+| **Director's Chair (Trio)** | Same pipeline with 3 actors | Triple face tracking across video steps |
 
 ```
 Selfie → Casting Polaroids → Body Double → Wardrobe → Set Design → Director's Chair → MP4
@@ -256,6 +290,47 @@ Selfie → Casting Polaroids → Body Double → Wardrobe → Set Design → Dir
 | **Debug Image Export** | Save intermediate workflow images for troubleshooting |
 
 </details>
+
+---
+
+## Bring Your Own Workflows
+
+**Already have ComfyUI workflows you've built or downloaded?** Spellcaster can run them directly from GIMP — no need to rebuild anything.
+
+### The Travelling Wizard
+
+Open `Filters > Spellcaster Tools > Travelling Wizard` to access the workflow bridge:
+
+| Action | What It Does |
+|---|---|
+| **Import Workflow File** | Load any `.json` workflow exported from ComfyUI. Spellcaster auto-detects the format (UI graph or API), classifies the workflow type, and extracts all tunable parameters. |
+| **Browse Workflow Library** | Connects to your ComfyUI server and lists all available workflows stored in its `workflows/` directory. |
+| **Installed Workflows** | Shows all workflows you've imported, with metadata and a one-click "Run" button. |
+
+Once imported, your custom workflows appear alongside Spellcaster's built-in tools. The wizard figures out which parameters matter (prompt, seed, steps, model, dimensions) and hides the ones that don't (internal wiring, output filenames, device settings).
+
+### Spellmaker — The Preset Editor
+
+Power users who want full control over presets can use Spellmaker, a standalone GUI tool:
+
+```bash
+python tools/spellmaker.py
+```
+
+Spellmaker lets you:
+- **Create presets** for any tool (model configs, inpaint recipes, video settings, Klein tuning)
+- **Import from ComfyUI** — load a raw workflow JSON and convert it to a named preset
+- **Edit and clone** existing presets
+- **Export** a `spellbook.json` that can be loaded into the plugins
+
+### For Existing ComfyUI Users
+
+If you already use ComfyUI and have workflows, models, and custom nodes installed, Spellcaster slots right in:
+
+- **Your existing models are used as-is.** Spellcaster discovers models on the server at runtime — it doesn't require its own copies.
+- **Your existing custom nodes keep working.** The installer only adds nodes it needs and skips ones you already have.
+- **Your existing workflows can be imported** via the Travelling Wizard and run from GIMP's menu.
+- **Remote server works natively.** If ComfyUI runs on a different machine (a render box, a cloud GPU), just point the settings at it. The entire plugin works over HTTP.
 
 ---
 
@@ -534,12 +609,14 @@ Magic Studios is a guided pipeline that turns a single photo into a fully compos
 
 | You are... | Spellcaster gives you... |
 |---|---|
-| **A complete beginner** | Professional results with zero learning curve |
+| **A complete beginner** | Professional results with zero learning curve — presets handle everything |
 | **A photographer** | AI retouching, upscaling, color grading — without leaving Darktable |
 | **A Photoshop refugee** | All the AI tools you're used to, free and open-source |
 | **An illustrator** | 25 art presets from photorealism to anime to Disney 3D |
 | **Someone with old photos** | One-click restoration: upscale + face fix + colorize |
 | **A video creator** | Turn any still image into a short animated clip |
+| **An existing ComfyUI user** | Run your workflows from GIMP, skip the browser UI, keep your existing setup |
+| **A tinkerer** | Import workflows, build custom presets, connect remote GPUs |
 | **Privacy-conscious** | Everything runs locally — no cloud, no subscriptions |
 
 ---
@@ -570,7 +647,7 @@ Any NVIDIA GPU with 4+ GB VRAM works for basic features. 8 GB unlocks most featu
 <details>
 <summary><strong>Can I use this without a GPU?</strong></summary>
 
-Yes — you can connect to a remote ComfyUI server running on another computer on your network. The installer has a remote server mode.
+Yes — you can connect to a remote ComfyUI server running on another computer on your network. The installer has a dedicated remote server mode, and the plugin settings let you change the server URL anytime.
 
 </details>
 
@@ -589,16 +666,44 @@ Similar capabilities (generative fill, object removal, upscaling, style transfer
 </details>
 
 <details>
+<summary><strong>I already use ComfyUI. Why would I want this?</strong></summary>
+
+Spellcaster lets you skip the browser UI and work directly inside GIMP with your layers, selections, and masks. You can import your existing workflows via the Travelling Wizard and run them from the Filters menu. Your models, nodes, and server stay exactly where they are — Spellcaster just talks to them over HTTP.
+
+</details>
+
+<details>
+<summary><strong>Can I use my own workflows?</strong></summary>
+
+Yes. Open `Filters > Spellcaster Tools > Travelling Wizard`, click "Import Workflow File", and load any `.json` workflow exported from ComfyUI. Spellcaster extracts the important parameters and builds a dialog for it automatically. You can also browse workflows stored on your ComfyUI server.
+
+</details>
+
+<details>
+<summary><strong>Can I run ComfyUI on a different machine?</strong></summary>
+
+Yes. If you have a powerful GPU on another computer (or a cloud instance), run ComfyUI there and point Spellcaster at it: `Settings > ComfyUI Server URL > http://192.168.x.x:8188`. The installer also has a remote server mode that skips local model downloads entirely.
+
+</details>
+
+<details>
 <summary><strong>What if the plugin doesn't show up after installation?</strong></summary>
 
-Download the [Manual Update & Repair tool](https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-manual-update.exe) — it automatically finds and fixes broken installations.
+Download the [Manual Update & Repair tool](https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-manual-update.exe) — it automatically finds and fixes broken installations, clears GIMP's plugin cache, and re-downloads any missing files.
 
 </details>
 
 <details>
 <summary><strong>What's the difference between the GIMP and Darktable plugins?</strong></summary>
 
-Both share the same core AI capabilities. The GIMP plugin adds selection-based workflows (paint a mask, then regenerate), layer-level operations, Magic Studios, and the full Klein editing suite. The Darktable plugin integrates with the lighttable workflow — select photos, process, and auto-import results back into your library.
+Both share the same core AI capabilities (20+ workflows each). The GIMP plugin adds selection-based workflows (paint a mask, then regenerate), layer-level operations, Magic Studios, the full Klein editing suite, and the Travelling Wizard. The Darktable plugin integrates with the lighttable workflow — select photos, process, and auto-import results back into your library.
+
+</details>
+
+<details>
+<summary><strong>Does it update itself?</strong></summary>
+
+Yes. Both plugins check GitHub on each launch and silently update themselves. New features appear automatically — no manual downloads needed.
 
 </details>
 
@@ -688,14 +793,23 @@ spellcaster/
 │   ├── build_macos.sh              #   macOS build convenience script
 │   └── signal_bridge_settings.jsx  #   Signal Bridge settings GUI
 ├── plugins/
-│   ├── gimp/comfyui-connector/     # GIMP 3 plugin (~22,500 lines)
-│   │   ├── comfyui-connector.py
-│   │   ├── spellcaster-theme.css
-│   │   ├── spellcaster_steg.py     # Steganography module
+│   ├── gimp/comfyui-connector/     # GIMP 3 plugin (~18,000 lines)
+│   │   ├── comfyui-connector.py    #   Main plugin (47 registered tools)
+│   │   ├── _workflows_v2.py        #   35 workflow builders
+│   │   ├── _nodes.py               #   Node definitions
+│   │   ├── _architectures.py       #   Architecture configs
+│   │   ├── _composites.py          #   Composite workflow helpers
+│   │   ├── spellcaster-theme.css   #   Full GIMP dark theme (1,600 lines)
+│   │   ├── spellcaster_steg.py     #   Steganography module
 │   │   ├── spinner.gif
-│   │   └── travelling-wizard/      # Scaffold editor (GIMP integration)
-│   └── darktable/                  # Darktable Lua plugin (~7,500 lines)
-│       └── comfyui_connector.lua
+│   │   └── travelling-wizard/      #   Workflow import & scaffold editor
+│   │       ├── wizard.py           #     Workflow bridge UI
+│   │       ├── settings.py         #     Configuration
+│   │       └── gimp-comfy-ai.py    #     Entry point
+│   └── darktable/                  # Darktable Lua plugin (~7,900 lines)
+│       ├── comfyui_connector.lua   #   20+ workflows, model management
+│       ├── spellcaster-darktable.css  # Full Darktable dark theme (790 lines)
+│       └── splash.py               #   Processing splash screen
 ├── scaffold/                       # Chatbot-driven ComfyUI interface
 │   ├── __init__.py                 #   SpellcasterScaffold entry point
 │   ├── meta_wizard.py              #   Intent router — top-level wizard
@@ -710,7 +824,7 @@ spellcaster/
 ├── tools/                          # Standalone utilities
 │   ├── generate_showcase.py        #   Showcase asset generator
 │   ├── generate_walkthrough.py     #   Magic Studios walkthrough generator
-│   └── spellmaker.py               #   Preset customization tool (89K)
+│   └── spellmaker.py               #   Preset editor GUI (89K)
 ├── docs/                           # Documentation
 │   ├── MAGIC_STUDIOS_WALKTHROUGH.md
 │   └── REFACTORING_AUDIT.md
@@ -724,7 +838,7 @@ spellcaster/
 
 1. **Export** — Canvas/selection exported to PNG using a custom pure-Python PNG writer (no PIL dependency)
 2. **Upload** — Multipart HTTP POST to ComfyUI `/upload/image`
-3. **Build** — ComfyUI workflow JSON (node graph) constructed from preset parameters
+3. **Build** — ComfyUI workflow JSON (node graph) constructed from preset parameters via v2 builders
 4. **Submit** — POST to `/prompt` endpoint
 5. **Poll** — `/history/{prompt_id}` polled with configurable timeout and spinner UI
 6. **Download** — Result fetched via `/view` endpoint
@@ -757,13 +871,15 @@ On Windows, in-use files are staged with a `.update` suffix and applied on next 
 
 </details>
 
-### Spellmaker (Experimental)
+### Spellmaker (Preset Editor)
 
 Power users can create custom presets, link LoRAs, and import ComfyUI workflows:
 
 ```bash
 python tools/spellmaker.py
 ```
+
+Supports 8 preset types: model configs, inpaint recipes, scene templates, video settings, Wan models, Klein models, IC-Light presets, and arbitrary workflow JSON. Create, edit, clone, import, and export to a `spellbook.json` file.
 
 ### Building the Installer
 
@@ -865,7 +981,8 @@ Body & detail fix, artistic styles, accelerators — across SDXL, Flux, Klein, Z
 | Klein results look wrong | Check VAE/CLIP pairings: 9B→qwen_3_8b, 4B→qwen_3_4b |
 | Video generation fails | Ensure both high-noise and low-noise Wan models are installed |
 | Temp files filling disk | Use Settings → Clean Server Inputs to purge gimp_* uploads |
-| Browse button doesn't work | Update plugin — fixed in latest version |
+| Custom workflow import fails | Make sure the JSON is an API export or standard LiteGraph format |
+| Presets not saving | Check that the plugin directory is writable (not read-only) |
 
 </details>
 
