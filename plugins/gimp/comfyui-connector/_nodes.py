@@ -1267,6 +1267,315 @@ class NodeFactory:
         }, node_id)
 
     # ═══════════════════════════════════════════════════════════════════
+    #  VIDEO (LTX 2.3)
+    # ═══════════════════════════════════════════════════════════════════
+    # LTX Video 2.3 uses a distinct pipeline from Wan:
+    #   UnetLoaderGGUF → LTXVChunkFeedForward → LTXVApplySTG → STGGuider
+    #   → KSamplerSelect → LTXVBaseSampler → LTXVSpatioTemporalTiledVAEDecode
+    # Text encoding uses LTXAVTextEncoderLoader (Gemma 3 12B + embeddings
+    # connectors), NOT DualCLIPLoader.
+    # Two-stage upscale: generate at half-res → LatentUpscaleModelLoader +
+    # LTXVLatentUpsampler → SamplerCustomAdvanced re-denoise at full res.
+
+    def ltxav_text_encoder_loader(self, text_encoder, ckpt_name,
+                                   device="default", node_id=None):
+        """LTXAVTextEncoderLoader — Gemma 3 text encoder + embeddings connector.
+
+        LTX2.3 uses a dedicated text encoder loader that pairs a Gemma 3 model
+        with LTX-specific embedding connectors, replacing the DualCLIPLoader
+        used by Flux/Klein architectures.
+
+        Args:
+            text_encoder: Gemma model filename (e.g. "gemma_3_12B_it_fp4_mixed.safetensors")
+            ckpt_name: Embeddings connector (e.g. "LTX\\ltx-2.3-22b-dev_embeddings_connectors.safetensors")
+            device: Compute device ("default", "cpu", "cuda")
+
+        Returns:
+            Node ID. Outputs: [0]=CLIP
+        """
+        return self._add("LTXAVTextEncoderLoader", {
+            "text_encoder": text_encoder,
+            "ckpt_name": ckpt_name,
+            "device": device,
+        }, node_id)
+
+    def ltxv_chunk_feed_forward(self, model_ref, chunks=4,
+                                 dim_threshold=4096, node_id=None):
+        """LTXVChunkFeedForward — VRAM-efficient chunked inference.
+
+        Splits feed-forward layers into chunks to reduce peak VRAM usage.
+        Essential for 22B parameter models on consumer GPUs (16GB).
+
+        Args:
+            model_ref: Reference to MODEL (from UnetLoaderGGUF or LoraLoaderModelOnly)
+            chunks: Number of chunks (default 4, higher = less VRAM but slower)
+            dim_threshold: Minimum dimension to chunk (default 4096)
+
+        Returns:
+            Node ID. Outputs: [0]=MODEL
+        """
+        return self._add("LTXVChunkFeedForward", {
+            "model": model_ref,
+            "chunks": chunks,
+            "dim_threshold": dim_threshold,
+        }, node_id)
+
+    def ltxv_apply_stg(self, model_ref, block_indices="14, 19", node_id=None):
+        """LTXVApplySTG — Spatiotemporal Guidance block injection.
+
+        Marks specific transformer blocks for STG guidance during sampling.
+        Default indices "14, 19" are the recommended blocks for LTX2.3.
+
+        Args:
+            model_ref: Reference to MODEL
+            block_indices: Comma-separated block indices (default "14, 19")
+
+        Returns:
+            Node ID. Outputs: [0]=MODEL
+        """
+        return self._add("LTXVApplySTG", {
+            "model": model_ref,
+            "block_indices": block_indices,
+        }, node_id)
+
+    def ltxv_conditioning(self, positive_ref, negative_ref, frame_rate=25.0,
+                           node_id=None):
+        """LTXVConditioning — wraps conditioning with frame rate metadata.
+
+        LTX2.3 uses 25fps (NOT 20fps like LTX2.2). This node attaches temporal
+        metadata to the conditioning tensors.
+
+        Args:
+            positive_ref: Reference to positive CONDITIONING
+            negative_ref: Reference to negative CONDITIONING
+            frame_rate: Target frame rate (default 25.0 for LTX2.3)
+
+        Returns:
+            Node ID. Outputs: [0]=POSITIVE, [1]=NEGATIVE
+        """
+        return self._add("LTXVConditioning", {
+            "positive": positive_ref,
+            "negative": negative_ref,
+            "frame_rate": frame_rate,
+        }, node_id)
+
+    def ltxv_scheduler(self, steps=30, max_shift=2.05, base_shift=0.95,
+                        stretch=True, terminal=0.1, latent_ref=None,
+                        node_id=None):
+        """LTXVScheduler — noise schedule for LTX Video sampling.
+
+        Args:
+            steps: Number of sampling steps (30 for normal, 8 for distilled)
+            max_shift: Maximum shift (default 2.05)
+            base_shift: Base shift (default 0.95)
+            stretch: Enable schedule stretching (default True)
+            terminal: Terminal sigma (default 0.1)
+            latent_ref: Optional latent reference for stage-2 re-denoise
+
+        Returns:
+            Node ID. Outputs: [0]=SIGMAS
+        """
+        inputs = {
+            "steps": steps,
+            "max_shift": max_shift,
+            "base_shift": base_shift,
+            "stretch": stretch,
+            "terminal": terminal,
+        }
+        if latent_ref is not None:
+            inputs["latent"] = latent_ref
+        return self._add("LTXVScheduler", inputs, node_id)
+
+    def stg_guider(self, model_ref, positive_ref, negative_ref,
+                    cfg=4.0, stg=1.0, rescale=0.7, node_id=None):
+        """STGGuider — Spatiotemporal Guidance guider for LTX sampling.
+
+        Combines CFG and STG for LTX2.3 video generation. For distilled mode,
+        use cfg=1.0, stg=0.0, rescale=0.0.
+
+        Args:
+            model_ref: Reference to MODEL (after LTXVApplySTG)
+            positive_ref: Positive conditioning (from LTXVConditioning output 0)
+            negative_ref: Negative conditioning (from LTXVConditioning output 1)
+            cfg: Classifier-free guidance scale (default 4.0)
+            stg: STG strength (default 1.0, 0.0 for distilled)
+            rescale: STG rescale factor (default 0.7, 0.0 for distilled)
+
+        Returns:
+            Node ID. Outputs: [0]=GUIDER
+        """
+        return self._add("STGGuider", {
+            "model": model_ref,
+            "positive": positive_ref,
+            "negative": negative_ref,
+            "cfg": cfg,
+            "stg": stg,
+            "rescale": rescale,
+        }, node_id)
+
+    def ksampler_select(self, sampler_name="euler", node_id=None):
+        """KSamplerSelect — select a sampler algorithm by name.
+
+        Args:
+            sampler_name: Sampler algorithm (default "euler")
+
+        Returns:
+            Node ID. Outputs: [0]=SAMPLER
+        """
+        return self._add("KSamplerSelect", {
+            "sampler_name": sampler_name,
+        }, node_id)
+
+    def random_noise(self, noise_seed, node_id=None):
+        """RandomNoise — generate noise tensor from seed.
+
+        Args:
+            noise_seed: Integer seed for reproducibility
+
+        Returns:
+            Node ID. Outputs: [0]=NOISE
+        """
+        return self._add("RandomNoise", {
+            "noise_seed": noise_seed,
+        }, node_id)
+
+    def ltxv_base_sampler(self, model_ref, vae_ref, guider_ref, sampler_ref,
+                           sigmas_ref, noise_ref, width, height, num_frames,
+                           node_id=None):
+        """LTXVBaseSampler — core LTX Video sampler node.
+
+        Generates latents at the specified resolution and frame count.
+        For two-stage pipeline, use half resolution here (e.g. 384x256)
+        then upscale via LTXVLatentUpsampler before stage-2 re-denoise.
+
+        Args:
+            model_ref: Reference to MODEL (after STG application)
+            vae_ref: Reference to VAE
+            guider_ref: Reference to GUIDER (from STGGuider)
+            sampler_ref: Reference to SAMPLER (from KSamplerSelect)
+            sigmas_ref: Reference to SIGMAS (from LTXVScheduler)
+            noise_ref: Reference to NOISE (from RandomNoise)
+            width: Output width in pixels
+            height: Output height in pixels
+            num_frames: Number of video frames to generate
+
+        Returns:
+            Node ID. Outputs: [0]=LATENT
+        """
+        return self._add("LTXVBaseSampler", {
+            "model": model_ref,
+            "vae": vae_ref,
+            "guider": guider_ref,
+            "sampler": sampler_ref,
+            "sigmas": sigmas_ref,
+            "noise": noise_ref,
+            "width": width,
+            "height": height,
+            "num_frames": num_frames,
+        }, node_id)
+
+    def latent_upscale_model_loader(self, model_name, node_id=None):
+        """LatentUpscaleModelLoader — loads latent-space upscale model.
+
+        Used in LTX2.3 two-stage pipeline for 2x latent upscale between
+        generation passes.
+
+        Args:
+            model_name: Model filename (e.g. "ltx-2-spatial-upscaler-x2-1.0.safetensors")
+
+        Returns:
+            Node ID. Outputs: [0]=LATENT_UPSCALE_MODEL
+        """
+        return self._add("LatentUpscaleModelLoader", {
+            "model_name": model_name,
+        }, node_id)
+
+    def ltxv_latent_upsampler(self, samples_ref, upscale_model_ref, vae_ref,
+                               node_id=None):
+        """LTXVLatentUpsampler — 2x latent-space upscale for two-stage pipeline.
+
+        Takes half-resolution latents from LTXVBaseSampler and upscales them
+        2x in latent space before stage-2 re-denoise via SamplerCustomAdvanced.
+
+        Args:
+            samples_ref: Reference to LATENT (from LTXVBaseSampler)
+            upscale_model_ref: Reference to LATENT_UPSCALE_MODEL
+            vae_ref: Reference to VAE
+
+        Returns:
+            Node ID. Outputs: [0]=LATENT
+        """
+        return self._add("LTXVLatentUpsampler", {
+            "samples": samples_ref,
+            "upscale_model": upscale_model_ref,
+            "vae": vae_ref,
+        }, node_id)
+
+    def sampler_custom_advanced(self, noise_ref, guider_ref, sampler_ref,
+                                 sigmas_ref, latent_image_ref, node_id=None):
+        """SamplerCustomAdvanced — generic advanced sampler for re-denoise pass.
+
+        Used in LTX2.3 two-stage pipeline for the second pass (10 steps)
+        after latent upscale. Also usable for any custom sampling workflow.
+
+        Args:
+            noise_ref: Reference to NOISE
+            guider_ref: Reference to GUIDER
+            sampler_ref: Reference to SAMPLER
+            sigmas_ref: Reference to SIGMAS
+            latent_image_ref: Reference to LATENT (upscaled latents)
+
+        Returns:
+            Node ID. Outputs: [0]=OUTPUT (denoised latent), [1]=DENOISED_OUTPUT
+        """
+        return self._add("SamplerCustomAdvanced", {
+            "noise": noise_ref,
+            "guider": guider_ref,
+            "sampler": sampler_ref,
+            "sigmas": sigmas_ref,
+            "latent_image": latent_image_ref,
+        }, node_id)
+
+    def ltxv_spatiotemporal_tiled_vae_decode(self, vae_ref, latents_ref,
+                                              spatial_tiles=4, spatial_overlap=1,
+                                              temporal_tile_length=16,
+                                              temporal_overlap=1,
+                                              last_frame_fix=False,
+                                              working_device="auto",
+                                              working_dtype="auto",
+                                              node_id=None):
+        """LTXVSpatioTemporalTiledVAEDecode — memory-efficient video VAE decode.
+
+        Decodes LTX latents to pixel-space video frames using spatial and
+        temporal tiling to fit within VRAM limits.
+
+        Args:
+            vae_ref: Reference to VAE
+            latents_ref: Reference to LATENT
+            spatial_tiles: Number of spatial tiles (default 4)
+            spatial_overlap: Overlap between spatial tiles (default 1)
+            temporal_tile_length: Frames per temporal tile (default 16)
+            temporal_overlap: Overlap between temporal tiles (default 1)
+            last_frame_fix: Fix for last-frame artifacts (default False)
+            working_device: "auto", "cpu", or "cuda" (default "auto")
+            working_dtype: "auto", "fp16", "bf16", etc (default "auto")
+
+        Returns:
+            Node ID. Outputs: [0]=IMAGE (video frames)
+        """
+        return self._add("LTXVSpatioTemporalTiledVAEDecode", {
+            "vae": vae_ref,
+            "latents": latents_ref,
+            "spatial_tiles": spatial_tiles,
+            "spatial_overlap": spatial_overlap,
+            "temporal_tile_length": temporal_tile_length,
+            "temporal_overlap": temporal_overlap,
+            "last_frame_fix": last_frame_fix,
+            "working_device": working_device,
+            "working_dtype": working_dtype,
+        }, node_id)
+
+    # ═══════════════════════════════════════════════════════════════════
     #  TAGGING / TEXT
     # ═══════════════════════════════════════════════════════════════════
 
