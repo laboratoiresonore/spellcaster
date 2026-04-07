@@ -7479,6 +7479,7 @@ _spinner_pb = None         # shared progress bar
 _spinner_status_lbl = None # shared status bar (queue info, VRAM, elapsed)
 _spinner_job_count = 0     # how many active jobs
 _spinner_start_time = 0    # when the first job started
+_spinner_cleanup_id = None # GLib source ID for pending delayed cleanup
 
 
 def _fetch_comfy_status(server):
@@ -7515,6 +7516,7 @@ def _run_with_spinner(label_text, func, *args):
     """
     global _spinner_label_text, _spinner_win, _spinner_jobs_box, _spinner_pb
     global _spinner_status_lbl, _spinner_job_count, _spinner_start_time
+    global _spinner_cleanup_id
     _spinner_label_text = ""
     result_box = [None]
     error_box = [None]
@@ -7526,6 +7528,15 @@ def _run_with_spinner(label_text, func, *args):
     # Detect server URL for status polling
     cfg = _load_config()
     _status_server = cfg.get("server_url", COMFYUI_DEFAULT_URL)
+
+    # ── Cancel any pending delayed cleanup so it doesn't destroy our
+    #    window mid-job. This is the key fix: without this, a cleanup
+    #    scheduled by the previous job's GLib.timeout_add fires inside
+    #    the NEW job's GLib.MainLoop.run(), destroying the window while
+    #    the current job is actively using it.
+    if _spinner_cleanup_id is not None:
+        GLib.source_remove(_spinner_cleanup_id)
+        _spinner_cleanup_id = None
 
     # ── Create or reuse the singleton spinner window ────────────────
     _win_alive = False
@@ -7662,9 +7673,12 @@ def _run_with_spinner(label_text, func, *args):
         # Don't destroy immediately — hide and schedule delayed cleanup.
         # This prevents window flicker when sequential jobs run
         # (e.g. Body Factory: generate → face swap → rembg).
-        # If a new job starts within 2 seconds, the window is reused.
+        # If a new job starts within 2 seconds, the window is reused
+        # because the new job cancels this cleanup via GLib.source_remove.
         def _delayed_cleanup():
-            global _spinner_win, _spinner_jobs_box, _spinner_pb, _spinner_status_lbl, _spinner_job_count
+            global _spinner_win, _spinner_jobs_box, _spinner_pb, _spinner_status_lbl
+            global _spinner_job_count, _spinner_cleanup_id
+            _spinner_cleanup_id = None
             if _spinner_job_count <= 0 and _spinner_win is not None:
                 try:
                     _spinner_win.destroy()
@@ -7676,7 +7690,7 @@ def _run_with_spinner(label_text, func, *args):
                 _spinner_status_lbl = None
                 _spinner_job_count = 0
             return False  # don't repeat
-        GLib.timeout_add(2000, _delayed_cleanup)
+        _spinner_cleanup_id = GLib.timeout_add(2000, _delayed_cleanup)
 
     if cancel_box[0]:
         raise InterruptedError("Generation cancelled by user")
