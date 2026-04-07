@@ -898,7 +898,7 @@ def _apply_mask_mode(server, image, img_data, layer_name, mask_enabled):
             tmp.write(img_data); tmp.close()
             _upload_image(server, tmp.name, rembg_input)
             os.unlink(tmp.name)
-            wf = _build_rembg(rembg_input)
+            wf = build_rembg(rembg_input)
             results = list(_run_comfyui_workflow(server, wf))
             for fn, sf, ft in results:
                 if fn.lower().endswith(".png"):
@@ -3610,15 +3610,12 @@ def _get_output_images(server, prompt_id, timeout=300):
     return images
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  Workflow builders — construct ComfyUI node graphs as Python dicts
+#  Workflow builder adapters
 # ═══════════════════════════════════════════════════════════════════════════
-# Each _build_* function returns a dict representing a ComfyUI workflow
-# (API format). Keys are string node IDs, values are dicts with
-# "class_type" and "inputs". Cross-node references use [node_id, output_index]
-# tuples — e.g. ["1", 0] means "output 0 of node 1".
-#
-# Convention: node IDs are assigned by function (1-9 for core pipeline,
-# 30+ for conditioning, 50+ for sampling, 90+ for scaling, 100+ for LoRAs).
+# Pure workflow builders live in _workflows_v2.py (imported at top).
+# The _build_* adapters below inject app-level state (CONTROLNET_GUIDE_MODES,
+# preset key resolution, turbo LoRA logic) before delegating to the v2 builders.
+# Simple builders (rembg, upscale, lut, etc.) are called directly from v2.
 
 # ── Model recommendation labels ──────────────────────────────────────
 # Maps (task, architecture) to recommendation. Used to tag model dropdown labels.
@@ -3728,39 +3725,11 @@ def _build_img2img(image_filename, preset, prompt_text, negative_text, seed,
                          loras=loras, controlnet=controlnet, controlnet_2=controlnet_2,
                          guide_modes=CONTROLNET_GUIDE_MODES)
 
-def _build_txt2img(preset, prompt_text, negative_text, seed, loras=None):
-    """→ Delegated to v2 builder."""
-    return build_txt2img(preset, prompt_text, negative_text, seed, loras=loras)
-
 def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_text, seed, loras=None, controlnet=None, controlnet_2=None):
     """→ Delegated to v2 builder."""
     return build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_text, seed,
                          loras=loras, controlnet=controlnet, controlnet_2=controlnet_2,
                          guide_modes=CONTROLNET_GUIDE_MODES)
-
-def _build_faceswap(target_filename, source_filename, swap_model="inswapper_128.onnx",
-                    face_restore_model="codeformer-v0.1.0.pth", face_restore_vis=1.0,
-                    codeformer_weight=0.7, quality_preset=None,
-                    input_face_idx="0", source_face_idx="0"):
-    """→ Delegated to v2 builder."""
-    return build_faceswap(target_filename, source_filename, swap_model=swap_model,
-                          face_restore_model=face_restore_model, face_restore_vis=face_restore_vis,
-                          codeformer_weight=codeformer_weight, quality_preset=quality_preset,
-                          input_face_idx=input_face_idx, source_face_idx=source_face_idx)
-
-def _build_faceswap_model(target_filename, face_model_name, swap_model="inswapper_128.onnx",
-                          face_restore_model="codeformer-v0.1.0.pth", face_restore_vis=1.0,
-                          codeformer_weight=0.7, quality_preset=None,
-                          input_face_idx="0", source_face_idx="0"):
-    """→ Delegated to v2 builder."""
-    return build_faceswap_model(target_filename, face_model_name, swap_model=swap_model,
-                                face_restore_model=face_restore_model, face_restore_vis=face_restore_vis,
-                                codeformer_weight=codeformer_weight, quality_preset=quality_preset,
-                                input_face_idx=input_face_idx, source_face_idx=source_face_idx)
-
-def _build_save_face_model(source_filename, model_name, overwrite=True):
-    """→ Delegated to v2 builder."""
-    return build_save_face_model(source_filename, model_name, overwrite=overwrite)
 
 def _rembg_post_process(server, filename, subfolder="", folder_type="output"):
     """Run rembg on an already-generated image and return transparent PNG bytes.
@@ -3781,7 +3750,7 @@ def _rembg_post_process(server, filename, subfolder="", folder_type="output"):
         _upload_image(server, tmp.name, rembg_input)
         os.unlink(tmp.name)
         # Run rembg
-        wf = _build_rembg(rembg_input)
+        wf = build_rembg(rembg_input)
         results = list(_run_comfyui_workflow(server, wf))
         for fn, sf, ft in results:
             if fn.lower().endswith(".png"):
@@ -3790,22 +3759,6 @@ def _rembg_post_process(server, filename, subfolder="", folder_type="output"):
         pass
     return None
 
-
-def _build_rembg(image_filename):
-    """→ Delegated to v2 builder."""
-    return build_rembg(image_filename)
-
-def _build_upscale(image_filename, model_name, upscale_factor=1.0):
-    """→ Delegated to v2 builder."""
-    return build_upscale(image_filename, model_name, upscale_factor)
-
-def _build_lama_remove(image_filename, mask_filename):
-    """→ Delegated to v2 builder."""
-    return build_lama_remove(image_filename, mask_filename)
-
-def _build_lut(image_filename, lut_name, strength):
-    """→ Delegated to v2 builder."""
-    return build_lut(image_filename, lut_name, strength)
 
 def _build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
                     left, top, right, bottom, feathering, loras=None, controlnet=None):
@@ -3827,18 +3780,6 @@ def _build_style_transfer(target_filename, style_ref_filename, preset,
                                 controlnet=controlnet, controlnet_2=controlnet_2,
                                 guide_modes=CONTROLNET_GUIDE_MODES)
 
-def _build_face_restore(image_filename, model_name, facedetection, visibility, codeformer_weight):
-    """→ Delegated to v2 builder."""
-    return build_face_restore(image_filename, model_name, facedetection, visibility, codeformer_weight)
-
-def _build_photo_restore(image_filename, upscale_model, face_model, facedetection,
-                         face_restore_visibility, codeformer_weight,
-                         sharpen_radius, sharpen_sigma, sharpen_amount):
-    """→ Delegated to v2 builder."""
-    return build_photo_restore(image_filename, upscale_model, face_model, facedetection,
-                               face_restore_visibility, codeformer_weight,
-                               sharpen_radius, sharpen_sigma, sharpen_amount)
-
 def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text, negative_text,
                               seed, denoise, cfg, steps=None, scale_factor=2.0,
                               orig_width=512, orig_height=512,
@@ -3858,49 +3799,6 @@ def _build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_
                          seed, denoise, cfg, steps, scale_factor, orig_width, orig_height,
                          controlnet=controlnet, controlnet_2=controlnet_2,
                          guide_modes=CONTROLNET_GUIDE_MODES)
-
-def _build_colorize(image_filename, preset, prompt_text, negative_text, seed,
-                    controlnet_strength=0.8, denoise=0.65,
-                    steps=None, cfg=None, sampler=None, scheduler=None,
-                    depth_strength=0.0, depth_model=None,
-                    lineart_models=None, depth_models=None):
-    """→ Delegated to v2 builder."""
-    return build_colorize(image_filename, preset, prompt_text, negative_text, seed,
-                          controlnet_strength=controlnet_strength, denoise=denoise,
-                          steps=steps, cfg=cfg, sampler=sampler, scheduler=scheduler,
-                          depth_strength=depth_strength, depth_model=depth_model,
-                          lineart_models=lineart_models, depth_models=depth_models)
-
-def _build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
-                          preset, prompt_text, negative_text, seed,
-                          controlnet_strength=1.0, denoise=0.75, loras=None):
-    """→ Delegated to v2 builder."""
-    return build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
-                                preset, prompt_text, negative_text, seed,
-                                controlnet_strength=controlnet_strength, denoise=denoise,
-                                loras=loras)
-
-def _build_iclight(image_filename, ckpt_name, prompt, negative, seed,
-                   multiplier=1.0, steps=25):
-    """→ Delegated to v2 builder."""
-    return build_iclight(image_filename, ckpt_name, prompt, negative, seed,
-                         multiplier=multiplier, steps=steps)
-
-def _build_supir(image_filename, supir_model, sdxl_model, prompt, seed,
-                 denoise=0.25, steps=20, scale_by=1.0,
-                 controlnet=None, controlnet_2=None):
-    """→ Delegated to v2 builder."""
-    return build_supir(image_filename, supir_model, sdxl_model, prompt, seed,
-                       denoise=denoise, steps=steps, scale_by=scale_by,
-                       controlnet=controlnet, controlnet_2=controlnet_2)
-
-def _build_faceswap_mtb(target_filename, source_filename,
-                        analysis_model="buffalo_l", swap_model="inswapper_128.onnx",
-                        faces_index=0):
-    """→ Delegated to v2 builder."""
-    return build_faceswap_mtb(target_filename, source_filename,
-                               analysis_model=analysis_model, swap_model=swap_model,
-                               faces_index=faces_index)
 
 def _build_faceid_img2img(target_filename, face_ref_filename, preset_key,
                            prompt_text, negative_text, seed,
@@ -4187,62 +4085,6 @@ def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negati
         pingpong=pingpong, fps=fps,
         end_image_filename=end_filename,
     )
-
-def _build_klein_headswap(target_filename, source_filename, klein_model_key,
-                          prompt, seed, denoise=0.35, steps=20,
-                          face_model=None, face_restore_vis=0.7, codeformer_weight=0.8):
-    """→ Delegated to v2 builder."""
-    return build_klein_headswap(target_filename, source_filename, klein_model_key,
-                                prompt, seed, denoise=denoise, steps=steps,
-                                face_model=face_model, face_restore_vis=face_restore_vis,
-                                codeformer_weight=codeformer_weight)
-
-def _build_video_upscale(video_name, upscale_model="4x-UltraSharp.pth",
-                         upscale_factor=1.0, rtx_scale=2.0, fps=16):
-    """→ Delegated to v2 builder."""
-    return build_video_upscale(video_name, upscale_model=upscale_model,
-                               upscale_factor=upscale_factor, rtx_scale=rtx_scale, fps=fps)
-
-def _build_video_reactor(video_name, face_models, upscale_model="4x-UltraSharp.pth",
-                         upscale_factor=1.0, rtx_scale=2.0, fps=16,
-                         face_restore_visibility=1.0, codeformer_weight=0.7):
-    """→ Delegated to v2 builder."""
-    return build_video_reactor(video_name, face_models, upscale_model=upscale_model,
-                               upscale_factor=upscale_factor, rtx_scale=rtx_scale, fps=fps,
-                               face_restore_visibility=face_restore_visibility,
-                               codeformer_weight=codeformer_weight)
-
-def _build_seedvr2_video_upscale(video_name, seed=-1,
-                                 resolution=1024, max_resolution=2048,
-                                 batch_size=4, uniform_batch_size=True,
-                                 color_correction=True, temporal_overlap=2,
-                                 input_noise_scale=0.0, latent_noise_scale=0.0,
-                                 vae_model="seedvr2_vae.safetensors",
-                                 vae_tiled=True, fps=16):
-    """→ Delegated to v2 builder."""
-    return build_seedvr2_video_upscale(video_name, seed=seed,
-                                       resolution=resolution, max_resolution=max_resolution,
-                                       batch_size=batch_size, uniform_batch_size=uniform_batch_size,
-                                       color_correction=color_correction, temporal_overlap=temporal_overlap,
-                                       input_noise_scale=input_noise_scale, latent_noise_scale=latent_noise_scale,
-                                       vae_model=vae_model, vae_tiled=vae_tiled, fps=fps)
-
-def _build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
-                         steps=4, denoise=0.65, guidance=1.0, loras=None,
-                         controlnet=None, controlnet_2=None, klein_models=None):
-    """→ Delegated to v2 builder."""
-    return build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
-                               steps=steps, denoise=denoise, guidance=guidance, loras=loras,
-                               controlnet=controlnet, controlnet_2=controlnet_2,
-                               klein_models=klein_models)
-
-def _build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
-                              prompt_text, seed, steps=4, denoise=0.65, guidance=1.0,
-                              enhancer_mag=1.0, enhancer_contrast=0.0, klein_models=None):
-    """→ Delegated to v2 builder (enhancer params deprecated — not used in v2)."""
-    return build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
-                                   prompt_text, seed, steps=steps, denoise=denoise,
-                                   guidance=guidance, klein_models=klein_models)
 
 def _write_rgb_png(filepath, width, height, pixel_rows):
     """Write an RGB PNG from raw pixel row data. Pure Python, no GIMP calls.
@@ -9137,7 +8979,7 @@ class Spellcaster(Gimp.PlugIn):
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = json.loads(v["custom_workflow"]) if v["custom_workflow"] else \
-                     _build_txt2img(v["preset"], v["prompt"], v["negative"], seed, v.get("loras"))
+                     build_txt2img(v["preset"], v["prompt"], v["negative"], seed, v.get("loras"))
                 label = f"Run {run_i+1}/{runs}" if runs > 1 else "txt2img"
                 _wf = wf
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
@@ -9264,13 +9106,13 @@ class Spellcaster(Gimp.PlugIn):
                 model_name = v["save_model_name"]
                 overwrite = v.get("save_overwrite", True)
                 _update_spinner_status(f"Saving face model '{model_name}'...")
-                save_wf = _build_save_face_model(src_name, model_name, overwrite=overwrite)
+                save_wf = build_save_face_model(src_name, model_name, overwrite=overwrite)
                 _run_with_spinner(f"Saving face model '{model_name}'...",
                                   lambda: list(_run_comfyui_workflow(srv, save_wf)))
                 Gimp.message(f"Face model '{model_name}' saved successfully.")
 
             # Build and run face swap workflow
-            wf = _build_faceswap(
+            wf = build_faceswap(
                 tgt_name, src_name,
                 swap_model=v["swap_model"],
                 face_restore_model=v["face_restore_model"],
@@ -9314,7 +9156,7 @@ class Spellcaster(Gimp.PlugIn):
             tmp = _export_image_to_tmp(image)
             tgt_name = f"gimp_fsm_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, tgt_name); os.unlink(tmp)
-            wf = _build_faceswap_model(
+            wf = build_faceswap_model(
                 tgt_name, v["face_model"],
                 swap_model=v["swap_model"],
                 face_restore_model=v["face_restore_model"],
@@ -9443,7 +9285,7 @@ class Spellcaster(Gimp.PlugIn):
                             tmp_mp4.write(mp4_data); tmp_mp4.close()
                             _upload_image(srv, tmp_mp4.name, sv2r_input); os.unlink(tmp_mp4.name)
 
-                            sv2r_wf = _build_seedvr2_video_upscale(
+                            sv2r_wf = build_seedvr2_video_upscale(
                                 sv2r_input,
                                 seed=random.randint(0, 2**32 - 1),
                                 resolution=v.get("seedvr2_resolution", 1024),
@@ -9969,7 +9811,7 @@ class Spellcaster(Gimp.PlugIn):
                         face_input_order = "left-right" if face_order == "left-right" else "large-small"
                         try:
                             # Pass 1: Actor A → face index 0
-                            wf_a = _build_faceswap(
+                            wf_a = build_faceswap(
                                 next_start, a_ref_name,
                                 quality_preset="High (ReSwapper 256 + GPEN-2048)",
                                 input_face_idx="0", source_face_idx="0")
@@ -9987,7 +9829,7 @@ class Spellcaster(Gimp.PlugIn):
                                     os.unlink(tmp_a.name)
 
                                     # Pass 2: Actor B → face index 1
-                                    wf_b = _build_faceswap(
+                                    wf_b = build_faceswap(
                                         a_out, b_ref_name,
                                         quality_preset="High (ReSwapper 256 + GPEN-2048)",
                                         input_face_idx="1", source_face_idx="0")
@@ -10251,7 +10093,7 @@ class Spellcaster(Gimp.PlugIn):
                         current_img = next_start
                         for ai in range(3):
                             try:
-                                wf_r = _build_faceswap(current_img, ref_names[ai],
+                                wf_r = build_faceswap(current_img, ref_names[ai],
                                     quality_preset="High (ReSwapper 256 + GPEN-2048)",
                                     input_face_idx=str(ai), source_face_idx="0")
                                 _wr = wf_r
@@ -10381,7 +10223,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
 
         try:
-            wf = _build_video_upscale(video_name, upscale_model=up_model,
+            wf = build_video_upscale(video_name, upscale_model=up_model,
                                        upscale_factor=model_factor, rtx_scale=rtx_scale, fps=fps)
             results = _run_with_spinner("Video Upscale: processing...",
                                          lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
@@ -10528,7 +10370,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
 
         try:
-            wf = _build_video_reactor(video_name, selected_faces, upscale_model=up_model,
+            wf = build_video_reactor(video_name, selected_faces, upscale_model=up_model,
                                        upscale_factor=model_factor, rtx_scale=rtx_scale, fps=fps,
                                        face_restore_visibility=vis, codeformer_weight=cfw)
             results = _run_with_spinner("Video ReActor: processing...",
@@ -10723,7 +10565,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
 
         try:
-            wf = _build_seedvr2_video_upscale(
+            wf = build_seedvr2_video_upscale(
                 video_name,
                 seed=int(seed_sp.get_value()),
                 resolution=int(res_sp.get_value()),
@@ -10771,7 +10613,7 @@ class Spellcaster(Gimp.PlugIn):
             # Upload source face image
             src_name = f"gimp_mtb_src_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, v["source_path"], src_name)
-            wf = _build_faceswap_mtb(tgt_name, src_name,
+            wf = build_faceswap_mtb(tgt_name, src_name,
                                       analysis_model=v["analysis_model"],
                                       swap_model=v["swap_model"],
                                       faces_index=v["faces_index"])
@@ -11059,7 +10901,7 @@ class Spellcaster(Gimp.PlugIn):
 
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
-                wf = _build_klein_headswap(
+                wf = build_klein_headswap(
                     tgt_name, src_name, klein_key, prompt, seed,
                     denoise=denoise, steps=steps,
                     face_model=face_model,
@@ -11104,7 +10946,7 @@ class Spellcaster(Gimp.PlugIn):
             base_seed = v["seed"]
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
-                wf = _build_klein_img2img(
+                wf = build_klein_img2img(
                     uname, v["klein_model"], v["prompt"], seed,
                     steps=v["steps"], denoise=v["denoise"], guidance=v["guidance"],
                     enhancer_mag=v["enhancer_mag"], enhancer_contrast=v["enhancer_contrast"],
@@ -11158,7 +11000,7 @@ class Spellcaster(Gimp.PlugIn):
             base_seed = v["seed"]
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
-                wf = _build_klein_img2img_ref(
+                wf = build_klein_img2img_ref(
                     uname, ref_name, v["klein_model"], v["prompt"], seed,
                     steps=v["steps"], denoise=v["denoise"], guidance=v["guidance"],
                     enhancer_mag=v["enhancer_mag"], enhancer_contrast=v["enhancer_contrast"],
@@ -13307,7 +13149,7 @@ class Spellcaster(Gimp.PlugIn):
                     # before using it as the next step's start image
                     if face_reinject and step_idx < num_steps - 1:
                         try:
-                            reinject_wf = _build_faceswap(
+                            reinject_wf = build_faceswap(
                                 next_start, start_name,
                                 quality_preset="High (ReSwapper 256 + GPEN-2048)",
                                 input_face_idx="0", source_face_idx="0",
@@ -13978,7 +13820,7 @@ class Spellcaster(Gimp.PlugIn):
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_upscale_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
-            wf = _build_upscale(uname, model_name, upscale_factor=upscale_factor)
+            wf = build_upscale(uname, model_name, upscale_factor=upscale_factor)
             results = _run_with_spinner("Upscale: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
             for i, (fn, sf, ft) in enumerate(results):
@@ -14170,7 +14012,7 @@ class Spellcaster(Gimp.PlugIn):
                 label_text = "AI Replace"
             else:
                 # LaMa fast removal
-                wf = _build_lama_remove(iname, mname)
+                wf = build_lama_remove(iname, mname)
                 label_text = "LaMa Remove"
 
             _update_spinner_status(f"{label_text}: processing on ComfyUI...")
@@ -14242,7 +14084,7 @@ class Spellcaster(Gimp.PlugIn):
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_lut_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
-            wf = _build_lut(uname, lut_name, strength)
+            wf = build_lut(uname, lut_name, strength)
             _update_spinner_status("LUT: processing on ComfyUI...")
             results = _run_with_spinner("LUT: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
@@ -14843,7 +14685,7 @@ class Spellcaster(Gimp.PlugIn):
             if do_compare:
                 _import_result_as_layer(image, tmp if os.path.exists(tmp) else _export_image_to_tmp(image),
                                         f"Face Restore BEFORE (original)")
-            wf = _build_face_restore(uname, fr_preset["model"], facedetection,
+            wf = build_face_restore(uname, fr_preset["model"], facedetection,
                                       visibility, codeformer_weight)
             # Add sharpening pass if requested
             if sharpen_amount > 0:
@@ -14997,7 +14839,7 @@ class Spellcaster(Gimp.PlugIn):
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_photorestore_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
-            wf = _build_photo_restore(uname, upscale_model, fr_preset["model"],
+            wf = build_photo_restore(uname, upscale_model, fr_preset["model"],
                                        facedetection, 1.0, codeformer_weight,
                                        sharpen_radius, 0.5, sharpen_amount)
             results = _run_with_spinner("Photo Restore: processing on ComfyUI...",
@@ -15775,7 +15617,7 @@ class Spellcaster(Gimp.PlugIn):
             _upload_image(srv, tmp, uname); os.unlink(tmp)
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
-                wf = _build_colorize(uname, preset, prompt, negative, seed,
+                wf = build_colorize(uname, preset, prompt, negative, seed,
                                       cn_strength, denoise,
                                       steps=_cp.get("steps"),
                                       cfg=_cp.get("cfg"),
@@ -15834,7 +15676,7 @@ class Spellcaster(Gimp.PlugIn):
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = json.loads(v["custom_workflow"]) if v["custom_workflow"] else \
-                     _build_txt2img(v["preset"], v["prompt"], v["negative"], seed, v.get("loras"))
+                     build_txt2img(v["preset"], v["prompt"], v["negative"], seed, v.get("loras"))
                 # Patch the EmptyLatentImage node to set batch_size
                 for nid, node in wf.items():
                     if node.get("class_type") == "EmptyLatentImage":
@@ -15996,7 +15838,7 @@ class Spellcaster(Gimp.PlugIn):
             _upload_image(srv, tmp, uname); os.unlink(tmp)
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
-                wf = _build_iclight(uname, ckpt_name, prompt, "", seed,
+                wf = build_iclight(uname, ckpt_name, prompt, "", seed,
                                      multiplier, steps)
                 label = f"IC-Light run {run_i+1}/{runs}" if runs > 1 else "IC-Light"
                 _wf = wf
@@ -16491,7 +16333,7 @@ class Spellcaster(Gimp.PlugIn):
             _upload_image(srv, tmp, uname); os.unlink(tmp)
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
-                wf = _build_supir(uname, "Other\\SUPIR-v0Q_fp16.safetensors", sdxl_model,
+                wf = build_supir(uname, "Other\\SUPIR-v0Q_fp16.safetensors", sdxl_model,
                                    prompt, seed, denoise, steps, scale_by=scale,
                                    controlnet=cn1, controlnet_2=cn2)
                 label = f"SUPIR run {run_i+1}/{runs}" if runs > 1 else "SUPIR"
@@ -16775,7 +16617,7 @@ class Spellcaster(Gimp.PlugIn):
             _upload_image(srv, tmp_chosen.name, chosen_name)
             os.unlink(tmp_chosen.name)
 
-            save_wf = _build_save_face_model(chosen_name, model_name, overwrite=True)
+            save_wf = build_save_face_model(chosen_name, model_name, overwrite=True)
             _run_with_spinner(
                 f"Saving face model '{model_name}'...",
                 lambda: list(_run_comfyui_workflow(srv, save_wf)))
@@ -17040,7 +16882,7 @@ class Spellcaster(Gimp.PlugIn):
                 for i in range(3):
                     seed = random.randint(0, 2**32 - 1)
                     # Step 1: txt2img body (with quality boost)
-                    wf_body = _build_txt2img(preset, boosted_prompt, boosted_negative, seed)
+                    wf_body = build_txt2img(preset, boosted_prompt, boosted_negative, seed)
                     _wf = wf_body
                     body_res = _run_with_spinner(
                         f"Body Factory: generating body {i+1}/3...",
@@ -17060,7 +16902,7 @@ class Spellcaster(Gimp.PlugIn):
                     tmp_b.write(body_data); tmp_b.close()
                     _upload_image(srv, tmp_b.name, body_img_name); os.unlink(tmp_b.name)
 
-                    wf_swap = _build_faceswap(
+                    wf_swap = build_faceswap(
                         body_img_name, ref_name,
                         swap_model="inswapper_128.onnx",
                         face_restore_model="codeformer-v0.1.0.pth",
@@ -17078,7 +16920,7 @@ class Spellcaster(Gimp.PlugIn):
                             tmp_r = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
                             tmp_r.write(swap_data); tmp_r.close()
                             _upload_image(srv, tmp_r.name, rembg_name); os.unlink(tmp_r.name)
-                            rembg_wf = _build_rembg(rembg_name)
+                            rembg_wf = build_rembg(rembg_name)
                             _wf3 = rembg_wf
                             rembg_res = _run_with_spinner(
                                 f"Body Factory: removing background {i+1}/3...",
@@ -17564,7 +17406,7 @@ class Spellcaster(Gimp.PlugIn):
                 bg_results = []
                 for i in range(3):
                     seed = random.randint(0, 2**32 - 1)
-                    wf = _build_txt2img(preset, bg_boosted, bg_neg, seed)
+                    wf = build_txt2img(preset, bg_boosted, bg_neg, seed)
                     _wf = wf
                     res = _run_with_spinner(f"Studio Set: generating background {i+1}/3...",
                                              lambda: list(_run_comfyui_workflow(srv, _wf)))
@@ -17725,7 +17567,7 @@ class Spellcaster(Gimp.PlugIn):
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_rembg_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
-            wf = _build_rembg(uname)
+            wf = build_rembg(uname)
             _update_spinner_status("Remove Background: processing on ComfyUI...")
             results = _run_with_spinner("Remove Background: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
