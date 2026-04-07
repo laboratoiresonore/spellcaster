@@ -55,12 +55,10 @@ session_state.json
 config.json
 *.spellcaster_version
 
-# Generated content not in assets/
+# Generated content — ignore all video/gif except assets/ gifs
 *.mp4
 *.gif
-!assets/*.mp4
 !assets/*.gif
-!assets/**/*.mp4
 !assets/**/*.gif
 
 # Signal Bridge — machine-specific config with IPs, API keys, paths
