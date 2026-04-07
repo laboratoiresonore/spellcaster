@@ -1,8 +1,39 @@
 """
-Spellcaster Presets — curated parameter combinations from the README.
+Spellcaster Presets — curated parameter combinations for common use cases.
 
-These are the recommended starting points for common use cases.
-The wizard offers them as one-click shortcuts before manual param walk.
+WHAT ARE PRESETS:
+  Presets are pre-configured sets of parameters for enhancement nodes.
+  Instead of asking users to manually set magnitude, contrast, normalize_strength
+  each time, we offer presets like "Gentle", "Strong", "Maximum" that have been
+  tested and balanced for real-world use.
+
+HOW THEY'RE USED:
+  1. When a user picks an enhancement node, the SpellcasterWizard checks for
+     presets via preset_names_for_node()
+  2. If presets exist, the wizard offers them as choices before manual config:
+       "1. Gentle (subtle boost)
+        2. Moderate (noticeable)
+        3. Strong (punchy)
+        ...
+        N+1. Manual (step by step)
+        N+2. All defaults"
+  3. The LLM sees all presets in the system prompt and can recommend them
+  4. Once a preset is chosen, all its parameters are applied at once
+
+STRUCTURE:
+  PRESETS: Dict[node_class_key, Dict[preset_name, Dict[param_name, value]]]
+
+  Example:
+    PRESETS["Flux2KleinEnhancer"]["Strong"] = {
+        "magnitude": 1.35,
+        "contrast": 0.30,
+        "normalize_strength": 0.15,
+        "edit_text_weight": 1.0,
+    }
+
+KEY FUNCTIONS:
+  - apply_preset(node_key, preset_name) -> Dict: Apply a preset to a session
+  - preset_names_for_node(node_key) -> List[str]: List available presets
 """
 
 from __future__ import annotations

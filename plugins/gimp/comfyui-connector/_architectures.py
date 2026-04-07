@@ -1,26 +1,89 @@
 """Architecture Registry — centralised model-architecture configuration.
 
-Every architecture-specific behaviour (loader pattern, sampler type, default
-parameters, LoRA prefixes, turbo config, quality boost prompts) lives here
-in ONE ArchConfig per architecture.
+Every model architecture supported by Spellcaster has unique properties:
+  - How to load the model (checkpoint vs separate unet/clip/vae)
+  - What sampler pipeline to use (KSampler vs SamplerCustomAdvanced)
+  - Whether negative prompts are supported
+  - Default parameters (steps, CFG, denoise, sampler, scheduler)
+  - LoRA path prefixes and strength
+  - Quality boost prompts
+  - Turbo mode configuration (if any)
+  - Recommended ControlNet and LoRA combinations per use case
 
-This replaces the scattered dicts: _AUTOSET_PROMPTS, _AUTOSET_CFG,
-_AUTOSET_STEPS, _AUTOSET_DENOISE, QUALITY_BOOST_POSITIVE/NEGATIVE,
-ARCH_LORA_PREFIXES, TURBO_CONFIGS, and the many inline ``if arch ==`` checks.
+Before this registry, these properties were scattered across:
+  _AUTOSET_PROMPTS, _AUTOSET_CFG, _AUTOSET_STEPS, _AUTOSET_DENOISE,
+  QUALITY_BOOST_POSITIVE/NEGATIVE, ARCH_LORA_PREFIXES, TURBO_CONFIGS,
+  and 50+ inline ``if arch == "sdxl"`` checks.
 
-Adding a new architecture = adding one entry to ARCHITECTURES.
+Now, each architecture is ONE ArchConfig entry that centralises all behaviour.
+Adding a new model = adding one registration via _reg().
 
-Usage:
-    from _architectures import ARCHITECTURES
+SUPPORTED ARCHITECTURES (as of April 2026):
+  - sd15: Stable Diffusion 1.5 (512x512, checkpoint-based)
+  - sdxl: Stable Diffusion XL (1024x1024, checkpoint-based)
+  - illustrious: SDXL-based anime model (1024x1024, checkpoint-based)
+  - zit: Z-Image-Turbo (fast SDXL distill, 4-6 steps, checkpoint-based)
+  - flux1dev: Flux Development (1024x1024, separate loaders, dual CLIP)
+  - flux2klein: Flux 2 Klein (distilled, 4 steps, separate loaders, custom sampler)
+  - flux_kontext: Flux with edit instructions (experimental, separate loaders)
+
+TYPICAL USAGE:
+    from _architectures import ARCHITECTURES, get_arch
+
     arch = ARCHITECTURES["flux2klein"]
-    arch.default_cfg           # 1.0
-    arch.supports_negative     # False
-    arch.loader                # "unet_clip_vae"
+    print(arch.default_cfg)         # 1.0
+    print(arch.supports_negative)   # False
+    print(arch.loader)              # "unet_clip_vae"
+
+    # Get recommended LoRA for img2img
+    loras = arch.get_loras("img2img")
+
+    # Get recommended ControlNet config
+    cn_config = arch.get_cn("img2img")
+
+    # Get denoise strength for a use case
+    denoise = arch.get_denoise("inpaint", fallback=0.60)
 """
 
 
 class ArchConfig:
-    """Configuration for a single model architecture."""
+    """Configuration for a single model architecture.
+
+    Each architecture (e.g. "sdxl", "flux2klein") has unique properties that
+    affect how workflows are constructed. ArchConfig captures all of them:
+
+    LOADING STRATEGY:
+      - loader: How models are loaded (checkpoint vs separate)
+      - clip_mode: Text encoder strategy (bundled, single, dual)
+      - vae_mode: VAE loading strategy (bundled, separate)
+
+    SAMPLING PARAMETERS:
+      - sampler: Scheduler type (ksampler, custom_advanced)
+      - default_sampler: Recommended sampler algorithm (euler, dpmpp_2m, etc)
+      - default_scheduler: Noise schedule (normal, karras, exponential)
+      - default_cfg: Classifier-free guidance scale
+      - default_steps: Recommended number of steps
+      - default_denoise: Default denoise strength (1.0 = full generation)
+      - default_resolution: Recommended output size (width, height)
+
+    ARCHITECTURE SPECIFICS:
+      - supports_negative: Whether negative prompts work (False for Flux)
+      - lora_prefixes: Expected LoRA folder names for this architecture
+
+    QUALITY & OPTIMIZATION:
+      - quality_positive/negative: Boost prompts for enhanced quality
+      - turbo_config: Fast mode via Hyper-LoRA (if None, no turbo mode)
+
+    CONTEXT-AWARE CONFIGURATION:
+      - autoset_prompts: Default prompts when user hasn't provided text
+      - autoset_denoise: Recommended denoise per use case (img2img, inpaint, etc)
+      - autoset_cn: Recommended ControlNet per use case (mode → (cn1, str1, cn2, str2))
+      - autoset_loras: Recommended LoRA chain per use case
+      - scene_group: Scene preset category for UI organization
+
+    EXTENSION POINT:
+      - extra: Dict for architecture-specific data (CLIP names, VAE paths, etc)
+    """
 
     __slots__ = (
         "key", "loader", "sampler", "clip_mode", "vae_mode",
@@ -59,18 +122,52 @@ class ArchConfig:
         self.extra = kw.get("extra", {})
 
     def get_denoise(self, mode, fallback=0.60):
-        """Get recommended denoise for a mode (img2img, inpaint, hallucinate...)."""
+        """Get recommended denoise strength for a specific use case.
+
+        Denoise strength controls how much the model relies on the input image
+        vs generating from scratch. Values are specific to the architecture and
+        use case (img2img, inpaint, etc).
+
+        Args:
+            mode: Use case ("img2img", "inpaint", "hallucinate", "colorize", etc)
+            fallback: Default if mode not found (default 0.60)
+
+        Returns:
+            Float between 0.0 (preserve input) and 1.0 (full generation)
+        """
         return self.autoset_denoise.get(mode, fallback)
 
     def get_cn(self, mode):
-        """Get recommended ControlNet config for a mode.
-        Returns (cn1_key, cn1_strength, cn2_key, cn2_strength) or None.
+        """Get recommended ControlNet configuration for a use case.
+
+        Returns a tuple describing up to two chained ControlNets:
+          (cn1_key, cn1_strength, cn2_key, cn2_strength)
+
+        Where each cn_key is either:
+          - A ControlNet name string (e.g. "Canny Edge Detection — SDXL")
+          - "Off" to disable that slot
+          - None to skip initialization
+
+        Args:
+            mode: Use case ("img2img", "inpaint", "hallucinate", etc)
+
+        Returns:
+            Tuple (cn1, cn1_str, cn2, cn2_str) or None if not configured
         """
         return self.autoset_cn.get(mode)
 
     def get_loras(self, mode):
-        """Get recommended LoRAs for a mode.
-        Returns list of (lora_name, model_strength, clip_strength) or [].
+        """Get recommended LoRA chain for a use case.
+
+        Returns a list of LoRA configurations to apply in sequence. Each
+        element is a dict with: {name, strength_model, strength_clip}.
+
+        Args:
+            mode: Use case ("img2img", "txt2img", "inpaint", etc)
+
+        Returns:
+            List of dicts [{"name": "...", "strength_model": 0.5, ...}, ...]
+            Empty list if no LoRAs recommended.
         """
         return self.autoset_loras.get(mode, [])
 
@@ -78,16 +175,57 @@ class ArchConfig:
 # ═══════════════════════════════════════════════════════════════════════════
 #  The Registry
 # ═══════════════════════════════════════════════════════════════════════════
+# This section holds all registered architectures. Each registration via _reg()
+# adds one ArchConfig to the ARCHITECTURES dict. Workflow builders query this
+# dict to determine how to construct workflows for a specific model.
 
 ARCHITECTURES = {}
 
 
 def _reg(key, **kw):
-    """Register an architecture."""
+    """Register a new architecture in the global ARCHITECTURES registry.
+
+    Called during module load to populate ARCHITECTURES with all supported
+    model architectures. Each _reg() call creates one ArchConfig.
+
+    Args:
+        key: Architecture identifier string (e.g. "sdxl", "flux2klein")
+        **kw: ArchConfig parameters (loader, sampler, quality_positive, etc)
+    """
     ARCHITECTURES[key] = ArchConfig(key, **kw)
 
 
+# ───────────────────────────────────────────────────────────────────────────
+#  ARCHITECTURE REGISTRATIONS
+# ───────────────────────────────────────────────────────────────────────────
+#
+# Each _reg() call below defines one model architecture. The key parameter
+# (e.g. "sdxl", "flux2klein") is the identifier used throughout Spellcaster
+# to look up configuration. All parameters have sensible defaults; override
+# only what's different from the defaults.
+#
+# KEY CONFIGURATIONS BY CATEGORY:
+#
+#   Checkpoint-based models (single file):
+#     - sd15, sdxl, illustrious, zit
+#     Loader: "checkpoint" (CheckpointLoaderSimple)
+#     Outputs: [0]=MODEL, [1]=CLIP, [2]=VAE from single file
+#
+#   Separate-loader models (UNET + CLIP + VAE separate):
+#     - flux1dev, flux2klein, flux_kontext
+#     Loader: "unet_clip_vae"
+#     CLIP modes: "dual" (two CLIPs for Flux) or "single_flux2" (one for Klein)
+#     Each loaded separately, composed into workflow
+#
+#   Sampler patterns:
+#     - "ksampler": Standard KSampler (most architectures)
+#     - "custom_advanced": SamplerCustomAdvanced + CFGGuider (Klein)
+#
+# ───────────────────────────────────────────────────────────────────────────
+
 # ── SD 1.5 ────────────────────────────────────────────────────────────────
+# Stable Diffusion 1.5 — classic 512x512 architecture
+# Good for: general purpose, retro/pixel art, fine control with lower VRAM
 
 _reg("sd15",
      loader="checkpoint",
@@ -146,6 +284,8 @@ _reg("sd15",
 
 
 # ── SDXL ──────────────────────────────────────────────────────────────────
+# Stable Diffusion XL — modern 1024x1024 architecture (2023)
+# Good for: photorealism, high detail, Illustrious anime models, best balance
 
 _reg("sdxl",
      loader="checkpoint",
@@ -208,6 +348,8 @@ _reg("sdxl",
 
 
 # ── Illustrious (SDXL-based anime) ───────────────────────────────────────
+# Illustrious Anime — SDXL-derived anime/illustration specialisation (2024)
+# Good for: anime, manga, illustration, stylised art (better than generic SDXL)
 
 _reg("illustrious",
      loader="checkpoint",
@@ -261,6 +403,8 @@ _reg("illustrious",
 
 
 # ── Z-Image-Turbo (fast SDXL distill) ────────────────────────────────────
+# Z-Image-Turbo — ultra-fast SDXL distillation (4-6 steps, 2024)
+# Good for: speed-critical, real-time generation, RTX 5060 Ti sweet spot
 
 _reg("zit",
      loader="checkpoint",
@@ -304,6 +448,9 @@ _reg("zit",
 
 
 # ── Flux 1 Dev ────────────────────────────────────────────────────────────
+# Flux Development — next-gen diffusion by Black Forest Labs (2024)
+# Architecture: separate UNET + dual CLIP (clip_l + t5xxl)
+# Good for: cutting-edge quality, no negative prompts, 25-30 steps (slower)
 
 _reg("flux1dev",
      loader="unet_clip_vae",
@@ -364,6 +511,10 @@ _reg("flux1dev",
 
 
 # ── Flux 2 Klein (distilled) ─────────────────────────────────────────────
+# Flux 2 Klein — Flux distilled to 4 steps, custom sampler (2025)
+# Architecture: separate UNET + single CLIP (flux2 type) + custom sampler
+# Good for: speed (4 steps), quality comparable to Flux1, no negative prompts
+# Note: Requires SamplerCustomAdvanced + CFGGuider (not standard KSampler)
 
 _reg("flux2klein",
      loader="unet_clip_vae",
@@ -412,6 +563,8 @@ _reg("flux2klein",
 
 
 # ── Flux Kontext (edit instructions) ─────────────────────────────────────
+# Flux Kontext — Flux variant with edit instruction support (experimental, 2025)
+# Similar to Flux1Dev but with additional guidance mechanism for edits
 
 _reg("flux_kontext",
      loader="unet_clip_vae",
@@ -457,5 +610,23 @@ _reg("flux_kontext",
 # ═══════════════════════════════════════════════════════════════════════════
 
 def get_arch(key, fallback="sdxl"):
-    """Get an ArchConfig by key, falling back to sdxl if unknown."""
+    """Get an ArchConfig by key, with fallback for unknown architectures.
+
+    This is the standard lookup function used throughout the codebase. If the
+    requested key doesn't exist, falls back to a known architecture (default
+    "sdxl") to avoid crashes when an unknown architecture is referenced.
+
+    Args:
+        key: Architecture identifier (e.g. "sdxl", "flux2klein")
+        fallback: Fallback architecture if key not found (default "sdxl")
+
+    Returns:
+        ArchConfig instance (guaranteed non-None unless both key and fallback
+        don't exist, which would indicate a misconfiguration)
+
+    Example:
+        arch = get_arch("flux2klein")  # Returns ARCHITECTURES["flux2klein"]
+        if arch.supports_negative:     # Check if arch accepts negative prompts
+            # ...
+    """
     return ARCHITECTURES.get(key, ARCHITECTURES.get(fallback))

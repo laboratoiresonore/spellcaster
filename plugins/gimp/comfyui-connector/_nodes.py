@@ -19,20 +19,69 @@ hardcoded IDs (e.g. ControlNet injection targeting sampler node "6").
 
 
 class NodeFactory:
-    """Builds a ComfyUI workflow dict one node at a time.
+    """Centralised factory for constructing ComfyUI workflow nodes.
 
-    Each method adds a node and returns its string ID.
-    References between nodes use [node_id, output_index] lists.
+    The NodeFactory pattern consolidates all node construction logic into a
+    single place, ensuring that when a ComfyUI node API changes (e.g. Flux2Scheduler
+    parameter removal), the fix happens in exactly one method that all 39+ workflow
+    builders depend on.
+
+    ARCHITECTURE:
+      Every method constructs one node dict and returns its auto-assigned or
+      manually-pinned ID (string). Each node dict follows ComfyUI's format:
+        { "class_type": "NodeClassName", "inputs": {...} }
+
+    NODE REFERENCES:
+      References between nodes use the [node_id, output_slot] list pattern:
+        model_ref = [ckpt_id, 0]  # Output slot 0 from ckpt loader
+        clip_ref = [ckpt_id, 1]   # Output slot 1 (CLIP) from ckpt loader
+
+      This pattern is consistent throughout ComfyUI and critical for downstream
+      node wiring. When a method says "Outputs: [0]=MODEL, [1]=CLIP, [2]=VAE",
+      those indices map directly to reference lists.
+
+    NODE ID SYSTEM:
+      - Auto-assigned IDs are ascending integers (1, 2, 3, ...) unless pinned
+      - Explicit node_id= parameter pins an ID for hardcoded references
+      - High ID ranges (e.g. base_id=100) prevent collisions in composite patterns
+      - The _next_id counter maintains the watermark even after explicit pins
+
+    BUILD PATTERN:
+      nf = NodeFactory()
+      ckpt_id = nf.checkpoint_loader("model.safetensors")
+      clip_id, vae_id = ckpt_id[0], ckpt_id[2]  # Extract from outputs
+      pos_id = nf.clip_encode([ckpt_id, 1], "a photo of a cat")
+      # ... more nodes ...
+      workflow = nf.build()  # Returns final {node_id: node_dict} mapping
     """
 
     def __init__(self, start_id=1):
+        """Initialize NodeFactory with optional starting ID.
+
+        Args:
+            start_id: First node ID to assign (default 1). Useful for downstream
+                     insertion into existing workflows.
+        """
         self._nodes = {}
         self._next_id = start_id
 
     # ── Internal ──────────────────────────────────────────────────────
 
     def _add(self, class_type, inputs, node_id=None):
-        """Add a node. Returns the string node ID."""
+        """Internal: Add a node dict to the workflow.
+
+        Called by all public methods. Handles node ID auto-assignment and
+        collision prevention. Returns the node's string ID so it can be
+        referenced by downstream nodes.
+
+        Args:
+            class_type: ComfyUI class name (e.g. "CheckpointLoaderSimple")
+            inputs: Dict of input parameters for the node
+            node_id: Optional explicit ID; if None, auto-assign the next ID
+
+        Returns:
+            String node ID (e.g. "1", "2", or explicit "7b")
+        """
         if node_id is None:
             nid = str(self._next_id)
             self._next_id += 1
@@ -68,23 +117,73 @@ class NodeFactory:
         return str(node_id) in self._nodes
 
     def build(self):
-        """Return the completed workflow dict (node_id → {class_type, inputs})."""
+        """Return the completed workflow dict for ComfyUI.
+
+        The returned dict maps node_id (string) → node (dict) and is the
+        final format expected by ComfyUI's API. This is typically serialized
+        to JSON and sent via ComfyUI's REST API or embedded in a workflow file.
+
+        Returns:
+            Dict[str, Dict] in ComfyUI workflow format:
+              {
+                "1": {"class_type": "CheckpointLoaderSimple", "inputs": {...}},
+                "2": {"class_type": "CLIPTextEncode", "inputs": {...}},
+                ...
+              }
+        """
         return dict(self._nodes)
 
     # ═══════════════════════════════════════════════════════════════════
     #  MODEL LOADERS
     # ═══════════════════════════════════════════════════════════════════
+    # These methods load the core diffusion models (UNETs), text encoders (CLIP),
+    # and variational autoencoders (VAEs) that form the backbone of any workflow.
+    # ComfyUI supports two loading patterns:
+    #   1. Checkpoint-based (sd15, sdxl, illustrious, zit): single file with all 3
+    #   2. Separate loaders (Flux, Klein): UNET + CLIP + VAE loaded independently
+    # The architecture detection (_architectures.py) determines which pattern to use.
 
     def checkpoint_loader(self, ckpt_name, node_id=None):
-        """CheckpointLoaderSimple — loads model+clip+vae from single file.
-        Outputs: [0]=MODEL, [1]=CLIP, [2]=VAE
+        """CheckpointLoaderSimple — loads model+clip+vae from single safetensors file.
+
+        This is the standard pattern for SD1.5, SDXL, Illustrious, and ZIT models.
+        A single checkpoint file contains the UNET (diffusion model), CLIP text
+        encoder, and VAE all bundled together.
+
+        Args:
+            ckpt_name: Checkpoint filename (e.g. "sd15_fp16.safetensors")
+                      Must exist in ComfyUI's models/checkpoints/ directory
+
+        Returns:
+            Node ID (string). The node has three outputs:
+              - [node_id, 0]: MODEL (the UNET for diffusion sampling)
+              - [node_id, 1]: CLIP (the text encoder for prompt encoding)
+              - [node_id, 2]: VAE (the image encoder/decoder)
+
+        Example:
+            ckpt_id = nf.checkpoint_loader("sd15.safetensors")
+            model = [ckpt_id, 0]  # Use in KSampler
+            clip = [ckpt_id, 1]   # Use in CLIPTextEncode
+            vae = [ckpt_id, 2]    # Use in VAEEncode/VAEDecode
         """
         return self._add("CheckpointLoaderSimple",
                          {"ckpt_name": ckpt_name}, node_id)
 
     def unet_loader(self, unet_name, weight_dtype="default", node_id=None):
-        """UNETLoader — loads a standalone UNET (Flux, Klein).
-        Outputs: [0]=MODEL
+        """UNETLoader — loads the diffusion model for Flux / Klein architectures.
+
+        Unlike checkpoint-based models, Flux and Klein architectures separate the
+        UNET (diffusion model) from the CLIP and VAE. This loader handles the UNET
+        only; CLIP and VAE are loaded separately via clip_loader/dual_clip_loader
+        and vae_loader.
+
+        Args:
+            unet_name: UNET filename (e.g. "flux1-dev-Q6_K.gguf" or "flux2-klein.safetensors")
+            weight_dtype: Data type ("default", "fp8", "fp16", "fp32", etc)
+
+        Returns:
+            Node ID (string). The node has one output:
+              - [node_id, 0]: MODEL (the UNET for diffusion sampling)
         """
         return self._add("UNETLoader",
                          {"unet_name": unet_name,
@@ -160,12 +259,33 @@ class NodeFactory:
                          {"model_name": model_name}, node_id)
 
     # ═══════════════════════════════════════════════════════════════════
-    #  CONDITIONING / CLIP
+    #  CONDITIONING / CLIP TEXT ENCODING
     # ═══════════════════════════════════════════════════════════════════
+    # These methods convert text prompts into conditioning tensors that guide
+    # diffusion sampling. The CLIP text encoder tokenizes and embeds prompts.
+    # For architectures with supports_negative=False (Flux, Klein), negative
+    # conditioning is created via ConditioningZeroOut instead.
 
     def clip_encode(self, clip_ref, text, node_id=None):
-        """CLIPTextEncode — encode text prompt into conditioning.
-        Outputs: [0]=CONDITIONING
+        """CLIPTextEncode — encode text prompt into conditioning tensor.
+
+        The CLIP text encoder takes a text prompt and produces a conditioning
+        tensor that guides the diffusion model during sampling. This is the
+        core mechanism for prompt-to-image generation.
+
+        Args:
+            clip_ref: Reference to a CLIP node, typically [clip_loader_id, 0]
+            text: The text prompt (string). Can be arbitrarily long; CLIP will
+                  truncate to max tokens.
+
+        Returns:
+            Node ID (string). The node has one output:
+              - [node_id, 0]: CONDITIONING tensor for use in KSampler/CFGGuider
+
+        Example:
+            clip_id = nf.checkpoint_loader("sd15.safetensors")
+            pos_cond = nf.clip_encode([clip_id, 1], "a beautiful cat, oil painting")
+            # Now pos_cond = ["N", 0] where N is this node's ID
         """
         return self._add("CLIPTextEncode",
                          {"clip": clip_ref, "text": text}, node_id)
@@ -201,14 +321,50 @@ class NodeFactory:
                           "image": image_ref}, node_id)
 
     # ═══════════════════════════════════════════════════════════════════
-    #  SAMPLING
+    #  SAMPLING / DIFFUSION SCHEDULERS
     # ═══════════════════════════════════════════════════════════════════
+    # These methods perform the core diffusion sampling process. KSampler is the
+    # standard scheduler for most architectures (SD1.5, SDXL, Flux1). Klein uses
+    # a separate SamplerCustomAdvanced + CFGGuider pipeline. All samplers accept
+    # noise scheduling parameters (sampler_name, scheduler, steps) that control
+    # the diffusion trajectory.
 
     def ksampler(self, model_ref, positive_ref, negative_ref, latent_ref,
                  seed, steps, cfg, sampler_name, scheduler, denoise,
                  node_id=None):
-        """KSampler — standard diffusion sampler.
-        Outputs: [0]=LATENT
+        """KSampler — standard diffusion sampling pipeline.
+
+        The KSampler is the workhorse of ComfyUI. It iteratively denoises a
+        latent starting from noise, guided by positive/negative conditioning
+        and a noise schedule. The sampler_name and scheduler control the
+        mathematical properties of the denoising trajectory.
+
+        Args:
+            model_ref: Reference to diffusion model (UNET), e.g. [ckpt_id, 0]
+            positive_ref: Positive conditioning, e.g. [clip_encode_id, 0]
+            negative_ref: Negative conditioning, e.g. [clip_encode_id, 0]
+            latent_ref: Starting latent, typically from EmptyLatentImage or VAEEncode
+            seed: Random seed for noise initialization (int)
+            steps: Number of denoising steps (typically 20-50)
+            cfg: Classifier-free guidance scale (float, e.g. 7.0)
+                 Higher values make the model follow the prompt more strictly.
+            sampler_name: Noise schedule family ("euler", "dpmpp_2m", "ddim", etc)
+            scheduler: Noise schedule variant ("normal", "karras", "exponential", etc)
+            denoise: Denoising strength (0.0 to 1.0)
+                    1.0 = full generation from noise
+                    0.5 = img2img strength where original image influence = 50%
+
+        Returns:
+            Node ID (string). The node has one output:
+              - [node_id, 0]: LATENT (denoised latent space tensor)
+
+        Example:
+            sample_id = nf.ksampler(
+                model=[ckpt_id, 0], positive=[pos_id, 0], negative=[neg_id, 0],
+                latent=[empty_id, 0],
+                seed=42, steps=25, cfg=7.0,
+                sampler_name="euler", scheduler="normal", denoise=1.0
+            )
         """
         return self._add("KSampler", {
             "model": model_ref,
@@ -323,10 +479,26 @@ class NodeFactory:
     # ═══════════════════════════════════════════════════════════════════
     #  LATENT OPERATIONS
     # ═══════════════════════════════════════════════════════════════════
+    # Latents are the compressed (lower-dimensional) representation of images
+    # used by diffusion models. Operations here initialize latents (EmptyLatentImage),
+    # encode/decode between pixels and latent space (VAEEncode/VAEDecode), and apply
+    # masks or references. Understanding latent space is critical: diffusion happens
+    # in latent space, but final output requires VAE decoding back to pixel space.
 
     def empty_latent_image(self, width, height, batch_size=1, node_id=None):
-        """EmptyLatentImage — blank latent for txt2img.
-        Outputs: [0]=LATENT
+        """EmptyLatentImage — initialize blank latent tensor for txt2img generation.
+
+        Creates a latent tensor filled with noise, ready for the KSampler to denoise.
+        This is the starting point for all txt2img (text-to-image) workflows.
+
+        Args:
+            width: Latent space width (pixels / 8). E.g., 768px → width=96
+            height: Latent space height (pixels / 8). E.g., 512px → height=64
+            batch_size: Number of images in batch (default 1)
+
+        Returns:
+            Node ID (string). The node has one output:
+              - [node_id, 0]: LATENT (uninitialized latent tensor)
         """
         return self._add("EmptyLatentImage", {
             "width": width, "height": height, "batch_size": batch_size,
@@ -362,16 +534,48 @@ class NodeFactory:
         }, node_id)
 
     def vae_encode(self, pixels_ref, vae_ref, node_id=None):
-        """VAEEncode — image pixels → latent space.
-        Outputs: [0]=LATENT
+        """VAEEncode — compress image pixels into latent space (8x8x4 factor).
+
+        Converts high-resolution pixel images into the compressed latent space
+        where diffusion sampling operates. Essential for img2img and inpaint
+        workflows: load an image, encode it, then use as starting latent.
+
+        Args:
+            pixels_ref: Reference to image pixels, typically [load_image_id, 0]
+            vae_ref: Reference to VAE decoder, typically [ckpt_id, 2]
+
+        Returns:
+            Node ID (string). The node has one output:
+              - [node_id, 0]: LATENT (compressed latent tensor)
+
+        Example:
+            img_id = nf.load_image("input.png")
+            latent_id = nf.vae_encode([img_id, 0], [ckpt_id, 2])
+            # Now latent_id can be passed to KSampler for img2img
         """
         return self._add("VAEEncode", {
             "pixels": pixels_ref, "vae": vae_ref,
         }, node_id)
 
     def vae_decode(self, samples_ref, vae_ref, node_id=None):
-        """VAEDecode — latent space → image pixels.
-        Outputs: [0]=IMAGE
+        """VAEDecode — decompress latent space back to pixel image (8x8x4 expansion).
+
+        The inverse of VAEEncode: expands the compact latent tensor back to
+        full-resolution pixel image. Always the final step before SaveImage
+        in image generation workflows.
+
+        Args:
+            samples_ref: Reference to denoised latent from KSampler, typically [sampler_id, 0]
+            vae_ref: Reference to VAE decoder, typically [ckpt_id, 2]
+
+        Returns:
+            Node ID (string). The node has one output:
+              - [node_id, 0]: IMAGE (decompressed pixel image)
+
+        Example:
+            sample_id = nf.ksampler(...)  # Returns latent
+            image_id = nf.vae_decode([sample_id, 0], [ckpt_id, 2])
+            nf.save_image([image_id, 0])  # Now save the final image
         """
         return self._add("VAEDecode", {
             "samples": samples_ref, "vae": vae_ref,
@@ -390,16 +594,41 @@ class NodeFactory:
     # ═══════════════════════════════════════════════════════════════════
     #  IMAGE I/O & PROCESSING
     # ═══════════════════════════════════════════════════════════════════
+    # These methods handle image loading/saving, scaling, blending, and other
+    # pixel-level operations. Images are typically loaded for img2img workflows,
+    # scaled for optimal performance, and saved as the final output. Masks are
+    # extracted from images or generated programmatically for inpaint/outpaint.
 
     def load_image(self, filename, node_id=None):
-        """LoadImage — load image from ComfyUI input directory.
-        Outputs: [0]=IMAGE, [1]=MASK (alpha channel)
+        """LoadImage — load image file from ComfyUI's input directory.
+
+        Supports common formats (PNG, JPG, WebP, etc). If the image has an
+        alpha channel, it's automatically extracted as a mask.
+
+        Args:
+            filename: Filename relative to ComfyUI input/ folder
+                     (e.g. "input.png", "photos/portrait.jpg")
+
+        Returns:
+            Node ID (string). The node has two outputs:
+              - [node_id, 0]: IMAGE (pixel tensor)
+              - [node_id, 1]: MASK (alpha channel as mask, if present)
         """
         return self._add("LoadImage", {"image": filename}, node_id)
 
     def save_image(self, images_ref, prefix="gimp_comfy", node_id=None):
-        """SaveImage — save image to ComfyUI output directory.
-        Outputs: (none — terminal node)
+        """SaveImage — save image(s) to ComfyUI output directory (terminal node).
+
+        This is a terminal node (has no downstream consumers). Saves the final
+        image and returns no output. Filename is auto-generated from prefix +
+        timestamp (e.g. "gimp_comfy_001.png").
+
+        Args:
+            images_ref: Reference to image tensor, typically [vae_decode_id, 0]
+            prefix: Filename prefix in output/ folder (default "gimp_comfy")
+
+        Returns:
+            Node ID (string), but has no outputs (terminal node).
         """
         return self._add("SaveImage", {
             "images": images_ref, "filename_prefix": prefix,
@@ -407,8 +636,21 @@ class NodeFactory:
 
     def image_scale(self, image_ref, width, height,
                     upscale_method="lanczos", crop="disabled", node_id=None):
-        """ImageScale — resize image to exact dimensions.
-        Outputs: [0]=IMAGE
+        """ImageScale — resize image to exact target dimensions.
+
+        Simple deterministic scaling. For upscaling with model-based super-resolution,
+        use image_upscale_with_model_by_factor instead.
+
+        Args:
+            image_ref: Reference to image, typically [load_image_id, 0]
+            width: Target width in pixels
+            height: Target height in pixels
+            upscale_method: "lanczos", "bicubic", "nearest-exact", etc
+            crop: "disabled" (stretch), "center" (crop to center), etc
+
+        Returns:
+            Node ID (string). The node has one output:
+              - [node_id, 0]: IMAGE (scaled/cropped image)
         """
         return self._add("ImageScale", {
             "image": image_ref,
@@ -555,12 +797,28 @@ class NodeFactory:
                          {"images": images}, node_id)
 
     # ═══════════════════════════════════════════════════════════════════
-    #  CONTROLNET
+    #  CONTROLNET (SPATIAL CONTROL)
     # ═══════════════════════════════════════════════════════════════════
+    # ControlNets inject spatial guidance (edges, depth, poses, etc) into diffusion.
+    # A typical ControlNet workflow: preprocess input image → load ControlNet model →
+    # apply to conditioning. Multiple ControlNets can be chained via the conditioning
+    # output of ControlNetApplyAdvanced feeding into the next ControlNet.
 
     def controlnet_loader(self, control_net_name, node_id=None):
-        """ControlNetLoader.
-        Outputs: [0]=CONTROL_NET
+        """ControlNetLoader — load a ControlNet model file.
+
+        ControlNets are lightweight models trained to guide diffusion based on
+        spatial information (edges, depth maps, pose skeletons, etc).
+
+        Args:
+            control_net_name: Model filename, typically indicates type:
+                            "control_canny-fp16.safetensors" (edge detection)
+                            "control_depth-midas.safetensors" (depth maps)
+                            "control_pose.safetensors" (pose guidance)
+
+        Returns:
+            Node ID (string). The node has one output:
+              - [node_id, 0]: CONTROL_NET (model, passed to ControlNetApplyAdvanced)
         """
         return self._add("ControlNetLoader",
                          {"control_net_name": control_net_name}, node_id)

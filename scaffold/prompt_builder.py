@@ -1,13 +1,38 @@
 """
-Prompt Builder — generates an LLM system prompt from introspected nodes.
+Prompt Builder — generates LLM system prompts from introspected nodes.
 
-The output is a complete system prompt that any 7B+ tool-enabled model
-can use to drive the Spellcaster scaffold. It describes every node,
-every parameter, every preset, and the exact numbered-menu protocol
-the model should follow.
+This module is the bridge between the Spellcaster scaffold runtime system
+(introspector, wizards, node definitions) and the language model that will
+drive it. It converts discovered node specs into human-readable system
+prompts that any 7B+ tool-enabled LLM can follow.
 
-The prompt is deterministic and regenerated fresh each time, so it
-always reflects the current state of the Spellcaster node pack.
+WHAT IT DOES:
+  1. Takes a dict of NodeSpec objects (from introspector.py)
+  2. Generates a complete, deterministic system prompt that covers:
+     - The numbered-menu interaction protocol
+     - Every available node with its parameters
+     - Presets for quick configuration
+     - Global commands (menu, cancel, help, etc.)
+     - Output format for wizard JSON
+
+  3. Also generates shorter tool descriptions for tool registries
+     (Open WebUI, Kobold, etc.)
+
+WHY IT MATTERS:
+  - The system prompt is deterministic — regenerated fresh each run so it
+    always reflects the current nodes and presets
+  - It's the "contract" between the LLM and the scaffold — if the LLM
+    follows this protocol, the scaffold can reliably parse and execute
+    its output
+  - 7B models can drive the full system if they have this prompt in context
+
+USAGE:
+    from scaffold.introspector import discover_nodes
+    from scaffold.prompt_builder import build_system_prompt
+
+    nodes = discover_nodes()
+    prompt = build_system_prompt(nodes)
+    # Inject 'prompt' into your LLM's system instructions
 """
 
 from __future__ import annotations
@@ -135,6 +160,17 @@ def _nodes_section(nodes: Dict[str, NodeSpec]) -> str:
 
 
 def _presets_section(nodes: Dict[str, NodeSpec]) -> str:
+    """Build a preset menu section for the system prompt.
+
+    Presets are curated parameter combinations for common use cases.
+    This section tells the LLM about all available presets so it can
+    offer them to users as quick shortcuts before manual parameter walk.
+
+    Example output:
+        Flux2KleinEnhancer:
+          - Gentle (subtle boost): magnitude=1.15, contrast=0.10, ...
+          - Strong (punchy): magnitude=1.35, contrast=0.30, ...
+    """
     lines = ["PRESETS", "=" * 40, ""]
 
     for key in nodes:
@@ -145,6 +181,7 @@ def _presets_section(nodes: Dict[str, NodeSpec]) -> str:
         lines.append(f"{nodes[key].display_name}:")
         for name in presets:
             vals = node_presets[name]
+            # Summarize preset contents for LLM to include in menu
             summary = ", ".join(f"{k}={v}" for k, v in vals.items())
             lines.append(f"  - {name}: {summary}")
         lines.append("")

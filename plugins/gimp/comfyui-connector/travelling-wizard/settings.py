@@ -1,5 +1,25 @@
 """
-Settings dialog mixin for GIMP AI Plugin.
+Settings dialog mixin for GIMP AI Plugin - Workflow configuration and preferences.
+
+Provides a tabbed settings dialog for configuring:
+
+1. GENERAL SETTINGS:
+   - ComfyUI server URL, input_dir, output_dir
+   - Prompt history (view count, clear button)
+   - Debug mode toggle (save intermediate images to temp)
+
+2. WORKFLOW TABS (8 tabs for standard workflows):
+   - Each tab: workflow path (JSON) + node override mappings
+   - Override fields map plugin inputs to ComfyUI node IDs and field names
+   - Pre-populated with default node IDs for common workflows
+   - Supports: inpaint_focused, imageedit_1/2/3, generator, outpaint, upscaler_4x
+
+3. CUSTOM WORKFLOWS TAB:
+   - Displays workflows imported via Travelling Wizard
+   - Shows metadata: type, node count, format, tunable parameters
+   - Managed entirely by WizardMixin (this mixin is read-only for custom workflows)
+
+The dialog persists all settings to the plugin config on Save.
 """
 
 import tempfile
@@ -8,10 +28,37 @@ from gi.repository import Gimp, Gtk, GLib
 
 
 class SettingsMixin:
-    """Mixin class providing settings dialog functionality"""
-    
+    """Mixin class providing the tabbed settings dialog for workflow and server configuration.
+
+    The dialog uses Gtk.Notebook for tabs. Each workflow tab lets users:
+      - Specify the path to a ComfyUI workflow JSON
+      - Override input parameter mappings (node_id → field name)
+
+    Assumes parent class provides:
+      - self.config: persistent config dict
+      - self._save_config(): save config to disk
+      - self._get_comfyui_config(): retrieve ComfyUI settings
+      - self._get_prompt_history(): retrieve stored prompts
+    """
+
     def _create_override_field(self, parent_box, label_text, node_id_value="", field_value=""):
-        """Create a row with label and two entry fields (node_id, field) for an override"""
+        """Create a UI row with label and two text entry fields for node override mappings.
+
+        Row layout: [Label (180px)] [Node ID Label] [Node ID Entry (100px)]
+                    [Field Label] [Field Entry (120px)]
+
+        These rows are packed into tabs to configure how plugin inputs map to
+        specific ComfyUI node fields (e.g., "promptText" → node "75:6" field "text").
+
+        Args:
+            parent_box (Gtk.Box): Container to pack row into
+            label_text (str): Display label (e.g., "Prompt Text")
+            node_id_value (str): Initial node ID value (e.g., "75:6")
+            field_value (str): Initial field name value (e.g., "text")
+
+        Returns:
+            tuple[Gtk.Entry, Gtk.Entry]: (node_id_entry, field_entry) for later retrieval
+        """
         hbox = Gtk.HBox(spacing=8)
         hbox.set_margin_bottom(5)
         
@@ -43,7 +90,28 @@ class SettingsMixin:
         return node_id_entry, field_entry
 
     def _create_workflow_tab(self, notebook, action, display_name, override_keys):
-        """Create a tab for a workflow with path entry and override fields"""
+        """Create a notebook tab for configuring a single workflow.
+
+        Tab contains:
+          - Workflow Path field (path to JSON file)
+          - Separator line
+          - Node Override section with fields for each override_key
+          - Each override has two fields: node_id (where in ComfyUI) and field name
+
+        Uses defaults dict to pre-populate common workflows' node IDs.
+
+        Args:
+            notebook (Gtk.Notebook): The notebook to append page to
+            action (str): Action key (e.g., "inpaint_focused", "generator")
+            display_name (str): Tab label (e.g., "Inpaint (Focused)")
+            override_keys (list[str]): Parameter names to override (e.g.,
+                                       ["promptText", "inputImageFilename"])
+
+        Returns:
+            tuple: (path_entry, override_entries_dict)
+              - path_entry: Gtk.Entry for workflow JSON path
+              - override_entries_dict: {key: (node_id_entry, field_entry), ...}
+        """
         workflows = (self.config or {}).get("workflows", {})
         wf = (workflows.get(action, {}) or {}) if isinstance(workflows, dict) else {}
         wf_path = (wf.get("path") or "").strip() if isinstance(wf, dict) else ""
@@ -194,7 +262,18 @@ class SettingsMixin:
         return path_entry, override_entries
 
     def _show_settings_dialog(self, parent_dialog):
-        """Show settings dialog with tabbed interface"""
+        """Show the main tabbed settings dialog (650x500 modal).
+
+        The dialog has 9 tabs:
+          1. General: ComfyUI config + prompt history + debug mode
+          2-8. Workflow tabs: inpaint_focused, imageedit_1/2/3, generator, outpaint, upscaler_4x
+          9. Custom Workflows: read-only display of imported workflows
+
+        On Save, all values are written to self.config and persisted to disk.
+
+        Args:
+            parent_dialog (Gtk.Dialog): Parent window for modality (may be None)
+        """
         try:
             dialog = Gtk.Dialog(
                 title="AI Plugin Settings",
@@ -225,6 +304,7 @@ class SettingsMixin:
             notebook.set_tab_pos(Gtk.PositionType.TOP)
 
             # Tab 1: General Settings
+            # Use ScrolledWindow to allow overflow if content grows
             general_scroller = Gtk.ScrolledWindow()
             general_scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
             general_box = Gtk.VBox(spacing=15)
@@ -233,9 +313,11 @@ class SettingsMixin:
             general_box.set_margin_top(15)
             general_box.set_margin_bottom(15)
 
+            # Load current ComfyUI config settings
             comfy_cfg = self._get_comfyui_config()
 
-            # ComfyUI Configuration
+            # ── ComfyUI Server Configuration Frame ──
+            # Contains: server URL, input_dir, output_dir text entries
             comfy_frame = Gtk.Frame(label="ComfyUI Configuration")
             comfy_box = Gtk.VBox(spacing=10)
             comfy_box.set_margin_start(10)
@@ -243,6 +325,7 @@ class SettingsMixin:
             comfy_box.set_margin_top(10)
             comfy_box.set_margin_bottom(10)
 
+            # Server URL field (e.g., "http://192.168.x.x:8188")
             comfy_url_label = Gtk.Label(label="Server URL (e.g. http://127.0.0.1:8188):")
             comfy_url_label.set_halign(Gtk.Align.START)
             comfy_box.pack_start(comfy_url_label, False, False, 0)
@@ -250,6 +333,7 @@ class SettingsMixin:
             comfy_url_entry.set_text((comfy_cfg.get("server_url") or "").strip())
             comfy_box.pack_start(comfy_url_entry, False, False, 0)
 
+            # Input directory for loading source images
             comfy_input_label = Gtk.Label(label="ComfyUI input_dir (absolute path):")
             comfy_input_label.set_halign(Gtk.Align.START)
             comfy_box.pack_start(comfy_input_label, False, False, 0)
@@ -257,6 +341,7 @@ class SettingsMixin:
             comfy_input_entry.set_text((comfy_cfg.get("input_dir") or "").strip())
             comfy_box.pack_start(comfy_input_entry, False, False, 0)
 
+            # Output directory where ComfyUI saves results
             comfy_output_label = Gtk.Label(label="ComfyUI output_dir (absolute path):")
             comfy_output_label.set_halign(Gtk.Align.START)
             comfy_box.pack_start(comfy_output_label, False, False, 0)
@@ -491,13 +576,31 @@ class SettingsMixin:
             traceback.print_exc()
 
     def _on_clear_history_clicked(self, button):
-        """Handle clear history button click"""
+        """Clear prompt history and save config.
+
+        Args:
+            button (Gtk.Button): The clicked button (unused, required by signal)
+        """
         self.config["prompt_history"] = []
         self._save_config()
         print("DEBUG: Prompt history cleared")
 
     def run_settings(self, procedure, run_mode, image, drawables, config, run_data):
-        """Open the Settings dialog from the menu."""
+        """GIMP procedure entrypoint: open the Settings dialog from the menu.
+
+        This is called when user selects Filters → AI → Settings.
+
+        Args:
+            procedure (Gimp.Procedure): The procedure being run
+            run_mode (Gimp.RunMode): Execution mode (INTERACTIVE, etc.)
+            image (Gimp.Image): The active image
+            drawables (list): Selected drawables (not used for settings dialog)
+            config: GIMP config object (not used)
+            run_data: Additional run data (not used)
+
+        Returns:
+            Gimp.ProcedureResult: Status and error (if any)
+        """
         try:
             print("DEBUG: Opening Settings dialog...")
             self._show_settings_dialog(None)

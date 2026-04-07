@@ -1,11 +1,30 @@
 """
-Travelling Wizard mixin for GIMP AI Plugin.
+Travelling Wizard mixin for GIMP AI Plugin - Workflow management and UI launcher.
 
-Provides:
-- "Travelling Wizard" menu entry that opens the Signal Bridge settings UI
-  in the user's default browser
-- "Workflow Library" dialog for browsing and importing ComfyUI workflows
-  directly inside GIMP
+Provides two core workflows:
+
+1. TRAVELLING WIZARD (run_wizard, _show_wizard_dialog):
+   - Opens a modal dialog with server connectivity check and action buttons
+   - "Open Scaffold Editor" button launches the Signal Bridge settings HTML UI
+     in the user's default browser
+   - "Browse Workflow Library" button shows server-side workflows (if available)
+   - "Import Workflow File" button opens file chooser for local JSON imports
+   - Displays installed custom workflows with remove buttons
+   - Workflows can be litegraph format (UI export) or ComfyUI API format
+
+2. WORKFLOW LIBRARY (_show_workflow_library, _fetch_server_workflows):
+   - Fetches workflow catalog from ComfyUI server (/spellcaster/workflows endpoint)
+   - Displays searchable list of available workflows
+   - Allows importing selected workflows into config
+   - Falls back to filesystem browsing if server endpoint unavailable
+
+WORKFLOW IMPORT (_parse_and_import_workflow):
+   - Detects workflow format (litegraph vs API)
+   - Classifies workflow type (Text-to-Image, Inpainting, etc.) based on node types
+   - Extracts tunable parameters (prompt, steps, seed, width, height, etc.)
+   - Stores metadata (format, type, node count, tunables) for UI display
+
+The mixin integrates with ConfigMixin to persist workflows in the plugin config.
 """
 
 import os
@@ -16,7 +35,17 @@ from gi.repository import Gimp, Gtk, GLib, Gio
 
 
 class WizardMixin:
-    """Mixin class providing Travelling Wizard and Workflow Library functionality"""
+    """Mixin class providing Travelling Wizard and Workflow Library functionality.
+
+    This mixin provides the complete workflow management system for GIMP users.
+    It handles opening the scaffold editor UI, browsing/importing workflows, and
+    managing the workflow library within GIMP's native dialog system.
+
+    Assumes parent class (GimpComfyAIPlugin) provides:
+      - self.config: dict with persistent settings
+      - self._save_config(): save config to disk
+      - self._get_comfyui_config(): retrieve ComfyUI server settings
+    """
 
     # ── Travelling Wizard (browser launcher) ──────────────────────
 
@@ -35,8 +64,18 @@ class WizardMixin:
             )
 
     def _show_wizard_dialog(self, parent_dialog):
-        """Show the Travelling Wizard launcher dialog."""
+        """Show the Travelling Wizard launcher dialog.
+
+        This dialog serves as the entry point for all workflow management tasks.
+        It provides:
+          - Server connectivity status (green/red indicator with URL)
+          - Action buttons to launch scaffold editor, browse, or import workflows
+          - List of installed custom workflows with remove buttons
+
+        The dialog is modal and blocks until closed.
+        """
         try:
+            # Create modal dialog with close button
             dialog = Gtk.Dialog(
                 title="The Travelling Wizard",
                 parent=parent_dialog,
@@ -47,6 +86,7 @@ class WizardMixin:
 
             dialog.add_button("Close", Gtk.ResponseType.CLOSE)
 
+            # Get main content area and set standard margins
             content = dialog.get_content_area()
             content.set_spacing(12)
             content.set_margin_start(16)
@@ -54,7 +94,7 @@ class WizardMixin:
             content.set_margin_top(16)
             content.set_margin_bottom(12)
 
-            # ── Header ──
+            # ── Header: title + subtitle ──
             header_label = Gtk.Label()
             header_label.set_markup(
                 '<span size="x-large" weight="bold">The Travelling Wizard</span>\n'
@@ -63,29 +103,33 @@ class WizardMixin:
             header_label.set_halign(Gtk.Align.START)
             content.pack_start(header_label, False, False, 0)
 
+            # Separator line below header
             sep = Gtk.HSeparator()
             content.pack_start(sep, False, False, 4)
 
-            # ── Server status ──
+            # ── Server status indicator ──
+            # Horizontal box with colored dot indicator + status text
             comfy_cfg = self._get_comfyui_config()
             server_url = (comfy_cfg.get("server_url") or "http://127.0.0.1:8188").rstrip("/")
 
             status_box = Gtk.HBox(spacing=8)
-            status_icon = Gtk.Label()
-            status_text = Gtk.Label()
+            status_icon = Gtk.Label()          # Colored bullet indicator
+            status_text = Gtk.Label()          # Status text + URL
             status_box.pack_start(status_icon, False, False, 0)
             status_box.pack_start(status_text, False, False, 0)
             content.pack_start(status_box, False, False, 0)
 
-            # Check ComfyUI connectivity
+            # Check ComfyUI connectivity via HTTP GET to /system_stats (3s timeout)
             online = self._check_comfyui_online(server_url)
             if online:
+                # Green dot + "Online" text
                 status_icon.set_markup('<span foreground="#4ade80">●</span>')
                 status_text.set_markup(
                     f'<span foreground="#4ade80">ComfyUI Online</span>'
                     f'  <span size="small" foreground="#888">{server_url}</span>'
                 )
             else:
+                # Red dot + "Offline" text
                 status_icon.set_markup('<span foreground="#f87171">●</span>')
                 status_text.set_markup(
                     f'<span foreground="#f87171">ComfyUI Offline</span>'
@@ -93,6 +137,7 @@ class WizardMixin:
                 )
 
             # ── Action buttons frame ──
+            # Three main action buttons, each with title + description text
             actions_frame = Gtk.Frame(label="Actions")
             actions_box = Gtk.VBox(spacing=10)
             actions_box.set_margin_start(12)
@@ -100,7 +145,8 @@ class WizardMixin:
             actions_box.set_margin_top(12)
             actions_box.set_margin_bottom(12)
 
-            # Button 1: Open Settings UI in browser
+            # Button 1: Open Scaffold Editor in browser
+            # Each button is a Gtk.Button containing a VBox with title + description
             btn_settings = Gtk.Button()
             btn_settings_box = Gtk.VBox(spacing=2)
             btn_settings_title = Gtk.Label()
@@ -117,10 +163,11 @@ class WizardMixin:
             btn_settings_box.pack_start(btn_settings_title, False, False, 0)
             btn_settings_box.pack_start(btn_settings_desc, False, False, 0)
             btn_settings.add(btn_settings_box)
+            # Connect to handler that calls _on_open_scaffold_editor
             btn_settings.connect("clicked", self._on_open_scaffold_editor)
             actions_box.pack_start(btn_settings, False, False, 0)
 
-            # Button 2: Workflow Library
+            # Button 2: Browse Workflow Library from ComfyUI server
             btn_workflows = Gtk.Button()
             btn_workflows_box = Gtk.VBox(spacing=2)
             btn_workflows_title = Gtk.Label()
@@ -137,12 +184,13 @@ class WizardMixin:
             btn_workflows_box.pack_start(btn_workflows_title, False, False, 0)
             btn_workflows_box.pack_start(btn_workflows_desc, False, False, 0)
             btn_workflows.add(btn_workflows_box)
+            # Pass parent dialog for modal child dialog
             btn_workflows.connect(
                 "clicked", lambda w: self._show_workflow_library(dialog)
             )
             actions_box.pack_start(btn_workflows, False, False, 0)
 
-            # Button 3: Import Workflow JSON
+            # Button 3: Import Workflow JSON from local filesystem
             btn_import = Gtk.Button()
             btn_import_box = Gtk.VBox(spacing=2)
             btn_import_title = Gtk.Label()
@@ -159,6 +207,7 @@ class WizardMixin:
             btn_import_box.pack_start(btn_import_title, False, False, 0)
             btn_import_box.pack_start(btn_import_desc, False, False, 0)
             btn_import.add(btn_import_box)
+            # Opens file chooser dialog
             btn_import.connect(
                 "clicked", lambda w: self._import_workflow_file(dialog)
             )
@@ -236,7 +285,19 @@ class WizardMixin:
             return False
 
     def _on_open_scaffold_editor(self, button):
-        """Open the Travelling Wizard settings JSX in the user's browser."""
+        """Open the Travelling Wizard settings UI in the user's default browser.
+
+        Searches for signal_bridge_settings.html in:
+          1. Custom path from config (wizard_settings_path)
+          2. Same directory as plugin
+          3. User home directory
+
+        Falls back to ComfyUI server endpoint (/spellcaster/settings) if local
+        file not found.
+
+        Args:
+            button (Gtk.Button): The clicked button (unused, but required by signal)
+        """
         # Look for the settings HTML file in known locations
         candidates = [
             # Same directory as plugin
@@ -277,18 +338,33 @@ class WizardMixin:
             )
 
     def _get_custom_workflows(self):
-        """Get user-imported custom workflows from config."""
+        """Get dict of all user-imported custom workflows from config.
+
+        Returns:
+            dict: Keyed by workflow name (str), values are workflow info dicts
+                 with keys: path, format, workflow_type, node_count, tunables
+        """
         return (self.config or {}).get("custom_workflows", {})
 
     def _save_custom_workflow(self, name, wf_data):
-        """Save a custom workflow to config."""
+        """Save a custom workflow to config and persist to disk.
+
+        Args:
+            name (str): User-friendly workflow name
+            wf_data (dict): Workflow metadata (path, format, type, node_count, etc.)
+        """
         if "custom_workflows" not in self.config:
             self.config["custom_workflows"] = {}
         self.config["custom_workflows"][name] = wf_data
         self._save_config()
 
     def _remove_custom_workflow(self, name, parent_dialog):
-        """Remove a custom workflow from config and refresh."""
+        """Remove a custom workflow from config and refresh the wizard dialog.
+
+        Args:
+            name (str): Name of workflow to remove
+            parent_dialog (Gtk.Dialog): The wizard dialog to refresh after deletion
+        """
         custom = self.config.get("custom_workflows", {})
         if name in custom:
             del custom[name]
@@ -298,7 +374,14 @@ class WizardMixin:
             self._show_wizard_dialog(None)
 
     def _import_workflow_file(self, parent_dialog):
-        """Open a file chooser to import a workflow JSON."""
+        """Open a file chooser dialog to select and import workflow JSON files.
+
+        Allows multi-select. Each selected file is parsed and imported via
+        _parse_and_import_workflow. Refreshes wizard dialog after successful import.
+
+        Args:
+            parent_dialog (Gtk.Dialog): Parent dialog for modal file chooser
+        """
         chooser = Gtk.FileChooserDialog(
             title="Import ComfyUI Workflow",
             parent=parent_dialog,
@@ -343,7 +426,19 @@ class WizardMixin:
         chooser.destroy()
 
     def _parse_and_import_workflow(self, filepath):
-        """Parse a workflow JSON and import it into config."""
+        """Parse a workflow JSON file and import it into config.
+
+        Detects format (litegraph vs API), classifies workflow type based on
+        node types (Text-to-Image, Inpainting, Face Swap, etc.), extracts
+        tunable parameters (prompt, seed, steps, dimensions, etc.), and saves
+        metadata to config.
+
+        Args:
+            filepath (str): Path to JSON file
+
+        Returns:
+            bool: True if import succeeded, False otherwise
+        """
         with open(filepath, "r") as f:
             data = json.load(f)
 
@@ -449,7 +544,15 @@ class WizardMixin:
     # ── Workflow Library (server browse) ──────────────────────────
 
     def _show_workflow_library(self, parent_dialog):
-        """Show a dialog listing workflows from the ComfyUI server."""
+        """Show a modal dialog with searchable workflow list from ComfyUI server.
+
+        Fetches workflows from /spellcaster/workflows endpoint. If unavailable,
+        offers filesystem browsing as fallback. Includes search filter and
+        import buttons for each workflow.
+
+        Args:
+            parent_dialog (Gtk.Dialog): Parent dialog for modality
+        """
         comfy_cfg = self._get_comfyui_config()
         server_url = (
             comfy_cfg.get("server_url") or "http://127.0.0.1:8188"
@@ -583,7 +686,14 @@ class WizardMixin:
         dialog.destroy()
 
     def _fetch_server_workflows(self, server_url):
-        """Try to fetch workflow catalog from ComfyUI server."""
+        """Fetch workflow catalog from ComfyUI server /spellcaster/workflows endpoint.
+
+        Args:
+            server_url (str): Base ComfyUI server URL (without trailing slash)
+
+        Returns:
+            list[dict] | None: List of workflow metadata dicts, or None if endpoint unavailable
+        """
         try:
             import urllib.request
             req = urllib.request.Request(
@@ -597,7 +707,12 @@ class WizardMixin:
         return None
 
     def _import_server_workflow(self, wf_data, parent_dialog):
-        """Import a workflow from the server catalog."""
+        """Import a workflow from the server catalog into config.
+
+        Args:
+            wf_data (dict): Workflow metadata from server
+            parent_dialog (Gtk.Dialog): Parent dialog to refresh after import
+        """
         name = wf_data.get("name", "Untitled")
         self._save_custom_workflow(name, wf_data)
         print(f"DEBUG: Imported server workflow '{name}'")
@@ -606,7 +721,14 @@ class WizardMixin:
         self._show_wizard_dialog(None)
 
     def _browse_workflow_directory(self, parent_dialog):
-        """Let user pick a directory to scan for workflow JSONs."""
+        """Open a folder picker and recursively import all .json files as workflows.
+
+        Walks directory tree looking for .json files. Each is parsed via
+        _parse_and_import_workflow. Refreshes wizard dialog after import.
+
+        Args:
+            parent_dialog (Gtk.Dialog): Parent dialog for modality
+        """
         chooser = Gtk.FileChooserDialog(
             title="Select Workflow Folder",
             parent=parent_dialog,

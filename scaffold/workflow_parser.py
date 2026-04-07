@@ -46,8 +46,23 @@ def fetch_object_info(base_url: str = "http://localhost:8188",
                       timeout: int = 10) -> Dict[str, Any]:
     """Fetch the full node registry from a running ComfyUI server.
 
-    Returns a dict keyed by class_type, each with "input", "output",
-    "output_name", "display_name", "category", etc.
+    Queries the /object_info endpoint to get complete metadata for all registered
+    nodes including:
+      - input_types: Required and optional input specifications
+      - output_types: Output tensor types
+      - display_name: Human-readable node name
+      - category: Node category (e.g., "loaders", "sampling", "conditioning")
+      - description: Optional node documentation
+
+    This is cached globally to avoid repeated network requests.
+
+    Args:
+        base_url: ComfyUI server base URL (default: http://localhost:8188)
+        timeout: Request timeout in seconds (default: 10)
+
+    Returns:
+        Dict keyed by class_type (e.g., "KSampler", "CheckpointLoader")
+        with full node specifications. Returns empty dict on network error.
     """
     global _object_info_cache
     if _object_info_cache is not None:
@@ -73,26 +88,43 @@ def clear_object_info_cache():
 
 @dataclass
 class ParsedInput:
-    """A single input on a parsed node."""
+    """A single input on a parsed node.
+
+    Represents either:
+      1. A literal value the user can change (e.g., text prompt, seed, strength)
+      2. A connection to another node's output (is_connection=True)
+      3. A tensor/model type that requires runtime wiring
+
+    Used to present tunable parameters in wizard menus and identify which inputs
+    should be shown to users (vs. which are internal/wired/tensor types).
+    """
     name: str
     value: Any                          # literal value, or None if connected
     input_type: str = "UNKNOWN"         # FLOAT, INT, STRING, BOOLEAN, COMBO, MODEL, etc.
     is_connection: bool = False         # True if wired to another node's output
-    source_node_id: Optional[str] = None
-    source_output_idx: Optional[int] = None
+    source_node_id: Optional[str] = None  # If connected, which node produces this
+    source_output_idx: Optional[int] = None  # Which output index from source
     # From object_info (when available):
     default: Any = None
     min_val: Optional[float] = None
     max_val: Optional[float] = None
     step: Optional[float] = None
-    choices: Optional[List[str]] = None
-    tooltip: Optional[str] = None
-    required: bool = True
-    multiline: bool = False
+    choices: Optional[List[str]] = None  # For COMBO types (model names, samplers, etc.)
+    tooltip: Optional[str] = None       # Help text from node definition
+    required: bool = True               # Whether this input must be provided
+    multiline: bool = False             # For STRING inputs, allow newlines
 
     @property
     def is_user_tunable(self) -> bool:
-        """True if this is a literal value a user could change."""
+        """True if this is a literal value a user could change.
+
+        Returns False for:
+          - Connections to other nodes (is_connection=True)
+          - Tensor types (MODEL, CLIP, VAE, IMAGE, LATENT, etc.)
+
+        These non-tunable inputs are hidden from the wizard menu because
+        they require runtime wiring or are handled automatically.
+        """
         if self.is_connection:
             return False
         # Tensor / model types are not user-tunable
@@ -107,7 +139,22 @@ class ParsedInput:
 
 @dataclass
 class ParsedNode:
-    """A single node in a parsed workflow."""
+    """A single node in a parsed workflow.
+
+    Represents a ComfyUI node instance with all its connections and inputs.
+    Handles both active nodes and muted/bypassed nodes.
+
+    Attributes:
+        node_id: String identifier (node_index in API format, or UUID in litegraph)
+        class_type: The node class (e.g., "KSampler", "CheckpointLoader")
+        display_name: Human-readable name from object_info
+        title: Optional user-set label in the ComfyUI UI
+        category: Node category (e.g., "sampling", "loaders")
+        inputs: Dict of input_name -> ParsedInput specs
+        outputs: List of output type names
+        mode: 0=active, 2=muted, 4=bypassed
+        order: Execution order in the ComfyUI graph
+    """
     node_id: str
     class_type: str
     display_name: str = ""
@@ -120,11 +167,16 @@ class ParsedNode:
 
     @property
     def is_active(self) -> bool:
+        """Whether this node will be executed (mode == 0)."""
         return self.mode == 0
 
     @property
     def is_output_node(self) -> bool:
-        """Heuristic: does this node produce a final output?"""
+        """Heuristic: does this node produce a final user-visible output?
+
+        Returns True for nodes that save/preview images, videos, text, etc.
+        Used to identify the 'destination' nodes in a workflow for UX purposes.
+        """
         ct = self.class_type.lower()
         OUTPUT_PATTERNS = {
             "saveimage", "previewimage", "savevideo", "previewvideo",
@@ -144,13 +196,29 @@ class ParsedNode:
 
 @dataclass
 class ParsedWorkflow:
-    """A fully parsed ComfyUI workflow."""
-    source_path: Optional[str] = None
+    """A fully parsed ComfyUI workflow.
+
+    This is the central data structure that represents a complete, validated
+    ComfyUI workflow after parsing from either:
+      1. Litegraph format (from ComfyUI web UI save, has nodes/links array)
+      2. API format (from /prompt submission or export, has numbered node keys)
+
+    The ParsedWorkflow provides:
+      - Complete node graph with connections
+      - User-tunable parameter identification
+      - Output node detection
+      - Workflow classification (txt2img, img2img, video, etc.)
+      - Export back to API format for /prompt submission
+
+    Used by WorkflowWizard to present choices and collect overrides, and by
+    the parser to describe workflows to users in human-readable form.
+    """
+    source_path: Optional[str] = None  # File path if loaded from disk
     source_format: str = "unknown"      # "litegraph" or "api"
-    nodes: Dict[str, ParsedNode] = field(default_factory=dict)
+    nodes: Dict[str, ParsedNode] = field(default_factory=dict)  # node_id -> ParsedNode
     # Metadata from litegraph format
-    groups: List[Dict[str, Any]] = field(default_factory=list)
-    extra: Dict[str, Any] = field(default_factory=dict)
+    groups: List[Dict[str, Any]] = field(default_factory=list)  # Node groups/frames
+    extra: Dict[str, Any] = field(default_factory=dict)  # Other metadata
 
     @property
     def node_count(self) -> int:
@@ -209,8 +277,17 @@ class ParsedWorkflow:
     def to_api_workflow(self) -> Dict[str, Any]:
         """Export as ComfyUI API format (ready to POST to /prompt).
 
-        Connections are represented as [source_node_id, output_index].
-        Only active (non-muted, non-bypassed) nodes are included.
+        Converts the parsed workflow back to the standard ComfyUI API format:
+          - Keys are node IDs (strings)
+          - Each value is {class_type: "...", inputs: {...}}
+          - Node inputs contain literal values or [source_node_id, output_idx] references
+          - Optional node titles are preserved in _meta
+
+        Only active (non-muted, non-bypassed) nodes are included. Muted/bypassed
+        nodes are skipped to respect the user's execution intent.
+
+        Returns:
+            Dict[str, Any]: Ready to submit to ComfyUI /prompt endpoint
         """
         wf = {}
         for nid, node in self.active_nodes.items():
