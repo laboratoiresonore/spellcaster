@@ -29,6 +29,10 @@ from _workflows_v2 import (
     build_video_upscale, build_video_reactor,
     build_wan_video, build_wan_flf, build_seedvr2_video_upscale,
     build_style_transfer, build_seedv2r,
+    build_photobooth,
+    build_klein_repose, build_klein_blend, build_klein_inpaint,
+    build_klein_scene_img2img, build_layer_blend, build_upscale_blend,
+    build_frame_assembly,
 )
 
 
@@ -960,6 +964,287 @@ def test_seedvr2_video_upscale():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  Photobooth Builder Tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_photobooth():
+    """Test build_photobooth — three-stage pipeline: Klein → ReActor → face restore."""
+    wf = build_photobooth(
+        "face_ref.png",
+        "professional headshot, neutral grey studio background, soft lighting",
+        seed=42, klein_model_key="Klein 9B", steps=20, guidance=30.0,
+    )
+    # Stage 1: Klein ReferenceLatent generation
+    assert wf["1"]["class_type"] == "LoadImage"
+    assert wf["1"]["inputs"]["image"] == "face_ref.png"
+    assert wf["10"]["class_type"] == "UNETLoader"
+    assert wf["11"]["class_type"] == "CLIPLoader"
+    assert wf["11"]["inputs"]["type"] == "flux2"
+    assert wf["12"]["class_type"] == "VAELoader"
+    assert wf["13"]["class_type"] == "CLIPTextEncode"
+    assert wf["14"]["class_type"] == "ConditioningZeroOut"
+    # ReferenceLatent conditioning (not raw img2img)
+    assert wf["18"]["class_type"] == "ReferenceLatent"
+    assert wf["19"]["class_type"] == "ReferenceLatent"
+    # Flux2Scheduler — full generation from noise (not BasicScheduler)
+    assert wf["22"]["class_type"] == "Flux2Scheduler"
+    assert wf["24"]["class_type"] == "EmptyFlux2LatentImage"
+    assert wf["30"]["class_type"] == "SamplerCustomAdvanced"
+    assert wf["31"]["class_type"] == "VAEDecode"
+
+    # Stage 2: ReActor identity restoration
+    assert wf["40"]["class_type"] == "ReActorFaceSwapOpt"
+    # Target is Klein output (node 31), source is original reference (node 1)
+    assert wf["40"]["inputs"]["input_image"] == ["31", 0]
+    assert wf["40"]["inputs"]["source_image"] == ["1", 0]
+    assert wf["40"]["inputs"]["swap_model"] == "reswapper_256.onnx"
+    assert wf["40o"]["class_type"] == "ReActorOptions"
+    assert wf["40b"]["class_type"] == "ReActorFaceBoost"
+
+    # Stage 3: Face restore
+    assert wf["50"]["class_type"] == "ReActorRestoreFace"
+    assert wf["50"]["inputs"]["image"] == ["40", 0]
+
+    # Output
+    assert wf["60"]["class_type"] == "SaveImage"
+    assert wf["60"]["inputs"]["images"] == ["50", 0]
+
+    return True, "photobooth", ""
+
+
+def test_photobooth_klein_4b():
+    """Test build_photobooth uses correct CLIP for Klein 4B."""
+    wf = build_photobooth(
+        "face_ref.png", "headshot", seed=42,
+        klein_model_key="Klein 4B",
+    )
+    assert "qwen_3_4b" in wf["11"]["inputs"]["clip_name"]
+    assert wf["10"]["inputs"]["unet_name"] == "A-Flux\\flux-2-klein-4b-fp8.safetensors"
+    return True, "photobooth_klein_4b", ""
+
+
+def test_klein_repose():
+    """Test build_klein_repose — ReferenceLatent + BasicScheduler."""
+    wf = build_klein_repose("pose_ref.png", "Klein 9B", "standing with arms crossed", 42,
+                            steps=20, denoise=0.50, guidance=1.0)
+    # Model loaders
+    assert wf["1"]["class_type"] == "UNETLoader"
+    assert wf["2"]["class_type"] == "CLIPLoader"
+    assert wf["2"]["inputs"]["type"] == "flux2"
+    assert wf["3"]["class_type"] == "VAELoader"
+    # Image processing
+    assert wf["10"]["class_type"] == "LoadImage"
+    assert wf["10"]["inputs"]["image"] == "pose_ref.png"
+    assert wf["11"]["class_type"] == "ImageScaleToTotalPixels"
+    assert wf["12"]["class_type"] == "GetImageSize"
+    assert wf["13"]["class_type"] == "VAEEncode"
+    # ReferenceLatent (structural guidance from input)
+    assert wf["20"]["class_type"] == "ReferenceLatent"
+    assert wf["21"]["class_type"] == "ReferenceLatent"
+    # BasicScheduler with denoise (not Flux2Scheduler)
+    assert wf["32"]["class_type"] == "BasicScheduler"
+    assert wf["32"]["inputs"]["denoise"] == 0.50
+    assert wf["32"]["inputs"]["steps"] == 20
+    # EmptyFlux2LatentImage (generates from noise, not img2img)
+    assert wf["34"]["class_type"] == "EmptyFlux2LatentImage"
+    assert wf["40"]["class_type"] == "SamplerCustomAdvanced"
+    assert wf["60"]["class_type"] == "SaveImage"
+    return True, "klein_repose", ""
+
+
+def test_klein_repose_4b():
+    """Test build_klein_repose uses correct CLIP for Klein 4B."""
+    wf = build_klein_repose("ref.png", "Klein 4B", "pose", 42)
+    assert "qwen_3_4b" in wf["2"]["inputs"]["clip_name"]
+    return True, "klein_repose_4b", ""
+
+
+def test_klein_blend():
+    """Test build_klein_blend — AILab_ImageCombiner + Klein ReferenceLatent."""
+    wf = build_klein_blend("fg.png", "bg.png", "harmonized scene", 42,
+                           blend_mode="normal", opacity=0.8, scale=1.0,
+                           position_x=0.5, position_y=0.5,
+                           klein_model_key="Klein 9B", steps=20, denoise=0.25)
+    # Two input images
+    assert wf["1"]["class_type"] == "LoadImage"
+    assert wf["1"]["inputs"]["image"] == "fg.png"
+    assert wf["2"]["class_type"] == "LoadImage"
+    assert wf["2"]["inputs"]["image"] == "bg.png"
+    # AILab_ImageCombiner compositing
+    assert wf["3"]["class_type"] == "AILab_ImageCombiner"
+    assert wf["3"]["inputs"]["foreground"] == ["1", 0]
+    assert wf["3"]["inputs"]["background"] == ["2", 0]
+    assert wf["3"]["inputs"]["foreground_opacity"] == 0.8
+    # Klein model stack
+    assert wf["10"]["class_type"] == "UNETLoader"
+    assert wf["11"]["class_type"] == "CLIPLoader"
+    assert wf["12"]["class_type"] == "VAELoader"
+    # ReferenceLatent wrapping
+    assert wf["20"]["class_type"] == "ReferenceLatent"
+    assert wf["21"]["class_type"] == "ReferenceLatent"
+    # BasicScheduler with low denoise
+    assert wf["32"]["class_type"] == "BasicScheduler"
+    assert wf["32"]["inputs"]["denoise"] == 0.25
+    assert wf["60"]["class_type"] == "SaveImage"
+    return True, "klein_blend", ""
+
+
+def test_klein_inpaint():
+    """Test build_klein_inpaint — mask-based with FluxGuidance + SetLatentNoiseMask."""
+    wf = build_klein_inpaint("image.png", "mask.png", "repair area", 42,
+                             klein_model_key="Klein 9B", steps=25, denoise=0.92,
+                             guidance=30.0, grow_px=0, use_differential_diffusion=False)
+    # Model stack
+    assert wf["1"]["class_type"] == "UNETLoader"
+    assert wf["2"]["class_type"] == "CLIPLoader"
+    assert wf["3"]["class_type"] == "VAELoader"
+    # Source image + mask
+    assert wf["10"]["class_type"] == "LoadImage"
+    assert wf["11"]["class_type"] == "LoadImage"
+    assert wf["12"]["class_type"] == "ImageToMask"
+    assert wf["12"]["inputs"]["channel"] == "red"
+    # FluxGuidance conditioning
+    assert wf["16"]["class_type"] == "FluxGuidance"
+    assert wf["16"]["inputs"]["guidance"] == 30.0
+    # SetLatentNoiseMask (mask applied to latent)
+    assert wf["20"]["class_type"] == "VAEEncode"
+    assert wf["21"]["class_type"] == "SetLatentNoiseMask"
+    # No DifferentialDiffusion when disabled
+    assert "22" not in wf
+    # Sampler input is masked latent
+    assert wf["40"]["class_type"] == "SamplerCustomAdvanced"
+    assert wf["40"]["inputs"]["latent_image"] == ["21", 0]
+    assert wf["60"]["class_type"] == "SaveImage"
+    return True, "klein_inpaint", ""
+
+
+def test_klein_inpaint_with_grow_and_dd():
+    """Test build_klein_inpaint with GrowMask + DifferentialDiffusion."""
+    wf = build_klein_inpaint("img.png", "mask.png", "fix", 42,
+                             grow_px=10, use_differential_diffusion=True)
+    assert wf["13"]["class_type"] == "GrowMask"
+    assert wf["13"]["inputs"]["expand"] == 10
+    assert wf["22"]["class_type"] == "DifferentialDiffusion"
+    # CFGGuider uses DD model
+    assert wf["30"]["inputs"]["model"] == ["22", 0]
+    return True, "klein_inpaint_grow_dd", ""
+
+
+def test_klein_inpaint_solid_mask():
+    """Test build_klein_inpaint with SolidMask (clothing store mode)."""
+    wf = build_klein_inpaint("img.png", None, "new outfit", 42,
+                             use_solid_mask=True, solid_mask_width=1024,
+                             solid_mask_height=1024,
+                             use_differential_diffusion=True)
+    assert wf["12"]["class_type"] == "SolidMask"
+    assert wf["12"]["inputs"]["width"] == 1024
+    assert wf["12"]["inputs"]["height"] == 1024
+    assert "11" not in wf  # no mask image loaded
+    return True, "klein_inpaint_solid_mask", ""
+
+
+def test_klein_scene_img2img():
+    """Test build_klein_scene_img2img — actual img2img (VAEEncode → latent_image)."""
+    wf = build_klein_scene_img2img("scene.png", "harmonize scene", 42,
+                                    steps=20, denoise=0.30, guidance=30.0)
+    assert wf["1"]["class_type"] == "UNETLoader"
+    assert wf["10"]["class_type"] == "LoadImage"
+    # FluxGuidance conditioning
+    assert wf["16"]["class_type"] == "FluxGuidance"
+    assert wf["16"]["inputs"]["guidance"] == 30.0
+    # VAEEncode — actual img2img (input image IS the latent)
+    assert wf["20"]["class_type"] == "VAEEncode"
+    assert wf["20"]["inputs"]["pixels"] == ["10", 0]
+    # Sampler gets VAEEncode output as latent_image (not EmptyFlux2LatentImage)
+    assert wf["40"]["class_type"] == "SamplerCustomAdvanced"
+    assert wf["40"]["inputs"]["latent_image"] == ["20", 0]
+    # BasicScheduler with low denoise
+    assert wf["32"]["class_type"] == "BasicScheduler"
+    assert wf["32"]["inputs"]["denoise"] == 0.30
+    # No ReferenceLatent nodes
+    for nid, node in wf.items():
+        assert node["class_type"] != "ReferenceLatent", f"Node {nid} is ReferenceLatent — should not be"
+    assert wf["60"]["class_type"] == "SaveImage"
+    return True, "klein_scene_img2img", ""
+
+
+def test_layer_blend():
+    """Test build_layer_blend — simple two-image blend."""
+    wf = build_layer_blend("a.png", "b.png", 0.5, "normal")
+    assert len(wf) == 4
+    assert wf["1"]["class_type"] == "LoadImage"
+    assert wf["2"]["class_type"] == "LoadImage"
+    assert wf["3"]["class_type"] == "ImageBlend"
+    assert wf["3"]["inputs"]["blend_factor"] == 0.5
+    assert wf["3"]["inputs"]["blend_mode"] == "normal"
+    assert wf["4"]["class_type"] == "SaveImage"
+    return True, "layer_blend", ""
+
+
+def test_upscale_blend():
+    """Test build_upscale_blend — dual model upscale + blend."""
+    wf = build_upscale_blend("img.png", "4x_ultrasharp.pth", "4x_remacri.pth",
+                             blend_factor=0.6, scale_by=1.0)
+    assert wf["1"]["class_type"] == "LoadImage"
+    # Model A
+    assert wf["10"]["class_type"] == "UpscaleModelLoader"
+    assert wf["10"]["inputs"]["model_name"] == "4x_ultrasharp.pth"
+    assert wf["11"]["class_type"] == "ImageUpscaleWithModelByFactor"
+    assert wf["11"]["inputs"]["upscale_model"] == ["10", 0]
+    assert wf["11"]["inputs"]["image"] == ["1", 0]
+    # Model B
+    assert wf["20"]["class_type"] == "UpscaleModelLoader"
+    assert wf["20"]["inputs"]["model_name"] == "4x_remacri.pth"
+    assert wf["21"]["class_type"] == "ImageUpscaleWithModelByFactor"
+    assert wf["21"]["inputs"]["upscale_model"] == ["20", 0]
+    assert wf["21"]["inputs"]["image"] == ["1", 0]
+    # Blend
+    assert wf["30"]["class_type"] == "ImageBlend"
+    assert wf["30"]["inputs"]["image1"] == ["11", 0]
+    assert wf["30"]["inputs"]["image2"] == ["21", 0]
+    assert wf["30"]["inputs"]["blend_factor"] == 0.6
+    assert wf["40"]["class_type"] == "SaveImage"
+    return True, "upscale_blend", ""
+
+
+def test_frame_assembly():
+    """Test build_frame_assembly — dynamic frame chain → VHS_VideoCombine."""
+    wf = build_frame_assembly(["f1.png", "f2.png", "f3.png", "f4.png"], fps=24.0,
+                              filename_prefix="test_assembly")
+    # 4 LoadImage nodes
+    assert wf["200"]["class_type"] == "LoadImage"
+    assert wf["201"]["class_type"] == "LoadImage"
+    assert wf["202"]["class_type"] == "LoadImage"
+    assert wf["203"]["class_type"] == "LoadImage"
+    # ImageBatch chain: 300 = batch(200,201), 301 = batch(300,202), 302 = batch(301,203)
+    assert wf["300"]["class_type"] == "ImageBatch"
+    assert wf["300"]["inputs"]["image1"] == ["200", 0]
+    assert wf["300"]["inputs"]["image2"] == ["201", 0]
+    assert wf["301"]["class_type"] == "ImageBatch"
+    assert wf["301"]["inputs"]["image1"] == ["300", 0]
+    assert wf["301"]["inputs"]["image2"] == ["202", 0]
+    assert wf["302"]["class_type"] == "ImageBatch"
+    assert wf["302"]["inputs"]["image1"] == ["301", 0]
+    assert wf["302"]["inputs"]["image2"] == ["203", 0]
+    # VHS_VideoCombine with final batch ref
+    assert wf["400"]["class_type"] == "VHS_VideoCombine"
+    assert wf["400"]["inputs"]["images"] == ["302", 0]
+    assert wf["400"]["inputs"]["frame_rate"] == 24.0
+    assert wf["400"]["inputs"]["filename_prefix"] == "test_assembly"
+    return True, "frame_assembly", ""
+
+
+def test_frame_assembly_single():
+    """Test build_frame_assembly with a single frame (edge case)."""
+    wf = build_frame_assembly(["only.png"], fps=16.0)
+    assert wf["200"]["class_type"] == "LoadImage"
+    assert "300" not in wf  # no ImageBatch needed
+    assert wf["400"]["class_type"] == "VHS_VideoCombine"
+    assert wf["400"]["inputs"]["images"] == ["200", 0]
+    return True, "frame_assembly_single", ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  Runner
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -1020,6 +1305,22 @@ def main():
         test_wan_video_flf,
         test_wan_video_teacache,
         test_seedvr2_video_upscale,
+        # Photobooth
+        test_photobooth,
+        test_photobooth_klein_4b,
+        # Klein workflow variants
+        test_klein_repose,
+        test_klein_repose_4b,
+        test_klein_blend,
+        test_klein_inpaint,
+        test_klein_inpaint_with_grow_and_dd,
+        test_klein_inpaint_solid_mask,
+        test_klein_scene_img2img,
+        # Utility workflows
+        test_layer_blend,
+        test_upscale_blend,
+        test_frame_assembly,
+        test_frame_assembly_single,
     ]
 
     passed = 0
