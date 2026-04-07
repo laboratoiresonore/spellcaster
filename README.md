@@ -915,9 +915,7 @@ Both plugins check GitHub on each launch and silently update themselves. New fea
 <details>
 <summary><strong>Update system details</strong></summary>
 
-The update system uses GitHub's API to compare the local version hash against the latest commit. If different, it fetches the file tree and downloads changed files incrementally.
-
-**NSFW variant handling**: The plugin source contains a `_BUILD_VARIANT` injection point. SFW builds (default) pull from the public `laboratoiresonore/spellcaster` repo. NSFW builds have this patched to `"nsfw"` at build time, routing all updates to the private `laboratoiresonore/spellcaster_NSFW` repo — so NSFW-specific customizations are never overwritten by a standard update.
+The update system uses GitHub's API to compare the local version hash against the latest commit. If different, it fetches the file tree and downloads changed files incrementally. The plugin source contains a `_BUILD_VARIANT` injection point that controls which repo updates pull from.
 
 On Windows, in-use files are staged with a `.update` suffix and applied on next launch. The updater also clears GIMP's pluginrc to force menu re-scanning.
 
@@ -952,4 +950,109 @@ The installer auto-detects your GPU and downloads the right model variants.
 | Tier | VRAM | What gets installed |
 |---|---|---|
 | **Low** | < 8 GB | Q4/Q5 GGUF quantized — lightweight but capable |
-| **Medium**
+| **Medium** | 8-12 GB | fp8 or Q8 — great quality/performance balance |
+| **High** | 12-20 GB | fp8 or standard — full feature access |
+| **Ultra** | 20+ GB | Full bf16 — maximum quality |
+
+### Checkpoints (25+ models)
+
+<details>
+<summary><strong>SD 1.5, SDXL, Illustrious, ZIT, Flux 1 Dev, Flux 2 Klein</strong></summary>
+
+**SD 1.5** (6 GB): Juggernaut Reborn, Realistic Vision v5.1, SD 1.5 Base
+
+**SDXL Realistic** (8 GB): Juggernaut XL v9/Ragnarok, JibMix Realistic, ZavyChroma, CyberRealistic Pony, AlbedoBase, SDXL Base
+
+**SDXL Anime** (8 GB): NoobAI-XL, Nova Anime XL, Wai Illustrious, IlustReal, Sloppy Messy Mix
+
+**SDXL Cartoon** (8 GB): Modern Disney XL, Nova Cartoon XL
+
+**Z-Image-Turbo** (8 GB): GonzaloMo Zpop v3 — 6-step turbo
+
+**Flux 1 Dev** (12+ GB): Flux 1 Dev fp8, Flux Kontext Dev fp8
+
+**Flux 2 Klein** (6-20 GB): Klein 9B, Klein 4B fp8, Klein Base 4B fp8
+
+</details>
+
+### Upscale Models (6)
+
+4x-UltraSharp, RealESRGAN x4plus, 4x Remacri, 4x NMKD Superscale, RealESRGAN Anime, 8x NMKD Faces
+
+### ControlNet Models (8)
+
+SD1.5 (Lineart, Depth, OpenPose, Tile), SDXL (Canny, OpenPose, Tile), ZIT Union
+
+### Video Models (Wan 2.2)
+
+Q4 GGUF (8 GB) and fp8 (16 GB) variants, UMT5-XXL encoder, Wan VAE
+
+### 90+ LoRAs
+
+Body & detail fix, artistic styles, accelerators — across SDXL, Flux, Klein, ZIT, and Illustrious architectures.
+
+</details>
+
+<details>
+<summary><h2>Custom Nodes (auto-installed)</h2></summary>
+
+| Node Pack | Purpose |
+|---|---|
+| ComfyUI-GGUF | Load quantized models for low VRAM |
+| ComfyUI-VideoHelperSuite | Video composition and output |
+| ComfyUI-Frame-Interpolation | RIFE smooth frame interpolation |
+| comfyui-reactor-node | Face swap + face restore |
+| comfyui-mtb | MTB face swap alternative |
+| ComfyUI_IPAdapter_plus | FaceID + style transfer |
+| PuLID_ComfyUI | Flux-native identity preservation |
+| ComfyUI-KJNodes | Image size utilities |
+| ComfyUI-RTXVideoSuperResolution | NVIDIA RTX video upscaling |
+| ComfyUI-REMBG | Background removal |
+| ComfyUI-LaMa | Object removal |
+| ComfyUI_essentials | LUT color grading |
+| comfyui_controlnet_aux | ControlNet preprocessors (Canny, Depth, Pose, etc.) |
+| ComfyUI-IC-Light | Directional relighting |
+| ComfyUI-SUPIR | SUPIR AI restoration |
+| ComfyUI-api-tools | REST API for image upload/download/delete (used by scaffold privacy cleanup) |
+
+</details>
+
+<details>
+<summary><h2>Troubleshooting</h2></summary>
+
+| Problem | Solution |
+|---|---|
+| Plugin not visible in GIMP | Run the [Manual Update & Repair tool](https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-manual-update.exe) |
+| "Node not found" error | Re-run the installer to install missing extensions |
+| "Cannot connect to server" | Make sure ComfyUI is running (`http://127.0.0.1:8188`) |
+| Out of VRAM | Switch to a smaller model or GGUF variant |
+| All runs produce same result | Set seed to -1 for random results |
+| Download fails (403) | Add your CivitAI or HuggingFace token in the installer |
+| Klein results look wrong | Check VAE/CLIP pairings: 9B→qwen_3_8b, 4B→qwen_3_4b |
+| Video generation fails | Ensure both high-noise and low-noise Wan models are installed |
+| Temp files filling disk | Use Settings → Clean Server Inputs to purge gimp_* uploads |
+| Custom workflow import fails | Make sure the JSON is an API export or standard LiteGraph format |
+| Presets not saving | Check that the plugin directory is writable (not read-only) |
+
+</details>
+
+---
+
+## License
+
+[GPL-2.0](LICENSE) — Free software. Use it, modify it, share it.
+
+---
+
+<p align="center">
+  <img src="plugins/darktable/darktable_splash.jpg" alt="Spellcaster" width="400" />
+  <br/><br/>
+  <strong>From zero to AI mastery in one install.</strong>
+  <br/><br/>
+  <em>Experimentally yours, <a href="https://www.laboratoiresonore.com/">le laboratoire sonore</a>, Arkyn Glyph</em>
+  <br/><br/>
+  <a href="https://www.instagram.com/lelaboratoiresonore/">Instagram</a> &bull;
+  <a href="https://www.youtube.com/@LeLaboratoireSonore">YouTube</a> &bull;
+  <a href="https://www.facebook.com/laboratoire.sonore.2025">Facebook</a> &bull;
+  <a href="https://www.twitch.tv/laboratoiresonore">Twitch</a>
+</p>
