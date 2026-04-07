@@ -3040,7 +3040,7 @@ def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_t
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_photobooth(ref_filename, prompt_text, seed,
-                     klein_model_key="Klein 9B", steps=20, guidance=30.0,
+                     klein_model_key="Klein 9B", steps=20, guidance=1.0,
                      swap_model="reswapper_256.onnx",
                      face_restore_model="codeformer-v0.1.0.pth",
                      face_restore_vis=0.9, codeformer_weight=0.6,
@@ -3317,7 +3317,7 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
 
 def build_klein_inpaint(image_filename, mask_filename, prompt_text, seed,
                         klein_model_key="Klein 9B", steps=25, denoise=0.92,
-                        guidance=30.0, grow_px=0, use_differential_diffusion=False,
+                        guidance=1.0, grow_px=0, use_differential_diffusion=False,
                         use_solid_mask=False, solid_mask_width=1024,
                         solid_mask_height=1024,
                         klein_models=None):
@@ -3413,7 +3413,7 @@ def build_klein_inpaint(image_filename, mask_filename, prompt_text, seed,
 
 def build_klein_scene_img2img(image_filename, prompt_text, seed,
                                klein_model_key="Klein 9B", steps=20,
-                               denoise=0.30, guidance=30.0,
+                               denoise=0.30, guidance=1.0,
                                klein_models=None):
     """Klein scene img2img: harmonize a composited scene.
 
@@ -3596,93 +3596,4 @@ def build_upscale_blend(image_filename, model_a_name, model_b_name,
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  Frame Assembly — dynamic LoadImage chain → ImageBatch → VHS_VideoCombine
-# ═══════════════════════════════════════════════════════════════════════════
-
-def build_frame_assembly(frame_filenames, fps=16.0,
-                         filename_prefix="gimp_frame_assembly"):
-    """Assemble individual frame images into a video file.
-
-    Takes a list of image files and compiles them into a video at a specified
-    framerate. Uses VHS_VideoCombine node for standard video assembly.
-
-    Pipeline:
-      1. Load each frame image
-      2. Chain them together with ImageBatch nodes
-      3. Create video from batched images
-      4. Save to disk
-
-    Args:
-        frame_filenames (list): Paths to frame images in sequence order.
-                               Each must be same resolution.
-                               Example: ["frame_0001.png", "frame_0002.png", ...]
-        fps (float): Playback framerate (default 16.0)
-                    - 16-24: Standard animation
-                    - 24-30: Smooth video
-                    - 60+: High-speed slow-motion
-        filename_prefix (str): Output filename prefix (default "gimp_frame_assembly")
-
-    Returns:
-        dict: ComfyUI workflow with frame loading and video assembly
-
-    Use Cases:
-      - Assemble WAN video output frames into final MP4
-      - Compile interpolated frames into smooth video
-      - Create animation from sequence of images
-      - Batch process multiple sequences
-
-    Node IDs:
-      - "200"+: Load nodes for each frame (200, 201, 202, ...)
-      - "300"+: ImageBatch chain (300, 301, 302, ...) - chains frames together
-      - "400": VHS_VideoCombine (final video creation)
-      - "401": VHS_SaveVideo (save to disk)
-
-    Limitations:
-      - All frames must be same resolution
-      - Framerate is global (no variable frame timing)
-      - No frame interpolation (use separate build_frame_interpolate for that)
-      - Output format determined by filename extension (.mp4, .avi, .mov, etc.)
-
-    ImageBatch Chain Mechanics:
-      - ImageBatch takes [image1, 0] and [image2, 0] → [batched_images, 0]
-      - For 3+ frames: batch(frame0, frame1) → output1
-                       batch(output1, frame2) → output2, etc.
-      - Final output is all frames in sequence
-
-    Example:
-      frames = [
-          "/path/to/frame_0001.png",
-          "/path/to/frame_0002.png",
-          "/path/to/frame_0003.png",
-      ]
-      build_frame_assembly(frames, fps=24.0, filename_prefix="output")
-      # Creates output.mp4 with 3 frames at 24fps
-
-    Gotchas:
-      - Frames must be in correct sequence order
-      - Frame resolution mismatch causes errors
-      - FPS is locked (no adaptive frame timing)
-      - Large frame counts (1000+) may cause memory issues
-    """
-    nf = NodeFactory()
-
-    # Load all frames
-    for i, fn in enumerate(frame_filenames):
-        nf.load_image(fn, node_id=str(200 + i))
-
-    # ImageBatch chain
-    if len(frame_filenames) >= 2:
-        batch_id = nf.image_batch([str(200), 0], [str(201), 0], node_id="300")
-        batch_ref = [batch_id, 0]
-        for i in range(2, len(frame_filenames)):
-            nid = str(300 + i - 1)
-            batch_id = nf.image_batch(batch_ref, [str(200 + i), 0], node_id=nid)
-            batch_ref = [batch_id, 0]
-    else:
-        batch_ref = [str(200), 0]
-
-    # Video output
-    nf.vhs_video_combine(batch_ref, frame_rate=float(fps), loop_count=0,
-                          filename_prefix=filename_prefix,
-                          format_type="video/h264-mp4", node_id="400")
-
-    return nf.build()
+# ═══════════

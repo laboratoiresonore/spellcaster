@@ -972,7 +972,7 @@ def test_photobooth():
     wf = build_photobooth(
         "face_ref.png",
         "professional headshot, neutral grey studio background, soft lighting",
-        seed=42, klein_model_key="Klein 9B", steps=20, guidance=30.0,
+        seed=42, klein_model_key="Klein 9B", steps=20, guidance=1.0,
     )
     # Stage 1: Klein ReferenceLatent generation
     assert wf["1"]["class_type"] == "LoadImage"
@@ -1093,7 +1093,7 @@ def test_klein_inpaint():
     """Test build_klein_inpaint — mask-based with FluxGuidance + SetLatentNoiseMask."""
     wf = build_klein_inpaint("image.png", "mask.png", "repair area", 42,
                              klein_model_key="Klein 9B", steps=25, denoise=0.92,
-                             guidance=30.0, grow_px=0, use_differential_diffusion=False)
+                             guidance=1.0, grow_px=0, use_differential_diffusion=False)
     # Model stack
     assert wf["1"]["class_type"] == "UNETLoader"
     assert wf["2"]["class_type"] == "CLIPLoader"
@@ -1105,7 +1105,7 @@ def test_klein_inpaint():
     assert wf["12"]["inputs"]["channel"] == "red"
     # FluxGuidance conditioning
     assert wf["16"]["class_type"] == "FluxGuidance"
-    assert wf["16"]["inputs"]["guidance"] == 30.0
+    assert wf["16"]["inputs"]["guidance"] == 1.0
     # SetLatentNoiseMask (mask applied to latent)
     assert wf["20"]["class_type"] == "VAEEncode"
     assert wf["21"]["class_type"] == "SetLatentNoiseMask"
@@ -1146,12 +1146,12 @@ def test_klein_inpaint_solid_mask():
 def test_klein_scene_img2img():
     """Test build_klein_scene_img2img — actual img2img (VAEEncode → latent_image)."""
     wf = build_klein_scene_img2img("scene.png", "harmonize scene", 42,
-                                    steps=20, denoise=0.30, guidance=30.0)
+                                    steps=20, denoise=0.30, guidance=1.0)
     assert wf["1"]["class_type"] == "UNETLoader"
     assert wf["10"]["class_type"] == "LoadImage"
     # FluxGuidance conditioning
     assert wf["16"]["class_type"] == "FluxGuidance"
-    assert wf["16"]["inputs"]["guidance"] == 30.0
+    assert wf["16"]["inputs"]["guidance"] == 1.0
     # VAEEncode — actual img2img (input image IS the latent)
     assert wf["20"]["class_type"] == "VAEEncode"
     assert wf["20"]["inputs"]["pixels"] == ["10", 0]
