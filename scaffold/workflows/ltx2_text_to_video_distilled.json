@@ -1,0 +1,149 @@
+{
+  "_meta": {
+    "title": "LTX 2.3 — Text to Video (Distilled Fast)",
+    "description": "LoRA-accelerated LTX 2.3 fast mode: 8 steps, no CFG/STG, ~4x faster than standard. Good for previews and iteration.",
+    "author": "Spellcaster",
+    "version": "1.0",
+    "category": "LTX2"
+  },
+  "1": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": {
+      "unet_name": "LTX\\ltx-2.3-22b-dev-Q4_K_M.gguf"
+    }
+  },
+  "1b": {
+    "class_type": "LoraLoaderModelOnly",
+    "_comment": "Distilled LoRA for 8-step fast generation",
+    "inputs": {
+      "model": ["1", 0],
+      "lora_name": "ltxv\\ltx-2.3-22b-distilled-lora-384.safetensors",
+      "strength_model": 1.0
+    }
+  },
+  "2": {
+    "class_type": "LTXVChunkFeedForward",
+    "inputs": {
+      "model": ["1b", 0],
+      "chunks": 4,
+      "dim_threshold": 4096
+    }
+  },
+  "3": {
+    "class_type": "LTXVApplySTG",
+    "inputs": {
+      "model": ["2", 0],
+      "block_indices": "14, 19"
+    }
+  },
+  "4": {
+    "class_type": "LTXAVTextEncoderLoader",
+    "inputs": {
+      "text_encoder": "gemma_3_12B_it_fp4_mixed.safetensors",
+      "ckpt_name": "LTX\\ltx-2.3-22b-dev_embeddings_connectors.safetensors",
+      "device": "default"
+    }
+  },
+  "5": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "ltx-2.3-vae.safetensors"
+    }
+  },
+  "10": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["4", 0],
+      "text": "A cinematic wide shot of ocean waves crashing against rocky cliffs at sunset, golden hour lighting, dramatic clouds"
+    }
+  },
+  "11": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["4", 0],
+      "text": ""
+    }
+  },
+  "12": {
+    "class_type": "LTXVConditioning",
+    "inputs": {
+      "positive": ["10", 0],
+      "negative": ["11", 0],
+      "frame_rate": 25.0
+    }
+  },
+  "15": {
+    "class_type": "LTXVScheduler",
+    "inputs": {
+      "steps": 8,
+      "max_shift": 2.05,
+      "base_shift": 0.95,
+      "stretch": true,
+      "terminal": 0.1
+    }
+  },
+  "16": {
+    "class_type": "STGGuider",
+    "_comment": "Distilled mode: cfg=1.0, stg=0.0, rescale=0.0",
+    "inputs": {
+      "model": ["3", 0],
+      "positive": ["12", 0],
+      "negative": ["12", 1],
+      "cfg": 1.0,
+      "stg": 0.0,
+      "rescale": 0.0
+    }
+  },
+  "17": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler"
+    }
+  },
+  "18": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": 42
+    }
+  },
+  "20": {
+    "class_type": "LTXVBaseSampler",
+    "inputs": {
+      "model": ["3", 0],
+      "vae": ["5", 0],
+      "guider": ["16", 0],
+      "sampler": ["17", 0],
+      "sigmas": ["15", 0],
+      "noise": ["18", 0],
+      "width": 768,
+      "height": 512,
+      "num_frames": 25
+    }
+  },
+  "40": {
+    "class_type": "LTXVSpatioTemporalTiledVAEDecode",
+    "inputs": {
+      "vae": ["5", 0],
+      "latents": ["20", 0],
+      "spatial_tiles": 4,
+      "spatial_overlap": 1,
+      "temporal_tile_length": 16,
+      "temporal_overlap": 1,
+      "last_frame_fix": false,
+      "working_device": "auto",
+      "working_dtype": "auto"
+    }
+  },
+  "50": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": ["40", 0],
+      "frame_rate": 25,
+      "loop_count": 0,
+      "filename_prefix": "LTX23-distilled",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": true
+    }
+  }
+}

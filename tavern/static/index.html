@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Wizard Guild</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="dark-theme">
+    <div id="app-container">
+        <!-- Sidebar: Characters -->
+        <aside id="sidebar">
+            <div class="sidebar-header">
+                <h2>The Wizard Guild</h2>
+                <div id="llm-indicator-container">
+                    <span id="llm-dot" class="dot red"></span> <span id="llm-status">LLM: Disconnected</span>
+                </div>
+                <div class="search-wrapper">
+                    <input type="text" id="character-search" placeholder="Search guild members...">
+                </div>
+            </div>
+            
+            <div id="character-list">
+                <!-- Dynamically populated from API -->
+            </div>
+            
+            <div class="sidebar-footer">
+                <button id="settings-btn">⚙️ LLM Settings</button>
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main id="chat-arena">
+            <header id="chat-header">
+                <div class="chat-header-info">
+                    <div class="avatar" id="active-avatar" style="background: linear-gradient(135deg, #1d976c, #93f9b9);"></div>
+                    <div class="header-titles">
+                        <h2 id="active-character-name">Loading...</h2>
+                        <p id="active-character-subtext">Connecting to guild...</p>
+                    </div>
+                </div>
+                <div class="chat-header-actions">
+                    <button id="rename-btn" title="Edit or Generate Identity">Rename Wizard</button>
+                    <button id="generate-bg-btn" title="Synthesize Tavern Background">Generate Background</button>
+                    <button id="generate-avatar-btn" title="Synthesize Avatar from parameters">Generate Avatar</button>
+                    <button id="reset-btn">Reset Memory</button>
+                </div>
+            </header>
+            
+            <div id="chat-stream">
+                <!-- Chat messages inject here -->
+            </div>
+
+            <!-- Input Area -->
+            <div id="chat-input-area">
+                <div class="input-wrapper">
+                    <button id="upload-btn" title="Attach Image (Coming Soon)">📎</button>
+                    <textarea id="chat-input" placeholder="Just talk to it..."></textarea>
+                    <button id="send-btn" title="Cast Spell">✨</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-content">
+            <h3>Kobold API Settings</h3>
+            <p>Connect your local LLM inferencer to breathe life into the Guild Members. Provide the base API URL (e.g., http://127.0.0.1:5001).</p>
+            <input type="text" id="kobold-url-input" placeholder="http://127.0.0.1:5001" value="http://127.0.0.1:5001">
+            <div class="modal-actions">
+                <button id="settings-cancel">Cancel</button>
+                <button id="settings-save">Save & Connect</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rename Modal -->
+    <div id="rename-modal" class="modal hidden">
+        <div class="modal-content">
+            <h3>Rename Wizard</h3>
+            <p>Type a custom name, or let the LLM synthesize a highly creative title.</p>
+            <input type="text" id="rename-input" placeholder="Enter name...">
+            <div class="modal-actions">
+                <button id="rename-cancel">Cancel</button>
+                <button id="rename-llm-btn" style="background: var(--accent); color: white;">Generate AI Name</button>
+                <button id="rename-save" style="background: #2ed573; color: #111;">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Spinner Overlay -->
+    <div id="loading-overlay" class="hidden">
+        <div class="spinner"></div>
+        <p>The Guild is thinking...</p>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
