@@ -17529,6 +17529,18 @@ class Spellcaster(Gimp.PlugIn):
         name_box.pack_start(restart_label, False, False, 2)
         name_frame.add(name_box); bx.pack_start(name_frame, False, False, 0)
 
+        # Candidates per batch
+        cand_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        cand_row.pack_start(Gtk.Label(label="Candidates per batch:"), False, False, 0)
+        cand_spin = Gtk.SpinButton.new_with_range(1, 9, 1)
+        cand_spin.set_value(3)
+        cand_spin.set_tooltip_text(
+            "How many passport photos to generate each round.\n"
+            "You'll review all candidates and pick the best one.\n"
+            "Default: 3. Use 1 for fastest results, up to 9 for more choice.")
+        cand_row.pack_start(cand_spin, False, False, 0)
+        bx.pack_start(cand_row, False, False, 0)
+
         bx.show_all()
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
@@ -17539,6 +17551,7 @@ class Spellcaster(Gimp.PlugIn):
         face_file = file_chooser.get_filename()
         gender = gender_combo.get_active_id() or "person"
         model_name = name_entry.get_text().strip() or "photobooth_face"
+        num_candidates = int(cand_spin.get_value())
         dlg.destroy()
 
         # ═══════════════════════════════════════════════════════════════
@@ -17576,17 +17589,18 @@ class Spellcaster(Gimp.PlugIn):
 
             while chosen_image is None:
                 results_data = []
-                for i in range(3):
+                for i in range(num_candidates):
                     seed = random.randint(0, 2**32 - 1)
                     wf = build_photobooth(
-                        ref_name, bg_prompts[i], seed,
+                        ref_name, bg_prompts[i % len(bg_prompts)], seed,
                         klein_model_key=klein_key,
                         steps=20, guidance=1.0,
                         klein_models=KLEIN_MODELS,
                     )
                     _wf = wf
+                    bg_labels = ['grey bg', 'white bg', 'dark bg']
                     res = _run_with_spinner(
-                        f"Photobooth: generating {i+1}/3 ({['grey bg','white bg','dark bg'][i]})...",
+                        f"Photobooth: generating {i+1}/{num_candidates} ({bg_labels[i % len(bg_labels)]})...",
                         lambda: list(_run_comfyui_workflow(srv, _wf)))
                     for fn, sf, ft in res:
                         if fn.lower().endswith(".png"):
@@ -17608,7 +17622,7 @@ class Spellcaster(Gimp.PlugIn):
                 # ═══════════════════════════════════════════════════════
                 pick_dlg = Gtk.Dialog(title="Photobooth — Pick the Best Likeness")
                 pick_dlg.set_default_size(400, -1)
-                pick_dlg.add_button("Generate 3 More", Gtk.ResponseType.REJECT)
+                pick_dlg.add_button(f"Generate {num_candidates} More", Gtk.ResponseType.REJECT)
                 pick_dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
                 pick_dlg.add_button("_Save This Face Model", Gtk.ResponseType.OK)
                 _style_dialog_buttons(pick_dlg)
@@ -17617,7 +17631,7 @@ class Spellcaster(Gimp.PlugIn):
                 pbx.set_margin_top(10); pbx.set_margin_bottom(10)
 
                 pbx.pack_start(Gtk.Label(
-                    label="3 passport photos have been added as layers in GIMP.\n"
+                    label=f"{len(results_data)} passport photos have been added as layers in GIMP.\n"
                           "Review them and select which one best captures the likeness.\n\n"
                           "The selected variant will be saved as a ReActor face model.",
                     xalign=0), False, False, 4)
@@ -17880,6 +17894,18 @@ class Spellcaster(Gimp.PlugIn):
                 prompt_tv.get_buffer().set_text(BODY_PRESETS[key]["prompt"])
         body_combo.connect("changed", _on_body)
 
+        # Candidates per batch
+        cand_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        cand_row.pack_start(Gtk.Label(label="Candidates per batch:"), False, False, 0)
+        cand_spin = Gtk.SpinButton.new_with_range(1, 9, 1)
+        cand_spin.set_value(3)
+        cand_spin.set_tooltip_text(
+            "How many body variants to generate each round.\n"
+            "You'll review all candidates and pick the best one.\n"
+            "Default: 3. Use 1 for fastest results, up to 9 for more choice.")
+        cand_row.pack_start(cand_spin, False, False, 0)
+        bx.pack_start(cand_row, False, False, 0)
+
         bx.show_all()
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
@@ -17890,6 +17916,7 @@ class Spellcaster(Gimp.PlugIn):
         face_file = face_chooser.get_filename()
         model_idx = int(model_combo.get_active_id() or "0")
         body_key = body_combo.get_active_id() or first_key
+        num_candidates = int(cand_spin.get_value())
         buf = prompt_tv.get_buffer()
         prompt = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
         negative = BODY_PRESETS.get(body_key, BODY_PRESETS[first_key])["negative"]
@@ -17915,13 +17942,13 @@ class Spellcaster(Gimp.PlugIn):
 
             while chosen is None:
                 results_data = []
-                for i in range(3):
+                for i in range(num_candidates):
                     seed = random.randint(0, 2**32 - 1)
                     # Step 1: txt2img body (with quality boost)
                     wf_body = build_txt2img(preset, boosted_prompt, boosted_negative, seed)
                     _wf = wf_body
                     body_res = _run_with_spinner(
-                        f"Body Factory: generating body {i+1}/3...",
+                        f"Body Factory: generating body {i+1}/{num_candidates}...",
                         lambda: list(_run_comfyui_workflow(srv, _wf)))
 
                     # Get the generated body image
@@ -17947,7 +17974,7 @@ class Spellcaster(Gimp.PlugIn):
                         quality_presets=FACESWAP_QUALITY_PRESETS)
                     _wf2 = wf_swap
                     swap_res = _run_with_spinner(
-                        f"Body Factory: swapping face {i+1}/3...",
+                        f"Body Factory: swapping face {i+1}/{num_candidates}...",
                         lambda: list(_run_comfyui_workflow(srv, _wf2)))
                     for fn, sf, ft in swap_res:
                         if fn.lower().endswith(".png"):
@@ -17960,7 +17987,7 @@ class Spellcaster(Gimp.PlugIn):
                             rembg_wf = build_rembg(rembg_name)
                             _wf3 = rembg_wf
                             rembg_res = _run_with_spinner(
-                                f"Body Factory: removing background {i+1}/3...",
+                                f"Body Factory: removing background {i+1}/{num_candidates}...",
                                 lambda: list(_run_comfyui_workflow(srv, _wf3)))
                             for fn2, sf2, ft2 in rembg_res:
                                 if fn2.lower().endswith(".png"):
@@ -17982,7 +18009,7 @@ class Spellcaster(Gimp.PlugIn):
                 # Pick dialog
                 pick_dlg = Gtk.Dialog(title="Body Factory — Pick the Best")
                 pick_dlg.set_default_size(400, -1)
-                pick_dlg.add_button("Generate 3 More", Gtk.ResponseType.REJECT)
+                pick_dlg.add_button(f"Generate {num_candidates} More", Gtk.ResponseType.REJECT)
                 pick_dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
                 pick_dlg.add_button("_Use This Body", Gtk.ResponseType.OK)
                 _style_dialog_buttons(pick_dlg)
@@ -17990,7 +18017,7 @@ class Spellcaster(Gimp.PlugIn):
                 pbx.set_spacing(8); pbx.set_margin_start(12); pbx.set_margin_end(12)
                 pbx.set_margin_top(10); pbx.set_margin_bottom(10)
                 pbx.pack_start(Gtk.Label(
-                    label="3 full-body images have been added as layers.\n"
+                    label=f"{len(results_data)} full-body images have been added as layers.\n"
                           "Pick the best one — it will remain as your active layer\n"
                           "for use as a start image in video generation tools.",
                     xalign=0), False, False, 4)
@@ -18300,7 +18327,7 @@ class Spellcaster(Gimp.PlugIn):
             "Background for your scene.\n\n"
             "'Current canvas' = use whatever is open in GIMP.\n"
             "All other options generate a new background via txt2img.\n"
-            "You'll pick the best from 3 variants.")
+            "You'll pick the best from the generated variants.")
         for k in SCENE_BG_PRESETS: bg_combo.append(k, k)
         bg_combo.set_active(0)
         bg_box.pack_start(bg_combo, False, False, 0)
@@ -18352,6 +18379,19 @@ class Spellcaster(Gimp.PlugIn):
         klein_combo.set_tooltip_text("Klein Flux 2 model for harmonizing actors into the scene.")
         bx.pack_start(klein_combo, False, False, 0)
 
+        # Candidates per batch (for background generation)
+        cand_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        cand_row.pack_start(Gtk.Label(label="BG candidates per batch:"), False, False, 0)
+        cand_spin = Gtk.SpinButton.new_with_range(1, 9, 1)
+        cand_spin.set_value(3)
+        cand_spin.set_tooltip_text(
+            "How many background variants to generate each round.\n"
+            "You'll review all candidates and pick the best one.\n"
+            "Only used when generating a new background (not 'use current canvas').\n"
+            "Default: 3. Use 1 for fastest results, up to 9 for more choice.")
+        cand_row.pack_start(cand_spin, False, False, 0)
+        bx.pack_start(cand_row, False, False, 0)
+
         bx.show_all()
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
@@ -18360,6 +18400,7 @@ class Spellcaster(Gimp.PlugIn):
         srv = srv_e.get_text().strip(); _propagate_server_url(srv)
         bg_key = bg_combo.get_active_id() or list(SCENE_BG_PRESETS.keys())[0]
         bg_model_idx = int(bg_model_combo.get_active_id() or "0")
+        num_candidates = int(cand_spin.get_value())
         klein_key = klein_combo.get_active_id() or list(KLEIN_MODELS.keys())[0]
         actors = []
         for i in range(3):
@@ -18383,18 +18424,18 @@ class Spellcaster(Gimp.PlugIn):
                 _upload_image(srv, tmp, bg_name); os.unlink(tmp)
                 _import_result_as_layer(image, _download_image(srv, bg_name, "", "input"), "Studio Set BG")
             else:
-                # Generate background — pick best of 3 (with quality boost)
+                # Generate background — pick best (with quality boost)
                 bg_prompt = SCENE_BG_PRESETS[bg_key]
                 preset = dict(MODEL_PRESETS[bg_model_idx] if 0 <= bg_model_idx < len(MODEL_PRESETS) else MODEL_PRESETS[0])
                 arch = preset.get("arch", "sdxl")
                 bg_boosted = _boost_prompt(bg_prompt, arch)
                 bg_neg = _boost_negative("people, person, human, figure, text, watermark, deformed", arch)
                 bg_results = []
-                for i in range(3):
+                for i in range(num_candidates):
                     seed = random.randint(0, 2**32 - 1)
                     wf = build_txt2img(preset, bg_boosted, bg_neg, seed)
                     _wf = wf
-                    res = _run_with_spinner(f"Studio Set: generating background {i+1}/3...",
+                    res = _run_with_spinner(f"Studio Set: generating background {i+1}/{num_candidates}...",
                                              lambda: list(_run_comfyui_workflow(srv, _wf)))
                     for fn, sf, ft in res:
                         if fn.lower().endswith(".png"):
@@ -18407,7 +18448,7 @@ class Spellcaster(Gimp.PlugIn):
                 # Pick best background
                 pick_dlg = Gtk.Dialog(title="Studio Set — Pick Background")
                 pick_dlg.set_default_size(350, -1)
-                pick_dlg.add_button("Generate 3 More", Gtk.ResponseType.REJECT)
+                pick_dlg.add_button(f"Generate {num_candidates} More", Gtk.ResponseType.REJECT)
                 pick_dlg.add_button("_Use This BG", Gtk.ResponseType.OK)
                 _style_dialog_buttons(pick_dlg)
                 pbx = pick_dlg.get_content_area()
