@@ -322,6 +322,10 @@ through parameter collection."""
         This adds bridge methods to the scaffold so it can access Signal Bridge
         configs and workflows directly through the Spellcaster interface.
 
+        Also applies privacy settings from the bridge config to the runner:
+        if ``privacy.auto_delete_generated`` or ``privacy.clean_comfyui_input``
+        are set, the runner's cleanup flags are updated accordingly.
+
         Args:
             scaffold_instance: A SpellcasterScaffold instance
         """
@@ -330,6 +334,16 @@ through parameter collection."""
         scaffold_instance.list_workflows = self.list_workflows
         scaffold_instance.get_scaffold = self.get_scaffold_for_workflow
         scaffold_instance.get_bridge_config = lambda: self.config
+
+        # Apply privacy settings from bridge config to the runner.
+        # The runner uses ComfyUI-api-tools DELETE endpoints for cleanup.
+        privacy = self.config.get("privacy", {})
+        if hasattr(scaffold_instance, "runner"):
+            runner = scaffold_instance.runner
+            runner.cleanup_inputs = privacy.get(
+                "clean_comfyui_input", runner.cleanup_inputs)
+            runner.cleanup_outputs = privacy.get(
+                "auto_delete_generated", runner.cleanup_outputs)
 
         print("BridgeLauncher registered with SpellcasterScaffold")
 

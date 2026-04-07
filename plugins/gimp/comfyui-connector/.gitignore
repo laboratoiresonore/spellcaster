@@ -1,0 +1,14 @@
+# GIMP ComfyUI Connector — machine-specific settings
+# Config file written by installer (contains local ComfyUI server URL)
+config.json
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Test artifacts
+.pytest_cache/
+
+# User-generated outputs
+output/

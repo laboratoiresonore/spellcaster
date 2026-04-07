@@ -47,13 +47,13 @@ jobs:
 
       - name: Build installer (Windows / Linux)
         if: matrix.onedir != true
-        run: python build_installer.py --platform ${{ matrix.platform }} --update-tool
+        run: python installer/build_installer.py --platform ${{ matrix.platform }} --update-tool
 
       - name: Build installer (macOS app bundle + single binary)
         if: matrix.onedir == true
         run: |
-          python build_installer.py --platform macos --onedir
-          python build_installer.py --platform macos --update-tool
+          python installer/build_installer.py --platform macos --onedir
+          python installer/build_installer.py --platform macos --update-tool
 
       - name: Zip macOS app bundle
         if: matrix.os == 'macos-latest'

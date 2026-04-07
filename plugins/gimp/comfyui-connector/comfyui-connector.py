@@ -8619,6 +8619,115 @@ class KleinDialog(Gtk.Dialog):
 # All _run_* callbacks follow the GIMP 3 ImageProcedure signature:
 #   (procedure, run_mode, image, drawables, config, data) → Gimp.ValueArray
 
+
+# ── Travelling Wizard helpers (used by _run_bridge) ──────────────────
+def _bridge_workflow_browser(parent_dlg, server_url, cfg):
+    """Show a dialog that fetches workflow list from ComfyUI server."""
+    browse_dlg = Gtk.Dialog(title="Workflow Library", parent=parent_dlg,
+                            flags=Gtk.DialogFlags.MODAL | Gtk.DialogFlags.DESTROY_WITH_PARENT)
+    browse_dlg.set_default_size(600, 500)
+    browse_dlg.add_button("_Close", Gtk.ResponseType.CLOSE)
+    bx = browse_dlg.get_content_area()
+    bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
+    bx.set_margin_top(12); bx.set_margin_bottom(12)
+
+    # Fetch user workflows from ComfyUI
+    workflows = {}
+    try:
+        req = urllib.request.Request(f"{server_url}/api/userdata/workflows?recurse=true", method="GET")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+            if isinstance(data, list):
+                for item in data:
+                    name = item if isinstance(item, str) else item.get("path", "unknown")
+                    workflows[name] = {"path": name, "source": "server"}
+    except Exception as e:
+        err = Gtk.Label()
+        err.set_markup(f'<span foreground="#FF5252">Could not fetch workflows: {e}</span>')
+        err.set_line_wrap(True)
+        bx.pack_start(err, False, False, 0)
+
+    if workflows:
+        bx.pack_start(Gtk.Label(label=f"Found {len(workflows)} workflow(s) on server:", xalign=0), False, False, 0)
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        list_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        for wf_name in sorted(workflows.keys()):
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            lbl = Gtk.Label(label=wf_name, xalign=0)
+            lbl.set_hexpand(True); lbl.set_ellipsize(3)  # PANGO_ELLIPSIZE_END
+            row.pack_start(lbl, True, True, 4)
+            import_btn = Gtk.Button(label="Import")
+            def _make_import_cb(name):
+                def on_click(btn):
+                    try:
+                        # Download the workflow JSON from server
+                        encoded = urllib.parse.quote(name, safe="")
+                        dl_req = urllib.request.Request(f"{server_url}/api/userdata/workflows/{encoded}")
+                        with urllib.request.urlopen(dl_req, timeout=15) as dl_resp:
+                            wf_data = json.loads(dl_resp.read())
+                        # Save to custom_workflows in config
+                        short = name.rsplit("/", 1)[-1].replace(".json", "")
+                        custom = cfg.get("custom_workflows", {})
+                        custom[short] = {"workflow_data": wf_data, "workflow_type": "imported",
+                                         "source": f"server:{name}"}
+                        cfg["custom_workflows"] = custom
+                        _save_config(cfg)
+                        btn.set_label("Imported ✓"); btn.set_sensitive(False)
+                    except Exception as ex:
+                        btn.set_label(f"Error"); btn.set_tooltip_text(str(ex))
+                return on_click
+            import_btn.connect("clicked", _make_import_cb(wf_name))
+            row.pack_start(import_btn, False, False, 0)
+            list_box.pack_start(row, False, False, 0)
+        scroll.add(list_box)
+        bx.pack_start(scroll, True, True, 0)
+    elif not workflows:
+        bx.pack_start(Gtk.Label(label="No workflows found on server.", xalign=0), False, False, 0)
+
+    bx.show_all()
+    browse_dlg.run()
+    browse_dlg.destroy()
+
+
+def _bridge_import_workflow(parent_dlg, path, cfg):
+    """Import a workflow JSON file into custom_workflows config."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            wf_data = json.load(f)
+        short = os.path.basename(path).replace(".json", "")
+        # Detect format
+        if "nodes" in wf_data and "links" in wf_data:
+            wf_type = "litegraph"
+        elif any(isinstance(v, dict) and "class_type" in v for v in wf_data.values() if isinstance(v, dict)):
+            wf_type = "api"
+        else:
+            wf_type = "unknown"
+        # Count nodes
+        if wf_type == "litegraph":
+            n_nodes = len(wf_data.get("nodes", []))
+        elif wf_type == "api":
+            n_nodes = len([v for v in wf_data.values() if isinstance(v, dict) and "class_type" in v])
+        else:
+            n_nodes = 0
+
+        custom = cfg.get("custom_workflows", {})
+        custom[short] = {"workflow_data": wf_data, "workflow_type": wf_type,
+                         "source": f"file:{path}", "node_count": n_nodes}
+        cfg["custom_workflows"] = custom
+        _save_config(cfg)
+
+        info = Gtk.MessageDialog(parent=parent_dlg, flags=Gtk.DialogFlags.MODAL,
+                                 type=Gtk.MessageType.INFO, buttons=Gtk.ButtonsType.OK)
+        info.set_markup(f"<b>Imported: {short}</b>\n\nFormat: {wf_type}, {n_nodes} nodes")
+        info.run(); info.destroy()
+    except Exception as e:
+        err = Gtk.MessageDialog(parent=parent_dlg, flags=Gtk.DialogFlags.MODAL,
+                                type=Gtk.MessageType.ERROR, buttons=Gtk.ButtonsType.OK)
+        err.set_markup(f"<b>Import failed</b>\n\n{e}")
+        err.run(); err.destroy()
+
+
 class Spellcaster(Gimp.PlugIn):
 
     def do_set_i18n(self, name):
@@ -8685,6 +8794,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-iclight": "iclight",
             "spellcaster-settings": None,
             "spellcaster-my-presets": None,
+            "spellcaster-bridge": None,
         }
 
         cfg = _load_config()
@@ -8803,6 +8913,8 @@ class Spellcaster(Gimp.PlugIn):
                                       "Configure Spellcaster: server URL, defaults, and preferences"),
             "spellcaster-my-presets": ("My Spellcaster Presets...", self._run_my_presets,
                                        "Quick access to your saved prompt/settings presets"),
+            "spellcaster-bridge": ("Travelling Wizard...", self._run_bridge,
+                                    "Signal Bridge scaffold editor, workflow library, and LLM wizard"),
         }
 
         label, callback, doc = menu_map[name]
@@ -8874,6 +8986,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-read-watermark":    "<Image>/Filters/Spellcaster Tools",
             "spellcaster-send-image":        "<Image>/Filters/Spellcaster Tools",
             "spellcaster-settings":          "<Image>/Filters/Spellcaster Tools",
+            "spellcaster-bridge":            "<Image>/Filters/Spellcaster Tools",
         }
 
         proc = Gimp.ImageProcedure.new(self, name, Gimp.PDBProcType.PLUGIN, callback, None)
@@ -17429,6 +17542,171 @@ class Spellcaster(Gimp.PlugIn):
             list_box.pack_start(empty, True, True, 20)
 
         bx.pack_start(scroll, True, True, 0)
+        bx.show_all()
+        dlg.run()
+        dlg.destroy()
+        return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+
+    # ── Travelling Wizard (Signal Bridge + Scaffold) ───────────────────
+    def _run_bridge(self, procedure, run_mode, image, drawables, config, data):
+        """Travelling Wizard: scaffold editor, workflow library, LLM wizard."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        try:
+            GimpUi.init("spellcaster")
+        except Exception:
+            pass
+        try:
+            _apply_spellcaster_theme()
+        except Exception:
+            pass
+        cfg = _load_config()
+        server_url = cfg.get("server_url", COMFYUI_DEFAULT_URL).rstrip("/")
+
+        dlg = Gtk.Dialog(title="The Travelling Wizard")
+        dlg.set_default_size(560, 520)
+        dlg.add_button("_Close", Gtk.ResponseType.CLOSE)
+        _style_dialog_buttons(dlg)
+        bx = dlg.get_content_area()
+        bx.set_spacing(10); bx.set_margin_start(16); bx.set_margin_end(16)
+        bx.set_margin_top(16); bx.set_margin_bottom(16)
+
+        # Header
+        _hdr = _make_branded_header()
+        if _hdr:
+            bx.pack_start(_hdr, False, False, 0)
+        title = Gtk.Label()
+        title.set_markup(
+            '<span size="large" weight="bold">The Travelling Wizard</span>\n'
+            '<span size="small">Signal Bridge &amp; Spellcaster Scaffold</span>')
+        title.set_halign(Gtk.Align.START)
+        bx.pack_start(title, False, False, 0)
+        bx.pack_start(Gtk.Separator(), False, False, 4)
+
+        # Server status
+        status_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        status_icon = Gtk.Label()
+        status_text = Gtk.Label()
+        try:
+            req = urllib.request.Request(f"{server_url}/system_stats", method="GET")
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                sdata = json.loads(resp.read())
+                gpu = sdata.get("devices", [{}])[0].get("name", "GPU")
+                vram = sdata.get("devices", [{}])[0].get("vram_total", 0)
+                if vram:
+                    status_icon.set_markup('<span foreground="#00E676">●</span>')
+                    status_text.set_markup(
+                        f'<span foreground="#00E676">ComfyUI Online</span>'
+                        f'  <span size="small" foreground="#888">{server_url} — {gpu} ({vram//1024//1024//1024} GB)</span>')
+                else:
+                    status_icon.set_markup('<span foreground="#00E676">●</span>')
+                    status_text.set_markup(f'<span foreground="#00E676">Connected</span>  <span size="small" foreground="#888">{server_url}</span>')
+        except Exception:
+            status_icon.set_markup('<span foreground="#FF5252">●</span>')
+            status_text.set_markup(f'<span foreground="#FF5252">ComfyUI Offline</span>  <span size="small" foreground="#888">{server_url}</span>')
+        status_box.pack_start(status_icon, False, False, 0)
+        status_box.pack_start(status_text, True, True, 0)
+        bx.pack_start(status_box, False, False, 0)
+
+        # ── Actions frame ──
+        actions_frame = Gtk.Frame(label="Actions")
+        actions_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        actions_box.set_margin_start(12); actions_box.set_margin_end(12)
+        actions_box.set_margin_top(12); actions_box.set_margin_bottom(12)
+
+        def _make_action_button(title_text, desc_text, on_click):
+            btn = Gtk.Button()
+            vb = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            t = Gtk.Label(); t.set_markup(f"<b>{title_text}</b>"); t.set_halign(Gtk.Align.START)
+            d = Gtk.Label(); d.set_text(desc_text); d.set_halign(Gtk.Align.START); d.set_line_wrap(True)
+            d.get_style_context().add_class("dim-label")
+            vb.pack_start(t, False, False, 0); vb.pack_start(d, False, False, 0)
+            btn.add(vb); btn.connect("clicked", on_click)
+            actions_box.pack_start(btn, False, False, 0)
+            return btn
+
+        # Button 1: Open scaffold settings in browser
+        def _on_open_settings(btn):
+            # Look for the settings HTML in known locations
+            plugin_dir = os.path.dirname(os.path.abspath(__file__))
+            candidates = [
+                os.path.join(plugin_dir, "signal_bridge_settings.html"),
+                os.path.join(plugin_dir, "..", "signal_bridge_settings.html"),
+                cfg.get("wizard_settings_path", ""),
+            ]
+            for path in candidates:
+                if path and os.path.isfile(path):
+                    import webbrowser
+                    webbrowser.open(f"file://{os.path.abspath(path)}")
+                    return
+            # Fallback: try server endpoint
+            import webbrowser
+            webbrowser.open(f"{server_url}/spellcaster/settings")
+        _make_action_button(
+            "Open Scaffold Editor",
+            "Opens the full Travelling Wizard settings UI in your browser.\n"
+            "Configure scaffolds, import workflows, manage Signal Bridge.",
+            _on_open_settings)
+
+        # Button 2: Browse workflow library from ComfyUI server
+        def _on_browse_workflows(btn):
+            _bridge_workflow_browser(dlg, server_url, cfg)
+        _make_action_button(
+            "Browse Workflow Library",
+            "Browse and import ComfyUI workflows from your server.\n"
+            "Any workflow JSON can be parsed and added as a Spellcaster action.",
+            _on_browse_workflows)
+
+        # Button 3: Import workflow JSON from disk
+        def _on_import_file(btn):
+            fc = Gtk.FileChooserDialog(
+                title="Import ComfyUI Workflow",
+                parent=dlg,
+                action=Gtk.FileChooserAction.OPEN)
+            fc.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+            fc.add_button("_Open", Gtk.ResponseType.OK)
+            filt = Gtk.FileFilter(); filt.set_name("JSON files"); filt.add_pattern("*.json")
+            fc.add_filter(filt)
+            if fc.run() == Gtk.ResponseType.OK:
+                path = fc.get_filename()
+                fc.destroy()
+                _bridge_import_workflow(dlg, path, cfg)
+            else:
+                fc.destroy()
+        _make_action_button(
+            "Import Workflow File",
+            "Import a ComfyUI workflow JSON from your computer.\n"
+            "Supports litegraph (UI export) and API format.",
+            _on_import_file)
+
+        actions_frame.add(actions_box)
+        bx.pack_start(actions_frame, False, False, 0)
+
+        # ── Installed custom workflows list ──
+        custom_frame = Gtk.Frame(label="Installed Workflows")
+        custom_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        custom_box.set_margin_start(12); custom_box.set_margin_end(12)
+        custom_box.set_margin_top(8); custom_box.set_margin_bottom(8)
+        custom_wfs = cfg.get("custom_workflows", {})
+        if custom_wfs:
+            for wf_name, wf_info in custom_wfs.items():
+                row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+                lbl = Gtk.Label(); lbl.set_markup(f"<b>{wf_name}</b>"); lbl.set_halign(Gtk.Align.START)
+                row.pack_start(lbl, True, True, 0)
+                wf_type = wf_info.get("workflow_type", "General")
+                tlbl = Gtk.Label(); tlbl.set_markup(f'<span size="small" foreground="#888">{wf_type}</span>')
+                row.pack_start(tlbl, False, False, 0)
+                custom_box.pack_start(row, False, False, 0)
+        else:
+            empty = Gtk.Label()
+            empty.set_markup(
+                '<span foreground="#888">No custom workflows installed.\n'
+                'Use Import or Browse to add workflows.</span>')
+            empty.set_halign(Gtk.Align.CENTER)
+            custom_box.pack_start(empty, False, False, 4)
+        custom_frame.add(custom_box)
+        bx.pack_start(custom_frame, True, True, 0)
+
         bx.show_all()
         dlg.run()
         dlg.destroy()
