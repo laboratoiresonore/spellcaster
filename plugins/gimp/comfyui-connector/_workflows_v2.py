@@ -1750,3 +1750,159 @@ def build_seedvr2_video_upscale(video_name, seed=-1,
     nf.save_image(["3", 0], "seedvr2_upscale_frame", node_id="11")
 
     return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Style Transfer — IPAdapter style transfer + ControlNet
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_style_transfer(target_filename, style_ref_filename, preset,
+                          prompt_text, negative_text, seed,
+                          ipadapter_preset="PLUS (high strength)",
+                          weight=0.8, denoise=0.6,
+                          controlnet=None, controlnet_2=None,
+                          guide_modes=None):
+    """Style transfer via IPAdapter. Drop-in for _build_style_transfer().
+
+    Pipeline: model stack → IPAdapterUnifiedLoader → IPAdapterAdvanced(style transfer)
+              → LoadImage(target) → encode → KSampler → decode → save
+    """
+    nf = NodeFactory()
+    arch_key = preset.get("arch", "sdxl")
+
+    # 1. Model stack
+    model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "1")
+
+    # 2. IPAdapter
+    ipa_loader_id = nf.ipadapter_unified_loader(model_ref, ipadapter_preset,
+                                                 node_id="2")
+    style_img_id = nf.load_image(style_ref_filename, node_id="3")
+    ipa_id = nf.ipadapter_advanced(
+        [ipa_loader_id, 0], [ipa_loader_id, 1], [style_img_id, 0],
+        weight=weight, weight_type="style transfer",
+        combine_embeds="concat", start_at=0.0, end_at=1.0,
+        embeds_scaling="V only", node_id="4",
+    )
+
+    # 3. Encode prompts
+    pos_id = nf.clip_encode(clip_ref, prompt_text, node_id="5")
+    neg_id = nf.clip_encode(clip_ref, negative_text or "blurry, deformed, bad anatomy",
+                             node_id="6")
+
+    # 4. Load target + encode
+    target_img_id = nf.load_image(target_filename, node_id="7")
+    target_ref = [target_img_id, 0]
+
+    # Mod-16 for Flux architectures
+    if arch_key in ("flux1dev", "flux_kontext", "flux2klein"):
+        scale_id = nf.image_scale_to_total_pixels(target_ref, megapixels=1.0,
+                                                    node_id="7s")
+        target_ref = [scale_id, 0]
+
+    enc_id = nf.vae_encode(target_ref, vae_ref, node_id="8")
+
+    # 5. Sample
+    samp_id = nf.ksampler(
+        [ipa_id, 0],
+        [pos_id, 0], [neg_id, 0], [enc_id, 0],
+        seed, preset["steps"], preset["cfg"],
+        preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
+        denoise, node_id="9",
+    )
+    dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="10")
+    nf.save_image([dec_id, 0], "spellcaster_style", node_id="11")
+
+    # 6. ControlNet injection (optional)
+    if guide_modes and controlnet and controlnet.get("mode", "Off") != "Off":
+        cn_pos, cn_neg = inject_controlnet(
+            nf, controlnet, guide_modes, arch_key, target_ref,
+            [pos_id, 0], [neg_id, 0], cn_base_id=20,
+        )
+        nf.patch_input("9", "positive", cn_pos)
+        nf.patch_input("9", "negative", cn_neg)
+
+    if guide_modes and controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
+        prev_pos = ["22", 0] if nf.has_node("22") else [pos_id, 0]
+        prev_neg = ["22", 1] if nf.has_node("22") else [neg_id, 0]
+        cn2_pos, cn2_neg = inject_controlnet(
+            nf, controlnet_2, guide_modes, arch_key, target_ref,
+            prev_pos, prev_neg, cn_base_id=30,
+        )
+        nf.patch_input("9", "positive", cn2_pos)
+        nf.patch_input("9", "negative", cn2_neg)
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  SeedV2R — Upscale + img2img hallucinate (like detail_hallucinate but
+#  with user-controlled scale factor)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_text,
+                   seed, denoise, cfg, steps, scale_factor, orig_width, orig_height,
+                   controlnet=None, controlnet_2=None, guide_modes=None):
+    """SeedV2R: upscale + img2img. Drop-in for _build_seedv2r().
+
+    For scale > 1x: upscale with model to target factor, then img2img.
+    For 1x: straight img2img on original.
+    """
+    nf = NodeFactory()
+    arch_key = preset.get("arch", "sdxl")
+
+    # 1. Load source image
+    img_id = nf.load_image(image_filename, node_id="1")
+    img_ref = [img_id, 0]
+
+    # 2. Optional upscale
+    if scale_factor > 1.0 and upscale_model:
+        up_model_id = nf.upscale_model_loader(upscale_model, node_id="2")
+        up_id = nf.image_upscale_with_model_by_factor([up_model_id, 0], img_ref,
+                                                      scale_factor, node_id="3")
+        img_ref = [up_id, 0]
+
+    # 3. Mod-16 for Flux
+    if arch_key in ("flux1dev", "flux_kontext", "flux2klein"):
+        scale_id = nf.image_scale_to_total_pixels(img_ref, megapixels=1.0,
+                                                    node_id="3s")
+        img_ref = [scale_id, 0]
+
+    # 4. Model stack
+    model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "4")
+
+    # 5. Encode
+    pos_id = nf.clip_encode(clip_ref, prompt_text, node_id="5")
+    neg_id = nf.clip_encode(clip_ref, negative_text, node_id="6")
+
+    # 6. VAE encode + sample + decode
+    enc_id = nf.vae_encode(img_ref, vae_ref, node_id="7")
+    samp_id = nf.ksampler(
+        model_ref,
+        [pos_id, 0], [neg_id, 0], [enc_id, 0],
+        seed, steps, cfg,
+        preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
+        denoise, node_id="8",
+    )
+    dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="9")
+    nf.save_image([dec_id, 0], "spellcaster_seedv2r", node_id="10")
+
+    # 7. ControlNet injection (optional)
+    if guide_modes and controlnet and controlnet.get("mode", "Off") != "Off":
+        cn_pos, cn_neg = inject_controlnet(
+            nf, controlnet, guide_modes, arch_key, img_ref,
+            [pos_id, 0], [neg_id, 0], cn_base_id=20,
+        )
+        nf.patch_input("8", "positive", cn_pos)
+        nf.patch_input("8", "negative", cn_neg)
+
+    if guide_modes and controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
+        prev_pos = ["22", 0] if nf.has_node("22") else [pos_id, 0]
+        prev_neg = ["22", 1] if nf.has_node("22") else [neg_id, 0]
+        cn2_pos, cn2_neg = inject_controlnet(
+            nf, controlnet_2, guide_modes, arch_key, img_ref,
+            prev_pos, prev_neg, cn_base_id=30,
+        )
+        nf.patch_input("8", "positive", cn2_pos)
+        nf.patch_input("8", "negative", cn2_neg)
+
+    return nf.build()

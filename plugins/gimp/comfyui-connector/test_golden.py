@@ -28,6 +28,7 @@ from _workflows_v2 import (
     build_klein_img2img_ref, build_klein_headswap,
     build_video_upscale, build_video_reactor,
     build_wan_video, build_wan_flf, build_seedvr2_video_upscale,
+    build_style_transfer, build_seedv2r,
 )
 
 
@@ -650,6 +651,77 @@ def test_img2img_sdxl():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  Style Transfer / SeedV2R Tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_style_transfer():
+    """Test build_style_transfer structure."""
+    preset = {
+        "arch": "sdxl", "ckpt": "test.safetensors",
+        "width": 1024, "height": 1024,
+        "steps": 25, "cfg": 7.0,
+        "sampler": "euler", "scheduler": "normal",
+    }
+    wf = build_style_transfer("target.png", "style.png", preset,
+                               "oil painting", "blurry", 42,
+                               weight=0.85, denoise=0.6)
+    assert wf["1"]["class_type"] == "CheckpointLoaderSimple"
+    assert wf["2"]["class_type"] == "IPAdapterUnifiedLoader"
+    assert wf["3"]["class_type"] == "LoadImage"
+    assert wf["3"]["inputs"]["image"] == "style.png"
+    assert wf["4"]["class_type"] == "IPAdapterAdvanced"
+    assert wf["4"]["inputs"]["weight"] == 0.85
+    assert wf["4"]["inputs"]["weight_type"] == "style transfer"
+    assert wf["7"]["class_type"] == "LoadImage"
+    assert wf["7"]["inputs"]["image"] == "target.png"
+    assert wf["9"]["class_type"] == "KSampler"
+    assert wf["9"]["inputs"]["denoise"] == 0.6
+    assert wf["11"]["class_type"] == "SaveImage"
+    return True, "style_transfer", ""
+
+
+def test_seedv2r():
+    """Test build_seedv2r with upscale."""
+    preset = {
+        "arch": "sdxl", "ckpt": "test.safetensors",
+        "width": 1024, "height": 1024,
+        "steps": 25, "cfg": 7.0,
+        "sampler": "dpmpp_2m_sde", "scheduler": "karras",
+    }
+    wf = build_seedv2r("img.png", "4x-UltraSharp.pth", preset,
+                        "detailed photo", "blurry", 42,
+                        denoise=0.4, cfg=7.0, steps=20,
+                        scale_factor=2.0, orig_width=512, orig_height=512)
+    assert wf["1"]["class_type"] == "LoadImage"
+    assert wf["2"]["class_type"] == "UpscaleModelLoader"
+    assert wf["3"]["class_type"] == "ImageUpscaleWithModelByFactor"
+    assert wf["3"]["inputs"]["scale_by"] == 2.0
+    assert wf["4"]["class_type"] == "CheckpointLoaderSimple"
+    assert wf["8"]["class_type"] == "KSampler"
+    assert wf["8"]["inputs"]["denoise"] == 0.4
+    assert wf["10"]["class_type"] == "SaveImage"
+    return True, "seedv2r", ""
+
+
+def test_seedv2r_no_upscale():
+    """Test build_seedv2r without upscale (1x)."""
+    preset = {
+        "arch": "sdxl", "ckpt": "test.safetensors",
+        "steps": 25, "cfg": 7.0,
+        "sampler": "euler", "scheduler": "normal",
+    }
+    wf = build_seedv2r("img.png", None, preset,
+                        "photo", "", 42,
+                        denoise=0.5, cfg=5.0, steps=15,
+                        scale_factor=1.0, orig_width=1024, orig_height=1024)
+    assert wf["1"]["class_type"] == "LoadImage"
+    assert "2" not in wf  # No upscale model loader
+    assert "3" not in wf  # No upscale
+    assert wf["8"]["class_type"] == "KSampler"
+    return True, "seedv2r_no_upscale", ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  Klein Variant Tests
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -932,6 +1004,10 @@ def main():
         test_faceid_img2img,
         test_pulid_flux1,
         test_pulid_flux2,
+        # Style transfer / SeedV2R
+        test_style_transfer,
+        test_seedv2r,
+        test_seedv2r_no_upscale,
         # Klein variants
         test_klein_img2img_ref,
         test_klein_headswap,
