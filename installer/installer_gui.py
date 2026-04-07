@@ -202,6 +202,7 @@ class InstallerApp(ctk.CTk):
         self._build_main_frames()
         self._init_variables()
 
+        self._force_all_on = True
         self.select_frame("welcome")
 
     # ------------------------------------------------------------------

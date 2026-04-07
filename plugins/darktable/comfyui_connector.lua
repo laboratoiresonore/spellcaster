@@ -1921,6 +1921,18 @@ local WAN_I2V_MODELS = {
     accel_strength  = 1.0,
   },
   -- NSFW_WAN_MODEL_INJECTION_POINT --
+  {
+    label = "Wan Enhanced NSFW SVI (fp8)",
+    high_model = "Wan\\wan22EnhancedNSFWSVICamera_nsfwV2FP8H.safetensors",
+    low_model  = "Wan\\wan22EnhancedNSFWSVICamera_nsfwV2FP8L.safetensors",
+    clip       = "umt5-xxl-encoder-Q8_0.gguf",
+    vae        = "wan_2.1_vae.safetensors",
+    steps = 30, second_step = 20, cfg = 5.0, shift = 8.0,
+    lora_prefixes   = {"WAN\\", "Wan-2.2-I2V\\"},
+    high_accel_lora = "WAN\\SVI_v2_PRO_Wan2.2-I2V-A14B_HIGH_lora_rank_128_fp16.safetensors",
+    low_accel_lora  = "WAN\\SVI_v2_PRO_Wan2.2-I2V-A14B_LOW_lora_rank_128_fp16.safetensors",
+    accel_strength  = 1.0,
+  },
 }
 
 -- ── Wan Video Prompt Presets ────────────────────────────────────────────
@@ -2856,6 +2868,66 @@ local INPAINT_REFINEMENTS = {
               flux2klein = { {"Flux-2-Klein\\Character\\Flux2Klein_AnythingtoRealCharacters.safetensors", 0.85, 0.85}, {"Flux-2-Klein\\K9bSR3al.safetensors", 0.5, 0.5} } } },
 
   -- NSFW_INPAINT_INJECTION_POINT --
+
+
+  -- NSFW_INJECTION_POINT --
+
+  -- NSFW Inpaint Presets (auto-injected)
+  { label = "* NSFW Unlock (Flux)",
+    prompt = "nsfw, nude, naked, explicit, uncensored",
+    negative = "clothed, censored, covered, safe for work",
+    denoise = 0.72, cfg_boost = 1.0, steps_override = 28,
+    loras = { flux1dev = { {"Flux-1-Dev\NSFW\aidmaNSFWunlock-FLUX-V0.2.safetensors", 0.85, 0.85} }, flux2klein = { {"Flux-1-Dev\NSFW\NSFW-klein.safetensors", 0.85, 0.85} } } },
+  { label = "* Female Nudity (Klein 9B)",
+    prompt = "female nudity, nude woman, naked body, uncensored, beautiful body",
+    negative = "clothed, censored, ugly, deformed",
+    denoise = 0.7, cfg_boost = 1.0, steps_override = 25,
+    loras = { flux2klein = { {"Flux-1-Dev\SEXGOD_FemaleNudity_Klein9b_v2.safetensors", 0.9, 0.9} } } },
+  { label = "* Petite Body (Flux)",
+    prompt = "petite body, slim, small frame, delicate, young adult woman",
+    negative = "muscular, overweight, masculine, child",
+    denoise = 0.65, cfg_boost = 0.5, steps_override = 25,
+    loras = { flux1dev = { {"Flux-1-Dev\NSFW\NSFW_Flux_Petite-000002.safetensors", 0.8, 0.8} } } },
+  { label = "* Sideboob Emphasis",
+    prompt = "sideboob, side view, partial nudity, sensual pose",
+    negative = "fully clothed, censored, ugly",
+    denoise = 0.6, cfg_boost = 0.5, steps_override = 25,
+    loras = { flux1dev = { {"Flux-1-Dev\NSFW\FluxSideboob.safetensors", 0.75, 0.75} } } },
+  { label = "* POV Blowjob A (Klein)",
+    prompt = "pov blowjob, oral, close-up, first person view",
+    negative = "ugly, deformed, bad anatomy",
+    denoise = 0.75, cfg_boost = 1.0, steps_override = 28,
+    loras = { flux2klein = { {"Flux-2-Klein\POV_blowjobV1_A.safetensors", 0.85, 0.85} } } },
+  { label = "* POV Blowjob B (Klein)",
+    prompt = "pov blowjob, oral, from above, first person",
+    negative = "ugly, deformed, bad anatomy",
+    denoise = 0.75, cfg_boost = 1.0, steps_override = 28,
+    loras = { flux2klein = { {"Flux-2-Klein\POV_blowjobV1_B.safetensors", 0.85, 0.85} } } },
+  { label = "* Cum Effect (Klein)",
+    prompt = "cum, ejaculation, cum on face, cum on body",
+    negative = "clean, dry, ugly, deformed",
+    denoise = 0.72, cfg_boost = 1.0, steps_override = 28,
+    loras = { flux2klein = { {"Flux-2-Klein\PornMaster_cum_flux-2-klein-9b_V1.safetensors", 0.8, 0.8} } } },
+  { label = "* Thick Cum (Klein)",
+    prompt = "thick cum, heavy cum, cum dripping, messy",
+    negative = "clean, dry, ugly",
+    denoise = 0.72, cfg_boost = 1.0, steps_override = 28,
+    loras = { flux2klein = { {"Flux-2-Klein\thick_cum_v1_f2k_9b_000002750.safetensors", 0.8, 0.8} } } },
+  { label = "* Realistic Feet (SDXL)",
+    prompt = "realistic feet, detailed toes, foot focus, barefoot, natural feet",
+    negative = "bad feet, extra toes, deformed, ugly",
+    denoise = 0.68, cfg_boost = 0.5, steps_override = 25,
+    loras = { sdxl = { {"SDXL\NSFW\RealFeet_xl_v1.safetensors", 0.8, 0.8} } } },
+  { label = "* Foot Detail (Flux)",
+    prompt = "detailed feet, foot focus, toes, soles, barefoot, close-up",
+    negative = "bad feet, deformed, ugly, shoes",
+    denoise = 0.65, cfg_boost = 0.5, steps_override = 25,
+    loras = { flux1dev = { {"Flux-1-Dev\NSFW\flux-lora-foot.safetensors", 0.8, 0.8} }, illustrious = { {"Illustrious-Pony\detailed foot focus style illustriousXL v1.safetensors", 0.8, 0.8} } } },
+  { label = "* Klein NSFW v2",
+    prompt = "nsfw, explicit, nude, uncensored, high quality",
+    negative = "clothed, censored, ugly, deformed",
+    denoise = 0.7, cfg_boost = 1.0, steps_override = 25,
+    loras = { flux2klein = { {"Flux-1-Dev\NSFW\Flux Klein - NSFW v2.safetensors", 0.85, 0.85} } } },
 
 }
 
@@ -7842,9 +7914,9 @@ local function spellcaster_auto_update()
   local mv  = (sep == "\\") and "move /y" or "mv -f"  -- platform-appropriate rename
   local plugin_dir = debug.getinfo(1, "S").source:sub(2):match("(.*[/\\])") or ("." .. sep)
   local version_file = plugin_dir .. ".spellcaster_version"
-  local api_url  = "https://api.github.com/repos/laboratoiresonore/spellcaster/commits?sha=main&per_page=1"
-  local tree_url = "https://api.github.com/repos/laboratoiresonore/spellcaster/git/trees/main?recursive=1"
-  local raw_base = "https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main"
+  local api_url  = "https://api.github.com/repos/laboratoiresonore/spellcaster_NSFW/commits?sha=main&per_page=1"
+  local tree_url = "https://api.github.com/repos/laboratoiresonore/spellcaster_NSFW/git/trees/main?recursive=1"
+  local raw_base = "https://raw.githubusercontent.com/laboratoiresonore/spellcaster_NSFW/main"
   local dt_prefix = "plugins/darktable/"
 
   -- Read local SHA (fast path: if matches remote, no downloads needed)

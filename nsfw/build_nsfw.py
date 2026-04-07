@@ -359,12 +359,25 @@ def patch_gimp_plugin(dest_dir):
                 f'            }},\n'
             )
 
-        nsfw_dir_marker = "# ── NSFW_DIRECTOR_INJECTION_POINT ──"
-        if nsfw_dir_marker in content:
-            content = content.replace(nsfw_dir_marker, nsfw_dir_marker + "\n" + director_code)
+        # Inject before the closing } of DIRECTOR_SCRIPTS dict.
+        # Find the dict by locating "DIRECTOR_SCRIPTS = {" and matching braces.
+        ds_start = content.find("DIRECTOR_SCRIPTS = {")
+        if ds_start >= 0:
+            depth = 0
+            ds_end = ds_start
+            for ci in range(ds_start, len(content)):
+                if content[ci] == '{':
+                    depth += 1
+                elif content[ci] == '}':
+                    depth -= 1
+                    if depth == 0:
+                        ds_end = ci
+                        break
+            # Insert before the closing }
+            content = content[:ds_end] + director_code + content[ds_end:]
             print(f"  Injected {len(nsfw_director)} NSFW Director scripts into GIMP plugin")
         else:
-            print("  WARNING: NSFW_DIRECTOR_INJECTION_POINT marker not found")
+            print("  WARNING: DIRECTOR_SCRIPTS dict not found in GIMP plugin")
 
     # Inject NSFW Director DUO scripts into DUO_SCRIPTS dict
     nsfw_duo = video.get("nsfw_director_duo_scripts", {})
@@ -389,9 +402,20 @@ def patch_gimp_plugin(dest_dir):
                 f'            }},\n'
             )
 
-        nsfw_duo_marker = "# ── NSFW_DIRECTOR_DUO_INJECTION_POINT ──"
-        if nsfw_duo_marker in content:
-            content = content.replace(nsfw_duo_marker, nsfw_duo_marker + "\n" + duo_code)
+        # Inject before the closing } of DUO_SCRIPTS dict.
+        duo_start = content.find("DUO_SCRIPTS = {")
+        if duo_start >= 0:
+            depth = 0
+            duo_end = duo_start
+            for ci in range(duo_start, len(content)):
+                if content[ci] == '{':
+                    depth += 1
+                elif content[ci] == '}':
+                    depth -= 1
+                    if depth == 0:
+                        duo_end = ci
+                        break
+            content = content[:duo_end] + duo_code + content[duo_end:]
             print(f"  Injected {len(nsfw_duo)} NSFW Director Duo scripts into GIMP plugin")
 
     with open(gimp_path, "w", encoding="utf-8") as f:
