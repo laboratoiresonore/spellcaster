@@ -299,15 +299,52 @@ Selfie → Casting Polaroids → Body Double → Wardrobe → Set Design → Dir
 
 ### The Travelling Wizard
 
-Open `Filters > Spellcaster Tools > Travelling Wizard` to access the workflow bridge:
+Open `Filters > Spellcaster Tools > Travelling Wizard` to access the workflow bridge. It shows your server status (green/red indicator) and three main actions:
 
 | Action | What It Does |
 |---|---|
-| **Import Workflow File** | Load any `.json` workflow exported from ComfyUI. Spellcaster auto-detects the format (UI graph or API), classifies the workflow type, and extracts all tunable parameters. |
-| **Browse Workflow Library** | Connects to your ComfyUI server and lists all available workflows stored in its `workflows/` directory. |
-| **Installed Workflows** | Shows all workflows you've imported, with metadata and a one-click "Run" button. |
+| **Open Scaffold Editor** | Launches a full settings GUI in your browser with 9 tabs — configure workflow paths, node mappings, ComfyUI connection, and manage imported workflows. |
+| **Browse Workflow Library** | Connects to your ComfyUI server and lists all available workflows stored in its `workflows/` directory. Pick one and it's imported automatically. |
+| **Import Workflow File** | Load any `.json` workflow from disk. Spellcaster auto-detects the format (LiteGraph UI graph or ComfyUI API), classifies the workflow type, and extracts all tunable parameters. |
 
-Once imported, your custom workflows appear alongside Spellcaster's built-in tools. The wizard figures out which parameters matter (prompt, seed, steps, model, dimensions) and hides the ones that don't (internal wiring, output filenames, device settings).
+Once imported, your custom workflows appear in the Installed Workflows list with metadata (type, node count, format, tunable parameters) and a one-click "Run" button. The wizard figures out which parameters matter (prompt, seed, steps, model, dimensions) and hides the ones that don't (internal wiring, output filenames, device settings).
+
+### The Scaffold Editor
+
+The Scaffold Editor is a browser-based GUI that opens when you click "Open Scaffold Editor" in the Travelling Wizard. It has 9 tabs:
+
+| Tab | What You Configure |
+|---|---|
+| **General** | ComfyUI server URL, input/output directories, prompt history, debug mode |
+| **Workflow tabs (1-8)** | One tab per standard workflow type (inpaint, image edit, generator, outpaint, upscaler, etc.). Each tab lets you point at a specific workflow JSON and remap which node IDs handle which parameters — so if you have a custom inpainting workflow that uses different node IDs than the defaults, you can make Spellcaster use it instead. |
+| **Custom Workflows** | Shows all workflows you've imported via the Travelling Wizard, with their metadata and parameter lists. |
+
+You don't need to touch the Scaffold Editor for normal use — it's there for when you want Spellcaster to drive **your** workflows instead of its built-in ones.
+
+### The Scaffold System — AI-Driven Workflow Configuration
+
+Under the hood, the Travelling Wizard is powered by Spellcaster's **scaffold system** — a chatbot-driven interface that lets any LLM drive ComfyUI through a text conversation. This isn't just a developer tool; it's how the entire workflow import and configuration system works.
+
+The scaffold has three layers:
+
+| Layer | What It Does | When You'd Care |
+|---|---|---|
+| **MetaWizard** | Routes natural-language intent ("make this more cinematic") to the right tool | If you connect an LLM via Signal Bridge or another chat interface |
+| **SpellcasterWizard** | Step-by-step parameter collection for enhancement nodes, with preset support (Gentle/Strong/Maximum) | If you use the Spellcaster custom nodes in ComfyUI |
+| **WorkflowWizard** | Parses any ComfyUI workflow JSON, extracts tunable parameters, and builds a numbered-menu wizard on the fly | Every time you import a workflow — this is what figures out the parameters |
+
+The scaffold auto-discovers every Spellcaster node and ComfyUI workflow on disk, builds wizards for them, and handles the full lifecycle: intent routing, parameter collection, workflow construction, execution, result delivery, and privacy cleanup.
+
+<details>
+<summary><strong>Signal Bridge — AI assistant for remote image generation</strong></summary>
+
+The scaffold also powers the **Signal Bridge** — a system where remote users on messaging platforms can request AI image generation from a chatbot without ever touching ComfyUI.
+
+How it works: an LLM receives a system prompt built from the discovered nodes and workflows, uses numbered menus to collect parameters from the user in natural language, and the scaffold executes the workflow on ComfyUI. Results are delivered back through the messaging platform.
+
+**Privacy-first**: uploaded input images and generated outputs are automatically deleted from the server after delivery. Character cards are available for SillyTavern, OpenWebUI, LM Studio, and KoboldCpp.
+
+</details>
 
 ### Spellmaker — The Preset Editor
 
@@ -318,7 +355,7 @@ python tools/spellmaker.py
 ```
 
 Spellmaker lets you:
-- **Create presets** for any tool (model configs, inpaint recipes, video settings, Klein tuning)
+- **Create presets** for any tool — 8 types: model configs, inpaint recipes, scene templates, video settings, Wan models, Klein models, IC-Light presets, and arbitrary workflow JSON
 - **Import from ComfyUI** — load a raw workflow JSON and convert it to a named preset
 - **Edit and clone** existing presets
 - **Export** a `spellbook.json` that can be loaded into the plugins
@@ -329,7 +366,7 @@ If you already use ComfyUI and have workflows, models, and custom nodes installe
 
 - **Your existing models are used as-is.** Spellcaster discovers models on the server at runtime — it doesn't require its own copies.
 - **Your existing custom nodes keep working.** The installer only adds nodes it needs and skips ones you already have.
-- **Your existing workflows can be imported** via the Travelling Wizard and run from GIMP's menu.
+- **Your existing workflows can be imported** via the Travelling Wizard and run from GIMP's menu — or remap Spellcaster's built-in tools to use your workflows via the Scaffold Editor.
 - **Remote server works natively.** If ComfyUI runs on a different machine (a render box, a cloud GPU), just point the settings at it. The entire plugin works over HTTP.
 
 ---
@@ -754,24 +791,18 @@ Every model preset is the product of extensive testing. Here's what Spellcaster 
 
 ### Signal Bridge & Scaffold
 
-Spellcaster includes a **chatbot-driven interface** (the "scaffold") that lets any tool-enabled LLM drive ComfyUI through a numbered-menu text conversation. This powers the **Signal Bridge** — a system where remote users on messaging platforms (Signal, etc.) can request image generation from an AI assistant without ever touching ComfyUI directly.
-
-The scaffold auto-discovers every Spellcaster node and ComfyUI workflow on disk, builds step-by-step wizards, and handles the full lifecycle: intent routing, parameter collection, workflow construction, execution, result delivery, and cleanup.
-
-**Privacy cleanup** is a core feature for remote deployments. When enabled (the default), the scaffold automatically deletes all uploaded input images and generated output images from the ComfyUI server after delivering them to the user. This uses the [ComfyUI-api-tools](https://github.com/brantje/ComfyUI-api-tools) extension's DELETE endpoints. The user is notified both before execution ("your images will be deleted") and after ("2 files deleted from the server"). Privacy settings are configurable per-deployment via the Signal Bridge settings GUI (`installer/signal_bridge_settings.jsx`).
+See [The Scaffold System](#the-scaffold-system--ai-driven-workflow-configuration) and [Signal Bridge](#signal-bridge--ai-assistant-for-remote-image-generation) in the "Bring Your Own Workflows" section above for the full description.
 
 <details>
-<summary><strong>Scaffold architecture</strong></summary>
+<summary><strong>Scaffold internals for developers</strong></summary>
 
-The scaffold has three wizard layers that can be used independently or together:
+The **ComfyUIRunner** (`scaffold/comfyui_runner.py`) handles all server communication: image upload, workflow submission, result polling, image download, and privacy cleanup via [ComfyUI-api-tools](https://github.com/brantje/ComfyUI-api-tools) DELETE endpoints. Zero external dependencies (pure urllib). Designed to be used standalone or through the wizard stack.
 
-- **MetaWizard** — top-level intent router. The user says "make this more cinematic" and the meta wizard figures out they need Flux2KleinEnhancer with a Strong preset, not a txt2img workflow. Routes to the correct sub-wizard automatically.
-- **SpellcasterWizard** — drives Spellcaster enhancement nodes (Flux2KleinEnhancer, DetailController, RefLatentController, etc.) with preset support and step-by-step parameter collection.
-- **WorkflowWizard** — drives *any* ComfyUI workflow on disk. Parses `.json` workflow files, extracts user-configurable parameters, and builds numbered-menu wizards on the fly.
+The **Introspector** (`scaffold/introspector.py`) auto-discovers node specs at runtime — either by live import inside ComfyUI or by AST-parsing Python files standalone. No hardcoded node definitions.
 
-The **ComfyUIRunner** handles all server communication: image upload, workflow submission, result polling, image download, and privacy cleanup. It's the only component that talks to ComfyUI and is designed to be used standalone or through the wizard stack.
+The **PromptBuilder** (`scaffold/prompt_builder.py`) generates deterministic LLM system prompts from introspected nodes. Regenerated fresh each run, always reflects current state. Designed so even 7B parameter models can drive the full system.
 
-The **BridgeLauncher** bridges Signal Bridge configuration with the scaffold, applying privacy settings and providing character cards for various LLM platforms (SillyTavern, OpenWebUI, LM Studio, KoboldCpp).
+The **BridgeLauncher** (`scaffold/bridge_launcher.py`) bridges Signal Bridge configuration with the scaffold, applying privacy settings and exporting character cards for SillyTavern, OpenWebUI, LM Studio, and KoboldCpp.
 
 </details>
 
