@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>AI superpowers for your photos and art — no experience needed.</strong><br/>
-  Just run the installer, open GIMP or Darktable, and start creating.
+  Use it from GIMP, from Darktable, or just tell an AI chatbot what you want.
 </p>
 
 <p align="center">
@@ -19,9 +19,8 @@
   <a href="#what-is-spellcaster">What Is It</a> &bull;
   <a href="#how-to-install">How to Install</a> &bull;
   <a href="#complete-feature-reference">Features</a> &bull;
-  <a href="#supported-architectures--models">Models</a> &bull;
   <a href="#sample-output">Samples</a> &bull;
-  <a href="#magic-studios--full-character-pipeline">Magic Studios</a> &bull;
+  <a href="#just-talk-to-it--the-scaffold-system">Just Talk To It</a> &bull;
   <a href="#bring-your-own-workflows">Your Workflows</a> &bull;
   <a href="#faq">FAQ</a> &bull;
   <a href="#for-developers--power-users">Dev Guide</a>
@@ -31,9 +30,11 @@
 
 ## What Is Spellcaster?
 
-**Spellcaster adds 47 AI tools to GIMP and Darktable** — the two most popular free image editors. Once installed, you'll find a new "Spellcaster" menu with tools that let you create images from text, fix and enhance photos, swap faces, generate short videos, remove backgrounds, change lighting, extend canvases, re-pose characters, blend layers with AI harmonization, and much more.
+**Spellcaster adds 47 AI tools to GIMP and Darktable** — the two most popular free image editors. Create images from text, fix and enhance photos, swap faces, generate short videos, remove backgrounds, change lighting, extend canvases, re-pose characters, blend layers with AI harmonization — and that's just the built-in stuff.
 
 **You don't need to understand AI, machine learning, or any technical concepts.** Every tool comes with pre-configured settings that professionals have spent hundreds of hours perfecting. Your first result will look like your hundredth.
+
+**Don't want to learn GIMP or Darktable?** You don't have to. Spellcaster's scaffold system lets you control everything by **just talking to an AI chatbot**. Say "make this photo more cinematic" or "swap the face in this image" and the AI figures out which tool to use, asks you the right questions, runs the workflow, and delivers the result. Works with any LLM — through Signal, SillyTavern, OpenWebUI, or any chat interface. See [Just Talk To It](#just-talk-to-it--the-scaffold-system).
 
 **Already use ComfyUI?** Spellcaster can import your existing workflows and run them straight from GIMP — no need to rebuild anything. See [Bring Your Own Workflows](#bring-your-own-workflows).
 
@@ -56,12 +57,17 @@ Spellcaster connects your image editor (GIMP or Darktable) to an AI engine calle
 
 ### What You Need First
 
-| App | What It Is | Download |
-|---|---|---|
-| **ComfyUI** | The AI engine (runs in the background) | [github.com/comfyanonymous/ComfyUI](https://github.com/comfyanonymous/ComfyUI) |
-| **GIMP 3** and/or **Darktable** | Your image editor | [gimp.org](https://www.gimp.org/downloads/) / [darktable.org](https://www.darktable.org/install/) |
+| App | What It Is | Why | Download |
+|---|---|---|---|
+| **ComfyUI** | The AI engine that does the heavy lifting | Required — this is what actually runs the AI models on your GPU | [github.com/comfyanonymous/ComfyUI](https://github.com/comfyanonymous/ComfyUI) |
+| **GIMP 3** and/or **Darktable** | Free image editors (like Photoshop / Lightroom) | You need at least one — this is where Spellcaster's menu lives | [gimp.org](https://www.gimp.org/downloads/) / [darktable.org](https://www.darktable.org/install/) |
+| **A GPU with 4+ GB VRAM** | NVIDIA recommended, AMD works too | The AI models run on your graphics card — more VRAM = more features | You probably already have one |
 
-> Don't worry if you've never heard of ComfyUI. Download it, unzip it, and run it once. That's all you need to do — Spellcaster handles the rest.
+> **Never heard of ComfyUI?** That's fine. Download it, unzip it, run it once. You'll never need to open it again — Spellcaster talks to it behind the scenes. Think of it like an engine under the hood: it does the work, but you never see it.
+>
+> **Don't have a GPU?** No problem. You can connect to a ComfyUI server running on another computer on your network (a friend's gaming PC, a cloud instance, etc.). The installer has a remote server mode.
+>
+> **Don't want to use GIMP or Darktable at all?** You can skip them entirely and control Spellcaster through an [AI chatbot](#just-talk-to-it--the-scaffold-system) instead.
 
 ### Install Spellcaster
 
@@ -293,6 +299,49 @@ Selfie → Casting Polaroids → Body Double → Wardrobe → Set Design → Dir
 
 ---
 
+## Just Talk To It — The Scaffold System
+
+You don't need to learn GIMP. You don't need to learn Darktable. You don't even need to open ComfyUI.
+
+**Just tell Spellcaster what you want in plain English.** The scaffold system connects any AI chatbot to your full Spellcaster toolkit. Say *"upscale this photo"* or *"make this look more cinematic"* or *"swap the face in this image with mine"* — and it happens. The AI picks the right tool, asks you the right questions, runs the workflow on your GPU, and sends back the result.
+
+### How It Works
+
+The scaffold is a three-layer AI brain that sits between you and ComfyUI:
+
+1. **You say what you want** — in any chat app (Signal, SillyTavern, OpenWebUI, LM Studio, KoboldCpp, or anything that can talk to an LLM)
+2. **The MetaWizard figures out your intent** — "make this more cinematic" routes to Klein with a cinematic preset, not a txt2img workflow
+3. **The SpellcasterWizard collects parameters** — asks you only what matters (prompt, strength, model) using simple numbered menus that even a 7B model can handle
+4. **ComfyUI runs the workflow** — the scaffold builds the node graph, uploads your image, executes, and polls for results
+5. **You get the result** — delivered right back into your chat, with all temp files automatically cleaned up for privacy
+
+Every Spellcaster node and every workflow on your server is auto-discovered. No configuration needed — the scaffold builds its own menus from whatever's installed.
+
+### Signal Bridge — AI Art on Autopilot
+
+The **Signal Bridge** takes this further: it turns your ComfyUI server into a remote AI art service. Friends, collaborators, or clients send a message — the AI assistant handles everything and sends back the finished image.
+
+- Works over **Signal, or any messaging platform** your LLM can reach
+- **Privacy-first** — uploaded images and generated outputs are automatically deleted from the server after delivery
+- **Character cards included** for SillyTavern, OpenWebUI, LM Studio, and KoboldCpp — drop one in and you're running
+- The LLM doesn't need to be smart — the scaffold uses numbered menus and state machines designed for **7B parameter models**
+
+<details>
+<summary><strong>Scaffold architecture for the curious</strong></summary>
+
+| Layer | Role |
+|---|---|
+| **MetaWizard** | Intent router — classifies what the user wants (enhance, generate, modify, video, inpaint, reference) and hands off to the right sub-wizard |
+| **SpellcasterWizard** | Drives Spellcaster enhancement nodes with preset support (Gentle / Strong / Maximum) and step-by-step parameter collection |
+| **WorkflowWizard** | Drives *any* ComfyUI workflow — parses the JSON, extracts tunable parameters, builds a numbered-menu wizard on the fly |
+| **ComfyUIRunner** | Handles all server communication: image upload, workflow submission, result polling, download, and privacy cleanup |
+| **Introspector** | Auto-discovers every node's parameters at runtime (live import or AST parsing) — no hardcoded definitions |
+| **PromptBuilder** | Generates the LLM system prompt from discovered nodes — deterministic, regenerated fresh each run |
+
+</details>
+
+---
+
 ## Bring Your Own Workflows
 
 **Already have ComfyUI workflows you've built or downloaded?** Spellcaster can run them directly from GIMP — no need to rebuild anything.
@@ -304,47 +353,22 @@ Open `Filters > Spellcaster Tools > Travelling Wizard` to access the workflow br
 | Action | What It Does |
 |---|---|
 | **Open Scaffold Editor** | Launches a full settings GUI in your browser with 9 tabs — configure workflow paths, node mappings, ComfyUI connection, and manage imported workflows. |
-| **Browse Workflow Library** | Connects to your ComfyUI server and lists all available workflows stored in its `workflows/` directory. Pick one and it's imported automatically. |
+| **Browse Workflow Library** | Connects to your ComfyUI server and lists all workflows in its `workflows/` directory. Pick one and it's imported automatically. |
 | **Import Workflow File** | Load any `.json` workflow from disk. Spellcaster auto-detects the format (LiteGraph UI graph or ComfyUI API), classifies the workflow type, and extracts all tunable parameters. |
 
-Once imported, your custom workflows appear in the Installed Workflows list with metadata (type, node count, format, tunable parameters) and a one-click "Run" button. The wizard figures out which parameters matter (prompt, seed, steps, model, dimensions) and hides the ones that don't (internal wiring, output filenames, device settings).
+Once imported, your custom workflows appear with metadata and a one-click "Run" button. The wizard figures out which parameters matter (prompt, seed, steps, model, dimensions) and hides the ones that don't.
 
 ### The Scaffold Editor
 
-The Scaffold Editor is a browser-based GUI that opens when you click "Open Scaffold Editor" in the Travelling Wizard. It has 9 tabs:
+Click "Open Scaffold Editor" in the Travelling Wizard to launch a browser-based GUI with 9 tabs:
 
 | Tab | What You Configure |
 |---|---|
 | **General** | ComfyUI server URL, input/output directories, prompt history, debug mode |
-| **Workflow tabs (1-8)** | One tab per standard workflow type (inpaint, image edit, generator, outpaint, upscaler, etc.). Each tab lets you point at a specific workflow JSON and remap which node IDs handle which parameters — so if you have a custom inpainting workflow that uses different node IDs than the defaults, you can make Spellcaster use it instead. |
-| **Custom Workflows** | Shows all workflows you've imported via the Travelling Wizard, with their metadata and parameter lists. |
+| **Workflow tabs (1-8)** | One tab per workflow type (inpaint, image edit, generator, outpaint, upscaler, etc.). Point at your own workflow JSON and remap node IDs — make Spellcaster drive your workflows instead of its built-in ones. |
+| **Custom Workflows** | All workflows imported via the Travelling Wizard, with metadata and parameter lists. |
 
-You don't need to touch the Scaffold Editor for normal use — it's there for when you want Spellcaster to drive **your** workflows instead of its built-in ones.
-
-### The Scaffold System — AI-Driven Workflow Configuration
-
-Under the hood, the Travelling Wizard is powered by Spellcaster's **scaffold system** — a chatbot-driven interface that lets any LLM drive ComfyUI through a text conversation. This isn't just a developer tool; it's how the entire workflow import and configuration system works.
-
-The scaffold has three layers:
-
-| Layer | What It Does | When You'd Care |
-|---|---|---|
-| **MetaWizard** | Routes natural-language intent ("make this more cinematic") to the right tool | If you connect an LLM via Signal Bridge or another chat interface |
-| **SpellcasterWizard** | Step-by-step parameter collection for enhancement nodes, with preset support (Gentle/Strong/Maximum) | If you use the Spellcaster custom nodes in ComfyUI |
-| **WorkflowWizard** | Parses any ComfyUI workflow JSON, extracts tunable parameters, and builds a numbered-menu wizard on the fly | Every time you import a workflow — this is what figures out the parameters |
-
-The scaffold auto-discovers every Spellcaster node and ComfyUI workflow on disk, builds wizards for them, and handles the full lifecycle: intent routing, parameter collection, workflow construction, execution, result delivery, and privacy cleanup.
-
-<details>
-<summary><strong>Signal Bridge — AI assistant for remote image generation</strong></summary>
-
-The scaffold also powers the **Signal Bridge** — a system where remote users on messaging platforms can request AI image generation from a chatbot without ever touching ComfyUI.
-
-How it works: an LLM receives a system prompt built from the discovered nodes and workflows, uses numbered menus to collect parameters from the user in natural language, and the scaffold executes the workflow on ComfyUI. Results are delivered back through the messaging platform.
-
-**Privacy-first**: uploaded input images and generated outputs are automatically deleted from the server after delivery. Character cards are available for SillyTavern, OpenWebUI, LM Studio, and KoboldCpp.
-
-</details>
+You don't need to touch the Scaffold Editor for normal use — it's there for when you want deeper control.
 
 ### Spellmaker — The Preset Editor
 
@@ -366,8 +390,8 @@ If you already use ComfyUI and have workflows, models, and custom nodes installe
 
 - **Your existing models are used as-is.** Spellcaster discovers models on the server at runtime — it doesn't require its own copies.
 - **Your existing custom nodes keep working.** The installer only adds nodes it needs and skips ones you already have.
-- **Your existing workflows can be imported** via the Travelling Wizard and run from GIMP's menu — or remap Spellcaster's built-in tools to use your workflows via the Scaffold Editor.
-- **Remote server works natively.** If ComfyUI runs on a different machine (a render box, a cloud GPU), just point the settings at it. The entire plugin works over HTTP.
+- **Your existing workflows can be imported** via the Travelling Wizard — or remap Spellcaster's built-in tools to use your workflows via the Scaffold Editor.
+- **Remote server works natively.** If ComfyUI runs on a different machine, just point the settings at it. The entire plugin works over HTTP.
 
 ---
 
@@ -647,6 +671,7 @@ Magic Studios is a guided pipeline that turns a single photo into a fully compos
 | You are... | Spellcaster gives you... |
 |---|---|
 | **A complete beginner** | Professional results with zero learning curve — presets handle everything |
+| **Someone who hates learning software** | Just talk to a chatbot — the scaffold system does the rest |
 | **A photographer** | AI retouching, upscaling, color grading — without leaving Darktable |
 | **A Photoshop refugee** | All the AI tools you're used to, free and open-source |
 | **An illustrator** | 25 art presets from photorealism to anime to Disney 3D |
@@ -663,7 +688,14 @@ Magic Studios is a guided pipeline that turns a single photo into a fully compos
 <details>
 <summary><strong>Do I need to know anything about AI?</strong></summary>
 
-No. Every tool comes with presets that handle all the technical settings. Just pick what sounds right and click Generate.
+No. Every tool comes with presets that handle all the technical settings. Just pick what sounds right and click Generate. Or skip the UI entirely and [just tell a chatbot what you want](#just-talk-to-it--the-scaffold-system).
+
+</details>
+
+<details>
+<summary><strong>Do I need to learn GIMP or Darktable?</strong></summary>
+
+Not if you don't want to. The scaffold system lets you control Spellcaster through any AI chatbot — Signal, SillyTavern, OpenWebUI, or any LLM interface. Say what you want in plain English and the AI handles the rest. But if you do use GIMP/Darktable, you'll get layer-level control, selections, masks, and all the extra power that comes with a real editor.
 
 </details>
 
@@ -791,20 +823,9 @@ Every model preset is the product of extensive testing. Here's what Spellcaster 
 
 ### Signal Bridge & Scaffold
 
-See [The Scaffold System](#the-scaffold-system--ai-driven-workflow-configuration) and [Signal Bridge](#signal-bridge--ai-assistant-for-remote-image-generation) in the "Bring Your Own Workflows" section above for the full description.
+See [Just Talk To It](#just-talk-to-it--the-scaffold-system) for the user-facing overview and [Signal Bridge](#signal-bridge--ai-art-on-autopilot) for the remote chatbot system.
 
-<details>
-<summary><strong>Scaffold internals for developers</strong></summary>
-
-The **ComfyUIRunner** (`scaffold/comfyui_runner.py`) handles all server communication: image upload, workflow submission, result polling, image download, and privacy cleanup via [ComfyUI-api-tools](https://github.com/brantje/ComfyUI-api-tools) DELETE endpoints. Zero external dependencies (pure urllib). Designed to be used standalone or through the wizard stack.
-
-The **Introspector** (`scaffold/introspector.py`) auto-discovers node specs at runtime — either by live import inside ComfyUI or by AST-parsing Python files standalone. No hardcoded node definitions.
-
-The **PromptBuilder** (`scaffold/prompt_builder.py`) generates deterministic LLM system prompts from introspected nodes. Regenerated fresh each run, always reflects current state. Designed so even 7B parameter models can drive the full system.
-
-The **BridgeLauncher** (`scaffold/bridge_launcher.py`) bridges Signal Bridge configuration with the scaffold, applying privacy settings and exporting character cards for SillyTavern, OpenWebUI, LM Studio, and KoboldCpp.
-
-</details>
+Key source files for developers: `scaffold/comfyui_runner.py` (server comms + privacy cleanup via [ComfyUI-api-tools](https://github.com/brantje/ComfyUI-api-tools)), `scaffold/introspector.py` (runtime node discovery via live import or AST parsing), `scaffold/prompt_builder.py` (deterministic LLM system prompt generation), `scaffold/bridge_launcher.py` (Signal Bridge config + character card export).
 
 ### Architecture
 
