@@ -105,14 +105,25 @@ class ComfyUIRunner:
                      image_type: str = "input") -> dict:
         """Upload an image to ComfyUI's /upload/image endpoint.
 
-        Files are always placed in the root of the target directory
-        (no subfolder) so that api-tools DELETE can find them later.
+        Constructs a multipart/form-data request with the image file and uploads
+        it to the server. Files are always placed in the root directory (not in
+        subfolders) so that api-tools DELETE can find them later during cleanup.
+
+        This is the standard way to get images into ComfyUI for workflows that
+        need to process existing images (img2img, inpainting, etc.).
 
         Args:
-            image_bytes: Raw image data.
-            filename:    Filename for the uploaded file.
-            image_type:  ComfyUI directory type — "input", "output", or
-                         "temp".  Default "input".
+            image_bytes: Raw image data (PNG, JPG, etc.)
+            filename:    Filename for the uploaded file (e.g. "input.png")
+            image_type:  ComfyUI directory type — "input", "output", or "temp"
+                         (default: "input"). This controls where on disk the
+                         file is stored.
+
+        Returns:
+            dict with 'name', 'subfolder', 'type' keys confirming the upload
+
+        Raises:
+            urllib.error.URLError: If the server is unreachable
         """
         boundary = uuid.uuid4().hex
         body = (

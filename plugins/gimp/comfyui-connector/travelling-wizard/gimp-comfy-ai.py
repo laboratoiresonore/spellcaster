@@ -2,7 +2,33 @@
 # -*- coding: utf-8 -*-
 
 """
-GIMP Comfy AI - Main plugin class using mixin pattern
+GIMP Comfy AI Plugin - Main entry point and GIMP procedure registration.
+
+This module serves as the plugin's entry point for GIMP 3.0+. It uses a mixin
+pattern to compose multiple functionality modules:
+  - ConfigMixin: Load/save persistent plugin settings
+  - UtilsMixin: Helper functions for image processing
+  - DialogsMixin: Error dialogs and notifications
+  - ComfyUIMixin: Low-level HTTP communication with ComfyUI server
+  - ImageProcessingMixin: PNG conversion, scaling, etc.
+  - InpaintMixin: Inpainting workflow
+  - CompositeMixin: Layer compositing
+  - GeneratorMixin: Text-to-image generation
+  - OutpaintMixin: Outpainting (extend canvas)
+  - UpscalerMixin: 4x upscaling via RealESRGAN
+  - SettingsMixin: Settings dialog (tabbed UI for workflow configuration)
+  - WizardMixin: Travelling Wizard UI (browser-based scaffold editor)
+
+The GimpComfyAIPlugin class registers the following GIMP procedures:
+  - gimp-comfy-ai-wizard: "The Travelling Wizard" — open scaffold editor
+  - gimp-comfy-ai-inpaint: "Inpainting" — selective image region generation
+  - gimp-comfy-ai-layer-generator: "Image Generator" — text-to-image
+  - gimp-comfy-ai-layer-composite: "Layer Composite" — blend layers
+  - gimp-comfy-ai-outpaint: "Outpaint" — extend canvas boundaries
+  - gimp-comfy-ai-upscaler-4x: "Upscaler (RealESRGAN 4x)" — enlarge image
+  - gimp-comfy-ai-settings: "Settings" — open settings dialog
+
+All procedures appear under Filters → AI in GIMP's menu.
 """
 
 VERSION = "1.0.0"
@@ -43,15 +69,37 @@ class GimpComfyAIPlugin(
     SettingsMixin,
     WizardMixin,
 ):
-    """GIMP Comfy AI - Main plugin class using mixin pattern"""
+    """GIMP AI Plugin using mixin architecture for modular feature composition.
+
+    This class inherits from multiple mixins, each providing a discrete set of
+    functionality. The plugin loads configuration on startup and maintains it
+    throughout the session. All GIMP procedure implementations delegate to their
+    corresponding mixin methods.
+
+    Attributes:
+        config (dict): Persistent configuration loaded from disk (ComfyUI URLs,
+                      workflow paths, node overrides, custom workflows, etc.)
+        _cancel_requested (bool): Flag to signal cancellation of long operations
+    """
 
     def __init__(self):
+        """Initialize the plugin: load GIMP base, load config, set defaults."""
         super().__init__()
-        self.config = self._load_config()  # from ConfigMixin
-        self._ensure_config_defaults()     # from ConfigMixin
+        # Load persisted config from ConfigMixin
+        self.config = self._load_config()
+        self._ensure_config_defaults()
+        # Flag for user-initiated cancellation
         self._cancel_requested = False
 
     def do_query_procedures(self):
+        """Return list of all GIMP procedures this plugin registers.
+
+        Called by GIMP's plugin infrastructure during PDB initialization.
+        Each returned procedure name will later have do_create_procedure called.
+
+        Returns:
+            list[str]: Procedure names (strings)
+        """
         return [
             "gimp-comfy-ai-wizard",
             "gimp-comfy-ai-inpaint",
@@ -63,6 +111,18 @@ class GimpComfyAIPlugin(
         ]
 
     def do_create_procedure(self, name):
+        """Create and return a Gimp.ImageProcedure for the given name.
+
+        Called by GIMP for each procedure name returned by do_query_procedures.
+        Each procedure is registered as an ImageProcedure (requires an image as first arg),
+        assigned a menu label, and given a menu path under Filters/AI/.
+
+        Args:
+            name (str): The procedure name to create
+
+        Returns:
+            Gimp.ImageProcedure: The configured procedure, or None if name not recognized
+        """
         if name == "gimp-comfy-ai-wizard":
             procedure = Gimp.ImageProcedure.new(
                 self, name, Gimp.PDBProcType.PLUGIN, self.run_wizard, None
