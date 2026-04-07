@@ -236,6 +236,7 @@ from _workflows_v2 import (
     build_klein_repose, build_klein_blend, build_klein_inpaint,
     build_klein_scene_img2img, build_layer_blend, build_upscale_blend,
     build_frame_assembly,
+    build_ltx_video,
 )
 
 
@@ -4258,6 +4259,114 @@ WAN_I2V_PRESETS = {
 
 # ═══════════════════════════════════════════════════════════════════════════
 
+# ── LTX 2.3 Model Presets ─────────────────────────────────────────────────
+LTX_PRESETS = {
+    "LTX 2.3 22B (GGUF Q4)": {
+        "unet": "LTX\\ltx-2.3-22b-dev-Q4_K_M.gguf",
+        "text_encoder": "gemma_3_12B_it_fp4_mixed.safetensors",
+        "embeddings_connector": "LTX\\ltx-2.3-22b-dev_embeddings_connectors.safetensors",
+        "vae": "LTX23_video_vae_bf16.safetensors",
+        "steps": 30, "cfg": 4.0, "stg": 1.0, "rescale": 0.7,
+        "distilled_lora": "ltxv\\ltx-2.3-22b-distilled-lora-384.safetensors",
+        "latent_upscaler": "ltx-2-spatial-upscaler-x2-1.0.safetensors",
+        "lora_prefix": "ltxv",
+    },
+}
+
+# ── LTX 2.3 Video Prompt Presets ──────────────────────────────────────────
+LTX_VIDEO_PRESETS = [
+    {
+        "label": "(none — manual prompt)",
+        "prompt": "",
+        "cfg_override": None,
+        "steps_override": None,
+        "two_stage": False,
+        "distilled": False,
+        "num_frames_override": None,
+        "loras": [],
+    },
+    # ── Speed modes ───────────────────────────────────────────────────
+    {
+        "label": "Distilled Fast (8 steps, ~60s)",
+        "prompt": "",
+        "cfg_override": 1.0,
+        "steps_override": 8,
+        "two_stage": False,
+        "distilled": True,
+        "num_frames_override": None,
+        "loras": [],
+    },
+    {
+        "label": "Two-Stage HQ (half-res → 2x upscale → re-denoise)",
+        "prompt": "",
+        "cfg_override": 4.0,
+        "steps_override": 30,
+        "two_stage": True,
+        "distilled": False,
+        "num_frames_override": None,
+        "loras": [],
+    },
+    # ── Scene templates ───────────────────────────────────────────────
+    {
+        "label": "Cinematic Pan — Landscape",
+        "prompt": "Slow cinematic camera pan across a vast landscape. Golden hour lighting, volumetric fog, "
+                  "depth of field. Photorealistic, 4K film grain, steady dolly movement.",
+        "cfg_override": 4.0,
+        "steps_override": 30,
+        "two_stage": False,
+        "distilled": False,
+        "num_frames_override": 49,
+        "loras": [],
+    },
+    {
+        "label": "Portrait — Subtle Motion",
+        "prompt": "Close-up portrait, subtle natural movement. Soft breathing, gentle hair sway in breeze, "
+                  "micro-expressions. Shallow depth of field, studio lighting, photorealistic skin detail.",
+        "cfg_override": 4.0,
+        "steps_override": 30,
+        "two_stage": False,
+        "distilled": False,
+        "num_frames_override": 25,
+        "loras": [],
+    },
+    {
+        "label": "Nature Loop — Water/Clouds",
+        "prompt": "Seamless loop of natural elements. Flowing water, drifting clouds, swaying trees. "
+                  "Gentle ambient motion, dreamy atmosphere, no camera movement.",
+        "cfg_override": 4.0,
+        "steps_override": 30,
+        "two_stage": False,
+        "distilled": False,
+        "num_frames_override": 49,
+        "pingpong": True,
+        "loras": [],
+    },
+    {
+        "label": "Action Sequence — Dynamic",
+        "prompt": "Dynamic action sequence with fast motion. Tracking camera, motion blur on fast elements, "
+                  "sharp focus on subject. Cinematic color grading, high contrast.",
+        "cfg_override": 5.0,
+        "steps_override": 30,
+        "two_stage": True,
+        "distilled": False,
+        "num_frames_override": 49,
+        "loras": [],
+    },
+    {
+        "label": "Product Turntable — 360° Spin",
+        "prompt": "Product rotating 360 degrees on turntable. Clean white background, "
+                  "studio lighting, smooth constant rotation speed. Sharp detail throughout.",
+        "cfg_override": 4.0,
+        "steps_override": 30,
+        "two_stage": False,
+        "distilled": False,
+        "num_frames_override": 49,
+        "loras": [],
+    },
+]
+
+# ═══════════════════════════════════════════════════════════════════════════
+
 # ── WAN Video Prompt Presets (best-practice templates) ───────────────────
 # These fill the video dialog's prompt/negative/settings with tested
 # templates for common animation types. Each can override cfg, steps,
@@ -5455,6 +5564,24 @@ def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negati
         pingpong=pingpong, fps=fps,
         end_image_filename=end_filename,
     )
+
+
+def _build_ltx_video(preset_key, prompt_text, seed,
+                      width=768, height=512, num_frames=25,
+                      steps=None, cfg=None, stg=None, rescale=None,
+                      two_stage=False, distilled=False,
+                      loras=None, interpolate=False, rtx_scale=0,
+                      fps=25, pingpong=False, image_filename=None):
+    """→ Delegated to v2 builder (resolves preset_key → preset dict)."""
+    preset = LTX_PRESETS[preset_key]
+    return build_ltx_video(preset, prompt_text, seed,
+                            width=width, height=height, num_frames=num_frames,
+                            steps=steps, cfg=cfg, stg=stg, rescale=rescale,
+                            two_stage=two_stage, distilled=distilled,
+                            loras=loras, interpolate=interpolate,
+                            rtx_scale=rtx_scale, fps=fps, pingpong=pingpong,
+                            image_filename=image_filename)
+
 
 def _write_rgb_png(filepath, width, height, pixel_rows):
     """Write an RGB PNG from raw pixel row data. Pure Python, no GIMP calls.
@@ -9051,6 +9178,257 @@ class WanI2VDialog(Gtk.Dialog):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  LTX Video Dialog
+# ═══════════════════════════════════════════════════════════════════════════
+
+class LtxVideoDialog(Gtk.Dialog):
+    """LTX Video 2.3 text-to-video with single/two-stage/distilled modes."""
+
+    def __init__(self, server_url=COMFYUI_DEFAULT_URL):
+        super().__init__(title="ComfyUI - LTX Video 2.3")
+        self.set_default_size(680, 720)
+        self.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        self.add_button("_Generate", Gtk.ResponseType.OK)
+        self.set_default_response(Gtk.ResponseType.OK)
+        _style_dialog_buttons(self)
+
+        content_area = self.get_content_area()
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_propagate_natural_height(True)
+        scroll.set_max_content_height(900)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.set_margin_start(12); box.set_margin_end(12)
+        box.set_margin_top(12); box.set_margin_bottom(12)
+        scroll.add(box)
+        content_area.pack_start(scroll, True, True, 0)
+
+        _hdr = _make_branded_header()
+        if _hdr:
+            box.pack_start(_hdr, False, False, 0)
+
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        self.server_entry = Gtk.Entry()
+        self.server_entry.set_text(server_url)
+        self.server_entry.set_hexpand(True)
+        hb.pack_start(self.server_entry, True, True, 0)
+        box.pack_start(hb, False, False, 0)
+
+        # Model preset
+        box.pack_start(Gtk.Label(label="Model Preset:", xalign=0), False, False, 0)
+        self.preset_combo = Gtk.ComboBoxText()
+        self.preset_combo.set_tooltip_text(
+            "LTX Video 2.3 model variant.\n\n"
+            "22B GGUF Q4: Quantized 22-billion parameter model.\n"
+            "Requires ~12GB VRAM with chunked inference.\n"
+            "Uses Gemma 3 12B text encoder for superior prompt understanding.")
+        for key in LTX_PRESETS:
+            self.preset_combo.append(key, key)
+        self.preset_combo.set_active(0)
+        box.pack_start(self.preset_combo, False, False, 0)
+
+        # Video prompt preset (template)
+        box.pack_start(Gtk.Label(label="Prompt Template:", xalign=0), False, False, 0)
+        self._video_preset_combo = Gtk.ComboBoxText()
+        self._video_preset_combo.set_tooltip_text(
+            "Ready-made templates — auto-fill prompt, mode, and settings.\n\n"
+            "Distilled Fast: 8-step LoRA mode, ~60 seconds.\n"
+            "Two-Stage HQ: Half-res → latent upscale → re-denoise, best quality.\n"
+            "Scene templates: Tested prompts for common video types.\n\n"
+            "Select '(none)' for full manual control.")
+        for i, vp in enumerate(LTX_VIDEO_PRESETS):
+            self._video_preset_combo.append(str(i), vp["label"])
+        self._video_preset_combo.set_active(0)
+        self._video_preset_combo.connect("changed", self._on_video_preset_changed)
+        box.pack_start(self._video_preset_combo, False, False, 0)
+
+        # Prompt
+        box.pack_start(Gtk.Label(label="Prompt:", xalign=0), False, False, 0)
+        sw = Gtk.ScrolledWindow()
+        sw.set_min_content_height(80)
+        sw.set_max_content_height(120)
+        sw.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        self.prompt_buf = Gtk.TextBuffer()
+        self.prompt_view = Gtk.TextView(buffer=self.prompt_buf)
+        self.prompt_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        sw.add(self.prompt_view)
+        box.pack_start(sw, False, False, 0)
+
+        # Dimensions & Frames
+        grid = Gtk.Grid(column_spacing=8, row_spacing=4)
+        grid.attach(Gtk.Label(label="Width:", xalign=1), 0, 0, 1, 1)
+        self.w_spin = Gtk.SpinButton.new_with_range(128, 1920, 32)
+        self.w_spin.set_value(768)
+        self.w_spin.set_tooltip_text("Output width (multiple of 32). Default 768.")
+        grid.attach(self.w_spin, 1, 0, 1, 1)
+        grid.attach(Gtk.Label(label="Height:", xalign=1), 2, 0, 1, 1)
+        self.h_spin = Gtk.SpinButton.new_with_range(128, 1920, 32)
+        self.h_spin.set_value(512)
+        self.h_spin.set_tooltip_text("Output height (multiple of 32). Default 512.")
+        grid.attach(self.h_spin, 3, 0, 1, 1)
+
+        grid.attach(Gtk.Label(label="Frames:", xalign=1), 0, 1, 1, 1)
+        self.frames_spin = Gtk.SpinButton.new_with_range(1, 257, 8)
+        self.frames_spin.set_value(25)
+        self.frames_spin.set_tooltip_text("Number of frames. 25 = 1 second at 25fps.")
+        grid.attach(self.frames_spin, 1, 1, 1, 1)
+        grid.attach(Gtk.Label(label="FPS:", xalign=1), 2, 1, 1, 1)
+        self.fps_spin = Gtk.SpinButton.new_with_range(1, 60, 1)
+        self.fps_spin.set_value(25)
+        self.fps_spin.set_tooltip_text("Output frame rate. LTX2.3 native rate = 25fps.")
+        grid.attach(self.fps_spin, 3, 1, 1, 1)
+        box.pack_start(grid, False, False, 0)
+
+        # Sampling params
+        grid2 = Gtk.Grid(column_spacing=8, row_spacing=4)
+        grid2.attach(Gtk.Label(label="Steps:", xalign=1), 0, 0, 1, 1)
+        self.steps_spin = Gtk.SpinButton.new_with_range(1, 100, 1)
+        self.steps_spin.set_value(30)
+        self.steps_spin.set_tooltip_text("Sampling steps. 30=normal, 8=distilled.")
+        grid2.attach(self.steps_spin, 1, 0, 1, 1)
+        grid2.attach(Gtk.Label(label="CFG:", xalign=1), 2, 0, 1, 1)
+        self.cfg_spin = Gtk.SpinButton.new_with_range(0.0, 20.0, 0.5)
+        self.cfg_spin.set_digits(1)
+        self.cfg_spin.set_value(4.0)
+        self.cfg_spin.set_tooltip_text("Classifier-free guidance. 4.0=normal, 1.0=distilled.")
+        grid2.attach(self.cfg_spin, 3, 0, 1, 1)
+
+        grid2.attach(Gtk.Label(label="STG:", xalign=1), 0, 1, 1, 1)
+        self.stg_spin = Gtk.SpinButton.new_with_range(0.0, 5.0, 0.1)
+        self.stg_spin.set_digits(1)
+        self.stg_spin.set_value(1.0)
+        self.stg_spin.set_tooltip_text("Spatiotemporal Guidance strength. 1.0=normal, 0.0=distilled.")
+        grid2.attach(self.stg_spin, 1, 1, 1, 1)
+        grid2.attach(Gtk.Label(label="Rescale:", xalign=1), 2, 1, 1, 1)
+        self.rescale_spin = Gtk.SpinButton.new_with_range(0.0, 2.0, 0.1)
+        self.rescale_spin.set_digits(1)
+        self.rescale_spin.set_value(0.7)
+        self.rescale_spin.set_tooltip_text("STG rescale factor. 0.7=normal, 0.0=distilled.")
+        grid2.attach(self.rescale_spin, 3, 1, 1, 1)
+        box.pack_start(grid2, False, False, 0)
+
+        # Seed
+        hbs = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hbs.pack_start(Gtk.Label(label="Seed:"), False, False, 0)
+        self.seed_spin = Gtk.SpinButton.new_with_range(-1, 2**32 - 1, 1)
+        self.seed_spin.set_value(-1)
+        self.seed_spin.set_tooltip_text("Random seed. -1 = random each time.")
+        hbs.pack_start(self.seed_spin, True, True, 0)
+        box.pack_start(hbs, False, False, 0)
+
+        # Mode checkboxes
+        sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        box.pack_start(sep, False, False, 4)
+
+        self.two_stage_check = Gtk.CheckButton(label="Two-Stage (half-res → latent upscale 2x → re-denoise)")
+        self.two_stage_check.set_tooltip_text(
+            "Generate at half resolution, then upscale 2x in latent space\n"
+            "and re-denoise with 10 additional steps. Higher quality but slower.")
+        self.two_stage_check.connect("toggled", self._on_mode_toggled)
+        box.pack_start(self.two_stage_check, False, False, 0)
+
+        self.distilled_check = Gtk.CheckButton(label="Distilled (LoRA fast mode — 8 steps, ~60s)")
+        self.distilled_check.set_tooltip_text(
+            "Apply distilled LoRA for 4x faster generation.\n"
+            "Uses cfg=1.0, stg=0.0, 8 steps. Lower quality but very fast.")
+        self.distilled_check.connect("toggled", self._on_mode_toggled)
+        box.pack_start(self.distilled_check, False, False, 0)
+
+        # Post-processing
+        sep2 = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        box.pack_start(sep2, False, False, 4)
+
+        self.interpolate_check = Gtk.CheckButton(label="RIFE Frame Interpolation (2x)")
+        self.interpolate_check.set_tooltip_text("Double frame count with AI interpolation for smoother video.")
+        box.pack_start(self.interpolate_check, False, False, 0)
+
+        hbr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.rtx_check = Gtk.CheckButton(label="RTX Video Super Resolution")
+        self.rtx_check.set_tooltip_text("Upscale video frames with RTX VSR.")
+        hbr.pack_start(self.rtx_check, False, False, 0)
+        self.rtx_scale_spin = Gtk.SpinButton.new_with_range(1.5, 4.0, 0.5)
+        self.rtx_scale_spin.set_digits(1)
+        self.rtx_scale_spin.set_value(2.0)
+        self.rtx_scale_spin.set_tooltip_text("RTX upscale factor (1.5x-4x).")
+        hbr.pack_start(self.rtx_scale_spin, False, False, 0)
+        box.pack_start(hbr, False, False, 0)
+
+        self.pingpong_check = Gtk.CheckButton(label="Ping-pong (bounce)")
+        self.pingpong_check.set_tooltip_text("Play video forward then backward for seamless looping.")
+        box.pack_start(self.pingpong_check, False, False, 0)
+
+        # Runs
+        hbr2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hbr2.pack_start(Gtk.Label(label="Runs:"), False, False, 0)
+        self._runs_spin = Gtk.SpinButton.new_with_range(1, 10, 1)
+        self._runs_spin.set_value(1)
+        self._runs_spin.set_tooltip_text("Generate multiple videos with different random seeds.")
+        hbr2.pack_start(self._runs_spin, False, False, 0)
+        box.pack_start(hbr2, False, False, 0)
+
+        self.show_all()
+
+    def _on_mode_toggled(self, widget):
+        """Mutual exclusion: two-stage and distilled can't both be active."""
+        if widget == self.two_stage_check and self.two_stage_check.get_active():
+            self.distilled_check.set_active(False)
+        elif widget == self.distilled_check and self.distilled_check.get_active():
+            self.two_stage_check.set_active(False)
+            self.steps_spin.set_value(8)
+            self.cfg_spin.set_value(1.0)
+            self.stg_spin.set_value(0.0)
+            self.rescale_spin.set_value(0.0)
+
+    def _on_video_preset_changed(self, combo):
+        idx = combo.get_active()
+        if idx < 0:
+            return
+        vp = LTX_VIDEO_PRESETS[idx]
+        if vp["prompt"]:
+            self.prompt_buf.set_text(vp["prompt"])
+        if vp.get("cfg_override") is not None:
+            self.cfg_spin.set_value(vp["cfg_override"])
+        if vp.get("steps_override") is not None:
+            self.steps_spin.set_value(vp["steps_override"])
+        if vp.get("num_frames_override") is not None:
+            self.frames_spin.set_value(vp["num_frames_override"])
+        self.two_stage_check.set_active(vp.get("two_stage", False))
+        self.distilled_check.set_active(vp.get("distilled", False))
+        if vp.get("pingpong") is not None:
+            self.pingpong_check.set_active(vp["pingpong"])
+
+    def get_values(self):
+        start = self.prompt_buf.get_start_iter()
+        end = self.prompt_buf.get_end_iter()
+        prompt = self.prompt_buf.get_text(start, end, True)
+        seed = int(self.seed_spin.get_value())
+        if seed < 0:
+            seed = random.randint(0, 2**32 - 1)
+        return {
+            "server": self.server_entry.get_text().strip(),
+            "preset_key": self.preset_combo.get_active_id(),
+            "prompt": prompt,
+            "seed": seed,
+            "width": int(self.w_spin.get_value()),
+            "height": int(self.h_spin.get_value()),
+            "num_frames": int(self.frames_spin.get_value()),
+            "fps": int(self.fps_spin.get_value()),
+            "steps": int(self.steps_spin.get_value()),
+            "cfg": self.cfg_spin.get_value(),
+            "stg": self.stg_spin.get_value(),
+            "rescale": self.rescale_spin.get_value(),
+            "two_stage": self.two_stage_check.get_active(),
+            "distilled": self.distilled_check.get_active(),
+            "interpolate": self.interpolate_check.get_active(),
+            "rtx_scale": self.rtx_scale_spin.get_value() if self.rtx_check.get_active() else 0,
+            "pingpong": self.pingpong_check.get_active(),
+            "runs": int(self._runs_spin.get_value()),
+        }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  mtb Face Swap Dialog
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -10137,6 +10515,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-klein-headswap": "klein_flux2",
             "spellcaster-klein-headswap-face": "klein_flux2",
             "spellcaster-klein-inpaint": "klein_flux2",
+            "spellcaster-ltx-t2v": "ltx_video",
             "spellcaster-wan-i2v": "wan_i2v",
             "spellcaster-wan-flf": "wan_i2v",
             "spellcaster-wan-director": "wan_i2v",
@@ -10233,6 +10612,8 @@ class Spellcaster(Gimp.PlugIn):
                                                   "Swap a face and refine with Klein AI — under Face menu"),
             "spellcaster-klein-inpaint": ("Klein Inpaint Selection...", self._run_klein_inpaint,
                                            "Regenerate selected area with Klein AI — context-aware, smooth edges"),
+            "spellcaster-ltx-t2v": ("LTX 2.3 Text to Video...", self._run_ltx_t2v,
+                                    "Generate video from text using LTX Video 2.3"),
             "spellcaster-wan-i2v": ("Wan 2.2 Image to Video...", self._run_wan_i2v,
                                     "Generate video from image using Wan 2.2"),
             "spellcaster-wan-flf": ("Wan 2.2 First + Last Frame to Video...", self._run_wan_flf,
@@ -10330,6 +10711,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-klein-inpaint":  "<Image>/Filters/Spellcaster Klein",
 
             # Video
+            "spellcaster-ltx-t2v":           "<Image>/Filters/Spellcaster Video",
             "spellcaster-wan-i2v":           "<Image>/Filters/Spellcaster Video",
             "spellcaster-wan-flf":           "<Image>/Filters/Spellcaster Video",
             "spellcaster-wan-director":      "<Image>/Filters/Spellcaster Magic Studios",
@@ -10664,6 +11046,86 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Face Swap (Model) Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    def _run_ltx_t2v(self, procedure, run_mode, image, drawables, config, data):
+        """LTX 2.3 text-to-video: generate video from prompt."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+
+        dlg = LtxVideoDialog()
+        last = _SESSION.get("ltx_t2v")
+        if last:
+            try:
+                if last.get("preset_key"):
+                    for i, k in enumerate(LTX_PRESETS):
+                        if k == last["preset_key"]:
+                            dlg.preset_combo.set_active(i)
+                            break
+                if last.get("width"):
+                    dlg.w_spin.set_value(last["width"])
+                if last.get("height"):
+                    dlg.h_spin.set_value(last["height"])
+                if last.get("num_frames"):
+                    dlg.frames_spin.set_value(last["num_frames"])
+                if last.get("fps"):
+                    dlg.fps_spin.set_value(last["fps"])
+                if last.get("steps"):
+                    dlg.steps_spin.set_value(last["steps"])
+                if last.get("cfg") is not None:
+                    dlg.cfg_spin.set_value(last["cfg"])
+                if last.get("stg") is not None:
+                    dlg.stg_spin.set_value(last["stg"])
+                if last.get("rescale") is not None:
+                    dlg.rescale_spin.set_value(last["rescale"])
+            except Exception:
+                pass
+
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        v = dlg.get_values()
+        _SESSION["ltx_t2v"] = v
+        _save_session()
+        dlg.destroy()
+
+        runs = v.get("runs", 1)
+        try:
+            base_seed = v["seed"]
+            for run_i in range(runs):
+                seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+                wf = _build_ltx_video(
+                    v["preset_key"], v["prompt"], seed,
+                    width=v["width"], height=v["height"],
+                    num_frames=v["num_frames"],
+                    steps=v["steps"], cfg=v["cfg"],
+                    stg=v["stg"], rescale=v["rescale"],
+                    two_stage=v["two_stage"], distilled=v["distilled"],
+                    interpolate=v.get("interpolate", False),
+                    rtx_scale=v.get("rtx_scale", 0),
+                    fps=v["fps"],
+                    pingpong=v.get("pingpong", False),
+                )
+                label = f"LTX T2V run {run_i+1}/{runs}" if runs > 1 else "LTX T2V"
+                _wf = wf
+                results = _run_with_spinner(
+                    f"{label}: generating video on ComfyUI...",
+                    lambda: list(_run_comfyui_workflow(v["server"], _wf, timeout=600)))
+
+                saved = _import_video_results(image, v["server"], results)
+
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            mode = "distilled" if v["distilled"] else ("two-stage" if v["two_stage"] else "single-stage")
+            msg = f"LTX 2.3 video generation complete! ({mode})\nLast frame imported as layer."
+            if saved:
+                msg += f"\nFiles saved: {', '.join(saved)}"
+            Gimp.message(msg)
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Spellcaster LTX T2V Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     def _run_wan_i2v(self, procedure, run_mode, image, drawables, config, data):
