@@ -3596,4 +3596,63 @@ def build_upscale_blend(image_filename, model_a_name, model_b_name,
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  Frame Assembly — dynamic LoadImage chain → ImageBatch → VHS_VideoCombine
-# ═══════════
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_frame_assembly(frame_filenames, fps=16.0, filename_prefix="gimp_assembled",
+                         crf=19, pingpong=False):
+    """Assemble a list of uploaded frame images into a single MP4 video.
+
+    Loads each frame via LoadImage, chains them pairwise through ImageBatch
+    nodes to build a single image batch, then encodes via VHS_VideoCombine.
+
+    Args:
+        frame_filenames (list[str]): Ordered list of filenames already in
+            ComfyUI's input folder (e.g. from _upload_image).
+        fps (float): Output video frame rate (default 16.0).
+        filename_prefix (str): Prefix for the output MP4 file.
+        crf (int): H.264 quality (lower = better, default 19).
+        pingpong (bool): Whether to bounce the video back and forth.
+
+    Returns:
+        dict: ComfyUI workflow that produces an MP4 in the output folder.
+    """
+    if not frame_filenames:
+        raise ValueError("build_frame_assembly: need at least 1 frame")
+
+    nf = NodeFactory()
+
+    if len(frame_filenames) == 1:
+        # Single frame — just load and encode (produces a 1-frame video)
+        img_id = nf.load_image(frame_filenames[0], node_id="f_0")
+        batch_ref = [img_id, 0]
+    else:
+        # Load all frames
+        img_ids = []
+        for i, fname in enumerate(frame_filenames):
+            img_ids.append(nf.load_image(fname, node_id=f"f_{i}"))
+
+        # Chain through ImageBatch nodes pairwise:
+        #   batch_0 = ImageBatch(frame_0, frame_1)
+        #   batch_1 = ImageBatch(batch_0, frame_2)
+        #   batch_2 = ImageBatch(batch_1, frame_3) ...
+        batch_ref = [img_ids[0], 0]
+        for i in range(1, len(img_ids)):
+            batch_id = nf.image_batch(batch_ref, [img_ids[i], 0],
+                                      node_id=f"b_{i}")
+            batch_ref = [batch_id, 0]
+
+    # Encode to MP4
+    nf.update({
+        "vhs_out": {"class_type": "VHS_VideoCombine",
+                    "inputs": {"images": batch_ref,
+                               "frame_rate": float(fps),
+                               "loop_count": 0,
+                               "filename_prefix": filename_prefix,
+                               "format": "video/h264-mp4",
+                               "pingpong": pingpong,
+                               "save_output": True,
+                               "pix_fmt": "yuv420p",
+                               "crf": crf}},
+    })
+
+    return nf.build()
