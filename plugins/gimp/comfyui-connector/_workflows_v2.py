@@ -553,7 +553,7 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
       6. Load and scale input image to 1.0 megapixel
       7. Encode image to latent
       8. Wrap both positive and negative in ReferenceLatent (ties conditioning to latent)
-      9. Build custom sampler: CFG guider + euler sampler + flux2_scheduler
+      9. Build custom sampler: CFG guider + euler sampler + basic_scheduler (with denoise)
       10. Sample with custom_advanced sampler
       11. Decode and save
 
@@ -591,7 +591,7 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
       - "10"-"12": input image loading and scaling
       - "13": vae_encode (image → latent)
       - "20","21": ReferenceLatent wrappers (conditioning tied to latent)
-      - "30"-"34": Sampler components (guider, sampler, scheduler, noise, empty)
+      - "30"-"33": Sampler components (guider, sampler, scheduler, noise)
       - "40": custom_advanced sampler (main diffusion)
       - "50": vae_decode
       - "51": save_image
@@ -600,7 +600,7 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
       - No LoRA chain support in current implementation (legacy)
       - Uses CFG guider + custom sampler instead of built-in ksampler
       - ReferenceLatent wrapping provides latent-aware guidance
-      - flux2_scheduler() is Flux-specific (different from SDXL schedulers)
+      - basic_scheduler() with denoise for proper img2img partial denoising
       - Low guidance values work better (1.0-3.0 vs 7-15 for SDXL)
     """
     if klein_models is None:
@@ -652,16 +652,14 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
     guider_id = nf.cfg_guider([unet_id, 0], [ref_pos_id, 0], [ref_neg_id, 0],
                               guidance, node_id="30")
     sampler_id = nf.ksampler_select("euler", node_id="31")
-    sched_id = nf.flux2_scheduler(steps, [size_id, 0], [size_id, 1],
-                                   node_id="32")
+    sched_id = nf.basic_scheduler([unet_id, 0], steps, denoise,
+                                   scheduler="simple", node_id="32")
     noise_id = nf.random_noise(seed, node_id="33")
-    empty_id = nf.empty_flux2_latent_image([size_id, 0], [size_id, 1],
-                                            batch_size=1, node_id="34")
 
-    # Sample
+    # Sample -- feed encoded image latent, NOT empty latent
     sample_id = nf.sampler_custom_advanced(
         [noise_id, 0], [guider_id, 0], [sampler_id, 0],
-        [sched_id, 0], [empty_id, 0], node_id="40",
+        [sched_id, 0], [latent_id, 0], node_id="40",
     )
 
     # Decode and save
@@ -2132,23 +2130,22 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
     ref_scaled_id = nf.image_scale_to_total_pixels([ref_id, 0], megapixels=1.0, node_id="16")
     ref_latent_id = nf.vae_encode([ref_scaled_id, 0], [vae_id, 0], node_id="17")
 
-    # ReferenceLatent: use main image latent for conditioning
-    ref_pos_id = nf.reference_latent([pos_id, 0], [latent_id, 0], node_id="20")
-    ref_neg_id = nf.reference_latent([neg_id, 0], [latent_id, 0], node_id="21")
+    # ReferenceLatent: use REFERENCE image latent for conditioning guidance
+    ref_pos_id = nf.reference_latent([pos_id, 0], [ref_latent_id, 0], node_id="20")
+    ref_neg_id = nf.reference_latent([neg_id, 0], [ref_latent_id, 0], node_id="21")
 
     # Sampler setup
     guider_id = nf.cfg_guider([unet_id, 0], [ref_pos_id, 0], [ref_neg_id, 0],
                               guidance, node_id="30")
     sampler_id = nf.ksampler_select("euler", node_id="31")
-    sched_id = nf.flux2_scheduler(steps, [size_id, 0], [size_id, 1], node_id="32")
+    sched_id = nf.basic_scheduler([unet_id, 0], steps, denoise,
+                                   scheduler="simple", node_id="32")
     noise_id = nf.random_noise(seed, node_id="33")
-    empty_id = nf.empty_flux2_latent_image([size_id, 0], [size_id, 1],
-                                            batch_size=1, node_id="34")
 
-    # Sample
+    # Sample -- feed encoded image latent, NOT empty latent
     sample_id = nf.sampler_custom_advanced(
         [noise_id, 0], [guider_id, 0], [sampler_id, 0],
-        [sched_id, 0], [empty_id, 0], node_id="40",
+        [sched_id, 0], [latent_id, 0], node_id="40",
     )
 
     dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="50")
@@ -2331,12 +2328,11 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
     sampler_id = nf.ksampler_select("euler", node_id="41")
     sched_id = nf.basic_scheduler([unet_id, 0], steps, denoise, node_id="42")
     noise_id = nf.random_noise(seed, node_id="43")
-    empty_id = nf.empty_flux2_latent_image([size_id, 0], [size_id, 1],
-                                            batch_size=1, node_id="44")
 
+    # Sample -- feed encoded image latent, NOT empty latent
     sample_id = nf.sampler_custom_advanced(
         [noise_id, 0], [guider_id, 0], [sampler_id, 0],
-        [sched_id, 0], [empty_id, 0], node_id="50",
+        [sched_id, 0], [latent_id, 0], node_id="50",
     )
 
     dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="60")
@@ -3213,13 +3209,11 @@ def build_klein_repose(image_filename, klein_model_key, prompt_text, seed,
     sched_id = nf.basic_scheduler([unet_id, 0], steps, denoise,
                                    scheduler="simple", node_id="32")
     noise_id = nf.random_noise(seed, node_id="33")
-    empty_id = nf.empty_flux2_latent_image([size_id, 0], [size_id, 1],
-                                            batch_size=1, node_id="34")
 
-    # Sample
+    # Sample -- feed encoded image latent, NOT empty latent
     sample_id = nf.sampler_custom_advanced(
         [noise_id, 0], [guider_id, 0], [sampler_id, 0],
-        [sched_id, 0], [empty_id, 0], node_id="40",
+        [sched_id, 0], [latent_id, 0], node_id="40",
     )
 
     # Decode and save
@@ -3296,12 +3290,11 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
     sched_id = nf.basic_scheduler([unet_id, 0], steps, denoise,
                                    scheduler="simple", node_id="32")
     noise_id = nf.random_noise(seed, node_id="33")
-    empty_id = nf.empty_flux2_latent_image([size_id, 0], [size_id, 1],
-                                            batch_size=1, node_id="34")
 
+    # Sample -- feed encoded image latent, NOT empty latent
     sample_id = nf.sampler_custom_advanced(
         [noise_id, 0], [guider_id, 0], [sampler_id, 0],
-        [sched_id, 0], [empty_id, 0], node_id="40",
+        [sched_id, 0], [latent_id, 0], node_id="40",
     )
 
     dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="50")
