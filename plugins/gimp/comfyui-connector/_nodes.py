@@ -1244,6 +1244,7 @@ class NodeFactory:
     def vhs_video_combine(self, images_ref, frame_rate=24, loop_count=0,
                            filename_prefix="spellcaster",
                            format_type="video/h264-mp4",
+                           pingpong=False, save_output=True,
                            node_id=None):
         """VHS_VideoCombine — combine frames into video."""
         return self._add("VHS_VideoCombine", {
@@ -1252,6 +1253,8 @@ class NodeFactory:
             "loop_count": loop_count,
             "filename_prefix": filename_prefix,
             "format": format_type,
+            "pingpong": pingpong,
+            "save_output": save_output,
         }, node_id)
 
     def rife_vfi(self, frames_ref, multiplier=2, node_id=None):

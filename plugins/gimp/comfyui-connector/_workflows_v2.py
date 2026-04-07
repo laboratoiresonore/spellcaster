@@ -1903,17 +1903,25 @@ def build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
     )
     padded_ref = [pad_id, 0]
 
-    # All architectures use KSampler for outpaint (Klein included — see docstring)
+    # Klein/Flux2 uses custom_advanced sampler with ReferenceLatent
     if is_klein:
         pos_id = nf.clip_encode(clip_ref, prompt_text, node_id="2")
-        neg_id = nf.clip_encode(clip_ref, "blurry, low quality, artifacts, seam, border", node_id="3")
+        neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="3")
         enc_id = nf.vae_encode(padded_ref, vae_ref, node_id="6")
         masked_id = nf.set_latent_noise_mask([enc_id, 0], [pad_id, 1], node_id="7")
-        samp_id = nf.ksampler(
-            model_ref,
-            [pos_id, 0], [neg_id, 0], [masked_id, 0],
-            seed, preset.get("steps", 20), 3.5,
-            "euler", "simple", 0.85, node_id="8",
+        # Wrap conditioning with ReferenceLatent for Flux2 guidance
+        ref_pos_id = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="20")
+        ref_neg_id = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="21")
+        # Custom sampler pipeline (required for Klein/Flux2)
+        guider_id = nf.cfg_guider(model_ref, [ref_pos_id, 0], [ref_neg_id, 0],
+                                  preset.get("cfg", 1.0), node_id="30")
+        sampler_id = nf.ksampler_select("euler", node_id="31")
+        sched_id = nf.basic_scheduler(model_ref, preset.get("steps", 20),
+                                       0.85, scheduler="simple", node_id="32")
+        noise_id = nf.random_noise(seed, node_id="33")
+        samp_id = nf.sampler_custom_advanced(
+            [noise_id, 0], [guider_id, 0], [sampler_id, 0],
+            [sched_id, 0], [masked_id, 0], node_id="8",
         )
     else:
         pos_id, neg_id = encode_prompts(nf, arch_key, clip_ref,
@@ -3829,6 +3837,6 @@ def build_ltx_video(preset, prompt_text, seed,
     mode_tag = "distilled" if distilled else ("2stage" if two_stage else "single")
     prefix = f"LTX23-{mode_tag}"
     nf.vhs_video_combine(frames_ref, frame_rate=fps, filename_prefix=prefix,
-                          node_id="50")
+                          pingpong=pingpong, node_id="50")
 
     return nf.build()
