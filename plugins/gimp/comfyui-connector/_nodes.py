@@ -754,14 +754,18 @@ class NodeFactory:
 
     def ipadapter_advanced(self, model_ref, ipadapter_ref, image_ref,
                            weight=1.0, weight_type="linear",
+                           combine_embeds="concat",
                            start_at=0.0, end_at=1.0,
+                           embeds_scaling="V only",
                            node_id=None):
         """IPAdapterAdvanced — apply IPAdapter with strength control."""
         return self._add("IPAdapterAdvanced", {
             "model": model_ref, "ipadapter": ipadapter_ref,
             "image": image_ref, "weight": weight,
             "weight_type": weight_type,
+            "combine_embeds": combine_embeds,
             "start_at": start_at, "end_at": end_at,
+            "embeds_scaling": embeds_scaling,
         }, node_id)
 
     def ipadapter_faceid(self, model_ref, ipadapter_ref, image_ref,
