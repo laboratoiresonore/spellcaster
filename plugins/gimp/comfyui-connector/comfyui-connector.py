@@ -519,7 +519,11 @@ def _auto_update():
                 tmp = dest.with_suffix(dest.suffix + ".tmp")
                 req_dl = urllib.request.Request(url, headers=_hdrs)
                 with urllib.request.urlopen(req_dl, timeout=60) as r2:
-                    tmp.write_bytes(r2.read())
+                    blob = r2.read()
+                    # Strip NTFS null-byte padding that can corrupt text files
+                    if remainder.endswith((".py", ".css", ".json", ".md", ".txt")):
+                        blob = blob.rstrip(b" ")
+                    tmp.write_bytes(blob)
                 try:
                     tmp.replace(dest)
                     updated += 1
