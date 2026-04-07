@@ -6433,9 +6433,12 @@ def _run_comfyui_workflow(server, workflow, timeout=300):
     global _workflow_queue_depth
     _workflow_queue_depth += 1
     try:
+        # Wait for ComfyUI's queue before acquiring the lock --
+        # this lets multiple jobs queue-wait concurrently
+        _wait_for_comfy_queue_empty(server)
+        # Lock only covers submission (not polling) so other jobs
+        # can poll their results concurrently
         with _workflow_lock:
-            # Wait for ComfyUI's queue to be empty before submitting
-            _wait_for_comfy_queue_empty(server)
             _flush_pending_uploads()
             result = _api_post_json(server, "/prompt", {
                 "prompt": workflow,
@@ -6444,13 +6447,14 @@ def _run_comfyui_workflow(server, workflow, timeout=300):
             prompt_id = result.get("prompt_id")
             if not prompt_id:
                 raise RuntimeError(f"ComfyUI did not return a prompt_id: {result}")
-            images = _get_output_images(server, prompt_id, timeout)
-            # Repatriate outputs to user's directory (if configured)
-            try:
-                _repatriate_outputs(server, images)
-            except Exception:
-                pass  # never fail the generation over repatriation
-            return images
+        # Poll for results outside the lock
+        images = _get_output_images(server, prompt_id, timeout)
+        # Repatriate outputs to user's directory (if configured)
+        try:
+            _repatriate_outputs(server, images)
+        except Exception:
+            pass  # never fail the generation over repatriation
+        return images
     finally:
         _workflow_queue_depth -= 1
 
@@ -6530,6 +6534,7 @@ _spinner_status_lbl = None # shared status bar (queue info, VRAM, elapsed)
 _spinner_job_count = 0     # how many active jobs
 _spinner_start_time = 0    # when the first job started
 _spinner_cleanup_id = None # GLib source ID for pending delayed cleanup
+_spinner_cleanup_gen = 0   # generation counter to prevent stale cleanup callbacks
 
 
 def _fetch_comfy_status(server):
@@ -6566,7 +6571,7 @@ def _run_with_spinner(label_text, func, *args):
     """
     global _spinner_label_text, _spinner_win, _spinner_jobs_box, _spinner_pb
     global _spinner_status_lbl, _spinner_job_count, _spinner_start_time
-    global _spinner_cleanup_id
+    global _spinner_cleanup_id, _spinner_cleanup_gen
     _spinner_label_text = ""
     result_box = [None]
     error_box = [None]
@@ -6587,6 +6592,7 @@ def _run_with_spinner(label_text, func, *args):
     if _spinner_cleanup_id is not None:
         GLib.source_remove(_spinner_cleanup_id)
         _spinner_cleanup_id = None
+        _spinner_cleanup_gen += 1  # invalidate any already-dispatched callback
 
     # ── Create or reuse the singleton spinner window ────────────────
     _win_alive = False
@@ -6727,7 +6733,10 @@ def _run_with_spinner(label_text, func, *args):
         # because the new job cancels this cleanup via GLib.source_remove.
         def _delayed_cleanup():
             global _spinner_win, _spinner_jobs_box, _spinner_pb, _spinner_status_lbl
-            global _spinner_job_count, _spinner_cleanup_id
+            global _spinner_job_count, _spinner_cleanup_id, _spinner_cleanup_gen
+            # If a new job started and bumped the gen counter, this callback is stale
+            if _my_gen != _spinner_cleanup_gen:
+                return False
             _spinner_cleanup_id = None
             if _spinner_job_count <= 0 and _spinner_win is not None:
                 try:
@@ -6740,6 +6749,7 @@ def _run_with_spinner(label_text, func, *args):
                 _spinner_status_lbl = None
                 _spinner_job_count = 0
             return False  # don't repeat
+        _my_gen = _spinner_cleanup_gen
         _spinner_cleanup_id = GLib.timeout_add(2000, _delayed_cleanup)
 
     if cancel_box[0]:
@@ -9376,8 +9386,6 @@ class WanI2VDialog(Gtk.Dialog):
         self.seedvr2_res.set_value(p.get("seedvr2_resolution", 1024))
         self.seedvr2_noise.set_value(p.get("seedvr2_noise", 0.10))
         self.pingpong_check.set_active(p.get("pingpong", False))
-        self.i2v_check.set_active(p.get("i2v", False))
-        self.i2v_strength_spin.set_value(p.get("i2v_strength", 1.0))
         if p.get("ip_adapter_source"):
             self.ipa_source_combo.set_active_id(p["ip_adapter_source"])
         if "runs" in p:
@@ -19993,7 +20001,7 @@ class Spellcaster(Gimp.PlugIn):
                 for fn_i, (fn, sf, ft) in enumerate(results):
                     if fn.lower().endswith(".png"):
                         lbl = f"Outfit run {run_i+1} #{fn_i+1}" if runs > 1 else f"Outfit #{fn_i+1}"
-                        _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
+                        _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, True)
                 Gimp.displays_flush()
 
             Gimp.progress_end()
