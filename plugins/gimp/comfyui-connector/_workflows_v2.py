@@ -3649,3 +3649,179 @@ def build_frame_assembly(frame_filenames, fps=16.0, filename_prefix="gimp_assemb
     })
 
     return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  LTX 2.3 VIDEO GENERATION
+# ═══════════════════════════════════════════════════════════════════════════
+# LTX Video 2.3 pipeline:
+#   UnetLoaderGGUF → LTXVChunkFeedForward → LTXVApplySTG → STGGuider
+#   Text: LTXAVTextEncoderLoader (Gemma 3 + embeddings connectors)
+#   VAE: LTX23_video_vae_bf16.safetensors (NOT LTX2.2 VAEs!)
+#   Sampler: LTXVBaseSampler → LTXVSpatioTemporalTiledVAEDecode
+#   Two-stage: half-res → LatentUpscaleModelLoader + LTXVLatentUpsampler
+#              → SamplerCustomAdvanced re-denoise at full res
+#   Distilled: LoRA + cfg=1.0, stg=0.0, 8 steps — 4x faster
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_ltx_video(preset, prompt_text, seed,
+                     width=768, height=512, num_frames=25,
+                     steps=None, cfg=None, stg=None, rescale=None,
+                     two_stage=False, distilled=False,
+                     loras=None, interpolate=False, rtx_scale=0,
+                     fps=25, pingpong=False,
+                     image_filename=None):
+    """LTX Video 2.3 generation — text-to-video or image-to-video.
+
+    Supports three modes:
+      1. Single-stage: generate at target resolution (default)
+      2. Two-stage: generate at half-res → latent upscale 2x → re-denoise
+      3. Distilled: LoRA-accelerated, 8 steps, 4x faster
+
+    Args:
+        preset (dict): LTX preset containing:
+          - unet: GGUF model path (e.g. "LTX\\ltx-2.3-22b-dev-Q4_K_M.gguf")
+          - text_encoder: Gemma model name
+          - embeddings_connector: LTX embeddings connector path
+          - vae: LTX2.3 VAE name
+          - steps: Default sampling steps (30 normal, 8 distilled)
+          - cfg: Default CFG (4.0 normal, 1.0 distilled)
+          - stg: Default STG strength (1.0 normal, 0.0 distilled)
+          - rescale: Default STG rescale (0.7 normal, 0.0 distilled)
+          - distilled_lora: Optional distilled LoRA path
+          - latent_upscaler: Latent upscale model for two-stage
+        prompt_text (str): Generation prompt
+        seed (int): Random seed
+        width (int): Target output width (default 768)
+        height (int): Target output height (default 512)
+        num_frames (int): Number of frames (default 25 = 1 sec at 25fps)
+        steps (int): Override sampling steps
+        cfg (float): Override CFG scale
+        stg (float): Override STG strength
+        rescale (float): Override STG rescale
+        two_stage (bool): Use two-stage latent upscale pipeline
+        distilled (bool): Use distilled LoRA fast mode
+        loras (list): Additional [(lora_name, strength), ...] LoRAs
+        interpolate (bool): RIFE frame interpolation (default False)
+        rtx_scale (int): RTX Video Super Resolution scale (0=off)
+        fps (int): Output frame rate (default 25)
+        pingpong (bool): Bounce video back and forth
+        image_filename (str): Optional start image for I2V mode
+
+    Returns:
+        dict: ComfyUI workflow
+    """
+    nf = NodeFactory()
+
+    # Resolve parameters from preset
+    steps = steps or preset.get("steps", 30)
+    cfg = cfg if cfg is not None else preset.get("cfg", 4.0)
+    stg = stg if stg is not None else preset.get("stg", 1.0)
+    rescale = rescale if rescale is not None else preset.get("rescale", 0.7)
+
+    unet_name = preset["unet"]
+    text_encoder = preset["text_encoder"]
+    embeddings_connector = preset["embeddings_connector"]
+    vae_name = preset["vae"]
+
+    # Distilled mode overrides
+    if distilled:
+        distilled_lora = preset.get("distilled_lora",
+                                      "ltxv\\ltx-2.3-22b-distilled-lora-384.safetensors")
+        steps = 8
+        cfg = 1.0
+        stg = 0.0
+        rescale = 0.0
+
+    # For two-stage, generate at half resolution
+    gen_width = width // 2 if two_stage else width
+    gen_height = height // 2 if two_stage else height
+
+    # ── Model loading ─────────────────────────────────────────────
+    unet_id = nf.unet_loader_gguf(unet_name, node_id="1")
+
+    # Distilled LoRA (applied before chunking)
+    model_ref = [unet_id, 0]
+    if distilled:
+        lora_id = nf.lora_loader_model_only(model_ref, distilled_lora, 1.0,
+                                             node_id="1b")
+        model_ref = [lora_id, 0]
+
+    # Additional user LoRAs
+    if loras:
+        for i, (ln, ls) in enumerate(loras):
+            nid = f"1l{i}"
+            lid = nf.lora_loader_model_only(model_ref, ln, ls, node_id=nid)
+            model_ref = [lid, 0]
+
+    # VRAM optimization + STG
+    chunk_id = nf.ltxv_chunk_feed_forward(model_ref, chunks=4, node_id="2")
+    stg_model_id = nf.ltxv_apply_stg([chunk_id, 0], "14, 19", node_id="3")
+
+    # ── Text encoding ─────────────────────────────────────────────
+    enc_id = nf.ltxav_text_encoder_loader(text_encoder, embeddings_connector,
+                                           node_id="4")
+    pos_id = nf.clip_encode([enc_id, 0], prompt_text, node_id="10")
+    neg_id = nf.clip_encode([enc_id, 0], "", node_id="11")
+
+    # ── VAE ───────────────────────────────────────────────────────
+    vae_id = nf.vae_loader(vae_name, node_id="5")
+
+    # ── Conditioning ──────────────────────────────────────────────
+    cond_id = nf.ltxv_conditioning([pos_id, 0], [neg_id, 0],
+                                    frame_rate=float(fps), node_id="12")
+
+    # ── Sampling ──────────────────────────────────────────────────
+    sched_id = nf.ltxv_scheduler(steps=steps, node_id="15")
+    guider_id = nf.stg_guider([stg_model_id, 0], [cond_id, 0], [cond_id, 1],
+                               cfg=cfg, stg=stg, rescale=rescale, node_id="16")
+    sampler_id = nf.ksampler_select("euler", node_id="17")
+    noise_id = nf.random_noise(seed, node_id="18")
+
+    base_id = nf.ltxv_base_sampler(
+        [stg_model_id, 0], [vae_id, 0], [guider_id, 0],
+        [sampler_id, 0], [sched_id, 0], [noise_id, 0],
+        gen_width, gen_height, num_frames, node_id="20")
+
+    decode_latent_ref = [base_id, 0]
+
+    # ── Two-stage upscale (optional) ──────────────────────────────
+    if two_stage:
+        upscaler_model = preset.get("latent_upscaler",
+                                      "ltx-2-spatial-upscaler-x2-1.0.safetensors")
+        ups_loader_id = nf.latent_upscale_model_loader(upscaler_model, node_id="25")
+        ups_id = nf.ltxv_latent_upsampler([base_id, 0], [ups_loader_id, 0],
+                                           [vae_id, 0], node_id="26")
+
+        # Stage 2 schedule (10 steps re-denoise)
+        sched2_id = nf.ltxv_scheduler(steps=10, latent_ref=[ups_id, 0],
+                                       node_id="30")
+        noise2_id = nf.random_noise(seed, node_id="31")
+        stage2_id = nf.sampler_custom_advanced(
+            [noise2_id, 0], [guider_id, 0], [sampler_id, 0],
+            [sched2_id, 0], [ups_id, 0], node_id="32")
+        decode_latent_ref = [stage2_id, 0]
+
+    # ── VAE decode ────────────────────────────────────────────────
+    decode_id = nf.ltxv_spatiotemporal_tiled_vae_decode(
+        [vae_id, 0], decode_latent_ref, node_id="40")
+
+    frames_ref = [decode_id, 0]
+
+    # ── Post-processing ───────────────────────────────────────────
+    if rtx_scale and rtx_scale > 0:
+        rtx_id = nf.rtx_video_super_resolution(frames_ref, scale_factor=rtx_scale,
+                                                node_id="45")
+        frames_ref = [rtx_id, 0]
+
+    if interpolate:
+        rife_id = nf.rife_vfi(frames_ref, multiplier=2, node_id="46")
+        frames_ref = [rife_id, 0]
+
+    # ── Output ────────────────────────────────────────────────────
+    mode_tag = "distilled" if distilled else ("2stage" if two_stage else "single")
+    prefix = f"LTX23-{mode_tag}"
+    nf.vhs_video_combine(frames_ref, frame_rate=fps, filename_prefix=prefix,
+                          node_id="50")
+
+    return nf.build()
