@@ -14395,6 +14395,35 @@ class Spellcaster(Gimp.PlugIn):
         _shrink_on_collapse(exp, dlg)
         bx.pack_start(exp, False, False, 0)
 
+        # ── LoRA (collapsible) ──────────────────────────────────────
+        lora_exp = Gtk.Expander(label="\u25b8 LoRA (optional)")
+        _shrink_on_collapse(lora_exp, dlg)
+        lora_exp.set_expanded(False)
+        lora_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        lora_box.set_margin_start(4); lora_box.set_margin_top(4)
+        lora_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        lora_hb.pack_start(Gtk.Label(label="LoRA:"), False, False, 0)
+        lora_combo = Gtk.ComboBoxText()
+        lora_combo.append("none", "(none)")
+        lora_combo.set_active_id("none")
+        try:
+            _all_loras = _fetch_loras(srv_e.get_text().strip())
+            for _ln in _filter_loras_for_arch(_all_loras, "flux2klein"):
+                lora_combo.append(_ln, _ln.replace("\\", "/").rsplit("/", 1)[-1])
+        except Exception:
+            pass
+        lora_hb.pack_start(lora_combo, True, True, 0)
+        lora_box.pack_start(lora_hb, False, False, 0)
+        lora_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        lora_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
+        lora_str_spin = Gtk.SpinButton.new_with_range(0.0, 2.0, 0.05)
+        lora_str_spin.set_digits(2); lora_str_spin.set_value(0.75)
+        lora_str_spin.set_tooltip_text("LoRA strength. 0.6-0.9 recommended for most specialized LoRAs.")
+        lora_str_hb.pack_start(lora_str_spin, False, False, 0)
+        lora_box.pack_start(lora_str_hb, False, False, 0)
+        lora_exp.add(lora_box)
+        bx.pack_start(lora_exp, False, False, 0)
+
         # ── Preset auto-fill ──────────────────────────────────────────
         def _on_task_changed(*_a):
             key = task_combo.get_active_id()
@@ -14404,6 +14433,13 @@ class Spellcaster(Gimp.PlugIn):
                     prompt_tv.get_buffer().set_text(p["prompt_hint"])
                 denoise_sp.set_value(p["denoise"])
                 steps_sp.set_value(p["steps"])
+                # Auto-select recommended LoRA if preset specifies one
+                _rec_lora = p.get("lora")
+                if _rec_lora:
+                    lora_combo.set_active_id(_rec_lora.get("path", "none"))
+                    lora_str_spin.set_value(_rec_lora.get("strength", 0.75))
+                else:
+                    lora_combo.set_active_id("none")
         task_combo.connect("changed", _on_task_changed)
         _on_task_changed()  # initial fill
 
@@ -14422,6 +14458,8 @@ class Spellcaster(Gimp.PlugIn):
                 "mask_blur": int(blur_sp.get_value()),
                 "grow_px": int(grow_sp.get_value()),
                 "use_dd": dd_check.get_active(),
+                "lora_id": lora_combo.get_active_id() or "",
+                "lora_str": lora_str_spin.get_value(),
             }
         def _apply_user_preset(p):
             if "klein_model" in p: klein_combo.set_active_id(p["klein_model"])
@@ -14434,6 +14472,10 @@ class Spellcaster(Gimp.PlugIn):
             if "mask_blur" in p: blur_sp.set_value(p["mask_blur"])
             if "grow_px" in p: grow_sp.set_value(p["grow_px"])
             if "use_dd" in p: dd_check.set_active(p["use_dd"])
+            if "lora_id" in p and p["lora_id"]:
+                lora_combo.set_active_id(p["lora_id"])
+            if "lora_str" in p:
+                lora_str_spin.set_value(p["lora_str"])
         dlg._collect_user_preset = _collect_user_preset
         dlg._apply_user_preset = _apply_user_preset
         _add_preset_ui(dlg, bx, "klein_inpaint")
@@ -14458,6 +14500,15 @@ class Spellcaster(Gimp.PlugIn):
         mask_blur = int(blur_sp.get_value())
         grow_px = int(grow_sp.get_value())
         use_dd = dd_check.get_active()
+        # ── Collect LoRA ──────────────────────────────────────────
+        _lora_id = lora_combo.get_active_id()
+        _lora_name = _lora_id if _lora_id and _lora_id != "none" else None
+        _lora_str = lora_str_spin.get_value()
+        loras = None
+        if _lora_name:
+            loras = [{"name": _lora_name,
+                       "strength_model": _lora_str,
+                       "strength_clip": _lora_str}]
         if base_seed < 0:
             base_seed = random.randint(0, 2**32 - 1)
         dlg.destroy()
@@ -14500,6 +14551,7 @@ class Spellcaster(Gimp.PlugIn):
                     guidance=1.0, grow_px=grow_px,
                     use_differential_diffusion=use_dd,
                     klein_models=KLEIN_MODELS,
+                    loras=loras,
                 )
 
                 label = f"Klein Inpaint run {run_i+1}/{runs}" if runs > 1 else "Klein Inpaint"
@@ -19869,11 +19921,22 @@ class Spellcaster(Gimp.PlugIn):
         # Runs
         _add_runs_spinner(dlg, bx)
 
+        # ── Session restore ───────────────────────────────────────────
+        _last = _SESSION.get("clothing_store")
+        if _last:
+            if "klein_model" in _last: klein_combo.set_active_id(_last["klein_model"])
+            if "prompt" in _last and _last["prompt"]:
+                prompt_tv.get_buffer().set_text(_last["prompt"])
+            if "denoise" in _last: dn_spin.set_value(_last["denoise"])
+            if "runs" in _last and hasattr(dlg, "_runs_spin"):
+                dlg._runs_spin.set_value(_last["runs"])
+
         bx.show_all()
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
 
+        # ── Session save ────────────────────────────────────────────
         srv = srv_e.get_text().strip(); _propagate_server_url(srv)
         klein_key = klein_combo.get_active_id() or list(KLEIN_MODELS.keys())[0]
         buf = prompt_tv.get_buffer()
@@ -19881,6 +19944,14 @@ class Spellcaster(Gimp.PlugIn):
         denoise = dn_spin.get_value()
         runs = int(dlg._runs_spin.get_value()) if hasattr(dlg, '_runs_spin') else 1
         dlg.destroy()
+        buf = prompt_tv.get_buffer()
+        _SESSION["clothing_store"] = {
+            "klein_model": klein_key,
+            "prompt": buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False),
+            "denoise": denoise,
+            "runs": runs,
+        }
+        _save_session()
 
         if not prompt.strip():
             Gimp.message("Please describe the outfit you want.")
