@@ -269,14 +269,30 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
 
     # 6. VAE encode → sample → VAE decode → save
     enc_id = nf.vae_encode(img_ref, vae_ref, node_id="5")
-    samp_id = nf.ksampler(
-        model_ref,
-        [pos_id, 0], [neg_id, 0], [enc_id, 0],
-        seed, preset["steps"], preset["cfg"],
-        preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
-        preset.get("denoise", 0.65),
-        node_id="6",
-    )
+    is_klein = arch_key == "flux2klein"
+    if is_klein:
+        ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
+        ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
+        guider_id = nf.cfg_guider(model_ref, [ref_pos, 0], [ref_neg, 0],
+                                  preset.get("cfg", 1.0), node_id="62")
+        sampler_sel = nf.ksampler_select("euler", node_id="63")
+        sched_id = nf.basic_scheduler(model_ref, preset.get("steps", 20),
+                                       preset.get("denoise", 0.65),
+                                       scheduler="simple", node_id="64")
+        noise_id = nf.random_noise(seed, node_id="65")
+        samp_id = nf.sampler_custom_advanced(
+            [noise_id, 0], [guider_id, 0], [sampler_sel, 0],
+            [sched_id, 0], [enc_id, 0], node_id="6",
+        )
+    else:
+        samp_id = nf.ksampler(
+            model_ref,
+            [pos_id, 0], [neg_id, 0], [enc_id, 0],
+            seed, preset["steps"], preset["cfg"],
+            preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
+            preset.get("denoise", 0.65),
+            node_id="6",
+        )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="7")
     nf.save_image([dec_id, 0], "gimp_comfy", node_id="8")
 
@@ -366,14 +382,27 @@ def build_txt2img(preset, prompt_text, negative_text, seed, loras=None):
     empty_id = nf.empty_latent_image(preset["width"], preset["height"],
                                       batch_size=1, node_id="4")
 
-    samp_id = nf.ksampler(
-        model_ref,
-        [pos_id, 0], [neg_id, 0], [empty_id, 0],
-        seed, preset["steps"], preset["cfg"],
-        preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
-        1.0,  # denoise always 1.0 for txt2img
-        node_id="5",
-    )
+    is_klein = preset.get("arch") == "flux2klein"
+    if is_klein:
+        guider_id = nf.cfg_guider(model_ref, [pos_id, 0], [neg_id, 0],
+                                  preset.get("cfg", 1.0), node_id="60")
+        sampler_sel = nf.ksampler_select("euler", node_id="61")
+        sched_id = nf.basic_scheduler(model_ref, preset.get("steps", 20),
+                                       1.0, scheduler="simple", node_id="62")
+        noise_id = nf.random_noise(seed, node_id="63")
+        samp_id = nf.sampler_custom_advanced(
+            [noise_id, 0], [guider_id, 0], [sampler_sel, 0],
+            [sched_id, 0], [empty_id, 0], node_id="5",
+        )
+    else:
+        samp_id = nf.ksampler(
+            model_ref,
+            [pos_id, 0], [neg_id, 0], [empty_id, 0],
+            seed, preset["steps"], preset["cfg"],
+            preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
+            1.0,  # denoise always 1.0 for txt2img
+            node_id="5",
+        )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="6")
     nf.save_image([dec_id, 0], "gimp_comfy", node_id="7")
 
@@ -1140,13 +1169,28 @@ def build_detail_hallucinate(image_filename, upscale_model, preset,
 
     # VAE encode → sample → decode → save
     enc_id = nf.vae_encode(img_ref, vae_ref, node_id="7")
-    samp_id = nf.ksampler(
-        model_ref,
-        [pos_id, 0], [neg_id, 0], [enc_id, 0],
-        seed, steps or preset["steps"], cfg,
-        preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
-        denoise, node_id="8",
-    )
+    is_klein = arch_key == "flux2klein"
+    if is_klein:
+        ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
+        ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
+        guider_id = nf.cfg_guider(model_ref, [ref_pos, 0], [ref_neg, 0],
+                                  cfg, node_id="62")
+        sampler_sel = nf.ksampler_select("euler", node_id="63")
+        sched_id = nf.basic_scheduler(model_ref, steps or preset.get("steps", 20),
+                                       denoise, scheduler="simple", node_id="64")
+        noise_id = nf.random_noise(seed, node_id="65")
+        samp_id = nf.sampler_custom_advanced(
+            [noise_id, 0], [guider_id, 0], [sampler_sel, 0],
+            [sched_id, 0], [enc_id, 0], node_id="8",
+        )
+    else:
+        samp_id = nf.ksampler(
+            model_ref,
+            [pos_id, 0], [neg_id, 0], [enc_id, 0],
+            seed, steps or preset["steps"], cfg,
+            preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
+            denoise, node_id="8",
+        )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="9")
     nf.save_image([dec_id, 0], "spellcaster_hallucinate", node_id="10")
 
@@ -1218,13 +1262,28 @@ def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
 
     # VAE encode → sample → decode → save
     enc_id = nf.vae_encode(img_ref, vae_ref, node_id="8")
-    samp_id = nf.ksampler(
-        model_ref,
-        [cn_apply_id, 0], [cn_apply_id, 1], [enc_id, 0],
-        seed, steps or preset["steps"], cfg or preset["cfg"],
-        preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
-        denoise, node_id="9",
-    )
+    is_klein = arch_key == "flux2klein"
+    if is_klein:
+        ref_pos = nf.reference_latent([cn_apply_id, 0], [enc_id, 0], node_id="60")
+        ref_neg = nf.reference_latent([cn_apply_id, 1], [enc_id, 0], node_id="61")
+        guider_id = nf.cfg_guider(model_ref, [ref_pos, 0], [ref_neg, 0],
+                                  cfg or preset.get("cfg", 1.0), node_id="62")
+        sampler_sel = nf.ksampler_select("euler", node_id="63")
+        sched_id = nf.basic_scheduler(model_ref, steps or preset.get("steps", 20),
+                                       denoise, scheduler="simple", node_id="64")
+        noise_id = nf.random_noise(seed, node_id="65")
+        samp_id = nf.sampler_custom_advanced(
+            [noise_id, 0], [guider_id, 0], [sampler_sel, 0],
+            [sched_id, 0], [enc_id, 0], node_id="9",
+        )
+    else:
+        samp_id = nf.ksampler(
+            model_ref,
+            [cn_apply_id, 0], [cn_apply_id, 1], [enc_id, 0],
+            seed, steps or preset["steps"], cfg or preset["cfg"],
+            preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
+            denoise, node_id="9",
+        )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="10")
     nf.save_image([dec_id, 0], "spellcaster_colorize", node_id="11")
 
@@ -1333,11 +1392,24 @@ def build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
     )
 
     empty_id = nf.empty_latent_image(width, height, 1, node_id="8")
-    samp_id = nf.ksampler(
-        model_ref,
-        [cn_apply_id, 0], [cn_apply_id, 1], [empty_id, 0],
-        seed, steps, cfg, sampler, scheduler, 1.0, node_id="9",
-    )
+    is_klein = preset.get("arch") == "flux2klein"
+    if is_klein:
+        guider_id = nf.cfg_guider(model_ref, [cn_apply_id, 0], [cn_apply_id, 1],
+                                  cfg, node_id="60")
+        sampler_sel = nf.ksampler_select("euler", node_id="61")
+        sched_id = nf.basic_scheduler(model_ref, steps, 1.0,
+                                       scheduler="simple", node_id="62")
+        noise_id = nf.random_noise(seed, node_id="63")
+        samp_id = nf.sampler_custom_advanced(
+            [noise_id, 0], [guider_id, 0], [sampler_sel, 0],
+            [sched_id, 0], [empty_id, 0], node_id="9",
+        )
+    else:
+        samp_id = nf.ksampler(
+            model_ref,
+            [cn_apply_id, 0], [cn_apply_id, 1], [empty_id, 0],
+            seed, steps, cfg, sampler, scheduler, 1.0, node_id="9",
+        )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="10")
     nf.save_image([dec_id, 0], "spellcaster_controlnet", node_id="11")
 
@@ -1769,13 +1841,29 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
     enc_id = nf.vae_encode([scaled_img_id, 0], vae_ref, node_id="6")
     masked_id = nf.set_latent_noise_mask([enc_id, 0], [scaled_mask_id, 0], node_id="7")
 
-    samp_id = nf.ksampler(
-        model_ref,
-        [pos_id, 0], [neg_id, 0], [masked_id, 0],
-        seed, preset["steps"], preset["cfg"],
-        preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
-        preset.get("denoise", 0.65), node_id="8",
-    )
+    is_klein = arch_key == "flux2klein"
+    if is_klein:
+        ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
+        ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
+        guider_id = nf.cfg_guider(model_ref, [ref_pos, 0], [ref_neg, 0],
+                                  preset.get("cfg", 1.0), node_id="62")
+        sampler_sel = nf.ksampler_select("euler", node_id="63")
+        sched_id = nf.basic_scheduler(model_ref, preset.get("steps", 20),
+                                       preset.get("denoise", 0.65),
+                                       scheduler="simple", node_id="64")
+        noise_id = nf.random_noise(seed, node_id="65")
+        samp_id = nf.sampler_custom_advanced(
+            [noise_id, 0], [guider_id, 0], [sampler_sel, 0],
+            [sched_id, 0], [masked_id, 0], node_id="8",
+        )
+    else:
+        samp_id = nf.ksampler(
+            model_ref,
+            [pos_id, 0], [neg_id, 0], [masked_id, 0],
+            seed, preset["steps"], preset["cfg"],
+            preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
+            preset.get("denoise", 0.65), node_id="8",
+        )
 
     # Decode → restore to original size → save
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="9")
@@ -1998,11 +2086,26 @@ def build_faceid_img2img(target_filename, face_ref_filename, preset,
     # Target image → VAE encode → sample → decode → save
     target_id = nf.load_image(target_filename, node_id="7")
     enc_id = nf.vae_encode([target_id, 0], vae_ref, node_id="8")
-    samp_id = nf.ksampler(
-        [faceid_id, 0],
-        [pos_id, 0], [neg_id, 0], [enc_id, 0],
-        seed, steps, cfg, sampler, scheduler, denoise, node_id="9",
-    )
+    is_klein = preset.get("arch") == "flux2klein"
+    if is_klein:
+        ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
+        ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
+        guider_id = nf.cfg_guider([faceid_id, 0], [ref_pos, 0], [ref_neg, 0],
+                                  cfg, node_id="62")
+        sampler_sel = nf.ksampler_select("euler", node_id="63")
+        sched_id = nf.basic_scheduler([faceid_id, 0], steps, denoise,
+                                       scheduler="simple", node_id="64")
+        noise_id = nf.random_noise(seed, node_id="65")
+        samp_id = nf.sampler_custom_advanced(
+            [noise_id, 0], [guider_id, 0], [sampler_sel, 0],
+            [sched_id, 0], [enc_id, 0], node_id="9",
+        )
+    else:
+        samp_id = nf.ksampler(
+            [faceid_id, 0],
+            [pos_id, 0], [neg_id, 0], [enc_id, 0],
+            seed, steps, cfg, sampler, scheduler, denoise, node_id="9",
+        )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="11")
     nf.save_image([dec_id, 0], "gimp_faceid", node_id="12")
 
@@ -2949,13 +3052,28 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
     enc_id = nf.vae_encode(target_ref, vae_ref, node_id="8")
 
     # 5. Sample
-    samp_id = nf.ksampler(
-        [ipa_id, 0],
-        [pos_id, 0], [neg_id, 0], [enc_id, 0],
-        seed, preset["steps"], preset["cfg"],
-        preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
-        denoise, node_id="9",
-    )
+    is_klein = arch_key == "flux2klein"
+    if is_klein:
+        ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
+        ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
+        guider_id = nf.cfg_guider([ipa_id, 0], [ref_pos, 0], [ref_neg, 0],
+                                  preset.get("cfg", 1.0), node_id="62")
+        sampler_sel = nf.ksampler_select("euler", node_id="63")
+        sched_id = nf.basic_scheduler([ipa_id, 0], preset.get("steps", 20),
+                                       denoise, scheduler="simple", node_id="64")
+        noise_id = nf.random_noise(seed, node_id="65")
+        samp_id = nf.sampler_custom_advanced(
+            [noise_id, 0], [guider_id, 0], [sampler_sel, 0],
+            [sched_id, 0], [enc_id, 0], node_id="9",
+        )
+    else:
+        samp_id = nf.ksampler(
+            [ipa_id, 0],
+            [pos_id, 0], [neg_id, 0], [enc_id, 0],
+            seed, preset["steps"], preset["cfg"],
+            preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
+            denoise, node_id="9",
+        )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="10")
     nf.save_image([dec_id, 0], "spellcaster_style", node_id="11")
 
@@ -3023,13 +3141,28 @@ def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_t
 
     # 6. VAE encode + sample + decode
     enc_id = nf.vae_encode(img_ref, vae_ref, node_id="7")
-    samp_id = nf.ksampler(
-        model_ref,
-        [pos_id, 0], [neg_id, 0], [enc_id, 0],
-        seed, steps, cfg,
-        preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
-        denoise, node_id="8",
-    )
+    is_klein = arch_key == "flux2klein"
+    if is_klein:
+        ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
+        ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
+        guider_id = nf.cfg_guider(model_ref, [ref_pos, 0], [ref_neg, 0],
+                                  cfg, node_id="62")
+        sampler_sel = nf.ksampler_select("euler", node_id="63")
+        sched_id = nf.basic_scheduler(model_ref, steps, denoise,
+                                       scheduler="simple", node_id="64")
+        noise_id = nf.random_noise(seed, node_id="65")
+        samp_id = nf.sampler_custom_advanced(
+            [noise_id, 0], [guider_id, 0], [sampler_sel, 0],
+            [sched_id, 0], [enc_id, 0], node_id="8",
+        )
+    else:
+        samp_id = nf.ksampler(
+            model_ref,
+            [pos_id, 0], [neg_id, 0], [enc_id, 0],
+            seed, steps, cfg,
+            preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
+            denoise, node_id="8",
+        )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="9")
     nf.save_image([dec_id, 0], "spellcaster_seedv2r", node_id="10")
 
