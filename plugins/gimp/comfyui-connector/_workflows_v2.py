@@ -3618,7 +3618,8 @@ def build_klein_inpaint(image_filename, mask_filename, prompt_text, seed,
 def build_klein_scene_img2img(image_filename, prompt_text, seed,
                                klein_model_key="Klein 9B", steps=20,
                                denoise=0.30, guidance=1.0,
-                               klein_models=None):
+                               klein_models=None,
+                               loras=None):
     """Klein scene img2img: harmonize a composited scene.
 
     Unlike build_klein_img2img which uses ReferenceLatent (generates from noise

@@ -97,9 +97,9 @@ def test_upscale():
               "inputs": {"image": "test_image.png"}},
         "2": {"class_type": "UpscaleModelLoader",
               "inputs": {"model_name": "4x-UltraSharp.pth"}},
-        "3": {"class_type": "ImageUpscaleWithModelByFactor",
+        "3": {"class_type": "Upscale by Factor with Model (WLSH)",
               "inputs": {"upscale_model": ["2", 0], "image": ["1", 0],
-                         "scale_by": 1.5}},
+                         "factor": 1.5, "upscale_method": "nearest-exact"}},
         "4": {"class_type": "SaveImage",
               "inputs": {"images": ["3", 0], "filename_prefix": "spellcaster_upscale"}},
     }
@@ -119,7 +119,7 @@ def test_lama():
               "inputs": {"image": ["2", 0], "channel": "red"}},
         "3": {"class_type": "LamaRemover",
               "inputs": {"images": ["1", 0], "masks": ["5", 0],
-                         "mask_threshold": 0.5, "gaussblur_radius": 8,
+                         "mask_threshold": 250, "gaussblur_radius": 8,
                          "invert_mask": False}},
         "4": {"class_type": "SaveImage",
               "inputs": {"images": ["3", 0], "filename_prefix": "spellcaster_lama"}},
@@ -216,14 +216,11 @@ def test_klein_img2img():
     assert wf["21"]["class_type"] == "ReferenceLatent"
     assert wf["30"]["class_type"] == "CFGGuider"
     assert wf["31"]["class_type"] == "KSamplerSelect"
-    assert wf["32"]["class_type"] == "Flux2Scheduler"
-    # Flux2Scheduler should NOT have model, denoise, max_shift, base_shift
+    assert wf["32"]["class_type"] == "BasicScheduler"
     sched_inputs = wf["32"]["inputs"]
-    assert "model" not in sched_inputs, "Flux2Scheduler should not have 'model' input"
-    assert "denoise" not in sched_inputs, "Flux2Scheduler should not have 'denoise' input"
+    assert "model" in sched_inputs
     assert "steps" in sched_inputs
-    assert "width" in sched_inputs
-    assert "height" in sched_inputs
+    assert "denoise" in sched_inputs
     assert wf["33"]["class_type"] == "RandomNoise"
     assert wf["40"]["class_type"] == "SamplerCustomAdvanced"
 
@@ -401,8 +398,8 @@ def test_photo_restore():
                               "retinaface_resnet50", 1.0, 0.7, 1, 1.0, 1.5)
     assert wf["1"]["class_type"] == "LoadImage"
     assert wf["2"]["class_type"] == "UpscaleModelLoader"
-    assert wf["3"]["class_type"] == "ImageUpscaleWithModelByFactor"
-    assert wf["3"]["inputs"]["scale_by"] == 1.0
+    assert wf["3"]["class_type"] == "Upscale by Factor with Model (WLSH)"
+    assert wf["3"]["inputs"]["factor"] == 1.0
     assert wf["4"]["class_type"] == "ReActorRestoreFace"
     assert wf["4"]["inputs"]["image"] == ["3", 0]  # Chains from upscale
     assert wf["5"]["class_type"] == "ImageSharpen"
@@ -426,7 +423,7 @@ def test_detail_hallucinate():
     )
     assert wf["1"]["class_type"] == "LoadImage"
     assert wf["2"]["class_type"] == "UpscaleModelLoader"
-    assert wf["3"]["class_type"] == "ImageUpscaleWithModelByFactor"
+    assert wf["3"]["class_type"] == "Upscale by Factor with Model (WLSH)"
     assert wf["4"]["class_type"] == "CheckpointLoaderSimple"
     assert wf["8"]["class_type"] == "KSampler"
     assert wf["8"]["inputs"]["denoise"] == 0.35
@@ -555,7 +552,7 @@ def test_outpaint():
 
 
 def test_outpaint_klein():
-    """Test outpaint with Klein falls back to KSampler (not SamplerCustomAdvanced)."""
+    """Test outpaint with Klein uses SamplerCustomAdvanced pipeline."""
     preset = {
         "arch": "flux2klein", "ckpt": "flux-2-klein-9b.safetensors",
         "width": 1024, "height": 1024,
@@ -564,8 +561,9 @@ def test_outpaint_klein():
     }
     wf = build_outpaint("img.png", preset, "extend", "bad", 42,
                           left=64, top=0, right=64, bottom=0, feathering=40)
-    assert wf["8"]["class_type"] == "KSampler"  # NOT SamplerCustomAdvanced
-    assert wf["8"]["inputs"]["denoise"] == 0.85
+    assert wf["8"]["class_type"] == "SamplerCustomAdvanced"
+    # Klein outpaint uses SetLatentNoiseMask → SamplerCustomAdvanced
+    assert wf["8"]["inputs"]["latent_image"] == ["7", 0]
     return True, "outpaint_klein", ""
 
 
@@ -698,8 +696,8 @@ def test_seedv2r():
                         scale_factor=2.0, orig_width=512, orig_height=512)
     assert wf["1"]["class_type"] == "LoadImage"
     assert wf["2"]["class_type"] == "UpscaleModelLoader"
-    assert wf["3"]["class_type"] == "ImageUpscaleWithModelByFactor"
-    assert wf["3"]["inputs"]["scale_by"] == 2.0
+    assert wf["3"]["class_type"] == "Upscale by Factor with Model (WLSH)"
+    assert wf["3"]["inputs"]["factor"] == 2.0
     assert wf["4"]["class_type"] == "CheckpointLoaderSimple"
     assert wf["8"]["class_type"] == "KSampler"
     assert wf["8"]["inputs"]["denoise"] == 0.4
@@ -748,10 +746,10 @@ def test_klein_img2img_ref():
     # ReferenceLatent for conditioning
     assert wf["20"]["class_type"] == "ReferenceLatent"
     assert wf["21"]["class_type"] == "ReferenceLatent"
-    # SamplerCustomAdvanced path (Flux2Scheduler for non-denoise path)
+    # SamplerCustomAdvanced path (BasicScheduler)
     assert wf["30"]["class_type"] == "CFGGuider"
     assert wf["31"]["class_type"] == "KSamplerSelect"
-    assert wf["32"]["class_type"] == "Flux2Scheduler"
+    assert wf["32"]["class_type"] == "BasicScheduler"
     assert wf["40"]["class_type"] == "SamplerCustomAdvanced"
     assert wf["51"]["class_type"] == "SaveImage"
     return True, "klein_img2img_ref", ""
@@ -1045,9 +1043,9 @@ def test_klein_repose():
     assert wf["32"]["class_type"] == "BasicScheduler"
     assert wf["32"]["inputs"]["denoise"] == 0.50
     assert wf["32"]["inputs"]["steps"] == 20
-    # EmptyFlux2LatentImage (generates from noise, not img2img)
-    assert wf["34"]["class_type"] == "EmptyFlux2LatentImage"
+    # Sampler gets VAEEncode output as latent (img2img path)
     assert wf["40"]["class_type"] == "SamplerCustomAdvanced"
+    assert wf["40"]["inputs"]["latent_image"] == ["13", 0]
     assert wf["60"]["class_type"] == "SaveImage"
     return True, "klein_repose", ""
 
@@ -1189,13 +1187,13 @@ def test_upscale_blend():
     # Model A
     assert wf["10"]["class_type"] == "UpscaleModelLoader"
     assert wf["10"]["inputs"]["model_name"] == "4x_ultrasharp.pth"
-    assert wf["11"]["class_type"] == "ImageUpscaleWithModelByFactor"
+    assert wf["11"]["class_type"] == "Upscale by Factor with Model (WLSH)"
     assert wf["11"]["inputs"]["upscale_model"] == ["10", 0]
     assert wf["11"]["inputs"]["image"] == ["1", 0]
     # Model B
     assert wf["20"]["class_type"] == "UpscaleModelLoader"
     assert wf["20"]["inputs"]["model_name"] == "4x_remacri.pth"
-    assert wf["21"]["class_type"] == "ImageUpscaleWithModelByFactor"
+    assert wf["21"]["class_type"] == "Upscale by Factor with Model (WLSH)"
     assert wf["21"]["inputs"]["upscale_model"] == ["20", 0]
     assert wf["21"]["inputs"]["image"] == ["1", 0]
     # Blend
@@ -1211,36 +1209,36 @@ def test_frame_assembly():
     """Test build_frame_assembly — dynamic frame chain → VHS_VideoCombine."""
     wf = build_frame_assembly(["f1.png", "f2.png", "f3.png", "f4.png"], fps=24.0,
                               filename_prefix="test_assembly")
-    # 4 LoadImage nodes
-    assert wf["200"]["class_type"] == "LoadImage"
-    assert wf["201"]["class_type"] == "LoadImage"
-    assert wf["202"]["class_type"] == "LoadImage"
-    assert wf["203"]["class_type"] == "LoadImage"
-    # ImageBatch chain: 300 = batch(200,201), 301 = batch(300,202), 302 = batch(301,203)
-    assert wf["300"]["class_type"] == "ImageBatch"
-    assert wf["300"]["inputs"]["image1"] == ["200", 0]
-    assert wf["300"]["inputs"]["image2"] == ["201", 0]
-    assert wf["301"]["class_type"] == "ImageBatch"
-    assert wf["301"]["inputs"]["image1"] == ["300", 0]
-    assert wf["301"]["inputs"]["image2"] == ["202", 0]
-    assert wf["302"]["class_type"] == "ImageBatch"
-    assert wf["302"]["inputs"]["image1"] == ["301", 0]
-    assert wf["302"]["inputs"]["image2"] == ["203", 0]
+    # 4 LoadImage nodes (f_0 through f_3)
+    assert wf["f_0"]["class_type"] == "LoadImage"
+    assert wf["f_1"]["class_type"] == "LoadImage"
+    assert wf["f_2"]["class_type"] == "LoadImage"
+    assert wf["f_3"]["class_type"] == "LoadImage"
+    # ImageBatch chain: b_1 = batch(f_0,f_1), b_2 = batch(b_1,f_2), b_3 = batch(b_2,f_3)
+    assert wf["b_1"]["class_type"] == "ImageBatch"
+    assert wf["b_1"]["inputs"]["image1"] == ["f_0", 0]
+    assert wf["b_1"]["inputs"]["image2"] == ["f_1", 0]
+    assert wf["b_2"]["class_type"] == "ImageBatch"
+    assert wf["b_2"]["inputs"]["image1"] == ["b_1", 0]
+    assert wf["b_2"]["inputs"]["image2"] == ["f_2", 0]
+    assert wf["b_3"]["class_type"] == "ImageBatch"
+    assert wf["b_3"]["inputs"]["image1"] == ["b_2", 0]
+    assert wf["b_3"]["inputs"]["image2"] == ["f_3", 0]
     # VHS_VideoCombine with final batch ref
-    assert wf["400"]["class_type"] == "VHS_VideoCombine"
-    assert wf["400"]["inputs"]["images"] == ["302", 0]
-    assert wf["400"]["inputs"]["frame_rate"] == 24.0
-    assert wf["400"]["inputs"]["filename_prefix"] == "test_assembly"
+    assert wf["vhs_out"]["class_type"] == "VHS_VideoCombine"
+    assert wf["vhs_out"]["inputs"]["images"] == ["b_3", 0]
+    assert wf["vhs_out"]["inputs"]["frame_rate"] == 24.0
+    assert wf["vhs_out"]["inputs"]["filename_prefix"] == "test_assembly"
     return True, "frame_assembly", ""
 
 
 def test_frame_assembly_single():
     """Test build_frame_assembly with a single frame (edge case)."""
     wf = build_frame_assembly(["only.png"], fps=16.0)
-    assert wf["200"]["class_type"] == "LoadImage"
-    assert "300" not in wf  # no ImageBatch needed
-    assert wf["400"]["class_type"] == "VHS_VideoCombine"
-    assert wf["400"]["inputs"]["images"] == ["200", 0]
+    assert wf["f_0"]["class_type"] == "LoadImage"
+    assert "b_1" not in wf  # no ImageBatch needed
+    assert wf["vhs_out"]["class_type"] == "VHS_VideoCombine"
+    assert wf["vhs_out"]["inputs"]["images"] == ["f_0", 0]
     return True, "frame_assembly_single", ""
 
 
