@@ -1,0 +1,318 @@
+[
+  {
+    "label": "(custom \u2014 write your own)"
+  },
+  {
+    "label": "Portrait \u2014 Headshot",
+    "prompts": {
+      "sd15": [
+        "close-up portrait photograph of [subject], 85mm lens, f/1.8, shallow depth of field, soft studio lighting, catchlights in eyes, ultra-detailed skin texture, sharp focus, photorealistic, professional headshot, RAW photo",
+        "(deformed, distorted, disfigured:1.3), poorly drawn face, bad anatomy, extra limbs, blurry, out of focus, low quality, cartoon, painting"
+      ],
+      "sdxl": [
+        "close-up portrait photograph of [subject], shot on Canon EOS R5 with 85mm f/1.4 lens, shallow depth of field, soft directional studio lighting, catchlights in eyes, ultra-detailed skin pores and texture, sharp focus on eyes, professional headshot, natural skin tones, 8k resolution",
+        "(deformed, distorted, disfigured:1.3), poorly drawn face, mutation, extra limbs, blurry, bokeh on face, watermark, text, low quality, worst quality, cartoon"
+      ],
+      "flux": [
+        "Professional headshot portrait of [subject]. Shot on a Canon EOS R5 with an 85mm f/1.4 lens at close range. Soft directional studio lighting creates gentle shadows on one side of the face. Sharp focus on the eyes with beautiful catchlights. Shallow depth of field blurs the background into creamy bokeh. Natural skin tones, visible pores and fine details. 8K resolution.",
+        ""
+      ]
+    }
+  },
+  {
+    "label": "Portrait \u2014 Full Body",
+    "prompts": {
+      "sd15": [
+        "full body portrait of [subject], standing pose, natural environment, 35mm lens, f/2.8, soft natural lighting, sharp focus, detailed clothing, photorealistic, professional photography, RAW photo",
+        "(deformed:1.3), bad anatomy, extra limbs, missing limbs, blurry, low quality, cropped, watermark"
+      ],
+      "sdxl": [
+        "full body portrait of [subject], standing in [environment], shot on 35mm f/2.8, natural golden hour lighting, sharp focus head to toe, detailed clothing texture, photorealistic, editorial photography, high resolution",
+        "(deformed, distorted:1.3), bad anatomy, bad proportions, extra limbs, missing limbs, blurry, watermark, worst quality, cartoon"
+      ],
+      "flux": [
+        "Full body portrait of [subject] standing in [environment]. Shot on a 35mm lens at f/2.8. Golden hour natural lighting casts warm tones. Sharp focus from head to toe with detailed clothing texture. Professional editorial photography style. Natural body proportions and relaxed pose.",
+        ""
+      ]
+    }
+  },
+  {
+    "label": "Product Photo",
+    "prompts": {
+      "sd15": [
+        "professional product photography of [product], centered on clean white background, soft box lighting, sharp focus, high detail, commercial photography, studio lighting setup, no shadows, RAW photo",
+        "blurry, low quality, dark, cluttered background, text, watermark"
+      ],
+      "sdxl": [
+        "professional commercial product photography of [product], centered on seamless white gradient background, three-point studio lighting with soft fill, crisp sharp focus, 100mm macro lens, high detail textures, clean minimalist composition, advertising quality, 8k",
+        "blurry, dark, shadows, cluttered, text, watermark, worst quality, low quality"
+      ],
+      "flux": [
+        "Professional commercial product photograph of [product] centered on a seamless white gradient background. Three-point studio lighting with soft diffused fill light. Shot with a 100mm macro lens for crisp detail. Clean minimalist composition. Advertising quality, suitable for e-commerce listing. 8K resolution.",
+        ""
+      ]
+    }
+  },
+  {
+    "label": "Landscape / Scenic",
+    "prompts": {
+      "sd15": [
+        "breathtaking landscape photograph of [scene], golden hour lighting, dramatic sky, wide angle lens, deep depth of field, sharp throughout, vivid colors, National Geographic quality, RAW photo, 8k",
+        "blurry, hazy, overexposed, flat lighting, low quality, watermark"
+      ],
+      "sdxl": [
+        "breathtaking landscape photograph of [scene], shot during golden hour, dramatic cloud formations, wide-angle 16mm lens at f/11 for maximum sharpness, deep depth of field, vivid natural colors, leading lines, National Geographic quality, 8k ultrawide",
+        "blurry, hazy, overexposed, flat lighting, desaturated, worst quality, low quality, watermark"
+      ],
+      "flux": [
+        "Breathtaking landscape photograph of [scene] during golden hour. Shot with a 16mm wide-angle lens at f/11 for maximum depth of field. Dramatic cloud formations in the sky with warm golden light. Vivid natural colors with leading lines drawing the eye into the scene. National Geographic quality with stunning detail from foreground to horizon.",
+        ""
+      ]
+    }
+  },
+  {
+    "label": "Food Photography",
+    "prompts": {
+      "sd15": [
+        "professional food photography of [dish], overhead angle, soft natural window light, shallow depth of field, appetizing presentation, rustic wooden table, garnish details, sharp focus, RAW photo",
+        "blurry, dark, overcooked, unappetizing, low quality, messy"
+      ],
+      "sdxl": [
+        "professional food photography of [dish], overhead 45-degree angle, soft natural window light with white bounce card, shallow depth of field, steam rising, appetizing presentation on rustic ceramic plate, garnish micro-herbs, wooden table, sharp focus, editorial quality, 8k",
+        "blurry, dark, unappetizing, low quality, worst quality, overexposed"
+      ],
+      "flux": [
+        "Professional food photograph of [dish] from a 45-degree overhead angle. Soft natural window light with a white bounce card for fill. Shallow depth of field focuses on the main dish with gentle steam rising. Appetizing presentation on a rustic ceramic plate with micro-herb garnish. Warm wooden table surface. Editorial quality food styling.",
+        ""
+      ]
+    }
+  },
+  {
+    "label": "Architecture / Interior",
+    "prompts": {
+      "sd15": [
+        "professional architectural photograph of [building/interior], symmetrical composition, dramatic lighting, tilt-shift lens, sharp lines, deep depth of field, clean modern design, Architectural Digest quality, RAW photo",
+        "blurry, distorted, cluttered, low quality, watermark"
+      ],
+      "sdxl": [
+        "professional architectural photograph of [building/interior], symmetrical composition, 24mm tilt-shift lens, dramatic natural lighting streaming through windows, sharp geometric lines, deep depth of field, clean design, Architectural Digest quality, 8k resolution",
+        "blurry, distorted, cluttered, fisheye, worst quality, low quality, watermark"
+      ],
+      "flux": [
+        "Professional architectural photograph of [building/interior]. Symmetrical composition shot with a 24mm tilt-shift lens. Dramatic natural light streams through large windows creating strong shadow patterns. Sharp geometric lines and deep depth of field. Clean modern design aesthetic. Architectural Digest magazine quality.",
+        ""
+      ]
+    }
+  },
+  {
+    "label": "Fashion Editorial",
+    "prompts": {
+      "sd15": [
+        "high fashion editorial photograph of [model/outfit], dramatic studio lighting, dynamic pose, sharp focus on fabric texture, Vogue magazine quality, professional fashion photography, RAW photo",
+        "(deformed:1.3), bad anatomy, blurry, low quality, amateur, watermark"
+      ],
+      "sdxl": [
+        "high fashion editorial photograph of [model/outfit], dramatic Rembrandt lighting, dynamic pose showing garment flow, sharp focus on fabric texture and stitching, 70mm lens, clean studio backdrop, Vogue magazine cover quality, professional retouching, 8k",
+        "(deformed, distorted:1.3), bad anatomy, bad proportions, blurry, worst quality, amateur, watermark"
+      ],
+      "flux": [
+        "High fashion editorial photograph of [model/outfit]. Dramatic Rembrandt lighting creates bold shadows. Dynamic pose shows the flow and drape of the garment. Shot on a 70mm lens with sharp focus on fabric texture. Clean studio backdrop. Vogue magazine cover quality with professional color grading.",
+        ""
+      ]
+    }
+  },
+  {
+    "label": "Fantasy Art / Epic Scene",
+    "prompts": {
+      "sd15": [
+        "epic fantasy art of [scene], dramatic volumetric lighting, magical atmosphere, highly detailed, cinematic composition, concept art quality, digital painting, masterpiece",
+        "blurry, low quality, bad anatomy, amateur, flat lighting"
+      ],
+      "sdxl": [
+        "epic fantasy art of [scene], dramatic god rays and volumetric lighting, magical glowing particles, cinematic wide composition, rich color palette, highly detailed environment and characters, concept art quality, digital painting masterpiece, trending on ArtStation, 8k",
+        "blurry, low quality, bad anatomy, amateur, flat lighting, worst quality, deformed, text, watermark"
+      ],
+      "flux": [
+        "Epic fantasy art depicting [scene]. Dramatic god rays pierce through clouds creating volumetric lighting. Magical glowing particles float in the air. Cinematic wide composition with rich jewel-tone color palette. Highly detailed environment with intricate architectural elements. Concept art quality with painterly brushwork. Award-winning fantasy illustration.",
+        ""
+      ]
+    }
+  },
+  {
+    "label": "Cinematic / Film Still",
+    "prompts": {
+      "sd15": [
+        "cinematic film still of [scene], anamorphic lens, dramatic lighting, shallow depth of field, film grain, color graded, 35mm film, movie scene quality, RAW photo",
+        "blurry, flat lighting, overexposed, low quality, amateur"
+      ],
+      "sdxl": [
+        "cinematic film still of [scene], shot on anamorphic 40mm lens, dramatic chiaroscuro lighting, shallow depth of field with oval bokeh, subtle film grain, teal and orange color grading, 35mm celluloid look, directed by Roger Deakins, IMAX quality, 8k",
+        "blurry, flat lighting, overexposed, desaturated, worst quality, low quality, watermark, text"
+      ],
+      "flux": [
+        "Cinematic film still of [scene]. Shot on an anamorphic 40mm lens with characteristic oval bokeh and lens flares. Dramatic chiaroscuro lighting with deep shadows and selective highlights. Subtle film grain texture. Teal and orange color grading reminiscent of a Roger Deakins production. 35mm celluloid look. Widescreen 2.39:1 composition.",
+        ""
+      ]
+    }
+  },
+  {
+    "label": "Street Photography",
+    "prompts": {
+      "sd15": [
+        "candid street photograph of [scene], natural light, documentary style, 35mm lens, f/5.6, decisive moment, urban environment, sharp focus, Henri Cartier-Bresson style, RAW photo",
+        "posed, blurry, studio lighting, low quality, watermark"
+      ],
+      "sdxl": [
+        "candid street photograph of [scene], natural ambient light, documentary style, 35mm lens at f/5.6, decisive moment captured mid-action, busy urban environment, sharp focus with environmental context, authentic atmosphere, Henri Cartier-Bresson inspired, black and white optional, 8k",
+        "posed, staged, blurry, studio lighting, worst quality, low quality, watermark"
+      ],
+      "flux": [
+        "Candid street photograph of [scene] in a busy urban environment. Shot on a 35mm lens at f/5.6 to keep both subject and environment in focus. Natural ambient light. A decisive moment captured mid-action. Documentary style with authentic atmosphere. Henri Cartier-Bresson inspired composition with leading lines and geometric framing.",
+        ""
+      ]
+    }
+  },
+  {
+    "label": "Macro / Close-Up Detail",
+    "prompts": {
+      "sd15": [
+        "extreme macro photograph of [subject], 100mm macro lens, f/2.8, ring light, incredible fine detail, shallow depth of field, sharp focus on subject, creamy bokeh background, RAW photo",
+        "blurry, out of focus, low quality, noisy, watermark"
+      ],
+      "sdxl": [
+        "extreme macro photograph of [subject], Canon 100mm f/2.8L macro lens, ring light with diffuser, incredible fine detail showing texture and structure, paper-thin depth of field, tack-sharp focus on subject, creamy pastel bokeh, scientific precision, 8k resolution",
+        "blurry, out of focus, noisy, worst quality, low quality, watermark"
+      ],
+      "flux": [
+        "Extreme macro photograph of [subject] shot with a Canon 100mm f/2.8L macro lens. Ring light with diffuser provides even illumination. Incredible fine detail showing texture, structure, and surface characteristics. Paper-thin depth of field with only the focal plane razor-sharp. Creamy pastel bokeh background. Scientific precision meets artistic composition.",
+        ""
+      ]
+    }
+  },
+  {
+    "label": "Anime \u2014 Character Portrait",
+    "prompts": {
+      "sdxl_anime": [
+        "masterpiece, best quality, very aesthetic, absurdres, 1girl/1boy, [character description], detailed face, beautiful detailed eyes, looking at viewer, upper body, dynamic lighting, vibrant colors, sharp linework, anime illustration",
+        "worst quality, low quality, lowres, bad anatomy, bad hands, extra fingers, fewer fingers, cropped, username, watermark, blurry, jpeg artifacts, realistic, 3d"
+      ]
+    }
+  },
+  {
+    "label": "Anime \u2014 Action Scene",
+    "prompts": {
+      "sdxl_anime": [
+        "masterpiece, best quality, very aesthetic, absurdres, 1girl/1boy, [action description], dynamic pose, motion blur effects, speed lines, energy aura, dramatic angle from below, cinematic lighting, vivid colors, action anime style",
+        "worst quality, low quality, lowres, bad anatomy, bad hands, stiff pose, static, blurry, jpeg artifacts, realistic"
+      ]
+    }
+  },
+  {
+    "label": "Anime \u2014 Slice of Life",
+    "prompts": {
+      "sdxl_anime": [
+        "masterpiece, best quality, very aesthetic, absurdres, 1girl/1boy, [everyday scene], soft warm lighting, cozy atmosphere, detailed background, school/cafe/park/room, gentle expression, pastel color palette, anime illustration",
+        "worst quality, low quality, lowres, bad anatomy, dark, gloomy, blurry, cropped, watermark"
+      ]
+    }
+  },
+  {
+    "label": "Anime \u2014 Fantasy / Isekai",
+    "prompts": {
+      "sdxl_anime": [
+        "masterpiece, best quality, very aesthetic, absurdres, 1girl/1boy, [fantasy description], magical environment, glowing effects, floating particles, epic landscape, detailed armor/costume, dramatic sky, volumetric lighting, fantasy anime illustration",
+        "worst quality, low quality, lowres, bad anatomy, modern clothing, realistic, photograph, blurry, watermark"
+      ]
+    }
+  },
+  {
+    "label": "Anime \u2014 Chibi / Cute",
+    "prompts": {
+      "sdxl_anime": [
+        "masterpiece, best quality, very aesthetic, chibi, 1girl/1boy, [character], super deformed, big head, small body, cute expression, sparkle eyes, pastel colors, simple background, kawaii, adorable, sticker style",
+        "worst quality, low quality, realistic, detailed anatomy, normal proportions, dark, scary, blurry"
+      ]
+    }
+  },
+  {
+    "label": "Anime \u2014 Wallpaper / Key Visual",
+    "prompts": {
+      "sdxl_anime": [
+        "masterpiece, best quality, very aesthetic, absurdres, official art, [scene/character], incredibly detailed background, cinematic composition, dramatic lighting, vibrant saturated colors, wallpaper quality, key visual, anime illustration",
+        "worst quality, low quality, lowres, bad anatomy, simple background, blurry, jpeg artifacts, watermark, text"
+      ]
+    }
+  },
+  {
+    "label": "Cartoon \u2014 Character Design",
+    "prompts": {
+      "sdxl_cartoon": [
+        "disney style, 3d render, [character description], expressive face, big eyes, smooth skin, vibrant colors, cinematic lighting, character design sheet, clean background, Pixar quality, cartoon, high detail",
+        "photorealistic, blurry, deformed, low quality, dark, scary, bad anatomy, ugly"
+      ]
+    }
+  },
+  {
+    "label": "Cartoon \u2014 Scene / Environment",
+    "prompts": {
+      "sdxl_cartoon": [
+        "disney style, 3d render, [scene description], vibrant colorful environment, whimsical architecture, magical atmosphere, volumetric lighting, Pixar movie scene, detailed background, cinematic composition, cartoon",
+        "photorealistic, dark, gritty, blurry, low quality, flat lighting"
+      ]
+    }
+  },
+  {
+    "label": "Cartoon \u2014 Cute Animal / Mascot",
+    "prompts": {
+      "sdxl_cartoon": [
+        "disney style, 3d render, adorable [animal/creature], big expressive eyes, soft fur/skin, rounded shapes, warm lighting, cute expression, Pixar character design, vibrant pastel colors, cartoon",
+        "photorealistic, scary, dark, blurry, low quality, deformed, ugly"
+      ]
+    }
+  },
+  {
+    "label": "Kontext \u2014 Change Outfit / Clothing",
+    "prompts": {
+      "flux_kontext": [
+        "Change the person's outfit to [clothing description]. Keep the face, pose, and background exactly the same. Only modify the clothing.",
+        ""
+      ]
+    }
+  },
+  {
+    "label": "Kontext \u2014 Change Background",
+    "prompts": {
+      "flux_kontext": [
+        "Replace the background with [new background]. Keep the subject exactly the same, including their pose, expression, and lighting on their face.",
+        ""
+      ]
+    }
+  },
+  {
+    "label": "Kontext \u2014 Age / Appearance Edit",
+    "prompts": {
+      "flux_kontext": [
+        "Make the person look [younger/older/description]. Keep everything else about the image the same, including background and clothing.",
+        ""
+      ]
+    }
+  },
+  {
+    "label": "Kontext \u2014 Add Object / Element",
+    "prompts": {
+      "flux_kontext": [
+        "Add [object/element] to the scene. Place it [location]. Keep everything else in the image unchanged.",
+        ""
+      ]
+    }
+  },
+  {
+    "label": "Kontext \u2014 Style / Color Shift",
+    "prompts": {
+      "flux_kontext": [
+        "Transform this image into [style: e.g. watercolor painting, pencil sketch, pop art, oil painting, noir]. Keep the composition and subject the same.",
+        ""
+      ]
+    }
+  }
+]
