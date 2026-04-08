@@ -5830,7 +5830,8 @@ def _build_ltx_video(preset_key, prompt_text, seed,
                       steps=None, cfg=None, stg=None, rescale=None,
                       two_stage=False, distilled=False,
                       loras=None, interpolate=False, rtx_scale=0,
-                      fps=25, pingpong=False, image_filename=None):
+                      fps=25, pingpong=False, image_filename=None,
+                      i2v_strength=0.9):
     """→ Delegated to v2 builder (resolves preset_key → preset dict)."""
     preset = LTX_PRESETS[preset_key]
     return build_ltx_video(preset, prompt_text, seed,
@@ -5839,7 +5840,8 @@ def _build_ltx_video(preset_key, prompt_text, seed,
                             two_stage=two_stage, distilled=distilled,
                             loras=loras, interpolate=interpolate,
                             rtx_scale=rtx_scale, fps=fps, pingpong=pingpong,
-                            image_filename=image_filename)
+                            image_filename=image_filename,
+                            i2v_strength=i2v_strength)
 
 
 def _write_rgb_png(filepath, width, height, pixel_rows):
@@ -9666,6 +9668,30 @@ class LtxVideoDialog(Gtk.Dialog):
         self.pingpong_check.set_tooltip_text("Play video forward then backward for seamless looping.")
         box.pack_start(self.pingpong_check, False, False, 0)
 
+        # I2V (image-to-video)
+        sep3 = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        box.pack_start(sep3, False, False, 4)
+        self.i2v_check = Gtk.CheckButton(label="Image-to-Video (use current canvas as first frame)")
+        self.i2v_check.set_tooltip_text(
+            "Use the current GIMP image (or selection) as the conditioning\n"
+            "frame for video generation. The video will start from this image.")
+        self.i2v_check.connect("toggled", self._on_i2v_toggled)
+        box.pack_start(self.i2v_check, False, False, 0)
+
+        hb_i2v = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb_i2v.pack_start(Gtk.Label(label="I2V Strength:"), False, False, 0)
+        self.i2v_strength_spin = Gtk.SpinButton.new_with_range(0.0, 1.0, 0.05)
+        self.i2v_strength_spin.set_digits(2)
+        self.i2v_strength_spin.set_value(0.90)
+        self.i2v_strength_spin.set_tooltip_text(
+            "How strongly the first frame conditions the video.\n"
+            "1.0 = strict adherence to input image.\n"
+            "0.8-0.9 = balanced (recommended).\n"
+            "0.5 = loose \xe2\x80\x94 more creative freedom.")
+        self.i2v_strength_spin.set_sensitive(False)
+        hb_i2v.pack_start(self.i2v_strength_spin, False, False, 0)
+        box.pack_start(hb_i2v, False, False, 0)
+
         # Runs
         hbr2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         hbr2.pack_start(Gtk.Label(label="Runs:"), False, False, 0)
@@ -9687,6 +9713,10 @@ class LtxVideoDialog(Gtk.Dialog):
             self.cfg_spin.set_value(1.0)
             self.stg_spin.set_value(0.0)
             self.rescale_spin.set_value(0.0)
+
+    def _on_i2v_toggled(self, widget):
+        """Enable/disable I2V strength slider."""
+        self.i2v_strength_spin.set_sensitive(widget.get_active())
 
     def _on_video_preset_changed(self, combo):
         idx = combo.get_active()
@@ -9731,6 +9761,8 @@ class LtxVideoDialog(Gtk.Dialog):
             "interpolate": self.interpolate_check.get_active(),
             "rtx_scale": self.rtx_scale_spin.get_value() if self.rtx_check.get_active() else 0,
             "pingpong": self.pingpong_check.get_active(),
+            "i2v": self.i2v_check.get_active(),
+            "i2v_strength": self.i2v_strength_spin.get_value(),
             "runs": int(self._runs_spin.get_value()),
         }
 
@@ -11386,6 +11418,10 @@ class Spellcaster(Gimp.PlugIn):
                     dlg.stg_spin.set_value(last["stg"])
                 if last.get("rescale") is not None:
                     dlg.rescale_spin.set_value(last["rescale"])
+                if last.get("i2v"):
+                    dlg.i2v_check.set_active(True)
+                if last.get("i2v_strength") is not None:
+                    dlg.i2v_strength_spin.set_value(last["i2v_strength"])
             except Exception:
                 pass
 
@@ -11400,6 +11436,20 @@ class Spellcaster(Gimp.PlugIn):
 
         runs = v.get("runs", 1)
         try:
+            # I2V: export current canvas and upload to ComfyUI
+            i2v_filename = None
+            if v.get("i2v"):
+                has_sel, sx1, sy1, sx2, sy2 = _get_selection_bounds(image)
+                if has_sel:
+                    _update_spinner_status("LTX I2V: exporting selection region...")
+                    tmp, _sw, _sh = _export_selection_to_tmp(image)
+                else:
+                    _update_spinner_status("LTX I2V: exporting image...")
+                    tmp = _export_image_to_tmp(image)
+                i2v_filename = f"gimp_ltx_i2v_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(v["server"], tmp, i2v_filename)
+                os.unlink(tmp)
+
             base_seed = v["seed"]
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
@@ -11414,8 +11464,11 @@ class Spellcaster(Gimp.PlugIn):
                     rtx_scale=v.get("rtx_scale", 0),
                     fps=v["fps"],
                     pingpong=v.get("pingpong", False),
+                    image_filename=i2v_filename,
+                    i2v_strength=v.get("i2v_strength", 0.9),
                 )
-                label = f"LTX T2V run {run_i+1}/{runs}" if runs > 1 else "LTX T2V"
+                mode_str = "I2V" if i2v_filename else "T2V"
+                label = f"LTX {mode_str} run {run_i+1}/{runs}" if runs > 1 else f"LTX {mode_str}"
                 _wf = wf
                 results = _run_with_spinner(
                     f"{label}: generating video on ComfyUI...",
@@ -11426,7 +11479,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.displays_flush()
             Gimp.progress_end()
             mode = "distilled" if v["distilled"] else ("two-stage" if v["two_stage"] else "single-stage")
-            msg = f"LTX 2.3 video generation complete! ({mode})\nLast frame imported as layer."
+            i2v_str = " I2V" if v.get("i2v") else ""
+            msg = f"LTX 2.3{i2v_str} video generation complete! ({mode})\nLast frame imported as layer."
             if saved:
                 msg += f"\nFiles saved: {', '.join(saved)}"
             Gimp.message(msg)
