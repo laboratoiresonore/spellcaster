@@ -564,7 +564,7 @@ def build_lut(image_filename, lut_name, strength):
 
 def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
                          steps=4, denoise=0.65, guidance=1.0,
-                         enhancer_mag=1.0, enhancer_contrast=0.0,
+                         enhancer_mag=1.0, enhancer_contrast=0.0, loras=None,
                          lora_name=None, lora_strength=1.0,
                          klein_models=None):
     """Image-to-image with Flux 2 Klein (distilled fast model).
@@ -664,6 +664,12 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
     )
     vae_id = nf.vae_loader("flux2-vae.safetensors", node_id="3")
 
+
+    # Apply LoRA chain
+    if loras:
+        unet_id, clip_id = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
+        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
+        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
     # Text conditioning
     pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="4")
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="5")
@@ -1069,6 +1075,7 @@ def build_photo_restore(image_filename, upscale_model, face_model,
 def build_detail_hallucinate(image_filename, upscale_model, preset,
                               prompt_text, negative_text, seed,
                               denoise, cfg, steps=None, upscale_factor=1.0,
+                              loras=None,
                               controlnet=None, controlnet_2=None,
                               guide_modes=None):
     """Super-resolution with detail hallucination via img2img diffusion.
@@ -1161,6 +1168,10 @@ def build_detail_hallucinate(image_filename, upscale_model, preset,
     # Model loading (architecture-aware)
     model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "4")
 
+    # LoRA chain
+    if loras:
+        model_ref, clip_ref = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100)
+
     # Encode prompts
     arch_key = preset.get("arch", "sdxl")
     pos_id, neg_id = encode_prompts(nf, arch_key, clip_ref,
@@ -1222,7 +1233,7 @@ def build_detail_hallucinate(image_filename, upscale_model, preset,
 
 def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
                     controlnet_strength, denoise, steps=None, cfg=None,
-                    controlnet_2=None, guide_modes=None,
+                    controlnet_2=None, guide_modes=None, loras=None,
                     lineart_models=None):
     """Colorize B&W photo. Drop-in for _build_colorize().
 
@@ -1243,6 +1254,10 @@ def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
 
     # Model loading
     model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "3")
+
+    # LoRA chain
+    if loras:
+        model_ref, clip_ref = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100)
 
     # Lineart ControlNet
     cn_lineart = (lineart_models or {}).get(arch_key, "control-lora-openposeXL2-rank256.safetensors")
@@ -1422,7 +1437,7 @@ def build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
 
 def build_iclight(image_filename, ckpt_name, prompt, negative, seed,
                    multiplier=0.18, steps=20, cfg=2.0,
-                   sampler="euler", scheduler="normal"):
+                   sampler="euler", scheduler="normal", loras=None):
     """IC-Light relighting: adjust light sources and illumination.
 
     IC-Light is a specialized model for controlling and adjusting light in images.
@@ -1507,6 +1522,10 @@ def build_iclight(image_filename, ckpt_name, prompt, negative, seed,
     model_ref = [ckpt_id, 0]
     clip_ref = [ckpt_id, 1]
     vae_ref = [ckpt_id, 2]
+
+    # LoRA chain
+    if loras:
+        model_ref, clip_ref = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100)
 
     # VAEEncode foreground to latent (ICLightConditioning expects LATENT)
     latent_id = nf.vae_encode([img_id, 0], vae_ref, node_id="10")
@@ -2237,6 +2256,7 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
     )
     vae_id = nf.vae_loader("flux2-vae.safetensors", node_id="3")
 
+
     # Apply LoRA chain
     if loras:
         unet_id, clip_id = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
@@ -2288,7 +2308,7 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
 def build_klein_headswap(target_filename, source_filename, klein_model_key,
                           prompt, seed, denoise=0.35, steps=20,
                           face_model=None, face_restore_vis=0.7,
-                          codeformer_weight=0.8, klein_models=None):
+                          codeformer_weight=0.8, loras=None, klein_models=None):
     """Head swap with Klein Flux2 refinement.
 
     Two-stage head swap: first uses ReActor for fast face swap, then refines
@@ -2437,6 +2457,12 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
     )
     vae_id = nf.vae_loader("flux2-vae.safetensors", node_id="22")
 
+
+    # Apply LoRA chain
+    if loras:
+        unet_id, clip_id = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
+        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
+        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
     pos_id = nf.clip_encode([clip_id, 0], prompt, node_id="23")
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="24")
 
@@ -3009,7 +3035,7 @@ def build_seedvr2_video_upscale(video_name, seed=-1,
 
 def build_style_transfer(target_filename, style_ref_filename, preset,
                           prompt_text, negative_text, seed,
-                          ipadapter_preset="PLUS (high strength)",
+                          ipadapter_preset="PLUS (high strength)", loras=None,
                           weight=0.8, denoise=0.6,
                           controlnet=None, controlnet_2=None,
                           guide_modes=None):
@@ -3023,6 +3049,10 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
 
     # 1. Model stack
     model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "1")
+
+    # LoRA chain
+    if loras:
+        model_ref, clip_ref = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100)
 
     # 2. IPAdapter
     ipa_loader_id = nf.ipadapter_unified_loader(model_ref, ipadapter_preset,
@@ -3107,7 +3137,8 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
 
 def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_text,
                    seed, denoise, cfg, steps, scale_factor, orig_width, orig_height,
-                   controlnet=None, controlnet_2=None, guide_modes=None):
+                   controlnet=None, controlnet_2=None, guide_modes=None,
+                   loras=None):
     """SeedV2R: upscale + img2img. Drop-in for _build_seedv2r().
 
     For scale > 1x: upscale with model to target factor, then img2img.
@@ -3135,6 +3166,10 @@ def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_t
 
     # 4. Model stack
     model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "4")
+
+    # LoRA chain
+    if loras:
+        model_ref, clip_ref = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100)
 
     # 5. Encode
     pos_id = nf.clip_encode(clip_ref, prompt_text, node_id="5")
@@ -3316,7 +3351,7 @@ def build_photobooth(ref_filename, prompt_text, seed,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_klein_repose(image_filename, klein_model_key, prompt_text, seed,
-                       steps=20, denoise=0.65, guidance=1.0,
+                       steps=20, denoise=0.65, guidance=1.0, loras=None,
                        klein_models=None):
     """Klein Re-poser: change character pose using ReferenceLatent + BasicScheduler.
 
@@ -3345,6 +3380,12 @@ def build_klein_repose(image_filename, klein_model_key, prompt_text, seed,
     )
     vae_id = nf.vae_loader("flux2-vae.safetensors", node_id="3")
 
+
+    # Apply LoRA chain
+    if loras:
+        unet_id, clip_id = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
+        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
+        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
     # Text conditioning
     pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="4")
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="5")
@@ -3389,7 +3430,7 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
                       blend_mode="normal", opacity=1.0, scale=1.0,
                       position_x=0.5, position_y=0.5,
                       klein_model_key="Klein 9B", steps=20, denoise=0.25,
-                      guidance=1.0, klein_models=None):
+                      guidance=1.0, loras=None, klein_models=None):
     """Klein Blend: composite foreground onto background, then harmonize with Klein.
 
     Pipeline: LoadImage(FG) + LoadImage(BG) → AILab_ImageCombiner → Klein
@@ -3427,6 +3468,12 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
     )
     vae_id = nf.vae_loader("flux2-vae.safetensors", node_id="12")
 
+
+    # Apply LoRA chain
+    if loras:
+        unet_id, clip_id = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
+        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
+        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
     # Text conditioning
     pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="13")
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="14")
@@ -3470,7 +3517,7 @@ def build_klein_inpaint(image_filename, mask_filename, prompt_text, seed,
                         klein_model_key="Klein 9B", steps=25, denoise=0.92,
                         guidance=1.0, grow_px=0, use_differential_diffusion=False,
                         use_solid_mask=False, solid_mask_width=1024,
-                        solid_mask_height=1024,
+                        solid_mask_height=1024, loras=None,
                         klein_models=None):
     """Klein Inpaint: regenerate masked area using FluxGuidance + SetLatentNoiseMask.
 
@@ -3502,6 +3549,12 @@ def build_klein_inpaint(image_filename, mask_filename, prompt_text, seed,
     )
     vae_id = nf.vae_loader("flux2-vae.safetensors", node_id="3")
 
+
+    # Apply LoRA chain
+    if loras:
+        unet_id, clip_id = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
+        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
+        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
     # Source image
     img_id = nf.load_image(image_filename, node_id="10")
 
@@ -3595,6 +3648,12 @@ def build_klein_scene_img2img(image_filename, prompt_text, seed,
     )
     vae_id = nf.vae_loader("flux2-vae.safetensors", node_id="3")
 
+
+    # Apply LoRA chain
+    if loras:
+        unet_id, clip_id = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
+        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
+        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
     # Source images (scene + actor — actor not used in workflow but loaded for context)
     scene_id = nf.load_image(image_filename, node_id="10")
 
@@ -3806,7 +3865,16 @@ def build_frame_assembly(frame_filenames, fps=16.0, filename_prefix="gimp_assemb
                                "crf": crf}},
     })
 
-    return nf.build()#   VAE: LTX23_video_vae_bf16.safetensors (NOT LTX2.2 VAEs!)
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  LTX 2.3 VIDEO GENERATION
+# ═══════════════════════════════════════════════════════════════════════════
+# LTX Video 2.3 pipeline:
+#   UnetLoaderGGUF → LTXVChunkFeedForward → LTXVApplySTG → STGGuider
+#   Text: LTXAVTextEncoderLoader (Gemma 3 + embeddings connectors)
+#   VAE: LTX23_video_vae_bf16.safetensors (NOT LTX2.2 VAEs!)
 #   Sampler: LTXVBaseSampler → LTXVSpatioTemporalTiledVAEDecode
 #   Two-stage: half-res → LatentUpscaleModelLoader + LTXVLatentUpsampler
 #              → SamplerCustomAdvanced re-denoise at full res
@@ -3819,7 +3887,7 @@ def build_ltx_video(preset, prompt_text, seed,
                      two_stage=False, distilled=False,
                      loras=None, interpolate=False, rtx_scale=0,
                      fps=25, pingpong=False,
-                     image_filename=None):
+                     image_filename=None, i2v_strength=0.9):
     """LTX Video 2.3 generation — text-to-video or image-to-video.
 
     Supports three modes:
@@ -3927,10 +3995,20 @@ def build_ltx_video(preset, prompt_text, seed,
     sampler_id = nf.ksampler_select("euler", node_id="17")
     noise_id = nf.random_noise(seed, node_id="18")
 
+    # ── I2V conditioning (optional) ─────────────────────────────────────────────
+    i2v_kwargs = {}
+    if image_filename:
+        i2v_img_id = nf.load_image(image_filename, node_id="19")
+        i2v_kwargs = {
+            "optional_cond_images": [i2v_img_id, 0],
+            "optional_cond_indices": "0",
+            "strength": i2v_strength,
+        }
+
     base_id = nf.ltxv_base_sampler(
         [stg_model_id, 0], [vae_id, 0], [guider_id, 0],
         [sampler_id, 0], [sched_id, 0], [noise_id, 0],
-        gen_width, gen_height, num_frames, node_id="20")
+        gen_width, gen_height, num_frames, **i2v_kwargs, node_id="20")
 
     decode_latent_ref = [base_id, 0]
 
@@ -3968,8 +4046,9 @@ def build_ltx_video(preset, prompt_text, seed,
         frames_ref = [rife_id, 0]
 
     # ── Output ────────────────────────────────────────────────────
+    i2v_tag = "-i2v" if image_filename else ""
     mode_tag = "distilled" if distilled else ("2stage" if two_stage else "single")
-    prefix = f"LTX23-{mode_tag}"
+    prefix = f"LTX23-{mode_tag}{i2v_tag}"
     nf.vhs_video_combine(frames_ref, frame_rate=fps, filename_prefix=prefix,
                           pingpong=pingpong, node_id="50")
 
