@@ -3184,508 +3184,26 @@ def _scene_arch(model_arch, model_label=""):
         return "sdxl_cartoon"
     return "sdxl"  # default for SDXL/Illustrious realistic
 
-SCENE_PRESETS = [
-    # ── Index 0: Custom (no auto-fill) ─────────────────────────────────
-    {"label": "(custom — write your own)"},
+def _load_presets_json(filename, fallback=None):
+    """Load a preset list from presets/<filename>.json next to this file."""
+    try:
+        _pdir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "presets")
+        with open(os.path.join(_pdir, filename), "r", encoding="utf-8") as _f:
+            loaded = json.load(_f)
+        # Convert [pos, neg] lists back to tuples for prompt pairs
+        for entry in loaded:
+            if "prompts" in entry:
+                for arch, pair in entry["prompts"].items():
+                    if isinstance(pair, list) and len(pair) == 2:
+                        entry["prompts"][arch] = tuple(pair)
+        return loaded
+    except Exception as e:
+        print(f"Spellcaster: Could not load {filename}: {e}")
+        return fallback if fallback is not None else []
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  REALISTIC / PHOTO presets (sd15, sdxl, flux)
-    # ══════════════════════════════════════════════════════════════════════
 
-    # 1 ── Portrait (Headshot) ─────────────────────────────────────────
-    {
-        "label": "Portrait — Headshot",
-        "prompts": {
-            "sd15": (
-                "close-up portrait photograph of [subject], 85mm lens, f/1.8, shallow depth of field, "
-                "soft studio lighting, catchlights in eyes, ultra-detailed skin texture, sharp focus, "
-                "photorealistic, professional headshot, RAW photo",
-                "(deformed, distorted, disfigured:1.3), poorly drawn face, bad anatomy, extra limbs, "
-                "blurry, out of focus, low quality, cartoon, painting"
-            ),
-            "sdxl": (
-                "close-up portrait photograph of [subject], shot on Canon EOS R5 with 85mm f/1.4 lens, "
-                "shallow depth of field, soft directional studio lighting, catchlights in eyes, "
-                "ultra-detailed skin pores and texture, sharp focus on eyes, professional headshot, "
-                "natural skin tones, 8k resolution",
-                "(deformed, distorted, disfigured:1.3), poorly drawn face, mutation, extra limbs, "
-                "blurry, bokeh on face, watermark, text, low quality, worst quality, cartoon"
-            ),
-            "flux": (
-                "Professional headshot portrait of [subject]. Shot on a Canon EOS R5 with an 85mm "
-                "f/1.4 lens at close range. Soft directional studio lighting creates gentle shadows "
-                "on one side of the face. Sharp focus on the eyes with beautiful catchlights. "
-                "Shallow depth of field blurs the background into creamy bokeh. Natural skin tones, "
-                "visible pores and fine details. 8K resolution.",
-                ""
-            ),
-        },
-    },
-    # 2 ── Portrait (Full Body) ────────────────────────────────────────
-    {
-        "label": "Portrait — Full Body",
-        "prompts": {
-            "sd15": (
-                "full body portrait of [subject], standing pose, natural environment, "
-                "35mm lens, f/2.8, soft natural lighting, sharp focus, detailed clothing, "
-                "photorealistic, professional photography, RAW photo",
-                "(deformed:1.3), bad anatomy, extra limbs, missing limbs, blurry, "
-                "low quality, cropped, watermark"
-            ),
-            "sdxl": (
-                "full body portrait of [subject], standing in [environment], shot on 35mm f/2.8, "
-                "natural golden hour lighting, sharp focus head to toe, detailed clothing texture, "
-                "photorealistic, editorial photography, high resolution",
-                "(deformed, distorted:1.3), bad anatomy, bad proportions, extra limbs, "
-                "missing limbs, blurry, watermark, worst quality, cartoon"
-            ),
-            "flux": (
-                "Full body portrait of [subject] standing in [environment]. Shot on a 35mm lens "
-                "at f/2.8. Golden hour natural lighting casts warm tones. Sharp focus from head "
-                "to toe with detailed clothing texture. Professional editorial photography style. "
-                "Natural body proportions and relaxed pose.",
-                ""
-            ),
-        },
-    },
-    # 3 ── Product Photo ───────────────────────────────────────────────
-    {
-        "label": "Product Photo",
-        "prompts": {
-            "sd15": (
-                "professional product photography of [product], centered on clean white background, "
-                "soft box lighting, sharp focus, high detail, commercial photography, "
-                "studio lighting setup, no shadows, RAW photo",
-                "blurry, low quality, dark, cluttered background, text, watermark"
-            ),
-            "sdxl": (
-                "professional commercial product photography of [product], centered on seamless "
-                "white gradient background, three-point studio lighting with soft fill, "
-                "crisp sharp focus, 100mm macro lens, high detail textures, clean minimalist "
-                "composition, advertising quality, 8k",
-                "blurry, dark, shadows, cluttered, text, watermark, worst quality, low quality"
-            ),
-            "flux": (
-                "Professional commercial product photograph of [product] centered on a seamless "
-                "white gradient background. Three-point studio lighting with soft diffused fill "
-                "light. Shot with a 100mm macro lens for crisp detail. Clean minimalist composition. "
-                "Advertising quality, suitable for e-commerce listing. 8K resolution.",
-                ""
-            ),
-        },
-    },
-    # 4 ── Landscape ───────────────────────────────────────────────────
-    {
-        "label": "Landscape / Scenic",
-        "prompts": {
-            "sd15": (
-                "breathtaking landscape photograph of [scene], golden hour lighting, "
-                "dramatic sky, wide angle lens, deep depth of field, sharp throughout, "
-                "vivid colors, National Geographic quality, RAW photo, 8k",
-                "blurry, hazy, overexposed, flat lighting, low quality, watermark"
-            ),
-            "sdxl": (
-                "breathtaking landscape photograph of [scene], shot during golden hour, "
-                "dramatic cloud formations, wide-angle 16mm lens at f/11 for maximum sharpness, "
-                "deep depth of field, vivid natural colors, leading lines, "
-                "National Geographic quality, 8k ultrawide",
-                "blurry, hazy, overexposed, flat lighting, desaturated, "
-                "worst quality, low quality, watermark"
-            ),
-            "flux": (
-                "Breathtaking landscape photograph of [scene] during golden hour. Shot with a "
-                "16mm wide-angle lens at f/11 for maximum depth of field. Dramatic cloud "
-                "formations in the sky with warm golden light. Vivid natural colors with "
-                "leading lines drawing the eye into the scene. National Geographic quality "
-                "with stunning detail from foreground to horizon.",
-                ""
-            ),
-        },
-    },
-    # 5 ── Food Photography ────────────────────────────────────────────
-    {
-        "label": "Food Photography",
-        "prompts": {
-            "sd15": (
-                "professional food photography of [dish], overhead angle, "
-                "soft natural window light, shallow depth of field, appetizing presentation, "
-                "rustic wooden table, garnish details, sharp focus, RAW photo",
-                "blurry, dark, overcooked, unappetizing, low quality, messy"
-            ),
-            "sdxl": (
-                "professional food photography of [dish], overhead 45-degree angle, "
-                "soft natural window light with white bounce card, shallow depth of field, "
-                "steam rising, appetizing presentation on rustic ceramic plate, "
-                "garnish micro-herbs, wooden table, sharp focus, editorial quality, 8k",
-                "blurry, dark, unappetizing, low quality, worst quality, overexposed"
-            ),
-            "flux": (
-                "Professional food photograph of [dish] from a 45-degree overhead angle. "
-                "Soft natural window light with a white bounce card for fill. Shallow depth "
-                "of field focuses on the main dish with gentle steam rising. Appetizing "
-                "presentation on a rustic ceramic plate with micro-herb garnish. "
-                "Warm wooden table surface. Editorial quality food styling.",
-                ""
-            ),
-        },
-    },
-    # 6 ── Architecture / Interior ─────────────────────────────────────
-    {
-        "label": "Architecture / Interior",
-        "prompts": {
-            "sd15": (
-                "professional architectural photograph of [building/interior], "
-                "symmetrical composition, dramatic lighting, tilt-shift lens, "
-                "sharp lines, deep depth of field, clean modern design, "
-                "Architectural Digest quality, RAW photo",
-                "blurry, distorted, cluttered, low quality, watermark"
-            ),
-            "sdxl": (
-                "professional architectural photograph of [building/interior], "
-                "symmetrical composition, 24mm tilt-shift lens, dramatic natural lighting "
-                "streaming through windows, sharp geometric lines, deep depth of field, "
-                "clean design, Architectural Digest quality, 8k resolution",
-                "blurry, distorted, cluttered, fisheye, worst quality, low quality, watermark"
-            ),
-            "flux": (
-                "Professional architectural photograph of [building/interior]. Symmetrical "
-                "composition shot with a 24mm tilt-shift lens. Dramatic natural light streams "
-                "through large windows creating strong shadow patterns. Sharp geometric lines "
-                "and deep depth of field. Clean modern design aesthetic. Architectural Digest "
-                "magazine quality.",
-                ""
-            ),
-        },
-    },
-    # 7 ── Fashion Editorial ───────────────────────────────────────────
-    {
-        "label": "Fashion Editorial",
-        "prompts": {
-            "sd15": (
-                "high fashion editorial photograph of [model/outfit], dramatic studio lighting, "
-                "dynamic pose, sharp focus on fabric texture, Vogue magazine quality, "
-                "professional fashion photography, RAW photo",
-                "(deformed:1.3), bad anatomy, blurry, low quality, amateur, watermark"
-            ),
-            "sdxl": (
-                "high fashion editorial photograph of [model/outfit], dramatic Rembrandt lighting, "
-                "dynamic pose showing garment flow, sharp focus on fabric texture and stitching, "
-                "70mm lens, clean studio backdrop, Vogue magazine cover quality, "
-                "professional retouching, 8k",
-                "(deformed, distorted:1.3), bad anatomy, bad proportions, blurry, "
-                "worst quality, amateur, watermark"
-            ),
-            "flux": (
-                "High fashion editorial photograph of [model/outfit]. Dramatic Rembrandt "
-                "lighting creates bold shadows. Dynamic pose shows the flow and drape of "
-                "the garment. Shot on a 70mm lens with sharp focus on fabric texture. "
-                "Clean studio backdrop. Vogue magazine cover quality with professional "
-                "color grading.",
-                ""
-            ),
-        },
-    },
-    # 8 ── Fantasy Art ─────────────────────────────────────────────────
-    {
-        "label": "Fantasy Art / Epic Scene",
-        "prompts": {
-            "sd15": (
-                "epic fantasy art of [scene], dramatic volumetric lighting, "
-                "magical atmosphere, highly detailed, cinematic composition, "
-                "concept art quality, digital painting, masterpiece",
-                "blurry, low quality, bad anatomy, amateur, flat lighting"
-            ),
-            "sdxl": (
-                "epic fantasy art of [scene], dramatic god rays and volumetric lighting, "
-                "magical glowing particles, cinematic wide composition, rich color palette, "
-                "highly detailed environment and characters, concept art quality, "
-                "digital painting masterpiece, trending on ArtStation, 8k",
-                "blurry, low quality, bad anatomy, amateur, flat lighting, "
-                "worst quality, deformed, text, watermark"
-            ),
-            "flux": (
-                "Epic fantasy art depicting [scene]. Dramatic god rays pierce through clouds "
-                "creating volumetric lighting. Magical glowing particles float in the air. "
-                "Cinematic wide composition with rich jewel-tone color palette. Highly detailed "
-                "environment with intricate architectural elements. Concept art quality with "
-                "painterly brushwork. Award-winning fantasy illustration.",
-                ""
-            ),
-        },
-    },
-    # 9 ── Cinematic / Film Still ──────────────────────────────────────
-    {
-        "label": "Cinematic / Film Still",
-        "prompts": {
-            "sd15": (
-                "cinematic film still of [scene], anamorphic lens, dramatic lighting, "
-                "shallow depth of field, film grain, color graded, 35mm film, "
-                "movie scene quality, RAW photo",
-                "blurry, flat lighting, overexposed, low quality, amateur"
-            ),
-            "sdxl": (
-                "cinematic film still of [scene], shot on anamorphic 40mm lens, "
-                "dramatic chiaroscuro lighting, shallow depth of field with oval bokeh, "
-                "subtle film grain, teal and orange color grading, 35mm celluloid look, "
-                "directed by Roger Deakins, IMAX quality, 8k",
-                "blurry, flat lighting, overexposed, desaturated, "
-                "worst quality, low quality, watermark, text"
-            ),
-            "flux": (
-                "Cinematic film still of [scene]. Shot on an anamorphic 40mm lens with "
-                "characteristic oval bokeh and lens flares. Dramatic chiaroscuro lighting "
-                "with deep shadows and selective highlights. Subtle film grain texture. "
-                "Teal and orange color grading reminiscent of a Roger Deakins production. "
-                "35mm celluloid look. Widescreen 2.39:1 composition.",
-                ""
-            ),
-        },
-    },
-    # 10 ── Street Photography ─────────────────────────────────────────
-    {
-        "label": "Street Photography",
-        "prompts": {
-            "sd15": (
-                "candid street photograph of [scene], natural light, documentary style, "
-                "35mm lens, f/5.6, decisive moment, urban environment, "
-                "sharp focus, Henri Cartier-Bresson style, RAW photo",
-                "posed, blurry, studio lighting, low quality, watermark"
-            ),
-            "sdxl": (
-                "candid street photograph of [scene], natural ambient light, documentary style, "
-                "35mm lens at f/5.6, decisive moment captured mid-action, busy urban environment, "
-                "sharp focus with environmental context, authentic atmosphere, "
-                "Henri Cartier-Bresson inspired, black and white optional, 8k",
-                "posed, staged, blurry, studio lighting, worst quality, low quality, watermark"
-            ),
-            "flux": (
-                "Candid street photograph of [scene] in a busy urban environment. Shot on a "
-                "35mm lens at f/5.6 to keep both subject and environment in focus. Natural "
-                "ambient light. A decisive moment captured mid-action. Documentary style with "
-                "authentic atmosphere. Henri Cartier-Bresson inspired composition with leading "
-                "lines and geometric framing.",
-                ""
-            ),
-        },
-    },
-    # 11 ── Macro / Close-Up ───────────────────────────────────────────
-    {
-        "label": "Macro / Close-Up Detail",
-        "prompts": {
-            "sd15": (
-                "extreme macro photograph of [subject], 100mm macro lens, f/2.8, "
-                "ring light, incredible fine detail, shallow depth of field, "
-                "sharp focus on subject, creamy bokeh background, RAW photo",
-                "blurry, out of focus, low quality, noisy, watermark"
-            ),
-            "sdxl": (
-                "extreme macro photograph of [subject], Canon 100mm f/2.8L macro lens, "
-                "ring light with diffuser, incredible fine detail showing texture and structure, "
-                "paper-thin depth of field, tack-sharp focus on subject, creamy pastel bokeh, "
-                "scientific precision, 8k resolution",
-                "blurry, out of focus, noisy, worst quality, low quality, watermark"
-            ),
-            "flux": (
-                "Extreme macro photograph of [subject] shot with a Canon 100mm f/2.8L macro lens. "
-                "Ring light with diffuser provides even illumination. Incredible fine detail "
-                "showing texture, structure, and surface characteristics. Paper-thin depth of "
-                "field with only the focal plane razor-sharp. Creamy pastel bokeh background. "
-                "Scientific precision meets artistic composition.",
-                ""
-            ),
-        },
-    },
-
-    # ══════════════════════════════════════════════════════════════════════
-    #  ANIME / ILLUSTRATION presets (sdxl_anime)
-    # ══════════════════════════════════════════════════════════════════════
-    # 12
-    {
-        "label": "Anime — Character Portrait",
-        "prompts": {
-            "sdxl_anime": (
-                "masterpiece, best quality, very aesthetic, absurdres, "
-                "1girl/1boy, [character description], detailed face, beautiful detailed eyes, "
-                "looking at viewer, upper body, dynamic lighting, vibrant colors, "
-                "sharp linework, anime illustration",
-                "worst quality, low quality, lowres, bad anatomy, bad hands, "
-                "extra fingers, fewer fingers, cropped, username, watermark, "
-                "blurry, jpeg artifacts, realistic, 3d"
-            ),
-        },
-    },
-    # 13
-    {
-        "label": "Anime — Action Scene",
-        "prompts": {
-            "sdxl_anime": (
-                "masterpiece, best quality, very aesthetic, absurdres, "
-                "1girl/1boy, [action description], dynamic pose, motion blur effects, "
-                "speed lines, energy aura, dramatic angle from below, "
-                "cinematic lighting, vivid colors, action anime style",
-                "worst quality, low quality, lowres, bad anatomy, bad hands, "
-                "stiff pose, static, blurry, jpeg artifacts, realistic"
-            ),
-        },
-    },
-    # 14
-    {
-        "label": "Anime — Slice of Life",
-        "prompts": {
-            "sdxl_anime": (
-                "masterpiece, best quality, very aesthetic, absurdres, "
-                "1girl/1boy, [everyday scene], soft warm lighting, cozy atmosphere, "
-                "detailed background, school/cafe/park/room, gentle expression, "
-                "pastel color palette, anime illustration",
-                "worst quality, low quality, lowres, bad anatomy, dark, gloomy, "
-                "blurry, cropped, watermark"
-            ),
-        },
-    },
-    # 15
-    {
-        "label": "Anime — Fantasy / Isekai",
-        "prompts": {
-            "sdxl_anime": (
-                "masterpiece, best quality, very aesthetic, absurdres, "
-                "1girl/1boy, [fantasy description], magical environment, glowing effects, "
-                "floating particles, epic landscape, detailed armor/costume, "
-                "dramatic sky, volumetric lighting, fantasy anime illustration",
-                "worst quality, low quality, lowres, bad anatomy, modern clothing, "
-                "realistic, photograph, blurry, watermark"
-            ),
-        },
-    },
-    # 16
-    {
-        "label": "Anime — Chibi / Cute",
-        "prompts": {
-            "sdxl_anime": (
-                "masterpiece, best quality, very aesthetic, "
-                "chibi, 1girl/1boy, [character], super deformed, big head, small body, "
-                "cute expression, sparkle eyes, pastel colors, simple background, "
-                "kawaii, adorable, sticker style",
-                "worst quality, low quality, realistic, detailed anatomy, "
-                "normal proportions, dark, scary, blurry"
-            ),
-        },
-    },
-    # 17
-    {
-        "label": "Anime — Wallpaper / Key Visual",
-        "prompts": {
-            "sdxl_anime": (
-                "masterpiece, best quality, very aesthetic, absurdres, "
-                "official art, [scene/character], incredibly detailed background, "
-                "cinematic composition, dramatic lighting, vibrant saturated colors, "
-                "wallpaper quality, key visual, anime illustration",
-                "worst quality, low quality, lowres, bad anatomy, simple background, "
-                "blurry, jpeg artifacts, watermark, text"
-            ),
-        },
-    },
-
-    # ══════════════════════════════════════════════════════════════════════
-    #  CARTOON / 3D presets (sdxl_cartoon — Disney, Nova Cartoon)
-    # ══════════════════════════════════════════════════════════════════════
-    # 18
-    {
-        "label": "Cartoon — Character Design",
-        "prompts": {
-            "sdxl_cartoon": (
-                "disney style, 3d render, [character description], expressive face, "
-                "big eyes, smooth skin, vibrant colors, cinematic lighting, "
-                "character design sheet, clean background, Pixar quality, "
-                "cartoon, high detail",
-                "photorealistic, blurry, deformed, low quality, dark, scary, "
-                "bad anatomy, ugly"
-            ),
-        },
-    },
-    # 19
-    {
-        "label": "Cartoon — Scene / Environment",
-        "prompts": {
-            "sdxl_cartoon": (
-                "disney style, 3d render, [scene description], vibrant colorful environment, "
-                "whimsical architecture, magical atmosphere, volumetric lighting, "
-                "Pixar movie scene, detailed background, cinematic composition, cartoon",
-                "photorealistic, dark, gritty, blurry, low quality, flat lighting"
-            ),
-        },
-    },
-    # 20
-    {
-        "label": "Cartoon — Cute Animal / Mascot",
-        "prompts": {
-            "sdxl_cartoon": (
-                "disney style, 3d render, adorable [animal/creature], big expressive eyes, "
-                "soft fur/skin, rounded shapes, warm lighting, cute expression, "
-                "Pixar character design, vibrant pastel colors, cartoon",
-                "photorealistic, scary, dark, blurry, low quality, deformed, ugly"
-            ),
-        },
-    },
-
-    # ══════════════════════════════════════════════════════════════════════
-    #  FLUX KONTEXT presets (edit instructions, not descriptions)
-    # ══════════════════════════════════════════════════════════════════════
-    # 21
-    {
-        "label": "Kontext — Change Outfit / Clothing",
-        "prompts": {
-            "flux_kontext": (
-                "Change the person's outfit to [clothing description]. Keep the face, pose, "
-                "and background exactly the same. Only modify the clothing.",
-                ""
-            ),
-        },
-    },
-    # 22
-    {
-        "label": "Kontext — Change Background",
-        "prompts": {
-            "flux_kontext": (
-                "Replace the background with [new background]. Keep the subject exactly the "
-                "same, including their pose, expression, and lighting on their face.",
-                ""
-            ),
-        },
-    },
-    # 23
-    {
-        "label": "Kontext — Age / Appearance Edit",
-        "prompts": {
-            "flux_kontext": (
-                "Make the person look [younger/older/description]. Keep everything else "
-                "about the image the same, including background and clothing.",
-                ""
-            ),
-        },
-    },
-    # 24
-    {
-        "label": "Kontext — Add Object / Element",
-        "prompts": {
-            "flux_kontext": (
-                "Add [object/element] to the scene. Place it [location]. Keep everything "
-                "else in the image unchanged.",
-                ""
-            ),
-        },
-    },
-    # 25
-    {
-        "label": "Kontext — Style / Color Shift",
-        "prompts": {
-            "flux_kontext": (
-                "Transform this image into [style: e.g. watercolor painting, pencil sketch, "
-                "pop art, oil painting, noir]. Keep the composition and subject the same.",
-                ""
-            ),
-        },
-    },
-]
+SCENE_PRESETS = _load_presets_json("scene_presets.json",
+    fallback=[{"label": "(custom \u2014 write your own)"}])
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -3707,868 +3225,9 @@ SCENE_PRESETS = [
 #                    auto-selected if the LoRA exists on the server
 # The first LoRA in each list is the primary recommendation; extras are stacked.
 
-INPAINT_REFINEMENTS = [
-    {
-        "label": "(none — manual prompt)",
-        "prompt": "",
-        "negative": "",
-        "denoise": None,
-        "cfg_boost": 0,
-        "steps_override": None,
-        "loras": {},
-    },
-    # ── Hands & Fingers ────────────────────────────────────────────────
-    {
-        "label": "Fix Hands / Fingers",
-        "prompt": "perfect hands, five fingers on each hand, correct finger count, natural hand pose, "
-                  "realistic hand anatomy, detailed knuckles and nails, well-proportioned fingers",
-        "negative": "bad hands, extra fingers, fewer fingers, fused fingers, mutated hands, "
-                    "deformed fingers, missing fingers, ugly hands, extra digit, too many fingers",
-        "denoise": 0.78,
-        "cfg_boost": 1.0,
-        "steps_override": 30,
-        "loras": {
-            "sdxl":       [("SDXL\\Body\\HandFineTuning_XL.safetensors", 0.85, 0.85),
-                           ("SDXL\\Body\\hand 5.5.safetensors", 0.6, 0.6)],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Eyes ───────────────────────────────────────────────────────────
-    {
-        "label": "Fix Eyes / Iris Detail",
-        "prompt": "beautiful detailed eyes, perfect symmetrical eyes, clear sharp iris, "
-                  "realistic eye reflections, natural eye color, correct eye anatomy, "
-                  "detailed eyelashes, properly aligned pupils",
-        "negative": "asymmetric eyes, misaligned eyes, deformed iris, bad eyes, "
-                    "cross-eyed, glowing eyes, empty eyes, dead eyes, uneven eyes",
-        "denoise": 0.65,
-        "cfg_boost": 0.5,
-        "steps_override": 28,
-        "loras": {
-            "sdxl":       [("SDXL\\Detail\\Eyes_High_Definition-000007.safetensors", 0.8, 0.8)],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Face / Portrait ───────────────────────────────────────────────
-    {
-        "label": "Refine Face / Portrait",
-        "prompt": "beautiful face, perfect facial features, natural skin texture, "
-                  "detailed facial structure, clear complexion, realistic portrait, "
-                  "well-defined jawline, natural expression, symmetrical face",
-        "negative": "deformed face, ugly face, asymmetric face, blurry face, "
-                    "distorted features, bad proportions, uncanny valley, disfigured",
-        "denoise": 0.62,
-        "cfg_boost": 0.5,
-        "steps_override": 30,
-        "loras": {
-            "sdxl":       [("SDXL\\Detail\\RealSkin_xxXL_v1.safetensors", 0.7, 0.7)],
-            "sd15":       [],
-            "flux2klein": [("Flux-2-Klein\\BFS_head_v1_flux-klein_9b_rank128.safetensors", 0.8, 0.8)],
-            "flux1dev":   [("Flux-1-Dev\\Detail/flux_face_detail.safetensors", 0.7, 0.7)],
-            "flux_kontext": [],
-        },
-    },
-    # ── Teeth / Mouth ─────────────────────────────────────────────────
-    {
-        "label": "Fix Teeth / Mouth",
-        "prompt": "perfect teeth, natural white teeth, correct dental anatomy, "
-                  "properly aligned teeth, realistic mouth, natural lips, "
-                  "healthy gums, natural smile",
-        "negative": "bad teeth, missing teeth, extra teeth, deformed mouth, "
-                    "broken teeth, ugly teeth, distorted jaw, melted lips",
-        "denoise": 0.72,
-        "cfg_boost": 1.0,
-        "steps_override": 28,
-        "loras": {
-            "sdxl":       [("SDXL\\Detail\\Teefs-000007.safetensors", 0.9, 0.9)],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Skin Texture / Detail ─────────────────────────────────────────
-    {
-        "label": "Enhance Skin Texture",
-        "prompt": "detailed skin texture, realistic skin pores, natural skin surface, "
-                  "subsurface scattering, high definition skin, photorealistic skin detail",
-        "negative": "plastic skin, smooth plastic, waxy skin, artificial skin, "
-                    "airbrushed, oversmoothed, blurry skin, painted skin",
-        "denoise": 0.45,
-        "cfg_boost": 0.0,
-        "steps_override": 25,
-        "loras": {
-            "sdxl":       [("SDXL\\Detail\\skin texture style v4.safetensors", 0.75, 0.75),
-                           ("SDXL\\Detail\\RealSkin_xxXL_v1.safetensors", 0.5, 0.5)],
-            "sd15":       [],
-            "flux2klein": [("Flux-2-Klein\\K9bSh4rpD3tails.safetensors", 0.7, 0.7)],
-            "flux1dev":   [("Flux-1-Dev\\Detail/add_detail.safetensors", 0.7, 0.7)],
-            "flux_kontext": [],
-        },
-    },
-    # ── Hair ──────────────────────────────────────────────────────────
-    {
-        "label": "Fix Hair / Hairstyle",
-        "prompt": "beautiful detailed hair, natural hair strands, realistic hair texture, "
-                  "individual hair strands visible, shiny healthy hair, well-groomed hair, "
-                  "natural hair flow, volumetric hair",
-        "negative": "bad hair, plastic hair, merged hair clumps, bald patches, "
-                    "unnatural hair, wig-like, stiff hair, flat hair, no hair detail",
-        "denoise": 0.68,
-        "cfg_boost": 0.5,
-        "steps_override": 28,
-        "loras": {
-            "sdxl":       [("SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors", 0.65, 0.65)],
-            "sd15":       [],
-            "flux2klein": [("Flux-2-Klein\\K9bSh4rpD3tails.safetensors", 0.6, 0.6)],
-            "flux1dev":   [("Flux-1-Dev\\Detail/add_detail.safetensors", 0.6, 0.6)],
-            "flux_kontext": [],
-        },
-    },
-    # ── Feet / Toes ───────────────────────────────────────────────────
-    {
-        "label": "Fix Feet / Toes",
-        "prompt": "perfect feet, five toes on each foot, correct toe count, "
-                  "natural foot anatomy, detailed toes and toenails, realistic feet, "
-                  "well-proportioned feet",
-        "negative": "bad feet, extra toes, fused toes, deformed feet, "
-                    "missing toes, ugly feet, malformed toes, mutated feet",
-        "denoise": 0.75,
-        "cfg_boost": 1.0,
-        "steps_override": 30,
-        "loras": {
-            "sdxl":       [],
-            "zit":        [("Z-Image-Turbo\\feet v2.1.safetensors", 0.8, 0.8)],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Body Anatomy / Proportions ────────────────────────────────────
-    {
-        "label": "Fix Body Anatomy",
-        "prompt": "correct human anatomy, natural body proportions, realistic body structure, "
-                  "proper limb length, natural muscle definition, anatomically correct, "
-                  "well-proportioned body",
-        "negative": "bad anatomy, extra limbs, missing limbs, deformed body, "
-                    "disproportionate, mutated, fused limbs, twisted torso, broken anatomy",
-        "denoise": 0.72,
-        "cfg_boost": 1.0,
-        "steps_override": 30,
-        "loras": {
-            "sdxl":       [("SDXL\\Body\\HandFineTuning_XL.safetensors", 0.5, 0.5)],
-            "sd15":       [],
-            "flux2klein": [("Flux-2-Klein\\Sliders/klein_slider_anatomy_9B_v1.5.safetensors", 0.8, 0.8)],
-            "flux1dev":   [("Flux-1-Dev\\Detail/add_detail.safetensors", 0.5, 0.5)],
-            "flux_kontext": [],
-        },
-    },
-    # ── Ears ──────────────────────────────────────────────────────────
-    {
-        "label": "Fix Ears",
-        "prompt": "perfect ears, natural ear shape, detailed ear anatomy, "
-                  "realistic ear, symmetrical ears, properly attached ears, correct ear placement",
-        "negative": "deformed ears, missing ears, extra ears, melted ears, "
-                    "oversized ears, badly shaped ears, asymmetric ears",
-        "denoise": 0.65,
-        "cfg_boost": 0.5,
-        "steps_override": 25,
-        "loras": {
-            "sdxl":       [("SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors", 0.6, 0.6)],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Nose ──────────────────────────────────────────────────────────
-    {
-        "label": "Fix Nose",
-        "prompt": "perfect nose, natural nose shape, detailed nostril anatomy, "
-                  "realistic nose, well-defined nose bridge, natural nose proportions, "
-                  "symmetrical nose",
-        "negative": "deformed nose, crooked nose, melted nose, flat nose, "
-                    "missing nose, blob nose, badly shaped nose",
-        "denoise": 0.62,
-        "cfg_boost": 0.5,
-        "steps_override": 25,
-        "loras": {
-            "sdxl":       [("SDXL\\Detail\\RealSkin_xxXL_v1.safetensors", 0.5, 0.5)],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Neck / Shoulders ──────────────────────────────────────────────
-    {
-        "label": "Fix Neck / Shoulders",
-        "prompt": "natural neck, correct neck proportions, realistic shoulder anatomy, "
-                  "proper collarbone detail, natural neck-to-shoulder transition, "
-                  "well-defined shoulders",
-        "negative": "long neck, broken neck, deformed shoulders, missing neck, "
-                    "twisted neck, extra shoulders, giraffe neck, merged neck",
-        "denoise": 0.68,
-        "cfg_boost": 0.5,
-        "steps_override": 28,
-        "loras": {
-            "sdxl":       [],
-            "sd15":       [],
-            "flux2klein": [("Flux-2-Klein\\Sliders/klein_slider_anatomy_9B_v1.5.safetensors", 0.6, 0.6)],
-            "flux1dev":   [("Flux-1-Dev\\Detail/add_detail.safetensors", 0.4, 0.4)],
-            "flux_kontext": [],
-        },
-    },
-    # ── Clothing / Fabric ─────────────────────────────────────────────
-    {
-        "label": "Fix Clothing / Fabric",
-        "prompt": "detailed clothing, realistic fabric texture, natural cloth folds, "
-                  "proper garment draping, wrinkle detail, high quality textile, "
-                  "correct clothing anatomy",
-        "negative": "deformed clothing, melted fabric, missing clothing parts, "
-                    "bad cloth physics, floating clothing, clipping, merged clothing",
-        "denoise": 0.65,
-        "cfg_boost": 0.5,
-        "steps_override": 25,
-        "loras": {
-            "sdxl":       [("SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors", 0.7, 0.7)],
-            "sd15":       [],
-            "flux2klein": [("Flux-2-Klein\\FTextureTransfer_F29B_V2.1.safetensors", 0.6, 0.6)],
-            "flux1dev":   [("Flux-1-Dev\\Detail/add_detail.safetensors", 0.5, 0.5)],
-            "flux_kontext": [],
-        },
-    },
-    # ── Background / Scene ────────────────────────────────────────────
-    {
-        "label": "Fix Background / Scene",
-        "prompt": "detailed background, realistic environment, natural scenery, "
-                  "high quality background, sharp background detail, "
-                  "consistent perspective, proper lighting",
-        "negative": "blurry background, distorted background, bad perspective, "
-                    "floating objects, impossible architecture, warped scene",
-        "denoise": 0.72,
-        "cfg_boost": 0.5,
-        "steps_override": 25,
-        "loras": {
-            "sdxl":       [("SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors", 0.6, 0.6)],
-            "sd15":       [],
-            "flux2klein": [("Flux-2-Klein\\K9bSh4rpD3tails.safetensors", 0.5, 0.5)],
-            "flux1dev":   [("Flux-1-Dev\\Detail/add_detail.safetensors", 0.5, 0.5)],
-            "flux_kontext": [],
-        },
-    },
-    # ── General Detail Enhancer ───────────────────────────────────────
-    {
-        "label": "Sharpen / Add Detail",
-        "prompt": "ultra sharp, highly detailed, intricate details, "
-                  "enhanced textures, crisp edges, high definition, 8k quality",
-        "negative": "blurry, soft, low detail, smooth, flat, low resolution, "
-                    "out of focus, motion blur",
-        "denoise": 0.40,
-        "cfg_boost": 0.0,
-        "steps_override": 25,
-        "loras": {
-            "sdxl":       [("SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors", 0.8, 0.8),
-                           ("SDXL\\Detail\\rdtdrp.safetensors", 0.5, 0.5)],
-            "sd15":       [],
-            "flux2klein": [("Flux-2-Klein\\K9bSh4rpD3tails.safetensors", 0.8, 0.8)],
-            "flux1dev":   [("Flux-1-Dev\\Detail/add_detail.safetensors", 0.8, 0.8)],
-            "flux_kontext": [],
-        },
-    },
-    # ── Realism Boost ─────────────────────────────────────────────────
-    {
-        "label": "Boost Realism / Photo Quality",
-        "prompt": "photorealistic, RAW photo, DSLR quality, natural lighting, "
-                  "realistic texture, professional photography, film grain, "
-                  "natural color grading",
-        "negative": "cartoon, anime, painting, illustration, digital art, "
-                    "artificial, fake, CGI, unrealistic, oversaturated",
-        "denoise": 0.50,
-        "cfg_boost": 0.5,
-        "steps_override": 30,
-        "loras": {
-            "sdxl":       [("SDXL\\Detail\\RealSkin_xxXL_v1.safetensors", 0.65, 0.65),
-                           ("SDXL\\Detail\\skin texture style v4.safetensors", 0.5, 0.5)],
-            "sd15":       [],
-            "flux2klein": [("Flux-2-Klein\\ultra_real_v2.safetensors", 0.7, 0.7)],
-            "flux1dev":   [("Flux-1-Dev\\Realism/flux_realism.safetensors", 0.7, 0.7)],
-            "flux_kontext": [],
-        },
-    },
-    # ── Remove Artifacts / Clean Up ───────────────────────────────────
-    {
-        "label": "Remove Artifacts / Clean Up",
-        "prompt": "clean image, artifact free, smooth transition, natural appearance, "
-                  "correct details, consistent style, seamless",
-        "negative": "artifacts, glitch, noise, compression artifacts, "
-                    "banding, jpeg artifacts, posterization, pixelation",
-        "denoise": 0.55,
-        "cfg_boost": 0.0,
-        "steps_override": 25,
-        "loras": {
-            "sdxl":       [("SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors", 0.5, 0.5)],
-            "sd15":       [],
-            "flux2klein": [("Flux-2-Klein\\FK4B_Image_Repair_V1.safetensors", 0.8, 0.8)],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-
-    # ═══════════════════════════════════════════════════════════════════
-    #  CREATIVE / EFFECT RENDERS
-    # ═══════════════════════════════════════════════════════════════════
-
-    # ── Oily / Wet Skin ───────────────────────────────────────────────
-    {
-        "label": "✦ Oily / Wet Skin Effect",
-        "prompt": "oily skin, wet skin, glistening skin, shiny skin, dewy skin, "
-                  "wet body, skin highlights, sweat, glossy complexion, moisture on skin",
-        "negative": "dry skin, matte skin, powder, flat lighting, dull skin",
-        "denoise": 0.55,
-        "cfg_boost": 0.5,
-        "steps_override": 28,
-        "loras": {
-            "sdxl":       [("SDXL\\Oily skin style xl v1.safetensors", 0.85, 0.85)],
-            "zit":        [("Z-Image-Turbo\\Effect\\OiledSkin_Zit_Turbo_V1.safetensors", 0.85, 0.85)],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Sweat / Exertion ──────────────────────────────────────────────
-    {
-        "label": "✦ Sweat / Exertion Effect",
-        "prompt": "sweaty skin, beads of sweat, perspiration, glistening with sweat, "
-                  "exertion, post-workout, wet with sweat, sweat dripping, athletic",
-        "negative": "dry skin, clean, powder, matte, cold, frozen",
-        "denoise": 0.55,
-        "cfg_boost": 0.5,
-        "steps_override": 28,
-        "loras": {
-            "sdxl":       [("SDXL\\Sweating my balls of mate.safetensors", 0.8, 0.8),
-                           ("SDXL\\Oily skin style xl v1.safetensors", 0.4, 0.4)],
-            "zit":        [("Z-Image-Turbo\\Effect\\OiledSkin_Zit_Turbo_V1.safetensors", 0.7, 0.7)],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Water Droplets ────────────────────────────────────────────────
-    {
-        "label": "✦ Water Droplets Effect",
-        "prompt": "water droplets on skin, water drops, dew drops, rain drops, "
-                  "wet surface, water beading, crystal clear droplets, morning dew, "
-                  "water splash, droplet reflections",
-        "negative": "dry, dusty, matte, powder, no water, arid",
-        "denoise": 0.58,
-        "cfg_boost": 0.5,
-        "steps_override": 28,
-        "loras": {
-            "sdxl":       [("SDXL\\Oily skin style xl v1.safetensors", 0.5, 0.5)],
-            "zit":        [("Z-Image-Turbo\\Effect\\water_droplet_effect_zit_v1.safetensors", 0.9, 0.9)],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Chrome / Metallic Skin ────────────────────────────────────────
-    {
-        "label": "✦ Chrome / Metallic Skin",
-        "prompt": "chrome skin, metallic skin, liquid metal surface, silver chrome body, "
-                  "reflective metallic, mercury skin, shiny metal texture, "
-                  "polished chrome, mirror-like skin",
-        "negative": "matte, natural skin, realistic skin, dull, flat, organic, flesh tone",
-        "denoise": 0.75,
-        "cfg_boost": 1.0,
-        "steps_override": 30,
-        "loras": {
-            "sdxl":       [("Illustrious-Pony\\MetallicGoldSilver_skinbody_paint-000019.safetensors", 0.9, 0.9)],
-            "zit":        [("Z-Image-Turbo\\Effect\\93PXB5SENBFN8NEYSRYZA1DVX0-Chrome skin.safetensors", 0.9, 0.9)],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Cyborg / Robot Parts ──────────────────────────────────────────
-    {
-        "label": "✦ Cyborg / Robot Parts",
-        "prompt": "cyborg, mechanical parts, robotic body, cybernetic implants, "
-                  "exposed machinery, glowing circuits, metal plates, bionic, "
-                  "android, tech implants, wires under skin, LED accents",
-        "negative": "fully human, natural, organic only, no technology, medieval, rustic",
-        "denoise": 0.78,
-        "cfg_boost": 1.5,
-        "steps_override": 30,
-        "loras": {
-            "sdxl":       [("SDXL\\Concept\\ARobotGirls_Concept-12.safetensors", 0.85, 0.85)],
-            "zit":        [("Z-Image-Turbo\\Effect\\Z-cyborg.safetensors", 0.9, 0.9)],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Gothic Dark Fantasy ───────────────────────────────────────────
-    {
-        "label": "✦ Gothic Dark Fantasy",
-        "prompt": "gothic dark fantasy, ethereal gothic elegance, dark atmosphere, "
-                  "moody shadows, dramatic dark lighting, mystical, dark beauty, "
-                  "occult aesthetic, dark romantic, candlelight, velvet darkness",
-        "negative": "bright, cheerful, colorful, sunny, cartoon, daytime, flat lighting",
-        "denoise": 0.68,
-        "cfg_boost": 1.0,
-        "steps_override": 30,
-        "loras": {
-            "sdxl":       [("Illustrious-Pony\\Ethereal_Gothic_Elegance.safetensors", 0.85, 0.85),
-                           ("SDXL\\Style\\dark.safetensors", 0.5, 0.5)],
-            "zit":        [],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Chiaroscuro Lighting ──────────────────────────────────────────
-    {
-        "label": "✦ Chiaroscuro / Dramatic Lighting",
-        "prompt": "chiaroscuro lighting, dramatic light and shadow, Rembrandt lighting, "
-                  "high contrast, deep shadows, single light source, volumetric light, "
-                  "film noir lighting, baroque lighting, tenebrism",
-        "negative": "flat lighting, even lighting, overexposed, no shadows, "
-                    "bright everywhere, flash photography, washed out",
-        "denoise": 0.62,
-        "cfg_boost": 1.0,
-        "steps_override": 30,
-        "loras": {
-            "sdxl":       [("Illustrious-Pony\\Chiaroscuro  film style pony v1.safetensors", 0.85, 0.85),
-                           ("SDXL\\Slider\\Dramatic Lighting Slider.safetensors", 0.6, 0.6)],
-            "zit":        [("Z-Image-Turbo\\Style\\zy_CinematicShot_zit.safetensors", 0.7, 0.7)],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Cinematic Film Look ───────────────────────────────────────────
-    {
-        "label": "✦ Cinematic Film Look",
-        "prompt": "cinematic photography, film grain, anamorphic lens, "
-                  "cinematic color grading, movie still, depth of field, "
-                  "professional cinematography, 35mm film, warm color palette",
-        "negative": "amateur, smartphone, flat, digital noise, harsh flash, "
-                    "oversaturated, snapshot, selfie",
-        "denoise": 0.55,
-        "cfg_boost": 0.5,
-        "steps_override": 30,
-        "loras": {
-            "sdxl":       [("Illustrious-Pony\\Cinematic Photography Style pony v1.safetensors", 0.8, 0.8),
-                           ("SDXL\\Style\\epiCPhotoXL-Derp2.safetensors", 0.4, 0.4)],
-            "zit":        [("Z-Image-Turbo\\Style\\zy_CinematicShot_zit.safetensors", 0.85, 0.85)],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Raw Camera / DSLR ─────────────────────────────────────────────
-    {
-        "label": "✦ Raw Camera / DSLR Photo",
-        "prompt": "RAW photo, DSLR, professional camera, natural lighting, "
-                  "shallow depth of field, bokeh, lens flare, sharp focus, "
-                  "unedited photograph, authentic colors, film emulation",
-        "negative": "painting, illustration, digital art, CGI, airbrushed, "
-                    "overprocessed, HDR, cartoon, anime",
-        "denoise": 0.50,
-        "cfg_boost": 0.5,
-        "steps_override": 28,
-        "loras": {
-            "sdxl":       [("SDXL\\Style\\RawCam_250_v1.safetensors", 0.8, 0.8),
-                           ("SDXL\\Style\\epicNewPhoto.safetensors", 0.4, 0.4)],
-            "zit":        [("Z-Image-Turbo\\Style\\SonyAlpha_ZImage.safetensors", 0.8, 0.8)],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── 35mm Telephoto Lens ───────────────────────────────────────────
-    {
-        "label": "✦ Telephoto / 600mm Lens",
-        "prompt": "600mm telephoto lens, extreme bokeh, compressed perspective, "
-                  "subject isolation, creamy background blur, long focal length, "
-                  "professional sports photography, wildlife photography style",
-        "negative": "wide angle, fisheye, everything in focus, deep DOF, "
-                    "distortion, flat, no blur",
-        "denoise": 0.52,
-        "cfg_boost": 0.5,
-        "steps_override": 28,
-        "loras": {
-            "sdxl":       [("SDXL\\Style\\epiCPhotoXL-Derp2.safetensors", 0.6, 0.6)],
-            "zit":        [("Z-Image-Turbo\\Style\\600mm_Lens-V2_TriggerIs_600mm.safetensors", 0.9, 0.9)],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Ghibli / Anime Style ─────────────────────────────────────────
-    {
-        "label": "✦ Ghibli / Anime Painterly",
-        "prompt": "studio ghibli style, anime painting, hand-drawn animation, "
-                  "soft watercolor, whimsical, miyazaki, painterly anime, "
-                  "cel shading, warm natural palette, gentle atmosphere",
-        "negative": "photorealistic, 3d render, CGI, harsh shadows, "
-                    "sharp edges, dark, horror, gritty",
-        "denoise": 0.72,
-        "cfg_boost": 1.0,
-        "steps_override": 30,
-        "loras": {
-            "sdxl":       [("SDXL\\Style\\ghibli_last.safetensors", 0.85, 0.85)],
-            "zit":        [("Z-Image-Turbo\\Style\\ZiTD3tailed4nime.safetensors", 0.8, 0.8)],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── FaeTastic Fantasy ─────────────────────────────────────────────
-    {
-        "label": "✦ Fairy Tale / Fantasy Art",
-        "prompt": "fairy tale illustration, fantasy art, magical atmosphere, "
-                  "ethereal glow, enchanted, whimsical fantasy, storybook illustration, "
-                  "dreamy, luminous, fantasy landscape, magical particles",
-        "negative": "realistic, modern, urban, gritty, dark, horror, mundane, "
-                    "photographic, plain",
-        "denoise": 0.70,
-        "cfg_boost": 1.0,
-        "steps_override": 30,
-        "loras": {
-            "sdxl":       [("SDXL\\Style\\SDXLFaeTastic2400.safetensors", 0.85, 0.85)],
-            "zit":        [("Z-Image-Turbo\\Style\\z-image-illustria-01.safetensors", 0.7, 0.7)],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── 80s Fantasy Movie ─────────────────────────────────────────────
-    {
-        "label": "✦ 80s Fantasy Movie Style",
-        "prompt": "80s fantasy movie, retro fantasy, practical effects, "
-                  "1980s film aesthetic, sword and sorcery, VHS quality, "
-                  "vintage fantasy, Conan the Barbarian style, matte painting background, "
-                  "old school special effects, film grain, warm tones",
-        "negative": "modern, clean digital, CGI, photorealistic, contemporary, "
-                    "minimalist, sleek",
-        "denoise": 0.72,
-        "cfg_boost": 1.0,
-        "steps_override": 30,
-        "loras": {
-            "sdxl":       [],
-            "zit":        [],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Glitch / Digital Error ────────────────────────────────────────
-    {
-        "label": "✦ Glitch / Digital Error",
-        "prompt": "glitch art, digital corruption, pixel sorting, data moshing, "
-                  "RGB split, scan lines, corrupted image, VHS glitch, "
-                  "digital artifact aesthetic, broken data, cyberpunk glitch",
-        "negative": "clean, perfect, smooth, natural, analog, traditional, "
-                    "high quality, no artifacts",
-        "denoise": 0.70,
-        "cfg_boost": 1.0,
-        "steps_override": 25,
-        "loras": {
-            "sdxl":       [("SDXL\\Concept\\err0rFv1.6.safetensors", 0.85, 0.85)],
-            "zit":        [("Z-Image-Turbo\\Effect\\EFFECTSp001_zit.safetensors", 0.7, 0.7)],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Slime / Wet & Messy ───────────────────────────────────────────
-    {
-        "label": "✦ Slime / Wet & Messy (WAM)",
-        "prompt": "covered in slime, green slime, gunge, wet and messy, "
-                  "dripping slime, splattered, gooey, splosh, viscous liquid, "
-                  "slime dripping from body",
-        "negative": "clean, dry, pristine, neat, tidy, powder, matte",
-        "denoise": 0.72,
-        "cfg_boost": 1.0,
-        "steps_override": 28,
-        "loras": {
-            "sdxl":       [],
-            "zit":        [],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Freckles / Skin Detail ────────────────────────────────────────
-    {
-        "label": "✦ Add Freckles",
-        "prompt": "freckles, natural freckles, sun-kissed freckles across cheeks, "
-                  "detailed skin with freckles, cute freckle pattern, "
-                  "beauty marks, speckled skin, natural imperfections",
-        "negative": "airbrushed, smooth porcelain skin, no marks, plastic skin, "
-                    "flawless, oversmoothed",
-        "denoise": 0.48,
-        "cfg_boost": 0.0,
-        "steps_override": 25,
-        "loras": {
-            "sdxl":       [("SDXL\\Detail\\skin texture style v4.safetensors", 0.6, 0.6)],
-            "zit":        [],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Hyperdetailed Realism ─────────────────────────────────────────
-    {
-        "label": "✦ Hyperdetailed Realism",
-        "prompt": "hyperdetailed, hyperrealistic, extreme detail, micro details, "
-                  "pore-level detail, ultra sharp focus, photographic perfection, "
-                  "8k resolution, extremely detailed textures",
-        "negative": "soft, blurry, painterly, illustration, low detail, "
-                    "flat, smooth, anime, cartoon",
-        "denoise": 0.52,
-        "cfg_boost": 1.0,
-        "steps_override": 35,
-        "loras": {
-            "sdxl":       [("Illustrious-Pony\\HyperdetailedRealismMJ7Pony.safetensors", 0.8, 0.8),
-                           ("SDXL\\Detail\\RealSkin_xxXL_v1.safetensors", 0.5, 0.5)],
-            "zit":        [("Z-Image-Turbo\\Style\\Z-Image-Professional_Photographer_3500.safetensors", 0.7, 0.7)],
-            "sd15":       [],
-            "flux2klein": [("Flux-2-Klein\\K9bSR3al.safetensors", 0.7, 0.7),
-                           ("Flux-2-Klein\\K9bSh4rpD3tails.safetensors", 0.5, 0.5)],
-            "flux1dev":   [("Flux-1-Dev\\Realism/flux_realism.safetensors", 0.7, 0.7),
-                           ("Flux-1-Dev\\Detail/add_detail.safetensors", 0.5, 0.5)],
-            "flux_kontext": [],
-        },
-    },
-    # ── 3D CG / Hi-Poly Render ────────────────────────────────────────
-    {
-        "label": "✦ 3D CG / Hi-Poly Render",
-        "prompt": "3d cg render, hi-poly 3d model, subsurface scattering, "
-                  "ray tracing, physically based rendering, unreal engine quality, "
-                  "octane render, smooth 3d surface, studio lighting 3d",
-        "negative": "2d, flat, painting, sketch, hand-drawn, low poly, "
-                    "pixel art, traditional art, photograph",
-        "denoise": 0.68,
-        "cfg_boost": 1.0,
-        "steps_override": 30,
-        "loras": {
-            "sdxl":       [("SDXL\\polyhedron_all_sdxl-000004.safetensors", 0.7, 0.7)],
-            "zit":        [],
-            "sd15":       [],
-            "flux2klein": [("Flux-2-Klein\\hipoly_3dcg_v7-epoch-000012.safetensors", 0.85, 0.85)],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Amateur / Candid Photo ────────────────────────────────────────
-    {
-        "label": "✦ Amateur / Candid Photo",
-        "prompt": "amateur photo, candid shot, casual snapshot, natural pose, "
-                  "real photography, unposed, everyday life, authentic, "
-                  "slightly imperfect, natural lighting, no filter",
-        "negative": "professional, studio, posed, perfect, airbrushed, "
-                    "magazine, retouched, glamour, high fashion",
-        "denoise": 0.55,
-        "cfg_boost": 0.0,
-        "steps_override": 25,
-        "loras": {
-            "sdxl":       [("SDXL\\Style\\zy_AmateurStyle_v2.safetensors", 0.85, 0.85)],
-            "zit":        [("Z-Image-Turbo\\Style\\SonyAlpha_ZImage.safetensors", 0.6, 0.6)],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Alien / Extraterrestrial ──────────────────────────────────────
-    {
-        "label": "✦ Alien / Extraterrestrial",
-        "prompt": "alien, extraterrestrial being, alien skin texture, otherworldly, "
-                  "sci-fi alien, non-human features, bioluminescent, "
-                  "exotic alien anatomy, space creature, xenomorph-inspired",
-        "negative": "human, normal, mundane, realistic human, everyday, "
-                    "natural, earthly",
-        "denoise": 0.78,
-        "cfg_boost": 1.5,
-        "steps_override": 30,
-        "loras": {
-            "sdxl":       [("SDXL\\Concept\\Aliens_AILF_SDXL.safetensors", 0.85, 0.85)],
-            "zit":        [],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Shadow Circuit / Tech Pattern ─────────────────────────────────
-    {
-        "label": "✦ Circuit / Tech Pattern",
-        "prompt": "circuit board pattern, tech circuits on skin, glowing circuit lines, "
-                  "electronic pathways, neon traces, cybernetic tattoo, "
-                  "tech vein pattern, digital circuitry, Tron-like lines",
-        "negative": "organic, natural, no technology, plain, simple, "
-                    "traditional tattoo, medieval",
-        "denoise": 0.68,
-        "cfg_boost": 1.0,
-        "steps_override": 28,
-        "loras": {
-            "sdxl":       [],
-            "zit":        [],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Glow / Ethereal Light ─────────────────────────────────────────
-    {
-        "label": "✦ Glow / Ethereal Light",
-        "prompt": "ethereal glow, soft radiant light, inner glow, angelic light, "
-                  "bioluminescent, aura, glowing skin, divine light, "
-                  "warm ethereal illumination, light particles",
-        "negative": "dark, shadowy, gloomy, flat lighting, harsh shadows, "
-                    "no glow, matte, dull",
-        "denoise": 0.58,
-        "cfg_boost": 0.5,
-        "steps_override": 28,
-        "loras": {
-            "sdxl":       [],
-            "zit":        [],
-            "sd15":       [],
-            "flux2klein": [("Flux-2-Klein\\Sliders/klein_slider_glow.safetensors", 0.8, 0.8)],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Tentacles / Lovecraftian ──────────────────────────────────────
-    {
-        "label": "✦ Tentacles / Lovecraftian",
-        "prompt": "tentacles, eldritch tentacles, lovecraftian horror, "
-                  "organic tentacle growth, writhing tentacles, cosmic horror, "
-                  "cthulhu inspired, deep sea creature, tentacle embrace",
-        "negative": "clean, normal, mundane, no tentacles, ordinary, "
-                    "cheerful, bright, simple",
-        "denoise": 0.78,
-        "cfg_boost": 1.5,
-        "steps_override": 30,
-        "loras": {
-            "sdxl":       [],
-            "zit":        [("Z-Image-Turbo\\Effect\\Tentacledv1.safetensors", 0.85, 0.85)],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Spaceship / Sci-Fi Vehicle ────────────────────────────────────
-    {
-        "label": "✦ Spaceship / Sci-Fi Vehicle",
-        "prompt": "spaceship, sci-fi vehicle, futuristic spacecraft, "
-                  "space cruiser, starship, detailed hull plating, "
-                  "engine glow, space background, concept art spacecraft",
-        "negative": "medieval, fantasy, modern car, realistic, natural, "
-                    "low quality, blurry",
-        "denoise": 0.75,
-        "cfg_boost": 1.0,
-        "steps_override": 30,
-        "loras": {
-            "sdxl":       [("SDXL\\Concept\\Space_ship_concept.safetensors", 0.85, 0.85)],
-            "zit":        [],
-            "sd15":       [],
-            "flux2klein": [],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Portrait Upscale / Enhancement ────────────────────────────────
-    {
-        "label": "✦ Portrait Enhancement (Klein)",
-        "prompt": "beautiful portrait, enhanced facial features, crisp details, "
-                  "professional portrait photography, catchlights in eyes, "
-                  "natural skin, high resolution face",
-        "negative": "blurry, soft, low resolution, artifacts, distorted, "
-                    "plastic, airbrushed, flat",
-        "denoise": 0.42,
-        "cfg_boost": 0.0,
-        "steps_override": 25,
-        "loras": {
-            "sdxl":       [("Illustrious-Pony\\StS_PonyXL_Detail_Slider_v1.4_iteration_3.safetensors", 0.7, 0.7)],
-            "zit":        [("Z-Image-Turbo\\Style\\Z-Image-Professional_Photographer_3500.safetensors", 0.6, 0.6)],
-            "sd15":       [],
-            "flux2klein": [("Flux-2-Klein\\upscale_portrait_9bklein.safetensors", 0.8, 0.8),
-                           ("Flux-2-Klein\\K9bSh4rpD3tails.safetensors", 0.4, 0.4)],
-            "flux1dev":   [("Flux-1-Dev\\Detail/add_detail.safetensors", 0.6, 0.6)],
-            "flux_kontext": [],
-        },
-    },
-    # ── Color Tone / Grading ──────────────────────────────────────────
-    {
-        "label": "✦ Color Tone / Grading (Klein)",
-        "prompt": "color graded, beautiful color palette, professional color correction, "
-                  "cinematic color tone, warm highlights cool shadows, "
-                  "complementary colors, mood lighting",
-        "negative": "flat colors, oversaturated, undersaturated, grey, "
-                    "washed out, neon, ugly colors",
-        "denoise": 0.40,
-        "cfg_boost": 0.0,
-        "steps_override": 25,
-        "loras": {
-            "sdxl":       [("SDXL\\Style\\sd_xl_offset_example-lora_1.0.safetensors", 0.6, 0.6)],
-            "zit":        [("Z-Image-Turbo\\Style\\zy_CinematicShot_zit.safetensors", 0.5, 0.5)],
-            "sd15":       [],
-            "flux2klein": [("Flux-2-Klein\\Sliders/ColorTone_Standard.safetensors", 0.7, 0.7)],
-            "flux1dev":   [],
-            "flux_kontext": [],
-        },
-    },
-    # ── Anything to Realistic (Klein) ─────────────────────────────────
-    {
-        "label": "✦ Anything → Realistic (Klein)",
-        "prompt": "photorealistic, real person, natural skin, realistic features, "
-                  "real photograph, authentic human, natural imperfections, "
-                  "professional portrait, real-life",
-        "negative": "anime, cartoon, illustration, painting, 3d render, "
-                    "artificial, CGI, plastic, doll-like",
-        "denoise": 0.65,
-        "cfg_boost": 0.5,
-        "steps_override": 30,
-        "loras": {
-            "sdxl":       [("SDXL\\Style\\epiCRealnessRC1.safetensors", 0.8, 0.8)],
-            "zit":        [("Z-Image-Turbo\\Style\\Z-Image-Professional_Photographer_3500.safetensors", 0.7, 0.7)],
-            "sd15":       [],
-            "flux2klein": [("Flux-2-Klein\\Character/Flux2Klein_AnythingtoRealCharacters.safetensors", 0.85, 0.85),
-                           ("Flux-2-Klein\\K9bSR3al.safetensors", 0.5, 0.5)],
-            "flux1dev":   [("Flux-1-Dev\\Realism/flux_realism.safetensors", 0.8, 0.8)],
-            "flux_kontext": [],
-        },
-    },
-]
+INPAINT_REFINEMENTS = _load_presets_json("inpaint_refinements.json",
+    fallback=[{"label": "(none \u2014 manual prompt)", "prompt": "", "negative": "",
+              "denoise": None, "cfg_boost": 0, "steps_override": None, "loras": {}}])
 
 # Style presets usable across img2img, txt2img, and inpaint
 # References the ✦ presets from INPAINT_REFINEMENTS (style/effect based, not body-part fixes)
@@ -4768,8 +3427,19 @@ def _api_get(server, path):
     """HTTP GET to ComfyUI server, returns parsed JSON."""
     url = f"{server.rstrip('/')}{path}"
     req = urllib.request.Request(url)
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.URLError as e:
+        raise ConnectionError(
+            f"ComfyUI Server Not Found\n\n"
+            f"Could not connect to {server}\n\n"
+            f"Troubleshooting:\n"
+            f"  1. Is ComfyUI running? Start it with: python main.py\n"
+            f"  2. Check the URL in Spellcaster Settings\n"
+            f"  3. If remote, check your firewall and network\n\n"
+            f"Technical: {e}"
+        ) from e
 
 def _api_post_json(server, path, data):
     """HTTP POST JSON to ComfyUI server. Extracts error detail on failure."""
@@ -21042,6 +19712,94 @@ class Spellcaster(Gimp.PlugIn):
         update_row.pack_start(update_status, True, True, 0)
         bx.pack_start(update_row, False, False, 0)
 
+        # ── Expert Settings (collapsible) ──
+        bx.pack_start(Gtk.Separator(), False, False, 5)
+        expert_expander = Gtk.Expander(label="Expert Settings")
+        expert_expander.set_expanded(False)
+        expert_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        expert_box.set_margin_start(12)
+        expert_box.set_margin_top(8)
+
+        # Hot-swap server URL (live, without restarting GIMP)
+        expert_box.pack_start(Gtk.Label(
+            label="Hot-swap API URL (applies immediately, no restart needed):",
+            xalign=0), False, False, 0)
+        hotswap_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hotswap_entry = Gtk.Entry()
+        hotswap_entry.set_text(COMFYUI_DEFAULT_URL)
+        hotswap_entry.set_hexpand(True)
+        hotswap_entry.set_tooltip_text(
+            "Change the active ComfyUI server URL without restarting GIMP.\n"
+            "Click Apply to switch instantly. Useful for toggling between\n"
+            "local and remote GPU servers mid-session.")
+        hotswap_row.pack_start(hotswap_entry, True, True, 0)
+        hotswap_status = Gtk.Label(label="")
+        def _on_hotswap(btn):
+            new = hotswap_entry.get_text().strip().rstrip("/")
+            if not new:
+                return
+            global COMFYUI_DEFAULT_URL
+            COMFYUI_DEFAULT_URL = new
+            server_entry.set_text(new)
+            hotswap_status.set_markup(
+                f'<span foreground="#00E676">Active: {new}</span>')
+        hotswap_btn = Gtk.Button(label="Apply")
+        hotswap_btn.connect("clicked", _on_hotswap)
+        hotswap_row.pack_start(hotswap_btn, False, False, 0)
+        expert_box.pack_start(hotswap_row, False, False, 0)
+        expert_box.pack_start(hotswap_status, False, False, 0)
+
+        # Extra workflow directories
+        expert_box.pack_start(Gtk.Label(
+            label="Extra Workflow Directories (one per line):",
+            xalign=0), False, False, 0)
+        extra_dirs_tv = Gtk.TextView()
+        extra_dirs_tv.set_wrap_mode(Gtk.WrapMode.WORD)
+        extra_dirs_buf = extra_dirs_tv.get_buffer()
+        extra_dirs_buf.set_text("\n".join(cfg.get("extra_workflow_dirs", [])))
+        extra_dirs_tv.set_tooltip_text(
+            "Add paths to directories containing ComfyUI workflow JSON files.\n"
+            "The Travelling Wizard will scan these directories and make\n"
+            "their workflows available alongside built-in ones.\n\n"
+            "Example: C:\\Users\\me\\ComfyUI\\user\\default\\workflows")
+        extra_dirs_frame = Gtk.Frame()
+        extra_dirs_scroll = Gtk.ScrolledWindow()
+        extra_dirs_scroll.set_min_content_height(60)
+        extra_dirs_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        extra_dirs_scroll.add(extra_dirs_tv)
+        extra_dirs_frame.add(extra_dirs_scroll)
+        expert_box.pack_start(extra_dirs_frame, False, False, 0)
+
+        # Reload presets button
+        reload_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        reload_status = Gtk.Label(label="")
+        def _on_reload_presets(btn):
+            global SCENE_PRESETS, INPAINT_REFINEMENTS, IMG2IMG_STYLE_PRESETS
+            SCENE_PRESETS = _load_presets_json("scene_presets.json",
+                fallback=[{"label": "(custom \xe2\x80\x94 write your own)"}])
+            INPAINT_REFINEMENTS = _load_presets_json("inpaint_refinements.json",
+                fallback=[{"label": "(none)", "prompt": "", "negative": "",
+                          "denoise": None, "cfg_boost": 0, "steps_override": None,
+                          "loras": {}}])
+            IMG2IMG_STYLE_PRESETS = [
+                {"label": "(none \xe2\x80\x94 no style)", "prompt": "", "negative": "",
+                 "denoise": None, "cfg_boost": 0, "steps_override": None, "loras": {}},
+            ] + [p for p in INPAINT_REFINEMENTS if p["label"].startswith("\u2726")]
+            reload_status.set_markup(
+                f'<span foreground="#00E676">Reloaded: {len(SCENE_PRESETS)} scene, '
+                f'{len(INPAINT_REFINEMENTS)} inpaint presets</span>')
+        reload_btn = Gtk.Button(label="Reload Presets from JSON")
+        reload_btn.set_tooltip_text(
+            "Reload scene_presets.json and inpaint_refinements.json from disk.\n"
+            "Use after editing preset files to pick up changes without restarting GIMP.")
+        reload_btn.connect("clicked", _on_reload_presets)
+        reload_row.pack_start(reload_btn, False, False, 0)
+        reload_row.pack_start(reload_status, True, True, 0)
+        expert_box.pack_start(reload_row, False, False, 0)
+
+        expert_expander.add(expert_box)
+        bx.pack_start(expert_expander, False, False, 0)
+
         # ── Info ──
         bx.pack_start(Gtk.Separator(), False, False, 5)
         info_label = Gtk.Label()
@@ -21074,6 +19832,11 @@ class Spellcaster(Gimp.PlugIn):
         global WORKFLOW_TIMEOUT
         WORKFLOW_TIMEOUT = new_timeout
 
+        # Parse extra workflow dirs from expert settings
+        _buf = extra_dirs_buf
+        _raw_dirs = _buf.get_text(_buf.get_start_iter(), _buf.get_end_iter(), False)
+        _extra_dirs = [d.strip() for d in _raw_dirs.split("\n") if d.strip()]
+
         _save_config({
             "server_url": new_url,
             "workflow_timeout": new_timeout,
@@ -21082,6 +19845,7 @@ class Spellcaster(Gimp.PlugIn):
             "favourite_model": new_fav,
             "output_dir": new_output_dir,
             "output_cleanup": new_cleanup,
+            "extra_workflow_dirs": _extra_dirs,
         })
         _propagate_server_url(new_url)
         Gimp.message(f"Settings saved. Server: {new_url}")

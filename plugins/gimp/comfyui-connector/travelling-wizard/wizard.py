@@ -340,11 +340,40 @@ class WizardMixin:
     def _get_custom_workflows(self):
         """Get dict of all user-imported custom workflows from config.
 
+        Also scans any directories listed in config['extra_workflow_dirs'] for
+        JSON workflow files, adding them as discovered (read-only) entries.
+
         Returns:
             dict: Keyed by workflow name (str), values are workflow info dicts
                  with keys: path, format, workflow_type, node_count, tunables
         """
-        return (self.config or {}).get("custom_workflows", {})
+        result = dict((self.config or {}).get("custom_workflows", {}))
+
+        # Scan extra workflow directories
+        extra_dirs = (self.config or {}).get("extra_workflow_dirs", [])
+        for dirpath in extra_dirs:
+            if not os.path.isdir(dirpath):
+                continue
+            try:
+                for fname in sorted(os.listdir(dirpath)):
+                    if not fname.lower().endswith(".json"):
+                        continue
+                    fpath = os.path.join(dirpath, fname)
+                    name = os.path.splitext(fname)[0].replace("_", " ").replace("-", " ")
+                    display_name = f"\u2197 {name}"  # arrow prefix for external workflows
+                    if display_name not in result:
+                        result[display_name] = {
+                            "path": fpath,
+                            "format": "unknown",
+                            "workflow_type": "External",
+                            "node_count": 0,
+                            "tunables": [],
+                            "external": True,
+                        }
+            except OSError:
+                continue
+
+        return result
 
     def _save_custom_workflow(self, name, wf_data):
         """Save a custom workflow to config and persist to disk.
