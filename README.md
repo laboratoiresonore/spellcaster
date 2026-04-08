@@ -34,7 +34,7 @@
 
 **You don't need to understand AI, machine learning, or any technical concepts.** Every tool comes with pre-configured settings that professionals have spent hundreds of hours perfecting. Your first result will look like your hundredth.
 
-**Don't want to learn GIMP or Darktable?** You don't have to. Spellcaster's scaffold system lets you control everything by **just talking to an AI chatbot**. Say "make this photo more cinematic" or "swap the face in this image" and the AI figures out which tool to use, asks you the right questions, runs the workflow, and delivers the result. Works with any LLM — through Signal, SillyTavern, OpenWebUI, or any chat interface. See [Just Talk To It](#just-talk-to-it--the-scaffold-system).
+**Don't want to learn GIMP or Darktable?** You don't have to. Spellcaster comes with **The Wizard Guild**, an immersive standalone Web UI. Simply boot it up, pick a generative Wizard, and control everything by **just talking to the AI**. Say *"make this photo more cinematic"* or *"swap the face in this image"* and the AI figures out which tool to use, asks you the right questions, runs the workflow, and delivers the result directly in your browser. It supports any local LLM (like Kobold) completely natively. See [Just Talk To It: The Wizard Guild & Scaffold System](#just-talk-to-it-the-wizard-guild--scaffold-system).
 
 **Already use ComfyUI?** Spellcaster can import your existing workflows and run them straight from GIMP — no need to rebuild anything. See [Bring Your Own Workflows](#bring-your-own-workflows).
 
@@ -316,44 +316,52 @@ Selfie → Casting Polaroids → Body Double → Wardrobe → Set Design → Dir
 
 ---
 
-## Just Talk To It — The Scaffold System
+## Just Talk To It: The Wizard Guild & Scaffold System
 
 You don't need to learn GIMP. You don't need to learn Darktable. You don't even need to open ComfyUI.
 
-**Just tell Spellcaster what you want in plain English.** The scaffold system connects any AI chatbot to your full Spellcaster toolkit. Say *"upscale this photo"* or *"make this look more cinematic"* or *"swap the face in this image with mine"* — and it happens. The AI picks the right tool, asks you the right questions, runs the workflow on your GPU, and sends back the result.
+**Just tell Spellcaster what you want in plain English.** Spellcaster comes with a standalone Web UI called **The Wizard Guild**. It connects any local LLM (like Kobold) and your ComfyUI backend into an immersive, premium chat interface. 
 
-### How It Works
+Say *"upscale this photo"* or *"swap the face in this image"* — and it happens. The AI picks the right tool, asks you the specified questions through a chat window, routes the workflow efficiently on your GPU through ComfyUI, and delivers the result.
 
-The scaffold is a three-layer AI brain that sits between you and ComfyUI:
+### The Wizard Guild (Standalone Web GUI)
 
-1. **You say what you want** — in any chat app (Signal, SillyTavern, OpenWebUI, LM Studio, KoboldCpp, or anything that can talk to an LLM)
-2. **The MetaWizard figures out your intent** — "make this more cinematic" routes to Klein with a cinematic preset, not a txt2img workflow
-3. **The SpellcasterWizard collects parameters** — asks you only what matters (prompt, strength, model) using simple numbered menus that even a 7B model can handle
-4. **ComfyUI runs the workflow** — the scaffold builds the node graph, uploads your image, executes, and polls for results
-5. **You get the result** — delivered right back into your chat, with all temp files automatically cleaned up for privacy
+When you launch The Wizard Guild (`python tavern/server.py`), you step into a dynamically generated, premium generative playground:
 
-Every Spellcaster node and every workflow on your server is auto-discovered. No configuration needed — the scaffold builds its own menus from whatever's installed.
+- **Living Personas:** The Guild reads every single node, custom workflow, and tool installed natively in your ComfyUI directory. It dynamically assigns an intelligent LLM Persona (a "Guild Member") to each one.
+- **Native AVATAR & Environment Generation:** Characters intelligently synthesize their own 4K portraits using your installed ComfyUI txt2img checklists. The Guild automatically generates an epic Tavern environment for you.
+- **Parametric Extraction:** When chatting with a Wizard, the Interface extracts ONLY their relevant capabilities (Steps, Denoise, Prompt) and feeds it to you natively.
+- **Absolute Privacy:** It runs 100% locally on your machine. You simply point the UI to your LLM API and your ComfyUI Server settings. 
+
+### How The Scaffold Brain Works
+
+Underneath The Wizard Guild sits a three-layer AI brain routing requests into ComfyUI:
+
+1. **You say what you want** — to a Guild Member, or via any external chat app (Signal, SillyTavern, OpenWebUI)
+2. **The MetaWizard maps your intent** — Intelligently decides what ComfyUI Graph needs to run. 
+3. **The WorkflowWizard collects parameters** — Asks precisely what matters (Prompt, Seeds, Aspect Ratios) utilizing robust internal dictionaries.
+4. **ComfyUI executes** — The scaffold securely translates your conversation into a ComfyUI JSON, ships the image payload natively, executes, and polls the `/history`.
+5. **The result is delivered** — Right back into your Web UI or chat window. 
 
 ### Signal Bridge — AI Art on Autopilot
 
-The **Signal Bridge** takes this further: it turns your ComfyUI server into a remote AI art service. Friends, collaborators, or clients send a message — the AI assistant handles everything and sends back the finished image.
+If you prefer external messengers, the **Signal Bridge** turns your ComfyUI server into a remote AI art service via the exact same scaffold logic. Friends or collaborators send a text message to a number — the AI assistant handles the rest.
 
-- Works over **Signal, or any messaging platform** your LLM can reach
-- **Privacy-first** — uploaded images and generated outputs are automatically deleted from the server after delivery
-- **Character cards included** for SillyTavern, OpenWebUI, LM Studio, and KoboldCpp — drop one in and you're running
-- The LLM doesn't need to be smart — the scaffold uses numbered menus and state machines designed for **7B parameter models**
+- Works over **Signal** or anything communicating with an LLM.
+- **Privacy-first** — all temporary elements are meticulously erased from the `ComfyUI/inputs` directory automatically after completion.
+- Uses strict state machines designed so that even lightweight **7B parameter models** can flawlessly operate massive generative pipelines.
 
 <details>
-<summary><strong>Scaffold architecture for the curious</strong></summary>
+<summary><strong>Scaffold architecture for developers</strong></summary>
 
 | Layer | Role |
 |---|---|
-| **MetaWizard** | Intent router — classifies what the user wants (enhance, generate, modify, video, inpaint, reference) and hands off to the right sub-wizard |
-| **SpellcasterWizard** | Drives Spellcaster enhancement nodes with preset support (Gentle / Strong / Maximum) and step-by-step parameter collection |
-| **WorkflowWizard** | Drives *any* ComfyUI workflow — parses the JSON, extracts tunable parameters, builds a numbered-menu wizard on the fly |
-| **ComfyUIRunner** | Handles all server communication: image upload, workflow submission, result polling, download, and privacy cleanup |
-| **Introspector** | Auto-discovers every node's parameters at runtime (live import or AST parsing) — no hardcoded definitions |
-| **PromptBuilder** | Generates the LLM system prompt from discovered nodes — deterministic, regenerated fresh each run |
+| **MetaWizard** | Intent router — classifies what the user wants and hands off to the right sub-wizard |
+| **SpellcasterWizard** | Drives Spellcaster enhancement nodes with preset support (Gentle / Strong / Maximum) |
+| **WorkflowWizard** | Drives *any* ComfyUI workflow — parses the JSON, extracts parameters, builds interactive states on the fly |
+| **ComfyUIRunner** | Handles all server communication: image upload, workflow generation, polling, and privacy cleanup |
+| **Introspector** | Auto-discovers every node's parameters natively at runtime (no hardcoding parameters) |
+| **PromptBuilder** | Generates the LLM system prompt from discovered nodes deterministically |
 
 </details>
 
