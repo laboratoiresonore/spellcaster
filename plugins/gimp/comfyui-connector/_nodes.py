@@ -312,13 +312,15 @@ class NodeFactory:
         return self._add("CLIPVisionLoader",
                          {"clip_name": clip_name}, node_id)
 
-    def clip_vision_encode(self, clip_vision_ref, image_ref, node_id=None):
+    def clip_vision_encode(self, clip_vision_ref, image_ref,
+                            crop="center", node_id=None):
         """CLIPVisionEncode.
         Outputs: [0]=CLIP_VISION_OUTPUT
         """
         return self._add("CLIPVisionEncode",
                          {"clip_vision": clip_vision_ref,
-                          "image": image_ref}, node_id)
+                          "image": image_ref,
+                          "crop": crop}, node_id)
 
     # ═══════════════════════════════════════════════════════════════════
     #  SAMPLING / DIFFUSION SCHEDULERS
@@ -582,6 +584,7 @@ class NodeFactory:
         }, node_id)
 
     def vae_decode_tiled(self, samples_ref, vae_ref, tile_size=512,
+                         overlap=64, temporal_size=64, temporal_overlap=8,
                          node_id=None):
         """VAEDecodeTiled — tiled decode for large images.
         Outputs: [0]=IMAGE
@@ -589,6 +592,9 @@ class NodeFactory:
         return self._add("VAEDecodeTiled", {
             "samples": samples_ref, "vae": vae_ref,
             "tile_size": tile_size,
+            "overlap": overlap,
+            "temporal_size": temporal_size,
+            "temporal_overlap": temporal_overlap,
         }, node_id)
 
     # ═══════════════════════════════════════════════════════════════════
@@ -713,14 +719,17 @@ class NodeFactory:
             "image1": image1_ref, "image2": image2_ref,
         }, node_id)
 
-    def image_from_batch(self, image_ref, batch_index=0, length=1,
+    def image_from_batch(self, image_ref, start=0, length=-1,
                          node_id=None):
         """ImageFromBatch+ — extract frame(s) from a batch.
+
+        start: starting index (0-based).
+        length: number of frames (-1 = all from start).
         Outputs: [0]=IMAGE
         """
         return self._add("ImageFromBatch+", {
             "image": image_ref,
-            "batch_index": batch_index,
+            "start": start,
             "length": length,
         }, node_id)
 
@@ -789,12 +798,25 @@ class NodeFactory:
             "gamma_correction": gamma_correction,
         }, node_id)
 
-    def image_combiner(self, images, node_id=None):
-        """AILab_ImageCombiner — combine multiple images.
+    def image_combiner(self, foreground_ref, background_ref,
+                       mode="normal", foreground_opacity=1.0,
+                       foreground_scale=1.0, position_x=50, position_y=50,
+                       node_id=None):
+        """AILab_ImageCombiner — composite foreground onto background.
+
+        mode: normal, multiply, screen, overlay, add, subtract.
+        position_x/y: 0-100 percentage positioning.
         Outputs: [0]=IMAGE
         """
-        return self._add("AILab_ImageCombiner",
-                         {"images": images}, node_id)
+        return self._add("AILab_ImageCombiner", {
+            "foreground": foreground_ref,
+            "background": background_ref,
+            "mode": mode,
+            "foreground_opacity": foreground_opacity,
+            "foreground_scale": foreground_scale,
+            "position_x": position_x,
+            "position_y": position_y,
+        }, node_id)
 
     # ═══════════════════════════════════════════════════════════════════
     #  CONTROLNET (SPATIAL CONTROL)
@@ -930,15 +952,22 @@ class NodeFactory:
                          {"face_model": face_model}, node_id)
 
     def reactor_build_face_model(self, image_ref, face_index=0,
-                                  compute_method="CPU", node_id=None):
+                                  compute_method="Mean",
+                                  face_model_name="default",
+                                  save_mode=True, send_only=False,
+                                  node_id=None):
         """ReActorBuildFaceModel — extract face embedding from image."""
         return self._add("ReActorBuildFaceModel", {
             "images": image_ref, "face_index": face_index,
             "compute_method": compute_method,
+            "face_model_name": face_model_name,
+            "save_mode": save_mode,
+            "send_only": send_only,
         }, node_id)
 
     def reactor_save_face_model(self, face_model_ref, save_mode="overwrite",
-                                face_model_name="face_model", node_id=None):
+                                face_model_name="face_model",
+                                select_face_index=0, node_id=None):
         """ReActorSaveFaceModel — save face model to disk.
 
         save_mode: "overwrite" or "new" (add numeric suffix).
@@ -948,6 +977,7 @@ class NodeFactory:
             "face_model": face_model_ref,
             "save_mode": mode,
             "face_model_name": face_model_name,
+            "select_face_index": select_face_index,
         }, node_id)
 
     def reactor_restore_face(self, image_ref,
@@ -1217,7 +1247,7 @@ class NodeFactory:
 
     def wan_image_to_video(self, positive_ref, negative_ref, vae_ref,
                            image_ref, model_ref, width, height, length,
-                           seed, steps, cfg, node_id=None):
+                           seed, steps, cfg, batch_size=1, node_id=None):
         """WanImageToVideo."""
         return self._add("WanImageToVideo", {
             "positive": positive_ref, "negative": negative_ref,
@@ -1225,12 +1255,13 @@ class NodeFactory:
             "model": model_ref,
             "width": width, "height": height, "length": length,
             "seed": seed, "steps": steps, "cfg": cfg,
+            "batch_size": batch_size,
         }, node_id)
 
     def wan_first_last_frame(self, positive_ref, negative_ref, vae_ref,
                               start_image_ref, end_image_ref, model_ref,
                               width, height, length, seed, steps, cfg,
-                              node_id=None):
+                              batch_size=1, node_id=None):
         """WanFirstLastFrameToVideo."""
         return self._add("WanFirstLastFrameToVideo", {
             "positive": positive_ref, "negative": negative_ref,
@@ -1239,6 +1270,7 @@ class NodeFactory:
             "model": model_ref,
             "width": width, "height": height, "length": length,
             "seed": seed, "steps": steps, "cfg": cfg,
+            "batch_size": batch_size,
         }, node_id)
 
     def vhs_video_combine(self, images_ref, frame_rate=24, loop_count=0,
@@ -1257,7 +1289,8 @@ class NodeFactory:
             "save_output": save_output,
         }, node_id)
 
-    def rife_vfi(self, frames_ref, multiplier=2, node_id=None):
+    def rife_vfi(self, frames_ref, multiplier=2, batch_size=1,
+                 dtype="float32", torch_compile=False, node_id=None):
         """RIFE VFI — frame interpolation."""
         return self._add("RIFE VFI", {
             "frames": frames_ref,
@@ -1267,6 +1300,9 @@ class NodeFactory:
             "fast_mode": True,
             "ensemble": True,
             "scale_factor": 1.0,
+            "batch_size": batch_size,
+            "dtype": dtype,
+            "torch_compile": torch_compile,
         }, node_id)
 
     # ═══════════════════════════════════════════════════════════════════
@@ -1615,21 +1651,62 @@ class NodeFactory:
     #  VIDEO UPSCALE
     # ═══════════════════════════════════════════════════════════════════
 
-    def rtx_video_super_resolution(self, images_ref, scale_factor=2,
+    def rtx_video_super_resolution(self, images_ref, scale_factor=2.0,
+                                    quality="ULTRA",
+                                    resize_type="scale by multiplier",
                                     node_id=None):
-        """RTXVideoSuperResolution."""
-        return self._add("RTXVideoSuperResolution", {
-            "images": images_ref, "scale_factor": scale_factor,
+        """RTXVideoSuperResolution.
+
+        resize_type: "scale by multiplier" (uses scale_factor) or
+                     "target dimensions" (pass width/height via scale_factor as tuple).
+        quality: "LOW", "MEDIUM", "HIGH", or "ULTRA".
+        """
+        inputs = {
+            "images": images_ref,
+            "resize_type": resize_type,
+            "quality": quality,
+            "scale": float(scale_factor),
+        }
+        return self._add("RTXVideoSuperResolution", inputs, node_id)
+
+    def seedvr2_video_upscaler(self, image_ref, dit_ref, vae_ref,
+                               seed=42, resolution=1080, max_resolution=0,
+                               batch_size=5, uniform_batch_size=False,
+                               color_correction="lab", node_id=None):
+        """SeedVR2VideoUpscaler — AI video upscaling.
+
+        dit_ref: from SeedVR2 DiT model loader.
+        vae_ref: from SeedVR2 VAE model loader.
+        resolution: target shortest-edge pixels.
+        batch_size: frames per batch (must be 4n+1: 1,5,9,13...).
+        color_correction: lab, wavelet, wavelet_adaptive, hsv, adain, none.
+        """
+        return self._add("SeedVR2VideoUpscaler", {
+            "image": image_ref,
+            "dit": dit_ref,
+            "vae": vae_ref,
+            "seed": seed,
+            "resolution": resolution,
+            "max_resolution": max_resolution,
+            "batch_size": batch_size,
+            "uniform_batch_size": uniform_batch_size,
+            "color_correction": color_correction,
         }, node_id)
 
-    def seedvr2_video_upscaler(self, images_ref, node_id=None):
-        """SeedVR2VideoUpscaler."""
-        return self._add("SeedVR2VideoUpscaler",
-                         {"images": images_ref}, node_id)
+    def ts_video_upscale(self, model_name, images_ref,
+                         upscale_method="bicubic", factor=2.0,
+                         device_strategy="auto", node_id=None):
+        """TS_Video_Upscale_With_Model — upscale video with a model.
 
-    def ts_video_upscale(self, upscale_model_ref, images_ref, node_id=None):
-        """TS_Video_Upscale_With_Model."""
+        model_name: upscale model filename (e.g. "4x-UltraSharp.pth").
+        upscale_method: nearest-exact, bilinear, area, bicubic.
+        factor: scale factor (0.1-8.0).
+        device_strategy: auto, load_unload_each_frame, keep_loaded, cpu_only.
+        """
         return self._add("TS_Video_Upscale_With_Model", {
-            "upscale_model": upscale_model_ref,
+            "model_name": model_name,
             "images": images_ref,
+            "upscale_method": upscale_method,
+            "factor": factor,
+            "device_strategy": device_strategy,
         }, node_id)
