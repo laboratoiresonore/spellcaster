@@ -1480,6 +1480,8 @@ class NodeFactory:
 
     def ltxv_base_sampler(self, model_ref, vae_ref, guider_ref, sampler_ref,
                            sigmas_ref, noise_ref, width, height, num_frames,
+                           optional_cond_images=None, optional_cond_indices=None,
+                           strength=0.9, crop="center", crf=0, blur=0,
                            node_id=None):
         """LTXVBaseSampler — core LTX Video sampler node.
 
@@ -1497,11 +1499,17 @@ class NodeFactory:
             width: Output width in pixels
             height: Output height in pixels
             num_frames: Number of video frames to generate
+            optional_cond_images: Reference to IMAGE for I2V conditioning (None=T2V)
+            optional_cond_indices: Frame indices for conditioning, e.g. "0" (None=T2V)
+            strength: I2V conditioning strength 0.0-1.0 (default 0.9)
+            crop: Image crop mode: "center", "disabled" (default "center")
+            crf: Compression ratio factor 0-63 (default 0)
+            blur: Blur amount for conditioning (default 0)
 
         Returns:
             Node ID. Outputs: [0]=LATENT
         """
-        return self._add("LTXVBaseSampler", {
+        inputs = {
             "model": model_ref,
             "vae": vae_ref,
             "guider": guider_ref,
@@ -1511,7 +1519,15 @@ class NodeFactory:
             "width": width,
             "height": height,
             "num_frames": num_frames,
-        }, node_id)
+        }
+        if optional_cond_images is not None:
+            inputs["optional_cond_images"] = optional_cond_images
+            inputs["optional_cond_indices"] = optional_cond_indices or "0"
+            inputs["strength"] = strength
+            inputs["crop"] = crop
+            inputs["crf"] = crf
+            inputs["blur"] = blur
+        return self._add("LTXVBaseSampler", inputs, node_id)
 
     def latent_upscale_model_loader(self, model_name, node_id=None):
         """LatentUpscaleModelLoader — loads latent-space upscale model.

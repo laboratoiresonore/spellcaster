@@ -3887,7 +3887,7 @@ def build_ltx_video(preset, prompt_text, seed,
                      two_stage=False, distilled=False,
                      loras=None, interpolate=False, rtx_scale=0,
                      fps=25, pingpong=False,
-                     image_filename=None):
+                     image_filename=None, i2v_strength=0.9):
     """LTX Video 2.3 generation — text-to-video or image-to-video.
 
     Supports three modes:
@@ -3995,10 +3995,20 @@ def build_ltx_video(preset, prompt_text, seed,
     sampler_id = nf.ksampler_select("euler", node_id="17")
     noise_id = nf.random_noise(seed, node_id="18")
 
+    # ── I2V conditioning (optional) ─────────────────────────────────────────────
+    i2v_kwargs = {}
+    if image_filename:
+        i2v_img_id = nf.load_image(image_filename, node_id="19")
+        i2v_kwargs = {
+            "optional_cond_images": [i2v_img_id, 0],
+            "optional_cond_indices": "0",
+            "strength": i2v_strength,
+        }
+
     base_id = nf.ltxv_base_sampler(
         [stg_model_id, 0], [vae_id, 0], [guider_id, 0],
         [sampler_id, 0], [sched_id, 0], [noise_id, 0],
-        gen_width, gen_height, num_frames, node_id="20")
+        gen_width, gen_height, num_frames, **i2v_kwargs, node_id="20")
 
     decode_latent_ref = [base_id, 0]
 
@@ -4036,8 +4046,9 @@ def build_ltx_video(preset, prompt_text, seed,
         frames_ref = [rife_id, 0]
 
     # ── Output ────────────────────────────────────────────────────
+    i2v_tag = "-i2v" if image_filename else ""
     mode_tag = "distilled" if distilled else ("2stage" if two_stage else "single")
-    prefix = f"LTX23-{mode_tag}"
+    prefix = f"LTX23-{mode_tag}{i2v_tag}"
     nf.vhs_video_combine(frames_ref, frame_rate=fps, filename_prefix=prefix,
                           pingpong=pingpong, node_id="50")
 
