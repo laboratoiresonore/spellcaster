@@ -215,6 +215,16 @@ import platform
 import zlib            # for PNG IDAT compression and CRC32 checksums
 
 import urllib.request
+
+# Auto-cleanup stale __pycache__ to prevent GIMP loading old bytecode
+try:
+    import shutil as _shutil
+    _cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "__pycache__")
+    if os.path.isdir(_cache_dir):
+        _shutil.rmtree(_cache_dir, ignore_errors=True)
+    del _cache_dir
+except Exception:
+    pass
 import urllib.parse
 import urllib.error
 import threading
@@ -9525,6 +9535,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-klein-headswap-face": "klein_flux2",
             "spellcaster-klein-inpaint": "klein_flux2",
             "spellcaster-ltx-t2v": "ltx_video",
+            "spellcaster-ltx-i2v": "ltx_video",
             "spellcaster-wan-i2v": "wan_i2v",
             "spellcaster-wan-flf": "wan_i2v",
             "spellcaster-wan-director": "wan_i2v",
@@ -9623,6 +9634,8 @@ class Spellcaster(Gimp.PlugIn):
                                            "Regenerate selected area with Klein AI — context-aware, smooth edges"),
             "spellcaster-ltx-t2v": ("LTX 2.3 Text to Video...", self._run_ltx_t2v,
                                     "Generate video from text using LTX Video 2.3"),
+            "spellcaster-ltx-i2v": ("LTX 2.3 Image to Video...", self._run_ltx_i2v,
+                                    "Generate video from canvas image using LTX Video 2.3"),
             "spellcaster-wan-i2v": ("Wan 2.2 Image to Video...", self._run_wan_i2v,
                                     "Generate video from image using Wan 2.2"),
             "spellcaster-wan-flf": ("Wan 2.2 First + Last Frame to Video...", self._run_wan_flf,
@@ -9721,6 +9734,7 @@ class Spellcaster(Gimp.PlugIn):
 
             # Video
             "spellcaster-ltx-t2v":           "<Image>/Filters/Spellcaster Video",
+            "spellcaster-ltx-i2v":           "<Image>/Filters/Spellcaster Video",
             "spellcaster-wan-i2v":           "<Image>/Filters/Spellcaster Video",
             "spellcaster-wan-flf":           "<Image>/Filters/Spellcaster Video",
             "spellcaster-wan-director":      "<Image>/Filters/Spellcaster Magic Studios",
@@ -10064,6 +10078,16 @@ class Spellcaster(Gimp.PlugIn):
         GimpUi.init("spellcaster")
 
         dlg = LtxVideoDialog()
+
+        # If launched via LTX I2V menu, pre-enable I2V and size from canvas
+        _i2v_auto = getattr(self, "_ltx_i2v_autostart", False)
+        if _i2v_auto:
+            self._ltx_i2v_autostart = False
+            dlg.i2v_check.set_active(True)
+            iw, ih = image.get_width(), image.get_height()
+            dlg.w_spin.set_value(max(128, min(1920, (iw + 16) // 32 * 32)))
+            dlg.h_spin.set_value(max(128, min(1920, (ih + 16) // 32 * 32)))
+
         last = _SESSION.get("ltx_t2v")
         if last:
             try:
@@ -10158,6 +10182,11 @@ class Spellcaster(Gimp.PlugIn):
         except Exception as e:
             Gimp.message(f"Spellcaster LTX T2V Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    def _run_ltx_i2v(self, procedure, run_mode, image, drawables, config, data):
+        """LTX 2.3 image-to-video: opens LTX dialog with I2V pre-enabled."""
+        self._ltx_i2v_autostart = True
+        return self._run_ltx_t2v(procedure, run_mode, image, drawables, config, data)
 
     def _run_wan_i2v(self, procedure, run_mode, image, drawables, config, data):
         """Wan 2.2 image-to-video: generate video from canvas or selection."""
