@@ -21,6 +21,7 @@ const settingsModal = document.getElementById('settings-modal');
 const settingsCancel = document.getElementById('settings-cancel');
 const settingsSave = document.getElementById('settings-save');
 const koboldUrlInput = document.getElementById('kobold-url-input');
+const comfyUrlInput = document.getElementById('comfy-url-input');
 
 // Rename Elements
 const renameModal = document.getElementById('rename-modal');
@@ -31,6 +32,9 @@ const renameLlmBtn = document.getElementById('rename-llm-btn');
 
 let koboldUrl = localStorage.getItem('kobold_url') || 'http://127.0.0.1:5001';
 koboldUrlInput.value = koboldUrl;
+
+let comfyUrl = localStorage.getItem('comfy_url') || 'http://127.0.0.1:8188';
+comfyUrlInput.value = comfyUrl;
 
 let characters = [];
 let activeCharacterId = null;
@@ -140,7 +144,7 @@ async function runFirstTimeSetup() {
             const avatarRes = await fetch('/api/avatar_generate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: char.id })
+                body: JSON.stringify({ id: char.id, comfy_url: comfyUrl })
             });
             const aData = await avatarRes.json();
             if(aData.avatar_url) {
@@ -158,7 +162,7 @@ async function runFirstTimeSetup() {
             const bgRes = await fetch('/api/background_generate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: characters[0].id })
+                body: JSON.stringify({ id: characters[0].id, comfy_url: comfyUrl })
             });
             const bData = await bgRes.json();
             if(bData.bg_url) {
@@ -342,6 +346,7 @@ async function askKobold(text) {
 
 async function dispatchToComfy(payload) {
     try {
+        payload.comfy_url = comfyUrl; // Intercept and attach user's Comfy URL natively
         const response = await fetch('/api/execute', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -386,7 +391,7 @@ generateAvatarBtn.addEventListener('click', async () => {
         const response = await fetch('/api/avatar_generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: activeCharacterId })
+            body: JSON.stringify({ id: activeCharacterId, comfy_url: comfyUrl })
         });
         const data = await response.json();
         if(data.avatar_url) {
@@ -413,7 +418,7 @@ generateBgBtn.addEventListener('click', async () => {
         const response = await fetch('/api/background_generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: activeCharacterId })
+            body: JSON.stringify({ id: activeCharacterId, comfy_url: comfyUrl })
         });
         const data = await response.json();
         if(data.bg_url) {
@@ -482,6 +487,10 @@ settingsCancel.addEventListener('click', () => settingsModal.classList.add('hidd
 settingsSave.addEventListener('click', () => {
     koboldUrl = koboldUrlInput.value.trim();
     localStorage.setItem('kobold_url', koboldUrl);
+    
+    comfyUrl = comfyUrlInput.value.trim();
+    localStorage.setItem('comfy_url', comfyUrl);
+    
     settingsModal.classList.add('hidden');
 });
 

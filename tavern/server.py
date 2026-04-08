@@ -59,9 +59,9 @@ def _api_post_json(server, path, data):
     with urllib.request.urlopen(req, timeout=60) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
-def _get_comfyui_checkpoint():
+def _get_comfyui_checkpoint(comfy_url):
     try:
-        url = f"{COMFYUI_URL}/object_info/CheckpointLoaderSimple"
+        url = f"{comfy_url}/object_info/CheckpointLoaderSimple"
         req = urllib.request.Request(url)
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode("utf-8"))
@@ -78,8 +78,8 @@ def _get_comfyui_checkpoint():
         print(f"Error fetching checkpoints: {e}")
         return None
 
-def _dispatch_txt2img(prompt, width, height):
-    ckpt = _get_comfyui_checkpoint()
+def _dispatch_txt2img(prompt, width, height, comfy_url):
+    ckpt = _get_comfyui_checkpoint(comfy_url)
     if not ckpt:
         raise Exception("No valid ComfyUI Checkpoint found. Ensure you have standard models loaded.")
     
@@ -96,7 +96,7 @@ def _dispatch_txt2img(prompt, width, height):
     
     # 1. Dispatch
     try:
-        url = f"{COMFYUI_URL}/prompt"
+        url = f"{comfy_url}/prompt"
         body = json.dumps({"prompt": workflow}).encode("utf-8")
         req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -107,7 +107,7 @@ def _dispatch_txt2img(prompt, width, height):
         raise Exception(f"Failed to submit prompt to ComfyUI: {e}")
         
     # 2. Poll for Completion
-    history_url = f"{COMFYUI_URL}/history/{prompt_id}"
+    history_url = f"{comfy_url}/history/{prompt_id}"
     for _ in range(120): # Polling for up to 60 seconds
         time.sleep(0.5)
         try:
@@ -121,7 +121,7 @@ def _dispatch_txt2img(prompt, width, height):
                         img_info = outputs["9"]["images"][0]
                         filename = img_info.get("filename")
                         subfolder = img_info.get("subfolder", "")
-                        file_url = f"{COMFYUI_URL}/view?filename={filename}&type=output"
+                        file_url = f"{comfy_url}/view?filename={filename}&type=output"
                         if subfolder: file_url += f"&subfolder={subfolder}"
                         return file_url
         except Exception:
@@ -173,6 +173,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
             try:
                 payload = json.loads(post_data.decode('utf-8'))
                 char_id = payload.get("id")
+                comfy_url = payload.get("comfy_url", COMFYUI_URL).rstrip('/')
                 
                 # We need to look up the subtext for the character.
                 char_list, _ = CHARS_CACHE, NODES_CACHE # The globals
@@ -185,7 +186,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 )
                 
                 # Execute dynamically via our ComfyUI TXT2IMG scaffold
-                img_url = _dispatch_txt2img(prompt, width=512, height=512)
+                img_url = _dispatch_txt2img(prompt, width=512, height=512, comfy_url=comfy_url)
                 
                 return self.end_json(200, {"status": "success", "avatar_url": img_url})
             except Exception as e:
@@ -195,12 +196,15 @@ class GuildHandler(SimpleHTTPRequestHandler):
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
             try:
+                payload = json.loads(post_data.decode('utf-8'))
+                comfy_url = payload.get("comfy_url", COMFYUI_URL).rstrip('/')
+                
                 prompt = (
                     f"An epic, dark, and mysterious magical tavern where ancient wizards meet "
                     f"to cast spells and enchantments, cinematic lighting, glowing runes, "
                     f"floating books, magical artifacts, cinematic framing, extremely detailed 8k background landscape."
                 )
-                img_url = _dispatch_txt2img(prompt, width=1024, height=576)
+                img_url = _dispatch_txt2img(prompt, width=1024, height=576, comfy_url=comfy_url)
                 return self.end_json(200, {"status": "success", "bg_url": img_url})
             except Exception as e:
                 return self.end_json(500, {"error": str(e)})
