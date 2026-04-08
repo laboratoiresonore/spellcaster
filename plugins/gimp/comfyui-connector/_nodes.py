@@ -679,14 +679,26 @@ class NodeFactory:
 
     def image_upscale_with_model_by_factor(self, upscale_model_ref,
                                             image_ref, scale_by,
+                                            upscale_method="nearest-exact",
                                             node_id=None):
-        """ImageUpscaleWithModelByFactor — model-based upscale at given factor.
+        """Upscale by Factor with Model (WLSH) — model-based upscale at given factor.
+
+        Uses the WLSH custom node which applies a model upscale then resizes
+        to the specified factor.
+
+        Args:
+            upscale_model_ref: Reference to UPSCALE_MODEL
+            image_ref: Reference to IMAGE
+            scale_by: Float factor (e.g. 2.0 for 2x)
+            upscale_method: Resize method ("nearest-exact", "bilinear", "area")
+
         Outputs: [0]=IMAGE
         """
-        return self._add("ImageUpscaleWithModelByFactor", {
+        return self._add("Upscale by Factor with Model (WLSH)", {
             "upscale_model": upscale_model_ref,
             "image": image_ref,
-            "scale_by": scale_by,
+            "factor": float(scale_by),
+            "upscale_method": upscale_method,
         }, node_id)
 
     def image_sharpen(self, image_ref, sharpen_radius=1, sigma=1.0,
@@ -1148,14 +1160,14 @@ class NodeFactory:
             "background_color": "none",
         }, node_id)
 
-    def lama_remover(self, images_ref, masks_ref, mask_threshold=0.5,
+    def lama_remover(self, images_ref, masks_ref, mask_threshold=250,
                      gaussblur_radius=8, invert_mask=False, node_id=None):
         """LamaRemover — LaMa inpainting without diffusion."""
         return self._add("LamaRemover", {
             "images": images_ref,
             "masks": masks_ref,
-            "mask_threshold": mask_threshold,
-            "gaussblur_radius": gaussblur_radius,
+            "mask_threshold": int(mask_threshold),
+            "gaussblur_radius": int(gaussblur_radius),
             "invert_mask": invert_mask,
         }, node_id)
 
