@@ -66,10 +66,13 @@
     <!-- Settings Modal -->
     <div id="settings-modal" class="modal hidden">
         <div class="modal-content">
-            <h3>Kobold API Settings</h3>
-            <p>Connect your local LLM inferencer to breathe life into the Guild Members. Provide the base API URL (e.g., http://127.0.0.1:5001).</p>
+            <h3>Guild Server Settings</h3>
+            <p><strong>Local LLM (Kobold):</strong> Breathe life into the Guild Members natively via local inference.</p>
             <input type="text" id="kobold-url-input" placeholder="http://127.0.0.1:5001" value="http://127.0.0.1:5001">
-            <div class="modal-actions">
+            <p style="margin-top: 16px;"><strong>ComfyUI Engine:</strong> Connect to your image rendering backend.</p>
+            <input type="text" id="comfy-url-input" placeholder="http://127.0.0.1:8188" value="http://127.0.0.1:8188">
+            
+            <div class="modal-actions" style="margin-top: 24px;">
                 <button id="settings-cancel">Cancel</button>
                 <button id="settings-save">Save & Connect</button>
             </div>
