@@ -555,7 +555,13 @@ def _fetch_comfyui_models(comfy_url):
     return models
 
 
-def fetch_all_characters():
+def fetch_all_characters(comfy_url=None):
+    """Discover all wizard characters from studios, models, and nodes.
+
+    Args:
+        comfy_url: Explicit ComfyUI URL. Falls back to global COMFYUI_URL.
+    """
+    _url = comfy_url or COMFYUI_URL
     chars = []
     nodes = discover_nodes()
 
@@ -638,7 +644,7 @@ def fetch_all_characters():
     # If the user has no WAN/LTX/SeedVR2 models installed, those wizards
     # should not appear. They'll auto-appear on next restart/reinit once
     # the user installs the corresponding model.
-    comfyui_models_early = _fetch_comfyui_models(COMFYUI_URL)
+    comfyui_models_early = _fetch_comfyui_models(_url)
     _all_model_names_lower = {m["name"].lower() for m in comfyui_models_early}
 
     # Map model_family keys to the substrings we look for in ComfyUI model names
@@ -892,7 +898,27 @@ def fetch_all_characters():
     return chars, nodes
 
 
-CHARS_CACHE, NODES_CACHE = fetch_all_characters()
+CHARS_CACHE, NODES_CACHE = [], []   # populated by _server_init()
+
+
+def _server_init(comfy_url=None):
+    """Call AFTER COMFYUI_URL has been set by the launcher.
+
+    Populates CHARS_CACHE/NODES_CACHE from ComfyUI and starts the
+    background LoRA registry builder. Safe to call more than once
+    (reinitialize uses it too).
+
+    Args:
+        comfy_url: Explicit ComfyUI URL. Falls back to global COMFYUI_URL.
+    """
+    global CHARS_CACHE, NODES_CACHE
+    url = comfy_url or COMFYUI_URL
+    CHARS_CACHE, NODES_CACHE = fetch_all_characters(comfy_url=url)
+    _load_lora_registry()
+    threading.Thread(
+        target=_build_lora_registry, args=(url,), daemon=True
+    ).start()
+
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Persistent State — survives server restarts via JSON files
@@ -1347,10 +1373,8 @@ def _get_unknown_loras_for_wizard(char_id):
     return [l for l in loras if not l["purpose"] and not l["user_desc"]]
 
 
-# ── Initialize LoRA registry at import time ──
-_load_lora_registry()
-# Build/refresh registry in background (merges with persisted data)
-threading.Thread(target=_build_lora_registry, args=(COMFYUI_URL,), daemon=True).start()
+# ── LoRA registry loaded by _server_init() ──
+# (was previously at import time, but COMFYUI_URL isn't set yet)
 
 
 def _build_avatar_prompt(char):
@@ -2778,7 +2802,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
             #   2. Model-family wizards (LTX2/WAN/SeedVR2) — gated on ComfyUI models
             #   3. Per-model wizards (comfyui_model) — detected from ComfyUI
             #   4. Spellcaster nodes
-            new_chars, new_nodes = fetch_all_characters()
+            new_chars, new_nodes = fetch_all_characters(comfy_url=comfy)
             CHARS_CACHE = new_chars
             NODES_CACHE = new_nodes
 
@@ -2790,7 +2814,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
             # Rebuild LoRA registry in background
             threading.Thread(
                 target=_build_lora_registry,
-                args=(COMFYUI_URL,),
+                args=(comfy,),
                 daemon=True
             ).start()
 
@@ -2893,6 +2917,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    _server_init()   # detect models + LoRAs with current COMFYUI_URL
     print(f"Starting The Wizard Guild on port {PORT}...")
     httpd = HTTPServer(('0.0.0.0', PORT), GuildHandler)
     try:
