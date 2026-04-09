@@ -1726,8 +1726,7 @@ Every image you generate is yours. Every tool works offline. No account needed. 
 <img src="https://img.shields.io/badge/Telemetry-Zero-22c55e?style=for-the-badge" alt="No telemetry"/>
 <br/><br/>
 <img src="https://img.shields.io/badge/Content_Filters-None-22c55e?style=for-the-badge" alt="No filters"/>
-<br/><br/>
-<img src="https://img.shields.io/badge/License-GPL--2.0-22c55e?style=for-the-badge" alt="GPL-2.0"/>
+
 
 <br/>
 
