@@ -53,44 +53,11 @@ def ensure_pyinstaller():
                        check=True)
 
 
-def generate_browser_jsx():
-    """Generate browser-ready JSX from the installer's React component.
-
-    Transforms ES6 module imports into global React references and
-    removes the default export, adding a window assignment instead.
-    """
-    jsx_source = SPELLCASTER_ROOT / "installer" / "signal_bridge_settings.jsx"
-    if not jsx_source.exists():
-        print("  No signal_bridge_settings.jsx found, skipping JSX generation")
-        return
-
-    import re
-    jsx_content = jsx_source.read_text(encoding="utf-8")
-    jsx_content = jsx_content.replace(
-        'import { useState, useCallback, useRef, useEffect, useMemo } '
-        'from "react";',
-        'const { useState, useCallback, useRef, useEffect, useMemo } '
-        '= React;'
-    )
-    jsx_content = jsx_content.replace(
-        'export default function SignalBridgeSettings()',
-        'function SignalBridgeSettings()'
-    )
-    jsx_content += '\nwindow.SignalBridgeSettings = SignalBridgeSettings;\n'
-    browser_jsx = HERE / "static" / "travelling_wizard.jsx"
-    browser_jsx.write_text(jsx_content, encoding="utf-8")
-    print(f"  Generated browser JSX: {browser_jsx.name} "
-          f"({len(jsx_content)//1024}KB)")
-
-
 def build(target_platform: str, onedir: bool = False):
     """Build the Wizard Guild executable for the given platform."""
     print(f"\n{'='*60}")
     print(f"  Building Wizard Guild for {target_platform}")
     print(f"{'='*60}\n")
-
-    # Generate browser-ready JSX before bundling
-    generate_browser_jsx()
 
     # -- Common PyInstaller arguments --
     cmd = [

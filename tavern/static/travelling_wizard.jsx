@@ -119,7 +119,7 @@ const DEFAULT_CONFIG = {
   webui_url: "http://127.0.0.1:8080",
   webui_api_key: "",
   ollama_url: "http://127.0.0.1:11434",
-  model: "legal-assistant",
+  model: "",
   comfyui_url: "http://127.0.0.1:8188",
   comfyui_output_dir: "/opt/ComfyUI/output",
   comfyui_cleanup_minutes: 30,
@@ -181,6 +181,286 @@ function newStep(type = "prompt") {
     next_step: null, // null = next in order
     branches: {}, // { "option_value": step_id }
   };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// BUILT-IN SCAFFOLDS — pre-populated in the editor for all pipelines
+// ═══════════════════════════════════════════════════════════════════
+
+function builtInScaffolds() {
+  const defs = [
+    // ── Image Generation ──
+    { name: "Text-to-Image", key: "txt2img", icon: "Image", type: "Image Generation",
+      desc: "Generate images from text prompts. Supports SD 1.5, SDXL, ZIT, Flux Dev, Flux Klein, Illustrious.",
+      greeting: "What image would you like to create? Describe it or pick a style preset:",
+      params: [
+        { name: "prompt", type: "text", label: "Prompt", help: "Describe what you want to see" },
+        { name: "negative", type: "text", label: "Negative Prompt", help: "Things to avoid" },
+        { name: "width", type: "number", label: "Width", default: "1024", min: "256", max: "2048" },
+        { name: "height", type: "number", label: "Height", default: "1024", min: "256", max: "2048" },
+        { name: "steps", type: "number", label: "Steps", default: "25", min: "1", max: "50" },
+        { name: "cfg", type: "number", label: "CFG Scale", default: "7.0", min: "1", max: "20" },
+        { name: "seed", type: "number", label: "Seed (-1 = random)", default: "-1" },
+      ]},
+    { name: "Image-to-Image", key: "img2img", icon: "Image", type: "Image Transformation",
+      desc: "Transform existing images — change style, add detail, reimagine. Per-model presets, LoRA injection, dual ControlNet.",
+      greeting: "Upload or select an image to transform. What style or change do you want?",
+      params: [
+        { name: "prompt", type: "text", label: "Style Prompt" },
+        { name: "denoise", type: "slider", label: "Denoise Strength", default: "0.55", min: "0.1", max: "1.0", help: "0.3=subtle, 0.7=heavy" },
+        { name: "steps", type: "number", label: "Steps", default: "25" },
+      ]},
+    { name: "Inpainting", key: "inpaint", icon: "Image", type: "Image Editing",
+      desc: "Paint over any area to regenerate it. 44 expert presets with body-part-tuned denoise values.",
+      greeting: "Select an area to regenerate. What should appear in the masked region?",
+      params: [
+        { name: "prompt", type: "text", label: "What to paint" },
+        { name: "denoise", type: "slider", label: "Denoise", default: "0.75", min: "0.3", max: "1.0" },
+      ]},
+    { name: "Outpainting", key: "outpaint", icon: "Image", type: "Image Editing",
+      desc: "Extend images beyond their borders in any direction.",
+      greeting: "Which direction would you like to extend the canvas?",
+      params: [
+        { name: "prompt", type: "text", label: "Extension prompt" },
+        { name: "padding_top", type: "number", label: "Top padding", default: "0" },
+        { name: "padding_bottom", type: "number", label: "Bottom padding", default: "128" },
+        { name: "padding_left", type: "number", label: "Left padding", default: "0" },
+        { name: "padding_right", type: "number", label: "Right padding", default: "0" },
+      ]},
+    // ── Klein Suite ──
+    { name: "Klein Image Editor", key: "klein_img2img", icon: "Image", type: "Klein Flux 2",
+      desc: "Best-quality img2img using Flux 2 Klein 9B/4B. The most advanced image editor available.",
+      greeting: "What changes do you want to make to your image?",
+      params: [
+        { name: "prompt", type: "text", label: "Edit instruction" },
+        { name: "denoise", type: "slider", label: "Strength", default: "0.55", min: "0.1", max: "1.0" },
+        { name: "model", type: "choice", label: "Klein Model", options: [{ label: "9B (Best)", value: "9b" }, { label: "4B (Fast)", value: "4b" }] },
+      ]},
+    { name: "Klein Inpaint", key: "klein_inpaint", icon: "Image", type: "Klein Flux 2",
+      desc: "Context-aware selection fill with smooth edges. 29 task presets.",
+      greeting: "Select the area to regenerate. What should appear there?",
+      params: [
+        { name: "prompt", type: "text", label: "Inpaint prompt" },
+        { name: "denoise", type: "slider", label: "Strength", default: "0.85", min: "0.3", max: "1.0" },
+      ]},
+    { name: "Klein Re-poser", key: "klein_repose", icon: "Image", type: "Klein Flux 2",
+      desc: "Change character poses and positions. 26 poses, 8 camera angles.",
+      greeting: "What pose do you want the character in?",
+      params: [
+        { name: "pose", type: "choice", label: "Pose", options: [
+          { label: "Standing", value: "standing" }, { label: "Sitting", value: "sitting" },
+          { label: "Walking", value: "walking" }, { label: "Running", value: "running" },
+          { label: "Action Pose", value: "action" }, { label: "Custom...", value: "custom" },
+        ]},
+      ]},
+    // ── Upscaling & Restoration ──
+    { name: "AI Upscale", key: "upscale", icon: "Image", type: "Restoration",
+      desc: "Make any image larger and sharper. 6 upscale models (UltraSharp, RealESRGAN, etc).",
+      greeting: "Which upscale model would you like to use?",
+      params: [
+        { name: "model", type: "choice", label: "Upscale Model", options: [
+          { label: "4x UltraSharp", value: "ultrasharp" }, { label: "RealESRGAN x4", value: "realesrgan" },
+          { label: "4x Remacri", value: "remacri" }, { label: "Anime 4x", value: "anime" },
+        ]},
+      ]},
+    { name: "Photo Restoration", key: "photo_restore", icon: "Image", type: "Restoration",
+      desc: "One-click pipeline: upscale + face fix + sharpen. Multi-stage combined workflow.",
+      greeting: "Upload a photo to restore. Choose restoration intensity:",
+      params: [
+        { name: "preset", type: "choice", label: "Preset", options: [
+          { label: "Quick Fix", value: "quick" }, { label: "Full Restoration", value: "full" },
+          { label: "Cinematic (2-stage + RTX + RIFE)", value: "cinematic" },
+        ]},
+      ]},
+    { name: "SUPIR Restoration", key: "supir", icon: "Image", type: "Restoration",
+      desc: "State-of-the-art AI photo repair using the SUPIR model.",
+      greeting: "Upload a damaged or low-quality photo to restore:",
+      params: [
+        { name: "denoise", type: "slider", label: "Restoration Strength", default: "0.40", min: "0.1", max: "0.8" },
+      ]},
+    { name: "Detail Hallucination", key: "detail_hallucinate", icon: "Image", type: "Restoration",
+      desc: "Add fine texture detail that wasn't there. Upscale + low-denoise img2img pass.",
+      greeting: "Upload an image to enhance with hallucinated detail:",
+      params: [
+        { name: "denoise", type: "slider", label: "Detail Amount", default: "0.35", min: "0.1", max: "0.6" },
+      ]},
+    // ── Face & Identity ──
+    { name: "Face Swap (ReActor)", key: "faceswap", icon: "Image", type: "Face & Identity",
+      desc: "Paste a face from one photo onto another. Direct source-to-target with optional face restoration.",
+      greeting: "Upload the source face and target image:",
+      params: [
+        { name: "quality", type: "choice", label: "Quality", options: [
+          { label: "High (ReSwapper 256 + GPEN)", value: "high" },
+          { label: "Fast (InSwapper 128)", value: "fast" },
+        ]},
+      ]},
+    { name: "FaceID (IPAdapter)", key: "faceid", icon: "Image", type: "Face & Identity",
+      desc: "Generate images that look like a specific person. FACEID, PLUS V2, PORTRAIT presets.",
+      greeting: "Upload a reference face. What scene should they appear in?",
+      params: [
+        { name: "prompt", type: "text", label: "Scene description" },
+        { name: "weight", type: "slider", label: "Face strength", default: "0.85", min: "0.3", max: "1.0" },
+      ]},
+    { name: "PuLID Flux", key: "pulid", icon: "Image", type: "Face & Identity",
+      desc: "Flux-native identity preservation at the attention level (not post-processing).",
+      greeting: "Upload a face reference. Describe the target image:",
+      params: [
+        { name: "prompt", type: "text", label: "Image description" },
+      ]},
+    // ── Style & Lighting ──
+    { name: "IC-Light Relighting", key: "iclight", icon: "Image", type: "Style & Lighting",
+      desc: "Change lighting direction on any photo. 10 presets: Left, Right, Top, Bottom, Golden Hour, Neon, etc.",
+      greeting: "Choose a lighting direction for your photo:",
+      params: [
+        { name: "light_preset", type: "choice", label: "Light Direction", options: [
+          { label: "Left", value: "left" }, { label: "Right", value: "right" },
+          { label: "Top", value: "top" }, { label: "Golden Hour", value: "golden" },
+          { label: "Neon", value: "neon" }, { label: "Dramatic", value: "dramatic" },
+        ]},
+      ]},
+    { name: "Style Transfer", key: "style_transfer", icon: "Image", type: "Style & Lighting",
+      desc: "Copy the visual style of any reference image. IPAdapter-based, adjustable strength.",
+      greeting: "Upload a style reference and a target image:",
+      params: [
+        { name: "strength", type: "slider", label: "Style strength", default: "0.8", min: "0.3", max: "1.0" },
+      ]},
+    // ── Video Generation ──
+    { name: "WAN 2.2 Image-to-Video", key: "wan_i2v", icon: "Film", type: "Video Generation",
+      desc: "Turn any photo into a 2-5 second video. Dual-UNET 14B, 26 motion presets, pingpong looping.",
+      greeting: "Upload an image to animate. Choose a motion style:",
+      params: [
+        { name: "prompt", type: "text", label: "Motion description", help: "e.g. 'gentle breathing, hair sway'" },
+        { name: "length", type: "number", label: "Frames", default: "81", min: "17", max: "129" },
+        { name: "turbo", type: "toggle", label: "Turbo mode (4 steps)", default: "true" },
+      ]},
+    { name: "LTX 2.3 Text-to-Video", key: "ltx_t2v", icon: "Film", type: "Video Generation",
+      desc: "Generate video from text — no input image needed. 80 prompt templates, hardware auto-detect.",
+      greeting: "Describe the video you want to create:",
+      params: [
+        { name: "prompt", type: "text", label: "Video description" },
+        { name: "width", type: "number", label: "Width", default: "768" },
+        { name: "height", type: "number", label: "Height", default: "512" },
+        { name: "frames", type: "number", label: "Frames", default: "97" },
+      ]},
+    { name: "LTX 2.3 Image-to-Video", key: "ltx_i2v", icon: "Film", type: "Video Generation",
+      desc: "Animate any photo with text guidance. Same pipeline as T2V with image conditioning.",
+      greeting: "Upload an image. How should it animate?",
+      params: [
+        { name: "prompt", type: "text", label: "Animation prompt" },
+        { name: "strength", type: "slider", label: "Image influence", default: "0.85", min: "0.3", max: "1.0" },
+      ]},
+    { name: "Director's Chair", key: "wan_director", icon: "Film", type: "Video Generation",
+      desc: "Multi-step video sequences with face re-injection between shots. Solo, Duo, and Trio actor modes.",
+      greeting: "How many actors in this scene? Choose a director script:",
+      params: [
+        { name: "actors", type: "choice", label: "Actors", options: [
+          { label: "Solo (1 actor)", value: "solo" }, { label: "Duo (2 actors)", value: "duo" },
+          { label: "Trio (3 actors)", value: "trio" },
+        ]},
+        { name: "script", type: "choice", label: "Script", options: [
+          { label: "Dramatic Reveal", value: "reveal" }, { label: "Living Portrait", value: "portrait" },
+          { label: "Walk Cycle", value: "walk" }, { label: "Emotional Arc", value: "arc" },
+        ]},
+      ]},
+    // ── Video Post-Processing ──
+    { name: "SeedVR2 Video Upscale", key: "seedvr2", icon: "Film", type: "Video Upscale",
+      desc: "AI video upscaling with hallucination control. 3B DiT model, batch processing.",
+      greeting: "Upload a video to upscale. Choose quality:",
+      params: [
+        { name: "hallucination", type: "choice", label: "Detail Level", options: [
+          { label: "None (preserve)", value: "none" }, { label: "Light", value: "light" }, { label: "High", value: "high" },
+        ]},
+      ]},
+    { name: "Video Face Swap", key: "video_reactor", icon: "Film", type: "Video Post-Processing",
+      desc: "Face swap across video frames with ReActor + upscale.",
+      greeting: "Upload a video and a face reference:",
+      params: [] },
+    // ── Utility ──
+    { name: "Remove Background", key: "rembg", icon: "Image", type: "Utility",
+      desc: "One-click transparent PNG using rembg segmentation model.",
+      greeting: "Upload an image to remove the background from:",
+      params: [] },
+    { name: "Object Removal (LaMa)", key: "lama", icon: "Image", type: "Utility",
+      desc: "Paint over anything to erase it — no prompt needed. LaMa inpainting.",
+      greeting: "Select the object to remove by painting a mask over it:",
+      params: [] },
+    // ── Magic Studios ──
+    { name: "Casting Polaroids", key: "photobooth", icon: "Image", type: "Magic Studios",
+      desc: "Create a reusable face model from any photo. 3 face restore variants.",
+      greeting: "Upload a clear face photo for casting:",
+      params: [
+        { name: "variant", type: "choice", label: "Quality", options: [
+          { label: "CodeFormer Sharp", value: "sharp" }, { label: "GPEN-2048 Balanced", value: "balanced" },
+          { label: "CodeFormer Faithful", value: "faithful" },
+        ]},
+      ]},
+    { name: "Body Double", key: "body_factory", icon: "Image", type: "Magic Studios",
+      desc: "Generate full-body references with face swap + transparent background removal.",
+      greeting: "Describe the body type, clothing, and pose:",
+      params: [
+        { name: "prompt", type: "text", label: "Body description" },
+      ]},
+    { name: "Wardrobe Department", key: "clothing_store", icon: "Image", type: "Magic Studios",
+      desc: "AI outfit replacement. 50+ presets from casual to fantasy to cultural.",
+      greeting: "What outfit should the character wear?",
+      params: [
+        { name: "outfit", type: "text", label: "Outfit description" },
+        { name: "denoise", type: "slider", label: "Change strength", default: "0.85", min: "0.3", max: "0.95" },
+      ]},
+    { name: "Set Design", key: "studio_set", icon: "Image", type: "Magic Studios",
+      desc: "Generate backgrounds and composite actors with AI lighting harmonization.",
+      greeting: "Describe the scene, or choose from 20+ presets:",
+      params: [
+        { name: "scene", type: "text", label: "Scene description" },
+        { name: "actors", type: "number", label: "Number of actors", default: "1", min: "0", max: "3" },
+      ]},
+    // ── ControlNet ──
+    { name: "ControlNet Generation", key: "controlnet", icon: "Image", type: "ControlNet",
+      desc: "Guide AI using edges, depth, poses, or sketches. Canny, MiDaS, OpenPose, Scribble, LineArt, Tile.",
+      greeting: "Choose a ControlNet mode:",
+      params: [
+        { name: "preprocessor", type: "choice", label: "Preprocessor", options: [
+          { label: "Canny Edge", value: "canny" }, { label: "Depth (MiDaS)", value: "depth" },
+          { label: "OpenPose", value: "openpose" }, { label: "Scribble", value: "scribble" },
+          { label: "LineArt", value: "lineart" }, { label: "Tile", value: "tile" },
+        ]},
+        { name: "prompt", type: "text", label: "Generation prompt" },
+      ]},
+  ];
+
+  return defs.map(d => ({
+    id: uid(),
+    name: d.name,
+    description: d.desc,
+    icon: d.icon || "Image",
+    workflow_key: d.key,
+    workflow_source: { type: "builder", path: "", workflow_type: d.type, node_count: 0, category: d.type },
+    nsfw: false,
+    admin_only: false,
+    steps: [
+      { ...newStep("prompt"), name: "Greeting", message_template: d.greeting },
+      { ...newStep("choice"), name: "Mode", options: [
+        { label: "Use a Preset", value: "preset" },
+        { label: "Custom (step by step)", value: "custom" },
+        { label: "All Defaults", value: "defaults" },
+      ]},
+      { ...newStep("param_collect"), name: "Parameters", params: d.params.map(p => ({
+        ...newParam(), ...p, id: uid(), required: p.required !== false,
+        options: (p.options || []).map(o => typeof o === "string" ? { label: o, value: o } : o),
+      }))},
+      { ...newStep("confirm"), name: "Review" },
+      { ...newStep("execute"), name: "Generate", comfyui_workflow: d.key, workflow_source: "builder" },
+    ],
+    presets: [],
+    system_prompt_header: `You are guiding a user through the "${d.name}" workflow.\n${d.desc}\nPresent numbered choices. Keep replies short and clear.`,
+    system_prompt_rules: [
+      "Present numbered choices for every decision",
+      "Accept 'd' or empty input as 'use default'",
+      "Show parameter name, range, and default for each param",
+      "After all params collected, show confirmation summary",
+      "On confirm, output the final JSON and signal ready to execute",
+    ],
+  }));
 }
 
 function newScaffold() {
@@ -899,8 +1179,8 @@ function ScaffoldEditor({ scaffolds, setScaffolds }) {
         <div className="space-y-2">
           {scaffold.steps.map((step, idx) => (
             <StepCard key={step.id} step={step} index={idx} total={scaffold.steps.length}
-              isSelected={false}
-              onSelect={() => {}}
+              isSelected={selectedStep === step.id}
+              onSelect={() => setSelectedStep(selectedStep === step.id ? null : step.id)}
               onMove={(fromIdx, toIdx) => {
                 const newSteps = [...scaffold.steps];
                 [newSteps[fromIdx], newSteps[toIdx]] = [newSteps[toIdx], newSteps[fromIdx]];
@@ -916,6 +1196,32 @@ function ScaffoldEditor({ scaffolds, setScaffolds }) {
 
       {/* Right: Details */}
       <div className="col-span-1 bg-slate-900 border border-amber-600/30 rounded-xl p-4 overflow-y-auto">
+        {selectedStep && scaffold.steps.find(s => s.id === selectedStep) ? (
+          <>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-medium text-amber-200">Edit Step</span>
+              <button onClick={() => setSelectedStep(null)}
+                className="text-xs text-slate-400 hover:text-amber-300 px-2 py-1 rounded bg-slate-800/50">
+                ← Back to Props
+              </button>
+            </div>
+            <StepEditor
+              step={scaffold.steps.find(s => s.id === selectedStep)}
+              scaffold={scaffold}
+              onChange={(updatedStep) => {
+                updateScaffold({
+                  ...scaffold,
+                  steps: scaffold.steps.map(s => s.id === selectedStep ? updatedStep : s)
+                });
+              }}
+              onDelete={() => {
+                updateScaffold({ ...scaffold, steps: scaffold.steps.filter(s => s.id !== selectedStep) });
+                setSelectedStep(null);
+              }}
+            />
+          </>
+        ) : (
+        <>
         <div className="flex gap-1 mb-3">
           <button onClick={() => setRightPanel("props")}
             className={`text-xs px-2 py-1 rounded ${rightPanel === "props" ? "bg-amber-600/40 text-amber-50" : "bg-slate-800/50 text-slate-400 hover:text-amber-300"}`}>
@@ -1015,6 +1321,8 @@ function ScaffoldEditor({ scaffolds, setScaffolds }) {
               </button>
             </div>
           </div>
+        )}
+        </>
         )}
       </div>
     </div>
@@ -2038,7 +2346,7 @@ function GuildSidebar({ isOpen, onToggle, comfyUrl, koboldUrl: initialKoboldUrl 
 
 function SignalBridgeSettings() {
   const [config, setConfig] = useState(deepClone(DEFAULT_CONFIG));
-  const [scaffolds, setScaffolds] = useState([newScaffold()]);
+  const [scaffolds, setScaffolds] = useState(() => builtInScaffolds());
   const [activeTab, setActiveTab] = useState("scaffolds");
   const [saved, setSaved] = useState(false);
   const [importError, setImportError] = useState("");
@@ -2182,7 +2490,7 @@ function SignalBridgeSettings() {
               <Field label="Ollama URL" tip="Direct Ollama API endpoint. Used as fallback when Open WebUI is unavailable. Default: http://localhost:11434">
                 <input value={config.ollama_url || ""} onChange={e => update("ollama_url", e.target.value)} className={inputCls} />
               </Field>
-              <Field label="Default Model" tip="The Ollama model tag used for all conversations. Must be pulled on the Ollama server first (e.g. legal-assistant:latest)">
+              <Field label="Default Model" tip="The Ollama model tag used for all conversations. Must be pulled on the Ollama server first (e.g. llama3:latest, mistral:latest)">
                 <input value={config.model} onChange={e => update("model", e.target.value)} className={inputCls} />
               </Field>
             </SectionCard>
