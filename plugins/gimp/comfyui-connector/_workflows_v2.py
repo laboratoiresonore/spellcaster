@@ -2786,8 +2786,18 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
     neg_id = nf.clip_encode(["1", 0], negative_text or "", node_id="6")
     img_id = nf.load_image(image_filename, node_id="7")
 
+    # CLIPVision: encode start image for WanImageToVideo/WanFirstLastFrameToVideo
+    # The WAN v2 API requires CLIP_VISION_OUTPUT, not raw IMAGE.
+    cv_loader_id = nf.clip_vision_loader("clip_vision_h.safetensors", node_id="7cv")
+    cv_enc_id = nf.clip_vision_encode([cv_loader_id, 0], ["7", 0], node_id="7ce")
+    cv_start_ref = [cv_enc_id, 0]
+
     if end_image_filename and not loop:
         nf.load_image(end_image_filename, node_id="7b")
+        cv_enc_end_id = nf.clip_vision_encode([cv_loader_id, 0], ["7b", 0], node_id="7be")
+        cv_end_ref = [cv_enc_end_id, 0]
+    else:
+        cv_end_ref = cv_start_ref  # loop uses same start/end
 
     # LoRA chains
     high_ref = ["2", 0]
@@ -2862,19 +2872,21 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
     # These nodes output: [0]=CONDITIONING(pos), [1]=CONDITIONING(neg), [2]=LATENT
     # Model/seed/steps/cfg are handled by the KSamplerAdvanced below.
     if use_flf:
-        end_ref = ["7", 0] if loop else ["7b", 0]
         flf_id = nf.wan_first_last_frame(
             ["5", 0], ["6", 0], ["4", 0],
             width, height, length,
-            clip_vision_start_ref=["7", 0],
-            clip_vision_end_ref=end_ref,
+            clip_vision_start_ref=cv_start_ref,
+            clip_vision_end_ref=cv_end_ref,
+            start_image_ref=["7", 0],
+            end_image_ref=(["7b", 0] if (end_image_filename and not loop) else ["7", 0]),
             node_id="40",
         )
     else:
         i2v_id = nf.wan_image_to_video(
             ["5", 0], ["6", 0], ["4", 0],
             width, height, length,
-            clip_vision_output_ref=["7", 0],
+            clip_vision_output_ref=cv_start_ref,
+            start_image_ref=["7", 0],
             node_id="40",
         )
 
