@@ -181,12 +181,14 @@ function init(router) {
     router.post('/generate', async (req, res) => {
         try {
             const { prompt, negative, width, height, seed, style } = req.body;
-            // Build a simple txt2img workflow
+            const model = await detectBestModel();
+            if (!model) return res.status(500).json({ error: 'No checkpoint models found on ComfyUI' });
             const workflow = buildTxt2ImgWorkflow(
                 prompt || 'a beautiful scene',
                 negative || 'blurry, low quality',
                 width || 1024, height || 768,
-                seed || Math.floor(Math.random() * 2147483647)
+                seed || Math.floor(Math.random() * 2147483647),
+                model
             );
             const result = await dispatchWorkflow(workflow);
             res.json({
@@ -202,12 +204,15 @@ function init(router) {
     router.post('/scene', async (req, res) => {
         try {
             const { description, width, height, style } = req.body;
+            const model = await detectBestModel();
+            if (!model) return res.status(500).json({ error: 'No checkpoint models found on ComfyUI' });
             const prompt = `${description}, cinematic scene, atmospheric, professional photography, 8k, detailed environment`;
             const negative = 'people, characters, faces, text, watermark, blurry, low quality';
             const workflow = buildTxt2ImgWorkflow(
                 prompt, negative,
                 width || 1280, height || 720,
-                Math.floor(Math.random() * 2147483647)
+                Math.floor(Math.random() * 2147483647),
+                model
             );
             const result = await dispatchWorkflow(workflow);
 
@@ -235,6 +240,9 @@ function init(router) {
             const { image_base64, prompt, style, denoise } = req.body;
             if (!image_base64) return res.status(400).json({ error: 'image_base64 required' });
 
+            const model = await detectBestModel();
+            if (!model) return res.status(500).json({ error: 'No checkpoint models found on ComfyUI' });
+
             // Upload to ComfyUI
             const imgBuf = Buffer.from(image_base64, 'base64');
             const uploadName = `spellcaster_restyle_${Date.now()}.png`;
@@ -244,7 +252,8 @@ function init(router) {
                 uploadName,
                 prompt || 'photorealistic portrait, professional photography, detailed',
                 'cartoon, anime, drawing, sketch, blurry, low quality',
-                denoise || 0.55
+                denoise || 0.55,
+                model
             );
             const result = await dispatchWorkflow(workflow);
             res.json({
@@ -287,12 +296,15 @@ function init(router) {
     router.post('/portrait', async (req, res) => {
         try {
             const { description, width, height } = req.body;
+            const model = await detectBestModel();
+            if (!model) return res.status(500).json({ error: 'No checkpoint models found on ComfyUI' });
             const prompt = `${description}, portrait photograph, 85mm lens, shallow depth of field, studio lighting, professional headshot, detailed face, 8k`;
             const negative = 'blurry, distorted, deformed, low quality, cartoon, watermark';
             const workflow = buildTxt2ImgWorkflow(
                 prompt, negative,
                 width || 400, height || 600,
-                Math.floor(Math.random() * 2147483647)
+                Math.floor(Math.random() * 2147483647),
+                model
             );
             const result = await dispatchWorkflow(workflow);
             res.json({
@@ -320,12 +332,32 @@ function init(router) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+//  Model Auto-Detection
+// ═══════════════════════════════════════════════════════════════════
+
+let _cachedModel = null;
+
+async function detectBestModel() {
+    if (_cachedModel) return _cachedModel;
+    try {
+        const res = await fetchJSON(`${COMFYUI_URL}/object_info/CheckpointLoaderSimple`);
+        const ckpts = res.data?.CheckpointLoaderSimple?.input?.required?.ckpt_name?.[0] || [];
+        // Prefer: flux > xl > juggernaut > anything
+        const priorities = ['flux', 'xl', 'jugger', 'reborn', 'realistic'];
+        for (const kw of priorities) {
+            const match = ckpts.find(c => c.toLowerCase().includes(kw));
+            if (match) { _cachedModel = match; return match; }
+        }
+        if (ckpts.length > 0) { _cachedModel = ckpts[0]; return ckpts[0]; }
+    } catch { /* fallback */ }
+    return null;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 //  Workflow Builders (minimal self-contained — no Python dependency)
 // ═══════════════════════════════════════════════════════════════════
 
-function buildTxt2ImgWorkflow(prompt, negative, width, height, seed) {
-    // Auto-detect best available model would happen on the client side.
-    // This is a generic SDXL/Flux-compatible workflow.
+function buildTxt2ImgWorkflow(prompt, negative, width, height, seed, modelName) {
     return {
         "3": { "class_type": "KSampler", "inputs": {
             "seed": seed, "steps": 25, "cfg": 7.0,
@@ -335,7 +367,7 @@ function buildTxt2ImgWorkflow(prompt, negative, width, height, seed) {
             "latent_image": ["5", 0]
         }},
         "4": { "class_type": "CheckpointLoaderSimple", "inputs": {
-            "ckpt_name": "%model%"  // Placeholder — resolved by client
+            "ckpt_name": modelName
         }},
         "5": { "class_type": "EmptyLatentImage", "inputs": {
             "width": width, "height": height, "batch_size": 1
@@ -355,7 +387,7 @@ function buildTxt2ImgWorkflow(prompt, negative, width, height, seed) {
     };
 }
 
-function buildImg2ImgWorkflow(imageName, prompt, negative, denoise) {
+function buildImg2ImgWorkflow(imageName, prompt, negative, denoise, modelName) {
     return {
         "1": { "class_type": "LoadImage", "inputs": { "image": imageName }},
         "3": { "class_type": "KSampler", "inputs": {
@@ -367,7 +399,7 @@ function buildImg2ImgWorkflow(imageName, prompt, negative, denoise) {
             "latent_image": ["5", 0]
         }},
         "4": { "class_type": "CheckpointLoaderSimple", "inputs": {
-            "ckpt_name": "%model%"
+            "ckpt_name": modelName
         }},
         "5": { "class_type": "VAEEncode", "inputs": {
             "pixels": ["1", 0], "vae": ["4", 2]
@@ -401,4 +433,10 @@ function exit() {
     console.log('[Spellcaster] Server plugin unloaded.');
 }
 
-export { init, exit };
+const info = {
+    id: 'spellcaster',
+    name: 'Spellcaster',
+    description: 'ComfyUI integration — living scenes, character restyling, autonomous image generation',
+};
+
+export { info, init, exit };
