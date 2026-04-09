@@ -25,13 +25,4 @@
           "build_txt2img",
           "build_controlnet_gen",
           "build_colorize",
-          "build_iclight",
-          "build_lut"
-        ],
-        "type": "studio",
-        "body_description": "eccentric male wizard, wild iridescent hair, paint-stained flowing robes in shifting colors, holding a glowing crystal paintbrush, confident theatrical stance"
-      }
-    },
-    "avatar": ""
-  }
-}
+        

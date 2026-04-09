@@ -7928,3 +7928,4 @@ end
 pcall(spellcaster_auto_update)
 
 return script_data
+                

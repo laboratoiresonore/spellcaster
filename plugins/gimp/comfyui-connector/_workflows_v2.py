@@ -4057,21 +4057,4 @@ def build_ltx_video(preset, prompt_text, seed,
 
     frames_ref = [decode_id, 0]
 
-    # ── Post-processing ───────────────────────────────────────────
-    if rtx_scale and rtx_scale > 0:
-        rtx_id = nf.rtx_video_super_resolution(frames_ref, scale_factor=rtx_scale,
-                                                node_id="45")
-        frames_ref = [rtx_id, 0]
-
-    if interpolate:
-        rife_id = nf.rife_vfi(frames_ref, multiplier=2, node_id="46")
-        frames_ref = [rife_id, 0]
-
-    # ── Output ────────────────────────────────────────────────────
-    i2v_tag = "-i2v" if image_filename else ""
-    mode_tag = "distilled" if distilled else ("2stage" if two_stage else "single")
-    prefix = f"LTX23-{mode_tag}{i2v_tag}"
-    nf.vhs_video_combine(frames_ref, frame_rate=fps, filename_prefix=prefix,
-                          pingpong=pingpong, node_id="50")
-
-    return nf.build()
+    # ── Post-processing ──────────────────�

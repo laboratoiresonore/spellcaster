@@ -510,6 +510,48 @@ _reg("flux1dev",
      )
 
 
+# ── Chroma (v1/v2) — single CLIPLoader with type="chroma" ───────────────
+# Chroma — flow-matching model using T5-XXL with chroma-specific CLIP loading
+# Architecture: separate UNET + single CLIP (chroma type) + standard KSampler
+# Good for: high quality photorealistic images, CFG-guided generation
+
+_reg("chroma",
+     loader="unet_clip_vae",
+     sampler="ksampler",
+     clip_mode="single_chroma",  # CLIPLoader with type="chroma"
+     vae_mode="separate",
+     supports_negative=False,
+     default_resolution=(1024, 1024),
+     default_cfg=3.0,
+     default_steps=25,
+     default_denoise=0.65,
+     default_sampler="euler",
+     default_scheduler="simple",
+     lora_prefixes=[],
+     turbo_config=None,
+     quality_positive=(
+         "photorealistic, highly detailed, sharp focus, professional photograph, "
+         "natural lighting, depth of field"
+     ),
+     quality_negative="",
+     autoset_prompts=(
+         "Detailed professional photograph, natural light, sharp, realistic",
+         "",
+     ),
+     autoset_denoise={
+         "img2img": 0.55,
+     },
+     autoset_cn={},
+     autoset_loras={},
+     scene_group="flux",
+     extra={
+         "vae_name": "ae.safetensors",
+         "clip_type": "chroma",
+         "clip_name": "t5xxl_fp8_e4m3fn.safetensors",
+     },
+     )
+
+
 # ── Flux 2 Klein (distilled) ─────────────────────────────────────────────
 # Flux 2 Klein — Flux distilled to 4 steps, custom sampler (2025)
 # Architecture: separate UNET + single CLIP (flux2 type) + custom sampler

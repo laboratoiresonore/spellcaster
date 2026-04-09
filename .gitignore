@@ -74,12 +74,4 @@ local_settings.json
 # NSFW builds — never push to public repo
 nsfw/
 *_nsfw*
-manifest_nsfw.json
-
-# Guild runtime state (user-generated, not distributable)
-.guild_version
-guild_config.json
-tavern/.guild_state/
-tavern/characters/*.png
-tavern/guild_config.json
-tavern/.guild_version
+manifest_nsf

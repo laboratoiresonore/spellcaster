@@ -1633,32 +1633,4 @@ def main():
     elif not _assets_need_generation():
         print("  [assets] Assets already generated (delete .guild_assets_version to regenerate)")
 
-    # ── Open browser ─────────────────────────────────────────────────
-    if config.get("auto_open_browser", True) and not args.no_browser:
-        import webbrowser
-        print(f"  [server] Opening browser: {guild_url}")
-        webbrowser.open(guild_url)
-
-    # ── Keep running until Ctrl+C ────────────────────────────────────
-    print()
-    print("  Press Ctrl+C to stop the server.")
-    print()
-
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("\n  [server] Shutting down...")
-        httpd.shutdown()
-        # Cleanup child processes
-        if _kobold_process and _kobold_process.poll() is None:
-            print("  [kobold] Stopping KoboldCPP...")
-            _kobold_process.terminate()
-        if _st_process and _st_process.poll() is None:
-            print("  [st] Stopping SillyTavern...")
-            _st_process.terminate()
-        print("  [server] Goodbye!")
-
-
-if __name__ == '__main__':
-    main()
+    # ── Open browser ───────────────�

@@ -28,14 +28,4 @@
           "build_klein_img2img_ref",
           "build_klein_scene_img2img",
           "build_klein_blend",
-          "build_klein_repose",
-          "build_style_transfer",
-          "build_layer_blend"
-        ],
-        "type": "studio",
-        "body_description": "androgynous alchemist, metallic silver-gold hair, leather apron over dark alchemical robes, holding a glowing vial, scholarly yet dangerous pose"
-      }
-    },
-    "avatar": ""
-  }
-}
+          "build_kl
