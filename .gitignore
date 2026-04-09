@@ -74,4 +74,4 @@ local_settings.json
 # NSFW builds — never push to public repo
 nsfw/
 *_nsfw*
-manifest_nsf
+manifest_nsfbuild_all.bat
