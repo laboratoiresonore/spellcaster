@@ -81,3 +81,5 @@ manifest_nsfw.json
 guild_config.json
 tavern/.guild_state/
 tavern/characters/*.png
+tavern/guild_config.json
+tavern/.guild_version
