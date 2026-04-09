@@ -30,13 +30,4 @@
           "build_faceswap",
           "build_rembg",
           "build_klein_inpaint",
-          "build_klein_blend",
-          "build_klein_scene_img2img",
-          "build_wan_video"
-        ],
-        "body_description": "pragmatic woman, auburn hair in practical bun, smart glasses, multi-pocketed production vest over shirt, clipboard in hand, professional stance"
-      }
-    },
-    "avatar": ""
-  }
-}
+     

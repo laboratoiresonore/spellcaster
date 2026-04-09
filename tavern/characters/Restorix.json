@@ -27,13 +27,4 @@
           "build_photo_restore",
           "build_detail_hallucinate",
           "build_supir",
-          "build_seedv2r",
-          "build_upscale_blend"
-        ],
-        "type": "studio",
-        "body_description": "elderly male wizard, round spectacles, long white braided beard with crystals, patched robes glowing at seams, holding an ancient magnifying glass, gentle patient stance"
-      }
-    },
-    "avatar": ""
-  }
-}
+  

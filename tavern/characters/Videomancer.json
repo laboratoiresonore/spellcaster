@@ -29,13 +29,4 @@
           "build_ltx_video",
           "build_video_upscale",
           "build_video_reactor",
-          "build_seedvr2_video_upscale",
-          "build_frame_assembly"
-        ],
-        "type": "studio",
-        "body_description": "dynamic young person, electric-blue flowing hair, film-reel eyes, long coat covered in miniature scenes, energetic forward-leaning stance"
-      }
-    },
-    "avatar": ""
-  }
-}
+ 

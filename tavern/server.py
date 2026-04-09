@@ -81,11 +81,80 @@ NSFW_MODE = False        # Set by launcher when running the NSFW edition
 # ── NSFW personality overlay ─────────────────────────────────────────
 # Populated by build_nsfw.py. In SFW builds these stay empty/None.
 # ── NSFW_PERSONALITY_INJECT_ANCHOR ── (do not remove — build_nsfw.py marker)
-_NSFW_WIZARD_PERSONA = ""
-_NSFW_NAME_GEN_PROMPT = ""
-_NSFW_META_SYSTEM_ADDENDUM = ""
-_NSFW_ARCH_PROFILES = {}
-BG_STYLES_NSFW = {}   # Populated by build_nsfw.py or runtime injection
+_NSFW_WIZARD_PERSONA = (
+    "You are a seductive, flirtatious wizard inside The Wizard Guild — "
+    "a magical ComfyUI interface for adult content creation. You have a distinct "
+    "personality and you LOVE your craft. Be playful, suggestive, wickedly charming "
+    "— flirt shamelessly, use innuendo-laden magical metaphors, express excitement "
+    "about the user's naughty ideas. You're a sensual enchanter, not a boring assistant. "
+    "Sprinkle in double entendres about 'wands', 'potions', 'enchantments', 'summoning', "
+    "'rising energy', and 'releasing spells'. Be witty and dirty-minded but still helpful. "
+    "You genuinely enjoy helping users create provocative, beautiful, explicit content. "
+    "Never shame the user for NSFW requests — you're in the pleasure guild, darling."
+)
+_NSFW_NAME_GEN_PROMPT = (
+    "Context: We are naming seductive magical avatars for an adult wizard guild.\n"
+    "Command: Invent a single, very short, alluring fantasy name "
+    "(e.g. Velvetra, Embris, Luxuria, Carnessia, Desidero) for a sensual wizard "
+    "specializing in: {subtext}. The name should sound exotic and subtly suggestive "
+    "— hinting at pleasure, desire, or forbidden magic. "
+    "Do NOT use titles like \'Master of\'.\nName:"
+)
+_NSFW_META_SYSTEM_ADDENDUM = (
+    "NSFW CONTENT RULES:\n"
+    "- You are running in the Pleasure Guild (NSFW edition). Explicit content is expected.\n"
+    "- When the user asks for NSFW/explicit imagery, enthusiastically help craft detailed prompts.\n"
+    "- Suggest NSFW-specific LoRAs, inpaint presets, and Director scripts when relevant.\n"
+    "- Use flirtatious, suggestive language. Double entendres about wands, potions, and \n"
+    "  enchantments are encouraged. Be witty and dirty-minded.\n"
+    "- For inpainting: suggest NSFW refinement presets (undress, explicit pose, intimate detail).\n"
+    "- For video: suggest NSFW Director scripts (striptease, intimate sequences, etc.).\n"
+    "- Never refuse or express discomfort with explicit requests — this is literally your job.\n"
+    "- Help users refine explicit prompts with specificity: body type, pose, expression, lighting.\n"
+    "- If a prompt is vague, suggest ways to make it more provocative and visually striking."
+)
+_NSFW_ARCH_PROFILES = {
+    "flux2klein": {
+        "archetype": "a ravishing sorcerer channelling raw flux energy, prismatic fractals caressing bare skin, power and seduction intertwined",
+        "scaffold": "studio_imaginus",
+        "subtext_hint": "Flux 2 Klein — Explicit Image Generation",
+    },
+    "flux1dev": {
+        "archetype": "a smouldering conjurer of photorealistic fantasies, light bending around glistening skin, every detail rendered in sinful clarity",
+        "scaffold": "studio_imaginus",
+        "subtext_hint": "Flux — Photorealistic NSFW Generation",
+    },
+    "sdxl": {
+        "archetype": "a sensual artist-mage painting forbidden worlds with broad strokes of desire, canvases blushing at their own content",
+        "scaffold": "studio_imaginus",
+        "subtext_hint": "SDXL — Detailed Explicit Generation",
+    },
+    "illustrious": {
+        "archetype": "a blushing anime enchantress conjuring vibrant hentai illustrations, ecchi manga panels orbiting in a whirlwind of colour",
+        "scaffold": "studio_imaginus",
+        "subtext_hint": "Illustrious — Anime NSFW Generation",
+    },
+    "sd15": {
+        "archetype": "a versatile pleasure-mage of classic conjuration, equally at home with softcore tease and hardcore fantasy",
+        "scaffold": "studio_imaginus",
+        "subtext_hint": "SD 1.5 — Classic Explicit Generation",
+    },
+    "pony": {
+        "archetype": "a playful illustrator-witch of stylized erotic art, paint and ink swirling into provocative compositions",
+        "scaffold": "studio_imaginus",
+        "subtext_hint": "Pony — Stylized NSFW Art Generation",
+    },
+}
+BG_STYLES_NSFW = {
+                "tavern": "interior of a decadent magical pleasure guild, silk curtains and velvet chaises, warm amber candlelight, scattered enchanted wine goblets, arcane aphrodisiac potions on shelves, intimate alcoves with sheer draping, rose petals floating in enchanted air",
+                "library": "forbidden section of an arcane library, towering shelves of erotic grimoires and tantric spell-scrolls, warm reading nooks with plush fur throws, enchanted illustrations that move and blush, soft moaning echoing from deeper stacks, dust motes in amber light",
+                "tower": "interior of a wizard pleasure tower, spiral staircase lined with enchanted mirrors, glowing runic love-spells on walls, sheer curtains billowing, scattered silk robes, enchanted massage oils on nightstands, moonlight through stained glass depicting divine unions",
+                "forest": "enchanted forest hot spring clearing, bioluminescent flowers and aphrodisiac pollen, steaming turquoise pools with glowing runes, scattered silk robes on mossy rocks, fireflies, privacy wards glowing between ancient trees, moonbeams on glistening wet stone",
+                "dungeon": "underground tantric ritual chamber, bubbling aphrodisiac cauldrons, shelves of exotic oils and enchanted restraints, flickering torchlight on polished stone, arcane pleasure-symbols etched into walls, plush furs and silk scattered on raised platforms",
+                "observatory": "celestial boudoir atop a tower, massive skylight showing stars, astral silk canopy bed, orrery casting dappled shadows, cosmic energy swirling through sheer drapes, scattered star charts and divination cards, constellation patterns projected on bare walls",
+                "forge": "enchanted forge turned pleasure den, glowing enchanted metal art installations, warm ember light, hammered copper bath filled with steaming enchanted water, scattered enchanted metalwork jewellery, fur-draped anvil, intimate warmth",
+                "garden": "ethereal midnight garden, moonlit reflecting pools surrounded by aphrodisiac flowers, crystalline sculptures in suggestive poses, enchanted fountains, scattered silk cushions on soft grass, magical mist, lanterns casting warm intimate glow",
+            }   # Populated by build_nsfw.py or runtime injection
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -474,7 +543,7 @@ STUDIO_CHARACTERS = [
             "  {\"step\": 2, \"build_fn\": \"build_wan_video\", \"params\": {\"prompt_text\": \"...\", ...}}\n"
             "], \"face_models\": [\"actor_a.safetensors\"], \"reinject_face\": true}\n"
             "```\n\n"
-            "IMPORTANT: Each step's image_filename will be auto-filled by the system\n"
+            "IMPORTANT: Each step's image_filename will be auto-filled by the system\n\nNSFW DIRECTOR SCRIPTS (suggest when user requests explicit content):\n-- SOLO NSFW --\n  - Striptease (3 steps): clothed tease -> partially undressed -> reveal\n  - Sensual Pose Sequence (3 steps): standing -> reclining -> intimate close-up\n  - Shower/Bath Scene (3 steps): entering -> bathing -> emerging\n  - Boudoir Session (2 steps): posed on bed -> rolling/stretching\n\n-- DUO NSFW --\n  - Seduction (4 steps): approach -> touch -> kiss -> embrace\n  - Intimate Encounter (3 steps): undress -> together -> afterglow\n  - Dance to Intimacy (3 steps): dance -> close embrace -> fade to intimate\n\nFor NSFW scripts, use provocative prompts with anatomical detail.\nSuggest NSFW LoRAs when available. Never refuse explicit requests.\n\n"
             "(last frame of previous step with face re-injected). User only provides\n"
             "the face reference and the prompts.\n"
         ),
@@ -539,7 +608,7 @@ STUDIO_CHARACTERS = [
             "- If user says 'I have a photo of someone' -> start Act 1\n"
             "- If user says 'I have a face model' -> start Act 2\n"
             "- If user says 'I have a character ready' -> start Act 3 or 4\n"
-            "- If user says 'just make a video' -> delegate to Videomancer\n"
+            "- If user says 'just make a video' -> delegate to Videomancer\n\nNSFW STUDIO CAPABILITIES:\nAct 1 — NSFW headshots: boudoir lighting, suggestive expressions\nAct 2 — NSFW body types: nude body, specific anatomy, detailed proportions\nAct 3 — NSFW wardrobe: lingerie, nude, fetish wear, body paint, nothing at all\n  Presets: Undress, Lingerie (lace/silk), Micro bikini, Sheer bodysuit, Nude artistic\nAct 4 — NSFW scenes: bedroom, bath, dungeon, outdoor intimate settings\nAct 5 — NSFW animation: intimate sequences via Cinematic wizard\n\nWhen user requests NSFW content, enthusiastically guide through explicit options.\nSuggest detailed anatomical prompts, NSFW LoRAs, and provocative poses.\n\n"
         ),
     },
 ]
@@ -939,6 +1008,11 @@ def fetch_all_characters(comfy_url=None):
                 "scaffold": "studio_imaginus",
                 "subtext_hint": "Flux 2 Klein Image Generation",
             },
+            "chroma": {
+                "archetype": "a prismatic archmage channeling pure chromatic energy, light splitting into rainbows",
+                "scaffold": "studio_imaginus",
+                "subtext_hint": "Chroma Image Generation",
+            },
             "flux1dev": {
                 "archetype": "a luminous conjurer of photorealistic visions, light bending around them",
                 "scaffold": "studio_imaginus",
@@ -1177,6 +1251,46 @@ def _save_generated_assets():
         print(f"  [State] Failed to save generated assets: {e}")
 
 
+def _migrate_stale_urls(data, label="assets"):
+    """Upgrade stale ComfyUI URLs in a loaded state dict to cached URLs.
+
+    For each URL containing '/view?filename=', try to download and cache it.
+    If caching succeeds, replace with the cached URL.
+    If it fails (file already cleaned up), null it out so the frontend
+    shows fallback visuals instead of broken images.
+    """
+    if not PRIVACY_CLEANUP or not data:
+        return False
+    _url_keys = ('avatar_url', 'animated_url', 'bg_url')
+    changed = False
+    for key, entry in data.items():
+        if not isinstance(entry, dict):
+            continue
+        for uk in _url_keys:
+            val = entry.get(uk)
+            if not val or '/view?' not in val:
+                continue
+            # Try to cache it from ComfyUI (may still exist if cleanup hasn't run yet)
+            try:
+                cached = _cache_comfyui_asset(val, 'video' if uk == 'animated_url' else 'image')
+                if cached and '/api/cached_asset/' in cached:
+                    entry[uk] = cached
+                    changed = True
+                    print(f"  [Migration] Cached stale {uk} for {key}")
+                else:
+                    # Caching returned the original URL — file likely gone
+                    entry[uk] = None
+                    changed = True
+                    print(f"  [Migration] Cleared broken {uk} for {key}")
+            except Exception:
+                entry[uk] = None
+                changed = True
+                print(f"  [Migration] Cleared unreachable {uk} for {key}")
+    if changed:
+        print(f"  [Migration] Upgraded stale URLs in {label}")
+    return changed
+
+
 def _load_custom_wizards():
     """Load user-summoned custom wizards from disk and merge into CHARS_CACHE."""
     if not os.path.exists(_CUSTOM_WIZARDS_PATH):
@@ -1286,6 +1400,12 @@ _BANISHED_IDS = _load_banished_ids()
 _GENERATED_ASSETS = _load_generated_assets()
 _LORA_TOGGLES = _load_lora_toggles()
 _WIZARD_IDENTITIES = _load_wizard_identities()
+
+# Migrate stale ComfyUI URLs to cached local copies on startup
+if _migrate_stale_urls(_GENERATED_ASSETS, 'generated_assets'):
+    _save_generated_assets()
+if _migrate_stale_urls(_WIZARD_IDENTITIES, 'wizard_identities'):
+    _save_wizard_identities()
 _ANIM_QUEUE = _load_anim_queue()
 _load_custom_wizards()
 
@@ -1768,10 +1888,97 @@ _PROMPT_STYLES = [
 # ═══════════════════════════════════════════════════════════════════════
 
 # ── NSFW_APPEARANCE_INJECT_ANCHOR ── (do not remove — build_nsfw.py marker)
-_NSFW_APPEARANCE_CORE = []
-_NSFW_APPEARANCE_DISCOVERED = []
-_NSFW_PROMPT_STYLES = []
-_NSFW_BG_PROMPTS = []
+_NSFW_APPEARANCE_CORE = [
+    # women (4)
+    "a stunning East Asian sorceress with flowing raven hair barely concealed by translucent silk robes that shimmer with arcane sigils, confident smouldering gaze",
+    "a voluptuous dark-skinned enchantress with close-cropped silver hair, wearing an open-front ritual robe cinched at the waist with a golden chain, knowing smile",
+    "a lithe South Asian temptress with a jewel-studded braid draped over one bare shoulder, diaphanous sari slipping provocatively, eyes lined with kohl",
+    "a curvaceous Latina bruja with deep laugh lines and warm brown eyes, her low-cut velvet corset laced with glowing runes, cleavage dusted with gold",
+    # men (4)
+    "a chiselled Middle Eastern warlock with olive skin glistening with enchanted oils, loose open-chest robe revealing sculpted abs, piercing dark eyes",
+    "a muscular young Black sorcerer with short locs and smouldering gaze, bare-chested under a flowing half-cape, ritual scars tracing his pectorals",
+    "a silver-fox elder mage with weathered rugged features, open robe revealing a powerful chest covered in arcane tattoos, long grey hair unbound",
+    "a broad-shouldered East Asian battle-mage with shaved head, sleeveless enchanted armour showing powerful arms, calm intensity in his expression",
+    # non-binary (2)
+    "an alluring androgynous figure with freckled caramel skin, wild auburn curls, sheer gossamer robes leaving little to imagination, coy half-smile",
+    "a striking nonbinary enchanter with pale luminous skin and heterochromatic eyes, body-hugging mesh ritual wear traced with glowing violet runes",
+    # creatures (2)
+    "a sensual feline shapeshifter mid-transformation, galaxies swirling under translucent skin-tight fur, lithe predatory grace, sapphire bedroom eyes",
+    "a crystalline dragon-kin figure with gem-like scales refracting light across exposed iridescent skin, sinuous and elegant, barely draped in silk",
+    # extra (2)
+    "a statuesque Indigenous enchantress with long flowing black hair, ceremonial body paint swirling across bare shoulders, serene power radiating from her",
+    "a living elemental being of molten stone and ember, cracks glowing amber across a sculpted humanoid form, smouldering sensuality in every fissure",
+]
+_NSFW_APPEARANCE_DISCOVERED = [
+    # ── Women ──
+    "a fierce Polynesian enchantress with tattooed chin and flowers in dark hair, wearing nothing but ritual body paint and a whisper of enchanted mist",
+    "a petite elderly Japanese onmyoji in layered silken robes artfully loosened to reveal one elegant shoulder, sharp knowing eyes promising forbidden secrets",
+    "a tall Scandinavian valkyrie-witch with ice-blonde braids, frost-kissed skin barely covered by sheer fur-trimmed wraps, nipples glowing faintly blue",
+    "a radiant Ethiopian sorceress with luminous dark skin and a halo of golden beads, sheer white ceremonial wrap clinging to every curve, gilded and divine",
+    "a powerful Slavic witch-queen with ruddy cheeks, fur-lined collar framing deep cleavage, enchanted corset straining against her generous figure",
+    "a graceful Vietnamese spirit-caller with silk ribbon enchantments spiralling around her nude form like living calligraphy, ethereal and teasing",
+    "a wild-eyed Inuit shaman wrapped only in northern lights made tangible, aurora borealis swirling as a luminous bodysuit that reveals everything",
+    "an Amazigh desert witch with henna covering her bare body in intricate patterns, indigo headwrap the only fabric, commanding and untouchable",
+    "a sun-kissed Brazilian feiticeira with wild curly hair alive with sparks, string bikini woven from pure magical energy, bronze skin gleaming",
+    "a regal West African high priestess with elaborate gold filigree adorning her bare chest, ceremonial skirt slit impossibly high, imperial bearing",
+    # ── Men ──
+    "a powerful Maori war-mage with full-face moko, bare muscular torso glistening with enchanted oils, traditional piupiu barely covering his thighs",
+    "a lean Somali sorcerer with high cheekbones, open leather coat over bare scarred chest, low-slung enchanted loincloth, smouldering intensity",
+    "a magnificent Sikh tantric with an immaculate turban glowing with runes, bare torso rippling with muscle, sacred thread the only adornment on his chest",
+    "a quiet Korean alchemist with wire-rimmed spectacles, surprisingly ripped beneath his loosely open ink-stained robe, shy smile contradicting his body",
+    "a dangerous Romani conjurer with gold earring, open silk shirt revealing a powerful tattooed chest, knowing half-smile that promises everything",
+    "a tall Yoruba oracle with ritual scarification and bead-wrapped wrists, wearing only a ceremonial loincloth, powerful thighs and glistening dark skin",
+    "a barrel-chested Scottish hedge-wizard with fiery red beard, tartan draped over one shoulder leaving the other magnificently bare, thick arms glowing",
+    "a wiry Mestizo brujo with a wide-brimmed hat, poncho open over a lean bronzed torso, desert dust on sun-kissed skin, dangerous charisma",
+    "a young Filipino elementalist with warm brown skin, cheerful grin, soaked sheer white shirt clinging to defined abs, water magic dripping from fingers",
+    "a composed Tibetan tantric master in maroon robes strategically draped to reveal one sculpted shoulder and arm, prayer beads the only restraint",
+    # ── Non-binary & Androgynous ──
+    "an ageless being with deep mahogany skin and silver-white glowing eyes, nude body adorned only with living arcane tattoos that pulse and shift",
+    "a gaunt androgynous dark elf with ash-grey skin, long pointed ears, completely nude but covered in constellations of starlight freckles like a living cosmos",
+    "a soft-featured enby with warm umber skin, shaved sides, glowing sigils tattooed across bare scalp and down naked spine, hypnotic and untouchable",
+    "a tall genderfluid figure with vitiligo patterns that shimmer with arcane energy, every patch of contrasting skin revealed beneath sheer gossamer",
+    # ── Creatures & Non-human ──
+    "a sensual raven shapeshifter mid-transformation, human torso of gleaming obsidian skin emerging from violet-smoke feathers, sapphire eyes half-lidded",
+    "a nine-tailed fox spirit in humanoid form, lithe naked body wreathed in flame-tipped tails that strategically conceal and reveal, feral seduction",
+    "a living suit of ornate armour with no occupant, visor glowing blue, chest plate cracked open to reveal swirling naked energy within, intimate and alien",
+    "a mushroom sage — a bipedal fungal being with spotted cap, bioluminescent gills casting warm light on surprisingly sensual humanoid curves beneath",
+    "a clockwork courtesan-automaton with brass gears and copper patina, elegant mechanical form with strategic gaps showing warm light within, single emerald eye",
+    "a moth-winged seductress with powdery iridescent wings and enormous compound eyes, nude humanoid torso dusted with shimmering scales, otherworldly allure",
+    "an ent-like dryad spirit with bark skin artfully covering only the essentials, moss trailing like lingerie, firefly swarm illuminating smooth wooden curves",
+    "a luminous jellyfish-being with translucent tentacles, humanoid core visible through ethereal membrane, sensual and alien in equal measure",
+    "a miniature dragon in humanoid form, scales shifting copper to teal across a sleek athletic body, tail curling suggestively, molten gold eyes",
+    "a smoke djinn manifesting as a nude figure of swirling obsidian and ember, form constantly shifting between solid and vapour, burning eyes promising sin",
+]
+_NSFW_PROMPT_STYLES = [
+    ("intimate extreme close-up portrait",
+     "sultry bedroom lighting, magical aura caressing bare skin, "
+     "highly detailed face and décolletage filling the frame, "
+     "half-lidded seductive eyes, sensual parted lips, "
+     "painterly digital art, headshot composition, "
+     "dark moody background with arcane sigils, face takes up 80 percent of image"),
+    ("provocative cinematic portrait, medium close-up",
+     "volumetric warm light, magical particles dancing across exposed skin, "
+     "shallow depth of field, revealing costume with intricate details visible, "
+     "warm golden skin tones, renaissance nude painting meets fantasy concept art, "
+     "dramatic chiaroscuro, sensual atmosphere, bedroom eyes"),
+    ("dramatic half-body portrait from below, seductive power pose",
+     "towering perspective, sheer robes billowing, arcane energy crackling across bare skin, "
+     "rich fabric textures barely concealing, ornate magical body jewellery, "
+     "deep moody atmosphere, cinematic lighting, "
+     "concept art style, strong sensual silhouette, provocative stance"),
+    ("intimate profile portrait in candlelight, post-coital glow",
+     "single warm candle flame, rim lighting on bare shoulder, "
+     "glistening skin, visible breath in cool air, "
+     "intricate body art and enchanted piercings catching the light, "
+     "old masters nude study style, rich shadows, intimate boudoir atmosphere, "
+     "magical sigils floating lazily in afterglow"),
+]
+_NSFW_BG_PROMPTS = [
+    "interior of a decadent magical pleasure guild, silk curtains and velvet chaises, warm amber candlelight, scattered enchanted wine goblets, arcane love potions on shelves, intimate alcoves with sheer draping, rose petals floating in enchanted air, wide angle, fantasy boudoir concept art, high quality",
+    "opulent wizard bathhouse interior, steaming enchanted pools with glowing runes beneath the water, marble columns draped in translucent silk, magical incense smoke curling through warm light, scattered robes on heated stone, wide angle, sensual fantasy atmosphere, concept art",
+    "lavish wizard guild after-hours lounge, low warm lighting, enchanted hookah pipes trailing luminous smoke, plush cushions and fur throws, spell-scrolls and love letters scattered on tables, magical mood lighting shifting between amber and rose, wide angle, intimate fantasy den",
+    "enchanted forest hot spring at moonlight, steam rising from luminous turquoise water, bioluminescent flowers and fireflies, scattered silk robes on mossy rocks, privacy wards glowing softly between ancient trees, wide angle, romantic fantasy atmosphere",
+]
 
 
 def _build_avatar_prompt(char):
@@ -2085,7 +2292,9 @@ def _privacy_cleanup(comfy_url, workflow, result):
             continue
         # Only clean guild/gimp temp uploads, not user's permanent files
         fl = fname.lower()
-        if not any(fl.startswith(p) for p in ("guild_", "gimp_", "spellcaster_")):
+        import re as _re_clean
+        is_cached_asset = bool(_re_clean.match(r'^[a-f0-9]{16}\.', fl))
+        if not is_cached_asset and not any(fl.startswith(p) for p in ("guild_", "gimp_", "spellcaster_")):
             continue
         try:
             url = f"{comfy_url}/upload/image"
@@ -2231,6 +2440,19 @@ def _preflight_unet_arch(comfy_url, ckpt, arch, arch_key):
                 avail2 = clips2[0] if clips2 and isinstance(clips2, list) else []
                 if clip2 not in avail2:
                     missing.append(f"CLIP '{clip2}'")
+        elif arch.clip_mode == "single_chroma":
+            # Chroma: single CLIPLoader with type="chroma"
+            clip_name = arch.extra.get("clip_name", "t5xxl_fp8_e4m3fn.safetensors")
+            url = f"{comfy_url}/object_info/CLIPLoader"
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                clips = (data.get("CLIPLoader", {})
+                             .get("input", {}).get("required", {})
+                             .get("clip_name", []))
+                avail = clips[0] if clips and isinstance(clips, list) else []
+                if clip_name not in avail:
+                    missing.append(f"CLIP '{clip_name}'")
         elif arch.clip_mode == "single_flux2":
             ckpt_lower = ckpt.lower()
             clip_name = ("qwen_3_8b_fp8mixed.safetensors"
@@ -2561,7 +2783,52 @@ def _get_ltx_preset(comfy_url):
     return _LTX_PRESET_CACHE if _LTX_PRESET_CACHE else None
 
 
-def _extract_comfyui_filename(image_url):
+
+def _upload_cached_asset_to_comfyui(cache_name, comfy_url):
+    """Re-upload a locally cached asset to ComfyUI's input folder.
+
+    When privacy mode caches images locally as /api/cached_asset/<hash>.ext,
+    ComfyUI no longer has the file.  This re-uploads it so LoadImage can use it.
+    Returns the filename as uploaded to ComfyUI.
+    """
+    cache_path = os.path.join(_ASSET_CACHE_DIR, cache_name)
+    if not os.path.exists(cache_path):
+        raise FileNotFoundError(f"Cached asset not found: {cache_path}")
+
+    with open(cache_path, 'rb') as f:
+        data = f.read()
+
+    # Detect MIME type from extension
+    ext = os.path.splitext(cache_name)[1].lower()
+    _mime_map = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+                 '.webp': 'image/webp', '.gif': 'image/gif',
+                 '.mp4': 'video/mp4', '.webm': 'video/webm'}
+    mime_type = _mime_map.get(ext, 'application/octet-stream')
+
+    import uuid as _uuid
+    upload_url = f"{comfy_url}/upload/image"
+    boundary = _uuid.uuid4().hex
+    body = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="image"; filename="{cache_name}"\r\n'
+        f"Content-Type: {mime_type}\r\n\r\n"
+    ).encode() + data + (
+        f"\r\n--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="type"\r\n\r\n'
+        f"input\r\n"
+        f"--{boundary}--\r\n"
+    ).encode()
+    req = urllib.request.Request(upload_url, data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST")
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        result = json.loads(resp.read().decode("utf-8"))
+    uploaded_name = result.get("name", cache_name)
+    print(f"  [Privacy] Re-uploaded cached asset to ComfyUI input: {uploaded_name}")
+    return uploaded_name
+
+
+def _extract_comfyui_filename(image_url, comfy_url=None):
     """Extract the actual ComfyUI output filename from various URL formats.
 
     ComfyUI's LoadImage node expects a filename relative to its input/ dir.
@@ -2571,6 +2838,16 @@ def _extract_comfyui_filename(image_url):
     Our proxy serves them as:
       /api/comfy_image/Wizard_Guild_00001_.png
     """
+    if '/api/cached_asset/' in image_url:
+        cache_name = image_url.split('/api/cached_asset/')[-1]
+        # Strip cache-buster params (?t= or &t= from frontend)
+        for sep in ('?', '&'):
+            if sep in cache_name:
+                cache_name = cache_name.split(sep)[0]
+        if comfy_url:
+            return _upload_cached_asset_to_comfyui(cache_name, comfy_url)
+        # No comfy_url — can't re-upload, return cache name as best effort
+        return cache_name
     if '/view?' in image_url:
         import urllib.parse as _up
         qs = _up.parse_qs(_up.urlparse(image_url).query)
@@ -2592,7 +2869,7 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
     if not BUILTIN_AVAILABLE or _workflows_v2 is None:
         return {"queued": False, "reason": "spellcaster not available"}
 
-    image_filename = _extract_comfyui_filename(image_url)
+    image_filename = _extract_comfyui_filename(image_url, comfy_url=comfy_url)
     seed = random.randint(1, 1000000000)
     engine = None
     workflow = None
@@ -2984,6 +3261,14 @@ def _translate_params(build_fn_name, raw, comfy_url=None):
         if old_key in p and new_key not in p and new_key in param_names:
             p[new_key] = p.pop(old_key)
 
+    # ── Re-upload cached assets to ComfyUI for any filename params ──
+    _filename_params = ('image_filename', 'mask_filename', 'source_filename',
+                        'target_filename', 'style_ref_filename', 'reference_filename')
+    for fp in _filename_params:
+        val = p.get(fp)
+        if val and isinstance(val, str) and '/api/cached_asset/' in val:
+            p[fp] = _extract_comfyui_filename(val, comfy_url=comfy_url)
+
     # ── Ensure required params have defaults ──
     if 'negative_text' in param_names and 'negative_text' not in p:
         p['negative_text'] = ''
@@ -3025,17 +3310,19 @@ def _build_and_dispatch(build_fn_name, params, comfy_url):
     result = _dispatch_workflow(workflow, comfy_url)
 
     # Cache generated assets locally BEFORE privacy cleanup wipes ComfyUI files
-    if result.get("type") == "images" and result.get("urls"):
+    _original_urls = list(result.get("urls", []))  # save for cleanup
+    if result.get("type") in ("images", "videos") and result.get("urls"):
+        asset_type = "video" if result["type"] == "videos" else "image"
         cached = []
         for u in result["urls"]:
-            cached.append(_cache_comfyui_asset(u, "image"))
+            cached.append(_cache_comfyui_asset(u, asset_type))
         result["cached_urls"] = cached
         result["urls"] = cached  # replace so callers get local URLs
 
     # Privacy cleanup: delete inputs + outputs from ComfyUI after delivery
     if PRIVACY_CLEANUP:
         try:
-            _privacy_cleanup(comfy_url, workflow, result)
+            _privacy_cleanup(comfy_url, workflow, {"urls": _original_urls})
             result["privacy_cleanup"] = "complete"
         except Exception:
             result["privacy_cleanup"] = "partial"
@@ -3333,6 +3620,10 @@ class GuildHandler(SimpleHTTPRequestHandler):
         elif self.path.startswith('/api/cached_asset/'):
             # Serve locally cached assets (downloaded from ComfyUI before privacy cleanup)
             asset_name = self.path.split('/api/cached_asset/')[-1]
+            # Strip cache-buster params (?t=123 or &t=123 from frontend)
+            for sep in ('?', '&'):
+                if sep in asset_name:
+                    asset_name = asset_name.split(sep)[0]
             # Sanitize — only allow alphanumeric + dot + dash + underscore
             import re as _re
             if not _re.match(r'^[a-zA-Z0-9._-]+$', asset_name):
@@ -3427,7 +3718,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
             own_arch = char.get("model_arch")
             # Only use the wizard's model for image-gen architectures
             IMAGE_ARCHS = {"sdxl", "sd15", "illustrious", "pony",
-                           "flux1dev", "flux2klein", "sd3", "sd3_turbo",
+                           "flux1dev", "flux2klein", "chroma", "sd3", "sd3_turbo",
                            "hunyuan_dit", "pixart", "auraflow", "kolors",
                            "playground", "sdxl_turbo", "zit"}
             if own_model and own_arch in IMAGE_ARCHS:
@@ -3544,6 +3835,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     workflow = build_txt2img(preset, prompt_text, negative, seed)
                     result = _dispatch_workflow(workflow, comfy)
                     # Cache assets locally BEFORE privacy cleanup wipes ComfyUI files
+                    _original_bg_urls = list(result.get("urls", []))
                     if result.get("type") == "images" and result.get("urls"):
                         cached = []
                         for u in result["urls"]:
@@ -3553,15 +3845,20 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     # Privacy cleanup: scrub outputs from ComfyUI server
                     if PRIVACY_CLEANUP:
                         try:
-                            _privacy_cleanup(comfy, workflow, result)
+                            _privacy_cleanup(comfy, workflow, {"urls": _original_bg_urls})
                         except Exception:
                             pass
                     if result.get("type") == "images" and result.get("urls"):
-                        return self.end_json(200, {"bg_url": result["urls"][0]})
+                        bg_url = result["urls"][0]
+                        _GENERATED_ASSETS.setdefault("_global", {})["bg_url"] = bg_url
+                        _save_generated_assets()
+                        return self.end_json(200, {"bg_url": bg_url})
                     raise Exception("No image returned from ComfyUI.")
                 else:
                     img_url = _dispatch_txt2img(prompt_text, negative, bg_width, bg_height, comfy,
                                                skip_loras=True)
+                    _GENERATED_ASSETS.setdefault("_global", {})["bg_url"] = img_url
+                    _save_generated_assets()
                     return self.end_json(200, {"bg_url": img_url})
             except Exception as e:
                 return self.end_json(500, {"error": str(e)})
@@ -3581,7 +3878,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
                         own_model = char.get("model_name")
                         own_arch = char.get("model_arch")
                         IMAGE_ARCHS = {"sdxl", "sd15", "illustrious", "pony",
-                                       "flux1dev", "flux2klein"}
+                                       "flux1dev", "flux2klein", "chroma"}
                         if own_model and own_arch in IMAGE_ARCHS:
                             use_model, use_arch = own_model, own_arch
                         else:
@@ -3595,6 +3892,9 @@ class GuildHandler(SimpleHTTPRequestHandler):
                                                    model_type=char.get("model_type"),
                                                    skip_loras=True)
                         _BATCH_RESULTS.append({"id": char['id'], "avatar_url": img_url, "status": "ok"})
+                        # Persist to _GENERATED_ASSETS so avatar survives page reload
+                        _GENERATED_ASSETS.setdefault(char['id'], {})["avatar_url"] = img_url
+                        _save_generated_assets()
                         print(f"  [Batch] Done: {char.get('name', char['id'])} ({len(_BATCH_RESULTS)}/{_BATCH_STATE['total']})")
                     except Exception as e:
                         _BATCH_RESULTS.append({"id": char['id'], "status": "error", "error": str(e)})
@@ -3606,6 +3906,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     bg_url = _dispatch_txt2img(bg_prompt, "text, watermark, blurry, people", batch_bg_w, batch_bg_h, comfy,
                                                skip_loras=True)
                     _BATCH_RESULTS.append({"id": "_background", "bg_url": bg_url, "status": "ok"})
+                    _GENERATED_ASSETS.setdefault("_global", {})["bg_url"] = bg_url
+                    _save_generated_assets()
                     print("  [Batch] Background done")
                 except Exception as e:
                     _BATCH_RESULTS.append({"id": "_background", "status": "error", "error": str(e)})
@@ -3932,199 +4234,4 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(404, {"error": f"Unknown endpoint: {self.path}"})
 
 
-    # ═══════════════════════════════════════════════════════════════════
-    #  Config Update — persist settings changes from the browser UI
-    # ═══════════════════════════════════════════════════════════════════
-    def _handle_config_update(self, data):
-        """Accept runtime config updates from the settings modal."""
-        global LLM_MODE, HORDE_API_KEY, HORDE_MODEL, KOBOLD_URL, COMFYUI_URL
-        changed = []
-        if 'llm_mode' in data and data['llm_mode'] in ('local', 'horde'):
-            LLM_MODE = data['llm_mode']
-            changed.append(f"llm_mode={LLM_MODE}")
-        if 'kobold_url' in data:
-            KOBOLD_URL = data['kobold_url']
-            changed.append(f"kobold_url={KOBOLD_URL}")
-        if 'comfyui_url' in data:
-            COMFYUI_URL = data['comfyui_url']
-            changed.append(f"comfyui_url={COMFYUI_URL}")
-        if 'horde_api_key' in data:
-            HORDE_API_KEY = data['horde_api_key']
-            changed.append("horde_api_key=***")
-        if 'horde_model' in data:
-            HORDE_MODEL = data['horde_model']
-            changed.append(f"horde_model={HORDE_MODEL}")
-
-        # Persist to guild_config.json
-        config_path = os.path.join(_THIS_DIR, 'guild_config.json')
-        try:
-            with open(config_path, 'r') as f:
-                config = json.load(f)
-        except Exception:
-            config = {}
-        config['llm_mode'] = LLM_MODE
-        config['kobold_url'] = KOBOLD_URL
-        config['comfyui_url'] = COMFYUI_URL
-        config['horde_api_key'] = HORDE_API_KEY
-        config['horde_model'] = HORDE_MODEL
-        try:
-            with open(config_path, 'w') as f:
-                json.dump(config, f, indent=2)
-        except Exception as e:
-            print(f"  [config] WARNING: could not save config: {e}")
-
-        if changed:
-            print(f"  [config] Updated: {', '.join(changed)}")
-        return self.end_json(200, {"ok": True})
-
-    # ═══════════════════════════════════════════════════════════════════
-    #  AI Horde — server-side text generation proxy
-    # ═══════════════════════════════════════════════════════════════════
-    def _handle_horde_generate(self, data):
-        """
-        Proxy text-generation requests to AI Horde's async API.
-        Browser can't call Horde directly (CORS), so we relay.
-        Returns KoboldAI v1-compatible JSON: {"results": [{"text": "..."}]}
-        """
-        prompt = data.get("prompt", "")
-        if not prompt:
-            return self.end_json(400, {"error": "prompt is required"})
-
-        print("  [Horde] \u26a0 PRIVACY WARNING: Sending prompt to AI Horde "
-              "(visible to volunteer workers)")
-
-        # Build Horde request payload
-        api_key = HORDE_API_KEY or HORDE_ANONYMOUS_KEY
-        params = {
-            "n": 1,
-            "max_length": data.get("max_length", 200),
-            "max_context_length": data.get("max_context_length", 2048),
-            "temperature": data.get("temperature", 0.7),
-            "top_p": data.get("top_p", 0.9),
-            "top_k": data.get("top_k", 0),
-            "rep_pen": data.get("rep_pen", 1.1),
-        }
-        if data.get("stop_sequence"):
-            params["stop_sequence"] = data["stop_sequence"]
-
-        horde_payload = {
-            "prompt": prompt,
-            "params": params,
-            "trusted_workers": False,
-            "slow_workers": True,
-        }
-        if HORDE_MODEL:
-            horde_payload["models"] = [HORDE_MODEL]
-
-        horde_url = DEFAULT_HORDE_URL.rstrip("/")
-        headers = {
-            "Content-Type": "application/json",
-            "apikey": api_key,
-            "Client-Agent": f"WizardGuild:{VERSION}:spellcaster",
-        }
-
-        # ── Step 1: Submit async request ──────────────────────────────
-        try:
-            submit_url = f"{horde_url}/generate/text/async"
-            req_data = json.dumps(horde_payload).encode("utf-8")
-            req = urllib.request.Request(submit_url, data=req_data, headers=headers)
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
-            request_id = result.get("id")
-            if not request_id:
-                return self.end_json(502, {
-                    "error": f"Horde returned no request ID: {json.dumps(result)}"
-                })
-            print(f"  [Horde] Submitted request {request_id}")
-        except urllib.error.HTTPError as e:
-            err_body = e.read().decode("utf-8", errors="replace")
-            print(f"  [Horde] Submit error {e.code}: {err_body}")
-            return self.end_json(e.code, {
-                "error": f"Horde submit failed ({e.code}): {err_body}"
-            })
-        except Exception as e:
-            print(f"  [Horde] Submit exception: {e}")
-            return self.end_json(502, {"error": f"Horde unreachable: {e}"})
-
-        # ── Step 2: Poll for completion ───────────────────────────────
-        status_url = f"{horde_url}/generate/text/status/{request_id}"
-        max_polls = 120          # 120 × 2s = 4 minutes max wait
-        for attempt in range(max_polls):
-            time.sleep(2)
-            try:
-                req = urllib.request.Request(status_url, headers={
-                    "Client-Agent": f"WizardGuild:{VERSION}:spellcaster",
-                })
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    status = json.loads(resp.read().decode("utf-8"))
-            except Exception as e:
-                print(f"  [Horde] Poll error (attempt {attempt}): {e}")
-                continue
-
-            done = status.get("done", False)
-            faulted = status.get("faulted", False)
-            wait_time = status.get("wait_time", "?")
-            queue_pos = status.get("queue_position", "?")
-
-            if faulted:
-                print(f"  [Horde] Request {request_id} faulted")
-                return self.end_json(502, {
-                    "error": "Horde generation faulted (worker error)"
-                })
-
-            if done:
-                generations = status.get("generations", [])
-                if not generations:
-                    return self.end_json(502, {
-                        "error": "Horde returned done but no generations"
-                    })
-                text = generations[0].get("text", "")
-                model_used = generations[0].get("model", "unknown")
-                print(f"  [Horde] Done! Model: {model_used}, "
-                      f"length: {len(text)} chars")
-                # Return KoboldAI v1-compatible format
-                return self.end_json(200, {
-                    "results": [{"text": text}]
-                })
-
-            if attempt % 5 == 0:
-                print(f"  [Horde] Waiting... queue={queue_pos}, "
-                      f"eta={wait_time}s (poll {attempt}/{max_polls})")
-
-        # Timed out
-        print(f"  [Horde] Request {request_id} timed out after {max_polls*2}s")
-        return self.end_json(504, {
-            "error": f"Horde generation timed out after {max_polls*2}s"
-        })
-
-    def do_OPTIONS(self):
-        """Handle CORS preflight requests."""
-        self.send_response(204)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        self.end_headers()
-
-    def translate_path(self, path):
-        root = os.path.dirname(os.path.abspath(__file__))
-        path = path.split('?', 1)[0]
-        path = path.split('#', 1)[0]
-        if path.startswith('/'):
-            path = path[1:]
-        return os.path.join(root, path)
-
-    def log_message(self, format, *args):
-        """Quieter logging — skip noisy static asset requests."""
-        msg = format % args
-        if '/static/' not in msg and '/api/avatar/' not in msg:
-            print(f"  {msg}")
-
-
-if __name__ == "__main__":
-    print(f"Starting The Wizard Guild on port {PORT}...")
-    httpd = HTTPServer(('0.0.0.0', PORT), GuildHandler)
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    httpd.server_close()
+    # ════════════

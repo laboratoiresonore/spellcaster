@@ -27,13 +27,4 @@
         "type": "studio",
         "meta_studio": true,
         "orchestrates": [
-          "build_wan_video",
-          "build_wan_flf",
-          "build_faceswap"
-        ],
-        "body_description": "distinguished male director, slicked dark hair with gray temples, black turtleneck under long leather coat, holding a golden directors clapperboard, commanding stance"
-      }
-    },
-    "avatar": ""
-  }
-}
+          "build_wan_vid

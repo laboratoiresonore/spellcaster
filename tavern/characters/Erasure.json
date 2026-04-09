@@ -26,13 +26,4 @@
           "build_rembg",
           "build_lama_remove",
           "build_inpaint",
-          "build_outpaint",
-          "build_klein_inpaint"
-        ],
-        "type": "studio",
-        "body_description": "minimalist woman, translucent skin with geometric patterns, short white hair, crisp white robe with void patterns, precise graceful stance"
-      }
-    },
-    "avatar": ""
-  }
-}
+          "bu

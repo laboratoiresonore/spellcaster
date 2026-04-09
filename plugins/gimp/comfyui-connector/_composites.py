@@ -101,7 +101,14 @@ def load_model_stack(nf, preset, node_id="1"):
         # Flux / Klein — separate loaders
         unet_id = nf.unet_loader(preset["ckpt"], "default", node_id=node_id)
 
-        if arch.clip_mode == "single_flux2":
+        if arch.clip_mode == "single_chroma":
+            # Chroma v1/v2: single CLIPLoader with type="chroma"
+            extra = arch.extra
+            clip_name = extra.get("clip_name", "t5xxl_fp8_e4m3fn.safetensors")
+            clip_id = nf.clip_loader(clip_name, clip_type="chroma",
+                                     device="default",
+                                     node_id=f"{node_id}b")
+        elif arch.clip_mode == "single_flux2":
             # Klein: single CLIPLoader, CLIP selection is model-dependent
             ckpt_lower = preset["ckpt"].lower()
             clip_name = ("qwen_3_8b_fp8mixed.safetensors"
