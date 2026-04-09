@@ -57,22 +57,28 @@ except (ImportError, Exception):
     def discover_workflows(search_dirs=None):
         return []
 
+# ── Shared constants & helpers ────────────────────────────────────────
+from guild_common import (
+    DEFAULT_GUILD_PORT, DEFAULT_COMFYUI_URL, DEFAULT_KOBOLD_URL,
+    is_port_in_use, test_endpoint,
+    UNET_ARCH_RULES, CKPT_ARCH_RULES, BEST_MODEL_PRIORITY,
+    FAMILY_MODEL_KEYWORDS, LORA_ARCH_PREFIXES, LORA_NAME_ARCH_HINTS,
+    classify_unet_model, classify_ckpt_model,
+)
+
 # ── Configurable globals (set by launcher before serve) ───────────────
-PORT = 7777
-COMFYUI_URL = "http://127.0.0.1:8188"
-KOBOLD_URL = "http://127.0.0.1:5001"
+PORT = DEFAULT_GUILD_PORT
+COMFYUI_URL = DEFAULT_COMFYUI_URL
+KOBOLD_URL = DEFAULT_KOBOLD_URL
 VERSION = "1.0.0"
+PRIVACY_CLEANUP = True   # Default ON — delete inputs+outputs from ComfyUI after delivery
 
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Instance Management — kill prior instances before binding
 # ═══════════════════════════════════════════════════════════════════════
 
-def _is_port_in_use(port: int) -> bool:
-    """Check if a TCP port is already bound."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(1)
-        return s.connect_ex(('127.0.0.1', port)) == 0
+_is_port_in_use = is_port_in_use   # alias for backward compat
 
 
 def _kill_prior_instances(port: int):
@@ -512,18 +518,7 @@ def _fetch_comfyui_models(comfy_url):
                            .get("unet_name", []))
             if choices and isinstance(choices, list) and choices[0]:
                 for m in choices[0]:
-                    ml = m.lower()
-                    if "klein" in ml:
-                        arch = "flux2klein"
-                    elif "flux" in ml:
-                        arch = "flux1dev"
-                    elif "wan" in ml:
-                        arch = "wan"
-                    elif "ltx" in ml:
-                        arch = "ltx"
-                    else:
-                        arch = "unknown"
-                    models.append({"name": m, "arch": arch, "type": "unet"})
+                    models.append({"name": m, "arch": classify_unet_model(m), "type": "unet"})
     except Exception:
         pass
     try:
@@ -536,18 +531,7 @@ def _fetch_comfyui_models(comfy_url):
                            .get("ckpt_name", []))
             if choices and isinstance(choices, list) and choices[0]:
                 for m in choices[0]:
-                    ml = m.lower()
-                    if "xl" in ml or "sdxl" in ml:
-                        arch = "sdxl"
-                    elif "illu" in ml:
-                        arch = "illustrious"
-                    elif "pony" in ml:
-                        arch = "pony"
-                    elif "flux" in ml:
-                        arch = "flux1dev"
-                    else:
-                        arch = "sd15"
-                    models.append({"name": m, "arch": arch, "type": "checkpoint"})
+                    models.append({"name": m, "arch": classify_ckpt_model(m), "type": "checkpoint"})
     except Exception:
         pass
 
@@ -647,18 +631,9 @@ def fetch_all_characters(comfy_url=None):
     comfyui_models_early = _fetch_comfyui_models(_url)
     _all_model_names_lower = {m["name"].lower() for m in comfyui_models_early}
 
-    # Map model_family keys to the substrings we look for in ComfyUI model names
-    _FAMILY_MODEL_KEYWORDS = {
-        "ltx2":        ["ltx"],
-        "seedvr2":     ["seedvr"],
-        "wan":         ["wan"],
-        "video_tools": ["wan", "ltx", "seedvr", "svd", "animate", "rife",
-                        "video_upscale", "reactor"],  # needs at least one video model
-    }
-
     def _family_has_backing_model(family_key):
         """Check if ComfyUI has at least one model matching this family."""
-        keywords = _FAMILY_MODEL_KEYWORDS.get(family_key)
+        keywords = FAMILY_MODEL_KEYWORDS.get(family_key)
         if keywords is None:
             return True  # unknown family — show by default
         return any(
@@ -911,13 +886,18 @@ def _server_init(comfy_url=None):
     Args:
         comfy_url: Explicit ComfyUI URL. Falls back to global COMFYUI_URL.
     """
-    global CHARS_CACHE, NODES_CACHE
+    global CHARS_CACHE, NODES_CACHE, _ANIM_POLL_THREAD
     url = comfy_url or COMFYUI_URL
     CHARS_CACHE, NODES_CACHE = fetch_all_characters(comfy_url=url)
     _load_lora_registry()
     threading.Thread(
         target=_build_lora_registry, args=(url,), daemon=True
     ).start()
+    # Start background animated-avatar poller (once)
+    if _ANIM_POLL_THREAD is None:
+        _ANIM_POLL_THREAD = threading.Thread(
+            target=_anim_poll_background, daemon=True)
+        _ANIM_POLL_THREAD.start()
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -929,6 +909,9 @@ os.makedirs(_STATE_DIR, exist_ok=True)
 _BANISHED_PATH = os.path.join(_STATE_DIR, "banished_ids.json")
 _ASSETS_PATH = os.path.join(_STATE_DIR, "generated_assets.json")
 _CUSTOM_WIZARDS_PATH = os.path.join(_STATE_DIR, "custom_wizards.json")
+_LORA_TOGGLES_PATH = os.path.join(_STATE_DIR, "lora_toggles.json")
+_IDENTITIES_PATH = os.path.join(_STATE_DIR, "wizard_identities.json")
+_ANIM_QUEUE_PATH = os.path.join(_STATE_DIR, "anim_queue.json")
 
 
 def _load_banished_ids():
@@ -1021,9 +1004,66 @@ def _save_custom_wizards():
         print(f"  [State] Failed to save custom wizards: {e}")
 
 
+# ── LoRA toggle state (per-wizard enabled/disabled) ──
+def _load_lora_toggles():
+    if os.path.exists(_LORA_TOGGLES_PATH):
+        try:
+            with open(_LORA_TOGGLES_PATH, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"  [State] Failed to load LoRA toggles: {e}")
+    return {}
+
+def _save_lora_toggles():
+    try:
+        with open(_LORA_TOGGLES_PATH, 'w', encoding='utf-8') as f:
+            json.dump(_LORA_TOGGLES, f, indent=2)
+    except Exception as e:
+        print(f"  [State] Failed to save LoRA toggles: {e}")
+
+
+# ── Wizard identity overrides (names, personalities, avatar choices) ──
+def _load_wizard_identities():
+    if os.path.exists(_IDENTITIES_PATH):
+        try:
+            with open(_IDENTITIES_PATH, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"  [State] Failed to load wizard identities: {e}")
+    return {}
+
+def _save_wizard_identities():
+    try:
+        with open(_IDENTITIES_PATH, 'w', encoding='utf-8') as f:
+            json.dump(_WIZARD_IDENTITIES, f, indent=2)
+    except Exception as e:
+        print(f"  [State] Failed to save wizard identities: {e}")
+
+
+# ── Animation queue (survives restarts for in-flight jobs) ──
+def _load_anim_queue():
+    if os.path.exists(_ANIM_QUEUE_PATH):
+        try:
+            with open(_ANIM_QUEUE_PATH, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"  [State] Failed to load animation queue: {e}")
+    return {}
+
+def _save_anim_queue():
+    try:
+        with open(_ANIM_QUEUE_PATH, 'w', encoding='utf-8') as f:
+            json.dump(_ANIM_QUEUE, f, indent=2)
+    except Exception as e:
+        print(f"  [State] Failed to save animation queue: {e}")
+
+
 # ── Load persisted state ──
 _BANISHED_IDS = _load_banished_ids()
 _GENERATED_ASSETS = _load_generated_assets()
+_LORA_TOGGLES = _load_lora_toggles()
+_WIZARD_IDENTITIES = _load_wizard_identities()
+_ANIM_QUEUE = _load_anim_queue()
 _load_custom_wizards()
 
 if _BANISHED_IDS:
@@ -1039,15 +1079,7 @@ _BATCH_RESULTS = []
 #  LoRA Registry — dynamic discovery, CivitAI metadata, per-wizard lists
 # ═══════════════════════════════════════════════════════════════════════
 # Architecture → compatible LoRA folder prefixes (mirrors GIMP plugin's table)
-_GUILD_LORA_PREFIXES = {
-    "sd15":         [],
-    "sdxl":         ["SDXL\\", "Illustrious\\", "Illustrious-Pony\\", "Pony\\"],
-    "illustrious":  ["Illustrious\\", "Illustrious-Pony\\"],
-    "pony":         ["Pony\\", "Illustrious-Pony\\"],
-    "flux2klein":   ["Flux-2-Klein\\"],
-    "flux1dev":     ["Flux-1-Dev\\"],
-    "flux_kontext": ["Flux-1-Dev\\"],
-}
+_GUILD_LORA_PREFIXES = LORA_ARCH_PREFIXES  # from guild_common
 
 # Registry: {lora_name: {arch_tags, purpose, tags, user_desc, source, hash}}
 # Persisted to lora_registry.json next to server.py
@@ -1254,22 +1286,15 @@ def _build_lora_registry(comfy_url):
                     compatible_archs.append(arch)
                     break
 
-        # If no architecture matched by prefix, it might be sd15 (root-level) or unknown
+        # If no architecture matched by prefix, infer from name keywords
         if not compatible_archs:
-            # Check if it's in a subfolder that hints at architecture
             lora_lower = lora_name.lower().replace("\\", "/")
-            if "sdxl" in lora_lower or "xl" in lora_lower:
-                compatible_archs = ["sdxl"]
-            elif "flux" in lora_lower:
-                compatible_archs = ["flux1dev"]
-            elif "klein" in lora_lower:
-                compatible_archs = ["flux2klein"]
-            elif "illu" in lora_lower:
-                compatible_archs = ["illustrious"]
-            elif "pony" in lora_lower:
-                compatible_archs = ["pony"]
+            for hint_kw, hint_arch in LORA_NAME_ARCH_HINTS:
+                if hint_kw in lora_lower:
+                    compatible_archs = [hint_arch]
+                    break
             else:
-                compatible_archs = ["sd15"]  # default to sd15 for root-level LoRAs
+                compatible_archs = ["sd15"]  # default for root-level LoRAs
 
         _LORA_REGISTRY[lora_name] = {
             "archs": compatible_archs,
@@ -1377,13 +1402,128 @@ def _get_unknown_loras_for_wizard(char_id):
 # (was previously at import time, but COMFYUI_URL isn't set yet)
 
 
+# ── Appearance diversity pools ───────────────────────────────────────
+# Pool A (14 entries): used for studio + model-family wizards via hash.
+# Pool size 14 guarantees all 6 studios land on unique entries.
+_APPEARANCE_CORE = [
+    # women (4)
+    "a young East Asian woman with flowing black hair adorned with luminous pins",
+    "a middle-aged Black woman with close-cropped silver hair and knowing eyes",
+    "a young South Asian woman with a long dark braid threaded with gold",
+    "an older Latina woman with deep laugh lines and warm brown eyes",
+    # men (4)
+    "a bearded Middle Eastern man with olive skin and piercing dark eyes",
+    "a young Black man with short locs and a confident gaze",
+    "an older white man with weathered features and a long grey beard",
+    "a stocky East Asian man with a shaved head and calm expression",
+    # non-binary (2)
+    "an androgynous figure with freckled light brown skin and wild auburn curls",
+    "a youthful nonbinary figure with pale skin and heterochromatic eyes",
+    # creatures (2)
+    "a spectral feline creature with galaxies swirling inside translucent fur",
+    "a crystalline dragon-kin figure with faceted gem-like scales refracting light",
+    # extra (2) — reaches 14 for collision-free studio distribution
+    "an Indigenous woman with long black hair, weathered hands, and a serene smile",
+    "an ancient elemental being of living stone and moss with glowing amber eyes",
+]
+
+# Pool B (large): used for discovered comfyui_model wizards (kibmix, etc.)
+# Each model install gets a unique, visually rich mage from this big pool.
+_APPEARANCE_DISCOVERED = [
+    # ── Women ──
+    "a fierce Polynesian woman with tattooed chin, flowers woven through dark hair",
+    "a petite elderly Japanese woman in layered silken robes, sharp knowing eyes",
+    "a tall Scandinavian woman with ice-blonde braids and frost-kissed eyebrows",
+    "a young Ethiopian woman with luminous dark skin and a halo of golden beads",
+    "a stout Slavic woman with ruddy cheeks, a fur-lined collar, and braided crown",
+    "a graceful Vietnamese woman with long straight hair and silk ribbon enchantments",
+    "a weathered Inuit woman in a hooded parka, northern lights reflected in her eyes",
+    "a striking Amazigh woman with henna-patterned hands and indigo headwrap",
+    "a lithe Brazilian woman with sun-bronzed skin and wild curly hair alive with sparks",
+    "a regal West African woman with elaborate gold filigree headpiece and deep brown eyes",
+    # ── Men ──
+    "a grizzled Maori man with full-face moko tattoo and fierce carved bone staff",
+    "a lanky Somali man with high cheekbones and a long weathered leather coat",
+    "a broad-shouldered Sikh man with an immaculate turban glowing with runes",
+    "a quiet Korean man with wire-rimmed spectacles and ink-stained fingers",
+    "a scarred Romani man with a gold earring and a knowing half-smile",
+    "a tall Yoruba man with facial scarification marks and bead-wrapped wrists",
+    "a stocky Scottish man with fiery red beard, tartan sash, and glowing staff",
+    "a wiry Mestizo man with a wide-brimmed hat and desert dust on his cloak",
+    "a young Filipino man with warm brown skin and an open friendly face",
+    "a composed Tibetan man in maroon robes with prayer beads wrapped around his wrist",
+    # ── Non-binary & Androgynous ──
+    "an ageless figure with deep mahogany skin and silver-white eyes that glow softly",
+    "a gaunt androgynous figure with ash-grey skin, long pointed ears, and starlight freckles",
+    "a soft-featured enby with warm umber skin, shaved sides, and glowing sigils on their scalp",
+    "a tall fluid figure with vitiligo patterns that shimmer with arcane energy",
+    # ── Creatures & Non-human ──
+    "a sentient raven the size of a person, feathers trailing violet smoke, sapphire eyes",
+    "a fox spirit with nine shimmering tails, each tip a different colour of flame",
+    "a living suit of ornate arcane armour with no visible occupant, visor glowing blue",
+    "a mushroom sage — a bipedal fungal being with a spotted cap and bioluminescent gills",
+    "a clockwork automaton with brass gears, copper patina, and a single emerald eye",
+    "a moth-winged humanoid with powdery iridescent wings and enormous compound eyes",
+    "an ent-like tree spirit with bark skin, moss beard, and firefly swarm for a crown",
+    "a ghostly jellyfish being trailing luminous tentacles, translucent and ethereal",
+    "a miniature dragon perched upright, scales shifting between copper and teal",
+    "a smoke djinn with swirling obsidian skin and embers where its eyes should be",
+]
+
+# ── Prompt style variations for discovered model wizards ─────────────
+_PROMPT_STYLES = [
+    ("extreme close-up face portrait",
+     "dramatic lighting, magical aura, highly detailed face filling the frame, "
+     "intense expressive eyes, painterly digital art style, headshot composition, "
+     "dark atmospheric background, face takes up 80 percent of image"),
+    ("cinematic portrait, medium close-up",
+     "volumetric god-rays, magical particles in the air, shallow depth of field, "
+     "detailed costume and accessories visible, warm-cool colour contrast, "
+     "renaissance painting meets concept art, dramatic chiaroscuro"),
+    ("dramatic half-body portrait from below",
+     "towering perspective, cape or cloak billowing, energy crackling from hands, "
+     "rich fabric textures, ornate magical accessories, deep moody atmosphere, "
+     "cinematic lighting, concept art style, strong silhouette"),
+    ("moody profile portrait in candlelight",
+     "single warm light source, rim lighting on far side, visible breath in cold air, "
+     "intricate embroidery on collar, magical sigils floating nearby, "
+     "old masters painting style, rich shadows, intimate atmosphere"),
+]
+
+
 def _build_avatar_prompt(char):
-    """Build a rich character-specific avatar prompt from the character metadata."""
+    """Build a rich character-specific avatar prompt from the character metadata.
+
+    Studio and model-family wizards draw from the core pool (14 entries,
+    collision-free for the 6 studios).  Discovered comfyui_model wizards
+    draw from a much larger pool with randomized prompt styles so the
+    guild fills with diverse, visually interesting mages.
+    """
     name = char.get('name', 'wizard')
     subtext = char.get('subtext', 'magical specialist')
     char_id = char.get('id', '')
+    char_type = char.get('type', '')
 
-    # Studio characters have explicit archetypes
+    seed_hash = int(hashlib.md5(char_id.encode('utf-8')).hexdigest(), 16)
+
+    # Pick appearance from the right pool
+    if char_type == 'comfyui_model':
+        # Discovered model wizards — big diverse pool + varied prompt styles
+        appearance = _APPEARANCE_DISCOVERED[seed_hash % len(_APPEARANCE_DISCOVERED)]
+        style_idx = (seed_hash // len(_APPEARANCE_DISCOVERED)) % len(_PROMPT_STYLES)
+        framing, style_tail = _PROMPT_STYLES[style_idx]
+    else:
+        # Studio + model-family wizards — core pool, classic framing
+        appearance = _APPEARANCE_CORE[seed_hash % len(_APPEARANCE_CORE)]
+        framing = "extreme close-up face portrait"
+        style_tail = (
+            "dramatic lighting, magical aura, "
+            "highly detailed face filling the frame, intense expressive eyes, "
+            "painterly digital art style, headshot composition, "
+            "dark atmospheric background, face takes up 80 percent of image"
+        )
+
+    # ── Archetype / specialisation hint ──────────────────────────────
     studio = _STUDIO_BY_ID.get(char_id)
     if studio and studio.get('archetype'):
         hint = studio['archetype']
@@ -1409,13 +1549,11 @@ def _build_avatar_prompt(char):
             hint = archetype_hints['video']
 
     base_prompt = (
-        f"extreme close-up face portrait of a wizard named {name}, "
+        f"{framing} of {appearance}, "
+        f"a wizard named {name}, "
         f"{hint + ', ' if hint else ''}"
         f"specialist in {subtext}, "
-        f"dramatic lighting, magical aura, "
-        f"highly detailed face filling the frame, intense expressive eyes, "
-        f"painterly digital art style, headshot composition, "
-        f"dark atmospheric background, face takes up 80 percent of image"
+        f"{style_tail}"
     )
     return base_prompt
 
@@ -1531,60 +1669,111 @@ def _dispatch_workflow(workflow, comfy_url, timeout=180):
     raise Exception("Timeout waiting for ComfyUI response.")
 
 
+# 1x1 transparent pixel PNG — used to overwrite temp uploads on ComfyUI
+_TINY_PNG = (
+    b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01'
+    b'\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89'
+    b'\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01'
+    b'\r\n\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
+)
+
+
+def _privacy_cleanup(comfy_url, workflow, result):
+    """Delete uploaded inputs and generated outputs from ComfyUI after delivery.
+
+    This is the Guild equivalent of the GIMP plugin's _cleanup_server_temps().
+    Called after _dispatch_workflow() when PRIVACY_CLEANUP is enabled.
+
+    Cleans:
+      1. Input images: any LoadImage node's "image" value that looks like a
+         guild-uploaded temp file (guild_*, gimp_*, spellcaster_*)
+      2. Output images/videos: the files returned in result["urls"]
+    """
+    import uuid as _uuid
+
+    # 1. Overwrite uploaded input images with a 1x1 transparent pixel
+    for nid, node in workflow.items():
+        if not isinstance(node, dict):
+            continue
+        ct = node.get("class_type", "")
+        if ct not in ("LoadImage", "VHS_LoadVideo"):
+            continue
+        fname = node.get("inputs", {}).get("image", "") or node.get("inputs", {}).get("video", "")
+        if not fname or not isinstance(fname, str):
+            continue
+        # Only clean guild/gimp temp uploads, not user's permanent files
+        fl = fname.lower()
+        if not any(fl.startswith(p) for p in ("guild_", "gimp_", "spellcaster_")):
+            continue
+        try:
+            url = f"{comfy_url}/upload/image"
+            boundary = _uuid.uuid4().hex
+            body = (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="image"; filename="{fname}"\r\n'
+                f"Content-Type: image/png\r\n\r\n"
+            ).encode() + _TINY_PNG + f"\r\n--{boundary}--\r\n".encode()
+            req = urllib.request.Request(url, data=body,
+                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+                method="POST")
+            urllib.request.urlopen(req, timeout=10)
+        except Exception:
+            pass
+
+    # 2. Delete output files from ComfyUI's output folder
+    for url in result.get("urls", []):
+        try:
+            # Parse filename from URL like /view?filename=foo.png&type=output
+            from urllib.parse import urlparse, parse_qs
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            fname = params.get("filename", [""])[0]
+            subfolder = params.get("subfolder", [""])[0]
+            if not fname:
+                continue
+            # ComfyUI doesn't have a delete API, but we can overwrite with tiny PNG
+            upload_url = f"{comfy_url}/upload/image"
+            boundary = _uuid.uuid4().hex
+            # Upload to output subfolder to overwrite
+            body = (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="image"; filename="{fname}"\r\n'
+                f"Content-Type: image/png\r\n\r\n"
+            ).encode() + _TINY_PNG + (
+                f"\r\n--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="subfolder"\r\n\r\n'
+                f"{subfolder}\r\n"
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="type"\r\n\r\n'
+                f"output\r\n"
+                f"--{boundary}--\r\n"
+            ).encode()
+            req = urllib.request.Request(upload_url, data=body,
+                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+                method="POST")
+            urllib.request.urlopen(req, timeout=10)
+        except Exception:
+            pass
+
+
 def _detect_best_model(comfy_url):
     """Detect the best available model on ComfyUI, returning (ckpt_name, arch_key).
 
-    Priority: flux2klein 9B > flux2klein 4B > flux1dev > sdxl > sd15.
+    Priority order is defined by BEST_MODEL_PRIORITY in guild_common.
+    Falls back to first checkpoint as sd15 if nothing better matches.
+    Reuses _fetch_comfyui_models() to avoid duplicated object_info queries.
     """
-    unet_models = []
-    ckpt_models = []
+    all_models = _fetch_comfyui_models(comfy_url)
+    unet_models = [m["name"] for m in all_models if m["type"] == "unet"]
+    ckpt_models = [m["name"] for m in all_models if m["type"] == "checkpoint"]
 
-    try:
-        url = f"{comfy_url}/object_info/UNETLoader"
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            choices = (data.get("UNETLoader", {})
-                           .get("input", {}).get("required", {})
-                           .get("unet_name", []))
-            if choices and isinstance(choices, list) and choices[0]:
-                unet_models = choices[0]
-    except Exception:
-        pass
+    pools = {"unet": unet_models, "ckpt": ckpt_models}
+    for pool_key, test_fn, arch_key in BEST_MODEL_PRIORITY:
+        for m in pools.get(pool_key, []):
+            if test_fn(m.lower()):
+                return m, arch_key
 
-    try:
-        url = f"{comfy_url}/object_info/CheckpointLoaderSimple"
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            choices = (data.get("CheckpointLoaderSimple", {})
-                           .get("input", {}).get("required", {})
-                           .get("ckpt_name", []))
-            if choices and isinstance(choices, list) and choices[0]:
-                ckpt_models = choices[0]
-    except Exception:
-        pass
-
-    for m in unet_models:
-        ml = m.lower()
-        if "klein" in ml and "9b" in ml:
-            return m, "flux2klein"
-    for m in unet_models:
-        ml = m.lower()
-        if "klein" in ml and "4b" in ml:
-            return m, "flux2klein"
-    for m in unet_models:
-        ml = m.lower()
-        if "flux" in ml and "dev" in ml:
-            return m, "flux1dev"
-    for m in unet_models:
-        ml = m.lower()
-        if "flux" in ml:
-            return m, "flux1dev"
-    for m in ckpt_models:
-        ml = m.lower()
-        if "xl" in ml:
-            return m, "sdxl"
+    # Fallback: first checkpoint → sd15
     if ckpt_models:
         return ckpt_models[0], "sd15"
 
@@ -1753,7 +1942,7 @@ def _detect_wan_preset(comfy_url):
 
 # ── Animated avatar queue — non-blocking, uses ComfyUI's prompt queue ────
 # Maps char_id → {prompt_id, status, result_url, error}
-_ANIM_QUEUE = {}
+# _ANIM_QUEUE is loaded from .guild_state/ in the persistence section above
 _WAN_PRESET_CACHE = None  # Cache so we only detect once
 
 
@@ -1848,6 +2037,7 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
         "error": None,
         "output_nid": _find_output_node(workflow),
     }
+    _save_anim_queue()
     print(f"  [Guild] Queued animated avatar for {char_id} (prompt_id={prompt_id})")
     return {"queued": True, "prompt_id": prompt_id}
 
@@ -1878,6 +2068,7 @@ def _poll_animated_avatars(comfy_url):
                            if msgs else "Unknown")
                     entry["status"] = "error"
                     entry["error"] = err
+                    _save_anim_queue()
                     print(f"  [Guild] Animated avatar FAILED for {char_id}: {err}")
                     continue
 
@@ -1912,12 +2103,30 @@ def _poll_animated_avatars(comfy_url):
                     entry["result_url"] = result_url
                     _GENERATED_ASSETS.setdefault(char_id, {})["animated_url"] = result_url
                     _save_generated_assets()
+                    _save_anim_queue()
                     print(f"  [Guild] Animated avatar DONE for {char_id}")
                 else:
                     entry["status"] = "error"
                     entry["error"] = "No output found in ComfyUI history"
+                    _save_anim_queue()
         except Exception:
             pass  # ComfyUI unreachable or still processing
+
+
+def _anim_poll_background():
+    """Background thread: polls ComfyUI every 10s while animations are queued."""
+    while True:
+        time.sleep(10)
+        pending = [e for e in _ANIM_QUEUE.values() if e["status"] == "queued"]
+        if not pending:
+            continue
+        try:
+            _poll_animated_avatars(COMFYUI_URL)
+        except Exception:
+            pass
+
+# Starts in _server_init() so COMFYUI_URL is set correctly
+_ANIM_POLL_THREAD = None
 
 
 def _dispatch_txt2img(prompt, negative, width, height, comfy_url,
@@ -2074,7 +2283,11 @@ def _translate_params(build_fn_name, raw, comfy_url=None):
 
 
 def _build_and_dispatch(build_fn_name, params, comfy_url):
-    """Build a workflow via _workflows_v2 build function and dispatch it."""
+    """Build a workflow via _workflows_v2 build function and dispatch it.
+
+    If PRIVACY_CLEANUP is enabled, cleans up uploaded inputs and generated
+    outputs from ComfyUI after delivering the result URLs to the client.
+    """
     if not BUILTIN_AVAILABLE or _workflows_v2 is None:
         raise Exception(
             "Build functions unavailable — _workflows_v2 could not be imported.")
@@ -2088,7 +2301,17 @@ def _build_and_dispatch(build_fn_name, params, comfy_url):
 
     translated = _translate_params(build_fn_name, params, comfy_url=comfy_url)
     workflow = fn(**translated)
-    return _dispatch_workflow(workflow, comfy_url)
+    result = _dispatch_workflow(workflow, comfy_url)
+
+    # Privacy cleanup: delete inputs + outputs from ComfyUI after delivery
+    if PRIVACY_CLEANUP:
+        try:
+            _privacy_cleanup(comfy_url, workflow, result)
+            result["privacy_cleanup"] = "complete"
+        except Exception:
+            result["privacy_cleanup"] = "partial"
+
+    return result
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -2129,6 +2352,12 @@ class GuildHandler(SimpleHTTPRequestHandler):
             # Returns server-side generated asset URLs for all characters
             # Frontend uses this to sync localStorage with pre-generated assets
             return self.end_json(200, _GENERATED_ASSETS)
+        elif self.path == '/api/lora_toggles':
+            # GET — returns per-wizard LoRA enabled/disabled state
+            return self.end_json(200, _LORA_TOGGLES)
+        elif self.path == '/api/wizard_identities':
+            # GET — returns server-persisted wizard identity overrides
+            return self.end_json(200, _WIZARD_IDENTITIES)
         elif self.path == '/api/animated_avatar_poll':
             # Poll all queued animated avatars — check ComfyUI for completion
             _poll_animated_avatars(COMFYUI_URL)
@@ -2147,6 +2376,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "kobold_url": KOBOLD_URL,
                 "port": PORT,
                 "version": VERSION,
+                "privacy_cleanup": PRIVACY_CLEANUP,
             })
         elif self.path == '/api/version':
             return self.end_json(200, {"version": VERSION})
@@ -2711,6 +2941,31 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "scaffold": scaffold,
             })
 
+        # -- /api/lora_toggles -- save per-wizard LoRA enabled/disabled state
+        elif self.path == '/api/lora_toggles':
+            # Expects: { char_id: { lora_name: true/false, ... }, ... }
+            # Merges with existing state (doesn't replace the whole dict)
+            toggles = data.get('toggles', data)
+            if not isinstance(toggles, dict):
+                return self.end_json(400, {"error": "toggles dict required"})
+            for char_id, lora_states in toggles.items():
+                if isinstance(lora_states, dict):
+                    _LORA_TOGGLES[char_id] = lora_states
+            _save_lora_toggles()
+            return self.end_json(200, {"status": "ok", "total_wizards": len(_LORA_TOGGLES)})
+
+        # -- /api/wizard_identities -- save wizard identity overrides
+        elif self.path == '/api/wizard_identities':
+            # Expects: { char_id: { name, personality, avatar_url, animated_url }, ... }
+            identities = data.get('identities', data)
+            if not isinstance(identities, dict):
+                return self.end_json(400, {"error": "identities dict required"})
+            for char_id, identity in identities.items():
+                if isinstance(identity, dict):
+                    _WIZARD_IDENTITIES[char_id] = identity
+            _save_wizard_identities()
+            return self.end_json(200, {"status": "ok", "total": len(_WIZARD_IDENTITIES)})
+
         # -- /api/lora_describe -- user provides descriptions for unknown LoRAs
         elif self.path == '/api/lora_describe':
             descriptions = data.get('descriptions', {})
@@ -2736,6 +2991,58 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "status": "ok",
                 "updated": updated,
                 "char_id": char_id,
+            })
+
+        # -- /api/settings -- update Guild settings (privacy, etc.)
+        elif self.path == '/api/settings':
+            global PRIVACY_CLEANUP
+            changed = []
+
+            if 'privacy_cleanup' in data:
+                new_val = bool(data['privacy_cleanup'])
+                PRIVACY_CLEANUP = new_val
+                changed.append(f"privacy_cleanup={new_val}")
+
+                # Persist to guild_config.json
+                cfg_path = os.path.join(_THIS_DIR, "guild_config.json")
+                try:
+                    with open(cfg_path, 'r', encoding='utf-8') as f:
+                        cfg = json.load(f)
+                except Exception:
+                    cfg = {}
+                cfg['privacy_cleanup'] = new_val
+                try:
+                    with open(cfg_path, 'w', encoding='utf-8') as f:
+                        json.dump(cfg, f, indent=2)
+                except Exception:
+                    pass
+
+                # Also sync to GIMP plugin config if it exists
+                # GIMP uses "output_cleanup": "delete" (privacy on) or "copy" (off)
+                gimp_cfg_candidates = []
+                if sys.platform == 'win32':
+                    appdata = os.environ.get('APPDATA', '')
+                    if appdata:
+                        for ver in ('3.2', '3.0'):
+                            p = os.path.join(appdata, 'GIMP', ver,
+                                             'plug-ins', 'comfyui-connector', 'config.json')
+                            gimp_cfg_candidates.append(p)
+                for gcp in gimp_cfg_candidates:
+                    if os.path.isfile(gcp):
+                        try:
+                            with open(gcp, 'r', encoding='utf-8') as f:
+                                gcfg = json.load(f)
+                            gcfg['output_cleanup'] = 'delete' if new_val else 'copy'
+                            with open(gcp, 'w', encoding='utf-8') as f:
+                                json.dump(gcfg, f, indent=2)
+                            changed.append(f"gimp_synced={gcp}")
+                        except Exception:
+                            pass
+
+            return self.end_json(200, {
+                "status": "ok",
+                "changed": changed,
+                "privacy_cleanup": PRIVACY_CLEANUP,
             })
 
         # -- /api/lora_refresh -- re-scan LoRAs from ComfyUI
@@ -2794,8 +3101,13 @@ class GuildHandler(SimpleHTTPRequestHandler):
             _LORA_INTERROGATED.clear()
             _save_lora_registry()
 
-            # Clear animation queue
+            # Clear animation queue, LoRA toggles, wizard identities
             _ANIM_QUEUE.clear()
+            _save_anim_queue()
+            _LORA_TOGGLES.clear()
+            _save_lora_toggles()
+            _WIZARD_IDENTITIES.clear()
+            _save_wizard_identities()
 
             # Re-run FULL character discovery — this handles:
             #   1. Studio characters (always present)
