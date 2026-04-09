@@ -1258,32 +1258,53 @@ class NodeFactory:
     # ═══════════════════════════════════════════════════════════════════
 
     def wan_image_to_video(self, positive_ref, negative_ref, vae_ref,
-                           image_ref, model_ref, width, height, length,
-                           seed, steps, cfg, batch_size=1, node_id=None):
-        """WanImageToVideo."""
-        return self._add("WanImageToVideo", {
-            "positive": positive_ref, "negative": negative_ref,
-            "vae": vae_ref, "clip_vision_output": image_ref,
-            "model": model_ref,
-            "width": width, "height": height, "length": length,
-            "seed": seed, "steps": steps, "cfg": cfg,
-            "batch_size": batch_size,
-        }, node_id)
+                           width, height, length,
+                           clip_vision_output_ref=None, start_image_ref=None,
+                           batch_size=1, node_id=None):
+        """WanImageToVideo — updated for ComfyUI WAN v2 API.
 
-    def wan_first_last_frame(self, positive_ref, negative_ref, vae_ref,
-                              start_image_ref, end_image_ref, model_ref,
-                              width, height, length, seed, steps, cfg,
-                              batch_size=1, node_id=None):
-        """WanFirstLastFrameToVideo."""
-        return self._add("WanFirstLastFrameToVideo", {
+        The node now only takes conditioning, VAE, and dimensions.
+        Model/seed/steps/cfg are handled by separate sampler nodes.
+        clip_vision_output and start_image are optional.
+        Outputs: [0]=CONDITIONING(pos), [1]=CONDITIONING(neg), [2]=LATENT
+        """
+        inputs = {
             "positive": positive_ref, "negative": negative_ref,
             "vae": vae_ref,
-            "start_image": start_image_ref, "end_image": end_image_ref,
-            "model": model_ref,
             "width": width, "height": height, "length": length,
-            "seed": seed, "steps": steps, "cfg": cfg,
             "batch_size": batch_size,
-        }, node_id)
+        }
+        if clip_vision_output_ref is not None:
+            inputs["clip_vision_output"] = clip_vision_output_ref
+        if start_image_ref is not None:
+            inputs["start_image"] = start_image_ref
+        return self._add("WanImageToVideo", inputs, node_id)
+
+    def wan_first_last_frame(self, positive_ref, negative_ref, vae_ref,
+                              width, height, length,
+                              clip_vision_start_ref=None, clip_vision_end_ref=None,
+                              start_image_ref=None, end_image_ref=None,
+                              batch_size=1, node_id=None):
+        """WanFirstLastFrameToVideo — updated for ComfyUI WAN v2 API.
+
+        Model/seed/steps/cfg are handled by separate sampler nodes.
+        Outputs: [0]=CONDITIONING(pos), [1]=CONDITIONING(neg), [2]=LATENT
+        """
+        inputs = {
+            "positive": positive_ref, "negative": negative_ref,
+            "vae": vae_ref,
+            "width": width, "height": height, "length": length,
+            "batch_size": batch_size,
+        }
+        if clip_vision_start_ref is not None:
+            inputs["clip_vision_start_image"] = clip_vision_start_ref
+        if clip_vision_end_ref is not None:
+            inputs["clip_vision_end_image"] = clip_vision_end_ref
+        if start_image_ref is not None:
+            inputs["start_image"] = start_image_ref
+        if end_image_ref is not None:
+            inputs["end_image"] = end_image_ref
+        return self._add("WanFirstLastFrameToVideo", inputs, node_id)
 
     def vhs_video_combine(self, images_ref, frame_rate=24, loop_count=0,
                            filename_prefix="spellcaster",
@@ -1689,11 +1710,17 @@ class NodeFactory:
                      "target dimensions" (pass width/height via scale_factor as tuple).
         quality: "LOW", "MEDIUM", "HIGH", or "ULTRA".
         """
+        # ComfyUI V3 dynamic combo: resize_type is a nested object
+        if resize_type == "scale by multiplier":
+            rt_value = {"value": "scale by multiplier", "scale": float(scale_factor)}
+        else:
+            w, h = (scale_factor if isinstance(scale_factor, (list, tuple))
+                    else (int(scale_factor), int(scale_factor)))
+            rt_value = {"value": "target dimensions", "width": w, "height": h}
         inputs = {
             "images": images_ref,
-            "resize_type": resize_type,
+            "resize_type": rt_value,
             "quality": quality,
-            "scale": float(scale_factor),
         }
         return self._add("RTXVideoSuperResolution", inputs, node_id)
 

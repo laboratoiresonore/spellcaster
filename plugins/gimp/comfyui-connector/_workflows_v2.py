@@ -2858,19 +2858,24 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
         high_ref = [sh_h, 0]
         low_ref = [sh_l, 0]
 
-    # Video conditioning
+    # Video conditioning — WanImageToVideo/WanFirstLastFrameToVideo
+    # These nodes output: [0]=CONDITIONING(pos), [1]=CONDITIONING(neg), [2]=LATENT
+    # Model/seed/steps/cfg are handled by the KSamplerAdvanced below.
     if use_flf:
         end_ref = ["7", 0] if loop else ["7b", 0]
         flf_id = nf.wan_first_last_frame(
             ["5", 0], ["6", 0], ["4", 0],
-            ["7", 0], end_ref, high_ref,
-            width, height, length, seed, steps, cfg, node_id="40",
+            width, height, length,
+            clip_vision_start_ref=["7", 0],
+            clip_vision_end_ref=end_ref,
+            node_id="40",
         )
     else:
         i2v_id = nf.wan_image_to_video(
             ["5", 0], ["6", 0], ["4", 0],
-            ["7", 0], high_ref,
-            width, height, length, seed, steps, cfg, node_id="40",
+            width, height, length,
+            clip_vision_output_ref=["7", 0],
+            node_id="40",
         )
 
     # Motion mask (optional)
