@@ -1,44 +1,41 @@
 #!/usr/bin/env python3
 """
-Wizard Guild Launcher — entry point for the standalone .exe
-============================================================
-Thin wrapper that bootstraps the guild_launcher module from the
-correct relative paths, whether running from source or from a
-PyInstaller --onefile bundle.
+Wizard Guild Launcher — thin wrapper that runs start_guild.bat.
 
-This file exists so PyInstaller has a clean entry point that
-doesn't interfere with the guild_launcher's own module-level code.
+This is the entry point for Wizard_Guild.exe (built by PyInstaller).
+It locates and runs tavern/start_guild.bat, which handles Python
+detection, config, and the full guild_launcher.py startup sequence.
 """
 
 import os
 import sys
+import subprocess
+
 
 def main():
-    # Resolve paths: PyInstaller extracts to _MEIPASS, source runs from tavern/
+    # Find the tavern/ directory relative to this exe (or script)
     if getattr(sys, '_MEIPASS', None):
-        base = sys._MEIPASS
+        # Running from PyInstaller bundle — exe sits at repo root
+        base = os.path.dirname(sys.executable)
     else:
-        base = os.path.dirname(os.path.abspath(__file__))
+        # Running from source — this file is in tavern/
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    # Ensure tavern/ and parent (for scaffold/) are on sys.path
-    tavern_dir = base if os.path.isfile(os.path.join(base, 'server.py')) else os.path.join(base, 'tavern')
-    parent_dir = os.path.dirname(tavern_dir)
+    bat = os.path.join(base, 'tavern', 'start_guild.bat')
 
-    for d in [tavern_dir, parent_dir]:
-        if d not in sys.path:
-            sys.path.insert(0, d)
+    if not os.path.isfile(bat):
+        # Maybe we're already inside tavern/
+        bat = os.path.join(base, 'start_guild.bat')
 
-    # Also add the GIMP plugin dir for _workflows_v2 imports
-    plugin_dir = os.path.join(parent_dir, 'plugins', 'gimp', 'comfyui-connector')
-    if os.path.isdir(plugin_dir) and plugin_dir not in sys.path:
-        sys.path.insert(0, plugin_dir)
+    if not os.path.isfile(bat):
+        print(f"ERROR: Cannot find start_guild.bat")
+        print(f"  Searched: {os.path.join(base, 'tavern')}")
+        print(f"  and:      {base}")
+        input("Press Enter to exit...")
+        sys.exit(1)
 
-    # Change to tavern/ so relative paths work
-    os.chdir(tavern_dir)
-
-    # Import and run the real launcher
-    import guild_launcher
-    guild_launcher.main()
+    # Run the bat in its own directory
+    subprocess.run(['cmd', '/c', bat], cwd=os.path.dirname(bat))
 
 
 if __name__ == '__main__':
