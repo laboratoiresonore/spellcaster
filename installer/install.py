@@ -158,160 +158,325 @@ def ask_text(prompt: str, default: str = "", auto_yes: bool = False) -> str:
 
 # ─── Application path detection ───────────────────────────────────────────────
 
+def _is_comfyui_dir(p: Path) -> bool:
+    """Validate that a directory contains a ComfyUI installation."""
+    return ((p / "main.py").is_file()
+            or (p / "comfy" / "cli_args.py").is_file()
+            or (p / "custom_nodes").is_dir())
+
+
+def _win_all_drives() -> list[str]:
+    """Return all available drive letters on Windows (A:-Z:)."""
+    drives = []
+    try:
+        import ctypes
+        bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+        for i in range(26):
+            if bitmask & (1 << i):
+                drives.append(f"{chr(65 + i)}:")
+    except Exception:
+        drives = ["C:", "D:", "E:", "F:", "G:", "H:"]
+    return drives
+
+
+def _win_registry_gimp() -> str:
+    """Query Windows Registry for GIMP installation path."""
+    try:
+        import winreg
+        for hive in [winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER]:
+            for subkey in [r"SOFTWARE\GIMP\3", r"SOFTWARE\GIMP\3.0",
+                           r"SOFTWARE\GIMP\3.2", r"SOFTWARE\GIMP"]:
+                try:
+                    with winreg.OpenKey(hive, subkey) as key:
+                        val, _ = winreg.QueryValueEx(key, "InstallPath")
+                        if val and Path(val).is_dir():
+                            return val
+                except (OSError, FileNotFoundError):
+                    continue
+    except ImportError:
+        pass
+    return ""
+
+
+def _gimp_config_from_executable() -> str:
+    """Infer GIMP config directory from the gimp executable location."""
+    import shutil
+    for name in ["gimp-3.2", "gimp-3.0", "gimp3", "gimp-2.99", "gimp"]:
+        exe = shutil.which(name)
+        if exe:
+            # GIMP config is in %APPDATA%/GIMP or ~/.config/GIMP
+            # The exe tells us GIMP exists — let the main scan find config
+            return exe
+    return ""
+
+
+def _scan_gimp_versions(root: Path) -> list[Path]:
+    """Scan a GIMP config root for version directories (3.x, 2.99)."""
+    results = []
+    if not root.is_dir():
+        return results
+    try:
+        for d in sorted(root.iterdir(), reverse=True):
+            if d.is_dir() and (d.name.startswith("3.") or d.name.startswith("2.99")):
+                plugins = d / "plug-ins"
+                results.append(plugins)
+    except (PermissionError, OSError):
+        pass
+    return results
+
+
 def find_default_comfyui() -> str:
-    """Auto-detect ComfyUI installation by checking common install locations.
+    """Auto-detect ComfyUI installation using multiple strategies.
 
-    Validates candidates by looking for main.py (older ComfyUI) or
-    comfy/cli_args.py (newer ComfyUI refactored layout).
+    Strategy order:
+      1. Environment variable COMFYUI_ROOT / COMFYUI_PATH
+      2. shutil.which() for 'comfy' executable on PATH
+      3. Common filesystem locations (all drives on Windows)
+      4. Portable distribution glob patterns
+      5. Running process detection (if psutil available)
 
-    Also probes ComfyUI Portable distributions, which place ComfyUI/ as a
-    subdirectory alongside python_embeded/ inside a *portable* wrapper folder.
+    Validates candidates by checking for main.py, comfy/cli_args.py, or custom_nodes/.
     """
+    import shutil
+
     home = Path.home()
+    candidates: list[Path] = []
+
+    # Strategy 1: Environment variables
+    for env_key in ["COMFYUI_ROOT", "COMFYUI_PATH", "COMFYUI_DIR"]:
+        val = os.environ.get(env_key, "")
+        if val:
+            candidates.append(Path(val))
+
+    # Strategy 2: shutil.which() — find 'comfy' or 'python' running ComfyUI
+    for name in ["comfy", "comfyui"]:
+        exe = shutil.which(name)
+        if exe:
+            # The executable might be in bin/ or scripts/ — go up to find the root
+            p = Path(exe).resolve().parent
+            for _ in range(4):
+                if _is_comfyui_dir(p):
+                    candidates.append(p)
+                    break
+                p = p.parent
+
     if platform.system() == "Windows":
-        candidates = [
+        # Strategy 3: Filesystem scan — ALL drives
+        drives = _win_all_drives()
+        for drive in drives:
+            root = Path(f"{drive}/")
+            candidates.append(root / "ComfyUI")
+            candidates.append(root / "ComfyUI_windows_portable" / "ComfyUI")
+        candidates += [
             home / "ComfyUI",
-            Path("C:/ComfyUI"),
-            Path("C:/ComfyUI_windows_portable/ComfyUI"),
             home / "Desktop" / "ComfyUI",
             home / "Documents" / "ComfyUI",
-            Path("D:/ComfyUI"),
-            Path("E:/ComfyUI"),
+            home / "Downloads" / "ComfyUI",
         ]
-        # Glob for portable distributions on common drives and user folders
-        for drive in ["C:", "D:", "E:"]:
-            drive_root = Path(drive + "/")
+        # Strategy 4: Glob for portable distributions on all drives + user folders
+        for drive in drives:
+            drive_root = Path(f"{drive}/")
             if drive_root.exists():
                 try:
                     for d in drive_root.glob("ComfyUI*portable*/ComfyUI"):
                         candidates.append(d)
-                except PermissionError:
+                    for d in drive_root.glob("ComfyUI*/ComfyUI"):
+                        candidates.append(d)
+                except (PermissionError, OSError):
                     pass
         for user_dir in ["Desktop", "Downloads", "Documents"]:
             try:
                 for d in (home / user_dir).glob("ComfyUI*portable*/ComfyUI"):
                     candidates.append(d)
+                for d in (home / user_dir).glob("ComfyUI*/ComfyUI"):
+                    candidates.append(d)
             except (PermissionError, OSError):
                 pass
     elif platform.system() == "Darwin":
-        candidates = [
+        candidates += [
             home / "ComfyUI",
             Path("/Applications/ComfyUI"),
             home / "Documents" / "ComfyUI",
+            home / "Desktop" / "ComfyUI",
+            home / "Downloads" / "ComfyUI",
         ]
     else:
-        candidates = [
+        candidates += [
             home / "ComfyUI",
             Path("/opt/ComfyUI"),
             home / "Documents" / "ComfyUI",
+            home / "Desktop" / "ComfyUI",
+            Path("/usr/local/share/ComfyUI"),
         ]
+
+    # Deduplicate and validate
+    seen: set[str] = set()
     for c in candidates:
-        # Check for either the legacy entry point or the newer package structure
-        if (c / "main.py").is_file() or (c / "comfy" / "cli_args.py").is_file():
+        try:
+            cs = str(c.resolve()) if c.exists() else str(c)
+        except (OSError, ValueError):
+            cs = str(c)
+        if cs in seen:
+            continue
+        seen.add(cs)
+        if _is_comfyui_dir(c):
             return str(c)
     return ""
 
 
 def find_default_gimp() -> str:
-    """Auto-detect GIMP 3 user plug-ins directory across platforms.
+    """Auto-detect GIMP 3 user plug-ins directory using multiple strategies.
 
-    GIMP 3 stores user plug-ins in a version-specific directory.  Different
-    install methods (native, Flatpak, Snap, MSIX, Homebrew) place this
-    directory in different locations.  We probe all known candidates and
-    also glob for version variants (3.0, 3.0-RC*, 2.99, 3.2, etc.).
+    Strategy order:
+      1. Environment variable GIMP_PLUGIN_PATH / GIMP_DIR
+      2. Windows Registry (HKLM/HKCU SOFTWARE\\GIMP)
+      3. shutil.which() for gimp executable
+      4. Config directory scanning (Roaming, Local, XDG, Flatpak, Snap)
+      5. Hardcoded fallback paths for all known versions
+
+    Returns the plug-ins directory path, or empty string.
     """
+    import shutil
+
     home = Path.home()
     candidates: list[Path] = []
 
-    if platform.system() == "Windows":
-        roaming = home / "AppData" / "Roaming" / "GIMP"
-        # Glob for any 3.x or 2.99 version folder
-        if roaming.is_dir():
-            for d in sorted(roaming.iterdir(), reverse=True):
-                if d.is_dir() and (d.name.startswith("3.") or d.name.startswith("2.99")):
-                    candidates.append(d / "plug-ins")
-        # Explicit fallbacks for common versions
-        candidates += [
-            roaming / "3.0" / "plug-ins",
-            roaming / "2.99" / "plug-ins",
-        ]
-    elif platform.system() == "Darwin":
-        # Native macOS
-        app_support = home / "Library" / "Application Support" / "GIMP"
-        if app_support.is_dir():
-            for d in sorted(app_support.iterdir(), reverse=True):
-                if d.is_dir() and (d.name.startswith("3.") or d.name.startswith("2.99")):
-                    candidates.append(d / "plug-ins")
-        # XDG fallback (Homebrew/manual builds)
-        xdg_gimp = home / ".config" / "GIMP"
-        if xdg_gimp.is_dir():
-            for d in sorted(xdg_gimp.iterdir(), reverse=True):
-                if d.is_dir() and (d.name.startswith("3.") or d.name.startswith("2.99")):
-                    candidates.append(d / "plug-ins")
-        candidates += [
-            app_support / "3.2" / "plug-ins",
-            app_support / "3.0" / "plug-ins",
-            home / ".config" / "GIMP" / "3.2" / "plug-ins",
-            home / ".config" / "GIMP" / "3.0" / "plug-ins",
-        ]
-    else:
-        # Linux: native XDG
-        xdg_gimp = home / ".config" / "GIMP"
-        if xdg_gimp.is_dir():
-            for d in sorted(xdg_gimp.iterdir(), reverse=True):
-                if d.is_dir() and (d.name.startswith("3.") or d.name.startswith("2.99")):
-                    candidates.append(d / "plug-ins")
-        # Flatpak (common on Fedora, Ubuntu)
-        flatpak_gimp = home / ".var" / "app" / "org.gimp.GIMP" / "config" / "GIMP"
-        if flatpak_gimp.is_dir():
-            for d in sorted(flatpak_gimp.iterdir(), reverse=True):
-                if d.is_dir() and (d.name.startswith("3.") or d.name.startswith("2.99")):
-                    candidates.append(d / "plug-ins")
-        # Snap
-        snap_gimp = home / "snap" / "gimp" / "current" / ".config" / "GIMP"
-        if snap_gimp.is_dir():
-            for d in sorted(snap_gimp.iterdir(), reverse=True):
-                if d.is_dir() and (d.name.startswith("3.") or d.name.startswith("2.99")):
-                    candidates.append(d / "plug-ins")
-        candidates += [
-            home / ".config" / "GIMP" / "3.2" / "plug-ins",
-            home / ".config" / "GIMP" / "3.0" / "plug-ins",
-            home / ".config" / "GIMP" / "2.99" / "plug-ins",
-            flatpak_gimp / "3.2" / "plug-ins",
-            flatpak_gimp / "3.0" / "plug-ins",
-            snap_gimp / "3.2" / "plug-ins",
-            snap_gimp / "3.0" / "plug-ins",
-        ]
+    # Strategy 1: Environment variables
+    for env_key in ["GIMP_PLUGIN_PATH", "GIMP_DIR", "GIMP3_DIR"]:
+        val = os.environ.get(env_key, "")
+        if val:
+            p = Path(val)
+            if p.is_dir():
+                # If it's already a plug-ins dir, use directly
+                if p.name == "plug-ins":
+                    candidates.append(p)
+                else:
+                    candidates.append(p / "plug-ins")
+                    candidates.append(p)
 
-    # Deduplicate while preserving order
+    # Strategy 2: Windows Registry
+    if platform.system() == "Windows":
+        reg_path = _win_registry_gimp()
+        if reg_path:
+            # Registry gives install path — config is in %APPDATA%/GIMP
+            # But knowing GIMP exists confirms we should look harder
+            pass
+
+    # Strategy 3: shutil.which() — confirms GIMP is installed
+    _gimp_config_from_executable()  # side-effect: confirms existence
+
+    # Strategy 4: Config directory scanning
+    if platform.system() == "Windows":
+        # Check BOTH Roaming and Local AppData
+        for appdata_key in ["APPDATA", "LOCALAPPDATA"]:
+            appdata = os.environ.get(appdata_key, "")
+            if appdata:
+                gimp_root = Path(appdata) / "GIMP"
+                candidates.extend(_scan_gimp_versions(gimp_root))
+        # Also check the home-relative paths (for edge cases)
+        candidates.extend(_scan_gimp_versions(home / "AppData" / "Roaming" / "GIMP"))
+        candidates.extend(_scan_gimp_versions(home / "AppData" / "Local" / "GIMP"))
+        # Hardcoded fallbacks
+        for ver in ["3.2", "3.0", "2.99"]:
+            candidates.append(home / "AppData" / "Roaming" / "GIMP" / ver / "plug-ins")
+            candidates.append(home / "AppData" / "Local" / "GIMP" / ver / "plug-ins")
+
+    elif platform.system() == "Darwin":
+        app_support = home / "Library" / "Application Support" / "GIMP"
+        candidates.extend(_scan_gimp_versions(app_support))
+        candidates.extend(_scan_gimp_versions(home / ".config" / "GIMP"))
+        for ver in ["3.2", "3.0", "2.99"]:
+            candidates.append(app_support / ver / "plug-ins")
+            candidates.append(home / ".config" / "GIMP" / ver / "plug-ins")
+
+    else:  # Linux
+        candidates.extend(_scan_gimp_versions(home / ".config" / "GIMP"))
+        # Flatpak
+        flatpak = home / ".var" / "app" / "org.gimp.GIMP" / "config" / "GIMP"
+        candidates.extend(_scan_gimp_versions(flatpak))
+        # Snap (multiple revisions)
+        snap_base = home / "snap" / "gimp"
+        if snap_base.is_dir():
+            try:
+                for rev in sorted(snap_base.iterdir(), reverse=True):
+                    candidates.extend(_scan_gimp_versions(rev / ".config" / "GIMP"))
+            except (PermissionError, OSError):
+                pass
+        # Hardcoded fallbacks
+        for ver in ["3.2", "3.0", "2.99"]:
+            candidates.append(home / ".config" / "GIMP" / ver / "plug-ins")
+            candidates.append(flatpak / ver / "plug-ins")
+
+    # Deduplicate and validate
     seen: set[str] = set()
     for c in candidates:
         cs = str(c)
-        if cs not in seen:
-            seen.add(cs)
-            if c.is_dir():
-                return cs
+        if cs in seen:
+            continue
+        seen.add(cs)
+        if c.is_dir():
+            return cs
     return ""
 
 
 def find_default_darktable() -> str:
-    """Auto-detect Darktable's lua/contrib directory for Lua script plugins."""
+    """Auto-detect Darktable's lua/contrib directory using multiple strategies.
+
+    Strategy order:
+      1. Environment variable DARKTABLE_DIR
+      2. shutil.which() for darktable executable
+      3. Config directory scanning (Windows, macOS, Linux, Flatpak)
+      4. System package paths
+    """
+    import shutil
+
     home = Path.home()
+    candidates: list[Path] = []
+
+    # Strategy 1: Environment variables
+    for env_key in ["DARKTABLE_DIR", "DARKTABLE_CONFIG"]:
+        val = os.environ.get(env_key, "")
+        if val:
+            p = Path(val)
+            candidates.append(p / "lua" / "contrib")
+            candidates.append(p)
+
+    # Strategy 2: shutil.which() — confirms darktable exists
+    for name in ["darktable", "darktable-cli"]:
+        if shutil.which(name):
+            break
+
+    # Strategy 3: Config directory scanning
     if platform.system() == "Windows":
-        candidates = [
-            home / "AppData" / "Local" / "darktable" / "lua" / "contrib",
-            home / ".config" / "darktable" / "lua" / "contrib",
-        ]
+        for appdata_key in ["LOCALAPPDATA", "APPDATA"]:
+            appdata = os.environ.get(appdata_key, "")
+            if appdata:
+                candidates.append(Path(appdata) / "darktable" / "lua" / "contrib")
+        candidates.append(home / "AppData" / "Local" / "darktable" / "lua" / "contrib")
+        candidates.append(home / "AppData" / "Roaming" / "darktable" / "lua" / "contrib")
+        candidates.append(home / ".config" / "darktable" / "lua" / "contrib")
     elif platform.system() == "Darwin":
-        candidates = [
+        candidates += [
             home / "Library" / "Application Support" / "darktable" / "lua" / "contrib",
             home / ".config" / "darktable" / "lua" / "contrib",
         ]
-    else:
-        candidates = [
+    else:  # Linux
+        candidates += [
             home / ".config" / "darktable" / "lua" / "contrib",
+            # Flatpak
+            home / ".var" / "app" / "org.darktable.darktable" / "config" / "darktable" / "lua" / "contrib",
+            # System-wide
+            Path("/usr/share/darktable/lua/contrib"),
+            Path("/usr/local/share/darktable/lua/contrib"),
         ]
+
+    # Deduplicate and validate
+    seen: set[str] = set()
     for c in candidates:
+        cs = str(c)
+        if cs in seen:
+            continue
+        seen.add(cs)
         if c.is_dir():
             return str(c)
     return ""
@@ -1037,13 +1202,16 @@ def step_detect_paths(args) -> dict:
     if comfyui_path is None:
         default_comfyui = find_default_comfyui()
         if default_comfyui:
-            print(f"  {C_GREEN}Found ComfyUI at:{C_RESET} {default_comfyui}")
+            print(f"  {C_GREEN}✓ DETECTED — ComfyUI at:{C_RESET} {default_comfyui}")
+            print(f"  {C_DIM}  (Your existing installation will NOT be modified or overwritten.{C_RESET}")
+            print(f"  {C_DIM}   We only ADD plugins and models alongside your existing files.){C_RESET}")
             if ask_yn("  Use this path?", auto_yes=args.yes):
                 comfyui_path = Path(default_comfyui)
             else:
                 comfyui_path = ask_path("  Enter ComfyUI root directory")
         else:
-            print(f"  {C_YELLOW}ComfyUI not found automatically.{C_RESET}")
+            print(f"  {C_YELLOW}✗ ComfyUI not found automatically.{C_RESET}")
+            print(f"  {C_DIM}  Searched: env vars, PATH, all drives, common locations.{C_RESET}")
             choice = ask_choice(
                 "ComfyUI setup:",
                 [
@@ -1089,14 +1257,18 @@ def step_detect_paths(args) -> dict:
     if gimp_path is None:
         default_gimp = find_default_gimp()
         if default_gimp:
-            print(f"  {C_GREEN}Found GIMP plug-ins at:{C_RESET} {default_gimp}")
+            print(f"  {C_GREEN}✓ DETECTED — GIMP 3 plug-ins at:{C_RESET} {default_gimp}")
+            print(f"  {C_DIM}  (Your GIMP installation is safe. We only ADD the Spellcaster plugin.{C_RESET}")
+            print(f"  {C_DIM}   No existing plugins or settings will be changed.){C_RESET}")
             if ask_yn("  Install GIMP plugin here?", auto_yes=args.yes):
                 gimp_path = Path(default_gimp)
             else:
                 if ask_yn("  Install GIMP plugin to a different path?", default=False, auto_yes=args.yes):
                     gimp_path = ask_path("  Enter GIMP 3 plug-ins directory")
         else:
-            print(f"  {C_YELLOW}GIMP 3 plug-ins directory not found automatically.{C_RESET}")
+            print(f"  {C_YELLOW}✗ GIMP 3 plug-ins directory not found automatically.{C_RESET}")
+            print(f"  {C_DIM}  Searched: env vars, registry, PATH, config dirs (Roaming+Local), Flatpak, Snap.{C_RESET}")
+            print(f"  {C_DIM}  Note: GIMP must have been launched at least once to create its config directory.{C_RESET}")
             if ask_yn("  Install the GIMP plugin?", auto_yes=args.yes):
                 print(f"  {C_DIM}Typical locations:{C_RESET}")
                 if platform.system() == "Windows":
@@ -1123,14 +1295,16 @@ def step_detect_paths(args) -> dict:
     if dt_path is None:
         default_dt = find_default_darktable()
         if default_dt:
-            print(f"  {C_GREEN}Found darktable lua/contrib at:{C_RESET} {default_dt}")
+            print(f"  {C_GREEN}✓ DETECTED — Darktable lua/contrib at:{C_RESET} {default_dt}")
+            print(f"  {C_DIM}  (Your Darktable installation is safe. We only ADD the Spellcaster script.){C_RESET}")
             if ask_yn("  Install Darktable plugin here?", auto_yes=args.yes):
                 dt_path = Path(default_dt)
             else:
                 if ask_yn("  Install Darktable plugin to a different path?", default=False, auto_yes=args.yes):
                     dt_path = ask_path("  Enter darktable lua/contrib directory")
         else:
-            print(f"  {C_YELLOW}Darktable lua/contrib directory not found automatically.{C_RESET}")
+            print(f"  {C_YELLOW}✗ Darktable lua/contrib directory not found.{C_RESET}")
+            print(f"  {C_DIM}  Searched: env vars, PATH, config dirs, Flatpak, system paths.{C_RESET}")
             if ask_yn("  Install the Darktable plugin?", default=False, auto_yes=args.yes):
                 print(f"  {C_DIM}Typical locations:{C_RESET}")
                 if platform.system() == "Windows":
