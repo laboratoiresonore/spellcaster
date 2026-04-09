@@ -861,9 +861,174 @@ def _download_sillytavern(verbose=True):
         return None
 
 
+def _find_node():
+    """Find Node.js executable path, auto-installing if missing.
+
+    Returns the path to 'node' (or 'node.exe') or None.
+    """
+    # 1) Already on PATH?
+    node = 'node'
+    try:
+        r = subprocess.run([node, '--version'], capture_output=True, check=True)
+        print(f"  [deps] Node.js found: {r.stdout.decode().strip()}")
+        return node
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
+
+    # 2) Windows: check common install locations
+    if sys.platform == 'win32':
+        for candidate in [
+            os.path.expandvars(r'%ProgramFiles%\nodejs\node.exe'),
+            os.path.expandvars(r'%ProgramFiles(x86)%\nodejs\node.exe'),
+            os.path.expandvars(r'%APPDATA%\..\Local\Programs\nodejs\node.exe'),
+            os.path.expandvars(r'%LOCALAPPDATA%\Programs\nodejs\node.exe'),
+        ]:
+            if os.path.isfile(candidate):
+                print(f"  [deps] Node.js found at {candidate}")
+                return candidate
+
+    # 3) Try to auto-install
+    print("  [deps] Node.js not found — attempting auto-install...")
+    if sys.platform == 'win32':
+        return _install_node_windows()
+    else:
+        return _install_node_unix()
+
+
+def _install_node_windows():
+    """Install Node.js on Windows via winget, then fallback to direct download."""
+    # Try winget first (available on Windows 10 1709+)
+    try:
+        print("  [deps] Trying: winget install OpenJS.NodeJS.LTS ...")
+        subprocess.run(
+            ['winget', 'install', '--id', 'OpenJS.NodeJS.LTS',
+             '--accept-source-agreements', '--accept-package-agreements',
+             '-e', '--silent'],
+            check=True, timeout=300)
+        # winget installs to PATH but current process doesn't see it yet
+        # Check the standard location
+        prog = os.path.expandvars(r'%ProgramFiles%\nodejs\node.exe')
+        if os.path.isfile(prog):
+            print(f"  [deps] Node.js installed via winget at {prog}")
+            return prog
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        print(f"  [deps] winget install failed ({e}), trying direct download...")
+
+    # Fallback: download the MSI and run it silently
+    import tempfile
+    node_ver = 'v22.15.0'
+    arch = 'x64' if sys.maxsize > 2**32 else 'x86'
+    msi_url = f'https://nodejs.org/dist/{node_ver}/node-{node_ver}-{arch}.msi'
+    msi_path = os.path.join(tempfile.gettempdir(), f'node-{node_ver}-{arch}.msi')
+
+    try:
+        print(f"  [deps] Downloading Node.js {node_ver} from nodejs.org ...")
+        urllib.request.urlretrieve(msi_url, msi_path)
+        print(f"  [deps] Installing Node.js (silent MSI) ...")
+        subprocess.run(
+            ['msiexec', '/i', msi_path, '/qn', '/norestart'],
+            check=True, timeout=300)
+        prog = os.path.expandvars(r'%ProgramFiles%\nodejs\node.exe')
+        if os.path.isfile(prog):
+            print(f"  [deps] Node.js installed at {prog}")
+            return prog
+    except Exception as e:
+        print(f"  [deps] MSI install failed: {e}")
+
+    print("  [deps] Could not auto-install Node.js.")
+    print("  [deps] Please install manually from https://nodejs.org/")
+    return None
+
+
+def _install_node_unix():
+    """Install Node.js on Linux/macOS via package manager."""
+    managers = [
+        # Ubuntu/Debian
+        (['sudo', 'apt-get', 'install', '-y', 'nodejs', 'npm'], 'apt'),
+        # macOS Homebrew
+        (['brew', 'install', 'node'], 'brew'),
+        # Fedora/RHEL
+        (['sudo', 'dnf', 'install', '-y', 'nodejs'], 'dnf'),
+    ]
+    for cmd, name in managers:
+        try:
+            # Check if the package manager exists first
+            subprocess.run([cmd[0] if name != 'apt' else 'apt-get',
+                            '--version'],
+                           capture_output=True, check=True)
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            continue
+
+        try:
+            print(f"  [deps] Installing Node.js via {name}...")
+            subprocess.run(cmd, check=True, timeout=120)
+            # Verify
+            r = subprocess.run(['node', '--version'], capture_output=True)
+            if r.returncode == 0:
+                print(f"  [deps] Node.js installed: {r.stdout.decode().strip()}")
+                return 'node'
+        except Exception as e:
+            print(f"  [deps] {name} install failed: {e}")
+
+    print("  [deps] Could not auto-install Node.js.")
+    print("  [deps] Please install manually from https://nodejs.org/")
+    return None
+
+
+def _ensure_npm_install(st_dir, node='node', verbose=True):
+    """Run npm install in the SillyTavern directory if node_modules is missing or stale."""
+    nm_dir = os.path.join(st_dir, 'node_modules')
+    pkg_json = os.path.join(st_dir, 'package.json')
+    pkg_lock = os.path.join(st_dir, 'package-lock.json')
+
+    need_install = False
+    if not os.path.isdir(nm_dir):
+        if verbose:
+            print("  [st] node_modules not found — running npm install...")
+        need_install = True
+    elif os.path.isfile(pkg_lock):
+        # Re-install if package-lock.json is newer than node_modules
+        lock_mtime = os.path.getmtime(pkg_lock)
+        nm_mtime = os.path.getmtime(nm_dir)
+        if lock_mtime > nm_mtime:
+            if verbose:
+                print("  [st] package-lock.json updated — running npm install...")
+            need_install = True
+
+    if not need_install:
+        return True
+
+    # Determine npm path — on Windows, npm might be a .cmd next to node
+    npm = 'npm'
+    if sys.platform == 'win32' and node != 'node':
+        node_dir = os.path.dirname(node)
+        npm_cmd = os.path.join(node_dir, 'npm.cmd')
+        if os.path.isfile(npm_cmd):
+            npm = npm_cmd
+
+    try:
+        if verbose:
+            print(f"  [st] Running npm install in {st_dir} ...")
+        subprocess.run(
+            [npm, 'install', '--no-audit', '--no-fund'],
+            cwd=st_dir, check=True, timeout=300)
+        if verbose:
+            print("  [st] npm install completed successfully")
+        return True
+    except subprocess.TimeoutExpired:
+        if verbose:
+            print("  [st] npm install timed out (5 min) — try running it manually")
+        return False
+    except Exception as e:
+        if verbose:
+            print(f"  [st] npm install failed: {e}")
+        return False
+
+
 def launch_sillytavern(st_dir, verbose=True):
     """Launch SillyTavern in the background.
 
+    Auto-installs Node.js if missing, runs npm install if needed.
     Returns the Popen object, or None if launch failed.
     """
     global _st_process
@@ -876,14 +1041,15 @@ def launch_sillytavern(st_dir, verbose=True):
             print("  [st] ERROR: server.js not found")
         return None
 
-    # Find Node.js
-    node = 'node'
-    try:
-        subprocess.run([node, '--version'], capture_output=True, check=True)
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        if verbose:
-            print("  [st] ERROR: Node.js not found. Install from https://nodejs.org/")
+    # Find or install Node.js
+    node = _find_node()
+    if not node:
         return None
+
+    # Ensure npm dependencies are installed
+    if not _ensure_npm_install(st_dir, node=node, verbose=verbose):
+        if verbose:
+            print("  [st] WARNING: npm install failed, trying to launch anyway...")
 
     try:
         kwargs = {}
@@ -1102,13 +1268,22 @@ def _generate_all_assets(guild_url, comfyui_url, kobold_url=""):
 
 
 def _generate_wizard_name(char, kobold_url):
-    """Generate a wizard name for a character via the LLM."""
-    context = (
-        f"Context: We are naming magical avatars.\n"
-        f"Command: Invent a single, very short, creative fantasy name "
-        f"(e.g. Zephyr) for a wizard specializing in: {char.get('subtext', 'magic')}. "
-        f"Do NOT use titles like 'Master of'.\nName:"
-    )
+    """Generate a wizard name for a character via the LLM.
+
+    In NSFW mode, uses a flirtier, more suggestive naming prompt
+    (populated by build_nsfw.py into server._NSFW_NAME_GEN_PROMPT).
+    """
+    import server as _srv
+    if getattr(_srv, 'NSFW_MODE', False) and getattr(_srv, '_NSFW_NAME_GEN_PROMPT', ''):
+        context = _srv._NSFW_NAME_GEN_PROMPT.format(
+            subtext=char.get('subtext', 'magic'))
+    else:
+        context = (
+            f"Context: We are naming magical avatars.\n"
+            f"Command: Invent a single, very short, creative fantasy name "
+            f"(e.g. Zephyr) for a wizard specializing in: {char.get('subtext', 'magic')}. "
+            f"Do NOT use titles like 'Master of'.\nName:"
+        )
     try:
         payload = json.dumps({
             "prompt": context,
@@ -1212,6 +1387,7 @@ def main():
     server.COMFYUI_URL = comfyui_url
     server.KOBOLD_URL = kobold_url
     server.PRIVACY_CLEANUP = config.get("privacy_cleanup", True)
+    server.NSFW_MODE = bool(_GUILD_AUTH_TOKEN)
 
     # ── Initialize server (model detection, LoRA scan) ───────────────
     # Pass URL explicitly to avoid any global-timing issues
@@ -1278,5 +1454,5 @@ def main():
         print("  [server] Goodbye!")
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

@@ -72,6 +72,15 @@ COMFYUI_URL = DEFAULT_COMFYUI_URL
 KOBOLD_URL = DEFAULT_KOBOLD_URL
 VERSION = "1.0.0"
 PRIVACY_CLEANUP = True   # Default ON — delete inputs+outputs from ComfyUI after delivery
+NSFW_MODE = False        # Set by launcher when running the NSFW edition
+
+# ── NSFW personality overlay ─────────────────────────────────────────
+# Populated by build_nsfw.py. In SFW builds these stay empty/None.
+# ── NSFW_PERSONALITY_INJECT_ANCHOR ── (do not remove — build_nsfw.py marker)
+_NSFW_WIZARD_PERSONA = ""
+_NSFW_NAME_GEN_PROMPT = ""
+_NSFW_META_SYSTEM_ADDENDUM = ""
+_NSFW_ARCH_PROFILES = {}
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -819,7 +828,12 @@ def fetch_all_characters(comfy_url=None):
             else:
                 march = "sd15"
 
-        profile = ARCH_PROFILES.get(march, ARCH_PROFILES["sd15"])
+        # NSFW arch profiles override SFW when available
+        if NSFW_MODE and _NSFW_ARCH_PROFILES:
+            profile = _NSFW_ARCH_PROFILES.get(march,
+                      ARCH_PROFILES.get(march, ARCH_PROFILES["sd15"]))
+        else:
+            profile = ARCH_PROFILES.get(march, ARCH_PROFILES["sd15"])
         hue = int(hashlib.md5(mname.encode('utf-8')).hexdigest(), 16) % 360
         subtext = f"{display} — {profile['subtext_hint']}"
 
@@ -1491,6 +1505,18 @@ _PROMPT_STYLES = [
 ]
 
 
+# ═══════════════════════════════════════════════════════════════════════
+#  NSFW Appearance Pools — injected by build_nsfw.py, used when
+#  NSFW_MODE is True.  SFW builds have empty lists here.
+# ═══════════════════════════════════════════════════════════════════════
+
+# ── NSFW_APPEARANCE_INJECT_ANCHOR ── (do not remove — build_nsfw.py marker)
+_NSFW_APPEARANCE_CORE = []
+_NSFW_APPEARANCE_DISCOVERED = []
+_NSFW_PROMPT_STYLES = []
+_NSFW_BG_PROMPTS = []
+
+
 def _build_avatar_prompt(char):
     """Build a rich character-specific avatar prompt from the character metadata.
 
@@ -1498,6 +1524,10 @@ def _build_avatar_prompt(char):
     collision-free for the 6 studios).  Discovered comfyui_model wizards
     draw from a much larger pool with randomized prompt styles so the
     guild fills with diverse, visually interesting mages.
+
+    In NSFW_MODE, appearance pools and prompt styles are swapped to their
+    NSFW equivalents (populated by build_nsfw.py).  Falls back to SFW pools
+    if NSFW pools are empty (e.g. during development).
     """
     name = char.get('name', 'wizard')
     subtext = char.get('subtext', 'magical specialist')
@@ -1506,37 +1536,49 @@ def _build_avatar_prompt(char):
 
     seed_hash = int(hashlib.md5(char_id.encode('utf-8')).hexdigest(), 16)
 
+    # Select pool set — NSFW when available, SFW fallback
+    use_nsfw = NSFW_MODE and _NSFW_APPEARANCE_CORE and _NSFW_PROMPT_STYLES
+    core_pool = _NSFW_APPEARANCE_CORE if use_nsfw else _APPEARANCE_CORE
+    disc_pool = (_NSFW_APPEARANCE_DISCOVERED if use_nsfw and _NSFW_APPEARANCE_DISCOVERED
+                 else _APPEARANCE_DISCOVERED)
+    styles = _NSFW_PROMPT_STYLES if use_nsfw else _PROMPT_STYLES
+
     # Pick appearance from the right pool
     if char_type == 'comfyui_model':
         # Discovered model wizards — big diverse pool + varied prompt styles
-        appearance = _APPEARANCE_DISCOVERED[seed_hash % len(_APPEARANCE_DISCOVERED)]
-        style_idx = (seed_hash // len(_APPEARANCE_DISCOVERED)) % len(_PROMPT_STYLES)
-        framing, style_tail = _PROMPT_STYLES[style_idx]
+        appearance = disc_pool[seed_hash % len(disc_pool)]
+        style_idx = (seed_hash // len(disc_pool)) % len(styles)
+        framing, style_tail = styles[style_idx]
     else:
         # Studio + model-family wizards — core pool, classic framing
-        appearance = _APPEARANCE_CORE[seed_hash % len(_APPEARANCE_CORE)]
-        framing = "extreme close-up face portrait"
-        style_tail = (
-            "dramatic lighting, magical aura, "
-            "highly detailed face filling the frame, intense expressive eyes, "
-            "painterly digital art style, headshot composition, "
-            "dark atmospheric background, face takes up 80 percent of image"
-        )
+        appearance = core_pool[seed_hash % len(core_pool)]
+        framing, style_tail = styles[0]  # first style = default/close-up
 
     # ── Archetype / specialisation hint ──────────────────────────────
     studio = _STUDIO_BY_ID.get(char_id)
     if studio and studio.get('archetype'):
         hint = studio['archetype']
     else:
-        archetype_hints = {
-            'text_to_image': 'a radiant conjurer of visions, surrounded by swirling paint and light',
-            'image_to_image': 'a transmutation alchemist, hands glowing with transformative energy',
-            'inpaint': 'a meticulous artisan restoring ancient paintings with precision magic',
-            'upscale': 'a grand elder wizard wielding a crystalline magnifying lens, enlarging tiny worlds',
-            'face_swap': 'a masked shapeshifter with shifting features, identity magic',
-            'rembg': 'an ethereal figure phasing between dimensions, partially transparent',
-            'video': 'a chronomancer weaving threads of time, motion captured in arcane runes',
-        }
+        if use_nsfw:
+            archetype_hints = {
+                'text_to_image': 'a seductive conjurer of forbidden visions, wreathed in swirling luminous body paint',
+                'image_to_image': 'a sensual transmutation alchemist, skin glistening with arcane oils',
+                'inpaint': 'a teasing artisan restoring erotic frescoes with deft enchanted fingertips',
+                'upscale': 'a voluptuous grand elder wielding a shimmering magnifying lens, skin aglow',
+                'face_swap': 'a sultry shapeshifter mid-transformation, features shifting provocatively',
+                'rembg': 'an ethereal figure half-phased between dimensions, translucent robes slipping away',
+                'video': 'a smouldering chronomancer weaving threads of time, every motion a slow tease',
+            }
+        else:
+            archetype_hints = {
+                'text_to_image': 'a radiant conjurer of visions, surrounded by swirling paint and light',
+                'image_to_image': 'a transmutation alchemist, hands glowing with transformative energy',
+                'inpaint': 'a meticulous artisan restoring ancient paintings with precision magic',
+                'upscale': 'a grand elder wizard wielding a crystalline magnifying lens, enlarging tiny worlds',
+                'face_swap': 'a masked shapeshifter with shifting features, identity magic',
+                'rembg': 'an ethereal figure phasing between dimensions, partially transparent',
+                'video': 'a chronomancer weaving threads of time, motion captured in arcane runes',
+            }
 
         hint = ''
         id_lower = char_id.lower()
@@ -1556,6 +1598,24 @@ def _build_avatar_prompt(char):
         f"{style_tail}"
     )
     return base_prompt
+
+
+def _build_background_prompt():
+    """Build the guild tavern background prompt (NSFW-aware).
+
+    In NSFW_MODE, selects from a pool of provocative tavern scenes.
+    In SFW mode, returns the classic cozy tavern prompt.
+    """
+    if NSFW_MODE and _NSFW_BG_PROMPTS:
+        idx = int(hashlib.md5(b"guild_bg").hexdigest(), 16) % len(_NSFW_BG_PROMPTS)
+        return _NSFW_BG_PROMPTS[idx]
+
+    return (
+        "interior of a magical wizard guild tavern, "
+        "warm candlelight, wooden beams, mystical artifacts on shelves, "
+        "medieval fantasy atmosphere, cozy, detailed, "
+        "wide angle, concept art, high quality"
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -2029,13 +2089,14 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
     except Exception as e:
         return {"queued": False, "reason": f"ComfyUI queue failed: {e}"}
 
-    # Track in our queue
+    # Track in our queue (store workflow for privacy cleanup on completion)
     _ANIM_QUEUE[char_id] = {
         "prompt_id": prompt_id,
         "status": "queued",
         "result_url": None,
         "error": None,
         "output_nid": _find_output_node(workflow),
+        "_workflow": workflow,
     }
     _save_anim_queue()
     print(f"  [Guild] Queued animated avatar for {char_id} (prompt_id={prompt_id})")
@@ -2070,6 +2131,13 @@ def _poll_animated_avatars(comfy_url):
                     entry["error"] = err
                     _save_anim_queue()
                     print(f"  [Guild] Animated avatar FAILED for {char_id}: {err}")
+                    # Privacy cleanup: scrub uploaded inputs even on failure
+                    if PRIVACY_CLEANUP:
+                        try:
+                            wf = entry.get("_workflow", {})
+                            _privacy_cleanup(comfy_url, wf, {"urls": []})
+                        except Exception:
+                            pass
                     continue
 
                 # Look for output
@@ -2105,10 +2173,25 @@ def _poll_animated_avatars(comfy_url):
                     _save_generated_assets()
                     _save_anim_queue()
                     print(f"  [Guild] Animated avatar DONE for {char_id}")
+                    # Privacy cleanup: scrub inputs + output from ComfyUI
+                    if PRIVACY_CLEANUP:
+                        try:
+                            wf = entry.get("_workflow", {})
+                            _privacy_cleanup(comfy_url, wf,
+                                             {"urls": [result_url]})
+                        except Exception:
+                            pass
                 else:
                     entry["status"] = "error"
                     entry["error"] = "No output found in ComfyUI history"
                     _save_anim_queue()
+                    # Still try to cleanup inputs even on error
+                    if PRIVACY_CLEANUP:
+                        try:
+                            wf = entry.get("_workflow", {})
+                            _privacy_cleanup(comfy_url, wf, {"urls": []})
+                        except Exception:
+                            pass
         except Exception:
             pass  # ComfyUI unreachable or still processing
 
@@ -2130,11 +2213,14 @@ _ANIM_POLL_THREAD = None
 
 
 def _dispatch_txt2img(prompt, negative, width, height, comfy_url,
-                      model_name=None, model_arch=None):
+                      model_name=None, model_arch=None, skip_loras=False):
     """Generate a txt2img via ComfyUI.
 
     If model_name/model_arch are provided, use that specific model.
     Otherwise auto-detect the best available model.
+    skip_loras: If True, don't apply architecture autoset_loras.
+                Use for internal asset generation (avatars, backgrounds)
+                to avoid LoRA shape mismatches.
     """
     if model_name and model_arch:
         ckpt, arch_key = model_name, model_arch
@@ -2155,11 +2241,12 @@ def _dispatch_txt2img(prompt, negative, width, height, comfy_url,
             negative = f"{negative}, {arch.quality_negative}"
 
         loras = None
-        autoset_loras = getattr(arch, 'autoset_loras', {})
-        if 'txt2img' in autoset_loras:
-            loras = [{"name": l[0], "strength_model": l[1],
-                       "strength_clip": l[2]}
-                      for l in autoset_loras['txt2img']]
+        if not skip_loras:
+            autoset_loras = getattr(arch, 'autoset_loras', {})
+            if 'txt2img' in autoset_loras:
+                loras = [{"name": l[0], "strength_model": l[1],
+                           "strength_clip": l[2]}
+                          for l in autoset_loras['txt2img']]
 
         workflow = build_txt2img(preset, prompt, negative, seed, loras=loras)
     else:
@@ -2187,6 +2274,14 @@ def _dispatch_txt2img(prompt, negative, width, height, comfy_url,
     print(f"  [Guild] Dispatching txt2img: {arch_key} / {ckpt} / {width}x{height} / seed={seed}")
 
     result = _dispatch_workflow(workflow, comfy_url, timeout=120)
+
+    # Privacy cleanup: scrub inputs + outputs from ComfyUI server
+    if PRIVACY_CLEANUP:
+        try:
+            _privacy_cleanup(comfy_url, workflow, result)
+        except Exception:
+            pass
+
     if result.get("type") == "images" and result.get("urls"):
         return result["urls"][0]
     raise Exception("No image returned from ComfyUI.")
@@ -2382,11 +2477,14 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(200, {"version": VERSION})
         elif self.path == '/api/system_prompt':
             meta_prompt = build_meta_system_prompt(NODES_CACHE)
+            nsfw_addendum = ""
+            if NSFW_MODE and _NSFW_META_SYSTEM_ADDENDUM:
+                nsfw_addendum = f"\n\n{_NSFW_META_SYSTEM_ADDENDUM}"
             prompt = (
                 "You are an eccentric, magical AI companion inside The Wizard Guild "
                 "(a comfyui GUI). The user is speaking to you. You help them conjure "
                 "images or edit them.\n\n"
-                f"{meta_prompt}\n\n"
+                f"{meta_prompt}{nsfw_addendum}\n\n"
                 "CRITICAL: If the user provides parameters and confirms they are ready, "
                 "you MUST output a JSON block wrapped in ```json that contains exactly "
                 "what to execute.\n"
@@ -2437,12 +2535,18 @@ class GuildHandler(SimpleHTTPRequestHandler):
                         "list the compatible LoRAs with their purposes.\n"
                     )
 
+                if NSFW_MODE and _NSFW_WIZARD_PERSONA:
+                    persona_intro = _NSFW_WIZARD_PERSONA
+                else:
+                    persona_intro = (
+                        "You are a colorful, eccentric wizard inside The Wizard Guild — "
+                        "a magical ComfyUI interface. You have a distinct personality and "
+                        "you LOVE your craft. Be playful, dramatic, witty — crack jokes, "
+                        "use magical metaphors, express excitement about the user's ideas. "
+                        "You're a real character, not a boring assistant."
+                    )
                 prompt = (
-                    "You are a colorful, eccentric wizard inside The Wizard Guild — "
-                    "a magical ComfyUI interface. You have a distinct personality and "
-                    "you LOVE your craft. Be playful, dramatic, witty — crack jokes, "
-                    "use magical metaphors, express excitement about the user's ideas. "
-                    "You're a real character, not a boring assistant.\n\n"
+                    f"{persona_intro}\n\n"
                     f"{personality_block}"
                     f"{studio['system_prompt']}\n"
                     f"{lora_block}\n"
@@ -2583,7 +2687,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
-        global CHARS_CACHE, NODES_CACHE  # needed for /api/reinitialize
+        global CHARS_CACHE, NODES_CACHE, PRIVACY_CLEANUP
         content_len = int(self.headers.get('Content-Length', 0))
         if content_len > MAX_POST_BYTES:
             return self.end_json(413, {"error": "Payload too large"})
@@ -2627,7 +2731,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
             try:
                 img_url = _dispatch_txt2img(
                     prompt_text, negative, 512, 512, comfy,
-                    model_name=use_model, model_arch=use_arch)
+                    model_name=use_model, model_arch=use_arch,
+                    skip_loras=True)
                 _GENERATED_ASSETS.setdefault(char_id, {})["avatar_url"] = img_url
                 _save_generated_assets()
                 return self.end_json(200, {"avatar_url": img_url})
@@ -2672,7 +2777,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
 
         # -- /api/background_generate --
         elif self.path == '/api/background_generate':
-            BG_STYLES = {
+            BG_STYLES_SFW = {
                 "tavern": "interior of a magical wizard guild tavern, warm candlelight, wooden beams, mystical artifacts on shelves, medieval fantasy atmosphere, cozy and inviting, tankards and spell scrolls on tables",
                 "library": "vast arcane library interior, towering bookshelves reaching to vaulted ceiling, floating glowing books, magical ladders, warm reading nooks, ancient tomes, dust motes in light beams, stained glass windows",
                 "tower": "interior of a wizard tower, spiral stone staircase, glowing runic inscriptions on walls, orbs of light floating, magical instruments, star maps on tables, moonlight through arched windows",
@@ -2682,6 +2787,9 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "forge": "magical forge interior, glowing enchanted anvil, molten magical metal flowing, sparks of arcane energy, weapon racks with enchanted swords, bellows, rune-carved tools, ember-lit atmosphere",
                 "garden": "ethereal crystal garden, floating prismatic crystals, light refracting into rainbows, crystalline flowers, reflective pools, amethyst and quartz formations, magical mist, serene and otherworldly",
             }
+            # ── NSFW_BG_STYLES_INJECT_ANCHOR ── (do not remove — build_nsfw.py marker)
+            BG_STYLES_NSFW = {}
+            BG_STYLES = BG_STYLES_NSFW if (NSFW_MODE and BG_STYLES_NSFW) else BG_STYLES_SFW
             style = data.get('style', 'tavern')
             custom_prompt = data.get('custom_prompt', '')
             model_name = data.get('model', 'auto')
@@ -2689,7 +2797,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
             if style == 'custom' and custom_prompt:
                 base_prompt = custom_prompt
             else:
-                base_prompt = BG_STYLES.get(style, BG_STYLES['tavern'])
+                base_prompt = BG_STYLES.get(style, BG_STYLES.get('tavern', list(BG_STYLES.values())[0]))
 
             prompt_text = f"{base_prompt}, wide angle shot, detailed environment concept art, high quality, atmospheric lighting, fantasy illustration"
             negative = "text, watermark, blurry, people, characters, faces, hands, low quality, jpeg artifacts"
@@ -2722,11 +2830,18 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     seed = random.randint(1, 1000000000)
                     workflow = build_txt2img(preset, prompt_text, negative, seed)
                     result = _dispatch_workflow(workflow, comfy)
+                    # Privacy cleanup: scrub outputs from ComfyUI server
+                    if PRIVACY_CLEANUP:
+                        try:
+                            _privacy_cleanup(comfy, workflow, result)
+                        except Exception:
+                            pass
                     if result.get("type") == "images" and result.get("urls"):
                         return self.end_json(200, {"bg_url": result["urls"][0]})
                     raise Exception("No image returned from ComfyUI.")
                 else:
-                    img_url = _dispatch_txt2img(prompt_text, negative, 1024, 576, comfy)
+                    img_url = _dispatch_txt2img(prompt_text, negative, 1024, 576, comfy,
+                                               skip_loras=True)
                     return self.end_json(200, {"bg_url": img_url})
             except Exception as e:
                 return self.end_json(500, {"error": str(e)})
@@ -2739,7 +2854,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
                         prompt_text = _build_avatar_prompt(char)
                         negative = "text, watermark, blurry, deformed, ugly, low quality, frame, border"
                         print(f"  [Batch] Generating avatar for: {char.get('name', char['id'])}")
-                        img_url = _dispatch_txt2img(prompt_text, negative, 512, 512, comfy)
+                        img_url = _dispatch_txt2img(prompt_text, negative, 512, 512, comfy,
+                                                   skip_loras=True)
                         _BATCH_RESULTS.append({"id": char['id'], "avatar_url": img_url, "status": "ok"})
                         print(f"  [Batch] Done: {char.get('name', char['id'])} ({len(_BATCH_RESULTS)}/{_BATCH_STATE['total']})")
                     except Exception as e:
@@ -2748,13 +2864,9 @@ class GuildHandler(SimpleHTTPRequestHandler):
 
                 try:
                     print("  [Batch] Generating tavern background...")
-                    bg_prompt = (
-                        "interior of a magical wizard guild tavern, "
-                        "warm candlelight, wooden beams, mystical artifacts on shelves, "
-                        "medieval fantasy atmosphere, cozy, detailed, "
-                        "wide angle, concept art, high quality"
-                    )
-                    bg_url = _dispatch_txt2img(bg_prompt, "text, watermark, blurry, people", 1024, 576, comfy)
+                    bg_prompt = _build_background_prompt()
+                    bg_url = _dispatch_txt2img(bg_prompt, "text, watermark, blurry, people", 1024, 576, comfy,
+                                               skip_loras=True)
                     _BATCH_RESULTS.append({"id": "_background", "bg_url": bg_url, "status": "ok"})
                     print("  [Batch] Background done")
                 except Exception as e:
@@ -2995,7 +3107,6 @@ class GuildHandler(SimpleHTTPRequestHandler):
 
         # -- /api/settings -- update Guild settings (privacy, etc.)
         elif self.path == '/api/settings':
-            global PRIVACY_CLEANUP
             changed = []
 
             if 'privacy_cleanup' in data:
@@ -3073,167 +3184,4 @@ class GuildHandler(SimpleHTTPRequestHandler):
             removed_ids = {c['id'] for c in CHARS_CACHE
                            if c.get('type') != PRESERVED_TYPE}
 
-            # Clean _STUDIO_BY_ID — remove non-studio entries
-            for rid in removed_ids:
-                _STUDIO_BY_ID.pop(rid, None)
-
-            # Clean generated assets
-            if keep_core_assets:
-                for rid in removed_ids:
-                    _GENERATED_ASSETS.pop(rid, None)
-            else:
-                _GENERATED_ASSETS.clear()
-            _save_generated_assets()
-
-            # Clear banished IDs (fresh start)
-            _BANISHED_IDS.clear()
-            _save_banished_ids()
-
-            # Nuke custom wizard persistence
-            if os.path.exists(_CUSTOM_WIZARDS_PATH):
-                try:
-                    os.remove(_CUSTOM_WIZARDS_PATH)
-                except Exception:
-                    pass
-
-            # Clear LoRA registry (will be rebuilt)
-            _LORA_REGISTRY.clear()
-            _LORA_INTERROGATED.clear()
-            _save_lora_registry()
-
-            # Clear animation queue, LoRA toggles, wizard identities
-            _ANIM_QUEUE.clear()
-            _save_anim_queue()
-            _LORA_TOGGLES.clear()
-            _save_lora_toggles()
-            _WIZARD_IDENTITIES.clear()
-            _save_wizard_identities()
-
-            # Re-run FULL character discovery — this handles:
-            #   1. Studio characters (always present)
-            #   2. Model-family wizards (LTX2/WAN/SeedVR2) — gated on ComfyUI models
-            #   3. Per-model wizards (comfyui_model) — detected from ComfyUI
-            #   4. Spellcaster nodes
-            new_chars, new_nodes = fetch_all_characters(comfy_url=comfy)
-            CHARS_CACHE = new_chars
-            NODES_CACHE = new_nodes
-
-            new_detected = sum(1 for c in CHARS_CACHE
-                               if c.get('type') != PRESERVED_TYPE)
-            studio_count = sum(1 for c in CHARS_CACHE
-                               if c.get('type') == PRESERVED_TYPE)
-
-            # Rebuild LoRA registry in background
-            threading.Thread(
-                target=_build_lora_registry,
-                args=(comfy,),
-                daemon=True
-            ).start()
-
-            print(f"  [Reinit] Removed {old_nonstudio} non-core wizards, "
-                  f"re-detected {new_detected} from ComfyUI "
-                  f"(studio: {studio_count}, total: {len(CHARS_CACHE)})")
-
-            return self.end_json(200, {
-                "status": "reinitialized",
-                "removed": old_nonstudio,
-                "core_kept": studio_count,
-                "new_detected": new_detected,
-                "total": len(CHARS_CACHE),
-            })
-
-        # -- /api/batch_status (POST alias) --
-        elif self.path == '/api/batch_status':
-            return self.end_json(200, {
-                "running": _BATCH_STATE.get("running", False),
-                "results": list(_BATCH_RESULTS),
-                "completed": len(_BATCH_RESULTS),
-            })
-
-        # -- /api/build -- call a build_* function from _workflows_v2
-        elif self.path == '/api/build':
-            fn_name = data.get('build_fn')
-            params = data.get('params', {})
-            if not fn_name:
-                return self.end_json(400, {"error": "Missing build_fn"})
-            try:
-                result = _build_and_dispatch(fn_name, params, comfy)
-                if result.get('type') == 'images' and result.get('urls'):
-                    return self.end_json(200, {
-                        "mock_img": result['urls'][0],
-                        "all_images": result['urls'],
-                        "prompt_id": result.get('prompt_id')
-                    })
-                elif result.get('type') == 'videos' and result.get('urls'):
-                    return self.end_json(200, {
-                        "mock_img": result['urls'][0],
-                        "all_videos": result['urls'],
-                        "prompt_id": result.get('prompt_id')
-                    })
-                else:
-                    return self.end_json(200, result)
-            except Exception as e:
-                return self.end_json(500, {"error": str(e)})
-
-        # -- /api/execute -- routes build_fn payloads from LLM chat
-        elif self.path == '/api/execute':
-            build_fn = data.get('build_fn')
-            params = data.get('params', {})
-            if build_fn:
-                try:
-                    result = _build_and_dispatch(build_fn, params, comfy)
-                    if result.get('type') == 'images' and result.get('urls'):
-                        return self.end_json(200, {
-                            "mock_img": result['urls'][0],
-                            "all_images": result['urls'],
-                            "prompt_id": result.get('prompt_id')
-                        })
-                    elif result.get('type') == 'videos' and result.get('urls'):
-                        return self.end_json(200, {
-                            "mock_img": result['urls'][0],
-                            "all_videos": result['urls'],
-                            "prompt_id": result.get('prompt_id')
-                        })
-                    else:
-                        return self.end_json(200, result)
-                except Exception as e:
-                    return self.end_json(500, {"error": str(e)})
-            else:
-                return self.end_json(400, {
-                    "error": "Missing build_fn. Expected {build_fn: '...', params: {...}}"})
-
-        else:
-            return self.end_json(404, {"error": f"Unknown endpoint: {self.path}"})
-
-    def do_OPTIONS(self):
-        """Handle CORS preflight requests."""
-        self.send_response(204)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        self.end_headers()
-
-    def translate_path(self, path):
-        root = os.path.dirname(os.path.abspath(__file__))
-        path = path.split('?', 1)[0]
-        path = path.split('#', 1)[0]
-        if path.startswith('/'):
-            path = path[1:]
-        return os.path.join(root, path)
-
-    def log_message(self, format, *args):
-        """Quieter logging — skip noisy static asset requests."""
-        msg = format % args
-        if '/static/' not in msg and '/api/avatar/' not in msg:
-            print(f"  {msg}")
-
-
-if __name__ == "__main__":
-    _server_init()   # detect models + LoRAs with current COMFYUI_URL
-    print(f"Starting The Wizard Guild on port {PORT}...")
-    httpd = HTTPServer(('0.0.0.0', PORT), GuildHandler)
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    httpd.server_close()
+            # Clean _STUDIO_BY_ID �
