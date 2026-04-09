@@ -545,7 +545,7 @@ def _auto_update():
                     blob = r2.read()
                     # Scrub ALL NTFS null-byte corruption from text files
                     # (NTFS can embed nulls mid-file AND append trailing nulls)
-                    if remainder.endswith((".py", ".css", ".json", ".md", ".txt")):
+                    if remainder.endswith((".py", ".js", ".jsx", ".css", ".json", ".md", ".txt", ".html")):
                         blob = blob.replace(b"\x00", b"")
                     tmp.write_bytes(blob)
                 # Always stage .py files — never replace running Python modules
@@ -19792,7 +19792,7 @@ class Spellcaster(Gimp.PlugIn):
                         with urllib.request.urlopen(req_dl, timeout=60) as r2:
                             blob = r2.read()
                             # Scrub NTFS null-byte corruption from text files
-                            if remainder.endswith((".py", ".css", ".json", ".md", ".txt")):
+                            if remainder.endswith((".py", ".js", ".jsx", ".css", ".json", ".md", ".txt", ".html")):
                                 blob = blob.replace(b"\x00", b"")
                             tmp.write_bytes(blob)
                         # Always stage .py files — never replace running Python

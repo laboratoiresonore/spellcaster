@@ -409,15 +409,12 @@ def check_for_updates(verbose=True):
         return False
 
     # Step 4: Filter for tavern/ and scaffold/ files
-    # Protected files: heavily customized locally, do NOT overwrite
+    # Protected files: user config and self — everything else auto-updates.
+    # Frontend files (app.js, style.css, index.html) MUST auto-update to
+    # receive bug fixes. The launcher and config are the only truly local files.
     _PROTECTED_FILES = {
-        "tavern/server.py",              # Custom Guild server with local enhancements
         "tavern/guild_launcher.py",      # This file — never overwrite self
         "tavern/guild_config.json",      # User configuration
-        "tavern/static/app.js",          # Customized frontend JS
-        "tavern/static/style.css",       # Customized frontend CSS
-        "tavern/static/index.html",      # Customized Guild chat HTML
-        "tavern/static/guild.html",      # Scaffold editor HTML
     }
     remote_files = []
     skipped = 0
