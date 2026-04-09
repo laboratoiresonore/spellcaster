@@ -169,11 +169,14 @@ def _is_comfyui_dir(p: Path) -> bool:
       - ComfyUI/main.py            (parent wrapper dirs — portable, Desktop data)
       - extra_models_config.yaml   (ComfyUI Desktop data directory)
     """
-    return ((p / "main.py").is_file()
-            or (p / "comfy" / "cli_args.py").is_file()
-            or (p / "custom_nodes").is_dir()
-            or (p / "ComfyUI" / "main.py").is_file()
-            or (p / "extra_models_config.yaml").is_file())
+    try:
+        return ((p / "main.py").is_file()
+                or (p / "comfy" / "cli_args.py").is_file()
+                or (p / "custom_nodes").is_dir()
+                or (p / "ComfyUI" / "main.py").is_file()
+                or (p / "extra_models_config.yaml").is_file())
+    except (PermissionError, OSError):
+        return False
 
 
 def _win_all_drives() -> list[str]:
