@@ -1,0 +1,13 @@
+{
+  "display_name": "Spellcaster",
+  "loading_order": 15,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "styles.css",
+  "author": "Laboratoire Sonore",
+  "version": "2.0.0",
+  "homePage": "https://github.com/laboratoiresonore/spellcaster",
+  "auto_update": true,
+  "generate_interceptor": "spellcasterInterceptor"
+}
