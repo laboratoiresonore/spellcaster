@@ -49,6 +49,12 @@ import urllib.error
 import traceback
 import socket
 
+# ── Shared constants & helpers (single source of truth) ──────────────
+from guild_common import (
+    DEFAULT_GUILD_PORT, DEFAULT_COMFYUI_URL, DEFAULT_KOBOLD_URL,
+    is_port_in_use, test_endpoint,
+)
+
 # ═══════════════════════════════════════════════════════════════════════
 #  Auto-Update Configuration
 # ═══════════════════════════════════════════════════════════════════════
@@ -106,9 +112,9 @@ else:
 _CONFIG_FILE = os.path.join(APP_DIR, "guild_config.json")
 
 _DEFAULT_CONFIG = {
-    "guild_port": 7777,
-    "comfyui_url": "http://127.0.0.1:8188",
-    "kobold_url": "http://127.0.0.1:5001",
+    "guild_port": DEFAULT_GUILD_PORT,
+    "comfyui_url": DEFAULT_COMFYUI_URL,
+    "kobold_url": DEFAULT_KOBOLD_URL,
     "sillytavern_dir": "",
     "koboldcpp_dir": "",
     "kobold_model": "",
@@ -116,6 +122,7 @@ _DEFAULT_CONFIG = {
     "auto_update": True,
     "auto_launch_st": True,
     "auto_launch_kobold": False,
+    "privacy_cleanup": True,
 }
 
 
@@ -173,16 +180,7 @@ def _input_yes_no(prompt, default=True):
         return default
 
 
-def _test_endpoint(url, path="", timeout=3):
-    """Quick connectivity test to a URL. Returns True if reachable."""
-    try:
-        req = urllib.request.Request(
-            f"{url.rstrip('/')}/{path.lstrip('/')}",
-            headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.status == 200
-    except Exception:
-        return False
+_test_endpoint = test_endpoint  # alias — canonical def in guild_common
 
 
 def run_setup_wizard(existing_config=None):
@@ -294,6 +292,9 @@ def run_setup_wizard(existing_config=None):
     config["auto_update"] = _input_yes_no(
         "Auto-update from GitHub on startup?",
         config.get("auto_update", True))
+    config["privacy_cleanup"] = _input_yes_no(
+        "Privacy mode? (auto-delete inputs & outputs from ComfyUI after delivery)",
+        config.get("privacy_cleanup", True))
 
     # ── Save ──────────────────────────────────────────────────────────
     print()
@@ -481,11 +482,7 @@ def check_for_updates(verbose=True):
     return False
 
 
-def _is_port_in_use(port: int) -> bool:
-    """Check if a TCP port is already bound."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(1)
-        return s.connect_ex(('127.0.0.1', port)) == 0
+_is_port_in_use = is_port_in_use  # alias — canonical def in guild_common
 
 
 def _restart_self():
@@ -916,17 +913,27 @@ def launch_sillytavern(st_dir, verbose=True):
 #  during first-run setup when ComfyUI is available
 # ═══════════════════════════════════════════════════════════════════════
 
-_ASSETS_VERSION_FILE = os.path.join(APP_DIR, ".guild_assets_version")
+# Asset tracking — uses the SAME file as server.py's _ASSETS_PATH
+# so both launcher and server agree on whether assets exist.
+_ASSETS_VERSION_FILE_LEGACY = os.path.join(APP_DIR, ".guild_assets_version")
+_STATE_DIR = os.path.join(APP_DIR, ".guild_state")
+_ASSETS_VERSION_FILE = os.path.join(_STATE_DIR, "generated_assets.json")
 
 
 def _assets_need_generation():
     """Check if asset generation has already been completed."""
-    return not os.path.exists(_ASSETS_VERSION_FILE)
+    # Check canonical location first, fall back to legacy
+    if os.path.exists(_ASSETS_VERSION_FILE):
+        return False
+    if os.path.exists(_ASSETS_VERSION_FILE_LEGACY):
+        return False
+    return True
 
 
 def _mark_assets_generated(count):
-    """Mark asset generation as complete."""
+    """Mark asset generation as complete (in the shared .guild_state/ dir)."""
     try:
+        os.makedirs(_STATE_DIR, exist_ok=True)
         with open(_ASSETS_VERSION_FILE, "w") as f:
             f.write(json.dumps({
                 "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -1204,6 +1211,7 @@ def main():
     server.PORT = port
     server.COMFYUI_URL = comfyui_url
     server.KOBOLD_URL = kobold_url
+    server.PRIVACY_CLEANUP = config.get("privacy_cleanup", True)
 
     # ── Initialize server (model detection, LoRA scan) ───────────────
     # Pass URL explicitly to avoid any global-timing issues
