@@ -3214,7 +3214,10 @@ class GuildHandler(SimpleHTTPRequestHandler):
         # Static routing
         if not self.path.startswith('/static/') and not self.path.startswith('/api/'):
             self.path = '/static' + self.path
-        return super().do_GET()
+        try:
+            return super().do_GET()
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            pass  # Browser disconnected mid-transfer — harmless
 
     def do_POST(self):
         global CHARS_CACHE, NODES_CACHE, PRIVACY_CLEANUP

@@ -76,6 +76,16 @@
   "comfyui_SDXL_Realistic_zavychromaxl_v100_safetensors": {
     "name": "Nimbus",
     "personality": "Nimbus is very casual and speaks in a soft, lilting voice.",
-    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00118_.png&type=output"
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00122_.png&type=output&t=1775719216567"
+  },
+  "studio_cinematic": {
+    "name": "Cinematic",
+    "personality": "Cinematic is passionate about their craft, to the point of being considered obsessive by some. They often speak in film references and metaphors, making it difficult for some to understand them at times. But there's no denying the spark of magic they bring to every project they work on.",
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00120_.png&type=output"
+  },
+  "studio_studiocraft": {
+    "name": "Studiocraft",
+    "personality": "A dedicated and powerful expert in Magic Studios \u2014 Full Character Pipeline.",
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00121_.png&type=output"
   }
 }

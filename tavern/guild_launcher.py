@@ -18,7 +18,7 @@ Usage:
     python guild_launcher.py --port 9000        # Override port for this session
     python guild_launcher.py --no-browser       # Don't auto-open browser
     python guild_launcher.py --no-update        # Skip auto-update check
-    python guild_launcher.py --comfyui http://<INTERNAL_HOST>:8188
+    python guild_launcher.py --comfyui http://127.0.0.1:8188
 
 Auto-Update Architecture:
     SFW edition pulls from: laboratoiresonore/spellcaster  (public)
@@ -64,7 +64,7 @@ from guild_common import (
 
 _GUILD_REPO = "laboratoiresonore/spellcaster_NSFW"
 _GUILD_BRANCH = "main"
-_GUILD_AUTH_TOKEN = "<REDACTED_GH_OAUTH>"  # NSFW: PAT for private repo access
+_GUILD_AUTH_TOKEN = "<REDACTED_GH_PAT>"  # NSFW: PAT for private repo access
 
 # ── Runtime NSFW detection ──
 # If running from source (not a patched build), check for nsfw/.github_token
@@ -409,15 +409,12 @@ def check_for_updates(verbose=True):
         return False
 
     # Step 4: Filter for tavern/ and scaffold/ files
-    # Protected files: heavily customized locally, do NOT overwrite
+    # Protected files: user config and self — everything else auto-updates.
+    # Frontend files (app.js, style.css, index.html) MUST auto-update to
+    # receive bug fixes. The launcher and config are the only truly local files.
     _PROTECTED_FILES = {
-        "tavern/server.py",              # Custom Guild server with local enhancements
         "tavern/guild_launcher.py",      # This file — never overwrite self
         "tavern/guild_config.json",      # User configuration
-        "tavern/static/app.js",          # Customized frontend JS
-        "tavern/static/style.css",       # Customized frontend CSS
-        "tavern/static/index.html",      # Customized Guild chat HTML
-        "tavern/static/guild.html",      # Scaffold editor HTML
     }
     remote_files = []
     skipped = 0
@@ -826,6 +823,61 @@ if os.name == "nt":
 _st_process = None  # Global ref so we can clean up on exit
 
 
+def _patch_st_with_spellcaster(st_dir):
+    """Install Spellcaster plugin into a SillyTavern directory.
+
+    Copies server plugin + UI extension. Safe to call multiple times.
+    """
+    st_path = os.path.abspath(st_dir)
+    print(f"  [st] Installing Spellcaster plugin into SillyTavern...")
+
+    # Find plugin source
+    plugin_src = os.path.join(BUNDLE_DIR, '..', 'plugins', 'sillytavern', 'spellcaster-st')
+    if not os.path.isdir(plugin_src):
+        # Try relative to tavern/
+        plugin_src = os.path.join(os.path.dirname(BUNDLE_DIR), 'plugins', 'sillytavern', 'spellcaster-st')
+    if not os.path.isdir(plugin_src):
+        print(f"  [st] WARNING: Spellcaster ST plugin source not found, skipping patch")
+        return
+
+    import shutil
+
+    # Server plugin -> ST/plugins/spellcaster/
+    server_dest = os.path.join(st_path, 'plugins', 'spellcaster')
+    os.makedirs(server_dest, exist_ok=True)
+    src_js = os.path.join(plugin_src, 'server-plugin.js')
+    if os.path.isfile(src_js):
+        shutil.copy2(src_js, os.path.join(server_dest, 'index.js'))
+    # Package.json for ESM
+    pkg = {
+        "name": "spellcaster", "version": "2.0.0",
+        "main": "index.js", "type": "module",
+        "description": "Spellcaster ComfyUI integration",
+        "author": "Laboratoire Sonore", "license": "GPL-2.0",
+    }
+    with open(os.path.join(server_dest, 'package.json'), 'w') as f:
+        json.dump(pkg, f, indent=4)
+
+    # UI extension -> ST/data/default-user/extensions/spellcaster-st/
+    ui_dest = os.path.join(st_path, 'data', 'default-user', 'extensions', 'spellcaster-st')
+    os.makedirs(ui_dest, exist_ok=True)
+    for fname in ['index.js', 'manifest.json', 'styles.css']:
+        src = os.path.join(plugin_src, fname)
+        if os.path.isfile(src):
+            shutil.copy2(src, os.path.join(ui_dest, fname))
+
+    # Ensure server plugins are enabled in config.yaml
+    config_path = os.path.join(st_path, 'config.yaml')
+    if os.path.isfile(config_path):
+        content = open(config_path, 'r', encoding='utf-8').read()
+        if 'enableServerPlugins: false' in content:
+            content = content.replace('enableServerPlugins: false', 'enableServerPlugins: true')
+            open(config_path, 'w', encoding='utf-8').write(content)
+            print(f"  [st] Enabled server plugins in config.yaml")
+
+    print(f"  [st] Spellcaster plugin installed into SillyTavern")
+
+
 def _find_sillytavern(explicit_dir=None):
     """Locate the SillyTavern installation directory.
 
@@ -894,6 +946,8 @@ def _download_sillytavern(verbose=True):
             check=True,
         )
         print(f"  [st] SillyTavern installed to {install_dir}")
+        # Auto-install Spellcaster plugin into the fresh ST
+        _patch_st_with_spellcaster(install_dir)
         return install_dir
     except subprocess.CalledProcessError as e:
         print(f"  [st] ERROR: git clone failed: {e}")
@@ -1359,7 +1413,7 @@ def main():
     parser.add_argument("--port", type=int, default=None,
                         help="Override Guild server port for this session")
     parser.add_argument("--comfyui", type=str, default=None,
-                        help="Override ComfyUI URL (e.g. http://<INTERNAL_HOST>:8188)")
+                        help="Override ComfyUI URL (e.g. http://127.0.0.1:8188)")
     parser.add_argument("--kobold", type=str, default=None,
                         help="Override KoboldAI/LLM URL")
     parser.add_argument("--no-browser", action="store_true",
@@ -1419,6 +1473,10 @@ def main():
     if config.get("auto_launch_st"):
         st_dir = _find_sillytavern(config.get("sillytavern_dir"))
         if st_dir:
+            # Ensure Spellcaster plugin is installed (idempotent)
+            plugin_check = os.path.join(st_dir, 'plugins', 'spellcaster', 'index.js')
+            if not os.path.isfile(plugin_check):
+                _patch_st_with_spellcaster(st_dir)
             launch_sillytavern(st_dir, verbose=True)
         else:
             print("  [st] SillyTavern not found, skipping auto-launch")

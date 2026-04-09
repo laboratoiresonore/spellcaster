@@ -84,9 +84,15 @@
     "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00117_.png&type=output"
   },
   "comfyui_SDXL_Realistic_zavychromaxl_v100_safetensors": {
-    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00118_.png&type=output"
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00122_.png&type=output"
   },
   "comfyui_ZIT_gonzalomoZpop_v30AIO_safetensors": {
     "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00119_.png&type=output"
+  },
+  "studio_cinematic": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00120_.png&type=output"
+  },
+  "studio_studiocraft": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00121_.png&type=output"
   }
 }

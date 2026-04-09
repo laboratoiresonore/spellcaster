@@ -119,7 +119,7 @@
     REQUIREMENTS
     ============
       - curl (built into Windows 10+, macOS, Linux)
-      - Running ComfyUI server (<INTERNAL_HOST>:8188 or configured via preferences)
+      - Running ComfyUI server (127.0.0.1:8188 or configured via preferences)
       - Supported checkpoint files (.safetensors) on ComfyUI's models/checkpoints/
       - LoRA files (if using model-specific LoRAs)
 
@@ -154,7 +154,7 @@
 
     6. ADVANCED: CONFIGURE SETTINGS
        - Preferences → Lua → comfyui_connector:
-         * Server URL: http://<INTERNAL_HOST>:8188 (adjust to your setup)
+         * Server URL: http://127.0.0.1:8188 (adjust to your setup)
          * Timeout: 300 (seconds, for images) / 600 (for video)
        - Max Resolution: slider to limit GPU memory usage (0 = no scaling)
 
@@ -186,7 +186,7 @@
     ==============
     • Check Darktable → Preferences → Lua → comfyui_connector
       Server URL and timeout should match your ComfyUI setup
-    • Ensure ComfyUI is running: http://<INTERNAL_HOST>:8188 (or your IP:port)
+    • Ensure ComfyUI is running: http://127.0.0.1:8188 (or your IP:port)
     • Test connection: "Send Test Message" button
     • Check Darktable message log (bottom bar): shows export/upload/processing steps
     • Look at ComfyUI web terminal for detailed node execution logs
@@ -883,7 +883,7 @@ dt.preferences.register(MODULE_NAME, "timeout", "integer",
 
 local sep = "/"
 
--- @return string : ComfyUI server URL from preferences (e.g. "http://<INTERNAL_HOST>:8188")
+-- @return string : ComfyUI server URL from preferences (e.g. "http://127.0.0.1:8188")
 -- Stores in Darktable's darktablerc file (editable via Preferences → Lua → comfyui_connector)
 local function get_server()
   return dt.preferences.read(MODULE_NAME, "server_url", "string")

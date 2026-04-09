@@ -35,6 +35,7 @@ UNET_ARCH_RULES = [
     # (substring, arch_key)  — order = priority, first match wins
     ("klein",     "flux2klein"),
     ("kontext",   "flux_kontext"),
+    ("chroma",    "flux1dev"),      # Chroma v1/v2 — same loader stack as Flux Dev
     ("flux",      "flux1dev"),
     ("wan",       "wan"),
     ("ltx",       "ltx"),

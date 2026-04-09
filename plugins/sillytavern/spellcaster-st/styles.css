@@ -1,0 +1,115 @@
+/* Spellcaster Extension Styles for SillyTavern */
+
+.spellcaster-panel {
+    background: rgba(30, 20, 50, 0.85);
+    border: 1px solid rgba(178, 70, 242, 0.3);
+    border-radius: 12px;
+    padding: 16px;
+    margin: 12px 0;
+    backdrop-filter: blur(8px);
+}
+
+.spellcaster-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(178, 70, 242, 0.2);
+}
+
+.spellcaster-icon {
+    font-size: 20px;
+}
+
+.spellcaster-header strong {
+    flex: 1;
+    font-size: 14px;
+    color: #e0d0ff;
+    letter-spacing: 1px;
+}
+
+.spellcaster-status {
+    font-size: 11px;
+    font-weight: 600;
+    transition: color 0.3s;
+}
+
+.spellcaster-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    cursor: pointer;
+    font-size: 13px;
+    color: #ccc;
+}
+
+.spellcaster-toggle input[type="checkbox"] {
+    accent-color: #b246f2;
+    width: 16px;
+    height: 16px;
+}
+
+.spellcaster-row {
+    padding: 6px 0;
+}
+
+.spellcaster-row label {
+    display: block;
+    font-size: 12px;
+    color: #999;
+    margin-bottom: 4px;
+}
+
+.spellcaster-row input[type="text"],
+.spellcaster-row textarea {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(178, 70, 242, 0.2);
+    border-radius: 6px;
+    color: #eee;
+    padding: 6px 8px;
+    font-family: inherit;
+    font-size: 12px;
+}
+
+.spellcaster-row input[type="text"]:focus,
+.spellcaster-row textarea:focus {
+    border-color: rgba(178, 70, 242, 0.6);
+    outline: none;
+    box-shadow: 0 0 8px rgba(178, 70, 242, 0.2);
+}
+
+.spellcaster-row input[type="range"] {
+    width: 100%;
+    accent-color: #b246f2;
+}
+
+.spellcaster-row input[type="number"] {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(178, 70, 242, 0.2);
+    border-radius: 6px;
+    color: #eee;
+    padding: 4px 8px;
+    font-family: inherit;
+}
+
+.spellcaster-commands {
+    margin-top: 12px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(178, 70, 242, 0.15);
+    font-size: 11px;
+    color: #888;
+    line-height: 1.6;
+}
+
+.spellcaster-commands strong {
+    color: #b246f2;
+    display: block;
+    margin-bottom: 4px;
+}
+
+.spellcaster-commands div {
+    font-family: monospace;
+    color: #aaa;
+}

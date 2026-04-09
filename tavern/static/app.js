@@ -1855,11 +1855,9 @@ function renderLoraInterrogation(unknownLoras, charId) {
 loraInterrogationSave.addEventListener('click', async () => {
     const inputs = loraInterrogationList.querySelectorAll('input[data-lora-name]');
     const descriptions = {};
-    inputs.forEach(input => {
-        const desc = input.value.trim();
-        if (desc) {
-            descriptions[input.dataset.loraName] = desc;
-        }
+    inputs.forEach(inp => {
+        const val = inp.value.trim();
+        if (val) descriptions[inp.dataset.loraName] = val;
     });
 
     if (Object.keys(descriptions).length === 0) {
@@ -1867,43 +1865,25 @@ loraInterrogationSave.addEventListener('click', async () => {
         return;
     }
 
-    loraInterrogationSave.disabled = true;
-    loraInterrogationSave.textContent = 'Saving...';
-
     try {
         await fetch('/api/lora_describe', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                descriptions: descriptions,
-                char_id: activeCharacterId,
-            })
+            body: JSON.stringify({ descriptions }),
         });
-        loraInterrogation.style.display = 'none';
-        // Refresh the list to show updated purposes
+        // Refresh the LoRA modal
         loraBtn.click();
     } catch(e) {
-        console.error('LoRA description save failed:', e);
+        console.error('Failed to save LoRA descriptions:', e);
     }
-
-    loraInterrogationSave.disabled = false;
-    loraInterrogationSave.textContent = 'Save Descriptions';
 });
 
-loraInterrogationSkip.addEventListener('click', async () => {
-    // Mark wizard as interrogated (skip) so the banner doesn't show again
-    try {
-        await fetch('/api/lora_describe', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                descriptions: {},
-                char_id: activeCharacterId,
-            })
-        });
-    } catch(e) { /* ignore */ }
+loraInterrogationSkip.addEventListener('click', () => {
     loraInterrogation.style.display = 'none';
 });
 
-// ── First-use LoRA interrogation on wizard selection ──
-// When the user first selects a wizard that has unknown LoR
+// ═══════════════════════════════════════════════════════════════════════
+//  Boot
+// ═══════════════════════════════════════════════════════════════════════
+
+initialize();

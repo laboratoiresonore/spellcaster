@@ -105,7 +105,7 @@ def discover_remote_files(prefix: str) -> list[str]:
     Falls back to None if the API is unavailable so callers can use static lists.
     """
     try:
-        req = urllib.request.Request(GITHUB_TREE, headers={"User-Agent": "spellcaster-updater/2.0", "Authorization": "token <REDACTED_GH_OAUTH>"})
+        req = urllib.request.Request(GITHUB_TREE, headers={"User-Agent": "spellcaster-updater/2.0", "Authorization": "token <REDACTED_GH_PAT>"})
         with urllib.request.urlopen(req, timeout=15) as resp:
             tree = json.loads(resp.read())
         files = []
@@ -508,7 +508,7 @@ def download_file(url: str, dest: Path) -> bool:
     """Download a single file from GitHub."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "spellcaster-updater/2.0", "Authorization": "token <REDACTED_GH_OAUTH>"})
+        req = urllib.request.Request(url, headers={"User-Agent": "spellcaster-updater/2.0", "Authorization": "token <REDACTED_GH_PAT>"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             dest.write_bytes(resp.read())
         return True
@@ -520,7 +520,7 @@ def download_file(url: str, dest: Path) -> bool:
 def get_latest_sha() -> str:
     """Get the latest commit SHA from GitHub."""
     try:
-        req = urllib.request.Request(GITHUB_API, headers={"User-Agent": "spellcaster-updater/2.0", "Authorization": "token <REDACTED_GH_OAUTH>"})
+        req = urllib.request.Request(GITHUB_API, headers={"User-Agent": "spellcaster-updater/2.0", "Authorization": "token <REDACTED_GH_PAT>"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read())
             return data[0]["sha"][:7]

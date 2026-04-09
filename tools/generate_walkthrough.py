@@ -19,7 +19,7 @@ Requirements:
 
 Usage:
     python generate_walkthrough.py
-    python generate_walkthrough.py --server http://<INTERNAL_HOST>:8188
+    python generate_walkthrough.py --server http://127.0.0.1:8188
     python generate_walkthrough.py --act 1         # Run only Act I
     python generate_walkthrough.py --act 1,2,3     # Run Acts I-III
     python generate_walkthrough.py --list           # List all steps
@@ -38,7 +38,7 @@ import argparse
 import copy
 from pathlib import Path
 
-SERVER = "http://<INTERNAL_HOST>:8188"
+SERVER = "http://127.0.0.1:8188"
 ASSETS_DIR = Path(__file__).parent / "assets"
 OUTPUT_DIR = ASSETS_DIR / "walkthrough"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

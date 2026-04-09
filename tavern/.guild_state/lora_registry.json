@@ -19,13 +19,15 @@
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "",
-      "tags": [],
+      "purpose": "character/concept design",
+      "tags": [
+        "concept"
+      ],
       "user_desc": "",
-      "source": "discovered",
-      "civitai_name": "",
-      "civitai_url": "",
-      "description": ""
+      "source": "civitai",
+      "civitai_name": "CTAI-Prefab house",
+      "civitai_url": "https://civitai.com/models/1002989",
+      "description": "CTAI Prefab house. A school bus has been converted into a unique home, located in the middle of a lush forest. The bus is black, with large windows that allow natural light to flood the interior. Above the bus is a mezzanine, creating additional living space and equipped with solar panels, demonstra..."
     },
     "Flux-1-Dev\\Detail\\Aesthetic texture enhancer.safetensors": {
       "archs": [
