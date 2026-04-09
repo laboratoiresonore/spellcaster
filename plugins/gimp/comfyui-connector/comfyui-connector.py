@@ -4857,6 +4857,26 @@ def _export_selection_to_tmp(image):
     except Exception:
         pass
 
+    # Last-resort: pixel-level fallback (same as _export_image_to_tmp strategy 5)
+    try:
+        w, h = dup.get_width(), dup.get_height()
+        rows = []
+        for y in range(h):
+            row = []
+            for x in range(w):
+                result = _pdb_run('gimp-drawable-get-pixel', {
+                    'drawable': flat, 'x-coord': x, 'y-coord': y,
+                })
+                px = result.pixel.get_children() if hasattr(result.pixel, 'get_children') else list(result.pixel)
+                row.extend(px[:3])
+            rows.append(b'\x00' + bytes(row))
+        _write_rgb_png(tmp.name, w, h, rows)
+        if os.path.getsize(tmp.name) > 100:
+            dup.delete()
+            return tmp.name, sel_w, sel_h
+    except Exception:
+        pass
+
     dup.delete()
     raise RuntimeError("Failed to export selection region")
 
