@@ -325,7 +325,7 @@ class SettingsMixin:
             comfy_box.set_margin_top(10)
             comfy_box.set_margin_bottom(10)
 
-            # Server URL field (e.g., "http://192.168.x.x:8188")
+            # Server URL field (e.g., "http://127.0.0.1:8188")
             comfy_url_label = Gtk.Label(label="Server URL (e.g. http://127.0.0.1:8188):")
             comfy_url_label.set_halign(Gtk.Align.START)
             comfy_box.pack_start(comfy_url_label, False, False, 0)

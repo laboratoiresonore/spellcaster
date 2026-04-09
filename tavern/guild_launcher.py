@@ -18,7 +18,7 @@ Usage:
     python guild_launcher.py --port 9000        # Override port for this session
     python guild_launcher.py --no-browser       # Don't auto-open browser
     python guild_launcher.py --no-update        # Skip auto-update check
-    python guild_launcher.py --comfyui http://192.168.x.x:8188
+    python guild_launcher.py --comfyui http://127.0.0.1:8188
 
 Auto-Update Architecture:
     SFW edition pulls from: laboratoiresonore/spellcaster  (public)
@@ -1413,7 +1413,7 @@ def main():
     parser.add_argument("--port", type=int, default=None,
                         help="Override Guild server port for this session")
     parser.add_argument("--comfyui", type=str, default=None,
-                        help="Override ComfyUI URL (e.g. http://192.168.x.x:8188)")
+                        help="Override ComfyUI URL (e.g. http://127.0.0.1:8188)")
     parser.add_argument("--kobold", type=str, default=None,
                         help="Override KoboldAI/LLM URL")
     parser.add_argument("--no-browser", action="store_true",

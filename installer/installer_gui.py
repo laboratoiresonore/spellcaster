@@ -305,87 +305,10 @@ class InstallerApp(ctk.CTk):
                      font=ctk.CTkFont(family="Inter", size=15), text_color=self.text_muted,
                      justify="left").pack(anchor="w", padx=30, pady=(0, 20))
 
-        # Prerequisites check
-        prereq_frame = ctk.CTkFrame(f_welcome, fg_color="#110A1F", corner_radius=12,
-                                     border_width=1, border_color="#3A2863")
-        prereq_frame.pack(fill="x", padx=30, pady=(0, 15))
-        ctk.CTkLabel(prereq_frame, text="Before we begin, you need two things installed:",
-                     font=ctk.CTkFont(family="Inter", size=16, weight="bold")).pack(anchor="w", padx=20, pady=(15, 10))
-
-        # Check what's detected
-        _has_comfy = bool(self.comfyui_path.get().strip())
-        _has_gimp = bool(self.gimp_path.get().strip())
-        _has_dt = bool(self.darktable_path.get().strip())
-        _has_editor = _has_gimp or _has_dt
-
-        prereqs = [
-            ("ComfyUI  (the AI engine that does the heavy lifting)",
-             "https://github.com/comfyanonymous/ComfyUI",
-             _has_comfy,
-             "ComfyUI is the free, open-source AI backend. It runs on your GPU and does all the actual\n"
-             "image generation. Spellcaster sends instructions to ComfyUI and displays the results.\n"
-             "Download it, unzip it, and run it once before continuing this installer."),
-            ("GIMP 3  or  Darktable  (your image editor)",
-             None, _has_editor,
-             "You need at least one of these free image editors. GIMP is like Photoshop — great for\n"
-             "creative editing. Darktable is like Lightroom — great for photo processing.\n"
-             "You can install both! Spellcaster adds AI tools to whichever ones you have."),
-        ]
-
-        for label, url, detected, explanation in prereqs:
-            row = ctk.CTkFrame(prereq_frame, fg_color=self.sidebar_color, corner_radius=8)
-            row.pack(fill="x", padx=15, pady=5)
-            status_icon = "  Detected" if detected else "  Not Found"
-            status_color = self.accent_green if detected else self.accent_red
-            ctk.CTkLabel(row, text=status_icon,
-                         font=ctk.CTkFont(family="Inter", size=13, weight="bold"),
-                         text_color=status_color, width=120).pack(side="left", padx=(10, 5), pady=8)
-            ctk.CTkLabel(row, text=label,
-                         font=ctk.CTkFont(family="Inter", size=14, weight="bold"),
-                         text_color=self.text_main).pack(side="left", padx=5, pady=8)
-            ctk.CTkLabel(prereq_frame, text=explanation,
-                         font=ctk.CTkFont(family="Inter", size=12),
-                         text_color=self.text_muted, justify="left").pack(anchor="w", padx=35, pady=(0, 8))
-
-        # Download links
-        if not _has_comfy or not _has_editor:
-            dl_frame = ctk.CTkFrame(f_welcome, fg_color="#1a0f2e", corner_radius=10,
-                                     border_width=1, border_color=self.accent_amber)
-            dl_frame.pack(fill="x", padx=30, pady=(0, 15))
-            ctk.CTkLabel(dl_frame, text="Download the missing apps first, then come back here:",
-                         font=ctk.CTkFont(family="Inter", size=14, weight="bold"),
-                         text_color=self.accent_amber).pack(anchor="w", padx=20, pady=(12, 8))
-            _dl_links = []
-            if not _has_comfy:
-                _dl_links.append(("ComfyUI", "https://github.com/comfyanonymous/ComfyUI"))
-            if not _has_gimp:
-                _dl_links.append(("GIMP 3", "https://www.gimp.org/downloads/"))
-            if not _has_dt:
-                _dl_links.append(("Darktable", "https://www.darktable.org/install/"))
-            for app_name, app_url in _dl_links:
-                link_row = ctk.CTkFrame(dl_frame, fg_color="transparent")
-                link_row.pack(fill="x", padx=20, pady=2)
-                ctk.CTkLabel(link_row, text=f"  {app_name}:",
-                             font=ctk.CTkFont(family="Inter", size=13, weight="bold"),
-                             text_color=self.text_main, width=100, anchor="w").pack(side="left")
-                link_btn = ctk.CTkButton(link_row, text=app_url,
-                                          font=ctk.CTkFont(family="Inter", size=13, underline=True),
-                                          fg_color="transparent", hover_color="#21153B",
-                                          text_color="#7c9dff", anchor="w",
-                                          command=lambda u=app_url: __import__('webbrowser').open(u))
-                link_btn.pack(side="left", padx=5)
-            ctk.CTkLabel(dl_frame, text="Or leave ComfyUI blank and set a remote server IP in Step 5 to use a network GPU.",
-                         font=ctk.CTkFont(family="Inter", size=11, slant="italic"),
-                         text_color=self.text_muted, wraplength=700).pack(anchor="w", padx=20, pady=(5, 12))
-
-        # All good message
-        if _has_comfy and _has_editor:
-            ok_frame = ctk.CTkFrame(f_welcome, fg_color="#0d1a0d", corner_radius=10,
-                                     border_width=1, border_color=self.accent_green)
-            ok_frame.pack(fill="x", padx=30, pady=(0, 15))
-            ctk.CTkLabel(ok_frame, text="Everything looks good! All required apps were detected.\nClick \"2. What You Want\" on the left to continue.",
-                         font=ctk.CTkFont(family="Inter", size=15, weight="bold"),
-                         text_color=self.accent_green, justify="left").pack(padx=20, pady=15)
+        # Prerequisites panel — a replaceable container so Re-detect can rebuild it
+        self._prereq_container = ctk.CTkFrame(f_welcome, fg_color="transparent")
+        self._prereq_container.pack(fill="x")
+        self._build_prereq_panel()
 
         # Quick explanation
         ctk.CTkLabel(f_welcome, text="How it works:",
@@ -843,40 +766,18 @@ class InstallerApp(ctk.CTk):
                      font=ctk.CTkFont(family="Inter", size=11), text_color=self.text_muted,
                      wraplength=700, justify="left").pack(anchor="w", padx=30, pady=(0, 8))
 
-        # Help panel: show download links for missing apps
-        missing = []
-        if not self.comfyui_path.get().strip():
-            missing.append(("ComfyUI", "https://github.com/comfyanonymous/ComfyUI"))
-        if not self.gimp_path.get().strip():
-            missing.append(("GIMP 3", "https://www.gimp.org/downloads/"))
-        if not self.darktable_path.get().strip():
-            missing.append(("Darktable", "https://www.darktable.org/install/"))
-
-        if missing:
-            help_frame = ctk.CTkFrame(f_paths, fg_color="#1a0f2e", corner_radius=8,
-                                      border_width=1, border_color=self.accent_amber)
-            help_frame.pack(fill="x", padx=30, pady=(5, 15))
-            ctk.CTkLabel(help_frame,
-                         text="Some applications were not detected. Install them first, or set paths manually:",
-                         font=ctk.CTkFont(family="Inter", size=12, weight="bold"),
-                         text_color=self.accent_amber).pack(anchor="w", padx=15, pady=(10, 5))
-            for app_name, url in missing:
-                link_row = ctk.CTkFrame(help_frame, fg_color="transparent")
-                link_row.pack(fill="x", padx=15, pady=2)
-                ctk.CTkLabel(link_row, text=f"  {app_name}:",
-                             font=ctk.CTkFont(family="Inter", size=12, weight="bold"),
-                             text_color=self.text_main, width=100, anchor="w").pack(side="left")
-                link_btn = ctk.CTkButton(link_row, text=url,
-                                         font=ctk.CTkFont(family="Inter", size=12, underline=True),
-                                         fg_color="transparent", hover_color="#21153B",
-                                         text_color="#7c9dff", anchor="w",
-                                         command=lambda u=url: __import__('webbrowser').open(u))
-                link_btn.pack(side="left", padx=5)
-                _ToolTip(link_btn, f"Open {app_name} download page in your browser")
-            ctk.CTkLabel(help_frame,
-                         text="You can also leave ComfyUI blank and set a remote server IP above to use a network GPU.",
-                         font=ctk.CTkFont(family="Inter", size=11, slant="italic"),
-                         text_color=self.text_muted, wraplength=700, justify="left").pack(anchor="w", padx=15, pady=(5, 10))
+        # Re-detect button for System Layout step
+        redetect_row = ctk.CTkFrame(f_paths, fg_color="transparent")
+        redetect_row.pack(fill="x", padx=30, pady=(0, 10))
+        ctk.CTkLabel(redetect_row,
+                     text="Paths not detected? Install the apps and run them once, then:",
+                     font=ctk.CTkFont(family="Inter", size=12),
+                     text_color=self.text_muted).pack(side="left")
+        ctk.CTkButton(redetect_row, text="Re-detect All", width=110, height=30,
+                       font=ctk.CTkFont(family="Inter", size=12, weight="bold"),
+                       fg_color="#3A2863", hover_color="#21153B",
+                       border_width=1, border_color=self.accent_color,
+                       command=self._redetect_apps).pack(side="left", padx=10)
 
         # Theme override checkbox
         theme_frame = ctk.CTkFrame(f_paths, fg_color="#150D26", corner_radius=8,
@@ -899,6 +800,126 @@ class InstallerApp(ctk.CTk):
             text_color=self.accent_amber,
             wraplength=760, justify="left",
         ).pack(anchor="w", padx=35, pady=(0, 10))
+
+    # ------------------------------------------------------------------
+    # Application detection — re-runnable
+    # ------------------------------------------------------------------
+
+    def _redetect_apps(self):
+        """Re-run auto-detection for all three apps and refresh the UI."""
+        self.comfyui_path.set(builder.find_default_comfyui())
+        self.gimp_path.set(builder.find_default_gimp())
+        self.darktable_path.set(builder.find_default_darktable())
+        self._build_prereq_panel()
+
+    def _build_prereq_panel(self):
+        """Build (or rebuild) the prerequisites section on the Welcome page.
+
+        This replaces the contents of self._prereq_container so it can
+        be called again after the user installs an app and clicks Re-detect.
+        """
+        # Tear down previous contents
+        for child in self._prereq_container.winfo_children():
+            child.destroy()
+
+        parent = self._prereq_container
+
+        _has_comfy = bool(self.comfyui_path.get().strip())
+        _has_gimp = bool(self.gimp_path.get().strip())
+        _has_dt = bool(self.darktable_path.get().strip())
+        _has_editor = _has_gimp or _has_dt
+
+        # --- Prereq checklist ---
+        prereq_frame = ctk.CTkFrame(parent, fg_color="#110A1F", corner_radius=12,
+                                     border_width=1, border_color="#3A2863")
+        prereq_frame.pack(fill="x", padx=30, pady=(0, 15))
+
+        header_row = ctk.CTkFrame(prereq_frame, fg_color="transparent")
+        header_row.pack(fill="x", padx=20, pady=(15, 10))
+        ctk.CTkLabel(header_row, text="Before we begin, you need two things installed:",
+                     font=ctk.CTkFont(family="Inter", size=16, weight="bold")).pack(side="left")
+        ctk.CTkButton(header_row, text="Re-detect", width=100, height=30,
+                       font=ctk.CTkFont(family="Inter", size=12, weight="bold"),
+                       fg_color="#3A2863", hover_color="#21153B",
+                       border_width=1, border_color=self.accent_color,
+                       command=self._redetect_apps).pack(side="right")
+
+        prereqs = [
+            ("ComfyUI  (the AI engine that does the heavy lifting)",
+             _has_comfy,
+             "ComfyUI is the free, open-source AI backend. It runs on your GPU and does all the actual\n"
+             "image generation. Spellcaster sends instructions to ComfyUI and displays the results.\n"
+             "Download it, unzip it, and run it once before continuing this installer."),
+            ("GIMP 3  or  Darktable  (your image editor)",
+             _has_editor,
+             "You need at least one of these free image editors. GIMP is like Photoshop — great for\n"
+             "creative editing. Darktable is like Lightroom — great for photo processing.\n"
+             "You can install both! Spellcaster adds AI tools to whichever ones you have."),
+        ]
+
+        for label, detected, explanation in prereqs:
+            row = ctk.CTkFrame(prereq_frame, fg_color=self.sidebar_color, corner_radius=8)
+            row.pack(fill="x", padx=15, pady=5)
+            if detected:
+                status_icon = "  Detected"
+                status_color = self.accent_green
+            else:
+                status_icon = "  Not Detected"
+                status_color = self.accent_amber
+            ctk.CTkLabel(row, text=status_icon,
+                         font=ctk.CTkFont(family="Inter", size=13, weight="bold"),
+                         text_color=status_color, width=140).pack(side="left", padx=(10, 5), pady=8)
+            ctk.CTkLabel(row, text=label,
+                         font=ctk.CTkFont(family="Inter", size=14, weight="bold"),
+                         text_color=self.text_main).pack(side="left", padx=5, pady=8)
+            ctk.CTkLabel(prereq_frame, text=explanation,
+                         font=ctk.CTkFont(family="Inter", size=12),
+                         text_color=self.text_muted, justify="left").pack(anchor="w", padx=35, pady=(0, 8))
+
+        # --- Download links / help ---
+        if not _has_comfy or not _has_editor:
+            dl_frame = ctk.CTkFrame(parent, fg_color="#1a0f2e", corner_radius=10,
+                                     border_width=1, border_color=self.accent_amber)
+            dl_frame.pack(fill="x", padx=30, pady=(0, 15))
+            ctk.CTkLabel(dl_frame,
+                         text="Install the apps below, then click Re-detect.\n"
+                              "If the app is installed but not detected, you can set the path manually in Step 5.",
+                         font=ctk.CTkFont(family="Inter", size=14, weight="bold"),
+                         text_color=self.accent_amber, justify="left").pack(anchor="w", padx=20, pady=(12, 8))
+            _dl_links = []
+            if not _has_comfy:
+                _dl_links.append(("ComfyUI", "https://github.com/comfyanonymous/ComfyUI"))
+            if not _has_gimp:
+                _dl_links.append(("GIMP 3", "https://www.gimp.org/downloads/"))
+            if not _has_dt:
+                _dl_links.append(("Darktable", "https://www.darktable.org/install/"))
+            for app_name, app_url in _dl_links:
+                link_row = ctk.CTkFrame(dl_frame, fg_color="transparent")
+                link_row.pack(fill="x", padx=20, pady=2)
+                ctk.CTkLabel(link_row, text=f"  {app_name}:",
+                             font=ctk.CTkFont(family="Inter", size=13, weight="bold"),
+                             text_color=self.text_main, width=100, anchor="w").pack(side="left")
+                link_btn = ctk.CTkButton(link_row, text=app_url,
+                                          font=ctk.CTkFont(family="Inter", size=13, underline=True),
+                                          fg_color="transparent", hover_color="#21153B",
+                                          text_color="#7c9dff", anchor="w",
+                                          command=lambda u=app_url: __import__('webbrowser').open(u))
+                link_btn.pack(side="left", padx=5)
+            ctk.CTkLabel(dl_frame,
+                         text="Or leave ComfyUI blank and set a remote server IP in Step 5 to use a network GPU.",
+                         font=ctk.CTkFont(family="Inter", size=11, slant="italic"),
+                         text_color=self.text_muted, wraplength=700).pack(anchor="w", padx=20, pady=(5, 12))
+
+        # --- All good ---
+        if _has_comfy and _has_editor:
+            ok_frame = ctk.CTkFrame(parent, fg_color="#0d1a0d", corner_radius=10,
+                                     border_width=1, border_color=self.accent_green)
+            ok_frame.pack(fill="x", padx=30, pady=(0, 15))
+            ctk.CTkLabel(ok_frame,
+                         text="Everything looks good! All required apps were detected.\n"
+                              "Click \"2. What You Want\" on the left to continue.",
+                         font=ctk.CTkFont(family="Inter", size=15, weight="bold"),
+                         text_color=self.accent_green, justify="left").pack(padx=20, pady=15)
 
     def _browse_dir(self, var):
         """Open a native directory picker and write the result into *var*."""
@@ -1498,6 +1519,7 @@ class InstallerApp(ctk.CTk):
 
         if self.darktable_path.get():
             dt_dir = Path(self.darktable_path.get())
+            dt_dir.mkdir(parents=True, exist_ok=True)
             if dt_dir.is_dir():
                 self.log(f"Installing Darktable plugin to {dt_dir}...")
                 dt_src = builder._find_darktable_plugin_src()
