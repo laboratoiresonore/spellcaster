@@ -66,11 +66,28 @@ _GUILD_REPO = "laboratoiresonore/spellcaster"
 _GUILD_BRANCH = "main"
 _GUILD_AUTH_TOKEN = ""  # empty for SFW (public); PAT for NSFW (private)
 
+# ── Runtime NSFW detection ──
+# If running from source (not a patched build), check for nsfw/.github_token
+# which indicates the NSFW build artifacts are installed alongside the source.
+if not _GUILD_AUTH_TOKEN:
+    _nsfw_token_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                     '..', 'nsfw', '.github_token')
+    if os.path.isfile(_nsfw_token_path):
+        try:
+            with open(_nsfw_token_path, 'r') as _tf:
+                _runtime_token = _tf.read().strip()
+            if _runtime_token:
+                _GUILD_AUTH_TOKEN = _runtime_token
+                _GUILD_REPO = "laboratoiresonore/spellcaster_NSFW"
+                print(f"  [Guild] NSFW token detected from nsfw/.github_token — switching to NSFW edition")
+        except Exception:
+            pass
+
 # Prefixes within the repo that belong to the Guild
 _TAVERN_PREFIX = "tavern/"
 _SCAFFOLD_PREFIX = "scaffold/"
 
-# GitHub API URLs (constructed from repo)
+# GitHub API URLs (constructed from repo — re-computed after NSFW detection)
 _GUILD_COMMITS_URL = (
     f"https://api.github.com/repos/{_GUILD_REPO}"
     f"/commits?sha={_GUILD_BRANCH}&per_page=1"
@@ -776,15 +793,92 @@ def launch_koboldcpp(kobold_dir, model_path, port=5001, verbose=True):
 _ST_REPO = "https://github.com/SillyTavern/SillyTavern.git"
 _ST_BRANCH = "release"
 
-# Search paths relative to this file (tavern/) to find spellcaster-st/
+# Search paths: relatives of this file, then common user install locations
+_home = os.path.expanduser("~")
 _ST_SEARCH_PATHS = [
+    # ── Relative to this file (tavern/) — spellcaster project layout ──
     os.path.join(BUNDLE_DIR, '..', '..', 'spellcaster-st'),        # spellcaster sibling
     os.path.join(BUNDLE_DIR, '..', '..', '..', 'spellcaster-st'),  # parent sibling
     os.path.join(BUNDLE_DIR, '..', 'sillytavern'),                 # inside spellcaster
     os.path.join(BUNDLE_DIR, 'sillytavern'),                       # inside tavern
+    # ── Common user install locations ──
+    os.path.join(_home, "SillyTavern"),
+    os.path.join(_home, "Documents", "SillyTavern"),
+    os.path.join(_home, "Documents", "GitHub", "SillyTavern"),     # GitHub Desktop default
+    os.path.join(_home, "Desktop", "SillyTavern"),
+    os.path.join(_home, "Documents", "AI", "SillyTavern"),
+    # ── SillyTavern-Launcher puts ST inside its own dir ──
+    os.path.join(_home, "SillyTavern-Launcher", "SillyTavern"),
+    os.path.join(_home, "Documents", "SillyTavern-Launcher", "SillyTavern"),
+    os.path.join(_home, "Desktop", "SillyTavern-Launcher", "SillyTavern"),
 ]
+# Windows-specific paths (C:\AI\SillyTavern is the community convention)
+if os.name == "nt":
+    for _drv in ["C:\\", "D:\\", "E:\\"]:
+        _ST_SEARCH_PATHS += [
+            os.path.join(_drv, "AI", "SillyTavern"),
+            os.path.join(_drv, "AI", "SillyTavern-Launcher", "SillyTavern"),
+            os.path.join(_drv, "SillyTavern"),
+        ]
+    # Also check Downloads (users sometimes clone there)
+    _ST_SEARCH_PATHS.append(os.path.join(_home, "Downloads", "SillyTavern"))
 
 _st_process = None  # Global ref so we can clean up on exit
+
+
+def _patch_st_with_spellcaster(st_dir):
+    """Install Spellcaster plugin into a SillyTavern directory.
+
+    Copies server plugin + UI extension. Safe to call multiple times.
+    """
+    st_path = os.path.abspath(st_dir)
+    print(f"  [st] Installing Spellcaster plugin into SillyTavern...")
+
+    # Find plugin source
+    plugin_src = os.path.join(BUNDLE_DIR, '..', 'plugins', 'sillytavern', 'spellcaster-st')
+    if not os.path.isdir(plugin_src):
+        # Try relative to tavern/
+        plugin_src = os.path.join(os.path.dirname(BUNDLE_DIR), 'plugins', 'sillytavern', 'spellcaster-st')
+    if not os.path.isdir(plugin_src):
+        print(f"  [st] WARNING: Spellcaster ST plugin source not found, skipping patch")
+        return
+
+    import shutil
+
+    # Server plugin -> ST/plugins/spellcaster/
+    server_dest = os.path.join(st_path, 'plugins', 'spellcaster')
+    os.makedirs(server_dest, exist_ok=True)
+    src_js = os.path.join(plugin_src, 'server-plugin.js')
+    if os.path.isfile(src_js):
+        shutil.copy2(src_js, os.path.join(server_dest, 'index.js'))
+    # Package.json for ESM
+    pkg = {
+        "name": "spellcaster", "version": "2.0.0",
+        "main": "index.js", "type": "module",
+        "description": "Spellcaster ComfyUI integration",
+        "author": "Laboratoire Sonore", "license": "GPL-2.0",
+    }
+    with open(os.path.join(server_dest, 'package.json'), 'w') as f:
+        json.dump(pkg, f, indent=4)
+
+    # UI extension -> ST/data/default-user/extensions/spellcaster-st/
+    ui_dest = os.path.join(st_path, 'data', 'default-user', 'extensions', 'spellcaster-st')
+    os.makedirs(ui_dest, exist_ok=True)
+    for fname in ['index.js', 'manifest.json', 'styles.css']:
+        src = os.path.join(plugin_src, fname)
+        if os.path.isfile(src):
+            shutil.copy2(src, os.path.join(ui_dest, fname))
+
+    # Ensure server plugins are enabled in config.yaml
+    config_path = os.path.join(st_path, 'config.yaml')
+    if os.path.isfile(config_path):
+        content = open(config_path, 'r', encoding='utf-8').read()
+        if 'enableServerPlugins: false' in content:
+            content = content.replace('enableServerPlugins: false', 'enableServerPlugins: true')
+            open(config_path, 'w', encoding='utf-8').write(content)
+            print(f"  [st] Enabled server plugins in config.yaml")
+
+    print(f"  [st] Spellcaster plugin installed into SillyTavern")
 
 
 def _find_sillytavern(explicit_dir=None):
@@ -855,6 +949,8 @@ def _download_sillytavern(verbose=True):
             check=True,
         )
         print(f"  [st] SillyTavern installed to {install_dir}")
+        # Auto-install Spellcaster plugin into the fresh ST
+        _patch_st_with_spellcaster(install_dir)
         return install_dir
     except subprocess.CalledProcessError as e:
         print(f"  [st] ERROR: git clone failed: {e}")
@@ -1058,11 +1154,14 @@ def launch_sillytavern(st_dir, verbose=True):
         else:
             kwargs['start_new_session'] = True
 
+        env = os.environ.copy()
+        env['DISABLE_AUTORUN'] = 'true'  # Prevent ST from opening its own browser tab
         _st_process = subprocess.Popen(
-            [node, 'server.js'],
+            [node, 'server.js', '--autorun', 'false'],
             cwd=st_dir,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=env,
             **kwargs,
         )
         if verbose:
@@ -1377,6 +1476,10 @@ def main():
     if config.get("auto_launch_st"):
         st_dir = _find_sillytavern(config.get("sillytavern_dir"))
         if st_dir:
+            # Ensure Spellcaster plugin is installed (idempotent)
+            plugin_check = os.path.join(st_dir, 'plugins', 'spellcaster', 'index.js')
+            if not os.path.isfile(plugin_check):
+                _patch_st_with_spellcaster(st_dir)
             launch_sillytavern(st_dir, verbose=True)
         else:
             print("  [st] SillyTavern not found, skipping auto-launch")
@@ -1388,6 +1491,26 @@ def main():
     server.KOBOLD_URL = kobold_url
     server.PRIVACY_CLEANUP = config.get("privacy_cleanup", True)
     server.NSFW_MODE = bool(_GUILD_AUTH_TOKEN)
+
+    # ── Runtime NSFW content injection ──────────────────────────────
+    # When running from source with nsfw/.github_token present, the server
+    # module's NSFW variables are still empty (not file-patched). Load them
+    # from build_nsfw.get_nsfw_runtime_content() and inject into server module.
+    if server.NSFW_MODE and not server._NSFW_APPEARANCE_CORE:
+        try:
+            nsfw_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                     '..', 'nsfw')
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(
+                "build_nsfw", os.path.join(nsfw_dir, "build_nsfw.py"))
+            _bn = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(_bn)
+            nsfw_content = _bn.get_nsfw_runtime_content()
+            for key, val in nsfw_content.items():
+                setattr(server, key, val)
+            print(f"  [Guild] NSFW content injected: {len(nsfw_content)} variables loaded")
+        except Exception as e:
+            print(f"  [Guild] WARNING: Failed to load NSFW runtime content: {e}")
 
     # ── Initialize server (model detection, LoRA scan) ───────────────
     # Pass URL explicitly to avoid any global-timing issues
