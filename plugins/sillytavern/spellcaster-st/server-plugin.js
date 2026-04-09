@@ -7,10 +7,10 @@
  * Mounted at: /api/plugins/spellcaster/*
  */
 
-const fs = require('fs');
-const path = require('path');
-const http = require('http');
-const https = require('https');
+import fs from 'node:fs';
+import path from 'node:path';
+import http from 'node:http';
+import https from 'node:https';
 
 // Default ComfyUI URL — overridden by settings
 let COMFYUI_URL = 'http://127.0.0.1:8188';
@@ -401,4 +401,4 @@ function exit() {
     console.log('[Spellcaster] Server plugin unloaded.');
 }
 
-module.exports = { init, exit };
+export { init, exit };
