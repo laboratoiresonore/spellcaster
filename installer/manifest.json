@@ -1718,6 +1718,84 @@
         "note": "Uses upscale models + checkpoints. Install 'upscale' and 'img2img' features."
       },
       "custom_nodes": []
+    },
+    "wizard_guild": {
+      "label": "Wizard Guild (Standalone Interface)",
+      "description": "Deploy the Wizard Guild web-based AI art studio. Chat with AI wizards to control all Spellcaster tools. The launcher can auto-download KoboldCPP and SillyTavern for a complete zero-setup experience.",
+      "plugins": [],
+      "vram_min_gb": 0,
+      "custom_nodes": [],
+      "models": {},
+      "llm_setup": {
+        "note": "The Wizard Guild needs a local LLM to power the chat. The launcher auto-detects or offers to download KoboldCPP.",
+        "recommended_engines": [
+          {
+            "name": "KoboldCPP",
+            "url": "https://github.com/LostRuins/koboldcpp/releases",
+            "description": "Simplest option — single .exe, no install. Download and run.",
+            "default_port": 5001
+          },
+          {
+            "name": "Ollama",
+            "url": "https://ollama.com/download",
+            "description": "CLI-based LLM manager. Run: ollama serve && ollama run llama3.1",
+            "default_port": 11434
+          },
+          {
+            "name": "LM Studio",
+            "url": "https://lmstudio.ai/",
+            "description": "Visual app for browsing and running local models.",
+            "default_port": 1234
+          }
+        ],
+        "recommended_models": [
+          {
+            "vram_max_gb": 4,
+            "name": "Phi-3-mini-4k-instruct Q4_K_M",
+            "size_gb": 2.3
+          },
+          {
+            "vram_max_gb": 8,
+            "name": "Mistral-7B-Instruct Q4_K_M",
+            "size_gb": 4.1
+          },
+          {
+            "vram_max_gb": 12,
+            "name": "Llama-3.1-8B-Instruct Q5_K_M",
+            "size_gb": 5.7
+          },
+          {
+            "vram_max_gb": 99,
+            "name": "Llama-3.1-8B-Instruct Q8_0",
+            "size_gb": 8.5
+          }
+        ]
+      },
+      "tavern_files": [
+        "tavern/server.py",
+        "tavern/guild_launcher.py",
+        "tavern/build_guild.py",
+        "tavern/start_guild.bat",
+        "tavern/guild_config.json",
+        "tavern/static/guild.html",
+        "tavern/static/index.html",
+        "tavern/static/app.js",
+        "tavern/static/style.css",
+        "tavern/static/travelling_wizard.jsx"
+      ],
+      "scaffold_files": [
+        "scaffold/__init__.py",
+        "scaffold/meta_wizard.py",
+        "scaffold/pipeline_wizard.py",
+        "scaffold/introspector.py",
+        "scaffold/workflow_wizard.py",
+        "scaffold/workflow_parser.py",
+        "scaffold/comfyui_runner.py",
+        "scaffold/presets.py",
+        "scaffold/prompt_builder.py",
+        "scaffold/wizard.py",
+        "scaffold/bridge_launcher.py"
+      ]
     }
   }
 }

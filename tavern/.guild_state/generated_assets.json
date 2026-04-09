@@ -1,0 +1,92 @@
+{
+  "studio_imaginus": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00088_.png&type=output"
+  },
+  "studio_transmutex": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00089_.png&type=output"
+  },
+  "studio_masquerade": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00090_.png&type=output"
+  },
+  "studio_restorix": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00091_.png&type=output"
+  },
+  "studio_erasure": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00092_.png&type=output"
+  },
+  "studio_videomancer": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00093_.png&type=output"
+  },
+  "model_ltx2": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00094_.png&type=output"
+  },
+  "comfyui_A-Flux_Flux2_flux-2-klein-9b_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00095_.png&type=output"
+  },
+  "comfyui_A-Flux_flux-2-klein-4b-fp8_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00096_.png&type=output"
+  },
+  "comfyui_A-Flux_flux-2-klein-base-4b-fp8_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00097_.png&type=output"
+  },
+  "comfyui_Illustrious_sloppyMessyMix_sloppyMessyMixV1_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00098_.png&type=output"
+  },
+  "comfyui_SDXL_Anime_NoobAI-XL-v1_1_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00099_.png&type=output"
+  },
+  "comfyui_SDXL_Anime_novaAnimeXL_ilV170_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00100_.png&type=output"
+  },
+  "comfyui_SDXL_Anime_waiIllustriousSDXL_v160-a5f5_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00101_.png&type=output"
+  },
+  "comfyui_SDXL_Base_AlbedoBaseXL_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00102_.png&type=output"
+  },
+  "comfyui_Flux_FLUX1 Dev fp8_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00104_.png&type=output"
+  },
+  "comfyui_Flux_HyFU-8-step-v1_0-pruned_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00105_.png&type=output"
+  },
+  "comfyui_Flux_flux1-dev-kontext_fp8_scaled_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00106_.png&type=output"
+  },
+  "comfyui_Lumina_lumina_2_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00107_.png&type=output"
+  },
+  "comfyui_SD-1_5_juggernaut_reborn_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00108_.png&type=output"
+  },
+  "comfyui_SD-1_5_v1-5-pruned-emaonly_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00109_.png&type=output"
+  },
+  "comfyui_SDXL_Base_sd_xl_refiner_1_0_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00111_.png&type=output"
+  },
+  "comfyui_SDXL_Cartoon-3D_modernDisneyXL_v3_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00112_.png&type=output"
+  },
+  "comfyui_SDXL_Cartoon-3D_novaCartoonXL_v60_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00113_.png&type=output"
+  },
+  "comfyui_SDXL_Realistic_cyberrealisticPony_v160_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00114_.png&type=output"
+  },
+  "comfyui_SDXL_Realistic_jibMixRealisticXL_v180SkinSupreme_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00115_.png&type=output"
+  },
+  "comfyui_SDXL_Realistic_juggernautXL_ragnarok_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00116_.png&type=output"
+  },
+  "comfyui_SDXL_Realistic_juggernautXL_v9Rundiffusionphoto2_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00117_.png&type=output"
+  },
+  "comfyui_SDXL_Realistic_zavychromaxl_v100_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00118_.png&type=output"
+  },
+  "comfyui_ZIT_gonzalomoZpop_v30AIO_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00119_.png&type=output"
+  }
+}

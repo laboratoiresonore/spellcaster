@@ -1,5 +1,5 @@
 --[[
-  comfyui_connector.lua - Spellcaster: AI superpowers for Darktable
+  comfyui_connector.lua - Spellcaster: AI superpowers — uncensored for Darktable
 
   darktable is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -7355,7 +7355,7 @@ local server_save_btn = dt.new_widget("button") {
 
 local module_widget = dt.new_widget("box") {
   orientation = "vertical",
-  dt.new_widget("label") { label = _("\xe2\x9c\xa8 Spellcaster \xe2\x80\x94 AI Superpowers") },
+  dt.new_widget("label") { label = _("\xe2\x9c\xa8 Spellcaster \xe2\x80\x94 AI Superpowers — Uncensored") },
   dt.new_widget("label") { label = _("Server:") },
   server_url_entry,
   server_save_btn,

@@ -1,0 +1,12 @@
+{
+  "guild_port": 7777,
+  "comfyui_url": "http://<INTERNAL_HOST>:8188",
+  "kobold_url": "http://<INTERNAL_HOST>:5001",
+  "sillytavern_dir": "C:\\Users\\redacted\\Documents\\AI\\Spellcaster\\spellcaster-st",
+  "koboldcpp_dir": "",
+  "kobold_model": "",
+  "auto_open_browser": true,
+  "auto_update": true,
+  "auto_launch_st": true,
+  "auto_launch_kobold": false
+}

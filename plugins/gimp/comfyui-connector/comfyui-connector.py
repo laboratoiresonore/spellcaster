@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 #
 # ═══════════════════════════════════════════════════════════════════════════
-#  Spellcaster — AI Superpowers for GIMP 3
+#  Spellcaster — AI Superpowers — Uncensored for GIMP 3
 # ═══════════════════════════════════════════════════════════════════════════
 #
 # Spellcaster lets artists run AI image generation workflows directly from the
@@ -257,7 +257,7 @@ from _workflows_v2 import (
 _PLUGIN_DIR    = Path(__file__).parent
 _VERSION_FILE  = _PLUGIN_DIR / ".spellcaster_version"
 
-_GITHUB_REPO = "laboratoiresonore/spellcaster"
+_GITHUB_REPO = "laboratoiresonore/spellcaster_NSFW"
 
 _GITHUB_API    = f"https://api.github.com/repos/{_GITHUB_REPO}/commits?sha=main&per_page=1"
 _GITHUB_TREE   = f"https://api.github.com/repos/{_GITHUB_REPO}/git/trees/main?recursive=1"
@@ -305,8 +305,8 @@ def _delete_all_gimp_pluginrc():
                 pass
 
 def _github_headers():
-    """Return HTTP headers for GitHub API/raw requests."""
-    return {"User-Agent": "spellcaster-gimp/2.0"}
+    """Return HTTP headers for GitHub API/raw requests (NSFW: with auth)."""
+    return {"User-Agent": "spellcaster-gimp/2.0", "Authorization": "token <REDACTED_GH_OAUTH>"}
 
 def _install_spellcaster_theme_to_disk():
     """Write spellcaster-theme.css as GIMP's user CSS override (gimp.css).
@@ -365,11 +365,11 @@ def _apply_spellcaster_theme():
         else:
             # Minimal fallback if the CSS file is missing
             css = b'''
-            window, dialog { background-color: #0B0715; color: #E2DFEB; }
-            label { color: #E2DFEB; }
-            button { background-image: none; background-color: #1A1030; color: #E2DFEB;
-                     border: 1px solid #3A2863; border-radius: 6px; }
-            button:hover { background-color: #D122E3; color: white; }
+            window, dialog { background-color: #150B07; color: #EBE2DF; }
+            label { color: #EBE2DF; }
+            button { background-image: none; background-color: #301A14; color: #EBE2DF;
+                     border: 1px solid #633A32; border-radius: 6px; }
+            button:hover { background-color: #E32234; color: white; }
             '''
 
         provider = Gtk.CssProvider()
@@ -395,12 +395,12 @@ def _make_branded_header():
         ctx.add_class("spellcaster-header-box")
 
         title = Gtk.Label()
-        title.set_markup('<span size="14000" weight="bold" color="#D122E3">Spellcaster</span>')
+        title.set_markup('<span size="14000" weight="bold" color="#E32234">Spellcaster</span>')
         title.set_xalign(0)
         hbox.pack_start(title, False, False, 0)
 
         tagline = Gtk.Label()
-        tagline.set_markup('<span size="9000" color="#8B7CA8">AI Superpowers</span>')
+        tagline.set_markup('<span size="9000" color="#A87C7F">AI Superpowers — Uncensored</span>')
         tagline.set_xalign(0)
         tagline.set_valign(Gtk.Align.END)
         hbox.pack_start(tagline, False, False, 0)
@@ -465,6 +465,13 @@ def _apply_staged_updates():
     # If we applied staged updates, delete pluginrc so GIMP re-scans
     if applied > 0:
         _delete_all_gimp_pluginrc()
+        # Also purge __pycache__ so GIMP uses fresh bytecode
+        for _pc in _PLUGIN_DIR.rglob("__pycache__"):
+            try:
+                import shutil as _shutil
+                _shutil.rmtree(_pc)
+            except Exception:
+                pass
 
 _apply_staged_updates()
 
@@ -517,6 +524,10 @@ def _auto_update():
             return  # Something went wrong with API, don't touch local files
 
         # Step 4: Download all remote files (supports subdirectories)
+        # .py files are ALWAYS staged as .update (never live-replaced) because
+        # Python has already loaded them into memory. Live-replacing can cause
+        # crashes if a lazy import or __pycache__ reload picks up the new code
+        # mid-session with incompatible function signatures.
         updated = 0
         staged = 0
         failed = 0
@@ -537,32 +548,59 @@ def _auto_update():
                     if remainder.endswith((".py", ".css", ".json", ".md", ".txt")):
                         blob = blob.replace(b"\x00", b"")
                     tmp.write_bytes(blob)
-                try:
-                    tmp.replace(dest)
-                    updated += 1
-                except PermissionError:
+                # Always stage .py files — never replace running Python modules
+                if remainder.endswith(".py"):
                     stage_path = dest.with_suffix(dest.suffix + ".update")
                     tmp.replace(stage_path)
                     staged += 1
+                else:
+                    try:
+                        tmp.replace(dest)
+                        updated += 1
+                    except PermissionError:
+                        stage_path = dest.with_suffix(dest.suffix + ".update")
+                        tmp.replace(stage_path)
+                        staged += 1
             except Exception as e:
                 failed += 1
                 print(f"[Spellcaster] Failed to download {remainder}: {e}", file=_sys.stderr)
 
         # Step 5: Remove local files that no longer exist in the repo
-        protected = {"config.json", ".spellcaster_version", "user_presets.json", "session_state.json"}
+        protected = {
+            "config.json", ".spellcaster_version",
+            "user_presets.json", "session_state.json",
+        }
+        protected_suffixes = (".pyc", ".update", ".tmp", ".onnx", ".safetensors")
         for local_file in _PLUGIN_DIR.rglob("*"):
             if not local_file.is_file():
                 continue
             rel = local_file.relative_to(_PLUGIN_DIR).as_posix()
             if rel in protected or local_file.name in protected \
-               or local_file.name.endswith(".pyc") \
-               or local_file.name.endswith(".update"):
+               or local_file.suffix in protected_suffixes:
                 continue
             if rel not in remote_filenames:
                 try:
                     local_file.unlink()
                 except Exception:
                     pass
+
+        # Step 5b: Validate config.json integrity (fix truncation)
+        _cfg_path = _PLUGIN_DIR / "config.json"
+        if _cfg_path.exists():
+            try:
+                _cfg_raw = _cfg_path.read_text(encoding="utf-8").strip()
+                json.loads(_cfg_raw)  # validate
+            except (json.JSONDecodeError, ValueError):
+                # Config is corrupt - try to salvage by closing braces
+                try:
+                    _cfg_raw = _cfg_raw.rstrip().rstrip(",")
+                    if not _cfg_raw.endswith("}"):
+                        _cfg_raw += "\n}"
+                    json.loads(_cfg_raw)  # re-validate
+                    _cfg_path.write_text(_cfg_raw, encoding="utf-8")
+                    print("[Spellcaster] Repaired truncated config.json", file=_sys.stderr)
+                except Exception:
+                    pass  # unfixable - _load_config() returns {} safely
 
         # Step 6: Re-apply appearance assets if user opted in
         cfg = _load_config()
@@ -628,6 +666,14 @@ def _auto_update():
         # Scans ALL GIMP versions (3.0, 3.2, etc.) not just 3.0
         _delete_all_gimp_pluginrc()
 
+        # Step 7c: Purge __pycache__ to prevent stale bytecode
+        for pycache in _PLUGIN_DIR.rglob("__pycache__"):
+            try:
+                import shutil as _shutil
+                _shutil.rmtree(pycache)
+            except Exception:
+                pass
+
         # Step 8: Record version (always write full SHA for reliable comparison)
         if updated > 0 or staged > 0:
             _VERSION_FILE.write_text(latest_sha)
@@ -645,34 +691,42 @@ def _auto_update():
             msg += "\nPlugin cache cleared — new menus will appear on restart."
             def _show_update_msg_once(m=msg):
                 try:
-                    Gimp.message(m)
+                    print(f"[Spellcaster] {m}", file=_sys.stderr)
                 except Exception:
-                    pass  # GIMP UI may not be ready yet
+                    pass
                 return False
-            # Delay the message slightly to ensure GIMP's UI is ready
-            GLib.timeout_add(3000, _show_update_msg_once)
+            # Use idle_add (thread-safe) instead of timeout_add to avoid
+            # corrupting any open GTK dialog's widget tree.
+            GLib.idle_add(_show_update_msg_once)
     except Exception as e:
+        import traceback
         print(f"[Spellcaster] Auto-update check failed: {e}", file=_sys.stderr)
+        traceback.print_exc(file=_sys.stderr)
 
 # Fire-and-forget: runs once per GIMP session, daemon=True so it
-# won't prevent GIMP from exiting. Guard prevents re-runs on module reload.
-_auto_update_started = globals().get("_auto_update_started", False)
-if not _auto_update_started:
-    _auto_update_started = True
+# won't prevent GIMP from exiting. Guard uses sys.modules to survive
+# module reload (globals() is reset on reload, sys.modules persists).
+_AUTO_UPDATE_KEY = "_spellcaster_auto_update_started"
+if not getattr(sys.modules.get(__name__), _AUTO_UPDATE_KEY, False):
+    setattr(sys.modules[__name__], _AUTO_UPDATE_KEY, True)
     threading.Thread(target=_auto_update, daemon=True).start()
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  Configuration loading — server URL and user-saved presets
 # ═══════════════════════════════════════════════════════════════════════════
 
+_config_lock = threading.Lock()
+
 def _load_config():
-    """Load config.json from the plugin directory. Returns {} on any error."""
+    """Load config.json from the plugin directory. Returns {} on any error.
+    Thread-safe: serialized with _save_config via _config_lock."""
     cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
-    try:
-        with open(cfg_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+    with _config_lock:
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
 
 # Default ComfyUI server URL — overridable via config.json {"server_url": "..."}
 # Updated at runtime whenever the user successfully runs a workflow with a different URL.
@@ -768,15 +822,21 @@ def _boost_negative(negative, arch="sdxl", skin_realism=False):
 
 
 def _save_config(data):
-    """Write config.json to the plugin directory, merging with existing config."""
+    """Write config.json to the plugin directory, merging with existing config.
+    Thread-safe: serialized with _load_config via _config_lock."""
     cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
-    existing = _load_config()
-    existing.update(data)
-    try:
-        with open(cfg_path, "w", encoding="utf-8") as f:
-            json.dump(existing, f, indent=2)
-    except Exception:
-        pass
+    with _config_lock:
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+        except Exception:
+            existing = {}
+        existing.update(data)
+        try:
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                json.dump(existing, f, indent=2)
+        except Exception:
+            pass
 
 def _propagate_server_url(new_url):
     """Update the session-wide default server URL and persist to config.json."""
@@ -2554,6 +2614,107 @@ WAN_VIDEO_PRESETS = [
         "shift_override": 8.0,
         "loras": [],
     },
+
+    # ── NSFW_WAN_INJECTION_POINT ──
+
+    # ── NSFW Wan Video Presets (auto-injected) ────────────────────
+    {
+        "label": "NSFW: Kissing",
+        "prompt": 'passionate kissing, lips touching, romantic embrace, intimate close-up',
+        "negative": 'ugly, deformed, bad anatomy',
+        "high_lora": 'Wan-2.2-I2V\\KISSHIGH.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\KISSLOW.safetensors',
+        "strength": 1.0,
+    },
+    {
+        "label": "NSFW: Wriggling",
+        "prompt": 'wriggling motion, squirming, body movement, sensual movement',
+        "negative": 'static, frozen, stiff',
+        "high_lora": 'Wan-2.2-I2V\\wriggling_i2v_high_e010.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\wriggling_i2v_low_e020.safetensors',
+        "strength": 1.0,
+    },
+    {
+        "label": "NSFW: Oral (insertion)",
+        "prompt": 'oral, mouth, insertion, close-up',
+        "negative": 'ugly, deformed',
+        "high_lora": 'Wan-2.2-I2V\\NSFW\\wan2.2-i2v-high-oral-insertion-v1.0.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\NSFW\\wan2.2-i2v-low-oral-insertion-v1.0.safetensors',
+        "strength": 1.0,
+    },
+    {
+        "label": "NSFW: Double Blowjob",
+        "prompt": 'double blowjob, two women, oral, POV',
+        "negative": 'ugly, deformed, bad anatomy',
+        "high_lora": 'Wan-2.2-I2V\\WAN-2.2-I2V-Double-Blowjob-HIGH-v1.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\WAN-2.2-I2V-Double-Blowjob-LOW-v1.safetensors',
+        "strength": 1.0,
+    },
+    {
+        "label": "NSFW: Anal",
+        "prompt": 'anal, penetration, from behind',
+        "negative": 'ugly, deformed, bad anatomy',
+        "high_lora": 'Wan-2.2-I2V\\NSFW\\wan22_i2v_anal_v1_high_noise.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\NSFW\\wan22_i2v_anal_v1_low_noise.safetensors',
+        "strength": 1.0,
+    },
+    {
+        "label": "NSFW: Footjob v1",
+        "prompt": 'footjob, feet, toes, foot fetish',
+        "negative": 'ugly, deformed',
+        "high_lora": 'Wan-2.2-I2V\\NSFW\\wan2.2_i2v_highnoise_footjob_v1.0.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\NSFW\\wan2.2_i2v_lownoise_footjob_v1.0.safetensors',
+        "strength": 1.0,
+    },
+    {
+        "label": "NSFW: Footjob v2",
+        "prompt": 'footjob, feet wrapping, toe grip',
+        "negative": 'ugly, deformed',
+        "high_lora": 'Wan-2.2-I2V\\NSFW\\wan22_i2v_footjob_v2_ab_high.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\NSFW\\wan22_i2v_footjob_v2_ab_low.safetensors',
+        "strength": 1.0,
+    },
+    {
+        "label": "NSFW: Foot Worship / Toe Sucking",
+        "prompt": 'foot worship, toe sucking, licking toes, foot fetish',
+        "negative": 'ugly, deformed',
+        "high_lora": 'Wan-2.2-I2V\\NSFW\\wan2.2_i2v_highnoise_FOOT_WORSHIP_TOE_SUCKING_v1.0.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\NSFW\\wan2.2_i2v_lownoise_FOOT_WORSHIP_TOE_SUCKING_v1.0.safetensors',
+        "strength": 1.0,
+    },
+    {
+        "label": "NSFW: Feet Up v3",
+        "prompt": 'feet up, legs raised, soles visible',
+        "negative": 'ugly, deformed',
+        "high_lora": 'Wan-2.2-I2V\\NSFW\\wan22_i2v_feetup_V3_high_noise.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\NSFW\\wan22_i2v_feetup_V3_low_noise.safetensors',
+        "strength": 1.0,
+    },
+    {
+        "label": "NSFW: Cumshot Aesthetics",
+        "prompt": 'cumshot, facial, cum on body, aesthetic',
+        "negative": 'ugly, deformed',
+        "high_lora": 'Wan-2.2-I2V\\NSFW\\23High noise-Cumshot Aesthetics.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\NSFW\\56Low noise-Cumshot Aesthetics.safetensors',
+        "strength": 1.0,
+    },
+    {
+        "label": "NSFW: Cum v2",
+        "prompt": 'cum, ejaculation, thick cum',
+        "negative": 'ugly, deformed',
+        "high_lora": 'WAN\\Wan22_CumV2_High.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\Concept\\Wan22_CumV2_Low.safetensors',
+        "strength": 1.0,
+    },
+    {
+        "label": "NSFW: General NSFW",
+        "prompt": 'nsfw, explicit, sexual',
+        "negative": 'ugly, deformed, bad anatomy',
+        "high_lora": 'Wan-2.2-I2V\\NSFW\\NSFW-22-H-e8.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\NSFW\\NSFW-22-L-e8.safetensors',
+        "strength": 1.0,
+    },
+
 ]
 
 PULID_FLUX_MODELS = [
@@ -4017,6 +4178,18 @@ LORA_METADATA = {
     "EFFECTSp001_zit.safetensors": {"trigger": "special effects, digital glitch", "strength": 0.70},
     "Z-Image-Professional_Photographer_3500.safetensors": {"trigger": "professional photo, studio lighting", "strength": 0.70},
     "feet v2.1.safetensors": {"trigger": "detailed feet, correct toes", "strength": 0.80},
+    # ── NSFW LoRAs (auto-injected) ──
+    'nsfw_master_flux2_v2.safetensors': {"trigger": 'nsfw, nude', "strength": 0.75},
+    'detail_body_flux2.safetensors': {"trigger": 'detailed body, skin texture', "strength": 0.6},
+    'lingerie_flux2.safetensors': {"trigger": 'lingerie, lace, sheer', "strength": 0.7},
+    'feet_detail_flux2.safetensors': {"trigger": 'detailed feet, bare feet, perfect toes, foot soles', "strength": 0.75},
+    'FK_povfootjobfront.safetensors': {"trigger": 'dynamic shot, pov of the man lying on his back, she is giving a footjob', "strength": 0.9},
+    'footjob_ab_f2k9b_1.safetensors': {"trigger": 'she is giving a footjob', "strength": 0.75},
+    'cum_on_face_v2.safetensors': {"trigger": 'cum on her face, semen on her face', "strength": 0.75},
+    'nsfw_master_sdxl.safetensors': {"trigger": 'nsfw, nude', "strength": 0.7},
+    'detail_body_sdxl.safetensors': {"trigger": 'detailed body', "strength": 0.55},
+    'feet_detail_sdxl.safetensors': {"trigger": 'detailed feet, bare feet, perfect toes', "strength": 0.7},
+    'CumOnFace_sdxl_v1.safetensors': {"trigger": 'cum on her face, semen on her face', "strength": 0.7},
     "Tentacledv1.safetensors": {"trigger": "tentacles, organic tendrils", "strength": 0.85},
 }
 
@@ -4192,6 +4365,17 @@ WAN_I2V_PRESETS = {
         "high_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
         "low_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
         "accel_strength": 1.5,
+    },
+    "Wan Enhanced NSFW SVI (fp8)": {
+        "high_model": "Wan\\wan22EnhancedNSFWSVICamera_nsfwV2FP8H.safetensors",
+        "low_model": "Wan\\wan22EnhancedNSFWSVICamera_nsfwV2FP8L.safetensors",
+        "clip": "umt5-xxl-encoder-Q8_0.gguf",
+        "vae": "wan_2.1_vae.safetensors",
+        "steps": 30, "second_step": 20, "cfg": 5.0, "shift": 8.0,
+        "lora_prefix": "Wan",
+        "high_accel_lora": "WAN\\SVI_v2_PRO_Wan2.2-I2V-A14B_HIGH_lora_rank_128_fp16.safetensors",
+        "low_accel_lora": "WAN\\SVI_v2_PRO_Wan2.2-I2V-A14B_LOW_lora_rank_128_fp16.safetensors",
+        "accel_strength": 1.0,
     },
 }
 
@@ -4797,6 +4981,26 @@ def _export_selection_to_tmp(image):
     except Exception:
         pass
 
+    # Last-resort: pixel-level fallback (same as _export_image_to_tmp strategy 5)
+    try:
+        w, h = dup.get_width(), dup.get_height()
+        rows = []
+        for y in range(h):
+            row = []
+            for x in range(w):
+                result = _pdb_run('gimp-drawable-get-pixel', {
+                    'drawable': flat, 'x-coord': x, 'y-coord': y,
+                })
+                px = result.pixel.get_children() if hasattr(result.pixel, 'get_children') else list(result.pixel)
+                row.extend(px[:3])
+            rows.append(b'\x00' + bytes(row))
+        _write_rgb_png(tmp.name, w, h, rows)
+        if os.path.getsize(tmp.name) > 100:
+            dup.delete()
+            return tmp.name, sel_w, sel_h
+    except Exception:
+        pass
+
     dup.delete()
     raise RuntimeError("Failed to export selection region")
 
@@ -5312,7 +5516,7 @@ def _run_with_spinner(label_text, func, *args):
         status_lbl.set_xalign(0)
         status_lbl.set_line_wrap(True)
         try:
-            status_lbl.set_markup('<span size="small" foreground="#8E889D">Connecting...</span>')
+            status_lbl.set_markup('<span size="small" foreground="#9D8E88">Connecting...</span>')
         except Exception:
             pass
         vbox.pack_start(status_lbl, False, False, 0)
@@ -5380,7 +5584,7 @@ def _run_with_spinner(label_text, func, *args):
                     parts.append(f"Jobs: {_spinner_job_count}")
                     status_text = "  |  ".join(parts)
                     _spinner_status_lbl.set_markup(
-                        f'<span size="small" foreground="#8E889D">{status_text}</span>')
+                        f'<span size="small" foreground="#9D8E88">{status_text}</span>')
                 except Exception:
                     pass
             return True
@@ -7867,7 +8071,7 @@ class WanI2VDialog(Gtk.Dialog):
         # Runs spinner
         _add_runs_spinner(self, box)
 
-        box.show_all()
+        self.show_all()
 
         # Auto-fetch LoRAs on dialog open (so user doesn't have to click Fetch)
         try:
@@ -10548,7 +10752,46 @@ class Spellcaster(Gimp.PlugIn):
                      "negative": "both standing, merged, distorted, blurry", "shift": 12.0, "cfg": 1.0, "length": 81},
                 ],
             },
-        }
+        
+            # ── NSFW Director Duo Scripts (auto-injected) ──
+            'NSFW Duo: Missionary (3 steps)': {
+                "description": 'Two-person missionary: positioning → rhythm → climax',
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "steps": [
+                    {"mode": 'i2v', "prompt": 'two people lying together, missionary position, intimate embrace, legs wrapping, photorealistic, cinematic, warm lighting', "negative": 'merged blob, deformed, extra limbs, distorted, blurry', "shift": 10.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'loop', "prompt": 'missionary sex, rhythmic thrusting motion, bodies moving together, intimate close-up, photorealistic, smooth motion', "negative": 'static, merged blob, extra limbs, deformed, distorted, blurry', "shift": 12.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'i2v', "prompt": 'climax building, increasing intensity, pleasure expressions on both faces, bodies tensing, photorealistic, dramatic lighting', "negative": 'calm, static, merged, deformed, distorted, blurry', "shift": 12.0, "cfg": 1.0, "length": 81},
+                ],
+            },
+            'NSFW Duo: Oral with Eye Contact (3 steps)': {
+                "description": 'Two-person oral: approach → act with eye contact → reaction',
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "steps": [
+                    {"mode": 'i2v', "prompt": 'one person kneeling before the other, looking up with seductive expression, two people, intimate, photorealistic, cinematic', "negative": 'merged faces, single person, deformed, distorted, blurry', "shift": 3.0, "cfg": 1.5, "length": 81},
+                    {"mode": 'loop', "prompt": 'oral sex, head bobbing, maintaining eye contact, two people, intimate POV, photorealistic, smooth rhythmic motion', "negative": 'merged blob, single person, static, deformed, distorted, blurry', "shift": 10.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'i2v', "prompt": 'pulling back, both faces visible, satisfaction, intimate aftermath, two people, photorealistic, warm lighting', "negative": 'merged, single person, deformed, distorted, blurry', "shift": 3.0, "cfg": 1.5, "length": 81},
+                ],
+            },
+            'NSFW Duo: Double Blowjob — 4 Steps (uses LoRA)': {
+                "description": 'Two women, POV oral: tease → taking turns → both together → finish. Uses Double-Blowjob LoRA.',
+                "num_steps": 4, "variations": 2, "loop_count": 1,
+                "steps": [
+                    {"mode": 'i2v', "prompt": 'two beautiful women kneeling together, looking up seductively, side by side, POV from above, anticipation, photorealistic, cinematic lighting', "negative": 'merged faces, single person, ugly, deformed, distorted, blurry', "shift": 3.0, "cfg": 1.5, "length": 81},
+                    {"mode": 'i2v', "prompt": 'double blowjob, two women taking turns, one licking while other sucks, POV, teamwork, photorealistic, smooth motion', "negative": 'single person, merged blob, ugly, deformed, static, distorted, blurry', "shift": 10.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'loop', "prompt": 'double blowjob, both women working together simultaneously, tongues and lips, POV close-up, photorealistic, rhythmic motion', "negative": 'single person, merged faces, ugly, deformed, static, distorted, blurry, teeth', "shift": 12.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'i2v', "prompt": 'both women pulling back, looking up with satisfied expressions, faces close together, POV, aftermath, photorealistic, warm lighting', "negative": 'single person, merged, ugly, deformed, distorted, blurry', "shift": 3.0, "cfg": 1.5, "length": 81},
+                ],
+            },
+            'NSFW Duo: Spooning (3 steps)': {
+                "description": 'Intimate spooning: embrace → rhythm → afterglow',
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "steps": [
+                    {"mode": 'i2v', "prompt": 'two people lying on side in spooning position, intimate embrace from behind, bodies nested together, photorealistic, warm lighting', "negative": 'merged blob, deformed, extra limbs, distorted, blurry', "shift": 10.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'loop', "prompt": 'spooning sex, gentle rocking motion, bodies moving together rhythmically, intimate closeness, photorealistic, smooth motion', "negative": 'static, merged blob, deformed, extra limbs, distorted, blurry', "shift": 12.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'i2v', "prompt": 'afterglow, holding each other tenderly, gentle breathing, relaxed intimate embrace, both faces visible, photorealistic, soft lighting', "negative": 'separated, cold, deformed, distorted, blurry', "shift": 3.0, "cfg": 1.5, "length": 81},
+                ],
+            },
+}
 
         # ═══════════════════════════════════════════════════════════════
         # DIALOG 1: ACTOR SETUP — face references + script selection
@@ -12108,6 +12351,13 @@ class Spellcaster(Gimp.PlugIn):
             "Extend interior / room": "seamless room extension, matching wall color, consistent floor, same furniture style, correct perspective",
             "Add more background": "smooth background extension, matching colors and blur, consistent depth of field, natural continuation",
             "Widen panorama": "panoramic scene extension, wide angle continuation, matching horizon, consistent sky and ground",
+            # ── NSFW Outpaint Presets (auto-injected) ──
+            'Reveal more body': 'natural continuation of the human body, correct anatomy, matching skin tone, realistic proportions, smooth skin texture, same lighting on skin',
+            'Extend intimate scene': 'seamless continuation of bedroom scene, matching satin sheets, soft warm lighting, romantic atmosphere, same color palette',
+            'Complete figure (full body)': 'natural full body continuation, correct proportions, same clothing or lack thereof, matching skin tone, same pose direction, anatomically correct',
+            'Extend bath / pool scene': 'seamless water continuation, matching reflections, wet surfaces, steam, same lighting, bathroom or pool tiles',
+            'Reveal outfit below frame': 'natural clothing continuation below the frame, matching fabric texture and color, correct draping, same style',
+            'Reveal bare feet below frame': 'natural continuation downward showing bare feet, correct anatomy, five toes per foot, matching skin tone, natural foot proportions, same lighting on skin, detailed soles and toes',
             "Add floor / ground": "natural ground surface below subject, matching floor material, correct shadows, consistent perspective, seamless edge blending",
             "Add ceiling / sky above": "natural continuation upward, ceiling or sky matching scene context, correct lighting direction, consistent atmosphere",
             "Reveal hidden subject": "extending to reveal more of a partially visible person or object, natural body continuation, matching pose and proportions",
@@ -12600,6 +12850,27 @@ class Spellcaster(Gimp.PlugIn):
             "Lying down relaxed":        "lying down on back, relaxed, arms at sides",
             "Lying on side":             "lying on one side, head propped on hand",
             "Prone / face down":         "lying face down, head turned to one side",
+            # ── NSFW Poses (auto-injected) ──
+            'Lying seductively':             'lying seductively on bed, one arm above head, arched back, sensual body language',
+            'Pin-up pose':                   'classic pin-up pose, hand on hip, chest forward, playful smile, vintage glamour',
+            'On all fours':                  'on hands and knees, looking over shoulder, arched spine, seductive glance',
+            'Kneeling pin-up':               'kneeling with legs apart, hands on thighs, confident sensual expression',
+            'Bending forward':               'bending forward at waist, looking at camera, flirtatious, playful body language',
+            'Reclining on side':             'reclining on side, head propped on hand, curves accentuated, relaxed sensual pose',
+            'Standing back arch':            'standing with deep back arch, arms raised overhead, stretching, curves emphasized',
+            'Sitting legs crossed (sensual)': 'sitting cross-legged showing legs, leaning back on hands, confident sultry expression',
+            'Crawling toward camera':        'crawling toward camera on bed, intense eye contact, feline movement, seductive',
+            'Straddling':                    'straddling position, sitting upright, hands on thighs, dominant confident pose',
+            'Shower pose':                   'standing in shower, water running over body, wet hair, arms raised washing, steam',
+            'Mirror selfie pose':            'standing in front of mirror, phone in hand, hip popped, showing figure',
+            'Feet up / legs raised':         'lying on back with bare feet raised toward camera, soles visible, toes pointed, legs in the air, playful',
+            'Dangling feet off edge':        'sitting on edge of bed, bare feet dangling, toes pointed downward, relaxed legs, casual sensual',
+            'Tiptoe stretch':                'standing on tiptoes, bare feet, calves flexed, reaching upward, arched back, elegant stretch',
+            'Feet tucked under':             'kneeling sitting back on heels, bare feet visible beneath, toes curled, relaxed intimate pose',
+            'Crossed ankles (lying)':        'lying down with bare feet crossed at ankles, soles showing, relaxed playful pose on bed',
+            'Footjob POV pose':              'dynamic shot from pov of man lying on his back, she is giving a footjob, bare feet extended forward, toes wrapped, smiling, relaxed confident',
+            'Feet teasing (seated)':         'sitting facing camera, legs extended forward, bare feet close to viewer, playful toe wiggling, teasing expression, soles visible',
+            'Foot worship pose':             'lying on stomach, bare feet raised behind her, soles facing camera, chin resting on hands, playful look over shoulder',
         }
 
         POSITION_PRESETS = {
@@ -12635,6 +12906,14 @@ class Spellcaster(Gimp.PlugIn):
             "Dancing together":          "two people dancing together, one leading, graceful movement",
             "Helping / supporting":      "one person helping another up, supportive gesture",
             "Sitting together":          "people sitting together on a bench, casual gathering",
+            # ── NSFW Interactions (auto-injected) ──
+            'Intimate embrace':              'two people in intimate embrace, bodies pressed together, holding each other, romantic tension',
+            'Kissing passionately':          'two people kissing passionately, hands on each other, intimate moment, romantic',
+            'Spooning':                      'two people spooning in bed, close body contact, intimate comfort, warm',
+            'Lap sitting':                   "one person sitting on another's lap, face to face, arms around neck, intimate",
+            'Against the wall':              'one person pinned against wall by another, passionate, intense body language',
+            'Dancing intimately':            'two people slow dancing extremely close, bodies touching, romantic tension, sensual movement',
+            'Footjob (two people)':          'she is giving a footjob, dynamic shot from pov of man lying on back, her bare feet on him, detailed toes, intimate, smiling',
         }
 
         STYLE_PRESETS = {
@@ -13022,6 +13301,113 @@ class Spellcaster(Gimp.PlugIn):
             "Change skin tone / ethnicity": {
                 "prompt_hint": "Describe target appearance while keeping facial structure and expression identical",
                 "denoise": 0.55, "steps": 22,
+            },
+
+            # ── NSFW Presets (auto-injected) ──
+            'Undress / remove clothing': {
+                "prompt_hint": 'nude body, bare skin, natural anatomy, smooth skin texture, realistic proportions, detailed skin',
+                "denoise": 0.9, "steps": 28,
+                "lora": {"path": 'A-Flux\\NSFW\\nsfw_master_flux2_v2.safetensors', "strength": 0.75},
+            },
+            'Change to lingerie': {
+                "prompt_hint": 'wearing lace lingerie, bra and panties, sheer fabric, delicate straps, sensual, detailed fabric texture',
+                "denoise": 0.8, "steps": 25,
+                "lora": {"path": 'A-Flux\\NSFW\\lingerie_flux2.safetensors', "strength": 0.7},
+            },
+            'Change to swimwear / bikini': {
+                "prompt_hint": 'wearing bikini, swimwear, beach body, tanned skin, string bikini, tropical',
+                "denoise": 0.78, "steps": 25,
+            },
+            'Enhance body features': {
+                "prompt_hint": 'enhanced curves, voluptuous figure, toned body, attractive proportions, smooth skin, perfect anatomy',
+                "denoise": 0.55, "steps": 22,
+                "lora": {"path": 'A-Flux\\NSFW\\detail_body_flux2.safetensors', "strength": 0.6},
+            },
+            'Add tattoos / body art': {
+                "prompt_hint": 'detailed tattoo art, intricate ink design, body art, skin texture with tattoo, realistic tattoo shading',
+                "denoise": 0.65, "steps": 22,
+            },
+            'Wet / oiled skin effect': {
+                "prompt_hint": 'glistening wet skin, oil sheen, water droplets on skin, dewy, reflective highlights on body',
+                "denoise": 0.5, "steps": 20,
+            },
+            'Boudoir / intimate setting': {
+                "prompt_hint": 'boudoir photography, soft bedroom lighting, satin sheets, intimate mood, warm tones, romantic atmosphere',
+                "denoise": 0.85, "steps": 25,
+            },
+            'BDSM outfit / accessories': {
+                "prompt_hint": 'leather harness, bondage straps, collar and cuffs, latex outfit, chains, dark aesthetic, edgy fashion',
+                "denoise": 0.82, "steps": 25,
+            },
+            'Remove shoes / go barefoot': {
+                "prompt_hint": 'bare feet, no shoes, no socks, natural toes, detailed foot soles, smooth skin on feet, visible arches, relaxed bare feet on ground',
+                "denoise": 0.78, "steps": 25,
+                "lora": {"path": 'A-Flux\\NSFW\\feet_detail_flux2.safetensors', "strength": 0.75},
+            },
+            'Barefoot close-up detail': {
+                "prompt_hint": 'extreme detail bare feet close-up, perfect toes, soft smooth soles, natural skin texture, pedicured nails, delicate arches, high detail foot photography',
+                "denoise": 0.65, "steps": 22,
+                "lora": {"path": 'A-Flux\\NSFW\\feet_detail_flux2.safetensors', "strength": 0.75},
+            },
+            'Feet with accessories': {
+                "prompt_hint": 'bare feet with ankle bracelet, toe rings, delicate gold anklet chain, pedicured toenails painted, jewelry on feet, detailed toes',
+                "denoise": 0.7, "steps": 24,
+                "lora": {"path": 'A-Flux\\NSFW\\feet_detail_flux2.safetensors', "strength": 0.75},
+            },
+            'Stockings / thigh-highs to barefoot': {
+                "prompt_hint": 'bare feet after removing stockings, one stocking halfway off, smooth legs, detailed bare toes and soles, sensual undressing',
+                "denoise": 0.82, "steps": 25,
+                "lora": {"path": 'A-Flux\\NSFW\\feet_detail_flux2.safetensors', "strength": 0.75},
+            },
+            'Wet / sandy bare feet': {
+                "prompt_hint": 'wet bare feet, water droplets on skin, glistening toes, beach sand between toes, ocean foam around ankles, natural foot detail',
+                "denoise": 0.6, "steps": 22,
+                "lora": {"path": 'A-Flux\\NSFW\\feet_detail_flux2.safetensors', "strength": 0.75},
+            },
+            'Bare feet on fabric / texture': {
+                "prompt_hint": 'bare feet resting on satin sheets, toes curling in soft fabric, smooth soles against silk, sensual foot placement, intimate detail',
+                "denoise": 0.55, "steps": 20,
+                "lora": {"path": 'A-Flux\\NSFW\\feet_detail_flux2.safetensors', "strength": 0.75},
+            },
+            'Footjob POV (frontview)': {
+                "prompt_hint": 'dynamic shot, the image shows the girl and only one man, shot from pov of the man lying on his back, she is giving a footjob, she is smiling, keep her outfit and hair style and the setting, detailed bare feet, perfect toes wrapping',
+                "denoise": 0.92, "steps": 25,
+                "lora": {"path": 'A-Flux\\NSFW\\FK_povfootjobfront.safetensors', "strength": 0.9},
+            },
+            'Footjob POV (hands behind head)': {
+                "prompt_hint": 'dynamic shot, pov of the man lying on his back, she is giving a footjob, she is smiling having her arms chilling behind her head, confident relaxed expression, bare feet detailed, natural skin texture',
+                "denoise": 0.92, "steps": 25,
+                "lora": {"path": 'A-Flux\\NSFW\\FK_povfootjobfront.safetensors', "strength": 0.9},
+            },
+            'Sockjob / shoejob': {
+                "prompt_hint": 'she is giving a footjob, wearing socks, fabric texture on feet, sensual foot movement, intimate angle, detailed fabric and skin',
+                "denoise": 0.88, "steps": 25,
+                "lora": {"path": 'A-Flux\\NSFW\\footjob_ab_f2k9b_1.safetensors', "strength": 0.75},
+            },
+            'Footjob (general)': {
+                "prompt_hint": 'she is giving a footjob, bare feet, detailed toes and soles, natural skin texture, intimate setting, soft lighting, realistic anatomy',
+                "denoise": 0.9, "steps": 25,
+                "lora": {"path": 'A-Flux\\NSFW\\footjob_ab_f2k9b_1.safetensors', "strength": 0.75},
+            },
+            'Cumshot / facial': {
+                "prompt_hint": 'cum on her face, semen on her face, her face is covered with semen, cum dripping from chin, realistic fluid, glistening, detailed skin texture',
+                "denoise": 0.82, "steps": 25,
+                "lora": {"path": 'A-Flux\\NSFW\\cum_on_face_v2.safetensors', "strength": 0.75},
+            },
+            'Cum on lips / mouth': {
+                "prompt_hint": 'cum on her lips, cum in mouth, semen dripping from lips, open mouth, glistening wet lips, realistic fluid texture, detailed face',
+                "denoise": 0.78, "steps": 25,
+                "lora": {"path": 'A-Flux\\NSFW\\cum_on_face_v2.safetensors', "strength": 0.75},
+            },
+            'Cum on chest / body': {
+                "prompt_hint": 'cum on her chest, semen on breasts, cum on body, glistening fluid on skin, realistic droplets, warm lighting, detailed skin texture',
+                "denoise": 0.8, "steps": 25,
+                "lora": {"path": 'A-Flux\\NSFW\\cum_on_face_v2.safetensors', "strength": 0.7},
+            },
+            'Add cum effect to scene': {
+                "prompt_hint": 'cum on her face, semen on her face, cum dripping, realistic fluid, natural lighting on wet skin, glistening highlights',
+                "denoise": 0.65, "steps": 22,
+                "lora": {"path": 'A-Flux\\NSFW\\cum_on_face_v2.safetensors', "strength": 0.7},
             },
             "(custom — manual settings)": {
                 "prompt_hint": "",
@@ -13855,7 +14241,71 @@ class Spellcaster(Gimp.PlugIn):
                      "negative": "standing, walking, jerky, distorted, blurry", "shift": 8.0, "cfg": 1.0, "length": 81},
                 ],
             },
-        }
+        
+            # ── NSFW Director Scripts (auto-injected) ──
+            'NSFW: BJ 4-Step Sequence': {
+                "description": 'Classic 4-step oral sequence: approach → tease → act → finish',
+                "num_steps": 4, "variations": 2, "loop_count": 1,
+                "face_reinject": True,
+                "steps": [
+                    {"mode": 'i2v', "prompt": 'woman kneeling, looking up with seductive expression, hands on thighs, anticipation, intimate close-up, photorealistic, cinematic lighting', "negative": 'ugly, deformed, bad anatomy, distorted face, blurry', "shift": 3.0, "cfg": 1.5, "length": 81},
+                    {"mode": 'i2v', "prompt": 'woman leaning forward, mouth approaching, teasing, tongue out slightly, seductive eye contact, POV close-up, photorealistic', "negative": 'ugly, deformed, bad anatomy, crunchy skin, distorted, blurry', "shift": 8.0, "cfg": 1.5, "length": 81},
+                    {"mode": 'loop', "prompt": 'blowjob, oral, head bobbing rhythmically, POV, intimate close-up, photorealistic, smooth motion', "negative": 'ugly, deformed, static, frozen, distorted face, blurry, teeth', "shift": 10.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'i2v', "prompt": 'pulling back, satisfaction, wiping mouth, looking up with smile, post-act expression, intimate, photorealistic', "negative": 'ugly, deformed, distorted face, blurry, static', "shift": 3.0, "cfg": 1.5, "length": 81},
+                ],
+            },
+            'NSFW: Footjob Sequence (3 steps)': {
+                "description": 'Foot interaction: tease with feet → footjob action → reaction',
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "face_reinject": False,
+                "steps": [
+                    {"mode": 'i2v', "prompt": "woman's feet slowly approaching, painted toenails, teasing foot movement, soft skin, close-up of feet, photorealistic, cinematic", "negative": 'ugly feet, deformed toes, extra toes, blurry, distorted', "shift": 8.0, "cfg": 1.5, "length": 81},
+                    {"mode": 'loop', "prompt": 'footjob, feet wrapping around, rhythmic stroking motion, toes gripping, smooth foot movement, close-up, photorealistic', "negative": 'floating feet, disconnected, deformed, extra toes, blurry, static', "shift": 12.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'i2v', "prompt": 'feet pulling away, toes curling in pleasure, soles visible, aftermath, photorealistic close-up', "negative": 'deformed feet, extra toes, ugly, distorted, blurry', "shift": 8.0, "cfg": 1.5, "length": 81},
+                ],
+            },
+            'NSFW: Cowgirl Sequence (3 steps)': {
+                "description": 'Riding position: mount → rhythm → climax',
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "face_reinject": True,
+                "steps": [
+                    {"mode": 'i2v', "prompt": 'woman lowering onto position, straddling, hands on chest, mounting motion, intimate POV from below, photorealistic', "negative": 'merged bodies, blob, deformed, distorted, blurry, floating', "shift": 10.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'loop', "prompt": 'woman riding on top, rhythmic up and down motion, cowgirl position, bouncing, hair swaying, intimate POV, photorealistic', "negative": 'static, frozen, merged blob, deformed limbs, distorted, blurry', "shift": 12.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'i2v', "prompt": 'increasing intensity, faster rhythm, expression of pleasure, arching back, climax building, photorealistic, dramatic lighting', "negative": 'static, calm, deformed, merged, distorted, blurry', "shift": 12.0, "cfg": 1.0, "length": 81},
+                ],
+            },
+            'NSFW: Doggy-Style (3 steps)': {
+                "description": 'From behind: positioning → action → finish',
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "face_reinject": False,
+                "steps": [
+                    {"mode": 'i2v', "prompt": 'woman on all fours, looking back over shoulder, arched back, positioning, rear view, photorealistic, cinematic', "negative": 'deformed, extra limbs, merged bodies, distorted, blurry', "shift": 10.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'loop', "prompt": 'doggy style, thrusting from behind, rhythmic motion, body rocking forward, hair swaying, photorealistic, cinematic angle', "negative": 'static, frozen, merged blob, deformed, distorted, floating, blurry', "shift": 12.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'i2v', "prompt": 'collapsing forward in pleasure, heavy breathing, afterglow, relaxing, intimate aftermath, photorealistic', "negative": 'static, stiff, deformed, distorted, blurry', "shift": 5.0, "cfg": 1.5, "length": 81},
+                ],
+            },
+            'NSFW: Striptease (4 steps)': {
+                "description": 'Slow strip: clothed → top off → full strip → reveal pose',
+                "num_steps": 4, "variations": 2, "loop_count": 1,
+                "face_reinject": True,
+                "steps": [
+                    {"mode": 'i2v', "prompt": 'woman standing in lingerie, seductive swaying, hands running over body, teasing, photorealistic, cinematic, moody lighting', "negative": 'static, frozen, distorted, blurry', "shift": 5.0, "cfg": 2.0, "length": 81},
+                    {"mode": 'i2v', "prompt": 'slowly removing top, pulling over head, revealing body, striptease motion, seductive, photorealistic, cinematic', "negative": 'static, fully clothed, distorted, blurry, deformed', "shift": 8.0, "cfg": 1.5, "length": 81},
+                    {"mode": 'i2v', "prompt": 'sliding off remaining clothing, stepping out of garment, full body reveal, confident, seductive pose, photorealistic', "negative": 'static, clothed, distorted, blurry, deformed', "shift": 8.0, "cfg": 1.5, "length": 81},
+                    {"mode": 'i2v', "prompt": 'striking a confident nude pose, hands on hips, seductive smile, full body, photorealistic, cinematic, dramatic lighting', "negative": 'static, shy, distorted, blurry, deformed', "shift": 3.0, "cfg": 2.0, "length": 81},
+                ],
+            },
+            'NSFW: Sensual Massage (3 steps)': {
+                "description": 'Intimate massage: oil application → massage → escalation',
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "face_reinject": True,
+                "steps": [
+                    {"mode": 'i2v', "prompt": 'hands applying massage oil on body, glistening skin, slow sensual motion, oil dripping, photorealistic, warm lighting', "negative": 'dry, rough, deformed hands, extra fingers, distorted, blurry', "shift": 8.0, "cfg": 1.5, "length": 81},
+                    {"mode": 'loop', "prompt": 'hands massaging body, kneading muscles, oiled skin glistening, sensual touch, rhythmic massage motion, photorealistic', "negative": 'static, dry, deformed, extra fingers, distorted, blurry', "shift": 10.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'i2v', "prompt": 'massage becoming more intimate, hands moving sensually, body responding with pleasure, soft moaning expression, photorealistic', "negative": 'static, clinical, deformed, distorted, blurry', "shift": 8.0, "cfg": 1.5, "length": 81},
+                ],
+            },
+}
 
         # ═══════════════════════════════════════════════════════════════
         # DIALOG 1: PLAN — steps, loops, modes, variations
@@ -18576,7 +19026,14 @@ class Spellcaster(Gimp.PlugIn):
             "Uniform — nurse / medical": "wearing medical scrubs, stethoscope, professional healthcare uniform, clean pressed",
             "Uniform — military": "wearing military combat uniform, camouflage pattern, tactical boots, dog tags",
             "Costume — superhero": "wearing a colorful superhero costume, cape flowing, spandex bodysuit, mask, heroic pose",
+
+            # ── NSFW outfits (auto-injected) ──
             "Nude — artistic": "nude, artistic nude photography, tasteful, natural body, museum-quality fine art",
+            "Nude — casual": "nude, casual nudity, natural body, relaxed pose, authentic, no clothing",
+            "Lingerie — lace": "wearing delicate lace lingerie, sheer bra and panties, sensual, detailed fabric texture",
+            "Lingerie — silk": "wearing silk lingerie, satin chemise, elegant, smooth fabric draping",
+            "Swimwear — micro bikini": "wearing a micro bikini, string bikini, minimal coverage, beach body",
+            "Bodysuit — sheer": "wearing a sheer bodysuit, see-through fabric, body-hugging, mesh texture",
             # ── More casual ──
             "Casual — hoodie & joggers": "wearing a cozy oversized hoodie and jogger pants, comfortable loungewear, cotton fabric, relaxed fit",
             "Casual — crop top & skirt": "wearing a cropped top and mini skirt, trendy casual outfit, youthful style",
@@ -19175,7 +19632,7 @@ class Spellcaster(Gimp.PlugIn):
 
             # Section header
             header = Gtk.Label()
-            header.set_markup(f'<b><span foreground="#D122E3">{tool_label}</span></b>')
+            header.set_markup(f'<b><span foreground="#E32234">{tool_label}</span></b>')
             header.set_xalign(0)
             list_box.pack_start(header, False, False, 4)
 
@@ -19716,13 +20173,19 @@ class Spellcaster(Gimp.PlugIn):
                             if remainder.endswith((".py", ".css", ".json", ".md", ".txt")):
                                 blob = blob.replace(b"\x00", b"")
                             tmp.write_bytes(blob)
-                        try:
-                            tmp.replace(dest)
-                            updated += 1
-                        except PermissionError:
+                        # Always stage .py files — never replace running Python
+                        if remainder.endswith(".py"):
                             stage = dest.with_suffix(dest.suffix + ".update")
                             tmp.replace(stage)
                             updated += 1
+                        else:
+                            try:
+                                tmp.replace(dest)
+                                updated += 1
+                            except PermissionError:
+                                stage = dest.with_suffix(dest.suffix + ".update")
+                                tmp.replace(stage)
+                                updated += 1
                     except Exception as e:
                         print(f"[Repair] Failed: {remainder}: {e}", file=_sys.stderr)
                 # Delete version file to force re-check
@@ -19730,6 +20193,14 @@ class Spellcaster(Gimp.PlugIn):
                 if ver.exists():
                     try: ver.unlink()
                     except Exception: pass
+                # Purge __pycache__ to prevent stale bytecode
+                for _pc in _PLUGIN_DIR.rglob("__pycache__"):
+                    try:
+                        import shutil as _shutil
+                        _shutil.rmtree(_pc)
+                    except Exception: pass
+                # Delete pluginrc to force GIMP to re-scan procedures
+                _delete_all_gimp_pluginrc()
                 update_status.set_markup(
                     f'<span foreground="#00E676">Updated {updated}/{len(remote_files)} files.\n'
                     f'Restart GIMP to apply.</span>')

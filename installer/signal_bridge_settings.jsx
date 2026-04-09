@@ -1798,6 +1798,241 @@ function WorkflowBrowser({ comfyuiUrl, onCreateScaffold }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// GUILD SIDEBAR — Collapsible right panel with characters + chat
+// ═══════════════════════════════════════════════════════════════════
+
+function GuildSidebar({ isOpen, onToggle, comfyUrl, koboldUrl: initialKoboldUrl }) {
+  const [characters, setCharacters] = useState([]);
+  const [activeCharId, setActiveCharId] = useState(null);
+  const [chatHistory, setChatHistory] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [searchFilter, setSearchFilter] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [llmConnected, setLlmConnected] = useState(false);
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const [koboldUrl, setKoboldUrl] = useState(initialKoboldUrl || "http://127.0.0.1:5001");
+  const chatEndRef = useRef(null);
+
+  // Initialize — fetch characters and system prompt
+  useEffect(() => {
+    (async () => {
+      try {
+        const [charRes, promptRes] = await Promise.all([
+          fetch("/api/characters"), fetch("/api/system_prompt")
+        ]);
+        const chars = await charRes.json();
+        const promptData = await promptRes.json();
+        // Restore saved identities
+        let saved = {};
+        try { saved = JSON.parse(localStorage.getItem("guild_identities") || "{}"); } catch {}
+        chars.forEach(c => {
+          if (saved[c.id]) {
+            c.name = saved[c.id].name || c.name;
+            c.personality = saved[c.id].personality || c.personality;
+            c.avatar_url = saved[c.id].avatar_url || c.avatar_url;
+          }
+        });
+        setCharacters(chars);
+        setSystemPrompt(promptData.prompt || "");
+        if (chars.length > 0) setActiveCharId(chars[0].id);
+      } catch (e) { console.error("Guild init error:", e); }
+    })();
+  }, []);
+
+  // Check LLM on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`${koboldUrl}/api/v1/model`);
+        setLlmConnected(res.ok);
+      } catch { setLlmConnected(false); }
+    })();
+  }, [koboldUrl]);
+
+  // Auto-scroll chat
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatHistory]);
+
+  const activeChar = characters.find(c => c.id === activeCharId);
+
+  const saveIdentity = (char) => {
+    const saved = JSON.parse(localStorage.getItem("guild_identities") || "{}");
+    saved[char.id] = { name: char.name, personality: char.personality, avatar_url: char.avatar_url };
+    localStorage.setItem("guild_identities", JSON.stringify(saved));
+  };
+
+  const selectChar = (id) => {
+    setActiveCharId(id);
+    const char = characters.find(c => c.id === id);
+    if (char) {
+      const intro = `Greetings. I am ${char.name}, master of ${char.subtext}. Tell me what you wish to conjure.`;
+      setChatHistory([{ role: "assistant", content: intro }]);
+    }
+  };
+
+  const sendMessage = async () => {
+    const text = chatInput.trim();
+    if (!text || !activeChar) return;
+    setChatInput("");
+    const newHistory = [...chatHistory, { role: "user", content: text }];
+    setChatHistory(newHistory);
+    setLoading(true);
+
+    let context = `${systemPrompt}\n\nYour Persona:\nYou are ${activeChar.name}, a magical expert in ${activeChar.subtext}.\n${activeChar.personality || ""}\n\n`;
+    for (const h of newHistory) {
+      context += `${h.role === "user" ? "User" : "Assistant"}: ${h.content}\n`;
+    }
+    context += "Assistant: ";
+
+    try {
+      const response = await fetch(`${koboldUrl}/api/v1/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: context, max_context_length: 4096, max_length: 300, temperature: 0.7, stop_sequence: ["User:", "\nUser"] }),
+      });
+      const data = await response.json();
+      const aiReply = data.results[0].text.trim();
+      setChatHistory(prev => [...prev, { role: "assistant", content: aiReply }]);
+    } catch (err) {
+      setChatHistory(prev => [...prev, { role: "assistant", content: `[Error: Could not connect to LLM at ${koboldUrl}]` }]);
+    }
+    setLoading(false);
+  };
+
+  const filteredChars = characters.filter(c => {
+    if (!searchFilter) return true;
+    const q = searchFilter.toLowerCase();
+    return c.name.toLowerCase().includes(q) || c.subtext.toLowerCase().includes(q);
+  });
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed right-0 top-0 h-full w-96 bg-slate-950/95 border-l border-amber-600/30 z-40 flex flex-col shadow-2xl"
+      style={{ backdropFilter: "blur(12px)", boxShadow: "-8px 0 30px rgba(0,0,0,0.5)" }}>
+
+      {/* Guild Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-amber-600/20 bg-slate-900/80">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 bg-gradient-to-br from-purple-600 to-amber-600 rounded-lg flex items-center justify-center">
+            <Icons.MessageSquare />
+          </div>
+          <div>
+            <h2 className="text-sm font-bold text-amber-50">The Wizard Guild</h2>
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className={`w-1.5 h-1.5 rounded-full ${llmConnected ? "bg-green-400" : "bg-red-400"}`} />
+              <span className="text-amber-200/60">{llmConnected ? "LLM Connected" : "LLM Offline"}</span>
+            </div>
+          </div>
+        </div>
+        <button onClick={onToggle} className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-amber-300 transition-colors">
+          <Icon d="M18 6L6 18M6 6l12 12" size={16} />
+        </button>
+      </div>
+
+      {/* Character List (collapsible) */}
+      <div className="border-b border-amber-600/20">
+        <div className="px-3 py-2">
+          <input
+            value={searchFilter} onChange={e => setSearchFilter(e.target.value)}
+            placeholder="Search wizards..."
+            className="w-full bg-slate-900/60 border border-amber-500/15 rounded-md px-2.5 py-1.5 text-xs text-amber-50 placeholder-slate-500 focus:border-amber-500/40 outline-none"
+          />
+        </div>
+        <div className="max-h-44 overflow-y-auto px-2 pb-2 space-y-0.5" style={{ scrollbarWidth: "thin" }}>
+          {filteredChars.map(c => (
+            <button key={c.id} onClick={() => selectChar(c.id)}
+              className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-all ${
+                c.id === activeCharId
+                  ? "bg-purple-700/30 border border-purple-500/40"
+                  : "hover:bg-slate-800/60"
+              }`}>
+              <div className="w-8 h-8 rounded-lg flex-shrink-0"
+                style={{
+                  background: c.avatar_url
+                    ? `url(${c.avatar_url}) center/cover, linear-gradient(135deg, ${c.color1}, ${c.color2})`
+                    : `linear-gradient(135deg, ${c.color1}, ${c.color2})`,
+                }} />
+              <div className="min-w-0">
+                <div className="text-xs font-medium text-amber-50 truncate">{c.name}</div>
+                <div className="text-[10px] text-amber-200/50 truncate">{c.subtext}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Active Character Header */}
+      {activeChar && (
+        <div className="flex items-center gap-3 px-4 py-2.5 border-b border-amber-600/10 bg-slate-900/40">
+          <div className="w-10 h-10 rounded-xl flex-shrink-0"
+            style={{
+              background: activeChar.avatar_url
+                ? `url(${activeChar.avatar_url}) center/cover, linear-gradient(135deg, ${activeChar.color1}, ${activeChar.color2})`
+                : `linear-gradient(135deg, ${activeChar.color1}, ${activeChar.color2})`,
+            }} />
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-amber-50 truncate">{activeChar.name}</div>
+            <div className="text-xs text-amber-200/50 truncate">{activeChar.subtext}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Chat Stream */}
+      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3" style={{ scrollbarWidth: "thin" }}>
+        {chatHistory.map((msg, i) => (
+          <div key={i} className={`flex gap-2 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
+            {msg.role === "assistant" && activeChar && (
+              <div className="w-6 h-6 rounded-md flex-shrink-0 mt-0.5"
+                style={{ background: `linear-gradient(135deg, ${activeChar.color1}, ${activeChar.color2})` }} />
+            )}
+            <div className={`max-w-[80%] rounded-xl px-3 py-2 text-xs leading-relaxed ${
+              msg.role === "user"
+                ? "bg-purple-700/40 text-purple-100 border border-purple-500/20"
+                : "bg-slate-800/60 text-amber-50/90 border border-amber-500/10"
+            }`}>
+              {msg.content}
+            </div>
+          </div>
+        ))}
+        {loading && (
+          <div className="flex gap-2">
+            <div className="w-6 h-6 rounded-md flex-shrink-0" style={{ background: activeChar ? `linear-gradient(135deg, ${activeChar.color1}, ${activeChar.color2})` : "#444" }} />
+            <div className="bg-slate-800/60 border border-amber-500/10 rounded-xl px-3 py-2">
+              <div className="flex gap-1">
+                <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+              </div>
+            </div>
+          </div>
+        )}
+        <div ref={chatEndRef} />
+      </div>
+
+      {/* Chat Input */}
+      <div className="border-t border-amber-600/20 px-3 py-2.5 bg-slate-900/60">
+        <div className="flex gap-2">
+          <textarea
+            value={chatInput}
+            onChange={e => setChatInput(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+            placeholder={activeChar ? `Ask ${activeChar.name}...` : "Select a wizard..."}
+            rows={1}
+            className="flex-1 bg-slate-900 border border-amber-500/20 rounded-lg px-3 py-2 text-xs text-amber-50 placeholder-slate-500 focus:border-amber-500/50 outline-none resize-none"
+            style={{ maxHeight: "80px" }}
+          />
+          <button onClick={sendMessage} disabled={loading || !chatInput.trim()}
+            className="px-3 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-lg transition-colors">
+            <Icon d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" size={14} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════════
 
@@ -1807,6 +2042,7 @@ export default function SignalBridgeSettings() {
   const [activeTab, setActiveTab] = useState("scaffolds");
   const [saved, setSaved] = useState(false);
   const [importError, setImportError] = useState("");
+  const [guildOpen, setGuildOpen] = useState(false);
   const fileInputRef = useRef(null);
 
   const tabs = [
@@ -1861,7 +2097,7 @@ export default function SignalBridgeSettings() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-amber-50" style={{background: "linear-gradient(135deg, #0f172a 0%, #1a1f35 50%, #0a0e1a 100%)"}}>
+    <div className="min-h-screen bg-slate-950 text-amber-50" style={{background: "linear-gradient(135deg, #0f172a 0%, #1a1f35 50%, #0a0e1a 100%)", marginRight: guildOpen ? "384px" : "0", transition: "margin-right 0.3s ease"}}>
       {/* Header */}
       <div className="bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-900 border-b border-amber-600/30 sticky top-0 z-50" style={{boxShadow: "0 4px 20px rgba(217, 119, 6, 0.15)"}}>
         <div className="max-w-6xl mx-auto px-6 py-4">
@@ -1879,6 +2115,16 @@ export default function SignalBridgeSettings() {
               <button onClick={exportAll} className={btnGhost}><Icons.Download /> Export</button>
               <button onClick={copyJson} className={btnPrimary}>
                 {saved ? <><Icons.Check /> Copied!</> : <><Icons.Copy /> Copy JSON</>}
+              </button>
+              <div className="w-px h-6 bg-amber-600/20 mx-1" />
+              <button onClick={() => setGuildOpen(prev => !prev)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                  guildOpen
+                    ? "bg-purple-600/30 text-purple-200 border border-purple-500/40"
+                    : "bg-purple-700/20 hover:bg-purple-700/40 text-purple-300"
+                }`}
+                style={{ boxShadow: guildOpen ? "0 0 12px rgba(147, 51, 234, 0.3)" : "" }}>
+                <Icons.MessageSquare /> Guild
               </button>
             </div>
           </div>
@@ -2041,6 +2287,14 @@ export default function SignalBridgeSettings() {
           <button onClick={exportAll} className={btnPrimary}><Icons.Save /> Export All</button>
         </div>
       </div>
+
+      {/* Guild Sidebar Panel */}
+      <GuildSidebar
+        isOpen={guildOpen}
+        onToggle={() => setGuildOpen(false)}
+        comfyUrl={config.comfyui_url || "http://127.0.0.1:8188"}
+        koboldUrl={config.kobold_url || "http://127.0.0.1:5001"}
+      />
     </div>
   );
 }

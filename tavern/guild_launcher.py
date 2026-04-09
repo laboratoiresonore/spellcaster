@@ -64,7 +64,7 @@ from guild_common import (
 
 _GUILD_REPO = "laboratoiresonore/spellcaster_NSFW"
 _GUILD_BRANCH = "main"
-_GUILD_AUTH_TOKEN = "<REDACTED_GH_OAUTH>"  # NSFW edition — private repo PAT
+_GUILD_AUTH_TOKEN = "<REDACTED_GH_OAUTH>"  # NSFW: PAT for private repo access
 
 # Prefixes within the repo that belong to the Guild
 _TAVERN_PREFIX = "tavern/"
