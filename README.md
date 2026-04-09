@@ -12,9 +12,7 @@
 <p align="center">
   <a href="https://github.com/laboratoiresonore/spellcaster/releases"><img alt="Releases" src="https://img.shields.io/github/v/release/laboratoiresonore/spellcaster?color=7c3aed&label=latest&style=for-the-badge"/></a>
   &nbsp;
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--2.0-7c3aed?style=for-the-badge"/></a>
-  &nbsp;
-  <img alt="Platform" src="https://img.shields.io/badge/Windows%20%7C%20macOS%20%7C%20Linux-7c3aed?style=for-the-badge&logo=windows&logoColor=white"/>
+    <img alt="Platform" src="https://img.shields.io/badge/Windows%20%7C%20macOS%20%7C%20Linux-7c3aed?style=for-the-badge&logo=windows&logoColor=white"/>
   &nbsp;
   <img alt="SillyTavern" src="https://img.shields.io/badge/SillyTavern-13%20Characters-e879f9?style=for-the-badge"/>
 </p>
