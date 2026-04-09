@@ -793,13 +793,35 @@ def launch_koboldcpp(kobold_dir, model_path, port=5001, verbose=True):
 _ST_REPO = "https://github.com/SillyTavern/SillyTavern.git"
 _ST_BRANCH = "release"
 
-# Search paths relative to this file (tavern/) to find spellcaster-st/
+# Search paths: relatives of this file, then common user install locations
+_home = os.path.expanduser("~")
 _ST_SEARCH_PATHS = [
+    # ── Relative to this file (tavern/) — spellcaster project layout ──
     os.path.join(BUNDLE_DIR, '..', '..', 'spellcaster-st'),        # spellcaster sibling
     os.path.join(BUNDLE_DIR, '..', '..', '..', 'spellcaster-st'),  # parent sibling
     os.path.join(BUNDLE_DIR, '..', 'sillytavern'),                 # inside spellcaster
     os.path.join(BUNDLE_DIR, 'sillytavern'),                       # inside tavern
+    # ── Common user install locations ──
+    os.path.join(_home, "SillyTavern"),
+    os.path.join(_home, "Documents", "SillyTavern"),
+    os.path.join(_home, "Documents", "GitHub", "SillyTavern"),     # GitHub Desktop default
+    os.path.join(_home, "Desktop", "SillyTavern"),
+    os.path.join(_home, "Documents", "AI", "SillyTavern"),
+    # ── SillyTavern-Launcher puts ST inside its own dir ──
+    os.path.join(_home, "SillyTavern-Launcher", "SillyTavern"),
+    os.path.join(_home, "Documents", "SillyTavern-Launcher", "SillyTavern"),
+    os.path.join(_home, "Desktop", "SillyTavern-Launcher", "SillyTavern"),
 ]
+# Windows-specific paths (C:\AI\SillyTavern is the community convention)
+if os.name == "nt":
+    for _drv in ["C:\\", "D:\\", "E:\\"]:
+        _ST_SEARCH_PATHS += [
+            os.path.join(_drv, "AI", "SillyTavern"),
+            os.path.join(_drv, "AI", "SillyTavern-Launcher", "SillyTavern"),
+            os.path.join(_drv, "SillyTavern"),
+        ]
+    # Also check Downloads (users sometimes clone there)
+    _ST_SEARCH_PATHS.append(os.path.join(_home, "Downloads", "SillyTavern"))
 
 _st_process = None  # Global ref so we can clean up on exit
 

@@ -832,13 +832,65 @@ function selectCharacter(id) {
     addAIMessage(intro);
 }
 
+function _parseNumberedOptions(text) {
+    // Split text into prose lines and numbered options.
+    // Matches patterns like: "1. Option text", "  2. Do something", "3) Thing"
+    // Returns { prose: string, options: [{num: "1", label: "Option text"}, ...] }
+    const lines = text.split('\n');
+    const prose = [];
+    const options = [];
+    const optionRe = /^\s*(\d+)[.)]\s+(.+)/;
+
+    for (const line of lines) {
+        const m = line.match(optionRe);
+        if (m) {
+            options.push({ num: m[1], label: m[2].trim() });
+        } else {
+            prose.push(line);
+        }
+    }
+    return { prose: prose.join('\n').trim(), options };
+}
+
 function addAIMessage(text) {
     const msg = document.createElement('div');
     msg.className = 'message ai-message';
+
+    const { prose, options } = _parseNumberedOptions(text);
+
+    let bubbleHTML = '';
+    if (prose) {
+        bubbleHTML += `<p>${prose}</p>`;
+    }
+    if (options.length > 0) {
+        bubbleHTML += '<div class="option-buttons">';
+        for (const opt of options) {
+            bubbleHTML += `<button class="option-btn" data-value="${opt.num}" title="Send: ${opt.num}">`
+                       + `<span class="option-num">${opt.num}</span> ${opt.label}</button>`;
+        }
+        bubbleHTML += '</div>';
+    }
+
     msg.innerHTML = `
         <div class="avatar-small" style="${_getActiveWizardAvatarStyle()}"></div>
-        <div class="bubble"><p>${text}</p></div>
+        <div class="bubble">${bubbleHTML}</div>
     `;
+
+    // Wire button clicks to auto-send the number
+    msg.querySelectorAll('.option-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const val = btn.dataset.value;
+            addUserMessage(val);
+            // Disable all option buttons in this message (already picked)
+            msg.querySelectorAll('.option-btn').forEach(b => {
+                b.disabled = true;
+                b.classList.add('used');
+            });
+            btn.classList.add('selected');
+            askKobold(val);
+        });
+    });
+
     chatStream.appendChild(msg);
     chatStream.scrollTop = chatStream.scrollHeight;
 }

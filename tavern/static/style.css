@@ -351,6 +351,53 @@ textarea::placeholder { color: #555; }
 /* Generated Images */
 .generated-image { max-width: 100%; border-radius: 12px; margin-top: 12px; border: 2px solid var(--accent-glow); box-shadow: 0 4px 20px rgba(178,70,242,0.2); }
 
+/* ── Numbered Option Buttons (parsed from LLM responses) ── */
+.option-buttons {
+    display: flex; flex-direction: column; gap: 6px;
+    margin-top: 10px; padding-top: 10px;
+    border-top: 1px solid rgba(178, 70, 242, 0.15);
+}
+.option-btn {
+    display: flex; align-items: center; gap: 8px;
+    width: 100%; text-align: left;
+    padding: 8px 14px; border-radius: 10px;
+    background: rgba(178, 70, 242, 0.06);
+    border: 1px solid rgba(178, 70, 242, 0.2);
+    color: var(--text-main);
+    font-family: 'Outfit', sans-serif; font-size: 13px; font-weight: 500;
+    cursor: pointer; transition: all 0.2s;
+    -webkit-tap-highlight-color: transparent;
+}
+.option-btn:hover:not(:disabled) {
+    background: rgba(178, 70, 242, 0.15);
+    border-color: var(--accent);
+    box-shadow: 0 0 12px var(--accent-glow);
+    transform: translateX(4px);
+}
+.option-btn:active:not(:disabled) {
+    transform: translateX(2px) scale(0.98);
+}
+.option-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--accent); color: #fff;
+    font-size: 12px; font-weight: 700; flex-shrink: 0;
+    box-shadow: 0 0 8px var(--accent-glow);
+}
+.option-btn.selected {
+    background: rgba(178, 70, 242, 0.25);
+    border-color: var(--accent);
+    box-shadow: 0 0 15px var(--accent-glow);
+}
+.option-btn.selected .option-num {
+    background: #2ed573; box-shadow: 0 0 8px rgba(46, 213, 115, 0.5);
+}
+.option-btn.used:not(.selected) {
+    opacity: 0.35; cursor: default;
+    transform: none !important;
+}
+.option-btn:disabled { cursor: default; }
+
 /* ── Summon Wizard Button ── */
 #summon-wizard-btn { padding: 6px !important; }
 #summon-wizard-btn img { display: block; transition: transform 0.3s, filter 0.3s; filter: drop-shadow(0 0 3px rgba(178, 70, 242, 0.4)); }
