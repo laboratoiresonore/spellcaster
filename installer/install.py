@@ -1782,6 +1782,134 @@ def _find_darktable_system_splash() -> Path | None:
     return candidates[0] if candidates else None
 
 
+
+def _get_tavern_install_dir() -> Path:
+    """Return the platform-specific Wizard Guild installation directory."""
+    if sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+        return base / "Spellcaster" / "tavern"
+    elif sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Spellcaster" / "tavern"
+    else:
+        return Path.home() / ".local" / "share" / "spellcaster" / "tavern"
+
+
+def _find_tavern_src() -> Path | None:
+    """Locate the tavern/ source directory relative to the installer."""
+    candidates = [
+        SCRIPT_DIR / "tavern",
+        SCRIPT_DIR.parent / "tavern",
+        SCRIPT_DIR / ".." / "tavern",
+    ]
+    for c in candidates:
+        if c.is_dir() and (c / "server.py").exists():
+            return c.resolve()
+    return None
+
+
+def _find_scaffold_src() -> Path | None:
+    """Locate the scaffold/ source directory relative to the installer."""
+    candidates = [
+        SCRIPT_DIR / "scaffold",
+        SCRIPT_DIR.parent / "scaffold",
+        SCRIPT_DIR / ".." / "scaffold",
+    ]
+    for c in candidates:
+        if c.is_dir() and (c / "__init__.py").exists():
+            return c.resolve()
+    return None
+
+
+def step_install_tavern(paths: dict, server_url: str, selected: dict, dry_run: bool = False):
+    """Deploy the Wizard Guild standalone interface.
+
+    Copies tavern/ and scaffold/ to a platform-specific application directory
+    and writes a launcher config with the ComfyUI server URL.
+    """
+    if not selected.get("wizard_guild", False):
+        return
+
+    print(f"\n{C_BOLD}{'\u2550' * 50}{C_RESET}")
+    print(f"{C_BOLD}  Install Wizard Guild{C_RESET}")
+    print(f"{C_BOLD}{'\u2550' * 50}{C_RESET}\n")
+
+    tavern_src = _find_tavern_src()
+    scaffold_src = _find_scaffold_src()
+
+    if not tavern_src:
+        print(f"  {C_YELLOW}\u26a0 Tavern source directory not found, skipping.{C_RESET}")
+        return
+
+    dest = _get_tavern_install_dir()
+    scaffold_dest = dest.parent / "scaffold"
+
+    if dry_run:
+        print(f"  [dry-run] Would install Wizard Guild to: {dest}")
+        return
+
+    # Copy tavern files
+    print(f"  {C_CYAN}Installing Wizard Guild to:{C_RESET} {dest}")
+    dest.mkdir(parents=True, exist_ok=True)
+    static_dest = dest / "static"
+    static_dest.mkdir(parents=True, exist_ok=True)
+
+    copied = 0
+    for item in tavern_src.rglob("*"):
+        if item.is_file() and "__pycache__" not in str(item) and "build" not in item.parts:
+            rel = item.relative_to(tavern_src)
+            target = dest / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, target)
+            copied += 1
+    print(f"  {C_GREEN}\u2713 Copied {copied} tavern files{C_RESET}")
+
+    # Copy scaffold files
+    if scaffold_src:
+        scaffold_dest.mkdir(parents=True, exist_ok=True)
+        sc_copied = 0
+        for item in scaffold_src.rglob("*"):
+            if item.is_file() and "__pycache__" not in str(item):
+                rel = item.relative_to(scaffold_src)
+                target = scaffold_dest / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(item, target)
+                sc_copied += 1
+        print(f"  {C_GREEN}\u2713 Copied {sc_copied} scaffold files{C_RESET}")
+
+    # Write guild config with ComfyUI URL
+    guild_config = dest / "guild_config.json"
+    guild_config.write_text(json.dumps({
+        "comfyui_url": server_url,
+        "auto_update": True,
+    }, indent=2), encoding="utf-8")
+    print(f"  {C_GREEN}\u2713 Wrote guild_config.json (ComfyUI: {server_url}){C_RESET}")
+
+    # Set executable permissions on Unix
+    if os.name != "nt":
+        for py in dest.glob("*.py"):
+            py.chmod(0o755)
+
+    # Create convenience launcher script
+    if sys.platform == "win32":
+        bat_path = dest.parent / "wizard-guild.bat"
+        bat_path.write_text(
+            f'@echo off\r\npython "{dest / "guild_launcher.py"}" --comfyui {server_url} %*\r\n',
+            encoding="utf-8"
+        )
+        print(f"  {C_GREEN}\u2713 Created launcher: {bat_path}{C_RESET}")
+    else:
+        sh_path = dest.parent / "wizard-guild"
+        sh_path.write_text(
+            f'#!/bin/sh\npython3 "{dest / "guild_launcher.py"}" --comfyui {server_url} "$@"\n',
+            encoding="utf-8"
+        )
+        sh_path.chmod(0o755)
+        print(f"  {C_GREEN}\u2713 Created launcher: {sh_path}{C_RESET}")
+
+    print(f"\n  {C_BOLD}To start the Wizard Guild:{C_RESET}")
+    print(f"    python \"{dest / 'guild_launcher.py'}\"")
+    print(f"    or use the launcher script in {dest.parent}")
+
 def step_apply_theme(paths: dict, dry_run: bool = False, auto_yes: bool = False) -> None:
     """Optional step: replace the GIMP/Darktable system splash with Spellcaster artwork.
 
@@ -1981,6 +2109,12 @@ def step_final_summary(manifest: dict, selected: dict[str, bool], paths: dict, s
     if paths["darktable"]:
         print(f"    3. Open Darktable — the Spellcaster panel appears in the lighttable module")
     print(f"    4. On first launch, verify the server URL in the plugin dialog")
+    if selected.get("wizard_guild", False):
+        tavern_dir = _get_tavern_install_dir()
+        print(f"    5. Start the Wizard Guild: python {tavern_dir / 'guild_launcher.py'}")
+        print(f"       The launcher will walk you through connecting to your LLM.")
+        print(f"       Don't have an LLM? Download KoboldCPP (single .exe, no install):")
+        print(f"       https://github.com/LostRuins/koboldcpp/releases")
 
     print(f"\n  {C_BOLD}Troubleshooting:{C_RESET}")
     print(f"    • 'Node not found' — install the missing custom node into ComfyUI")
@@ -2031,7 +2165,7 @@ def build_arg_parser():
                              "wan_i2v, rembg, upscale, lama_remove, lut_grading, "
                              "outpaint, style_transfer, face_restore, photo_restore, "
                              "detail_hallucinate, colorize, controlnet, iclight, supir, "
-                             "batch_variations, seedv2r")
+                             "batch_variations, seedv2r, wizard_guild")
     parser.add_argument("--comfyui", metavar="PATH",
                         help="Path to ComfyUI root directory")
     parser.add_argument("--gimp", metavar="PATH",
@@ -2097,6 +2231,7 @@ def main():
 
     step_install_models(manifest, selected, paths, args)
     step_install_plugins(paths, server_url, args.dry_run)
+    step_install_tavern(paths, server_url, selected, args.dry_run)
     step_import_luts(paths, args)
     step_apply_theme(paths, args.dry_run, args.yes)
     step_final_summary(manifest, selected, paths, server_url)

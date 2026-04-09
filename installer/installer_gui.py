@@ -1480,6 +1480,7 @@ class InstallerApp(ctk.CTk):
                 "server_url": self.server_url.get(),
                 "apply_theme": self.apply_theme.get(),
                 "installed_features": installed_features,
+                "wizard_guild_installed": "wizard_guild" in installed_features,
                 "output_dir": self.output_dir.get().strip(),
             }
             if gimp_dest.is_dir():

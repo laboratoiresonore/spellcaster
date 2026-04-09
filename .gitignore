@@ -1,6 +1,7 @@
 # Build artifacts
 build/
 dist/
+*.spec
 *.spec.bak
 
 # Virtual environments (created by build scripts)

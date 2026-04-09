@@ -1,0 +1,9 @@
+{
+  "guild_port": 7777,
+  "comfyui_url": "http://192.168.x.x:8188",
+  "kobold_url": "http://192.168.x.x:5001",
+  "sillytavern_dir": "C:\\Users\\lmlgg\\Documents\\AI\\Whimweaver\\whimweaver-st",
+  "auto_open_browser": true,
+  "auto_update": true,
+  "auto_launch_st": true
+}
