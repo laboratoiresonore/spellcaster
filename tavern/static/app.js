@@ -1,3 +1,19 @@
+/* ── Mobile sidebar toggle ── */
+function toggleMobileSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const backdrop = document.getElementById('sidebar-backdrop');
+    sidebar.classList.toggle('open');
+    backdrop.classList.toggle('visible');
+}
+function closeMobileSidebar() {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebar-backdrop').classList.remove('visible');
+}
+// Close sidebar when a character is tapped on mobile
+function onMobileCharacterSelect() {
+    if (window.innerWidth <= 768) closeMobileSidebar();
+}
+
 const chatStream = document.getElementById('chat-stream');
 const chatInput = document.getElementById('chat-input');
 const sendBtn = document.getElementById('send-btn');
@@ -471,6 +487,20 @@ async function runFirstTimeSetup() {
 
     // 3. Queue animated avatars in background (non-blocking)
     queueAnimatedAvatars();
+
+    // 4. Post-setup: prompt user to review & banish misidentified models
+    addSystemMessage(
+        '<strong>Setup Complete!</strong><br>' +
+        'The Guild has detected all models in ComfyUI and generated wizard avatars. ' +
+        'However, some models may have been <strong>misidentified as image generators</strong> ' +
+        '(e.g. video models, upscalers, 3D models, lighting models). ' +
+        'Opening the <em>Banish</em> menu so you can review and dismiss any that don\'t belong.'
+    );
+    // Open the settings modal after a short delay so the message is visible
+    setTimeout(() => {
+        settingsModal.classList.remove('hidden');
+        loadAndCacheWizards();
+    }, 1500);
 }
 
 async function generateMissingAvatars() {
@@ -719,8 +749,22 @@ function renderSidebar(filter = "") {
             `;
         }
 
-        card.addEventListener('click', () => selectCharacter(char.id));
+        card.addEventListener('click', () => { selectCharacter(char.id); onMobileCharacterSelect(); });
         characterList.appendChild(card);
+    }
+
+    // Add "Core Spellcasters" header if there are visible core wizards
+    if (coreChars.length > 0) {
+        const hasVisibleCore = coreChars.some(c =>
+            !filter || c.name.toLowerCase().includes(lowFilter) || c.subtext.toLowerCase().includes(lowFilter)
+        );
+        if (hasVisibleCore) {
+            const coreSep = document.createElement('div');
+            coreSep.className = 'sidebar-separator';
+            coreSep.style.paddingTop = '4px';
+            coreSep.innerHTML = '<span>Core Spellcasters</span>';
+            characterList.appendChild(coreSep);
+        }
     }
 
     coreChars.forEach(renderCard);
@@ -1809,40 +1853,4 @@ loraInterrogationSkip.addEventListener('click', async () => {
 });
 
 // ── First-use LoRA interrogation on wizard selection ──
-// When the user first selects a wizard that has unknown LoRAs,
-// show a brief chat notification suggesting they open Enchantments.
-let _loraNotifiedWizards = new Set(JSON.parse(localStorage.getItem('lora_notified') || '[]'));
-
-async function checkLoraInterrogation(charId) {
-    try {
-        const res = await fetch(`/api/lora_registry/${charId}`);
-        const data = await res.json();
-        if (data.unknown_count > 0 && !data.interrogated && !_loraNotifiedWizards.has(charId)) {
-            _loraNotifiedWizards.add(charId);
-            localStorage.setItem('lora_notified', JSON.stringify([..._loraNotifiedWizards]));
-            addSystemMessage(
-                `<strong>New Enchantments Detected!</strong><br>` +
-                `This wizard has <strong>${data.unknown_count}</strong> unidentified LoRA enchantment${data.unknown_count > 1 ? 's' : ''}. ` +
-                `Click <em>Enchantments</em> in the header to review and describe them — ` +
-                `this helps the wizard suggest the right enhancements for your spells.`
-            );
-        }
-    } catch(e) { /* silent */ }
-}
-
-// Patch selectCharacter to also check LoRA state
-const _originalSelectCharacter = selectCharacter;
-// We can't easily replace selectCharacter since it's hoisted, so we hook into
-// the chat flow instead. The askKobold function already fetches system_prompt
-// which now includes LoRA awareness. For the interrogation notification, we
-// hook after character selection via a MutationObserver on the name element.
-const _nameObserver = new MutationObserver(() => {
-    if (activeCharacterId) {
-        checkLoraInterrogation(activeCharacterId);
-    }
-});
-_nameObserver.observe(activeName, { childList: true, characterData: true, subtree: true });
-
-
-// Start
-initialize();
+// When the user first selects a wizard that has unknown LoR
