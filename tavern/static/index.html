@@ -8,6 +8,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
 </head>
 <body class="dark-theme">
+    <canvas id="magic-particles"></canvas>
+    <div id="sidebar-backdrop" onclick="closeMobileSidebar()"></div>
     <div id="app-container">
         <!-- Sidebar: Characters -->
         <aside id="sidebar">
@@ -37,6 +39,7 @@
         <main id="chat-arena">
             <header id="chat-header">
                 <div class="chat-header-info">
+                    <button id="mobile-menu-btn" onclick="toggleMobileSidebar()" title="Guild Members">&#9776;</button>
                     <div class="avatar" id="active-avatar" style="background: linear-gradient(135deg, #1d976c, #93f9b9);"></div>
                     <div class="header-titles">
                         <h2 id="active-character-name">Loading...</h2>

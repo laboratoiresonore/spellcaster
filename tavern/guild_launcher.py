@@ -66,11 +66,28 @@ _GUILD_REPO = "laboratoiresonore/spellcaster_NSFW"
 _GUILD_BRANCH = "main"
 _GUILD_AUTH_TOKEN = "<REDACTED_GH_OAUTH>"  # NSFW: PAT for private repo access
 
+# ── Runtime NSFW detection ──
+# If running from source (not a patched build), check for nsfw/.github_token
+# which indicates the NSFW build artifacts are installed alongside the source.
+if not _GUILD_AUTH_TOKEN:
+    _nsfw_token_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                     '..', 'nsfw', '.github_token')
+    if os.path.isfile(_nsfw_token_path):
+        try:
+            with open(_nsfw_token_path, 'r') as _tf:
+                _runtime_token = _tf.read().strip()
+            if _runtime_token:
+                _GUILD_AUTH_TOKEN = _runtime_token
+                _GUILD_REPO = "laboratoiresonore/spellcaster_NSFW"
+                print(f"  [Guild] NSFW token detected from nsfw/.github_token — switching to NSFW edition")
+        except Exception:
+            pass
+
 # Prefixes within the repo that belong to the Guild
 _TAVERN_PREFIX = "tavern/"
 _SCAFFOLD_PREFIX = "scaffold/"
 
-# GitHub API URLs (constructed from repo)
+# GitHub API URLs (constructed from repo — re-computed after NSFW detection)
 _GUILD_COMMITS_URL = (
     f"https://api.github.com/repos/{_GUILD_REPO}"
     f"/commits?sha={_GUILD_BRANCH}&per_page=1"
@@ -1058,11 +1075,14 @@ def launch_sillytavern(st_dir, verbose=True):
         else:
             kwargs['start_new_session'] = True
 
+        env = os.environ.copy()
+        env['DISABLE_AUTORUN'] = 'true'  # Prevent ST from opening its own browser tab
         _st_process = subprocess.Popen(
-            [node, 'server.js'],
+            [node, 'server.js', '--autorun', 'false'],
             cwd=st_dir,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=env,
             **kwargs,
         )
         if verbose:
@@ -1388,6 +1408,26 @@ def main():
     server.KOBOLD_URL = kobold_url
     server.PRIVACY_CLEANUP = config.get("privacy_cleanup", True)
     server.NSFW_MODE = bool(_GUILD_AUTH_TOKEN)
+
+    # ── Runtime NSFW content injection ──────────────────────────────
+    # When running from source with nsfw/.github_token present, the server
+    # module's NSFW variables are still empty (not file-patched). Load them
+    # from build_nsfw.get_nsfw_runtime_content() and inject into server module.
+    if server.NSFW_MODE and not server._NSFW_APPEARANCE_CORE:
+        try:
+            nsfw_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                     '..', 'nsfw')
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(
+                "build_nsfw", os.path.join(nsfw_dir, "build_nsfw.py"))
+            _bn = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(_bn)
+            nsfw_content = _bn.get_nsfw_runtime_content()
+            for key, val in nsfw_content.items():
+                setattr(server, key, val)
+            print(f"  [Guild] NSFW content injected: {len(nsfw_content)} variables loaded")
+        except Exception as e:
+            print(f"  [Guild] WARNING: Failed to load NSFW runtime content: {e}")
 
     # ── Initialize server (model detection, LoRA scan) ───────────────
     # Pass URL explicitly to avoid any global-timing issues

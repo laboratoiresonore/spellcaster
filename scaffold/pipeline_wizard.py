@@ -699,6 +699,189 @@ _register(PipelineDef(
 ))
 
 
+# ── Director's Chair (multi-step video sequence) ──────────────────────
+
+_register(PipelineDef(
+    key="director_solo",
+    label="Director's Chair (Solo)",
+    description="Multi-step WAN video sequence with face re-injection between steps",
+    build_fn="build_wan_video",
+    common_params=[
+        PipelineParam("face_model", "Face model file", "STRING", "",
+                      tooltip="Saved .safetensors face model for re-injection"),
+        PipelineParam("image_filename", "Starting image", "STRING", ""),
+        PipelineParam("seed", "Seed", "INT", -1, min_val=-1, max_val=2**32),
+    ],
+    steps=[
+        PipelineStep(
+            key="plan",
+            label="Step 1 — Sequence Plan",
+            description="Number of steps and generation mode per step",
+            required=True,
+            params=[
+                PipelineParam("num_steps", "Number of steps", "INT", 3,
+                              min_val=1, max_val=8),
+                PipelineParam("variations", "Variations per step", "INT", 2,
+                              min_val=1, max_val=4),
+                PipelineParam("reinject_face", "Re-inject face between steps", "BOOLEAN", True),
+            ],
+        ),
+        PipelineStep(
+            key="video_settings",
+            label="Step 2 — Video Settings",
+            description="Resolution, length, and quality per step",
+            required=True,
+            params=[
+                PipelineParam("width", "Width", "INT", 832, min_val=256, max_val=1920),
+                PipelineParam("height", "Height", "INT", 480, min_val=256, max_val=1920),
+                PipelineParam("length", "Frames per step", "INT", 81,
+                              min_val=17, max_val=241,
+                              tooltip="81 frames = 5 sec at 16fps"),
+                PipelineParam("fps", "FPS", "INT", 16, min_val=8, max_val=60),
+                PipelineParam("turbo", "Turbo mode", "BOOLEAN", True),
+            ],
+        ),
+    ],
+    presets={
+        "Dramatic Reveal (3 steps)": {
+            "num_steps": 3, "variations": 2, "reinject_face": True,
+            "width": 832, "height": 480, "length": 81, "turbo": True,
+        },
+        "Living Portrait (2 steps)": {
+            "num_steps": 2, "variations": 2, "reinject_face": True,
+            "width": 512, "height": 512, "length": 33, "turbo": True,
+        },
+        "Action Sequence (3 steps)": {
+            "num_steps": 3, "variations": 3, "reinject_face": True,
+            "width": 832, "height": 480, "length": 81, "turbo": True,
+        },
+        "Emotional Arc (4 steps)": {
+            "num_steps": 4, "variations": 2, "reinject_face": True,
+            "width": 832, "height": 480, "length": 81, "turbo": True,
+        },
+    },
+))
+
+
+# ── Magic Studios (full character pipeline) ───────────────────────────
+
+_register(PipelineDef(
+    key="magic_studios",
+    label="Magic Studios — Full Character Pipeline",
+    description="Selfie -> Face Model -> Body -> Wardrobe -> Set -> Video (5 acts)",
+    build_fn="build_photobooth",
+    common_params=[
+        PipelineParam("ref_filename", "Face reference photo", "STRING", "",
+                      tooltip="Any photo with a clear face"),
+        PipelineParam("seed", "Seed", "INT", -1, min_val=-1, max_val=2**32),
+    ],
+    steps=[
+        PipelineStep(
+            key="casting",
+            label="Act 1 — Casting Polaroids",
+            description="Create a clean headshot and reusable face model",
+            required=True,
+            params=[
+                PipelineParam("prompt_text", "Describe the person", "STRING",
+                              "professional headshot portrait, clean lighting, neutral background",
+                              tooltip="Guides the headshot generation style"),
+                PipelineParam("face_restore_model", "Face restore model", "COMBO",
+                              "codeformer-v0.1.0.pth",
+                              choices=["codeformer-v0.1.0.pth", "GFPGANv1.3.pth", "GFPGANv1.4.pth"]),
+            ],
+        ),
+        PipelineStep(
+            key="body",
+            label="Act 2 — Body Double",
+            description="Generate full-body reference with actor's face",
+            required=False,
+            params=[
+                PipelineParam("body_prompt", "Body type / description", "STRING",
+                              "full body portrait, standing pose, natural proportions",
+                              tooltip="Describe the body type and pose"),
+                PipelineParam("remove_bg", "Remove background", "BOOLEAN", True),
+            ],
+        ),
+        PipelineStep(
+            key="wardrobe",
+            label="Act 3 — Wardrobe Department",
+            description="Change outfit via AI inpainting",
+            required=False,
+            params=[
+                PipelineParam("outfit_prompt", "Outfit description", "STRING",
+                              "professional business suit, well-tailored, clean pressed",
+                              tooltip="Describe the outfit to generate"),
+                PipelineParam("denoise", "Outfit strength", "FLOAT", 0.80,
+                              min_val=0.4, max_val=0.95,
+                              tooltip="Higher = more change from original"),
+            ],
+        ),
+        PipelineStep(
+            key="set_design",
+            label="Act 4 — Set Design",
+            description="Generate background and composite actor",
+            required=False,
+            params=[
+                PipelineParam("scene_prompt", "Scene description", "STRING",
+                              "cinematic scene, dramatic lighting, atmospheric",
+                              tooltip="Describe the environment/background"),
+                PipelineParam("harmonize_denoise", "Harmonization strength", "FLOAT",
+                              0.30, min_val=0.1, max_val=0.5,
+                              tooltip="How much to blend actor into scene (lower=subtle)"),
+            ],
+        ),
+        PipelineStep(
+            key="animate",
+            label="Act 5 — Director's Chair",
+            description="Animate the composited scene as video",
+            required=False,
+            params=[
+                PipelineParam("motion_prompt", "Motion description", "STRING",
+                              "subtle breathing, gentle movement, living portrait",
+                              tooltip="Describe the motion/animation"),
+                PipelineParam("video_length", "Frames", "INT", 33,
+                              min_val=17, max_val=161,
+                              tooltip="33=2s, 81=5s at 16fps"),
+            ],
+        ),
+    ],
+    presets={
+        "Quick Portrait (Acts 1-2)": {
+            "prompt_text": "professional headshot, clean lighting",
+            "body_prompt": "full body standing pose, neutral background",
+            "remove_bg": True,
+        },
+        "Full Character Sheet (Acts 1-3)": {
+            "prompt_text": "professional headshot, clean lighting",
+            "body_prompt": "full body standing pose, neutral background",
+            "remove_bg": True,
+            "outfit_prompt": "casual outfit, modern style",
+            "denoise": 0.80,
+        },
+        "Complete Scene (Acts 1-4)": {
+            "prompt_text": "professional headshot, clean lighting",
+            "body_prompt": "full body standing, natural proportions",
+            "remove_bg": True,
+            "outfit_prompt": "appropriate outfit for the scene",
+            "denoise": 0.80,
+            "scene_prompt": "cinematic environment, dramatic lighting",
+            "harmonize_denoise": 0.30,
+        },
+        "Full Production (All 5 Acts)": {
+            "prompt_text": "professional headshot, clean lighting",
+            "body_prompt": "full body standing pose",
+            "remove_bg": True,
+            "outfit_prompt": "costume for the scene",
+            "denoise": 0.80,
+            "scene_prompt": "epic cinematic setting",
+            "harmonize_denoise": 0.30,
+            "motion_prompt": "subtle breathing, gentle camera movement",
+            "video_length": 81,
+        },
+    },
+))
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  Pipeline session
 # ═══════════════════════════════════════════════════════════════════════════

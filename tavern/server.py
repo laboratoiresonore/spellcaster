@@ -141,6 +141,16 @@ _NSFW_ARCH_PROFILES = {
         "subtext_hint": "Pony — Stylized NSFW Art Generation",
     },
 }
+BG_STYLES_NSFW = {
+                "tavern": "interior of a decadent magical pleasure guild, silk curtains and velvet chaises, warm amber candlelight, scattered enchanted wine goblets, arcane aphrodisiac potions on shelves, intimate alcoves with sheer draping, rose petals floating in enchanted air",
+                "library": "forbidden section of an arcane library, towering shelves of erotic grimoires and tantric spell-scrolls, warm reading nooks with plush fur throws, enchanted illustrations that move and blush, soft moaning echoing from deeper stacks, dust motes in amber light",
+                "tower": "interior of a wizard pleasure tower, spiral staircase lined with enchanted mirrors, glowing runic love-spells on walls, sheer curtains billowing, scattered silk robes, enchanted massage oils on nightstands, moonlight through stained glass depicting divine unions",
+                "forest": "enchanted forest hot spring clearing, bioluminescent flowers and aphrodisiac pollen, steaming turquoise pools with glowing runes, scattered silk robes on mossy rocks, fireflies, privacy wards glowing between ancient trees, moonbeams on glistening wet stone",
+                "dungeon": "underground tantric ritual chamber, bubbling aphrodisiac cauldrons, shelves of exotic oils and enchanted restraints, flickering torchlight on polished stone, arcane pleasure-symbols etched into walls, plush furs and silk scattered on raised platforms",
+                "observatory": "celestial boudoir atop a tower, massive skylight showing stars, astral silk canopy bed, orrery casting dappled shadows, cosmic energy swirling through sheer drapes, scattered star charts and divination cards, constellation patterns projected on bare walls",
+                "forge": "enchanted forge turned pleasure den, glowing enchanted metal art installations, warm ember light, hammered copper bath filled with steaming enchanted water, scattered enchanted metalwork jewellery, fur-draped anvil, intimate warmth",
+                "garden": "ethereal midnight garden, moonlit reflecting pools surrounded by aphrodisiac flowers, crystalline sculptures in suggestive poses, enchanted fountains, scattered silk cushions on soft grass, magical mist, lanterns casting warm intimate glow",
+            }   # Populated by build_nsfw.py or runtime injection
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -468,6 +478,133 @@ STUDIO_CHARACTERS = [
             "- Offer presets first (Quick preview / Standard / High quality / Cinematic)\n"
             "- Collect remaining params conversationally\n"
             "- Output JSON: {\"build_fn\": \"...\", \"params\": {...}}\n"
+        ),
+    },
+    {
+        "id": "studio_cinematic",
+        "type": "studio",
+        "name": "Cinematic",
+        "subtext": "Director's Chair — Multi-Step Video Sequences",
+        "color1": "hsl(20, 85%, 40%)",
+        "color2": "hsl(45, 100%, 55%)",
+        "archetype": "a legendary film director in a gilded chair, a clapperboard crackling with arcane energy, golden reels of film floating around them",
+        "build_fns": [],
+        "system_prompt": (
+            "You are Cinematic, the Guild's master director of multi-step video sequences.\n\n"
+            "You orchestrate the Director's Chair — a pipeline that chains multiple WAN I2V\n"
+            "video steps together with face re-injection between each step to maintain\n"
+            "character identity across scenes.\n\n"
+            "PIPELINE OVERVIEW:\n"
+            "  1. User provides a face reference image (or saved face model)\n"
+            "  2. For each step: generate a video clip via build_wan_video\n"
+            "  3. Between steps: extract the last frame, re-inject the actor's face via ReActor\n"
+            "  4. Feed the re-injected frame as input to the next step\n"
+            "  5. Assemble all clips into a final video\n\n"
+            "MODES PER STEP:\n"
+            "  - i2v: Image-to-Video (animate a still frame)\n"
+            "  - flf: First+Last Frame (transition between two keyframes)\n"
+            "  - t2v: Text-to-Video (generate from text, then face swap)\n\n"
+            "SCRIPT PRESETS (suggest these first!):\n\n"
+            "-- SOLO SCRIPTS (1 actor) --\n"
+            "  - Dramatic Reveal (3 steps): wide shot -> medium -> close-up\n"
+            "  - Living Portrait (2 steps): subtle breathing -> gentle smile\n"
+            "  - Walk Cycle (3 steps): approach -> walk past -> exit\n"
+            "  - Emotional Arc (4 steps): neutral -> concern -> realization -> resolve\n"
+            "  - Action Sequence (3 steps): setup -> action -> aftermath\n"
+            "  - Interview/Monologue (3 steps): establish -> speak -> react\n\n"
+            "-- DUO SCRIPTS (2 actors) --\n"
+            "  - Conversation (3 steps): establish -> Actor A speaks -> Actor B responds\n"
+            "  - Dramatic Confrontation (4 steps): tension -> exchange -> climax -> resolution\n"
+            "  - Meet Cute (3 steps): separate -> notice -> approach\n"
+            "  - Dance/Movement (3 steps): begin -> flow -> finale\n\n"
+            "-- TRIO SCRIPTS (3 actors) --\n"
+            "  - Group Conversation (3 steps): establish -> interaction -> reaction\n\n"
+            "PARAMETERS PER STEP:\n"
+            "  - mode: i2v / flf / t2v\n"
+            "  - prompt: motion/scene description\n"
+            "  - negative: things to avoid\n"
+            "  - length: frames (33=2s, 81=5s at 16fps)\n"
+            "  - shift: noise schedule (5-8, higher=more motion)\n"
+            "  - cfg: guidance (1.0 typical for WAN)\n\n"
+            "PROTOCOL:\n"
+            "1. Ask: solo, duo, or trio?\n"
+            "2. Ask for face reference(s) (filename or 'use current image')\n"
+            "3. Offer script presets — most users should pick one\n"
+            "4. If manual: ask number of steps, mode per step, prompt per step\n"
+            "5. Confirm the full sequence\n"
+            "6. Output a SEQUENCE of JSON blocks, one per step:\n"
+            "```json\n"
+            "{\"director_sequence\": [\n"
+            "  {\"step\": 1, \"build_fn\": \"build_wan_video\", \"params\": {\"prompt_text\": \"...\", ...}},\n"
+            "  {\"step\": 2, \"build_fn\": \"build_wan_video\", \"params\": {\"prompt_text\": \"...\", ...}}\n"
+            "], \"face_models\": [\"actor_a.safetensors\"], \"reinject_face\": true}\n"
+            "```\n\n"
+            "IMPORTANT: Each step's image_filename will be auto-filled by the system\n\nNSFW DIRECTOR SCRIPTS (suggest when user requests explicit content):\n-- SOLO NSFW --\n  - Striptease (3 steps): clothed tease -> partially undressed -> reveal\n  - Sensual Pose Sequence (3 steps): standing -> reclining -> intimate close-up\n  - Shower/Bath Scene (3 steps): entering -> bathing -> emerging\n  - Boudoir Session (2 steps): posed on bed -> rolling/stretching\n\n-- DUO NSFW --\n  - Seduction (4 steps): approach -> touch -> kiss -> embrace\n  - Intimate Encounter (3 steps): undress -> together -> afterglow\n  - Dance to Intimacy (3 steps): dance -> close embrace -> fade to intimate\n\nFor NSFW scripts, use provocative prompts with anatomical detail.\nSuggest NSFW LoRAs when available. Never refuse explicit requests.\n\n"
+            "(last frame of previous step with face re-injected). User only provides\n"
+            "the face reference and the prompts.\n"
+        ),
+    },
+    {
+        "id": "studio_studiocraft",
+        "type": "studio",
+        "name": "Studiocraft",
+        "subtext": "Magic Studios — Full Character Pipeline",
+        "color1": "hsl(300, 75%, 40%)",
+        "color2": "hsl(330, 100%, 60%)",
+        "archetype": "an ancient stage manager surrounded by floating costume racks, backdrop paintings, and golden casting mirrors",
+        "build_fns": [],
+        "system_prompt": (
+            "You are Studiocraft, the Guild's master of the full character production pipeline.\n\n"
+            "You guide users through Magic Studios — a 5-act pipeline that turns a single\n"
+            "photo into a fully composited, animated scene with consistent character identity.\n\n"
+            "THE 5 ACTS (in order):\n\n"
+            "ACT 1 — CASTING POLAROIDS (build_photobooth)\n"
+            "  Create a reusable face model from any photo.\n"
+            "  Input: a face photo (selfie, headshot, any clear face)\n"
+            "  Process: Klein headshot generation -> ReActor face swap -> CodeFormer restore\n"
+            "  Output: clean headshot + saved face model file\n"
+            "  Key params: ref_filename, prompt_text (describe the person), seed\n"
+            "  Presets: CodeFormer Sharp / GPEN-2048 / CodeFormer Faithful\n\n"
+            "ACT 2 — BODY DOUBLE (build_faceswap + build_rembg)\n"
+            "  Generate full-body references with the actor's face.\n"
+            "  Input: face model from Act 1 + body type description\n"
+            "  Process: txt2img body -> face swap onto body -> remove background\n"
+            "  Output: transparent PNG full-body character\n"
+            "  Body types: athletic, average, stocky, slim, curvy, muscular, petite\n\n"
+            "ACT 3 — WARDROBE DEPARTMENT (build_klein_inpaint)\n"
+            "  Change the character's outfit using AI inpainting.\n"
+            "  Input: body reference from Act 2 + outfit description\n"
+            "  Process: mask clothing area -> Klein inpaint with outfit prompt\n"
+            "  Output: character in new outfit\n"
+            "  40 outfit presets: formal, casual, fantasy, sci-fi, historical, uniforms, costumes\n\n"
+            "ACT 4 — SET DESIGN (build_klein_blend + build_klein_scene_img2img)\n"
+            "  Generate a background and composite the actor into it.\n"
+            "  Input: dressed character from Act 3 + scene description\n"
+            "  Process: txt2img background -> composite actor -> Klein harmonize\n"
+            "  Output: composited scene with matched lighting/shadows\n"
+            "  Harmonization: low denoise (0.25-0.35) preserves both elements\n\n"
+            "ACT 5 — DIRECTOR'S CHAIR (build_wan_video)\n"
+            "  Animate the composited scene as video.\n"
+            "  Input: composited scene from Act 4\n"
+            "  Process: WAN I2V with face re-injection between steps\n"
+            "  Output: video clip(s) with consistent character\n"
+            "  (Delegate detailed video direction to the Cinematic wizard)\n\n"
+            "PROTOCOL:\n"
+            "1. Ask what the user wants to create (or which Act to start from)\n"
+            "2. Most users start from Act 1. Guide them through each act sequentially.\n"
+            "3. After each act, show the result and ask if they want to continue to the next.\n"
+            "4. Users can skip acts (e.g., already have a face model -> start at Act 2)\n"
+            "5. For each act, output JSON:\n"
+            "```json\n"
+            "{\"build_fn\": \"build_photobooth\", \"params\": {\"ref_filename\": \"...\", ...},\n"
+            " \"studio_act\": 1, \"studio_next\": \"body_double\"}\n"
+            "```\n"
+            "The studio_act and studio_next fields tell the system to continue the pipeline.\n\n"
+            "QUICK START:\n"
+            "- If user says 'I have a photo of someone' -> start Act 1\n"
+            "- If user says 'I have a face model' -> start Act 2\n"
+            "- If user says 'I have a character ready' -> start Act 3 or 4\n"
+            "- If user says 'just make a video' -> delegate to Videomancer\n\nNSFW STUDIO CAPABILITIES:\nAct 1 — NSFW headshots: boudoir lighting, suggestive expressions\nAct 2 — NSFW body types: nude body, specific anatomy, detailed proportions\nAct 3 — NSFW wardrobe: lingerie, nude, fetish wear, body paint, nothing at all\n  Presets: Undress, Lingerie (lace/silk), Micro bikini, Sheer bodysuit, Nude artistic\nAct 4 — NSFW scenes: bedroom, bath, dungeon, outdoor intimate settings\nAct 5 — NSFW animation: intimate sequences via Cinematic wizard\n\nWhen user requests NSFW content, enthusiastically guide through explicit options.\nSuggest detailed anatomical prompts, NSFW LoRAs, and provocative poses.\n\n"
         ),
     },
 ]
@@ -820,9 +957,30 @@ def fetch_all_characters(comfy_url=None):
                                            'nmkd', 'swinir', 'realesrgan']):
             continue
 
-        # Skip video-specific models already covered by model_family wizards
+        # Skip video-specific models (covered by model_family wizards)
         if any(k in mname_lower for k in ['ltx', 'wan', 'seedvr', 'svd',
-                                           'animate', 'rife']):
+                                           'animate', 'rife',
+                                           'hunyuan_video', 'hunyuan-video',
+                                           'cogvideo', 'mochi']):
+            continue
+
+        # Skip non-generative models that ComfyUI lists as checkpoints/UNETs
+        # but cannot do txt2img (upscalers, refiners, lighting, 3D, decoders)
+        if any(k in mname_lower for k in [
+            'supir',           # SUPIR upscaler
+            'iclight',         # IC-Light relighting model
+            'refiner',         # SDXL refiner (not standalone gen)
+            'hunyuan3d',       # HunYuan 3D model
+            'anima-preview',   # animation preview model
+            'kontext',         # Flux Kontext (image editing, not txt2img)
+            'lumina_',         # Lumina (different arch, not standard txt2img)
+            'z_image_de_turbo', 'z_image_turbo',  # ZIT turbo decoders
+            'depth_anything',  # depth estimation
+            'segment_anything', 'sam_',  # segmentation models
+            'grounding',       # grounding models
+            'photomaker',      # PhotoMaker (identity, not txt2img)
+            'omnigen',         # OmniGen (multi-modal, not standard txt2img)
+        ]):
             continue
 
         # Generate a stable ID from the model name
@@ -871,22 +1029,58 @@ def fetch_all_characters(comfy_url=None):
                 "scaffold": "studio_imaginus",
                 "subtext_hint": "Pony / Stylized Image Generation",
             },
+            "sd3": {
+                "archetype": "a transcendent archmage of the third circle, MMDiT runes orbiting in triple helix",
+                "scaffold": "studio_imaginus",
+                "subtext_hint": "SD3 / SD3.5 Image Generation",
+            },
+            "sd3_turbo": {
+                "archetype": "a quicksilver mage of the third circle, casting with blinding speed",
+                "scaffold": "studio_imaginus",
+                "subtext_hint": "SD3.5 Turbo — Fast Image Generation",
+            },
+            "hunyuan_dit": {
+                "archetype": "a bilingual sage bridging Eastern and Western magic, calligraphy strokes flowing",
+                "scaffold": "studio_imaginus",
+                "subtext_hint": "HunyuanDiT Image Generation",
+            },
+            "pixart": {
+                "archetype": "a pixel-perfect artificer of precise visions, transformer runes floating",
+                "scaffold": "studio_imaginus",
+                "subtext_hint": "PixArt Image Generation",
+            },
+            "auraflow": {
+                "archetype": "a flowing aura mage channeling open-source energy, luminous trails streaming",
+                "scaffold": "studio_imaginus",
+                "subtext_hint": "AuraFlow Image Generation",
+            },
+            "kolors": {
+                "archetype": "a chromatic wizard of vivid color magic, prismatic crystals spinning",
+                "scaffold": "studio_imaginus",
+                "subtext_hint": "Kolors Image Generation",
+            },
+            "playground": {
+                "archetype": "an aesthetics-obsessed artisan conjuring beauty with every gesture",
+                "scaffold": "studio_imaginus",
+                "subtext_hint": "Playground v2.5 Image Generation",
+            },
+            "sdxl_turbo": {
+                "archetype": "a lightning-fast battle mage conjuring images in the blink of an eye",
+                "scaffold": "studio_imaginus",
+                "subtext_hint": "SDXL Turbo — Fast Image Generation",
+            },
+            "zit": {
+                "archetype": "an ultra-fast wizard of turbo conjuration, images materializing instantly",
+                "scaffold": "studio_imaginus",
+                "subtext_hint": "Z-Image-Turbo — Fast Image Generation",
+            },
         }
 
-        # Enhanced arch detection
+        # Enhanced arch detection — use centralised rules from guild_common
         if march == "unknown":
-            if "xl" in mname_lower or "sdxl" in mname_lower:
-                march = "sdxl"
-            elif "illu" in mname_lower:
-                march = "illustrious"
-            elif "pony" in mname_lower:
-                march = "pony"
-            elif "flux" in mname_lower:
-                march = "flux1dev"
-            elif "klein" in mname_lower:
-                march = "flux2klein"
-            else:
-                march = "sd15"
+            march = classify_unet_model(mname)
+        if march == "unknown":
+            march = classify_ckpt_model(mname)
 
         # NSFW arch profiles override SFW when available
         if NSFW_MODE and _NSFW_ARCH_PROFILES:
@@ -2150,15 +2344,154 @@ def _detect_wan_preset(comfy_url):
 # ── Animated avatar queue — non-blocking, uses ComfyUI's prompt queue ────
 # Maps char_id → {prompt_id, status, result_url, error}
 # _ANIM_QUEUE is loaded from .guild_state/ in the persistence section above
-_WAN_PRESET_CACHE = None  # Cache so we only detect once
+_WAN_PRESET_CACHE = None       # Cache so we only detect once per URL
+_WAN_PRESET_CACHE_URL = None
+_LTX_PRESET_CACHE = None
+_LTX_PRESET_CACHE_URL = None
 
 
 def _get_wan_preset(comfy_url):
-    """Get cached WAN preset, detecting once."""
-    global _WAN_PRESET_CACHE
-    if _WAN_PRESET_CACHE is None:
+    """Get cached WAN preset, detecting once per ComfyUI URL."""
+    global _WAN_PRESET_CACHE, _WAN_PRESET_CACHE_URL
+    if _WAN_PRESET_CACHE is None or _WAN_PRESET_CACHE_URL != comfy_url:
         _WAN_PRESET_CACHE = _detect_wan_preset(comfy_url) or False
+        _WAN_PRESET_CACHE_URL = comfy_url
     return _WAN_PRESET_CACHE if _WAN_PRESET_CACHE else None
+
+
+def _detect_ltx_preset(comfy_url):
+    """Auto-detect LTX 2.3 video models on ComfyUI and build a preset.
+
+    Returns an LTX preset dict or None if LTX models aren't available.
+    """
+    gguf_models = []
+    try:
+        url = f"{comfy_url}/object_info/UnetLoaderGGUF"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            choices = (data.get("UnetLoaderGGUF", {})
+                           .get("input", {}).get("required", {})
+                           .get("unet_name", []))
+            if choices and isinstance(choices, list) and choices[0]:
+                gguf_models = choices[0]
+    except Exception:
+        return None
+
+    # Find LTX UNET
+    ltx_unet = None
+    for m in gguf_models:
+        ml = m.lower()
+        if "ltx" in ml and ("2.3" in ml or "22b" in ml or "13b" in ml):
+            ltx_unet = m
+            break
+
+    if not ltx_unet:
+        return None
+
+    # Auto-detect text encoder (Gemma)
+    text_encoder = None
+    try:
+        url = f"{comfy_url}/object_info/LTXAVTextEncoderLoader"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            choices = (data.get("LTXAVTextEncoderLoader", {})
+                           .get("input", {}).get("required", {})
+                           .get("text_encoder_name", []))
+            if choices and isinstance(choices, list) and choices[0]:
+                for c in choices[0]:
+                    if "gemma" in c.lower():
+                        text_encoder = c
+                        break
+    except Exception:
+        pass
+
+    # Auto-detect embeddings connector
+    embeddings_connector = None
+    try:
+        # Same node, different input
+        url = f"{comfy_url}/object_info/LTXAVTextEncoderLoader"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            choices = (data.get("LTXAVTextEncoderLoader", {})
+                           .get("input", {}).get("required", {})
+                           .get("embeddings_connector_name", []))
+            if choices and isinstance(choices, list) and choices[0]:
+                for c in choices[0]:
+                    if "ltx" in c.lower() and "connector" in c.lower():
+                        embeddings_connector = c
+                        break
+    except Exception:
+        pass
+
+    # Auto-detect LTX VAE
+    ltx_vae = None
+    try:
+        url = f"{comfy_url}/object_info/VAELoader"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            choices = (data.get("VAELoader", {})
+                           .get("input", {}).get("required", {})
+                           .get("vae_name", []))
+            if choices and isinstance(choices, list) and choices[0]:
+                for v in choices[0]:
+                    if "ltx" in v.lower() and "video" in v.lower() and "vae" in v.lower():
+                        ltx_vae = v
+                        break
+    except Exception:
+        pass
+
+    if not text_encoder or not ltx_vae:
+        print(f"  [Guild] LTX model found ({ltx_unet}) but missing "
+              f"text_encoder ({text_encoder}) or VAE ({ltx_vae})")
+        return None
+
+    # Auto-detect distilled LoRA
+    distilled_lora = None
+    try:
+        url = f"{comfy_url}/object_info/LoraLoaderModelOnly"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            choices = (data.get("LoraLoaderModelOnly", {})
+                           .get("input", {}).get("required", {})
+                           .get("lora_name", []))
+            if choices and isinstance(choices, list) and choices[0]:
+                for l in choices[0]:
+                    ll = l.lower()
+                    if "ltx" in ll and "distill" in ll:
+                        distilled_lora = l
+                        break
+    except Exception:
+        pass
+
+    preset = {
+        "unet": ltx_unet,
+        "text_encoder": text_encoder,
+        "embeddings_connector": embeddings_connector or "",
+        "vae": ltx_vae,
+        "steps": 30,
+        "cfg": 4.0,
+        "stg": 1.0,
+        "rescale": 0.7,
+    }
+    if distilled_lora:
+        preset["distilled_lora"] = distilled_lora
+
+    print(f"  [Guild] LTX preset built: unet={ltx_unet}")
+    return preset
+
+
+def _get_ltx_preset(comfy_url):
+    """Get cached LTX preset, detecting once per ComfyUI URL."""
+    global _LTX_PRESET_CACHE, _LTX_PRESET_CACHE_URL
+    if _LTX_PRESET_CACHE is None or _LTX_PRESET_CACHE_URL != comfy_url:
+        _LTX_PRESET_CACHE = _detect_ltx_preset(comfy_url) or False
+        _LTX_PRESET_CACHE_URL = comfy_url
+    return _LTX_PRESET_CACHE if _LTX_PRESET_CACHE else None
 
 
 def _extract_comfyui_filename(image_url):
@@ -2182,45 +2515,75 @@ def _extract_comfyui_filename(image_url):
 
 
 def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
-    """Queue a WAN animated avatar job to ComfyUI (non-blocking).
+    """Queue an animated avatar job to ComfyUI (non-blocking).
 
-    Returns: {queued: True, prompt_id} or {queued: False, reason: ...}
+    Tries WAN first (image-to-video, best quality for portraits).
+    Falls back to LTX (text+image-to-video) if WAN models aren't available.
+
+    Returns: {queued: True, prompt_id, engine: "wan"|"ltx"} or {queued: False, reason: ...}
     """
     if not BUILTIN_AVAILABLE or _workflows_v2 is None:
         return {"queued": False, "reason": "spellcaster not available"}
 
-    wan_preset = _get_wan_preset(comfy_url)
-    if not wan_preset:
-        return {"queued": False, "reason": "WAN video models not found on ComfyUI"}
-
-    build_wan = getattr(_workflows_v2, 'build_wan_video', None)
-    if build_wan is None:
-        return {"queued": False, "reason": "build_wan_video not available"}
-
     image_filename = _extract_comfyui_filename(image_url)
     seed = random.randint(1, 1000000000)
+    engine = None
+    workflow = None
 
-    try:
-        workflow = build_wan(
-            image_filename=image_filename,
-            preset=wan_preset,
-            prompt_text=f"subtle magical animation, {prompt_text}, gentle swaying, "
-                        "mystical particles, flickering candlelight, living portrait",
-            negative_text="text, watermark, blurry, deformed",
-            seed=seed,
-            width=512, height=512,
-            length=33,         # ~2 sec at 16fps
-            turbo=True,
-            loop=True,
-            rtx_scale=1.0,
-            interpolate=False,
-            face_swap=False,
-            save_raw=False,
-            fps=16,
-            pingpong=True,
-        )
-    except Exception as e:
-        return {"queued": False, "reason": f"workflow build failed: {e}"}
+    # Strategy 1: WAN (preferred — image-to-video, best portrait quality)
+    wan_preset = _get_wan_preset(comfy_url)
+    if wan_preset:
+        build_wan = getattr(_workflows_v2, 'build_wan_video', None)
+        if build_wan:
+            try:
+                workflow = build_wan(
+                    image_filename=image_filename,
+                    preset=wan_preset,
+                    prompt_text=f"subtle magical animation, {prompt_text}, gentle swaying, "
+                                "mystical particles, flickering candlelight, living portrait",
+                    negative_text="text, watermark, blurry, deformed",
+                    seed=seed,
+                    width=512, height=512,
+                    length=33,         # ~2 sec at 16fps
+                    turbo=True,
+                    loop=True,
+                    rtx_scale=1.0,
+                    interpolate=False,
+                    face_swap=False,
+                    save_raw=False,
+                    fps=16,
+                    pingpong=True,
+                )
+                engine = "wan"
+            except Exception as e:
+                print(f"  [Guild] WAN workflow build failed, trying LTX: {e}")
+
+    # Strategy 2: LTX (fallback — image-to-video via i2v mode)
+    if workflow is None:
+        ltx_preset = _get_ltx_preset(comfy_url)
+        if ltx_preset:
+            build_ltx = getattr(_workflows_v2, 'build_ltx_video', None)
+            if build_ltx:
+                try:
+                    workflow = build_ltx(
+                        preset=ltx_preset,
+                        prompt_text=f"subtle magical animation, {prompt_text}, gentle swaying, "
+                                    "mystical particles, flickering light, living portrait",
+                        seed=seed,
+                        width=512, height=512,
+                        num_frames=25,     # 1 sec at 25fps
+                        fps=25,
+                        image_filename=image_filename,
+                        i2v_strength=0.85,
+                        pingpong=True,
+                    )
+                    engine = "ltx"
+                except Exception as e:
+                    print(f"  [Guild] LTX workflow build failed: {e}")
+
+    if workflow is None:
+        return {"queued": False,
+                "reason": "No video models found (need WAN or LTX on ComfyUI)"}
 
     # Submit to ComfyUI queue (non-blocking — just POST and get prompt_id)
     try:
@@ -2246,8 +2609,9 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
         "_workflow": workflow,
     }
     _save_anim_queue()
-    print(f"  [Guild] Queued animated avatar for {char_id} (prompt_id={prompt_id})")
-    return {"queued": True, "prompt_id": prompt_id}
+    print(f"  [Guild] Queued animated avatar for {char_id} via {engine.upper()} "
+          f"(prompt_id={prompt_id})")
+    return {"queued": True, "prompt_id": prompt_id, "engine": engine}
 
 
 def _poll_animated_avatars(comfy_url):
@@ -2357,6 +2721,25 @@ def _anim_poll_background():
 
 # Starts in _server_init() so COMFYUI_URL is set correctly
 _ANIM_POLL_THREAD = None
+
+
+def _avatar_resolution(arch_key):
+    """Return (width, height) for avatar generation, optimized per architecture.
+
+    Each architecture was trained at a native resolution; generating at that
+    resolution or nearby produces the best quality. For avatar thumbnails we
+    use a balance of quality vs speed:
+      - SD1.5: 512×512 (native)
+      - SDXL Turbo: 512×512 (native for turbo)
+      - Everything else (SDXL, Flux, SD3, etc.): 768×768 (good quality, not overkill)
+    """
+    if arch_key in ("sd15",):
+        return 512, 512
+    elif arch_key in ("sdxl_turbo",):
+        return 512, 512
+    # All modern architectures: SDXL, Illustrious, Pony, Flux, SD3, HunyuanDiT,
+    # PixArt, AuraFlow, Kolors, Playground, ZIT, etc.
+    return 768, 768
 
 
 def _dispatch_txt2img(prompt, negative, width, height, comfy_url,
@@ -2867,7 +3250,9 @@ class GuildHandler(SimpleHTTPRequestHandler):
             own_arch = char.get("model_arch")
             # Only use the wizard's model for image-gen architectures
             IMAGE_ARCHS = {"sdxl", "sd15", "illustrious", "pony",
-                           "flux1dev", "flux2klein"}
+                           "flux1dev", "flux2klein", "sd3", "sd3_turbo",
+                           "hunyuan_dit", "pixart", "auraflow", "kolors",
+                           "playground", "sdxl_turbo", "zit"}
             if own_model and own_arch in IMAGE_ARCHS:
                 use_model = own_model
                 use_arch = own_arch
@@ -2875,11 +3260,13 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 use_model = None
                 use_arch = None
 
+            # Use arch-appropriate resolution for best quality
+            av_w, av_h = _avatar_resolution(use_arch)
+
             try:
                 img_url = _dispatch_txt2img(
-                    prompt_text, negative, 512, 512, comfy,
-                    model_name=use_model, model_arch=use_arch,
-                    skip_loras=True)
+                    prompt_text, negative, av_w, av_h, comfy,
+                    model_name=use_model, model_arch=use_arch)
                 _GENERATED_ASSETS.setdefault(char_id, {})["avatar_url"] = img_url
                 _save_generated_assets()
                 return self.end_json(200, {"avatar_url": img_url})
@@ -2935,20 +3322,16 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "garden": "ethereal crystal garden, floating prismatic crystals, light refracting into rainbows, crystalline flowers, reflective pools, amethyst and quartz formations, magical mist, serene and otherworldly",
             }
             # ── NSFW_BG_STYLES_INJECT_ANCHOR ── (do not remove — build_nsfw.py marker)
-            BG_STYLES_NSFW = {
-                "tavern": "interior of a decadent magical pleasure guild, silk curtains and velvet chaises, warm amber candlelight, scattered enchanted wine goblets, arcane aphrodisiac potions on shelves, intimate alcoves with sheer draping, rose petals floating in enchanted air",
-                "library": "forbidden section of an arcane library, towering shelves of erotic grimoires and tantric spell-scrolls, warm reading nooks with plush fur throws, enchanted illustrations that move and blush, soft moaning echoing from deeper stacks, dust motes in amber light",
-                "tower": "interior of a wizard pleasure tower, spiral staircase lined with enchanted mirrors, glowing runic love-spells on walls, sheer curtains billowing, scattered silk robes, enchanted massage oils on nightstands, moonlight through stained glass depicting divine unions",
-                "forest": "enchanted forest hot spring clearing, bioluminescent flowers and aphrodisiac pollen, steaming turquoise pools with glowing runes, scattered silk robes on mossy rocks, fireflies, privacy wards glowing between ancient trees, moonbeams on glistening wet stone",
-                "dungeon": "underground tantric ritual chamber, bubbling aphrodisiac cauldrons, shelves of exotic oils and enchanted restraints, flickering torchlight on polished stone, arcane pleasure-symbols etched into walls, plush furs and silk scattered on raised platforms",
-                "observatory": "celestial boudoir atop a tower, massive skylight showing stars, astral silk canopy bed, orrery casting dappled shadows, cosmic energy swirling through sheer drapes, scattered star charts and divination cards, constellation patterns projected on bare walls",
-                "forge": "enchanted forge turned pleasure den, glowing enchanted metal art installations, warm ember light, hammered copper bath filled with steaming enchanted water, scattered enchanted metalwork jewellery, fur-draped anvil, intimate warmth",
-                "garden": "ethereal midnight garden, moonlit reflecting pools surrounded by aphrodisiac flowers, crystalline sculptures in suggestive poses, enchanted fountains, scattered silk cushions on soft grass, magical mist, lanterns casting warm intimate glow",
-            }
             BG_STYLES = BG_STYLES_NSFW if (NSFW_MODE and BG_STYLES_NSFW) else BG_STYLES_SFW
             style = data.get('style', 'tavern')
             custom_prompt = data.get('custom_prompt', '')
             model_name = data.get('model', 'auto')
+            # Client sends optimal resolution based on user's display
+            bg_width = int(data.get('width', 1024))
+            bg_height = int(data.get('height', 576))
+            # Clamp to sane range
+            bg_width = max(512, min(bg_width, 2048))
+            bg_height = max(512, min(bg_height, 2048))
 
             if style == 'custom' and custom_prompt:
                 base_prompt = custom_prompt
@@ -2962,19 +3345,11 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 # Use specific model if requested
                 if model_name and model_name != 'auto':
                     ckpt = model_name
-                    # Detect arch from model name
-                    ml = ckpt.lower()
-                    if "klein" in ml:
-                        arch_key = "flux2klein"
-                    elif "flux" in ml:
-                        arch_key = "flux1dev"
-                    elif "xl" in ml:
-                        arch_key = "sdxl"
-                    elif "illu" in ml:
-                        arch_key = "illustrious"
-                    else:
-                        arch_key = "sd15"
-                    preset = _build_optimized_preset(ckpt, arch_key, 1024, 576)
+                    # Use centralised arch detection from guild_common
+                    arch_key = classify_unet_model(ckpt)
+                    if arch_key == "unknown":
+                        arch_key = classify_ckpt_model(ckpt)
+                    preset = _build_optimized_preset(ckpt, arch_key, bg_width, bg_height)
 
                     if BUILTIN_AVAILABLE and get_arch:
                         arch = get_arch(arch_key)
@@ -2996,7 +3371,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
                         return self.end_json(200, {"bg_url": result["urls"][0]})
                     raise Exception("No image returned from ComfyUI.")
                 else:
-                    img_url = _dispatch_txt2img(prompt_text, negative, 1024, 576, comfy,
+                    img_url = _dispatch_txt2img(prompt_text, negative, bg_width, bg_height, comfy,
                                                skip_loras=True)
                     return self.end_json(200, {"bg_url": img_url})
             except Exception as e:
@@ -3004,14 +3379,30 @@ class GuildHandler(SimpleHTTPRequestHandler):
 
         # -- /api/batch_generate --
         elif self.path == '/api/batch_generate':
+            batch_bg_w = max(512, min(int(data.get('bg_width', 1024)), 2048))
+            batch_bg_h = max(512, min(int(data.get('bg_height', 576)), 2048))
             def _run_batch():
                 for char in CHARS_CACHE:
                     try:
                         prompt_text = _build_avatar_prompt(char)
                         negative = "text, watermark, blurry, deformed, ugly, low quality, frame, border"
                         print(f"  [Batch] Generating avatar for: {char.get('name', char['id'])}")
-                        img_url = _dispatch_txt2img(prompt_text, negative, 512, 512, comfy,
-                                                   skip_loras=True)
+
+                        # Per-model wizards use their OWN model (matches avatar_generate)
+                        own_model = char.get("model_name")
+                        own_arch = char.get("model_arch")
+                        IMAGE_ARCHS = {"sdxl", "sd15", "illustrious", "pony",
+                                       "flux1dev", "flux2klein"}
+                        if own_model and own_arch in IMAGE_ARCHS:
+                            use_model, use_arch = own_model, own_arch
+                        else:
+                            use_model, use_arch = None, None
+
+                        # Use arch-appropriate resolution
+                        av_w, av_h = _avatar_resolution(use_arch)
+
+                        img_url = _dispatch_txt2img(prompt_text, negative, av_w, av_h, comfy,
+                                                   model_name=use_model, model_arch=use_arch)
                         _BATCH_RESULTS.append({"id": char['id'], "avatar_url": img_url, "status": "ok"})
                         print(f"  [Batch] Done: {char.get('name', char['id'])} ({len(_BATCH_RESULTS)}/{_BATCH_STATE['total']})")
                     except Exception as e:
@@ -3021,7 +3412,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 try:
                     print("  [Batch] Generating tavern background...")
                     bg_prompt = _build_background_prompt()
-                    bg_url = _dispatch_txt2img(bg_prompt, "text, watermark, blurry, people", 1024, 576, comfy,
+                    bg_url = _dispatch_txt2img(bg_prompt, "text, watermark, blurry, people", batch_bg_w, batch_bg_h, comfy,
                                                skip_loras=True)
                     _BATCH_RESULTS.append({"id": "_background", "bg_url": bg_url, "status": "ok"})
                     print("  [Batch] Background done")
@@ -3189,11 +3580,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 custom_studio["default_model"] = model_name
                 custom_studio["default_arch"] = model_arch
                 # Update system prompt to mention the specific model
-                custom_studio["system_prompt"] = (
-                    ref_studio["system_prompt"]
-                    + f"\nDEFAULT MODEL: When building presets, always use "
-                    f"checkpoint/UNET '{model_name}' (arch: {model_arch}) "
-                    f"unless the user explicitly requests a different model.\n"
+                custom_studio["system_prompt"] = ref_studio.get("system_prompt", "").replace(
+                    "{MODEL}", model_name
                 )
                 _STUDIO_BY_ID[char_id] = custom_studio
 
@@ -3211,8 +3599,6 @@ class GuildHandler(SimpleHTTPRequestHandler):
 
         # -- /api/lora_toggles -- save per-wizard LoRA enabled/disabled state
         elif self.path == '/api/lora_toggles':
-            # Expects: { char_id: { lora_name: true/false, ... }, ... }
-            # Merges with existing state (doesn't replace the whole dict)
             toggles = data.get('toggles', data)
             if not isinstance(toggles, dict):
                 return self.end_json(400, {"error": "toggles dict required"})
@@ -3224,7 +3610,6 @@ class GuildHandler(SimpleHTTPRequestHandler):
 
         # -- /api/wizard_identities -- save wizard identity overrides
         elif self.path == '/api/wizard_identities':
-            # Expects: { char_id: { name, personality, avatar_url, animated_url }, ... }
             identities = data.get('identities', data)
             if not isinstance(identities, dict):
                 return self.end_json(400, {"error": "identities dict required"})
@@ -3246,7 +3631,6 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 if lora_name in _LORA_REGISTRY:
                     _LORA_REGISTRY[lora_name]["user_desc"] = desc
                     _LORA_REGISTRY[lora_name]["source"] = "user"
-                    # Also set purpose from user description if not already set
                     if not _LORA_REGISTRY[lora_name].get("purpose"):
                         _LORA_REGISTRY[lora_name]["purpose"] = desc
                     updated += 1
@@ -3270,7 +3654,6 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 PRIVACY_CLEANUP = new_val
                 changed.append(f"privacy_cleanup={new_val}")
 
-                # Persist to guild_config.json
                 cfg_path = os.path.join(_THIS_DIR, "guild_config.json")
                 try:
                     with open(cfg_path, 'r', encoding='utf-8') as f:
@@ -3284,8 +3667,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 except Exception:
                     pass
 
-                # Also sync to GIMP plugin config if it exists
-                # GIMP uses "output_cleanup": "delete" (privacy on) or "copy" (off)
+                # Sync to GIMP plugin config if it exists
                 gimp_cfg_candidates = []
                 if sys.platform == 'win32':
                     appdata = os.environ.get('APPDATA', '')
@@ -3327,17 +3709,65 @@ class GuildHandler(SimpleHTTPRequestHandler):
         # -- /api/reinitialize -- nuke non-core wizards, re-detect from ComfyUI
         elif self.path == '/api/reinitialize':
             keep_core_assets = data.get('keep_core_assets', True)
-
-            # "Core" = studio characters only (Imaginus, Transmutex, etc.)
-            # model_wizard (LTX2, WAN, etc.) and comfyui_model are all re-detected
             PRESERVED_TYPE = 'studio'
-
             old_total = len(CHARS_CACHE)
             old_nonstudio = sum(1 for c in CHARS_CACHE
                                 if c.get('type') != PRESERVED_TYPE)
+            CHARS_CACHE[:] = [c for c in CHARS_CACHE
+                              if c.get('type') == PRESERVED_TYPE]
+            cw_path = os.path.join(_THIS_DIR, "custom_wizards.json")
+            if os.path.isfile(cw_path):
+                try:
+                    with open(cw_path, 'w', encoding='utf-8') as f:
+                        json.dump([], f)
+                except Exception:
+                    pass
+            _STUDIO_BY_ID.clear()
+            for sc in STUDIO_CHARACTERS:
+                _STUDIO_BY_ID[sc["id"]] = sc
+            comfy = data.get('comfy_url', COMFYUI_URL)
+            threading.Thread(
+                target=_server_init,
+                args=(comfy,),
+                daemon=True
+            ).start()
+            return self.end_json(200, {
+                "status": "reinitializing",
+                "removed": old_nonstudio,
+                "kept_core": old_total - old_nonstudio,
+            })
 
-            # Collect IDs of everything being removed (for asset cleanup)
-            removed_ids = {c['id'] for c in CHARS_CACHE
-                           if c.get('type') != PRESERVED_TYPE}
+        else:
+            return self.end_json(404, {"error": f"Unknown endpoint: {self.path}"})
 
-            # Clean _STUDIO_BY_ID �
+    def do_OPTIONS(self):
+        """Handle CORS preflight requests."""
+        self.send_response(204)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
+
+    def translate_path(self, path):
+        root = os.path.dirname(os.path.abspath(__file__))
+        path = path.split('?', 1)[0]
+        path = path.split('#', 1)[0]
+        if path.startswith('/'):
+            path = path[1:]
+        return os.path.join(root, path)
+
+    def log_message(self, format, *args):
+        """Quieter logging — skip noisy static asset requests."""
+        msg = format % args
+        if '/static/' not in msg and '/api/avatar/' not in msg:
+            print(f"  {msg}")
+
+
+if __name__ == "__main__":
+    print(f"Starting The Wizard Guild on port {PORT}...")
+    httpd = HTTPServer(('0.0.0.0', PORT), GuildHandler)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    httpd.server_close()
