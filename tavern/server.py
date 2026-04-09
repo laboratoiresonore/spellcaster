@@ -60,6 +60,7 @@ except (ImportError, Exception):
 # ── Shared constants & helpers ────────────────────────────────────────
 from guild_common import (
     DEFAULT_GUILD_PORT, DEFAULT_COMFYUI_URL, DEFAULT_KOBOLD_URL,
+    DEFAULT_HORDE_URL, HORDE_ANONYMOUS_KEY,
     is_port_in_use, test_endpoint,
     UNET_ARCH_RULES, CKPT_ARCH_RULES, BEST_MODEL_PRIORITY,
     FAMILY_MODEL_KEYWORDS, LORA_ARCH_PREFIXES, LORA_NAME_ARCH_HINTS,
@@ -71,7 +72,10 @@ PORT = DEFAULT_GUILD_PORT
 COMFYUI_URL = DEFAULT_COMFYUI_URL
 KOBOLD_URL = DEFAULT_KOBOLD_URL
 VERSION = "1.0.0"
-PRIVACY_CLEANUP = True   # Default ON — delete inputs+outputs from ComfyUI after delivery
+PRIVACY_CLEANUP = True   # Default ON
+LLM_MODE = "local"         # "local" (KoboldAI) or "horde" (AI Horde)
+HORDE_API_KEY = ""         # AI Horde API key (empty = anonymous = 0000000000)
+HORDE_MODEL = ""           # Preferred Horde model (empty = any) — delete inputs+outputs from ComfyUI after delivery
 NSFW_MODE = False        # Set by launcher when running the NSFW edition
 
 # ── NSFW personality overlay ─────────────────────────────────────────
@@ -1092,6 +1096,20 @@ def _server_init(comfy_url=None):
     threading.Thread(
         target=_build_lora_registry, args=(url,), daemon=True
     ).start()
+    # Log privacy mode status
+    if LLM_MODE == "horde":
+        print("  [Guild] \u26a0 WARNING: LLM set to HORDE mode — ZERO PRIVACY")
+        print("  [Guild]   All prompts will be sent to volunteer workers on AI Horde.")
+        print("  [Guild]   Change to 'local' in Settings or guild_config.json to use private LLM.")
+    else:
+        print(f"  [Guild] LLM mode: local (private) — {KOBOLD_URL}")
+    if PRIVACY_CLEANUP:
+        print(f"  [Guild] Privacy mode: ON — ComfyUI files wiped after delivery")
+        print(f"  [Guild] All creations saved to: {_CREATIONS_DIR}")
+    else:
+        print(f"  [Guild] Privacy mode: OFF — files remain on ComfyUI server")
+        print(f"  [Guild] Creations folder: {_CREATIONS_DIR}")
+
     # Start background animated-avatar poller (once)
     if _ANIM_POLL_THREAD is None:
         _ANIM_POLL_THREAD = threading.Thread(
@@ -1104,6 +1122,12 @@ def _server_init(comfy_url=None):
 # ═══════════════════════════════════════════════════════════════════════
 _STATE_DIR = os.path.join(_THIS_DIR, ".guild_state")
 os.makedirs(_STATE_DIR, exist_ok=True)
+
+# Creations folder — all generated outputs are saved here locally.
+# When privacy mode is ON, ComfyUI copies are wiped after caching here.
+_CREATIONS_DIR = os.path.join(_THIS_DIR, "creations")
+os.makedirs(_CREATIONS_DIR, exist_ok=True)
+_ASSET_CACHE_DIR = _CREATIONS_DIR  # alias for existing cache code
 
 _BANISHED_PATH = os.path.join(_STATE_DIR, "banished_ids.json")
 _ASSETS_PATH = os.path.join(_STATE_DIR, "generated_assets.json")
@@ -1305,15 +1329,29 @@ def _load_lora_registry():
 
 
 def _save_lora_registry():
-    """Persist LoRA registry to disk."""
+    """Persist LoRA registry to disk (atomic write to prevent corruption)."""
     try:
-        with open(_LORA_REGISTRY_PATH, 'w', encoding='utf-8') as f:
-            json.dump({
-                "registry": _LORA_REGISTRY,
-                "interrogated": list(_LORA_INTERROGATED),
-            }, f, indent=2)
+        tmp_path = _LORA_REGISTRY_PATH + ".tmp"
+        payload = json.dumps({
+            "registry": _LORA_REGISTRY,
+            "interrogated": list(_LORA_INTERROGATED),
+        }, indent=2)
+        with open(tmp_path, 'w', encoding='utf-8') as f:
+            f.write(payload)
+            f.flush()
+            os.fsync(f.fileno())
+        # Atomic rename (Windows: need to remove first)
+        if os.path.exists(_LORA_REGISTRY_PATH):
+            os.replace(tmp_path, _LORA_REGISTRY_PATH)
+        else:
+            os.rename(tmp_path, _LORA_REGISTRY_PATH)
     except Exception as e:
         print(f"  [LoRA] Failed to save registry: {e}")
+        # Clean up temp file on failure
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
 
 
 def _fetch_all_loras_from_comfyui(comfy_url):
@@ -1363,11 +1401,16 @@ def _query_civitai_by_filename(lora_name):
     """Query CivitAI API to find metadata for a LoRA by its filename.
 
     Returns {purpose, tags, civitai_url, description} or None if not found.
+    Uses exact filename match against CivitAI version files when available.
     """
     # Extract the bare filename without path separators
     bare = lora_name.replace("\\", "/").rsplit("/", 1)[-1]
     # Strip extension
     search_name = bare.rsplit(".", 1)[0] if "." in bare else bare
+    # Skip known non-CivitAI patterns (distilled/control LoRAs from model repos)
+    skip_patterns = ["distilled-lora", "ic-lora", "control-ref", "lora-union"]
+    if any(sp in search_name.lower() for sp in skip_patterns):
+        return None
 
     try:
         # CivitAI search endpoint — search by model name
@@ -1384,16 +1427,33 @@ def _query_civitai_by_filename(lora_name):
         if not items:
             return None
 
-        # Find the best match — prefer exact filename matches
+        # Find the best match — check model version filenames for exact match
         best = None
+        search_lower = search_name.lower()
         for item in items:
-            item_name_lower = item.get("name", "").lower()
-            search_lower = search_name.lower()
-            if search_lower in item_name_lower or item_name_lower in search_lower:
-                best = item
+            # Check actual version filenames (most reliable)
+            for ver in item.get("modelVersions", []):
+                for f in ver.get("files", []):
+                    fname = f.get("name", "").rsplit(".", 1)[0].lower()
+                    if fname == search_lower:
+                        best = item
+                        break
+                if best:
+                    break
+            if best:
                 break
+        # Fallback: fuzzy name match (but skip if names are wildly different)
         if not best:
-            best = items[0]  # fallback to first result
+            for item in items:
+                item_name_lower = item.get("name", "").lower()
+                # Both directions — but require substantial overlap
+                if (search_lower in item_name_lower or item_name_lower in search_lower):
+                    # Reject if the search name is too short to be meaningful
+                    if len(search_lower) >= 5:
+                        best = item
+                        break
+        if not best:
+            return None  # No confident match — don't use first random result
 
         # Extract useful metadata
         tags = best.get("tags", [])
@@ -1524,23 +1584,35 @@ def _build_lora_registry(comfy_url):
 def _civitai_metadata_worker(lora_names):
     """Background worker to fetch CivitAI metadata for unknown LoRAs."""
     fetched = 0
+    skipped = 0
+    errors = 0
     for lora_name in lora_names:
         if lora_name not in _LORA_REGISTRY:
             continue
-        meta = _query_civitai_by_filename(lora_name)
-        if meta:
-            entry = _LORA_REGISTRY[lora_name]
-            entry["purpose"] = meta["purpose"]
-            entry["tags"] = meta["tags"]
-            entry["civitai_url"] = meta["civitai_url"]
-            entry["civitai_name"] = meta.get("civitai_name", "")
-            entry["description"] = meta.get("description", "")
-            entry["source"] = "civitai"
-            fetched += 1
+        try:
+            meta = _query_civitai_by_filename(lora_name)
+            if meta:
+                entry = _LORA_REGISTRY[lora_name]
+                entry["purpose"] = meta["purpose"]
+                entry["tags"] = meta["tags"]
+                entry["civitai_url"] = meta["civitai_url"]
+                entry["civitai_name"] = meta.get("civitai_name", "")
+                entry["description"] = meta.get("description", "")
+                entry["source"] = "civitai"
+                fetched += 1
+            else:
+                skipped += 1
+        except Exception as e:
+            errors += 1
+            print(f"  [LoRA] CivitAI error for '{lora_name}': {e}")
         # Rate limit: be polite to CivitAI's API
         time.sleep(1.0)
+        # Save periodically to avoid losing progress
+        if (fetched + skipped + errors) % 20 == 0:
+            _save_lora_registry()
     _save_lora_registry()
-    print(f"  [LoRA] CivitAI metadata complete: {fetched}/{len(lora_names)} identified")
+    print(f"  [LoRA] CivitAI metadata complete: {fetched} identified, "
+          f"{skipped} not found, {errors} errors (of {len(lora_names)} total)")
 
 
 def _get_loras_for_wizard(char_id):
@@ -1833,6 +1905,9 @@ def _dispatch_workflow(workflow, comfy_url, timeout=180):
     Raises Exception on failure or timeout.
     """
     # Submit
+    # Debug: log workflow node types for troubleshooting
+    node_types = {nid: n.get('class_type', '?') for nid, n in workflow.items()}
+    print(f"  [Guild] Workflow nodes: {node_types}")
     try:
         url = f"{comfy_url}/prompt"
         body = json.dumps({"prompt": workflow}).encode("utf-8")
@@ -1843,6 +1918,25 @@ def _dispatch_workflow(workflow, comfy_url, timeout=180):
             prompt_id = data.get("prompt_id")
             if not prompt_id:
                 raise Exception("ComfyUI declined prompt dispatch.")
+    except urllib.error.HTTPError as e:
+        # Read the actual error body from ComfyUI (node errors, missing files, etc.)
+        try:
+            err_body = e.read().decode('utf-8', errors='replace')
+            err_detail = json.loads(err_body) if err_body else {}
+            node_errors = err_detail.get('node_errors', {})
+            if node_errors:
+                msgs = []
+                for nid, info in node_errors.items():
+                    cls = info.get('class_type', nid)
+                    for err in info.get('errors', []):
+                        msgs.append(f"{cls}: {err.get('message', str(err))}")
+                detail = '; '.join(msgs) if msgs else err_body[:500]
+            else:
+                detail = err_body[:500]
+        except Exception:
+            detail = str(e)
+        print(f"  [Guild] ComfyUI rejected workflow: {detail}")
+        raise Exception(f"ComfyUI rejected workflow: {detail}")
     except urllib.error.URLError as e:
         raise Exception(f"ComfyUI is offline at {comfy_url}: {e}")
     except Exception as e:
@@ -1912,6 +2006,49 @@ def _dispatch_workflow(workflow, comfy_url, timeout=180):
             pass
 
     raise Exception("Timeout waiting for ComfyUI response.")
+
+
+def _cache_comfyui_asset(comfy_url_str, asset_type="image"):
+    """Download an image/video from ComfyUI and cache it locally.
+
+    Returns a local URL like /api/cached_asset/abc123.png that the browser
+    can use instead of the original ComfyUI URL.  This allows privacy cleanup
+    to delete the ComfyUI copy without breaking the browser's reference.
+    """
+    if not comfy_url_str or '/view?' not in comfy_url_str:
+        return comfy_url_str  # not a ComfyUI URL, pass through
+
+    try:
+        from urllib.parse import urlparse, parse_qs
+        parsed = urlparse(comfy_url_str)
+        params = parse_qs(parsed.query)
+        fname = params.get("filename", [""])[0]
+        if not fname:
+            return comfy_url_str
+
+        # Determine extension
+        ext = os.path.splitext(fname)[1] or ".png"
+
+        # Generate a stable cache filename from the original
+        cache_name = hashlib.sha256(comfy_url_str.encode()).hexdigest()[:16] + ext
+        cache_path = os.path.join(_ASSET_CACHE_DIR, cache_name)
+
+        # Download if not already cached
+        if not os.path.exists(cache_path):
+            req = urllib.request.Request(comfy_url_str)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = resp.read()
+            if len(data) < 100:
+                return comfy_url_str  # too small, probably already wiped
+            with open(cache_path, 'wb') as f:
+                f.write(data)
+                f.flush()
+                os.fsync(f.fileno())
+
+        return f"/api/cached_asset/{cache_name}"
+    except Exception as e:
+        print(f"  [Privacy] Failed to cache asset: {e}")
+        return comfy_url_str  # fallback to original URL
 
 
 # 1x1 transparent pixel PNG — used to overwrite temp uploads on ComfyUI
@@ -2025,11 +2162,16 @@ def _detect_best_model(comfy_url):
     return None, None
 
 
-def _build_optimized_preset(ckpt, arch_key, width, height):
-    """Build an optimized preset using the architecture defaults from spellcaster."""
+def _build_optimized_preset(ckpt, arch_key, width, height, model_type=None):
+    """Build an optimized preset using the architecture defaults from spellcaster.
+
+    model_type: 'unet' or 'checkpoint' — passed through to load_model_stack
+    so it can override the architecture's default loader if the model is
+    in a different pool (e.g. chroma2 as checkpoint instead of UNET).
+    """
     if BUILTIN_AVAILABLE and get_arch:
         arch = get_arch(arch_key)
-        return {
+        p = {
             "arch": arch_key,
             "ckpt": ckpt,
             "width": width, "height": height,
@@ -2039,7 +2181,10 @@ def _build_optimized_preset(ckpt, arch_key, width, height):
             "scheduler": arch.default_scheduler,
             "denoise": 1.0,
         }
-    return {
+        if model_type:
+            p["model_type"] = model_type
+        return p
+    p = {
         "arch": arch_key,
         "ckpt": ckpt,
         "width": width, "height": height,
@@ -2047,6 +2192,84 @@ def _build_optimized_preset(ckpt, arch_key, width, height):
         "sampler": "dpmpp_2m", "scheduler": "karras",
         "denoise": 1.0,
     }
+    if model_type:
+        p["model_type"] = model_type
+    return p
+
+
+def _preflight_unet_arch(comfy_url, ckpt, arch, arch_key):
+    """Check if required supporting files (CLIP, VAE) exist on ComfyUI.
+
+    For unet_clip_vae architectures (Flux, Klein, etc.), the UNET alone isn't
+    enough — we also need specific CLIP and VAE files.
+
+    Returns a string describing missing files, or None if all are present.
+    """
+    missing = []
+
+    # Check CLIP files
+    try:
+        if arch.clip_mode == "dual":
+            extra = arch.extra
+            clip1 = extra.get("clip_name1", "clip_l.safetensors")
+            clip2 = extra.get("clip_name2", "t5xxl_fp8_e4m3fn.safetensors")
+            # Query DualCLIPLoader for available CLIP models
+            url = f"{comfy_url}/object_info/DualCLIPLoader"
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                clips = (data.get("DualCLIPLoader", {})
+                             .get("input", {}).get("required", {})
+                             .get("clip_name1", []))
+                avail = clips[0] if clips and isinstance(clips, list) else []
+                if clip1 not in avail:
+                    missing.append(f"CLIP '{clip1}'")
+                # clip_name2 choices
+                clips2 = (data.get("DualCLIPLoader", {})
+                              .get("input", {}).get("required", {})
+                              .get("clip_name2", []))
+                avail2 = clips2[0] if clips2 and isinstance(clips2, list) else []
+                if clip2 not in avail2:
+                    missing.append(f"CLIP '{clip2}'")
+        elif arch.clip_mode == "single_flux2":
+            ckpt_lower = ckpt.lower()
+            clip_name = ("qwen_3_8b_fp8mixed.safetensors"
+                         if "9b" in ckpt_lower
+                         else "qwen_3_4b.safetensors")
+            url = f"{comfy_url}/object_info/CLIPLoader"
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                clips = (data.get("CLIPLoader", {})
+                             .get("input", {}).get("required", {})
+                             .get("clip_name", []))
+                avail = clips[0] if clips and isinstance(clips, list) else []
+                if clip_name not in avail:
+                    missing.append(f"CLIP '{clip_name}'")
+    except Exception as e:
+        print(f"  [Preflight] Could not check CLIP files: {e}")
+
+    # Check VAE file
+    try:
+        vae_name = arch.extra.get("vae_name", "ae.safetensors")
+        url = f"{comfy_url}/object_info/VAELoader"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            vaes = (data.get("VAELoader", {})
+                        .get("input", {}).get("required", {})
+                        .get("vae_name", []))
+            avail = vaes[0] if vaes and isinstance(vaes, list) else []
+            if vae_name not in avail:
+                missing.append(f"VAE '{vae_name}'")
+    except Exception as e:
+        print(f"  [Preflight] Could not check VAE files: {e}")
+
+    if missing:
+        msg = ", ".join(missing)
+        print(f"  [Preflight] {arch_key} model '{ckpt}' is missing: {msg}")
+        return msg
+    return None
 
 
 def _detect_wan_preset(comfy_url):
@@ -2522,9 +2745,11 @@ def _poll_animated_avatars(comfy_url):
                         break
 
                 if result_url:
+                    # Cache locally BEFORE privacy cleanup wipes ComfyUI files
+                    cached_url = _cache_comfyui_asset(result_url, "video")
                     entry["status"] = "done"
-                    entry["result_url"] = result_url
-                    _GENERATED_ASSETS.setdefault(char_id, {})["animated_url"] = result_url
+                    entry["result_url"] = cached_url
+                    _GENERATED_ASSETS.setdefault(char_id, {})["animated_url"] = cached_url
                     _save_generated_assets()
                     _save_anim_queue()
                     print(f"  [Guild] Animated avatar DONE for {char_id}")
@@ -2587,11 +2812,14 @@ def _avatar_resolution(arch_key):
 
 
 def _dispatch_txt2img(prompt, negative, width, height, comfy_url,
-                      model_name=None, model_arch=None, skip_loras=False):
+                      model_name=None, model_arch=None, model_type=None,
+                      skip_loras=False):
     """Generate a txt2img via ComfyUI.
 
     If model_name/model_arch are provided, use that specific model.
     Otherwise auto-detect the best available model.
+    model_type: 'unet' or 'checkpoint' — tells load_model_stack which
+                loader to use when the arch default doesn't match.
     skip_loras: If True, don't apply architecture autoset_loras.
                 Use for internal asset generation (avatars, backgrounds)
                 to avoid LoRA shape mismatches.
@@ -2605,7 +2833,17 @@ def _dispatch_txt2img(prompt, negative, width, height, comfy_url,
                         "Ensure you have models loaded.")
 
     seed = random.randint(1, 1000000000)
-    preset = _build_optimized_preset(ckpt, arch_key, width, height)
+    preset = _build_optimized_preset(ckpt, arch_key, width, height, model_type=model_type)
+
+    # Pre-flight: verify supporting files exist for separate-loader archs
+    # Skip if model_type is checkpoint — we'll use CheckpointLoaderSimple instead
+    if BUILTIN_AVAILABLE and get_arch and model_type != "checkpoint":
+        _pf_arch = get_arch(arch_key)
+        if _pf_arch.loader == "unet_clip_vae":
+            _missing = _preflight_unet_arch(comfy_url, ckpt, _pf_arch, arch_key)
+            if _missing:
+                raise Exception(f"Missing files for {arch_key}: {_missing}. "
+                                f"See ComfyUI docs for required CLIP/VAE files.")
 
     if BUILTIN_AVAILABLE and get_arch:
         arch = get_arch(arch_key)
@@ -2645,9 +2883,21 @@ def _dispatch_txt2img(prompt, negative, width, height, comfy_url,
                              "images": ["8", 0]}}
         }
 
-    print(f"  [Guild] Dispatching txt2img: {arch_key} / {ckpt} / {width}x{height} / seed={seed}")
+    # Log the loader strategy for debugging
+    loader_strat = "unknown"
+    if BUILTIN_AVAILABLE and get_arch:
+        _dbg_arch = get_arch(arch_key)
+        loader_strat = getattr(_dbg_arch, "loader", "unknown")
+    print(f"  [Guild] Dispatching txt2img: {arch_key} / {ckpt} / {width}x{height} / seed={seed} / loader={loader_strat}")
 
     result = _dispatch_workflow(workflow, comfy_url, timeout=120)
+
+    # Cache images locally BEFORE cleanup (so we have a copy)
+    if result.get("type") == "images" and result.get("urls"):
+        cached_urls = []
+        for u in result["urls"]:
+            cached_urls.append(_cache_comfyui_asset(u, "image"))
+        result["cached_urls"] = cached_urls
 
     # Privacy cleanup: scrub inputs + outputs from ComfyUI server
     if PRIVACY_CLEANUP:
@@ -2656,6 +2906,8 @@ def _dispatch_txt2img(prompt, negative, width, height, comfy_url,
         except Exception:
             pass
 
+    if result.get("cached_urls"):
+        return result["cached_urls"][0]
     if result.get("type") == "images" and result.get("urls"):
         return result["urls"][0]
     raise Exception("No image returned from ComfyUI.")
@@ -2772,6 +3024,14 @@ def _build_and_dispatch(build_fn_name, params, comfy_url):
     workflow = fn(**translated)
     result = _dispatch_workflow(workflow, comfy_url)
 
+    # Cache generated assets locally BEFORE privacy cleanup wipes ComfyUI files
+    if result.get("type") == "images" and result.get("urls"):
+        cached = []
+        for u in result["urls"]:
+            cached.append(_cache_comfyui_asset(u, "image"))
+        result["cached_urls"] = cached
+        result["urls"] = cached  # replace so callers get local URLs
+
     # Privacy cleanup: delete inputs + outputs from ComfyUI after delivery
     if PRIVACY_CLEANUP:
         try:
@@ -2799,11 +3059,9 @@ class GuildHandler(SimpleHTTPRequestHandler):
         self.wfile.write(json.dumps(payload).encode('utf-8'))
 
     def do_GET(self):
-        # Route swap: / → Guild chat, /guild → scaffold editor
+        # Route: / → Guild chat UI
         if self.path == '/':
             self.path = '/static/index.html'
-        elif self.path == '/guild':
-            self.path = '/static/guild.html'
 
         # ── API GET endpoints ──
         if self.path == '/api/characters':
@@ -2843,10 +3101,44 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(200, {
                 "comfyui_url": COMFYUI_URL,
                 "kobold_url": KOBOLD_URL,
+                "llm_mode": LLM_MODE,
+                "horde_api_key": bool(HORDE_API_KEY),  # don't leak key, just flag
+                "horde_mode_warning": "ZERO PRIVACY — all prompts visible to volunteers" if LLM_MODE == "horde" else None,
                 "port": PORT,
                 "version": VERSION,
                 "privacy_cleanup": PRIVACY_CLEANUP,
             })
+        elif self.path == '/api/has_video_model':
+            # Check if WAN, LTX, or other video-capable models are available
+            has_video = False
+            engine = None
+            try:
+                wan_preset = _detect_wan_preset(COMFYUI_URL)
+                if wan_preset:
+                    has_video = True
+                    engine = "wan"
+            except Exception:
+                pass
+            if not has_video:
+                # Check for LTX models in unet list
+                try:
+                    url = f"{COMFYUI_URL}/object_info/UNETLoader"
+                    req = urllib.request.Request(url)
+                    with urllib.request.urlopen(req, timeout=10) as resp:
+                        data = json.loads(resp.read().decode("utf-8"))
+                        models = (data.get("UNETLoader", {})
+                                      .get("input", {}).get("required", {})
+                                      .get("unet_name", []))
+                        if models and isinstance(models, list) and models[0]:
+                            for m in models[0]:
+                                ml = m.lower()
+                                if "ltx" in ml or "svd" in ml or "cog" in ml:
+                                    has_video = True
+                                    engine = "ltx" if "ltx" in ml else ("svd" if "svd" in ml else "cogvideo")
+                                    break
+                except Exception:
+                    pass
+            return self.end_json(200, {"has_video_model": has_video, "engine": engine})
         elif self.path == '/api/version':
             return self.end_json(200, {"version": VERSION})
         elif self.path == '/api/system_prompt':
@@ -3038,6 +3330,35 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 {"name": w.name, "type": w.workflow_type, "path": str(w.path)}
                 for w in wfs
             ])
+        elif self.path.startswith('/api/cached_asset/'):
+            # Serve locally cached assets (downloaded from ComfyUI before privacy cleanup)
+            asset_name = self.path.split('/api/cached_asset/')[-1]
+            # Sanitize — only allow alphanumeric + dot + dash + underscore
+            import re as _re
+            if not _re.match(r'^[a-zA-Z0-9._-]+$', asset_name):
+                return self.end_json(400, {"error": "Invalid asset name"})
+            asset_path = os.path.join(_ASSET_CACHE_DIR, asset_name)
+            if not os.path.isfile(asset_path):
+                return self.end_json(404, {"error": "Asset not found"})
+            # Determine content type
+            ext = os.path.splitext(asset_name)[1].lower()
+            ct_map = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+                      '.webp': 'image/webp', '.gif': 'image/gif',
+                      '.mp4': 'video/mp4', '.webm': 'video/webm'}
+            ct = ct_map.get(ext, 'application/octet-stream')
+            try:
+                with open(asset_path, 'rb') as f:
+                    data = f.read()
+                self.send_response(200)
+                self.send_header('Content-Type', ct)
+                self.send_header('Content-Length', str(len(data)))
+                self.send_header('Cache-Control', 'public, max-age=86400')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(data)
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                pass
+            return
         elif self.path.startswith('/api/avatar/'):
             char_id = self.path.split('/api/avatar/')[-1]
             hue = int(hashlib.md5(char_id.encode()).hexdigest(), 16) % 360
@@ -3077,6 +3398,15 @@ class GuildHandler(SimpleHTTPRequestHandler):
 
         comfy = data.get('comfy_url', COMFYUI_URL)
 
+        # -- /api/horde_generate -- server-side proxy to AI Horde
+        #    Browser can't call Horde directly (CORS), so we relay.
+        if self.path == '/api/horde_generate':
+            return self._handle_horde_generate(data)
+
+        # -- /api/config (POST) -- update runtime config from settings UI
+        if self.path == '/api/config':
+            return self._handle_config_update(data)
+
         # -- /api/avatar_generate --
         if self.path == '/api/avatar_generate':
             char_id = data.get('id', '')
@@ -3110,14 +3440,19 @@ class GuildHandler(SimpleHTTPRequestHandler):
             # Use arch-appropriate resolution for best quality
             av_w, av_h = _avatar_resolution(use_arch)
 
+            use_type = char.get("model_type", "unknown")
+            print(f"  [Avatar] Generating for {char_id}: model={use_model} arch={use_arch} type={use_type} res={av_w}x{av_h}")
             try:
                 img_url = _dispatch_txt2img(
                     prompt_text, negative, av_w, av_h, comfy,
-                    model_name=use_model, model_arch=use_arch)
+                    model_name=use_model, model_arch=use_arch,
+                    model_type=char.get("model_type"),
+                    skip_loras=True)
                 _GENERATED_ASSETS.setdefault(char_id, {})["avatar_url"] = img_url
                 _save_generated_assets()
                 return self.end_json(200, {"avatar_url": img_url})
             except Exception as e:
+                print(f"  [Avatar] FAILED for {char_id} (model={use_model}, arch={use_arch}): {e}")
                 return self.end_json(500, {"error": str(e)})
 
         # -- /api/animated_avatar_queue -- queue a WAN animation (non-blocking)
@@ -3208,6 +3543,13 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     seed = random.randint(1, 1000000000)
                     workflow = build_txt2img(preset, prompt_text, negative, seed)
                     result = _dispatch_workflow(workflow, comfy)
+                    # Cache assets locally BEFORE privacy cleanup wipes ComfyUI files
+                    if result.get("type") == "images" and result.get("urls"):
+                        cached = []
+                        for u in result["urls"]:
+                            cached.append(_cache_comfyui_asset(u, "image"))
+                        result["cached_urls"] = cached
+                        result["urls"] = cached
                     # Privacy cleanup: scrub outputs from ComfyUI server
                     if PRIVACY_CLEANUP:
                         try:
@@ -3249,7 +3591,9 @@ class GuildHandler(SimpleHTTPRequestHandler):
                         av_w, av_h = _avatar_resolution(use_arch)
 
                         img_url = _dispatch_txt2img(prompt_text, negative, av_w, av_h, comfy,
-                                                   model_name=use_model, model_arch=use_arch)
+                                                   model_name=use_model, model_arch=use_arch,
+                                                   model_type=char.get("model_type"),
+                                                   skip_loras=True)
                         _BATCH_RESULTS.append({"id": char['id'], "avatar_url": img_url, "status": "ok"})
                         print(f"  [Batch] Done: {char.get('name', char['id'])} ({len(_BATCH_RESULTS)}/{_BATCH_STATE['total']})")
                     except Exception as e:
@@ -3586,6 +3930,172 @@ class GuildHandler(SimpleHTTPRequestHandler):
 
         else:
             return self.end_json(404, {"error": f"Unknown endpoint: {self.path}"})
+
+
+    # ═══════════════════════════════════════════════════════════════════
+    #  Config Update — persist settings changes from the browser UI
+    # ═══════════════════════════════════════════════════════════════════
+    def _handle_config_update(self, data):
+        """Accept runtime config updates from the settings modal."""
+        global LLM_MODE, HORDE_API_KEY, HORDE_MODEL, KOBOLD_URL, COMFYUI_URL
+        changed = []
+        if 'llm_mode' in data and data['llm_mode'] in ('local', 'horde'):
+            LLM_MODE = data['llm_mode']
+            changed.append(f"llm_mode={LLM_MODE}")
+        if 'kobold_url' in data:
+            KOBOLD_URL = data['kobold_url']
+            changed.append(f"kobold_url={KOBOLD_URL}")
+        if 'comfyui_url' in data:
+            COMFYUI_URL = data['comfyui_url']
+            changed.append(f"comfyui_url={COMFYUI_URL}")
+        if 'horde_api_key' in data:
+            HORDE_API_KEY = data['horde_api_key']
+            changed.append("horde_api_key=***")
+        if 'horde_model' in data:
+            HORDE_MODEL = data['horde_model']
+            changed.append(f"horde_model={HORDE_MODEL}")
+
+        # Persist to guild_config.json
+        config_path = os.path.join(_THIS_DIR, 'guild_config.json')
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+        except Exception:
+            config = {}
+        config['llm_mode'] = LLM_MODE
+        config['kobold_url'] = KOBOLD_URL
+        config['comfyui_url'] = COMFYUI_URL
+        config['horde_api_key'] = HORDE_API_KEY
+        config['horde_model'] = HORDE_MODEL
+        try:
+            with open(config_path, 'w') as f:
+                json.dump(config, f, indent=2)
+        except Exception as e:
+            print(f"  [config] WARNING: could not save config: {e}")
+
+        if changed:
+            print(f"  [config] Updated: {', '.join(changed)}")
+        return self.end_json(200, {"ok": True})
+
+    # ═══════════════════════════════════════════════════════════════════
+    #  AI Horde — server-side text generation proxy
+    # ═══════════════════════════════════════════════════════════════════
+    def _handle_horde_generate(self, data):
+        """
+        Proxy text-generation requests to AI Horde's async API.
+        Browser can't call Horde directly (CORS), so we relay.
+        Returns KoboldAI v1-compatible JSON: {"results": [{"text": "..."}]}
+        """
+        prompt = data.get("prompt", "")
+        if not prompt:
+            return self.end_json(400, {"error": "prompt is required"})
+
+        print("  [Horde] \u26a0 PRIVACY WARNING: Sending prompt to AI Horde "
+              "(visible to volunteer workers)")
+
+        # Build Horde request payload
+        api_key = HORDE_API_KEY or HORDE_ANONYMOUS_KEY
+        params = {
+            "n": 1,
+            "max_length": data.get("max_length", 200),
+            "max_context_length": data.get("max_context_length", 2048),
+            "temperature": data.get("temperature", 0.7),
+            "top_p": data.get("top_p", 0.9),
+            "top_k": data.get("top_k", 0),
+            "rep_pen": data.get("rep_pen", 1.1),
+        }
+        if data.get("stop_sequence"):
+            params["stop_sequence"] = data["stop_sequence"]
+
+        horde_payload = {
+            "prompt": prompt,
+            "params": params,
+            "trusted_workers": False,
+            "slow_workers": True,
+        }
+        if HORDE_MODEL:
+            horde_payload["models"] = [HORDE_MODEL]
+
+        horde_url = DEFAULT_HORDE_URL.rstrip("/")
+        headers = {
+            "Content-Type": "application/json",
+            "apikey": api_key,
+            "Client-Agent": f"WizardGuild:{VERSION}:spellcaster",
+        }
+
+        # ── Step 1: Submit async request ──────────────────────────────
+        try:
+            submit_url = f"{horde_url}/generate/text/async"
+            req_data = json.dumps(horde_payload).encode("utf-8")
+            req = urllib.request.Request(submit_url, data=req_data, headers=headers)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+            request_id = result.get("id")
+            if not request_id:
+                return self.end_json(502, {
+                    "error": f"Horde returned no request ID: {json.dumps(result)}"
+                })
+            print(f"  [Horde] Submitted request {request_id}")
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="replace")
+            print(f"  [Horde] Submit error {e.code}: {err_body}")
+            return self.end_json(e.code, {
+                "error": f"Horde submit failed ({e.code}): {err_body}"
+            })
+        except Exception as e:
+            print(f"  [Horde] Submit exception: {e}")
+            return self.end_json(502, {"error": f"Horde unreachable: {e}"})
+
+        # ── Step 2: Poll for completion ───────────────────────────────
+        status_url = f"{horde_url}/generate/text/status/{request_id}"
+        max_polls = 120          # 120 × 2s = 4 minutes max wait
+        for attempt in range(max_polls):
+            time.sleep(2)
+            try:
+                req = urllib.request.Request(status_url, headers={
+                    "Client-Agent": f"WizardGuild:{VERSION}:spellcaster",
+                })
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    status = json.loads(resp.read().decode("utf-8"))
+            except Exception as e:
+                print(f"  [Horde] Poll error (attempt {attempt}): {e}")
+                continue
+
+            done = status.get("done", False)
+            faulted = status.get("faulted", False)
+            wait_time = status.get("wait_time", "?")
+            queue_pos = status.get("queue_position", "?")
+
+            if faulted:
+                print(f"  [Horde] Request {request_id} faulted")
+                return self.end_json(502, {
+                    "error": "Horde generation faulted (worker error)"
+                })
+
+            if done:
+                generations = status.get("generations", [])
+                if not generations:
+                    return self.end_json(502, {
+                        "error": "Horde returned done but no generations"
+                    })
+                text = generations[0].get("text", "")
+                model_used = generations[0].get("model", "unknown")
+                print(f"  [Horde] Done! Model: {model_used}, "
+                      f"length: {len(text)} chars")
+                # Return KoboldAI v1-compatible format
+                return self.end_json(200, {
+                    "results": [{"text": text}]
+                })
+
+            if attempt % 5 == 0:
+                print(f"  [Horde] Waiting... queue={queue_pos}, "
+                      f"eta={wait_time}s (poll {attempt}/{max_polls})")
+
+        # Timed out
+        print(f"  [Horde] Request {request_id} timed out after {max_polls*2}s")
+        return self.end_json(504, {
+            "error": f"Horde generation timed out after {max_polls*2}s"
+        })
 
     def do_OPTIONS(self):
         """Handle CORS preflight requests."""

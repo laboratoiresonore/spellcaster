@@ -57,16 +57,14 @@ GIMP_PLUGIN_FILES = [
     "plugins/gimp/comfyui-connector/spellcaster_hero.png",
     "plugins/gimp/comfyui-connector/spinner.gif",
     "plugins/gimp/comfyui-connector/wizard_banner.gif",
-]
+]
 TAVERN_FILES = [
     "tavern/server.py",
     "tavern/guild_launcher.py",
     "tavern/build_guild.py",
-    "tavern/static/guild.html",
     "tavern/static/index.html",
     "tavern/static/app.js",
     "tavern/static/style.css",
-    "tavern/static/travelling_wizard.jsx",
     "scaffold/__init__.py",
     "scaffold/meta_wizard.py",
     "scaffold/introspector.py",

@@ -15,6 +15,8 @@ import urllib.request
 DEFAULT_GUILD_PORT = 7777
 DEFAULT_COMFYUI_URL = "http://127.0.0.1:8188"
 DEFAULT_KOBOLD_URL = "http://127.0.0.1:5001"
+DEFAULT_HORDE_URL = "https://aihorde.net/api/v2"
+HORDE_ANONYMOUS_KEY = "0000000000"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -35,6 +37,7 @@ UNET_ARCH_RULES = [
     # (substring, arch_key)  — order = priority, first match wins
     ("klein",     "flux2klein"),
     ("kontext",   "flux_kontext"),
+    ("chroma",    "flux1dev"),      # Chroma v1/v2 — same loader stack as Flux Dev
     ("flux",      "flux1dev"),
     ("wan",       "wan"),
     ("ltx",       "ltx"),
@@ -66,6 +69,7 @@ CKPT_ARCH_RULES = [
     ("sd3medium",   "sd3"),
     ("hunyuan_dit", "hunyuan_dit"),
     ("hunyuandit",  "hunyuan_dit"),
+    ("chroma",      "flux1dev"),       # Chroma v1/v2 — same stack as Flux Dev
     ("sdxl",        "sdxl"),
     ("xl",          "sdxl"),
     ("illu",        "illustrious"),
@@ -80,12 +84,14 @@ CKPT_ARCH_RULES = [
 BEST_MODEL_PRIORITY = [
     ("unet",  lambda ml: "klein" in ml and "9b" in ml,  "flux2klein"),
     ("unet",  lambda ml: "klein" in ml and "4b" in ml,  "flux2klein"),
+    ("unet",  lambda ml: "chroma" in ml,                "flux1dev"),
     ("unet",  lambda ml: "flux" in ml and "dev" in ml,  "flux1dev"),
     ("unet",  lambda ml: "flux" in ml,                  "flux1dev"),
     ("unet",  lambda ml: "sd3.5" in ml and "turbo" not in ml, "sd3"),
     ("unet",  lambda ml: "sd3" in ml,                   "sd3"),
     ("unet",  lambda ml: "pixart" in ml,                "pixart"),
     ("unet",  lambda ml: "auraflow" in ml or "aura_flow" in ml, "auraflow"),
+    ("ckpt",  lambda ml: "chroma" in ml,                "flux1dev"),
     ("ckpt",  lambda ml: "sd3.5" in ml and "turbo" not in ml, "sd3"),
     ("ckpt",  lambda ml: "playground" in ml,            "playground"),
     ("ckpt",  lambda ml: "kolors" in ml,                "kolors"),
@@ -114,8 +120,11 @@ LORA_ARCH_PREFIXES = {
     "illustrious":  ["Illustrious\\", "Illustrious-Pony\\"],
     "pony":         ["Pony\\", "Illustrious-Pony\\"],
     "flux2klein":   ["Flux-2-Klein\\"],
-    "flux1dev":     ["Flux-1-Dev\\"],
+    "flux1dev":     ["Flux-1-Dev\\", "Flux\\"],
     "flux_kontext": ["Flux-1-Dev\\"],
+    "ltx":          ["ltxv\\", "LTX\\"],
+    "wan":          ["Wan\\", "WAN\\"],
+    "seedvr":       ["SeedVR\\", "seedvr\\"],
 }
 
 # LoRA name keyword → arch (fallback when prefix matching fails)
@@ -133,6 +142,12 @@ LORA_NAME_ARCH_HINTS = [
     ("auraflow",  "auraflow"),
     ("kolors",    "kolors"),
     ("playground", "playground"),
+    ("ltx",       "ltx"),
+    ("ltxv",      "ltx"),
+    ("wan",       "wan"),
+    ("seedvr",    "seedvr"),
+    ("cogvideo",  "cogvideo"),
+    ("svd",       "svd"),
 ]
 
 

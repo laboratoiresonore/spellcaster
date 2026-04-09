@@ -52,13 +52,62 @@ const renameLlmBtn = document.getElementById('rename-llm-btn');
 // Defaults — will be overridden by server config or localStorage
 let koboldUrl = localStorage.getItem('kobold_url') || 'http://127.0.0.1:5001';
 let comfyUrl = localStorage.getItem('comfy_url') || 'http://127.0.0.1:8188';
+let llmMode = 'local';  // 'local' (KoboldAI) or 'horde' (AI Horde)
 
 let characters = [];
 let activeCharacterId = null;
 let systemPrompt = "";
 let chatHistory = [];
 
-let _serverGeneratedAssets = {};  // cached for background URL fallback
+let _serverGeneratedAssets = {};
+let _sidebarRevealed = false;
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Privacy Banner — persistent warning when Horde mode is active
+// ═══════════════════════════════════════════════════════════════════════
+function _updatePrivacyBanner() {
+    let banner = document.getElementById('horde-privacy-banner');
+    if (llmMode === 'horde') {
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'horde-privacy-banner';
+            banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:9998;' +
+                'background:linear-gradient(90deg,#3d1010,#501515);color:#ff9999;' +
+                'padding:6px 16px;text-align:center;font-size:12px;font-weight:600;' +
+                'border-top:2px solid #ff4757;font-family:Outfit,sans-serif;';
+            banner.innerHTML = '\u26a0 HORDE MODE — ZERO PRIVACY — All prompts visible to volunteer workers. ' +
+                '<span style="color:#ff6b6b;cursor:pointer;text-decoration:underline;" ' +
+                'onclick="document.getElementById(\'horde-privacy-banner\').remove()" ' +
+                'title="Dismiss until next page load">dismiss</span>';
+            document.body.appendChild(banner);
+        }
+    } else if (banner) {
+        banner.remove();
+    }
+}  // cached for background URL fallback
+
+// ═══════════════════════════════════════════════════════════════════════
+//  LLM Generate — routes to KoboldAI (local) or AI Horde (server proxy)
+// ═══════════════════════════════════════════════════════════════════════
+async function llmGenerate(params) {
+    if (llmMode === 'horde') {
+        // Route through server-side Horde proxy (avoids CORS)
+        const res = await fetch('/api/horde_generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(params)
+        });
+        return await res.json();
+    } else {
+        // Direct KoboldAI v1 call
+        const res = await fetch(`${koboldUrl}/api/v1/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(params)
+        });
+        return await res.json();
+    }
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Magical Particle System (pure JS canvas, zero dependencies)
@@ -119,7 +168,49 @@ let _serverGeneratedAssets = {};  // cached for background URL fallback
         ctx.globalAlpha = 1;
         requestAnimationFrame(animate);
     }
-    animate();
+    // Mouse-interactive arcane trail particles
+    let _mouseParticles = [];
+    window._spawnMouseParticle = function(mx, my) {
+        if (_mouseParticles.length > 30) return;  // cap
+        for (let i = 0; i < 3; i++) {
+            const mp = {
+                x: mx + (Math.random()-0.5)*10,
+                y: my + (Math.random()-0.5)*10,
+                size: Math.random() * 2.5 + 0.5,
+                vx: (Math.random()-0.5) * 2,
+                vy: (Math.random()-0.5) * 2 - 1,
+                life: 1.0,
+                hue: Math.random() > 0.5 ? 275 : 260
+            };
+            _mouseParticles.push(mp);
+        }
+    };
+
+    function animateAll() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // Background ambient particles
+        particles.forEach(p => { p.update(); p.draw(); });
+        // Mouse trail particles
+        _mouseParticles = _mouseParticles.filter(mp => {
+            mp.x += mp.vx;
+            mp.y += mp.vy;
+            mp.vy += 0.02; // gravity
+            mp.life -= 0.025;
+            if (mp.life <= 0) return false;
+            ctx.globalAlpha = mp.life * 0.8;
+            ctx.fillStyle = `hsl(${mp.hue}, 90%, 75%)`;
+            ctx.shadowBlur = mp.size * 5;
+            ctx.shadowColor = `hsl(${mp.hue}, 90%, 65%)`;
+            ctx.beginPath();
+            ctx.arc(mp.x, mp.y, mp.size * mp.life, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            return true;
+        });
+        ctx.globalAlpha = 1;
+        requestAnimationFrame(animateAll);
+    }
+    animateAll();
 })();
 
 // ComfyUI logo as inline SVG for system messages
@@ -275,6 +366,7 @@ function addTypingIndicator() {
         </div>`;
     chatStream.appendChild(div);
     chatStream.scrollTop = chatStream.scrollHeight;
+    _typingIndicatorMagic(div);
 }
 
 function removeTypingIndicator() {
@@ -282,17 +374,45 @@ function removeTypingIndicator() {
     if (el) el.remove();
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+//  LLM Mode Toggle (Local / Horde)
+// ═══════════════════════════════════════════════════════════════════════
+function setLlmMode(mode) {
+    const localBtn = document.getElementById('llm-mode-local');
+    const hordeBtn = document.getElementById('llm-mode-horde');
+    const localSettings = document.getElementById('llm-local-settings');
+    const hordeSettings = document.getElementById('llm-horde-settings');
+    if (mode === 'horde') {
+        localBtn.style.borderColor = '#333'; localBtn.style.color = '#888';
+        hordeBtn.style.borderColor = '#ff4757'; hordeBtn.style.color = '#ff6b6b';
+        localSettings.style.display = 'none';
+        hordeSettings.style.display = 'block';
+    } else {
+        localBtn.style.borderColor = '#B246F2'; localBtn.style.color = '#eee';
+        hordeBtn.style.borderColor = '#333'; hordeBtn.style.color = '#888';
+        localSettings.style.display = 'block';
+        hordeSettings.style.display = 'none';
+    }
+    // Store pending mode (applied on Save)
+    localBtn.dataset.pendingMode = mode;
+}
+
 async function initialize() {
     // Fetch server config (launcher-configured defaults)
     try {
         const cfgRes = await fetch('/api/config');
         const cfg = await cfgRes.json();
-        if(!localStorage.getItem('kobold_url') && cfg.kobold_url) {
+        if(cfg.kobold_url) {
             koboldUrl = cfg.kobold_url;
         }
-        if(!localStorage.getItem('comfy_url') && cfg.comfyui_url) {
+        if(cfg.comfyui_url) {
             comfyUrl = cfg.comfyui_url;
         }
+        if(cfg.llm_mode) {
+            llmMode = cfg.llm_mode;
+        }
+        // Show persistent privacy banner when in horde mode
+        _updatePrivacyBanner();
     } catch(e) {
         console.log('Could not fetch server config, using defaults');
     }
@@ -302,6 +422,9 @@ async function initialize() {
     // Check ComfyUI connection
     checkComfyConnection();
     setInterval(checkComfyConnection, 30000);
+
+    // Check if video models available (for Animate All button)
+    checkVideoModelAvailable();
 
     // Fetch System Prompt
     const promptRes = await fetch('/api/system_prompt');
@@ -360,12 +483,20 @@ async function initialize() {
 
 async function checkLlmAndGenerateNames() {
     try {
-        const testRes = await fetch(`${koboldUrl}/api/v1/model`);
-        if(testRes.ok) {
-            llmDot.className = "dot green";
-            llmStatus.textContent = "LLM: Connected";
+        if (llmMode === 'horde') {
+            // Horde is always "connected" — it's a cloud service
+            llmDot.className = "dot yellow";
+            llmStatus.textContent = "LLM: AI Horde";
+            llmStatus.title = "\u26a0 ZERO PRIVACY — All text sent to volunteer workers";
             await generateNamesForCharacters();
-        } else { throw new Error("Bad response"); }
+        } else {
+            const testRes = await fetch(`${koboldUrl}/api/v1/model`);
+            if(testRes.ok) {
+                llmDot.className = "dot green";
+                llmStatus.textContent = "LLM: Connected";
+                await generateNamesForCharacters();
+            } else { throw new Error("Bad response"); }
+        }
     } catch(e) {
         llmDot.className = "dot red";
         llmStatus.textContent = "LLM: Disconnected";
@@ -381,12 +512,7 @@ async function generateNamesForCharacters() {
             // Generate a real personality for studio characters via LLM
             try {
                 let pCtx = `Context: A magical wizard named ${char.name} is the Guild's specialist in ${char.subtext}. They live inside an enchanted ComfyUI interface.\nCommand: Write exactly one vivid, eccentric sentence describing their personality quirk and speaking style. Make them memorable and fun — maybe they're dramatic, obsessive about their craft, sarcastic, poetic, or hilariously intense. No generic descriptions.\nPersonality:`;
-                const pRes = await fetch(`${koboldUrl}/api/v1/generate`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: pCtx, max_length: 80, temperature: 0.9, stop_sequence: ["\n"] })
-                });
-                const pData = await pRes.json();
+                const pData = await llmGenerate({ prompt: pCtx, max_length: 80, temperature: 0.9, stop_sequence: ["\n"] });
                 let llmPers = pData.results[0].text.trim();
                 char.personality = llmPers || `A dedicated and powerful expert in ${char.subtext}.`;
             } catch(e) {
@@ -397,12 +523,7 @@ async function generateNamesForCharacters() {
         if(char.name === "Unnamed Wizard") {
             let context = `Context: We are naming magical avatars.\nCommand: Invent a single, very short, creative fantasy name (e.g. Zephyr) for a wizard specializing in: ${char.subtext}. Do NOT use titles like 'Master of'.\nName:`;
             try {
-                const response = await fetch(`${koboldUrl}/api/v1/generate`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: context, max_length: 15, temperature: 0.8, stop_sequence: ["\n", "."] })
-                });
-                const data = await response.json();
+                const data = await llmGenerate({ prompt: context, max_length: 15, temperature: 0.8, stop_sequence: ["\n", "."] });
                 let llmName = data.results[0].text.trim().replace(/["']/g, '');
                 if(llmName) char.name = llmName;
                 saveIdentity(char);
@@ -410,12 +531,7 @@ async function generateNamesForCharacters() {
                 
                 // Now generate personality
                 let pContext = `Context: A magical avatar named ${char.name} specializes in ${char.subtext}.\nCommand: Write exactly one short, eccentric sentence describing their speaking style and demeanor.\nPersonality:`;
-                const pResponse = await fetch(`${koboldUrl}/api/v1/generate`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: pContext, max_length: 60, temperature: 0.8, stop_sequence: ["\n"] })
-                });
-                const pData = await pResponse.json();
+                const pData = await llmGenerate({ prompt: pContext, max_length: 60, temperature: 0.8, stop_sequence: ["\n"] });
                 let llmPers = pData.results[0].text.trim();
                 char.personality = llmPers || `A dedicated and whimsical expert in ${char.subtext}.`;
                 saveIdentity(char);
@@ -486,8 +602,7 @@ async function runFirstTimeSetup() {
     localStorage.setItem('guild_setup_complete', 'true');
     statusBanner.remove();
 
-    // 3. Queue animated avatars in background (non-blocking)
-    queueAnimatedAvatars();
+    // 3. (Animated avatars are now manual via the Animate All button)
 
     // 4. Post-setup: prompt user to review & banish misidentified models
     addSystemMessage(
@@ -508,11 +623,7 @@ async function generateMissingAvatars() {
     // Find characters that don't have avatars yet (new models added since last run)
     let savedIdentities = JSON.parse(localStorage.getItem('guild_identities') || '{}');
     const missing = characters.filter(c => !c.avatar_url && !savedIdentities[c.id]?.avatar_url);
-    if (missing.length === 0) {
-        // Still queue animated avatars for those that need them
-        queueAnimatedAvatars();
-        return;
-    }
+    if (missing.length === 0) return;
 
     console.log(`[Guild] Generating avatars for ${missing.length} new wizard(s)...`);
     // Non-blocking banner instead of full overlay
@@ -545,13 +656,43 @@ async function generateMissingAvatars() {
         renderSidebar(searchInput.value);
     }
     banner.remove();
-
-    // Queue animated avatars in background (non-blocking)
-    queueAnimatedAvatars();
 }
 
-// ── Animated avatar queue system (non-blocking) ──────────────────────
+// ── Animated avatar queue system (now manual, not auto) ──────────────
 let _animPollInterval = null;
+
+// Show "Animate All" button only when video models are detected
+async function checkVideoModelAvailable() {
+    const btn = document.getElementById('animate-all-btn');
+    if (!btn) return;
+    btn.style.display = 'inline-flex';  // always visible
+    try {
+        const res = await fetch('/api/has_video_model');
+        const data = await res.json();
+        if (data.has_video_model) {
+            btn.disabled = false;
+            btn.title = 'Animate all wizard avatars using ' + (data.engine || 'video').toUpperCase() +
+                ' (queues to ComfyUI in background)';
+        } else {
+            btn.disabled = true;
+            btn.title = 'No video model detected in ComfyUI (needs WAN, LTX, SVD, or CogVideo)';
+        }
+    } catch(e) {
+        btn.disabled = true;
+        btn.title = 'Cannot check for video models — ComfyUI may be offline';
+    }
+}
+
+function onAnimateAllClick() {
+    const btn = document.getElementById('animate-all-btn');
+    if (!btn) return;
+    btn.disabled = true;
+    btn.innerHTML = '\u2728 Animating...';
+    queueAnimatedAvatars().then(() => {
+        btn.disabled = false;
+        btn.innerHTML = '\u2728 Animate All Avatars';
+    });
+}
 
 async function queueAnimatedAvatars() {
     // Find characters that have a static avatar but no animated one
@@ -671,6 +812,11 @@ function applyGlobalBackground() {
         document.body.style.backgroundPosition = "center";
         document.body.style.backgroundRepeat = "no-repeat";
         document.body.style.backgroundAttachment = "fixed";
+        // Magical transition when background changes
+        if (typeof gsap !== 'undefined') {
+            gsap.fromTo(document.body, { filter: 'brightness(1.5) saturate(1.5)' },
+                { filter: 'brightness(1) saturate(1)', duration: 1.5, ease: 'power2.out' });
+        }
     }
 }
 
@@ -724,6 +870,7 @@ function renderSidebar(filter = "") {
 
         const card = document.createElement('div');
         card.className = 'character-card';
+        if (_sidebarRevealed) card.classList.add('revealed');
         if (char.id === activeCharacterId) card.classList.add('active');
         card.dataset.id = char.id;
 
@@ -830,6 +977,9 @@ function selectCharacter(id) {
     }
     chatHistory.push({ role: 'assistant', content: intro });
     addAIMessage(intro);
+
+    // GSAP: burst effect on avatar selection
+    _avatarSelectBurst(activeAvatar);
 }
 
 function _parseNumberedOptions(text) {
@@ -893,6 +1043,7 @@ function addAIMessage(text) {
 
     chatStream.appendChild(msg);
     chatStream.scrollTop = chatStream.scrollHeight;
+    _messageEntrance(msg);
 }
 
 function addUserMessage(text) {
@@ -904,6 +1055,7 @@ function addUserMessage(text) {
     `;
     chatStream.appendChild(msg);
     chatStream.scrollTop = chatStream.scrollHeight;
+    _messageEntrance(msg);
 }
 
 function addSystemMessage(htmlContent) {
@@ -915,6 +1067,7 @@ function addSystemMessage(htmlContent) {
     `;
     chatStream.appendChild(msg);
     chatStream.scrollTop = chatStream.scrollHeight;
+    _messageEntrance(msg);
 }
 
 async function askKobold(text) {
@@ -942,19 +1095,22 @@ async function askKobold(text) {
     context += "Assistant: ";
 
     try {
-        const response = await fetch(`${koboldUrl}/api/v1/generate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
+        // Warn in chat on first horde message per session
+            if (llmMode === 'horde' && !window._hordeWarnShown) {
+                addSystemMessage(
+                    '\u26a0 <strong>Horde Mode Active</strong> — Your message is being sent to ' +
+                    'volunteer workers on the AI Horde network. <strong>Do not share personal or sensitive info.</strong>'
+                );
+                window._hordeWarnShown = true;
+            }
+
+            const data = await llmGenerate({
                 prompt: context,
                 max_context_length: 4096,
                 max_length: 300,
                 temperature: 0.7,
                 stop_sequence: ["User:", "\nUser"]
-            })
-        });
-        
-        const data = await response.json();
+            });
         let aiReply = data.results[0].text.trim();
         
         chatHistory.push({ role: 'assistant', content: aiReply });
@@ -1011,6 +1167,7 @@ async function dispatchToComfy(payload) {
 }
 
 sendBtn.addEventListener('click', () => {
+    _spellCastFlash();
     const text = chatInput.value.trim();
     if (!text) return;
     addUserMessage(text);
@@ -1035,6 +1192,7 @@ generateAvatarBtn.addEventListener('click', async () => {
     if(!activeCharacterId) return;
     overlay.classList.remove('hidden');
     document.querySelector('#loading-overlay p').textContent = "Synthesizing Avatar...";
+    _showGenerationCircle('Conjuring avatar...');
     try {
         const response = await fetch('/api/avatar_generate', {
             method: 'POST',
@@ -1056,6 +1214,7 @@ generateAvatarBtn.addEventListener('click', async () => {
     }
     document.querySelector('#loading-overlay p').textContent = "The Guild is thinking...";
     overlay.classList.add('hidden');
+    _hideGenerationCircle();
 });
 
 // Background generation modal
@@ -1133,6 +1292,7 @@ batchGenerateBtn.addEventListener('click', async () => {
     if(batchGenerateBtn.classList.contains('running')) return;
     batchGenerateBtn.classList.add('running');
     batchGenerateBtn.textContent = '⚡ Generating...';
+    _showGenerationCircle('Batch spell in progress...');
     addSystemMessage('<strong>Batch Generation Started!</strong><br>Queuing avatars for all guild members + tavern background via ComfyUI. This runs in the background — you can keep chatting.');
 
     try {
@@ -1178,6 +1338,7 @@ batchGenerateBtn.addEventListener('click', async () => {
                         batchGenerateBtn.classList.remove('running');
                         batchGenerateBtn.textContent = '⚡ Generate All';
                         characters.forEach(c => delete c._batch_applied);
+                        _hideGenerationCircle();
                         addSystemMessage(`<strong>Batch Complete!</strong><br>${ok} succeeded, ${fail} failed.`);
                     }
                 } catch(e) {
@@ -1227,12 +1388,7 @@ renameLlmBtn.addEventListener('click', async () => {
     
     let context = `Context: We are naming magical avatars.\nCommand: Invent a single, very short, creative fantasy name (e.g. Zephyr) for a wizard specializing in: ${char.subtext}. Do NOT use titles like 'Master of'.\nName:`;
     try {
-        const response = await fetch(`${koboldUrl}/api/v1/generate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt: context, max_length: 15, temperature: 0.8, stop_sequence: ["\n", "."] })
-        });
-        const data = await response.json();
+        const data = await llmGenerate({ prompt: context, max_length: 15, temperature: 0.8, stop_sequence: ["\n", "."] });
         let llmName = data.results[0].text.trim().replace(/["']/g, '');
         renameInput.value = llmName;
     } catch(e) {
@@ -1351,17 +1507,52 @@ wizardMgmtFilter.addEventListener('change', () => renderWizardMgmt(_allCharsCach
 // Settings Modal
 settingsBtn.addEventListener('click', () => {
     settingsModal.classList.remove('hidden');
+    // Sync LLM mode toggle to current state
+    setLlmMode(llmMode);
+    const hordeKeyInput = document.getElementById('horde-api-key-input');
+    const hordeModelInput = document.getElementById('horde-model-input');
+    if (hordeKeyInput) hordeKeyInput.value = localStorage.getItem('horde_api_key') || '';
+    if (hordeModelInput) hordeModelInput.value = localStorage.getItem('horde_model') || '';
     loadAndCacheWizards();
 });
 settingsCancel.addEventListener('click', () => settingsModal.classList.add('hidden'));
 settingsSave.addEventListener('click', async () => {
+    // LLM mode
+    const pendingMode = document.getElementById('llm-mode-local').dataset.pendingMode || 'local';
+    llmMode = pendingMode;
+    localStorage.setItem('llm_mode', llmMode);
+
     koboldUrl = koboldUrlInput.value.trim();
     localStorage.setItem('kobold_url', koboldUrl);
+
+    // Horde settings
+    const hordeKey = (document.getElementById('horde-api-key-input') || {}).value || '';
+    const hordeModel = (document.getElementById('horde-model-input') || {}).value || '';
+    localStorage.setItem('horde_api_key', hordeKey.trim());
+    localStorage.setItem('horde_model', hordeModel.trim());
 
     comfyUrl = comfyUrlInput.value.trim();
     localStorage.setItem('comfy_url', comfyUrl);
 
+    // Push LLM config to server (persists to guild_config.json)
+    try {
+        await fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                llm_mode: llmMode,
+                kobold_url: koboldUrl,
+                comfyui_url: comfyUrl,
+                horde_api_key: hordeKey.trim(),
+                horde_model: hordeModel.trim()
+            })
+        });
+    } catch(e) { console.warn('Failed to push config to server:', e); }
+
     settingsModal.classList.add('hidden');
+
+    // Refresh privacy banner based on new mode
+    _updatePrivacyBanner();
 
     // Re-check connections with new URLs
     await checkLlmAndGenerateNames();
@@ -1577,12 +1768,7 @@ async function generateWizardIdentity() {
     // Generate name via LLM
     try {
         const nameCtx = `Context: We are naming magical wizard avatars for a ComfyUI image generation interface.\nThe wizard specializes in: ${getScaffoldLabel(scaffold)}.\nTheir primary model/tool is called "${m.name}" (architecture: ${m.arch}).\nCommand: Invent a single, very short, creative fantasy name (1-2 words, e.g. Zephyr, Duskweave, Pyralis) for this wizard. The name should hint at what the model does. Do NOT use titles like 'Master of'.\nName:`;
-        const nameRes = await fetch(`${koboldUrl}/api/v1/generate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt: nameCtx, max_length: 15, temperature: 0.85, stop_sequence: ["\n", "."] })
-        });
-        const nameData = await nameRes.json();
+        const nameData = await llmGenerate({ prompt: nameCtx, max_length: 15, temperature: 0.85, stop_sequence: ["\n", "."] });
         const llmName = nameData.results[0].text.trim().replace(/["']/g, '');
         document.getElementById('summon-name-input').value = llmName || 'Unnamed Wizard';
     } catch(e) {
@@ -1592,12 +1778,7 @@ async function generateWizardIdentity() {
     // Generate personality via LLM
     try {
         const persCtx = `Context: A magical wizard named "${document.getElementById('summon-name-input').value}" works in The Wizard Guild, a ComfyUI interface. They specialize in ${getScaffoldLabel(scaffold)} using the model "${m.name}".\nCommand: Write exactly one vivid, eccentric sentence describing their personality quirk and speaking style. Make them memorable — maybe dramatic, obsessive, sarcastic, poetic, or hilariously intense. Reference their specialty.\nPersonality:`;
-        const persRes = await fetch(`${koboldUrl}/api/v1/generate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt: persCtx, max_length: 80, temperature: 0.9, stop_sequence: ["\n"] })
-        });
-        const persData = await persRes.json();
+        const persData = await llmGenerate({ prompt: persCtx, max_length: 80, temperature: 0.9, stop_sequence: ["\n"] });
         const llmPers = persData.results[0].text.trim();
         document.getElementById('summon-personality-input').value = llmPers || `A dedicated specialist in ${getScaffoldLabel(scaffold)}.`;
     } catch(e) {
@@ -1883,7 +2064,370 @@ loraInterrogationSkip.addEventListener('click', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════
-//  Boot
+//  Splash Screen — wait for server, animate sigil, then reveal UI
 // ═══════════════════════════════════════════════════════════════════════
 
-initialize();
+async function _waitForServer(maxWait = 30000) {
+    const start = Date.now();
+    const bar = document.getElementById('splash-bar-fill');
+    const status = document.getElementById('splash-status');
+    let pct = 0;
+    while (Date.now() - start < maxWait) {
+        try {
+            const r = await fetch('/api/config', { signal: AbortSignal.timeout(2000) });
+            if (r.ok) {
+                if (bar) bar.style.width = '100%';
+                if (status) status.textContent = 'The Guild awaits...';
+                return true;
+            }
+        } catch(e) { /* server not ready yet */ }
+        pct = Math.min(85, pct + (85 - pct) * 0.15);
+        if (bar) bar.style.width = pct + '%';
+        await new Promise(r => setTimeout(r, 400));
+    }
+    return false;
+}
+
+function _animateSplashSigil() {
+    if (typeof gsap === 'undefined' || document.hidden) return;
+    const tl = gsap.timeline();
+    // Outer ring draws in
+    tl.to('#splash-ring-outer', { strokeDashoffset: 0, duration: 1.5, ease: 'power2.inOut' }, 0);
+    // Inner ring draws in (staggered)
+    tl.to('#splash-ring-inner', { strokeDashoffset: 0, duration: 1.2, ease: 'power2.inOut' }, 0.3);
+    // Star fades in
+    tl.to('#splash-star', { opacity: 0.7, duration: 0.8, ease: 'power1.in' }, 0.8);
+    // Star slowly rotates
+    tl.to('#splash-star', { rotation: 360, duration: 20, ease: 'none', repeat: -1, transformOrigin: '100px 100px' }, 0.8);
+    // Eye opens
+    tl.to('#splash-eye', { opacity: 0.9, duration: 0.5 }, 1.4);
+    tl.to('#splash-pupil', { opacity: 1, duration: 0.3 }, 1.6);
+    // Title and status
+    tl.to('#splash-title', { opacity: 1, y: 0, duration: 0.8, ease: 'power3.out' }, 1.2);
+    tl.to('#splash-status', { opacity: 1, duration: 0.6 }, 1.6);
+    tl.to('#splash-bar-track', { opacity: 1, duration: 0.4 }, 1.8);
+    // Floating motes
+    for (let i = 0; i < 20; i++) {
+        const mote = document.createElement('div');
+        mote.className = 'splash-mote';
+        document.getElementById('guild-splash').appendChild(mote);
+        gsap.set(mote, {
+            x: Math.random() * window.innerWidth,
+            y: Math.random() * window.innerHeight,
+            scale: Math.random() * 1.5 + 0.5,
+            opacity: 0
+        });
+        gsap.to(mote, {
+            y: '-=200', x: '+=' + (Math.random() * 100 - 50),
+            opacity: Math.random() * 0.5 + 0.2,
+            duration: Math.random() * 4 + 3,
+            repeat: -1,
+            delay: Math.random() * 2,
+            ease: 'none',
+            yoyo: true
+        });
+    }
+}
+
+function _dismissSplash() {
+    return new Promise(resolve => {
+        const splash = document.getElementById('guild-splash');
+        const app = document.getElementById('app-container');
+        if (!splash) { resolve(); return; }
+        if (typeof gsap !== 'undefined' && !document.hidden) {
+            // Kill ALL infinite tweens from the splash sigil animation (motes, star rotation)
+            document.querySelectorAll('.splash-mote').forEach(m => { gsap.killTweensOf(m); m.remove(); });
+            gsap.killTweensOf('#splash-star, #splash-ring-outer, #splash-ring-inner, #splash-eye, #splash-pupil');
+
+            const tl = gsap.timeline({ onComplete: () => {
+                splash.remove();
+                document.body.style.overflow = '';
+                resolve();
+            }});
+            // Flash the sigil bright
+            tl.to('#splash-sigil', { filter: 'drop-shadow(0 0 80px rgba(178,70,242,0.9)) brightness(2)', scale: 1.2, duration: 0.4, ease: 'power2.in' }, 0);
+            tl.to('#splash-title', { opacity: 0, y: -20, duration: 0.3 }, 0.1);
+            tl.to('#splash-status, #splash-bar-track', { opacity: 0, duration: 0.2 }, 0.1);
+            // White flash
+            tl.to(splash, { backgroundColor: 'rgba(178,70,242,0.15)', duration: 0.15 }, 0.4);
+            // Fade out splash
+            tl.to(splash, { opacity: 0, duration: 0.5, ease: 'power2.in' }, 0.5);
+            // Reveal app
+            tl.to(app, { opacity: 1, y: 0, duration: 0.8, ease: 'power3.out' }, 0.6);
+        } else {
+            splash.style.display = 'none';
+            app.style.opacity = '1';
+            app.style.transform = 'none';
+            document.body.style.overflow = '';
+            resolve();
+        }
+    });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  GSAP Magical Effects — sprinkled throughout the UI
+// ═══════════════════════════════════════════════════════════════════════
+
+function _guildRevealSidebar() {
+    _sidebarRevealed = true;  // Set immediately so re-renders produce visible cards
+    const cards = document.querySelectorAll('.character-card');
+    if (typeof gsap === 'undefined' || document.hidden) {
+        // No GSAP or tab backgrounded — reveal instantly
+        cards.forEach(c => { c.classList.add('revealed'); c.style.opacity = '1'; c.style.transform = 'none'; });
+        return;
+    }
+    // Stagger-reveal all character cards
+    gsap.fromTo(cards,
+        { opacity: 0, x: -30, scale: 0.95 },
+        { opacity: 1, x: 0, scale: 1, duration: 0.5, stagger: 0.06, ease: 'back.out(1.4)',
+          onComplete: () => cards.forEach(c => c.classList.add('revealed'))
+        }
+    );
+    // Sidebar title entrance
+    gsap.fromTo('.sidebar-header h2',
+        { opacity: 0, y: -10, letterSpacing: '8px' },
+        { opacity: 1, y: 0, letterSpacing: '1.5px', duration: 0.8, ease: 'power3.out' }
+    );
+}
+
+function _spellCastFlash() {
+    // Full-screen arcane flash when sending a message
+    if (typeof gsap === 'undefined') return;
+    let flash = document.getElementById('spell-flash');
+    if (!flash) {
+        flash = document.createElement('div');
+        flash.id = 'spell-flash';
+        document.body.appendChild(flash);
+    }
+    gsap.fromTo(flash, { opacity: 0.6 }, { opacity: 0, duration: 0.8, ease: 'power2.out' });
+    // Send button charge
+    const btn = document.getElementById('send-btn');
+    if (btn) {
+        gsap.fromTo(btn, { scale: 1.4, rotation: -15 }, { scale: 1, rotation: 0, duration: 0.6, ease: 'elastic.out(1, 0.4)' });
+    }
+}
+
+function _avatarSelectBurst(avatarEl) {
+    if (typeof gsap === 'undefined' || !avatarEl) return;
+    // Ripple burst on the active avatar
+    gsap.fromTo(avatarEl,
+        { boxShadow: '0 0 0 0 rgba(178,70,242,0.7)' },
+        { boxShadow: '0 0 0 20px rgba(178,70,242,0)', duration: 0.7, ease: 'power2.out' }
+    );
+    gsap.fromTo(avatarEl, { scale: 1.15 }, { scale: 1, duration: 0.5, ease: 'elastic.out(1, 0.5)' });
+}
+
+function _messageEntrance(msgEl) {
+    if (typeof gsap === 'undefined' || !msgEl) return;
+    const isUser = msgEl.classList.contains('user-message');
+    gsap.fromTo(msgEl,
+        { opacity: 0, y: 30, x: isUser ? 40 : -40, scale: 0.9 },
+        { opacity: 1, y: 0, x: 0, scale: 1, duration: 0.6, ease: 'back.out(1.2)' }
+    );
+    // Tiny sparkles around the new message
+    const bubble = msgEl.querySelector('.bubble');
+    if (bubble) {
+        for (let i = 0; i < 6; i++) {
+            const spark = document.createElement('div');
+            spark.className = 'msg-sparkle';
+            bubble.appendChild(spark);
+            const angle = (i / 6) * Math.PI * 2;
+            gsap.fromTo(spark,
+                { x: 0, y: 0, opacity: 1, scale: 1 },
+                { x: Math.cos(angle) * 40, y: Math.sin(angle) * 40, opacity: 0, scale: 0,
+                  duration: 0.6, delay: i * 0.05, ease: 'power2.out',
+                  onComplete: () => spark.remove()
+                }
+            );
+        }
+    }
+}
+
+function _typingIndicatorMagic(el) {
+    if (typeof gsap === 'undefined' || !el) return;
+    // Orbiting glow around typing indicator
+    gsap.to(el, {
+        boxShadow: '0 0 20px rgba(178,70,242,0.4), 0 0 40px rgba(108,99,255,0.2)',
+        duration: 1.5, repeat: -1, yoyo: true, ease: 'sine.inOut'
+    });
+}
+
+function _enchantButton(btn) {
+    if (typeof gsap === 'undefined' || !btn) return;
+    btn.addEventListener('mouseenter', () => {
+        gsap.to(btn, { scale: 1.05, duration: 0.2, ease: 'power2.out' });
+        gsap.to(btn, { boxShadow: '0 0 20px var(--accent-glow)', duration: 0.3 });
+    });
+    btn.addEventListener('mouseleave', () => {
+        gsap.to(btn, { scale: 1, duration: 0.3, ease: 'elastic.out(1, 0.5)' });
+        gsap.to(btn, { boxShadow: 'none', duration: 0.5 });
+    });
+}
+
+function _initMagicalEffects() {
+    if (typeof gsap === 'undefined') return;
+    // Enchant header action buttons
+    document.querySelectorAll('.chat-header-actions button').forEach(_enchantButton);
+    _enchantButton(document.getElementById('settings-btn'));
+    _enchantButton(document.getElementById('send-btn'));
+
+    // Ambient rune watermark in chat
+    const chatStream = document.getElementById('chat-stream');
+    if (chatStream && !document.getElementById('chat-rune-watermark')) {
+        const rune = document.createElement('div');
+        rune.id = 'chat-rune-watermark';
+        rune.innerHTML = '<svg viewBox="0 0 200 200"><polygon points="100,10 123,72 190,72 135,112 155,175 100,140 45,175 65,112 10,72 77,72" fill="none" stroke="rgba(178,70,242,0.5)" stroke-width="1"/><circle cx="100" cy="100" r="85" fill="none" stroke="rgba(178,70,242,0.3)" stroke-width="0.5"/></svg>';
+        chatStream.style.position = 'relative';
+        chatStream.appendChild(rune);
+        gsap.to(rune, { rotation: 360, duration: 120, repeat: -1, ease: 'none' });
+        gsap.to(rune, { opacity: 0.06, duration: 4, repeat: -1, yoyo: true, ease: 'sine.inOut' });
+    }
+
+    // Particle system boost — add mouse-interactive arcane trails
+    const canvas = document.getElementById('magic-particles');
+    if (canvas) {
+        canvas.addEventListener('mousemove', (e) => {
+            if (typeof _spawnMouseParticle === 'function') _spawnMouseParticle(e.clientX, e.clientY);
+        });
+    }
+
+    // Floating arcane runes drifting up the sidebar
+    _spawnFloatingRunes();
+
+    // Chat input focus glow pulse
+    const input = document.getElementById('chat-input');
+    if (input) {
+        input.addEventListener('focus', () => {
+            gsap.fromTo(input, { boxShadow: '0 0 0px rgba(178,70,242,0)' },
+                { boxShadow: '0 0 25px rgba(178,70,242,0.2)', duration: 0.5, ease: 'power2.out' });
+        });
+    }
+}
+
+// ── Floating Arcane Runes ──
+const _RUNE_GLYPHS = ['\u16A0','\u16A2','\u16A6','\u16A8','\u16B1','\u16B7','\u16C1','\u16C7','\u16D2','\u16D6','\u16DA','\u16DE','\u16DF','\u2638','\u2720','\u2721','\u269D','\u2694','\u2604'];
+
+function _spawnFloatingRunes() {
+    if (typeof gsap === 'undefined') return;
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    // Spawn a new rune every 2-4 seconds
+    setInterval(() => {
+        if (document.hidden) return; // pause when tab not visible
+        const rune = document.createElement('div');
+        rune.className = 'magic-rune';
+        rune.textContent = _RUNE_GLYPHS[Math.floor(Math.random() * _RUNE_GLYPHS.length)];
+        const rect = sidebar.getBoundingClientRect();
+        rune.style.left = (rect.left + Math.random() * rect.width) + 'px';
+        rune.style.top = (rect.bottom + 10) + 'px';
+        rune.style.fontSize = (14 + Math.random() * 10) + 'px';
+        document.body.appendChild(rune);
+        gsap.to(rune, {
+            y: -(rect.height + 40), x: (Math.random() - 0.5) * 60,
+            rotation: (Math.random() - 0.5) * 180,
+            opacity: Math.random() * 0.25 + 0.1,
+            duration: 6 + Math.random() * 4,
+            ease: 'none',
+            onComplete: () => rune.remove()
+        });
+        // Fade in then out
+        gsap.fromTo(rune, { opacity: 0 }, { opacity: Math.random() * 0.25 + 0.1, duration: 1, ease: 'power1.in' });
+        gsap.to(rune, { opacity: 0, duration: 1.5, delay: 5 + Math.random() * 3, ease: 'power1.out' });
+    }, 2000 + Math.random() * 2000);
+}
+
+// ── Generation Spellcasting Circle Overlay ──
+function _showGenerationCircle(label) {
+    if (typeof gsap === 'undefined') return;
+    let ov = document.getElementById('generation-circle-overlay');
+    if (!ov) {
+        ov = document.createElement('div');
+        ov.id = 'generation-circle-overlay';
+        ov.innerHTML = `
+            <svg viewBox="0 0 200 200">
+                <circle cx="100" cy="100" r="90" fill="none" stroke="rgba(178,70,242,0.5)" stroke-width="1"
+                    stroke-dasharray="565" stroke-dashoffset="565" id="gen-circle-outer"/>
+                <circle cx="100" cy="100" r="70" fill="none" stroke="rgba(108,99,255,0.4)" stroke-width="0.8"
+                    stroke-dasharray="440" stroke-dashoffset="440" id="gen-circle-inner"/>
+                <polygon points="100,20 132,68 180,80 145,115 155,165 100,140 45,165 55,115 20,80 68,68"
+                    fill="none" stroke="rgba(178,70,242,0.6)" stroke-width="0.8" opacity="0" id="gen-pentagram"/>
+                <circle cx="100" cy="100" r="10" fill="rgba(178,70,242,0.3)" opacity="0" id="gen-core"/>
+            </svg>
+            <div class="gen-status" id="gen-status-text">${label || 'Channeling arcane energies...'}</div>`;
+        document.body.appendChild(ov);
+    } else {
+        const st = ov.querySelector('.gen-status');
+        if (st) st.textContent = label || 'Channeling arcane energies...';
+    }
+    ov.style.pointerEvents = 'none';
+    const tl = gsap.timeline();
+    tl.to(ov, { opacity: 1, duration: 0.4 }, 0);
+    tl.to('#gen-circle-outer', { strokeDashoffset: 0, duration: 1.5, ease: 'power2.inOut' }, 0);
+    tl.to('#gen-circle-inner', { strokeDashoffset: 0, duration: 1.2, ease: 'power2.inOut' }, 0.3);
+    tl.to('#gen-pentagram', { opacity: 0.7, duration: 0.6 }, 0.8);
+    tl.to('#gen-pentagram', { rotation: 360, duration: 12, ease: 'none', repeat: -1, transformOrigin: '100px 100px' }, 0.8);
+    tl.to('#gen-core', { opacity: 0.8, scale: 1.5, duration: 0.8, yoyo: true, repeat: -1, ease: 'sine.inOut', transformOrigin: '100px 100px' }, 1.2);
+}
+
+function _hideGenerationCircle() {
+    if (typeof gsap === 'undefined') return;
+    const ov = document.getElementById('generation-circle-overlay');
+    if (!ov) return;
+    gsap.to(ov, { opacity: 0, duration: 0.5, ease: 'power2.in', onComplete: () => ov.remove() });
+    // Burst particles from center
+    _completionBurst();
+}
+
+function _completionBurst() {
+    if (typeof gsap === 'undefined') return;
+    const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+    for (let i = 0; i < 30; i++) {
+        const p = document.createElement('div');
+        p.className = 'completion-particle';
+        p.style.left = cx + 'px';
+        p.style.top = cy + 'px';
+        document.body.appendChild(p);
+        const angle = (i / 30) * Math.PI * 2;
+        const dist = 80 + Math.random() * 150;
+        gsap.to(p, {
+            x: Math.cos(angle) * dist,
+            y: Math.sin(angle) * dist,
+            opacity: 0, scale: 0,
+            duration: 0.8 + Math.random() * 0.4,
+            ease: 'power2.out',
+            onComplete: () => p.remove()
+        });
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Boot — splash → server wait → initialize → reveal
+// ═══════════════════════════════════════════════════════════════════════
+
+(async function boot() {
+    // Disable lag smoothing so animations catch up instantly if tab is backgrounded
+    if (typeof gsap !== 'undefined') gsap.ticker.lagSmoothing(0);
+    _animateSplashSigil();
+    const ready = await _waitForServer(30000);
+    const status = document.getElementById('splash-status');
+    if (!ready) {
+        if (status) status.textContent = 'Server is taking long... loading anyway';
+        await new Promise(r => setTimeout(r, 1000));
+    }
+    await initialize();
+    await _dismissSplash();
+    _guildRevealSidebar();
+    _initMagicalEffects();
+
+    // If tab was backgrounded during boot, re-run visual effects when it becomes visible
+    if (document.hidden) {
+        const _onFirstVisible = () => {
+            if (!document.hidden) {
+                document.removeEventListener('visibilitychange', _onFirstVisible);
+                _guildRevealSidebar();
+                _initMagicalEffects();
+            }
+        };
+        document.addEventListener('visibilitychange', _onFirstVisible);
+    }
+})();
