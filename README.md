@@ -87,7 +87,7 @@ Spellcaster connects your image editor (GIMP or Darktable) to an AI engine calle
     <img src="https://img.shields.io/badge/macOS-Spellcaster%20Installer.app-7c3aed?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS"/>
   </a>
   &nbsp;
-  <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-installer-linux">
+  <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-installer">
     <img src="https://img.shields.io/badge/Linux-spellcaster--installer-7c3aed?style=for-the-badge&logo=linux&logoColor=white" alt="Download for Linux"/>
   </a>
 </p>
@@ -97,7 +97,16 @@ Spellcaster connects your image editor (GIMP or Darktable) to an AI engine calle
 3. **Open GIMP or Darktable.** Go to `Filters > Spellcaster` — all your new AI tools are there
 4. **Pick any tool and click Generate.** That's it. Every preset is already optimized for great results.
 
-> **Plugin not showing up?** Download the [**Manual Update & Repair tool**](https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-manual-update.exe) — it finds and fixes broken installations automatically.
+> **Linux users:** After downloading, make it executable: `chmod +x spellcaster-installer && ./spellcaster-installer`
+>
+> **Prefer to run from source?** Works on any OS with Python 3.10+:
+> ```bash
+> git clone https://github.com/laboratoiresonore/spellcaster
+> cd spellcaster
+> python installer/install.py
+> ```
+>
+> **Plugin not showing up?** Download the [**Manual Update & Repair tool**](https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-manual-update.exe) ([Linux version](https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-manual-update)) — it finds and fixes broken installations automatically.
 
 ### What the Installer Does For You
 

@@ -90,7 +90,7 @@ Name=Spellcaster Installer
 Comment=AI superpowers for GIMP 3 & Darktable
 Exec=spellcaster-installer
 Icon=spellcaster
-Terminal=false
+Terminal=true
 Categories=Graphics;Photography;
 Keywords=AI;GIMP;Darktable;ComfyUI;StableDiffusion;
 DESKTOP_EOF
