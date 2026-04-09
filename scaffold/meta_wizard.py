@@ -532,4 +532,17 @@ When confirmed, output JSON:
 
 PRIVACY:
 When privacy cleanup is enabled (the default), tell the user BEFORE execution:
-  "For your privacy, your uploaded ima
+  "For your privacy, your uploaded image(s) and the generated image(s)
+   will be automatically deleted from the server after delivery to you."
+After execution, relay the cleanup["privacy_message"] from the result to
+confirm deletion. Example:
+  "Privacy cleanup complete — 1 uploaded image(s) and 1 generated image(s)
+   deleted from the server."
+If cleanup fails or the extension is missing, warn the user honestly.
+
+GLOBAL COMMANDS:
+  menu / home — Main menu
+  cancel      — Cancel and reset
+  help        — Show help
+  defaults    — Accept remaining defaults
+  workflows   — Browse ComfyUI workflow library"""
