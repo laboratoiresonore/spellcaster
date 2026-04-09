@@ -2003,14 +2003,19 @@ def _detect_wan_preset(comfy_url):
 # ── Animated avatar queue — non-blocking, uses ComfyUI's prompt queue ────
 # Maps char_id → {prompt_id, status, result_url, error}
 # _ANIM_QUEUE is loaded from .guild_state/ in the persistence section above
-_WAN_PRESET_CACHE = None  # Cache so we only detect once
+_WAN_PRESET_CACHE = None       # Cache so we only detect once per URL
+_WAN_PRESET_CACHE_URL = None   # URL that was used for cached detection
 
 
 def _get_wan_preset(comfy_url):
-    """Get cached WAN preset, detecting once."""
-    global _WAN_PRESET_CACHE
-    if _WAN_PRESET_CACHE is None:
+    """Get cached WAN preset, detecting once per ComfyUI URL.
+
+    Re-detects if the URL changed (e.g., corrected from localhost to remote).
+    """
+    global _WAN_PRESET_CACHE, _WAN_PRESET_CACHE_URL
+    if _WAN_PRESET_CACHE is None or _WAN_PRESET_CACHE_URL != comfy_url:
         _WAN_PRESET_CACHE = _detect_wan_preset(comfy_url) or False
+        _WAN_PRESET_CACHE_URL = comfy_url
     return _WAN_PRESET_CACHE if _WAN_PRESET_CACHE else None
 
 
@@ -2793,6 +2798,12 @@ class GuildHandler(SimpleHTTPRequestHandler):
             style = data.get('style', 'tavern')
             custom_prompt = data.get('custom_prompt', '')
             model_name = data.get('model', 'auto')
+            # Client sends optimal resolution based on user's display
+            bg_width = int(data.get('width', 1024))
+            bg_height = int(data.get('height', 576))
+            # Clamp to sane range
+            bg_width = max(512, min(bg_width, 2048))
+            bg_height = max(512, min(bg_height, 2048))
 
             if style == 'custom' and custom_prompt:
                 base_prompt = custom_prompt
@@ -3178,10 +3189,4 @@ class GuildHandler(SimpleHTTPRequestHandler):
 
             old_total = len(CHARS_CACHE)
             old_nonstudio = sum(1 for c in CHARS_CACHE
-                                if c.get('type') != PRESERVED_TYPE)
-
-            # Collect IDs of everything being removed (for asset cleanup)
-            removed_ids = {c['id'] for c in CHARS_CACHE
-                           if c.get('type') != PRESERVED_TYPE}
-
-            # Clean _STUDIO_BY_ID �
+            
