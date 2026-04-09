@@ -2,7 +2,7 @@
 """
 Spellcaster Installer
 =====================
-Interactive installer for Spellcaster — AI superpowers — uncensored for GIMP 3 and Darktable.
+Interactive installer for Spellcaster — AI superpowers for GIMP 3 and Darktable.
 Downloads and installs models, custom nodes, and patches the host applications.
 
 Usage:
@@ -45,8 +45,9 @@ if getattr(sys, 'frozen', False):
 else:
     SCRIPT_DIR = Path(__file__).resolve().parent
 MANIFEST_PATH = SCRIPT_DIR / "manifest.json"
-VERSION = "1.3-NSFW"
+VERSION = "1.3"
 DEFAULT_SERVER_URL = "http://127.0.0.1:8188"
+_BOX_LINE = "═" * 50
 
 # ANSI colors — enabled on real terminals, but only on Windows when running
 # inside Windows Terminal (WT_SESSION), which supports VT100 escape sequences.
@@ -70,7 +71,7 @@ def banner():
 {C_BOLD}{C_CYAN}╔══════════════════════════════════════════════════╗
 ║       ✦  SPELLCASTER INSTALLER  v{VERSION}  ✦       ║
 ║                                                  ║
-║  AI superpowers — uncensored for GIMP 3 & Darktable           ║
+║  AI superpowers for GIMP 3 & Darktable           ║
 ║  Every preset expertly tuned for instant results ║
 ╚══════════════════════════════════════════════════╝{C_RESET}
 """)
@@ -1292,9 +1293,9 @@ def print_feature_summary(key: str, feature: dict[str, Any], selected: bool):
 
 def step_api_keys(args) -> None:
     """Optional step: collect CivitAI and HuggingFace tokens for authenticated downloads."""
-    print(f"\n{C_BOLD}{'═' * 50}{C_RESET}")
+    print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
     print(f"{C_BOLD}  API Keys (Optional){C_RESET}")
-    print(f"{C_BOLD}{'═' * 50}{C_RESET}\n")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
     print(f"  {C_DIM}API tokens speed up and unlock downloads from CivitAI and HuggingFace.")
     print(f"  They are used only during this install session and never stored on disk.{C_RESET}\n")
     print(f"  {C_DIM}CivitAI token:    civitai.com → Account → API Keys{C_RESET}")
@@ -1319,9 +1320,9 @@ def step_api_keys(args) -> None:
 
 def step_system_detection(args) -> tuple[str, int]:
     """Detect GPU/VRAM, show hardware profile, and warn if no GPU found."""
-    print(f"\n{C_BOLD}{'\u2550' * 50}{C_RESET}")
+    print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
     print(f"{C_BOLD}  System Detection{C_RESET}")
-    print(f"{C_BOLD}{'\u2550' * 50}{C_RESET}\n")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
 
     gpu_name, vram_mb = detect_gpu_vram()
     tier = vram_tier(vram_mb)
@@ -1398,9 +1399,9 @@ def step_system_detection(args) -> tuple[str, int]:
 
 def step_detect_server(args) -> str:
     """Step 0: Determine ComfyUI server URL."""
-    print(f"\n{C_BOLD}{'═' * 50}{C_RESET}")
+    print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
     print(f"{C_BOLD}  STEP 1: ComfyUI Server{C_RESET}")
-    print(f"{C_BOLD}{'═' * 50}{C_RESET}\n")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
 
     if args.server_url:
         print(f"  {C_GREEN}Using specified server URL:{C_RESET} {args.server_url}")
@@ -1436,9 +1437,9 @@ def step_detect_server(args) -> str:
 
 def step_detect_paths(args) -> dict:
     """Step 2: Detect or ask for application paths."""
-    print(f"\n{C_BOLD}{'═' * 50}{C_RESET}")
+    print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
     print(f"{C_BOLD}  STEP 2: Application Paths{C_RESET}")
-    print(f"{C_BOLD}{'═' * 50}{C_RESET}\n")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
 
     # ── ComfyUI ──
     comfyui_path = None
@@ -1577,9 +1578,9 @@ def step_detect_paths(args) -> dict:
 
 def step_select_features(manifest: dict, paths: dict, args) -> dict[str, bool]:
     """Step 3: Feature selection with VRAM-aware pre-selection."""
-    print(f"\n{C_BOLD}{'\u2550' * 50}{C_RESET}")
+    print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
     print(f"{C_BOLD}  STEP 3: Select Features{C_RESET}")
-    print(f"{C_BOLD}{'\u2550' * 50}{C_RESET}\n")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
 
     vram_mb = getattr(args, '_vram_mb', 0)
     features = manifest["features"]
@@ -1794,9 +1795,9 @@ def step_install_nodes(manifest: dict, selected: dict[str, bool], paths: dict,
         print(f"  {C_YELLOW}Install git from https://git-scm.com/ and re-run the installer.{C_RESET}\n")
         return
 
-    print(f"\n{C_BOLD}{'═' * 50}{C_RESET}")
+    print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
     print(f"{C_BOLD}  STEP 4: Install Custom Nodes{C_RESET}")
-    print(f"{C_BOLD}{'═' * 50}{C_RESET}\n")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
 
     custom_nodes_dir = paths["comfyui"] / "custom_nodes"
     if not dry_run:
@@ -1850,9 +1851,9 @@ def step_install_models(manifest: dict, selected: dict[str, bool], paths: dict,
         print(f"\n  {C_YELLOW}Skipping model installation (no ComfyUI path).{C_RESET}")
         return
 
-    print(f"\n{C_BOLD}{'═' * 50}{C_RESET}")
+    print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
     print(f"{C_BOLD}  STEP 5: Download Models{C_RESET}")
-    print(f"{C_BOLD}{'═' * 50}{C_RESET}\n")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
 
     if args.skip_models:
         print(f"  {C_YELLOW}--skip-models specified — skipping all model downloads.{C_RESET}")
@@ -2003,9 +2004,9 @@ def _find_darktable_plugin_src() -> Path | None:
 
 def step_install_plugins(paths: dict, server_url: str, dry_run: bool = False):
     """Step 6: Copy plugin files, patching the server URL."""
-    print(f"\n{C_BOLD}{'═' * 50}{C_RESET}")
+    print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
     print(f"{C_BOLD}  STEP 6: Install Plugins{C_RESET}")
-    print(f"{C_BOLD}{'═' * 50}{C_RESET}\n")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
 
     gimp_src = _find_gimp_plugin_src()
     dt_src = _find_darktable_plugin_src()
@@ -2254,9 +2255,9 @@ def step_install_tavern(paths: dict, server_url: str, selected: dict, dry_run: b
     if not selected.get("wizard_guild", False):
         return
 
-    print(f"\n{C_BOLD}{'\u2550' * 50}{C_RESET}")
+    print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
     print(f"{C_BOLD}  Install Wizard Guild{C_RESET}")
-    print(f"{C_BOLD}{'\u2550' * 50}{C_RESET}\n")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
 
     tavern_src = _find_tavern_src()
     scaffold_src = _find_scaffold_src()
@@ -2345,9 +2346,9 @@ def step_apply_theme(paths: dict, dry_run: bool = False, auto_yes: bool = False)
     if not (paths.get("gimp") or paths.get("darktable")):
         return
 
-    print(f"\n{C_BOLD}{'═' * 50}{C_RESET}")
+    print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
     print(f"{C_BOLD}  STEP 7 (Optional): Apply Spellcaster Visual Theme{C_RESET}")
-    print(f"{C_BOLD}{'═' * 50}{C_RESET}\n")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
     print(f"  Replaces the GIMP and/or Darktable default splash screen")
     print(f"  with Spellcaster-themed AI-generated artwork.\n")
     if platform.system() == "Windows":
@@ -2428,9 +2429,9 @@ def step_import_luts(paths: dict, args) -> None:
             print(f"  {C_YELLOW}⚠ --lut-folder specified but no ComfyUI path — skipping.{C_RESET}")
         return
 
-    print(f"\n{C_BOLD}{'═' * 50}{C_RESET}")
+    print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
     print(f"{C_BOLD}  STEP 6b (Optional): Import LUT Files{C_RESET}")
-    print(f"{C_BOLD}{'═' * 50}{C_RESET}\n")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
     print(f"  {C_DIM}Import .cube / .3dl LUT files from Davinci Resolve, Lightroom,")
     print(f"  or any other tool. They will appear immediately in the Spellcaster")
     print(f"  Color Grading preset picker as soon as ComfyUI starts.{C_RESET}\n")
@@ -2508,9 +2509,9 @@ def step_import_luts(paths: dict, args) -> None:
 
 def step_final_summary(manifest: dict, selected: dict[str, bool], paths: dict, server_url: str):
     """Step 7: Print final summary."""
-    print(f"\n{C_BOLD}{'═' * 50}{C_RESET}")
+    print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
     print(f"{C_BOLD}  INSTALLATION COMPLETE{C_RESET}")
-    print(f"{C_BOLD}{'═' * 50}{C_RESET}\n")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
 
     print(f"  {C_BOLD}Installed features:{C_RESET}")
     for key, feat in manifest["features"].items():
@@ -2549,4 +2550,124 @@ def step_final_summary(manifest: dict, selected: dict[str, bool], paths: dict, s
     print()
 
 
-# ─── Entry point ─────────────
+# ─── Entry point ───────────────────────────────────────────────────────────────────
+
+def load_manifest() -> dict:
+    """Load the manifest.json that defines all features, models, and custom nodes."""
+    if not MANIFEST_PATH.exists():
+        print(f"{C_RED}Error: manifest.json not found at {MANIFEST_PATH}{C_RESET}")
+        sys.exit(1)
+    with open(MANIFEST_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def build_arg_parser():
+    """Build the argparse parser with all CLI flags."""
+    parser = argparse.ArgumentParser(
+        description="Spellcaster \u2014 AI superpowers for GIMP 3 & Darktable",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=textwrap.dedent("""\
+            Examples:
+              python install.py
+              python install.py --cli --yes
+              python install.py --server-url http://192.168.1.50:8188
+              python install.py --features img2img,inpaint,face_swap_reactor
+              python install.py --comfyui ~/ComfyUI --gimp ~/.config/GIMP/3.2/plug-ins
+              python install.py --dry-run
+        """)
+    )
+    parser.add_argument("--cli", action="store_true",
+                        help="Force terminal mode (skip GUI wrapper)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Preview what would be done without making changes")
+    parser.add_argument("-y", "--yes", action="store_true",
+                        help="Auto-accept all defaults (non-interactive)")
+    parser.add_argument("--server-url", metavar="URL",
+                        help=f"ComfyUI server URL (default: {DEFAULT_SERVER_URL})")
+    parser.add_argument("--features", metavar="FEAT1,FEAT2",
+                        help="Comma-separated list of features to install. "
+                             "Available: img2img, txt2img, inpaint, face_swap_reactor, "
+                             "face_swap_mtb, faceid_img2img, pulid_flux, klein_flux2, "
+                             "wan_i2v, rembg, upscale, lama_remove, lut_grading, "
+                             "outpaint, style_transfer, face_restore, photo_restore, "
+                             "detail_hallucinate, colorize, controlnet, iclight, supir, "
+                             "batch_variations, seedv2r, wizard_guild")
+    parser.add_argument("--comfyui", metavar="PATH",
+                        help="Path to ComfyUI root directory")
+    parser.add_argument("--gimp", metavar="PATH",
+                        help="Path to GIMP 3 plug-ins directory")
+    parser.add_argument("--darktable", metavar="PATH",
+                        help="Path to Darktable lua/contrib directory")
+    parser.add_argument("--lut-folder", metavar="PATH", default="",
+                        help="Source folder containing .cube/.3dl LUT files to import into ComfyUI")
+    parser.add_argument("--civitai-key", metavar="TOKEN", default="",
+                        help="CivitAI API token for authenticated model downloads")
+    parser.add_argument("--hf-token", metavar="TOKEN", default="",
+                        help="HuggingFace access token for gated model downloads")
+    parser.add_argument("--skip-models", action="store_true",
+                        help="Skip model downloads (install plugins and nodes only)")
+    parser.add_argument("--skip-nodes", action="store_true",
+                        help="Skip custom node installation")
+    parser.add_argument("--version", action="version",
+                        version=f"Spellcaster Installer v{VERSION}")
+    return parser
+
+
+def main():
+    """Run the full CLI installation pipeline."""
+    args = build_arg_parser().parse_args()
+
+    banner()
+
+    if args.dry_run:
+        print(f"  {C_YELLOW}DRY RUN MODE \u2014 no changes will be made{C_RESET}\n")
+
+    manifest = load_manifest()
+
+    if not hasattr(args, 'civitai_key'):
+        args.civitai_key = getattr(args, 'civitai_key', '') or ''
+    if not hasattr(args, 'hf_token'):
+        args.hf_token = getattr(args, 'hf_token', '') or ''
+
+    # \u2500\u2500 Execute the installation pipeline \u2500\u2500
+    step_system_detection(args)
+    step_api_keys(args)
+    server_url = step_detect_server(args)
+    paths = step_detect_paths(args)
+    selected = step_select_features(manifest, paths, args)
+
+    if not args.skip_nodes:
+        step_install_nodes(manifest, selected, paths, args.dry_run)
+    else:
+        print(f"\n  {C_YELLOW}--skip-nodes specified \u2014 skipping custom node installation.{C_RESET}")
+
+    step_install_models(manifest, selected, paths, args)
+    step_install_plugins(paths, server_url, args.dry_run)
+    step_install_tavern(paths, server_url, selected, args.dry_run)
+    step_import_luts(paths, args)
+    step_apply_theme(paths, args.dry_run, args.yes)
+    step_final_summary(manifest, selected, paths, server_url)
+
+
+# \u2500\u2500\u2500 GUI wrapper \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+if __name__ == "__main__":
+    _args = build_arg_parser().parse_args()
+    _is_frozen_gui = getattr(sys, 'frozen', False) and not sys.stdin
+    _force_cli = getattr(_args, 'cli', False)
+    if _force_cli and sys.stdin:
+        main()
+    elif _is_frozen_gui or (not _force_cli and sys.stdin and sys.stdin.isatty()):
+        try:
+            from installer_gui import run_gui
+            run_gui(_args, load_manifest())
+        except Exception as e:
+            if sys.stdin:
+                import traceback
+                print(f"Failed to load premium GUI: {e}")
+                traceback.print_exc()
+                main()
+            else:
+                raise
+    else:
+        main()

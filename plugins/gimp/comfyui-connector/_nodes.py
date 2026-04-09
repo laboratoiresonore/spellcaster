@@ -1732,36 +1732,4 @@ class NodeFactory:
 
         dit_ref: from SeedVR2 DiT model loader.
         vae_ref: from SeedVR2 VAE model loader.
-        resolution: target shortest-edge pixels.
-        batch_size: frames per batch (must be 4n+1: 1,5,9,13...).
-        color_correction: lab, wavelet, wavelet_adaptive, hsv, adain, none.
-        """
-        return self._add("SeedVR2VideoUpscaler", {
-            "image": image_ref,
-            "dit": dit_ref,
-            "vae": vae_ref,
-            "seed": seed,
-            "resolution": resolution,
-            "max_resolution": max_resolution,
-            "batch_size": batch_size,
-            "uniform_batch_size": uniform_batch_size,
-            "color_correction": color_correction,
-        }, node_id)
-
-    def ts_video_upscale(self, model_name, images_ref,
-                         upscale_method="bicubic", factor=2.0,
-                         device_strategy="auto", node_id=None):
-        """TS_Video_Upscale_With_Model — upscale video with a model.
-
-        model_name: upscale model filename (e.g. "4x-UltraSharp.pth").
-        upscale_method: nearest-exact, bilinear, area, bicubic.
-        factor: scale factor (0.1-8.0).
-        device_strategy: auto, load_unload_each_frame, keep_loaded, cpu_only.
-        """
-        return self._add("TS_Video_Upscale_With_Model", {
-            "model_name": model_name,
-            "images": images_ref,
-            "upscale_method": upscale_method,
-            "factor": factor,
-            "device_strategy": device_strategy,
-        }, node_id)
+        resolution: target shortest-

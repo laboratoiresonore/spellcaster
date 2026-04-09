@@ -119,6 +119,11 @@ _NSFW_ARCH_PROFILES = {
         "scaffold": "studio_imaginus",
         "subtext_hint": "Flux 2 Klein — Explicit Image Generation",
     },
+    "chroma": {
+        "archetype": "a dazzling prismatic seductress splitting light into sinful rainbows, every colour revealing a new desire, chromatic energy pulsing with erotic intensity",
+        "scaffold": "studio_imaginus",
+        "subtext_hint": "Chroma — Chromatic NSFW Generation",
+    },
     "flux1dev": {
         "archetype": "a smouldering conjurer of photorealistic fantasies, light bending around glistening skin, every detail rendered in sinful clarity",
         "scaffold": "studio_imaginus",
@@ -154,6 +159,22 @@ BG_STYLES_NSFW = {
                 "observatory": "celestial boudoir atop a tower, massive skylight showing stars, astral silk canopy bed, orrery casting dappled shadows, cosmic energy swirling through sheer drapes, scattered star charts and divination cards, constellation patterns projected on bare walls",
                 "forge": "enchanted forge turned pleasure den, glowing enchanted metal art installations, warm ember light, hammered copper bath filled with steaming enchanted water, scattered enchanted metalwork jewellery, fur-draped anvil, intimate warmth",
                 "garden": "ethereal midnight garden, moonlit reflecting pools surrounded by aphrodisiac flowers, crystalline sculptures in suggestive poses, enchanted fountains, scattered silk cushions on soft grass, magical mist, lanterns casting warm intimate glow",
+                "throne": "decadent pleasure throne room, ornate throne draped in sheer silk and velvet, stained glass windows depicting divine lovers entwined, enchanted incense filling the air, scattered rose petals and wine goblets on marble floor, intimate golden candlelight",
+                "shipwreck": "beached ghost ship turned floating bordello, captain's cabin with silk-draped hammock bed, phosphorescent sea creatures casting romantic light, porthole windows showing moonlit waves, scattered exotic oils and pearl jewellery, gentle rocking motion",
+                "marketplace": "night market of forbidden pleasures, silk-curtained stalls selling enchanted aphrodisiacs, floating lanterns casting warm intimate glow, exotic perfumes and enchanted massage oils, velvet-draped private alcoves between stalls, seductive atmosphere",
+                "cathedral": "ruined cathedral of a love goddess, crumbling arches draped in sheer flowing fabric, moonbeams illuminating scattered silk cushions, enchanted candles hovering with warm light, wildflowers and aphrodisiac blooms growing through stone, ethereal romance",
+                "cavern": "secret underground hot spring cavern, crystal formations casting prismatic light on steaming pools, smooth stone ledges with scattered silk robes, bioluminescent flowers along the water's edge, enchanted privacy wards glowing softly, warm mist rising",
+                "apothecary": "back room of an aphrodisiac apothecary, shelves of love potions and enchanted oils, a plush fur-draped examination table, bundles of arousing herbs hanging from rafters, warm firelight, mortar and pestle grinding aphrodisiac ingredients, intimate clutter",
+                "arctic": "enchanted ice palace boudoir, aurora borealis visible through crystal dome ceiling, fur-covered bed on heated floor, ice sculptures in sensuous poses, warm magical braziers creating a cozy cocoon, frost crystals catching colored light",
+                "desert": "sultry desert harem tent, sheer silk drapes and jewel-toned cushions everywhere, enchanted cooling breeze, starlit ceiling, scattered perfume bottles and golden jewellery, belly-dance silhouettes on tent walls, warm amber lantern light, aromatic incense",
+                "underwater": "underwater pleasure dome, glass walls showing bioluminescent deep-sea ballet, water-silk draped furniture, enchanted air bubbles carrying sweet fragrance, coral-shaped lounging platforms with soft coverings, rippling blue-green light on skin",
+                "volcano": "volcanic pleasure grotto, warm mineral pools heated by magma below, obsidian walls with passion-rune inscriptions, enchanted heat creating a permanent sauna effect, scattered silk on smooth stone ledges, ember motes floating romantically, orange glow",
+                "clocktower": "midnight clocktower boudoir, enormous silent brass gears turning overhead, time-stopped candles frozen mid-flicker, silk-draped platform among the mechanism, moonlight through massive clock face casting gear-shadow patterns, timeless intimate atmosphere",
+                "greenhouse": "moonlit pleasure greenhouse, towering glass panels showing starry sky, aphrodisiac flowers in full nocturnal bloom releasing intoxicating pollen, vine-covered alcoves with silk cushions, warm humid air, butterflies of light drifting lazily, enchanted privacy screen of flowering vines",
+                "crypt": "ancient vampire queen's crypt turned luxurious den, velvet-draped sarcophagus bed, ghostly wisps providing dim romantic light, gothic carved walls with erotic motifs, heavy silk curtains, scattered goblets of enchanted wine, cool seductive atmosphere",
+                "treehouse": "secret treetop lovers' nest, living wood walls with faintly glowing sap veins, canopy of leaves creating total privacy, moonbeams filtering through branches onto fur-covered platform, wind carrying the scent of night-blooming jasmine, gentle swaying motion",
+                "tavern_upstairs": "private pleasure suite above the guild tavern, enchanted privacy wards humming, enormous canopy bed with sheer draping, fireplace with sensual blue flames, tall windows with curtains drawn, scattered wine and enchanted oils on bedside table, warm intimate amber glow",
+                "colosseum": "moonlit arena turned midnight festival ground, tiered seating draped in silk for spectators, enchanted sand floor warm underfoot, floating lanterns and scattered cushions, enchanted wine fountains, celebratory decadent atmosphere, dramatic torchlight",
             }   # Populated by build_nsfw.py or runtime injection
 
 
@@ -1008,6 +1029,11 @@ def fetch_all_characters(comfy_url=None):
                 "scaffold": "studio_imaginus",
                 "subtext_hint": "Flux 2 Klein Image Generation",
             },
+            "chroma": {
+                "archetype": "a prismatic archmage channeling pure chromatic energy, light splitting into rainbows",
+                "scaffold": "studio_imaginus",
+                "subtext_hint": "Chroma Image Generation",
+            },
             "flux1dev": {
                 "archetype": "a luminous conjurer of photorealistic visions, light bending around them",
                 "scaffold": "studio_imaginus",
@@ -1246,6 +1272,46 @@ def _save_generated_assets():
         print(f"  [State] Failed to save generated assets: {e}")
 
 
+def _migrate_stale_urls(data, label="assets"):
+    """Upgrade stale ComfyUI URLs in a loaded state dict to cached URLs.
+
+    For each URL containing '/view?filename=', try to download and cache it.
+    If caching succeeds, replace with the cached URL.
+    If it fails (file already cleaned up), null it out so the frontend
+    shows fallback visuals instead of broken images.
+    """
+    if not PRIVACY_CLEANUP or not data:
+        return False
+    _url_keys = ('avatar_url', 'animated_url', 'bg_url')
+    changed = False
+    for key, entry in data.items():
+        if not isinstance(entry, dict):
+            continue
+        for uk in _url_keys:
+            val = entry.get(uk)
+            if not val or '/view?' not in val:
+                continue
+            # Try to cache it from ComfyUI (may still exist if cleanup hasn't run yet)
+            try:
+                cached = _cache_comfyui_asset(val, 'video' if uk == 'animated_url' else 'image')
+                if cached and '/api/cached_asset/' in cached:
+                    entry[uk] = cached
+                    changed = True
+                    print(f"  [Migration] Cached stale {uk} for {key}")
+                else:
+                    # Caching returned the original URL — file likely gone
+                    entry[uk] = None
+                    changed = True
+                    print(f"  [Migration] Cleared broken {uk} for {key}")
+            except Exception:
+                entry[uk] = None
+                changed = True
+                print(f"  [Migration] Cleared unreachable {uk} for {key}")
+    if changed:
+        print(f"  [Migration] Upgraded stale URLs in {label}")
+    return changed
+
+
 def _load_custom_wizards():
     """Load user-summoned custom wizards from disk and merge into CHARS_CACHE."""
     if not os.path.exists(_CUSTOM_WIZARDS_PATH):
@@ -1355,6 +1421,12 @@ _BANISHED_IDS = _load_banished_ids()
 _GENERATED_ASSETS = _load_generated_assets()
 _LORA_TOGGLES = _load_lora_toggles()
 _WIZARD_IDENTITIES = _load_wizard_identities()
+
+# Migrate stale ComfyUI URLs to cached local copies on startup
+if _migrate_stale_urls(_GENERATED_ASSETS, 'generated_assets'):
+    _save_generated_assets()
+if _migrate_stale_urls(_WIZARD_IDENTITIES, 'wizard_identities'):
+    _save_wizard_identities()
 _ANIM_QUEUE = _load_anim_queue()
 _load_custom_wizards()
 
@@ -2239,9 +2311,12 @@ def _privacy_cleanup(comfy_url, workflow, result):
         fname = node.get("inputs", {}).get("image", "") or node.get("inputs", {}).get("video", "")
         if not fname or not isinstance(fname, str):
             continue
-        # Only clean guild/gimp temp uploads, not user's permanent files
+        # Only clean guild/gimp temp uploads and re-uploaded cached assets,
+        # not user's permanent files
         fl = fname.lower()
-        if not any(fl.startswith(p) for p in ("guild_", "gimp_", "spellcaster_")):
+        import re as _re_clean
+        is_cached_asset = bool(_re_clean.match(r'^[a-f0-9]{16}\.', fl))
+        if not is_cached_asset and not any(fl.startswith(p) for p in ("guild_", "gimp_", "spellcaster_")):
             continue
         try:
             url = f"{comfy_url}/upload/image"
@@ -2387,6 +2462,19 @@ def _preflight_unet_arch(comfy_url, ckpt, arch, arch_key):
                 avail2 = clips2[0] if clips2 and isinstance(clips2, list) else []
                 if clip2 not in avail2:
                     missing.append(f"CLIP '{clip2}'")
+        elif arch.clip_mode == "single_chroma":
+            # Chroma: single CLIPLoader with type="chroma"
+            clip_name = arch.extra.get("clip_name", "t5xxl_fp8_e4m3fn.safetensors")
+            url = f"{comfy_url}/object_info/CLIPLoader"
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                clips = (data.get("CLIPLoader", {})
+                             .get("input", {}).get("required", {})
+                             .get("clip_name", []))
+                avail = clips[0] if clips and isinstance(clips, list) else []
+                if clip_name not in avail:
+                    missing.append(f"CLIP '{clip_name}'")
         elif arch.clip_mode == "single_flux2":
             ckpt_lower = ckpt.lower()
             clip_name = ("qwen_3_8b_fp8mixed.safetensors"
@@ -2717,7 +2805,51 @@ def _get_ltx_preset(comfy_url):
     return _LTX_PRESET_CACHE if _LTX_PRESET_CACHE else None
 
 
-def _extract_comfyui_filename(image_url):
+def _upload_cached_asset_to_comfyui(cache_name, comfy_url):
+    """Re-upload a locally cached asset to ComfyUI's input folder.
+
+    When privacy mode caches images locally as /api/cached_asset/<hash>.png,
+    ComfyUI no longer has the file.  This re-uploads it so LoadImage can use it.
+    Returns the filename as uploaded to ComfyUI.
+    """
+    cache_path = os.path.join(_ASSET_CACHE_DIR, cache_name)
+    if not os.path.exists(cache_path):
+        raise FileNotFoundError(f"Cached asset not found: {cache_path}")
+
+    with open(cache_path, 'rb') as f:
+        data = f.read()
+
+    # Detect MIME type from extension
+    ext = os.path.splitext(cache_name)[1].lower()
+    _mime_map = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+                 '.webp': 'image/webp', '.gif': 'image/gif',
+                 '.mp4': 'video/mp4', '.webm': 'video/webm'}
+    mime_type = _mime_map.get(ext, 'application/octet-stream')
+
+    import uuid as _uuid
+    upload_url = f"{comfy_url}/upload/image"
+    boundary = _uuid.uuid4().hex
+    body = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="image"; filename="{cache_name}"\r\n'
+        f"Content-Type: {mime_type}\r\n\r\n"
+    ).encode() + data + (
+        f"\r\n--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="type"\r\n\r\n'
+        f"input\r\n"
+        f"--{boundary}--\r\n"
+    ).encode()
+    req = urllib.request.Request(upload_url, data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST")
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        result = json.loads(resp.read().decode("utf-8"))
+    uploaded_name = result.get("name", cache_name)
+    print(f"  [Privacy] Re-uploaded cached asset to ComfyUI input: {uploaded_name}")
+    return uploaded_name
+
+
+def _extract_comfyui_filename(image_url, comfy_url=None):
     """Extract the actual ComfyUI output filename from various URL formats.
 
     ComfyUI's LoadImage node expects a filename relative to its input/ dir.
@@ -2726,7 +2858,20 @@ def _extract_comfyui_filename(image_url):
       http://host:port/view?filename=Wizard_Guild_00001_.png&subfolder=&type=output
     Our proxy serves them as:
       /api/comfy_image/Wizard_Guild_00001_.png
+
+    For cached assets (/api/cached_asset/<hash>.png), re-uploads the local
+    file to ComfyUI's input folder so LoadImage can access it.
     """
+    if '/api/cached_asset/' in image_url:
+        cache_name = image_url.split('/api/cached_asset/')[-1]
+        # Strip cache-buster params (?t= or &t= from frontend)
+        for sep in ('?', '&'):
+            if sep in cache_name:
+                cache_name = cache_name.split(sep)[0]
+        if comfy_url:
+            return _upload_cached_asset_to_comfyui(cache_name, comfy_url)
+        # No comfy_url — can't re-upload, return cache name as best effort
+        return cache_name
     if '/view?' in image_url:
         import urllib.parse as _up
         qs = _up.parse_qs(_up.urlparse(image_url).query)
@@ -2748,7 +2893,7 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
     if not BUILTIN_AVAILABLE or _workflows_v2 is None:
         return {"queued": False, "reason": "spellcaster not available"}
 
-    image_filename = _extract_comfyui_filename(image_url)
+    image_filename = _extract_comfyui_filename(image_url, comfy_url=comfy_url)
     seed = random.randint(1, 1000000000)
     engine = None
     workflow = None
@@ -3140,6 +3285,16 @@ def _translate_params(build_fn_name, raw, comfy_url=None):
         if old_key in p and new_key not in p and new_key in param_names:
             p[new_key] = p.pop(old_key)
 
+    # ── Re-upload cached assets to ComfyUI for any filename params ──
+    # Under privacy mode, image URLs are /api/cached_asset/<hash>.png which
+    # ComfyUI can't access.  Re-upload them to ComfyUI's input folder.
+    _filename_params = ('image_filename', 'mask_filename', 'source_filename',
+                        'target_filename', 'style_ref_filename', 'reference_filename')
+    for fp in _filename_params:
+        val = p.get(fp)
+        if val and isinstance(val, str) and '/api/cached_asset/' in val:
+            p[fp] = _extract_comfyui_filename(val, comfy_url=comfy_url)
+
     # ── Ensure required params have defaults ──
     if 'negative_text' in param_names and 'negative_text' not in p:
         p['negative_text'] = ''
@@ -3181,17 +3336,20 @@ def _build_and_dispatch(build_fn_name, params, comfy_url):
     result = _dispatch_workflow(workflow, comfy_url)
 
     # Cache generated assets locally BEFORE privacy cleanup wipes ComfyUI files
-    if result.get("type") == "images" and result.get("urls"):
+    _original_urls = list(result.get("urls", []))  # save for cleanup
+    if result.get("type") in ("images", "videos") and result.get("urls"):
+        asset_type = "video" if result["type"] == "videos" else "image"
         cached = []
         for u in result["urls"]:
-            cached.append(_cache_comfyui_asset(u, "image"))
+            cached.append(_cache_comfyui_asset(u, asset_type))
         result["cached_urls"] = cached
         result["urls"] = cached  # replace so callers get local URLs
 
     # Privacy cleanup: delete inputs + outputs from ComfyUI after delivery
+    # Use _original_urls (ComfyUI URLs) not result["urls"] (now cached local paths)
     if PRIVACY_CLEANUP:
         try:
-            _privacy_cleanup(comfy_url, workflow, result)
+            _privacy_cleanup(comfy_url, workflow, {"urls": _original_urls})
             result["privacy_cleanup"] = "complete"
         except Exception:
             result["privacy_cleanup"] = "partial"
@@ -3489,6 +3647,10 @@ class GuildHandler(SimpleHTTPRequestHandler):
         elif self.path.startswith('/api/cached_asset/'):
             # Serve locally cached assets (downloaded from ComfyUI before privacy cleanup)
             asset_name = self.path.split('/api/cached_asset/')[-1]
+            # Strip cache-buster params (?t=123 or &t=123 from frontend)
+            for sep in ('?', '&'):
+                if sep in asset_name:
+                    asset_name = asset_name.split(sep)[0]
             # Sanitize — only allow alphanumeric + dot + dash + underscore
             import re as _re
             if not _re.match(r'^[a-zA-Z0-9._-]+$', asset_name):
@@ -3583,7 +3745,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
             own_arch = char.get("model_arch")
             # Only use the wizard's model for image-gen architectures
             IMAGE_ARCHS = {"sdxl", "sd15", "illustrious", "pony",
-                           "flux1dev", "flux2klein", "sd3", "sd3_turbo",
+                           "flux1dev", "flux2klein", "chroma", "sd3", "sd3_turbo",
                            "hunyuan_dit", "pixart", "auraflow", "kolors",
                            "playground", "sdxl_turbo", "zit"}
             if own_model and own_arch in IMAGE_ARCHS:
@@ -3658,6 +3820,22 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "observatory": "celestial observatory atop a tower, massive brass telescope, astral maps and star charts, orrery with orbiting planets, glass dome showing starry sky, cosmic energy swirling, constellation diagrams",
                 "forge": "magical forge interior, glowing enchanted anvil, molten magical metal flowing, sparks of arcane energy, weapon racks with enchanted swords, bellows, rune-carved tools, ember-lit atmosphere",
                 "garden": "ethereal crystal garden, floating prismatic crystals, light refracting into rainbows, crystalline flowers, reflective pools, amethyst and quartz formations, magical mist, serene and otherworldly",
+                "throne": "grand magical throne room, ornate gilded throne with glowing runes, towering stained glass windows depicting legendary wizards, marble floor with inlaid arcane circles, enchanted banners floating without wind, dramatic shafts of golden light",
+                "shipwreck": "interior of a beached ghost ship repurposed as a wizard hideout, barnacle-encrusted timbers, phosphorescent sea creatures in jars, navigation charts with moving ink, porthole windows showing an underwater reef, ship lanterns swaying",
+                "marketplace": "bustling magical marketplace at dusk, merchant stalls draped in enchanted fabrics, floating lanterns and spell-signs, exotic ingredients and bottled creatures, cobblestone paths, warm torchlight, magical street performers",
+                "cathedral": "ruined cathedral reclaimed by nature and magic, crumbling stone arches overgrown with glowing vines, shattered rose window letting in moonbeams, enchanted candles hovering where pews once stood, moss and wildflowers, ethereal atmosphere",
+                "cavern": "vast underground crystal cavern, massive geode formations glowing from within, underground river reflecting prismatic light, stalactites dripping liquid starlight, bioluminescent cave flora, natural stone bridges, echoing silence",
+                "apothecary": "cluttered wizard apothecary shop, floor-to-ceiling shelves of labeled bottles and dried herbs, mortar and pestle grinding themselves, a large enchanted ledger writing itself, bundles of sage hanging from rafters, warm hearth fire, cozy clutter",
+                "arctic": "frozen wizard sanctum carved from glacial ice, aurora borealis visible through crystal ceiling, ice sculptures of mythical beasts, frost-rune inscriptions glowing blue, polar bear fur rugs, warm magical braziers defying the cold",
+                "desert": "desert oasis wizard tent, rich silk tapestries and ornate brass lanterns, enchanted sand swirling in mesmerizing patterns outside, star-mapped ceiling, cushions and low tables with divination tools, incense smoke forming shapes",
+                "underwater": "underwater wizard dome, glass walls showing deep ocean with bioluminescent creatures, coral furniture, bubble-streams carrying messages, kelp gardens with enchanted fish, rippling light reflections on every surface, serene blue-green glow",
+                "volcano": "wizard workshop built into a dormant volcano, magma rivers flowing through carved channels behind glass, obsidian walls with fire-rune inscriptions, heat-forged magical instruments, ember motes floating upward, dramatic orange and red lighting",
+                "clocktower": "interior of a massive magical clocktower, enormous brass gears and pendulums enchanted to run silently, time-rune inscriptions on every surface, hourglasses filled with golden sand, multiple clock faces showing different realms, ticking energy",
+                "greenhouse": "overgrown wizard greenhouse, towering glass panels letting in dappled sunlight, magical plants in bloom with luminous petals, enchanted watering cans floating between rows, vine-covered iron framework, butterflies made of light, warm humid atmosphere",
+                "crypt": "ancient wizard crypt turned study, sarcophagi repurposed as bookshelves, ghostly wisps providing gentle illumination, carved stone walls depicting forgotten spells, vaulted ceiling with star map mosaic, respectful scholarly atmosphere, cool blue light",
+                "treehouse": "enormous treehouse wizard dwelling, living wood walls with glowing sap veins, windows formed naturally by twisting branches, rope bridges visible outside, leaf-filtered sunlight, carved wooden furniture growing from the tree itself, wind chimes of crystal",
+                "tavern_upstairs": "private upper floor of the wizard guild tavern, intimate seating with enchanted privacy wards, a roaring fireplace with magical blue flames, tall windows overlooking a moonlit medieval city, bookshelves and personal artifacts, warm amber glow",
+                "colosseum": "ancient magical colosseum converted to a wizard training arena, tiered stone seating, enchanted sand floor with glowing combat circles, floating magical targets and practice dummies, banners of different wizard schools, dramatic sunset lighting through open roof",
             }
             # ── NSFW_BG_STYLES_INJECT_ANCHOR ── (do not remove — build_nsfw.py marker)
             BG_STYLES = BG_STYLES_NSFW if (NSFW_MODE and BG_STYLES_NSFW) else BG_STYLES_SFW
@@ -3700,6 +3878,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     workflow = build_txt2img(preset, prompt_text, negative, seed)
                     result = _dispatch_workflow(workflow, comfy)
                     # Cache assets locally BEFORE privacy cleanup wipes ComfyUI files
+                    _original_bg_urls = list(result.get("urls", []))  # save for cleanup
                     if result.get("type") == "images" and result.get("urls"):
                         cached = []
                         for u in result["urls"]:
@@ -3707,17 +3886,23 @@ class GuildHandler(SimpleHTTPRequestHandler):
                         result["cached_urls"] = cached
                         result["urls"] = cached
                     # Privacy cleanup: scrub outputs from ComfyUI server
+                    # Use _original_bg_urls (ComfyUI URLs) not result["urls"] (now cached)
                     if PRIVACY_CLEANUP:
                         try:
-                            _privacy_cleanup(comfy, workflow, result)
+                            _privacy_cleanup(comfy, workflow, {"urls": _original_bg_urls})
                         except Exception:
                             pass
                     if result.get("type") == "images" and result.get("urls"):
-                        return self.end_json(200, {"bg_url": result["urls"][0]})
+                        bg_url = result["urls"][0]
+                        _GENERATED_ASSETS.setdefault("_global", {})["bg_url"] = bg_url
+                        _save_generated_assets()
+                        return self.end_json(200, {"bg_url": bg_url})
                     raise Exception("No image returned from ComfyUI.")
                 else:
                     img_url = _dispatch_txt2img(prompt_text, negative, bg_width, bg_height, comfy,
                                                skip_loras=True)
+                    _GENERATED_ASSETS.setdefault("_global", {})["bg_url"] = img_url
+                    _save_generated_assets()
                     return self.end_json(200, {"bg_url": img_url})
             except Exception as e:
                 return self.end_json(500, {"error": str(e)})
@@ -3737,7 +3922,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
                         own_model = char.get("model_name")
                         own_arch = char.get("model_arch")
                         IMAGE_ARCHS = {"sdxl", "sd15", "illustrious", "pony",
-                                       "flux1dev", "flux2klein"}
+                                       "flux1dev", "flux2klein", "chroma"}
                         if own_model and own_arch in IMAGE_ARCHS:
                             use_model, use_arch = own_model, own_arch
                         else:
@@ -3751,6 +3936,9 @@ class GuildHandler(SimpleHTTPRequestHandler):
                                                    model_type=char.get("model_type"),
                                                    skip_loras=True)
                         _BATCH_RESULTS.append({"id": char['id'], "avatar_url": img_url, "status": "ok"})
+                        # Persist to _GENERATED_ASSETS so avatar survives page reload
+                        _GENERATED_ASSETS.setdefault(char['id'], {})["avatar_url"] = img_url
+                        _save_generated_assets()
                         print(f"  [Batch] Done: {char.get('name', char['id'])} ({len(_BATCH_RESULTS)}/{_BATCH_STATE['total']})")
                     except Exception as e:
                         _BATCH_RESULTS.append({"id": char['id'], "status": "error", "error": str(e)})
@@ -3762,6 +3950,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     bg_url = _dispatch_txt2img(bg_prompt, "text, watermark, blurry, people", batch_bg_w, batch_bg_h, comfy,
                                                skip_loras=True)
                     _BATCH_RESULTS.append({"id": "_background", "bg_url": bg_url, "status": "ok"})
+                    _GENERATED_ASSETS.setdefault("_global", {})["bg_url"] = bg_url
+                    _save_generated_assets()
                     print("  [Batch] Background done")
                 except Exception as e:
                     _BATCH_RESULTS.append({"id": "_background", "status": "error", "error": str(e)})
@@ -4088,199 +4278,4 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(404, {"error": f"Unknown endpoint: {self.path}"})
 
 
-    # ═══════════════════════════════════════════════════════════════════
-    #  Config Update — persist settings changes from the browser UI
-    # ═══════════════════════════════════════════════════════════════════
-    def _handle_config_update(self, data):
-        """Accept runtime config updates from the settings modal."""
-        global LLM_MODE, HORDE_API_KEY, HORDE_MODEL, KOBOLD_URL, COMFYUI_URL
-        changed = []
-        if 'llm_mode' in data and data['llm_mode'] in ('local', 'horde'):
-            LLM_MODE = data['llm_mode']
-            changed.append(f"llm_mode={LLM_MODE}")
-        if 'kobold_url' in data:
-            KOBOLD_URL = data['kobold_url']
-            changed.append(f"kobold_url={KOBOLD_URL}")
-        if 'comfyui_url' in data:
-            COMFYUI_URL = data['comfyui_url']
-            changed.append(f"comfyui_url={COMFYUI_URL}")
-        if 'horde_api_key' in data:
-            HORDE_API_KEY = data['horde_api_key']
-            changed.append("horde_api_key=***")
-        if 'horde_model' in data:
-            HORDE_MODEL = data['horde_model']
-            changed.append(f"horde_model={HORDE_MODEL}")
-
-        # Persist to guild_config.json
-        config_path = os.path.join(_THIS_DIR, 'guild_config.json')
-        try:
-            with open(config_path, 'r') as f:
-                config = json.load(f)
-        except Exception:
-            config = {}
-        config['llm_mode'] = LLM_MODE
-        config['kobold_url'] = KOBOLD_URL
-        config['comfyui_url'] = COMFYUI_URL
-        config['horde_api_key'] = HORDE_API_KEY
-        config['horde_model'] = HORDE_MODEL
-        try:
-            with open(config_path, 'w') as f:
-                json.dump(config, f, indent=2)
-        except Exception as e:
-            print(f"  [config] WARNING: could not save config: {e}")
-
-        if changed:
-            print(f"  [config] Updated: {', '.join(changed)}")
-        return self.end_json(200, {"ok": True})
-
-    # ═══════════════════════════════════════════════════════════════════
-    #  AI Horde — server-side text generation proxy
-    # ═══════════════════════════════════════════════════════════════════
-    def _handle_horde_generate(self, data):
-        """
-        Proxy text-generation requests to AI Horde's async API.
-        Browser can't call Horde directly (CORS), so we relay.
-        Returns KoboldAI v1-compatible JSON: {"results": [{"text": "..."}]}
-        """
-        prompt = data.get("prompt", "")
-        if not prompt:
-            return self.end_json(400, {"error": "prompt is required"})
-
-        print("  [Horde] \u26a0 PRIVACY WARNING: Sending prompt to AI Horde "
-              "(visible to volunteer workers)")
-
-        # Build Horde request payload
-        api_key = HORDE_API_KEY or HORDE_ANONYMOUS_KEY
-        params = {
-            "n": 1,
-            "max_length": data.get("max_length", 200),
-            "max_context_length": data.get("max_context_length", 2048),
-            "temperature": data.get("temperature", 0.7),
-            "top_p": data.get("top_p", 0.9),
-            "top_k": data.get("top_k", 0),
-            "rep_pen": data.get("rep_pen", 1.1),
-        }
-        if data.get("stop_sequence"):
-            params["stop_sequence"] = data["stop_sequence"]
-
-        horde_payload = {
-            "prompt": prompt,
-            "params": params,
-            "trusted_workers": False,
-            "slow_workers": True,
-        }
-        if HORDE_MODEL:
-            horde_payload["models"] = [HORDE_MODEL]
-
-        horde_url = DEFAULT_HORDE_URL.rstrip("/")
-        headers = {
-            "Content-Type": "application/json",
-            "apikey": api_key,
-            "Client-Agent": f"WizardGuild:{VERSION}:spellcaster",
-        }
-
-        # ── Step 1: Submit async request ──────────────────────────────
-        try:
-            submit_url = f"{horde_url}/generate/text/async"
-            req_data = json.dumps(horde_payload).encode("utf-8")
-            req = urllib.request.Request(submit_url, data=req_data, headers=headers)
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
-            request_id = result.get("id")
-            if not request_id:
-                return self.end_json(502, {
-                    "error": f"Horde returned no request ID: {json.dumps(result)}"
-                })
-            print(f"  [Horde] Submitted request {request_id}")
-        except urllib.error.HTTPError as e:
-            err_body = e.read().decode("utf-8", errors="replace")
-            print(f"  [Horde] Submit error {e.code}: {err_body}")
-            return self.end_json(e.code, {
-                "error": f"Horde submit failed ({e.code}): {err_body}"
-            })
-        except Exception as e:
-            print(f"  [Horde] Submit exception: {e}")
-            return self.end_json(502, {"error": f"Horde unreachable: {e}"})
-
-        # ── Step 2: Poll for completion ───────────────────────────────
-        status_url = f"{horde_url}/generate/text/status/{request_id}"
-        max_polls = 120          # 120 × 2s = 4 minutes max wait
-        for attempt in range(max_polls):
-            time.sleep(2)
-            try:
-                req = urllib.request.Request(status_url, headers={
-                    "Client-Agent": f"WizardGuild:{VERSION}:spellcaster",
-                })
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    status = json.loads(resp.read().decode("utf-8"))
-            except Exception as e:
-                print(f"  [Horde] Poll error (attempt {attempt}): {e}")
-                continue
-
-            done = status.get("done", False)
-            faulted = status.get("faulted", False)
-            wait_time = status.get("wait_time", "?")
-            queue_pos = status.get("queue_position", "?")
-
-            if faulted:
-                print(f"  [Horde] Request {request_id} faulted")
-                return self.end_json(502, {
-                    "error": "Horde generation faulted (worker error)"
-                })
-
-            if done:
-                generations = status.get("generations", [])
-                if not generations:
-                    return self.end_json(502, {
-                        "error": "Horde returned done but no generations"
-                    })
-                text = generations[0].get("text", "")
-                model_used = generations[0].get("model", "unknown")
-                print(f"  [Horde] Done! Model: {model_used}, "
-                      f"length: {len(text)} chars")
-                # Return KoboldAI v1-compatible format
-                return self.end_json(200, {
-                    "results": [{"text": text}]
-                })
-
-            if attempt % 5 == 0:
-                print(f"  [Horde] Waiting... queue={queue_pos}, "
-                      f"eta={wait_time}s (poll {attempt}/{max_polls})")
-
-        # Timed out
-        print(f"  [Horde] Request {request_id} timed out after {max_polls*2}s")
-        return self.end_json(504, {
-            "error": f"Horde generation timed out after {max_polls*2}s"
-        })
-
-    def do_OPTIONS(self):
-        """Handle CORS preflight requests."""
-        self.send_response(204)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        self.end_headers()
-
-    def translate_path(self, path):
-        root = os.path.dirname(os.path.abspath(__file__))
-        path = path.split('?', 1)[0]
-        path = path.split('#', 1)[0]
-        if path.startswith('/'):
-            path = path[1:]
-        return os.path.join(root, path)
-
-    def log_message(self, format, *args):
-        """Quieter logging — skip noisy static asset requests."""
-        msg = format % args
-        if '/static/' not in msg and '/api/avatar/' not in msg:
-            print(f"  {msg}")
-
-
-if __name__ == "__main__":
-    print(f"Starting The Wizard Guild on port {PORT}...")
-    httpd = HTTPServer(('0.0.0.0', PORT), GuildHandler)
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    httpd.server_close()
+    # ════════════

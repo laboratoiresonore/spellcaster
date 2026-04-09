@@ -2325,13 +2325,15 @@
       "archs": [
         "sd15"
       ],
-      "purpose": "",
-      "tags": [],
+      "purpose": "character/concept design",
+      "tags": [
+        "character"
+      ],
       "user_desc": "",
-      "source": "discovered",
-      "civitai_name": "",
-      "civitai_url": "",
-      "description": ""
+      "source": "civitai",
+      "civitai_name": "2B",
+      "civitai_url": "https://civitai.com/models/2173971",
+      "description": "just stands there"
     },
     "Z-Image-Turbo\\Effect\\93PXB5SENBFN8NEYSRYZA1DVX0-Chrome skin.safetensors": {
       "archs": [
