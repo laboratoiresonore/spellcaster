@@ -2004,19 +2004,153 @@ def _detect_wan_preset(comfy_url):
 # Maps char_id → {prompt_id, status, result_url, error}
 # _ANIM_QUEUE is loaded from .guild_state/ in the persistence section above
 _WAN_PRESET_CACHE = None       # Cache so we only detect once per URL
-_WAN_PRESET_CACHE_URL = None   # URL that was used for cached detection
+_WAN_PRESET_CACHE_URL = None
+_LTX_PRESET_CACHE = None
+_LTX_PRESET_CACHE_URL = None
 
 
 def _get_wan_preset(comfy_url):
-    """Get cached WAN preset, detecting once per ComfyUI URL.
-
-    Re-detects if the URL changed (e.g., corrected from localhost to remote).
-    """
+    """Get cached WAN preset, detecting once per ComfyUI URL."""
     global _WAN_PRESET_CACHE, _WAN_PRESET_CACHE_URL
     if _WAN_PRESET_CACHE is None or _WAN_PRESET_CACHE_URL != comfy_url:
         _WAN_PRESET_CACHE = _detect_wan_preset(comfy_url) or False
         _WAN_PRESET_CACHE_URL = comfy_url
     return _WAN_PRESET_CACHE if _WAN_PRESET_CACHE else None
+
+
+def _detect_ltx_preset(comfy_url):
+    """Auto-detect LTX 2.3 video models on ComfyUI and build a preset.
+
+    Returns an LTX preset dict or None if LTX models aren't available.
+    """
+    gguf_models = []
+    try:
+        url = f"{comfy_url}/object_info/UnetLoaderGGUF"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            choices = (data.get("UnetLoaderGGUF", {})
+                           .get("input", {}).get("required", {})
+                           .get("unet_name", []))
+            if choices and isinstance(choices, list) and choices[0]:
+                gguf_models = choices[0]
+    except Exception:
+        return None
+
+    # Find LTX UNET
+    ltx_unet = None
+    for m in gguf_models:
+        ml = m.lower()
+        if "ltx" in ml and ("2.3" in ml or "22b" in ml or "13b" in ml):
+            ltx_unet = m
+            break
+
+    if not ltx_unet:
+        return None
+
+    # Auto-detect text encoder (Gemma)
+    text_encoder = None
+    try:
+        url = f"{comfy_url}/object_info/LTXAVTextEncoderLoader"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            choices = (data.get("LTXAVTextEncoderLoader", {})
+                           .get("input", {}).get("required", {})
+                           .get("text_encoder_name", []))
+            if choices and isinstance(choices, list) and choices[0]:
+                for c in choices[0]:
+                    if "gemma" in c.lower():
+                        text_encoder = c
+                        break
+    except Exception:
+        pass
+
+    # Auto-detect embeddings connector
+    embeddings_connector = None
+    try:
+        # Same node, different input
+        url = f"{comfy_url}/object_info/LTXAVTextEncoderLoader"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            choices = (data.get("LTXAVTextEncoderLoader", {})
+                           .get("input", {}).get("required", {})
+                           .get("embeddings_connector_name", []))
+            if choices and isinstance(choices, list) and choices[0]:
+                for c in choices[0]:
+                    if "ltx" in c.lower() and "connector" in c.lower():
+                        embeddings_connector = c
+                        break
+    except Exception:
+        pass
+
+    # Auto-detect LTX VAE
+    ltx_vae = None
+    try:
+        url = f"{comfy_url}/object_info/VAELoader"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            choices = (data.get("VAELoader", {})
+                           .get("input", {}).get("required", {})
+                           .get("vae_name", []))
+            if choices and isinstance(choices, list) and choices[0]:
+                for v in choices[0]:
+                    if "ltx" in v.lower() and "video" in v.lower() and "vae" in v.lower():
+                        ltx_vae = v
+                        break
+    except Exception:
+        pass
+
+    if not text_encoder or not ltx_vae:
+        print(f"  [Guild] LTX model found ({ltx_unet}) but missing "
+              f"text_encoder ({text_encoder}) or VAE ({ltx_vae})")
+        return None
+
+    # Auto-detect distilled LoRA
+    distilled_lora = None
+    try:
+        url = f"{comfy_url}/object_info/LoraLoaderModelOnly"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            choices = (data.get("LoraLoaderModelOnly", {})
+                           .get("input", {}).get("required", {})
+                           .get("lora_name", []))
+            if choices and isinstance(choices, list) and choices[0]:
+                for l in choices[0]:
+                    ll = l.lower()
+                    if "ltx" in ll and "distill" in ll:
+                        distilled_lora = l
+                        break
+    except Exception:
+        pass
+
+    preset = {
+        "unet": ltx_unet,
+        "text_encoder": text_encoder,
+        "embeddings_connector": embeddings_connector or "",
+        "vae": ltx_vae,
+        "steps": 30,
+        "cfg": 4.0,
+        "stg": 1.0,
+        "rescale": 0.7,
+    }
+    if distilled_lora:
+        preset["distilled_lora"] = distilled_lora
+
+    print(f"  [Guild] LTX preset built: unet={ltx_unet}")
+    return preset
+
+
+def _get_ltx_preset(comfy_url):
+    """Get cached LTX preset, detecting once per ComfyUI URL."""
+    global _LTX_PRESET_CACHE, _LTX_PRESET_CACHE_URL
+    if _LTX_PRESET_CACHE is None or _LTX_PRESET_CACHE_URL != comfy_url:
+        _LTX_PRESET_CACHE = _detect_ltx_preset(comfy_url) or False
+        _LTX_PRESET_CACHE_URL = comfy_url
+    return _LTX_PRESET_CACHE if _LTX_PRESET_CACHE else None
 
 
 def _extract_comfyui_filename(image_url):
@@ -2040,45 +2174,75 @@ def _extract_comfyui_filename(image_url):
 
 
 def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
-    """Queue a WAN animated avatar job to ComfyUI (non-blocking).
+    """Queue an animated avatar job to ComfyUI (non-blocking).
 
-    Returns: {queued: True, prompt_id} or {queued: False, reason: ...}
+    Tries WAN first (image-to-video, best quality for portraits).
+    Falls back to LTX (text+image-to-video) if WAN models aren't available.
+
+    Returns: {queued: True, prompt_id, engine: "wan"|"ltx"} or {queued: False, reason: ...}
     """
     if not BUILTIN_AVAILABLE or _workflows_v2 is None:
         return {"queued": False, "reason": "spellcaster not available"}
 
-    wan_preset = _get_wan_preset(comfy_url)
-    if not wan_preset:
-        return {"queued": False, "reason": "WAN video models not found on ComfyUI"}
-
-    build_wan = getattr(_workflows_v2, 'build_wan_video', None)
-    if build_wan is None:
-        return {"queued": False, "reason": "build_wan_video not available"}
-
     image_filename = _extract_comfyui_filename(image_url)
     seed = random.randint(1, 1000000000)
+    engine = None
+    workflow = None
 
-    try:
-        workflow = build_wan(
-            image_filename=image_filename,
-            preset=wan_preset,
-            prompt_text=f"subtle magical animation, {prompt_text}, gentle swaying, "
-                        "mystical particles, flickering candlelight, living portrait",
-            negative_text="text, watermark, blurry, deformed",
-            seed=seed,
-            width=512, height=512,
-            length=33,         # ~2 sec at 16fps
-            turbo=True,
-            loop=True,
-            rtx_scale=1.0,
-            interpolate=False,
-            face_swap=False,
-            save_raw=False,
-            fps=16,
-            pingpong=True,
-        )
-    except Exception as e:
-        return {"queued": False, "reason": f"workflow build failed: {e}"}
+    # Strategy 1: WAN (preferred — image-to-video, best portrait quality)
+    wan_preset = _get_wan_preset(comfy_url)
+    if wan_preset:
+        build_wan = getattr(_workflows_v2, 'build_wan_video', None)
+        if build_wan:
+            try:
+                workflow = build_wan(
+                    image_filename=image_filename,
+                    preset=wan_preset,
+                    prompt_text=f"subtle magical animation, {prompt_text}, gentle swaying, "
+                                "mystical particles, flickering candlelight, living portrait",
+                    negative_text="text, watermark, blurry, deformed",
+                    seed=seed,
+                    width=512, height=512,
+                    length=33,         # ~2 sec at 16fps
+                    turbo=True,
+                    loop=True,
+                    rtx_scale=1.0,
+                    interpolate=False,
+                    face_swap=False,
+                    save_raw=False,
+                    fps=16,
+                    pingpong=True,
+                )
+                engine = "wan"
+            except Exception as e:
+                print(f"  [Guild] WAN workflow build failed, trying LTX: {e}")
+
+    # Strategy 2: LTX (fallback — image-to-video via i2v mode)
+    if workflow is None:
+        ltx_preset = _get_ltx_preset(comfy_url)
+        if ltx_preset:
+            build_ltx = getattr(_workflows_v2, 'build_ltx_video', None)
+            if build_ltx:
+                try:
+                    workflow = build_ltx(
+                        preset=ltx_preset,
+                        prompt_text=f"subtle magical animation, {prompt_text}, gentle swaying, "
+                                    "mystical particles, flickering light, living portrait",
+                        seed=seed,
+                        width=512, height=512,
+                        num_frames=25,     # 1 sec at 25fps
+                        fps=25,
+                        image_filename=image_filename,
+                        i2v_strength=0.85,
+                        pingpong=True,
+                    )
+                    engine = "ltx"
+                except Exception as e:
+                    print(f"  [Guild] LTX workflow build failed: {e}")
+
+    if workflow is None:
+        return {"queued": False,
+                "reason": "No video models found (need WAN or LTX on ComfyUI)"}
 
     # Submit to ComfyUI queue (non-blocking — just POST and get prompt_id)
     try:
@@ -2104,8 +2268,9 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
         "_workflow": workflow,
     }
     _save_anim_queue()
-    print(f"  [Guild] Queued animated avatar for {char_id} (prompt_id={prompt_id})")
-    return {"queued": True, "prompt_id": prompt_id}
+    print(f"  [Guild] Queued animated avatar for {char_id} via {engine.upper()} "
+          f"(prompt_id={prompt_id})")
+    return {"queued": True, "prompt_id": prompt_id, "engine": engine}
 
 
 def _poll_animated_avatars(comfy_url):
@@ -2829,7 +2994,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
                         arch_key = "illustrious"
                     else:
                         arch_key = "sd15"
-                    preset = _build_optimized_preset(ckpt, arch_key, 1024, 576)
+                    preset = _build_optimized_preset(ckpt, arch_key, bg_width, bg_height)
 
                     if BUILTIN_AVAILABLE and get_arch:
                         arch = get_arch(arch_key)
@@ -2851,7 +3016,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
                         return self.end_json(200, {"bg_url": result["urls"][0]})
                     raise Exception("No image returned from ComfyUI.")
                 else:
-                    img_url = _dispatch_txt2img(prompt_text, negative, 1024, 576, comfy,
+                    img_url = _dispatch_txt2img(prompt_text, negative, bg_width, bg_height, comfy,
                                                skip_loras=True)
                     return self.end_json(200, {"bg_url": img_url})
             except Exception as e:
@@ -2859,6 +3024,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
 
         # -- /api/batch_generate --
         elif self.path == '/api/batch_generate':
+            batch_bg_w = max(512, min(int(data.get('bg_width', 1024)), 2048))
+            batch_bg_h = max(512, min(int(data.get('bg_height', 576)), 2048))
             def _run_batch():
                 for char in CHARS_CACHE:
                     try:
@@ -2876,7 +3043,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 try:
                     print("  [Batch] Generating tavern background...")
                     bg_prompt = _build_background_prompt()
-                    bg_url = _dispatch_txt2img(bg_prompt, "text, watermark, blurry, people", 1024, 576, comfy,
+                    bg_url = _dispatch_txt2img(bg_prompt, "text, watermark, blurry, people", batch_bg_w, batch_bg_h, comfy,
                                                skip_loras=True)
                     _BATCH_RESULTS.append({"id": "_background", "bg_url": bg_url, "status": "ok"})
                     print("  [Batch] Background done")
