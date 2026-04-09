@@ -140,9 +140,10 @@ def build(target_platform: str, onedir: bool = False):
     elif target_platform == "linux":
         print("Building Linux installer…")
         # No icon flag for Linux — .ico/.icns are not used by the OS.
+        # Use --console (NOT --windowed) — the installer needs terminal input.
         cmd = common + [
             "--onefile" if not onedir else "--onedir",
-            "--windowed",                           # still suppresses any console attachment
+            "--console",
             "--name", "spellcaster-installer",
             "install.py",
         ]
