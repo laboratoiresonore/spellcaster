@@ -81,6 +81,7 @@ _NSFW_WIZARD_PERSONA = ""
 _NSFW_NAME_GEN_PROMPT = ""
 _NSFW_META_SYSTEM_ADDENDUM = ""
 _NSFW_ARCH_PROFILES = {}
+BG_STYLES_NSFW = {}   # Populated by build_nsfw.py or runtime injection
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -408,6 +409,133 @@ STUDIO_CHARACTERS = [
             "- Offer presets first (Quick preview / Standard / High quality / Cinematic)\n"
             "- Collect remaining params conversationally\n"
             "- Output JSON: {\"build_fn\": \"...\", \"params\": {...}}\n"
+        ),
+    },
+    {
+        "id": "studio_cinematic",
+        "type": "studio",
+        "name": "Cinematic",
+        "subtext": "Director's Chair — Multi-Step Video Sequences",
+        "color1": "hsl(20, 85%, 40%)",
+        "color2": "hsl(45, 100%, 55%)",
+        "archetype": "a legendary film director in a gilded chair, a clapperboard crackling with arcane energy, golden reels of film floating around them",
+        "build_fns": [],
+        "system_prompt": (
+            "You are Cinematic, the Guild's master director of multi-step video sequences.\n\n"
+            "You orchestrate the Director's Chair — a pipeline that chains multiple WAN I2V\n"
+            "video steps together with face re-injection between each step to maintain\n"
+            "character identity across scenes.\n\n"
+            "PIPELINE OVERVIEW:\n"
+            "  1. User provides a face reference image (or saved face model)\n"
+            "  2. For each step: generate a video clip via build_wan_video\n"
+            "  3. Between steps: extract the last frame, re-inject the actor's face via ReActor\n"
+            "  4. Feed the re-injected frame as input to the next step\n"
+            "  5. Assemble all clips into a final video\n\n"
+            "MODES PER STEP:\n"
+            "  - i2v: Image-to-Video (animate a still frame)\n"
+            "  - flf: First+Last Frame (transition between two keyframes)\n"
+            "  - t2v: Text-to-Video (generate from text, then face swap)\n\n"
+            "SCRIPT PRESETS (suggest these first!):\n\n"
+            "-- SOLO SCRIPTS (1 actor) --\n"
+            "  - Dramatic Reveal (3 steps): wide shot -> medium -> close-up\n"
+            "  - Living Portrait (2 steps): subtle breathing -> gentle smile\n"
+            "  - Walk Cycle (3 steps): approach -> walk past -> exit\n"
+            "  - Emotional Arc (4 steps): neutral -> concern -> realization -> resolve\n"
+            "  - Action Sequence (3 steps): setup -> action -> aftermath\n"
+            "  - Interview/Monologue (3 steps): establish -> speak -> react\n\n"
+            "-- DUO SCRIPTS (2 actors) --\n"
+            "  - Conversation (3 steps): establish -> Actor A speaks -> Actor B responds\n"
+            "  - Dramatic Confrontation (4 steps): tension -> exchange -> climax -> resolution\n"
+            "  - Meet Cute (3 steps): separate -> notice -> approach\n"
+            "  - Dance/Movement (3 steps): begin -> flow -> finale\n\n"
+            "-- TRIO SCRIPTS (3 actors) --\n"
+            "  - Group Conversation (3 steps): establish -> interaction -> reaction\n\n"
+            "PARAMETERS PER STEP:\n"
+            "  - mode: i2v / flf / t2v\n"
+            "  - prompt: motion/scene description\n"
+            "  - negative: things to avoid\n"
+            "  - length: frames (33=2s, 81=5s at 16fps)\n"
+            "  - shift: noise schedule (5-8, higher=more motion)\n"
+            "  - cfg: guidance (1.0 typical for WAN)\n\n"
+            "PROTOCOL:\n"
+            "1. Ask: solo, duo, or trio?\n"
+            "2. Ask for face reference(s) (filename or 'use current image')\n"
+            "3. Offer script presets — most users should pick one\n"
+            "4. If manual: ask number of steps, mode per step, prompt per step\n"
+            "5. Confirm the full sequence\n"
+            "6. Output a SEQUENCE of JSON blocks, one per step:\n"
+            "```json\n"
+            "{\"director_sequence\": [\n"
+            "  {\"step\": 1, \"build_fn\": \"build_wan_video\", \"params\": {\"prompt_text\": \"...\", ...}},\n"
+            "  {\"step\": 2, \"build_fn\": \"build_wan_video\", \"params\": {\"prompt_text\": \"...\", ...}}\n"
+            "], \"face_models\": [\"actor_a.safetensors\"], \"reinject_face\": true}\n"
+            "```\n\n"
+            "IMPORTANT: Each step's image_filename will be auto-filled by the system\n"
+            "(last frame of previous step with face re-injected). User only provides\n"
+            "the face reference and the prompts.\n"
+        ),
+    },
+    {
+        "id": "studio_studiocraft",
+        "type": "studio",
+        "name": "Studiocraft",
+        "subtext": "Magic Studios — Full Character Pipeline",
+        "color1": "hsl(300, 75%, 40%)",
+        "color2": "hsl(330, 100%, 60%)",
+        "archetype": "an ancient stage manager surrounded by floating costume racks, backdrop paintings, and golden casting mirrors",
+        "build_fns": [],
+        "system_prompt": (
+            "You are Studiocraft, the Guild's master of the full character production pipeline.\n\n"
+            "You guide users through Magic Studios — a 5-act pipeline that turns a single\n"
+            "photo into a fully composited, animated scene with consistent character identity.\n\n"
+            "THE 5 ACTS (in order):\n\n"
+            "ACT 1 — CASTING POLAROIDS (build_photobooth)\n"
+            "  Create a reusable face model from any photo.\n"
+            "  Input: a face photo (selfie, headshot, any clear face)\n"
+            "  Process: Klein headshot generation -> ReActor face swap -> CodeFormer restore\n"
+            "  Output: clean headshot + saved face model file\n"
+            "  Key params: ref_filename, prompt_text (describe the person), seed\n"
+            "  Presets: CodeFormer Sharp / GPEN-2048 / CodeFormer Faithful\n\n"
+            "ACT 2 — BODY DOUBLE (build_faceswap + build_rembg)\n"
+            "  Generate full-body references with the actor's face.\n"
+            "  Input: face model from Act 1 + body type description\n"
+            "  Process: txt2img body -> face swap onto body -> remove background\n"
+            "  Output: transparent PNG full-body character\n"
+            "  Body types: athletic, average, stocky, slim, curvy, muscular, petite\n\n"
+            "ACT 3 — WARDROBE DEPARTMENT (build_klein_inpaint)\n"
+            "  Change the character's outfit using AI inpainting.\n"
+            "  Input: body reference from Act 2 + outfit description\n"
+            "  Process: mask clothing area -> Klein inpaint with outfit prompt\n"
+            "  Output: character in new outfit\n"
+            "  40 outfit presets: formal, casual, fantasy, sci-fi, historical, uniforms, costumes\n\n"
+            "ACT 4 — SET DESIGN (build_klein_blend + build_klein_scene_img2img)\n"
+            "  Generate a background and composite the actor into it.\n"
+            "  Input: dressed character from Act 3 + scene description\n"
+            "  Process: txt2img background -> composite actor -> Klein harmonize\n"
+            "  Output: composited scene with matched lighting/shadows\n"
+            "  Harmonization: low denoise (0.25-0.35) preserves both elements\n\n"
+            "ACT 5 — DIRECTOR'S CHAIR (build_wan_video)\n"
+            "  Animate the composited scene as video.\n"
+            "  Input: composited scene from Act 4\n"
+            "  Process: WAN I2V with face re-injection between steps\n"
+            "  Output: video clip(s) with consistent character\n"
+            "  (Delegate detailed video direction to the Cinematic wizard)\n\n"
+            "PROTOCOL:\n"
+            "1. Ask what the user wants to create (or which Act to start from)\n"
+            "2. Most users start from Act 1. Guide them through each act sequentially.\n"
+            "3. After each act, show the result and ask if they want to continue to the next.\n"
+            "4. Users can skip acts (e.g., already have a face model -> start at Act 2)\n"
+            "5. For each act, output JSON:\n"
+            "```json\n"
+            "{\"build_fn\": \"build_photobooth\", \"params\": {\"ref_filename\": \"...\", ...},\n"
+            " \"studio_act\": 1, \"studio_next\": \"body_double\"}\n"
+            "```\n"
+            "The studio_act and studio_next fields tell the system to continue the pipeline.\n\n"
+            "QUICK START:\n"
+            "- If user says 'I have a photo of someone' -> start Act 1\n"
+            "- If user says 'I have a face model' -> start Act 2\n"
+            "- If user says 'I have a character ready' -> start Act 3 or 4\n"
+            "- If user says 'just make a video' -> delegate to Videomancer\n"
         ),
     },
 ]
@@ -760,9 +888,30 @@ def fetch_all_characters(comfy_url=None):
                                            'nmkd', 'swinir', 'realesrgan']):
             continue
 
-        # Skip video-specific models already covered by model_family wizards
+        # Skip video-specific models (covered by model_family wizards)
         if any(k in mname_lower for k in ['ltx', 'wan', 'seedvr', 'svd',
-                                           'animate', 'rife']):
+                                           'animate', 'rife',
+                                           'hunyuan_video', 'hunyuan-video',
+                                           'cogvideo', 'mochi']):
+            continue
+
+        # Skip non-generative models that ComfyUI lists as checkpoints/UNETs
+        # but cannot do txt2img (upscalers, refiners, lighting, 3D, decoders)
+        if any(k in mname_lower for k in [
+            'supir',           # SUPIR upscaler
+            'iclight',         # IC-Light relighting model
+            'refiner',         # SDXL refiner (not standalone gen)
+            'hunyuan3d',       # HunYuan 3D model
+            'anima-preview',   # animation preview model
+            'kontext',         # Flux Kontext (image editing, not txt2img)
+            'lumina_',         # Lumina (different arch, not standard txt2img)
+            'z_image_de_turbo', 'z_image_turbo',  # ZIT turbo decoders
+            'depth_anything',  # depth estimation
+            'segment_anything', 'sam_',  # segmentation models
+            'grounding',       # grounding models
+            'photomaker',      # PhotoMaker (identity, not txt2img)
+            'omnigen',         # OmniGen (multi-modal, not standard txt2img)
+        ]):
             continue
 
         # Generate a stable ID from the model name
@@ -2382,6 +2531,24 @@ def _anim_poll_background():
 _ANIM_POLL_THREAD = None
 
 
+def _avatar_resolution(arch_key):
+    """Return (width, height) for avatar generation, optimized per architecture.
+
+    SD1.5 is trained at 512, so 512×512 is correct.
+    SDXL/Illustrious/Pony are trained at 1024, so we use 768×768 for a good
+    balance of quality vs speed (full 1024 is overkill for avatar thumbnails).
+    Flux models are trained at 1024 and degrade badly at 512, so 768×768.
+    """
+    if arch_key in ("sdxl", "illustrious", "pony", "zit"):
+        return 768, 768
+    elif arch_key in ("flux1dev", "flux2klein"):
+        return 768, 768
+    elif arch_key == "sd15":
+        return 512, 512
+    # Unknown arch / None (auto-detect will pick best model)
+    return 768, 768
+
+
 def _dispatch_txt2img(prompt, negative, width, height, comfy_url,
                       model_name=None, model_arch=None, skip_loras=False):
     """Generate a txt2img via ComfyUI.
@@ -2898,11 +3065,13 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 use_model = None
                 use_arch = None
 
+            # Use arch-appropriate resolution for best quality
+            av_w, av_h = _avatar_resolution(use_arch)
+
             try:
                 img_url = _dispatch_txt2img(
-                    prompt_text, negative, 512, 512, comfy,
-                    model_name=use_model, model_arch=use_arch,
-                    skip_loras=True)
+                    prompt_text, negative, av_w, av_h, comfy,
+                    model_name=use_model, model_arch=use_arch)
                 _GENERATED_ASSETS.setdefault(char_id, {})["avatar_url"] = img_url
                 _save_generated_assets()
                 return self.end_json(200, {"avatar_url": img_url})
@@ -2958,7 +3127,6 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "garden": "ethereal crystal garden, floating prismatic crystals, light refracting into rainbows, crystalline flowers, reflective pools, amethyst and quartz formations, magical mist, serene and otherworldly",
             }
             # ── NSFW_BG_STYLES_INJECT_ANCHOR ── (do not remove — build_nsfw.py marker)
-            BG_STYLES_NSFW = {}
             BG_STYLES = BG_STYLES_NSFW if (NSFW_MODE and BG_STYLES_NSFW) else BG_STYLES_SFW
             style = data.get('style', 'tavern')
             custom_prompt = data.get('custom_prompt', '')
@@ -2982,18 +3150,10 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 # Use specific model if requested
                 if model_name and model_name != 'auto':
                     ckpt = model_name
-                    # Detect arch from model name
-                    ml = ckpt.lower()
-                    if "klein" in ml:
-                        arch_key = "flux2klein"
-                    elif "flux" in ml:
-                        arch_key = "flux1dev"
-                    elif "xl" in ml:
-                        arch_key = "sdxl"
-                    elif "illu" in ml:
-                        arch_key = "illustrious"
-                    else:
-                        arch_key = "sd15"
+                    # Use centralised arch detection from guild_common
+                    arch_key = classify_unet_model(ckpt)
+                    if arch_key == "unknown":
+                        arch_key = classify_ckpt_model(ckpt)
                     preset = _build_optimized_preset(ckpt, arch_key, bg_width, bg_height)
 
                     if BUILTIN_AVAILABLE and get_arch:
@@ -3032,8 +3192,22 @@ class GuildHandler(SimpleHTTPRequestHandler):
                         prompt_text = _build_avatar_prompt(char)
                         negative = "text, watermark, blurry, deformed, ugly, low quality, frame, border"
                         print(f"  [Batch] Generating avatar for: {char.get('name', char['id'])}")
-                        img_url = _dispatch_txt2img(prompt_text, negative, 512, 512, comfy,
-                                                   skip_loras=True)
+
+                        # Per-model wizards use their OWN model (matches avatar_generate)
+                        own_model = char.get("model_name")
+                        own_arch = char.get("model_arch")
+                        IMAGE_ARCHS = {"sdxl", "sd15", "illustrious", "pony",
+                                       "flux1dev", "flux2klein"}
+                        if own_model and own_arch in IMAGE_ARCHS:
+                            use_model, use_arch = own_model, own_arch
+                        else:
+                            use_model, use_arch = None, None
+
+                        # Use arch-appropriate resolution
+                        av_w, av_h = _avatar_resolution(use_arch)
+
+                        img_url = _dispatch_txt2img(prompt_text, negative, av_w, av_h, comfy,
+                                                   model_name=use_model, model_arch=use_arch)
                         _BATCH_RESULTS.append({"id": char['id'], "avatar_url": img_url, "status": "ok"})
                         print(f"  [Batch] Done: {char.get('name', char['id'])} ({len(_BATCH_RESULTS)}/{_BATCH_STATE['total']})")
                     except Exception as e:
@@ -3211,11 +3385,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 custom_studio["default_model"] = model_name
                 custom_studio["default_arch"] = model_arch
                 # Update system prompt to mention the specific model
-                custom_studio["system_prompt"] = (
-                    ref_studio["system_prompt"]
-                    + f"\nDEFAULT MODEL: When building presets, always use "
-                    f"checkpoint/UNET '{model_name}' (arch: {model_arch}) "
-                    f"unless the user explicitly requests a different model.\n"
+                custom_studio["system_prompt"] = ref_studio.get("system_prompt", "").replace(
+                    "{MODEL}", model_name
                 )
                 _STUDIO_BY_ID[char_id] = custom_studio
 
@@ -3268,7 +3439,6 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 if lora_name in _LORA_REGISTRY:
                     _LORA_REGISTRY[lora_name]["user_desc"] = desc
                     _LORA_REGISTRY[lora_name]["source"] = "user"
-                    # Also set purpose from user description if not already set
                     if not _LORA_REGISTRY[lora_name].get("purpose"):
                         _LORA_REGISTRY[lora_name]["purpose"] = desc
                     updated += 1
@@ -3307,7 +3477,6 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     pass
 
                 # Also sync to GIMP plugin config if it exists
-                # GIMP uses "output_cleanup": "delete" (privacy on) or "copy" (off)
                 gimp_cfg_candidates = []
                 if sys.platform == 'win32':
                     appdata = os.environ.get('APPDATA', '')
@@ -3351,9 +3520,75 @@ class GuildHandler(SimpleHTTPRequestHandler):
             keep_core_assets = data.get('keep_core_assets', True)
 
             # "Core" = studio characters only (Imaginus, Transmutex, etc.)
-            # model_wizard (LTX2, WAN, etc.) and comfyui_model are all re-detected
             PRESERVED_TYPE = 'studio'
 
             old_total = len(CHARS_CACHE)
             old_nonstudio = sum(1 for c in CHARS_CACHE
-            
+                                if c.get('type') != PRESERVED_TYPE)
+
+            # Remove non-core wizards
+            CHARS_CACHE[:] = [c for c in CHARS_CACHE
+                              if c.get('type') == PRESERVED_TYPE]
+
+            # Clear custom wizard persistence
+            cw_path = os.path.join(_THIS_DIR, "custom_wizards.json")
+            if os.path.isfile(cw_path):
+                try:
+                    with open(cw_path, 'w', encoding='utf-8') as f:
+                        json.dump([], f)
+                except Exception:
+                    pass
+
+            # Reset studio lookup to only core entries
+            _STUDIO_BY_ID.clear()
+            for sc in STUDIO_CHARACTERS:
+                _STUDIO_BY_ID[sc["id"]] = sc
+
+            # Re-detect models from ComfyUI
+            comfy = data.get('comfy_url', COMFYUI_URL)
+            threading.Thread(
+                target=_server_init,
+                args=(comfy,),
+                daemon=True
+            ).start()
+
+            return self.end_json(200, {
+                "status": "reinitializing",
+                "removed": old_nonstudio,
+                "kept_core": old_total - old_nonstudio,
+            })
+
+        else:
+            return self.end_json(404, {"error": f"Unknown endpoint: {self.path}"})
+
+    def do_OPTIONS(self):
+        """Handle CORS preflight requests."""
+        self.send_response(204)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
+
+    def translate_path(self, path):
+        root = os.path.dirname(os.path.abspath(__file__))
+        path = path.split('?', 1)[0]
+        path = path.split('#', 1)[0]
+        if path.startswith('/'):
+            path = path[1:]
+        return os.path.join(root, path)
+
+    def log_message(self, format, *args):
+        """Quieter logging — skip noisy static asset requests."""
+        msg = format % args
+        if '/static/' not in msg and '/api/avatar/' not in msg:
+            print(f"  {msg}")
+
+
+if __name__ == "__main__":
+    print(f"Starting The Wizard Guild on port {PORT}...")
+    httpd = HTTPServer(('0.0.0.0', PORT), GuildHandler)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    httpd.server_close()
