@@ -27,7 +27,7 @@
     "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00096_.png&type=output"
   },
   "comfyui_A-Flux_flux-2-klein-base-4b-fp8_safetensors": {
-    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00097_.png&type=output"
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00123_.png&type=output"
   },
   "comfyui_Illustrious_sloppyMessyMix_sloppyMessyMixV1_safetensors": {
     "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00098_.png&type=output"
@@ -94,5 +94,8 @@
   },
   "studio_studiocraft": {
     "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00121_.png&type=output"
+  },
+  "comfyui_Chroma_Chroma1-HD-fp8_scaled_defaultloader_hybrid_large_rev2_safetensors": {
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00124_.png&type=output"
   }
 }

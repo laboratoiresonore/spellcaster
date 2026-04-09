@@ -89,7 +89,15 @@ def load_model_stack(nf, preset, node_id="1"):
     arch_key = preset.get("arch", "sdxl")
     arch = get_arch(arch_key)
 
-    if arch.loader == "unet_clip_vae":
+    # If the model is actually a checkpoint but the arch expects unet_clip_vae,
+    # fall back to CheckpointLoaderSimple (e.g. chroma2 merged checkpoint).
+    # The model_type field in preset overrides the architecture's default loader.
+    actual_loader = arch.loader
+    model_type = preset.get("model_type")
+    if model_type == "checkpoint" and actual_loader == "unet_clip_vae":
+        actual_loader = "checkpoint"
+
+    if actual_loader == "unet_clip_vae":
         # Flux / Klein — separate loaders
         unet_id = nf.unet_loader(preset["ckpt"], "default", node_id=node_id)
 
@@ -121,7 +129,7 @@ def load_model_stack(nf, preset, node_id="1"):
         return [unet_id, 0], [clip_id, 0], [vae_id, 0]
 
     else:
-        # Checkpoint-based (sd15, sdxl, zit, illustrious)
+        # Checkpoint-based (sd15, sdxl, zit, illustrious, or forced-checkpoint)
         ckpt_id = nf.checkpoint_loader(preset["ckpt"], node_id=node_id)
         return [ckpt_id, 0], [ckpt_id, 1], [ckpt_id, 2]
 

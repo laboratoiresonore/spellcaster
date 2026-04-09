@@ -2,539 +2,379 @@
   "registry": {
     "AuraFlow\\aura-pvc-2-_00010e_074520s.safetensors": {
       "archs": [
-        "sd15"
+        "auraflow"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "style"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "V67 Bioluminescence",
-      "civitai_url": "https://civitai.com/models/2517486",
-      "description": "V67 Bioluminescence LoRA for FLUXLiving Light, Neon DreamsTry my models: https://civitai.com/user/angelomaiota/modelsPremise: If you decide to use my model, I will give you 500 Yellow Buzz if your image is chosen for the cover of \"CIVITAI,\" even if used in combination with other models.R+ images wil..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\CTAI- Hand and foot details v1.0.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "concept"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "CTAI-Prefab house",
-      "civitai_url": "https://civitai.com/models/1002989",
-      "description": "CTAI Prefab house. A school bus has been converted into a unique home, located in the middle of a lush forest. The bus is black, with large windows that allow natural light to flood the interior. Above the bus is a mezzanine, creating additional living space and equipped with solar panels, demonstra..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\Detail\\Aesthetic texture enhancer.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "nintendo",
-        "the legend of zelda",
-        "princess zelda",
-        "style",
-        "artstyle",
-        "link",
-        "majora's mask",
-        "tloz",
-        "n64",
-        "nintendo 64"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Majora's Mask Artstyle [Illustrious] - v1.0",
-      "civitai_url": "https://civitai.com/models/2519057",
-      "description": "For duplicating the Majora's Mask official art styleSuggested tags:M4j0r4, anime coloring, (dark shading 1.4),bold lines, high contrast, dramatic shadows, rough textures, strong comic book aesthetic,Black outline, thick outline,Trained using HiRes images collected from: https://www.flickr.com/photos..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\Detail\\detailed skin pore style v2.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "eye detail enhancement",
-      "tags": [
-        "anime",
-        "character",
-        "school",
-        "alya",
-        "alya sometimes hides her feelings in russian",
-        "alisa mikhailovna kujou"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Alisa Mikhailovna Kujou - (Alya sometimes hides her feelings in russian)",
-      "civitai_url": "https://civitai.com/models/2523438",
-      "description": "Alisa Mikhailovna Kujou==[ Lora Prompt ]==alisa mikhailovna kujou, 1girl,long hair, silver hair, grey hair, ahoge, crossed bangs, hair between eyes, blue eyes, hair ribbon, red ribbon, sidelocks, beautiful detailed eyes, masterpiece, best quality, ultra detailed, anime coloring, highres, absurdres, ..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\Detail\\detailed_v2_flux_ntc.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "eye detail enhancement",
-      "tags": [
-        "anime",
-        "character",
-        "school",
-        "alya",
-        "alya sometimes hides her feelings in russian",
-        "alisa mikhailovna kujou"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Alisa Mikhailovna Kujou - (Alya sometimes hides her feelings in russian)",
-      "civitai_url": "https://civitai.com/models/2523438",
-      "description": "Alisa Mikhailovna Kujou==[ Lora Prompt ]==alisa mikhailovna kujou, 1girl,long hair, silver hair, grey hair, ahoge, crossed bangs, hair between eyes, blue eyes, hair ribbon, red ribbon, sidelocks, beautiful detailed eyes, masterpiece, best quality, ultra detailed, anime coloring, highres, absurdres, ..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\Detail\\freckles_flux_v1.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "character",
-        "iris",
-        "lolirock"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Iris (Lolirock)",
-      "civitai_url": "https://civitai.com/models/2527159",
-      "description": "Generates Iris from Lolirock"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\Detail\\skin texture style v5.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "character",
-        "blizzard",
-        "woman",
-        "overwatch",
-        "video game",
-        "dark skin"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Sierra (Overwatch) (Character) for Illustrious",
-      "civitai_url": "https://civitai.com/models/2528458",
-      "description": "Sierra from video game Overwatch.The model was based on the character's cinematic trailer."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\Flacs_Enhancer_v2.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "anime",
-        "style",
-        "2.5d"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Flac's 2.5D Anime [IL]",
-      "civitai_url": "https://civitai.com/models/1339600",
-      "description": "Prompting:Use ff-3da in your prompt.All example images generated with Hassaku V2 as the base model."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\NSFW\\Flux Klein - NSFW v2.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "general purpose",
-      "tags": [
-        "base model",
-        "flux"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "FoxyHair - FLUX LORA TRAINED",
-      "civitai_url": "https://civitai.com/models/2526565",
-      "description": "Girl with red hair in a yellow autumn jacket. You should use 'FoxyHair' to trigger the image generation. You can use this workflow for this lora"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\NSFW\\FluxSideboob.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\NSFW\\NSFW-klein.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "face/portrait enhancement",
-      "tags": [
-        "character",
-        "\u4eba\u7269\uff1a\u9ed1\u53d1\u957f\u53d1\u5e74\u8f7b\u5973\u6027 \u957f\u76f8\uff1a\u4e94\u5b98\u7cbe\u81f4\u7acb\u4f53\uff0c\u9ad8\u9f3b\u6881\uff0c\u957f\u7709 \u8eab\u6750\uff1a\u4e30\u6ee1\u66f2\u7ebf\uff0c\u524d\u51f8\u540e\u7fd8\uff0c\u7ec6\u8170 \u53d1\u578b\uff1a\u9ed1\u8272\u957f\u76f4\u53d1\uff0c\u4e2d\u5206\u62ab\u80a9 \u88c5\u626e\uff1a\u90fd\u5e02\u65f6\u5c1a\u6027\u611f\u98ce\u683c \u8863\u670d\uff1a\u9999\u69df\u8272\u7d27\u8eab\u540a\u5e26\u8fde\u8863\u88d9\uff0c\u9ed1\u8272\u8774\u8776\u5370\u82b1 \u88e4\u5b50/\u88d9\u5b50\uff1a\u65e0\u88e4\u88c5\uff0c\u9ad8\u5f00\u53c9\u8d85\u77ed\u88d9\u8bbe\u8ba1 \u978b\u5b50\uff1a\u9ed1\u8272\u5c16\u5934\u7ec6\u9ad8\u8ddf\u76ae\u978b \u4e1d\u889c\uff1a\u9ed1\u8272\u900f\u660e\u8fde\u88e4\u4e1d\u889c",
-        "person: young woman with long black hair face: defined facial features, high nose bridge, long eyebrows body shape: voluptuous curves, hourglass figure, slim waist hair style: long straight black hair, center part outfit theme: modern urban chic and sexy style clothing type: champagne tight spaghetti strap mini dress with black butterfly print pants / skirt: no pants, high slit mini skirt design shoes: black pointed toe stiletto heels stockings: black sheer pantyhose"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "NSFW Z-IMAGE Champagne Butterfly Print Spaghetti Strap Dress High Slit And Black Sheer Stockings",
-      "civitai_url": "https://civitai.com/models/2519958",
-      "description": "Z-IMAGEUsing this Lora will generate a fixed NSFW content\uff01 \ud83c\udfac\u2728This is suitable for the latest z-image turbo model.If this model is not available, it is recommended to use my online platform for generation to achieve the best results.This image depicts a theme of modern indoor fashion photography. A w..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\NSFW\\NSFW_Flux_Petite-000002.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "face/portrait enhancement",
-      "tags": [
-        "character",
-        "\u4eba\u7269\uff1a\u9ed1\u53d1\u957f\u53d1\u5e74\u8f7b\u5973\u6027 \u957f\u76f8\uff1a\u4e94\u5b98\u7cbe\u81f4\u7acb\u4f53\uff0c\u9ad8\u9f3b\u6881\uff0c\u957f\u7709 \u8eab\u6750\uff1a\u4e30\u6ee1\u66f2\u7ebf\uff0c\u524d\u51f8\u540e\u7fd8\uff0c\u7ec6\u8170 \u53d1\u578b\uff1a\u9ed1\u8272\u957f\u76f4\u53d1\uff0c\u4e2d\u5206\u62ab\u80a9 \u88c5\u626e\uff1a\u90fd\u5e02\u65f6\u5c1a\u6027\u611f\u98ce\u683c \u8863\u670d\uff1a\u9999\u69df\u8272\u7d27\u8eab\u540a\u5e26\u8fde\u8863\u88d9\uff0c\u9ed1\u8272\u8774\u8776\u5370\u82b1 \u88e4\u5b50/\u88d9\u5b50\uff1a\u65e0\u88e4\u88c5\uff0c\u9ad8\u5f00\u53c9\u8d85\u77ed\u88d9\u8bbe\u8ba1 \u978b\u5b50\uff1a\u9ed1\u8272\u5c16\u5934\u7ec6\u9ad8\u8ddf\u76ae\u978b \u4e1d\u889c\uff1a\u9ed1\u8272\u900f\u660e\u8fde\u88e4\u4e1d\u889c",
-        "person: young woman with long black hair face: defined facial features, high nose bridge, long eyebrows body shape: voluptuous curves, hourglass figure, slim waist hair style: long straight black hair, center part outfit theme: modern urban chic and sexy style clothing type: champagne tight spaghetti strap mini dress with black butterfly print pants / skirt: no pants, high slit mini skirt design shoes: black pointed toe stiletto heels stockings: black sheer pantyhose"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "NSFW Z-IMAGE Champagne Butterfly Print Spaghetti Strap Dress High Slit And Black Sheer Stockings",
-      "civitai_url": "https://civitai.com/models/2519958",
-      "description": "Z-IMAGEUsing this Lora will generate a fixed NSFW content\uff01 \ud83c\udfac\u2728This is suitable for the latest z-image turbo model.If this model is not available, it is recommended to use my online platform for generation to achieve the best results.This image depicts a theme of modern indoor fashion photography. A w..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\NSFW\\aidmaNSFWunlock-FLUX-V0.2.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\NSFW\\flux-lora-foot.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "general purpose",
-      "tags": [
-        "base model",
-        "flux"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "FoxyHair - FLUX LORA TRAINED",
-      "civitai_url": "https://civitai.com/models/2526565",
-      "description": "Girl with red hair in a yellow autumn jacket. You should use 'FoxyHair' to trigger the image generation. You can use this workflow for this lora"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\NSFW\\foot feet v1.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "anime",
-        "character",
-        "collection",
-        "woman",
-        "game character",
-        "girls",
-        "video game",
-        "game",
-        "boys",
-        "azure striker gunvolt"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "(\"Illustrious\" Ver)A Collection of Game Characters from \"Azure Striker Gunvolt\" & \"Luminous Avenger iX\" series - V.Mytyl",
-      "civitai_url": "https://civitai.com/models/2517817",
-      "description": "This LORA is a collection of characters from the \"Azure Striker Gunvolt\" and \"Luminous Avenger iX\" series.\"Pony\" version here\u2192https://civitai.com/models/913293?modelVersionId=1908164The recommended strength is \"0.5 - 0.8\".\u201dGunvolt Series\u201d Art Style is here\u2192https://civitai.com/models/1686051/illustri..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\NSFW\\sharp detailed image (foot focus) v1.1.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "multi",
-        "style",
-        "transformation",
-        "furry",
-        "taur",
-        "corruption",
-        "monsterification"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Monstrifex",
-      "civitai_url": "https://civitai.com/models/2525768",
-      "description": "Monstrifex draws a lot of what you would expect with a name like that. Monsters and monster transformation. Always liked their art so here have a style. Be sure to check the tags, but don't use them all at once, a lot conflict because they're there for multiple stages of a transformation. This has 4..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\Pose\\Dynamic_Poses_V2.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "bara",
-        "style",
-        "male"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Bara homo XL",
-      "civitai_url": "https://civitai.com/models/2513176",
-      "description": "Style beta"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\SEXGOD_FemaleNudity_Klein9b_v2.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\Style\\80sFantasyMovieMJ7Flux.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\Style\\CinematicStyleFlux_v1.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\Style\\DSL_Two.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\Style\\GothicDarkFantasyMovieFlux.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\Style\\Portrait_Engine v2.0.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "face/portrait enhancement",
-      "tags": [
-        "concept",
-        "meme",
-        "usami"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "usamichan-meme",
-      "civitai_url": "https://civitai.com/models/2516874",
-      "description": "1.TM_meme, looking_at_viewer, empty eyes, open mouth, :3, portrait, solo2.TM_meme, looking_at_viewer, empty eyes, closed mouth, :3, portrait, solousamichan\uff1aTM_meme, 1girl, usami, bunny_ears, furry, portrait,"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\Style\\Royo_flux_v4.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "style",
-        "artist",
-        "luis royo"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Luis Royo - ArtStyle (ZiT)",
-      "civitai_url": "https://civitai.com/models/2307095",
-      "description": "Stylization by Luis Royo.The training was conducted on the CIVITAI website.128 pictures were used.It is recommended to use the basic model - Z Image Turbowe have to temporarily make early access to the model in order, if possible, to slightly compensate for the BUZZ spent on training.if your CFG is ..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\Style\\UltraRealPhoto.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\Style\\aidmaMJ6.1-FLUX-v0.5.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\Style\\ck-shadow-circuit-000021.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "clothing/fashion",
-      "tags": [
-        "gothic",
-        "clothes",
-        "clothing",
-        "game",
-        "robe"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Robes  | Gothic game [Ill]",
-      "civitai_url": "https://civitai.com/models/2189989",
-      "description": "LoRA \u0434\u043b\u044f \u043c\u043e\u0434\u0435\u043b\u0435\u0439 \u0432\u0435\u0440\u0441\u0438\u0438 Illustrious;\u0414\u043b\u044f \u043f\u043e\u043b\u0443\u0447\u0435\u043d\u0438\u044f \u043d\u0430\u0438\u043b\u0443\u0447\u0448\u0438\u0445 \u043f\u043e\u0437 \u0438\u0433\u0440\u0430\u0439\u0442\u0435 \u0441 \u0442\u043e\u043a\u0435\u043d\u0430\u043c\u0438, \u043d\u0430\u043f\u0440\u0438\u043c\u0435\u0440:iron chest emblem, ruby gem-studded belt, -&gt; hood, belt, from behind, (\u0441\u043f\u0438\u043d\u043e\u0439)\u043e\u0431\u0443\u0447\u0435\u043d\u0438\u0435 \u043d\u0430 https://civitai.com/models/795765?modelVersionId=889818"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\detail_enhancer_flux_v1.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "anime",
-        "style",
-        "male",
-        "ntr"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Anime HNTR",
-      "civitai_url": "https://civitai.com/models/2519208",
-      "description": "Style anime beta"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\devbon-flux-v2-000025.safetensors": {
       "archs": [
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Dev\\rMada - Enhance - beta2.safetensors": {
       "archs": [
@@ -568,50 +408,37 @@
       "archs": [
         "flux1dev"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "style",
-        "kontext"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "\u5e7b\u8c61\u7ed8\u5f71\u4e07\u7269\u73a9\u5076-DollKontextLoRA",
-      "civitai_url": "https://civitai.com/models/1761373",
-      "description": "\u5e7b\u8c61\u7ed8\u5f71\u4e07\u7269\u73a9\u5076-DollKontextLoRA\u3002\u7528\u4e8e\u5404\u7c7b\u56fe\u7247\u8f6c\u6362\u6210\u73a9\u5076\u5f62\u6001\uff0c\u6b64\u6a21\u578b\u5177\u6709\u5f88\u5f3a\u7684\u6cdb\u5316\u80fd\u529b\uff0c\u9002\u7528\u4e8e\u7269\u54c1/\u4eba\u7269/\u52a8\u7269/\u5efa\u7b51\u7b49\u3002\u89e6\u53d1\u8bcd\uff1aConvert to hxhy_doll style\u6743\u91cd\uff1a\u5efa\u8bae\u503c1.0\u3002\u901a\u7528\u5de5\u4f5c\u6d41\uff1ahttps://civitai.com/models/1733176/fluxkontextdev-lora-general-workflow\u81ea\u52a8\u5927\u5c0f\u901a\u7528\u5de5\u4f5c\u6d41\uff1ahttps://civitai.com/models/1733187/fluxkontextdev-lora-general-workflow-auto-size-fluxkontextdev-lora====..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Kontext\\Spray thick milk.safetensors": {
       "archs": [
         "flux1dev"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "arcane",
-        "character",
-        "animation",
-        "woman",
-        "adaptation"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Jinx (Spray paint / Shark outfit) - Arcane - Illustrious",
-      "civitai_url": "https://civitai.com/models/2395088",
-      "description": "Jinx's in her final episode's \"Shark\" outfit, from Arcane, made for Illustrious!Feel free to like/comment! Commissions are open. ^_^You can support me through Ko-fi: https://ko-fi.com/reijiboy360"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-1-Kontext\\high_detail.safetensors": {
       "archs": [
         "flux1dev"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "character",
-        "iris",
-        "lolirock"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Iris (Lolirock)",
-      "civitai_url": "https://civitai.com/models/2527159",
-      "description": "Generates Iris from Lolirock"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\Asura.safetensors": {
       "archs": [
@@ -646,64 +473,49 @@
       "archs": [
         "flux2klein"
       ],
-      "purpose": "anime/manga style",
-      "tags": [
-        "anime",
-        "character",
-        "nier automata",
-        "woman",
-        "a2"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "COMMISSION-A2-Nier Automata ver 1.1a-IL",
-      "civitai_url": "https://civitai.com/models/2329970",
-      "description": "I\u2019ve started a Patreon. You can find extra images there (NSFW included).\ud83d\udc49 https://patreon.com/kagenoCommissions are now open.https://ko-fi.com/kagenoss/commissions."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\Character\\Flux2Klein_AnythingtoRealCharacters.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "concept",
-        "tattoo",
-        "body writing"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "flux2 klein extract tattoo",
-      "civitai_url": "https://civitai.com/models/2506180",
-      "description": "Used to extract tattoo's and body writing.See workflow for more information: https://civitai.com/models/2506222?modelVersionId=2817190"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\Character\\Klein_Anatomy_Male.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "character",
-        "mtg"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Liliana Vess (Magic: The Gathering) [Klein 9B]",
-      "civitai_url": "https://civitai.com/models/2528142",
-      "description": "Creates Liliana Vess from Magic: The Gathering, and it is capable of functioning in both T2I (Text to Image) and I2I (Image Edit) workflows.The primary trigger word for her is \"LilianaVess,\" and the trigger for her traditional outfit is \"Purp13Dr3ss\"For image edit workflows, you can give it commands..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\Character\\The_Body_Version_A_Flux2.k.9B.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "character"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Mrs. Brisby (The Secret of NIMH)",
-      "civitai_url": "https://civitai.com/models/2528453",
-      "description": "This LoRA faithfully recreates Mrs. Brisby, the gentle, brave, and devoted widowed field mouse and main protagonist of Don Bluth's 1982 animated classic The Secret of NIMH. She is voiced by the late Elizabeth Hartman in her final film role.Mrs. Brisby is a loving mother determined to save her younge..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\Character\\f2k_anything2real_a_patched.safetensors": {
       "archs": [
@@ -737,151 +549,109 @@
       "archs": [
         "flux2klein"
       ],
-      "purpose": "photorealism/realism",
-      "tags": [
-        "character",
-        "woman",
-        "realistic",
-        "nordic",
-        "flux1dev",
-        "f1d",
-        "flux2klein9b",
-        "f2k9b"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Sora0Veda [F1D+F2K9B]",
-      "civitai_url": "https://civitai.com/models/2370544",
-      "description": "\u2744\ufe0f Sora0Veda \u2013 The Nordic Spirit (Multi-Model Release)Available for FLUX.2 [klein] 9B &amp; FLUX.1 [dev]&gt; \"Silence speaks louder than words.\"1. THE CONCEPTSora is the calm in the storm. She embodies a Nordic, ethereal aesthetic\u2014clean lines, cool tones, and a powerful, statue-like presence. While ..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\FK4B_Image_Repair_V1.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\FK_povfootjobfront.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "concept"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Godzilla + Gijinka [Comission] | Shrekman Creatures Collection",
-      "civitai_url": "https://civitai.com/models/1496586",
-      "description": "Model made as a comission on http://www.fiverr.com/s/gD2zEyX Want to get acces to all current and future early acces models, request a model or just support me?Here is my Patreon from 5$ supporter tier allow acces to ALL models that get posed with early acces: https://www.patreon.com/c/RenaissanceGr..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\FTextureTransfer_F29B_V2.1.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\K9bSR3al.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\K9bSh4rpD3tails.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\KLEIN-Unchained-V1.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "character",
-        "mtg"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Liliana Vess (Magic: The Gathering) [Klein 9B]",
-      "civitai_url": "https://civitai.com/models/2528142",
-      "description": "Creates Liliana Vess from Magic: The Gathering, and it is capable of functioning in both T2I (Text to Image) and I2I (Image Edit) workflows.The primary trigger word for her is \"LilianaVess,\" and the trigger for her traditional outfit is \"Purp13Dr3ss\"For image edit workflows, you can give it commands..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\POV_blowjobV1_A.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "concept"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Pov doorway",
-      "civitai_url": "https://civitai.com/models/2425672",
-      "description": "Tags: Povdoomb2, pov doorway"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\POV_blowjobV1_B.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "concept"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Pov doorway",
-      "civitai_url": "https://civitai.com/models/2425672",
-      "description": "Tags: Povdoomb2, pov doorway"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\PornMaster_cum_flux-2-klein-9b_V1.safetensors": {
       "archs": [
@@ -899,213 +669,157 @@
       "archs": [
         "flux2klein"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\Sliders\\ColorTone_Standard.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "concept",
-        "slider"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "colortone slide Zit",
-      "civitai_url": "https://civitai.com/models/2213611",
-      "description": "\u6b63\u503c\u51b7\u8272\u8abf\u8ca0\u503c\u6696\u8272\u8abf\u4f8b\u5716-1~+1Positive values: cool colortoneNegative values: warm colortoneExample image: -1 -0.5 +0.5 +1"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\Sliders\\detail_slider_klein_9b.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "anime",
-        "style",
-        "male",
-        "ntr"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Anime HNTR",
-      "civitai_url": "https://civitai.com/models/2519208",
-      "description": "Style anime beta"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\Sliders\\klein4B_slider_anatomy.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "clothing/fashion",
-      "tags": [
-        "fashion",
-        "woman",
-        "clothing",
-        "traditional dress",
-        "casual wear",
-        "alluring",
-        "sensual",
-        "south asian",
-        "designer cloth",
-        "flux.2 klein 4b"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Salwar Kameez Flux.2 Klein 4B by Sarcastic TOFU",
-      "civitai_url": "https://civitai.com/models/2515234",
-      "description": "The Salwar Kameez is a traditional outfit worn by South Asian women (Pakistani, Indian &amp; Bangladeshi). It comprises a pair of trousers known as the Salwar and a tunic called the Kameez. Traditionally, the Salwar trousers are tailored to be long and loose-fitting with narrow hems above the ankles..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\Sliders\\klein_slider_anatomy_9B_v1.5.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "character",
-        "mtg"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Liliana Vess (Magic: The Gathering) [Klein 9B]",
-      "civitai_url": "https://civitai.com/models/2528142",
-      "description": "Creates Liliana Vess from Magic: The Gathering, and it is capable of functioning in both T2I (Text to Image) and I2I (Image Edit) workflows.The primary trigger word for her is \"LilianaVess,\" and the trigger for her traditional outfit is \"Purp13Dr3ss\"For image edit workflows, you can give it commands..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\Sliders\\klein_slider_bodyweight.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "character",
-        "mtg"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Liliana Vess (Magic: The Gathering) [Klein 9B]",
-      "civitai_url": "https://civitai.com/models/2528142",
-      "description": "Creates Liliana Vess from Magic: The Gathering, and it is capable of functioning in both T2I (Text to Image) and I2I (Image Edit) workflows.The primary trigger word for her is \"LilianaVess,\" and the trigger for her traditional outfit is \"Purp13Dr3ss\"For image edit workflows, you can give it commands..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\Sliders\\klein_slider_detail.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "character",
-        "mtg"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Liliana Vess (Magic: The Gathering) [Klein 9B]",
-      "civitai_url": "https://civitai.com/models/2528142",
-      "description": "Creates Liliana Vess from Magic: The Gathering, and it is capable of functioning in both T2I (Text to Image) and I2I (Image Edit) workflows.The primary trigger word for her is \"LilianaVess,\" and the trigger for her traditional outfit is \"Purp13Dr3ss\"For image edit workflows, you can give it commands..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\Sliders\\klein_slider_glow.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "character",
-        "mtg"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Liliana Vess (Magic: The Gathering) [Klein 9B]",
-      "civitai_url": "https://civitai.com/models/2528142",
-      "description": "Creates Liliana Vess from Magic: The Gathering, and it is capable of functioning in both T2I (Text to Image) and I2I (Image Edit) workflows.The primary trigger word for her is \"LilianaVess,\" and the trigger for her traditional outfit is \"Purp13Dr3ss\"For image edit workflows, you can give it commands..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\THTUbetav2.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\Tentacle v2_000002000.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "hand/finger refinement",
-      "tags": [
-        "character"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Jellymon (digimon ghost game)",
-      "civitai_url": "https://civitai.com/models/2516207",
-      "description": "promtps: jellymon \\(ghost game\\), tentacle hair, pointy ears, black eyes, bodysuit, multicolored hair, pink body, black fingers, purple high boot, chibiweight: 1This lora is more or less a request from a friend, she told me to do it when I was up to date with my requests and here we are!Not sure wha..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\Turbo\\klein_4b_turbo_r128.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "character",
-        "mtg"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Liliana Vess (Magic: The Gathering) [Klein 9B]",
-      "civitai_url": "https://civitai.com/models/2528142",
-      "description": "Creates Liliana Vess from Magic: The Gathering, and it is capable of functioning in both T2I (Text to Image) and I2I (Image Edit) workflows.The primary trigger word for her is \"LilianaVess,\" and the trigger for her traditional outfit is \"Purp13Dr3ss\"For image edit workflows, you can give it commands..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\clothesonoffv2.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\cum_on_face_v2.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "character"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "\u4ed6\u4eba\u306e\u59bb\u3092\u533f\u3063\u3066",
-      "civitai_url": "https://civitai.com/models/2290096",
-      "description": "\u5144\u5f1f\u4eec\uff0c\u8bf7\u7ed9\u6211\u7684\u56fe\u7247\u3001lora\u70b9\u4e2a\u8d5e\uff0c\u6216\u8005\u4e0a\u4f20\u7528lora\u751f\u6210\u7684\u56fe\u7247\u90fd\u6210\uff0c\u8c22\u8c22\uff01LoRA training cost Civitai Buzz. If you like, please reacting to my images, posting your images and using Civitai generator with my models can also help, Thank you!Weight: 0.8-1.0"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\f2k_consist_20260225.safetensors": {
       "archs": [
@@ -1123,227 +837,157 @@
       "archs": [
         "flux2klein"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\flux2klein_vulva_and_anus_from_behind_v1.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "concept",
-        "tattoo",
-        "body writing"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "flux2 klein extract tattoo",
-      "civitai_url": "https://civitai.com/models/2506180",
-      "description": "Used to extract tattoo's and body writing.See workflow for more information: https://civitai.com/models/2506222?modelVersionId=2817190"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\footjob_ab_f2k9b_1.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "concept",
-        "femdom",
-        "hentai",
-        "footjob",
-        "wrestling",
-        "headscissor"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "head scissor hold (sitting) / headscissor footjob \u3010Request\u3011",
-      "civitai_url": "https://civitai.com/models/1191864",
-      "description": "If you have any questions or problems, please use DM or Discussion.And please send Discussion(comments?) or GallerySupport me onhttps://ko-fi.com/karicorn\u2191You can send me some tip\u2193You can send me some request herehttps://civitai.com/articles/8745/concept-femdom-lora-requestsVer.Illustrious V2Weight:..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\hipoly_3dcg_v7-epoch-000012.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\klein-blowbang-6epoc-k3nk.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "character",
-        "mtg"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Liliana Vess (Magic: The Gathering) [Klein 9B]",
-      "civitai_url": "https://civitai.com/models/2528142",
-      "description": "Creates Liliana Vess from Magic: The Gathering, and it is capable of functioning in both T2I (Text to Image) and I2I (Image Edit) workflows.The primary trigger word for her is \"LilianaVess,\" and the trigger for her traditional outfit is \"Purp13Dr3ss\"For image edit workflows, you can give it commands..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\klein-deepthroat-15epoc-k3nk.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "character",
-        "mtg"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Liliana Vess (Magic: The Gathering) [Klein 9B]",
-      "civitai_url": "https://civitai.com/models/2528142",
-      "description": "Creates Liliana Vess from Magic: The Gathering, and it is capable of functioning in both T2I (Text to Image) and I2I (Image Edit) workflows.The primary trigger word for her is \"LilianaVess,\" and the trigger for her traditional outfit is \"Purp13Dr3ss\"For image edit workflows, you can give it commands..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\klein_snofs_v1_1.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "character",
-        "mtg"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Liliana Vess (Magic: The Gathering) [Klein 9B]",
-      "civitai_url": "https://civitai.com/models/2528142",
-      "description": "Creates Liliana Vess from Magic: The Gathering, and it is capable of functioning in both T2I (Text to Image) and I2I (Image Edit) workflows.The primary trigger word for her is \"LilianaVess,\" and the trigger for her traditional outfit is \"Purp13Dr3ss\"For image edit workflows, you can give it commands..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\lenovo_flux2.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\lenovo_flux_klein9b.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\pussydiffusion-f2-klein-9b_v2.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\spread_legs_beta1.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "anime",
-        "concept",
-        "meme",
-        "sitting",
-        "woman",
-        "spread legs",
-        "illustrious",
-        "style.",
-        "concept.",
-        "illustrioux"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Chair Sitting Pose | Concept | illustriousXL",
-      "civitai_url": "https://civitai.com/models/2468928",
-      "description": "Sitting LegQuick PostSlightly Overtrain I think or I just can't generate full body that well with my settingsSource : https://x.com/whgkdud_d/status/2031977923666928051?s=46Support My Work:\ud83c\udfa8 Commissions Open Ko-fi \u2014 feel free to check them out and support my work!\ud83d\udc26\u200d\u2b1b Twitter Follow Here, I don't pos..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\thick_cum_v1_f2k_9b_000002750.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "style"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "V67 V. Van Gogh",
-      "civitai_url": "https://civitai.com/models/2527104",
-      "description": "V67 V. Van Gogh \u2013 LoRA for Z Image TurboSpecial Edition: Landscapes &amp; Sunflowers with a ChairPremise: If you decide to use my model and your image is chosen for the cover of CIVITAI, I will give you 500 Yellow Buzz, even if the image combines multiple models.R+ images will be hidden from the gal..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\ultra_real_v2.safetensors": {
       "archs": [
         "flux2klein"
       ],
-      "purpose": "eye detail enhancement",
-      "tags": [
-        "anime",
-        "character",
-        "school",
-        "alya",
-        "alya sometimes hides her feelings in russian",
-        "alisa mikhailovna kujou"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Alisa Mikhailovna Kujou - (Alya sometimes hides her feelings in russian)",
-      "civitai_url": "https://civitai.com/models/2523438",
-      "description": "Alisa Mikhailovna Kujou==[ Lora Prompt ]==alisa mikhailovna kujou, 1girl,long hair, silver hair, grey hair, ahoge, crossed bangs, hair between eyes, blue eyes, hair ribbon, red ribbon, sidelocks, beautiful detailed eyes, masterpiece, best quality, ultra detailed, anime coloring, highres, absurdres, ..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Flux-2-Klein\\upscale_portrait_9bklein.safetensors": {
       "archs": [
@@ -1363,16 +1007,13 @@
         "illustrious",
         "pony"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "concept",
-        "lighting"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Cinematic / Chiaroscuro Lighting Style",
-      "civitai_url": "https://civitai.com/models/2429565",
-      "description": "Triggerscinematic lighting stylechiaroscuro lighting stylecinematic chiaroscuro lighting stylehttps://ko-fi.com/playtime_ai"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Illustrious-Pony\\Cinematic Photography Style pony v1.safetensors": {
       "archs": [
@@ -1380,17 +1021,13 @@
         "illustrious",
         "pony"
       ],
-      "purpose": "eye detail enhancement",
-      "tags": [
-        "style",
-        "cinematic lighting",
-        "backlight"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Wacan Backlight Dark Tone",
-      "civitai_url": "https://civitai.com/models/2525133",
-      "description": "Enhances light-dark contrast, darkens character outlines, and creates strong chiaroscuro lighting effects; boosts the glowing texture of eyes and local parts, well-suited for dim, moody atmospheres. \u5f3a\u5316\u5149\u5f71\u7684\u660e\u6697\u5bf9\u6bd4\u6548\u679c\uff0c\u538b\u6697\u4eba\u7269\u8f6e\u5ed3\uff0c\u6253\u9020\u5f3a\u70c8\u660e\u6697\u53cd\u5dee\u7684\u5149\u5f71\u6548\u679c\uff1b\u5f3a\u5316\u773c\u90e8/\u5c40\u90e8\u53d1\u5149\u8d28\u611f\uff0c\u6bd4\u8f83\u9002\u914d\u660f\u6697\u7684\u6c1b\u56f4Trigger word: cinematic lightingRecommended wei..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Illustrious-Pony\\Ethereal_Gothic_Elegance.safetensors": {
       "archs": [
@@ -1398,15 +1035,13 @@
         "illustrious",
         "pony"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "style"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "V67 Bioluminescence",
-      "civitai_url": "https://civitai.com/models/2517486",
-      "description": "V67 Bioluminescence LoRA for FLUXLiving Light, Neon DreamsTry my models: https://civitai.com/user/angelomaiota/modelsPremise: If you decide to use my model, I will give you 500 Yellow Buzz if your image is chosen for the cover of \"CIVITAI,\" even if used in combination with other models.R+ images wil..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Illustrious-Pony\\HyperdetailedRealismMJ7Pony.safetensors": {
       "archs": [
@@ -1414,19 +1049,13 @@
         "illustrious",
         "pony"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Illustrious-Pony\\MetallicGoldSilver_skinbody_paint-000019.safetensors": {
       "archs": [
@@ -1434,19 +1063,13 @@
         "illustrious",
         "pony"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Illustrious-Pony\\PerkyCTits_Pony.safetensors": {
       "archs": [
@@ -1454,19 +1077,13 @@
         "illustrious",
         "pony"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Illustrious-Pony\\Princess_Jasmine.safetensors": {
       "archs": [
@@ -1474,24 +1091,13 @@
         "illustrious",
         "pony"
       ],
-      "purpose": "anime/manga style",
-      "tags": [
-        "anime",
-        "character",
-        "male",
-        "man",
-        "men",
-        "boys",
-        "scrapped princess",
-        "haiki oujo",
-        "\u30d5\u30e5\u30fc\u30ec",
-        "\u30b9\u30af\u30e9\u30c3\u30d7\u30c9\u30fb\u30d7\u30ea\u30f3\u30bb\u30b9"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Fulle/Furet from Scrapped Princess",
-      "civitai_url": "https://civitai.com/models/2517866",
-      "description": "Uploaded from https://pixai.art/en/model/1997149371878917690"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Illustrious-Pony\\Sinozick_Style_XL_Pony.safetensors": {
       "archs": [
@@ -1499,20 +1105,13 @@
         "illustrious",
         "pony"
       ],
-      "purpose": "hand/finger refinement",
-      "tags": [
-        "anime",
-        "dark",
-        "style",
-        "ai",
-        "sinozick",
-        "ai styles"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "AI Styles - Sinozick",
-      "civitai_url": "https://civitai.com/models/2346144",
-      "description": "What's this?This is a dark anime style LoRA, trained on the works of AI creator Sinozick. Sinozick's style often features dark and muted colors, cyberpunk visuals such as cyborgs, masks and wires, as well as beautiful gothic girls in an overall moody aesthetic, so these are the themes this LoRA hand..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Illustrious-Pony\\StS_PonyXL_Detail_Slider_v1.4_iteration_3.safetensors": {
       "archs": [
@@ -1520,17 +1119,13 @@
         "illustrious",
         "pony"
       ],
-      "purpose": "eye detail enhancement",
-      "tags": [
-        "character",
-        "woman",
-        "game"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "yuki_kanan(digimon sts)",
-      "civitai_url": "https://civitai.com/models/2024293",
-      "description": "The expression of the lower body is unstable.Promptdmsts_kanan,1girl,solo,brown eyes,black hair,short hair,hat,eyewear on head,sleeveless,dress,bare shoulders,elbow gloves,belt,single thighhigh,white thighhigh,thigh strap,(for adjustment)---scarf,leg pouch,green paws,"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Illustrious-Pony\\cinematic photography detailed illu xl v5.safetensors": {
       "archs": [
@@ -1538,17 +1133,13 @@
         "illustrious",
         "pony"
       ],
-      "purpose": "eye detail enhancement",
-      "tags": [
-        "style",
-        "cinematic lighting",
-        "backlight"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Wacan Backlight Dark Tone",
-      "civitai_url": "https://civitai.com/models/2525133",
-      "description": "Enhances light-dark contrast, darkens character outlines, and creates strong chiaroscuro lighting effects; boosts the glowing texture of eyes and local parts, well-suited for dim, moody atmospheres. \u5f3a\u5316\u5149\u5f71\u7684\u660e\u6697\u5bf9\u6bd4\u6548\u679c\uff0c\u538b\u6697\u4eba\u7269\u8f6e\u5ed3\uff0c\u6253\u9020\u5f3a\u70c8\u660e\u6697\u53cd\u5dee\u7684\u5149\u5f71\u6548\u679c\uff1b\u5f3a\u5316\u773c\u90e8/\u5c40\u90e8\u53d1\u5149\u8d28\u611f\uff0c\u6bd4\u8f83\u9002\u914d\u660f\u6697\u7684\u6c1b\u56f4Trigger word: cinematic lightingRecommended wei..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Illustrious-Pony\\detailed foot focus style illustriousXL v1.safetensors": {
       "archs": [
@@ -1556,20 +1147,13 @@
         "illustrious",
         "pony"
       ],
-      "purpose": "eye detail enhancement",
-      "tags": [
-        "anime",
-        "character",
-        "school",
-        "alya",
-        "alya sometimes hides her feelings in russian",
-        "alisa mikhailovna kujou"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Alisa Mikhailovna Kujou - (Alya sometimes hides her feelings in russian)",
-      "civitai_url": "https://civitai.com/models/2523438",
-      "description": "Alisa Mikhailovna Kujou==[ Lora Prompt ]==alisa mikhailovna kujou, 1girl,long hair, silver hair, grey hair, ahoge, crossed bangs, hair between eyes, blue eyes, hair ribbon, red ribbon, sidelocks, beautiful detailed eyes, masterpiece, best quality, ultra detailed, anime coloring, highres, absurdres, ..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Illustrious-Pony\\perfect sclera eye style pony v1.3.safetensors": {
       "archs": [
@@ -1577,155 +1161,104 @@
         "illustrious",
         "pony"
       ],
-      "purpose": "eye detail enhancement",
-      "tags": [
-        "anime",
-        "character",
-        "school",
-        "alya",
-        "alya sometimes hides her feelings in russian",
-        "alisa mikhailovna kujou"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Alisa Mikhailovna Kujou - (Alya sometimes hides her feelings in russian)",
-      "civitai_url": "https://civitai.com/models/2523438",
-      "description": "Alisa Mikhailovna Kujou==[ Lora Prompt ]==alisa mikhailovna kujou, 1girl,long hair, silver hair, grey hair, ahoge, crossed bangs, hair between eyes, blue eyes, hair ribbon, red ribbon, sidelocks, beautiful detailed eyes, masterpiece, best quality, ultra detailed, anime coloring, highres, absurdres, ..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Illustrious\\model adjust\\Beautiful_female_model_face_-_ILL.safetensors": {
       "archs": [
         "sdxl",
         "illustrious"
       ],
-      "purpose": "eye detail enhancement",
-      "tags": [
-        "anime",
-        "character",
-        "school",
-        "alya",
-        "alya sometimes hides her feelings in russian",
-        "alisa mikhailovna kujou"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Alisa Mikhailovna Kujou - (Alya sometimes hides her feelings in russian)",
-      "civitai_url": "https://civitai.com/models/2523438",
-      "description": "Alisa Mikhailovna Kujou==[ Lora Prompt ]==alisa mikhailovna kujou, 1girl,long hair, silver hair, grey hair, ahoge, crossed bangs, hair between eyes, blue eyes, hair ribbon, red ribbon, sidelocks, beautiful detailed eyes, masterpiece, best quality, ultra detailed, anime coloring, highres, absurdres, ..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Illustrious\\model adjust\\detailed_realistic_eyes-pony.safetensors": {
       "archs": [
         "sdxl",
         "illustrious"
       ],
-      "purpose": "eye detail enhancement",
-      "tags": [
-        "anime",
-        "character",
-        "school",
-        "alya",
-        "alya sometimes hides her feelings in russian",
-        "alisa mikhailovna kujou"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Alisa Mikhailovna Kujou - (Alya sometimes hides her feelings in russian)",
-      "civitai_url": "https://civitai.com/models/2523438",
-      "description": "Alisa Mikhailovna Kujou==[ Lora Prompt ]==alisa mikhailovna kujou, 1girl,long hair, silver hair, grey hair, ahoge, crossed bangs, hair between eyes, blue eyes, hair ribbon, red ribbon, sidelocks, beautiful detailed eyes, masterpiece, best quality, ultra detailed, anime coloring, highres, absurdres, ..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Pony\\Body\\thicc_v1.4-pony_done.safetensors": {
       "archs": [
         "sdxl",
         "pony"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "character",
-        "asian",
-        "ai",
-        "women"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "THICC Asian Women - ZIT Character / Ai Influencer [SFW+NSFW]",
-      "civitai_url": "https://civitai.com/models/2316879",
-      "description": "created Using 30 detailed images at 1440p"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Pony\\Slider\\Pony Realism Slider.safetensors": {
       "archs": [
         "sdxl",
         "pony"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "anime",
-        "style",
-        "artstyle",
-        "girls"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "n.pn / Eiyo (\uc778\ub098) artstyle (Pixiv, arca.live, etc) - Uncensored [Pony]",
-      "civitai_url": "https://civitai.com/models/2528313",
-      "description": "This LoRA tries to replicate n.pn's artstyle.The trigger is by eiyo.As a blessing of the Korean sources, this dataset was unmarred by Japanese mosaics and stuff even for NSFW stuff. Enjoy."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Pony\\Slider\\Skin Color_alpha1.0_rank4_noxattn_250steps.safetensors": {
       "archs": [
         "sdxl",
         "pony"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "character",
-        "blizzard",
-        "woman",
-        "overwatch",
-        "video game",
-        "dark skin"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Sierra (Overwatch) (Character) for Illustrious",
-      "civitai_url": "https://civitai.com/models/2528458",
-      "description": "Sierra from video game Overwatch.The model was based on the character's cinematic trailer."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Pony\\Style\\MoriiMee_Gothic_Niji_Style__Pony_LoRA.safetensors": {
       "archs": [
         "sdxl",
         "pony"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "gothic",
-        "style",
-        "woman",
-        "nijijourney",
-        "goth",
-        "niji journey",
-        "moriimee"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "MoriiMee - Gothic Niji Journey - Style Anima LORA",
-      "civitai_url": "https://civitai.com/models/2485109",
-      "description": "Trained on AnimaPreview2 with 36 pictures.Best result with weight between : 0.8-1.Prompts : realisticInspired by this LoRA and from the original artist MoriiMeeReviews are really appreciated, i love to see the community use my work, that's why I share it.If you like my work, you can tip me here.Got ..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Pony\\Style\\amateur_style_v1_pony.safetensors": {
       "archs": [
         "sdxl",
         "pony"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "retro",
-        "style",
-        "nostalgia",
-        "frutiger aero"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "2000s art style Frutiger aero/Flash",
-      "civitai_url": "https://civitai.com/models/2377004",
-      "description": "\ud83d\udc47\ud83d\udc47\ud83d\udc47\ud83d\udc47You can comission me here with moneyhttps://ko-fi.com/Y8Y7196V3Yor using buzzA normal LoRA of a character with lots of images \u2013 10k buzzCreate a pony or illustrious version of an existing LoRA \u2013 5.5k buzzA LoRA of a black-and-white character that requires me to color the dataset myself \u2013 20k buz..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Pony\\Style\\igbaddie-PN.safetensors": {
       "archs": [
@@ -1755,204 +1288,133 @@
       "archs": [
         "sdxl"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Body\\Nipples XL - All in One.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "character",
-        "mc",
-        "mtf",
-        "gender swap",
-        "time traveler"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Yuri(Female) |Gnosia| Dragon Kings Special",
-      "civitai_url": "https://civitai.com/models/2525580",
-      "description": "Creative Freedom"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Body\\Perfect_Booty_XL_V1.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "eye detail enhancement",
-      "tags": [
-        "anime",
-        "character",
-        "school",
-        "alya",
-        "alya sometimes hides her feelings in russian",
-        "alisa mikhailovna kujou"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Alisa Mikhailovna Kujou - (Alya sometimes hides her feelings in russian)",
-      "civitai_url": "https://civitai.com/models/2523438",
-      "description": "Alisa Mikhailovna Kujou==[ Lora Prompt ]==alisa mikhailovna kujou, 1girl,long hair, silver hair, grey hair, ahoge, crossed bangs, hair between eyes, blue eyes, hair ribbon, red ribbon, sidelocks, beautiful detailed eyes, masterpiece, best quality, ultra detailed, anime coloring, highres, absurdres, ..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Body\\hand 5.5.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "hand/finger refinement",
-      "tags": [
-        "anime",
-        "character",
-        "animation",
-        "muscles",
-        "manga",
-        "muscular",
-        "plague",
-        "japan",
-        "anthro",
-        "furry"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Plague Dragon, Illusia - DoraTama",
-      "civitai_url": "https://civitai.com/models/2528289",
-      "description": "This character is from light novel, manga and Japanese animation.And now, He's LEVEL UP!Reincarnated as a Dragon Hatchling (DoraTama) - Plague Dragon, Illusia.In anime, He evolve so Big and Handsome. XDTrigger wordIllusia_Lv2 DoraTamadragongray and black bodymultiple body colorsorange handorange fee..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Body\\thicc_v1.2-illu_done.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "character",
-        "asian",
-        "ai",
-        "women"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "THICC Asian Women - ZIT Character / Ai Influencer [SFW+NSFW]",
-      "civitai_url": "https://civitai.com/models/2316879",
-      "description": "created Using 30 detailed images at 1440p"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Clothing\\KneehighFishnetCutoutFrilledSocksILL.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Concept\\ARobotGirls_Concept-12.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Concept\\Aliens_AILF_SDXL.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "character",
-        "roswell conspiracies",
-        "sh'lainn blaze"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Sh'lainn Blaze (Roswell Conspiracies: Aliens, Myths and Legends - 1999) IL",
-      "civitai_url": "https://civitai.com/models/2479465",
-      "description": "Support me at https://ko-fi.com/elderagent I'm broke!I only post on civit and tensor.art do not upload my models without permission, much less monetize them.IL loRa Sh'lainn Blaze from Roswell Conspiracies: Aliens, Myths and Legends, 107 images as dataset.Prompts:sh'lainn, style parody, white hair, ..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Concept\\Space_ship_concept.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "anime/manga style",
-      "tags": [
-        "anime",
-        "character",
-        "mezametara saikyou soubi to uchuusenmochi datta node, ikkodate mezashite youhei toshite jiyuu ni ikitai"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Selena Holz / \u30bb\u30ec\u30ca\u30fb\u30db\u30fc\u30eb\u30ba - Reborn as a Space Mercenary / \u76ee\u899a\u3081\u305f\u3089\u6700\u5f37\u88c5\u5099\u3068\u5b87\u5b99\u8239\u6301\u3061\u3060\u3063\u305f\u306e\u3067\u3001\u4e00\u6238\u5efa\u3066\u76ee\u6307\u3057\u3066\u50ad\u5175\u3068\u3057\u3066\u81ea\u7531\u306b\u751f\u304d\u305f\u3044",
-      "civitai_url": "https://civitai.com/models/2527457",
-      "description": "Anime ver. Out on October 2026Designed for ILXL 1.1, compatible with ILXL 2. and backports, but best on ILXL 1.1 and above.It's recommended to run this LORA for IL version with advokat's Illustrious-XL SmoothFT - smoothFT-SOLID | Illustrious Checkpoint | Civitai OR with Ikena's Hassaku XL (Illustrio..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Concept\\err0rFv1.6.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Detail\\Eyes_High_Definition-000007.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "anime/manga style",
-      "tags": [
-        "anime",
-        "character",
-        "female",
-        "woman",
-        "game character",
-        "girls",
-        "video game",
-        "idolmaster",
-        "cinderella girls"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Ranko Kanzaki",
-      "civitai_url": "https://civitai.com/models/2528836",
-      "description": "She isn't idoly pride or Akatsuki member ok ?She shares her bd with Seth Lowell and Momoka Sakurai \ud83d\ude2d"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Detail\\RealSkin_xxXL_v1.safetensors": {
       "archs": [
@@ -1981,363 +1443,229 @@
       "archs": [
         "sdxl"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "anime/manga style",
-      "tags": [
-        "anime",
-        "character",
-        "girl",
-        "aqua",
-        "konosuba",
-        "cute",
-        "women",
-        "lora",
-        "sfw",
-        "goddess"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Aqua | KonoSuba: God's Blessing on This Wonderful World!",
-      "civitai_url": "https://civitai.com/models/2475766",
-      "description": "Kindly share the first image directly in the Model Gallery. This is the best way to support and motivate creators!For creating Lora &amp; Concepts (SDXL | Flux | Z Image), feel free to Give me Direct DM via CivitAI. While I may not be able to create every concept, I will definitely bring the best on..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Detail\\rdtdrp.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Detail\\skin texture style v4.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "character",
-        "blizzard",
-        "woman",
-        "overwatch",
-        "video game",
-        "dark skin"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Sierra (Overwatch) (Character) for Illustrious",
-      "civitai_url": "https://civitai.com/models/2528458",
-      "description": "Sierra from video game Overwatch.The model was based on the character's cinematic trailer."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Dynamic_Poses_SDXL.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "bara",
-        "style",
-        "male"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Bara homo XL",
-      "civitai_url": "https://civitai.com/models/2513176",
-      "description": "Style beta"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Green_Slime_WAM_Gunge_Wet_and_Messy_Sploshing_Splosh.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "eye detail enhancement",
-      "tags": [
-        "concept",
-        "heterochromia"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Green Right Eye Heterochromia",
-      "civitai_url": "https://civitai.com/models/2528774",
-      "description": "Same as the other one, but this time green.To explain why this is needed. AI can already do heterochromia, but it can't tell left and right aside. Because of how perspectives work, observer's left is a character's right. I experimented a lot with trying to give a character heterochromia, but color p..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\NSFW\\RealFeet_xl_v1.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "concept",
-        "woman",
-        "feet",
-        "toes"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "RealFeet for SDXL \u2013 Feet and painted toes",
-      "civitai_url": "https://civitai.com/models/211517",
-      "description": "The Lora model is specifically trained to render feet for SDXL.\u00a0If you like nylon feet instead, you can download RealNylonFeets XL - Feet in nylonThe native 1024x1024 was selected to train a performing XL Lora, with reliable layout.Anyway, the AI feet rendering is still challenging, and this Lora is..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\NSFW\\feet v2.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "hand/finger refinement",
-      "tags": [
-        "anime",
-        "character",
-        "animation",
-        "muscles",
-        "manga",
-        "muscular",
-        "plague",
-        "japan",
-        "anthro",
-        "furry"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Plague Dragon, Illusia - DoraTama",
-      "civitai_url": "https://civitai.com/models/2528289",
-      "description": "This character is from light novel, manga and Japanese animation.And now, He's LEVEL UP!Reincarnated as a Dragon Hatchling (DoraTama) - Plague Dragon, Illusia.In anime, He evolve so Big and Handsome. XDTrigger wordIllusia_Lv2 DoraTamadragongray and black bodymultiple body colorsorange handorange fee..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Oily skin style xl v1.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "clothing/fashion",
-      "tags": [
-        "pantyhose",
-        "clothing",
-        "shiny"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Oily-shine pantyhose",
-      "civitai_url": "https://civitai.com/models/1829942",
-      "description": "\u5f3a\u5ea6\uff1a1-1.51.\u5f3a\u5ea6\u8d8a\u9ad8\uff0c\u5149\u6cfd\u5ea6\u3001\u53cd\u5149\u611f\u8d8a\u5f3a\uff0c\u9884\u89c8\u56fe\u5747\u4f7f\u75281.3\u7684\u5f3a\u5ea6\u751f\u6210\u30022.\u53ea\u8981\u662f\u60a8\u7684\u6a21\u578b\u80fd\u8bc6\u522b\u5230\u7684\u989c\u8272\uff0c\u90fd\u53ef\u4ee5\u66f4\u6362\u30023.\u5e94\u8be5\u4e5f\u80fd\u5c06\u5149\u6cfd\u5ea6\u6dfb\u52a0\u5230\u522b\u7684\u7c7b\u578b\u7684\u889c\u5b50\u4e0a\uff0c\u6bd4\u5982\u201coily-shine socks\u201d\uff0c\u4e0d\u8fc7\u6211\u53ea\u505a\u4e86\u7b80\u5355\u7684\u6d4b\u8bd5\uff0c\u4e0d\u786e\u5b9a\u3002\u5df2\u77e5\u95ee\u9898\uff1a1.\u5982\u679c\u60a8\u4e0d\u5e0c\u671b\u60a8\u7684\u89d2\u8272\u7a7f\u978b\uff0c\u8bf7\u4e0d\u8981\u4f7f\u7528\u4f8b\u5982\u201cno shoes\u201d\u4e4b\u7c7b\u7684\u8bcd\uff0c\u4f7f\u7528\u8fd9\u4e00\u7c7b\u63d0\u793a\u8bcd\u53cd\u800c\u4f1a\u751f\u6210\u7a7f\u7740\u978b\u7684\u56fe\u7247\uff0c\u5efa\u8bae\u4f7f\u7528\u201cfeet\u201d\u4e4b\u7c7b\u7684\u30022.\u5982\u679c\u60a8\u7684\u978b\u5b50\u989c\u8272\u548c\u8fde\u88e4\u889c\u989c\u8272\u8bbe\u7f6e\u7684\u4e0d\u4e00\u81f4\uff0c\u90a3\u4e48\u6781\u5927\u6982\u7387\u978b\u5b50\u7684\u989c\u8272\u4e5f\u4f1a\u53d8\u6210\u8fde\u88e4\u889c\u7684\u989c\u8272\uff08\u7279\u522b\u662f\u9ad8\u8ddf\u978b\uff09\uff0c\u5c06\u978b\u5b50\u548c\u5b83\u7684\u989c\u8272\u7684\u63d0\u793a\u8bcd\u7684\u5f3a\u5ea6\u63d0\u9ad8\u52301.3\uff0c\u53ef\u4ee5\u907f\u514d\u8fd9\u79cd\u60c5\u51b5\u53d1\u751f\u30023.\u6709\u53ef\u80fd\u4f1a\u628a\u5176\u5b83\u8863\u7269\u7684\u5149\u6cfd\u5ea6\u4e00..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Slider\\Body Type Slider - Illustrious_alpha1.0_rank4_noxattn_last.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "hand/finger refinement",
-      "tags": [
-        "anime",
-        "character",
-        "animation",
-        "muscles",
-        "manga",
-        "muscular",
-        "plague",
-        "japan",
-        "anthro",
-        "furry"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Plague Dragon, Illusia - DoraTama",
-      "civitai_url": "https://civitai.com/models/2528289",
-      "description": "This character is from light novel, manga and Japanese animation.And now, He's LEVEL UP!Reincarnated as a Dragon Hatchling (DoraTama) - Plague Dragon, Illusia.In anime, He evolve so Big and Handsome. XDTrigger wordIllusia_Lv2 DoraTamadragongray and black bodymultiple body colorsorange handorange fee..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Slider\\Dramatic Lighting Slider.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "nintendo",
-        "the legend of zelda",
-        "princess zelda",
-        "style",
-        "artstyle",
-        "link",
-        "majora's mask",
-        "tloz",
-        "n64",
-        "nintendo 64"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Majora's Mask Artstyle [Illustrious] - v1.0",
-      "civitai_url": "https://civitai.com/models/2519057",
-      "description": "For duplicating the Majora's Mask official art styleSuggested tags:M4j0r4, anime coloring, (dark shading 1.4),bold lines, high contrast, dramatic shadows, rough textures, strong comic book aesthetic,Black outline, thick outline,Trained using HiRes images collected from: https://www.flickr.com/photos..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Slider\\Skin color slider - Illustrious_alpha1.0_rank4_noxattn_last.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "character",
-        "blizzard",
-        "woman",
-        "overwatch",
-        "video game",
-        "dark skin"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Sierra (Overwatch) (Character) for Illustrious",
-      "civitai_url": "https://civitai.com/models/2528458",
-      "description": "Sierra from video game Overwatch.The model was based on the character's cinematic trailer."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Style\\Asian_Beauty XL.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "face/portrait enhancement",
-      "tags": [
-        "character",
-        "kpop",
-        "korean woman",
-        "beautiful face",
-        "asian woman",
-        "beautiful woman",
-        "z image turbo"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "NexBlend Asian 01 Face ZIT",
-      "civitai_url": "https://civitai.com/models/2523771",
-      "description": "Z Image Turbo-Based High-Quality Photorealistic Portrait LoRAThis model is a realism-focused LoRA designed to maximize the potential of the Z Image Turbo base. It is optimized for refined East Asian features, especially Korean facial aesthetics, and trendy character rendering.It avoids excessive pos..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Style\\ExpressiveH__Incase_Mixed_Style_.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "princess",
-        "afrobull",
-        "mixed style",
-        "expressiveh",
-        "vixon",
-        "style"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "ExpressiveH Afrobull Princess Mixed Style [PONY ILLUSTRIOUS XL] by UOC",
-      "civitai_url": "https://civitai.com/models/637091",
-      "description": "Hello,Please remember to look at this article before using my models. I will update this article as I learn new things.Pony XL Image Generation Guide For My ModelsMy All Work In Here! Dont forget to check!You can support me on Patreon or here. All subscriptions, paid or free, are appreciated. TYSM.E..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Style\\Expressive_H-000001.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "hand/finger refinement",
-      "tags": [
-        "comics",
-        "style",
-        "cartoon",
-        "toon",
-        "expressive"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Expressive Euro Cartoon",
-      "civitai_url": "https://civitai.com/models/2497291",
-      "description": "Trained on 20-22 images of comics style from old times, they have more like hand drawn feel but a slight exaggerated expressiveness.Use strength 0.6 - 0.8.1.0 strength will produce artifacts"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Style\\MoriiMee_Gothic_Niji_Style__Pony_LoRA_V1_Redux.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "gothic",
-        "style",
-        "woman",
-        "nijijourney",
-        "goth",
-        "niji journey",
-        "moriimee"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "MoriiMee - Gothic Niji Journey - Style Anima LORA",
-      "civitai_url": "https://civitai.com/models/2485109",
-      "description": "Trained on AnimaPreview2 with 36 pictures.Best result with weight between : 0.8-1.Prompts : realisticInspired by this LoRA and from the original artist MoriiMeeReviews are really appreciated, i love to see the community use my work, that's why I share it.If you like my work, you can tip me here.Got ..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Style\\RawCam_250_v1.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Style\\SDXLFaeTastic2400.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Style\\dark.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "eye detail enhancement",
-      "tags": [
-        "character",
-        "shin megami tensei",
-        "fire emblem",
-        "anna",
-        "tokyo mirage sessions",
-        "tokyo mirage sessions #fe"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Anna - Tokyo Mirage Sessions #FE (2 Outfits)",
-      "civitai_url": "https://civitai.com/models/2528175",
-      "description": "The incarnation of Anna from Tokyo Mirage Sessions #FE, contains both her regular version and her masked version.Trigger Words (General): AnnaTMS, red hair, long hair, bangs, sidelocks, high ponytail, Trigger Words (Original): ClerkAnna, red eyes, store uniform, two-tone shirt, blue shirt, white shi..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Style\\epiCPhotoXL-Derp2.safetensors": {
       "archs": [
@@ -2361,220 +1689,149 @@
       "archs": [
         "sdxl"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Style\\epicNewPhoto.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Style\\ghibli_last.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "style"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Cee_One's Ghibli-Esque Blend for Illustrious",
-      "civitai_url": "https://civitai.com/models/2463040",
-      "description": "This is my first go at training a \"vibes\" model so it is very experimental, may go well or catastrophically bad. I basically tried to capture the ghibli-esque fantasy vibe I enjoy, bare in mind this is trained on a blend of many artists and style so this should NOT do an exactly Ghibli style, it may..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Style\\sd_xl_offset_example-lora_1.0.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "character",
-        "disney",
-        "dog",
-        "male",
-        "canine",
-        "bolt"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Bolt (Disney's Bolt film), SDXL LORA 1",
-      "civitai_url": "https://civitai.com/models/2527039",
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
       "description": ""
     },
     "SDXL\\Style\\zy_AmateurStyle_v2.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "character"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "\u660e\u65e5\u65b9\u821f  \u771f\u8a00   |  Arknights  Mantra",
-      "civitai_url": "https://civitai.com/models/2195372",
-      "description": "\u59d4\u6258\u5236\u4f5c\uff0c\u65e0\u9700\u591a\u8a00\u6ca1\u6709\u592a\u7ec6\u81f4\u7684\u53bb\u8dd1\u56fe\uff0c\u8bf7\u81ea\u884c\u4f53\u9a8c\u5982\u6709\u59d4\u6258\u9700\u6c42\uff0c\u8bf7\u79fb\u6b65\u81f3\u672c\u4eba\u4e3b\u9875\uff0c\u611f\u8c22\u60a8\u7684\u652f\u6301\u2665"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Style\\\u7eee\u513f \u539a\u6d82\u6784\u56fe\u5149\u5f71\u8d28\u611f\u589e\u5f3aV3.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "eye detail enhancement",
-      "tags": [
-        "character",
-        "jujutsu kaisen",
-        "anime character"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Kirara Hoshi (\u661f\u7dba\u7f85\u7f85) - Jujutsu Kaisen",
-      "civitai_url": "https://civitai.com/models/2430928",
-      "description": "Kirara Hoshi (\u661f\u7dba\u7f85\u7f85) fom Jujutsu KaisenYou may change the gender of the character by replacing 1 girl with 1boyAppearance:1girl,purple eyes,pink eyes,black hair,blue hair,pink hair,multicolored hair,two-tone hair,streaked hair,long hair,bangs,blunt bangsOutfit 1:alternate hairstyle,piercing,ear pierc..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\Sweating my balls of mate.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "style",
-        "sweating profusely",
-        "sweat style"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "sweating profusely (sweat style) ANIMA LORA",
-      "civitai_url": "https://civitai.com/models/2498589",
-      "description": "\u30c6\u30b9\u30c8\u9069\u7528\u3057\u305f\u5834\u5408\u3001\u30de\u30ad\u30ce\u30b9\u30bf\u30a4\u30eb\u306b\u5bc4\u3063\u3066\u3057\u307e\u3046\u306e\u3067\u4e0a\u624b\u304f\u8abf\u6574\u3059\u308b\u5fc5\u8981\u304c\u6709\u308a\u307e\u3059\u4ed6\u306e\u30ad\u30e3\u30e9\u30af\u30bf\u30fcLORA\u7b49\u3068\u7d44\u307f\u5408\u308f\u305b\u308b\u5834\u5408\u306f\u30a6\u30a7\u30a4\u30c8\u3084\u30d7\u30ed\u30f3\u30d7\u30c8\u3092\u8abf\u6574\u3057\u3066\u4e0b\u3055\u3044"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\XL_DarkSkinAnyRaceR12.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "style",
-        "\u821e-hime",
-        "satou kenetsu",
-        "\u7570\u4e16\u754cntr",
-        "\u5723\u75d5\u306e\u30af\u30a7\u30a4\u30b5\u30fc",
-        "\u4f50\u85e4\u5065\u60a6"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "[illustrious XL] Satou Kenetsu/\u4f50\u85e4\u5065\u60a6\uff0c\u300a\u821e-HiME\u300b\u300a\u5723\u75d5\u306e\u30af\u30a7\u30a4\u30b5\u30fc\u300b\u300a\u7570\u4e16\u754cNTR\u300b- Artist Style",
-      "civitai_url": "https://civitai.com/models/2524479",
-      "description": "Help fuel my passion! Even $1 makes a difference.\u2615 https://ko-fi.com/flyx3\u8ba9\u6211\u4fdd\u6301\u521b\u4f5c\u70ed\u60c5\uff0c\u4ed8\u8d39\u6b3e/\u9690\u85cf\u6b3e\u6a21\u578b\u53ef\u4ee5\u5728 \u7231\u53d1\u7535 \u83b7\u53d6~(2026\u5e742\u6708\u9650\u5b9a\u6b3elora\uff1a\u300a\u5e7b\u60f3\u4f20\u8bf4\u300b\u300aTales of Phantasia\u300b3\u98ce\u683c+7\u89d2\u8272lora)(2026\u5e743\u6708\u9650\u5b9a\u6b3elora\uff1a\u300a\u51fa\u5305\u738b\u5973_V3\u300b\u300aTo Love Ru\u300b2\u98ce\u683c+22\u89d2\u8272lora)(2026\u5e744\u6708\u9650\u5b9a\u6b3elora\uff1a\u300a\u6211\u7684\u5973\u795e_V3\u300b3\u98ce\u683c+10\u89d2\u8272lora)(2026\u5e744\u6708\u62a2\u5148\u4f53\u9a8c\uff1a\u300a\u732b\u773c\u4e09\u59d0\u59b9\u300b\u300a\u57ce\u5e02\u730e\u4eba\u300b3\u98ce\u683c+6\u89d2\u8272lora)\u2615 https://www.ifd..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\dmd2_sdxl_4step_lora.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "anime/manga style",
-      "tags": [
-        "anime",
-        "concept",
-        "checkpoint",
-        "sdxl",
-        "illustrious",
-        "dmd2",
-        "noobai"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "DMD2: Smart-Brain Infusion (The Portable Checkpoint Series)",
-      "civitai_url": "https://civitai.com/models/2354742",
-      "description": "\ud83d\udc4b If you like what I do and want to support the development, feel free to buy me a coffee:Neural Repair &amp; Portable Checkpoints Lora Type.Hello! I'm back with something much juicier than ever!Originally, I planned to release more Samplers (and I will), but I pivoted to solve a critical flaw I fou..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\polyhedron_all_sdxl-000004.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "hand/finger refinement",
-      "tags": [
-        "assets",
-        "perfect skin",
-        "perfect hands",
-        "detailed skin",
-        "perfect eyes",
-        "skin imperfections",
-        "skin blemish"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "WAN2.2. T2I (HIGH/LOW Noise) -\u2013 Polyhedron_all: Perfect skin. Perfect hands. Perfect eyes. (m/f)",
-      "civitai_url": "https://civitai.com/models/1947995",
-      "description": "EDIT! (25.10.10): Okay, okay \u2014 I\u2019ve added the HIGH NOISE model! :) Took me a small fortune to train it in proper high quality. For the workflow and more training steps, please check out my Patreon \u2014 link below. &lt;3https://www.patreon.com/polyhedron_aiSo, folks. My first LoRA for the WAN2.2 model (..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "SDXL\\realistic\\feet v3.safetensors": {
       "archs": [
         "sdxl"
       ],
-      "purpose": "hand/finger refinement",
-      "tags": [
-        "anime",
-        "character",
-        "animation",
-        "muscles",
-        "manga",
-        "muscular",
-        "plague",
-        "japan",
-        "anthro",
-        "furry"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Plague Dragon, Illusia - DoraTama",
-      "civitai_url": "https://civitai.com/models/2528289",
-      "description": "This character is from light novel, manga and Japanese animation.And now, He's LEVEL UP!Reincarnated as a Dragon Hatchling (DoraTama) - Plague Dragon, Illusia.In anime, He evolve so Big and Handsome. XDTrigger wordIllusia_Lv2 DoraTamadragongray and black bodymultiple body colorsorange handorange fee..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "WAN\\14B\\DR34ML4Y_I2V_14B_LOW_V2.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "WAN\\SVI_v2_PRO_Wan2.2-I2V-A14B_HIGH_lora_rank_128_fp16.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
       "purpose": "",
       "tags": [],
@@ -2586,7 +1843,7 @@
     },
     "WAN\\SVI_v2_PRO_Wan2.2-I2V-A14B_LOW_lora_rank_128_fp16.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
       "purpose": "",
       "tags": [],
@@ -2598,7 +1855,7 @@
     },
     "WAN\\Wan22_CumV2_High.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
       "purpose": "",
       "tags": [],
@@ -2610,7 +1867,7 @@
     },
     "WAN\\WanAnimate_relight_lora_fp16.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
       "purpose": "",
       "tags": [],
@@ -2622,7 +1879,7 @@
     },
     "WAN\\lightx2v_I2V_14B_480p_cfg_step_distill_rank128_bf16.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
       "purpose": "",
       "tags": [],
@@ -2634,7 +1891,7 @@
     },
     "WAN\\lightx2v_T2V_14B_cfg_step_distill_v2_lora_rank256_bf16.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
       "purpose": "",
       "tags": [],
@@ -2646,87 +1903,55 @@
     },
     "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "photorealism/realism",
-      "tags": [
-        "character",
-        "woman",
-        "realistic",
-        "lora",
-        "video",
-        "wan",
-        "wan 2.2"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "AI Girl: Fictional Women Series17 / \u67b6\u7a7a\u306e\u5973\u6027\u30b7\u30ea\u30fc\u30ba17 Wan 2.2 T2V",
-      "civitai_url": "https://civitai.com/models/2522967",
-      "description": "\u597d\u307f\u306b\u3088\u308a\u307e\u3059\u3002\u30b5\u30f3\u30d7\u30eb\u52d5\u753b\u306e\u5f37\u5ea6\u306f1.0\u3067\u3059\u3002It depends on your preference.The intensity of the sample video is 1.0"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "photorealism/realism",
-      "tags": [
-        "character",
-        "woman",
-        "realistic",
-        "lora",
-        "video",
-        "wan",
-        "wan 2.2"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "AI Girl: Fictional Women Series17 / \u67b6\u7a7a\u306e\u5973\u6027\u30b7\u30ea\u30fc\u30ba17 Wan 2.2 T2V",
-      "civitai_url": "https://civitai.com/models/2522967",
-      "description": "\u597d\u307f\u306b\u3088\u308a\u307e\u3059\u3002\u30b5\u30f3\u30d7\u30eb\u52d5\u753b\u306e\u5f37\u5ea6\u306f1.0\u3067\u3059\u3002It depends on your preference.The intensity of the sample video is 1.0"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "WAN\\wan2.2_t2v_lightx2v_4steps_lora_v1.1_high_noise.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "photorealism/realism",
-      "tags": [
-        "character",
-        "woman",
-        "realistic",
-        "lora",
-        "video",
-        "wan",
-        "wan 2.2"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "AI Girl: Fictional Women Series17 / \u67b6\u7a7a\u306e\u5973\u6027\u30b7\u30ea\u30fc\u30ba17 Wan 2.2 T2V",
-      "civitai_url": "https://civitai.com/models/2522967",
-      "description": "\u597d\u307f\u306b\u3088\u308a\u307e\u3059\u3002\u30b5\u30f3\u30d7\u30eb\u52d5\u753b\u306e\u5f37\u5ea6\u306f1.0\u3067\u3059\u3002It depends on your preference.The intensity of the sample video is 1.0"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "WAN\\wan2.2_t2v_lightx2v_4steps_lora_v1.1_low_noise.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "photorealism/realism",
-      "tags": [
-        "character",
-        "woman",
-        "realistic",
-        "lora",
-        "video",
-        "wan",
-        "wan 2.2"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "AI Girl: Fictional Women Series17 / \u67b6\u7a7a\u306e\u5973\u6027\u30b7\u30ea\u30fc\u30ba17 Wan 2.2 T2V",
-      "civitai_url": "https://civitai.com/models/2522967",
-      "description": "\u597d\u307f\u306b\u3088\u308a\u307e\u3059\u3002\u30b5\u30f3\u30d7\u30eb\u52d5\u753b\u306e\u5f37\u5ea6\u306f1.0\u3067\u3059\u3002It depends on your preference.The intensity of the sample video is 1.0"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "WAN\\wan22_i2v_footjob_v2_ab_high.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
       "purpose": "",
       "tags": [],
@@ -2738,7 +1963,7 @@
     },
     "WAN\\wan22_i2v_footjob_v2_ab_low.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
       "purpose": "",
       "tags": [],
@@ -2750,27 +1975,19 @@
     },
     "Wan-2.2-I2V\\Concept\\Wan2.2-I2V-Low-MysticXXX.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "photorealism/realism",
-      "tags": [
-        "character",
-        "woman",
-        "realistic",
-        "lora",
-        "video",
-        "wan",
-        "wan 2.2"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "AI Girl: Fictional Women Series17 / \u67b6\u7a7a\u306e\u5973\u6027\u30b7\u30ea\u30fc\u30ba17 Wan 2.2 T2V",
-      "civitai_url": "https://civitai.com/models/2522967",
-      "description": "\u597d\u307f\u306b\u3088\u308a\u307e\u3059\u3002\u30b5\u30f3\u30d7\u30eb\u52d5\u753b\u306e\u5f37\u5ea6\u306f1.0\u3067\u3059\u3002It depends on your preference.The intensity of the sample video is 1.0"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Wan-2.2-I2V\\Concept\\Wan22_CumV2_Low.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
       "purpose": "",
       "tags": [],
@@ -2782,83 +1999,55 @@
     },
     "Wan-2.2-I2V\\KISSHIGH.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Wan-2.2-I2V\\KISSLOW.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Wan-2.2-I2V\\Lightning\\Wan2.2-Lightning_I2V-A14B-4steps-lora_HIGH_fp16.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "photorealism/realism",
-      "tags": [
-        "character",
-        "woman",
-        "realistic",
-        "lora",
-        "video",
-        "wan",
-        "wan 2.2"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "AI Girl: Fictional Women Series17 / \u67b6\u7a7a\u306e\u5973\u6027\u30b7\u30ea\u30fc\u30ba17 Wan 2.2 T2V",
-      "civitai_url": "https://civitai.com/models/2522967",
-      "description": "\u597d\u307f\u306b\u3088\u308a\u307e\u3059\u3002\u30b5\u30f3\u30d7\u30eb\u52d5\u753b\u306e\u5f37\u5ea6\u306f1.0\u3067\u3059\u3002It depends on your preference.The intensity of the sample video is 1.0"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Wan-2.2-I2V\\Lightning\\Wan2.2-Lightning_I2V-A14B-4steps-lora_LOW_fp16.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "photorealism/realism",
-      "tags": [
-        "character",
-        "woman",
-        "realistic",
-        "lora",
-        "video",
-        "wan",
-        "wan 2.2"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "AI Girl: Fictional Women Series17 / \u67b6\u7a7a\u306e\u5973\u6027\u30b7\u30ea\u30fc\u30ba17 Wan 2.2 T2V",
-      "civitai_url": "https://civitai.com/models/2522967",
-      "description": "\u597d\u307f\u306b\u3088\u308a\u307e\u3059\u3002\u30b5\u30f3\u30d7\u30eb\u52d5\u753b\u306e\u5f37\u5ea6\u306f1.0\u3067\u3059\u3002It depends on your preference.The intensity of the sample video is 1.0"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Wan-2.2-I2V\\Lightning\\lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
       "purpose": "",
       "tags": [],
@@ -2870,195 +2059,127 @@
     },
     "Wan-2.2-I2V\\NSFW\\23High noise-Cumshot Aesthetics.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Wan-2.2-I2V\\NSFW\\56Low noise-Cumshot Aesthetics.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Wan-2.2-I2V\\NSFW\\NSFW-22-H-e8.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "face/portrait enhancement",
-      "tags": [
-        "character",
-        "\u4eba\u7269\uff1a\u9ed1\u53d1\u957f\u53d1\u5e74\u8f7b\u5973\u6027 \u957f\u76f8\uff1a\u4e94\u5b98\u7cbe\u81f4\u7acb\u4f53\uff0c\u9ad8\u9f3b\u6881\uff0c\u957f\u7709 \u8eab\u6750\uff1a\u4e30\u6ee1\u66f2\u7ebf\uff0c\u524d\u51f8\u540e\u7fd8\uff0c\u7ec6\u8170 \u53d1\u578b\uff1a\u9ed1\u8272\u957f\u76f4\u53d1\uff0c\u4e2d\u5206\u62ab\u80a9 \u88c5\u626e\uff1a\u90fd\u5e02\u65f6\u5c1a\u6027\u611f\u98ce\u683c \u8863\u670d\uff1a\u9999\u69df\u8272\u7d27\u8eab\u540a\u5e26\u8fde\u8863\u88d9\uff0c\u9ed1\u8272\u8774\u8776\u5370\u82b1 \u88e4\u5b50/\u88d9\u5b50\uff1a\u65e0\u88e4\u88c5\uff0c\u9ad8\u5f00\u53c9\u8d85\u77ed\u88d9\u8bbe\u8ba1 \u978b\u5b50\uff1a\u9ed1\u8272\u5c16\u5934\u7ec6\u9ad8\u8ddf\u76ae\u978b \u4e1d\u889c\uff1a\u9ed1\u8272\u900f\u660e\u8fde\u88e4\u4e1d\u889c",
-        "person: young woman with long black hair face: defined facial features, high nose bridge, long eyebrows body shape: voluptuous curves, hourglass figure, slim waist hair style: long straight black hair, center part outfit theme: modern urban chic and sexy style clothing type: champagne tight spaghetti strap mini dress with black butterfly print pants / skirt: no pants, high slit mini skirt design shoes: black pointed toe stiletto heels stockings: black sheer pantyhose"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "NSFW Z-IMAGE Champagne Butterfly Print Spaghetti Strap Dress High Slit And Black Sheer Stockings",
-      "civitai_url": "https://civitai.com/models/2519958",
-      "description": "Z-IMAGEUsing this Lora will generate a fixed NSFW content\uff01 \ud83c\udfac\u2728This is suitable for the latest z-image turbo model.If this model is not available, it is recommended to use my online platform for generation to achieve the best results.This image depicts a theme of modern indoor fashion photography. A w..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Wan-2.2-I2V\\NSFW\\NSFW-22-L-e8.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "face/portrait enhancement",
-      "tags": [
-        "character",
-        "\u4eba\u7269\uff1a\u9ed1\u53d1\u957f\u53d1\u5e74\u8f7b\u5973\u6027 \u957f\u76f8\uff1a\u4e94\u5b98\u7cbe\u81f4\u7acb\u4f53\uff0c\u9ad8\u9f3b\u6881\uff0c\u957f\u7709 \u8eab\u6750\uff1a\u4e30\u6ee1\u66f2\u7ebf\uff0c\u524d\u51f8\u540e\u7fd8\uff0c\u7ec6\u8170 \u53d1\u578b\uff1a\u9ed1\u8272\u957f\u76f4\u53d1\uff0c\u4e2d\u5206\u62ab\u80a9 \u88c5\u626e\uff1a\u90fd\u5e02\u65f6\u5c1a\u6027\u611f\u98ce\u683c \u8863\u670d\uff1a\u9999\u69df\u8272\u7d27\u8eab\u540a\u5e26\u8fde\u8863\u88d9\uff0c\u9ed1\u8272\u8774\u8776\u5370\u82b1 \u88e4\u5b50/\u88d9\u5b50\uff1a\u65e0\u88e4\u88c5\uff0c\u9ad8\u5f00\u53c9\u8d85\u77ed\u88d9\u8bbe\u8ba1 \u978b\u5b50\uff1a\u9ed1\u8272\u5c16\u5934\u7ec6\u9ad8\u8ddf\u76ae\u978b \u4e1d\u889c\uff1a\u9ed1\u8272\u900f\u660e\u8fde\u88e4\u4e1d\u889c",
-        "person: young woman with long black hair face: defined facial features, high nose bridge, long eyebrows body shape: voluptuous curves, hourglass figure, slim waist hair style: long straight black hair, center part outfit theme: modern urban chic and sexy style clothing type: champagne tight spaghetti strap mini dress with black butterfly print pants / skirt: no pants, high slit mini skirt design shoes: black pointed toe stiletto heels stockings: black sheer pantyhose"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "NSFW Z-IMAGE Champagne Butterfly Print Spaghetti Strap Dress High Slit And Black Sheer Stockings",
-      "civitai_url": "https://civitai.com/models/2519958",
-      "description": "Z-IMAGEUsing this Lora will generate a fixed NSFW content\uff01 \ud83c\udfac\u2728This is suitable for the latest z-image turbo model.If this model is not available, it is recommended to use my online platform for generation to achieve the best results.This image depicts a theme of modern indoor fashion photography. A w..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Wan-2.2-I2V\\NSFW\\wan2.2-i2v-high-oral-insertion-v1.0.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "photorealism/realism",
-      "tags": [
-        "character",
-        "woman",
-        "realistic",
-        "lora",
-        "video",
-        "wan",
-        "wan 2.2"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "AI Girl: Fictional Women Series17 / \u67b6\u7a7a\u306e\u5973\u6027\u30b7\u30ea\u30fc\u30ba17 Wan 2.2 T2V",
-      "civitai_url": "https://civitai.com/models/2522967",
-      "description": "\u597d\u307f\u306b\u3088\u308a\u307e\u3059\u3002\u30b5\u30f3\u30d7\u30eb\u52d5\u753b\u306e\u5f37\u5ea6\u306f1.0\u3067\u3059\u3002It depends on your preference.The intensity of the sample video is 1.0"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Wan-2.2-I2V\\NSFW\\wan2.2-i2v-low-oral-insertion-v1.0.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "photorealism/realism",
-      "tags": [
-        "character",
-        "woman",
-        "realistic",
-        "lora",
-        "video",
-        "wan",
-        "wan 2.2"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "AI Girl: Fictional Women Series17 / \u67b6\u7a7a\u306e\u5973\u6027\u30b7\u30ea\u30fc\u30ba17 Wan 2.2 T2V",
-      "civitai_url": "https://civitai.com/models/2522967",
-      "description": "\u597d\u307f\u306b\u3088\u308a\u307e\u3059\u3002\u30b5\u30f3\u30d7\u30eb\u52d5\u753b\u306e\u5f37\u5ea6\u306f1.0\u3067\u3059\u3002It depends on your preference.The intensity of the sample video is 1.0"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Wan-2.2-I2V\\NSFW\\wan2.2_i2v_highnoise_FOOT_WORSHIP_TOE_SUCKING_v1.0.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "photorealism/realism",
-      "tags": [
-        "character",
-        "woman",
-        "realistic",
-        "lora",
-        "video",
-        "wan",
-        "wan 2.2"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "AI Girl: Fictional Women Series17 / \u67b6\u7a7a\u306e\u5973\u6027\u30b7\u30ea\u30fc\u30ba17 Wan 2.2 T2V",
-      "civitai_url": "https://civitai.com/models/2522967",
-      "description": "\u597d\u307f\u306b\u3088\u308a\u307e\u3059\u3002\u30b5\u30f3\u30d7\u30eb\u52d5\u753b\u306e\u5f37\u5ea6\u306f1.0\u3067\u3059\u3002It depends on your preference.The intensity of the sample video is 1.0"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Wan-2.2-I2V\\NSFW\\wan2.2_i2v_highnoise_footjob_v1.0.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "photorealism/realism",
-      "tags": [
-        "character",
-        "woman",
-        "realistic",
-        "lora",
-        "video",
-        "wan",
-        "wan 2.2"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "AI Girl: Fictional Women Series17 / \u67b6\u7a7a\u306e\u5973\u6027\u30b7\u30ea\u30fc\u30ba17 Wan 2.2 T2V",
-      "civitai_url": "https://civitai.com/models/2522967",
-      "description": "\u597d\u307f\u306b\u3088\u308a\u307e\u3059\u3002\u30b5\u30f3\u30d7\u30eb\u52d5\u753b\u306e\u5f37\u5ea6\u306f1.0\u3067\u3059\u3002It depends on your preference.The intensity of the sample video is 1.0"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Wan-2.2-I2V\\NSFW\\wan2.2_i2v_lownoise_FOOT_WORSHIP_TOE_SUCKING_v1.0.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "photorealism/realism",
-      "tags": [
-        "character",
-        "woman",
-        "realistic",
-        "lora",
-        "video",
-        "wan",
-        "wan 2.2"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "AI Girl: Fictional Women Series17 / \u67b6\u7a7a\u306e\u5973\u6027\u30b7\u30ea\u30fc\u30ba17 Wan 2.2 T2V",
-      "civitai_url": "https://civitai.com/models/2522967",
-      "description": "\u597d\u307f\u306b\u3088\u308a\u307e\u3059\u3002\u30b5\u30f3\u30d7\u30eb\u52d5\u753b\u306e\u5f37\u5ea6\u306f1.0\u3067\u3059\u3002It depends on your preference.The intensity of the sample video is 1.0"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Wan-2.2-I2V\\NSFW\\wan2.2_i2v_lownoise_footjob_v1.0.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "photorealism/realism",
-      "tags": [
-        "character",
-        "woman",
-        "realistic",
-        "lora",
-        "video",
-        "wan",
-        "wan 2.2"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "AI Girl: Fictional Women Series17 / \u67b6\u7a7a\u306e\u5973\u6027\u30b7\u30ea\u30fc\u30ba17 Wan 2.2 T2V",
-      "civitai_url": "https://civitai.com/models/2522967",
-      "description": "\u597d\u307f\u306b\u3088\u308a\u307e\u3059\u3002\u30b5\u30f3\u30d7\u30eb\u52d5\u753b\u306e\u5f37\u5ea6\u306f1.0\u3067\u3059\u3002It depends on your preference.The intensity of the sample video is 1.0"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Wan-2.2-I2V\\NSFW\\wan22_i2v_anal_v1_high_noise.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
       "purpose": "",
       "tags": [],
@@ -3070,7 +2191,7 @@
     },
     "Wan-2.2-I2V\\NSFW\\wan22_i2v_anal_v1_low_noise.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
       "purpose": "",
       "tags": [],
@@ -3082,7 +2203,7 @@
     },
     "Wan-2.2-I2V\\NSFW\\wan22_i2v_feetup_V3_high_noise.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
       "purpose": "",
       "tags": [],
@@ -3094,7 +2215,7 @@
     },
     "Wan-2.2-I2V\\NSFW\\wan22_i2v_feetup_V3_low_noise.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
       "purpose": "",
       "tags": [],
@@ -3106,7 +2227,7 @@
     },
     "Wan-2.2-I2V\\NSFW\\wan22_i2v_footjob_v2_ab_high.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
       "purpose": "",
       "tags": [],
@@ -3118,7 +2239,7 @@
     },
     "Wan-2.2-I2V\\NSFW\\wan22_i2v_footjob_v2_ab_low.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
       "purpose": "",
       "tags": [],
@@ -3130,425 +2251,302 @@
     },
     "Wan-2.2-I2V\\WAN-2.2-I2V-Double-Blowjob-HIGH-v1.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "photorealism/realism",
-      "tags": [
-        "character",
-        "woman",
-        "realistic",
-        "lora",
-        "video",
-        "wan",
-        "wan 2.2"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "AI Girl: Fictional Women Series17 / \u67b6\u7a7a\u306e\u5973\u6027\u30b7\u30ea\u30fc\u30ba17 Wan 2.2 T2V",
-      "civitai_url": "https://civitai.com/models/2522967",
-      "description": "\u597d\u307f\u306b\u3088\u308a\u307e\u3059\u3002\u30b5\u30f3\u30d7\u30eb\u52d5\u753b\u306e\u5f37\u5ea6\u306f1.0\u3067\u3059\u3002It depends on your preference.The intensity of the sample video is 1.0"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Wan-2.2-I2V\\WAN-2.2-I2V-Double-Blowjob-LOW-v1.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "photorealism/realism",
-      "tags": [
-        "character",
-        "woman",
-        "realistic",
-        "lora",
-        "video",
-        "wan",
-        "wan 2.2"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "AI Girl: Fictional Women Series17 / \u67b6\u7a7a\u306e\u5973\u6027\u30b7\u30ea\u30fc\u30ba17 Wan 2.2 T2V",
-      "civitai_url": "https://civitai.com/models/2522967",
-      "description": "\u597d\u307f\u306b\u3088\u308a\u307e\u3059\u3002\u30b5\u30f3\u30d7\u30eb\u52d5\u753b\u306e\u5f37\u5ea6\u306f1.0\u3067\u3059\u3002It depends on your preference.The intensity of the sample video is 1.0"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Wan-2.2-I2V\\wan2.2_t2v_highnoise_masturbation_v1.0.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "photorealism/realism",
-      "tags": [
-        "character",
-        "woman",
-        "realistic",
-        "lora",
-        "video",
-        "wan",
-        "wan 2.2"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "AI Girl: Fictional Women Series17 / \u67b6\u7a7a\u306e\u5973\u6027\u30b7\u30ea\u30fc\u30ba17 Wan 2.2 T2V",
-      "civitai_url": "https://civitai.com/models/2522967",
-      "description": "\u597d\u307f\u306b\u3088\u308a\u307e\u3059\u3002\u30b5\u30f3\u30d7\u30eb\u52d5\u753b\u306e\u5f37\u5ea6\u306f1.0\u3067\u3059\u3002It depends on your preference.The intensity of the sample video is 1.0"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Wan-2.2-I2V\\wan2.2_t2v_lownoise_masturbation_v1.0.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "photorealism/realism",
-      "tags": [
-        "character",
-        "woman",
-        "realistic",
-        "lora",
-        "video",
-        "wan",
-        "wan 2.2"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "AI Girl: Fictional Women Series17 / \u67b6\u7a7a\u306e\u5973\u6027\u30b7\u30ea\u30fc\u30ba17 Wan 2.2 T2V",
-      "civitai_url": "https://civitai.com/models/2522967",
-      "description": "\u597d\u307f\u306b\u3088\u308a\u307e\u3059\u3002\u30b5\u30f3\u30d7\u30eb\u52d5\u753b\u306e\u5f37\u5ea6\u306f1.0\u3067\u3059\u3002It depends on your preference.The intensity of the sample video is 1.0"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Wan-2.2-I2V\\wriggling_i2v_high_e010.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Wan-2.2-I2V\\wriggling_i2v_low_e020.safetensors": {
       "archs": [
-        "sd15"
+        "wan"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Z-Image-Turbo\\Character\\2B_NierA_v1.safetensors": {
       "archs": [
         "sd15"
       ],
-      "purpose": "face/portrait enhancement",
-      "tags": [
-        "base model",
-        "lora",
-        "anima",
-        "lcm",
-        "dmd2"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Cosmos-Predict2.5-2B base distilled extracted DMD2 LoRA",
-      "civitai_url": "https://civitai.com/models/2466415",
-      "description": "https://huggingface.co/nvidia/Cosmos-Predict2.5-2B/tree/main/base/distilled - https://huggingface.co/nvidia/Cosmos-Predict2.5-2B/tree/main/base/pre-trained = this LoRAhttps://github.com/nvidia-cosmos/cosmos-predict2.5/blob/main/docs/post-training_video2world_action.md#4-distillation"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Z-Image-Turbo\\Effect\\93PXB5SENBFN8NEYSRYZA1DVX0-Chrome skin.safetensors": {
       "archs": [
         "sd15"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Z-Image-Turbo\\Effect\\EFFECTSp001_zit.safetensors": {
       "archs": [
         "sd15"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Z-Image-Turbo\\Effect\\OiledSkin_Zit_Turbo_V1.safetensors": {
       "archs": [
         "sd15"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "concept",
-        "oiled skin"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Oiled skin",
-      "civitai_url": "https://civitai.com/models/720370",
-      "description": "Oiled skin for hot pics.1.1 Stable version for Civitai Generator"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Z-Image-Turbo\\Effect\\Tentacledv1.safetensors": {
       "archs": [
         "sd15"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Z-Image-Turbo\\Effect\\Z-cyborg.safetensors": {
       "archs": [
         "sd15"
       ],
-      "purpose": "face/portrait enhancement",
-      "tags": [
-        "character",
-        "\u4eba\u7269\uff1a\u9ed1\u53d1\u90fd\u5e02\u65f6\u5c1a\u5973\u90ce   \u957f\u76f8\uff1a\u4e94\u5b98\u7acb\u4f53\u6e05\u6670\uff0c\u9f3b\u6881\u9ad8\u633a\uff0c\u7ea2\u5507\u9971\u6ee1   \u8eab\u6750\uff1a\u4fee\u957f\u7ea4\u7ec6\u8170\u8eab\u914d\u4e30\u6ee1\u80f8\u7ebf\u4e0e\u81c0\u90e8\u66f2\u7ebf   \u53d1\u578b\uff1a\u4e2d\u5206\u5fae\u5377\u957f\u53d1\uff0c\u524d\u989d\u788e\u53d1\u4fee\u9970\u8138\u578b   \u88c5\u626e\uff1a\u665a\u5bb4/\u9152\u5427\u98ce\u6027\u611f\u9732\u80a9\u9020\u578b   \u8863\u670d\uff1a\u9152\u7ea2\u8272\u900f\u89c6\u9732\u80a9\u957f\u8896\u4fee\u8eab\u8fde\u8863\u88d9   \u88e4\u5b50/\u88d9\u5b50\uff1a\u65e0\u88e4\u88c5\uff0c\u88d9\u8eab\u4e3a\u53ca\u819d\u4e2d\u957f\u6b3e\u4e0d\u89c4\u5219\u4e0b\u6446   \u978b\u5b50\uff1a\u9152\u7ea2\u8272\u5c16\u5934\u7ec6\u9ad8\u8ddf\u4ea4\u53c9\u7ed1\u5e26\u51c9\u978b   \u4e1d\u889c\uff1a\u672a\u7a7f\u4e1d\u889c\uff0c\u53cc\u817f\u88f8\u9732",
-        "person: black-haired urban fashion woman   face: sculpted facial structure, high nose bridge, full red lips   body shape: slender waist with pronounced bust and hip curves   hair style: center-parted wavy long hair with bangs framing face   outfit theme: evening/bar sexy off-shoulder look   clothing type: wine-red sheer off-shoulder long-sleeve bodycon midi dress   pants / skirt: no pants; skirt features asymmetrical hemline reaching mid-calf   shoes: wine-red pointed-toe stiletto sandals with crisscross ankle straps   stockings: bare legs without hosiery"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "NSFW Z-IMAGE  Sheer Off-Shoulder Wine Red Midi Dress With Crisscross Stiletto Sandals",
-      "civitai_url": "https://civitai.com/models/2526938",
-      "description": "Z-IMAGEUsing this Lora will generate a fixed NSFW content\uff01 \ud83c\udfac\u2728This is suitable for the latest z-image turbo model.If this model is not available, it is recommended to use my online platform for generation to achieve the best results.This image depicts a fashionable woman in an urban nightclub or upsc..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Z-Image-Turbo\\Effect\\water_droplet_effect_zit_v1.safetensors": {
       "archs": [
         "sd15"
       ],
-      "purpose": "artistic style",
-      "tags": [
-        "style"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "V67 IOR",
-      "civitai_url": "https://civitai.com/models/2513055",
-      "description": "V67 IOR (Refractive index) LoRA for FluxOptical Precision, Material RealityTry my models: https://civitai.com/user/angelomaiota/modelsPremise: If you decide to use my model, I will give you 500 Yellow Buzz if your image is chosen for the cover of CIVITAI, even if used in combination with other model..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Z-Image-Turbo\\Style\\600mm_Lens-V2_TriggerIs_600mm.safetensors": {
       "archs": [
         "sd15"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Z-Image-Turbo\\Style\\SonyAlpha_ZImage.safetensors": {
       "archs": [
         "sd15"
       ],
-      "purpose": "artistic style",
+      "purpose": "detail/quality enhancement",
       "tags": [
-        "buildings",
-        "interior rendering",
-        "interior design",
-        "architecture design"
+        "high quality",
+        "style",
+        "cinematic",
+        "realistic",
+        "depth of field",
+        "natural colors",
+        "high resolution",
+        "sharp details",
+        "dynamic range",
+        "proffesional"
       ],
       "user_desc": "",
       "source": "civitai",
-      "civitai_name": "XSarchitectural-9Advanced interior design based on Japanese style",
-      "civitai_url": "https://civitai.com/models/25447",
-      "description": "Advanced interior design based on Japanese styleThe pictures are pure Lora model test, and the effects will be better if CKPT, VAE and controlnet are provided, basically meeting the requirements of effect drawingIf you have any questions, please contact me at xsarchitecturalstudio@gmail.com"
+      "civitai_name": "Sony Alpha A7 III Style",
+      "civitai_url": "https://civitai.com/models/1174190",
+      "description": "This Sony Alpha A7 III Style LoRA faithfully captures the essence of the renowned Sony Alpha A7 III camera, celebrated for its outstanding dynamic range, vibrant yet natural colors, and professional-quality output.In short: this LoRA delivers enhanced details, a more sophisticated depth of field (Do..."
     },
     "Z-Image-Turbo\\Style\\Z-Image-Professional_Photographer_3500.safetensors": {
       "archs": [
         "sd15"
       ],
-      "purpose": "face/portrait enhancement",
-      "tags": [
-        "character",
-        "\u4eba\u7269\uff1a\u9ed1\u53d1\u90fd\u5e02\u65f6\u5c1a\u5973\u90ce   \u957f\u76f8\uff1a\u4e94\u5b98\u7acb\u4f53\u6e05\u6670\uff0c\u9f3b\u6881\u9ad8\u633a\uff0c\u7ea2\u5507\u9971\u6ee1   \u8eab\u6750\uff1a\u4fee\u957f\u7ea4\u7ec6\u8170\u8eab\u914d\u4e30\u6ee1\u80f8\u7ebf\u4e0e\u81c0\u90e8\u66f2\u7ebf   \u53d1\u578b\uff1a\u4e2d\u5206\u5fae\u5377\u957f\u53d1\uff0c\u524d\u989d\u788e\u53d1\u4fee\u9970\u8138\u578b   \u88c5\u626e\uff1a\u665a\u5bb4/\u9152\u5427\u98ce\u6027\u611f\u9732\u80a9\u9020\u578b   \u8863\u670d\uff1a\u9152\u7ea2\u8272\u900f\u89c6\u9732\u80a9\u957f\u8896\u4fee\u8eab\u8fde\u8863\u88d9   \u88e4\u5b50/\u88d9\u5b50\uff1a\u65e0\u88e4\u88c5\uff0c\u88d9\u8eab\u4e3a\u53ca\u819d\u4e2d\u957f\u6b3e\u4e0d\u89c4\u5219\u4e0b\u6446   \u978b\u5b50\uff1a\u9152\u7ea2\u8272\u5c16\u5934\u7ec6\u9ad8\u8ddf\u4ea4\u53c9\u7ed1\u5e26\u51c9\u978b   \u4e1d\u889c\uff1a\u672a\u7a7f\u4e1d\u889c\uff0c\u53cc\u817f\u88f8\u9732",
-        "person: black-haired urban fashion woman   face: sculpted facial structure, high nose bridge, full red lips   body shape: slender waist with pronounced bust and hip curves   hair style: center-parted wavy long hair with bangs framing face   outfit theme: evening/bar sexy off-shoulder look   clothing type: wine-red sheer off-shoulder long-sleeve bodycon midi dress   pants / skirt: no pants; skirt features asymmetrical hemline reaching mid-calf   shoes: wine-red pointed-toe stiletto sandals with crisscross ankle straps   stockings: bare legs without hosiery"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "NSFW Z-IMAGE  Sheer Off-Shoulder Wine Red Midi Dress With Crisscross Stiletto Sandals",
-      "civitai_url": "https://civitai.com/models/2526938",
-      "description": "Z-IMAGEUsing this Lora will generate a fixed NSFW content\uff01 \ud83c\udfac\u2728This is suitable for the latest z-image turbo model.If this model is not available, it is recommended to use my online platform for generation to achieve the best results.This image depicts a fashionable woman in an urban nightclub or upsc..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Z-Image-Turbo\\Style\\Z-TURBO_Photography_35mmPhoto_1536.safetensors": {
       "archs": [
         "sd15"
       ],
-      "purpose": "face/portrait enhancement",
-      "tags": [
-        "character",
-        "\u4eba\u7269\uff1a\u9ed1\u53d1\u90fd\u5e02\u65f6\u5c1a\u5973\u90ce   \u957f\u76f8\uff1a\u4e94\u5b98\u7acb\u4f53\u6e05\u6670\uff0c\u9f3b\u6881\u9ad8\u633a\uff0c\u7ea2\u5507\u9971\u6ee1   \u8eab\u6750\uff1a\u4fee\u957f\u7ea4\u7ec6\u8170\u8eab\u914d\u4e30\u6ee1\u80f8\u7ebf\u4e0e\u81c0\u90e8\u66f2\u7ebf   \u53d1\u578b\uff1a\u4e2d\u5206\u5fae\u5377\u957f\u53d1\uff0c\u524d\u989d\u788e\u53d1\u4fee\u9970\u8138\u578b   \u88c5\u626e\uff1a\u665a\u5bb4/\u9152\u5427\u98ce\u6027\u611f\u9732\u80a9\u9020\u578b   \u8863\u670d\uff1a\u9152\u7ea2\u8272\u900f\u89c6\u9732\u80a9\u957f\u8896\u4fee\u8eab\u8fde\u8863\u88d9   \u88e4\u5b50/\u88d9\u5b50\uff1a\u65e0\u88e4\u88c5\uff0c\u88d9\u8eab\u4e3a\u53ca\u819d\u4e2d\u957f\u6b3e\u4e0d\u89c4\u5219\u4e0b\u6446   \u978b\u5b50\uff1a\u9152\u7ea2\u8272\u5c16\u5934\u7ec6\u9ad8\u8ddf\u4ea4\u53c9\u7ed1\u5e26\u51c9\u978b   \u4e1d\u889c\uff1a\u672a\u7a7f\u4e1d\u889c\uff0c\u53cc\u817f\u88f8\u9732",
-        "person: black-haired urban fashion woman   face: sculpted facial structure, high nose bridge, full red lips   body shape: slender waist with pronounced bust and hip curves   hair style: center-parted wavy long hair with bangs framing face   outfit theme: evening/bar sexy off-shoulder look   clothing type: wine-red sheer off-shoulder long-sleeve bodycon midi dress   pants / skirt: no pants; skirt features asymmetrical hemline reaching mid-calf   shoes: wine-red pointed-toe stiletto sandals with crisscross ankle straps   stockings: bare legs without hosiery"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "NSFW Z-IMAGE  Sheer Off-Shoulder Wine Red Midi Dress With Crisscross Stiletto Sandals",
-      "civitai_url": "https://civitai.com/models/2526938",
-      "description": "Z-IMAGEUsing this Lora will generate a fixed NSFW content\uff01 \ud83c\udfac\u2728This is suitable for the latest z-image turbo model.If this model is not available, it is recommended to use my online platform for generation to achieve the best results.This image depicts a fashionable woman in an urban nightclub or upsc..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Z-Image-Turbo\\Style\\ZiTD3tailed4nime.safetensors": {
       "archs": [
         "sd15"
       ],
-      "purpose": "detail/quality enhancement",
-      "tags": [
-        "concept",
-        "detailed",
-        "detail",
-        "enhancer",
-        "undetailed"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Detail Tweaker XL",
-      "civitai_url": "https://civitai.com/models/122359",
-      "description": "Detail tweaker for SDXL.Works with weights [-3, 3]Use positive weight to increase details and negative weight to reduce details.Good weight depends on your prompt and number of sampling steps, I recommend starting at 1.5 and then adjusting it."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Z-Image-Turbo\\Style\\z-image-illustria-01.safetensors": {
       "archs": [
         "illustrious"
       ],
-      "purpose": "face/portrait enhancement",
-      "tags": [
-        "character",
-        "\u4eba\u7269\uff1a\u9ed1\u53d1\u90fd\u5e02\u65f6\u5c1a\u5973\u90ce   \u957f\u76f8\uff1a\u4e94\u5b98\u7acb\u4f53\u6e05\u6670\uff0c\u9f3b\u6881\u9ad8\u633a\uff0c\u7ea2\u5507\u9971\u6ee1   \u8eab\u6750\uff1a\u4fee\u957f\u7ea4\u7ec6\u8170\u8eab\u914d\u4e30\u6ee1\u80f8\u7ebf\u4e0e\u81c0\u90e8\u66f2\u7ebf   \u53d1\u578b\uff1a\u4e2d\u5206\u5fae\u5377\u957f\u53d1\uff0c\u524d\u989d\u788e\u53d1\u4fee\u9970\u8138\u578b   \u88c5\u626e\uff1a\u665a\u5bb4/\u9152\u5427\u98ce\u6027\u611f\u9732\u80a9\u9020\u578b   \u8863\u670d\uff1a\u9152\u7ea2\u8272\u900f\u89c6\u9732\u80a9\u957f\u8896\u4fee\u8eab\u8fde\u8863\u88d9   \u88e4\u5b50/\u88d9\u5b50\uff1a\u65e0\u88e4\u88c5\uff0c\u88d9\u8eab\u4e3a\u53ca\u819d\u4e2d\u957f\u6b3e\u4e0d\u89c4\u5219\u4e0b\u6446   \u978b\u5b50\uff1a\u9152\u7ea2\u8272\u5c16\u5934\u7ec6\u9ad8\u8ddf\u4ea4\u53c9\u7ed1\u5e26\u51c9\u978b   \u4e1d\u889c\uff1a\u672a\u7a7f\u4e1d\u889c\uff0c\u53cc\u817f\u88f8\u9732",
-        "person: black-haired urban fashion woman   face: sculpted facial structure, high nose bridge, full red lips   body shape: slender waist with pronounced bust and hip curves   hair style: center-parted wavy long hair with bangs framing face   outfit theme: evening/bar sexy off-shoulder look   clothing type: wine-red sheer off-shoulder long-sleeve bodycon midi dress   pants / skirt: no pants; skirt features asymmetrical hemline reaching mid-calf   shoes: wine-red pointed-toe stiletto sandals with crisscross ankle straps   stockings: bare legs without hosiery"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "NSFW Z-IMAGE  Sheer Off-Shoulder Wine Red Midi Dress With Crisscross Stiletto Sandals",
-      "civitai_url": "https://civitai.com/models/2526938",
-      "description": "Z-IMAGEUsing this Lora will generate a fixed NSFW content\uff01 \ud83c\udfac\u2728This is suitable for the latest z-image turbo model.If this model is not available, it is recommended to use my online platform for generation to achieve the best results.This image depicts a fashionable woman in an urban nightclub or upsc..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Z-Image-Turbo\\Style\\zy_CinematicShot_zit.safetensors": {
       "archs": [
         "sd15"
       ],
-      "purpose": "character/concept design",
-      "tags": [
-        "character"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "\u660e\u65e5\u65b9\u821f  \u771f\u8a00   |  Arknights  Mantra",
-      "civitai_url": "https://civitai.com/models/2195372",
-      "description": "\u59d4\u6258\u5236\u4f5c\uff0c\u65e0\u9700\u591a\u8a00\u6ca1\u6709\u592a\u7ec6\u81f4\u7684\u53bb\u8dd1\u56fe\uff0c\u8bf7\u81ea\u884c\u4f53\u9a8c\u5982\u6709\u59d4\u6258\u9700\u6c42\uff0c\u8bf7\u79fb\u6b65\u81f3\u672c\u4eba\u4e3b\u9875\uff0c\u611f\u8c22\u60a8\u7684\u652f\u6301\u2665"
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "Z-Image-Turbo\\feet v2.1.safetensors": {
       "archs": [
         "sd15"
       ],
-      "purpose": "hand/finger refinement",
-      "tags": [
-        "anime",
-        "character",
-        "animation",
-        "muscles",
-        "manga",
-        "muscular",
-        "plague",
-        "japan",
-        "anthro",
-        "furry"
-      ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "Plague Dragon, Illusia - DoraTama",
-      "civitai_url": "https://civitai.com/models/2528289",
-      "description": "This character is from light novel, manga and Japanese animation.And now, He's LEVEL UP!Reincarnated as a Dragon Hatchling (DoraTama) - Plague Dragon, Illusia.In anime, He evolve so Big and Handsome. XDTrigger wordIllusia_Lv2 DoraTamadragongray and black bodymultiple body colorsorange handorange fee..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "ltxv\\ltx-2.3-22b-distilled-lora-384.safetensors": {
       "archs": [
-        "sd15"
-      ],
-      "purpose": "hand/finger refinement",
-      "tags": [
-        "style",
-        "cute",
-        "paper cutout",
         "ltx"
       ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "LTX 2.3 - Paper Cut-Out",
-      "civitai_url": "https://civitai.com/models/2528213",
-      "description": "This LoRA creates a cozy handcrafted paper cut-out cinematic diorama style where every subject and environment looks physically assembled from layered paper pieces. Scenes feature stacked paper shapes, visible cut edges, layered sheets, folded paper elements, slight paper curl, tape seams, and handc..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "ltxv\\ltx2\\ltx-2.3-22b-ic-lora-motion-track-control-ref0.5.safetensors": {
       "archs": [
-        "sd15"
-      ],
-      "purpose": "hand/finger refinement",
-      "tags": [
-        "style",
-        "cute",
-        "paper cutout",
         "ltx"
       ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "LTX 2.3 - Paper Cut-Out",
-      "civitai_url": "https://civitai.com/models/2528213",
-      "description": "This LoRA creates a cozy handcrafted paper cut-out cinematic diorama style where every subject and environment looks physically assembled from layered paper pieces. Scenes feature stacked paper shapes, visible cut edges, layered sheets, folded paper elements, slight paper curl, tape seams, and handc..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     },
     "ltxv\\ltx2\\ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors": {
       "archs": [
-        "sd15"
-      ],
-      "purpose": "hand/finger refinement",
-      "tags": [
-        "style",
-        "cute",
-        "paper cutout",
         "ltx"
       ],
+      "purpose": "",
+      "tags": [],
       "user_desc": "",
-      "source": "civitai",
-      "civitai_name": "LTX 2.3 - Paper Cut-Out",
-      "civitai_url": "https://civitai.com/models/2528213",
-      "description": "This LoRA creates a cozy handcrafted paper cut-out cinematic diorama style where every subject and environment looks physically assembled from layered paper pieces. Scenes feature stacked paper shapes, visible cut edges, layered sheets, folded paper elements, slight paper curl, tape seams, and handc..."
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
     }
   },
   "interrogated": []

@@ -2,58 +2,147 @@
   <img src="assets/wizard_banner.gif" alt="Spellcaster" width="600" />
 </p>
 
-<h1 align="center">Spellcaster</h1>
+<h1 align="center">✨ Spellcaster ✨</h1>
 
 <p align="center">
-  <strong>AI superpowers for your photos and art — no experience needed.</strong><br/>
-  Use it from GIMP, from Darktable, or just tell an AI chatbot what you want.
+  <strong>49 AI tools. Zero experience needed. Just talk to it.</strong><br/>
+  <em>GIMP &bull; Darktable &bull; SillyTavern &bull; Standalone Web UI &bull; 100% Local &bull; No Cloud</em>
 </p>
 
 <p align="center">
-  <a href="https://github.com/laboratoiresonore/spellcaster/releases"><img alt="Releases" src="https://img.shields.io/github/v/release/laboratoiresonore/spellcaster?color=7c3aed&label=latest&style=flat-square"/></a>
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--2.0-7c3aed?style=flat-square"/></a>
-  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-7c3aed?style=flat-square"/>
+  <a href="https://github.com/laboratoiresonore/spellcaster/releases"><img alt="Releases" src="https://img.shields.io/github/v/release/laboratoiresonore/spellcaster?color=7c3aed&label=latest&style=for-the-badge"/></a>
+  &nbsp;
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--2.0-7c3aed?style=for-the-badge"/></a>
+  &nbsp;
+  <img alt="Platform" src="https://img.shields.io/badge/Windows%20%7C%20macOS%20%7C%20Linux-7c3aed?style=for-the-badge&logo=windows&logoColor=white"/>
+  &nbsp;
+  <img alt="SillyTavern" src="https://img.shields.io/badge/SillyTavern-13%20Characters-e879f9?style=for-the-badge"/>
 </p>
 
 <p align="center">
-  <a href="#what-is-spellcaster">What Is It</a> &bull;
-  <a href="#how-to-install">How to Install</a> &bull;
-  <a href="#complete-feature-reference">Features</a> &bull;
-  <a href="#sample-output">Samples</a> &bull;
-  <a href="#just-talk-to-it--the-scaffold-system">Just Talk To It</a> &bull;
-  <a href="#bring-your-own-workflows">Your Workflows</a> &bull;
-  <a href="#faq">FAQ</a> &bull;
-  <a href="#for-developers--power-users">Dev Guide</a>
+  <a href="#-what-is-spellcaster">What Is It</a> &bull;
+  <a href="#-see-it-in-action">See It</a> &bull;
+  <a href="#-how-to-install">Install</a> &bull;
+  <a href="#-the-wizard-guild">Wizard Guild</a> &bull;
+  <a href="#-sillytavern-characters">SillyTavern</a> &bull;
+  <a href="#-complete-feature-reference">All Features</a> &bull;
+  <a href="#-faq">FAQ</a>
 </p>
 
 ---
 
-## What Is Spellcaster?
+## 🧙 What Is Spellcaster?
 
-**Spellcaster adds 49 AI tools to GIMP and Darktable** — the two most popular free image editors. Create images from text, fix and enhance photos, swap faces, generate short videos, remove backgrounds, change lighting, extend canvases, re-pose characters, blend layers with AI harmonization — and that's just the built-in stuff.
+<table>
+<tr>
+<td width="60%">
 
-**You don't need to understand AI, machine learning, or any technical concepts.** Every tool comes with pre-configured settings that professionals have spent hundreds of hours perfecting. Your first result will look like your hundredth.
+**Spellcaster adds 49 AI tools to GIMP and Darktable** — create images from text, fix photos, swap faces, generate videos, remove backgrounds, change lighting, extend canvases, re-pose characters, and more.
 
-**Don't want to learn GIMP or Darktable?** You don't have to. Spellcaster comes with **The Wizard Guild**, an immersive standalone Web UI. Simply boot it up, pick a generative Wizard, and control everything by **just talking to the AI**. Say *"make this photo more cinematic"* or *"swap the face in this image"* and the AI figures out which tool to use, asks you the right questions, runs the workflow, and delivers the result directly in your browser. It supports any local LLM (like Kobold) completely natively. See [Just Talk To It: The Wizard Guild & Scaffold System](#just-talk-to-it-the-wizard-guild--scaffold-system).
+**No AI experience needed.** Every tool has expert-tuned presets. Your first result looks like your hundredth.
 
-**Already use ComfyUI?** Spellcaster can import your existing workflows and run them straight from GIMP — no need to rebuild anything. See [Bring Your Own Workflows](#bring-your-own-workflows).
+**Three ways to use it:**
+- 🎨 **GIMP / Darktable** — full plugin with 49 menu entries
+- 🧙 **The Wizard Guild** — standalone chat UI with AI wizards
+- 💬 **SillyTavern** — 13 character cards for live RP visuals
+
+Everything runs **100% locally** on your GPU. No cloud, no subscriptions, no content filters.
+
+</td>
+<td width="40%">
+
+<img src="assets/wizardguild.png" alt="The Wizard Guild" width="100%"/>
+<sub><em>The Wizard Guild — talk to AI wizards, get images</em></sub>
+
+</td>
+</tr>
+</table>
 
 ---
 
-## How Does It Work?
+## 🎬 See It In Action
 
-Spellcaster connects your image editor (GIMP or Darktable) to an AI engine called [ComfyUI](https://github.com/comfyanonymous/ComfyUI) that runs on your computer's graphics card. You never need to touch ComfyUI directly — Spellcaster handles everything behind the scenes.
+> **Every image and animation below was generated by Spellcaster — zero manual tuning, zero Photoshop, zero cloud APIs.**
 
-1. You select an area or pick a preset in GIMP/Darktable
-2. Spellcaster exports the image and sends it to ComfyUI
-3. Your GPU processes the image using AI models
-4. The result appears as a new layer in your editor
+### 🌍 Living Worlds — Scenes That Breathe
 
-**The installer handles all the complexity** — GPU detection, model downloads, extension installs, and preset configuration. You just run it and click "Install."
+<table>
+<tr>
+<td align="center" width="33%"><img src="assets/readme/anim_forest.gif" alt="Animated Forest" width="100%"/><br/><sub>🌲 <strong>Animancer</strong> brought this forest to life</sub></td>
+<td align="center" width="33%"><img src="assets/readme/anim_tavern.gif" alt="Animated Tavern" width="100%"/><br/><sub>🔥 Firelight flickers. Candles dance.</sub></td>
+<td align="center" width="33%"><img src="assets/readme/anim_library.gif" alt="Animated Library" width="100%"/><br/><sub>📚 Dust motes drift through lamplight</sub></td>
+</tr>
+</table>
+
+<p align="center"><sub><strong>Sceneshifter</strong> generates the background. <strong>Animancer</strong> makes it move. Your story writes itself.</sub></p>
+
+### 🧝 Characters That Feel Real
+
+<table>
+<tr>
+<td align="center" width="20%"><img src="assets/readme/anim_portrait.gif" alt="Living Portrait" width="100%"/><br/><sub>✨ <strong>Living portrait</strong><br/>Hair sways. Eyes blink.</sub></td>
+<td align="center" width="20%"><img src="assets/readme/portrait_elf.png" alt="Elf" width="100%"/><br/><sub>🧝 Elven Ranger</sub></td>
+<td align="center" width="20%"><img src="assets/readme/portrait_knight.png" alt="Knight" width="100%"/><br/><sub>⚔️ Noble Paladin</sub></td>
+<td align="center" width="20%"><img src="assets/readme/portrait_mage.png" alt="Mage" width="100%"/><br/><sub>🔮 Wise Wizard</sub></td>
+<td align="center" width="20%"><img src="assets/readme/portrait_rogue.png" alt="Rogue" width="100%"/><br/><sub>🗡️ Charming Rogue</sub></td>
+</tr>
+</table>
+
+<p align="center"><sub><strong>Portraitist</strong> generates expression portraits that match your character's mood — happy, angry, heartbroken, confident.</sub></p>
+
+### 🎨 One Character. Five Art Styles. One Command.
+
+<table>
+<tr>
+<td align="center" width="20%"><img src="assets/readme/portrait_elf.png" alt="Original" width="100%"/><br/><sub>Original</sub></td>
+<td align="center" width="20%"><img src="assets/readme/restyle_photorealistic.png" alt="Photo" width="100%"/><br/><sub>📷 Photorealistic</sub></td>
+<td align="center" width="20%"><img src="assets/readme/restyle_oilpainting.png" alt="Oil" width="100%"/><br/><sub>🖼️ Oil Painting</sub></td>
+<td align="center" width="20%"><img src="assets/readme/restyle_watercolor.png" alt="Watercolor" width="100%"/><br/><sub>💧 Watercolor</sub></td>
+<td align="center" width="20%"><img src="assets/readme/restyle_cyberpunk.png" alt="Cyberpunk" width="100%"/><br/><sub>⚡ Cyberpunk</sub></td>
+</tr>
+</table>
+
+<p align="center"><code>/restyle-all photorealistic portrait, 8k</code> — every avatar in your chat, transformed instantly</p>
+
+### ⚔️ The AI Decides When You Need a Picture
+
+<table>
+<tr>
+<td align="center" width="33%"><img src="assets/readme/moment_battle.png" alt="Battle" width="100%"/><br/><sub>⚔️ Two knights clash — <strong>Autonoma</strong> illustrated this on its own</sub></td>
+<td align="center" width="33%"><img src="assets/readme/moment_reveal.png" alt="Reveal" width="100%"/><br/><sub>👁️ A dramatic reveal — the AI sensed the moment</sub></td>
+<td align="center" width="33%"><img src="assets/readme/moment_discovery.png" alt="Discovery" width="100%"/><br/><sub>💎 An ancient discovery — visual generated autonomously</sub></td>
+</tr>
+</table>
+
+<p align="center"><sub><strong>Autonoma</strong> uses LLM function tools to decide <em>on its own</em> when a scene deserves an illustration. You don't ask. It just knows.</sub></p>
+
+### 🏰 More Scenes — All Auto-Generated
+
+<table>
+<tr>
+<td align="center" width="20%"><img src="assets/readme/scene_tavern.png" alt="Tavern" width="100%"/><br/><sub>🍺 Medieval Tavern</sub></td>
+<td align="center" width="20%"><img src="assets/readme/scene_forest.png" alt="Forest" width="100%"/><br/><sub>🌙 Moonlit Forest</sub></td>
+<td align="center" width="20%"><img src="assets/readme/scene_throne.png" alt="Throne" width="100%"/><br/><sub>👑 Throne Room</sub></td>
+<td align="center" width="20%"><img src="assets/readme/scene_ship.png" alt="Ship" width="100%"/><br/><sub>🏴‍☠️ Pirate Ship</sub></td>
+<td align="center" width="20%"><img src="assets/readme/scene_library.png" alt="Library" width="100%"/><br/><sub>📖 Arcane Library</sub></td>
+</tr>
+</table>
+
+<p align="center"><sub>Write <em>"They stepped through the portal into a moonlit forest clearing"</em> — the background changes automatically.</sub></p>
 
 ---
 
-## How to Install
+## ⚡ How Does It Work?
+
+```
+You pick a tool → Spellcaster talks to ComfyUI → Your GPU does the magic → Result appears in your editor
+```
+
+That's it. [ComfyUI](https://github.com/comfyanonymous/ComfyUI) is the AI engine under the hood. You never touch it. The installer handles GPU detection, model downloads, and configuration. You just run it and click "Install."
+
+---
+
+## 📦 How to Install
 
 ### What You Need First
 
@@ -134,7 +223,7 @@ The installer is an 8-step guided wizard. It's designed so you never have to mak
 
 ---
 
-## Complete Feature Reference
+## 🛠️ Complete Feature Reference
 
 ### Generation — Create and Edit Images
 
@@ -284,12 +373,6 @@ Dual ControlNet support in img2img and inpaint workflows. Models auto-selected p
 
 </details>
 
-### My Presets — Save and Recall Your Favorites
-
-Every dialog in Spellcaster has a **Save Preset** button. Name your settings, and they appear in the **My Presets** panel — a quick-access menu that lives at the top of the Filters menu.
-
-Presets remember everything: model, prompt, LoRAs, denoise, steps, dimensions — so you can recreate any result instantly. Works across img2img, Klein, Wan video, FaceID, PuLID, and all other tools.
-
 ### Magic Studios — Full Character Pipeline
 
 <details>
@@ -332,7 +415,7 @@ Selfie → Casting Polaroids → Body Double → Wardrobe → Set Design → Dir
 
 ---
 
-## Just Talk To It: The Wizard Guild & Scaffold System
+## 🧙‍♂️ Just Talk To It: The Wizard Guild & Scaffold System
 
 You don't need to learn GIMP. You don't need to learn Darktable. You don't even need to open ComfyUI.
 
@@ -439,62 +522,489 @@ If you prefer external messengers, the **Signal Bridge** turns your ComfyUI serv
 
 </details>
 
+### 🎭 SillyTavern Characters — AI Art Inside Your Roleplay
+
+**Your roleplay just got eyes.** 👀
+
+Spellcaster ships **13 character cards** for [SillyTavern](https://github.com/SillyTavern/SillyTavern) that turn your text-only RP into a **visual experience**. Backgrounds change when the story moves. Portraits shift with emotions. Dramatic moments get illustrated *automatically*. Characters restyle from anime to photorealistic mid-conversation. Scenes come alive as short animations. All without leaving the chat window.
+
+> 💡 **Think of it like this:** You write *"The ancient door creaked open to reveal a vast underground library."* — and suddenly your SillyTavern background IS that library. Generated in real-time. By your GPU. For free.
+
+<table>
+  <tr>
+    <td align="center" width="7.7%"><strong>Imaginus</strong><br/><sub>Image creation<br/>txt2img, ControlNet</sub></td>
+    <td align="center" width="7.7%"><strong>Transmutex</strong><br/><sub>Transformation<br/>img2img, Klein, style</sub></td>
+    <td align="center" width="7.7%"><strong>Masquerade</strong><br/><sub>Face & identity<br/>swap, FaceID, PuLID</sub></td>
+    <td align="center" width="7.7%"><strong>Restorix</strong><br/><sub>Upscale & restore<br/>SUPIR, hallucinate</sub></td>
+    <td align="center" width="7.7%"><strong>Erasure</strong><br/><sub>Inpaint & remove<br/>LaMa, background</sub></td>
+    <td align="center" width="7.7%"><strong>Videomancer</strong><br/><sub>Video generation<br/>WAN, LTX, SeedVR2</sub></td>
+    <td align="center" width="7.7%"><strong>Cinematic</strong><br/><sub>Director's Chair<br/>multi-step sequences</sub></td>
+    <td align="center" width="7.7%"><strong>Studiocraft</strong><br/><sub>Magic Studios<br/>5-act character pipeline</sub></td>
+    <td align="center" width="7.7%"><strong>Sceneshifter</strong><br/><sub>Living scenes<br/>auto-background</sub></td>
+    <td align="center" width="7.7%"><strong>Restyler</strong><br/><sub>Avatar restyle<br/>anime↔photo</sub></td>
+    <td align="center" width="7.7%"><strong>Portraitist</strong><br/><sub>Expression gen<br/>emotion portraits</sub></td>
+    <td align="center" width="7.7%"><strong>Autonoma</strong><br/><sub>Function tools<br/>LLM-autonomous gen</sub></td>
+    <td align="center" width="7.7%"><strong>Animancer</strong><br/><sub>Animation<br/>video moments</sub></td>
+  </tr>
+</table>
+
+**What actually happens:** Add Sceneshifter to your group chat. You write *"They stepped through the portal into a moonlit forest clearing."* — and the SillyTavern background silently changes to a moonlit forest clearing, generated in real-time by your GPU. Add Portraitist, and every time a character smiles, frowns, or rages, their portrait updates to match. Add Autonoma, and the AI decides *on its own* when a scene deserves an illustration — a dramatic reveal, a first meeting, a battle — and generates it inline in the chat.
+
+These aren't gimmicks. They're full ComfyUI pipelines — the same ones photographers and artists use — triggered by your story. Sceneshifter generates 1280×720 scene backgrounds. Portraitist creates 400×600 character portraits. Restyler can transform **every avatar in your chat** from anime to photorealistic (or vice versa) with one command: `/restyle-all photorealistic portrait, professional photography, 8k`. Masquerade can swap faces between characters. Videomancer can animate a still scene into a short video clip. Restyling is **fully reversible** — originals are auto-backed up and restored with `/restyle-undo`.
+
+Everything runs locally on your GPU. No cloud API, no per-image costs, no content filters.
+
+#### Magic Studios — Characters *Inside* Your Scenes
+
+The ultimate feature: **your characters appear inside the generated scenes, dressed for the occasion.**
+
+Use `/studio-cast-all` to create face models from every character's avatar. Use `/studio-body-all` to generate full-body transparent cutouts with face swap. Then every time a scene generates — manually via `/studio-scene` or automatically via Sceneshifter — your characters are **composited into the scene** with attire appropriate to the setting, followed by an AI harmonization pass that matches lighting and shadows.
+
+Write *"They entered the medieval tavern"* → your characters appear in the tavern, wearing tavern-appropriate clothing. Write *"They fled into the enchanted forest"* → same characters, now in adventurer gear, composited into a moonlit forest. The attire changes automatically based on the scene description.
+
+```
+/studio-cast-all              → Face models ready
+/studio-body-all casual wear  → Transparent body doubles ready
+/studio-scene a pirate ship   → Scene + characters composited + harmonized
+```
+
+All characters are auto-cast on startup (face models generated from avatars in the background). If a character card includes a `body_description` in its metadata, the body double is also auto-generated.
+
+#### Story Scaffold — The AI Watches Your Story
+
+Spellcaster includes a **story scaffold** that watches every message for narrative changes that need a visual update. It doesn't just wait for scene descriptions — it detects:
+
+| What Changed | Example | What Happens |
+|---|---|---|
+| **Location** | *"walked into the throne room"* | Full scene regeneration + re-dress characters |
+| **Character enters/exits** | *"a stranger appears"*, *"storms off"* | Recomposite with updated cast |
+| **Pose change** | sitting → running, fighting, kneeling, dancing | Regenerate bodies in new poses |
+| **Attire change** | *"puts on armor"*, *"removes her cloak"* | Regenerate body with new outfit |
+| **Important object** | *"draws a glowing sword"*, *"opens an ancient chest"* | Recomposite scene with new element |
+| **Weather/atmosphere** | sunset, storm, fog, fire, earthquake | Full scene regeneration |
+| **Intimate moment** | kissing, embracing, holding close | Bodies regenerated close together |
+| **Conflict** | arguing, shouting, confronting | Bodies in tense stances |
+| **Dramatic beat** | betrayal, confession, death | Recomposite for dramatic staging |
+
+The scaffold triggers **immediately** on detected changes — no waiting for the message counter. It falls back to interval-based extraction only when no specific trigger is detected.
+
+<details>
+<summary><strong>Sceneshifter — Living Scenes (auto-background generation)</strong></summary>
+
+**The scene changes. The background follows.**
+
+Sceneshifter is the character that makes SillyTavern feel alive. Add it to any group chat and forget about it — it works in the background, watching your story unfold. When the narrative moves to a new location, Sceneshifter detects the scene change and generates a matching background image using ComfyUI. The SillyTavern background updates automatically.
+
+**How it works:** Sceneshifter uses a two-layer detection system. The **story scaffold** watches every message for 10 categories of narrative change (location shift, character enter/exit, pose change, attire change, atmosphere shift, combat, intimacy, drama, object appearance). When a trigger is detected, it fires immediately — no waiting for the message interval. As a fallback, it also parses asterisk narration (`*They entered the dark cavern*`), parenthetical descriptions, and scene-setting keywords on a configurable interval. When characters have studio body doubles ready, they're automatically composited into the scene with appropriate attire.
+
+**How to use it:**
+1. Add Sceneshifter to your group chat (it won't talk — it just watches)
+2. Enable auto-background: type `/spellcaster auto-bg on`
+3. Set the interval (default: every 3 messages): adjust in the Spellcaster settings panel
+4. Play your story. When the setting changes, the background changes with it.
+
+**Best for:** Any roleplay with multiple locations — fantasy adventures, detective stories, slice-of-life scenes, dungeon crawls. Imagine your tavern scene having an actual tavern background, then transitioning to a forest when the party sets out. No manual work.
+
+**Pro tips:**
+- Write descriptive scene transitions: *"The grand doors swung open to reveal a cathedral of ice, frozen pillars reaching impossibly high"* — the more vivid, the better the background
+- Set the interval to 5+ messages for slower stories, 1-2 for fast-paced action
+- Use `/scene [description]` manually for an instant background override
+- Sceneshifter works best as a silent observer — it won't interrupt the conversation
+
+</details>
+
+<details>
+<summary><strong>Autonoma — The AI That Decides When You Need a Picture</strong></summary>
+
+**It's not just generating images. It's deciding *when* images matter.**
+
+Autonoma is the most magical character in the collection. It registers three LLM function tools — `generate_scene`, `generate_portrait`, and `set_atmosphere` — that let the AI model itself decide when to create a visual. You don't ask for images. The AI reads the emotional weight of the moment and decides "this deserves to be seen."
+
+**How it works:** When your LLM backend supports function calling (Mistral, Llama 3.1+, GPT-4, Claude), Autonoma's tools appear in the model's tool list. During a dramatic reveal, a first meeting, a battle, or any visually striking moment, the AI can call `generate_scene` with a description. The image appears inline in the chat.
+
+**How to use it:**
+1. Add Autonoma to your group chat
+2. Make sure your LLM backend supports function calling (KoboldCPP with Mistral-7B works)
+3. Play your story as usual
+4. When something dramatic happens, Autonoma generates an image automatically
+5. You can also talk to Autonoma directly: *"Autonoma, show me what the throne room looks like"*
+
+**Best for:** Immersive storytelling where you want visuals at emotional peaks without breaking the flow. Fantasy adventures, mysteries with dramatic reveals, romantic scenes where the atmosphere matters. The AI generates at moments like:
+- A character's first appearance (*"A tall figure emerged from the shadows..."*)
+- A scene of high tension (*"The dragon reared its head, flames licking between its teeth"*)
+- A mood shift (*"The sun broke through the clouds for the first time in days"*)
+- An important discovery (*"Hidden behind the bookshelf was a door she'd never seen before"*)
+
+**Pro tips:**
+- Autonoma works best with models that have strong tool-calling support — Mistral 7B Instruct is the sweet spot for local inference
+- If it generates too often, adjust the system prompt to be more selective
+- If it doesn't generate enough, try adding *"[Autonoma: consider generating a visual]"* as a subtle hint in your narration
+
+</details>
+
+<details>
+<summary><strong>Imaginus — The Image Conjurer</strong></summary>
+
+**Describe it. See it. That's the whole deal.**
+
+Imaginus is your direct line to txt2img generation. It's the character you talk to when you want to *create* something from scratch — concept art for a new character, a landscape for your world, a dramatic illustration of a scene.
+
+**How it works:** Tell Imaginus what you want to see. It constructs a ComfyUI txt2img workflow with quality-boosting prompt engineering, dispatches it, and returns the result. Imaginus automatically detects the best available model on your ComfyUI server (preferring Flux/SDXL over SD1.5) and optimizes the parameters.
+
+**How to use it:**
+- Chat directly: *"Imaginus, conjure me a crystal palace floating among clouds at sunset"*
+- Group chat: Imaginus responds when mentioned or when given a visual request
+- Slash command: `/scene a crystal palace floating among clouds` for instant generation
+
+**Best for:** World-building, character concept art, scene illustrations, inspiration boards. When you need a specific visual that doesn't come from transforming an existing image.
+
+</details>
+
+<details>
+<summary><strong>Transmutex — The Transformation Alchemist</strong></summary>
+
+**Take what exists. Make it something else entirely.**
+
+Transmutex specializes in img2img — taking an existing image and transforming it. Change the art style. Shift the mood. Turn a rough sketch into a polished illustration. Transmutex is what you use when you already have a visual but want to push it in a new direction.
+
+**How it works:** Transmutex takes an existing image (character avatar, generated scene, uploaded reference), applies a style prompt through ComfyUI's img2img pipeline at a configurable denoise level, and returns the transformed version.
+
+**How to use it:**
+- *"Transmutex, take this scene and make it look like it's painted by Studio Ghibli"*
+- *"Transform my character's portrait into a dark, moody noir style"*
+- Slash command: `/restyle oil painting, dramatic chiaroscuro lighting, museum masterpiece`
+
+**Best for:** Style experiments, mood shifts mid-story, transforming AI-generated art into different aesthetics. Amazing for "what if" explorations — same character, different universe. Imagine: *"What would this tavern look like in a cyberpunk setting?"*
+
+</details>
+
+<details>
+<summary><strong>Masquerade — The Face Weaver</strong></summary>
+
+**Identities are fluid. Faces are just another mask.**
+
+Masquerade handles everything face-related — face swapping between characters, identity preservation, and generating portraits with specific facial features. If your story involves disguises, shapeshifting, twins, doppelgangers, or any kind of identity play, Masquerade is your go-to.
+
+**How it works:** Under the hood, Masquerade drives ReActor (face swap), IPAdapter FaceID (identity-guided generation), PuLID Flux (attention-level face transfer), and Klein Head Swap (hybrid pipeline). In SillyTavern, it generates identity-consistent portraits based on character descriptions.
+
+**Best for:** Stories with shapeshifters, disguises, twin characters, or any scenario where faces matter. Also great for creating consistent character portraits across multiple scenes — describe a character once, and Masquerade keeps them recognizable.
+
+</details>
+
+<details>
+<summary><strong>Restorix — The Restoration Elder</strong></summary>
+
+**Old, damaged, blurry? Restorix makes it pristine.**
+
+Restorix handles upscaling, restoration, and quality enhancement. In a SillyTavern context, it sharpens and enhances generated images — taking a rough generation and refining it into something that looks professional.
+
+**How it works:** Restorix applies low-denoise img2img passes that add fine detail without changing the composition. Think of it as an AI-powered "enhance" button that actually works. It uses the same SUPIR, CodeFormer, and detail hallucination pipelines that professional photo editors rely on.
+
+**How to use it:**
+- *"Restorix, enhance this image — make it sharper and more detailed"*
+- Apply after any other character's generation to improve quality
+
+**Best for:** Post-processing. Generate a rough scene with Imaginus or Sceneshifter, then pass it through Restorix for a polished final version. Also great for enhancing character avatars.
+
+</details>
+
+<details>
+<summary><strong>Erasure — The Surgical Editor</strong></summary>
+
+**Remove what shouldn't be there. Fill in what should.**
+
+Erasure is the precision tool — background removal, object erasure, inpainting (regenerating specific areas), and clean scene generation. In SillyTavern, its most common use is generating empty environments for scenes, free of any pre-existing characters.
+
+**How it works:** Erasure generates scenes with explicit negative prompts to exclude people and characters, producing clean backgrounds perfect for roleplay. It can also remove unwanted elements from existing images using LaMa inpainting.
+
+**How to use it:**
+- *"Erasure, create an empty medieval throne room — no people, just the architecture"*
+- *"Remove the figure from this background and fill in what was behind them"*
+
+**Best for:** Creating clean backgrounds for scenes, removing unwanted elements from generated images, preparing environments for compositing.
+
+</details>
+
+<details>
+<summary><strong>Videomancer — The Motion Weaver</strong></summary>
+
+**Your still images just started breathing.**
+
+Videomancer turns static images into short video clips. A portrait becomes a living, breathing character. A landscape gets gentle wind and flowing water. A dramatic scene gets camera movement. Videomancer supports both WAN 2.2 (image-to-video) and LTX 2.3 (text-to-video) depending on what's installed on your ComfyUI server.
+
+**How it works:** Videomancer dispatches video generation workflows to ComfyUI — WAN for high-quality portrait animation, LTX for text-prompted video. Results come back as GIFs that display inline in the chat or MP4s saved to disk.
+
+**Best for:** Living portraits for your character cards, animated scene transitions, dramatic moments that deserve more than a still image. Imagine your villain's entrance as a short video clip right there in the chat.
+
+</details>
+
+<details>
+<summary><strong>Cinematic — The Director</strong></summary>
+
+**Lights. Camera. Multiple takes. Face continuity across every shot.**
+
+Cinematic is the Director's Chair — it orchestrates multi-step video sequences where the same character appears consistently across multiple shots. It chains WAN I2V video steps with face re-injection between each step to maintain character identity.
+
+**How it works:** Cinematic plans a sequence (3-4 steps), generates each video clip, extracts the last frame, re-injects the character's face using ReActor, then feeds the re-injected frame into the next clip. The result is a coherent mini-movie with consistent character appearance.
+
+**Script presets include:**
+- *Dramatic Reveal* (3 steps): wide shot → medium → close-up
+- *Living Portrait* (2 steps): subtle breathing → gentle smile
+- *Walk Cycle* (3 steps): approach → walk past → exit
+- *Emotional Arc* (4 steps): neutral → concern → realization → resolve
+
+**Best for:** Users who want cinematic storytelling — multi-shot sequences for dramatic moments, character introductions, action scenes. This is the most ambitious feature in the collection.
+
+</details>
+
+<details>
+<summary><strong>Studiocraft — The Production Manager</strong></summary>
+
+**From a selfie to a composited, animated scene. Five acts. One pipeline.**
+
+Studiocraft guides you through Magic Studios — a complete 5-act character production pipeline. In SillyTavern, this is accessible via `/studio-*` commands that automate the entire process:
+
+1. **Act 1 — Casting Polaroids** (`/studio-cast`): Avatar → ReActor face model saved to ComfyUI
+2. **Act 2 — Body Double** (`/studio-body`): txt2img full body → face swap → background removal → transparent PNG
+3. **Act 3 — Wardrobe Department**: Characters are auto-dressed based on the scene description
+4. **Act 4 — Set Design** (`/studio-scene`): Generate scene → composite characters → AI harmonization pass
+5. **Act 5 — Director's Chair** (`/animate`): Animate the composited scene as video
+
+**In SillyTavern**, the pipeline runs automatically: characters are auto-cast on startup, and when Sceneshifter generates a new scene, any characters with body doubles are composited into it wearing scene-appropriate attire. The story scaffold detects attire changes, pose changes, and character entrances/exits to trigger regeneration.
+
+**How to use it:**
+- Start: *"Studiocraft, I want to create a character from this photo"*
+- Studiocraft walks you through each act, asking for choices at each step
+- Skip acts if you already have assets (e.g., already have a face model → start at Act 2)
+
+**Best for:** Creating complete character sheets for new RP characters, building visual novel-style scenes, producing character content that's consistent across images and video. The ultimate tool for users who want to fully visualize their OCs.
+
+</details>
+
+<details>
+<summary><strong>Restyler — The Art Director</strong></summary>
+
+**Every avatar in your chat. Transformed. One command.**
+
+Restyler is the batch avatar transformation specialist. While Transmutex handles individual image transformations, Restyler is designed for the workflow SillyTavern users actually want: change the art style of *everyone* at once.
+
+**How to use it:**
+- `/restyle-all photorealistic portrait, professional photography, detailed skin, 8k` — turns every avatar in your chat from anime/cartoon to photorealistic
+- `/restyle-all anime style, cel shading, vibrant colors, manga illustration` — goes the other direction
+- `/restyle-all dark fantasy oil painting, moody, dramatic lighting` — unified art style for the whole cast
+- `/restyle watercolor, soft washes, paper texture` — transform just the active character
+
+**Best for:** When you download a character card with an anime avatar but you're running a photorealistic RP. When you want your entire cast to look like they belong in the same universe. When you're experimenting with how your story would look in a completely different art style. One command, every avatar, instant transformation.
+
+**Fully reversible:** Restyling automatically backs up the original avatar as a `.bak.png` file. Don't like the result? Just type `/restyle-undo` (single character) or `/restyle-undo-all` (everyone) and you're back to the originals instantly. Experiment fearlessly.
+
+**Denoise guide:**
+- 0.30 = subtle touch-up (sharpen, slight style shift)
+- 0.50 = noticeable transformation (clear style change, character still recognizable)
+- 0.70 = heavy transformation (major style shift, composition may change)
+
+</details>
+
+<details>
+<summary><strong>Portraitist — The Expression Artist</strong></summary>
+
+**Characters that wear their emotions on their face. Literally.**
+
+Portraitist generates emotion-appropriate character portraits based on the mood of each message. When a character is happy, their portrait shows joy. When they're angry, you see fury. When they're heartbroken, the expression matches.
+
+**How it works:** Portraitist hooks into `CHARACTER_MESSAGE_RENDERED` and runs keyword-based sentiment analysis on the AI's response. It detects emotions (happy, sad, angry, surprised, afraid, loving, thinking, confident) and generates a matching portrait via ComfyUI. The portrait is **saved as an expression sprite** to SillyTavern's character folder (`data/default-user/characters/<CharName>/<emotion>.png`), so ST's built-in expression system can use it.
+
+**Emotion detection keywords:**
+- Happy: smile, laugh, grin, joy, cheer, delight
+- Angry: fury, rage, snarl, growl, scowl, glare, fist
+- Sad: cry, tear, sob, mourn, grief, sorrow
+- Surprised: gasp, shock, widen, startle
+- Loving: blush, flutter, warmth, tender, embrace
+
+**How to use it:**
+1. Add Portraitist to your group chat
+2. Enable auto-expressions in the Spellcaster settings panel
+3. Play your story — when characters show strong emotions, portraits update automatically
+4. Or generate manually: `/portrait a warrior grimacing in pain, clutching a wound`
+
+**Best for:** Emotional storytelling. Characters that feel real because their face actually changes. Stories where expression matters — romance, drama, conflict, comedy. Combined with Sceneshifter, you get a visual novel experience that generates itself.
+
+</details>
+
+<details>
+<summary><strong>Animancer — The Motion Enchanter</strong></summary>
+
+**That perfect still image? Now it moves.**
+
+Animancer takes any generated image and brings it to life as a short animation. A portrait starts breathing. A landscape gets wind through the trees. A campfire flickers. It's the final polish that turns a good visual into an immersive one.
+
+**How it works:** Type `/animate` and Animancer takes the current character's avatar, creates subtle frame variations via img2img with noise injection, and assembles them into a looping pingpong GIF. The result plays inline in the chat. For more complex animations, the full WAN I2V and LTX I2V pipelines are available via the Wizard Guild.
+
+**Best for:** Living character portraits, animated scene headers, dramatic moment captures. Particularly powerful when combined with Sceneshifter — the background not only changes, but comes alive with subtle motion.
+
+</details>
+
+**Setup — what you need:**
+
+| Requirement | What It Is | How to Get It |
+|---|---|---|
+| **SillyTavern** | The chat frontend these characters live in | [github.com/SillyTavern/SillyTavern](https://github.com/SillyTavern/SillyTavern) |
+| **ComfyUI** | The AI engine that generates images/video | Already installed if you use Spellcaster |
+| **Spellcaster server plugin** | Bridges SillyTavern to ComfyUI | Installed automatically (see below) |
+| **An LLM backend** | Powers the character conversations | KoboldCPP, Ollama, or any OpenAI-compatible API |
+
+**How the installer sets it up:**
+
+The Spellcaster installer and the Wizard Guild launcher both handle SillyTavern setup automatically:
+
+- **Wizard Guild launcher** (`start_guild.bat` or `Wizard_Guild.exe`): If SillyTavern isn't found, it offers to clone and install it. If it IS found, it checks for the Spellcaster plugin and installs it if missing. **All 13 character cards and their avatars are auto-imported** — no manual copying.
+- **Manual patcher**: Run `python installer/patch_sillytavern.py --st-dir /path/to/SillyTavern` to install the plugin into any existing SillyTavern installation.
+- **What gets installed**: A server plugin at `ST/plugins/spellcaster/` (ComfyUI bridge, Magic Studios pipeline, story scaffold) + a UI extension at `ST/data/default-user/extensions/spellcaster-st/` (slash commands, function tools, auto-background, settings panel) + all 13 character cards with pre-generated avatars.
+
+**How to use them:**
+
+1. Launch the Wizard Guild — it handles everything automatically (SillyTavern setup, plugin install, character import)
+2. Or run the patcher manually: `python installer/patch_sillytavern.py --st-dir /path/to/SillyTavern`
+3. Open SillyTavern — the 13 characters appear in your character list with their avatars
+4. Add any of them to a **group chat** alongside your existing roleplay characters
+5. Characters auto-cast on startup (face models generated from avatars in the background)
+6. Sceneshifter generates backgrounds as scenes change; Portraitist creates expression portraits; Autonoma generates images at dramatic moments — all automatically
+7. Use `/studio-cast-all` + `/studio-body-all` to enable full character compositing in scenes
+
+> **Tip:** You don't need all 13. Start with **Sceneshifter** (auto-backgrounds) and **Autonoma** (autonomous image generation) — they work silently alongside any existing character without interrupting the conversation.
+
+**Slash commands** (available when any Spellcaster character is active):
+
+| Command | What It Does |
+|---|---|
+| **Scenes & Portraits** | |
+| `/scene [description]` | Generate and set a scene background |
+| `/portrait [description]` | Generate a character portrait inline |
+| `/animate [prompt]` | Animate the current character's avatar as a looping GIF |
+| **Avatar Restyling** | |
+| `/restyle [style prompt]` | Transform the active character's avatar (original auto-backed up) |
+| `/restyle-all [style prompt]` | Transform ALL character avatars at once (all originals backed up) |
+| `/restyle-undo` | Restore the current character's original avatar |
+| `/restyle-undo-all` | Restore ALL avatars to their originals |
+| **Magic Studios** | |
+| `/studio-cast` | Create a face model from the current character's avatar |
+| `/studio-cast-all` | Batch-cast all characters (face models for everyone) |
+| `/studio-body [description]` | Generate a full-body transparent PNG with face swap + bg removal |
+| `/studio-body-all [attire]` | Batch-generate bodies for all cast characters |
+| `/studio-scene [description]` | Generate a scene with characters composited in, auto-dressed for the setting |
+| `/studio-status` | Show which characters are cast and have bodies ready |
+| **System** | |
+| `/spellcaster auto-bg on` | Enable automatic background generation (with story scaffold) |
+| `/spellcaster auto-bg off` | Disable auto-background |
+| `/spellcaster on\|off` | Enable/disable the entire extension |
+
 ---
 
-## Bring Your Own Workflows
+## 🔌 Bring Your Own Workflows
 
-**Already have ComfyUI workflows you've built or downloaded?** Spellcaster can run them directly from GIMP — no need to rebuild anything.
+**Already have ComfyUI workflows?** Import them in two clicks — Spellcaster runs them directly from GIMP.
 
 ### The Travelling Wizard
 
-Open `Filters > Spellcaster Tools > Travelling Wizard` to access the workflow bridge. It shows your server status (green/red indicator) and three main actions:
+Open `Filters > Spellcaster Tools > Travelling Wizard` and you'll see:
 
-| Action | What It Does |
-|---|---|
-| **Open Scaffold Editor** | Launches a full settings GUI in your browser with 9 tabs — configure workflow paths, node mappings, ComfyUI connection, and manage imported workflows. |
-| **Browse Workflow Library** | Connects to your ComfyUI server and lists all workflows in its `workflows/` directory. Pick one and it's imported automatically. |
-| **Import Workflow File** | Load any `.json` workflow from disk. Spellcaster auto-detects the format (LiteGraph UI graph or ComfyUI API), classifies the workflow type, and extracts all tunable parameters. |
+- 🟢 **Live server status** — GPU name, VRAM, and connection indicator
+- 📂 **Browse Workflow Library** — lists every workflow on your ComfyUI server, one-click import
+- 📄 **Import Workflow File** — load any `.json` from disk
+- ⚙️ **Open Scaffold Editor** — browser-based power-user settings
 
-Once imported, your custom workflows appear with metadata and a one-click "Run" button. The wizard figures out which parameters matter (prompt, seed, steps, model, dimensions) and hides the ones that don't.
+Import a workflow and it appears in your GIMP menu, ready to run. That's it for most users.
 
-### The Scaffold Editor
+<details>
+<summary><strong>How workflow import works (auto-detection, formats, what gets extracted)</strong></summary>
 
-Click "Open Scaffold Editor" in the Travelling Wizard to launch a browser-based GUI with 9 tabs:
+**Supported formats:**
+- **LiteGraph** — the default format when you click "Save" in ComfyUI's browser UI. Contains `nodes` and `links` arrays.
+- **API format** — the format used by ComfyUI's `/prompt` endpoint. Contains node dictionaries with `class_type` keys.
+- Spellcaster **auto-detects** which format you're importing. No manual selection needed.
+
+**What happens on import:**
+1. Format is classified (litegraph / API / unknown)
+2. Node count is calculated and displayed
+3. Source is tracked (from server or local file)
+4. Workflow is stored persistently in Spellcaster's config — survives GIMP restarts
+5. Confirmation dialog shows: workflow name, format type, node count
+
+**Import sources:**
+- **From ComfyUI server**: Click "Browse Workflow Library" → scrollable list of all workflows in your server's `workflows/` directory → click "Import" next to any workflow
+- **From disk**: Click "Import Workflow File" → standard file picker filtered to `*.json`
+
+**After import:**
+- Workflow appears in the Travelling Wizard's "Installed Workflows" panel with name and type
+- Accessible for execution from GIMP's Filters menu
+- Spellcaster identifies tunable parameters (prompt, seed, steps, model, dimensions) and hides internal wiring
+
+</details>
+
+<details>
+<summary><strong>The Scaffold Editor (9-tab browser GUI for power users)</strong></summary>
+
+Click "Open Scaffold Editor" in the Travelling Wizard to launch a browser-based configuration interface:
 
 | Tab | What You Configure |
 |---|---|
 | **General** | ComfyUI server URL, input/output directories, prompt history, debug mode |
-| **Workflow tabs (1-8)** | One tab per workflow type (inpaint, image edit, generator, outpaint, upscaler, etc.). Point at your own workflow JSON and remap node IDs — make Spellcaster drive your workflows instead of its built-in ones. |
-| **Custom Workflows** | All workflows imported via the Travelling Wizard, with metadata and parameter lists. |
+| **Inpaint** | Point at your own inpaint workflow JSON, remap node IDs so Spellcaster drives it |
+| **Image Edit** | Custom img2img / Klein workflow mapping |
+| **Generator** | Custom txt2img workflow mapping |
+| **Outpaint** | Custom outpaint/canvas extension workflow |
+| **Upscaler** | Custom upscale workflow mapping |
+| **Video** | Custom video generation workflow mapping |
+| **Extras** | Additional workflow type mappings |
+| **Custom Workflows** | All imported workflows with metadata, parameter lists, and run buttons |
 
-You don't need to touch the Scaffold Editor for normal use — it's there for when you want deeper control.
+**What node remapping means:** Spellcaster's built-in tools expect specific node IDs (e.g., node "3" = KSampler, node "6" = positive prompt). If your workflow uses different IDs, the Scaffold Editor lets you tell Spellcaster which node is which — then your workflow runs with Spellcaster's UI, presets, and LoRA injection.
 
-### Spellmaker — The Preset Editor
+You don't need the Scaffold Editor for normal use. It's there when you want Spellcaster to drive *your* workflows instead of its built-in ones.
 
-Power users who want full control over presets can use Spellmaker, a standalone GUI tool:
+</details>
+
+<details>
+<summary><strong>Spellmaker — Preset Editor (create, clone, import, export presets)</strong></summary>
 
 ```bash
 python tools/spellmaker.py
 ```
 
-Spellmaker lets you:
-- **Create presets** for any tool — 8 types: model configs, inpaint recipes, scene templates, video settings, Wan models, Klein models, IC-Light presets, and arbitrary workflow JSON
+A standalone GUI for managing presets across all tools:
+
+- **Create presets** for 8 types: model configs, inpaint recipes, scene templates, video settings, Wan models, Klein models, IC-Light presets, arbitrary workflow JSON
 - **Import from ComfyUI** — load a raw workflow JSON and convert it to a named preset
 - **Edit and clone** existing presets
 - **Export** a `spellbook.json` that can be loaded into the plugins
+- **Per-tool tuning** — each preset stores model, prompt, negative, LoRAs, denoise, steps, dimensions, and tool-specific parameters
+
+</details>
+
+<details>
+<summary><strong>My Presets — quick-access saved settings</strong></summary>
+
+Every dialog in Spellcaster has a **Save Preset** button. Name your settings and they appear in the **My Presets** panel (`Filters > Spellcaster > My Presets`) for instant recall.
+
+Supported tools: img2img, txt2img, inpaint, Wan I2V Video, FaceID, Klein Editor, PuLID Flux, and all custom workflows. Presets remember everything: model, prompt, LoRAs, denoise, steps, dimensions.
+
+Hover over any preset for a tooltip showing model, prompt snippet, and step count.
+
+</details>
 
 ### For Existing ComfyUI Users
 
-If you already use ComfyUI and have workflows, models, and custom nodes installed, Spellcaster slots right in:
+Your existing setup works as-is — Spellcaster slots right in:
 
-- **Your existing models are used as-is.** Spellcaster discovers models on the server at runtime — it doesn't require its own copies.
-- **Your existing custom nodes keep working.** The installer only adds nodes it needs and skips ones you already have.
-- **Your existing workflows can be imported** via the Travelling Wizard — or remap Spellcaster's built-in tools to use your workflows via the Scaffold Editor.
-- **Remote server works natively.** If ComfyUI runs on a different machine, just point the settings at it. The entire plugin works over HTTP.
+- **Models** — discovered on the server at runtime, no copies needed
+- **Custom nodes** — the installer only adds what's missing, skips what you have
+- **Workflows** — import via the Travelling Wizard or remap via the Scaffold Editor
+- **Remote server** — point at any ComfyUI instance over HTTP, everything works
+- **Extra workflow directories** — configure additional scan paths in Settings for workflow discovery
 
 ---
 
-## Supported Architectures & Models
+## 🧬 Supported Architectures & Models
 
 <details>
 <summary><strong>SD 1.5</strong> — 3 checkpoints, classic architecture</summary>
@@ -653,9 +1163,9 @@ LoRAs can be injected into all major generation pipelines: img2img, txt2img, inp
 
 ---
 
-## Sample Output
+## 🖼️ Sample Output
 
-<p align="center"><em>Every image below was generated using Spellcaster's built-in presets — zero manual tuning.</em></p>
+<p align="center"><em>Every image and animation below was generated using Spellcaster's built-in presets — zero manual tuning.</em></p>
 
 ### Demo (Inpaint)
 
@@ -788,24 +1298,24 @@ Magic Studios is a guided pipeline that turns a single photo into a fully compos
 
 ---
 
-## Who Is This For?
+## 🎯 Who Is This For?
 
-| You are... | Spellcaster gives you... |
-|---|---|
-| **A complete beginner** | Professional results with zero learning curve — presets handle everything |
-| **Someone who hates learning software** | Just talk to a chatbot — the scaffold system does the rest |
-| **A photographer** | AI retouching, upscaling, color grading — without leaving Darktable |
-| **A Photoshop refugee** | All the AI tools you're used to, free and open-source |
-| **An illustrator** | 25 art presets from photorealism to anime to Disney 3D |
-| **Someone with old photos** | One-click restoration: upscale + face fix + colorize |
-| **A video creator** | Turn any still image or text prompt into a short animated clip (Wan 2.2 + LTX2.2) |
-| **An existing ComfyUI user** | Run your workflows from GIMP, skip the browser UI, keep your existing setup |
-| **A tinkerer** | Import workflows, build custom presets, connect remote GPUs |
-| **Privacy-conscious** | Everything runs locally — no cloud, no subscriptions |
+<table>
+<tr><td>🆕</td><td><strong>Never touched AI?</strong></td><td>Presets handle everything. Your first result looks like your hundredth.</td></tr>
+<tr><td>💬</td><td><strong>Hate learning software?</strong></td><td>Just talk to a chatbot. It picks the right tool for you.</td></tr>
+<tr><td>📷</td><td><strong>Photographer?</strong></td><td>AI retouching, upscaling, color grading — right inside Darktable.</td></tr>
+<tr><td>🎨</td><td><strong>Illustrator?</strong></td><td>25 art presets from photorealism to anime to Disney 3D.</td></tr>
+<tr><td>🎭</td><td><strong>SillyTavern user?</strong></td><td>13 character cards. Living backgrounds. Autonomous illustration.</td></tr>
+<tr><td>🎬</td><td><strong>Video creator?</strong></td><td>Turn any still or text prompt into a clip (WAN 2.2 + LTX 2.3).</td></tr>
+<tr><td>🔧</td><td><strong>ComfyUI power user?</strong></td><td>Run your workflows from GIMP. Import, customize, extend.</td></tr>
+<tr><td>🔒</td><td><strong>Privacy-conscious?</strong></td><td>100% local. No cloud. No telemetry. No content filters.</td></tr>
+</table>
+
+> **AI-curious but overwhelmed?** That's exactly who this is for. The installer walks you through everything. The chatbot explains what it's doing. The presets are already tuned. You bring the creativity — Spellcaster handles the rest.
 
 ---
 
-## FAQ
+## ❓ FAQ
 
 <details>
 <summary><strong>Do I need to know anything about AI?</strong></summary>
@@ -1168,9 +1678,46 @@ Body & detail fix, artistic styles, accelerators — across SDXL, Flux, Klein, Z
 
 ---
 
-## License
+## 💜 Free. Open Source. Forever.
 
-[GPL-2.0](LICENSE) — Free software. Use it, modify it, share it.
+<table>
+<tr>
+<td width="60%">
+
+**Spellcaster is and will always be free.** Not "free trial." Not "free with watermarks." Not "free tier with a $20/month upgrade." Actually, genuinely, no-strings-attached **free.**
+
+Every image you generate is yours. Every tool works offline. No account needed. No telemetry. No "sign in to continue." No cloud that could shut down tomorrow and take your workflows with it.
+
+**Why?** Because the tools that let people create art should be accessible to everyone — not locked behind a subscription that costs more than some people's rent. GIMP is free. Darktable is free. ComfyUI is free. The AI models are free. Spellcaster connects them all and adds 49 tools on top — also free.
+
+**This is what open source looks like when it works.** A community of people building things because they're worth building. If you find Spellcaster useful, the best thing you can do is share it with someone else who might.
+
+</td>
+<td width="40%" align="center">
+
+<br/>
+
+<img src="https://img.shields.io/badge/Cost-$0.00_forever-22c55e?style=for-the-badge" alt="Free forever"/>
+<br/><br/>
+<img src="https://img.shields.io/badge/Cloud_Required-None-22c55e?style=for-the-badge" alt="No cloud"/>
+<br/><br/>
+<img src="https://img.shields.io/badge/Account_Required-None-22c55e?style=for-the-badge" alt="No account"/>
+<br/><br/>
+<img src="https://img.shields.io/badge/Telemetry-Zero-22c55e?style=for-the-badge" alt="No telemetry"/>
+<br/><br/>
+<img src="https://img.shields.io/badge/Content_Filters-None-22c55e?style=for-the-badge" alt="No filters"/>
+<br/><br/>
+<img src="https://img.shields.io/badge/License-GPL--2.0-22c55e?style=for-the-badge" alt="GPL-2.0"/>
+
+<br/>
+
+</td>
+</tr>
+</table>
+
+> *"But wait, how is this different from just using ComfyUI directly?"*
+>
+> ComfyUI is an engine. Spellcaster is 49 expert-tuned tools, a chat interface, 13 SillyTavern characters, an 8-step guided installer, 90+ LoRA presets, auto-updating plugins, and a scaffold AI that lets a 7B chatbot drive the whole thing. You *could* build all of this yourself. Or you could just run the installer.
 
 ---
 
@@ -1185,4 +1732,8 @@ Body & detail fix, artistic styles, accelerators — across SDXL, Flux, Klein, Z
   <a href="https://www.youtube.com/@LeLaboratoireSonore">YouTube</a> &bull;
   <a href="https://www.facebook.com/laboratoire.sonore.2025">Facebook</a> &bull;
   <a href="https://www.twitch.tv/laboratoiresonore">Twitch</a>
+  <br/><br/>
+  <a href="https://github.com/laboratoiresonore/spellcaster/stargazers"><img src="https://img.shields.io/github/stars/laboratoiresonore/spellcaster?style=social" alt="Stars"/></a>
+  &nbsp;&nbsp;
+  <a href="https://github.com/laboratoiresonore/spellcaster/network/members"><img src="https://img.shields.io/github/forks/laboratoiresonore/spellcaster?style=social" alt="Forks"/></a>
 </p>

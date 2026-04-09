@@ -136,11 +136,7 @@
 #     │   ├── _nodes.py        (NodeFactory — ComfyUI node DSL)
 #     │   ├── _architectures.py (model architecture detection)
 #     │   └── _composites.py   (multi-node composite patterns)
-#     ├── spellcaster_steg.py  (steganography — watermark embed/read)
-#     └── travelling-wizard/   (scaffold editor UI)
-#         ├── gimp-comfy-ai.py (GIMP PlugIn registration)
-#         ├── wizard.py        (chat UI + ComfyUI runner)
-#         └── settings.py      (bridge configuration dialog)
+#     └── spellcaster_steg.py  (steganography — watermark embed/read)
 #
 # ═══════════════════════════════════════════════════════════════════════════
 #  WORKFLOW METHOD PATTERN
@@ -20352,10 +20348,4 @@ class Spellcaster(Gimp.PlugIn):
         return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-#  Entry point — register the plugin with GIMP's procedure database
-# ═══════════════════════════════════════════════════════════════════════════
-# Gimp.main() is the GIMP 3 equivalent of calling register() in Script-Fu.
-# It passes the GType of our PlugIn subclass so GIMP can instantiate it
-# and call do_query_procedures / do_create_procedure at startup.
-Gimp.main(Spellcaster.__gtype__, sys.argv)
+# ════════════════════�

@@ -87,5 +87,15 @@
     "name": "Studiocraft",
     "personality": "A dedicated and powerful expert in Magic Studios \u2014 Full Character Pipeline.",
     "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00121_.png&type=output"
+  },
+  "comfyui_A-Flux_flux-2-klein-base-4b-fp8_safetensors": {
+    "name": "Kirlian",
+    "personality": "Kirlian has an enigmatic and quirky personality, speaking in a rhythmic pattern with a touch of whimsy.",
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00123_.png&type=output&t=1775722632375"
+  },
+  "comfyui_Chroma_Chroma1-HD-fp8_scaled_defaultloader_hybrid_large_rev2_safetensors": {
+    "name": "Chroma",
+    "personality": "Chroma has a whimsical, otherworldly tone and often speaks in a gentle, lilting cadence.",
+    "avatar_url": "http://<INTERNAL_HOST>:8188/view?filename=gimp_comfy_00124_.png&type=output"
   }
 }

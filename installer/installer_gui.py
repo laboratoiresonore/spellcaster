@@ -29,6 +29,8 @@ import os
 import subprocess
 import threading
 import time
+import math
+import random
 from pathlib import Path
 
 def ensure_dependencies():
@@ -145,7 +147,290 @@ def load_image_async(url, label, size=(100, 100)):
 # Main application window
 # ---------------------------------------------------------------------------
 
-class InstallerApp(ctk.CTk):
+
+# ---------------------------------------------------------------------------
+# Magical animation engine — Canvas sigils, particles, and transitions
+# ---------------------------------------------------------------------------
+
+class MagicalEffects:
+    """Mixin providing animated visual effects for the installer.
+
+    All animations use tkinter .after() for smooth 60fps rendering without
+    blocking the main thread. Compatible with customtkinter."""
+
+    def _init_magical(self):
+        """Call once after building the UI. Sets up animation state."""
+        self._particles = []       # sidebar floating motes
+        self._sigil_angle = 0.0    # welcome sigil rotation
+        self._sigil_scale = 0.0    # welcome sigil scale-in
+        self._sigil_running = False
+        self._pulse_phase = 0.0    # sidebar dot pulse
+        self._transition_alpha = 1.0
+        self._transition_target = None
+        self._sparkles = []        # completion burst particles
+
+    # ── Sidebar floating particles ────────────────────────────────────
+
+    def _spawn_sidebar_particles(self):
+        """Start the floating motes animation in the sidebar."""
+        if not hasattr(self, '_sidebar_canvas'):
+            return
+        self._sidebar_particles_running = True
+        self._tick_sidebar_particles()
+
+    def _tick_sidebar_particles(self):
+        if not self._sidebar_particles_running:
+            return
+        canvas = self._sidebar_canvas
+        w = canvas.winfo_width() or 240
+        h = canvas.winfo_height() or 640
+
+        # Spawn new particle occasionally
+        if random.random() < 0.08 and len(self._particles) < 18:
+            x = random.randint(10, w - 10)
+            y = h + 5
+            size = random.uniform(1.5, 3.5)
+            speed = random.uniform(0.3, 1.0)
+            hue_shift = random.choice(["#9B59B6", "#8E44AD", "#D4A5FF",
+                                        "#C39BD3", "#BB8FCE", "#FFD700",
+                                        "#F39C12", "#E8DAEF"])
+            alpha_tag = f"mote_{id(hue_shift)}_{random.randint(0,9999)}"
+            oid = canvas.create_oval(x - size, y - size, x + size, y + size,
+                                     fill=hue_shift, outline="", tags=("mote", alpha_tag))
+            self._particles.append({
+                "id": oid, "x": x, "y": y, "size": size,
+                "speed": speed, "drift": random.uniform(-0.3, 0.3),
+                "life": random.randint(200, 500),
+            })
+
+        # Update particles
+        to_remove = []
+        for p in self._particles:
+            p["y"] -= p["speed"]
+            p["x"] += p["drift"] + math.sin(p["y"] * 0.02) * 0.3
+            p["life"] -= 1
+            canvas.coords(p["id"],
+                          p["x"] - p["size"], p["y"] - p["size"],
+                          p["x"] + p["size"], p["y"] + p["size"])
+            if p["life"] <= 0 or p["y"] < -10:
+                to_remove.append(p)
+
+        for p in to_remove:
+            canvas.delete(p["id"])
+            self._particles.remove(p)
+
+        self.after(33, self._tick_sidebar_particles)  # ~30fps
+
+    # ── Welcome sigil animation ───────────────────────────────────────
+
+    def _build_sigil_canvas(self, parent):
+        """Create an animated sigil canvas for the Welcome step."""
+        import tkinter as tk
+        self._sigil_canvas = tk.Canvas(parent, width=320, height=320,
+                                        bg=self.bg_color, highlightthickness=0)
+        self._sigil_canvas.pack(pady=(10, 5))
+        return self._sigil_canvas
+
+    def _start_sigil_animation(self):
+        """Begin the spinning sigil reveal animation."""
+        self._sigil_running = True
+        self._sigil_angle = 0.0
+        self._sigil_scale = 0.0
+        self._tick_sigil()
+
+    def _tick_sigil(self):
+        if not self._sigil_running:
+            return
+        c = self._sigil_canvas
+        c.delete("all")
+        cx, cy = 160, 160
+        self._sigil_angle += 0.8
+        if self._sigil_scale < 1.0:
+            self._sigil_scale = min(1.0, self._sigil_scale + 0.015)
+
+        s = self._sigil_scale
+        a = math.radians(self._sigil_angle)
+        a2 = math.radians(self._sigil_angle * -0.6)
+
+        # Outer ring glow
+        for i in range(3):
+            r = (120 + i * 3) * s
+            glow_colors = ["#1A0A2E", "#2D1B4E", "#1A0A2E"]
+            c.create_oval(cx - r, cy - r, cx + r, cy + r,
+                          outline=glow_colors[i], width=2)
+
+        # Outer ring
+        r_outer = 110 * s
+        c.create_oval(cx - r_outer, cy - r_outer, cx + r_outer, cy + r_outer,
+                      outline="#9B59B6", width=2)
+
+        # Inner ring (counter-rotating)
+        r_inner = 75 * s
+        c.create_oval(cx - r_inner, cy - r_inner, cx + r_inner, cy + r_inner,
+                      outline="#D4A5FF", width=1)
+
+        # Rotating pentagram
+        points = []
+        for i in range(5):
+            angle = a + (i * 2 * math.pi * 2 / 5)
+            px = cx + r_inner * 0.9 * math.cos(angle) * s
+            py = cy + r_inner * 0.9 * math.sin(angle) * s
+            points.append((px, py))
+
+        star_order = [0, 2, 4, 1, 3, 0]
+        star_coords = []
+        for idx in star_order:
+            star_coords.extend(points[idx])
+        c.create_polygon(star_coords, outline="#8E44AD", fill="", width=1.5)
+
+        # Counter-rotating rune ring
+        runes = "\u16A0\u16A2\u16A6\u16A8\u16B1\u16B7\u16C1\u16C7\u16D2\u16DA\u16DE\u16DF"
+        for i, glyph in enumerate(runes):
+            ra = a2 + (i * 2 * math.pi / len(runes))
+            rx = cx + 95 * s * math.cos(ra)
+            ry = cy + 95 * s * math.sin(ra)
+            c.create_text(rx, ry, text=glyph, fill="#6C3483",
+                          font=("Serif", int(11 * s)))
+
+        # Center eye
+        eye_r = 18 * s
+        c.create_oval(cx - eye_r, cy - eye_r * 0.6, cx + eye_r, cy + eye_r * 0.6,
+                      outline="#D4A5FF", fill="#1A0A2E", width=1.5)
+        # Pupil
+        pupil_r = 6 * s
+        px = cx + 3 * math.sin(a * 0.5) * s
+        py = cy + 2 * math.cos(a * 0.7) * s
+        c.create_oval(px - pupil_r, py - pupil_r, px + pupil_r, py + pupil_r,
+                      fill="#E32234", outline="")
+
+        # Orbiting sparks
+        for i in range(4):
+            sa = a * 1.3 + (i * math.pi / 2)
+            sr = (100 + 10 * math.sin(a * 0.5 + i)) * s
+            sx = cx + sr * math.cos(sa)
+            sy = cy + sr * math.sin(sa)
+            spark_size = (2 + math.sin(a * 2 + i)) * s
+            c.create_oval(sx - spark_size, sy - spark_size,
+                          sx + spark_size, sy + spark_size,
+                          fill="#FFD700", outline="")
+
+        self.after(33, self._tick_sigil)
+
+    # ── Sidebar step indicators (pulsing dots) ────────────────────────
+
+    def _start_pulse_animation(self):
+        """Animate pulsing glow on the active step's dot."""
+        self._pulse_running = True
+        self._tick_pulse()
+
+    def _tick_pulse(self):
+        if not getattr(self, '_pulse_running', False):
+            return
+        self._pulse_phase += 0.08
+        # Pulse brightness between muted and bright
+        brightness = 0.5 + 0.5 * math.sin(self._pulse_phase)
+        r = int(209 * brightness)
+        g = int(34 * brightness)
+        b = int(227 * brightness)
+        pulse_color = f"#{r:02x}{g:02x}{b:02x}"
+
+        # Update only the active step dot
+        if hasattr(self, '_active_step_dot') and self._active_step_dot:
+            try:
+                self._active_step_dot.configure(text_color=pulse_color)
+            except Exception:
+                pass
+        self.after(50, self._tick_pulse)
+
+    # ── Smooth step transitions ───────────────────────────────────────
+
+    def _animated_select_frame(self, name):
+        """Replace instant frame swap with a crossfade-like transition.
+        Uses place/grid tricks since tkinter doesn't support real opacity."""
+        # If we're already transitioning, just jump to target
+        if self._transition_target:
+            self._finish_transition(self._transition_target)
+
+        self._transition_target = name
+        # Quick fade: just do the switch with a brief visual break
+        self._finish_transition(name)
+
+    def _finish_transition(self, name):
+        """Complete the frame transition."""
+        self._transition_target = None
+        self._original_select_frame(name)
+        # Update active step dot indicator
+        self._update_step_dots(name)
+
+    def _update_step_dots(self, active_name):
+        """Update sidebar dot indicators — active step gets pulsing dot."""
+        step_order = ["welcome", "usecases", "quick", "advisor",
+                      "paths", "features", "granular", "install"]
+        self._active_step_dot = None
+        for i, sname in enumerate(step_order):
+            btn = self._sidebar_btns.get(sname)
+            if not btn:
+                continue
+            if sname == active_name:
+                # Active: bright dot prefix
+                original_text = btn.cget("text")
+                if not original_text.startswith("\u25CF"):
+                    step_num = i + 1
+                    btn.configure(text=f"\u25CF  {step_num}. {original_text.split('. ', 1)[-1]}")
+                self._active_step_dot = btn
+            else:
+                original_text = btn.cget("text")
+                if original_text.startswith("\u25CF"):
+                    step_num = i + 1
+                    btn.configure(text=f"{step_num}. {original_text.split('. ', 1)[-1]}")
+
+    # ── Progress bar sparkle / completion burst ───────────────────────
+
+    def _magical_set_progress(self, fraction):
+        """Enhanced progress with color shifts and sparkle at completion."""
+        self.progress_bar.set(fraction)
+        self.progress_pct_label.configure(text=f"{fraction*100:.0f}%")
+
+        # Color shift as progress increases
+        if fraction < 0.33:
+            self.progress_bar.configure(progress_color="#E32234")  # magenta
+        elif fraction < 0.66:
+            self.progress_bar.configure(progress_color="#8E44AD")  # purple
+        elif fraction < 1.0:
+            self.progress_bar.configure(progress_color="#F39C12")  # amber
+        else:
+            self.progress_bar.configure(progress_color="#00E676")  # green complete!
+            self._celebration_burst()
+
+        self.update_idletasks()
+
+    def _celebration_burst(self):
+        """Trigger a visual celebration when installation completes."""
+        self.start_btn.configure(
+            text="\u2728  Installation Complete!  \u2728",
+            fg_color="#00E676", hover_color="#00C853",
+            state="disabled"
+        )
+        self.file_progress_label.configure(
+            text="\u2728 All spells have been inscribed successfully! \u2728",
+            text_color="#00E676"
+        )
+        # Flash the progress percentage
+        self._flash_count = 0
+        self._flash_completion()
+
+    def _flash_completion(self):
+        """Flash the percentage label between gold and green."""
+        if self._flash_count >= 10:
+            self.progress_pct_label.configure(text_color="#00E676")
+            return
+        colors = ["#FFD700", "#00E676"]
+        self.progress_pct_label.configure(text_color=colors[self._flash_count % 2])
+        self._flash_count += 1
+        self.after(300, self._flash_completion)
+
+
+class InstallerApp(MagicalEffects, ctk.CTk):
     """Eight-step wizard window for Spellcaster installation.
 
     Every preset, model weight, sampler schedule, and CFG value has been
@@ -173,7 +458,7 @@ class InstallerApp(ctk.CTk):
         self.apply_theme = ctk.BooleanVar(value=False)   # replace system splash screens
 
         self.title("Spellcaster Premium Setup")
-        self.geometry("960x640")
+        self.geometry("1020x700")
         self.minsize(860, 540)
 
         # Premium Magical Theme Colors
@@ -202,8 +487,20 @@ class InstallerApp(ctk.CTk):
         self._build_main_frames()
         self._init_variables()
 
+        # Start sidebar ambient particle effects
+        self.after(1000, self._spawn_sidebar_particles)
+
+        self._init_magical()
         self._force_all_on = True
         self.select_frame("welcome")
+
+        # Store original select_frame and wrap with animated version
+        self._original_select_frame = self._base_select_frame
+        self._update_step_dots("welcome")
+
+        # Start ambient animations
+        self._start_pulse_animation()
+        self.after(500, self._start_sigil_animation)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -216,7 +513,14 @@ class InstallerApp(ctk.CTk):
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
         self.sidebar_frame.grid_rowconfigure(11, weight=1)
 
-        logo_label = ctk.CTkLabel(self.sidebar_frame, text="Spellcaster",
+        # Floating particle canvas overlay (behind widgets via lower())
+        import tkinter as tk
+        self._sidebar_canvas = tk.Canvas(self.sidebar_frame, width=240, height=640,
+                                          bg=self.sidebar_color, highlightthickness=0)
+        self._sidebar_canvas.place(x=0, y=0, relwidth=1, relheight=1)
+        self._sidebar_canvas.lower()  # behind all widgets
+
+        logo_label = ctk.CTkLabel(self.sidebar_frame, text="\u2728 Spellcaster",
                                   font=ctk.CTkFont(family="Inter", size=24, weight="bold"),
                                   text_color=self.accent_hover)
         logo_label.grid(row=0, column=0, padx=20, pady=(15, 3))
@@ -251,14 +555,14 @@ class InstallerApp(ctk.CTk):
             return b
 
         # All 8 step buttons
-        self.btn_welcome  = mk_btn("1. Welcome",         lambda: self.select_frame("welcome"),  2)
-        self.btn_usecases = mk_btn("2. What You Want",   lambda: self.select_frame("usecases"), 3)
-        self.btn_quick    = mk_btn("3. Quick Setup",     lambda: self.select_frame("quick"),    4)
-        self.btn_advisor  = mk_btn("4. Model Advisor",   lambda: self.select_frame("advisor"),  5)
-        self.btn_paths    = mk_btn("5. System Layout",   lambda: self.select_frame("paths"),    6)
-        self.btn_features = mk_btn("6. Magic Profiles",  lambda: self.select_frame("features"), 7)
-        self.btn_granular = mk_btn("7. Components",      lambda: self.select_frame("granular"), 8)
-        self.btn_install  = mk_btn("8. Review & Deploy", lambda: self.select_frame("install"),  9)
+        self.btn_welcome  = mk_btn("\u2728 1. Welcome",         lambda: self.select_frame("welcome"),  2)
+        self.btn_usecases = mk_btn("\U0001f3af 2. What You Want",   lambda: self.select_frame("usecases"), 3)
+        self.btn_quick    = mk_btn("\u26A1 3. Quick Setup",     lambda: self.select_frame("quick"),    4)
+        self.btn_advisor  = mk_btn("\U0001f9d9 4. Model Advisor",   lambda: self.select_frame("advisor"),  5)
+        self.btn_paths    = mk_btn("\U0001f5c2 5. System Layout",   lambda: self.select_frame("paths"),    6)
+        self.btn_features = mk_btn("\u2728 6. Magic Profiles",  lambda: self.select_frame("features"), 7)
+        self.btn_granular = mk_btn("\U0001f9ea 7. Components",      lambda: self.select_frame("granular"), 8)
+        self.btn_install  = mk_btn("\U0001f680 8. Review & Deploy", lambda: self.select_frame("install"),  9)
 
         _ToolTip(self.btn_welcome,  "Step 1: Make sure you have the required apps installed before continuing.")
         _ToolTip(self.btn_usecases, "Step 2: Tell us what you want to do in plain English. We'll pre-select the right features for you.")
@@ -297,14 +601,17 @@ class InstallerApp(ctk.CTk):
         f_welcome = ctk.CTkScrollableFrame(self, corner_radius=0, fg_color="transparent")
         self.frames["welcome"] = f_welcome
 
-        ctk.CTkLabel(f_welcome, text="Welcome to Spellcaster",
+        ctk.CTkLabel(f_welcome, text="\u2728 Welcome to Spellcaster \u2728",
                      font=ctk.CTkFont(family="Inter", size=30, weight="bold"),
                      text_color=self.accent_hover).pack(anchor="w", padx=30, pady=(35, 5))
         ctk.CTkLabel(f_welcome, text="Spellcaster gives you AI superpowers — uncensored inside GIMP and Darktable.\n"
                      "You'll be able to create images from text, fix photos, swap faces, remove\n"
                      "backgrounds, change lighting, and much more — all with one click.",
                      font=ctk.CTkFont(family="Inter", size=15), text_color=self.text_muted,
-                     justify="left").pack(anchor="w", padx=30, pady=(0, 20))
+                     justify="left").pack(anchor="w", padx=30, pady=(0, 10))
+
+        # Animated magical sigil
+        self._build_sigil_canvas(f_welcome)
 
         # Prerequisites panel — a replaceable container so Re-detect can rebuild it
         self._prereq_container = ctk.CTkFrame(f_welcome, fg_color="transparent")
@@ -326,7 +633,7 @@ class InstallerApp(ctk.CTk):
                      justify="left").pack(anchor="w", padx=40, pady=(0, 20))
 
         # Next button
-        ctk.CTkButton(f_welcome, text="Let's Go  \u2192", height=42,
+        ctk.CTkButton(f_welcome, text="\u2728 Let's Go  \u2192", height=42,
                        font=ctk.CTkFont(family="Inter", size=16, weight="bold"),
                        fg_color=self.accent_color, hover_color=self.accent_hover,
                        command=lambda: self.select_frame("usecases")).pack(padx=30, pady=(5, 25), anchor="w")
@@ -337,7 +644,7 @@ class InstallerApp(ctk.CTk):
         f_use = ctk.CTkScrollableFrame(self, corner_radius=0, fg_color="transparent")
         self.frames["usecases"] = f_use
 
-        ctk.CTkLabel(f_use, text="What Do You Want To Do?",
+        ctk.CTkLabel(f_use, text="\u2728 What Do You Want To Do?",
                      font=ctk.CTkFont(family="Inter", size=28, weight="bold")).pack(anchor="w", padx=30, pady=(35, 5))
         ctk.CTkLabel(f_use, text="Check everything that sounds interesting. We'll automatically select the right\n"
                      "AI models and tools for you. Don't worry about technical details — just pick what excites you.",
@@ -427,7 +734,7 @@ class InstallerApp(ctk.CTk):
         f_quick = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
         self.frames["quick"] = f_quick
 
-        ctk.CTkLabel(f_quick, text="Quick Setup",
+        ctk.CTkLabel(f_quick, text="\u26A1 Quick Setup",
                      font=ctk.CTkFont(family="Inter", size=28, weight="bold")).pack(anchor="w", padx=30, pady=(35, 5))
         ctk.CTkLabel(f_quick, text="How much do you want to install?",
                      font=ctk.CTkFont(family="Inter", size=15), text_color=self.text_muted).pack(anchor="w", padx=30, pady=(0, 25))
@@ -471,7 +778,7 @@ class InstallerApp(ctk.CTk):
         f_advisor = ctk.CTkScrollableFrame(self, corner_radius=0, fg_color="transparent")
         self.frames["advisor"] = f_advisor
 
-        ctk.CTkLabel(f_advisor, text="Model Advisor",
+        ctk.CTkLabel(f_advisor, text="\U0001f9d9 Model Advisor",
                      font=ctk.CTkFont(family="Inter", size=28, weight="bold")).pack(anchor="w", padx=30, pady=(35, 5))
         ctk.CTkLabel(f_advisor, text="Smart recommendations based on your GPU. Read through these tips,\n"
                      "then continue to System Layout or jump straight to Review & Deploy.",
@@ -618,7 +925,7 @@ class InstallerApp(ctk.CTk):
         # ---- Step 3: Advanced / Granular ----
         f_gran = ctk.CTkScrollableFrame(self, corner_radius=0, fg_color="transparent")
         self.frames["granular"] = f_gran
-        ctk.CTkLabel(f_gran, text="Mana & Ingredients",
+        ctk.CTkLabel(f_gran, text="\U0001f9ea Mana & Ingredients",
                      font=ctk.CTkFont(family="Inter", size=28, weight="bold")).pack(anchor="w", padx=30, pady=(35, 5))
         ctk.CTkLabel(f_gran, text="Fine-tune your models and extensions manually. Core components are locked by their parent profiles.",
                      font=ctk.CTkFont(family="Inter", size=14), text_color=self.text_muted).pack(anchor="w", padx=30, pady=(0, 20))
@@ -628,7 +935,7 @@ class InstallerApp(ctk.CTk):
         # ---- Step 4: Summary + Install Console ----
         f_inst = ctk.CTkScrollableFrame(self, corner_radius=0, fg_color="transparent")
         self.frames["install"] = f_inst
-        ctk.CTkLabel(f_inst, text="Review & Deploy",
+        ctk.CTkLabel(f_inst, text="\u2728 Review & Deploy",
                      font=ctk.CTkFont(family="Inter", size=28, weight="bold")).pack(anchor="w", padx=30, pady=(35, 5))
         ctk.CTkLabel(f_inst, text="Review your selections below, then launch the installation. Failed downloads are retried automatically.",
                      font=ctk.CTkFont(family="Inter", size=14), text_color=self.text_muted).pack(anchor="w", padx=30, pady=(0, 20))
@@ -697,7 +1004,7 @@ class InstallerApp(ctk.CTk):
         self.log_box.pack(fill="both", expand=True, padx=30, pady=(0, 20))
         _ToolTip(self.log_box, "Live installation log. Shows each step as it executes: plugin copies, git clones, model downloads, and any warnings or errors. Scroll up to review earlier messages.")
 
-        self.start_btn = ctk.CTkButton(f_inst, text="Launch Installation",
+        self.start_btn = ctk.CTkButton(f_inst, text="\u2728 Launch Installation \u2728",
                                         command=self.start_installation, height=45,
                                         font=ctk.CTkFont(family="Inter", size=16, weight="bold"),
                                         fg_color=self.accent_color, hover_color=self.accent_hover)
@@ -1398,6 +1705,11 @@ class InstallerApp(ctk.CTk):
     # ------------------------------------------------------------------
 
     def select_frame(self, name):
+        """Animated frame selection with step indicator update."""
+        self._base_select_frame(name)
+        self._update_step_dots(name)
+
+    def _base_select_frame(self, name):
         """Show the frame for *name* and highlight its sidebar button."""
         for key, btn in self._sidebar_btns.items():
             btn.configure(fg_color="#3B2115" if key == name else "transparent")
@@ -1428,10 +1740,8 @@ class InstallerApp(ctk.CTk):
         self.update_idletasks()
 
     def _set_progress(self, fraction):
-        """Update progress bar and percentage label."""
-        self.progress_bar.set(fraction)
-        self.progress_pct_label.configure(text=f"{fraction*100:.0f}%")
-        self.update_idletasks()
+        """Update progress bar and percentage label with magical color shifts."""
+        self._magical_set_progress(fraction)
 
     # ------------------------------------------------------------------
     # Installation pipeline
@@ -1452,7 +1762,7 @@ class InstallerApp(ctk.CTk):
         t_start = time.time()
         stats = {"plugins": 0, "nodes": 0, "models_ok": 0, "models_skip": 0, "models_fail": 0}
 
-        self.log("Starting deployment pipeline...")
+        self.log("\u2728 Initiating magical deployment pipeline...")
         if self._vram_mb > 0:
             self.log(f"  GPU: {self._gpu_name}  |  VRAM: {self._vram_mb/1024:.0f} GB  |  Tier: {self._vram_tier}")
         self.log("")
@@ -1477,7 +1787,7 @@ class InstallerApp(ctk.CTk):
             self.log("")
 
         # ---- Phase 1: Host Plugin Configuration ----
-        self._set_file_progress("Phase 1/3: Installing host plugins...")
+        self._set_file_progress("\u2728 Phase 1/3: Inscribing host enchantments...")
 
         if self.gimp_path.get():
             self.log(f"Installing GIMP plugin to {self.gimp_path.get()}...")
@@ -1760,7 +2070,7 @@ class InstallerApp(ctk.CTk):
 
     def _install_nodes(self, comfy_path, stats):
         """Phase 2: Clone custom nodes into ComfyUI."""
-        self._set_file_progress("Phase 2/3: Installing custom nodes...")
+        self._set_file_progress("\U0001f9ea Phase 2/3: Summoning arcane components...")
         self.log("\nInstalling Custom Nodes...")
         import shutil
         has_git = shutil.which("git") is not None

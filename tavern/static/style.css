@@ -1,3 +1,210 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   SPLASH SCREEN — magical sigil animation while server loads
+   ═══════════════════════════════════════════════════════════════════════ */
+#guild-splash {
+    position: fixed; inset: 0; z-index: 10000;
+    background: radial-gradient(ellipse at center, #0e0d18 0%, #07060b 70%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    overflow: hidden;
+}
+#guild-splash::before {
+    content: ''; position: absolute; inset: 0;
+    background: radial-gradient(circle at 50% 50%, rgba(178,70,242,0.08) 0%, transparent 60%);
+    animation: splashPulse 3s ease-in-out infinite;
+}
+@keyframes splashPulse {
+    0%, 100% { opacity: 0.3; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.1); }
+}
+#splash-sigil {
+    width: 200px; height: 200px; margin-bottom: 30px;
+    filter: drop-shadow(0 0 30px rgba(178,70,242,0.4));
+}
+#splash-title {
+    font-family: 'Outfit', sans-serif; font-size: 32px; font-weight: 700;
+    color: #fff; letter-spacing: 4px; text-transform: uppercase;
+    text-shadow: 0 0 40px rgba(178,70,242,0.6), 0 0 80px rgba(178,70,242,0.3);
+    opacity: 0;
+}
+#splash-status {
+    font-family: 'Outfit', sans-serif; font-size: 14px; color: rgba(178,70,242,0.7);
+    margin-top: 12px; letter-spacing: 2px; opacity: 0;
+}
+#splash-bar-track {
+    width: 200px; height: 3px; background: rgba(255,255,255,0.06);
+    border-radius: 3px; margin-top: 20px; overflow: hidden; opacity: 0;
+}
+#splash-bar-fill {
+    width: 0%; height: 100%; border-radius: 3px;
+    background: linear-gradient(90deg, #6C63FF, #B246F2, #df8eff);
+    box-shadow: 0 0 10px rgba(178,70,242,0.6);
+    transition: width 0.3s ease-out;
+}
+/* Splash particles */
+.splash-mote {
+    position: absolute; width: 3px; height: 3px; border-radius: 50%;
+    background: rgba(178,70,242,0.6); pointer-events: none;
+    box-shadow: 0 0 6px rgba(178,70,242,0.4);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   GSAP-POWERED EFFECTS — enhance existing elements
+   ═══════════════════════════════════════════════════════════════════════ */
+/* Spell-cast flash overlay */
+#spell-flash {
+    position: fixed; inset: 0; z-index: 99; pointer-events: none;
+    background: radial-gradient(circle at center, rgba(178,70,242,0.3) 0%, transparent 70%);
+    opacity: 0;
+}
+
+/* Character card entrance stagger */
+.character-card { opacity: 0; transform: translateX(-20px); }
+.character-card.revealed { opacity: 1; transform: translateX(0); }
+
+/* Avatar selection burst */
+.avatar-select-ring {
+    position: absolute; inset: -8px; border-radius: 50%;
+    border: 2px solid transparent;
+    background: conic-gradient(from 0deg, #B246F2, #6C63FF, #df8eff, #B246F2) border-box;
+    -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor; mask-composite: exclude;
+    opacity: 0; transform: scale(0.8);
+}
+
+/* Message sparkle trail */
+.msg-sparkle {
+    position: absolute; width: 4px; height: 4px; border-radius: 50%;
+    background: #B246F2; pointer-events: none;
+    box-shadow: 0 0 8px rgba(178,70,242,0.8);
+}
+
+/* Send button charge-up */
+#send-btn.charging {
+    animation: chargeUp 0.6s ease-out;
+}
+@keyframes chargeUp {
+    0% { filter: drop-shadow(0 0 0px transparent); }
+    50% { filter: drop-shadow(0 0 20px rgba(178,70,242,0.8)); transform: scale(1.3); }
+    100% { filter: drop-shadow(0 0 8px var(--accent-glow)); transform: scale(1); }
+}
+
+/* Header active wizard glow-pulse on selection */
+#active-avatar.selecting {
+    animation: avatarBurst 0.6s ease-out;
+}
+@keyframes avatarBurst {
+    0% { box-shadow: 0 0 0 0 rgba(178,70,242,0.6); }
+    50% { box-shadow: 0 0 0 15px rgba(178,70,242,0); }
+    100% { box-shadow: 0 0 12px rgba(0,0,0,0.5), 0 0 0 2px rgba(178,70,242,0.2); }
+}
+
+/* Rune watermark in chat (ambient) */
+#chat-rune-watermark {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: 300px; height: 300px; pointer-events: none; z-index: 0;
+    opacity: 0.03;
+}
+
+/* Enchantment shimmer on buttons */
+.btn-enchanted {
+    position: relative; overflow: hidden;
+}
+.btn-enchanted::after {
+    content: ''; position: absolute; top: -50%; left: -50%;
+    width: 200%; height: 200%;
+    background: linear-gradient(45deg, transparent 40%, rgba(255,255,255,0.08) 50%, transparent 60%);
+    animation: btnShimmer 3s ease-in-out infinite;
+}
+@keyframes btnShimmer {
+    0% { transform: translateX(-100%) rotate(45deg); }
+    100% { transform: translateX(100%) rotate(45deg); }
+}
+
+/* ── Floating Runes (sidebar ambient) ── */
+.magic-rune {
+    position: fixed; pointer-events: none; z-index: 1;
+    font-size: 18px; opacity: 0; color: rgba(178,70,242,0.35);
+    text-shadow: 0 0 12px rgba(178,70,242,0.4);
+    font-family: serif;
+    filter: blur(0.5px);
+}
+
+/* ── Character card magical hover ── */
+.character-card::before {
+    content: ''; position: absolute; inset: 0; border-radius: 10px;
+    opacity: 0; transition: opacity 0.3s ease;
+    background: radial-gradient(ellipse at 50% 0%, rgba(178,70,242,0.12) 0%, transparent 70%);
+    pointer-events: none; z-index: 0;
+}
+.character-card:hover::before { opacity: 1; }
+
+/* ── Active character card pulsing aura ── */
+.character-card.active {
+    box-shadow: 0 0 12px rgba(178,70,242,0.25), inset 0 0 12px rgba(178,70,242,0.06);
+}
+
+/* ── Generation overlay — spellcasting circle ── */
+#generation-circle-overlay {
+    position: fixed; inset: 0; z-index: 9990;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(10,8,20,0.7); backdrop-filter: blur(4px);
+    pointer-events: none; opacity: 0;
+}
+#generation-circle-overlay svg { width: 200px; height: 200px; }
+#generation-circle-overlay .gen-status {
+    position: absolute; bottom: calc(50% - 130px);
+    color: rgba(178,70,242,0.9); font-size: 14px; font-family: 'Outfit', sans-serif;
+    text-shadow: 0 0 20px rgba(178,70,242,0.6);
+    letter-spacing: 2px; text-transform: uppercase;
+}
+
+/* ── Completion burst particles ── */
+.completion-particle {
+    position: fixed; pointer-events: none; z-index: 9991;
+    width: 3px; height: 3px; border-radius: 50%;
+    background: #B246F2;
+    box-shadow: 0 0 6px rgba(178,70,242,0.8), 0 0 12px rgba(108,99,255,0.4);
+}
+
+/* ── Chat input glow when focused ── */
+#chat-input:focus {
+    box-shadow: 0 0 20px rgba(178,70,242,0.15), 0 0 40px rgba(108,99,255,0.05);
+    border-color: rgba(178,70,242,0.5) !important;
+}
+
+/* ── Typing indicator enhanced ── */
+.typing-bubble {
+    position: relative;
+}
+.typing-bubble::before {
+    content: ''; position: absolute; inset: -2px; border-radius: inherit;
+    background: conic-gradient(from var(--typing-angle, 0deg), rgba(178,70,242,0.3), transparent 30%, rgba(108,99,255,0.3) 50%, transparent 80%);
+    z-index: -1; opacity: 0.6;
+    animation: typingOrbit 2s linear infinite;
+}
+@keyframes typingOrbit {
+    to { --typing-angle: 360deg; }
+}
+@property --typing-angle {
+    syntax: '<angle>';
+    initial-value: 0deg;
+    inherits: false;
+}
+
+/* ── Active character name shimmer ── */
+#active-character-name {
+    background: linear-gradient(90deg, var(--text-primary) 0%, var(--text-primary) 40%, rgba(178,70,242,0.9) 50%, var(--text-primary) 60%, var(--text-primary) 100%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: nameShimmer 4s ease-in-out infinite;
+}
+@keyframes nameShimmer {
+    0%, 100% { background-position: 100% 0; }
+    50% { background-position: -100% 0; }
+}
+
 :root {
     --bg-main: #0B0A10;
     --bg-sidebar: #13121C;
@@ -73,7 +280,16 @@ body {
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; transition: all 0.3s; }
 .dot.red { background: #ff4757; box-shadow: 0 0 8px rgba(255, 71, 87, 0.6); animation: dotPulse 2s ease-in-out infinite; }
 .dot.green { background: #2ed573; box-shadow: 0 0 8px rgba(46, 213, 115, 0.6); animation: dotPulse 2s ease-in-out infinite; }
+.dot.yellow { background: #ffa502; box-shadow: 0 0 8px rgba(255, 165, 2, 0.6); animation: dotPulse 2s ease-in-out infinite; }
 @keyframes dotPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.3); } }
+#animate-all-btn {
+    background: linear-gradient(135deg, #6c5ce7, #a29bfe);
+    color: #fff; border: none; border-radius: 8px; padding: 6px 14px;
+    font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: all 0.2s;
+}
+#animate-all-btn:hover { background: linear-gradient(135deg, #5f4bd8, #8b83f5); }
+#animate-all-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .search-wrapper { margin-top: 12px; }
 .search-wrapper input {
@@ -97,6 +313,7 @@ body {
     border-radius: 10px; cursor: pointer;
     transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     margin-bottom: 4px; background: transparent;
+    position: relative;
     border: 1px solid transparent;
     position: relative; overflow: hidden;
 }
@@ -189,7 +406,7 @@ body {
 .chat-header-actions {
     display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end;
 }
-#reset-btn, #generate-avatar-btn, #generate-bg-btn, #rename-btn, #batch-generate-btn, #lora-btn {
+#reset-btn, #generate-avatar-btn, #generate-bg-btn, #rename-btn, #batch-generate-btn, #lora-btn, #scaffold-link {
     background: transparent; border: 1px solid var(--border-color);
     color: var(--text-muted); padding: 6px 12px; border-radius: 6px;
     cursor: pointer; font-family: 'Outfit'; transition: all 0.25s;
@@ -199,16 +416,9 @@ body {
 #reset-btn:hover { background: rgba(255,255,0,0.1); color: #fff; border-color: #ffcc00; box-shadow: 0 0 10px rgba(255,204,0,0.2); }
 #generate-avatar-btn:hover, #generate-bg-btn:hover, #rename-btn:hover { background: rgba(178, 70, 242, 0.1); color: #fff; border-color: var(--accent); box-shadow: 0 0 10px var(--accent-glow); }
 #batch-generate-btn:hover { background: rgba(46, 213, 115, 0.15); color: #2ed573; border-color: #2ed573; box-shadow: 0 0 10px rgba(46,213,115,0.2); }
+#scaffold-link:hover { background: rgba(178, 70, 242, 0.1); color: #fff; border-color: var(--accent); box-shadow: 0 0 10px var(--accent-glow); }
 #batch-generate-btn.running { background: rgba(46, 213, 115, 0.2); color: #2ed573; border-color: #2ed573; animation: pulse 2s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
-#scaffold-link {
-    background: transparent; border: 1px solid var(--border-color);
-    color: var(--text-muted); padding: 6px 12px; border-radius: 6px;
-    cursor: pointer; font-family: 'Outfit'; transition: all 0.25s;
-    font-size: 11px; font-weight: 600; text-decoration: none;
-    display: inline-flex; align-items: center; white-space: nowrap;
-}
-#scaffold-link:hover { background: rgba(217, 119, 6, 0.15); color: #fbbf24; border-color: #d97706; box-shadow: 0 0 10px rgba(251,191,36,0.2); }
 
 #chat-stream {
     flex: 1; overflow-y: auto; padding: 20px;

@@ -52,6 +52,7 @@ import socket
 # ── Shared constants & helpers (single source of truth) ──────────────
 from guild_common import (
     DEFAULT_GUILD_PORT, DEFAULT_COMFYUI_URL, DEFAULT_KOBOLD_URL,
+    DEFAULT_HORDE_URL, HORDE_ANONYMOUS_KEY,
     is_port_in_use, test_endpoint,
 )
 
@@ -140,6 +141,9 @@ _DEFAULT_CONFIG = {
     "auto_launch_st": True,
     "auto_launch_kobold": False,
     "privacy_cleanup": True,
+    "llm_mode": "local",           # "local" (KoboldAI) or "horde" (AI Horde)
+    "horde_api_key": "",           # AI Horde API key (empty = anonymous)
+    "horde_model": "",             # Preferred Horde model (empty = any)
 }
 
 
@@ -239,40 +243,80 @@ def run_setup_wizard(existing_config=None):
     else:
         print("Not reachable (will retry when Guild starts)")
 
-    # ── 3. KoboldAI / LLM Backend ──────────────────────────────────
+    # ── 3. LLM Backend ──────────────────────────────────────────────
     print()
-    print("  ── LLM Backend (for chat) ──────────────────────")
-    print("    The Guild uses a KoboldAI-compatible API for wizard chat.")
-    print("    This can be KoboldCPP, text-generation-webui, Ollama, or any")
-    print("    OpenAI-compatible server at /api/v1/generate.")
-    config["kobold_url"] = _input_with_default(
-        "LLM API URL", config["kobold_url"]).rstrip('/')
+    print("  ── LLM Backend (for wizard chat) ────────────────")
+    print("    Choose how wizards talk:")
+    print()
+    print("    [1] Local LLM  — KoboldCPP, Ollama, text-gen-webui, etc.")
+    print("                     Fast, private, runs on YOUR machine.")
+    print()
+    print("    [2] AI Horde   — Free cloud LLM via crowdsourced workers.")
+    print("                     No GPU needed.  ZERO privacy (see below).")
+    print()
+    llm_choice = ""
+    while llm_choice not in ("1", "2"):
+        llm_choice = input("    Choose [1/2]: ").strip()
 
-    # Test LLM connection
-    print(f"    Testing LLM at {config['kobold_url']}...", end=" ", flush=True)
-    llm_reachable = _test_endpoint(config["kobold_url"], "api/v1/model")
-    if llm_reachable:
-        print("Connected!")
-    else:
-        print("Not reachable.")
-        # Offer to download KoboldCPP
+    if llm_choice == "2":
+        # ── AI Horde ──
+        config["llm_mode"] = "horde"
         print()
-        print("    No LLM backend detected. The Guild needs one for chat.")
-        print("    KoboldCPP is the simplest option — single file, no install.")
-        kobold_dir = _find_koboldcpp(config.get("koboldcpp_dir") or None)
-        if kobold_dir:
-            print(f"    Found KoboldCPP at: {kobold_dir}")
+        print("  " + "=" * 56)
+        print("  ⚠  WARNING — AI HORDE HAS ZERO PRIVACY  ⚠")
+        print("  " + "=" * 56)
+        print("  Your prompts are sent to VOLUNTEER worker machines.")
+        print("  Volunteers can see every prompt and every response.")
+        print("  There is NO encryption, NO anonymity, NO guarantees.")
+        print("  Do NOT send personal data, passwords, or secrets.")
+        print("  " + "=" * 56)
+        print()
+        confirm = input("    Type YES to accept the risk: ").strip()
+        if confirm.upper() != "YES":
+            print("    Aborting — switching to local LLM mode.")
+            config["llm_mode"] = "local"
         else:
-            kobold_dir = _download_koboldcpp(verbose=True)
-        if kobold_dir:
-            config["koboldcpp_dir"] = kobold_dir
-            config["auto_launch_kobold"] = True
-            # Offer model download
-            model_path = config.get("kobold_model", "")
-            if not model_path or not os.path.isfile(model_path):
-                model_path = _select_and_download_model(kobold_dir)
-            if model_path:
-                config["kobold_model"] = model_path
+            print()
+            print("    API key (press Enter for anonymous / no account):")
+            horde_key = input("    Horde API key: ").strip()
+            config["horde_api_key"] = horde_key
+            print("    AI Horde configured.  Wizard chat will use the Horde.")
+
+    if config.get("llm_mode") != "horde":
+        # ── Local LLM (original flow) ──
+        config["llm_mode"] = "local"
+        print()
+        print("    The Guild uses a KoboldAI-compatible API for wizard chat.")
+        print("    This can be KoboldCPP, text-generation-webui, Ollama, or any")
+        print("    OpenAI-compatible server at /api/v1/generate.")
+        config["kobold_url"] = _input_with_default(
+            "LLM API URL", config["kobold_url"]).rstrip('/')
+
+        # Test LLM connection
+        print(f"    Testing LLM at {config['kobold_url']}...", end=" ", flush=True)
+        llm_reachable = _test_endpoint(config["kobold_url"], "api/v1/model")
+        if llm_reachable:
+            print("Connected!")
+        else:
+            print("Not reachable.")
+            # Offer to download KoboldCPP
+            print()
+            print("    No LLM backend detected. The Guild needs one for chat.")
+            print("    KoboldCPP is the simplest option — single file, no install.")
+            kobold_dir = _find_koboldcpp(config.get("koboldcpp_dir") or None)
+            if kobold_dir:
+                print(f"    Found KoboldCPP at: {kobold_dir}")
+            else:
+                kobold_dir = _download_koboldcpp(verbose=True)
+            if kobold_dir:
+                config["koboldcpp_dir"] = kobold_dir
+                config["auto_launch_kobold"] = True
+                # Offer model download
+                model_path = config.get("kobold_model", "")
+                if not model_path or not os.path.isfile(model_path):
+                    model_path = _select_and_download_model(kobold_dir)
+                if model_path:
+                    config["kobold_model"] = model_path
 
     # ── 4. SillyTavern ───────────────────────────────────────────────
     print()
@@ -313,10 +357,16 @@ def run_setup_wizard(existing_config=None):
         "Privacy mode? (auto-delete inputs & outputs from ComfyUI after delivery)",
         config.get("privacy_cleanup", True))
 
+    # ── Create creations/ folder for all generated outputs ────────────
+    creations_dir = os.path.join(APP_DIR, "creations")
+    os.makedirs(creations_dir, exist_ok=True)
+
     # ── Save ──────────────────────────────────────────────────────────
     print()
     save_config(config)
     print(f"  Configuration saved to: {_CONFIG_FILE}")
+    print(f"  Creations folder: {creations_dir}")
+    print("  All generated images and videos will be saved in creations/")
     print("  Run with --setup to change these settings later.")
     print()
 
@@ -415,8 +465,9 @@ def check_for_updates(verbose=True):
     _PROTECTED_FILES = {
         "tavern/guild_launcher.py",      # This file — never overwrite self
         "tavern/guild_config.json",      # User configuration
+        "tavern/guild_common.py",        # Local arch rules & user customisations
     }
-    remote_files = []
+    remote_files = []  # list of (path, expected_size)
     skipped = 0
     for item in tree.get("tree", []):
         if item["type"] != "blob":
@@ -426,7 +477,7 @@ def check_for_updates(verbose=True):
             skipped += 1
             continue
         if path.startswith(_TAVERN_PREFIX) or path.startswith(_SCAFFOLD_PREFIX):
-            remote_files.append(path)
+            remote_files.append((path, item.get("size", 0)))
     if skipped and verbose:
         print(f"  [update] Skipped {skipped} protected file(s)")
 
@@ -449,7 +500,7 @@ def check_for_updates(verbose=True):
     else:
         write_base = os.path.dirname(BUNDLE_DIR)  # spellcaster root
 
-    for rel_path in remote_files:
+    for rel_path, expected_size in remote_files:
         try:
             url = f"{_GUILD_RAW_BASE}/{rel_path}"
             dest = os.path.join(write_base, rel_path)
@@ -458,7 +509,16 @@ def check_for_updates(verbose=True):
             req = urllib.request.Request(url, headers=hdrs)
             with urllib.request.urlopen(req, timeout=30) as r2:
                 blob = r2.read()
-                # Scrub null bytes from text files (NTFS corruption guard)
+
+            # ── Integrity check: reject incomplete downloads ──
+            # GitHub tree API provides exact blob sizes.  If the
+            # download is short the connection was likely dropped.
+            if expected_size > 0 and len(blob) != expected_size:
+                raise IOError(
+                    f"Incomplete download: got {len(blob)} bytes, "
+                    f"expected {expected_size}")
+
+            # Scrub null bytes from text files (NTFS corruption guard)
                 if rel_path.endswith(('.py', '.js', '.css', '.html',
                                       '.json', '.jsx', '.md', '.txt')):
                     blob = blob.replace(b'\x00', b'')
@@ -874,6 +934,29 @@ def _patch_st_with_spellcaster(st_dir):
             content = content.replace('enableServerPlugins: false', 'enableServerPlugins: true')
             open(config_path, 'w', encoding='utf-8').write(content)
             print(f"  [st] Enabled server plugins in config.yaml")
+
+    # Auto-import character cards (13 Spellcaster wizards)
+    chars_src = os.path.join(BUNDLE_DIR, 'characters')
+    if not os.path.isdir(chars_src):
+        chars_src = os.path.join(os.path.dirname(BUNDLE_DIR), 'tavern', 'characters')
+    chars_dest = os.path.join(st_path, 'data', 'default-user', 'characters')
+    if os.path.isdir(chars_src) and os.path.isdir(chars_dest):
+        imported = 0
+        for fname in os.listdir(chars_src):
+            # Copy both JSON cards and PNG avatars
+            if not (fname.endswith('.json') or fname.endswith('.png')):
+                continue
+            src = os.path.join(chars_src, fname)
+            dest = os.path.join(chars_dest, fname)
+            if not os.path.isfile(dest):
+                shutil.copy2(src, dest)
+                if fname.endswith('.json'):
+                    imported += 1
+        if imported:
+            print(f"  [st] Imported {imported} Spellcaster character card(s)")
+    else:
+        if not os.path.isdir(chars_src):
+            print(f"  [st] Character cards source not found, skipping import")
 
     print(f"  [st] Spellcaster plugin installed into SillyTavern")
 
@@ -1487,6 +1570,9 @@ def main():
     server.COMFYUI_URL = comfyui_url
     server.KOBOLD_URL = kobold_url
     server.PRIVACY_CLEANUP = config.get("privacy_cleanup", True)
+    server.LLM_MODE = config.get("llm_mode", "local")
+    server.HORDE_API_KEY = config.get("horde_api_key", "")
+    server.HORDE_MODEL = config.get("horde_model", "")
     server.NSFW_MODE = bool(_GUILD_AUTH_TOKEN)
 
     # ── Runtime NSFW content injection ──────────────────────────────

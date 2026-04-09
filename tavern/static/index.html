@@ -7,16 +7,52 @@
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
 </head>
-<body class="dark-theme">
+<body class="dark-theme" style="overflow:hidden;">
+    <!-- Splash Screen — polls server before revealing UI -->
+    <div id="guild-splash">
+        <div id="splash-sigil">
+            <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" id="splash-rune-svg">
+                <defs>
+                    <linearGradient id="sigilGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#B246F2"/>
+                        <stop offset="50%" stop-color="#6C63FF"/>
+                        <stop offset="100%" stop-color="#B246F2"/>
+                    </linearGradient>
+                    <filter id="sigilGlow">
+                        <feGaussianBlur stdDeviation="4" result="blur"/>
+                        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                    </filter>
+                </defs>
+                <!-- Outer ring -->
+                <circle cx="100" cy="100" r="90" fill="none" stroke="url(#sigilGrad)" stroke-width="2" opacity="0.6" filter="url(#sigilGlow)"
+                    stroke-dasharray="565" stroke-dashoffset="565" id="splash-ring-outer"/>
+                <!-- Inner ring -->
+                <circle cx="100" cy="100" r="60" fill="none" stroke="url(#sigilGrad)" stroke-width="1.5" opacity="0.4"
+                    stroke-dasharray="377" stroke-dashoffset="377" id="splash-ring-inner"/>
+                <!-- Pentagram -->
+                <polygon points="100,20 123,72 180,72 133,108 148,165 100,133 52,165 67,108 20,72 77,72"
+                    fill="none" stroke="url(#sigilGrad)" stroke-width="1.5" opacity="0" filter="url(#sigilGlow)" id="splash-star"/>
+                <!-- Center eye -->
+                <ellipse cx="100" cy="100" rx="18" ry="12" fill="none" stroke="#B246F2" stroke-width="2" opacity="0" id="splash-eye"/>
+                <circle cx="100" cy="100" r="5" fill="#B246F2" opacity="0" id="splash-pupil"/>
+            </svg>
+        </div>
+        <h1 id="splash-title">The Wizard Guild</h1>
+        <p id="splash-status">Awakening the arcane...</p>
+        <div id="splash-bar-track">
+            <div id="splash-bar-fill"></div>
+        </div>
+    </div>
+
     <canvas id="magic-particles"></canvas>
     <div id="sidebar-backdrop" onclick="closeMobileSidebar()"></div>
-    <div id="app-container">
+    <div id="app-container" style="opacity:0;transform:translateY(20px);">
         <!-- Sidebar: Characters -->
         <aside id="sidebar">
             <div class="sidebar-header">
                 <h2>The Wizard Guild</h2>
                 <div id="llm-indicator-container">
-                    <span id="llm-dot" class="dot red"></span> <span id="llm-status">LLM: Disconnected</span>
+                    <span id="llm-dot" class="dot red"></span> <span id="llm-status" title="">LLM: Disconnected</span>
                 </div>
                 <div id="comfy-indicator-container">
                     <span id="comfy-dot" class="dot red"></span> <span id="comfy-status">ComfyUI: Disconnected</span>
@@ -53,7 +89,8 @@
                     <button id="lora-btn" title="Manage LoRA Enchantments for this wizard">Enchantments</button>
                     <button id="reset-btn">Reset Memory</button>
                     <button id="batch-generate-btn" title="Generate avatars for all guild members + tavern background">⚡ Generate All</button>
-                    <a href="/guild" id="scaffold-link" title="Open The Travelling Wizard scaffold editor">🧙 Scaffold</a>
+                    <button id="animate-all-btn" onclick="onAnimateAllClick()" title="Checking for video models..." disabled style="display:inline-flex;align-items:center;gap:4px;">✨ Animate All Avatars</button>
+                    <a href="/static/guild.html" id="scaffold-link" title="Open The Travelling Wizard — scaffolds, workflows, configuration & more" style="display:inline-flex;align-items:center;gap:4px;text-decoration:none;">🧙 Travelling Wizard</a>
                 </div>
             </header>
             
@@ -77,8 +114,34 @@
     <div id="settings-modal" class="modal hidden">
         <div class="modal-content" style="max-width:520px;max-height:85vh;overflow-y:auto;">
             <h3>Guild Server Settings</h3>
-            <p><strong>Local LLM (Kobold):</strong> Breathe life into the Guild Members natively via local inference.</p>
-            <input type="text" id="kobold-url-input" placeholder="http://127.0.0.1:5001" value="http://127.0.0.1:5001">
+            <p><strong>LLM Source:</strong> Choose how Guild Members come alive.</p>
+            <div style="display:flex;gap:8px;margin:8px 0 12px 0;">
+                <button id="llm-mode-local" class="llm-mode-btn active" onclick="setLlmMode('local')" style="flex:1;padding:10px;border-radius:8px;border:2px solid #B246F2;background:#1e1e2e;color:#eee;cursor:pointer;font-family:'Outfit';font-size:13px;font-weight:600;transition:all 0.2s;">Local (KoboldAI)</button>
+                <button id="llm-mode-horde" class="llm-mode-btn" onclick="setLlmMode('horde')" style="flex:1;padding:10px;border-radius:8px;border:2px solid #333;background:#1e1e2e;color:#888;cursor:pointer;font-family:'Outfit';font-size:13px;font-weight:600;transition:all 0.2s;">AI Horde</button>
+            </div>
+
+            <div id="llm-local-settings">
+                <p style="color:#aaa;font-size:12px;margin-bottom:6px;">Local inference via KoboldAI — private, on your machine.</p>
+                <input type="text" id="kobold-url-input" placeholder="http://127.0.0.1:5001" value="http://127.0.0.1:5001">
+            </div>
+
+            <div id="llm-horde-settings" style="display:none;">
+                <div style="background:#3d1010;border:2px solid #ff4757;border-radius:10px;padding:14px;margin-bottom:12px;">
+                    <p style="color:#ff6b6b;font-weight:700;font-size:14px;margin-bottom:6px;">&#9888; ZERO PRIVACY WARNING</p>
+                    <p style="color:#ffaaaa;font-size:12px;line-height:1.5;margin:0;">
+                        AI Horde is a <strong>crowdsourced volunteer network</strong>. Every prompt you send
+                        is processed by <strong>random strangers' machines</strong>. Your conversations,
+                        character names, and all text are <strong>fully visible to volunteer workers</strong>.
+                        <br><br>
+                        <strong>Never send sensitive, personal, or private information through Horde.</strong>
+                    </p>
+                </div>
+                <p style="color:#aaa;font-size:12px;margin-bottom:6px;">API Key (leave empty for anonymous — slower, lower priority):</p>
+                <input type="text" id="horde-api-key-input" placeholder="0000000000 (anonymous)" value="" style="margin-bottom:10px;">
+                <p style="color:#aaa;font-size:12px;margin-bottom:6px;">Preferred model (leave empty for any available):</p>
+                <input type="text" id="horde-model-input" placeholder="Any available model" value="">
+            </div>
+
             <p style="margin-top: 16px;"><strong>ComfyUI Engine:</strong> Connect to your image rendering backend.</p>
             <input type="text" id="comfy-url-input" placeholder="http://127.0.0.1:8188" value="http://127.0.0.1:8188">
 
@@ -256,6 +319,8 @@
         <p>The Guild is thinking...</p>
     </div>
 
+    <!-- GSAP — the one ring to rule all animations -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
