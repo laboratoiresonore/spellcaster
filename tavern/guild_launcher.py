@@ -1205,6 +1205,10 @@ def main():
     server.COMFYUI_URL = comfyui_url
     server.KOBOLD_URL = kobold_url
 
+    # ── Initialize server (model detection, LoRA scan) ───────────────
+    # Pass URL explicitly to avoid any global-timing issues
+    server._server_init(comfy_url=comfyui_url)
+
     guild_url = f"http://127.0.0.1:{port}"
 
     # ── Check ComfyUI connectivity ───────────────────────────────────
