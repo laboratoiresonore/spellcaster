@@ -37,6 +37,8 @@ GITHUB_TREE = "https://api.github.com/repos/laboratoiresonore/spellcaster/git/tr
 
 # Prefixes for dynamic file discovery via GitHub Tree API
 GIMP_PLUGIN_PREFIX = "plugins/gimp/comfyui-connector/"
+TAVERN_PREFIX = "tavern/"
+SCAFFOLD_PREFIX = "scaffold/"
 DARKTABLE_PLUGIN_PREFIX = "plugins/darktable/"
 
 # Static fallback lists (used when Tree API is unavailable)
@@ -55,7 +57,28 @@ GIMP_PLUGIN_FILES = [
     "plugins/gimp/comfyui-connector/spellcaster_hero.png",
     "plugins/gimp/comfyui-connector/spinner.gif",
     "plugins/gimp/comfyui-connector/wizard_banner.gif",
+]
+TAVERN_FILES = [
+    "tavern/server.py",
+    "tavern/guild_launcher.py",
+    "tavern/build_guild.py",
+    "tavern/static/guild.html",
+    "tavern/static/index.html",
+    "tavern/static/app.js",
+    "tavern/static/style.css",
+    "tavern/static/travelling_wizard.jsx",
+    "scaffold/__init__.py",
+    "scaffold/meta_wizard.py",
+    "scaffold/introspector.py",
+    "scaffold/workflow_wizard.py",
+    "scaffold/workflow_parser.py",
+    "scaffold/comfyui_runner.py",
+    "scaffold/presets.py",
+    "scaffold/prompt_builder.py",
+    "scaffold/wizard.py",
+    "scaffold/bridge_launcher.py",
 ]
+
 
 DARKTABLE_PLUGIN_FILES = [
     "plugins/darktable/comfyui_connector.lua",
@@ -773,6 +796,55 @@ def apply_spellcaster_theme_darktable(dt_dir: Path):
 
 
 # ─── Repair & Update ───────────────────────────────────────────────────────
+
+def update_tavern(server_url: str = "http://127.0.0.1:8188") -> bool:
+    """Download latest Wizard Guild tavern files from GitHub."""
+    import sys as _sys
+    if _sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+        tavern_dir = base / "Spellcaster" / "tavern"
+    elif _sys.platform == "darwin":
+        tavern_dir = Path.home() / "Library" / "Application Support" / "Spellcaster" / "tavern"
+    else:
+        tavern_dir = Path.home() / ".local" / "share" / "spellcaster" / "tavern"
+
+    scaffold_dir = tavern_dir.parent / "scaffold"
+    tavern_dir.mkdir(parents=True, exist_ok=True)
+    scaffold_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"  {C}Discovering tavern files from GitHub...{X}")
+    remote_tavern = discover_remote_files(TAVERN_PREFIX)
+    remote_scaffold = discover_remote_files(SCAFFOLD_PREFIX)
+    remote_files = (remote_tavern or []) + (remote_scaffold or [])
+    if not remote_files:
+        remote_files = TAVERN_FILES
+        print(f"    {Y}Using static file list{X}")
+    else:
+        print(f"    {G}✓{X} Found {len(remote_files)} files")
+
+    all_ok = True
+    for rel_path in remote_files:
+        filename = rel_path  # keep relative path structure
+        url = f"{GITHUB_RAW}/{rel_path}"
+        # tavern/ files go to tavern_dir, scaffold/ to scaffold_dir
+        if rel_path.startswith("tavern/"):
+            dest = tavern_dir / rel_path[len("tavern/"):]
+        elif rel_path.startswith("scaffold/"):
+            dest = scaffold_dir / rel_path[len("scaffold/"):]
+        else:
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if download_file(url, dest):
+            print(f"    {G}✓{X} {Path(rel_path).name}")
+        else:
+            all_ok = False
+
+    # Write guild config
+    config = tavern_dir / "guild_config.json"
+    config.write_text(json.dumps({"comfyui_url": server_url, "auto_update": True}, indent=2))
+    print(f"  {G}Wizard Guild updated at:{X} {tavern_dir}")
+    return all_ok
+
 
 def repair_and_install_gimp(plug_dir: Path, server_url: str = "http://127.0.0.1:8188") -> bool:
     """Full repair: clean up any broken installs, then download fresh plugin files."""

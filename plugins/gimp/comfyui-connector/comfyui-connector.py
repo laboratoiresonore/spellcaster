@@ -465,6 +465,13 @@ def _apply_staged_updates():
     # If we applied staged updates, delete pluginrc so GIMP re-scans
     if applied > 0:
         _delete_all_gimp_pluginrc()
+        # Also purge __pycache__ so GIMP uses fresh bytecode
+        for _pc in _PLUGIN_DIR.rglob("__pycache__"):
+            try:
+                import shutil as _shutil
+                _shutil.rmtree(_pc)
+            except Exception:
+                pass
 
 _apply_staged_updates()
 
@@ -517,6 +524,10 @@ def _auto_update():
             return  # Something went wrong with API, don't touch local files
 
         # Step 4: Download all remote files (supports subdirectories)
+        # .py files are ALWAYS staged as .update (never live-replaced) because
+        # Python has already loaded them into memory. Live-replacing can cause
+        # crashes if a lazy import or __pycache__ reload picks up the new code
+        # mid-session with incompatible function signatures.
         updated = 0
         staged = 0
         failed = 0
@@ -537,32 +548,59 @@ def _auto_update():
                     if remainder.endswith((".py", ".css", ".json", ".md", ".txt")):
                         blob = blob.replace(b"\x00", b"")
                     tmp.write_bytes(blob)
-                try:
-                    tmp.replace(dest)
-                    updated += 1
-                except PermissionError:
+                # Always stage .py files — never replace running Python modules
+                if remainder.endswith(".py"):
                     stage_path = dest.with_suffix(dest.suffix + ".update")
                     tmp.replace(stage_path)
                     staged += 1
+                else:
+                    try:
+                        tmp.replace(dest)
+                        updated += 1
+                    except PermissionError:
+                        stage_path = dest.with_suffix(dest.suffix + ".update")
+                        tmp.replace(stage_path)
+                        staged += 1
             except Exception as e:
                 failed += 1
                 print(f"[Spellcaster] Failed to download {remainder}: {e}", file=_sys.stderr)
 
         # Step 5: Remove local files that no longer exist in the repo
-        protected = {"config.json", ".spellcaster_version", "user_presets.json", "session_state.json"}
+        protected = {
+            "config.json", ".spellcaster_version",
+            "user_presets.json", "session_state.json",
+        }
+        protected_suffixes = (".pyc", ".update", ".tmp", ".onnx", ".safetensors")
         for local_file in _PLUGIN_DIR.rglob("*"):
             if not local_file.is_file():
                 continue
             rel = local_file.relative_to(_PLUGIN_DIR).as_posix()
             if rel in protected or local_file.name in protected \
-               or local_file.name.endswith(".pyc") \
-               or local_file.name.endswith(".update"):
+               or local_file.suffix in protected_suffixes:
                 continue
             if rel not in remote_filenames:
                 try:
                     local_file.unlink()
                 except Exception:
                     pass
+
+        # Step 5b: Validate config.json integrity (fix truncation)
+        _cfg_path = _PLUGIN_DIR / "config.json"
+        if _cfg_path.exists():
+            try:
+                _cfg_raw = _cfg_path.read_text(encoding="utf-8").strip()
+                json.loads(_cfg_raw)  # validate
+            except (json.JSONDecodeError, ValueError):
+                # Config is corrupt - try to salvage by closing braces
+                try:
+                    _cfg_raw = _cfg_raw.rstrip().rstrip(",")
+                    if not _cfg_raw.endswith("}"):
+                        _cfg_raw += "\n}"
+                    json.loads(_cfg_raw)  # re-validate
+                    _cfg_path.write_text(_cfg_raw, encoding="utf-8")
+                    print("[Spellcaster] Repaired truncated config.json", file=_sys.stderr)
+                except Exception:
+                    pass  # unfixable - _load_config() returns {} safely
 
         # Step 6: Re-apply appearance assets if user opted in
         cfg = _load_config()
@@ -628,6 +666,14 @@ def _auto_update():
         # Scans ALL GIMP versions (3.0, 3.2, etc.) not just 3.0
         _delete_all_gimp_pluginrc()
 
+        # Step 7c: Purge __pycache__ to prevent stale bytecode
+        for pycache in _PLUGIN_DIR.rglob("__pycache__"):
+            try:
+                import shutil as _shutil
+                _shutil.rmtree(pycache)
+            except Exception:
+                pass
+
         # Step 8: Record version (always write full SHA for reliable comparison)
         if updated > 0 or staged > 0:
             _VERSION_FILE.write_text(latest_sha)
@@ -645,34 +691,42 @@ def _auto_update():
             msg += "\nPlugin cache cleared — new menus will appear on restart."
             def _show_update_msg_once(m=msg):
                 try:
-                    Gimp.message(m)
+                    print(f"[Spellcaster] {m}", file=_sys.stderr)
                 except Exception:
-                    pass  # GIMP UI may not be ready yet
+                    pass
                 return False
-            # Delay the message slightly to ensure GIMP's UI is ready
-            GLib.timeout_add(3000, _show_update_msg_once)
+            # Use idle_add (thread-safe) instead of timeout_add to avoid
+            # corrupting any open GTK dialog's widget tree.
+            GLib.idle_add(_show_update_msg_once)
     except Exception as e:
+        import traceback
         print(f"[Spellcaster] Auto-update check failed: {e}", file=_sys.stderr)
+        traceback.print_exc(file=_sys.stderr)
 
 # Fire-and-forget: runs once per GIMP session, daemon=True so it
-# won't prevent GIMP from exiting. Guard prevents re-runs on module reload.
-_auto_update_started = globals().get("_auto_update_started", False)
-if not _auto_update_started:
-    _auto_update_started = True
+# won't prevent GIMP from exiting. Guard uses sys.modules to survive
+# module reload (globals() is reset on reload, sys.modules persists).
+_AUTO_UPDATE_KEY = "_spellcaster_auto_update_started"
+if not getattr(sys.modules.get(__name__), _AUTO_UPDATE_KEY, False):
+    setattr(sys.modules[__name__], _AUTO_UPDATE_KEY, True)
     threading.Thread(target=_auto_update, daemon=True).start()
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  Configuration loading — server URL and user-saved presets
 # ═══════════════════════════════════════════════════════════════════════════
 
+_config_lock = threading.Lock()
+
 def _load_config():
-    """Load config.json from the plugin directory. Returns {} on any error."""
+    """Load config.json from the plugin directory. Returns {} on any error.
+    Thread-safe: serialized with _save_config via _config_lock."""
     cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
-    try:
-        with open(cfg_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+    with _config_lock:
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
 
 # Default ComfyUI server URL — overridable via config.json {"server_url": "..."}
 # Updated at runtime whenever the user successfully runs a workflow with a different URL.
@@ -768,15 +822,21 @@ def _boost_negative(negative, arch="sdxl", skin_realism=False):
 
 
 def _save_config(data):
-    """Write config.json to the plugin directory, merging with existing config."""
+    """Write config.json to the plugin directory, merging with existing config.
+    Thread-safe: serialized with _load_config via _config_lock."""
     cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
-    existing = _load_config()
-    existing.update(data)
-    try:
-        with open(cfg_path, "w", encoding="utf-8") as f:
-            json.dump(existing, f, indent=2)
-    except Exception:
-        pass
+    with _config_lock:
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+        except Exception:
+            existing = {}
+        existing.update(data)
+        try:
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                json.dump(existing, f, indent=2)
+        except Exception:
+            pass
 
 def _propagate_server_url(new_url):
     """Update the session-wide default server URL and persist to config.json."""
@@ -7867,7 +7927,7 @@ class WanI2VDialog(Gtk.Dialog):
         # Runs spinner
         _add_runs_spinner(self, box)
 
-        box.show_all()
+        self.show_all()
 
         # Auto-fetch LoRAs on dialog open (so user doesn't have to click Fetch)
         try:
@@ -18576,7 +18636,6 @@ class Spellcaster(Gimp.PlugIn):
             "Uniform — nurse / medical": "wearing medical scrubs, stethoscope, professional healthcare uniform, clean pressed",
             "Uniform — military": "wearing military combat uniform, camouflage pattern, tactical boots, dog tags",
             "Costume — superhero": "wearing a colorful superhero costume, cape flowing, spandex bodysuit, mask, heroic pose",
-            "Nude — artistic": "nude, artistic nude photography, tasteful, natural body, museum-quality fine art",
             # ── More casual ──
             "Casual — hoodie & joggers": "wearing a cozy oversized hoodie and jogger pants, comfortable loungewear, cotton fabric, relaxed fit",
             "Casual — crop top & skirt": "wearing a cropped top and mini skirt, trendy casual outfit, youthful style",
@@ -19716,13 +19775,19 @@ class Spellcaster(Gimp.PlugIn):
                             if remainder.endswith((".py", ".css", ".json", ".md", ".txt")):
                                 blob = blob.replace(b"\x00", b"")
                             tmp.write_bytes(blob)
-                        try:
-                            tmp.replace(dest)
-                            updated += 1
-                        except PermissionError:
+                        # Always stage .py files — never replace running Python
+                        if remainder.endswith(".py"):
                             stage = dest.with_suffix(dest.suffix + ".update")
                             tmp.replace(stage)
                             updated += 1
+                        else:
+                            try:
+                                tmp.replace(dest)
+                                updated += 1
+                            except PermissionError:
+                                stage = dest.with_suffix(dest.suffix + ".update")
+                                tmp.replace(stage)
+                                updated += 1
                     except Exception as e:
                         print(f"[Repair] Failed: {remainder}: {e}", file=_sys.stderr)
                 # Delete version file to force re-check
@@ -19730,6 +19795,14 @@ class Spellcaster(Gimp.PlugIn):
                 if ver.exists():
                     try: ver.unlink()
                     except Exception: pass
+                # Purge __pycache__ to prevent stale bytecode
+                for _pc in _PLUGIN_DIR.rglob("__pycache__"):
+                    try:
+                        import shutil as _shutil
+                        _shutil.rmtree(_pc)
+                    except Exception: pass
+                # Delete pluginrc to force GIMP to re-scan procedures
+                _delete_all_gimp_pluginrc()
                 update_status.set_markup(
                     f'<span foreground="#00E676">Updated {updated}/{len(remote_files)} files.\n'
                     f'Restart GIMP to apply.</span>')

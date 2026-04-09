@@ -63,11 +63,18 @@ Spellcaster connects your image editor (GIMP or Darktable) to an AI engine calle
 | **GIMP 3** and/or **Darktable** | Free image editors (like Photoshop / Lightroom) | You need at least one — this is where Spellcaster's menu lives | [gimp.org](https://www.gimp.org/downloads/) / [darktable.org](https://www.darktable.org/install/) |
 | **A GPU with 4+ GB VRAM** | NVIDIA recommended, AMD works too | The AI models run on your graphics card — more VRAM = more features | You probably already have one |
 
-> **Never heard of ComfyUI?** That's fine. Download it, unzip it, run it once. You'll never need to open it again — Spellcaster talks to it behind the scenes. Think of it like an engine under the hood: it does the work, but you never see it.
+> **Never heard of ComfyUI?** That's fine. The installer can download and set it up for you. You'll never need to open it — Spellcaster talks to it behind the scenes. Think of it like an engine under the hood.
 >
 > **Don't have a GPU?** No problem. You can connect to a ComfyUI server running on another computer on your network (a friend's gaming PC, a cloud instance, etc.). The installer has a remote server mode.
 >
-> **Don't want to use GIMP or Darktable at all?** You can skip them entirely and control Spellcaster through an [AI chatbot](#just-talk-to-it--the-scaffold-system) instead.
+> **Don't want to use GIMP or Darktable at all?** You can skip them entirely and control Spellcaster through [The Wizard Guild](#just-talk-to-it-the-wizard-guild--scaffold-system) — an AI chatbot that handles everything for you.
+
+**Want the AI chatbot experience (The Wizard Guild)?** You'll also need a local LLM engine. See the [Wizard Guild setup guide](#how-to-set-up-the-wizard-guild) — it takes about 5 minutes.
+
+| App | What It Is | Why | Download |
+|---|---|---|---|
+| **KoboldCPP** | Local AI chatbot engine | Powers the Wizard Guild's conversational interface | [github.com/LostRuins/koboldcpp](https://github.com/LostRuins/koboldcpp/releases) |
+| **SillyTavern** *(optional)* | Chat frontend with character cards | Enhanced chat experience — auto-downloaded by the Guild launcher | [github.com/SillyTavern/SillyTavern](https://github.com/SillyTavern/SillyTavern) |
 
 ### Install Spellcaster
 
@@ -320,36 +327,93 @@ Selfie → Casting Polaroids → Body Double → Wardrobe → Set Design → Dir
 
 You don't need to learn GIMP. You don't need to learn Darktable. You don't even need to open ComfyUI.
 
-**Just tell Spellcaster what you want in plain English.** Spellcaster comes with a standalone Web UI called **The Wizard Guild**. It connects any local LLM (like Kobold) and your ComfyUI backend into an immersive, premium chat interface. 
+**Just tell Spellcaster what you want in plain English.** Spellcaster comes with a standalone Web UI called **The Wizard Guild**. It connects any local LLM (like KoboldCPP) and your ComfyUI backend into an immersive, premium chat interface.
 
-Say *"upscale this photo"* or *"swap the face in this image"* — and it happens. The AI picks the right tool, asks you the specified questions through a chat window, routes the workflow efficiently on your GPU through ComfyUI, and delivers the result.
+Say *"upscale this photo"* or *"swap the face in this image"* — and it happens. The AI picks the right tool, asks you the right questions, runs the workflow, and delivers the result directly in your browser.
+
+<p align="center">
+  <img src="assets/wizardguild.png" alt="The Wizard Guild" width="90%"/><br/>
+  <sub><strong>The Wizard Guild</strong> — AI-driven generative art studio. Each wizard specializes in different tools.<br/>Just describe what you want and the wizard handles everything.</sub>
+</p>
 
 ### The Wizard Guild (Standalone Web GUI)
 
-When you launch The Wizard Guild (`python tavern/server.py`), you step into a dynamically generated, premium generative playground:
+When you launch The Wizard Guild, you step into a dynamically generated, premium generative playground:
 
-- **Living Personas:** The Guild reads every single node, custom workflow, and tool installed natively in your ComfyUI directory. It dynamically assigns an intelligent LLM Persona (a "Guild Member") to each one.
-- **Native AVATAR & Environment Generation:** Characters intelligently synthesize their own 4K portraits using your installed ComfyUI txt2img checklists. The Guild automatically generates an epic Tavern environment for you.
-- **Parametric Extraction:** When chatting with a Wizard, the Interface extracts ONLY their relevant capabilities (Steps, Denoise, Prompt) and feeds it to you natively.
-- **Absolute Privacy:** It runs 100% locally on your machine. You simply point the UI to your LLM API and your ComfyUI Server settings. 
+- **Living Personas:** The Guild reads every node, workflow, and tool installed in your ComfyUI. It assigns an intelligent Wizard persona to each — Imaginus for image creation, Masquerade for face tools, Videomancer for video generation, Restorix for upscaling, and more.
+- **Native Avatar & Environment Generation:** Wizards synthesize their own 4K portraits using your installed models. The Guild auto-generates an epic tavern environment.
+- **Parametric Extraction:** When chatting with a Wizard, the system extracts only relevant capabilities and walks you through configuration step by step.
+- **Pipeline Wizard:** Complex multi-step operations (photo restoration, video generation, SUPIR, detail hallucination) have dedicated guided pipelines with curated presets — pick "Quick fix" or "Cinematic (2-stage + RTX + RIFE)" and go.
+- **Absolute Privacy:** Everything runs 100% locally. No cloud, no accounts, no data leaves your machine.
+
+### How to Set Up The Wizard Guild
+
+The Guild needs two things running on your computer: **ComfyUI** (the AI engine) and a **local LLM** (the chatbot brain). Here's the simplest path:
+
+<details>
+<summary><strong>Step-by-step: get the Guild running in 5 minutes</strong></summary>
+
+**1. Make sure ComfyUI is running** (the Spellcaster installer handles this)
+
+**2. Get a local chatbot engine** — pick ONE:
+
+| Engine | What It Is | Best For | Download |
+|---|---|---|---|
+| **KoboldCPP** | One-file LLM server, no install needed | Simplest option — just download and run | [github.com/LostRuins/koboldcpp/releases](https://github.com/LostRuins/koboldcpp/releases) |
+| **Ollama** | CLI-based LLM manager | If you want to try many models easily | [ollama.com/download](https://ollama.com/download) |
+| **LM Studio** | GUI app for running local models | If you want a visual model browser | [lmstudio.ai](https://lmstudio.ai/) |
+
+> **Recommended for beginners: KoboldCPP.** Download `koboldcpp.exe` (Windows) or the Linux/macOS build. Download a GGUF chat model (see below). Run: `koboldcpp --model your-model.gguf --port 5001`. Done.
+
+**3. Download a chat model** (GGUF format):
+
+| Your GPU VRAM | Recommended Model | Size | Download |
+|---|---|---|---|
+| 4 GB or less | Phi-3-mini-4k Q4_K_M | ~2.3 GB | [HuggingFace](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf) |
+| 4-8 GB | Mistral-7B-Instruct Q4_K_M | ~4.1 GB | [HuggingFace](https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF) |
+| 8-12 GB | Llama-3.1-8B-Instruct Q5_K_M | ~5.7 GB | [HuggingFace](https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF) |
+| 12+ GB | Llama-3.1-8B-Instruct Q8_0 | ~8.5 GB | [HuggingFace](https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF) |
+
+> **Tip:** The Wizard Guild's scaffold system is designed to work with small 7B models — you don't need a massive model. It uses numbered menus, not open-ended conversation.
+
+**4. Launch the Guild:**
+
+```bash
+# Windows
+start_guild.bat
+
+# macOS / Linux
+python tavern/guild_launcher.py
+```
+
+On first run, it walks you through connecting to ComfyUI and your LLM. After that, it auto-starts everything.
+
+**5. Optional: SillyTavern integration**
+
+The Guild can auto-download and launch [SillyTavern](https://github.com/SillyTavern/SillyTavern) alongside itself for character-card-based chat. The launcher handles the setup — just say "yes" when prompted.
+
+</details>
 
 ### How The Scaffold Brain Works
 
-Underneath The Wizard Guild sits a three-layer AI brain routing requests into ComfyUI:
+Underneath The Wizard Guild sits a four-layer AI brain routing requests into ComfyUI:
 
-1. **You say what you want** — to a Guild Member, or via any external chat app (Signal, SillyTavern, OpenWebUI)
-2. **The MetaWizard maps your intent** — Intelligently decides what ComfyUI Graph needs to run. 
-3. **The WorkflowWizard collects parameters** — Asks precisely what matters (Prompt, Seeds, Aspect Ratios) utilizing robust internal dictionaries.
-4. **ComfyUI executes** — The scaffold securely translates your conversation into a ComfyUI JSON, ships the image payload natively, executes, and polls the `/history`.
-5. **The result is delivered** — Right back into your Web UI or chat window. 
+1. **You say what you want** — to a Guild Wizard, or via any external chat app (Signal, SillyTavern, OpenWebUI)
+2. **The MetaWizard maps your intent** — classifies what you want (enhance, generate, restore, video, etc.) and routes to the right sub-wizard
+3. **The sub-wizard collects parameters:**
+   - **SpellcasterWizard** — for enhancement nodes (Klein, detail, reference)
+   - **PipelineWizard** — for multi-step operations (photo restore, SUPIR, LTX video, WAN video, SeedVR2 upscale) with step-by-step guidance and curated presets
+   - **WorkflowWizard** — for any arbitrary ComfyUI workflow from your library
+4. **ComfyUI executes** — the scaffold translates the conversation into a ComfyUI JSON workflow, submits it, polls for results
+5. **The result is delivered** — right back into your browser, chat window, or messenger
 
 ### Signal Bridge — AI Art on Autopilot
 
 If you prefer external messengers, the **Signal Bridge** turns your ComfyUI server into a remote AI art service via the exact same scaffold logic. Friends or collaborators send a text message to a number — the AI assistant handles the rest.
 
 - Works over **Signal** or anything communicating with an LLM.
-- **Privacy-first** — all temporary elements are meticulously erased from the `ComfyUI/inputs` directory automatically after completion.
-- Uses strict state machines designed so that even lightweight **7B parameter models** can flawlessly operate massive generative pipelines.
+- **Privacy-first** — all temporary files are automatically erased after delivery.
+- Uses strict state machines designed so that even lightweight **7B parameter models** can flawlessly drive the full pipeline.
 
 <details>
 <summary><strong>Scaffold architecture for developers</strong></summary>
@@ -358,9 +422,10 @@ If you prefer external messengers, the **Signal Bridge** turns your ComfyUI serv
 |---|---|
 | **MetaWizard** | Intent router — classifies what the user wants and hands off to the right sub-wizard |
 | **SpellcasterWizard** | Drives Spellcaster enhancement nodes with preset support (Gentle / Strong / Maximum) |
+| **PipelineWizard** | Guides multi-step pipelines (Photo Restore, SUPIR, Detail Hallucinate, LTX Video, WAN Video, SeedVR2, Video Reactor) with per-step params and pipeline-level presets |
 | **WorkflowWizard** | Drives *any* ComfyUI workflow — parses the JSON, extracts parameters, builds interactive states on the fly |
-| **ComfyUIRunner** | Handles all server communication: image upload, workflow generation, polling, and privacy cleanup |
-| **Introspector** | Auto-discovers every node's parameters natively at runtime (no hardcoding parameters) |
+| **ComfyUIRunner** | Handles all server communication: image upload, workflow dispatch, polling, and privacy cleanup |
+| **Introspector** | Auto-discovers every node's parameters natively at runtime (no hardcoding) |
 | **PromptBuilder** | Generates the LLM system prompt from discovered nodes deterministically |
 
 </details>

@@ -1693,7 +1693,7 @@ class NodeFactory:
             "images": images_ref,
             "resize_type": resize_type,
             "quality": quality,
-            "scale_factor": float(scale_factor),
+            "scale": float(scale_factor),
         }
         return self._add("RTXVideoSuperResolution", inputs, node_id)
 

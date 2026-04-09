@@ -2014,17 +2014,20 @@ def build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
     if is_klein:
         pos_id = nf.clip_encode(clip_ref, prompt_text, node_id="2")
         neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="3")
+        # Encode ORIGINAL (un-padded) image for ReferenceLatent context
+        orig_enc_id = nf.vae_encode([img_id, 0], vae_ref, node_id="6o")
+        # Encode PADDED image for the sampler latent (with noise mask)
         enc_id = nf.vae_encode(padded_ref, vae_ref, node_id="6")
         masked_id = nf.set_latent_noise_mask([enc_id, 0], [pad_id, 1], node_id="7")
-        # Wrap conditioning with ReferenceLatent for Flux2 guidance
-        ref_pos_id = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="20")
-        ref_neg_id = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="21")
+        # ReferenceLatent uses the ORIGINAL image — not the padded one
+        ref_pos_id = nf.reference_latent([pos_id, 0], [orig_enc_id, 0], node_id="20")
+        ref_neg_id = nf.reference_latent([neg_id, 0], [orig_enc_id, 0], node_id="21")
         # Custom sampler pipeline (required for Klein/Flux2)
         guider_id = nf.cfg_guider(model_ref, [ref_pos_id, 0], [ref_neg_id, 0],
                                   preset.get("cfg", 1.0), node_id="30")
         sampler_id = nf.ksampler_select("euler", node_id="31")
         sched_id = nf.basic_scheduler(model_ref, preset.get("steps", 20),
-                                       0.85, scheduler="simple", node_id="32")
+                                       0.92, scheduler="simple", node_id="32")
         noise_id = nf.random_noise(seed, node_id="33")
         samp_id = nf.sampler_custom_advanced(
             [noise_id, 0], [guider_id, 0], [sampler_id, 0],
@@ -3591,11 +3594,12 @@ def build_klein_inpaint(image_filename, mask_filename, prompt_text, seed,
         dd_id = nf.differential_diffusion([unet_id, 0], node_id="22")
         model_ref = [dd_id, 0]
 
-    # Sampler
+    # Sampler — FluxGuidance (not ReferenceLatent) because
+    # SetLatentNoiseMask already constrains generation to the masked region.
     guider_id = nf.cfg_guider(model_ref, [guided_id, 0], [neg_id, 0],
                               1.0, node_id="30")
     sampler_id = nf.ksampler_select("euler", node_id="31")
-    sched_id = nf.basic_scheduler([unet_id, 0], steps, denoise,
+    sched_id = nf.basic_scheduler(model_ref, steps, denoise,
                                    scheduler="simple", node_id="32")
     noise_id = nf.random_noise(seed, node_id="33")
 

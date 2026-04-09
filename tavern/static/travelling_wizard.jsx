@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+const { useState, useCallback, useRef, useEffect, useMemo } = React;
 
 // ─── Icons (inline SVG components) ────────────────────────────────
 const Icon = ({ d, size = 20, className = "" }) => (
@@ -2036,7 +2036,7 @@ function GuildSidebar({ isOpen, onToggle, comfyUrl, koboldUrl: initialKoboldUrl 
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════════
 
-export default function SignalBridgeSettings() {
+function SignalBridgeSettings() {
   const [config, setConfig] = useState(deepClone(DEFAULT_CONFIG));
   const [scaffolds, setScaffolds] = useState([newScaffold()]);
   const [activeTab, setActiveTab] = useState("scaffolds");
@@ -2117,13 +2117,8 @@ export default function SignalBridgeSettings() {
                 {saved ? <><Icons.Check /> Copied!</> : <><Icons.Copy /> Copy JSON</>}
               </button>
               <div className="w-px h-6 bg-amber-600/20 mx-1" />
-              <button onClick={() => setGuildOpen(prev => !prev)}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                  guildOpen
-                    ? "bg-purple-600/30 text-purple-200 border border-purple-500/40"
-                    : "bg-purple-700/20 hover:bg-purple-700/40 text-purple-300"
-                }`}
-                style={{ boxShadow: guildOpen ? "0 0 12px rgba(147, 51, 234, 0.3)" : "" }}>
+              <button onClick={() => window.location.href = '/'}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all bg-purple-700/20 hover:bg-purple-700/40 text-purple-300">
                 <Icons.MessageSquare /> Guild
               </button>
             </div>
@@ -2298,3 +2293,5 @@ export default function SignalBridgeSettings() {
     </div>
   );
 }
+
+window.SignalBridgeSettings = SignalBridgeSettings;
