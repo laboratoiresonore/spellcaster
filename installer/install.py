@@ -159,10 +159,20 @@ def ask_text(prompt: str, default: str = "", auto_yes: bool = False) -> str:
 # ─── Application path detection ───────────────────────────────────────────────
 
 def _is_comfyui_dir(p: Path) -> bool:
-    """Validate that a directory contains a ComfyUI installation."""
+    """Validate that a directory contains a ComfyUI installation.
+
+    Checks for markers found in all distribution flavours:
+      - main.py                    (git clone, portable, comfy-cli, StabilityMatrix)
+      - comfy/cli_args.py          (post-refactor source tree)
+      - custom_nodes/              (every install that has run at least once)
+      - ComfyUI/main.py            (parent wrapper dirs — portable, Desktop data)
+      - extra_models_config.yaml   (ComfyUI Desktop data directory)
+    """
     return ((p / "main.py").is_file()
             or (p / "comfy" / "cli_args.py").is_file()
-            or (p / "custom_nodes").is_dir())
+            or (p / "custom_nodes").is_dir()
+            or (p / "ComfyUI" / "main.py").is_file()
+            or (p / "extra_models_config.yaml").is_file())
 
 
 def _win_all_drives() -> list[str]:
@@ -260,6 +270,10 @@ def find_default_comfyui() -> str:
                     break
                 p = p.parent
 
+    # comfy-cli default workspace (all platforms)
+    candidates.append(home / "comfy" / "ComfyUI")
+    candidates.append(home / "comfy")
+
     if platform.system() == "Windows":
         # Strategy 3: Filesystem scan — ALL drives
         drives = _win_all_drives()
@@ -267,13 +281,28 @@ def find_default_comfyui() -> str:
             root = Path(f"{drive}/")
             candidates.append(root / "ComfyUI")
             candidates.append(root / "ComfyUI_windows_portable" / "ComfyUI")
+            # StabilityMatrix common location
+            candidates.append(root / "StabilityMatrix" / "Data" / "Packages" / "ComfyUI")
+        # ComfyUI Desktop (Electron app) — engine in LOCALAPPDATA, data in APPDATA
+        localappdata = os.environ.get("LOCALAPPDATA", "")
+        appdata = os.environ.get("APPDATA", "")
+        if localappdata:
+            candidates.append(Path(localappdata) / "ComfyUI" / "ComfyUI")
+            candidates.append(Path(localappdata) / "ComfyUI")
+            candidates.append(Path(localappdata) / "Programs" / "ComfyUI_Desktop" / "ComfyUI")
+            candidates.append(Path(localappdata) / "Programs" / "comfyui-electron" / "ComfyUI")
+        if appdata:
+            candidates.append(Path(appdata) / "ComfyUI")
         candidates += [
             home / "ComfyUI",
             home / "Desktop" / "ComfyUI",
             home / "Documents" / "ComfyUI",
             home / "Downloads" / "ComfyUI",
+            home / "Documents" / "AI" / "ComfyUI",
         ]
-        # Strategy 4: Glob for portable distributions on all drives + user folders
+        # Pinokio
+        candidates.append(home / "pinokio" / "api" / "comfy.git" / "app")
+        # Strategy 4: Glob for portable/StabilityMatrix/Pinokio distributions
         for drive in drives:
             drive_root = Path(f"{drive}/")
             if drive_root.exists():
@@ -281,6 +310,9 @@ def find_default_comfyui() -> str:
                     for d in drive_root.glob("ComfyUI*portable*/ComfyUI"):
                         candidates.append(d)
                     for d in drive_root.glob("ComfyUI*/ComfyUI"):
+                        candidates.append(d)
+                    # StabilityMatrix in non-standard locations
+                    for d in drive_root.glob("StabilityMatrix*/Data/Packages/ComfyUI"):
                         candidates.append(d)
                 except (PermissionError, OSError):
                     pass
@@ -299,6 +331,11 @@ def find_default_comfyui() -> str:
             home / "Documents" / "ComfyUI",
             home / "Desktop" / "ComfyUI",
             home / "Downloads" / "ComfyUI",
+            # ComfyUI Desktop (Electron app)
+            home / "Library" / "Application Support" / "ComfyUI" / "ComfyUI",
+            home / "Library" / "Application Support" / "ComfyUI",
+            # Pinokio
+            home / "pinokio" / "api" / "comfy.git" / "app",
         ]
     else:
         candidates += [
@@ -307,7 +344,62 @@ def find_default_comfyui() -> str:
             home / "Documents" / "ComfyUI",
             home / "Desktop" / "ComfyUI",
             Path("/usr/local/share/ComfyUI"),
+            # ComfyUI Desktop (Linux)
+            home / ".config" / "ComfyUI",
+            # Pinokio
+            home / "pinokio" / "api" / "comfy.git" / "app",
         ]
+
+    # Strategy 5: Running-process detection (psutil, then /proc fallback)
+    # If ComfyUI is currently running we can read its working directory
+    _proc_found = False
+    try:
+        import psutil
+        for proc in psutil.process_iter(["pid", "name", "cmdline", "cwd"]):
+            try:
+                cmdline = proc.info.get("cmdline") or []
+                joined = " ".join(cmdline).lower()
+                if "main.py" in joined and ("comfy" in joined or "custom_nodes" in joined):
+                    cwd = proc.info.get("cwd", "")
+                    if cwd:
+                        candidates.append(Path(cwd))
+                    for arg in cmdline:
+                        if "main.py" in arg:
+                            candidates.append(Path(arg).resolve().parent)
+                    _proc_found = True
+            except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
+                continue
+    except ImportError:
+        pass
+
+    # /proc fallback for Linux when psutil is not installed
+    if not _proc_found and platform.system() == "Linux":
+        proc_dir = Path("/proc")
+        if proc_dir.is_dir():
+            try:
+                for pid_dir in proc_dir.iterdir():
+                    if not pid_dir.name.isdigit():
+                        continue
+                    cmdline_file = pid_dir / "cmdline"
+                    try:
+                        raw = cmdline_file.read_bytes()
+                        if b"main.py" in raw and b"comfy" in raw.lower():
+                            # Read cwd symlink
+                            cwd_link = pid_dir / "cwd"
+                            if cwd_link.is_symlink():
+                                candidates.append(Path(os.readlink(cwd_link)))
+                            # Parse script path from cmdline
+                            parts = raw.split(b"\x00")
+                            for part in parts:
+                                if b"main.py" in part:
+                                    try:
+                                        candidates.append(Path(part.decode()).resolve().parent)
+                                    except (UnicodeDecodeError, OSError):
+                                        pass
+                    except (PermissionError, OSError):
+                        continue
+            except (PermissionError, OSError):
+                pass
 
     # Deduplicate and validate
     seen: set[str] = set()
@@ -341,29 +433,83 @@ def find_default_gimp() -> str:
     home = Path.home()
     candidates: list[Path] = []
 
-    # Strategy 1: Environment variables
-    for env_key in ["GIMP_PLUGIN_PATH", "GIMP_DIR", "GIMP3_DIR"]:
+    # Strategy 1: Environment variables (GIMP3_DIRECTORY is GIMP's own override)
+    for env_key in ["GIMP_PLUGIN_PATH", "GIMP_DIR", "GIMP3_DIR",
+                     "GIMP3_DIRECTORY", "XDG_CONFIG_HOME"]:
         val = os.environ.get(env_key, "")
-        if val:
-            p = Path(val)
-            if p.is_dir():
-                # If it's already a plug-ins dir, use directly
-                if p.name == "plug-ins":
-                    candidates.append(p)
-                else:
-                    candidates.append(p / "plug-ins")
-                    candidates.append(p)
+        if not val:
+            continue
+        p = Path(val)
+        if env_key == "XDG_CONFIG_HOME":
+            # XDG override: config root may contain GIMP/3.x/
+            candidates.extend(_scan_gimp_versions(p / "GIMP"))
+        elif p.is_dir() or p.parent.is_dir():
+            # If it's already a plug-ins dir, use directly
+            if p.name == "plug-ins":
+                candidates.append(p)
+            else:
+                candidates.append(p / "plug-ins")
+                candidates.append(p)
 
-    # Strategy 2: Windows Registry
+    # Strategy 2: Windows Registry — use install path to locate config
+    _gimp_confirmed = False
     if platform.system() == "Windows":
         reg_path = _win_registry_gimp()
         if reg_path:
-            # Registry gives install path — config is in %APPDATA%/GIMP
-            # But knowing GIMP exists confirms we should look harder
-            pass
+            _gimp_confirmed = True
+        # Also check Uninstall keys (covers MSI installer, MSIX, winget)
+        if not _gimp_confirmed:
+            try:
+                import winreg
+                for hive in [winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER]:
+                    for uninstall_root in [r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                                            r"SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall"]:
+                        try:
+                            with winreg.OpenKey(hive, uninstall_root) as root_key:
+                                i = 0
+                                while True:
+                                    try:
+                                        sub_name = winreg.EnumKey(root_key, i)
+                                        if "gimp" in sub_name.lower():
+                                            _gimp_confirmed = True
+                                            break
+                                        i += 1
+                                    except OSError:
+                                        break
+                        except (OSError, FileNotFoundError):
+                            continue
+                        if _gimp_confirmed:
+                            break
+                    if _gimp_confirmed:
+                        break
+            except ImportError:
+                pass
+        # Also check Program Files for GIMP install dir
+        if not _gimp_confirmed:
+            for pf_key in ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"]:
+                pf = os.environ.get(pf_key, "")
+                if pf:
+                    for gdir in ["GIMP 3", "GIMP3", "GIMP"]:
+                        if (Path(pf) / gdir / "bin" / "gimp-3.0.exe").is_file() \
+                           or (Path(pf) / gdir / "bin" / "gimp-3.2.exe").is_file() \
+                           or (Path(pf) / gdir / "bin" / "gimp.exe").is_file():
+                            _gimp_confirmed = True
+                            break
+                if _gimp_confirmed:
+                    break
+        if _gimp_confirmed:
+            # We know GIMP is installed — aggressively scan all config locations
+            for appdata_key in ["APPDATA", "LOCALAPPDATA"]:
+                appdata = os.environ.get(appdata_key, "")
+                if appdata:
+                    candidates.extend(_scan_gimp_versions(Path(appdata) / "GIMP"))
 
-    # Strategy 3: shutil.which() — confirms GIMP is installed
-    _gimp_config_from_executable()  # side-effect: confirms existence
+    # Strategy 3: shutil.which() — confirms GIMP is installed, use to seed search
+    for name in ["gimp-3.2", "gimp-3.0", "gimp3", "gimp-2.99", "gimp"]:
+        exe = shutil.which(name)
+        if exe:
+            # GIMP exists on PATH — its config will be in the standard locations
+            break
 
     # Strategy 4: Config directory scanning
     if platform.system() == "Windows":
@@ -376,20 +522,36 @@ def find_default_gimp() -> str:
         # Also check the home-relative paths (for edge cases)
         candidates.extend(_scan_gimp_versions(home / "AppData" / "Roaming" / "GIMP"))
         candidates.extend(_scan_gimp_versions(home / "AppData" / "Local" / "GIMP"))
-        # Hardcoded fallbacks
-        for ver in ["3.2", "3.0", "2.99"]:
+        # Hardcoded fallbacks (include 3.4 for future-proofing)
+        for ver in ["3.4", "3.2", "3.0", "2.99"]:
             candidates.append(home / "AppData" / "Roaming" / "GIMP" / ver / "plug-ins")
             candidates.append(home / "AppData" / "Local" / "GIMP" / ver / "plug-ins")
+        # PortableApps (USB / portable GIMP on any drive)
+        drives = _win_all_drives()
+        for drive in drives:
+            try:
+                for d in Path(f"{drive}/").glob("PortableApps/GIMPPortable*/Data"):
+                    if d.is_dir():
+                        candidates.extend(_scan_gimp_versions(d / "GimpAppData"))
+            except (PermissionError, OSError):
+                pass
 
     elif platform.system() == "Darwin":
         app_support = home / "Library" / "Application Support" / "GIMP"
         candidates.extend(_scan_gimp_versions(app_support))
         candidates.extend(_scan_gimp_versions(home / ".config" / "GIMP"))
-        for ver in ["3.2", "3.0", "2.99"]:
+        # Some macOS builds use ~/Library/GIMP directly
+        candidates.extend(_scan_gimp_versions(home / "Library" / "GIMP"))
+        for ver in ["3.4", "3.2", "3.0", "2.99"]:
             candidates.append(app_support / ver / "plug-ins")
             candidates.append(home / ".config" / "GIMP" / ver / "plug-ins")
+            candidates.append(home / "Library" / "GIMP" / ver / "plug-ins")
 
     else:  # Linux
+        # XDG_CONFIG_HOME override (already handled in env vars, but belt-and-suspenders)
+        xdg_config = os.environ.get("XDG_CONFIG_HOME", "")
+        if xdg_config:
+            candidates.extend(_scan_gimp_versions(Path(xdg_config) / "GIMP"))
         candidates.extend(_scan_gimp_versions(home / ".config" / "GIMP"))
         # Flatpak
         flatpak = home / ".var" / "app" / "org.gimp.GIMP" / "config" / "GIMP"
@@ -403,11 +565,15 @@ def find_default_gimp() -> str:
             except (PermissionError, OSError):
                 pass
         # Hardcoded fallbacks
-        for ver in ["3.2", "3.0", "2.99"]:
+        for ver in ["3.4", "3.2", "3.0", "2.99"]:
             candidates.append(home / ".config" / "GIMP" / ver / "plug-ins")
             candidates.append(flatpak / ver / "plug-ins")
 
     # Deduplicate and validate
+    # IMPORTANT: On a fresh GIMP install the plug-ins/ subdir may not exist
+    # yet — GIMP only creates it when plugins are added.  If the parent
+    # version directory exists (e.g. .../GIMP/3.2/) we accept the path and
+    # the installer will mkdir it during deployment.
     seen: set[str] = set()
     for c in candidates:
         cs = str(c)
@@ -415,6 +581,9 @@ def find_default_gimp() -> str:
             continue
         seen.add(cs)
         if c.is_dir():
+            return cs
+        # Accept if the version dir exists even though plug-ins/ doesn't yet
+        if c.name == "plug-ins" and c.parent.is_dir():
             return cs
     return ""
 
@@ -446,6 +615,37 @@ def find_default_darktable() -> str:
         if shutil.which(name):
             break
 
+    # Strategy 2b: Windows Registry — check Uninstall keys for darktable
+    # If found, we know darktable is installed → seed the standard config paths
+    if platform.system() == "Windows":
+        _dt_confirmed = False
+        try:
+            import winreg
+            for hive in [winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER]:
+                for uninstall_root in [r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                                        r"SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall"]:
+                    try:
+                        with winreg.OpenKey(hive, uninstall_root) as root_key:
+                            i = 0
+                            while True:
+                                try:
+                                    sub_name = winreg.EnumKey(root_key, i)
+                                    if "darktable" in sub_name.lower():
+                                        _dt_confirmed = True
+                                    i += 1
+                                except OSError:
+                                    break
+                    except (OSError, FileNotFoundError):
+                        continue
+        except ImportError:
+            pass
+        if _dt_confirmed:
+            # Registry confirms install — aggressively add all standard config paths
+            for appdata_key in ["LOCALAPPDATA", "APPDATA"]:
+                appdata = os.environ.get(appdata_key, "")
+                if appdata:
+                    candidates.append(Path(appdata) / "darktable" / "lua" / "contrib")
+
     # Strategy 3: Config directory scanning
     if platform.system() == "Windows":
         for appdata_key in ["LOCALAPPDATA", "APPDATA"]:
@@ -461,16 +661,60 @@ def find_default_darktable() -> str:
             home / ".config" / "darktable" / "lua" / "contrib",
         ]
     else:  # Linux
+        # XDG override
+        xdg_config = os.environ.get("XDG_CONFIG_HOME", "")
+        if xdg_config:
+            candidates.append(Path(xdg_config) / "darktable" / "lua" / "contrib")
         candidates += [
             home / ".config" / "darktable" / "lua" / "contrib",
-            # Flatpak
+            # Flatpak (note: org.darktable.Darktable with capital D)
             home / ".var" / "app" / "org.darktable.darktable" / "config" / "darktable" / "lua" / "contrib",
+            home / ".var" / "app" / "org.darktable.Darktable" / "config" / "darktable" / "lua" / "contrib",
             # System-wide
             Path("/usr/share/darktable/lua/contrib"),
             Path("/usr/local/share/darktable/lua/contrib"),
         ]
 
+    # Strategy 4: Config-root marker detection
+    # Even without lua/contrib, darktable creates darktablerc and library.db
+    # on first run.  If we find these, we know the config root → derive lua/contrib.
+    _dt_config_roots: list[Path] = []
+    if platform.system() == "Windows":
+        for appdata_key in ["LOCALAPPDATA", "APPDATA"]:
+            appdata = os.environ.get(appdata_key, "")
+            if appdata:
+                _dt_config_roots.append(Path(appdata) / "darktable")
+        _dt_config_roots.append(home / ".config" / "darktable")
+    elif platform.system() == "Darwin":
+        _dt_config_roots += [
+            home / "Library" / "Application Support" / "darktable",
+            home / ".config" / "darktable",
+        ]
+    else:
+        xdg_config = os.environ.get("XDG_CONFIG_HOME", "")
+        if xdg_config:
+            _dt_config_roots.append(Path(xdg_config) / "darktable")
+        _dt_config_roots.append(home / ".config" / "darktable")
+        _dt_config_roots.append(
+            home / ".var" / "app" / "org.darktable.Darktable" / "config" / "darktable")
+        _dt_config_roots.append(
+            home / ".var" / "app" / "org.darktable.darktable" / "config" / "darktable")
+
+    for dt_root in _dt_config_roots:
+        if dt_root.is_dir() and (
+            (dt_root / "darktablerc").is_file()
+            or (dt_root / "library.db").is_file()
+            or (dt_root / "data.db").is_file()
+        ):
+            lua_contrib = dt_root / "lua" / "contrib"
+            cs = str(lua_contrib)
+            if cs not in {str(c) for c in candidates}:
+                candidates.append(lua_contrib)
+
     # Deduplicate and validate
+    # A fresh Darktable install may not have lua/ or lua/contrib/.
+    # If we can see the darktable config root we accept the path — the
+    # installer will mkdir -p the full chain during deployment.
     seen: set[str] = set()
     for c in candidates:
         cs = str(c)
@@ -479,6 +723,13 @@ def find_default_darktable() -> str:
         seen.add(cs)
         if c.is_dir():
             return str(c)
+        # Accept if the darktable config root exists (lua/contrib will be created)
+        # Walk up: contrib → lua → darktable-config-root
+        dt_root = c
+        for _ in range(3):
+            dt_root = dt_root.parent
+            if dt_root.is_dir() and dt_root.name.lower() in ("darktable",):
+                return str(c)
     return ""
 
 
@@ -2298,142 +2549,4 @@ def step_final_summary(manifest: dict, selected: dict[str, bool], paths: dict, s
     print()
 
 
-# ─── Entry point ──────────────────────────────────────────────────────────────
-
-def load_manifest() -> dict:
-    """Load the manifest.json that defines all features, models, and custom nodes."""
-    if not MANIFEST_PATH.exists():
-        print(f"{C_RED}Error: manifest.json not found at {MANIFEST_PATH}{C_RESET}")
-        sys.exit(1)
-    with open(MANIFEST_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def build_arg_parser():
-    """Build the argparse parser with all CLI flags."""
-    parser = argparse.ArgumentParser(
-        description="Spellcaster — AI superpowers for GIMP 3 & Darktable",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=textwrap.dedent("""\
-            Examples:
-              python install.py
-              python install.py --cli --yes
-              python install.py --server-url http://192.168.1.50:8188
-              python install.py --features img2img,inpaint,face_swap_reactor
-              python install.py --comfyui ~/ComfyUI --gimp ~/.config/GIMP/3.2/plug-ins
-              python install.py --dry-run
-        """)
-    )
-    parser.add_argument("--cli", action="store_true",
-                        help="Force terminal mode (skip GUI wrapper)")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Preview what would be done without making changes")
-    parser.add_argument("-y", "--yes", action="store_true",
-                        help="Auto-accept all defaults (non-interactive)")
-    parser.add_argument("--server-url", metavar="URL",
-                        help=f"ComfyUI server URL (default: {DEFAULT_SERVER_URL})")
-    parser.add_argument("--features", metavar="FEAT1,FEAT2",
-                        help="Comma-separated list of features to install. "
-                             "Available: img2img, txt2img, inpaint, face_swap_reactor, "
-                             "face_swap_mtb, faceid_img2img, pulid_flux, klein_flux2, "
-                             "wan_i2v, rembg, upscale, lama_remove, lut_grading, "
-                             "outpaint, style_transfer, face_restore, photo_restore, "
-                             "detail_hallucinate, colorize, controlnet, iclight, supir, "
-                             "batch_variations, seedv2r, wizard_guild")
-    parser.add_argument("--comfyui", metavar="PATH",
-                        help="Path to ComfyUI root directory")
-    parser.add_argument("--gimp", metavar="PATH",
-                        help="Path to GIMP 3 plug-ins directory")
-    parser.add_argument("--darktable", metavar="PATH",
-                        help="Path to Darktable lua/contrib directory")
-    parser.add_argument("--lut-folder", metavar="PATH", default="",
-                        help="Source folder containing .cube/.3dl LUT files to import into ComfyUI")
-    parser.add_argument("--civitai-key", metavar="TOKEN", default="",
-                        help="CivitAI API token for authenticated model downloads")
-    parser.add_argument("--hf-token", metavar="TOKEN", default="",
-                        help="HuggingFace access token for gated model downloads")
-    parser.add_argument("--skip-models", action="store_true",
-                        help="Skip model downloads (install plugins and nodes only)")
-    parser.add_argument("--skip-nodes", action="store_true",
-                        help="Skip custom node installation")
-    parser.add_argument("--version", action="version",
-                        version=f"Spellcaster Installer v{VERSION}")
-    return parser
-
-
-def main():
-    """Run the full CLI installation pipeline.
-
-    Steps execute in order:
-    1. Detect GPU/VRAM for model tier recommendations
-    2. Collect optional API keys (CivitAI, HuggingFace)
-    3. Determine ComfyUI server URL (localhost or remote)
-    4. Detect/prompt for application paths (ComfyUI, GIMP, Darktable)
-    5. Select features interactively (or from --features flag)
-    6. Clone/install required custom nodes into ComfyUI
-    7. Download AI models to ComfyUI's models directory
-    8. Copy plugin files to GIMP/Darktable, patching server URL
-    9. Print final summary with next-steps guidance
-    """
-    args = build_arg_parser().parse_args()
-
-    banner()
-
-    if args.dry_run:
-        print(f"  {C_YELLOW}DRY RUN MODE — no changes will be made{C_RESET}\n")
-
-    manifest = load_manifest()
-
-    # argparse converts --civitai-key to civitai_key, but ensure the attrs
-    # exist with empty-string defaults for safe getattr() calls downstream
-    if not hasattr(args, 'civitai_key'):
-        args.civitai_key = getattr(args, 'civitai_key', '') or ''
-    if not hasattr(args, 'hf_token'):
-        args.hf_token = getattr(args, 'hf_token', '') or ''
-
-    # ── Execute the installation pipeline ──
-    step_system_detection(args)
-    step_api_keys(args)
-    server_url = step_detect_server(args)
-    paths = step_detect_paths(args)
-    selected = step_select_features(manifest, paths, args)
-
-    if not args.skip_nodes:
-        step_install_nodes(manifest, selected, paths, args.dry_run)
-    else:
-        print(f"\n  {C_YELLOW}--skip-nodes specified — skipping custom node installation.{C_RESET}")
-
-    step_install_models(manifest, selected, paths, args)
-    step_install_plugins(paths, server_url, args.dry_run)
-    step_install_tavern(paths, server_url, selected, args.dry_run)
-    step_import_luts(paths, args)
-    step_apply_theme(paths, args.dry_run, args.yes)
-    step_final_summary(manifest, selected, paths, server_url)
-
-
-# ─── GUI wrapper ──────────────────────────────────────────────────────────────
-# When run directly (not imported), prefer the GUI wrapper if available.
-# Falls back to CLI mode if: --cli is passed, stdin is not a terminal (piped),
-# or the GUI module fails to load (e.g., missing tkinter).
-
-if __name__ == "__main__":
-    _args = build_arg_parser().parse_args()
-    # PyInstaller --windowed sets sys.stdin to None; never fall back to CLI in that case.
-    _is_frozen_gui = getattr(sys, 'frozen', False) and not sys.stdin
-    _force_cli = getattr(_args, 'cli', False)
-    if _force_cli and sys.stdin:
-        main()
-    elif _is_frozen_gui or (not _force_cli and sys.stdin and sys.stdin.isatty()):
-        try:
-            from installer_gui import run_gui
-            run_gui(_args, load_manifest())
-        except Exception as e:
-            if sys.stdin:
-                import traceback
-                print(f"Failed to load premium GUI: {e}")
-                traceback.print_exc()
-                main()
-            else:
-                raise
-    else:
-        main()
+# ─── Entry point ─────────────

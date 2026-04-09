@@ -7,7 +7,7 @@ Each generation uses Spellcaster's own expertly-tuned presets.
 
 Usage:
     python generate_showcase.py
-    python generate_showcase.py --server http://192.168.x.x:8188
+    python generate_showcase.py --server http://127.0.0.1:8188
     python generate_showcase.py --only generation    # run one category
     python generate_showcase.py --list               # list all jobs
 """
@@ -23,7 +23,7 @@ import urllib.parse
 import argparse
 from pathlib import Path
 
-SERVER = "http://192.168.x.x:8188"
+SERVER = "http://127.0.0.1:8188"
 OUTPUT_DIR = Path(__file__).parent / "assets"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
@@ -1223,7 +1223,7 @@ Categories:
 
 Examples:
   python generate_showcase.py --only splash
-  python generate_showcase.py --only splash --server http://192.168.x.x:8188
+  python generate_showcase.py --only splash --server http://127.0.0.1:8188
   python generate_showcase.py --job gimp_banner
         """
     )

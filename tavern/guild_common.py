@@ -32,21 +32,45 @@ DEFAULT_KOBOLD_URL = "http://127.0.0.1:5001"
 
 # UNET model-name keywords → arch key
 UNET_ARCH_RULES = [
-    # (substring, arch_key)
-    ("klein",   "flux2klein"),
-    ("flux",    "flux1dev"),
-    ("wan",     "wan"),
-    ("ltx",     "ltx"),
-    ("seedvr",  "seedvr"),
+    # (substring, arch_key)  — order = priority, first match wins
+    ("klein",     "flux2klein"),
+    ("kontext",   "flux_kontext"),
+    ("flux",      "flux1dev"),
+    ("wan",       "wan"),
+    ("ltx",       "ltx"),
+    ("seedvr",    "seedvr"),
+    ("pixart",    "pixart"),
+    ("auraflow",  "auraflow"),
+    ("aura_flow", "auraflow"),
+    ("hunyuan_dit", "hunyuan_dit"),
+    ("hunyuandit",  "hunyuan_dit"),
+    ("sd3.5_large_turbo", "sd3_turbo"),
+    ("sd3_turbo",   "sd3_turbo"),
+    ("sd3.5",       "sd3"),
+    ("sd3_",        "sd3"),
+    ("sd3medium",   "sd3"),
 ]
 
 # Checkpoint model-name keywords → arch key   (order = priority)
 CKPT_ARCH_RULES = [
-    ("sdxl",    "sdxl"),
-    ("xl",      "sdxl"),
-    ("illu",    "illustrious"),
-    ("pony",    "pony"),
-    ("flux",    "flux1dev"),
+    ("playground",  "playground"),
+    ("sdxl_turbo",  "sdxl_turbo"),
+    ("sdxl_lightning", "sdxl_turbo"),
+    ("lcm",         "sdxl_turbo"),
+    ("turbo",       "sdxl_turbo"),     # generic turbo → sdxl_turbo (unless caught above)
+    ("kolors",      "kolors"),
+    ("sd3.5_large_turbo", "sd3_turbo"),
+    ("sd3_turbo",   "sd3_turbo"),
+    ("sd3.5",       "sd3"),
+    ("sd3_",        "sd3"),
+    ("sd3medium",   "sd3"),
+    ("hunyuan_dit", "hunyuan_dit"),
+    ("hunyuandit",  "hunyuan_dit"),
+    ("sdxl",        "sdxl"),
+    ("xl",          "sdxl"),
+    ("illu",        "illustrious"),
+    ("pony",        "pony"),
+    ("flux",        "flux1dev"),
     # fallthrough → "sd15"
 ]
 
@@ -58,6 +82,15 @@ BEST_MODEL_PRIORITY = [
     ("unet",  lambda ml: "klein" in ml and "4b" in ml,  "flux2klein"),
     ("unet",  lambda ml: "flux" in ml and "dev" in ml,  "flux1dev"),
     ("unet",  lambda ml: "flux" in ml,                  "flux1dev"),
+    ("unet",  lambda ml: "sd3.5" in ml and "turbo" not in ml, "sd3"),
+    ("unet",  lambda ml: "sd3" in ml,                   "sd3"),
+    ("unet",  lambda ml: "pixart" in ml,                "pixart"),
+    ("unet",  lambda ml: "auraflow" in ml or "aura_flow" in ml, "auraflow"),
+    ("ckpt",  lambda ml: "sd3.5" in ml and "turbo" not in ml, "sd3"),
+    ("ckpt",  lambda ml: "playground" in ml,            "playground"),
+    ("ckpt",  lambda ml: "kolors" in ml,                "kolors"),
+    ("ckpt",  lambda ml: "illu" in ml,                  "illustrious"),
+    ("ckpt",  lambda ml: "xl" in ml and "turbo" not in ml, "sdxl"),
     ("ckpt",  lambda ml: "xl" in ml,                    "sdxl"),
 ]
 
@@ -87,12 +120,19 @@ LORA_ARCH_PREFIXES = {
 
 # LoRA name keyword → arch (fallback when prefix matching fails)
 LORA_NAME_ARCH_HINTS = [
-    ("sdxl",  "sdxl"),
-    ("xl",    "sdxl"),
-    ("flux",  "flux1dev"),
-    ("klein", "flux2klein"),
-    ("illu",  "illustrious"),
-    ("pony",  "pony"),
+    ("sdxl",      "sdxl"),
+    ("xl",        "sdxl"),
+    ("flux",      "flux1dev"),
+    ("klein",     "flux2klein"),
+    ("illu",      "illustrious"),
+    ("pony",      "pony"),
+    ("sd3",       "sd3"),
+    ("sd35",      "sd3"),
+    ("hunyuan",   "hunyuan_dit"),
+    ("pixart",    "pixart"),
+    ("auraflow",  "auraflow"),
+    ("kolors",    "kolors"),
+    ("playground", "playground"),
 ]
 
 
