@@ -960,22 +960,58 @@ def fetch_all_characters(comfy_url=None):
                 "scaffold": "studio_imaginus",
                 "subtext_hint": "Pony / Stylized Image Generation",
             },
+            "sd3": {
+                "archetype": "a transcendent archmage of the third circle, MMDiT runes orbiting in triple helix",
+                "scaffold": "studio_imaginus",
+                "subtext_hint": "SD3 / SD3.5 Image Generation",
+            },
+            "sd3_turbo": {
+                "archetype": "a quicksilver mage of the third circle, casting with blinding speed",
+                "scaffold": "studio_imaginus",
+                "subtext_hint": "SD3.5 Turbo — Fast Image Generation",
+            },
+            "hunyuan_dit": {
+                "archetype": "a bilingual sage bridging Eastern and Western magic, calligraphy strokes flowing",
+                "scaffold": "studio_imaginus",
+                "subtext_hint": "HunyuanDiT Image Generation",
+            },
+            "pixart": {
+                "archetype": "a pixel-perfect artificer of precise visions, transformer runes floating",
+                "scaffold": "studio_imaginus",
+                "subtext_hint": "PixArt Image Generation",
+            },
+            "auraflow": {
+                "archetype": "a flowing aura mage channeling open-source energy, luminous trails streaming",
+                "scaffold": "studio_imaginus",
+                "subtext_hint": "AuraFlow Image Generation",
+            },
+            "kolors": {
+                "archetype": "a chromatic wizard of vivid color magic, prismatic crystals spinning",
+                "scaffold": "studio_imaginus",
+                "subtext_hint": "Kolors Image Generation",
+            },
+            "playground": {
+                "archetype": "an aesthetics-obsessed artisan conjuring beauty with every gesture",
+                "scaffold": "studio_imaginus",
+                "subtext_hint": "Playground v2.5 Image Generation",
+            },
+            "sdxl_turbo": {
+                "archetype": "a lightning-fast battle mage conjuring images in the blink of an eye",
+                "scaffold": "studio_imaginus",
+                "subtext_hint": "SDXL Turbo — Fast Image Generation",
+            },
+            "zit": {
+                "archetype": "an ultra-fast wizard of turbo conjuration, images materializing instantly",
+                "scaffold": "studio_imaginus",
+                "subtext_hint": "Z-Image-Turbo — Fast Image Generation",
+            },
         }
 
-        # Enhanced arch detection
+        # Enhanced arch detection — use centralised rules from guild_common
         if march == "unknown":
-            if "xl" in mname_lower or "sdxl" in mname_lower:
-                march = "sdxl"
-            elif "illu" in mname_lower:
-                march = "illustrious"
-            elif "pony" in mname_lower:
-                march = "pony"
-            elif "flux" in mname_lower:
-                march = "flux1dev"
-            elif "klein" in mname_lower:
-                march = "flux2klein"
-            else:
-                march = "sd15"
+            march = classify_unet_model(mname)
+        if march == "unknown":
+            march = classify_ckpt_model(mname)
 
         # NSFW arch profiles override SFW when available
         if NSFW_MODE and _NSFW_ARCH_PROFILES:
@@ -2534,18 +2570,19 @@ _ANIM_POLL_THREAD = None
 def _avatar_resolution(arch_key):
     """Return (width, height) for avatar generation, optimized per architecture.
 
-    SD1.5 is trained at 512, so 512×512 is correct.
-    SDXL/Illustrious/Pony are trained at 1024, so we use 768×768 for a good
-    balance of quality vs speed (full 1024 is overkill for avatar thumbnails).
-    Flux models are trained at 1024 and degrade badly at 512, so 768×768.
+    Each architecture was trained at a native resolution; generating at that
+    resolution or nearby produces the best quality. For avatar thumbnails we
+    use a balance of quality vs speed:
+      - SD1.5: 512×512 (native)
+      - SDXL Turbo: 512×512 (native for turbo)
+      - Everything else (SDXL, Flux, SD3, etc.): 768×768 (good quality, not overkill)
     """
-    if arch_key in ("sdxl", "illustrious", "pony", "zit"):
-        return 768, 768
-    elif arch_key in ("flux1dev", "flux2klein"):
-        return 768, 768
-    elif arch_key == "sd15":
+    if arch_key in ("sd15",):
         return 512, 512
-    # Unknown arch / None (auto-detect will pick best model)
+    elif arch_key in ("sdxl_turbo",):
+        return 512, 512
+    # All modern architectures: SDXL, Illustrious, Pony, Flux, SD3, HunyuanDiT,
+    # PixArt, AuraFlow, Kolors, Playground, ZIT, etc.
     return 768, 768
 
 
@@ -3021,7 +3058,10 @@ class GuildHandler(SimpleHTTPRequestHandler):
         # Static routing
         if not self.path.startswith('/static/') and not self.path.startswith('/api/'):
             self.path = '/static' + self.path
-        return super().do_GET()
+        try:
+            return super().do_GET()
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            pass  # Browser disconnected mid-transfer — harmless
 
     def do_POST(self):
         global CHARS_CACHE, NODES_CACHE, PRIVACY_CLEANUP
@@ -3057,7 +3097,9 @@ class GuildHandler(SimpleHTTPRequestHandler):
             own_arch = char.get("model_arch")
             # Only use the wizard's model for image-gen architectures
             IMAGE_ARCHS = {"sdxl", "sd15", "illustrious", "pony",
-                           "flux1dev", "flux2klein"}
+                           "flux1dev", "flux2klein", "sd3", "sd3_turbo",
+                           "hunyuan_dit", "pixart", "auraflow", "kolors",
+                           "playground", "sdxl_turbo", "zit"}
             if own_model and own_arch in IMAGE_ARCHS:
                 use_model = own_model
                 use_arch = own_arch
@@ -3404,8 +3446,6 @@ class GuildHandler(SimpleHTTPRequestHandler):
 
         # -- /api/lora_toggles -- save per-wizard LoRA enabled/disabled state
         elif self.path == '/api/lora_toggles':
-            # Expects: { char_id: { lora_name: true/false, ... }, ... }
-            # Merges with existing state (doesn't replace the whole dict)
             toggles = data.get('toggles', data)
             if not isinstance(toggles, dict):
                 return self.end_json(400, {"error": "toggles dict required"})
@@ -3417,7 +3457,6 @@ class GuildHandler(SimpleHTTPRequestHandler):
 
         # -- /api/wizard_identities -- save wizard identity overrides
         elif self.path == '/api/wizard_identities':
-            # Expects: { char_id: { name, personality, avatar_url, animated_url }, ... }
             identities = data.get('identities', data)
             if not isinstance(identities, dict):
                 return self.end_json(400, {"error": "identities dict required"})
@@ -3462,7 +3501,6 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 PRIVACY_CLEANUP = new_val
                 changed.append(f"privacy_cleanup={new_val}")
 
-                # Persist to guild_config.json
                 cfg_path = os.path.join(_THIS_DIR, "guild_config.json")
                 try:
                     with open(cfg_path, 'r', encoding='utf-8') as f:
@@ -3476,7 +3514,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 except Exception:
                     pass
 
-                # Also sync to GIMP plugin config if it exists
+                # Sync to GIMP plugin config if it exists
                 gimp_cfg_candidates = []
                 if sys.platform == 'win32':
                     appdata = os.environ.get('APPDATA', '')
@@ -3518,19 +3556,12 @@ class GuildHandler(SimpleHTTPRequestHandler):
         # -- /api/reinitialize -- nuke non-core wizards, re-detect from ComfyUI
         elif self.path == '/api/reinitialize':
             keep_core_assets = data.get('keep_core_assets', True)
-
-            # "Core" = studio characters only (Imaginus, Transmutex, etc.)
             PRESERVED_TYPE = 'studio'
-
             old_total = len(CHARS_CACHE)
             old_nonstudio = sum(1 for c in CHARS_CACHE
                                 if c.get('type') != PRESERVED_TYPE)
-
-            # Remove non-core wizards
             CHARS_CACHE[:] = [c for c in CHARS_CACHE
                               if c.get('type') == PRESERVED_TYPE]
-
-            # Clear custom wizard persistence
             cw_path = os.path.join(_THIS_DIR, "custom_wizards.json")
             if os.path.isfile(cw_path):
                 try:
@@ -3538,20 +3569,15 @@ class GuildHandler(SimpleHTTPRequestHandler):
                         json.dump([], f)
                 except Exception:
                     pass
-
-            # Reset studio lookup to only core entries
             _STUDIO_BY_ID.clear()
             for sc in STUDIO_CHARACTERS:
                 _STUDIO_BY_ID[sc["id"]] = sc
-
-            # Re-detect models from ComfyUI
             comfy = data.get('comfy_url', COMFYUI_URL)
             threading.Thread(
                 target=_server_init,
                 args=(comfy,),
                 daemon=True
             ).start()
-
             return self.end_json(200, {
                 "status": "reinitializing",
                 "removed": old_nonstudio,
