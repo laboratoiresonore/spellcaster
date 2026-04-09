@@ -2342,4 +2342,277 @@ function GuildSidebar({ isOpen, onToggle, comfyUrl, koboldUrl: initialKoboldUrl 
             className="flex-1 bg-slate-900 border border-amber-500/20 rounded-lg px-3 py-2 text-xs text-amber-50 placeholder-slate-500 focus:border-amber-500/50 outline-none resize-none"
             style={{ maxHeight: "80px" }}
           />
-          <button onClick={sendMessage} disabled={loading || !
+          <button onClick={sendMessage} disabled={loading || !chatInput.trim()}
+            className="px-3 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-lg transition-colors">
+            <Icon d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" size={14} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// MAIN APP
+// ═══════════════════════════════════════════════════════════════════
+
+function SignalBridgeSettings() {
+  const [config, setConfig] = useState(deepClone(DEFAULT_CONFIG));
+  const [scaffolds, setScaffolds] = useState(() => builtInScaffolds());
+  const [activeTab, setActiveTab] = useState("scaffolds");
+  const [saved, setSaved] = useState(false);
+  const [importError, setImportError] = useState("");
+  const [guildOpen, setGuildOpen] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const tabs = [
+    { id: "workflows", label: "Workflows", icon: <Icons.Film /> },
+    { id: "scaffolds", label: "Scaffolds", icon: <Icons.Wand /> },
+    { id: "integrations", label: "Integrations", icon: <Icons.Compass /> },
+    { id: "network", label: "Network", icon: <Icons.Wifi /> },
+    { id: "signal", label: "Signal", icon: <Icons.Signal /> },
+    { id: "users", label: "Users & Access", icon: <Icons.Users /> },
+    { id: "privacy", label: "Privacy", icon: <Icons.Shield /> },
+    { id: "paths", label: "Paths", icon: <Icons.Folder /> },
+    { id: "advanced", label: "Advanced", icon: <Icons.Zap /> },
+  ];
+
+  const update = useCallback((key, val) => setConfig(prev => ({ ...prev, [key]: val })), []);
+  const updateNested = useCallback((section, key, val) => {
+    setConfig(prev => { const u = deepClone(prev); if (!u[section]) u[section] = {}; u[section][key] = val; return u; });
+  }, []);
+
+  const exportAll = () => {
+    const bundle = { config: deepClone(config), scaffolds: deepClone(scaffolds) };
+    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "signal_bridge_config.json"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importAll = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target.result);
+        if (parsed.config) {
+          const merged = { ...deepClone(DEFAULT_CONFIG), ...parsed.config };
+          setConfig(merged);
+        }
+        if (parsed.scaffolds && Array.isArray(parsed.scaffolds)) {
+          setScaffolds(parsed.scaffolds);
+        }
+        setImportError("");
+      } catch { setImportError("Invalid JSON file."); }
+    };
+    reader.readAsText(file);
+  };
+
+  const copyJson = () => {
+    const bundle = { config: deepClone(config), scaffolds: deepClone(scaffolds) };
+    navigator.clipboard?.writeText(JSON.stringify(bundle, null, 2));
+    setSaved(true); setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-amber-50" style={{background: "linear-gradient(135deg, #0f172a 0%, #1a1f35 50%, #0a0e1a 100%)", marginRight: guildOpen ? "384px" : "0", transition: "margin-right 0.3s ease"}}>
+      {/* Header */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-900 border-b border-amber-600/30 sticky top-0 z-50" style={{boxShadow: "0 4px 20px rgba(217, 119, 6, 0.15)"}}>
+        <div className="max-w-6xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-amber-600 to-amber-700 rounded-xl flex items-center justify-center text-amber-50" style={{boxShadow: "0 0 16px rgba(217, 119, 6, 0.5), inset 0 0 8px rgba(217, 119, 6, 0.3)"}}><Icons.Signal /></div>
+              <div>
+                <h1 className="text-xl font-bold text-amber-50">The Travelling Wizard</h1>
+                <p className="text-xs text-amber-200/70">Signal Bridge & Spellcaster Scaffold</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <input type="file" ref={fileInputRef} accept=".json" onChange={importAll} className="hidden" />
+              <button onClick={() => fileInputRef.current?.click()} className={btnGhost}><Icons.Upload /> Import</button>
+              <button onClick={exportAll} className={btnGhost}><Icons.Download /> Export</button>
+              <button onClick={copyJson} className={btnPrimary}>
+                {saved ? <><Icons.Check /> Copied!</> : <><Icons.Copy /> Copy JSON</>}
+              </button>
+              <div className="w-px h-6 bg-amber-600/20 mx-1" />
+              <button onClick={() => window.location.href = '/'}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all bg-purple-700/20 hover:bg-purple-700/40 text-purple-300">
+                <Icons.MessageSquare /> Guild
+              </button>
+            </div>
+          </div>
+          {importError && (
+            <div className="mt-3 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 text-sm text-red-400 flex items-center gap-2">
+              <Icons.AlertTriangle /> {importError}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="bg-gradient-to-r from-slate-900/50 to-slate-900/30 border-b border-amber-600/20">
+        <div className="max-w-6xl mx-auto px-6">
+          <nav className="flex gap-1 overflow-x-auto py-2">
+            {tabs.map(t => (
+              <button key={t.id} onClick={() => setActiveTab(t.id)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${
+                  activeTab === t.id ? "bg-amber-600/30 text-amber-50 border border-amber-500/50" : "text-slate-400 hover:text-amber-300 hover:bg-purple-800/20"
+                }`}
+                style={{boxShadow: activeTab === t.id ? "0 0 12px rgba(217, 119, 6, 0.2)" : ""}}>
+                {t.icon} {t.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="max-w-6xl mx-auto px-6 py-6">
+        {/* ── Workflows Tab ── */}
+        {activeTab === "workflows" && (
+          <WorkflowBrowser comfyuiUrl={config.comfyui_url} onCreateScaffold={(wf) => {
+            const newScaff = scaffoldFromParsedWorkflow(wf);
+            setScaffolds(prev => [...prev, newScaff]);
+            setActiveTab("scaffolds");
+          }} />
+        )}
+
+        {/* ── Scaffolds Tab ── */}
+        {activeTab === "scaffolds" && (
+          <ScaffoldEditor scaffolds={scaffolds} setScaffolds={setScaffolds} />
+        )}
+
+        {/* ── Integrations Tab ── */}
+        {activeTab === "integrations" && (
+          <IntegrationsPanel />
+        )}
+
+        {/* ── Network Tab ── */}
+        {activeTab === "network" && (
+          <div className="space-y-4">
+            <SectionCard title="LLM Server" icon={<Icons.Server />}>
+              <Field label="Open WebUI URL" tip="The address of your Open WebUI instance. This is where the LLM processes messages. Default: http://localhost:8080">
+                <input value={config.webui_url} onChange={e => update("webui_url", e.target.value)} className={inputCls} />
+              </Field>
+              <Field label="Open WebUI API Key" tip="Authentication token for the WebUI API. Generate this from Open WebUI → Settings → Account → API Keys">
+                <PasswordField value={config.webui_api_key} onChange={e => update("webui_api_key", e.target.value)} placeholder="sk-..." className={inputCls} />
+              </Field>
+              <Field label="Ollama URL" tip="Direct Ollama API endpoint. Used as fallback when Open WebUI is unavailable. Default: http://localhost:11434">
+                <input value={config.ollama_url || ""} onChange={e => update("ollama_url", e.target.value)} className={inputCls} />
+              </Field>
+              <Field label="Default Model" tip="The Ollama model tag used for all conversations. Must be pulled on the Ollama server first (e.g. llama3:latest, mistral:latest)">
+                <input value={config.model} onChange={e => update("model", e.target.value)} className={inputCls} />
+              </Field>
+            </SectionCard>
+            <SectionCard title="ComfyUI Server" icon={<Icons.Zap />}>
+              <Field label="ComfyUI URL" tip="Address of your ComfyUI server for image generation. The Spellcaster nodes must be installed. Default: http://localhost:8188">
+                <input value={config.comfyui_url} onChange={e => update("comfyui_url", e.target.value)} className={inputCls} />
+              </Field>
+              <Field label="Output Directory" tip="Where ComfyUI saves generated images on the server filesystem. Used for cleanup and retrieval">
+                <input value={config.comfyui_output_dir || ""} onChange={e => update("comfyui_output_dir", e.target.value)} className={inputCls} />
+              </Field>
+              <Field label="Cleanup Timer (minutes)" tip="How often (in minutes) to purge old generated files from the ComfyUI output directory. Set to 0 to disable">
+                <input type="number" min="0" max="1440" value={config.comfyui_cleanup_minutes || 30} onChange={e => update("comfyui_cleanup_minutes", parseInt(e.target.value) || 30)} className={inputCls + " w-32"} />
+              </Field>
+            </SectionCard>
+          </div>
+        )}
+
+        {/* ── Signal Tab ── */}
+        {activeTab === "signal" && (
+          <div className="space-y-4">
+            <SectionCard title="Signal Configuration" icon={<Icons.Signal />}>
+              <Field label="Signal Phone Number" tip="The phone number registered with signal-cli that the bridge sends/receives messages from. Must be registered first via signal-cli">
+                <input value={config.phone_number} onChange={e => update("phone_number", e.target.value)} className={inputCls} />
+              </Field>
+              <Field label="Admin Phone Number" tip="Your personal Signal number. Messages from this number bypass all restrictions and have full NSFW + admin access">
+                <input value={config.admin_number} onChange={e => update("admin_number", e.target.value)} className={inputCls} />
+              </Field>
+              <Field label="signal-cli Path" tip="Path to the signal-cli binary or wrapper script. Can be absolute path or just the version folder name">
+                <input value={config.signal_cli_path} onChange={e => update("signal_cli_path", e.target.value)} className={inputCls} />
+              </Field>
+              <Field label="Poll Interval (seconds)" tip="How often (in seconds) the bridge checks for new Signal messages. Lower = faster response, higher = less CPU usage">
+                <input type="number" min="1" max="30" value={config.poll_interval} onChange={e => update("poll_interval", parseInt(e.target.value) || 2)} className={inputCls + " w-32"} />
+              </Field>
+            </SectionCard>
+            <SectionCard title="Google Integration" icon={<Icons.Lock />}>
+              <Field label="Credentials File" tip="Path to the Google OAuth client_secret JSON file. Required for Gmail, Calendar, Tasks, and Drive integration">
+                <input value={config.google?.credentials_file || ""} onChange={e => updateNested("google", "credentials_file", e.target.value)} className={inputCls} />
+              </Field>
+              <Field label="Admin Email" tip="The Google account email used for OAuth. Calendar events, emails, and tasks are synced from this account">
+                <input value={config.google?.admin_email || ""} onChange={e => updateNested("google", "admin_email", e.target.value)} className={inputCls} />
+              </Field>
+            </SectionCard>
+          </div>
+        )}
+
+        {/* ── Users Tab ── */}
+        {activeTab === "users" && (
+          <SectionCard title="Authorized Users" icon={<Icons.Users />} collapsible={false}>
+            <div className="bg-amber-500/10 border border-amber-600/30 rounded-lg p-3 flex items-start gap-3 mb-2">
+              <span className="text-amber-500 mt-0.5"><Icons.AlertTriangle /></span>
+              <p className="text-sm text-amber-200"><strong>Restricted</strong> = SFW only. <strong>Unrestricted</strong> = full NSFW access. Admin always has unrestricted access.</p>
+            </div>
+            <PhoneManager config={config} setConfig={setConfig} />
+          </SectionCard>
+        )}
+
+        {/* ── Privacy Tab ── */}
+        {activeTab === "privacy" && <SectionCard title="Privacy & Cleanup" icon={<Icons.Shield />} collapsible={false}><PrivacyPanel config={config} setConfig={setConfig} /></SectionCard>}
+
+        {/* ── Paths Tab ── */}
+        {activeTab === "paths" && <SectionCard title="File Paths" icon={<Icons.Folder />} collapsible={false}><PathEditor config={config} setConfig={setConfig} /></SectionCard>}
+
+        {/* ── Advanced Tab ── */}
+        {activeTab === "advanced" && (
+          <div className="space-y-4">
+            <SectionCard title="Rate Limiting" icon={<Icons.Zap />}>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Max Requests" tip="Maximum number of messages a user can send within the rate window. Prevents abuse and runaway API costs">
+                  <input type="number" value={config.rate_limit} onChange={e => update("rate_limit", parseInt(e.target.value) || 20)} className={inputCls} />
+                </Field>
+                <Field label="Window (seconds)" tip="Time window for rate limiting. A user can send 'Max Requests' messages within this many seconds before being throttled">
+                  <input type="number" value={config.rate_window} onChange={e => update("rate_window", parseInt(e.target.value) || 60)} className={inputCls} />
+                </Field>
+              </div>
+              <Field label="Max History" tip="Number of previous messages kept in the conversation context. Higher = better memory but more tokens per request">
+                <input type="number" value={config.max_history} onChange={e => update("max_history", parseInt(e.target.value) || 30)} className={inputCls + " w-32"} />
+              </Field>
+            </SectionCard>
+            <SectionCard title="System Prompt" icon={<Icons.Server />}>
+              <Field label="Default System Prompt" tip="Base system prompt injected into every LLM conversation. Persona-specific instructions are appended after this">
+                <textarea value={config.system_prompt} onChange={e => update("system_prompt", e.target.value)} rows={6} className={inputCls + " resize-y"} />
+              </Field>
+            </SectionCard>
+            <SectionCard title="Raw JSON" icon={<Icons.Copy />}>
+              <pre className="bg-slate-950 border border-amber-600/20 rounded-lg p-4 text-xs text-slate-300 overflow-auto max-h-96 font-mono">
+                {JSON.stringify({ config, scaffolds }, null, 2)}
+              </pre>
+            </SectionCard>
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-900 border-t border-amber-600/30 mt-8">
+        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+          <p className="text-xs text-amber-200/60">The Travelling Wizard · Spellcaster Suite · {scaffolds.length} scaffold(s) configured</p>
+          <button onClick={exportAll} className={btnPrimary}><Icons.Save /> Export All</button>
+        </div>
+      </div>
+
+      {/* Guild Sidebar Panel */}
+      <GuildSidebar
+        isOpen={guildOpen}
+        onToggle={() => setGuildOpen(false)}
+        comfyUrl={config.comfyui_url || "http://127.0.0.1:8188"}
+        koboldUrl={config.kobold_url || "http://127.0.0.1:5001"}
+      />
+    </div>
+  );
+}
+
+window.SignalBridgeSettings = SignalBridgeSettings;
