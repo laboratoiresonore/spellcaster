@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Wizard Guild</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="dark-theme">
+    <div id="app-container">
+        <!-- Sidebar: Characters -->
+        <aside id="sidebar">
+            <div class="sidebar-header">
+                <h2>The Wizard Guild</h2>
+                <div id="llm-indicator-container">
+                    <span id="llm-dot" class="dot red"></span> <span id="llm-status">LLM: Disconnected</span>
+                </div>
+                <div id="comfy-indicator-container">
+                    <span id="comfy-dot" class="dot red"></span> <span id="comfy-status">ComfyUI: Disconnected</span>
+                </div>
+                <div class="search-wrapper">
+                    <input type="text" id="character-search" placeholder="Search guild members...">
+                </div>
+            </div>
+            
+            <div id="character-list">
+                <!-- Dynamically populated from API -->
+            </div>
+            
+            <div class="sidebar-footer">
+                <button id="settings-btn">⚙️ Settings</button>
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main id="chat-arena">
+            <header id="chat-header">
+                <div class="chat-header-info">
+                    <div class="avatar" id="active-avatar" style="background: linear-gradient(135deg, #1d976c, #93f9b9);"></div>
+                    <div class="header-titles">
+                        <h2 id="active-character-name">Loading...</h2>
+                        <p id="active-character-subtext">Connecting to guild...</p>
+                    </div>
+                </div>
+                <div class="chat-header-actions">
+                    <button id="rename-btn" title="Edit or Generate Identity">Rename Wizard</button>
+                    <button id="generate-bg-btn" title="Synthesize Tavern Background">Generate Background</button>
+                    <button id="generate-avatar-btn" title="Synthesize Avatar from parameters">Generate Avatar</button>
+                    <button id="lora-btn" title="Manage LoRA Enchantments for this wizard">Enchantments</button>
+                    <button id="reset-btn">Reset Memory</button>
+                    <button id="batch-generate-btn" title="Generate avatars for all guild members + tavern background">⚡ Generate All</button>
+                    <a href="/guild" id="scaffold-link" title="Open The Travelling Wizard scaffold editor">🧙 Scaffold</a>
+                </div>
+            </header>
+            
+            <div id="chat-stream">
+                <!-- Chat messages inject here -->
+            </div>
+
+            <!-- Input Area -->
+            <div id="chat-input-area">
+                <div class="input-wrapper">
+                    <button id="upload-btn" title="Attach Image (Coming Soon)">📎</button>
+                    <textarea id="chat-input" placeholder="Just talk to it..."></textarea>
+                    <button id="summon-wizard-btn" title="Summon a new Wizard from your models"><img src="/static/icons/summon-wand.svg" alt="Summon Wizard" style="width:24px;height:24px;"></button>
+                    <button id="send-btn" title="Cast Spell">✨</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-content" style="max-width:520px;max-height:85vh;overflow-y:auto;">
+            <h3>Guild Server Settings</h3>
+            <p><strong>Local LLM (Kobold):</strong> Breathe life into the Guild Members natively via local inference.</p>
+            <input type="text" id="kobold-url-input" placeholder="http://127.0.0.1:5001" value="http://127.0.0.1:5001">
+            <p style="margin-top: 16px;"><strong>ComfyUI Engine:</strong> Connect to your image rendering backend.</p>
+            <input type="text" id="comfy-url-input" placeholder="http://127.0.0.1:8188" value="http://127.0.0.1:8188">
+
+            <hr style="border:none;border-top:1px solid #333;margin:20px 0;">
+            <h3 style="margin-bottom:8px;">Wizard Management</h3>
+            <p style="margin-bottom:12px;">Banish wizards you don't need, or restore banished ones.</p>
+            <div style="display:flex;gap:8px;margin-bottom:10px;">
+                <input type="text" id="wizard-mgmt-search" placeholder="Filter wizards..." style="flex:1;padding:8px;border-radius:8px;border:1px solid #444;background:#1e1e2e;color:#eee;font-size:13px;margin-bottom:0;">
+                <select id="wizard-mgmt-filter" style="padding:8px;border-radius:8px;border:1px solid #444;background:#1e1e2e;color:#eee;font-size:13px;">
+                    <option value="active">Active</option>
+                    <option value="banished">Banished</option>
+                    <option value="all">All</option>
+                </select>
+            </div>
+            <div id="wizard-mgmt-list" style="max-height:250px;overflow-y:auto;border:1px solid #333;border-radius:8px;background:#151520;">
+                <p style="color:#666;padding:12px;text-align:center;">Loading...</p>
+            </div>
+
+            <hr style="border:none;border-top:1px solid #333;margin:20px 0;">
+            <h3 style="margin-bottom:8px;">Re-initialize Guild</h3>
+            <p style="margin-bottom:8px;color:#aaa;font-size:13px;">Nuke all auto-detected and custom wizards, then re-scan ComfyUI for models. Core wizards (Imaginus, Transmutex, etc.) and their assets are preserved.</p>
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+                <label style="display:flex;align-items:center;gap:6px;color:#ccc;font-size:13px;cursor:pointer;">
+                    <input type="checkbox" id="reinit-keep-assets" checked style="accent-color:#B246F2;">
+                    Keep core wizard assets (avatars, backgrounds)
+                </label>
+            </div>
+            <button id="reinit-btn" style="background:#ff4757;color:#fff;padding:10px 20px;border-radius:8px;border:none;cursor:pointer;font-family:'Outfit';font-size:13px;font-weight:600;width:100%;transition:all 0.2s;">Re-initialize &amp; Re-detect All Models</button>
+            <p id="reinit-status" style="color:#888;font-size:12px;margin-top:6px;display:none;"></p>
+
+            <div class="modal-actions" style="margin-top: 24px;">
+                <button id="settings-cancel">Cancel</button>
+                <button id="settings-save">Save & Connect</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rename Modal -->
+    <div id="rename-modal" class="modal hidden">
+        <div class="modal-content">
+            <h3>Rename Wizard</h3>
+            <p>Type a custom name, or let the LLM synthesize a highly creative title.</p>
+            <input type="text" id="rename-input" placeholder="Enter name...">
+            <div class="modal-actions">
+                <button id="rename-cancel">Cancel</button>
+                <button id="rename-llm-btn" style="background: var(--accent); color: white;">Generate AI Name</button>
+                <button id="rename-save" style="background: #2ed573; color: #111;">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Background Options Modal -->
+    <div id="bg-modal" class="modal hidden">
+        <div class="modal-content">
+            <h3>Generate Background</h3>
+            <p style="margin-bottom:12px;">Choose a scene style and the model to render it with.</p>
+            <label style="color:#aaa;font-size:13px;">Scene Style</label>
+            <select id="bg-style-select" style="width:100%;padding:8px;margin:6px 0 14px;border-radius:8px;border:1px solid #444;background:#1e1e2e;color:#eee;font-size:14px;">
+                <option value="tavern">Wizard Tavern (cozy candlelit medieval inn)</option>
+                <option value="library">Arcane Library (vast halls of ancient tomes)</option>
+                <option value="tower">Wizard Tower (spiral staircase, glowing runes)</option>
+                <option value="forest">Enchanted Forest (bioluminescent plants, moonlight)</option>
+                <option value="dungeon">Dungeon Laboratory (alchemy, bubbling potions)</option>
+                <option value="observatory">Celestial Observatory (stars, telescopes, astral maps)</option>
+                <option value="forge">Magical Forge (molten metal, enchanted anvils, sparks)</option>
+                <option value="garden">Crystal Garden (floating crystals, prismatic light)</option>
+                <option value="custom">Custom (write your own prompt below)</option>
+            </select>
+            <textarea id="bg-custom-prompt" placeholder="Describe your custom scene..." style="width:100%;min-height:60px;padding:8px;border-radius:8px;border:1px solid #444;background:#1e1e2e;color:#eee;font-size:14px;display:none;resize:vertical;"></textarea>
+            <label style="color:#aaa;font-size:13px;margin-top:8px;display:block;">Image Model</label>
+            <select id="bg-model-select" style="width:100%;padding:8px;margin:6px 0 14px;border-radius:8px;border:1px solid #444;background:#1e1e2e;color:#eee;font-size:14px;">
+                <option value="auto">Auto-detect best model</option>
+            </select>
+            <div class="modal-actions" style="margin-top:16px;">
+                <button id="bg-cancel">Cancel</button>
+                <button id="bg-generate" style="background:var(--accent);color:white;">Generate</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summon Wizard Modal -->
+    <div id="summon-modal" class="modal hidden">
+        <div class="modal-content" style="max-width:560px;max-height:80vh;overflow-y:auto;">
+            <h3>🪄 Summon New Wizard</h3>
+            <p style="margin-bottom:14px;color:#aaa;font-size:13px;">Detect models from ComfyUI and create a new wizard with auto-generated personality, name, and optimized settings.</p>
+
+            <!-- Step 1: Model selection -->
+            <div id="summon-step-1">
+                <label style="color:#ccc;font-size:13px;font-weight:600;">Select a Model</label>
+                <div id="summon-model-list" style="margin:8px 0 14px;max-height:240px;overflow-y:auto;border:1px solid #333;border-radius:8px;background:#151520;">
+                    <p style="color:#666;padding:12px;text-align:center;">Loading models from ComfyUI...</p>
+                </div>
+
+                <label style="color:#ccc;font-size:13px;font-weight:600;">Assign Scaffold (Workflow Template)</label>
+                <select id="summon-scaffold-select" style="width:100%;padding:8px;margin:6px 0 14px;border-radius:8px;border:1px solid #444;background:#1e1e2e;color:#eee;font-size:14px;">
+                    <option value="auto">Auto-detect from model architecture</option>
+                    <option value="studio_imaginus">Image Creation (txt2img, ControlNet)</option>
+                    <option value="studio_transmutex">Image Transformation (img2img, Style Transfer)</option>
+                    <option value="studio_masquerade">Face & Identity (Face Swap, FaceID, PuLID)</option>
+                    <option value="studio_restorix">Upscaling & Restoration</option>
+                    <option value="studio_erasure">Inpainting, Removal & Edits</option>
+                    <option value="video_gen">Video Generation (text/image to video)</option>
+                    <option value="video_upscale">Video Upscaling & Enhancement</option>
+                    <option value="generic">Generic Workflow Browser</option>
+                </select>
+
+                <div class="modal-actions" style="margin-top:12px;">
+                    <button id="summon-cancel">Cancel</button>
+                    <button id="summon-next" style="background:var(--accent);color:white;" disabled>Next: Generate Identity</button>
+                </div>
+            </div>
+
+            <!-- Step 2: LLM-generated identity preview -->
+            <div id="summon-step-2" style="display:none;">
+                <div id="summon-preview" style="background:#1a1a2e;border-radius:10px;padding:16px;margin-bottom:14px;">
+                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+                        <div id="summon-preview-avatar" style="width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#B246F2,#6C63FF);flex-shrink:0;"></div>
+                        <div>
+                            <input id="summon-name-input" style="font-size:18px;font-weight:700;background:transparent;border:1px solid #444;border-radius:6px;padding:4px 8px;color:#fff;width:100%;" placeholder="Wizard name...">
+                            <p id="summon-preview-model" style="font-size:11px;color:#888;margin-top:4px;"></p>
+                        </div>
+                    </div>
+                    <label style="color:#aaa;font-size:12px;">Personality</label>
+                    <textarea id="summon-personality-input" style="width:100%;min-height:50px;padding:8px;border-radius:8px;border:1px solid #444;background:#151520;color:#eee;font-size:13px;resize:vertical;margin-top:4px;"></textarea>
+                    <label style="color:#aaa;font-size:12px;margin-top:8px;display:block;">Specialty Description</label>
+                    <input id="summon-subtext-input" style="width:100%;padding:8px;border-radius:8px;border:1px solid #444;background:#151520;color:#eee;font-size:13px;margin-top:4px;" placeholder="e.g. Image Creation (txt2img)">
+                    <label style="color:#aaa;font-size:12px;margin-top:8px;display:block;">Scaffold</label>
+                    <p id="summon-scaffold-label" style="font-size:13px;color:#ccc;"></p>
+                </div>
+                <div class="modal-actions" style="margin-top:12px;">
+                    <button id="summon-back">Back</button>
+                    <button id="summon-regenerate" style="background:#444;color:#eee;">Regenerate</button>
+                    <button id="summon-create" style="background:#2ed573;color:#111;font-weight:600;">Summon Wizard</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- LoRA Enchantments Modal -->
+    <div id="lora-modal" class="modal hidden">
+        <div class="modal-content" style="max-width:600px;max-height:85vh;overflow-y:auto;">
+            <h3 id="lora-modal-title">LoRA Enchantments</h3>
+            <p id="lora-modal-subtitle" style="color:#aaa;font-size:13px;margin-bottom:14px;">Compatible magical enhancements for this wizard.</p>
+
+            <!-- LoRA interrogation banner (shown for first-use wizards with unknown LoRAs) -->
+            <div id="lora-interrogation" style="display:none;background:rgba(178,70,242,0.15);border:1px solid rgba(178,70,242,0.4);border-radius:10px;padding:14px;margin-bottom:16px;">
+                <p style="color:#ddd;font-size:13px;margin-bottom:10px;">Some enchantments couldn't be identified automatically. Help the Guild understand them:</p>
+                <div id="lora-interrogation-list"></div>
+                <div style="text-align:right;margin-top:10px;">
+                    <button id="lora-interrogation-skip" style="background:#444;color:#ccc;padding:6px 14px;border-radius:6px;border:none;cursor:pointer;margin-right:8px;">Skip</button>
+                    <button id="lora-interrogation-save" style="background:var(--accent);color:#fff;padding:6px 14px;border-radius:6px;border:none;cursor:pointer;">Save Descriptions</button>
+                </div>
+            </div>
+
+            <!-- LoRA list (toggleable per wizard) -->
+            <div id="lora-list" style="border:1px solid #333;border-radius:8px;background:#151520;max-height:400px;overflow-y:auto;">
+                <p style="color:#666;padding:12px;text-align:center;">Loading enchantments...</p>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;">
+                <button id="lora-refresh-btn" style="background:#333;color:#ccc;padding:6px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;">Refresh from ComfyUI</button>
+                <span id="lora-count-label" style="color:#888;font-size:12px;"></span>
+            </div>
+
+            <div class="modal-actions" style="margin-top:16px;">
+                <button id="lora-close">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Spinner Overlay -->
+    <div id="loading-overlay" class="hidden">
+        <img class="loading-banner" src="/static/icons/wizard_banner.gif" alt="Wizard conjuring...">
+        <div class="spinner"></div>
+        <p>The Guild is thinking...</p>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

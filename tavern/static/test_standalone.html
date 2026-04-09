@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Wizard Guild - Standalone Test</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+:root {
+    --bg-main: #0B0A10;
+    --bg-sidebar: #13121C;
+    --bg-panel: rgba(25, 23, 38, 0.7);
+    --border-color: rgba(255, 255, 255, 0.08);
+    --text-main: #E2DFEB;
+    --text-muted: #8F8C9E;
+    --accent: #B246F2;
+    --accent-hover: #9833D4;
+    --accent-glow: rgba(178, 70, 242, 0.4);
+    --user-bubble: #281D45;
+    --ai-bubble: #1F1D2A;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Outfit', sans-serif; background-color: var(--bg-main); color: var(--text-main); height: 100vh; display: flex; overflow: hidden; }
+#app-container { display: flex; width: 100%; height: 100%; }
+#sidebar { width: 320px; background-color: var(--bg-sidebar); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; }
+.sidebar-header { padding: 24px; border-bottom: 1px solid var(--border-color); }
+.sidebar-header h2 { font-size: 20px; font-weight: 700; color: #fff; letter-spacing: 1px; }
+#llm-indicator-container { font-size: 11px; color: var(--text-muted); margin-top: 8px; display: flex; align-items: center; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+.dot.red { background: #ff4757; box-shadow: 0 0 8px rgba(255, 71, 87, 0.6); }
+.dot.green { background: #2ed573; box-shadow: 0 0 8px rgba(46, 213, 115, 0.6); }
+.search-wrapper { margin-top: 16px; }
+.search-wrapper input { width: 100%; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-panel); color: #fff; font-family: 'Outfit'; outline: none; transition: border 0.2s; }
+.search-wrapper input:focus { border-color: var(--accent); }
+#character-list { flex: 1; overflow-y: auto; padding: 12px; }
+.character-card { display: flex; align-items: center; padding: 12px; border-radius: 12px; cursor: pointer; transition: background 0.2s, transform 0.1s; margin-bottom: 8px; background: transparent; border: 1px solid transparent; }
+.character-card:hover { background: rgba(255, 255, 255, 0.03); }
+.character-card.active { background: linear-gradient(145deg, rgba(178, 70, 242, 0.15) 0%, rgba(25, 23, 38, 0.8) 100%); border: 1px solid var(--border-color); box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2); }
+.avatar { width: 48px; height: 48px; border-radius: 50%; margin-right: 16px; box-shadow: 0 0 12px rgba(0,0,0,0.5); flex-shrink: 0; background-size: cover !important; background-position: center !important; }
+.avatar-small { width: 36px; height: 36px; border-radius: 50%; margin-right: 12px; flex-shrink: 0; align-self: flex-end; background-size: cover !important; background-position: center !important;}
+.header-titles { display: flex; flex-direction: column; }
+.character-info h3, .header-titles h2 { font-size: 15px; font-weight: 600; color: #fff; }
+.character-info p, .header-titles p { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.sidebar-footer { padding: 16px; border-top: 1px solid var(--border-color); }
+#settings-btn { width: 100%; border: 1px solid var(--border-color); background: var(--bg-panel); color: #ddd; padding: 10px; border-radius: 8px; cursor: pointer; font-family: 'Outfit'; font-weight: 600; transition: 0.2s; }
+#settings-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+#chat-arena { flex: 1; display: flex; flex-direction: column; background-image: radial-gradient(circle at top right, rgba(178, 70, 242, 0.05) 0%, transparent 40%); }
+#chat-header { height: 80px; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-color); background: rgba(19, 18, 28, 0.6); backdrop-filter: blur(12px); z-index: 10; }
+.chat-header-info { display: flex; align-items: center; justify-content: space-between; flex:1; }
+.chat-header-actions { display: flex; gap: 8px; }
+#reset-btn, #generate-avatar-btn, #generate-bg-btn, #rename-btn { background: transparent; border: 1px solid var(--border-color); color: var(--text-muted); padding: 8px 16px; border-radius: 6px; cursor: pointer; font-family: 'Outfit'; transition: all 0.2s; font-size: 12px; font-weight: 600; }
+#reset-btn:hover { background: rgba(255,255,0,0.1); color: #fff; border-color: #ffcc00; }
+#generate-avatar-btn:hover, #generate-bg-btn:hover, #rename-btn:hover { background: rgba(178, 70, 242, 0.1); color: #fff; border-color: var(--accent); }
+#chat-stream { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 20px; scroll-behavior: smooth; }
+.message { display: flex; max-width: 85%; animation: fadeIn 0.3s ease-up; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.user-message { align-self: flex-end; flex-direction: row-reverse; }
+.ai-message { align-self: flex-start; }
+.bubble { padding: 14px 18px; border-radius: 16px; font-size: 15px; line-height: 1.5; white-space: pre-wrap; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+.user-message .bubble { background: var(--user-bubble); border-bottom-right-radius: 4px; margin-left: 12px; }
+.user-message .avatar-small { margin-right: 0; margin-left: 12px; background: #444; }
+.ai-message .bubble { background: var(--ai-bubble); border: 1px solid var(--border-color); border-bottom-left-radius: 4px; }
+#chat-input-area { padding: 24px; background: rgba(11, 10, 16, 0.8); backdrop-filter: blur(16px); border-top: 1px solid var(--border-color); }
+.input-wrapper { display: flex; align-items: flex-end; background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 16px; padding: 8px 12px; transition: border-color 0.2s, box-shadow 0.2s; }
+.input-wrapper:focus-within { border-color: var(--accent); box-shadow: 0 0 15px var(--accent-glow); }
+textarea { flex: 1; background: transparent; border: none; color: #fff; font-family: inherit; font-size: 16px; resize: none; outline: none; padding: 10px; min-height: 44px; max-height: 200px; line-height: 1.4; }
+textarea::placeholder { color: #555; }
+#chat-input-area button { background: transparent; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer; padding: 8px; border-radius: 50%; transition: color 0.2s, transform 0.1s; height: 40px; width: 40px; display: flex; align-items: center; justify-content: center; margin-bottom: 2px; }
+#chat-input-area button:hover { color: #fff; background: rgba(255,255,255,0.05); }
+#send-btn { color: var(--accent); }
+#send-btn:hover { transform: scale(1.1); color: #df8eff; }
+.modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 200; backdrop-filter: blur(4px); }
+.modal.hidden { display: none; }
+.modal-content { background: var(--bg-sidebar); border: 1px solid var(--accent); padding: 32px; border-radius: 16px; width: 400px; box-shadow: 0 0 30px var(--accent-glow); }
+.modal-content h3 { margin-bottom: 12px; color: #fff; }
+.modal-content p { font-size: 13px; color: var(--text-muted); margin-bottom: 24px; line-height: 1.5; }
+.modal-content input { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: #fff; font-family: 'Outfit'; margin-bottom: 24px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 12px; }
+.modal-actions button { padding: 10px 20px; border-radius: 8px; font-family: 'Outfit'; font-weight: 600; cursor: pointer; border: none; }
+#settings-cancel { background: transparent; color: var(--text-muted); border: 1px solid var(--border-color); }
+#settings-save { background: var(--accent); color: #fff; }
+#settings-save:hover { background: var(--accent-hover); }
+#loading-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; }
+#loading-overlay.hidden { display: none; }
+.spinner { width: 60px; height: 60px; border: 4px solid rgba(178, 70, 242, 0.2); border-top: 4px solid var(--accent); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 16px; }
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+.generated-image { max-width: 100%; border-radius: 12px; margin-top: 12px; border: 2px solid var(--accent-glow); }
+/* Test banner */
+.test-banner { position: fixed; top: 0; left: 0; right: 0; background: #B246F2; color: white; text-align: center; padding: 6px; font-size: 12px; z-index: 999; font-weight: 600; }
+    </style>
+</head>
+<body class="dark-theme">
+    <div class="test-banner">STANDALONE TEST MODE - API calls are mocked - Server not required</div>
+    <div id="app-container">
+        <aside id="sidebar">
+            <div class="sidebar-header">
+                <h2>The Wizard Guild</h2>
+                <div id="llm-indicator-container">
+                    <span id="llm-dot" class="dot red"></span> <span id="llm-status">LLM: Disconnected</span>
+                </div>
+                <div class="search-wrapper">
+                    <input type="text" id="character-search" placeholder="Search guild members...">
+                </div>
+            </div>
+            <div id="character-list"></div>
+            <div class="sidebar-footer">
+                <button id="settings-btn">Settings</button>
+            </div>
+        </aside>
+        <main id="chat-arena">
+            <header id="chat-header">
+                <div class="chat-header-info">
+                    <div class="avatar" id="active-avatar" style="background: linear-gradient(135deg, #1d976c, #93f9b9);"></div>
+                    <div class="header-titles">
+                        <h2 id="active-character-name">Loading...</h2>
+                        <p id="active-character-subtext">Connecting to guild...</p>
+                    </div>
+                </div>
+                <div class="chat-header-actions">
+                    <button id="rename-btn" title="Edit or Generate Identity">Rename Wizard</button>
+                    <button id="generate-bg-btn" title="Synthesize Tavern Background">Generate Background</button>
+                    <button id="generate-avatar-btn" title="Synthesize Avatar">Generate Avatar</button>
+                    <button id="reset-btn">Reset Memory</button>
+                </div>
+            </header>
+            <div id="chat-stream"></div>
+            <div id="chat-input-area">
+                <div class="input-wrapper">
+                    <button id="upload-btn" title="Attach Image">&#x1F4CE;</button>
+                    <textarea id="chat-input" placeholder="Just talk to it..."></textarea>
+                    <button id="send-btn" title="Cast Spell">&#x2728;</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-content">
+            <h3>Guild Server Settings</h3>
+            <p><strong>Local LLM (Kobold):</strong> Breathe life into the Guild Members natively via local inference.</p>
+            <input type="text" id="kobold-url-input" placeholder="http://127.0.0.1:5001" value="http://127.0.0.1:5001">
+            <p style="margin-top: 16px;"><strong>ComfyUI Engine:</strong> Connect to your image rendering backend.</p>
+            <input type="text" id="comfy-url-input" placeholder="http://127.0.0.1:8188" value="http://127.0.0.1:8188">
+            <div class="modal-actions" style="margin-top: 24px;">
+                <button id="settings-cancel">Cancel</button>
+                <button id="settings-save">Save &amp; Connect</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rename Modal -->
+    <div id="rename-modal" class="modal hidden">
+        <div class="modal-content">
+            <h3>Rename Wizard</h3>
+            <p>Type a custom name, or let the LLM synthesize a highly creative title.</p>
+            <input type="text" id="rename-input" placeholder="Enter name...">
+            <div class="modal-actions">
+                <button id="rename-cancel">Cancel</button>
+                <button id="rename-llm-btn" style="background: var(--accent); color: white;">Generate AI Name</button>
+                <button id="rename-save" style="background: #2ed573; color: #111;">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Spinner Overlay -->
+    <div id="loading-overlay" class="hidden">
+        <div class="spinner"></div>
+        <p>The Guild is thinking...</p>
+    </div>
+
+    <script>
+    // ── Mock API data ──
+    const MOCK_CHARACTERS = [
+        {id:"pipe_txt2img", type:"core_pipeline", name:"Visionary Weaver", subtext:"Text-to-Image Master", color1:"hsl(197,80%,40%)", color2:"hsl(257,100%,60%)"},
+        {id:"pipe_img2img", type:"core_pipeline", name:"Structural Transmuter", subtext:"Image-to-Image Alchemist", color1:"hsl(42,80%,40%)", color2:"hsl(102,100%,60%)"},
+        {id:"pipe_inpaint", type:"core_pipeline", name:"Precision Restorer", subtext:"Inpainting & Modification", color1:"hsl(315,80%,40%)", color2:"hsl(15,100%,60%)"},
+        {id:"pipe_upscale", type:"core_pipeline", name:"Grand Enlarger", subtext:"Upscaling & Detail Enhancement", color1:"hsl(88,80%,40%)", color2:"hsl(148,100%,60%)"},
+        {id:"pipe_faceswap", type:"core_pipeline", name:"Identity Thief", subtext:"Face Swap Specialist", color1:"hsl(230,80%,40%)", color2:"hsl(290,100%,60%)"}
+    ];
+
+    // ── DOM refs ──
+    const chatStream = document.getElementById('chat-stream');
+    const chatInput = document.getElementById('chat-input');
+    const sendBtn = document.getElementById('send-btn');
+    const resetBtn = document.getElementById('reset-btn');
+    const characterList = document.getElementById('character-list');
+    const activeAvatar = document.getElementById('active-avatar');
+    const activeName = document.getElementById('active-character-name');
+    const activeSubtext = document.getElementById('active-character-subtext');
+    const overlay = document.getElementById('loading-overlay');
+    const searchInput = document.getElementById('character-search');
+    const renameBtn = document.getElementById('rename-btn');
+    const generateAvatarBtn = document.getElementById('generate-avatar-btn');
+    const generateBgBtn = document.getElementById('generate-bg-btn');
+    const llmDot = document.getElementById('llm-dot');
+    const llmStatus = document.getElementById('llm-status');
+    const settingsBtn = document.getElementById('settings-btn');
+    const settingsModal = document.getElementById('settings-modal');
+    const settingsCancel = document.getElementById('settings-cancel');
+    const settingsSave = document.getElementById('settings-save');
+    const koboldUrlInput = document.getElementById('kobold-url-input');
+    const comfyUrlInput = document.getElementById('comfy-url-input');
+    const renameModal = document.getElementById('rename-modal');
+    const renameInput = document.getElementById('rename-input');
+    const renameCancel = document.getElementById('rename-cancel');
+    const renameSave = document.getElementById('rename-save');
+    const renameLlmBtn = document.getElementById('rename-llm-btn');
+
+    let koboldUrl = 'http://<INTERNAL_HOST>:5001';
+    koboldUrlInput.value = koboldUrl;
+    let comfyUrl = 'http://<INTERNAL_HOST>:8188';
+    comfyUrlInput.value = comfyUrl;
+
+    let characters = [...MOCK_CHARACTERS];
+    let activeCharacterId = null;
+    let systemPrompt = "You are an eccentric, magical AI companion inside The Wizard Guild. The user is speaking to you. You help them conjure images or edit them.";
+    let chatHistory = [];
+
+    function initialize() {
+        let savedIdentities = {};
+        try { savedIdentities = JSON.parse(localStorage.getItem('guild_identities') || '{}'); } catch(e) {}
+        characters.forEach(char => {
+            if(savedIdentities[char.id]) {
+                char.name = savedIdentities[char.id].name || char.name;
+                char.avatar_url = savedIdentities[char.id].avatar_url || char.avatar_url;
+            }
+        });
+        renderSidebar();
+        checkLlm();
+        if (characters.length > 0) selectCharacter(characters[0].id);
+    }
+
+    async function checkLlm() {
+        try {
+            const res = await fetch(koboldUrl + '/api/v1/model', { signal: AbortSignal.timeout(5000) });
+            if (res.ok) {
+                llmDot.className = 'dot green';
+                llmStatus.textContent = 'LLM: Connected';
+            }
+        } catch(e) {
+            llmDot.className = 'dot red';
+            llmStatus.textContent = 'LLM: Disconnected';
+        }
+    }
+
+    function saveIdentity(char) {
+        let saved = {};
+        try { saved = JSON.parse(localStorage.getItem('guild_identities') || '{}'); } catch(e) {}
+        saved[char.id] = { name: char.name, personality: char.personality, avatar_url: char.avatar_url };
+        localStorage.setItem('guild_identities', JSON.stringify(saved));
+    }
+
+    function renderSidebar(filter = "") {
+        characterList.innerHTML = '';
+        const low = filter.toLowerCase();
+        characters.forEach(char => {
+            if (filter && !char.name.toLowerCase().includes(low) && !char.subtext.toLowerCase().includes(low)) return;
+            const card = document.createElement('div');
+            card.className = 'character-card' + (char.id === activeCharacterId ? ' active' : '');
+            const gradient = `linear-gradient(135deg, ${char.color1}, ${char.color2})`;
+            const avatarBg = char.avatar_url ? `url('${char.avatar_url}')` : gradient;
+            card.innerHTML = `
+                <div class="avatar" style="background: ${gradient}; background-image: ${avatarBg}; background-size: cover; background-position: center;"></div>
+                <div class="character-info"><h3>${char.name}</h3><p>${char.subtext}</p></div>
+            `;
+            card.addEventListener('click', () => selectCharacter(char.id));
+            characterList.appendChild(card);
+        });
+    }
+
+    searchInput.addEventListener('input', e => renderSidebar(e.target.value));
+
+    function selectCharacter(id) {
+        activeCharacterId = id;
+        const char = characters.find(c => c.id === id);
+        if (!char) return;
+        renderSidebar(searchInput.value);
+        activeName.textContent = char.name;
+        activeSubtext.textContent = char.subtext;
+        const grad = `linear-gradient(135deg, ${char.color1}, ${char.color2})`;
+        activeAvatar.style.background = grad;
+        if (char.avatar_url) activeAvatar.style.backgroundImage = `url('${char.avatar_url}')`;
+        activeAvatar.style.backgroundSize = 'cover';
+        activeAvatar.style.backgroundPosition = 'center';
+        chatStream.innerHTML = '';
+        chatHistory = [];
+        addSystemMessage(`Connected to <strong>${char.name}</strong> - ${char.subtext}`);
+    }
+
+    function addUserMessage(text) {
+        const div = document.createElement('div');
+        div.className = 'message user-message';
+        div.innerHTML = `<div class="bubble">${escapeHtml(text)}</div>`;
+        chatStream.appendChild(div);
+        chatStream.scrollTop = chatStream.scrollHeight;
+    }
+    function addAIMessage(text) {
+        const div = document.createElement('div');
+        div.className = 'message ai-message';
+        div.innerHTML = `<div class="bubble">${text}</div>`;
+        chatStream.appendChild(div);
+        chatStream.scrollTop = chatStream.scrollHeight;
+    }
+    function addSystemMessage(html) {
+        const div = document.createElement('div');
+        div.className = 'message ai-message';
+        div.innerHTML = `<div class="bubble" style="border-color: var(--accent); background: rgba(178,70,242,0.08);">${html}</div>`;
+        chatStream.appendChild(div);
+        chatStream.scrollTop = chatStream.scrollHeight;
+    }
+    function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    async function askKobold(userText) {
+        chatHistory.push({role:'user', content: userText});
+        overlay.classList.remove('hidden');
+        try {
+            const fullPrompt = systemPrompt + '\n\n' + chatHistory.map(m => (m.role==='user'?'User: ':'Assistant: ')+m.content).join('\n') + '\nAssistant:';
+            const response = await fetch(koboldUrl + '/api/v1/generate', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({prompt: fullPrompt, max_length: 300, temperature: 0.7, top_p: 0.9})
+            });
+            const data = await response.json();
+            const aiReply = (data.results && data.results[0]) ? data.results[0].text.trim() : '[No response from LLM]';
+            chatHistory.push({role:'assistant', content: aiReply});
+            addAIMessage(aiReply);
+        } catch(err) {
+            addAIMessage(`[Error: Could not connect to LLM at ${koboldUrl}. Click Settings to configure.]`);
+        }
+        overlay.classList.add('hidden');
+    }
+
+    sendBtn.addEventListener('click', () => {
+        const text = chatInput.value.trim();
+        if (!text) return;
+        addUserMessage(text);
+        chatInput.value = '';
+        chatInput.style.height = 'auto';
+        askKobold(text);
+    });
+    chatInput.addEventListener('keydown', e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendBtn.click(); } });
+    chatInput.addEventListener('input', function() { this.style.height = 'auto'; this.style.height = this.scrollHeight + 'px'; });
+    resetBtn.addEventListener('click', () => { if(activeCharacterId) selectCharacter(activeCharacterId); });
+
+    // Settings
+    settingsBtn.addEventListener('click', () => settingsModal.classList.remove('hidden'));
+    settingsCancel.addEventListener('click', () => settingsModal.classList.add('hidden'));
+    settingsSave.addEventListener('click', () => {
+        koboldUrl = koboldUrlInput.value.replace(/\/+$/, '');
+        comfyUrl = comfyUrlInput.value.replace(/\/+$/, '');
+        localStorage.setItem('kobold_url', koboldUrl);
+        localStorage.setItem('comfy_url', comfyUrl);
+        settingsModal.classList.add('hidden');
+        checkLlm();
+    });
+
+    // Rename
+    renameBtn.addEventListener('click', () => {
+        if(!activeCharacterId) return;
+        const char = characters.find(c => c.id === activeCharacterId);
+        renameInput.value = char.name === "Unnamed Wizard" ? "" : char.name;
+        renameModal.classList.remove('hidden');
+        renameInput.focus();
+    });
+    renameCancel.addEventListener('click', () => renameModal.classList.add('hidden'));
+    renameSave.addEventListener('click', () => {
+        const char = characters.find(c => c.id === activeCharacterId);
+        if(char && renameInput.value.trim()) {
+            char.name = renameInput.value.trim();
+            saveIdentity(char);
+            activeName.textContent = char.name;
+            renderSidebar(searchInput.value);
+        }
+        renameModal.classList.add('hidden');
+    });
+    renameLlmBtn.addEventListener('click', async () => {
+        const char = characters.find(c => c.id === activeCharacterId);
+        if(!char) return;
+        try {
+            const res = await fetch(koboldUrl + '/api/v1/generate', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({prompt: `Generate a single creative fantasy wizard name for a character who specializes in "${char.subtext}". Reply with ONLY the name, nothing else.`, max_length: 30, temperature: 1.0})
+            });
+            const data = await res.json();
+            if(data.results && data.results[0]) renameInput.value = data.results[0].text.trim().split('\n')[0];
+        } catch(e) { renameInput.value = char.subtext + ' Wizard'; }
+    });
+
+    // Generate avatar / background (mock in standalone mode)
+    generateAvatarBtn.addEventListener('click', () => {
+        addSystemMessage('<strong>Avatar Generation</strong> requires a running server with ComfyUI. In standalone test mode, this feature is simulated.');
+    });
+    generateBgBtn.addEventListener('click', () => {
+        addSystemMessage('<strong>Background Generation</strong> requires a running server with ComfyUI. In standalone test mode, this feature is simulated.');
+    });
+
+    initialize();
+    </script>
+</body>
+</html>

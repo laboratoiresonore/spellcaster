@@ -1,0 +1,155 @@
+{
+  "_meta": {
+    "title": "LTX 2.3 — Image to Video",
+    "description": "Animate a still image into video using LTX 2.3 I2V pipeline. Loads source image, encodes as first frame, generates motion continuation.",
+    "author": "Spellcaster",
+    "version": "1.0",
+    "category": "LTX2"
+  },
+  "1": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": {
+      "unet_name": "LTX\\ltx-2.3-22b-dev-Q4_K_M.gguf"
+    }
+  },
+  "2": {
+    "class_type": "LTXVChunkFeedForward",
+    "inputs": {
+      "model": ["1", 0],
+      "chunks": 4,
+      "dim_threshold": 4096
+    }
+  },
+  "3": {
+    "class_type": "LTXVApplySTG",
+    "inputs": {
+      "model": ["2", 0],
+      "block_indices": "14, 19"
+    }
+  },
+  "4": {
+    "class_type": "LTXAVTextEncoderLoader",
+    "inputs": {
+      "text_encoder": "gemma_3_12B_it_fp4_mixed.safetensors",
+      "ckpt_name": "LTX\\ltx-2.3-22b-dev_embeddings_connectors.safetensors",
+      "device": "default"
+    }
+  },
+  "5": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "ltx-2.3-vae.safetensors"
+    }
+  },
+  "6": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "input.png"
+    }
+  },
+  "10": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["4", 0],
+      "text": "Camera slowly pans right, gentle motion, cinematic"
+    }
+  },
+  "11": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["4", 0],
+      "text": ""
+    }
+  },
+  "12": {
+    "class_type": "LTXVConditioning",
+    "inputs": {
+      "positive": ["10", 0],
+      "negative": ["11", 0],
+      "frame_rate": 25.0
+    }
+  },
+  "13": {
+    "class_type": "LTXVImgToVideo",
+    "inputs": {
+      "positive": ["12", 0],
+      "negative": ["12", 1],
+      "vae": ["5", 0],
+      "image": ["6", 0],
+      "width": 768,
+      "height": 512,
+      "length": 25,
+      "batch_size": 1,
+      "strength": 0.75
+    }
+  },
+  "15": {
+    "class_type": "LTXVScheduler",
+    "inputs": {
+      "steps": 30,
+      "max_shift": 2.05,
+      "base_shift": 0.95,
+      "stretch": true,
+      "terminal": 0.1
+    }
+  },
+  "16": {
+    "class_type": "STGGuider",
+    "inputs": {
+      "model": ["3", 0],
+      "positive": ["13", 0],
+      "negative": ["13", 1],
+      "cfg": 4.0,
+      "stg": 1.0,
+      "rescale": 0.7
+    }
+  },
+  "17": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler"
+    }
+  },
+  "18": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": 42
+    }
+  },
+  "20": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": ["18", 0],
+      "guider": ["16", 0],
+      "sampler": ["17", 0],
+      "sigmas": ["15", 0],
+      "latent_image": ["13", 2]
+    }
+  },
+  "40": {
+    "class_type": "LTXVSpatioTemporalTiledVAEDecode",
+    "inputs": {
+      "vae": ["5", 0],
+      "latents": ["20", 0],
+      "spatial_tiles": 4,
+      "spatial_overlap": 1,
+      "temporal_tile_length": 16,
+      "temporal_overlap": 1,
+      "last_frame_fix": false,
+      "working_device": "auto",
+      "working_dtype": "auto"
+    }
+  },
+  "50": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": ["40", 0],
+      "frame_rate": 25,
+      "loop_count": 0,
+      "filename_prefix": "LTX23-i2v",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": true
+    }
+  }
+}

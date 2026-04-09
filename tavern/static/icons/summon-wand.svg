@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Wand body (diagonal, bottom-left to top-right) -->
+  <line x1="4" y1="28" x2="20" y2="12" stroke="url(#wand-grad)" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- Wand tip glow -->
+  <circle cx="20" cy="12" r="3" fill="#B246F2" opacity="0.5"/>
+  <circle cx="20" cy="12" r="1.5" fill="#df8eff"/>
+  <!-- Sparkles around the tip -->
+  <g fill="#ffd700">
+    <!-- Main star (4-pointed) -->
+    <path d="M26 6 L27 9 L30 10 L27 11 L26 14 L25 11 L22 10 L25 9 Z" opacity="0.95"/>
+    <!-- Small star top-left -->
+    <path d="M16 4 L16.5 5.5 L18 6 L16.5 6.5 L16 8 L15.5 6.5 L14 6 L15.5 5.5 Z" opacity="0.7" transform="scale(0.7) translate(8, 1)"/>
+    <!-- Tiny sparkle -->
+    <circle cx="24" cy="4" r="1" opacity="0.6"/>
+    <circle cx="14" cy="9" r="0.8" opacity="0.5"/>
+    <!-- Small cross sparkle -->
+    <path d="M28 16 L28.3 17 L29.3 17.3 L28.3 17.6 L28 18.6 L27.7 17.6 L26.7 17.3 L27.7 17 Z" opacity="0.5"/>
+  </g>
+  <!-- Wand handle detail -->
+  <line x1="4" y1="28" x2="9" y2="23" stroke="#c9a04e" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="11" cy="21" r="1.2" fill="#B246F2" opacity="0.8"/>
+  <defs>
+    <linearGradient id="wand-grad" x1="4" y1="28" x2="20" y2="12" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#8B6914"/>
+      <stop offset="40%" stop-color="#c9a04e"/>
+      <stop offset="100%" stop-color="#B246F2"/>
+    </linearGradient>
+  </defs>
+</svg>

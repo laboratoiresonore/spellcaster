@@ -1,0 +1,182 @@
+{
+  "_meta": {
+    "title": "LTX 2.3 — Text to Video (Two-Stage Upscale)",
+    "description": "Two-stage LTX 2.3 pipeline: generate at half resolution, 2x latent upscale, re-denoise. Higher quality at the cost of ~2x generation time.",
+    "author": "Spellcaster",
+    "version": "1.0",
+    "category": "LTX2"
+  },
+  "1": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": {
+      "unet_name": "LTX\\ltx-2.3-22b-dev-Q4_K_M.gguf"
+    }
+  },
+  "2": {
+    "class_type": "LTXVChunkFeedForward",
+    "inputs": {
+      "model": ["1", 0],
+      "chunks": 4,
+      "dim_threshold": 4096
+    }
+  },
+  "3": {
+    "class_type": "LTXVApplySTG",
+    "inputs": {
+      "model": ["2", 0],
+      "block_indices": "14, 19"
+    }
+  },
+  "4": {
+    "class_type": "LTXAVTextEncoderLoader",
+    "inputs": {
+      "text_encoder": "gemma_3_12B_it_fp4_mixed.safetensors",
+      "ckpt_name": "LTX\\ltx-2.3-22b-dev_embeddings_connectors.safetensors",
+      "device": "default"
+    }
+  },
+  "5": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "ltx-2.3-vae.safetensors"
+    }
+  },
+  "10": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["4", 0],
+      "text": "A cinematic wide shot of ocean waves crashing against rocky cliffs at sunset, golden hour lighting, dramatic clouds, slow motion"
+    }
+  },
+  "11": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["4", 0],
+      "text": ""
+    }
+  },
+  "12": {
+    "class_type": "LTXVConditioning",
+    "inputs": {
+      "positive": ["10", 0],
+      "negative": ["11", 0],
+      "frame_rate": 25.0
+    }
+  },
+  "15": {
+    "class_type": "LTXVScheduler",
+    "inputs": {
+      "steps": 30,
+      "max_shift": 2.05,
+      "base_shift": 0.95,
+      "stretch": true,
+      "terminal": 0.1
+    }
+  },
+  "16": {
+    "class_type": "STGGuider",
+    "inputs": {
+      "model": ["3", 0],
+      "positive": ["12", 0],
+      "negative": ["12", 1],
+      "cfg": 4.0,
+      "stg": 1.0,
+      "rescale": 0.7
+    }
+  },
+  "17": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler"
+    }
+  },
+  "18": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": 42
+    }
+  },
+  "20": {
+    "class_type": "LTXVBaseSampler",
+    "_comment": "Half resolution for stage 1 — latent upscale doubles it",
+    "inputs": {
+      "model": ["3", 0],
+      "vae": ["5", 0],
+      "guider": ["16", 0],
+      "sampler": ["17", 0],
+      "sigmas": ["15", 0],
+      "noise": ["18", 0],
+      "width": 384,
+      "height": 256,
+      "num_frames": 25
+    }
+  },
+  "25": {
+    "class_type": "LatentUpscaleModelLoader",
+    "inputs": {
+      "model_name": "ltx-2-spatial-upscaler-x2-1.0.safetensors"
+    }
+  },
+  "26": {
+    "class_type": "LTXVLatentUpsampler",
+    "inputs": {
+      "samples": ["20", 0],
+      "upscale_model": ["25", 0],
+      "vae": ["5", 0]
+    }
+  },
+  "30": {
+    "class_type": "LTXVScheduler",
+    "_comment": "Stage 2 schedule — 10 re-denoise steps on upscaled latents",
+    "inputs": {
+      "steps": 10,
+      "max_shift": 2.05,
+      "base_shift": 0.95,
+      "stretch": true,
+      "terminal": 0.1,
+      "latent": ["26", 0]
+    }
+  },
+  "31": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": 42
+    }
+  },
+  "32": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": ["31", 0],
+      "guider": ["16", 0],
+      "sampler": ["17", 0],
+      "sigmas": ["30", 0],
+      "latent_image": ["26", 0]
+    }
+  },
+  "40": {
+    "class_type": "LTXVSpatioTemporalTiledVAEDecode",
+    "inputs": {
+      "vae": ["5", 0],
+      "latents": ["32", 0],
+      "spatial_tiles": 4,
+      "spatial_overlap": 1,
+      "temporal_tile_length": 16,
+      "temporal_overlap": 1,
+      "last_frame_fix": false,
+      "working_device": "auto",
+      "working_dtype": "auto"
+    }
+  },
+  "50": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": ["40", 0],
+      "frame_rate": 25,
+      "loop_count": 0,
+      "filename_prefix": "LTX23-2stage",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": true
+    }
+  }
+}
