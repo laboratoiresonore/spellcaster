@@ -4278,4 +4278,36 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(404, {"error": f"Unknown endpoint: {self.path}"})
 
 
-    # ════════════
+    # ════════════════════════════════════════════════════════════════════════════
+
+    def do_OPTIONS(self):
+        """Handle CORS preflight requests."""
+        self.send_response(204)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
+
+    def translate_path(self, path):
+        root = os.path.dirname(os.path.abspath(__file__))
+        path = path.split('?', 1)[0]
+        path = path.split('#', 1)[0]
+        if path.startswith('/'):
+            path = path[1:]
+        return os.path.join(root, path)
+
+    def log_message(self, format, *args):
+        """Quieter logging — skip noisy static asset requests."""
+        msg = format % args
+        if '/static/' not in msg and '/api/avatar/' not in msg:
+            print(f"  {msg}")
+
+
+if __name__ == "__main__":
+    print(f"Starting The Wizard Guild on port {PORT}...")
+    httpd = HTTPServer(('0.0.0.0', PORT), GuildHandler)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    httpd.server_close()

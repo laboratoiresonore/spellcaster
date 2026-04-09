@@ -1259,4 +1259,3 @@ Examples:
         run_jobs(args.server, matching, output_plugin_dir=out_plugin_dir)
     else:
         run_jobs(args.server, JOBS, categories, output_plugin_dir=out_plugin_dir)
-            
