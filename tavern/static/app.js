@@ -1144,6 +1144,7 @@ async function askKobold(text) {
 async function dispatchToComfy(payload) {
     try {
         payload.comfy_url = comfyUrl; // Intercept and attach user's Comfy URL natively
+        payload.char_id = activeCharacterId; // Tell the server which wizard is requesting
         const response = await fetch('/api/execute', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
