@@ -309,17 +309,21 @@ def find_default_comfyui() -> str:
         # Strategy 4: Glob for portable/StabilityMatrix/Pinokio distributions
         for drive in drives:
             drive_root = Path(f"{drive}/")
-            if drive_root.exists():
-                try:
-                    for d in drive_root.glob("ComfyUI*portable*/ComfyUI"):
-                        candidates.append(d)
-                    for d in drive_root.glob("ComfyUI*/ComfyUI"):
-                        candidates.append(d)
-                    # StabilityMatrix in non-standard locations
-                    for d in drive_root.glob("StabilityMatrix*/Data/Packages/ComfyUI"):
-                        candidates.append(d)
-                except (PermissionError, OSError):
-                    pass
+            try:
+                if not drive_root.exists():
+                    continue
+            except (PermissionError, OSError):
+                continue
+            try:
+                for d in drive_root.glob("ComfyUI*portable*/ComfyUI"):
+                    candidates.append(d)
+                for d in drive_root.glob("ComfyUI*/ComfyUI"):
+                    candidates.append(d)
+                # StabilityMatrix in non-standard locations
+                for d in drive_root.glob("StabilityMatrix*/Data/Packages/ComfyUI"):
+                    candidates.append(d)
+            except (PermissionError, OSError):
+                pass
         for user_dir in ["Desktop", "Downloads", "Documents"]:
             try:
                 for d in (home / user_dir).glob("ComfyUI*portable*/ComfyUI"):
