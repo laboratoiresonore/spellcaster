@@ -2729,10 +2729,12 @@ def _get_wan_preset(comfy_url):
 
 
 def _detect_ltx_preset(comfy_url):
-    """Auto-detect LTX 2.3 video models on ComfyUI and build a preset.
+    """Auto-detect LTX video models on ComfyUI and build a preset.
 
     Returns an LTX preset dict or None if LTX models aren't available.
+    Searches both GGUF and standard UNET loaders.
     """
+    # Search GGUF models
     gguf_models = []
     try:
         url = f"{comfy_url}/object_info/UnetLoaderGGUF"
@@ -2745,17 +2747,50 @@ def _detect_ltx_preset(comfy_url):
             if choices and isinstance(choices, list) and choices[0]:
                 gguf_models = choices[0]
     except Exception:
-        return None
+        pass
 
-    # Find LTX UNET
+    # Search standard UNET models too
+    unet_models = []
+    try:
+        url = f"{comfy_url}/object_info/UNETLoader"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            choices = (data.get("UNETLoader", {})
+                           .get("input", {}).get("required", {})
+                           .get("unet_name", []))
+            if choices and isinstance(choices, list) and choices[0]:
+                unet_models = choices[0]
+    except Exception:
+        pass
+
+    all_models = gguf_models + unet_models
+
+    # Find LTX UNET — prefer versioned (2.3, 22b, 13b), fall back to any "ltx"
     ltx_unet = None
-    for m in gguf_models:
+    ltx_unet_fallback = None
+    ltx_is_gguf = False
+    for m in all_models:
         ml = m.lower()
-        if "ltx" in ml and ("2.3" in ml or "22b" in ml or "13b" in ml):
+        if "ltx" not in ml:
+            continue
+        is_gguf = m.endswith(".gguf")
+        if "2.3" in ml or "22b" in ml or "13b" in ml:
             ltx_unet = m
+            ltx_is_gguf = is_gguf
             break
+        if ltx_unet_fallback is None:
+            ltx_unet_fallback = m
+            ltx_is_gguf = is_gguf
 
     if not ltx_unet:
+        ltx_unet = ltx_unet_fallback
+        if ltx_unet:
+            print(f"  [Guild] LTX: no versioned model found, using fallback: {ltx_unet}")
+
+    if not ltx_unet:
+        ltx_candidates = [m for m in all_models if "ltx" in m.lower()]
+        print(f"  [Guild] LTX: no model found. Candidates with 'ltx': {ltx_candidates}")
         return None
 
     # Auto-detect text encoder (Gemma)
@@ -2839,6 +2874,7 @@ def _detect_ltx_preset(comfy_url):
 
     preset = {
         "unet": ltx_unet,
+        "unet_is_gguf": ltx_is_gguf,
         "text_encoder": text_encoder,
         "embeddings_connector": embeddings_connector or "",
         "vae": ltx_vae,
@@ -2956,6 +2992,7 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
 
     # Strategy 1: LTX (preferred -- reliable I2V, no channel mismatch)
     ltx_preset = _get_ltx_preset(comfy_url)
+    print(f"  [Guild] Anim strategy: LTX preset={'found' if ltx_preset else 'NONE'}")
     if ltx_preset:
         build_ltx = getattr(_workflows_v2, 'build_ltx_video', None)
         if build_ltx:
