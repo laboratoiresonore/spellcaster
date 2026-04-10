@@ -2660,13 +2660,17 @@ def _detect_wan_preset(comfy_url):
             elif is_low and not generic_low:
                 generic_low = m
 
-    # Prefer I2V (needed for image-to-video animated avatars),
-    # fall back to generic, then T2V as last resort
-    wan_high = i2v_high or generic_high or t2v_high
-    wan_low = i2v_low or generic_low or t2v_low
+    # I2V only — T2V models are architecturally incompatible (36ch vs 64ch)
+    # and will crash with "expected input to have 36 channels, but got 64"
+    wan_high = i2v_high or generic_high
+    wan_low = i2v_low or generic_low
     if wan_high:
-        variant = "i2v" if i2v_high else ("generic" if generic_high else "t2v")
+        variant = "i2v" if i2v_high else "generic"
         print(f"  [Guild] WAN model selection: high={wan_high} ({variant})")
+    if t2v_high and not wan_high:
+        print(f"  [Guild] WARNING: Found T2V models ({t2v_high}) but no I2V models. "
+              f"T2V models are incompatible with Spellcaster's I2V pipeline. "
+              f"Install wan2.2_i2v_high/low_noise models for video features.")
 
     if not wan_high:
         print(f"  [Guild] No WAN models found among {len(all_models)} UNET models")
