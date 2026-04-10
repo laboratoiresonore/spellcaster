@@ -1749,25 +1749,26 @@ class NodeFactory:
                                     quality="ULTRA",
                                     resize_type="scale by multiplier",
                                     node_id=None):
-        """RTXVideoSuperResolution.
+        """RTXVideoSuperResolution — NVIDIA RTX AI upscaling.
 
         resize_type: "scale by multiplier" (uses scale_factor) or
                      "target dimensions" (pass width/height via scale_factor as tuple).
         quality: "LOW", "MEDIUM", "HIGH", or "ULTRA".
+
+        Uses COMFY_DYNAMICCOMBO_V3 format: resize_type is a nested dict
+        with "value" key selecting the mode + sub-inputs for that mode.
         """
-        inputs = {
-            "images": images_ref,
-            "resize_type": resize_type,
-            "quality": quality,
-        }
-        # Provide scale/dimension inputs based on resize_type
         if resize_type == "scale by multiplier":
-            inputs["scale"] = float(scale_factor)
+            rt_value = {"value": "scale by multiplier", "scale": float(scale_factor)}
         else:
             w, h = (scale_factor if isinstance(scale_factor, (list, tuple))
                     else (int(scale_factor), int(scale_factor)))
-            inputs["width"] = w
-            inputs["height"] = h
+            rt_value = {"value": "target dimensions", "width": w, "height": h}
+        inputs = {
+            "images": images_ref,
+            "resize_type": rt_value,
+            "quality": quality,
+        }
         return self._add("RTXVideoSuperResolution", inputs, node_id)
 
     def seedvr2_video_upscaler(self, image_ref, dit_ref, vae_ref,
