@@ -895,12 +895,44 @@ def download_file(url: str, dest: Path, dry_run: bool = False,
                 print()
         print(f"  {C_GREEN}✓ Saved to {dest}{C_RESET}")
         return True
-    except (urllib.error.URLError, urllib.error.HTTPError, OSError) as e:
-        print(f"\n  {C_RED}✗ Download failed: {e}{C_RESET}")
-        # Remove partial file to prevent ComfyUI from trying to load a corrupt model
+    except urllib.error.HTTPError as e:
         if dest.exists():
             dest.unlink()
+        if e.code == 401:
+            if "huggingface.co" in url:
+                print(f"\n  {C_RED}✗ 401 Unauthorized — this HuggingFace repo is gated.{C_RESET}")
+                print(f"    Visit the model page, accept the license, then re-run with --hf-token YOUR_TOKEN")
+            elif "civitai.com" in url:
+                print(f"\n  {C_RED}✗ 401 Unauthorized — CivitAI requires an API key.{C_RESET}")
+                print(f"    Re-run with --civitai-key YOUR_KEY")
+            else:
+                print(f"\n  {C_RED}✗ 401 Unauthorized: {e}{C_RESET}")
+        elif e.code == 403:
+            print(f"\n  {C_RED}✗ 403 Forbidden — access denied. The model may require authentication.{C_RESET}")
+        else:
+            print(f"\n  {C_RED}✗ Download failed (HTTP {e.code}): {e}{C_RESET}")
         return False
+    except (urllib.error.URLError, OSError) as e:
+        if dest.exists():
+            dest.unlink()
+        # Retry once on network errors
+        print(f"\n  {C_YELLOW}⟳ Network error, retrying...{C_RESET}")
+        try:
+            import time; time.sleep(2)
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=300) as resp:
+                with open(dest, "wb") as f:
+                    while True:
+                        chunk = resp.read(1024 * 1024)
+                        if not chunk: break
+                        f.write(chunk)
+            print(f"  {C_GREEN}✓ Saved to {dest} (retry succeeded){C_RESET}")
+            return True
+        except Exception as e2:
+            if dest.exists():
+                dest.unlink()
+            print(f"  {C_RED}✗ Download failed after retry: {e2}{C_RESET}")
+            return False
 
 
 def git_clone(repo_url: str, dest: Path, dry_run: bool = False) -> bool:
