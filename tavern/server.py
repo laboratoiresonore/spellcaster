@@ -1382,7 +1382,27 @@ def _load_anim_queue():
     if os.path.exists(_ANIM_QUEUE_PATH):
         try:
             with open(_ANIM_QUEUE_PATH, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                queue = json.load(f)
+            # Expire stale "queued" entries from previous sessions --
+            # ComfyUI prompt_ids are invalid after restart, and cached
+            # workflows may contain outdated node types (e.g. CLIPLoaderGGUF
+            # for non-GGUF clips).
+            expired = 0
+            for cid, entry in queue.items():
+                if entry.get("status") == "queued":
+                    entry["status"] = "expired"
+                    entry["error"] = "Server restarted -- re-queue to regenerate"
+                    expired += 1
+                # Strip cached workflow dicts to keep the file small
+                entry.pop("_workflow", None)
+            if expired:
+                print(f"  [State] Expired {expired} stale queued animations")
+                try:
+                    with open(_ANIM_QUEUE_PATH, 'w', encoding='utf-8') as f:
+                        json.dump(queue, f, indent=2)
+                except Exception:
+                    pass
+            return queue
         except Exception as e:
             print(f"  [State] Failed to load animation queue: {e}")
     return {}
