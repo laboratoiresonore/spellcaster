@@ -2683,6 +2683,9 @@ def _detect_wan_preset(comfy_url):
         print(f"  [Guild] WAN models found but missing CLIP ({wan_clip}) or VAE ({wan_vae})")
         return None
 
+    # Track whether we have actual I2V models (needed for image-to-video)
+    has_i2v = bool(i2v_high or generic_high)
+
     preset = {
         "arch": "wan",
         "high_model": wan_high,
@@ -2694,6 +2697,7 @@ def _detect_wan_preset(comfy_url):
         "cfg": 1.0,
         "shift": 8.0,
         "second_step": 3,
+        "is_i2v": has_i2v,
     }
     if wan_accel_high:
         preset["high_accel_lora"] = wan_accel_high
@@ -2949,9 +2953,10 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
     engine = None
     workflow = None
 
-    # Strategy 1: WAN (preferred — image-to-video, best portrait quality)
+    # Strategy 1: WAN (preferred -- image-to-video, best portrait quality)
+    # Skip WAN if only T2V models found (T2V has 64ch, I2V workflow needs 36ch)
     wan_preset = _get_wan_preset(comfy_url)
-    if wan_preset:
+    if wan_preset and wan_preset.get("is_i2v", True):
         build_wan = getattr(_workflows_v2, 'build_wan_video', None)
         if build_wan:
             try:
