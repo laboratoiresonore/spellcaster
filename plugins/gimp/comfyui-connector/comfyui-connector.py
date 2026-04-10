@@ -19975,5 +19975,9 @@ class Spellcaster(Gimp.PlugIn):
         Gimp.message(f"Settings saved. Server: {new_url}")
         return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
+
+# ═════════════════════════════════════
+#  GIMP Entry Point
+# ═════════════════════════════════════
 
-# ════════════════════�
+Gimp.main(Spellcaster.__gtype__, sys.argv)
