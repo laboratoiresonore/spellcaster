@@ -481,10 +481,10 @@ STUDIO_CHARACTERS = [
             "1. **WAN Image-to-Video** (build_wan_video) — Turn any photo into a 2-10 sec video.\n"
             "   Key params: image_filename, prompt_text, negative_text, seed\n"
             "   Options: width (832), height (480), length (81 frames), fps (16)\n"
-            "   Post-processing: rtx_scale (0/2/4), interpolate (RIFE 4x), face_swap, pingpong\n"
+            "   Post-processing: upscale (0/2/4), interpolate (RIFE 4x), face_swap, pingpong\n"
             "   Turbo: turbo=True uses LightX2V LoRA (30 steps to 4 steps)\n"
             "   PRESETS:\n"
-            "     - Standard quality: 832x480, 81 frames, turbo, RTX 2.5x, RIFE, face swap\n"
+            "     - Standard quality: 832x480, 81 frames, turbo, AI upscale 2x, RIFE, face swap\n"
             "     - Fast preview: 576x320, 33 frames, turbo, no post-processing\n"
             "     - High quality (no turbo): full quality dual-UNET, all post-processing\n"
             "     - Long clip (10 sec): 161 frames\n\n"
@@ -495,12 +495,12 @@ STUDIO_CHARACTERS = [
             "   Key params: prompt_text, seed, width (768), height (512), num_frames (25), fps (25)\n"
             "   Modes: single-stage, two_stage (latent upscale 2x), distilled (8 steps, 4x faster)\n"
             "   Optional: image_filename for image-to-video, i2v_strength (0.0-1.0)\n"
-            "   Post-processing: rtx_scale (0/2/4), interpolate (RIFE), pingpong\n"
+            "   Post-processing: upscale (0/2/4), interpolate (RIFE), pingpong\n"
             "   PRESETS:\n"
             "     - Quick preview: 512x384, distilled, no post-processing\n"
             "     - Standard quality: 768x512, 25 frames\n"
             "     - High quality (2-stage): latent upscale pipeline\n"
-            "     - Cinematic: 2-stage + RTX 2x + RIFE, 49 frames\n"
+            "     - Cinematic: 2-stage + AI upscale 2x + RIFE, 49 frames\n"
             "     - Fast + smooth: distilled + RIFE\n\n"
             "-- VIDEO ENHANCEMENT --\n"
             "4. **Video Upscale** (build_video_upscale) — Upscale video with AI models.\n"
@@ -508,8 +508,8 @@ STUDIO_CHARACTERS = [
             "5. **Video Face Swap** (build_video_reactor) — Face swap every frame + upscale.\n"
             "   Key params: video_name, face_models (list), upscale_model, rtx_scale, fps\n"
             "   PRESETS:\n"
-            "     - Standard: UltraSharp + RTX 2x + CodeFormer 0.7\n"
-            "     - Quality: RTX only + CodeFormer 0.5\n\n"
+            "     - Standard: UltraSharp + AI upscale 2x + CodeFormer 0.7\n"
+            "     - Quality: AI upscale only + CodeFormer 0.5\n\n"
             "6. **SeedVR2 Video Upscale** (build_seedvr2_video_upscale) — AI temporal upscaling.\n"
             "   Key params: video_name, seed, resolution, max_resolution, batch_size\n"
             "   Options: color_correction (lab/wavelet/hsv/adain/none), temporal_overlap\n"
@@ -3166,7 +3166,7 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
                         length=33,         # ~2 sec at 16fps
                         turbo=True,
                         loop=False,
-                        rtx_scale=1.0,
+                        rtx_scale=0,
                         interpolate=False,
                         face_swap=False,
                         save_raw=False,

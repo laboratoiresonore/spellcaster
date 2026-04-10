@@ -1745,31 +1745,41 @@ class NodeFactory:
     #  VIDEO UPSCALE
     # ═══════════════════════════════════════════════════════════════════
 
-    def rtx_video_super_resolution(self, images_ref, scale_factor=2.0,
-                                    quality="ULTRA",
-                                    resize_type="scale by multiplier",
-                                    node_id=None):
-        """RTXVideoSuperResolution — NVIDIA RTX AI upscaling.
+    def video_upscale(self, images_ref, scale_factor=2.0,
+                      upscale_model="4x-UltraSharp.pth",
+                      node_id=None):
+        """AI upscaling for video frames using UpscaleModelLoader + ImageUpscaleWithModel.
 
-        resize_type: "scale by multiplier" (uses scale_factor) or
-                     "target dimensions" (pass width/height via scale_factor as tuple).
-        quality: "LOW", "MEDIUM", "HIGH", or "ULTRA".
+        Uses native ComfyUI nodes (no custom node dependency). The upscale model
+        runs at its native scale (typically 4x), then ImageScaleBy adjusts to the
+        requested factor.
 
-        Uses COMFY_DYNAMICCOMBO_V3 format: resize_type is a nested dict
-        with "value" key selecting the mode + sub-inputs for that mode.
+        Args:
+            images_ref: Reference to input images/frames.
+            scale_factor: Target scale (e.g. 2.0 = double resolution).
+            upscale_model: Upscale model filename (default: 4x-UltraSharp.pth).
+            node_id: Optional fixed node ID.
         """
-        if resize_type == "scale by multiplier":
-            rt_value = {"value": "scale by multiplier", "scale": float(scale_factor)}
-        else:
-            w, h = (scale_factor if isinstance(scale_factor, (list, tuple))
-                    else (int(scale_factor), int(scale_factor)))
-            rt_value = {"value": "target dimensions", "width": w, "height": h}
-        inputs = {
-            "images": images_ref,
-            "resize_type": rt_value,
-            "quality": quality,
-        }
-        return self._add("RTXVideoSuperResolution", inputs, node_id)
+        loader_id = self._add("UpscaleModelLoader",
+                              {"model_name": upscale_model},
+                              node_id=f"{node_id}_ml" if node_id else None)
+        up_id = self._add("ImageUpscaleWithModel",
+                          {"upscale_model": [loader_id, 0],
+                           "image": images_ref},
+                          node_id=node_id)
+        # Model does 4x natively; scale down to target if needed
+        if scale_factor < 3.5:
+            ratio = scale_factor / 4.0
+            down_id = self._add("ImageScaleBy",
+                                {"image": [up_id, 0],
+                                 "upscale_method": "lanczos",
+                                 "scale_by": ratio},
+                                node_id=f"{node_id}_ds" if node_id else None)
+            return down_id
+        return up_id
+
+    # Keep old name as alias for backwards compat
+    rtx_video_super_resolution = video_upscale
 
     def seedvr2_video_upscaler(self, image_ref, dit_ref, vae_ref,
                                seed=42, resolution=1080, max_resolution=0,
