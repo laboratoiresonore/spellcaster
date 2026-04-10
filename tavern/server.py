@@ -2558,15 +2558,47 @@ def _detect_wan_preset(comfy_url):
     wan_accel_high = None
     wan_accel_low = None
 
+    # Separate I2V and T2V candidates -- animated avatars need I2V (36ch)
+    i2v_high = None
+    i2v_low = None
+    t2v_high = None
+    t2v_low = None
+    generic_high = None
+    generic_low = None
+
     for m in all_models:
         ml = m.lower()
         if "wan" not in ml:
             continue
-        if "high" in ml or "2.2" in ml:
-            if wan_high is None or "high" in ml:
-                wan_high = m
-        elif "low" in ml:
-            wan_low = m
+        is_i2v = "i2v" in ml
+        is_t2v = "t2v" in ml
+        is_high = "high" in ml or "2.2" in ml
+        is_low = "low" in ml
+
+        if is_i2v:
+            if is_high and not i2v_high:
+                i2v_high = m
+            elif is_low and not i2v_low:
+                i2v_low = m
+        elif is_t2v:
+            if is_high and not t2v_high:
+                t2v_high = m
+            elif is_low and not t2v_low:
+                t2v_low = m
+        else:
+            # Generic WAN model (no i2v/t2v in name)
+            if is_high and not generic_high:
+                generic_high = m
+            elif is_low and not generic_low:
+                generic_low = m
+
+    # Prefer I2V (needed for image-to-video animated avatars),
+    # fall back to generic, then T2V as last resort
+    wan_high = i2v_high or generic_high or t2v_high
+    wan_low = i2v_low or generic_low or t2v_low
+    if wan_high:
+        variant = "i2v" if i2v_high else ("generic" if generic_high else "t2v")
+        print(f"  [Guild] WAN model selection: high={wan_high} ({variant})")
 
     if not wan_high:
         return None

@@ -2975,7 +2975,7 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
     # Last frame for GIMP
     nf.update({
         "85": {"class_type": "ImageFromBatch+",
-               "inputs": {"images": [dec_id, 0], "start": length - 1, "length": 1}},
+               "inputs": {"image": [dec_id, 0], "start": length - 1, "length": 1}},
     })
     nf.save_image(["85", 0], f"{prefix}_lastframe", node_id="86")
 
