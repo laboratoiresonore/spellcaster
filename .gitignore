@@ -75,3 +75,5 @@ local_settings.json
 nsfw/
 *_nsfw*
 manifest_nsfbuild_all.bat
+rebuild.bat
+push_fix.bat
