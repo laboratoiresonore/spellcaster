@@ -883,6 +883,100 @@ if os.name == "nt":
 _st_process = None  # Global ref so we can clean up on exit
 
 
+def _repair_gimp_plugin():
+    """Sync the GIMP plugin from this repo into GIMP's plug-ins directory.
+
+    Copies all .py files from plugins/gimp/comfyui-connector/ into
+    %APPDATA%/GIMP/<version>/plug-ins/comfyui-connector/.
+    Also invalidates GIMP's pluginrc cache so it re-scans on next launch.
+
+    Safe to call every startup — only copies if files differ.
+    """
+    import platform
+    plugin_src = os.path.join(os.path.dirname(BUNDLE_DIR),
+                              'plugins', 'gimp', 'comfyui-connector')
+    if not os.path.isdir(plugin_src):
+        return  # No plugin source available (packaged build uses different path)
+
+    # Find GIMP plug-ins directory
+    if platform.system() == "Windows":
+        appdata = os.environ.get("APPDATA", "")
+        gimp_base = os.path.join(appdata, "GIMP")
+    elif platform.system() == "Darwin":
+        gimp_base = os.path.expanduser("~/Library/Application Support/GIMP")
+    else:
+        gimp_base = os.path.expanduser("~/.config/GIMP")
+
+    if not os.path.isdir(gimp_base):
+        return  # GIMP not installed
+
+    # Find the highest GIMP version directory (3.2 > 3.0 > 2.10)
+    gimp_dirs = []
+    try:
+        for d in sorted(os.listdir(gimp_base), reverse=True):
+            plug_dir = os.path.join(gimp_base, d, "plug-ins")
+            if os.path.isdir(plug_dir):
+                gimp_dirs.append(plug_dir)
+    except OSError:
+        return
+
+    if not gimp_dirs:
+        return
+
+    # Sync files to each GIMP version that has a plug-ins directory
+    for plug_dir in gimp_dirs:
+        dest_dir = os.path.join(plug_dir, "comfyui-connector")
+        os.makedirs(dest_dir, exist_ok=True)
+
+        updated = 0
+        for fname in os.listdir(plugin_src):
+            src_path = os.path.join(plugin_src, fname)
+            if not os.path.isfile(src_path):
+                continue
+            # Skip non-essential files (test suite, images, css)
+            if fname in ("config.json", "session_state.json"):
+                continue  # User-local files — never overwrite
+            dest_path = os.path.join(dest_dir, fname)
+
+            # Only copy if file is missing or different size (fast check)
+            try:
+                if os.path.isfile(dest_path):
+                    src_size = os.path.getsize(src_path)
+                    dest_size = os.path.getsize(dest_path)
+                    if src_size == dest_size:
+                        continue
+            except OSError:
+                pass
+
+            try:
+                import shutil
+                shutil.copy2(src_path, dest_path)
+                updated += 1
+            except Exception as e:
+                print(f"  [gimp] WARNING: Failed to copy {fname}: {e}")
+
+        if updated > 0:
+            print(f"  [gimp] Updated {updated} file(s) in {dest_dir}")
+            # Invalidate pluginrc cache so GIMP re-scans procedures
+            _invalidate_gimp_pluginrc(os.path.dirname(os.path.dirname(dest_dir)))
+
+
+def _invalidate_gimp_pluginrc(gimp_version_dir):
+    """Delete GIMP's pluginrc cache to force procedure re-scan."""
+    for name in ("pluginrc", "pluginrc.d"):
+        rc = os.path.join(gimp_version_dir, name)
+        try:
+            if os.path.isfile(rc):
+                os.unlink(rc)
+                print(f"  [gimp] Deleted {name} cache (GIMP will re-scan)")
+            elif os.path.isdir(rc):
+                import shutil
+                shutil.rmtree(rc)
+                print(f"  [gimp] Deleted {name} cache dir (GIMP will re-scan)")
+        except Exception:
+            pass
+
+
 def _patch_st_with_spellcaster(st_dir):
     """Install Spellcaster plugin into a SillyTavern directory.
 
@@ -1563,6 +1657,12 @@ def main():
             launch_sillytavern(st_dir, verbose=True)
         else:
             print("  [st] SillyTavern not found, skipping auto-launch")
+
+    # ── Repair GIMP plugin (sync from repo) ───────────────────────────
+    try:
+        _repair_gimp_plugin()
+    except Exception as e:
+        print(f"  [gimp] WARNING: Plugin repair failed: {e}")
 
     # ── Configure and start server module ────────────────────────────
     import server

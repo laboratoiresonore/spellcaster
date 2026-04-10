@@ -152,6 +152,105 @@ const STEP_COLORS = {
   execute: { bg: "bg-red-900/25", border: "border-red-600/40", dot: "bg-red-500", label: "text-red-300" },
 };
 
+// ── LoRA Slot Definitions per workflow type ──
+// Each workflow type declares what LoRA slots it supports.
+// "list" slots accept multiple LoRAs; "single" slots accept exactly one.
+// "format" is "model+clip" (full LoRA) or "model_only" (model-only).
+// "arch" constrains which LoRA architectures are compatible.
+const LORA_SLOT_DEFS = {
+  txt2img: {
+    arch: ["sd15", "sdxl", "illustrious", "flux1dev", "flux2klein", "chroma", "zit"],
+    autoset_mode: "txt2img",
+    slots: [
+      { key: "loras", label: "Generation LoRAs", type: "list", format: "model+clip",
+        help: "Applied to both model and CLIP. Quality/detail/style LoRAs." },
+    ],
+  },
+  img2img: {
+    arch: ["sd15", "sdxl", "illustrious", "flux1dev", "flux2klein", "chroma", "zit"],
+    autoset_mode: "img2img",
+    slots: [
+      { key: "loras", label: "Transformation LoRAs", type: "list", format: "model+clip",
+        help: "Applied to both model and CLIP during image transformation." },
+    ],
+  },
+  inpaint: {
+    arch: ["sd15", "sdxl", "illustrious", "flux1dev", "flux2klein"],
+    autoset_mode: "inpaint",
+    slots: [
+      { key: "loras", label: "Inpaint LoRAs", type: "list", format: "model+clip",
+        help: "Applied during inpainting. Use lower strength (0.2-0.5) to avoid artifacts." },
+    ],
+  },
+  detail_hallucinate: {
+    arch: ["sd15", "sdxl", "illustrious"],
+    autoset_mode: "hallucinate",
+    slots: [
+      { key: "loras", label: "Detail LoRAs", type: "list", format: "model+clip",
+        help: "Detail/quality LoRAs for hallucination pass." },
+    ],
+  },
+  wan_i2v: {
+    arch: ["wan"],
+    slots: [
+      { key: "high_accel_lora", label: "Turbo LoRA (High Model)", type: "single", format: "model_only",
+        help: "Acceleration LoRA for the high-quality UNET. Auto-detected: LightX2V / Lightning I2V.",
+        preset_key: "wan.high_accel_lora" },
+      { key: "low_accel_lora", label: "Turbo LoRA (Low Model)", type: "single", format: "model_only",
+        help: "Acceleration LoRA for the low-quality UNET. Usually same family as high.",
+        preset_key: "wan.low_accel_lora" },
+      { key: "loras_high", label: "High Model LoRAs", type: "list", format: "model_only",
+        help: "Additional LoRAs for the high-quality model. Style, detail, etc." },
+      { key: "loras_low", label: "Low Model LoRAs", type: "list", format: "model_only",
+        help: "Additional LoRAs for the low-quality model. Usually mirror loras_high." },
+    ],
+  },
+  wan_director: {
+    arch: ["wan"],
+    slots: [
+      { key: "high_accel_lora", label: "Turbo LoRA (High)", type: "single", format: "model_only",
+        help: "Acceleration LoRA for high-quality UNET.", preset_key: "wan.high_accel_lora" },
+      { key: "low_accel_lora", label: "Turbo LoRA (Low)", type: "single", format: "model_only",
+        help: "Acceleration LoRA for low-quality UNET.", preset_key: "wan.low_accel_lora" },
+      { key: "loras_high", label: "High Model LoRAs", type: "list", format: "model_only" },
+      { key: "loras_low", label: "Low Model LoRAs", type: "list", format: "model_only" },
+    ],
+  },
+  ltx_t2v: {
+    arch: ["ltx"],
+    slots: [
+      { key: "distilled_lora", label: "Distilled LoRA (Speed)", type: "single", format: "model_only",
+        help: "Distillation LoRA for 8-step mode. Auto-detected from installed models.",
+        preset_key: "ltx.distilled_lora" },
+      { key: "loras", label: "Additional LoRAs", type: "list", format: "model_only",
+        help: "Style/quality LoRAs for LTX video generation." },
+    ],
+  },
+  ltx_i2v: {
+    arch: ["ltx"],
+    slots: [
+      { key: "distilled_lora", label: "Distilled LoRA (Speed)", type: "single", format: "model_only",
+        help: "Distillation LoRA for fast mode.", preset_key: "ltx.distilled_lora" },
+      { key: "loras", label: "Additional LoRAs", type: "list", format: "model_only" },
+    ],
+  },
+  klein_img2img: {
+    arch: ["flux2klein"],
+    autoset_mode: "img2img",
+    slots: [
+      { key: "loras", label: "Klein LoRAs", type: "list", format: "model+clip",
+        help: "LoRAs for Flux 2 Klein editing." },
+    ],
+  },
+  faceid: {
+    arch: ["sd15", "sdxl", "illustrious"],
+    slots: [
+      { key: "loras", label: "FaceID LoRAs", type: "list", format: "model+clip",
+        help: "Additional LoRAs applied during FaceID generation." },
+    ],
+  },
+};
+
 function newParam() {
   return { id: uid(), name: "", type: "text", label: "", default: "", min: "", max: "", options: [], help: "", required: true, comfyui_node: "", comfyui_param: "" };
 }
@@ -452,6 +551,7 @@ function builtInScaffolds() {
       { ...newStep("execute"), name: "Generate", comfyui_workflow: d.key, workflow_source: "builder" },
     ],
     presets: [],
+    lora_config: {},
     system_prompt_header: `You are guiding a user through the "${d.name}" workflow.\n${d.desc}\nPresent numbered choices. Keep replies short and clear.`,
     system_prompt_rules: [
       "Present numbered choices for every decision",
@@ -481,6 +581,7 @@ function newScaffold() {
       { ...newStep("execute"), name: "Generate" },
     ],
     presets: [],
+    lora_config: {},  // Per-slot LoRA configuration (managed by LoRA tab)
     system_prompt_header: "You are guiding a user through a ComfyUI workflow via text message.\nAlways present numbered choices. Keep replies short and clear.\nNever invent parameter values — only use what the user chose or the defaults.",
     system_prompt_rules: [
       "Present numbered choices for every decision",
@@ -1089,6 +1190,292 @@ function ConversationSimulator({ scaffold }) {
   );
 }
 
+// ─── LoRA Slot Manager ───────────────────────────────────────────
+
+function LoraSlotManager({ scaffold, onChange }) {
+  const [loraData, setLoraData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [expandedSlot, setExpandedSlot] = useState(null);
+  const [searchText, setSearchText] = useState("");
+
+  // Fetch LoRA data from server
+  useEffect(() => {
+    setLoading(true);
+    fetch("/api/scaffold_loras")
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { setLoraData(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const slotDef = LORA_SLOT_DEFS[scaffold.workflow_key];
+  if (!slotDef) {
+    return (
+      <div className="text-xs text-slate-500 italic py-4 text-center">
+        No LoRA slots defined for workflow "{scaffold.workflow_key || "(none)"}".<br/>
+        LoRA management is available for: {Object.keys(LORA_SLOT_DEFS).join(", ")}
+      </div>
+    );
+  }
+
+  const config = scaffold.lora_config || {};
+
+  const updateConfig = (newConfig) => {
+    onChange({ ...scaffold, lora_config: newConfig });
+  };
+
+  // Get compatible LoRAs for this scaffold's architectures
+  const compatibleLoras = [];
+  if (loraData?.by_arch) {
+    for (const arch of slotDef.arch) {
+      for (const lora of (loraData.by_arch[arch] || [])) {
+        if (!compatibleLoras.find(l => l.name === lora.name)) {
+          compatibleLoras.push(lora);
+        }
+      }
+    }
+  }
+
+  // Get auto-detected value for a preset_key like "wan.high_accel_lora"
+  const getAutoPreset = (presetKey) => {
+    if (!presetKey || !loraData?.auto_presets) return null;
+    const [group, field] = presetKey.split(".");
+    return loraData.auto_presets[group]?.[field] || null;
+  };
+
+  // Get autoset LoRAs from architecture config
+  const getAutosetLoras = () => {
+    if (!slotDef.autoset_mode || !loraData?.arch_autosets) return [];
+    const result = [];
+    for (const arch of slotDef.arch) {
+      const modes = loraData.arch_autosets[arch];
+      if (modes?.[slotDef.autoset_mode]) {
+        for (const l of modes[slotDef.autoset_mode]) {
+          if (!result.find(r => r.name === l.name)) {
+            result.push(l);
+          }
+        }
+      }
+    }
+    return result;
+  };
+
+  // Render a single LoRA slot
+  const renderSlot = (slot) => {
+    const isExpanded = expandedSlot === slot.key;
+    const slotConfig = config[slot.key] || (slot.type === "single" ? { name: "", strength: 1.0, enabled: false } : { entries: [] });
+    const autoValue = slot.preset_key ? getAutoPreset(slot.preset_key) : null;
+    const autosetLoras = (!slot.preset_key && slot.type === "list" && slotDef.autoset_mode) ? getAutosetLoras() : [];
+
+    const updateSlot = (newSlotConfig) => {
+      updateConfig({ ...config, [slot.key]: newSlotConfig });
+    };
+
+    // For single slots: auto-detected badge + override input
+    if (slot.type === "single") {
+      const currentName = slotConfig.name || autoValue || "";
+      const isAuto = !slotConfig.name && autoValue;
+      return (
+        <div key={slot.key} className="bg-slate-800/50 border border-cyan-600/30 rounded-lg p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-medium text-cyan-200 flex items-center gap-1.5">
+              {slot.label}
+              {isAuto && <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-800/50 text-emerald-300 border border-emerald-600/30">auto</span>}
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <span className="text-[10px] text-slate-500">{slotConfig.enabled !== false ? "ON" : "OFF"}</span>
+              <input type="checkbox" checked={slotConfig.enabled !== false && !!currentName}
+                onChange={e => updateSlot({ ...slotConfig, enabled: e.target.checked })}
+                className="w-3 h-3 accent-cyan-500" />
+            </label>
+          </div>
+          {slot.help && <p className="text-[10px] text-slate-500">{slot.help}</p>}
+          {/* Current value */}
+          <div className="flex items-center gap-2">
+            <input value={slotConfig.name || ""} placeholder={autoValue || "(none detected)"}
+              onChange={e => updateSlot({ ...slotConfig, name: e.target.value })}
+              className={inputCls + " text-xs py-1 flex-1 font-mono"} />
+            {slotConfig.name && (
+              <button onClick={() => updateSlot({ ...slotConfig, name: "" })}
+                title="Reset to auto-detected"
+                className="text-xs text-slate-500 hover:text-amber-300 px-1">reset</button>
+            )}
+          </div>
+          {/* Strength slider */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-slate-500 w-14">Strength</span>
+            <input type="range" min="0" max="2" step="0.05"
+              value={slotConfig.strength ?? 1.0}
+              onChange={e => updateSlot({ ...slotConfig, strength: parseFloat(e.target.value) })}
+              className="flex-1 h-1 accent-cyan-500" />
+            <span className="text-xs text-cyan-300 w-8 text-right font-mono">{(slotConfig.strength ?? 1.0).toFixed(2)}</span>
+          </div>
+          {/* Browse compatible LoRAs */}
+          <button onClick={() => setExpandedSlot(isExpanded ? null : slot.key)}
+            className={btnSmall + " text-[10px] bg-cyan-900/30 text-cyan-300 hover:text-amber-300 border border-cyan-600/20"}>
+            {isExpanded ? "Close" : "Browse"} compatible LoRAs ({compatibleLoras.length})
+          </button>
+          {isExpanded && renderLoraPicker(slot, (name) => updateSlot({ ...slotConfig, name, enabled: true }))}
+        </div>
+      );
+    }
+
+    // For list slots: table of entries + add button
+    const entries = slotConfig.entries || [];
+    const hasAutoset = autosetLoras.length > 0;
+
+    return (
+      <div key={slot.key} className="bg-slate-800/50 border border-cyan-600/30 rounded-lg p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-medium text-cyan-200">{slot.label}</label>
+          <span className="text-[10px] text-slate-500">{entries.length} LoRA{entries.length !== 1 ? "s" : ""}</span>
+        </div>
+        {slot.help && <p className="text-[10px] text-slate-500">{slot.help}</p>}
+        {/* Auto-detected LoRAs from architecture */}
+        {hasAutoset && entries.length === 0 && (
+          <div className="bg-emerald-900/20 border border-emerald-600/20 rounded p-2 space-y-1">
+            <p className="text-[10px] text-emerald-300 font-medium">Auto-configured from architecture:</p>
+            {autosetLoras.map((l, i) => {
+              const dn = l.name.replace(/\\/g, "/").split("/").pop().replace(".safetensors","");
+              return (
+                <div key={i} className="flex items-center justify-between text-[10px]">
+                  <span className="text-emerald-200 font-mono truncate flex-1">{dn}</span>
+                  <span className="text-emerald-400 ml-2">m:{l.strength_model} c:{l.strength_clip}</span>
+                </div>
+              );
+            })}
+            <button onClick={() => {
+              const imported = autosetLoras.map(l => ({
+                id: uid(), name: l.name, strength_model: l.strength_model,
+                strength_clip: l.strength_clip, enabled: true, source: "auto",
+              }));
+              updateSlot({ entries: imported });
+            }} className={btnSmall + " text-[10px] bg-emerald-800/30 text-emerald-300 hover:text-amber-300 mt-1"}>
+              Import auto-config to edit
+            </button>
+          </div>
+        )}
+        {/* LoRA entries */}
+        {entries.map((entry, i) => (
+          <div key={entry.id || i} className={`bg-slate-900/50 rounded p-2 space-y-1.5 border ${entry.enabled !== false ? "border-cyan-700/30" : "border-slate-700/30 opacity-60"}`}>
+            <div className="flex items-center gap-2">
+              <input type="checkbox" checked={entry.enabled !== false}
+                onChange={e => {
+                  const newEntries = [...entries];
+                  newEntries[i] = { ...entry, enabled: e.target.checked };
+                  updateSlot({ entries: newEntries });
+                }} className="w-3 h-3 accent-cyan-500" />
+              <span className="text-xs text-cyan-100 font-mono truncate flex-1"
+                title={entry.name}>{entry.name.replace(/\\/g, "/").split("/").pop().replace(".safetensors","")}</span>
+              {entry.source === "auto" && <span className="text-[8px] px-1 py-0 rounded bg-emerald-800/40 text-emerald-300">auto</span>}
+              <button onClick={() => updateSlot({ entries: entries.filter((_, idx) => idx !== i) })}
+                className="text-slate-600 hover:text-red-400 p-0.5"><Icons.Trash /></button>
+            </div>
+            {/* Strength controls */}
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] text-slate-500 w-7">Mdl</span>
+              <input type="range" min="0" max="2" step="0.05"
+                value={entry.strength_model ?? 0.5}
+                onChange={e => {
+                  const newEntries = [...entries];
+                  newEntries[i] = { ...entry, strength_model: parseFloat(e.target.value) };
+                  updateSlot({ entries: newEntries });
+                }} className="flex-1 h-1 accent-cyan-500" />
+              <span className="text-[10px] text-cyan-300 w-7 text-right font-mono">{(entry.strength_model ?? 0.5).toFixed(2)}</span>
+            </div>
+            {slot.format === "model+clip" && (
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] text-slate-500 w-7">Clip</span>
+                <input type="range" min="0" max="2" step="0.05"
+                  value={entry.strength_clip ?? 0.5}
+                  onChange={e => {
+                    const newEntries = [...entries];
+                    newEntries[i] = { ...entry, strength_clip: parseFloat(e.target.value) };
+                    updateSlot({ entries: newEntries });
+                  }} className="flex-1 h-1 accent-cyan-500" />
+                <span className="text-[10px] text-cyan-300 w-7 text-right font-mono">{(entry.strength_clip ?? 0.5).toFixed(2)}</span>
+              </div>
+            )}
+          </div>
+        ))}
+        {/* Add LoRA button / browser */}
+        <button onClick={() => setExpandedSlot(isExpanded ? null : slot.key)}
+          className={btnSmall + " text-[10px] bg-cyan-900/30 text-cyan-300 hover:text-amber-300 border border-cyan-600/20"}>
+          <Icons.Plus /> {isExpanded ? "Close browser" : "Add LoRA"} ({compatibleLoras.length} available)
+        </button>
+        {isExpanded && renderLoraPicker(slot, (name) => {
+          if (entries.find(e => e.name === name)) return; // already added
+          const newEntry = {
+            id: uid(), name, strength_model: 0.5,
+            strength_clip: slot.format === "model+clip" ? 0.5 : undefined,
+            enabled: true, source: "user",
+          };
+          updateSlot({ entries: [...entries, newEntry] });
+        })}
+      </div>
+    );
+  };
+
+  // Searchable LoRA picker dropdown
+  const renderLoraPicker = (slot, onPick) => {
+    const q = searchText.toLowerCase();
+    const filtered = compatibleLoras.filter(l =>
+      !q || l.display_name.toLowerCase().includes(q) ||
+      (l.purpose || "").toLowerCase().includes(q) ||
+      (l.user_desc || "").toLowerCase().includes(q)
+    ).slice(0, 50);
+
+    return (
+      <div className="bg-slate-900 border border-cyan-700/30 rounded-lg p-2 mt-1 max-h-48 overflow-y-auto space-y-1">
+        <input value={searchText} onChange={e => setSearchText(e.target.value)}
+          placeholder="Search LoRAs..." className={inputCls + " text-xs py-1 mb-1"} />
+        {filtered.length === 0 && <p className="text-xs text-slate-500 italic">No matching LoRAs found</p>}
+        {filtered.map(l => (
+          <button key={l.name} onClick={() => onPick(l.name)}
+            className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-cyan-900/30 transition-colors group">
+            <div className="flex items-center gap-2">
+              <span className="text-cyan-100 font-mono truncate flex-1">{l.display_name}</span>
+              <span className={`text-[9px] px-1 rounded ${
+                l.source === "civitai" ? "bg-blue-900/40 text-blue-300" :
+                l.source === "user" ? "bg-purple-900/40 text-purple-300" :
+                "bg-slate-700/40 text-slate-400"
+              }`}>{l.source === "civitai" ? "CivitAI" : l.source === "user" ? "user" : "auto"}</span>
+            </div>
+            {(l.purpose || l.user_desc) && (
+              <p className="text-[10px] text-slate-500 truncate mt-0.5">{l.purpose || l.user_desc}</p>
+            )}
+          </button>
+        ))}
+      </div>
+    );
+  };
+
+  if (loading) {
+    return <div className="text-xs text-slate-400 animate-pulse py-4 text-center">Loading LoRA registry...</div>;
+  }
+  if (!loraData) {
+    return <div className="text-xs text-slate-500 italic py-4 text-center">Could not load LoRA data from server. Is the Guild running?</div>;
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium text-cyan-200">
+          LoRA Slots for "{scaffold.name}"
+        </p>
+        <span className="text-[10px] text-slate-500">
+          {compatibleLoras.length} compatible / {loraData.total} total
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-1 mb-1">
+        {slotDef.arch.map(a => (
+          <span key={a} className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-900/30 text-cyan-400 border border-cyan-700/20">{a}</span>
+        ))}
+      </div>
+      {slotDef.slots.map(renderSlot)}
+    </div>
+  );
+}
+
 // ─── Scaffold Editor ──────────────────────────────────────────────
 
 function ScaffoldEditor({ scaffolds, setScaffolds }) {
@@ -1231,6 +1618,10 @@ function ScaffoldEditor({ scaffolds, setScaffolds }) {
             className={`text-xs px-2 py-1 rounded ${rightPanel === "rules" ? "bg-amber-600/40 text-amber-50" : "bg-slate-800/50 text-slate-400 hover:text-amber-300"}`}>
             Rules
           </button>
+          <button onClick={() => setRightPanel("loras")}
+            className={`text-xs px-2 py-1 rounded ${rightPanel === "loras" ? "bg-cyan-600/40 text-cyan-50" : "bg-slate-800/50 text-slate-400 hover:text-cyan-300"}`}>
+            LoRAs
+          </button>
         </div>
 
         {rightPanel === "props" && (
@@ -1321,6 +1712,10 @@ function ScaffoldEditor({ scaffolds, setScaffolds }) {
               </button>
             </div>
           </div>
+        )}
+
+        {rightPanel === "loras" && (
+          <LoraSlotManager scaffold={scaffold} onChange={updateScaffold} />
         )}
         </>
         )}

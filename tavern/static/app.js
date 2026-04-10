@@ -906,6 +906,17 @@ function renderSidebar(filter = "") {
         }
 
         card.addEventListener('click', () => { selectCharacter(char.id); onMobileCharacterSelect(); });
+
+        // ── Wizard info tooltip on hover ──
+        let hoverTimer = null;
+        card.addEventListener('mouseenter', () => {
+            hoverTimer = setTimeout(() => showWizardTooltip(char, card), 420);
+        });
+        card.addEventListener('mouseleave', () => {
+            clearTimeout(hoverTimer);
+            hideWizardTooltip();
+        });
+
         characterList.appendChild(card);
     }
 
@@ -944,6 +955,163 @@ function renderSidebar(filter = "") {
 searchInput.addEventListener('input', (e) => {
     renderSidebar(e.target.value);
 });
+
+// ── Wizard Info Tooltip ──────────────────────────────────────────
+
+let _wizardTooltip = null;
+let _tooltipCache = {};  // Cache fetched info to avoid re-fetching
+
+function hideWizardTooltip() {
+    if (_wizardTooltip) {
+        _wizardTooltip.remove();
+        _wizardTooltip = null;
+    }
+}
+
+async function showWizardTooltip(char, cardEl) {
+    hideWizardTooltip();
+
+    // Fetch detailed info (cached)
+    let info = _tooltipCache[char.id];
+    if (!info) {
+        try {
+            const resp = await fetch(`/api/wizard_info/${char.id}`);
+            if (!resp.ok) return;
+            info = await resp.json();
+            _tooltipCache[char.id] = info;
+        } catch { return; }
+    }
+
+    // Build tooltip content
+    const tooltip = document.createElement('div');
+    tooltip.className = 'wizard-tooltip';
+
+    // Avatar + header
+    const avatarUrl = char.avatar_url || `/api/avatar/${char.id}`;
+    const gradient = `linear-gradient(135deg, ${info.color1}, ${info.color2})`;
+
+    // Category badge
+    const catClass = info.is_core ? 'wt-badge-core' : 'wt-badge-model';
+    const catLabel = info.is_core ? 'Core Spellcaster' : 'Per-Model Wizard';
+
+    // Build functions list
+    let fnHtml = '';
+    if (info.build_fns && info.build_fns.length > 0) {
+        const fns = info.build_fns.slice(0, 6).map(f =>
+            `<span class="wt-fn-tag">${f.replace('build_', '')}</span>`
+        ).join('');
+        const extra = info.build_fn_count > 6 ? `<span class="wt-fn-extra">+${info.build_fn_count - 6} more</span>` : '';
+        fnHtml = `<div class="wt-section"><div class="wt-section-label">Capabilities</div><div class="wt-fn-list">${fns}${extra}</div></div>`;
+    }
+
+    // Model info
+    let modelHtml = '';
+    if (info.model_name) {
+        const shortModel = info.model_name.split(/[/\\]/).pop();
+        modelHtml = `<div class="wt-section">
+            <div class="wt-section-label">Model</div>
+            <div class="wt-model-row">
+                <span class="wt-model-name" title="${info.model_name}">${shortModel}</span>
+                <span class="wt-arch-badge">${info.model_arch}</span>
+            </div>
+        </div>`;
+    }
+
+    // LoRA summary
+    let loraHtml = '';
+    const hasAutoset = info.autoset_loras && Object.keys(info.autoset_loras).length > 0;
+    const hasPreset = info.preset_loras && Object.keys(info.preset_loras).length > 0;
+    if (info.lora_count > 0 || hasAutoset || hasPreset) {
+        let loraLines = '';
+        // Autoset LoRAs
+        if (hasAutoset) {
+            for (const [mode, loras] of Object.entries(info.autoset_loras)) {
+                for (const l of loras) {
+                    loraLines += `<div class="wt-lora-row">
+                        <span class="wt-lora-name">${l.name}</span>
+                        <span class="wt-lora-str">${l.strength}</span>
+                        <span class="wt-lora-badge wt-lora-auto">auto:${mode}</span>
+                    </div>`;
+                }
+            }
+        }
+        // Preset LoRAs (WAN turbo, LTX distilled)
+        if (hasPreset) {
+            for (const [key, name] of Object.entries(info.preset_loras)) {
+                const label = key.replace('wan_turbo_', 'WAN Turbo ').replace('ltx_distilled', 'LTX Distilled');
+                loraLines += `<div class="wt-lora-row">
+                    <span class="wt-lora-name">${name}</span>
+                    <span class="wt-lora-badge wt-lora-preset">${label}</span>
+                </div>`;
+            }
+        }
+        // Compatible LoRAs
+        if (info.lora_summary && info.lora_summary.length > 0) {
+            for (const l of info.lora_summary) {
+                const srcClass = l.source === 'civitai' ? 'wt-lora-civitai' : l.source === 'user' ? 'wt-lora-user' : 'wt-lora-disc';
+                const srcLabel = l.source === 'civitai' ? 'CivitAI' : l.source === 'user' ? 'user' : 'found';
+                loraLines += `<div class="wt-lora-row">
+                    <span class="wt-lora-name">${l.name}</span>
+                    ${l.purpose ? `<span class="wt-lora-purpose">${l.purpose}</span>` : ''}
+                    <span class="wt-lora-badge ${srcClass}">${srcLabel}</span>
+                </div>`;
+            }
+        }
+        const extraCount = info.lora_count > 8 ? `<div class="wt-lora-extra">+${info.lora_count - 8} more compatible LoRAs</div>` : '';
+        loraHtml = `<div class="wt-section">
+            <div class="wt-section-label">LoRAs (${info.lora_count} compatible)</div>
+            <div class="wt-lora-list">${loraLines}${extraCount}</div>
+        </div>`;
+    }
+
+    // Settings hint
+    const settingsHint = info.is_core
+        ? '<div class="wt-hint">Core settings — built into the app. Customizable via Travelling Wizard > Scaffolds tab.</div>'
+        : '<div class="wt-hint">Auto-generated settings from detected model. Edit in Travelling Wizard > Scaffolds tab.</div>';
+
+    // Personality
+    let personHtml = '';
+    if (info.personality) {
+        personHtml = `<div class="wt-section"><div class="wt-section-label">Personality</div><div class="wt-personality">${info.personality}</div></div>`;
+    }
+
+    tooltip.innerHTML = `
+        <div class="wt-header" style="background: ${gradient};">
+            <img class="wt-avatar" src="${avatarUrl}" alt="" onerror="this.style.display='none'"/>
+            <div class="wt-header-text">
+                <div class="wt-name">${info.name}</div>
+                <div class="wt-subtext">${info.subtext}</div>
+                <span class="wt-badge ${catClass}">${catLabel}</span>
+            </div>
+        </div>
+        ${personHtml}
+        ${modelHtml}
+        ${fnHtml}
+        ${loraHtml}
+        ${settingsHint}
+    `;
+
+    // Position tooltip to the right of the card
+    document.body.appendChild(tooltip);
+    _wizardTooltip = tooltip;
+
+    const cardRect = cardEl.getBoundingClientRect();
+    const ttRect = tooltip.getBoundingClientRect();
+    let top = cardRect.top;
+    let left = cardRect.right + 12;
+
+    // Keep within viewport
+    if (top + ttRect.height > window.innerHeight - 10) {
+        top = window.innerHeight - ttRect.height - 10;
+    }
+    if (top < 10) top = 10;
+    if (left + ttRect.width > window.innerWidth - 10) {
+        left = cardRect.left - ttRect.width - 12;  // flip to left side
+    }
+    tooltip.style.top = top + 'px';
+    tooltip.style.left = left + 'px';
+    tooltip.classList.add('wt-visible');
+}
 
 function selectCharacter(id) {
     activeCharacterId = id;
