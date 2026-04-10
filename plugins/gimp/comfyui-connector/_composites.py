@@ -120,6 +120,7 @@ def load_model_stack(nf, preset, node_id="1"):
             clip_name = ("qwen_3_4b.safetensors"
                          if is_4b
                          else "qwen_3_8b_fp8mixed.safetensors")
+            print(f"  [Klein CLIP] ckpt={preset['ckpt']} is_9b={is_9b} is_4b={is_4b} -> clip={clip_name}")
             clip_id = nf.clip_loader(clip_name, clip_type="flux2",
                                      device="default",
                                      node_id=f"{node_id}b")
