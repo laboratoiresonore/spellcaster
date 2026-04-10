@@ -2762,17 +2762,20 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
 
     is_gguf_high = high_model.endswith(".gguf")
     is_gguf_low = low_model.endswith(".gguf")
+    is_gguf_clip = preset.get("clip_is_gguf", clip_name.endswith(".gguf"))
     use_flf = loop or (end_image_filename is not None)
 
-    # Model loaders
-    if is_gguf_high:
+    # Model loaders -- use CLIPLoaderGGUF only for .gguf clips, regular CLIPLoader otherwise
+    if is_gguf_clip:
         nf.update({"1": {"class_type": "CLIPLoaderGGUF",
                           "inputs": {"clip_name": clip_name, "type": "wan"}}})
+    else:
+        clip_id = nf.clip_loader(clip_name, clip_type="wan", node_id="1")
+
+    if is_gguf_high:
         nf.update({"2": {"class_type": "UnetLoaderGGUF",
                           "inputs": {"unet_name": high_model}}})
     else:
-        nf.update({"1": {"class_type": "CLIPLoaderGGUF",
-                          "inputs": {"clip_name": clip_name, "type": "wan"}}})
         unet_id = nf.unet_loader(high_model, "default", node_id="2")
 
     if is_gguf_low:
