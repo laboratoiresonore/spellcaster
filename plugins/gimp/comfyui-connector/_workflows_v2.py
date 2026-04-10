@@ -2840,9 +2840,13 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
     if ip_adapter_image:
         cv_id = nf.clip_vision_loader("siglip2_so400m_patch16_naflex.safetensors", node_id="95")
         cv_enc_id = nf.clip_vision_encode([cv_id, 0], ["7", 0], node_id="96")
+        # Select IP-Adapter model matching the WAN model size.
+        # 14B models use different attention dims than 1.3B — using the wrong
+        # adapter causes "size mismatch for N.to_k_ip.weight" errors.
+        ipa_model = preset.get("ip_adapter_model", "ip-adapter.bin")
         nf.update({
             "97": {"class_type": "IPAdapterWANLoader",
-                   "inputs": {"ipadapter": "ip-adapter.bin", "provider": "cuda"}},
+                   "inputs": {"ipadapter": ipa_model, "provider": "cuda"}},
         })
         if ip_adapter_image != "__start_image__":
             ip_img_id = nf.load_image(ip_adapter_image, node_id="98")
