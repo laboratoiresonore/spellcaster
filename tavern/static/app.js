@@ -1155,7 +1155,13 @@ async function dispatchToComfy(payload) {
             addSystemMessage(`<strong>Spell Failed!</strong><br>${data.error || 'Unknown server error (HTTP ' + response.status + ')'}`);
             return;
         }
-        if (data.mock_img) {
+        if (data.type === 'images' && data.urls && data.urls.length) {
+            const imgs = data.urls.map(u => `<img src="${u}" class="generated-image" style="max-width:100%;border-radius:8px;margin:4px 0;">`).join('');
+            addSystemMessage(`<strong>Spell Complete!</strong><br>${imgs}`);
+        } else if (data.type === 'videos' && data.urls && data.urls.length) {
+            const vids = data.urls.map(u => `<video src="${u}" controls autoplay loop muted style="max-width:100%;border-radius:8px;margin:4px 0;"></video>`).join('');
+            addSystemMessage(`<strong>Spell Complete!</strong><br>${vids}`);
+        } else if (data.mock_img) {
             addSystemMessage(`<strong>Image Rendered!</strong><br><img src="${data.mock_img}" class="generated-image">`);
         } else {
             addSystemMessage(`<strong>Spell Complete!</strong><br>Result: ${JSON.stringify(data).substring(0, 200)}`);
