@@ -251,6 +251,51 @@ class NodeFactory:
             "strength_model": strength_model,
         }, node_id)
 
+    def lora_loader_triggers(self, model_ref, clip_ref, lora_name,
+                             strength_model=1.0, strength_clip=1.0,
+                             force_fetch=False, append_loraname_if_empty=True,
+                             node_id=None):
+        """LoraLoaderAdvanced (ComfyUI-Lora-Auto-Trigger-Words) — loads LoRA
+        AND extracts trigger words from metadata/CivitAI.
+
+        Outputs: [0]=MODEL, [1]=CLIP, [2]=STRING (trigger words)
+
+        Falls back to standard LoraLoader if custom node not installed
+        (caller checks via BUILTIN_AVAILABLE or object_info query).
+        """
+        return self._add("LoraLoaderAdvanced", {
+            "model": model_ref, "clip": clip_ref,
+            "lora_name": lora_name,
+            "strength_model": strength_model,
+            "strength_clip": strength_clip,
+            "force_fetch": force_fetch,
+            "append_loraname_if_empty": append_loraname_if_empty,
+        }, node_id)
+
+    def lora_tags_only(self, lora_name, force_fetch=False,
+                       append_loraname_if_empty=True, node_id=None):
+        """LoraTagsOnly (ComfyUI-Lora-Auto-Trigger-Words) — extracts trigger
+        words from a LoRA's metadata WITHOUT loading it.
+
+        Outputs: [0]=STRING (trigger words)
+
+        Use when you need trigger words for prompt construction but the LoRA
+        is loaded elsewhere (e.g. LoraLoaderModelOnly for video).
+        """
+        return self._add("LoraTagsOnly", {
+            "lora_name": lora_name,
+            "force_fetch": force_fetch,
+            "append_loraname_if_empty": append_loraname_if_empty,
+        }, node_id)
+
+    def string_concat(self, text1, text2, separator=", ", node_id=None):
+        """StringConcat — concatenate two strings (for prompt assembly).
+        Outputs: [0]=STRING
+        """
+        return self._add("StringConcat", {
+            "text1": text1, "text2": text2, "separator": separator,
+        }, node_id)
+
     def upscale_model_loader(self, model_name, node_id=None):
         """UpscaleModelLoader — loads a super-resolution model (RealESRGAN etc).
         Outputs: [0]=UPSCALE_MODEL

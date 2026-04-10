@@ -100,5 +100,8 @@
   },
   "_global": {
     "bg_url": "/api/cached_asset/29ad13d64317f96f.png"
+  },
+  "comfyui_SDXL_Base_sd_xl_base_1_0_safetensors": {
+    "avatar_url": "/api/cached_asset/7616b93e3d8992e3.png"
   }
 }

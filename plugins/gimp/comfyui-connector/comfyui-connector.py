@@ -4362,17 +4362,6 @@ WAN_I2V_PRESETS = {
         "low_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
         "accel_strength": 1.5,
     },
-    "Wan Enhanced NSFW SVI (fp8)": {
-        "high_model": "Wan\\wan22EnhancedNSFWSVICamera_nsfwV2FP8H.safetensors",
-        "low_model": "Wan\\wan22EnhancedNSFWSVICamera_nsfwV2FP8L.safetensors",
-        "clip": "umt5-xxl-encoder-Q8_0.gguf",
-        "vae": "wan_2.1_vae.safetensors",
-        "steps": 30, "second_step": 20, "cfg": 5.0, "shift": 8.0,
-        "lora_prefix": "Wan",
-        "high_accel_lora": "WAN\\SVI_v2_PRO_Wan2.2-I2V-A14B_HIGH_lora_rank_128_fp16.safetensors",
-        "low_accel_lora": "WAN\\SVI_v2_PRO_Wan2.2-I2V-A14B_LOW_lora_rank_128_fp16.safetensors",
-        "accel_strength": 1.0,
-    },
 }
 
 # ── LTX 2.3 Model Presets ─────────────────────────────────────────────────
@@ -4538,6 +4527,12 @@ def _get_cached_server_lists(server_url):
         clips = info["CLIPLoaderGGUF"]["input"]["required"]["clip_name"][0]
     except Exception:
         pass
+    if not clips:
+        try:
+            info = _api_get(server_url, "/object_info/CLIPLoader")
+            clips = info["CLIPLoader"]["input"]["required"]["clip_name"][0]
+        except Exception:
+            pass
     try:
         info = _api_get(server_url, "/object_info/VAELoader")
         vaes = info["VAELoader"]["input"]["required"]["vae_name"][0]
@@ -20348,4 +20343,9 @@ class Spellcaster(Gimp.PlugIn):
         return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
 
-# ════════════════════�
+
+# ═════════════════════════════════════
+#  GIMP Entry Point
+# ═════════════════════════════════════
+
+Gimp.main(Spellcaster.__gtype__, sys.argv)

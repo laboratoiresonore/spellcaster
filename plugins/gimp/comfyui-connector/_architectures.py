@@ -74,6 +74,12 @@ class ArchConfig:
       - quality_positive/negative: Boost prompts for enhanced quality
       - turbo_config: Fast mode via Hyper-LoRA (if None, no turbo mode)
 
+    PROMPT STYLE (for LLM scaffolding):
+      - prompt_style: How this arch prefers prompts ("booru_tags", "natural",
+                      "minimal"). Guides the LLM in how to write/rewrite prompts.
+      - prompt_guidance: Expert rules the LLM should follow when crafting prompts
+                         for this architecture (multiline string).
+
     CONTEXT-AWARE CONFIGURATION:
       - autoset_prompts: Default prompts when user hasn't provided text
       - autoset_denoise: Recommended denoise per use case (img2img, inpaint, etc)
@@ -92,6 +98,7 @@ class ArchConfig:
         "default_sampler", "default_scheduler",
         "lora_prefixes", "turbo_config",
         "quality_positive", "quality_negative",
+        "prompt_style", "prompt_guidance",
         "autoset_prompts", "autoset_denoise", "autoset_cn", "autoset_loras",
         "scene_group",
         "extra",
@@ -114,6 +121,8 @@ class ArchConfig:
         self.turbo_config = kw.get("turbo_config", None)
         self.quality_positive = kw.get("quality_positive", "")
         self.quality_negative = kw.get("quality_negative", "")
+        self.prompt_style = kw.get("prompt_style", "booru_tags")
+        self.prompt_guidance = kw.get("prompt_guidance", "")
         self.autoset_prompts = kw.get("autoset_prompts", ("", ""))
         self.autoset_denoise = kw.get("autoset_denoise", {})
         self.autoset_cn = kw.get("autoset_cn", {})
@@ -247,6 +256,18 @@ _reg("sd15",
          "sampler": "ddim", "scheduler": "sgm_uniform",
          "steps": 8, "cfg": 5.0, "denoise": None,
      },
+     prompt_style="booru_tags",
+     prompt_guidance=(
+         "PROMPT FORMAT: Comma-separated tags, most important first.\n"
+         "Use weighted emphasis: (important concept:1.3), subtle detail.\n"
+         "Quality tags go first: masterpiece, best quality, highly detailed.\n"
+         "Subject tags next: 1girl, long hair, blue eyes, standing.\n"
+         "Scene/style tags last: outdoors, sunset, cinematic lighting.\n"
+         "NEGATIVE prompt is CRITICAL: always include bad anatomy, bad hands, etc.\n"
+         "Typical structure: [quality], [subject], [scene], [style], [camera]\n"
+         "Keep prompts under 75 tokens (CLIP limit). 40-60 tags is ideal.\n"
+         "Parentheses boost weight: (tag:1.0-1.5). Brackets reduce: [tag]."
+     ),
      quality_positive=(
          "masterpiece, best quality, highly detailed, photorealistic, sharp focus, "
          "professional photograph, DSLR, 8K UHD, soft natural lighting, film grain"
@@ -307,6 +328,17 @@ _reg("sdxl",
          "sampler": "ddim", "scheduler": "sgm_uniform",
          "steps": 8, "cfg": 5.0, "denoise": None,
      },
+     prompt_style="booru_tags",
+     prompt_guidance=(
+         "PROMPT FORMAT: Comma-separated tags, like SD1.5 but more expressive.\n"
+         "Weighted emphasis works: (concept:1.2). SDXL handles longer prompts.\n"
+         "Camera metadata helps greatly: shot on Fujifilm XT3, 35mm, f/2.8.\n"
+         "Lighting descriptors matter: golden hour, studio lighting, rim light.\n"
+         "NEGATIVE prompt is important but less critical than SD1.5.\n"
+         "Mix tags with short phrases: cinematic composition, dramatic shadows.\n"
+         "Resolution tags: 8K UHD, high resolution, detailed. These help.\n"
+         "SDXL handles 150+ tokens well (dual CLIP). Be descriptive."
+     ),
      quality_positive=(
          "masterpiece, best quality, highly detailed, photorealistic, 8K UHD, "
          "DSLR, Fujifilm XT3, sharp focus, professional photograph, natural lighting, film grain"
@@ -371,6 +403,17 @@ _reg("illustrious",
          "sampler": "ddim", "scheduler": "sgm_uniform",
          "steps": 8, "cfg": 5.0, "denoise": None,
      },
+     prompt_style="booru_tags",
+     prompt_guidance=(
+         "PROMPT FORMAT: Booru/Danbooru tag style, comma-separated.\n"
+         "Start with character tags: 1girl, solo, long hair, blue eyes.\n"
+         "Quality: masterpiece, best quality, highly detailed, absurdres.\n"
+         "Style tags: anime coloring, cel shading, illustration, digital art.\n"
+         "Emphasize aesthetics: aesthetic, beautiful, vibrant colors.\n"
+         "Negative must include: bad anatomy, bad hands, worst quality.\n"
+         "Works best with Danbooru-style tags, NOT natural language.\n"
+         "Weighted emphasis: (tag:1.2) works. Keep within 0.8-1.5 range."
+     ),
      quality_positive=(
          "masterpiece, best quality, highly detailed, photorealistic, sharp focus, "
          "professional photograph, 8K UHD, natural lighting"
@@ -420,6 +463,15 @@ _reg("zit",
      default_scheduler="sgm_uniform",
      lora_prefixes=["Z-Image-Turbo\\"],
      turbo_config=None,  # Already fast at 4-6 steps
+     prompt_style="booru_tags",
+     prompt_guidance=(
+         "PROMPT FORMAT: Same as SDXL (tag-based) but keep it shorter.\n"
+         "Turbo model distilled to 4-6 steps; overly complex prompts hurt.\n"
+         "Focus on the essential subject + one style descriptor.\n"
+         "Low CFG (~2.0): the model is already biased toward quality.\n"
+         "Skip camera metadata. Skip quality tags. Just describe the scene.\n"
+         "Negative prompt still works but keep it minimal."
+     ),
      quality_positive=(
          "photorealistic, highly detailed, sharp focus, 8K UHD, professional, natural lighting"
      ),
@@ -472,6 +524,19 @@ _reg("flux1dev",
          "sampler": "euler", "scheduler": "simple",
          "steps": 8, "cfg": 3.5, "denoise": None,
      },
+     prompt_style="natural",
+     prompt_guidance=(
+         "PROMPT FORMAT: Natural language sentences, NOT comma-separated tags.\n"
+         "Write like a description: A photograph of a woman with auburn hair\n"
+         "standing in a sunlit meadow, wearing a white dress, wind in her hair.\n"
+         "Do NOT use weighted emphasis syntax like (tag:1.2). Flux ignores it.\n"
+         "Do NOT use booru tags. Flux was NOT trained on them.\n"
+         "NO negative prompt. Flux does not support negative conditioning.\n"
+         "Be verbose and descriptive. Longer prompts give better results.\n"
+         "Specify camera, lens, film: shot on 35mm film, shallow depth of field.\n"
+         "Describe mood and atmosphere: warm golden light, melancholic mood.\n"
+         "T5-XXL encoder understands full sentences. Use them."
+     ),
      quality_positive=(
          "photorealistic, highly detailed, sharp focus, professional photograph, "
          "8K UHD, natural lighting, Fujifilm XT3, film grain, depth of field"
@@ -529,6 +594,12 @@ _reg("chroma",
      default_scheduler="simple",
      lora_prefixes=[],
      turbo_config=None,
+     prompt_style="natural",
+     prompt_guidance=(
+         "PROMPT FORMAT: Natural language, like Flux. No tags, no weights.\n"
+         "Descriptive sentences work best. No negative prompts supported.\n"
+         "Keep it concise. Chroma is a lighter flow-matching model."
+     ),
      quality_positive=(
          "photorealistic, highly detailed, sharp focus, professional photograph, "
          "natural lighting, depth of field"
@@ -572,6 +643,16 @@ _reg("flux2klein",
      default_scheduler="simple",
      lora_prefixes=["Flux-2-Klein\\"],
      turbo_config=None,  # Already 4 steps
+     prompt_style="natural",
+     prompt_guidance=(
+         "PROMPT FORMAT: Natural language, like Flux but even simpler.\n"
+         "Klein is distilled to 4 steps. Keep prompts clear and direct.\n"
+         "No weighted emphasis, no tags, no negative prompt.\n"
+         "Good: A photorealistic portrait of an elderly man with kind eyes.\n"
+         "Bad: masterpiece, best quality, highly detailed (tag spam hurts).\n"
+         "CFG is 1.0. The model already knows what quality means.\n"
+         "Focus on WHAT you want, not quality modifiers."
+     ),
      quality_positive=(
          "photorealistic, highly detailed, sharp focus, professional photograph, "
          "8K UHD, natural lighting, depth of field"
@@ -628,6 +709,13 @@ _reg("flux_kontext",
          "sampler": "euler", "scheduler": "simple",
          "steps": 8, "cfg": 3.5, "denoise": None,
      },
+     prompt_style="natural",
+     prompt_guidance=(
+         "PROMPT FORMAT: Edit instructions in natural language.\n"
+         "Describe the edit: Change the hair color to red.\n"
+         "Or describe the target: The same scene but during sunset.\n"
+         "No quality tags, no weights, no negative prompts."
+     ),
      quality_positive="",
      quality_negative="",
      autoset_prompts=(

@@ -491,7 +491,6 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         self.after(1000, self._spawn_sidebar_particles)
 
         self._init_magical()
-        self._force_all_on = True
         self.select_frame("welcome")
 
         # Store original select_frame and wrap with animated version

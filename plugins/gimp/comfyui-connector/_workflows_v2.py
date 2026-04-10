@@ -250,7 +250,7 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
     model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "1")
 
     # 2. LoRA chain
-    model_ref, clip_ref = inject_lora_chain(nf, loras or [], model_ref, clip_ref)
+    model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [], model_ref, clip_ref)
 
     # 3. Load image
     img_id = nf.load_image(image_filename, node_id="4")
@@ -373,7 +373,7 @@ def build_txt2img(preset, prompt_text, negative_text, seed, loras=None):
     nf = NodeFactory()
 
     model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "1")
-    model_ref, clip_ref = inject_lora_chain(nf, loras or [], model_ref, clip_ref)
+    model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [], model_ref, clip_ref)
 
     pos_id, neg_id = encode_prompts(nf, preset.get("arch", "sdxl"), clip_ref,
                                      prompt_text, negative_text,
@@ -667,7 +667,7 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
 
     # Apply LoRA chain
     if loras:
-        unet_id, clip_id = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
+        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
         unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
         clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
     # Text conditioning
@@ -1170,7 +1170,7 @@ def build_detail_hallucinate(image_filename, upscale_model, preset,
 
     # LoRA chain
     if loras:
-        model_ref, clip_ref = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100)
+        model_ref, clip_ref, _trig = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100)
 
     # Encode prompts
     arch_key = preset.get("arch", "sdxl")
@@ -1257,7 +1257,7 @@ def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
 
     # LoRA chain
     if loras:
-        model_ref, clip_ref = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100)
+        model_ref, clip_ref, _trig = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100)
 
     # Lineart ControlNet
     cn_lineart = (lineart_models or {}).get(arch_key, "control-lora-openposeXL2-rank256.safetensors")
@@ -1393,7 +1393,7 @@ def build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
     pre_id = nf.preprocessor(preprocessor_type, [img_id, 0], node_id="2")
 
     model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "3")
-    model_ref, clip_ref = inject_lora_chain(nf, loras or [], model_ref, clip_ref)
+    model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [], model_ref, clip_ref)
 
     cn_loader_id = nf.controlnet_loader(controlnet_model, node_id="4")
 
@@ -1525,7 +1525,7 @@ def build_iclight(image_filename, ckpt_name, prompt, negative, seed,
 
     # LoRA chain
     if loras:
-        model_ref, clip_ref = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100)
+        model_ref, clip_ref, _trig = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100)
 
     # VAEEncode foreground to latent (ICLightConditioning expects LATENT)
     latent_id = nf.vae_encode([img_id, 0], vae_ref, node_id="10")
@@ -1826,7 +1826,7 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
 
     # Model loading
     model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "1")
-    model_ref, clip_ref = inject_lora_chain(nf, loras or [], model_ref, clip_ref)
+    model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [], model_ref, clip_ref)
 
     # Load image and mask
     img_id = nf.load_image(image_filename, node_id="4")
@@ -2001,7 +2001,7 @@ def build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
 
     # Model loading
     model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "1")
-    model_ref, clip_ref = inject_lora_chain(nf, loras or [], model_ref, clip_ref)
+    model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [], model_ref, clip_ref)
 
     # Load and pad image
     img_id = nf.load_image(image_filename, node_id="4")
@@ -2086,7 +2086,7 @@ def build_faceid_img2img(target_filename, face_ref_filename, preset,
     scheduler = preset.get("scheduler", "normal")
 
     model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "1")
-    model_ref, clip_ref = inject_lora_chain(nf, loras or [], model_ref, clip_ref)
+    model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [], model_ref, clip_ref)
 
     # FaceID unified loader
     faceid_loader_id = nf.ipadapter_unified_loader_faceid(
@@ -2172,7 +2172,7 @@ def build_pulid_flux(target_filename, face_ref_filename,
     clip_ref = [clip_id, 0]
 
     # LoRA chain
-    model_ref, clip_ref = inject_lora_chain(nf, loras or [], model_ref, clip_ref)
+    model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [], model_ref, clip_ref)
 
     # PuLID loaders (different node families per architecture)
     if is_flux2:
@@ -2262,7 +2262,7 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
 
     # Apply LoRA chain
     if loras:
-        unet_id, clip_id = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
+        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
         unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
         clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
     # Text conditioning
@@ -2463,7 +2463,7 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
 
     # Apply LoRA chain
     if loras:
-        unet_id, clip_id = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
+        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
         unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
         clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
     pos_id = nf.clip_encode([clip_id, 0], prompt, node_id="23")
@@ -2762,17 +2762,20 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
 
     is_gguf_high = high_model.endswith(".gguf")
     is_gguf_low = low_model.endswith(".gguf")
+    is_gguf_clip = preset.get("clip_is_gguf", clip_name.endswith(".gguf"))
     use_flf = loop or (end_image_filename is not None)
 
-    # Model loaders
-    if is_gguf_high:
+    # Model loaders -- use CLIPLoaderGGUF only for .gguf clips, regular CLIPLoader otherwise
+    if is_gguf_clip:
         nf.update({"1": {"class_type": "CLIPLoaderGGUF",
                           "inputs": {"clip_name": clip_name, "type": "wan"}}})
+    else:
+        clip_id = nf.clip_loader(clip_name, clip_type="wan", node_id="1")
+
+    if is_gguf_high:
         nf.update({"2": {"class_type": "UnetLoaderGGUF",
                           "inputs": {"unet_name": high_model}}})
     else:
-        nf.update({"1": {"class_type": "CLIPLoaderGGUF",
-                          "inputs": {"clip_name": clip_name, "type": "wan"}}})
         unet_id = nf.unet_loader(high_model, "default", node_id="2")
 
     if is_gguf_low:
@@ -2972,7 +2975,7 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
     # Last frame for GIMP
     nf.update({
         "85": {"class_type": "ImageFromBatch+",
-               "inputs": {"images": [dec_id, 0], "start": length - 1, "length": 1}},
+               "inputs": {"image": [dec_id, 0], "start": length - 1, "length": 1}},
     })
     nf.save_image(["85", 0], f"{prefix}_lastframe", node_id="86")
 
@@ -3072,7 +3075,7 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
 
     # LoRA chain
     if loras:
-        model_ref, clip_ref = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100)
+        model_ref, clip_ref, _trig = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100)
 
     # 2. IPAdapter
     ipa_loader_id = nf.ipadapter_unified_loader(model_ref, ipadapter_preset,
@@ -3189,7 +3192,7 @@ def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_t
 
     # LoRA chain
     if loras:
-        model_ref, clip_ref = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100)
+        model_ref, clip_ref, _trig = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100)
 
     # 5. Encode
     pos_id = nf.clip_encode(clip_ref, prompt_text, node_id="5")
@@ -3403,7 +3406,7 @@ def build_klein_repose(image_filename, klein_model_key, prompt_text, seed,
 
     # Apply LoRA chain
     if loras:
-        unet_id, clip_id = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
+        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
         unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
         clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
     # Text conditioning
@@ -3491,7 +3494,7 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
 
     # Apply LoRA chain
     if loras:
-        unet_id, clip_id = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
+        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
         unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
         clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
     # Text conditioning
@@ -3572,7 +3575,7 @@ def build_klein_inpaint(image_filename, mask_filename, prompt_text, seed,
 
     # Apply LoRA chain
     if loras:
-        unet_id, clip_id = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
+        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
         unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
         clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
     # Source image
@@ -3673,7 +3676,7 @@ def build_klein_scene_img2img(image_filename, prompt_text, seed,
 
     # Apply LoRA chain
     if loras:
-        unet_id, clip_id = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
+        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
         unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
         clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
     # Source images (scene + actor — actor not used in workflow but loaded for context)

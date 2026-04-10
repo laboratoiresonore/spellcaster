@@ -2,7 +2,7 @@
 """
 Spellcaster Installer
 =====================
-Interactive installer for Spellcaster — AI superpowers for GIMP 3 and Darktable.
+Interactive installer for Spellcaster — AI superpowers — uncensored for GIMP 3 and Darktable.
 Downloads and installs models, custom nodes, and patches the host applications.
 
 Usage:
@@ -45,7 +45,7 @@ if getattr(sys, 'frozen', False):
 else:
     SCRIPT_DIR = Path(__file__).resolve().parent
 MANIFEST_PATH = SCRIPT_DIR / "manifest.json"
-VERSION = "1.3"
+VERSION = "1.3-NSFW"
 DEFAULT_SERVER_URL = "http://127.0.0.1:8188"
 _BOX_LINE = "═" * 50
 
@@ -71,7 +71,7 @@ def banner():
 {C_BOLD}{C_CYAN}╔══════════════════════════════════════════════════╗
 ║       ✦  SPELLCASTER INSTALLER  v{VERSION}  ✦       ║
 ║                                                  ║
-║  AI superpowers for GIMP 3 & Darktable           ║
+║  AI superpowers — uncensored for GIMP 3 & Darktable           ║
 ║  Every preset expertly tuned for instant results ║
 ╚══════════════════════════════════════════════════╝{C_RESET}
 """)
@@ -169,22 +169,35 @@ def _is_comfyui_dir(p: Path) -> bool:
       - ComfyUI/main.py            (parent wrapper dirs — portable, Desktop data)
       - extra_models_config.yaml   (ComfyUI Desktop data directory)
     """
-    return ((p / "main.py").is_file()
-            or (p / "comfy" / "cli_args.py").is_file()
-            or (p / "custom_nodes").is_dir()
-            or (p / "ComfyUI" / "main.py").is_file()
-            or (p / "extra_models_config.yaml").is_file())
+    try:
+        return ((p / "main.py").is_file()
+                or (p / "comfy" / "cli_args.py").is_file()
+                or (p / "custom_nodes").is_dir()
+                or (p / "ComfyUI" / "main.py").is_file()
+                or (p / "extra_models_config.yaml").is_file())
+    except (PermissionError, OSError):
+        return False
 
 
 def _win_all_drives() -> list[str]:
-    """Return all available drive letters on Windows (A:-Z:)."""
+    """Return all accessible drive letters on Windows (A:-Z:).
+
+    Filters out drives that raise PermissionError (e.g. mapped network
+    drives that require elevated privileges).
+    """
     drives = []
     try:
         import ctypes
         bitmask = ctypes.windll.kernel32.GetLogicalDrives()
         for i in range(26):
             if bitmask & (1 << i):
-                drives.append(f"{chr(65 + i)}:")
+                letter = f"{chr(65 + i)}:"
+                # Skip drives we can't access (network/restricted)
+                try:
+                    Path(f"{letter}/").exists()
+                    drives.append(letter)
+                except (PermissionError, OSError):
+                    pass
     except Exception:
         drives = ["C:", "D:", "E:", "F:", "G:", "H:"]
     return drives
@@ -306,17 +319,21 @@ def find_default_comfyui() -> str:
         # Strategy 4: Glob for portable/StabilityMatrix/Pinokio distributions
         for drive in drives:
             drive_root = Path(f"{drive}/")
-            if drive_root.exists():
-                try:
-                    for d in drive_root.glob("ComfyUI*portable*/ComfyUI"):
-                        candidates.append(d)
-                    for d in drive_root.glob("ComfyUI*/ComfyUI"):
-                        candidates.append(d)
-                    # StabilityMatrix in non-standard locations
-                    for d in drive_root.glob("StabilityMatrix*/Data/Packages/ComfyUI"):
-                        candidates.append(d)
-                except (PermissionError, OSError):
-                    pass
+            try:
+                if not drive_root.exists():
+                    continue
+            except (PermissionError, OSError):
+                continue
+            try:
+                for d in drive_root.glob("ComfyUI*portable*/ComfyUI"):
+                    candidates.append(d)
+                for d in drive_root.glob("ComfyUI*/ComfyUI"):
+                    candidates.append(d)
+                # StabilityMatrix in non-standard locations
+                for d in drive_root.glob("StabilityMatrix*/Data/Packages/ComfyUI"):
+                    candidates.append(d)
+            except (PermissionError, OSError):
+                pass
         for user_dir in ["Desktop", "Downloads", "Documents"]:
             try:
                 for d in (home / user_dir).glob("ComfyUI*portable*/ComfyUI"):
@@ -407,13 +424,16 @@ def find_default_comfyui() -> str:
     for c in candidates:
         try:
             cs = str(c.resolve()) if c.exists() else str(c)
-        except (OSError, ValueError):
+        except (PermissionError, OSError, ValueError):
             cs = str(c)
         if cs in seen:
             continue
         seen.add(cs)
-        if _is_comfyui_dir(c):
-            return str(c)
+        try:
+            if _is_comfyui_dir(c):
+                return str(c)
+        except (PermissionError, OSError):
+            continue
     return ""
 
 
@@ -2564,7 +2584,7 @@ def load_manifest() -> dict:
 def build_arg_parser():
     """Build the argparse parser with all CLI flags."""
     parser = argparse.ArgumentParser(
-        description="Spellcaster \u2014 AI superpowers for GIMP 3 & Darktable",
+        description="Spellcaster \u2014 AI superpowers — uncensored for GIMP 3 & Darktable",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
             Examples:
