@@ -28,7 +28,7 @@ WHY COMPOSITES:
 PATTERN:
   nf = NodeFactory()
   model_ref, clip_ref, vae_ref = load_model_stack(nf, preset)
-  model_ref, clip_ref = inject_lora_chain(nf, loras, model_ref, clip_ref)
+  model_ref, clip_ref, triggers = inject_lora_chain(nf, loras, model_ref, clip_ref)
   pos_id, neg_id = encode_prompts(nf, arch_key, clip_ref, pos_text, neg_text)
   sample_id = sample_standard(nf, model_ref, pos_id, neg_id, latent_ref, ...)
   workflow = nf.build()
@@ -155,7 +155,8 @@ def load_model_stack(nf, preset, node_id="1"):
 # stacked in chains. This composite handles sequential application, updating
 # the model_ref and clip_ref after each LoRA to feed into the next one.
 
-def inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100):
+def inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100,
+                      use_triggers=False):
     """Apply a sequence of LoRAs to model and CLIP (or skip if empty list).
 
     LoRAs are applied in order, each one receiving the previous LoRA's output.
@@ -178,41 +179,82 @@ def inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100):
         clip_ref: Initial CLIP reference
         base_id: Starting node ID for LoRA nodes (default 100).
                  High IDs prevent collision with core workflow (nodes 1-50).
+        use_triggers: If True, use LoraLoaderAdvanced (from
+                      ComfyUI-Lora-Auto-Trigger-Words) which extracts trigger
+                      words from LoRA metadata/CivitAI alongside loading.
+                      trigger_refs will contain [node_id, 2] refs for each LoRA.
+                      Falls back to standard LoraLoader if node unavailable.
 
     Returns:
-        Tuple (updated_model_ref, updated_clip_ref) ready for downstream use.
+        Tuple (updated_model_ref, updated_clip_ref, trigger_refs).
+        trigger_refs is a list of [node_id, 2] references to STRING outputs
+        containing trigger words. Empty list if use_triggers=False.
 
-        If loras is empty, returns (model_ref, clip_ref) unchanged.
-        If loras has 2 items, returns the output of the 2nd LoRA node.
+        If loras is empty, returns (model_ref, clip_ref, []) unchanged.
 
     Example:
         loras = [
             {"name": "SD15/add_detail.safetensors", "strength_model": 0.5,
              "strength_clip": 0.5}
         ]
-        model_ref, clip_ref = inject_lora_chain(
-            nf, loras, [ckpt_id, 0], [ckpt_id, 1], base_id=100
+        model_ref, clip_ref, triggers = inject_lora_chain(
+            nf, loras, [ckpt_id, 0], [ckpt_id, 1], base_id=100,
+            use_triggers=True,
         )
-        # LoRA node added at ID 100, model/clip updated to [100, 0/1]
+        # triggers = [["100", 2]]  — STRING output with trigger words
     """
     if not loras:
-        return model_ref, clip_ref
+        return model_ref, clip_ref, []
 
     prev_model = model_ref
     prev_clip = clip_ref
+    trigger_refs = []
 
     for i, lora in enumerate(loras):
-        nid = nf.lora_loader(
-            prev_model, prev_clip,
-            lora["name"],
-            lora.get("strength_model", 1.0),
-            lora.get("strength_clip", 1.0),
-            node_id=str(base_id + i),
-        )
+        nid_str = str(base_id + i)
+        if use_triggers:
+            nid = nf.lora_loader_triggers(
+                prev_model, prev_clip,
+                lora["name"],
+                lora.get("strength_model", 1.0),
+                lora.get("strength_clip", 1.0),
+                node_id=nid_str,
+            )
+            trigger_refs.append([nid, 2])
+        else:
+            nid = nf.lora_loader(
+                prev_model, prev_clip,
+                lora["name"],
+                lora.get("strength_model", 1.0),
+                lora.get("strength_clip", 1.0),
+                node_id=nid_str,
+            )
         prev_model = [nid, 0]
         prev_clip = [nid, 1]
 
-    return prev_model, prev_clip
+    return prev_model, prev_clip, trigger_refs
+
+
+def collect_lora_trigger_tags(nf, lora_names, base_id=150):
+    """Extract trigger words from LoRAs WITHOUT loading them (metadata only).
+
+    Uses the LoraTagsOnly node from ComfyUI-Lora-Auto-Trigger-Words.
+    Useful when LoRAs are loaded via LoraLoaderModelOnly (e.g. video) and
+    you still need their trigger words for the prompt.
+
+    Args:
+        nf: NodeFactory instance
+        lora_names: List of LoRA filenames
+        base_id: Starting node ID (default 150)
+
+    Returns:
+        List of [node_id, 0] references to STRING outputs containing triggers.
+    """
+    refs = []
+    for i, name in enumerate(lora_names):
+        nid = nf.lora_tags_only(name, node_id=str(base_id + i))
+        refs.append([nid, 0])
+    return refs
 
 
 # ═══════════════════════════════════════════════════════════════════════════

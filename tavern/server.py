@@ -234,6 +234,24 @@ STUDIO_CHARACTERS = [
             "- User has an image and wants color grading: tool 5 (lut)\n"
             "\n"
             "NOTE: Tools 2–5 all REQUIRE an existing image_filename. If the user has not provided an image, ALWAYS use tool 1 (txt2img).\n\n"
+            "PROMPTING GUIDE (adapt based on the model arch shown in DEFAULT MODEL):\n"
+            "- sd15/sdxl/illustrious/zit: Use COMMA-SEPARATED TAGS. Quality first, subject next,\n"
+            "  scene last. Weighted emphasis works: (important:1.3). Negative prompt matters.\n"
+            "  Example: masterpiece, best quality, 1girl, red dress, standing, forest, sunset\n"
+            "- flux1dev/flux2klein/chroma: Use NATURAL LANGUAGE SENTENCES. NO tags, NO weights.\n"
+            "  NO negative prompt (model ignores it). Be verbose and descriptive.\n"
+            "  Example: A photograph of a woman in a red dress standing in a forest at sunset,\n"
+            "  golden light filtering through the trees, shot on Fujifilm XT3, shallow DOF.\n"
+            "- flux_kontext: Use EDIT INSTRUCTIONS. Describe what to change, not quality tags.\n"
+            "- illustrious: Prefer BOORU/DANBOORU tags for anime. 1girl, solo, blue eyes, etc.\n"
+            "- Klein (4 steps, CFG 1.0): Keep it simple. Skip quality modifiers entirely.\n"
+            "- ZIT (turbo): Short prompts only. Complex prompts hurt at 4-6 steps.\n\n"
+            "LORA GUIDE:\n"
+            "- If the user enables LoRAs, trigger words are auto-extracted from metadata.\n"
+            "  Mention the trigger words in your prompt suggestion so the user includes them.\n"
+            "- Recommend LoRA strength based on purpose: detail LoRAs 0.4-0.7, style 0.3-0.6,\n"
+            "  hand/face fix 0.7-0.9, acceleration LoRAs use their preset strength.\n"
+            "- Do NOT stack >3 LoRAs. Diminishing returns and quality degradation.\n\n"
             "PROTOCOL:\n"
             "- Greet the user with enthusiasm and ask what vision they want to conjure\n"
             "- Suggest the right tool with numbered choices\n"
@@ -1155,11 +1173,32 @@ def fetch_all_characters(comfy_url=None):
             custom_studio["archetype"] = profile["archetype"]
             custom_studio["default_model"] = mname
             custom_studio["default_arch"] = march
+            # Build arch-specific prompt style hint
+            _prompt_style_hint = ""
+            if march in ("flux1dev", "flux2klein", "chroma", "flux_kontext"):
+                _prompt_style_hint = (
+                    "\nPROMPT STYLE FOR THIS MODEL: NATURAL LANGUAGE. "
+                    "Write descriptive sentences, NOT comma-separated tags. "
+                    "NO weighted emphasis (tag:1.2). NO negative prompt.\n"
+                )
+            elif march in ("illustrious",):
+                _prompt_style_hint = (
+                    "\nPROMPT STYLE FOR THIS MODEL: BOORU TAGS. "
+                    "Use Danbooru-style comma-separated tags. "
+                    "Quality and character tags first. Weighted emphasis OK.\n"
+                )
+            elif march in ("sd15", "sdxl", "zit"):
+                _prompt_style_hint = (
+                    "\nPROMPT STYLE FOR THIS MODEL: COMMA-SEPARATED TAGS. "
+                    "Quality tags first, then subject, scene, style. "
+                    "Weighted emphasis works: (concept:1.2). Negative prompt important.\n"
+                )
             custom_studio["system_prompt"] = (
                 ref_studio["system_prompt"]
                 + f"\nDEFAULT MODEL: When building presets, always use "
                 f"checkpoint/UNET '{mname}' (arch: {march}) "
                 f"unless the user explicitly requests a different model.\n"
+                + _prompt_style_hint
             )
             _STUDIO_BY_ID[char_id] = custom_studio
 
