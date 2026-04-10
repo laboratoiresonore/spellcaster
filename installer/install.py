@@ -2298,11 +2298,80 @@ def _find_scaffold_src() -> Path | None:
     return None
 
 
-def step_install_tavern(paths: dict, server_url: str, selected: dict, dry_run: bool = False):
+def _create_shortcut_windows(target_script: Path, shortcut_name: str,
+                             shortcut_dir: Path, server_url: str,
+                             icon_path: Path | None = None):
+    """Create a Windows .lnk shortcut using PowerShell (no COM dependency)."""
+    shortcut_path = shortcut_dir / f"{shortcut_name}.lnk"
+    # Use PowerShell to create the shortcut — avoids win32com dependency
+    ps_script = (
+        f'$ws = New-Object -ComObject WScript.Shell; '
+        f'$s = $ws.CreateShortcut("{shortcut_path}"); '
+        f'$s.TargetPath = "pythonw.exe"; '
+        f'$s.Arguments = """{target_script}"" --comfyui {server_url}"; '
+        f'$s.WorkingDirectory = "{target_script.parent}"; '
+        f'$s.Description = "Launch Spellcaster Wizard Guild"; '
+    )
+    if icon_path and icon_path.exists():
+        ps_script += f'$s.IconLocation = "{icon_path}"; '
+    ps_script += '$s.Save()'
+    try:
+        import subprocess
+        subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_script],
+            capture_output=True, timeout=10
+        )
+        if shortcut_path.exists():
+            return shortcut_path
+    except Exception:
+        pass
+    # Fallback: create a .bat launcher if .lnk fails
+    bat_path = shortcut_dir / f"{shortcut_name}.bat"
+    bat_path.write_text(
+        f'@echo off\r\npython "{target_script}" --comfyui {server_url} %*\r\n',
+        encoding="utf-8"
+    )
+    return bat_path
+
+
+def _create_shortcut_unix(target_script: Path, shortcut_name: str,
+                          shortcut_dir: Path, server_url: str):
+    """Create a .desktop file (Linux) or shell alias (macOS)."""
+    if sys.platform == "darwin":
+        # macOS: create a simple shell script in Applications
+        app_path = shortcut_dir / f"{shortcut_name}.command"
+        app_path.write_text(
+            f'#!/bin/sh\ncd "{target_script.parent}"\n'
+            f'python3 "{target_script}" --comfyui {server_url} "$@"\n',
+            encoding="utf-8"
+        )
+        app_path.chmod(0o755)
+        return app_path
+    else:
+        # Linux: .desktop file
+        desktop_path = shortcut_dir / f"{shortcut_name.lower().replace(' ', '-')}.desktop"
+        desktop_path.write_text(
+            f'[Desktop Entry]\n'
+            f'Type=Application\n'
+            f'Name={shortcut_name}\n'
+            f'Comment=Launch Spellcaster Wizard Guild\n'
+            f'Exec=python3 "{target_script}" --comfyui {server_url}\n'
+            f'Path={target_script.parent}\n'
+            f'Terminal=true\n'
+            f'Categories=Graphics;Utility;\n',
+            encoding="utf-8"
+        )
+        desktop_path.chmod(0o755)
+        return desktop_path
+
+
+def step_install_tavern(paths: dict, server_url: str, selected: dict,
+                        dry_run: bool = False, auto_yes: bool = False):
     """Deploy the Wizard Guild standalone interface.
 
     Copies tavern/ and scaffold/ to a platform-specific application directory
     and writes a launcher config with the ComfyUI server URL.
+    Asks the user for the install location and shortcut preferences.
     """
     if not selected.get("wizard_guild", False):
         return
@@ -2318,18 +2387,46 @@ def step_install_tavern(paths: dict, server_url: str, selected: dict, dry_run: b
         print(f"  {C_YELLOW}\u26a0 Tavern source directory not found, skipping.{C_RESET}")
         return
 
-    dest = _get_tavern_install_dir()
+    # ── Ask install location ──────────────────────────────────────────
+    default_dir = _get_tavern_install_dir()
+    print(f"  {C_CYAN}Where should Wizard Guild be installed?{C_RESET}")
+    print(f"  The app needs a writable directory for its files and settings.\n")
+    print(f"  Default: {C_DIM}{default_dir}{C_RESET}\n")
+
+    choice = ask_choice(
+        "Install location:",
+        [
+            f"Default ({default_dir.parent})",
+            "Choose a custom directory",
+            "Install in current directory",
+        ],
+        default=0,
+        auto_yes=auto_yes,
+    )
+
+    if choice == 0:
+        dest = default_dir
+    elif choice == 1:
+        custom_base = ask_path(
+            "Enter installation directory",
+            must_exist=False,
+            default=str(default_dir.parent),
+            auto_yes=auto_yes,
+        )
+        dest = custom_base / "tavern"
+    else:
+        dest = Path.cwd() / "tavern"
+
     scaffold_dest = dest.parent / "scaffold"
 
     if dry_run:
         print(f"  [dry-run] Would install Wizard Guild to: {dest}")
         return
 
-    # Copy tavern files
-    print(f"  {C_CYAN}Installing Wizard Guild to:{C_RESET} {dest}")
+    # ── Copy files ────────────────────────────────────────────────────
+    print(f"\n  {C_CYAN}Installing Wizard Guild to:{C_RESET} {dest}")
     dest.mkdir(parents=True, exist_ok=True)
-    static_dest = dest / "static"
-    static_dest.mkdir(parents=True, exist_ok=True)
+    (dest / "static").mkdir(parents=True, exist_ok=True)
 
     copied = 0
     for item in tavern_src.rglob("*"):
@@ -2356,11 +2453,14 @@ def step_install_tavern(paths: dict, server_url: str, selected: dict, dry_run: b
 
     # Write guild config with ComfyUI URL
     guild_config = dest / "guild_config.json"
-    guild_config.write_text(json.dumps({
-        "comfyui_url": server_url,
-        "auto_update": True,
-    }, indent=2), encoding="utf-8")
-    print(f"  {C_GREEN}\u2713 Wrote guild_config.json (ComfyUI: {server_url}){C_RESET}")
+    if not guild_config.exists():
+        guild_config.write_text(json.dumps({
+            "comfyui_url": server_url,
+            "auto_update": True,
+        }, indent=2), encoding="utf-8")
+        print(f"  {C_GREEN}\u2713 Wrote guild_config.json (ComfyUI: {server_url}){C_RESET}")
+    else:
+        print(f"  {C_GREEN}\u2713 guild_config.json preserved (existing){C_RESET}")
 
     # Set executable permissions on Unix
     if os.name != "nt":
@@ -2368,25 +2468,95 @@ def step_install_tavern(paths: dict, server_url: str, selected: dict, dry_run: b
             py.chmod(0o755)
 
     # Create convenience launcher script
+    launcher_path = dest / "guild_launcher.py"
     if sys.platform == "win32":
         bat_path = dest.parent / "wizard-guild.bat"
         bat_path.write_text(
-            f'@echo off\r\npython "{dest / "guild_launcher.py"}" --comfyui {server_url} %*\r\n',
+            f'@echo off\r\npython "{launcher_path}" --comfyui {server_url} %*\r\n',
             encoding="utf-8"
         )
         print(f"  {C_GREEN}\u2713 Created launcher: {bat_path}{C_RESET}")
     else:
         sh_path = dest.parent / "wizard-guild"
         sh_path.write_text(
-            f'#!/bin/sh\npython3 "{dest / "guild_launcher.py"}" --comfyui {server_url} "$@"\n',
+            f'#!/bin/sh\npython3 "{launcher_path}" --comfyui {server_url} "$@"\n',
             encoding="utf-8"
         )
         sh_path.chmod(0o755)
         print(f"  {C_GREEN}\u2713 Created launcher: {sh_path}{C_RESET}")
 
-    print(f"\n  {C_BOLD}To start the Wizard Guild:{C_RESET}")
-    print(f"    python \"{dest / 'guild_launcher.py'}\"")
-    print(f"    or use the launcher script in {dest.parent}")
+    # ── Ask about shortcuts ───────────────────────────────────────────
+    print()
+    # Try to find an icon
+    icon_path = dest / "static" / "favicon.ico"
+    if not icon_path.exists():
+        icon_path = None
+
+    created_shortcuts = []
+
+    # Desktop shortcut
+    if ask_yn("Create a Desktop shortcut for Wizard Guild?", default=True,
+              auto_yes=auto_yes):
+        if sys.platform == "win32":
+            desktop = Path(os.environ.get("USERPROFILE", Path.home())) / "Desktop"
+        elif sys.platform == "darwin":
+            desktop = Path.home() / "Desktop"
+        else:
+            desktop = Path.home() / "Desktop"
+
+        if desktop.is_dir():
+            sc = (_create_shortcut_windows(launcher_path, "Wizard Guild",
+                                           desktop, server_url, icon_path)
+                  if sys.platform == "win32"
+                  else _create_shortcut_unix(launcher_path, "Wizard Guild",
+                                              desktop, server_url))
+            if sc:
+                print(f"  {C_GREEN}\u2713 Desktop shortcut: {sc}{C_RESET}")
+                created_shortcuts.append(sc)
+        else:
+            print(f"  {C_YELLOW}\u26a0 Desktop directory not found ({desktop}), skipping.{C_RESET}")
+
+    # Start Menu shortcut (Windows only)
+    if sys.platform == "win32":
+        if ask_yn("Add to Windows Start Menu?", default=True,
+                  auto_yes=auto_yes):
+            start_menu = (Path(os.environ.get("APPDATA", "")) /
+                         "Microsoft" / "Windows" / "Start Menu" / "Programs" /
+                         "Spellcaster")
+            try:
+                start_menu.mkdir(parents=True, exist_ok=True)
+                sc = _create_shortcut_windows(launcher_path, "Wizard Guild",
+                                              start_menu, server_url, icon_path)
+                if sc:
+                    print(f"  {C_GREEN}\u2713 Start Menu shortcut: {sc}{C_RESET}")
+                    created_shortcuts.append(sc)
+            except Exception as e:
+                print(f"  {C_YELLOW}\u26a0 Start Menu shortcut failed: {e}{C_RESET}")
+
+    # Linux: offer to add to ~/.local/share/applications
+    elif sys.platform == "linux":
+        apps_dir = Path.home() / ".local" / "share" / "applications"
+        if ask_yn("Add to application menu?", default=True,
+                  auto_yes=auto_yes):
+            try:
+                apps_dir.mkdir(parents=True, exist_ok=True)
+                sc = _create_shortcut_unix(launcher_path, "Wizard Guild",
+                                           apps_dir, server_url)
+                if sc:
+                    print(f"  {C_GREEN}\u2713 App menu entry: {sc}{C_RESET}")
+                    created_shortcuts.append(sc)
+            except Exception as e:
+                print(f"  {C_YELLOW}\u26a0 App menu entry failed: {e}{C_RESET}")
+
+    # ── Summary ───────────────────────────────────────────────────────
+    print(f"\n  {C_BOLD}Wizard Guild installed!{C_RESET}")
+    print(f"  {C_DIM}Location: {dest}{C_RESET}")
+    if created_shortcuts:
+        print(f"  {C_DIM}Shortcuts: {len(created_shortcuts)} created{C_RESET}")
+    print(f"\n  {C_BOLD}To start:{C_RESET}")
+    print(f"    python \"{launcher_path}\"")
+    if created_shortcuts:
+        print(f"    or double-click the Desktop/Start Menu shortcut")
 
 def step_apply_theme(paths: dict, dry_run: bool = False, auto_yes: bool = False) -> None:
     """Optional step: replace the GIMP/Darktable system splash with Spellcaster artwork.
@@ -2695,7 +2865,7 @@ def main():
 
     step_install_models(manifest, selected, paths, args)
     step_install_plugins(paths, server_url, args.dry_run)
-    step_install_tavern(paths, server_url, selected, args.dry_run)
+    step_install_tavern(paths, server_url, selected, args.dry_run, args.yes)
     step_import_luts(paths, args)
     step_apply_theme(paths, args.dry_run, args.yes)
     step_final_summary(manifest, selected, paths, server_url)
