@@ -180,14 +180,24 @@ def _is_comfyui_dir(p: Path) -> bool:
 
 
 def _win_all_drives() -> list[str]:
-    """Return all available drive letters on Windows (A:-Z:)."""
+    """Return all accessible drive letters on Windows (A:-Z:).
+
+    Filters out drives that raise PermissionError (e.g. mapped network
+    drives that require elevated privileges).
+    """
     drives = []
     try:
         import ctypes
         bitmask = ctypes.windll.kernel32.GetLogicalDrives()
         for i in range(26):
             if bitmask & (1 << i):
-                drives.append(f"{chr(65 + i)}:")
+                letter = f"{chr(65 + i)}:"
+                # Skip drives we can't access (network/restricted)
+                try:
+                    Path(f"{letter}/").exists()
+                    drives.append(letter)
+                except (PermissionError, OSError):
+                    pass
     except Exception:
         drives = ["C:", "D:", "E:", "F:", "G:", "H:"]
     return drives
@@ -414,13 +424,16 @@ def find_default_comfyui() -> str:
     for c in candidates:
         try:
             cs = str(c.resolve()) if c.exists() else str(c)
-        except (OSError, ValueError):
+        except (PermissionError, OSError, ValueError):
             cs = str(c)
         if cs in seen:
             continue
         seen.add(cs)
-        if _is_comfyui_dir(c):
-            return str(c)
+        try:
+            if _is_comfyui_dir(c):
+                return str(c)
+        except (PermissionError, OSError):
+            continue
     return ""
 
 
