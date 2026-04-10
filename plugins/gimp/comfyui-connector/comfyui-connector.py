@@ -7466,7 +7466,7 @@ class WanI2VDialog(Gtk.Dialog):
         self._quality_combo.set_tooltip_text(
             "Pick a quality level — sets resolution, speed, and post-processing automatically.\n\n"
             "Fast Preview:   576×320, 33 frames (~2 sec), turbo, no post-processing.\n"
-            "Standard:       832×480, 81 frames (~5 sec), turbo + RTX upscale + RIFE.\n"
+            "Standard:       832×480, 81 frames (~5 sec), turbo + AI upscale + RIFE.\n"
             "High Quality:   832×480, 81 frames, full 20-step quality, all post-processing.\n"
             "Long Clip:      832×480, 161 frames (~10 sec), turbo + all post-processing.\n"
             "Custom:         Set all parameters manually in the Advanced section below.")
@@ -7564,13 +7564,13 @@ class WanI2VDialog(Gtk.Dialog):
         grid.attach(Gtk.Label(label="Width:", xalign=1), 0, 0, 1, 1)
         self.w_spin = Gtk.SpinButton.new_with_range(128, 1024, 16)
         self.w_spin.set_value(832)
-        self.w_spin.set_tooltip_text("Video width in pixels. Max 1024 (use RTX upscale for higher res).")
+        self.w_spin.set_tooltip_text("Video width in pixels. Max 1024 (use AI upscale for higher res).")
         grid.attach(self.w_spin, 1, 0, 1, 1)
 
         grid.attach(Gtk.Label(label="Height:", xalign=1), 2, 0, 1, 1)
         self.h_spin = Gtk.SpinButton.new_with_range(128, 1024, 16)
         self.h_spin.set_value(480)
-        self.h_spin.set_tooltip_text("Video height in pixels. Max 1024 (use RTX upscale for higher res).")
+        self.h_spin.set_tooltip_text("Video height in pixels. Max 1024 (use AI upscale for higher res).")
         grid.attach(self.h_spin, 3, 0, 1, 1)
 
         grid.attach(Gtk.Label(label="Frames:", xalign=1), 0, 1, 1, 1)
@@ -7720,12 +7720,12 @@ class WanI2VDialog(Gtk.Dialog):
         pp_box.set_margin_start(8); pp_box.set_margin_end(8)
         pp_box.set_margin_top(4); pp_box.set_margin_bottom(8)
 
-        # Row 1: RTX upscale toggle (fixed 2x — sufficient for most use cases)
-        self.upscale_check = Gtk.CheckButton(label="RTX Upscale (2×)")
+        # Row 1: AI upscale toggle (fixed 2x — sufficient for most use cases)
+        self.upscale_check = Gtk.CheckButton(label="AI Upscale (2×)")
         self.upscale_check.set_active(True)
         self.upscale_check.set_tooltip_text(
-            "RTX Video Super Resolution — doubles the video resolution using AI.\n"
-            "832×480 → 1664×960.  Requires NVIDIA RTX GPU on ComfyUI server.")
+            "AI Video Upscale — doubles the video resolution using 4x-UltraSharp.\n"
+            "832×480 → 1664×960.  Uses native ComfyUI upscale model.")
         self.upscale_spin = Gtk.SpinButton.new_with_range(1.0, 4.0, 0.25)
         self.upscale_spin.set_digits(2); self.upscale_spin.set_value(2.0)
         # Scale spinner hidden but still functional for get_values()
@@ -8465,13 +8465,13 @@ class LtxVideoDialog(Gtk.Dialog):
         box.pack_start(self.interpolate_check, False, False, 0)
 
         hbr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        self.rtx_check = Gtk.CheckButton(label="RTX Video Super Resolution")
-        self.rtx_check.set_tooltip_text("Upscale video frames with RTX VSR.")
+        self.rtx_check = Gtk.CheckButton(label="AI Upscale (2x)")
+        self.rtx_check.set_tooltip_text("Upscale video frames with 4x-UltraSharp AI model.")
         hbr.pack_start(self.rtx_check, False, False, 0)
         self.rtx_scale_spin = Gtk.SpinButton.new_with_range(1.5, 4.0, 0.5)
         self.rtx_scale_spin.set_digits(1)
         self.rtx_scale_spin.set_value(2.0)
-        self.rtx_scale_spin.set_tooltip_text("RTX upscale factor (1.5x-4x).")
+        self.rtx_scale_spin.set_tooltip_text("AI upscale factor (1.5x-4x).")
         hbr.pack_start(self.rtx_scale_spin, False, False, 0)
         box.pack_start(hbr, False, False, 0)
 
@@ -9778,7 +9778,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-wan-director-trio": ("7. Director's Chair (Trio)...", self._run_wan_director_trio,
                                                "Action! — direct a multi-step video with three actors and triple face tracking"),
             "spellcaster-video-upscale": ("Video Upscale (RTX + Model)...", self._run_video_upscale,
-                                           "Upscale a video with model + RTX super-resolution"),
+                                           "Upscale a video with AI model upscaling"),
             "spellcaster-video-reactor": ("Video Face Swap + Upscale...", self._run_video_reactor,
                                            "Upscale a video and swap faces using ReActor"),
             "spellcaster-seedvr2-video": ("SeedVR2 Video Upscale...", self._run_seedvr2_video,
@@ -11267,7 +11267,7 @@ class Spellcaster(Gimp.PlugIn):
 
     # ── Video Upscale (V2R) ────────────────────────────────────────────
     def _run_video_upscale(self, procedure, run_mode, image, drawables, config, data):
-        """Upscale a video file using model + RTX super-resolution."""
+        """Upscale a video file using AI model upscaling."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
