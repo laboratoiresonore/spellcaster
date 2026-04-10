@@ -517,7 +517,9 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         self._sidebar_canvas = tk.Canvas(self.sidebar_frame, width=240, height=640,
                                           bg=self.sidebar_color, highlightthickness=0)
         self._sidebar_canvas.place(x=0, y=0, relwidth=1, relheight=1)
-        self._sidebar_canvas.lower()  # behind all widgets
+        # Canvas.lower() is tag_lower (canvas items), not Misc.lower (widget stacking).
+        # Call the widget-level method explicitly to push canvas behind all widgets.
+        tk.Misc.lower(self._sidebar_canvas)
 
         logo_label = ctk.CTkLabel(self.sidebar_frame, text="\u2728 Spellcaster",
                                   font=ctk.CTkFont(family="Inter", size=24, weight="bold"),
