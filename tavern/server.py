@@ -2954,57 +2954,56 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
     engine = None
     workflow = None
 
-    # Strategy 1: WAN (preferred -- image-to-video, best portrait quality)
-    # Skip WAN if only T2V models found (T2V has 64ch, I2V workflow needs 36ch)
-    wan_preset = _get_wan_preset(comfy_url)
-    if wan_preset and wan_preset.get("is_i2v", True):
-        build_wan = getattr(_workflows_v2, 'build_wan_video', None)
-        if build_wan:
+    # Strategy 1: LTX (preferred -- reliable I2V, no channel mismatch)
+    ltx_preset = _get_ltx_preset(comfy_url)
+    if ltx_preset:
+        build_ltx = getattr(_workflows_v2, 'build_ltx_video', None)
+        if build_ltx:
             try:
-                workflow = build_wan(
-                    image_filename=image_filename,
-                    preset=wan_preset,
+                workflow = build_ltx(
+                    preset=ltx_preset,
                     prompt_text=f"subtle magical animation, {prompt_text}, gentle swaying, "
-                                "mystical particles, flickering candlelight, living portrait",
-                    negative_text="text, watermark, blurry, deformed",
+                                "mystical particles, flickering light, living portrait",
                     seed=seed,
                     width=512, height=512,
-                    length=33,         # ~2 sec at 16fps
-                    turbo=True,
-                    loop=False,        # Use WanImageToVideo (36ch I2V), NOT FLF (64ch)
-                    rtx_scale=1.0,
-                    interpolate=False,
-                    face_swap=False,
-                    save_raw=False,
-                    fps=16,
+                    num_frames=25,     # 1 sec at 25fps
+                    fps=25,
+                    image_filename=image_filename,
+                    i2v_strength=0.85,
                     pingpong=True,
                 )
-                engine = "wan"
+                engine = "ltx"
             except Exception as e:
-                print(f"  [Guild] WAN workflow build failed, trying LTX: {e}")
+                print(f"  [Guild] LTX workflow build failed, trying WAN: {e}")
 
-    # Strategy 2: LTX (fallback — image-to-video via i2v mode)
+    # Strategy 2: WAN (fallback -- image-to-video, may have channel issues)
     if workflow is None:
-        ltx_preset = _get_ltx_preset(comfy_url)
-        if ltx_preset:
-            build_ltx = getattr(_workflows_v2, 'build_ltx_video', None)
-            if build_ltx:
+        wan_preset = _get_wan_preset(comfy_url)
+        if wan_preset and wan_preset.get("is_i2v", True):
+            build_wan = getattr(_workflows_v2, 'build_wan_video', None)
+            if build_wan:
                 try:
-                    workflow = build_ltx(
-                        preset=ltx_preset,
+                    workflow = build_wan(
+                        image_filename=image_filename,
+                        preset=wan_preset,
                         prompt_text=f"subtle magical animation, {prompt_text}, gentle swaying, "
-                                    "mystical particles, flickering light, living portrait",
+                                    "mystical particles, flickering candlelight, living portrait",
+                        negative_text="text, watermark, blurry, deformed",
                         seed=seed,
                         width=512, height=512,
-                        num_frames=25,     # 1 sec at 25fps
-                        fps=25,
-                        image_filename=image_filename,
-                        i2v_strength=0.85,
+                        length=33,         # ~2 sec at 16fps
+                        turbo=True,
+                        loop=False,
+                        rtx_scale=1.0,
+                        interpolate=False,
+                        face_swap=False,
+                        save_raw=False,
+                        fps=16,
                         pingpong=True,
                     )
-                    engine = "ltx"
+                    engine = "wan"
                 except Exception as e:
-                    print(f"  [Guild] LTX workflow build failed: {e}")
+                    print(f"  [Guild] WAN workflow build failed: {e}")
 
     if workflow is None:
         return {"queued": False,
@@ -3075,9 +3074,10 @@ def _poll_animated_avatars(comfy_url):
                         except Exception:
                             pass
                     # Auto-retry with LTX if WAN failed (channel mismatch, etc.)
-                    engine = entry.get("engine", "wan")
-                    if engine == "wan" and not entry.get("_retried"):
-                        print(f"  [Guild] WAN failed for {char_id}, auto-retrying with LTX...")
+                    engine = entry.get("engine", "ltx")
+                    if engine in ("wan", "ltx") and not entry.get("_retried"):
+                        retry_engine = "wan" if engine == "ltx" else "ltx"
+                        print(f"  [Guild] {engine.upper()} failed for {char_id}, auto-retrying with {retry_engine.upper()}...")
                         entry["_retried"] = True
                         # Build LTX workflow as fallback
                         ltx_preset = _get_ltx_preset(comfy_url)
