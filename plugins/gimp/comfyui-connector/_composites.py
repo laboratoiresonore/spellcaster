@@ -110,10 +110,16 @@ def load_model_stack(nf, preset, node_id="1"):
                                      node_id=f"{node_id}b")
         elif arch.clip_mode == "single_flux2":
             # Klein: single CLIPLoader, CLIP selection is model-dependent
+            # 9B (dev) needs qwen_3_8b, 4B (schnell/lite) needs qwen_3_4b
             ckpt_lower = preset["ckpt"].lower()
-            clip_name = ("qwen_3_8b_fp8mixed.safetensors"
-                         if "9b" in ckpt_lower
-                         else "qwen_3_4b.safetensors")
+            is_9b = ("9b" in ckpt_lower or
+                     ("dev" in ckpt_lower and "4b" not in ckpt_lower))
+            is_4b = "4b" in ckpt_lower or "schnell" in ckpt_lower or "lite" in ckpt_lower
+            # Explicit 4B wins, else default to 9B (dev is more common,
+            # and 9B CLIP with 4B model fails loudly vs silently)
+            clip_name = ("qwen_3_4b.safetensors"
+                         if is_4b
+                         else "qwen_3_8b_fp8mixed.safetensors")
             clip_id = nf.clip_loader(clip_name, clip_type="flux2",
                                      device="default",
                                      node_id=f"{node_id}b")
