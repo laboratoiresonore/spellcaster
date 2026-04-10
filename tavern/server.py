@@ -2601,6 +2601,7 @@ def _detect_wan_preset(comfy_url):
         print(f"  [Guild] WAN model selection: high={wan_high} ({variant})")
 
     if not wan_high:
+        print(f"  [Guild] No WAN models found among {len(all_models)} UNET models")
         return None
 
     # Auto-detect WAN CLIP (umt5xxl) — prefer GGUF, fall back to regular CLIPLoader
@@ -2970,7 +2971,7 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
                     width=512, height=512,
                     length=33,         # ~2 sec at 16fps
                     turbo=True,
-                    loop=True,
+                    loop=False,        # Use WanImageToVideo (36ch I2V), NOT FLF (64ch)
                     rtx_scale=1.0,
                     interpolate=False,
                     face_swap=False,
@@ -3029,8 +3030,11 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
         "status": "queued",
         "result_url": None,
         "error": None,
+        "engine": engine,
         "output_nid": _find_output_node(workflow),
         "_workflow": workflow,
+        "_image_filename": image_filename,
+        "_prompt_text": prompt_text,
     }
     _save_anim_queue()
     print(f"  [Guild] Queued animated avatar for {char_id} via {engine.upper()} "
@@ -3062,9 +3066,6 @@ def _poll_animated_avatars(comfy_url):
                     msgs = status.get("messages", [])
                     err = (msgs[-1][1].get("exception_message", "Unknown")
                            if msgs else "Unknown")
-                    entry["status"] = "error"
-                    entry["error"] = err
-                    _save_anim_queue()
                     print(f"  [Guild] Animated avatar FAILED for {char_id}: {err}")
                     # Privacy cleanup: scrub uploaded inputs even on failure
                     if PRIVACY_CLEANUP:
@@ -3073,6 +3074,52 @@ def _poll_animated_avatars(comfy_url):
                             _privacy_cleanup(comfy_url, wf, {"urls": []})
                         except Exception:
                             pass
+                    # Auto-retry with LTX if WAN failed (channel mismatch, etc.)
+                    engine = entry.get("engine", "wan")
+                    if engine == "wan" and not entry.get("_retried"):
+                        print(f"  [Guild] WAN failed for {char_id}, auto-retrying with LTX...")
+                        entry["_retried"] = True
+                        # Build LTX workflow as fallback
+                        ltx_preset = _get_ltx_preset(comfy_url)
+                        build_ltx = getattr(_workflows_v2, 'build_ltx_video', None) if _workflows_v2 else None
+                        if ltx_preset and build_ltx:
+                            try:
+                                img_fn = entry.get("_image_filename", "")
+                                ltx_wf = build_ltx(
+                                    preset=ltx_preset,
+                                    prompt_text=entry.get("_prompt_text",
+                                        "subtle magical animation, living portrait"),
+                                    seed=random.randint(1, 1000000000),
+                                    width=512, height=512,
+                                    num_frames=25, fps=25,
+                                    image_filename=img_fn,
+                                    i2v_strength=0.85,
+                                    pingpong=True,
+                                )
+                                url_q = f"{comfy_url}/prompt"
+                                body = json.dumps({"prompt": ltx_wf}).encode("utf-8")
+                                req2 = urllib.request.Request(
+                                    url_q, data=body,
+                                    headers={"Content-Type": "application/json"})
+                                with urllib.request.urlopen(req2, timeout=10) as resp2:
+                                    d2 = json.loads(resp2.read().decode("utf-8"))
+                                    new_pid = d2.get("prompt_id")
+                                    if new_pid:
+                                        entry["prompt_id"] = new_pid
+                                        entry["status"] = "queued"
+                                        entry["engine"] = "ltx"
+                                        entry["error"] = None
+                                        entry["output_nid"] = _find_output_node(ltx_wf)
+                                        entry["_workflow"] = ltx_wf
+                                        _save_anim_queue()
+                                        print(f"  [Guild] Re-queued {char_id} with LTX "
+                                              f"(prompt_id={new_pid})")
+                                        continue
+                            except Exception as e2:
+                                print(f"  [Guild] LTX re-queue also failed: {e2}")
+                    entry["status"] = "error"
+                    entry["error"] = err
+                    _save_anim_queue()
                     continue
 
                 # Look for output
