@@ -4473,6 +4473,20 @@ class GuildHandler(SimpleHTTPRequestHandler):
             params = data.get('params', {})
             exec_comfy = data.get('comfy_url', COMFYUI_URL)
 
+            # Look up the requesting wizard's assigned model so we don't
+            # fall through to _detect_best_model() (which picks Klein).
+            _wizard_model = None
+            _wizard_arch = None
+            _wizard_type = None
+            _req_char_id = data.get('char_id')
+            if _req_char_id:
+                for _c in CHARS_CACHE:
+                    if _c.get('id') == _req_char_id:
+                        _wizard_model = _c.get('model_name')
+                        _wizard_arch = _c.get('model_arch')
+                        _wizard_type = _c.get('model_type')
+                        break
+
             # Validate build_fn is a real function in _workflows_v2
             if not BUILTIN_AVAILABLE or not _workflows_v2:
                 return self.end_json(500, {'error': 'Workflow engine not available'})
@@ -4500,11 +4514,11 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     height = int(params.get('height', 1024))
                     seed = params.get('seed') or random.randint(1, 1000000000)
                     seed = int(seed)
-                    model_name = params.get('model')
+                    model_name = params.get('model') or _wizard_model
 
                     if model_name:
                         ckpt = model_name
-                        arch_key = classify_unet_model(ckpt)
+                        arch_key = _wizard_arch or classify_unet_model(ckpt)
                         if arch_key == 'unknown':
                             arch_key = classify_ckpt_model(ckpt)
                     else:
@@ -4530,7 +4544,11 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     width = int(params.get('width', 1024))
                     height = int(params.get('height', 1024))
                     seed = int(params.get('seed') or random.randint(1, 1000000000))
-                    ckpt, arch_key = _detect_best_model(exec_comfy)
+                    if _wizard_model:
+                        ckpt = _wizard_model
+                        arch_key = _wizard_arch or classify_ckpt_model(ckpt)
+                    else:
+                        ckpt, arch_key = _detect_best_model(exec_comfy)
                     if not ckpt:
                         return self.end_json(500, {'error': 'No ComfyUI model available'})
                     preset = _build_optimized_preset(ckpt, arch_key, width, height)
@@ -4549,10 +4567,10 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     if sig_params and sig_params[0] == 'preset':
                         width = int(params.pop('width', 1024))
                         height = int(params.pop('height', 1024))
-                        model_name = params.pop('model', None)
+                        model_name = params.pop('model', None) or _wizard_model
                         if model_name:
                             ckpt = model_name
-                            arch_key = classify_unet_model(ckpt)
+                            arch_key = _wizard_arch or classify_unet_model(ckpt)
                             if arch_key == 'unknown':
                                 arch_key = classify_ckpt_model(ckpt)
                         else:
