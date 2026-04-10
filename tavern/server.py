@@ -2639,23 +2639,23 @@ def _detect_wan_preset(comfy_url):
         if "wan" not in ml:
             continue
         is_i2v = "i2v" in ml
-        is_t2v = "t2v" in ml
-        is_high = "high" in ml or "2.2" in ml
+        is_t2v = "t2v" in ml and not is_i2v  # "RemixT2VI2V" has both — treat as I2V
         is_low = "low" in ml
+        is_high = "high" in ml or (not is_low)  # Default to high if neither specified
 
         if is_i2v:
-            if is_high and not i2v_high:
+            if is_high and not is_low and not i2v_high:
                 i2v_high = m
             elif is_low and not i2v_low:
                 i2v_low = m
         elif is_t2v:
-            if is_high and not t2v_high:
+            if is_high and not is_low and not t2v_high:
                 t2v_high = m
             elif is_low and not t2v_low:
                 t2v_low = m
         else:
             # Generic WAN model (no i2v/t2v in name)
-            if is_high and not generic_high:
+            if is_high and not is_low and not generic_high:
                 generic_high = m
             elif is_low and not generic_low:
                 generic_low = m
@@ -2732,7 +2732,7 @@ def _detect_wan_preset(comfy_url):
     except Exception:
         pass
 
-    # Auto-detect WAN accel LoRAs
+    # Auto-detect WAN acceleration LoRAs (LightX2V / Lightning / accel)
     try:
         url = f"{comfy_url}/object_info/LoraLoaderModelOnly"
         req = urllib.request.Request(url)
@@ -2744,11 +2744,21 @@ def _detect_wan_preset(comfy_url):
             if choices and isinstance(choices, list) and choices[0]:
                 for l in choices[0]:
                     ll = l.lower()
-                    if "wan" in ll and "accel" in ll:
-                        if "high" in ll:
-                            wan_accel_high = l
-                        elif "low" in ll:
-                            wan_accel_low = l
+                    # Match: lightx2v I2V step-distill, Lightning I2V, or "accel"
+                    is_wan_accel = ("wan" in ll and (
+                        ("lightx2v" in ll and "i2v" in ll) or
+                        ("lightning" in ll and "i2v" in ll) or
+                        ("accel" in ll)
+                    ))
+                    if not is_wan_accel:
+                        continue
+                    # Must be I2V-specific (skip T2V accel LoRAs)
+                    if "t2v" in ll:
+                        continue
+                    if "high" in ll and not wan_accel_high:
+                        wan_accel_high = l
+                    elif "low" in ll and not wan_accel_low:
+                        wan_accel_low = l
     except Exception:
         pass
 
