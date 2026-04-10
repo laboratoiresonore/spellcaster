@@ -234,18 +234,19 @@ STUDIO_CHARACTERS = [
             "- User has an image and wants color grading: tool 5 (lut)\n"
             "\n"
             "NOTE: Tools 2–5 all REQUIRE an existing image_filename. If the user has not provided an image, ALWAYS use tool 1 (txt2img).\n\n"
-            "PROMPTING GUIDE (adapt based on the model arch shown in DEFAULT MODEL):\n"
-            "- sd15/sdxl/illustrious/zit: Use COMMA-SEPARATED TAGS. Quality first, subject next,\n"
-            "  scene last. Weighted emphasis works: (important:1.3). Negative prompt matters.\n"
-            "  Example: masterpiece, best quality, 1girl, red dress, standing, forest, sunset\n"
-            "- flux1dev/flux2klein/chroma: Use NATURAL LANGUAGE SENTENCES. NO tags, NO weights.\n"
-            "  NO negative prompt (model ignores it). Be verbose and descriptive.\n"
-            "  Example: A photograph of a woman in a red dress standing in a forest at sunset,\n"
-            "  golden light filtering through the trees, shot on Fujifilm XT3, shallow DOF.\n"
-            "- flux_kontext: Use EDIT INSTRUCTIONS. Describe what to change, not quality tags.\n"
-            "- illustrious: Prefer BOORU/DANBOORU tags for anime. 1girl, solo, blue eyes, etc.\n"
-            "- Klein (4 steps, CFG 1.0): Keep it simple. Skip quality modifiers entirely.\n"
-            "- ZIT (turbo): Short prompts only. Complex prompts hurt at 4-6 steps.\n\n"
+            "PROMPT HANDLING (CRITICAL — the app handles formatting, NOT the user):\n"
+            "- The user describes what they want in PLAIN ENGLISH. That's it.\n"
+            "- YOU silently translate their description into the correct format for the model:\n"
+            "  - sd15/sdxl/illustrious/zit → comma-separated tags with quality prefixes\n"
+            "  - flux1dev/flux2klein/chroma → natural language sentences, no tags/weights\n"
+            "  - illustrious → booru/danbooru tag style\n"
+            "  - flux_kontext → edit instructions\n"
+            "- Quality tags, negative prompts, and weighted emphasis are added by YOU automatically.\n"
+            "  The user NEVER needs to know about these. NEVER ask them to write tags.\n"
+            "- NEVER mention 'quality tags', 'negative prompt', 'weighted emphasis', or\n"
+            "  prompt engineering syntax to the user. Just ask WHAT they want to see.\n"
+            "- If the user gives a vague request like 'a dragon', flesh it out yourself into\n"
+            "  a rich, detailed prompt in the correct format. Be creative!\n\n"
             "LORA GUIDE:\n"
             "- If the user enables LoRAs, trigger words are auto-extracted from metadata.\n"
             "  Mention the trigger words in your prompt suggestion so the user includes them.\n"
@@ -253,10 +254,12 @@ STUDIO_CHARACTERS = [
             "  hand/face fix 0.7-0.9, acceleration LoRAs use their preset strength.\n"
             "- Do NOT stack >3 LoRAs. Diminishing returns and quality degradation.\n\n"
             "PROTOCOL:\n"
-            "- Greet the user with enthusiasm and ask what vision they want to conjure\n"
+            "- Greet the user with enthusiasm and ask what they want to see\n"
             "- Suggest the right tool with numbered choices\n"
-            "- Collect the parameters conversationally — help refine their prompt!\n"
-            "- When confirmed, output a JSON block:\n"
+            "- Ask the user to describe their vision in PLAIN ENGLISH — no technical jargon\n"
+            "- YOU handle all prompt engineering: translate their description into the right\n"
+            "  format, add quality tags, negative prompts, weights — all silently\n"
+            "- When ready, output a JSON block with the fully-formatted prompt:\n"
             "```json\n"
             '{\"build_fn\": \"build_txt2img\", \"params\": {\"prompt\": \"...\", ...}}\n'
             "```\n"
@@ -1173,25 +1176,26 @@ def fetch_all_characters(comfy_url=None):
             custom_studio["archetype"] = profile["archetype"]
             custom_studio["default_model"] = mname
             custom_studio["default_arch"] = march
-            # Build arch-specific prompt style hint
+            # Build arch-specific prompt style hint (internal — user never sees this)
             _prompt_style_hint = ""
             if march in ("flux1dev", "flux2klein", "chroma", "flux_kontext"):
                 _prompt_style_hint = (
-                    "\nPROMPT STYLE FOR THIS MODEL: NATURAL LANGUAGE. "
-                    "Write descriptive sentences, NOT comma-separated tags. "
-                    "NO weighted emphasis (tag:1.2). NO negative prompt.\n"
+                    "\nINTERNAL PROMPT FORMAT (apply silently, NEVER explain to user): "
+                    "Natural language sentences. No tags, no weights, no negative prompt. "
+                    "The user just describes what they want in plain English — YOU format it.\n"
                 )
             elif march in ("illustrious",):
                 _prompt_style_hint = (
-                    "\nPROMPT STYLE FOR THIS MODEL: BOORU TAGS. "
-                    "Use Danbooru-style comma-separated tags. "
-                    "Quality and character tags first. Weighted emphasis OK.\n"
+                    "\nINTERNAL PROMPT FORMAT (apply silently, NEVER explain to user): "
+                    "Danbooru-style comma-separated tags. Add quality tags automatically. "
+                    "The user just describes what they want in plain English — YOU format it.\n"
                 )
             elif march in ("sd15", "sdxl", "zit"):
                 _prompt_style_hint = (
-                    "\nPROMPT STYLE FOR THIS MODEL: COMMA-SEPARATED TAGS. "
-                    "Quality tags first, then subject, scene, style. "
-                    "Weighted emphasis works: (concept:1.2). Negative prompt important.\n"
+                    "\nINTERNAL PROMPT FORMAT (apply silently, NEVER explain to user): "
+                    "Comma-separated tags. Quality first, subject, scene, style. "
+                    "Add weighted emphasis and negative prompt automatically. "
+                    "The user just describes what they want in plain English — YOU format it.\n"
                 )
             custom_studio["system_prompt"] = (
                 ref_studio["system_prompt"]
@@ -1879,6 +1883,45 @@ def _get_unknown_loras_for_wizard(char_id):
 
 # ── LoRA registry loaded by _server_init() ──
 # (was previously at import time, but COMFYUI_URL isn't set yet)
+
+
+# ── NSFW avatar LoRA injection ───────────────────────────────────────
+# Flux models are SFW by default and refuse NSFW content. In NSFW mode
+# we inject an unlock LoRA during avatar generation so the NSFW appearance
+# pools can produce suggestive/explicit avatars.
+_NSFW_AVATAR_LORA_PATTERNS = {
+    # arch_key: [(name_pattern, strength_model, strength_clip), ...]
+    "flux2klein": [
+        ("nicegirls", 0.7, 0.7),       # NiceGirls UltraReal — photorealistic NSFW
+        ("nsfw", 0.6, 0.6),             # Generic NSFW unlock fallback
+    ],
+    "flux1dev": [
+        ("aidmansfw", 0.7, 0.7),       # aidmaNSFWunlock for Flux Dev
+        ("nsfw", 0.6, 0.6),
+    ],
+}
+
+
+def _get_nsfw_avatar_loras(arch_key, comfy_url):
+    """Find NSFW-enabling LoRAs for avatar generation.
+
+    Searches the LoRA registry for known NSFW unlock LoRAs matching the
+    architecture. Returns a list of LoRA dicts or None if none found.
+    """
+    patterns = _NSFW_AVATAR_LORA_PATTERNS.get(arch_key, [])
+    if not patterns:
+        return None
+
+    for pattern, str_m, str_c in patterns:
+        for lora_name, info in _LORA_REGISTRY.items():
+            if arch_key not in info.get("archs", []):
+                continue
+            if pattern.lower() in lora_name.lower():
+                print(f"  [Guild] NSFW avatar LoRA: {lora_name} (str={str_m})")
+                return [{"name": lora_name,
+                         "strength_model": str_m,
+                         "strength_clip": str_c}]
+    return None
 
 
 # ── Appearance diversity pools ───────────────────────────────────────
@@ -2626,7 +2669,12 @@ def _detect_wan_preset(comfy_url):
     wan_accel_high = None
     wan_accel_low = None
 
-    # Separate I2V and T2V candidates -- animated avatars need I2V (36ch)
+    # Separate I2V and T2V candidates.
+    # IMPORTANT: Only EXPLICITLY tagged I2V models are safe for I2V workflows.
+    # T2V models have 36ch patch_embedding, I2V have 64ch — mixing them crashes
+    # with "expected input to have 36 channels, but got 64 channels".
+    # Generic/ambiguous WAN models (no i2v/t2v tag) are UNSAFE — they could be
+    # either architecture internally, so we must NOT use them for I2V.
     i2v_high = None
     i2v_low = None
     t2v_high = None
@@ -2654,23 +2702,27 @@ def _detect_wan_preset(comfy_url):
             elif is_low and not t2v_low:
                 t2v_low = m
         else:
-            # Generic WAN model (no i2v/t2v in name)
+            # Generic WAN model (no i2v/t2v in name) — track but do NOT use for I2V
             if is_high and not is_low and not generic_high:
                 generic_high = m
             elif is_low and not generic_low:
                 generic_low = m
 
-    # I2V only — T2V models are architecturally incompatible (36ch vs 64ch)
-    # and will crash with "expected input to have 36 channels, but got 64"
-    wan_high = i2v_high or generic_high
-    wan_low = i2v_low or generic_low
+    # STRICTLY I2V only — generic models are unsafe (could be T2V internally)
+    # T2V models have 36ch patch_embedding vs I2V's 64ch — causes runtime crash
+    wan_high = i2v_high  # NO generic fallback
+    wan_low = i2v_low    # NO generic fallback
     if wan_high:
-        variant = "i2v" if i2v_high else "generic"
-        print(f"  [Guild] WAN model selection: high={wan_high} ({variant})")
+        print(f"  [Guild] WAN model selection: high={wan_high} (i2v)")
+    if generic_high and not wan_high:
+        print(f"  [Guild] WARNING: Found generic WAN models ({generic_high}) but no "
+              f"explicitly-tagged I2V models. Generic models are unsafe for I2V "
+              f"(may be T2V internally → 36ch/64ch crash). "
+              f"Install wan2.2_i2v_720p_high/low_noise models for video features.")
     if t2v_high and not wan_high:
         print(f"  [Guild] WARNING: Found T2V models ({t2v_high}) but no I2V models. "
               f"T2V models are incompatible with Spellcaster's I2V pipeline. "
-              f"Install wan2.2_i2v_high/low_noise models for video features.")
+              f"Install wan2.2_i2v_720p_high/low_noise models for video features.")
 
     if not wan_high:
         print(f"  [Guild] No WAN models found among {len(all_models)} UNET models")
@@ -2767,7 +2819,8 @@ def _detect_wan_preset(comfy_url):
         return None
 
     # Track whether we have actual I2V models (needed for image-to-video)
-    has_i2v = bool(i2v_high or generic_high)
+    # Only explicitly-tagged I2V models count — generic models are unsafe
+    has_i2v = bool(i2v_high)
 
     preset = {
         "arch": "wan",
@@ -3383,6 +3436,14 @@ def _dispatch_txt2img(prompt, negative, width, height, comfy_url,
                            "strength_clip": l[2]}
                           for l in autoset_loras['txt2img']]
 
+        # In NSFW mode, inject NSFW-enabling LoRAs even for internal
+        # asset generation (avatars/backgrounds). Flux models are SFW by
+        # default and refuse NSFW content without an unlock LoRA.
+        if NSFW_MODE and skip_loras:
+            nsfw_loras = _get_nsfw_avatar_loras(arch_key, comfy_url)
+            if nsfw_loras:
+                loras = nsfw_loras
+
         workflow = build_txt2img(preset, prompt, negative, seed, loras=loras)
     else:
         workflow = {
@@ -3597,7 +3658,88 @@ class GuildHandler(SimpleHTTPRequestHandler):
             self.path = '/static/index.html'
 
         # ── API GET endpoints ──
-        if self.path == '/api/characters':
+        if self.path.startswith('/api/wizard_info/'):
+            # GET /api/wizard_info/<char_id> — detailed wizard info for tooltip
+            char_id = self.path.split('/api/wizard_info/')[-1]
+            char = next((c for c in CHARS_CACHE if c["id"] == char_id), None)
+            if not char:
+                return self.end_json(404, {"error": "Wizard not found"})
+            studio = _STUDIO_BY_ID.get(char_id, {})
+            # Determine wizard category
+            ctype = char.get("type", "")
+            core_types = {"studio", "model_wizard", "spellcaster_node"}
+            is_core = ctype in core_types
+            # Build functions / capabilities
+            build_fns = studio.get("build_fns", [])
+            # Model info
+            model_name = char.get("model_name") or studio.get("default_model", "")
+            model_arch = char.get("model_arch") or studio.get("default_arch", "")
+            # Compatible LoRAs
+            loras = _get_loras_for_wizard(char_id)
+            lora_count = len(loras)
+            lora_summary = []
+            for l in loras[:8]:
+                lora_summary.append({
+                    "name": l.get("display_name", ""),
+                    "purpose": l.get("purpose") or l.get("user_desc") or "",
+                    "source": l.get("source", ""),
+                })
+            # Auto-configured LoRAs from architecture
+            autoset_info = {}
+            if BUILTIN_AVAILABLE and get_arch and model_arch:
+                arch = get_arch(model_arch)
+                if arch and arch.autoset_loras:
+                    for mode, chain in arch.autoset_loras.items():
+                        autoset_info[mode] = [
+                            {"name": l[0].rsplit("\\",1)[-1].rsplit("/",1)[-1]
+                                          .replace(".safetensors",""),
+                             "strength": l[1]}
+                            for l in chain
+                        ]
+            # WAN/LTX preset LoRAs
+            preset_loras = {}
+            wan_p = _get_wan_preset(COMFYUI_URL) if COMFYUI_URL else None
+            if wan_p:
+                if wan_p.get("high_accel_lora"):
+                    h = wan_p["high_accel_lora"]
+                    preset_loras["wan_turbo_high"] = h.rsplit("\\",1)[-1].rsplit("/",1)[-1]
+                if wan_p.get("low_accel_lora"):
+                    l = wan_p["low_accel_lora"]
+                    preset_loras["wan_turbo_low"] = l.rsplit("\\",1)[-1].rsplit("/",1)[-1]
+            ltx_p = _get_ltx_preset(COMFYUI_URL) if COMFYUI_URL else None
+            if ltx_p and ltx_p.get("distilled_lora"):
+                d = ltx_p["distilled_lora"]
+                preset_loras["ltx_distilled"] = d.rsplit("\\",1)[-1].rsplit("/",1)[-1]
+            # Personality
+            personality = char.get("personality", "")
+            return self.end_json(200, {
+                "id": char_id,
+                "name": char.get("name", ""),
+                "subtext": char.get("subtext", ""),
+                "type": ctype,
+                "is_core": is_core,
+                "category": "Core Spellcaster" if is_core else "Per-Model Wizard",
+                "category_detail": ("Built-in studio wizard with fixed capabilities. "
+                                    "Settings are part of the app's core configuration."
+                                    if is_core else
+                                    f"Auto-generated wizard for model '{model_name}'. "
+                                    "Settings are auto-detected and can be edited in the "
+                                    "Travelling Wizard (Scaffolds tab)."),
+                "model_name": model_name,
+                "model_arch": model_arch,
+                "personality": personality,
+                "build_fns": build_fns,
+                "build_fn_count": len(build_fns),
+                "lora_count": lora_count,
+                "lora_summary": lora_summary,
+                "autoset_loras": autoset_info,
+                "preset_loras": preset_loras,
+                "avatar_url": char.get("avatar_url", ""),
+                "animated_url": char.get("animated_url", ""),
+                "color1": char.get("color1", "#B246F2"),
+                "color2": char.get("color2", "#6C63FF"),
+            })
+        elif self.path == '/api/characters':
             visible = [c for c in CHARS_CACHE if c['id'] not in _BANISHED_IDS]
             return self.end_json(200, visible)
         elif self.path == '/api/all_characters':
@@ -3861,6 +4003,65 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "user_described": sum(1 for v in _LORA_REGISTRY.values()
                                       if v.get("user_desc")),
                 "interrogated_wizards": list(_LORA_INTERROGATED),
+            })
+        elif self.path == '/api/scaffold_loras':
+            # GET /api/scaffold_loras — LoRAs organized for scaffold editor
+            # Returns: per-architecture LoRA lists + auto-detected presets
+            by_arch = {}
+            for name, info in _LORA_REGISTRY.items():
+                display = name.rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
+                if display.endswith(".safetensors"):
+                    display = display[:-len(".safetensors")]
+                elif display.endswith(".gguf"):
+                    display = display[:-len(".gguf")]
+                entry = {
+                    "name": name,
+                    "display_name": display,
+                    "purpose": info.get("purpose", ""),
+                    "user_desc": info.get("user_desc", ""),
+                    "source": info.get("source", "discovered"),
+                    "tags": info.get("tags", [])[:5],
+                }
+                for arch in info.get("archs", []):
+                    by_arch.setdefault(arch, []).append(entry)
+            # Sort each arch group: known purpose first, then alphabetical
+            for arch in by_arch:
+                by_arch[arch].sort(key=lambda l: (
+                    0 if (l["purpose"] or l["user_desc"]) else 1,
+                    l["display_name"].lower()))
+            # Auto-detected presets from WAN/LTX detection
+            auto_presets = {}
+            wan_p = _get_wan_preset(COMFYUI_URL) if COMFYUI_URL else None
+            if wan_p:
+                auto_presets["wan"] = {
+                    "high_accel_lora": wan_p.get("high_accel_lora"),
+                    "low_accel_lora": wan_p.get("low_accel_lora"),
+                    "accel_strength": wan_p.get("accel_strength", 1.5),
+                }
+            ltx_p = _get_ltx_preset(COMFYUI_URL) if COMFYUI_URL else None
+            if ltx_p:
+                auto_presets["ltx"] = {
+                    "distilled_lora": ltx_p.get("distilled_lora"),
+                }
+            # Architecture autoset_loras (from _architectures.py)
+            arch_autosets = {}
+            if BUILTIN_AVAILABLE and get_arch:
+                for arch_key in ("sd15", "sdxl", "illustrious", "flux1dev",
+                                 "flux2klein", "chroma", "zit"):
+                    arch = get_arch(arch_key)
+                    if arch and arch.autoset_loras:
+                        arch_autosets[arch_key] = {}
+                        for mode, loras in arch.autoset_loras.items():
+                            arch_autosets[arch_key][mode] = [
+                                {"name": l[0], "strength_model": l[1],
+                                 "strength_clip": l[2]}
+                                for l in loras
+                            ]
+            return self.end_json(200, {
+                "by_arch": by_arch,
+                "auto_presets": auto_presets,
+                "arch_autosets": arch_autosets,
+                "total": len(_LORA_REGISTRY),
             })
         elif self.path == '/api/workflows':
             wfs = discover_workflows(search_dirs=None)
