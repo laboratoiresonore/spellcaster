@@ -4414,6 +4414,12 @@ def _get_cached_server_lists(server_url):
         clips = info["CLIPLoaderGGUF"]["input"]["required"]["clip_name"][0]
     except Exception:
         pass
+    if not clips:
+        try:
+            info = _api_get(server_url, "/object_info/CLIPLoader")
+            clips = info["CLIPLoader"]["input"]["required"]["clip_name"][0]
+        except Exception:
+            pass
     try:
         info = _api_get(server_url, "/object_info/VAELoader")
         vaes = info["VAELoader"]["input"]["required"]["vae_name"][0]

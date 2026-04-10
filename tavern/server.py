@@ -2551,7 +2551,8 @@ def _detect_wan_preset(comfy_url):
     if not wan_high:
         return None
 
-    # Auto-detect WAN CLIP (umt5xxl)
+    # Auto-detect WAN CLIP (umt5xxl) — prefer GGUF, fall back to regular CLIPLoader
+    wan_clip_is_gguf = False
     try:
         url = f"{comfy_url}/object_info/CLIPLoaderGGUF"
         req = urllib.request.Request(url)
@@ -2562,11 +2563,32 @@ def _detect_wan_preset(comfy_url):
                            .get("clip_name", []))
             if choices and isinstance(choices, list) and choices[0]:
                 for c in choices[0]:
-                    if "umt5" in c.lower() or "t5xxl" in c.lower():
+                    cl = c.lower()
+                    if ("umt5" in cl or "t5xxl" in cl) and c.endswith(".gguf"):
                         wan_clip = c
+                        wan_clip_is_gguf = True
                         break
     except Exception:
         pass
+    # Fall back to regular CLIPLoader for non-GGUF (fp8/safetensors) text encoders
+    if not wan_clip:
+        try:
+            url = f"{comfy_url}/object_info/CLIPLoader"
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                choices = (data.get("CLIPLoader", {})
+                               .get("input", {}).get("required", {})
+                               .get("clip_name", []))
+                if choices and isinstance(choices, list) and choices[0]:
+                    for c in choices[0]:
+                        cl = c.lower()
+                        if "umt5" in cl or "t5xxl" in cl:
+                            wan_clip = c
+                            wan_clip_is_gguf = False
+                            break
+        except Exception:
+            pass
 
     # Auto-detect WAN VAE
     try:
@@ -2614,6 +2636,7 @@ def _detect_wan_preset(comfy_url):
         "high_model": wan_high,
         "low_model": wan_low or wan_high,
         "clip": wan_clip,
+        "clip_is_gguf": wan_clip_is_gguf,
         "vae": wan_vae,
         "steps": 6,
         "cfg": 1.0,
