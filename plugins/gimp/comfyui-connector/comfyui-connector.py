@@ -4237,6 +4237,7 @@ WAN_I2V_PRESETS = {
         "high_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
         "low_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
         "accel_strength": 1.5,
+        "ip_adapter_model": "ip-adapter-wan2.1-14b.bin",
     },
     "Wan I2V 14B (fp8)": {
         "high_model": "Wan\\wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
@@ -4248,6 +4249,7 @@ WAN_I2V_PRESETS = {
         "high_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
         "low_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
         "accel_strength": 1.5,
+        "ip_adapter_model": "ip-adapter-wan2.1-14b.bin",
     },
 }
 
@@ -7458,25 +7460,76 @@ class WanI2VDialog(Gtk.Dialog):
         self.preset_combo.connect("changed", self._on_preset_changed)
         box.pack_start(self.preset_combo, False, False, 0)
 
-        # Video prompt preset (template)
-        box.pack_start(Gtk.Label(label="Prompt Template:", xalign=0), False, False, 0)
+        # ── Quality preset (replaces individual Width/Height/Steps/CFG/Shift) ──
+        box.pack_start(Gtk.Label(label="Quality:", xalign=0), False, False, 0)
+        self._quality_combo = Gtk.ComboBoxText()
+        self._quality_combo.set_tooltip_text(
+            "Pick a quality level — sets resolution, speed, and post-processing automatically.\n\n"
+            "Fast Preview:   576×320, 33 frames (~2 sec), turbo, no post-processing.\n"
+            "Standard:       832×480, 81 frames (~5 sec), turbo + RTX upscale + RIFE.\n"
+            "High Quality:   832×480, 81 frames, full 20-step quality, all post-processing.\n"
+            "Long Clip:      832×480, 161 frames (~10 sec), turbo + all post-processing.\n"
+            "Custom:         Set all parameters manually in the Advanced section below.")
+        _qpresets = [
+            ("fast", "Fast Preview (2 sec, ~1 min)"),
+            ("standard", "Standard (5 sec, ~3 min)"),
+            ("high", "High Quality (5 sec, ~15 min)"),
+            ("long", "Long Clip (10 sec, ~6 min)"),
+            ("custom", "Custom (set everything manually)"),
+        ]
+        for qid, qlabel in _qpresets:
+            self._quality_combo.append(qid, qlabel)
+        self._quality_combo.set_active_id("standard")
+
+        def _on_quality_changed(combo):
+            qid = combo.get_active_id()
+            if qid == "fast":
+                self.w_spin.set_value(576); self.h_spin.set_value(320)
+                self.length_spin.set_value(33); self.steps_spin.set_value(6)
+                self.cfg_spin.set_value(1.0); self.shift_spin.set_value(8.0)
+                self.second_step_spin.set_value(3)
+                self.turbo_check.set_active(True)
+                self.upscale_check.set_active(False)
+                self.interpolate_check.set_active(False)
+                self.face_swap_check.set_active(False)
+            elif qid == "standard":
+                self.w_spin.set_value(832); self.h_spin.set_value(480)
+                self.length_spin.set_value(81); self.steps_spin.set_value(6)
+                self.cfg_spin.set_value(1.0); self.shift_spin.set_value(8.0)
+                self.second_step_spin.set_value(3)
+                self.turbo_check.set_active(True)
+                self.upscale_check.set_active(True)
+                self.interpolate_check.set_active(True)
+                self.face_swap_check.set_active(True)
+            elif qid == "high":
+                self.w_spin.set_value(832); self.h_spin.set_value(480)
+                self.length_spin.set_value(81); self.steps_spin.set_value(20)
+                self.cfg_spin.set_value(1.0); self.shift_spin.set_value(3.0)
+                self.second_step_spin.set_value(10)
+                self.turbo_check.set_active(False)
+                self.upscale_check.set_active(True)
+                self.interpolate_check.set_active(True)
+                self.face_swap_check.set_active(True)
+            elif qid == "long":
+                self.w_spin.set_value(832); self.h_spin.set_value(480)
+                self.length_spin.set_value(161); self.steps_spin.set_value(6)
+                self.cfg_spin.set_value(1.0); self.shift_spin.set_value(8.0)
+                self.second_step_spin.set_value(3)
+                self.turbo_check.set_active(True)
+                self.upscale_check.set_active(True)
+                self.interpolate_check.set_active(True)
+                self.face_swap_check.set_active(True)
+            # "custom" — don't change anything, let user set manually
+
+        self._quality_combo.connect("changed", _on_quality_changed)
+        box.pack_start(self._quality_combo, False, False, 0)
+
+        # Hidden video preset combo (still functional but not shown — used by get_values)
         self._video_preset_combo = Gtk.ComboBoxText()
-        self._video_preset_combo.set_tooltip_text(
-            "Ready-made motion templates — auto-fill prompt, negative, and settings.\n\n"
-            "Quality/Action/Portrait Modes: Empty prompt, optimized shift + CFG.\n"
-            "  Fill in your own prompt — these just set the best technical params.\n\n"
-            "Turbo Quality: Uses 2H+4L step split (proven better than 3/3).\n\n"
-            "POV / Close-Up: Low CFG (2.0) prevents crunchy skin artifacts.\n\n"
-            "Physical Contact — Intense: High shift (12) for body interactions.\n\n"
-            "Living Portraits: Subtle animation — breathing, blinking, hair.\n"
-            "Camera presets: Zoom, orbit, pan with pingpong.\n"
-            "Nature presets: Water, clouds, fire with looping.\n\n"
-            "Select '(none)' for full manual control.")
         for i, vp in enumerate(WAN_VIDEO_PRESETS):
             self._video_preset_combo.append(str(i), vp["label"])
         self._video_preset_combo.set_active(0)
-        self._video_preset_combo.connect("changed", self._on_video_preset_changed)
-        box.pack_start(self._video_preset_combo, False, False, 0)
+        # Not packed into the UI — hidden
 
         # Prompt
         box.pack_start(Gtk.Label(label="Prompt:", xalign=0), False, False, 0)
@@ -7499,19 +7552,25 @@ class WanI2VDialog(Gtk.Dialog):
         sw2.add(self.neg_tv)
         box.pack_start(sw2, False, False, 0)
 
+        # ── Advanced Settings (collapsible) ──
+        adv_expander = Gtk.Expander(label="Advanced Settings")
+        adv_expander.set_expanded(False)
+        adv_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        adv_box.set_margin_start(4); adv_box.set_margin_top(4)
+
         # Parameters grid
         grid = Gtk.Grid(column_spacing=8, row_spacing=4)
 
         grid.attach(Gtk.Label(label="Width:", xalign=1), 0, 0, 1, 1)
-        self.w_spin = Gtk.SpinButton.new_with_range(16, 2048, 16)
+        self.w_spin = Gtk.SpinButton.new_with_range(128, 1024, 16)
         self.w_spin.set_value(832)
-        self.w_spin.set_tooltip_text("Video width in pixels. Default: 832.\nLarger = more detail but much more VRAM and time.")
+        self.w_spin.set_tooltip_text("Video width in pixels. Max 1024 (use RTX upscale for higher res).")
         grid.attach(self.w_spin, 1, 0, 1, 1)
 
         grid.attach(Gtk.Label(label="Height:", xalign=1), 2, 0, 1, 1)
-        self.h_spin = Gtk.SpinButton.new_with_range(16, 2048, 16)
+        self.h_spin = Gtk.SpinButton.new_with_range(128, 1024, 16)
         self.h_spin.set_value(480)
-        self.h_spin.set_tooltip_text("Video height in pixels. Default: 480.\nLarger = more detail but much more VRAM and time.")
+        self.h_spin.set_tooltip_text("Video height in pixels. Max 1024 (use RTX upscale for higher res).")
         grid.attach(self.h_spin, 3, 0, 1, 1)
 
         grid.attach(Gtk.Label(label="Frames:", xalign=1), 0, 1, 1, 1)
@@ -7651,7 +7710,9 @@ class WanI2VDialog(Gtk.Dialog):
         # Apply turbo defaults
         _on_turbo_toggle(self.turbo_check)
 
-        box.pack_start(grid, False, False, 0)
+        adv_box.pack_start(grid, False, False, 0)
+        adv_expander.add(adv_box)
+        box.pack_start(adv_expander, False, False, 0)
 
         # Post-processing & output options
         pp_frame = Gtk.Frame(label="Post-processing & Output")
@@ -7659,28 +7720,16 @@ class WanI2VDialog(Gtk.Dialog):
         pp_box.set_margin_start(8); pp_box.set_margin_end(8)
         pp_box.set_margin_top(4); pp_box.set_margin_bottom(8)
 
-        # Row 1: RTX upscale toggle + scale value
-        rtx_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        self.upscale_check = Gtk.CheckButton(label="RTX Upscale")
+        # Row 1: RTX upscale toggle (fixed 2x — sufficient for most use cases)
+        self.upscale_check = Gtk.CheckButton(label="RTX Upscale (2×)")
         self.upscale_check.set_active(True)
         self.upscale_check.set_tooltip_text(
-            "RTX Video Super Resolution — AI upscaling using NVIDIA's RTX model.\n\n"
-            "Upscales the final video after interpolation. Uses the GPU's\n"
-            "tensor cores for fast, high-quality upscaling.\n\n"
-            "Requires: Nvidia_RTX_Nodes_ComfyUI custom node on server.\n"
-            "Disable if your server doesn't have an NVIDIA GPU or the node.")
-        rtx_row.pack_start(self.upscale_check, False, False, 0)
-        rtx_row.pack_start(Gtk.Label(label="Scale:"), False, False, 0)
+            "RTX Video Super Resolution — doubles the video resolution using AI.\n"
+            "832×480 → 1664×960.  Requires NVIDIA RTX GPU on ComfyUI server.")
         self.upscale_spin = Gtk.SpinButton.new_with_range(1.0, 4.0, 0.25)
-        self.upscale_spin.set_digits(2); self.upscale_spin.set_value(2.5)
-        self.upscale_spin.set_tooltip_text(
-            "RTX upscale multiplier. Applied to the final video resolution.\n\n"
-            "1.5×: Light upscale. Fast, minimal VRAM.\n"
-            "2.0×: Double resolution (e.g. 480p → 960p).\n"
-            "2.5×: Recommended (canon workflow default). 480p → 1200p.\n"
-            "4.0×: Maximum. 480p → 1920p (4K-ish). Very VRAM heavy.")
-        rtx_row.pack_start(self.upscale_spin, False, False, 0)
-        pp_box.pack_start(rtx_row, False, False, 0)
+        self.upscale_spin.set_digits(2); self.upscale_spin.set_value(2.0)
+        # Scale spinner hidden but still functional for get_values()
+        pp_box.pack_start(self.upscale_check, False, False, 0)
 
         # Row 2: RIFE interpolation + face swap + ping pong + loop
         row2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
@@ -19975,7 +20024,7 @@ class Spellcaster(Gimp.PlugIn):
         Gimp.message(f"Settings saved. Server: {new_url}")
         return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
-
+
 # ═════════════════════════════════════
 #  GIMP Entry Point
 # ═════════════════════════════════════

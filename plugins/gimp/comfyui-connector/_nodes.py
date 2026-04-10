@@ -1755,18 +1755,19 @@ class NodeFactory:
                      "target dimensions" (pass width/height via scale_factor as tuple).
         quality: "LOW", "MEDIUM", "HIGH", or "ULTRA".
         """
-        # ComfyUI V3 dynamic combo: resize_type is a nested object
+        inputs = {
+            "images": images_ref,
+            "resize_type": resize_type,
+            "quality": quality,
+        }
+        # Provide scale/dimension inputs based on resize_type
         if resize_type == "scale by multiplier":
-            rt_value = {"value": "scale by multiplier", "scale": float(scale_factor)}
+            inputs["scale"] = float(scale_factor)
         else:
             w, h = (scale_factor if isinstance(scale_factor, (list, tuple))
                     else (int(scale_factor), int(scale_factor)))
-            rt_value = {"value": "target dimensions", "width": w, "height": h}
-        inputs = {
-            "images": images_ref,
-            "resize_type": rt_value,
-            "quality": quality,
-        }
+            inputs["width"] = w
+            inputs["height"] = h
         return self._add("RTXVideoSuperResolution", inputs, node_id)
 
     def seedvr2_video_upscaler(self, image_ref, dit_ref, vae_ref,
