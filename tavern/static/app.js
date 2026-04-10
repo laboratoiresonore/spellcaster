@@ -214,6 +214,14 @@ async function llmGenerate(params) {
 })();
 
 // ComfyUI logo as inline SVG for system messages
+const USER_SPARKLE_SVG = `<svg class="user-sparkle" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" fill="white">
+  <path d="M16 2 L18 12 L28 14 L18 16 L16 26 L14 16 L4 14 L14 12 Z" opacity="0.9"/>
+  <path d="M25 4 L25.8 7 L28.8 7.8 L25.8 8.6 L25 11.6 L24.2 8.6 L21.2 7.8 L24.2 7 Z" opacity="0.6"/>
+  <path d="M7 22 L7.6 24 L9.6 24.6 L7.6 25.2 L7 27.2 L6.4 25.2 L4.4 24.6 L6.4 24 Z" opacity="0.5"/>
+  <circle cx="24" cy="24" r="1" opacity="0.4"/>
+  <circle cx="8" cy="6" r="0.8" opacity="0.35"/>
+</svg>`;
+
 const COMFYUI_LOGO_SVG = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
   <defs><linearGradient id="cg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#B246F2"/><stop offset="100%" stop-color="#6C63FF"/></linearGradient></defs>
   <circle cx="32" cy="32" r="28" fill="none" stroke="url(#cg)" stroke-width="3"/>
@@ -1050,7 +1058,7 @@ function addUserMessage(text) {
     const msg = document.createElement('div');
     msg.className = 'message user-message';
     msg.innerHTML = `
-        <div class="avatar-small"></div>
+        <div class="avatar-small">${USER_SPARKLE_SVG}</div>
         <div class="bubble"><p>${text}</p></div>
     `;
     chatStream.appendChild(msg);
