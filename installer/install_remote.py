@@ -47,6 +47,24 @@ MANIFEST_PATH = SCRIPT_DIR / "manifest.json"
 VERSION = "1.0"
 _BOX_LINE = "═" * 50
 
+# ─── SFW / NSFW detection ────────────────────────────────────────────────────
+# Known NSFW LoRA name patterns (case-insensitive substring match).
+# If ANY of these appear in the server's LoRA list, the server is NSFW.
+NSFW_LORA_PATTERNS = [
+    "nicegirls",      # NiceGirls UltraReal — Flux2 Klein NSFW unlock
+    "aidmansfw",      # aidmaNSFWunlock — Flux Dev
+    "nsfw_unlock",    # Generic NSFW unlock LoRAs
+]
+# Known NSFW model name patterns (unet / checkpoint names)
+NSFW_MODEL_PATTERNS = [
+    "nsfw",
+    "phr00t",         # phr00t NSFW merge models (e.g. ltx2-phr00tmerge-nsfw)
+    "uncensored",
+]
+# GitHub repos per edition
+SFW_REPO  = "laboratoiresonore/spellcaster"
+NSFW_REPO = "laboratoiresonore/spellcaster_NSFW"
+
 # ANSI colors
 if sys.stdout and sys.stdout.isatty() and (os.name != "nt" or os.environ.get("WT_SESSION")):
     C_BOLD   = "\033[1m"
@@ -320,6 +338,54 @@ def detect_available_features(manifest: dict, server_info: dict) -> list[str]:
     return available
 
 
+def detect_nsfw_mode(server_info: dict) -> bool:
+    """Detect whether the remote ComfyUI server is running the NSFW edition.
+
+    Checks the server's LoRA and model lists for known NSFW-specific patterns.
+    Returns True if NSFW content is detected, False for SFW.
+    """
+    section("Edition Detection (SFW / NSFW)")
+
+    # Flatten all LoRA names to lowercase for pattern matching
+    loras_lower = [l.lower().replace("\\", "/")
+                   for l in server_info.get("loras", [])]
+
+    # Check LoRAs for NSFW patterns
+    nsfw_loras_found: list[str] = []
+    for lora in loras_lower:
+        for pattern in NSFW_LORA_PATTERNS:
+            if pattern in lora:
+                # Get the original (un-lowered) name for display
+                idx = loras_lower.index(lora)
+                original = server_info.get("loras", [])[idx]
+                nsfw_loras_found.append(original)
+                break
+
+    # Check unet/checkpoint models for NSFW patterns
+    nsfw_models_found: list[str] = []
+    all_models = (server_info.get("unet_models", [])
+                  + server_info.get("checkpoints", []))
+    for model in all_models:
+        model_lower = model.lower().replace("\\", "/")
+        for pattern in NSFW_MODEL_PATTERNS:
+            if pattern in model_lower:
+                nsfw_models_found.append(model)
+                break
+
+    is_nsfw = bool(nsfw_loras_found or nsfw_models_found)
+
+    if is_nsfw:
+        log_ok(f"{C_BOLD}NSFW edition detected{C_RESET}")
+        if nsfw_loras_found:
+            log_dim(f"NSFW LoRAs: {', '.join(nsfw_loras_found[:5])}")
+        if nsfw_models_found:
+            log_dim(f"NSFW models: {', '.join(nsfw_models_found[:5])}")
+    else:
+        log_ok(f"{C_BOLD}SFW edition detected{C_RESET} (no NSFW content on server)")
+
+    return is_nsfw
+
+
 # ─── Local app detection (reused from install.py patterns) ────────────────────
 
 def _scan_gimp_versions(root: Path) -> list[Path]:
@@ -529,7 +595,8 @@ def _classify_server_loras(loras: list) -> dict:
 # ─── Settings writer ─────────────────────────────────────────────────────────
 
 def write_settings(paths: dict, server_url: str, llm_url: str,
-                   server_info: dict, dry_run: bool = False) -> dict:
+                   server_info: dict, nsfw_mode: bool = False,
+                   dry_run: bool = False) -> dict:
     """Write spellcaster_settings.json — shared config all plugins read."""
     section("Writing Settings")
 
@@ -546,6 +613,7 @@ def write_settings(paths: dict, server_url: str, llm_url: str,
         "llm_url": llm_url,
         "server_reachable": server_info.get("reachable", False),
         "remote_install": True,
+        "nsfw_mode": nsfw_mode,
         "available_nodes": sorted(server_info.get("available_nodes", set())),
         "models": {
             "checkpoints": server_info.get("checkpoints", []),
@@ -707,8 +775,15 @@ def _get_tavern_install_dir() -> Path:
         return Path.home() / ".local" / "share" / "spellcaster" / "tavern"
 
 
-def install_wizard_guild(server_url: str, llm_url: str, dry_run: bool = False):
-    """Deploy the Wizard Guild standalone interface."""
+def install_wizard_guild(server_url: str, llm_url: str,
+                         nsfw_mode: bool = False, nsfw_token: str = "",
+                         dry_run: bool = False):
+    """Deploy the Wizard Guild standalone interface.
+
+    When nsfw_mode is True:
+    - Writes nsfw/.github_token so the Guild auto-updates from the NSFW repo
+    - Sets NSFW_MODE in the guild config
+    """
     tavern_src = _find_tavern_src()
     scaffold_src = _find_scaffold_src()
 
@@ -721,6 +796,8 @@ def install_wizard_guild(server_url: str, llm_url: str, dry_run: bool = False):
 
     if dry_run:
         log_dim(f"[dry-run] Would install Wizard Guild to {dest}")
+        if nsfw_mode:
+            log_dim(f"[dry-run] Would configure NSFW edition")
         return
 
     log_info(f"Installing Wizard Guild → {dest}")
@@ -751,15 +828,34 @@ def install_wizard_guild(server_url: str, llm_url: str, dry_run: bool = False):
                 sc_copied += 1
         log_ok(f"Copied {sc_copied} scaffold files")
 
+    # ── NSFW edition setup ──
+    # The Wizard Guild detects NSFW mode at runtime by checking for
+    # nsfw/.github_token adjacent to the tavern directory.  When present,
+    # guild_launcher.py switches to the NSFW repo for auto-updates and
+    # sets server.NSFW_MODE = True for content pools.
+    if nsfw_mode and nsfw_token:
+        nsfw_dir = dest.parent / "nsfw"
+        nsfw_dir.mkdir(parents=True, exist_ok=True)
+        token_path = nsfw_dir / ".github_token"
+        token_path.write_text(nsfw_token, encoding="utf-8")
+        log_ok(f"NSFW token written → {token_path}")
+        log_info("Guild will auto-update from NSFW repo")
+    elif nsfw_mode and not nsfw_token:
+        log_warn("NSFW mode detected but no --nsfw-token provided.")
+        log_dim("Wizard Guild will run in SFW mode without the token.")
+        log_dim("Use --nsfw-token <PAT> to enable NSFW auto-updates.")
+
     # Write guild config
     guild_config = dest / "guild_config.json"
+    config_data = {
+        "comfyui_url": server_url,
+        "kobold_url": llm_url or "http://127.0.0.1:5001",
+        "prompt_enhance": bool(llm_url),
+        "auto_update": True,
+    }
     if not guild_config.exists():
-        guild_config.write_text(json.dumps({
-            "comfyui_url": server_url,
-            "kobold_url": llm_url or "http://127.0.0.1:5001",
-            "prompt_enhance": bool(llm_url),
-            "auto_update": True,
-        }, indent=2), encoding="utf-8")
+        guild_config.write_text(json.dumps(config_data, indent=2),
+                                encoding="utf-8")
         log_ok(f"Wrote guild_config.json (ComfyUI: {server_url})")
     else:
         log_ok("guild_config.json preserved (existing)")
@@ -910,9 +1006,12 @@ def _create_shortcut_unix(target_script: Path, shortcut_name: str,
 # ─── Summary ──────────────────────────────────────────────────────────────────
 
 def print_summary(server_url: str, llm_url: str, paths: dict,
-                  features: list[str], manifest: dict):
+                  features: list[str], manifest: dict,
+                  nsfw_mode: bool = False):
     section("INSTALLATION COMPLETE")
 
+    edition = f"{C_RED}NSFW{C_RESET}" if nsfw_mode else f"{C_GREEN}SFW{C_RESET}"
+    print(f"  {C_BOLD}Edition:{C_RESET}        {edition}")
     print(f"  {C_BOLD}Remote ComfyUI:{C_RESET} {server_url}")
     if llm_url:
         print(f"  {C_BOLD}LLM server:{C_RESET}     {llm_url}")
@@ -985,6 +1084,11 @@ def build_arg_parser():
                         help="Override GIMP plug-ins directory")
     parser.add_argument("--darktable", metavar="PATH",
                         help="Override Darktable lua/contrib directory")
+    parser.add_argument("--nsfw-token", metavar="PAT", default="",
+                        help="GitHub PAT for NSFW repo auto-updates. "
+                             "Enables Wizard Guild NSFW edition with auto-update support.")
+    parser.add_argument("--force-sfw", action="store_true",
+                        help="Force SFW mode even if NSFW content is detected on server")
     parser.add_argument("--interactive", action="store_true",
                         help="Use interactive prompts instead of auto-detection")
     parser.add_argument("--version", action="version",
@@ -1055,6 +1159,15 @@ def main():
     # ── Detect available features ─────────────────────────────────────
     available_features = detect_available_features(manifest, server_info)
 
+    # ── Detect SFW / NSFW edition ─────────────────────────────────────
+    if args.force_sfw:
+        nsfw_mode = False
+        log_info("SFW mode forced via --force-sfw")
+    else:
+        nsfw_mode = detect_nsfw_mode(server_info)
+
+    nsfw_token = args.nsfw_token
+
     # ── Detect local application paths ────────────────────────────────
     section("Local Application Detection")
 
@@ -1113,7 +1226,10 @@ def main():
     # ── Install Wizard Guild ──────────────────────────────────────────
     if not args.skip_guild:
         section("Installing Wizard Guild")
-        result = install_wizard_guild(server_url, llm_url, args.dry_run)
+        result = install_wizard_guild(server_url, llm_url,
+                                      nsfw_mode=nsfw_mode,
+                                      nsfw_token=nsfw_token,
+                                      dry_run=args.dry_run)
         if result:
             dest, launcher_path = result
             paths["tavern"] = dest
@@ -1125,10 +1241,12 @@ def main():
         log_dim("Wizard Guild: skipped (--skip-guild)")
 
     # ── Write shared settings ─────────────────────────────────────────
-    write_settings(paths, server_url, llm_url, server_info, args.dry_run)
+    write_settings(paths, server_url, llm_url, server_info,
+                   nsfw_mode=nsfw_mode, dry_run=args.dry_run)
 
     # ── Summary ───────────────────────────────────────────────────────
-    print_summary(server_url, llm_url, paths, available_features, manifest)
+    print_summary(server_url, llm_url, paths, available_features, manifest,
+                  nsfw_mode=nsfw_mode)
 
 
 if __name__ == "__main__":
