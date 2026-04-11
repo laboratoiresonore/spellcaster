@@ -1234,6 +1234,130 @@ def fetch_all_characters(comfy_url=None):
 CHARS_CACHE, NODES_CACHE = [], []   # populated by _server_init()
 
 
+def _llm_enhance_scaffolds():
+    """Background: use local LLM to generate richer descriptions for
+    auto-detected wizards that still have 'Unnamed Wizard' as their name.
+
+    Runs once after startup. Skips wizards that already have a user-set
+    name (via scaffold_overrides or wizard_identities). Results are saved
+    to scaffold_overrides so they persist across restarts.
+
+    This is best-effort: if the LLM is unreachable or returns junk,
+    the wizard keeps its default name/description.
+    """
+    global _SCAFFOLD_OVERRIDES
+    try:
+        # Quick reachability check — bail if LLM is down
+        test_url = f"{KOBOLD_URL}/v1/models"
+        req = urllib.request.Request(test_url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            if resp.status != 200:
+                return
+    except Exception:
+        print("  [Guild] LLM unreachable — skipping scaffold enhancement")
+        return
+
+    # Find wizards that need enhancement (still unnamed or generic)
+    candidates = []
+    for char_id, studio in _STUDIO_BY_ID.items():
+        # Only enhance auto-detected model wizards, not studios or customs
+        if not char_id.startswith("comfyui_") and not char_id.startswith("model_"):
+            continue
+        # Skip if user already overrode the name
+        if char_id in _SCAFFOLD_OVERRIDES and "name" in _SCAFFOLD_OVERRIDES[char_id]:
+            continue
+        if char_id in _WIZARD_IDENTITIES and "name" in _WIZARD_IDENTITIES[char_id]:
+            continue
+        candidates.append((char_id, studio))
+
+    if not candidates:
+        return
+
+    print(f"  [Guild] Enhancing {len(candidates)} wizard scaffold(s) via LLM...")
+    enhanced = 0
+
+    for char_id, studio in candidates:
+        model_name = studio.get("default_model", "")
+        arch = studio.get("default_arch", "unknown")
+        current_name = studio.get("name", "Unnamed Wizard")
+
+        # Build a compact LLM prompt
+        system_msg = (
+            "You name AI model wizards for a creative art tool. "
+            "Given a model filename and architecture, generate:\n"
+            "1. A short creative wizard name (2-4 words, evocative and fun)\n"
+            "2. A one-sentence personality hint\n"
+            "Reply in EXACTLY this format (no other text):\n"
+            "NAME: <wizard name>\n"
+            "PERSONALITY: <one sentence>\n"
+        )
+        user_msg = f"Model: {model_name}\nArchitecture: {arch}"
+
+        payload = {
+            "messages": [
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
+            ],
+            "max_tokens": 80,
+            "temperature": 0.8,
+        }
+
+        try:
+            url = f"{KOBOLD_URL}/v1/chat/completions"
+            body = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(
+                url, data=body,
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+
+            text = (
+                result.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+                .strip()
+            )
+
+            # Parse NAME: and PERSONALITY: lines
+            name_val = None
+            personality_val = None
+            for line in text.split("\n"):
+                line = line.strip()
+                if line.upper().startswith("NAME:"):
+                    name_val = line[5:].strip().strip('"')
+                elif line.upper().startswith("PERSONALITY:"):
+                    personality_val = line[12:].strip().strip('"')
+
+            if name_val and len(name_val) > 2 and len(name_val) < 50:
+                overrides = _SCAFFOLD_OVERRIDES.get(char_id, {})
+                overrides["name"] = name_val
+                if personality_val:
+                    overrides["archetype"] = personality_val
+                _SCAFFOLD_OVERRIDES[char_id] = overrides
+
+                # Apply to live data
+                _STUDIO_BY_ID[char_id]["name"] = name_val
+                if personality_val:
+                    _STUDIO_BY_ID[char_id]["archetype"] = personality_val
+                # Update CHARS_CACHE entry
+                for c in CHARS_CACHE:
+                    if c["id"] == char_id:
+                        c["name"] = name_val
+                        break
+
+                enhanced += 1
+
+        except Exception as e:
+            # Non-fatal — skip this wizard
+            print(f"  [Guild] LLM scaffold enhance failed for {char_id}: {e}")
+            continue
+
+    if enhanced:
+        _save_scaffold_overrides()
+        print(f"  [Guild] Enhanced {enhanced} wizard scaffold(s) via LLM")
+
+
 def _server_init(comfy_url=None):
     """Call AFTER COMFYUI_URL has been set by the launcher.
 
@@ -1247,6 +1371,7 @@ def _server_init(comfy_url=None):
     global CHARS_CACHE, NODES_CACHE, _ANIM_POLL_THREAD
     url = comfy_url or COMFYUI_URL
     CHARS_CACHE, NODES_CACHE = fetch_all_characters(comfy_url=url)
+    _apply_scaffold_overrides()
     _load_lora_registry()
     threading.Thread(
         target=_build_lora_registry, args=(url,), daemon=True
@@ -1264,6 +1389,11 @@ def _server_init(comfy_url=None):
     else:
         print(f"  [Guild] Privacy mode: OFF — files remain on ComfyUI server")
         print(f"  [Guild] Creations folder: {_CREATIONS_DIR}")
+
+    # LLM-powered scaffold enhancement (background, non-blocking)
+    # Names auto-detected wizards using the local LLM if available
+    if PROMPT_ENHANCE:
+        threading.Thread(target=_llm_enhance_scaffolds, daemon=True).start()
 
     # Start background animated-avatar poller (once)
     if _ANIM_POLL_THREAD is None:
@@ -1290,6 +1420,7 @@ _CUSTOM_WIZARDS_PATH = os.path.join(_STATE_DIR, "custom_wizards.json")
 _LORA_TOGGLES_PATH = os.path.join(_STATE_DIR, "lora_toggles.json")
 _IDENTITIES_PATH = os.path.join(_STATE_DIR, "wizard_identities.json")
 _ANIM_QUEUE_PATH = os.path.join(_STATE_DIR, "anim_queue.json")
+_SCAFFOLD_OVERRIDES_PATH = os.path.join(_STATE_DIR, "scaffold_overrides.json")
 
 
 def _load_banished_ids():
@@ -1458,6 +1589,42 @@ def _save_wizard_identities():
         print(f"  [State] Failed to save wizard identities: {e}")
 
 
+# ── Scaffold overrides (user edits to wizard scaffolds) ──
+# Stores per-wizard overrides from the scaffold editor. Keys are char_ids,
+# values are dicts with any subset of: name, subtext, archetype,
+# system_prompt, color1, color2, default_model, default_arch.
+# These are applied on top of auto-detected scaffolds at load time.
+
+def _load_scaffold_overrides():
+    if os.path.exists(_SCAFFOLD_OVERRIDES_PATH):
+        try:
+            with open(_SCAFFOLD_OVERRIDES_PATH, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"  [State] Failed to load scaffold overrides: {e}")
+    return {}
+
+def _save_scaffold_overrides():
+    try:
+        with open(_SCAFFOLD_OVERRIDES_PATH, 'w', encoding='utf-8') as f:
+            json.dump(_SCAFFOLD_OVERRIDES, f, indent=2)
+    except Exception as e:
+        print(f"  [State] Failed to save scaffold overrides: {e}")
+
+def _apply_scaffold_overrides():
+    """Apply saved scaffold overrides to _STUDIO_BY_ID entries."""
+    if not _SCAFFOLD_OVERRIDES:
+        return
+    applied = 0
+    for char_id, overrides in _SCAFFOLD_OVERRIDES.items():
+        if char_id in _STUDIO_BY_ID:
+            for key, val in overrides.items():
+                _STUDIO_BY_ID[char_id][key] = val
+            applied += 1
+    if applied:
+        print(f"  [State] Applied scaffold overrides to {applied} wizard(s)")
+
+
 # ── Animation queue (survives restarts for in-flight jobs) ──
 def _load_anim_queue():
     if os.path.exists(_ANIM_QUEUE_PATH):
@@ -1501,6 +1668,7 @@ _BANISHED_IDS = _load_banished_ids()
 _GENERATED_ASSETS = _load_generated_assets()
 _LORA_TOGGLES = _load_lora_toggles()
 _WIZARD_IDENTITIES = _load_wizard_identities()
+_SCAFFOLD_OVERRIDES = _load_scaffold_overrides()
 
 # Migrate stale ComfyUI URLs to cached local copies on startup
 if _migrate_stale_urls(_GENERATED_ASSETS, 'generated_assets'):
@@ -1774,7 +1942,7 @@ def _build_lora_registry(comfy_url):
                     compatible_archs = [hint_arch]
                     break
             else:
-                compatible_archs = ["sd15"]  # default for root-level LoRAs
+                compatible_archs = ["unknown"]  # unmatched — don't pollute arch dropdowns
 
         _LORA_REGISTRY[lora_name] = {
             "archs": compatible_archs,
@@ -4427,6 +4595,37 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 {"name": w.name, "type": w.workflow_type, "path": str(w.path)}
                 for w in wfs
             ])
+        elif self.path == '/api/scaffolds':
+            # GET /api/scaffolds — all wizard scaffolds for the Travelling Wizard
+            # Scaffold Editor. Returns every scaffold (studio, model, custom,
+            # auto-generated) with editable fields. Both default and LLM-generated
+            # scaffolds are included so the user can edit ALL of them.
+            scaffolds = []
+            for char_id, studio in _STUDIO_BY_ID.items():
+                # Determine source and editability
+                is_studio = char_id.startswith("studio_")
+                is_custom = char_id.startswith("custom_")
+                is_model = char_id.startswith("comfyui_") or char_id.startswith("model_")
+                banished = char_id in _BANISHED_IDS
+
+                scaffolds.append({
+                    "id": char_id,
+                    "name": studio.get("name", "Unknown"),
+                    "subtext": studio.get("subtext", ""),
+                    "type": studio.get("type", "studio"),
+                    "archetype": studio.get("archetype", ""),
+                    "system_prompt": studio.get("system_prompt", ""),
+                    "color1": studio.get("color1", ""),
+                    "color2": studio.get("color2", ""),
+                    "default_model": studio.get("default_model", ""),
+                    "default_arch": studio.get("default_arch", ""),
+                    "banished": banished,
+                    "editable": True,
+                    "source": "studio" if is_studio else "custom" if is_custom
+                              else "auto_model" if is_model else "generated",
+                    "build_fns": studio.get("build_fns", []),
+                })
+            return self.end_json(200, scaffolds)
         elif self.path.startswith('/api/cached_asset/'):
             # Serve locally cached assets (downloaded from ComfyUI before privacy cleanup)
             asset_name = self.path.split('/api/cached_asset/')[-1]
@@ -4766,6 +4965,42 @@ class GuildHandler(SimpleHTTPRequestHandler):
             _save_banished_ids()
             print(f"  [Guild] Unbanished wizard: {char_id}")
             return self.end_json(200, {"status": "unbanished", "id": char_id})
+
+        # -- /api/scaffold_edit -- save edits to a wizard scaffold
+        elif self.path == '/api/scaffold_edit':
+            char_id = data.get('id', '')
+            if not char_id:
+                return self.end_json(400, {"error": "Missing scaffold id"})
+            # Editable fields — anything the scaffold editor can change
+            EDITABLE = {
+                "name", "subtext", "archetype", "system_prompt",
+                "color1", "color2", "default_model", "default_arch",
+            }
+            overrides = {k: v for k, v in data.items()
+                         if k in EDITABLE and v is not None}
+            if not overrides:
+                return self.end_json(400, {"error": "No editable fields provided"})
+            # Merge into persisted overrides
+            existing = _SCAFFOLD_OVERRIDES.get(char_id, {})
+            existing.update(overrides)
+            _SCAFFOLD_OVERRIDES[char_id] = existing
+            _save_scaffold_overrides()
+            # Apply to live in-memory studio data
+            if char_id in _STUDIO_BY_ID:
+                for k, v in overrides.items():
+                    _STUDIO_BY_ID[char_id][k] = v
+            # Also update CHARS_CACHE entry if present
+            for c in CHARS_CACHE:
+                if c['id'] == char_id:
+                    for k, v in overrides.items():
+                        if k in c:
+                            c[k] = v
+                    break
+            print(f"  [Guild] Scaffold edit: {char_id} — updated {list(overrides.keys())}")
+            return self.end_json(200, {
+                "status": "ok", "id": char_id,
+                "updated": list(overrides.keys()),
+            })
 
         # -- /api/summon_wizard -- create a new wizard character from a model
         elif self.path == '/api/summon_wizard':
