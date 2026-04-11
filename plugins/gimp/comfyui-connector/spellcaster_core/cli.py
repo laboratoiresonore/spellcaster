@@ -381,6 +381,23 @@ def cmd_diagnostic(args):
     return 0 if not report.broken else 1
 
 
+def cmd_calibrate(args):
+    """Run full model+LoRA compatibility calibration."""
+    from spellcaster_core.calibration import calibrate, save_matrix
+    print("Starting calibration (this may take 5-20 minutes)...")
+    matrix = calibrate(
+        args.server, callback=print,
+        test_loras=not args.no_loras,
+        max_loras_per_model=args.max_loras,
+    )
+    report_path = os.path.join(args.output, "calibration_matrix.json")
+    save_matrix(matrix, report_path)
+    print(f"\nMatrix saved: {report_path}")
+    print(f"Verified models: {len(matrix.verified_models())}")
+    print(f"Broken models: {len(matrix.broken_models())}")
+    return 0 if not matrix.broken_models() else 1
+
+
 def cmd_recommend(args):
     """Recommend the best model and settings for a prompt."""
     from spellcaster_core.recommend import recommend
@@ -503,6 +520,14 @@ def main():
     sub.add_parser("diagnostic", aliases=["diag", "test"],
                    help="Test every capability and generate a health report")
 
+    # calibrate
+    p_cal = sub.add_parser("calibrate", aliases=["cal"],
+                           help="Test every model+LoRA combo (5-20 min)")
+    p_cal.add_argument("--no-loras", action="store_true",
+                       help="Skip LoRA testing (faster)")
+    p_cal.add_argument("--max-loras", type=int, default=3,
+                       help="Max LoRAs to test per model (default: 3)")
+
     # recommend
     p_rec = sub.add_parser("recommend", aliases=["rec"],
                            help="Recommend best model for a prompt")
@@ -540,6 +565,8 @@ def main():
         return cmd_recommend(args)
     elif cmd in ("diagnostic", "diag", "test"):
         return cmd_diagnostic(args)
+    elif cmd in ("calibrate", "cal"):
+        return cmd_calibrate(args)
     else:
         parser.print_help()
         return 1
