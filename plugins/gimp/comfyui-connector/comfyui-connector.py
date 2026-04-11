@@ -228,6 +228,13 @@ from pathlib import Path
 
 # ── v2 workflow builders (modular replacements) ──────────────────────────
 from _workflows_v2 import (
+    # ── Shared constants (single source of truth) ──
+    KLEIN_MODELS, FLUX2_VAE,
+    STUDIO_FACE_W, STUDIO_FACE_H,
+    STUDIO_BODY_W, STUDIO_BODY_H,
+    STUDIO_SCENE_W, STUDIO_SCENE_H,
+    STUDIO_BODY_IN_SCENE_SCALE,
+    # ── Workflow builders ──
     build_rembg, build_upscale, build_lama_remove, build_lut,
     build_klein_img2img, build_txt2img, build_img2img,
     build_faceswap, build_faceswap_model, build_save_face_model,
@@ -1607,20 +1614,7 @@ KLEIN_DEFAULTS = {
     "text_ref_balance": 0.5,
 }
 
-KLEIN_MODELS = {
-    "Klein 9B": {
-        "unet": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
-        "clip": "qwen_3_8b_fp8mixed.safetensors",
-    },
-    "Klein 4B": {
-        "unet": "A-Flux\\flux-2-klein-4b-fp8.safetensors",
-        "clip": "qwen_3_4b.safetensors",
-    },
-    "Klein Base 4B": {
-        "unet": "A-Flux\\flux-2-klein-base-4b-fp8.safetensors",
-        "clip": "qwen_3_4b.safetensors",
-    },
-}
+# KLEIN_MODELS is now imported from _workflows_v2 (single source of truth)
 
 LUT_PRESETS = {
     "Kodak 2383 (cinema warm)": "Rec709_Kodak_2383_D65.cube",
