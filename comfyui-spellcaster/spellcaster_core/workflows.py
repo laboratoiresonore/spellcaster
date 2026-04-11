@@ -173,13 +173,24 @@ All original _build_* functions have been migrated to this pattern for consisten
 and maintainability.
 """
 
-from _nodes import NodeFactory
-from _architectures import ARCHITECTURES, get_arch
-from _composites import (
-    load_model_stack, inject_lora_chain, encode_prompts,
-    sample_standard, sample_klein_img2img,
-    inject_controlnet, inject_controlnet_pair,
-)
+try:
+    # When running as part of spellcaster_core package (CLI, ComfyUI nodes)
+    from .node_factory import NodeFactory
+    from .architectures import ARCHITECTURES, get_arch
+    from .composites import (
+        load_model_stack, inject_lora_chain, encode_prompts,
+        sample_standard, sample_klein_img2img,
+        inject_controlnet, inject_controlnet_pair,
+    )
+except ImportError:
+    # Fallback: when running from GIMP plugin directory (shim imports via _nodes etc.)
+    from _nodes import NodeFactory
+    from _architectures import ARCHITECTURES, get_arch
+    from _composites import (
+        load_model_stack, inject_lora_chain, encode_prompts,
+        sample_standard, sample_klein_img2img,
+        inject_controlnet, inject_controlnet_pair,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
