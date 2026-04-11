@@ -1,12 +1,13 @@
 [project]
 name = "comfyui-spellcaster"
-description = "Architecture-aware nodes for image generation. Auto-detects model architecture, loads correct CLIP/VAE, enhances prompts via LLM, and samples with optimal settings. ONE SOURCE OF TRUTH for Spellcaster ecosystem (GIMP, Darktable, Wizard Guild)."
+description = "Architecture-aware nodes for AI image generation. Auto-detects model architecture (SD1.5, SDXL, Flux, Klein, Chroma), loads correct CLIP/VAE, enhances prompts via local LLM, and samples with optimal settings."
 version = "1.0.0"
-license = "MIT"
+license = { file = "LICENSE" }
 requires-python = ">=3.10"
 
 [project.urls]
-Repository = "https://github.com/laboratoiresonore/spellcaster"
+Repository = "https://github.com/laboratoiresonore/ComfyUI-Spellcaster"
+Issues = "https://github.com/laboratoiresonore/ComfyUI-Spellcaster/issues"
 
 [tool.comfy]
 PublisherId = "laboratoiresonore"

@@ -1,0 +1,132 @@
+{
+  "1": {
+    "class_type": "SpellcasterLoader",
+    "inputs": {
+      "model_name": "Put your model here.safetensors",
+      "arch_override": "auto"
+    },
+    "_meta": {
+      "title": "SpellcasterLoader"
+    }
+  },
+  "2": {
+    "class_type": "SpellcasterPromptEnhance",
+    "inputs": {
+      "prompt": "a majestic dragon perched on a crystal mountain at sunset",
+      "arch_key": [
+        "1",
+        3
+      ],
+      "enhance": true,
+      "llm_url": "http://127.0.0.1:5001",
+      "is_negative": false
+    },
+    "_meta": {
+      "title": "SpellcasterPromptEnhance (Positive)"
+    }
+  },
+  "3": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": [
+        "2",
+        0
+      ],
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "CLIPTextEncode (Positive)"
+    }
+  },
+  "4": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "blurry, low quality, deformed",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "CLIPTextEncode (Negative)"
+    }
+  },
+  "5a": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "example.png"
+    },
+    "_meta": {
+      "title": "LoadImage"
+    }
+  },
+  "5b": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        "5a",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    },
+    "_meta": {
+      "title": "VAEEncode"
+    }
+  },
+  "6": {
+    "class_type": "SpellcasterSampler",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "positive": [
+        "3",
+        0
+      ],
+      "negative": [
+        "4",
+        0
+      ],
+      "latent_image": [
+        "5b",
+        0
+      ],
+      "arch_key": [
+        "1",
+        3
+      ],
+      "seed": 42,
+      "steps_override": 0,
+      "cfg_override": 0.0,
+      "denoise": 0.6
+    },
+    "_meta": {
+      "title": "SpellcasterSampler"
+    }
+  },
+  "7": {
+    "class_type": "SpellcasterOutput",
+    "inputs": {
+      "samples": [
+        "6",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ],
+      "filename_prefix": "Spellcaster",
+      "strip_metadata": true
+    },
+    "_meta": {
+      "title": "SpellcasterOutput"
+    }
+  }
+}
