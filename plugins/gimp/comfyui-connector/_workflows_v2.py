@@ -183,6 +183,39 @@ from _composites import (
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  SHARED CONSTANTS — Single source of truth for Klein / Flux2 / Studio
+# ═══════════════════════════════════════════════════════════════════════════
+
+KLEIN_MODELS = {
+    "Klein 9B": {
+        "unet": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
+        "clip": "qwen_3_8b_fp8mixed.safetensors",
+    },
+    "Klein 4B": {
+        "unet": "A-Flux\\flux-2-klein-4b-fp8.safetensors",
+        "clip": "qwen_3_4b.safetensors",
+    },
+    "Klein Base 4B": {
+        "unet": "A-Flux\\flux-2-klein-base-4b-fp8.safetensors",
+        "clip": "qwen_3_4b.safetensors",
+    },
+}
+
+FLUX2_VAE = "flux2-vae.safetensors"
+
+# ── Studio Canvas — canonical dimensions for the Magic Studio pipeline ──
+# All stages generate at these sizes so compositing has a shared spatial
+# reference.  Dimensions are multiples of 16 and ≈1 MP each.
+STUDIO_FACE_W, STUDIO_FACE_H = 1024, 1024   # square — passport headshots
+STUDIO_BODY_W, STUDIO_BODY_H = 768, 1152    # 2:3 portrait — full-body
+STUDIO_SCENE_W, STUDIO_SCENE_H = 1152, 768  # 3:2 landscape — scene backdrops
+
+# Derived: default foreground_scale when placing a body PNG into a scene.
+# The body should fill ~85% of the scene height.
+STUDIO_BODY_IN_SCENE_SCALE = round((STUDIO_SCENE_H * 0.85) / STUDIO_BODY_H, 3)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  img2img — Standard image-to-image generation
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -413,7 +446,8 @@ def build_txt2img(preset, prompt_text, negative_text, seed, loras=None):
 #  rembg — Background removal
 # ═══════════════════════════════════════════════════════════════════════════
 
-def build_rembg(image_filename):
+def build_rembg(image_filename, alpha_matting=False,
+                model="isnet-general-use"):
     """Background removal (transparent cutout).
 
     Uses rembg (remove background) to extract subject from background, creating
@@ -426,6 +460,11 @@ def build_rembg(image_filename):
 
     Args:
         image_filename (str): Path to input image
+        alpha_matting (bool): Enable alpha matting for cleaner edges around
+            hair and fine detail.  Slower but produces much better cutouts
+            for portrait / full-body work.  Default False for back-compat.
+        model (str): Rembg segmentation model.  Default "isnet-general-use".
+            "u2net" is a lighter alternative.
 
     Returns:
         dict: ComfyUI workflow (simple 3-node graph: load → rembg → save)
@@ -437,7 +476,8 @@ def build_rembg(image_filename):
     """
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
-    rembg_id = nf.rembg([img_id, 0], node_id="2")
+    rembg_id = nf.rembg([img_id, 0], model=model,
+                         alpha_matting=alpha_matting, node_id="2")
     nf.save_image([rembg_id, 0], "spellcaster_rembg", node_id="3")
     return nf.build()
 
@@ -633,21 +673,7 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
       - Low guidance values work better (1.0-3.0 vs 7-15 for SDXL)
     """
     if klein_models is None:
-        # Fallback — import from main module during migration
-        klein_models = {
-            "Klein 9B": {
-                "unet": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
-                "clip": "qwen_3_8b_fp8mixed.safetensors",
-            },
-            "Klein 4B": {
-                "unet": "A-Flux\\flux-2-klein-4b-fp8.safetensors",
-                "clip": "qwen_3_4b.safetensors",
-            },
-            "Klein Base 4B": {
-                "unet": "A-Flux\\flux-2-klein-base-4b-fp8.safetensors",
-                "clip": "qwen_3_4b.safetensors",
-            },
-        }
+        klein_models = KLEIN_MODELS
 
     # Convert single lora_name/lora_strength to loras list format
     if lora_name and not loras:
@@ -662,7 +688,7 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
         km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
         clip_type="flux2", device="default", node_id="2",
     )
-    vae_id = nf.vae_loader("flux2-vae.safetensors", node_id="3")
+    vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
 
 
     # Apply LoRA chain
@@ -2235,14 +2261,7 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
     as the ReferenceLatent source instead of the main input image.
     """
     if klein_models is None:
-        klein_models = {
-            "Klein 9B": {"unet": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
-                         "clip": "qwen_3_8b_fp8mixed.safetensors"},
-            "Klein 4B": {"unet": "A-Flux\\flux-2-klein-4b-fp8.safetensors",
-                         "clip": "qwen_3_4b.safetensors"},
-            "Klein Base 4B": {"unet": "A-Flux\\flux-2-klein-base-4b-fp8.safetensors",
-                              "clip": "qwen_3_4b.safetensors"},
-        }
+        klein_models = KLEIN_MODELS
 
     # Convert single lora_name/lora_strength to loras list format
     if lora_name and not loras:
@@ -2257,7 +2276,7 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
         km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
         clip_type="flux2", device="default", node_id="2",
     )
-    vae_id = nf.vae_loader("flux2-vae.safetensors", node_id="3")
+    vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
 
 
     # Apply LoRA chain
@@ -2409,14 +2428,7 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
       - Swapped face quality depends on source image quality and angle match
     """
     if klein_models is None:
-        klein_models = {
-            "Klein 9B": {"unet": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
-                         "clip": "qwen_3_8b_fp8mixed.safetensors"},
-            "Klein 4B": {"unet": "A-Flux\\flux-2-klein-4b-fp8.safetensors",
-                         "clip": "qwen_3_4b.safetensors"},
-            "Klein Base 4B": {"unet": "A-Flux\\flux-2-klein-base-4b-fp8.safetensors",
-                              "clip": "qwen_3_4b.safetensors"},
-        }
+        klein_models = KLEIN_MODELS
 
     km = klein_models[klein_model_key]
     nf = NodeFactory()
@@ -2458,7 +2470,7 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
         km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
         clip_type="flux2", device="default", node_id="21",
     )
-    vae_id = nf.vae_loader("flux2-vae.safetensors", node_id="22")
+    vae_id = nf.vae_loader(FLUX2_VAE, node_id="22")
 
 
     # Apply LoRA chain
@@ -3260,15 +3272,16 @@ def build_photobooth(ref_filename, prompt_text, seed,
                      swap_model="reswapper_256.onnx",
                      face_restore_model="codeformer-v0.1.0.pth",
                      face_restore_vis=0.9, codeformer_weight=0.6,
+                     transparent=False,
                      klein_models=None):
     """Photobooth: generate passport-style headshots with extreme character fidelity.
 
-    Three-stage single-workflow pipeline:
+    Four-stage single-workflow pipeline:
 
     1. **Klein ReferenceLatent generation** — generates a clean studio headshot
-       guided by the reference photo. Prompt controls background/lighting/pose,
+       at fixed STUDIO_FACE_W × STUDIO_FACE_H (square) dimensions, guided by
+       the reference photo.  Prompt controls background/lighting/pose,
        ReferenceLatent provides structural guidance from the input face.
-       This produces a well-composed headshot that RESEMBLES the person.
 
     2. **ReActor face swap** — transplants the EXACT face from the original
        reference onto the Klein output. This restores character fidelity
@@ -3277,17 +3290,15 @@ def build_photobooth(ref_filename, prompt_text, seed,
     3. **Face restore** — CodeFormer final pass for artifact cleanup and
        skin detail enhancement.
 
-    The result is a clean passport-style headshot with the person's real face.
+    4. **Background removal** (optional, ``transparent=True``) — rembg with
+       alpha matting produces a transparent PNG cutout suitable for compositing
+       in later Studio pipeline stages.
+
+    The result is a clean passport-style headshot with the person's real face,
+    always at a predictable square resolution for downstream compositing.
     """
     if klein_models is None:
-        klein_models = {
-            "Klein 9B": {"unet": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
-                         "clip": "qwen_3_8b_fp8mixed.safetensors"},
-            "Klein 4B": {"unet": "A-Flux\\flux-2-klein-4b-fp8.safetensors",
-                         "clip": "qwen_3_4b.safetensors"},
-            "Klein Base 4B": {"unet": "A-Flux\\flux-2-klein-base-4b-fp8.safetensors",
-                              "clip": "qwen_3_4b.safetensors"},
-        }
+        klein_models = KLEIN_MODELS
 
     km = klein_models[klein_model_key]
     nf = NodeFactory()
@@ -3297,36 +3308,38 @@ def build_photobooth(ref_filename, prompt_text, seed,
 
     # ══════════════════════════════════════════════════════════════════
     # Stage 1: Klein ReferenceLatent generation — clean headshot base
+    #          Fixed square output (STUDIO_FACE_W × STUDIO_FACE_H) so
+    #          all photobooth results share the same spatial reference.
     # ══════════════════════════════════════════════════════════════════
     unet_id = nf.unet_loader(km["unet"], "default", node_id="10")
     clip_id = nf.clip_loader(
         km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
         clip_type="flux2", device="default", node_id="11",
     )
-    vae_id = nf.vae_loader("flux2-vae.safetensors", node_id="12")
+    vae_id = nf.vae_loader(FLUX2_VAE, node_id="12")
 
     # Text conditioning
     pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="13")
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="14")
 
-    # Encode reference for ReferenceLatent conditioning
+    # Encode reference — scale to 1 MP but ReferenceLatent only needs
+    # the structural guidance, NOT the output resolution.
     scaled_id = nf.image_scale_to_total_pixels([ref_id, 0], megapixels=1.0,
                                                 node_id="15")
-    size_id = nf.get_image_size([scaled_id, 0], node_id="16")
     latent_id = nf.vae_encode([scaled_id, 0], [vae_id, 0], node_id="17")
 
     # ReferenceLatent wrapping
     ref_pos_id = nf.reference_latent([pos_id, 0], [latent_id, 0], node_id="18")
     ref_neg_id = nf.reference_latent([neg_id, 0], [latent_id, 0], node_id="19")
 
-    # Sampling (Flux2Scheduler — full generation from noise)
+    # Sampling at FIXED square dimensions (not derived from reference)
     guider_id = nf.cfg_guider([unet_id, 0], [ref_pos_id, 0], [ref_neg_id, 0],
                               guidance, node_id="20")
     sampler_id = nf.ksampler_select("euler", node_id="21")
-    sched_id = nf.flux2_scheduler(steps, [size_id, 0], [size_id, 1],
+    sched_id = nf.flux2_scheduler(steps, STUDIO_FACE_W, STUDIO_FACE_H,
                                    node_id="22")
     noise_id = nf.random_noise(seed, node_id="23")
-    empty_id = nf.empty_flux2_latent_image([size_id, 0], [size_id, 1],
+    empty_id = nf.empty_flux2_latent_image(STUDIO_FACE_W, STUDIO_FACE_H,
                                             batch_size=1, node_id="24")
 
     sample_id = nf.sampler_custom_advanced(
@@ -3368,7 +3381,15 @@ def build_photobooth(ref_filename, prompt_text, seed,
         node_id="50",
     )
 
-    nf.save_image([restore_id, 0], "photobooth", node_id="60")
+    # ══════════════════════════════════════════════════════════════════
+    # Stage 4 (optional): Background removal — transparent PNG cutout
+    # ══════════════════════════════════════════════════════════════════
+    final_ref = [restore_id, 0]
+    if transparent:
+        rembg_id = nf.rembg([restore_id, 0], alpha_matting=True, node_id="55")
+        final_ref = [rembg_id, 0]
+
+    nf.save_image(final_ref, "photobooth", node_id="60")
 
     return nf.build()
 
@@ -3387,14 +3408,7 @@ def build_klein_repose(image_filename, klein_model_key, prompt_text, seed,
     keeping ReferenceLatent structural guidance from the input image.
     """
     if klein_models is None:
-        klein_models = {
-            "Klein 9B": {"unet": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
-                         "clip": "qwen_3_8b_fp8mixed.safetensors"},
-            "Klein 4B": {"unet": "A-Flux\\flux-2-klein-4b-fp8.safetensors",
-                         "clip": "qwen_3_4b.safetensors"},
-            "Klein Base 4B": {"unet": "A-Flux\\flux-2-klein-base-4b-fp8.safetensors",
-                              "clip": "qwen_3_4b.safetensors"},
-        }
+        klein_models = KLEIN_MODELS
 
     km = klein_models[klein_model_key]
     nf = NodeFactory()
@@ -3405,7 +3419,7 @@ def build_klein_repose(image_filename, klein_model_key, prompt_text, seed,
         km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
         clip_type="flux2", device="default", node_id="2",
     )
-    vae_id = nf.vae_loader("flux2-vae.safetensors", node_id="3")
+    vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
 
 
     # Apply LoRA chain
@@ -3454,24 +3468,24 @@ def build_klein_repose(image_filename, klein_model_key, prompt_text, seed,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
-                      blend_mode="normal", opacity=1.0, scale=1.0,
-                      position_x=0.5, position_y=0.5,
+                      blend_mode="normal", opacity=1.0,
+                      scale=None, position_x=0.5, position_y=0.5,
                       klein_model_key="Klein 9B", steps=20, denoise=0.25,
                       guidance=1.0, loras=None, klein_models=None):
     """Klein Blend: composite foreground onto background, then harmonize with Klein.
 
     Pipeline: LoadImage(FG) + LoadImage(BG) → AILab_ImageCombiner → Klein
     ReferenceLatent + BasicScheduler (low denoise for subtle integration).
+
+    When ``scale`` is None (default) it falls back to
+    STUDIO_BODY_IN_SCENE_SCALE — the canvas-aware ratio that makes a
+    full-body PNG fill ~85 % of the scene height.  Pass an explicit
+    float to override.
     """
+    if scale is None:
+        scale = STUDIO_BODY_IN_SCENE_SCALE
     if klein_models is None:
-        klein_models = {
-            "Klein 9B": {"unet": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
-                         "clip": "qwen_3_8b_fp8mixed.safetensors"},
-            "Klein 4B": {"unet": "A-Flux\\flux-2-klein-4b-fp8.safetensors",
-                         "clip": "qwen_3_4b.safetensors"},
-            "Klein Base 4B": {"unet": "A-Flux\\flux-2-klein-base-4b-fp8.safetensors",
-                              "clip": "qwen_3_4b.safetensors"},
-        }
+        klein_models = KLEIN_MODELS
 
     km = klein_models[klein_model_key]
     nf = NodeFactory()
@@ -3493,7 +3507,7 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
         km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
         clip_type="flux2", device="default", node_id="11",
     )
-    vae_id = nf.vae_loader("flux2-vae.safetensors", node_id="12")
+    vae_id = nf.vae_loader(FLUX2_VAE, node_id="12")
 
 
     # Apply LoRA chain
@@ -3556,14 +3570,7 @@ def build_klein_inpaint(image_filename, mask_filename, prompt_text, seed,
     Optional DifferentialDiffusion enables smooth mask-edge blending.
     """
     if klein_models is None:
-        klein_models = {
-            "Klein 9B": {"unet": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
-                         "clip": "qwen_3_8b_fp8mixed.safetensors"},
-            "Klein 4B": {"unet": "A-Flux\\flux-2-klein-4b-fp8.safetensors",
-                         "clip": "qwen_3_4b.safetensors"},
-            "Klein Base 4B": {"unet": "A-Flux\\flux-2-klein-base-4b-fp8.safetensors",
-                              "clip": "qwen_3_4b.safetensors"},
-        }
+        klein_models = KLEIN_MODELS
 
     km = klein_models[klein_model_key]
     nf = NodeFactory()
@@ -3574,7 +3581,7 @@ def build_klein_inpaint(image_filename, mask_filename, prompt_text, seed,
         km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
         clip_type="flux2", device="default", node_id="2",
     )
-    vae_id = nf.vae_loader("flux2-vae.safetensors", node_id="3")
+    vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
 
 
     # Apply LoRA chain
@@ -3657,14 +3664,7 @@ def build_klein_scene_img2img(image_filename, prompt_text, seed,
     Used by Studio Set to blend actors into scenes with low denoise.
     """
     if klein_models is None:
-        klein_models = {
-            "Klein 9B": {"unet": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
-                         "clip": "qwen_3_8b_fp8mixed.safetensors"},
-            "Klein 4B": {"unet": "A-Flux\\flux-2-klein-4b-fp8.safetensors",
-                         "clip": "qwen_3_4b.safetensors"},
-            "Klein Base 4B": {"unet": "A-Flux\\flux-2-klein-base-4b-fp8.safetensors",
-                              "clip": "qwen_3_4b.safetensors"},
-        }
+        klein_models = KLEIN_MODELS
 
     km = klein_models[klein_model_key]
     nf = NodeFactory()
@@ -3675,7 +3675,7 @@ def build_klein_scene_img2img(image_filename, prompt_text, seed,
         km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
         clip_type="flux2", device="default", node_id="2",
     )
-    vae_id = nf.vae_loader("flux2-vae.safetensors", node_id="3")
+    vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
 
 
     # Apply LoRA chain
