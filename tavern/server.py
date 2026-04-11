@@ -19,18 +19,32 @@ import socket
 import threading
 
 # ── Path setup ────────────────────────────────────────────────────────
-# Add parent dirs so scaffold/ and _workflows_v2 can be found
+# Add parent dirs so scaffold/ and spellcaster_core can be found
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.dirname(_THIS_DIR))
-sys.path.append(os.path.join(os.path.dirname(_THIS_DIR),
-                             'plugins', 'gimp', 'comfyui-connector'))
+_REPO_ROOT = os.path.dirname(_THIS_DIR)
+sys.path.append(_REPO_ROOT)
+
+# Find spellcaster_core: comfyui-spellcaster/ (dev) or plugins/gimp/.../spellcaster_core (bundled)
+for _core_candidate in [
+    os.path.join(_REPO_ROOT, 'comfyui-spellcaster'),
+    os.path.join(_REPO_ROOT, 'plugins', 'gimp', 'comfyui-connector'),
+]:
+    if os.path.isdir(os.path.join(_core_candidate, 'spellcaster_core')):
+        if _core_candidate not in sys.path:
+            sys.path.insert(0, _core_candidate)
+        break
+
+# Also add GIMP connector path for _workflows_v2 (still lives there)
+_gimp_connector = os.path.join(_REPO_ROOT, 'plugins', 'gimp', 'comfyui-connector')
+if _gimp_connector not in sys.path:
+    sys.path.append(_gimp_connector)
 
 try:
     import _workflows_v2
     from _workflows_v2 import build_txt2img
-    from _architectures import ARCHITECTURES, get_arch
+    from spellcaster_core.architectures import ARCHITECTURES, get_arch
     BUILTIN_AVAILABLE = True
-except (ImportError, SyntaxError, ValueError, Exception):
+except (ImportError, SyntaxError):
     BUILTIN_AVAILABLE = False
     _workflows_v2 = None
     build_txt2img = None
