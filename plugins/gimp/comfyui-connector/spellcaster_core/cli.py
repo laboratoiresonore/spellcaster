@@ -368,6 +368,28 @@ def cmd_vram(args):
     return 0
 
 
+def cmd_recommend(args):
+    """Recommend the best model and settings for a prompt."""
+    from spellcaster_core.recommend import recommend
+
+    rec = recommend(args.prompt, server=args.server)
+    print(f"Recommendation for: \"{args.prompt}\"")
+    print(f"  Intent:  {rec['intent']} ({rec['reason']})")
+    print(f"  Arch:    {rec['arch']}")
+    if rec['model']:
+        print(f"  Model:   {rec['model']}")
+    print(f"  Settings: {rec['settings']}")
+    if rec['alternatives']:
+        print(f"  Alternatives:")
+        for alt in rec['alternatives']:
+            m = f" ({alt['model']})" if alt['model'] else ""
+            print(f"    - {alt['arch']}{m}")
+    if len(rec.get('all_intents', [])) > 1:
+        extra = ", ".join(f"{i[0]}" for i in rec['all_intents'][1:])
+        print(f"  Also detected: {extra}")
+    return 0
+
+
 def _find_best_model(server, arch_key):
     """Find the best available model for an architecture on ComfyUI."""
     def _get_opts(node, field):
@@ -464,6 +486,11 @@ def main():
     sub.add_parser("models", aliases=["ls"],
                    help="List available models")
 
+    # recommend
+    p_rec = sub.add_parser("recommend", aliases=["rec"],
+                           help="Recommend best model for a prompt")
+    p_rec.add_argument("--prompt", "-p", required=True, help="What you want to create")
+
     # vram estimate
     p_vram = sub.add_parser("vram", help="Estimate VRAM usage for a generation")
     p_vram.add_argument("--arch", "-a", default="sdxl", help="Architecture")
@@ -492,6 +519,8 @@ def main():
         return cmd_models(args)
     elif cmd == "vram":
         return cmd_vram(args)
+    elif cmd in ("recommend", "rec"):
+        return cmd_recommend(args)
     else:
         parser.print_help()
         return 1
