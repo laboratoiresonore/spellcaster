@@ -2168,9 +2168,9 @@ def _ensure_spellcaster_core(staging):
     canonical = staging / "comfyui-spellcaster" / "spellcaster_core"
     target = staging / "plugins" / "gimp" / "comfyui-connector" / "spellcaster_core"
     if canonical.is_dir():
-        if target.is_dir():
-            shutil.rmtree(target)
-        shutil.copytree(str(canonical), str(target))
+        target.mkdir(parents=True, exist_ok=True)
+        for f in canonical.glob("*.py"):
+            shutil.copy2(str(f), str(target / f.name))
         print(f"  Ensured spellcaster_core in GIMP plugin ({len(list(target.glob('*.py')))} files)")
 
 
