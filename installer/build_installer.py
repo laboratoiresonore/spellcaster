@@ -210,6 +210,64 @@ def build_manual_update():
     return result.returncode
 
 
+def build_remote_installer(target_platform: str):
+    """Build the standalone remote installer binary.
+
+    The remote installer is a lightweight console app that bundles only:
+    - manifest.json (feature/node definitions)
+    - plugins/ (GIMP, Darktable, tavern, scaffold sources)
+    - assets/ (icons, if present)
+
+    It does NOT bundle the GUI module or customtkinter (no interactive UI).
+    """
+    sep = os.pathsep
+    print("Building remote installer…")
+
+    cmd = [
+        sys.executable, "-m", "PyInstaller",
+        "--noconfirm",
+        "--onefile",
+        "--console",                                    # always console — no GUI
+        "--name", "spellcaster-remote-installer",
+        "--add-data", f"manifest.json{sep}.",
+        "--add-data", f"{REPO_ROOT / 'plugins'}{sep}plugins",
+        "--distpath", str(REPO_ROOT / "dist"),
+        "--workpath", str(REPO_ROOT / "build"),
+    ]
+
+    # Bundle assets/ if present (icons for shortcuts)
+    if (REPO_ROOT / "assets").is_dir():
+        cmd += ["--add-data", f"{REPO_ROOT / 'assets'}{sep}assets"]
+
+    # Bundle tavern/ and scaffold/ if present
+    if (REPO_ROOT / "tavern").is_dir():
+        cmd += ["--add-data", f"{REPO_ROOT / 'tavern'}{sep}tavern"]
+    if (REPO_ROOT / "scaffold").is_dir():
+        cmd += ["--add-data", f"{REPO_ROOT / 'scaffold'}{sep}scaffold"]
+
+    # Platform-specific icon
+    if target_platform == "windows":
+        icon_path = REPO_ROOT / "assets" / "spellcaster.ico"
+        if icon_path.exists():
+            cmd += ["--icon", str(icon_path)]
+
+    cmd.append("install_remote.py")
+
+    print("Command:", " ".join(str(c) for c in cmd))
+    result = subprocess.run(cmd, cwd=str(HERE))
+
+    if result.returncode == 0:
+        ext = ".exe" if target_platform == "windows" else ""
+        output = f"dist/spellcaster-remote-installer{ext}"
+        print(f"\nRemote installer built: {output}")
+        print(f"  Full path: {REPO_ROOT / output}")
+        print(f"\n  Usage: {output} http://192.168.1.50:8188")
+        print(f"         {output} --scan")
+    else:
+        print(f"\nRemote installer build failed (exit code {result.returncode})")
+    return result.returncode
+
+
 def main():
     """Parse CLI arguments, auto-detect platform if needed, and kick off the build."""
     parser = argparse.ArgumentParser(description="Build Spellcaster standalone installer")
@@ -226,6 +284,14 @@ def main():
         "--update-tool", action="store_true",
         help="Also build the manual update/repair tool",
     )
+    parser.add_argument(
+        "--remote", action="store_true",
+        help="Also build the remote network installer",
+    )
+    parser.add_argument(
+        "--remote-only", action="store_true",
+        help="Build ONLY the remote network installer (skip main installer)",
+    )
     args = parser.parse_args()
 
     # Auto-detect platform from the current OS if not explicitly provided
@@ -241,10 +307,15 @@ def main():
         print(f"Auto-detected platform: {target}")
 
     ensure_pyinstaller()
-    build(target, onedir=args.onedir)
+
+    if not args.remote_only:
+        build(target, onedir=args.onedir)
 
     if args.update_tool:
         build_manual_update()
+
+    if args.remote or args.remote_only:
+        build_remote_installer(target)
 
 
 if __name__ == "__main__":
