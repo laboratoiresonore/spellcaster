@@ -1380,8 +1380,11 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         # Open in a new terminal window
         try:
             if sys.platform == "win32":
+                # "start" requires an empty "" title before the command when
+                # the exe path contains spaces, otherwise it treats the path
+                # as the window title and fails to launch anything.
                 subprocess.Popen(
-                    ["cmd", "/c", "start", "Spellcaster Antenna Installer"] + launch_cmd,
+                    ["cmd", "/c", "start", ""] + launch_cmd,
                     cwd=launch_cwd,
                 )
             elif sys.platform == "darwin":
