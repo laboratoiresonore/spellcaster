@@ -79,6 +79,17 @@ class Pipeline:
         self._steps.append(("load", {"path": image_path}))
         return self
 
+    def auto(self, prompt, **kwargs):
+        """Smart generation — auto-detect the best model and settings from prompt.
+
+        Uses the recommender to analyze the prompt and pick architecture,
+        resolution, steps, and model automatically.
+
+            Pipeline(server).auto("anime girl in a garden").save("out/").run()
+        """
+        self._steps.append(("auto", {"prompt": prompt, **kwargs}))
+        return self
+
     def txt2img(self, prompt, negative="", arch="sdxl", model="",
                 width=0, height=0, steps=0, cfg=None, seed=-1, loras=None):
         """Generate an image from text."""
@@ -151,7 +162,29 @@ class Pipeline:
                 print(f"  {label}...", end=" ", flush=True)
 
             try:
-                if step_type == "load":
+                if step_type == "auto":
+                    from .recommend import recommend
+                    rec = recommend(params["prompt"], server=self._server)
+                    if self._verbose:
+                        print(f"[{rec['intent']}] {rec['arch']}", end=" ", flush=True)
+                    auto_params = {
+                        "prompt": params["prompt"],
+                        "arch": rec["arch"],
+                        "model": rec.get("model", ""),
+                        "width": rec["settings"].get("width", 0),
+                        "height": rec["settings"].get("height", 0),
+                        "steps": rec["settings"].get("steps", 0),
+                        "cfg": rec["settings"].get("cfg"),
+                        "seed": params.get("seed", -1),
+                        "negative": params.get("negative", ""),
+                        "loras": params.get("loras"),
+                    }
+                    results = self._run_txt2img(auto_params)
+                    current_image = self._first_image(results)
+                    if self._verbose:
+                        print(f"-> {current_image}")
+
+                elif step_type == "load":
                     current_image = self._upload(params["path"])
                     if self._verbose:
                         print(f"uploaded as {current_image}")
