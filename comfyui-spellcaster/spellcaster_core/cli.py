@@ -336,6 +336,38 @@ def _print_models(server):
             print(f"    [{arch:12s}] {u}")
 
 
+def cmd_vram(args):
+    """Estimate VRAM usage for a generation configuration."""
+    from spellcaster_core.optimizer import estimate_vram, get_max_resolution, get_server_vram, ARCH_BASE_VRAM
+
+    server_vram = get_server_vram(args.server) if args.server != DEFAULT_SERVER else None
+
+    if args.all:
+        print(f"VRAM Estimates ({args.width}x{args.height}, {args.frames} frames)")
+        if server_vram:
+            print(f"Server VRAM: {server_vram:.1f} GB")
+        print()
+        for arch in sorted(ARCH_BASE_VRAM.keys()):
+            est, breakdown = estimate_vram(arch, args.width, args.height, args.frames)
+            safe = ""
+            if server_vram:
+                safe = " OK" if est < server_vram * 0.9 else " OOM RISK"
+                max_w, max_h = get_max_resolution(server_vram, arch)
+                safe += f" (max safe: {max_w}x{max_h})"
+            print(f"  {arch:14s} {est:5.1f} GB  {breakdown}{safe}")
+    else:
+        est, breakdown = estimate_vram(args.arch, args.width, args.height, args.frames)
+        print(f"VRAM estimate for {args.arch}: {est:.1f} GB")
+        print(f"  {breakdown}")
+        if server_vram:
+            pct = est / server_vram * 100
+            status = "OK" if pct < 90 else "OOM RISK"
+            print(f"  Server: {server_vram:.1f} GB ({pct:.0f}% usage) [{status}]")
+            max_w, max_h = get_max_resolution(server_vram, args.arch)
+            print(f"  Max safe resolution: {max_w}x{max_h}")
+    return 0
+
+
 def _find_best_model(server, arch_key):
     """Find the best available model for an architecture on ComfyUI."""
     def _get_opts(node, field):
@@ -432,6 +464,14 @@ def main():
     sub.add_parser("models", aliases=["ls"],
                    help="List available models")
 
+    # vram estimate
+    p_vram = sub.add_parser("vram", help="Estimate VRAM usage for a generation")
+    p_vram.add_argument("--arch", "-a", default="sdxl", help="Architecture")
+    p_vram.add_argument("--width", "-W", type=int, default=1024)
+    p_vram.add_argument("--height", "-H", type=int, default=1024)
+    p_vram.add_argument("--frames", "-f", type=int, default=1, help="Frame count (video)")
+    p_vram.add_argument("--all", action="store_true", help="Show all architectures")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -450,6 +490,8 @@ def main():
         return cmd_doctor(args)
     elif cmd in ("models", "ls"):
         return cmd_models(args)
+    elif cmd == "vram":
+        return cmd_vram(args)
     else:
         parser.print_help()
         return 1

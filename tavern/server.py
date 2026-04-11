@@ -2442,7 +2442,7 @@ def _dispatch_workflow(workflow, comfy_url, timeout=180):
         ok, workflow, report = preflight_workflow(workflow, comfy_url)
         if report.get("substituted"):
             for orig, desc in report["substituted"]:
-                print(f"  [Preflight] {orig} → {desc}")
+                print(f"  [Preflight] {orig} -> {desc}")
         if not ok:
             missing = report.get("missing", [])
             raise Exception(
@@ -2450,6 +2450,15 @@ def _dispatch_workflow(workflow, comfy_url, timeout=180):
                 f"Install the required custom nodes on your ComfyUI server.")
     except ImportError:
         pass  # spellcaster_core not available — skip preflight
+
+    # Optimizer: VRAM check, resolution capping, auto-tuning
+    try:
+        from spellcaster_core.optimizer import optimize_workflow
+        workflow, opt_warnings = optimize_workflow(workflow, comfy_url=comfy_url)
+        for w in opt_warnings:
+            print(f"  [Optimizer] {w}")
+    except ImportError:
+        pass
 
     # Debug: log workflow node types
     node_types = {nid: n.get('class_type', '?') for nid, n in workflow.items()}
