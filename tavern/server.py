@@ -4672,6 +4672,33 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 return self.end_json(200, _DIAGNOSTIC_REPORT.to_json())
             return self.end_json(200, {"status": "pending", "message": "Diagnostic still running"})
 
+        elif self.path == '/api/vision_nodes':
+            # GET /api/vision_nodes — which vision/LLM backends are available
+            vision_info = {"backends": [], "llm": [], "vision_methods": []}
+            try:
+                from spellcaster_core.preflight import get_available_nodes
+                nodes = get_available_nodes(COMFYUI_URL)
+                if "Florence2Run" in nodes:
+                    vision_info["vision_methods"].append("florence2")
+                if "MoondreamQuery" in nodes:
+                    vision_info["vision_methods"].append("moondream")
+                if "JoyCaption" in nodes:
+                    vision_info["vision_methods"].append("joycaption")
+                # Check LLM backends
+                try:
+                    r = urllib.request.urlopen(f"{KOBOLD_URL}/v1/models", timeout=3)
+                    vision_info["llm"].append({"type": "koboldcpp", "url": KOBOLD_URL})
+                except Exception:
+                    pass
+                try:
+                    r = urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=3)
+                    vision_info["llm"].append({"type": "ollama", "url": "http://127.0.0.1:11434"})
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            return self.end_json(200, vision_info)
+
         elif self.path == '/api/calibration':
             # GET /api/calibration — compatibility matrix
             cal_path = os.path.join(_STATE_DIR, "calibration_matrix.json")
@@ -5410,6 +5437,37 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "status": "refreshing",
                 "current_total": len(_LORA_REGISTRY),
             })
+
+        # -- /api/guild_chat -- embedded LLM chat (auto-detects backend)
+        elif self.path == '/api/guild_chat':
+            message = data.get("message", "")
+            system_prompt = data.get("system_prompt", "")
+            if not message:
+                return self.end_json(400, {"error": "message required"})
+            try:
+                from spellcaster_core.guild_llm import chat
+                response = chat(message, system_prompt=system_prompt,
+                               server=COMFYUI_URL, kobold_url=KOBOLD_URL)
+                if response:
+                    return self.end_json(200, {"response": response})
+                return self.end_json(503, {"error": "No LLM backend available"})
+            except ImportError:
+                return self.end_json(503, {"error": "spellcaster_core not available"})
+
+        # -- /api/inspect_image -- vision + LLM image analysis
+        elif self.path == '/api/inspect_image':
+            image = data.get("image", "")
+            prompt = data.get("original_prompt", "")
+            if not image:
+                return self.end_json(400, {"error": "image filename required"})
+            try:
+                from spellcaster_core.guild_llm import inspect_generation
+                result = inspect_generation(image, COMFYUI_URL,
+                                           kobold_url=KOBOLD_URL,
+                                           original_prompt=prompt)
+                return self.end_json(200, result)
+            except ImportError:
+                return self.end_json(503, {"error": "spellcaster_core not available"})
 
         # -- /api/calibrate -- run compatibility calibration
         elif self.path == '/api/calibrate':
