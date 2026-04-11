@@ -67,11 +67,27 @@ if defined NSFW_REPO (
     )
 )
 
-:: Not found — clone it automatically as sibling
+:: Not found — clone it using the same credentials as the SFW repo
 echo.
 echo   NSFW repo not found — cloning as sibling...
+
+:: Extract auth from SFW remote URL (e.g. https://TOKEN@github.com/org/repo)
+set "NSFW_CLONE_URL="
+pushd "%SFW_ROOT%"
+for /f "tokens=*" %%U in ('git remote get-url origin 2^>nul') do set "SFW_REMOTE=%%U"
+popd
+
+:: Replace /spellcaster.git with /spellcaster_NSFW.git in the remote URL
+:: This preserves any embedded PAT or credential helper config
+if defined SFW_REMOTE (
+    set "NSFW_CLONE_URL=%SFW_REMOTE:spellcaster.git=spellcaster_NSFW.git%"
+)
+if not defined NSFW_CLONE_URL (
+    set "NSFW_CLONE_URL=https://github.com/laboratoiresonore/spellcaster_NSFW.git"
+)
+
 pushd "%SFW_ROOT%\.."
-git clone https://github.com/laboratoiresonore/spellcaster_NSFW.git spellcaster_NSFW
+git clone "%NSFW_CLONE_URL%" spellcaster_NSFW
 if errorlevel 1 (
     echo   [WARN] Failed to clone NSFW repo. Continuing with SFW only.
     popd
@@ -215,6 +231,8 @@ if errorlevel 1 (
     echo   No source changes to commit.
 )
 
+echo   Pulling latest...
+git pull --rebase origin main 2>nul
 echo   Pushing...
 git push origin main
 if errorlevel 1 (
@@ -303,6 +321,8 @@ if errorlevel 1 (
     echo   No changes in NSFW.
 )
 
+echo   Pulling latest...
+git pull --rebase origin main 2>nul
 echo   Pushing...
 git push origin main
 if errorlevel 1 (
@@ -321,7 +341,11 @@ echo [7/7] Uploading binaries to GitHub Release...
 
 :: Auto-detect tag if not set
 if not defined RELEASE_TAG (
-    for /f "tokens=*" %%V in ('python -c "import re; m=re.search(r'VERSION\s*=\s*[\"'']([^\"'']+)[\"'']', open('tavern/guild_launcher.py').read()); print('v'+m.group(1) if m else '')" 2^>nul') do set "RELEASE_TAG=%%V"
+    pushd "%SFW_ROOT%"
+    > "%TEMP%\_spellcaster_ver.py" echo import re; f=open("tavern/guild_launcher.py").read(); m=re.search(r"VERSION\s*=\s*[\"']([^\"']+)[\"']",f); print("v"+m.group(1) if m else "")
+    for /f "tokens=*" %%V in ('python "%TEMP%\_spellcaster_ver.py" 2^>nul') do set "RELEASE_TAG=%%V"
+    del "%TEMP%\_spellcaster_ver.py" 2>nul
+    popd
 )
 if not defined RELEASE_TAG (
     echo   [WARN] No --tag provided and could not auto-detect version.
