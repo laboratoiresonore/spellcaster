@@ -178,6 +178,19 @@
       "required_by": [
         "img2img"
       ]
+    },
+    "ComfyUI-Spellcaster-NSFW": {
+      "repo": "https://github.com/laboratoiresonore/ComfyUI-Spellcaster-NSFW",
+      "provides": [
+        "SpellcasterLoader",
+        "SpellcasterPromptEnhance",
+        "SpellcasterSampler",
+        "SpellcasterOutput",
+        "SpellcasterNSFWLoRA",
+        "SpellcasterNSFWLoRAModelOnly"
+      ],
+      "required_by": ["img2img", "txt2img", "inpaint"],
+      "note": "Spellcaster NSFW nodes — auto-arch loading, LLM prompt enhance, smart sampling, and NSFW LoRA presets. Auto-updates via git pull."
     }
   },
   "features": {
