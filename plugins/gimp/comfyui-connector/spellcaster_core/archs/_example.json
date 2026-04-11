@@ -1,0 +1,23 @@
+{
+    "_comment": "Example custom architecture config. Copy this file, rename it, and edit.",
+    "_comment2": "Place .json files in this directory to auto-register new architectures.",
+    "key": "my_custom_model",
+    "display_name": "My Custom Model",
+    "loader": "checkpoint",
+    "sampler_type": "ksampler",
+    "clip_mode": "single",
+    "supports_negative": true,
+    "default_steps": 20,
+    "default_cfg": 7.0,
+    "default_sampler": "euler",
+    "default_scheduler": "normal",
+    "default_denoise": 0.65,
+    "quality_positive": "masterpiece, best quality, highly detailed",
+    "quality_negative": "worst quality, blurry, ugly, deformed",
+    "prompt_style": "tags",
+    "prompt_guidance": "Comma-separated tags. Quality first, subject, scene.",
+    "lora_prefixes": ["MyModel\\"],
+    "detect_unet_keywords": ["mycustommodel"],
+    "detect_ckpt_keywords": ["mycustommodel"],
+    "scene_group": "sdxl"
+}
