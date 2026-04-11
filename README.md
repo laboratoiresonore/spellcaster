@@ -213,13 +213,13 @@ git clone https://github.com/laboratoiresonore/spellcaster
 cd spellcaster
 
 # Point it at your ComfyUI server — everything else is automatic
-python installer/install_remote.py http://192.168.1.50:8188
+python installer/install_remote.py http://<COMFYUI-IP>:8188
 
 # Don't know the IP? Let it scan your network
 python installer/install_remote.py --scan
 
 # Also have a local LLM on the server machine?
-python installer/install_remote.py http://192.168.1.50:8188 --llm-url http://192.168.1.50:5001
+python installer/install_remote.py http://<COMFYUI-IP>:8188 --llm-url http://<LLM-IP>:5001
 ```
 
 > **Want a standalone .exe?** Build it yourself with `python installer/build_installer.py --remote-only` — produces a single `spellcaster-remote-installer.exe` that bundles everything. Standalone binaries will also be available in future releases.
@@ -276,7 +276,7 @@ The installer is an 8-step guided wizard. It's designed so you never have to mak
 
 **The installer detects your GPU** and only shows features your hardware can run. If you have 4 GB of VRAM, you won't see options that need 16 GB. No guesswork.
 
-**Remote server mode**: Don't have a GPU? Use the [Remote Installer](#comfyui-on-another-machine-remote--network-install) — it connects to a ComfyUI server on another machine and sets up everything locally. Or use the main installer with `--server-url http://192.168.1.50:8188`.
+**Remote server mode**: Don't have a GPU? Use the [Remote Installer](#comfyui-on-another-machine-remote--network-install) — it connects to a ComfyUI server on another machine and sets up everything locally. Or use the main installer with `--server-url http://<COMFYUI-IP>:8188`.
 
 </details>
 

@@ -11,9 +11,9 @@ in their local network.  Installs **everything except ComfyUI itself**:
   - Completely headless — no interactive prompts (unless --interactive)
 
 Usage:
-    python install_remote.py http://192.168.1.50:8188
-    python install_remote.py http://192.168.1.50:8188 --dry-run
-    python install_remote.py http://192.168.1.50:8188 --llm-url http://192.168.1.50:5001
+    python install_remote.py http://<SERVER-IP>:8188
+    python install_remote.py http://<SERVER-IP>:8188 --dry-run
+    python install_remote.py http://<SERVER-IP>:8188 --llm-url http://<SERVER-IP>:5001
     python install_remote.py --scan                     # Auto-discover via network scan
     python install_remote.py --interactive               # Fall back to guided prompts
     python install_remote.py --help
@@ -1056,20 +1056,20 @@ def build_arg_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
             Examples:
-              python install_remote.py http://192.168.1.50:8188
+              python install_remote.py http://<SERVER-IP>:8188
               python install_remote.py --scan
-              python install_remote.py http://10.0.0.5:8188 --llm-url http://10.0.0.5:5001
-              python install_remote.py http://192.168.1.50:8188 --dry-run
+              python install_remote.py http://<SERVER-IP>:8188 --llm-url http://<LLM-IP>:5001
+              python install_remote.py http://<SERVER-IP>:8188 --dry-run
         """)
     )
     parser.add_argument("server_url", nargs="?", default="",
-                        help="ComfyUI server URL (e.g. http://192.168.1.50:8188)")
+                        help="ComfyUI server URL (e.g. http://<SERVER-IP>:8188)")
     parser.add_argument("--scan", action="store_true",
                         help="Auto-discover ComfyUI servers on the local network")
     parser.add_argument("--port", type=int, default=8188,
                         help="Port to scan for ComfyUI servers (default: 8188)")
     parser.add_argument("--llm-url", default="",
-                        help="LLM server URL for prompt enhancement (e.g. http://192.168.1.50:5001)")
+                        help="LLM server URL for prompt enhancement (e.g. http://<SERVER-IP>:5001)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Preview what would be done without making changes")
     parser.add_argument("--skip-gimp", action="store_true",
@@ -1139,7 +1139,7 @@ def main():
                     f"\n  {C_BOLD}Enter ComfyUI server URL:{C_RESET} ").strip().rstrip("/")
             else:
                 log_err("No server URL provided and network scan found nothing.")
-                print(f"\n  Usage: python install_remote.py http://192.168.1.50:8188")
+                print(f"\n  Usage: python install_remote.py http://<SERVER-IP>:8188")
                 print(f"         python install_remote.py --scan")
                 sys.exit(1)
 
