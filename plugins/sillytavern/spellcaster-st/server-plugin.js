@@ -52,7 +52,15 @@ function autoDetectBgDir() {
 function fetchJSON(url, options = {}) {
     return new Promise((resolve, reject) => {
         const mod = url.startsWith('https') ? https : http;
-        const req = mod.request(url, { method: options.method || 'GET', ...options }, (res) => {
+        const parsedUrl = new URL(url);
+        const reqOpts = {
+            hostname: parsedUrl.hostname,
+            port: parsedUrl.port,
+            path: parsedUrl.pathname + parsedUrl.search,
+            method: options.method || 'GET',
+            headers: options.headers || {},
+        };
+        const req = mod.request(reqOpts, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
@@ -964,6 +972,44 @@ function buildAnimationWorkflow(imageName, prompt, numFrames) {
         "7": { "class_type": "CLIPTextEncode", "inputs": {
             "text": "static, frozen, still, blurry, low quality, deformed",
             "clip": ["4", 1]
+        }},
+        "10": { "class_type": "RepeatLatentBatch", "inputs": {
+            "samples": ["5", 0], "amount": numFrames
+        }},
+        "11": { "class_type": "InjectLatentNoise+", "inputs": {
+            "latent": ["10", 0], "noise_seed": seed, "noise_strength": 0.12
+        }},
+        "3": { "class_type": "KSampler", "inputs": {
+            "seed": seed, "steps": 8, "cfg": 5.0,
+            "sampler_name": "euler", "scheduler": "normal",
+            "denoise": 0.15, "model": ["4", 0],
+            "positive": ["6", 0], "negative": ["7", 0],
+            "latent_image": ["11", 0]
+        }},
+        "8": { "class_type": "VAEDecode", "inputs": {
+            "samples": ["3", 0], "vae": ["4", 2]
+        }},
+        "20": { "class_type": "VHS_VideoCombine", "inputs": {
+            "images": ["8", 0], "frame_rate": 8.0,
+            "loop_count": 0, "filename_prefix": "Spellcaster_ST_anim",
+            "format": "image/gif", "pingpong": true,
+            "save_output": true
+        }}
+    };
+}
+
+function exit() {
+    console.log('[Spellcaster] Server plugin unloaded.');
+}
+
+const info = {
+    id: 'spellcaster',
+    name: 'Spellcaster',
+    description: 'ComfyUI integration — living scenes, character restyling, autonomous image generation',
+};
+
+export { info, init, exit };
+1]
         }},
         "10": { "class_type": "RepeatLatentBatch", "inputs": {
             "samples": ["5", 0], "amount": numFrames

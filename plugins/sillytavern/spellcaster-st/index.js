@@ -15,6 +15,7 @@
  *   8. Generate interceptor: extracts scene context for visual generation
  */
 
+import { getContext } from '../../../st-context.js';
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument } from '../../../slash-commands/SlashCommandArgument.js';
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
@@ -62,9 +63,10 @@ function saveSettings() {
 // ═══════════════════════════════════════════════════════════════════
 
 async function spellcasterAPI(endpoint, body) {
+    const headers = getContext().getRequestHeaders();
     const res = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(body),
     });
     if (!res.ok) {
@@ -76,7 +78,7 @@ async function spellcasterAPI(endpoint, body) {
 
 async function checkHealth() {
     try {
-        const res = await fetch(`${API_BASE}/health`);
+        const res = await fetch(`${API_BASE}/health`, { headers: getContext().getRequestHeaders() });
         const data = await res.json();
         return data.comfyui === 'connected';
     } catch {
