@@ -1149,3 +1149,75 @@ textarea::placeholder { color: #555; }
 #chat-arena {
     padding-bottom: 50px;
 }
+
+/* ── Spell Bar: quick-cast buttons below header ── */
+.spell-bar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(16, 14, 24, 0.95);
+    border-bottom: 1px solid rgba(178, 70, 242, 0.15);
+    backdrop-filter: blur(8px);
+    padding: 6px 16px;
+}
+.spell-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.spell-list::-webkit-scrollbar { display: none; }
+.spell-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 12px;
+    border-radius: 16px;
+    border: 1px solid;
+    background: rgba(25, 23, 38, 0.6);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+}
+.spell-btn:hover {
+    background: rgba(178, 70, 242, 0.15);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+.spell-btn:active {
+    transform: translateY(0);
+}
+.spell-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.spell-color-popup {
+    display: flex;
+    gap: 4px;
+    padding: 6px;
+    background: rgba(25, 23, 38, 0.95);
+    border: 1px solid rgba(178, 70, 242, 0.3);
+    border-radius: 8px;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
+.spell-color-swatch {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+.spell-color-swatch:hover {
+    transform: scale(1.2);
+    border-color: rgba(255,255,255,0.4);
+}
+.spell-color-swatch.active {
+    border-color: #fff;
+}

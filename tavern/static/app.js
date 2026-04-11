@@ -1183,6 +1183,7 @@ function selectCharacter(id) {
     if (!char) return;
 
     renderSidebar(searchInput.value);
+    loadSpellBar(id);  // Load spells for this wizard
 
     activeName.textContent = char.name;
     activeSubtext.textContent = char.subtext;
@@ -1763,6 +1764,129 @@ settingsBtn.addEventListener('click', () => {
     loadAndCacheWizards();
 });
 settingsCancel.addEventListener('click', () => settingsModal.classList.add('hidden'));
+
+// ── Spell bar: quick-cast spells for active wizard ──
+async function loadSpellBar(wizardId) {
+    const bar = document.getElementById('spell-bar');
+    const list = document.getElementById('spell-list');
+    if (!bar || !list) return;
+
+    try {
+        const resp = await fetch(`/api/spells/for_wizard/${wizardId}`);
+        const data = await resp.json();
+        const spells = data.spells || [];
+
+        if (spells.length === 0) {
+            bar.style.display = 'none';
+            return;
+        }
+
+        list.innerHTML = '';
+        for (const spell of spells) {
+            const btn = document.createElement('button');
+            btn.className = 'spell-btn';
+            btn.style.borderColor = spell.color || '#B246F2';
+            btn.style.color = spell.color || '#B246F2';
+            btn.title = `${spell.name}\n${_spellSummary(spell.params)}`;
+            btn.innerHTML = `${spell.icon || ''}${spell.name}`;
+
+            // Color dot indicator
+            const dot = document.createElement('span');
+            dot.className = 'spell-dot';
+            dot.style.background = spell.color || '#B246F2';
+            btn.prepend(dot);
+
+            // Click: load spell settings into chat context
+            btn.addEventListener('click', async () => {
+                try {
+                    const r = await fetch('/api/spells/use', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({name: spell.name}),
+                    });
+                    const d = await r.json();
+                    if (d.params) {
+                        // Inject into chat as a system message
+                        addAssistantMessage(`Spell loaded: **${spell.name}**\n` +
+                            `Settings: ${_spellSummary(d.params)}\n` +
+                            `Ready to generate! Just type your prompt.`);
+                        // Store active spell for the generation
+                        window._activeSpell = {name: spell.name, params: d.params};
+                    }
+                } catch (e) {
+                    console.error('Spell load failed:', e);
+                }
+            });
+
+            // Right-click: change color
+            btn.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                _showColorPicker(spell.name, spell.color, btn);
+            });
+
+            list.appendChild(btn);
+        }
+        bar.style.display = '';
+    } catch (e) {
+        bar.style.display = 'none';
+    }
+}
+
+function _spellSummary(params) {
+    if (!params) return '';
+    const parts = [];
+    if (params.arch) parts.push(params.arch);
+    if (params.model || params.ckpt) {
+        const m = (params.model || params.ckpt || '').split('\\').pop().split('/').pop();
+        parts.push(m.replace('.safetensors','').replace('.gguf',''));
+    }
+    if (params.width && params.height) parts.push(`${params.width}x${params.height}`);
+    if (params.steps) parts.push(`${params.steps} steps`);
+    if (params.cfg) parts.push(`CFG ${params.cfg}`);
+    if (params.loras && params.loras.length) {
+        const l = params.loras.map(l => l.name.split('\\').pop().replace('.safetensors',''));
+        parts.push(`LoRA: ${l.join('+')}`);
+    }
+    return parts.join(' | ');
+}
+
+function _showColorPicker(spellName, currentColor, btnEl) {
+    const colors = ['#B246F2','#3B82F6','#10B981','#EF4444','#F59E0B','#EC4899','#06B6D4','#D4A017'];
+    const popup = document.createElement('div');
+    popup.className = 'spell-color-popup';
+    popup.innerHTML = colors.map(c =>
+        `<button class="spell-color-swatch" style="background:${c}" data-color="${c}"` +
+        `${c === currentColor ? ' class="active"' : ''}></button>`
+    ).join('');
+    popup.style.position = 'absolute';
+    popup.style.zIndex = '9999';
+    const rect = btnEl.getBoundingClientRect();
+    popup.style.top = (rect.top - 40) + 'px';
+    popup.style.left = rect.left + 'px';
+    document.body.appendChild(popup);
+
+    popup.addEventListener('click', async (e) => {
+        const color = e.target.dataset?.color;
+        if (!color) return;
+        await fetch('/api/spells/color', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name: spellName, color}),
+        });
+        popup.remove();
+        loadSpellBar(activeCharacterId);
+    });
+
+    // Close on click outside
+    setTimeout(() => {
+        document.addEventListener('click', function _close(e) {
+            if (!popup.contains(e.target)) { popup.remove(); document.removeEventListener('click', _close); }
+        });
+    }, 100);
+}
+
+// Load spells whenever wizard changes
+const _origSelectCharacter = typeof selectCharacter === 'function' ? selectCharacter : null;
 
 // ── Familiar generator ──
 document.getElementById('familiar-btn')?.addEventListener('click', async () => {
