@@ -237,8 +237,15 @@ robocopy "%SFW_ROOT%\installer" "%NSFW_ROOT%\installer" /s /xd __pycache__ .buil
 :: Plugins
 robocopy "%SFW_ROOT%\plugins" "%NSFW_ROOT%\plugins" /s /xd __pycache__ >nul 2>&1
 
-:: ComfyUI Spellcaster node pack (ONE SOURCE OF TRUTH)
-robocopy "%SFW_ROOT%\comfyui-spellcaster" "%NSFW_ROOT%\comfyui-spellcaster" /s /xd __pycache__ >nul 2>&1
+:: ComfyUI-Spellcaster — sync base files only, preserve NSFW-only additions
+:: (nsfw_loras.py, __init__.py, web/spellcaster.js, README, pyproject.toml are NSFW-specific)
+robocopy "%SFW_ROOT%\comfyui-spellcaster\spellcaster_core" "%NSFW_ROOT%\comfyui-spellcaster\spellcaster_core" /s /xd __pycache__ >nul 2>&1
+for %%F in (loader.py sampler.py output.py prompt.py) do (
+    if exist "%SFW_ROOT%\comfyui-spellcaster\nodes\%%F" (
+        copy /y "%SFW_ROOT%\comfyui-spellcaster\nodes\%%F" "%NSFW_ROOT%\comfyui-spellcaster\nodes\%%F" >nul 2>&1
+    )
+)
+robocopy "%SFW_ROOT%\comfyui-spellcaster\example_workflows" "%NSFW_ROOT%\comfyui-spellcaster\example_workflows" spellcaster_txt2img.json spellcaster_img2img.json >nul 2>&1
 
 :: Scaffold — individual files to preserve NSFW-only modules
 for %%F in (meta_wizard.py introspector.py workflow_wizard.py workflow_parser.py comfyui_runner.py presets.py prompt_builder.py wizard.py bridge_launcher.py pipeline_wizard.py __init__.py) do (
