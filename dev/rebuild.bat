@@ -123,10 +123,10 @@ echo.
 :: ══════════════════════════════════════════════════════════════════════
 if "%GUILD_ONLY%"=="1" goto skip_installer
 
-echo [3/7] Building installer + manual update tool...
+echo [3/7] Building installer + manual update + antenna installer...
 echo.
 pushd "%SFW_ROOT%\installer"
-python build_installer.py --platform windows --update-tool
+python build_installer.py --platform windows --update-tool --remote
 set "INSTALLER_EXIT=%errorlevel%"
 popd
 
@@ -137,12 +137,17 @@ if not "%INSTALLER_EXIT%"=="0" (
 )
 
 if exist "%SFW_ROOT%\dist\spellcaster-installer.exe" (
-    for %%F in ("%SFW_ROOT%\dist\spellcaster-installer.exe") do echo   spellcaster-installer.exe ...... %%~zF bytes  OK
+    for %%F in ("%SFW_ROOT%\dist\spellcaster-installer.exe") do echo   spellcaster-installer.exe .......... %%~zF bytes  OK
 ) else (
     echo   [WARN] spellcaster-installer.exe not found in dist\
 )
 if exist "%SFW_ROOT%\dist\spellcaster-manual-update.exe" (
-    for %%F in ("%SFW_ROOT%\dist\spellcaster-manual-update.exe") do echo   spellcaster-manual-update.exe . %%~zF bytes  OK
+    for %%F in ("%SFW_ROOT%\dist\spellcaster-manual-update.exe") do echo   spellcaster-manual-update.exe ..... %%~zF bytes  OK
+)
+if exist "%SFW_ROOT%\dist\spellcaster-remote-installer.exe" (
+    for %%F in ("%SFW_ROOT%\dist\spellcaster-remote-installer.exe") do echo   spellcaster-remote-installer.exe .. %%~zF bytes  OK
+) else (
+    echo   [WARN] spellcaster-remote-installer.exe not found in dist\
 )
 echo.
 
@@ -337,6 +342,10 @@ if exist "%SFW_ROOT%\dist\spellcaster-manual-update.exe" (
     echo   Uploading spellcaster-manual-update.exe...
     gh release upload %RELEASE_TAG% "%SFW_ROOT%\dist\spellcaster-manual-update.exe" --clobber
 )
+if exist "%SFW_ROOT%\dist\spellcaster-remote-installer.exe" (
+    echo   Uploading spellcaster-remote-installer.exe...
+    gh release upload %RELEASE_TAG% "%SFW_ROOT%\dist\spellcaster-remote-installer.exe" --clobber
+)
 if exist "%SFW_ROOT%\dist\Wizard_Guild.exe" (
     echo   Uploading Wizard_Guild.exe...
     gh release upload %RELEASE_TAG% "%SFW_ROOT%\dist\Wizard_Guild.exe" --clobber
@@ -370,13 +379,16 @@ echo.
 if not "%PUSH_ONLY%"=="1" (
     echo   Built executables in dist\:
     if exist "%SFW_ROOT%\dist\spellcaster-installer.exe" (
-        for %%F in ("%SFW_ROOT%\dist\spellcaster-installer.exe") do echo     spellcaster-installer.exe ...... %%~zF bytes
+        for %%F in ("%SFW_ROOT%\dist\spellcaster-installer.exe") do echo     spellcaster-installer.exe .......... %%~zF bytes
     )
     if exist "%SFW_ROOT%\dist\spellcaster-manual-update.exe" (
-        for %%F in ("%SFW_ROOT%\dist\spellcaster-manual-update.exe") do echo     spellcaster-manual-update.exe . %%~zF bytes
+        for %%F in ("%SFW_ROOT%\dist\spellcaster-manual-update.exe") do echo     spellcaster-manual-update.exe ..... %%~zF bytes
+    )
+    if exist "%SFW_ROOT%\dist\spellcaster-remote-installer.exe" (
+        for %%F in ("%SFW_ROOT%\dist\spellcaster-remote-installer.exe") do echo     spellcaster-remote-installer.exe .. %%~zF bytes
     )
     if exist "%SFW_ROOT%\dist\Wizard_Guild.exe" (
-        for %%F in ("%SFW_ROOT%\dist\Wizard_Guild.exe") do echo     Wizard_Guild.exe ............. %%~zF bytes
+        for %%F in ("%SFW_ROOT%\dist\Wizard_Guild.exe") do echo     Wizard_Guild.exe .................. %%~zF bytes
     )
     echo.
 )
