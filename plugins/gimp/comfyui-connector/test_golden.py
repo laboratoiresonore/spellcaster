@@ -811,7 +811,8 @@ def test_video_upscale():
     assert wf["1"]["inputs"]["video"] == "test.mp4"
     assert wf["10"]["class_type"] == "TS_Video_Upscale_With_Model"
     assert wf["10"]["inputs"]["factor"] == 2.0
-    assert wf["20"]["class_type"] == "RTXVideoSuperResolution"
+    assert wf["20"]["class_type"] == "ImageUpscaleWithModel"  # model-based upscale (RTX API incompatible)
+    assert wf["20_ml"]["class_type"] == "UpscaleModelLoader"
     assert wf["30"]["class_type"] == "CreateVideo"
     assert wf["30"]["inputs"]["fps"] == 24.0
     assert wf["31"]["class_type"] == "SaveVideo"
@@ -824,7 +825,7 @@ def test_video_upscale_no_upscale():
     wf = build_video_upscale("test.mp4", upscale_factor=1.0, rtx_scale=2.0)
     assert wf["1"]["class_type"] == "VHS_LoadVideo"
     assert "10" not in wf  # No TS upscale when factor <= 1.0
-    assert wf["20"]["class_type"] == "RTXVideoSuperResolution"
+    assert wf["20"]["class_type"] == "ImageUpscaleWithModel"  # model-based upscale
     return True, "video_upscale_no_upscale", ""
 
 
@@ -854,7 +855,7 @@ def test_wan_video():
         "arch": "wan",
         "high_model": "wan_high.gguf",
         "low_model": "wan_low.gguf",
-        "clip": "umt5xxl_fp8.safetensors",
+        "clip": "umt5xxl_fp8.gguf",    # GGUF clip matches GGUF model loaders
         "vae": "wan_vae.safetensors",
         "steps": 6, "cfg": 1.0, "shift": 8.0,
         "second_step": 3,
@@ -892,8 +893,8 @@ def test_wan_video():
     assert wf["71"]["class_type"] == "ReActorFaceSwapOpt"
     # RIFE interpolation
     assert wf["70"]["class_type"] == "RIFE VFI"
-    # RTX upscale
-    assert wf["75"]["class_type"] == "RTXVideoSuperResolution"
+    # RTX upscale (model-based fallback)
+    assert wf["75"]["class_type"] == "ImageUpscaleWithModel"  # model-based upscale (RTX API incompatible)
     # Final video
     assert wf["83"]["class_type"] == "VHS_VideoCombine"
     assert wf["83"]["inputs"]["frame_rate"] == 64.0  # 16 * 4 (interpolated)

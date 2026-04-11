@@ -84,5 +84,14 @@ tavern/creations/
 tavern/.guild_state/
 tavern/.guild_version
 
+# Root-level runtime/dev files (keep root clean for users)
+guild_config.json
+.guild_version
+generate_readme_gifs.py
+creations/
+
 # Test scripts
-test_live.py
+test_*.py
+
+# Self — stop tracking local gitignore changes
+.gitignore

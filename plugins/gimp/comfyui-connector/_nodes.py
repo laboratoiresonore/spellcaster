@@ -1746,13 +1746,11 @@ class NodeFactory:
     # ═══════════════════════════════════════════════════════════════════
 
     def video_upscale(self, images_ref, scale_factor=2.0,
-                      upscale_model="4x-UltraSharp.pth",
-                      node_id=None):
-        """AI upscaling for video frames using UpscaleModelLoader + ImageUpscaleWithModel.
+                      upscale_model="4x-UltraSharp.pth", node_id=None):
+        """AI model upscaling for video frames (UpscaleModelLoader + ImageUpscaleWithModel).
 
-        Uses native ComfyUI nodes (no custom node dependency). The upscale model
-        runs at its native scale (typically 4x), then ImageScaleBy adjusts to the
-        requested factor.
+        Uses a traditional upscale model file. The model runs at its native
+        scale (typically 4x), then ImageScaleBy adjusts to the requested factor.
 
         Args:
             images_ref: Reference to input images/frames.
@@ -1778,7 +1776,27 @@ class NodeFactory:
             return down_id
         return up_id
 
-    # Keep old name as alias for backwards compat
+    def rtx_video_upscale(self, images_ref, scale_factor=2.0,
+                          quality="ULTRA", node_id=None):
+        """RTX GPU-accelerated super-resolution (RTXVideoSuperResolution).
+
+        NOTE: Requires ComfyUI-NVIDIA-RTX with a compatible API version.
+        Use video_upscale() for the standard model-based path.
+
+        Args:
+            images_ref: Reference to input images/frames.
+            scale_factor: Scale multiplier (1.0-4.0).
+            quality: 'LOW', 'MEDIUM', 'HIGH', or 'ULTRA'.
+            node_id: Optional fixed node ID.
+        """
+        return self._add("RTXVideoSuperResolution", {
+            "images": images_ref,
+            "resize_type": "scale by multiplier",
+            "scale": float(scale_factor),
+            "quality": quality,
+        }, node_id)
+
+    # Backwards-compat alias
     rtx_video_super_resolution = video_upscale
 
     def seedvr2_video_upscaler(self, image_ref, dit_ref, vae_ref,

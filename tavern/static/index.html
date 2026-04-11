@@ -57,6 +57,12 @@
                 <div id="comfy-indicator-container">
                     <span id="comfy-dot" class="dot red"></span> <span id="comfy-status">ComfyUI: Disconnected</span>
                 </div>
+                <div id="st-indicator-container">
+                    <span id="st-dot" class="dot red"></span> <span id="st-status">SillyTavern: Disconnected</span>
+                </div>
+                <div id="bridge-indicator-container">
+                    <span id="bridge-dot" class="dot red"></span> <span id="bridge-status">Signal Bridge: Disconnected</span>
+                </div>
                 <div class="search-wrapper">
                     <input type="text" id="character-search" placeholder="Search guild members...">
                 </div>
@@ -144,6 +150,12 @@
 
             <p style="margin-top: 16px;"><strong>ComfyUI Engine:</strong> Connect to your image rendering backend.</p>
             <input type="text" id="comfy-url-input" placeholder="http://127.0.0.1:8188" value="http://127.0.0.1:8188">
+
+            <p style="margin-top: 16px;"><strong>SillyTavern Bridge:</strong> Connect to SillyTavern (API enabled).</p>
+            <input type="text" id="st-url-input" placeholder="http://127.0.0.1:8000" value="http://127.0.0.1:8000">
+
+            <p style="margin-top: 16px;"><strong>Signal Bridge:</strong> Connect to Signal messaging bridge.</p>
+            <input type="text" id="bridge-url-input" placeholder="http://127.0.0.1:8765" value="http://127.0.0.1:8765">
 
             <hr style="border:none;border-top:1px solid #333;margin:20px 0;">
             <h3 style="margin-bottom:8px;">Wizard Management</h3>

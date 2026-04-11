@@ -29,4 +29,14 @@
           "build_save_face_model",
           "build_faceid_img2img",
           "build_pulid_flux",
-        
+          "build_klein_headswap",
+          "build_face_restore",
+          "build_photobooth"
+        ],
+        "type": "studio",
+        "body_description": "elegant pale woman, ornate venetian half-mask, long black hair, high-collared dramatic cloak with face motifs, graceful theatrical stance"
+      }
+    },
+    "avatar": ""
+  }
+}
