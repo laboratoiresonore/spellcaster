@@ -340,13 +340,13 @@ echo.
 echo [7/7] Uploading binaries to GitHub Release...
 
 :: Auto-detect tag if not set
-if not defined RELEASE_TAG (
-    pushd "%SFW_ROOT%"
-    > "%TEMP%\_spellcaster_ver.py" echo import re; f=open("tavern/guild_launcher.py").read(); m=re.search(r"VERSION\s*=\s*[\"']([^\"']+)[\"']",f); print("v"+m.group(1) if m else "")
-    for /f "tokens=*" %%V in ('python "%TEMP%\_spellcaster_ver.py" 2^>nul') do set "RELEASE_TAG=%%V"
-    del "%TEMP%\_spellcaster_ver.py" 2>nul
-    popd
-)
+if defined RELEASE_TAG goto tag_ready
+pushd "%SFW_ROOT%"
+python -c "import re,sys; f=open('tavern/guild_launcher.py').read(); m=re.search(r'VERSION\s*=\s*[\x22\x27]([^\x22\x27]+)[\x22\x27]',f); sys.stdout.write('v'+m.group(1) if m else '')" > "%TEMP%\_spellcaster_ver.txt" 2>nul
+set /p RELEASE_TAG=<"%TEMP%\_spellcaster_ver.txt"
+del "%TEMP%\_spellcaster_ver.txt" 2>nul
+popd
+:tag_ready
 if not defined RELEASE_TAG (
     echo   [WARN] No --tag provided and could not auto-detect version.
     echo          Use: rebuild.bat --tag v2.2
