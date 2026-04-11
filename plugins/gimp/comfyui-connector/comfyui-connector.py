@@ -5267,23 +5267,25 @@ def _run_comfyui_workflow(server, workflow, timeout=300):
     global _workflow_queue_depth
     _workflow_queue_depth += 1
     try:
-        # Wait for ComfyUI's queue before acquiring the lock --
-        # this lets multiple jobs queue-wait concurrently
+        # Preflight: check node availability and apply automatic fallbacks
+        try:
+            from spellcaster_core.preflight import preflight_workflow
+            ok, workflow, report = preflight_workflow(workflow, server)
+            if report.get("substituted"):
+                for orig, desc in report["substituted"]:
+                    print(f"[Spellcaster Preflight] {orig} -> {desc}")
+            if not ok:
+                missing = report.get("missing", [])
+                raise RuntimeError(
+                    f"Missing ComfyUI nodes: {', '.join(missing)}. "
+                    f"Install the required custom nodes on your server.")
+        except ImportError:
+            pass  # spellcaster_core not available
+
+        # Wait for ComfyUI's queue before acquiring the lock
         _wait_for_comfy_queue_empty(server)
-        # Lock only covers submission (not polling) so other jobs
-        # can poll their results concurrently
         with _workflow_lock:
             _flush_pending_uploads()
-            # ── Diagnostic: dump workflow JSON for debugging ──
-            try:
-                import json as _json_diag
-                _diag_path = os.path.join(tempfile.gettempdir(), "spellcaster_last_workflow.json")
-                with open(_diag_path, "w") as _df:
-                    _json_diag.dump(workflow, _df, indent=2)
-                print(f"[Spellcaster] Workflow dumped to {_diag_path}")
-            except Exception:
-                pass
-            # ── End diagnostic ──
             result = _api_post_json(server, "/prompt", {
                 "prompt": workflow,
                 "extra_pnginfo": {"workflow": workflow},
