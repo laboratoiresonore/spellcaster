@@ -916,22 +916,24 @@ function saveIdentity(char) {
 
 function renderSidebar(filter = "") {
     characterList.innerHTML = '';
+    const dockList = document.getElementById('dock-list');
+    const dockCount = document.getElementById('dock-count');
+    if (dockList) dockList.innerHTML = '';
+
     const lowFilter = filter.toLowerCase();
 
-    // Separate core wizards (studio + model_wizard) from per-model wizards (comfyui_model, custom_*)
+    // Separate core wizards (sidebar) from per-model wizards (bottom dock)
     const coreTypes = new Set(['studio', 'model_wizard', 'spellcaster_node']);
     const coreChars = characters.filter(c => coreTypes.has(c.type));
     const modelChars = characters.filter(c => !coreTypes.has(c.type));
 
-    let addedSeparator = false;
-
-    function renderCard(char) {
+    function renderCard(char, container) {
         if (filter && !char.name.toLowerCase().includes(lowFilter) && !char.subtext.toLowerCase().includes(lowFilter)) {
             return;
         }
 
         const card = document.createElement('div');
-        card.className = 'character-card';
+        card.className = container === dockList ? 'dock-card' : 'character-card';
         if (_sidebarRevealed) card.classList.add('revealed');
         if (char.id === activeCharacterId) card.classList.add('active');
         card.dataset.id = char.id;
@@ -939,7 +941,16 @@ function renderSidebar(filter = "") {
         const gradient = `linear-gradient(135deg, ${char.color1}, ${char.color2})`;
         const avatarUrl = char.avatar_url || `/api/avatar/${char.id}`;
 
-        if (char.animated_url) {
+        if (container === dockList) {
+            // Compact dock card (horizontal, small avatar)
+            card.innerHTML = `
+                <div class="dock-avatar" style="background: ${gradient}; background-image: url('${avatarUrl}');"></div>
+                <div class="dock-info">
+                    <span class="dock-name">${char.name}</span>
+                    <span class="dock-sub">${char.subtext}</span>
+                </div>
+            `;
+        } else if (char.animated_url) {
             card.innerHTML = `
                 <div class="avatar avatar-animated" style="background: ${gradient};">
                     <video src="${char.animated_url}" autoplay loop muted playsinline></video>
@@ -971,39 +982,38 @@ function renderSidebar(filter = "") {
             hideWizardTooltip();
         });
 
-        characterList.appendChild(card);
+        container.appendChild(card);
     }
 
-    // Add "Core Spellcasters" header if there are visible core wizards
-    if (coreChars.length > 0) {
-        const hasVisibleCore = coreChars.some(c =>
-            !filter || c.name.toLowerCase().includes(lowFilter) || c.subtext.toLowerCase().includes(lowFilter)
-        );
-        if (hasVisibleCore) {
-            const coreSep = document.createElement('div');
-            coreSep.className = 'sidebar-separator';
-            coreSep.style.paddingTop = '4px';
-            coreSep.innerHTML = '<span>Core Spellcasters</span>';
-            characterList.appendChild(coreSep);
+    // Core wizards go in the sidebar
+    coreChars.forEach(c => renderCard(c, characterList));
+
+    // Per-model wizards go in the bottom dock
+    let dockVisible = 0;
+    modelChars.forEach(c => {
+        if (dockList) {
+            renderCard(c, dockList);
+            dockVisible++;
+        } else {
+            renderCard(c, characterList);  // Fallback if dock not in DOM
         }
+    });
+
+    // Update dock count badge
+    if (dockCount) {
+        dockCount.textContent = dockVisible;
+        const dock = document.getElementById('bottom-dock');
+        if (dock) dock.style.display = dockVisible > 0 ? '' : 'none';
     }
+}
 
-    coreChars.forEach(renderCard);
-
-    // Add separator if there are both core and model wizards (and filter allows model results)
-    if (modelChars.length > 0) {
-        const hasVisibleModels = modelChars.some(c =>
-            !filter || c.name.toLowerCase().includes(lowFilter) || c.subtext.toLowerCase().includes(lowFilter)
-        );
-        if (hasVisibleModels && coreChars.length > 0) {
-            const sep = document.createElement('div');
-            sep.className = 'sidebar-separator';
-            sep.innerHTML = '<span>Per-Model Wizards</span>';
-            characterList.appendChild(sep);
-        }
+function toggleBottomDock() {
+    const dock = document.getElementById('bottom-dock');
+    if (dock) dock.classList.toggle('dock-collapsed');
+    const chevron = document.getElementById('dock-chevron');
+    if (chevron) {
+        chevron.innerHTML = dock?.classList.contains('dock-collapsed') ? '&#9660;' : '&#9650;';
     }
-
-    modelChars.forEach(renderCard);
 }
 
 searchInput.addEventListener('input', (e) => {
