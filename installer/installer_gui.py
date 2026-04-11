@@ -517,7 +517,9 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         self._sidebar_canvas = tk.Canvas(self.sidebar_frame, width=240, height=640,
                                           bg=self.sidebar_color, highlightthickness=0)
         self._sidebar_canvas.place(x=0, y=0, relwidth=1, relheight=1)
-        self._sidebar_canvas.lower()  # behind all widgets
+        # Canvas.lower() is tag_lower (canvas items), not Misc.lower (widget stacking).
+        # Call the widget-level method explicitly to push canvas behind all widgets.
+        tk.Misc.lower(self._sidebar_canvas)
 
         logo_label = ctk.CTkLabel(self.sidebar_frame, text="\u2728 Spellcaster",
                                   font=ctk.CTkFont(family="Inter", size=24, weight="bold"),
@@ -1212,10 +1214,70 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                                           text_color="#7c9dff", anchor="w",
                                           command=lambda u=app_url: __import__('webbrowser').open(u))
                 link_btn.pack(side="left", padx=5)
-            ctk.CTkLabel(dl_frame,
-                         text="Or leave ComfyUI blank and set a remote server IP in Step 5 to use a network GPU.",
-                         font=ctk.CTkFont(family="Inter", size=11, slant="italic"),
-                         text_color=self.text_muted, wraplength=700).pack(anchor="w", padx=20, pady=(5, 12))
+            # ── Remote ComfyUI quick-connect ──
+            remote_sep = ctk.CTkFrame(dl_frame, fg_color="#633A32", height=1)
+            remote_sep.pack(fill="x", padx=20, pady=(8, 0))
+
+            remote_frame = ctk.CTkFrame(dl_frame, fg_color="transparent")
+            remote_frame.pack(fill="x", padx=20, pady=(8, 12))
+
+            ctk.CTkLabel(
+                remote_frame,
+                text="Or connect to a remote ComfyUI on your network:",
+                font=ctk.CTkFont(family="Inter", size=13, weight="bold"),
+                text_color=self.text_main,
+            ).pack(anchor="w", pady=(0, 6))
+
+            input_row = ctk.CTkFrame(remote_frame, fg_color="transparent")
+            input_row.pack(fill="x")
+
+            self._welcome_server_entry = ctk.CTkEntry(
+                input_row,
+                textvariable=self.server_url,
+                width=320,
+                border_color="#633A32",
+                fg_color="#100B1A",
+                placeholder_text="http://192.168.1.50:8188",
+            )
+            self._welcome_server_entry.pack(side="left", padx=(0, 8))
+            _ToolTip(
+                self._welcome_server_entry,
+                "Enter the IP and port of a ComfyUI server running on another machine.\n"
+                "Example: http://192.168.1.50:8188\n"
+                "The installer will configure plugins to talk to this server\n"
+                "instead of looking for a local ComfyUI installation.",
+            )
+
+            self._test_conn_btn = ctk.CTkButton(
+                input_row,
+                text="Test Connection",
+                width=130,
+                height=32,
+                font=ctk.CTkFont(family="Inter", size=12, weight="bold"),
+                fg_color="#633A32",
+                hover_color="#3B2115",
+                border_width=1,
+                border_color=self.accent_color,
+                command=self._test_remote_comfyui,
+            )
+            self._test_conn_btn.pack(side="left", padx=(0, 8))
+
+            self._conn_status_label = ctk.CTkLabel(
+                input_row,
+                text="",
+                font=ctk.CTkFont(family="Inter", size=12),
+                text_color=self.text_muted,
+            )
+            self._conn_status_label.pack(side="left")
+
+            ctk.CTkLabel(
+                remote_frame,
+                text="Leave ComfyUI Directory blank \u2014 the installer will skip local model\n"
+                     "downloads and configure your plugins to connect to the remote server.",
+                font=ctk.CTkFont(family="Inter", size=11, slant="italic"),
+                text_color=self.text_muted,
+                justify="left",
+            ).pack(anchor="w", pady=(4, 0))
 
         # --- All good ---
         if _has_comfy and _has_editor:
@@ -1233,6 +1295,61 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         from customtkinter import filedialog
         path = filedialog.askdirectory()
         if path: var.set(path)
+
+    def _test_remote_comfyui(self):
+        """Ping the remote ComfyUI server and update the status label."""
+        import threading
+
+        url = self.server_url.get().strip().rstrip("/")
+        if not url:
+            self._conn_status_label.configure(
+                text="  Enter a URL first", text_color=self.accent_amber)
+            return
+
+        self._test_conn_btn.configure(state="disabled", text="Testing\u2026")
+        self._conn_status_label.configure(text="", text_color=self.text_muted)
+
+        def _ping():
+            ok = False
+            detail = ""
+            try:
+                import urllib.request
+                import urllib.error
+                import json as _json
+
+                req = urllib.request.Request(
+                    f"{url}/system_stats", method="GET")
+                req.add_header("Accept", "application/json")
+                with urllib.request.urlopen(req, timeout=6) as resp:
+                    data = _json.loads(resp.read())
+                    if "system" in data:
+                        vram = data["system"].get("vram_total", 0)
+                        if vram:
+                            detail = f"  {vram / (1024**3):.1f} GB VRAM"
+                        ok = True
+                    else:
+                        ok = True
+            except urllib.error.URLError as e:
+                detail = (f"  {e.reason}"
+                          if hasattr(e, "reason") else "  Connection refused")
+            except Exception as e:
+                detail = f"  {type(e).__name__}: {e}"
+
+            def _update():
+                self._test_conn_btn.configure(
+                    state="normal", text="Test Connection")
+                if ok:
+                    self._conn_status_label.configure(
+                        text=f"  Connected!{detail}",
+                        text_color=self.accent_green)
+                else:
+                    self._conn_status_label.configure(
+                        text=f"  Failed{detail}",
+                        text_color=self.accent_amber)
+
+            self.after(0, _update)
+
+        threading.Thread(target=_ping, daemon=True).start()
 
     # ------------------------------------------------------------------
     # Variable / checkbox initialisation

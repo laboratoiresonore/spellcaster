@@ -75,3 +75,14 @@ local_settings.json
 nsfw/
 *_nsfw*
 manifest_nsfbuild_all.bat
+rebuild.bat
+push_fix.bat
+push_now.bat
+
+# Tavern runtime data — user-generated, not source
+tavern/creations/
+tavern/.guild_state/
+tavern/.guild_version
+
+# Test scripts
+test_live.py

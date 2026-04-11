@@ -900,7 +900,7 @@
         "unet": [
           {
             "path": "unet/Flux/FLUX1 Dev fp8.safetensors",
-            "url": null,
+            "url": "https://huggingface.co/Comfy-Org/flux1-dev/resolve/main/flux1-dev-fp8.safetensors",
             "page_url": "https://huggingface.co/Comfy-Org/flux1-dev/tree/main",
             "size_mb": 11904,
             "vram_min_gb": 12,
@@ -948,11 +948,11 @@
         "pulid": [
           {
             "path": "pulid/pulid_flux_v0.9.1.safetensors",
-            "url": "https://huggingface.co/guozinan/PuLID/resolve/main/pulid_flux_v0.9.1.safetensors",
+            "url": null,
             "page_url": "https://huggingface.co/guozinan/PuLID",
+            "note": "PuLID Flux model v0.9.1",
             "size_mb": 1078,
-            "optional": false,
-            "note": "PuLID Flux model v0.9.1"
+            "optional": false
           }
         ]
       },
@@ -1002,7 +1002,7 @@
         "clip": [
           {
             "path": "clip/qwen_3_8b_fp8mixed.safetensors",
-            "url": null,
+            "url": "https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-9b/resolve/main/split_files/text_encoders/qwen_3_8b_fp8mixed.safetensors",
             "page_url": "https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-9b",
             "size_mb": 4100,
             "optional": false,
@@ -1020,7 +1020,7 @@
         "vae": [
           {
             "path": "vae/flux2-vae.safetensors",
-            "url": null,
+            "url": "https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-9b/resolve/main/split_files/vae/flux2-vae.safetensors",
             "page_url": "https://huggingface.co/search/full-text?q=flux2+vae",
             "size_mb": 167,
             "optional": false,
@@ -1043,7 +1043,7 @@
         "unet": [
           {
             "path": "unet/Wan/wan2.2_i2v_high_noise_14B_Q4_K_S.gguf",
-            "url": null,
+            "url": "https://huggingface.co/QuantStack/Wan2.2-I2V-A14B-GGUF/resolve/main/HighNoise/Wan2.2-I2V-A14B-HighNoise-Q4_K_S.gguf",
             "page_url": "https://huggingface.co/city96/Wan2.2-I2V-A14B-480p-gguf",
             "size_mb": 8200,
             "vram_min_gb": 8,
@@ -1052,7 +1052,7 @@
           },
           {
             "path": "unet/Wan/wan2.2_i2v_low_noise_14B_Q4_K_S.gguf",
-            "url": null,
+            "url": "https://huggingface.co/QuantStack/Wan2.2-I2V-A14B-GGUF/resolve/main/LowNoise/Wan2.2-I2V-A14B-LowNoise-Q4_K_S.gguf",
             "page_url": "https://huggingface.co/city96/Wan2.2-I2V-A14B-480p-gguf",
             "size_mb": 8200,
             "vram_min_gb": 8,
@@ -1061,7 +1061,7 @@
           },
           {
             "path": "unet/Wan/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
-            "url": null,
+            "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
             "page_url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
             "size_mb": 14000,
             "vram_min_gb": 16,
@@ -1070,7 +1070,7 @@
           },
           {
             "path": "unet/Wan/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
-            "url": null,
+            "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
             "page_url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
             "size_mb": 14000,
             "vram_min_gb": 16,
@@ -1125,7 +1125,7 @@
         "loras": [
           {
             "path": "loras/WAN/wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
-            "url": null,
+            "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
             "page_url": "https://huggingface.co/lightx2v/Wan2.2-Lightning",
             "size_mb": 80,
             "optional": true,
@@ -1133,7 +1133,7 @@
           },
           {
             "path": "loras/WAN/wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
-            "url": null,
+            "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
             "page_url": "https://huggingface.co/lightx2v/Wan2.2-Lightning",
             "size_mb": 80,
             "optional": true,

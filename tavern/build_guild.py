@@ -63,7 +63,6 @@ def build(target_platform: str, onedir: bool = False):
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--noconfirm",
-        "--clean",
         # Hidden imports - modules loaded dynamically or conditionally
         "--hidden-import", "scaffold",
         "--hidden-import", "scaffold.meta_wizard",

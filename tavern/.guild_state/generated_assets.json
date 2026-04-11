@@ -1,54 +1,54 @@
 {
   "studio_imaginus": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/882019d38b677e9d.png"
   },
   "studio_transmutex": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/da04e4e2f6f5775a.png"
   },
   "studio_masquerade": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/a3c98203d9ed8c95.png"
   },
   "studio_restorix": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/9205a0b10f9c1829.png"
   },
   "studio_erasure": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/11124c05c8582a36.png"
   },
   "studio_videomancer": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/7755a6371977dd32.png"
   },
   "model_ltx2": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/f71369a2cf2197b6.png"
   },
   "comfyui_A-Flux_Flux2_flux-2-klein-9b_safetensors": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/3f446755d976ea76.png"
   },
   "comfyui_A-Flux_flux-2-klein-4b-fp8_safetensors": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/dda49fb796898532.png"
   },
   "comfyui_A-Flux_flux-2-klein-base-4b-fp8_safetensors": {
-    "avatar_url": "/api/cached_asset/4afe7b592bdf96af.png"
+    "avatar_url": "/api/cached_asset/6fc7bb0b53e75570.png"
   },
   "comfyui_Illustrious_sloppyMessyMix_sloppyMessyMixV1_safetensors": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/7f5c642fd2671f3f.png"
   },
   "comfyui_SDXL_Anime_NoobAI-XL-v1_1_safetensors": {
-    "avatar_url": "/api/cached_asset/0639168ad0d27006.png"
+    "avatar_url": "/api/cached_asset/b857d16c12c1db6d.png"
   },
   "comfyui_SDXL_Anime_novaAnimeXL_ilV170_safetensors": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/522d4206dc5c1a10.png"
   },
   "comfyui_SDXL_Anime_waiIllustriousSDXL_v160-a5f5_safetensors": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/8927ff90ae3bd9f7.png"
   },
   "comfyui_SDXL_Base_AlbedoBaseXL_safetensors": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/4c602fa9f923e70c.png"
   },
   "comfyui_Flux_FLUX1 Dev fp8_safetensors": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/ed5669c891629e14.png"
   },
   "comfyui_Flux_HyFU-8-step-v1_0-pruned_safetensors": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/ebe3ef1519f21994.png"
   },
   "comfyui_Flux_flux1-dev-kontext_fp8_scaled_safetensors": {
     "avatar_url": null
@@ -57,51 +57,51 @@
     "avatar_url": null
   },
   "comfyui_SD-1_5_juggernaut_reborn_safetensors": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/9e733ced3ffe4208.png"
   },
   "comfyui_SD-1_5_v1-5-pruned-emaonly_safetensors": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/33f4a71bf5faf8a9.png"
   },
   "comfyui_SDXL_Base_sd_xl_refiner_1_0_safetensors": {
     "avatar_url": null
   },
   "comfyui_SDXL_Cartoon-3D_modernDisneyXL_v3_safetensors": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/ea24e717ee48848b.png"
   },
   "comfyui_SDXL_Cartoon-3D_novaCartoonXL_v60_safetensors": {
-    "avatar_url": "/api/cached_asset/6a72b997fe6205c3.png"
+    "avatar_url": "/api/cached_asset/42d861f4c8da1eea.png"
   },
   "comfyui_SDXL_Realistic_cyberrealisticPony_v160_safetensors": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/532adfc2178d084c.png"
   },
   "comfyui_SDXL_Realistic_jibMixRealisticXL_v180SkinSupreme_safetensors": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/8bd2763121ac0cab.png"
   },
   "comfyui_SDXL_Realistic_juggernautXL_ragnarok_safetensors": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/fe0a22059776300e.png"
   },
   "comfyui_SDXL_Realistic_juggernautXL_v9Rundiffusionphoto2_safetensors": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/0eee05969268d2d3.png"
   },
   "comfyui_SDXL_Realistic_zavychromaxl_v100_safetensors": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/daae2ac610b21f43.png"
   },
   "comfyui_ZIT_gonzalomoZpop_v30AIO_safetensors": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/6f824d0bbd1a92f8.png"
   },
   "studio_cinematic": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/753697e28f2fb412.png"
   },
   "studio_studiocraft": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/96f1344463beb52c.png"
   },
   "comfyui_Chroma_Chroma1-HD-fp8_scaled_defaultloader_hybrid_large_rev2_safetensors": {
-    "avatar_url": null
+    "avatar_url": "/api/cached_asset/a3b1588ef5369283.png"
   },
   "_global": {
-    "bg_url": "/api/cached_asset/29ad13d64317f96f.png"
+    "bg_url": "/api/cached_asset/9f5988d8cf6001b6.png"
   },
   "comfyui_SDXL_Base_sd_xl_base_1_0_safetensors": {
-    "avatar_url": "/api/cached_asset/7616b93e3d8992e3.png"
+    "avatar_url": "/api/cached_asset/9b5f12e5d9e70bf9.png"
   }
 }

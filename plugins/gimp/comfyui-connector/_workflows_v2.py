@@ -2529,8 +2529,8 @@ def build_video_upscale(video_name, upscale_model="4x-UltraSharp.pth",
         video_ref = ["10", 0]
 
     if rtx_scale > 1.0:
-        rtx_id = nf.rtx_video_super_resolution(video_ref, scale_factor=rtx_scale,
-                                                node_id="20")
+        rtx_id = nf.video_upscale(video_ref, scale_factor=rtx_scale,
+                                  node_id="20")
         video_ref = [rtx_id, 0]
 
     nf.update({
@@ -2575,8 +2575,8 @@ def build_video_reactor(video_name, face_models, upscale_model="4x-UltraSharp.pt
         video_ref = ["10", 0]
 
     if rtx_scale > 1.0:
-        rtx_id = nf.rtx_video_super_resolution(video_ref, scale_factor=rtx_scale,
-                                                node_id="20")
+        rtx_id = nf.video_upscale(video_ref, scale_factor=rtx_scale,
+                                  node_id="20")
         video_ref = [rtx_id, 0]
 
     # Face swap chain — one ReActorFaceSwapOpt per face model
@@ -2840,9 +2840,13 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
     if ip_adapter_image:
         cv_id = nf.clip_vision_loader("siglip2_so400m_patch16_naflex.safetensors", node_id="95")
         cv_enc_id = nf.clip_vision_encode([cv_id, 0], ["7", 0], node_id="96")
+        # Select IP-Adapter model matching the WAN model size.
+        # 14B models use different attention dims than 1.3B — using the wrong
+        # adapter causes "size mismatch for N.to_k_ip.weight" errors.
+        ipa_model = preset.get("ip_adapter_model", "ip-adapter.bin")
         nf.update({
             "97": {"class_type": "IPAdapterWANLoader",
-                   "inputs": {"ipadapter": "ip-adapter.bin", "provider": "cuda"}},
+                   "inputs": {"ipadapter": ipa_model, "provider": "cuda"}},
         })
         if ip_adapter_image != "__start_image__":
             ip_img_id = nf.load_image(ip_adapter_image, node_id="98")
@@ -2955,10 +2959,10 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
         rife_id = nf.rife_vfi(video_ref, multiplier=4, node_id="70")
         video_ref = [rife_id, 0]
 
-    # RTX Video Super Resolution (optional)
+    # AI upscale (optional — replaces RTX with native model upscale)
     if rtx_scale > 1.0:
-        rtx_id = nf.rtx_video_super_resolution(video_ref, scale_factor=rtx_scale,
-                                                node_id="75")
+        rtx_id = nf.video_upscale(video_ref, scale_factor=rtx_scale,
+                                   node_id="75")
         video_ref = [rtx_id, 0]
 
     # Final MP4
@@ -4062,8 +4066,8 @@ def build_ltx_video(preset, prompt_text, seed,
 
     # ── Post-processing ───────────────────────────────────────────
     if rtx_scale and rtx_scale > 0:
-        rtx_id = nf.rtx_video_super_resolution(frames_ref, scale_factor=rtx_scale,
-                                                node_id="45")
+        rtx_id = nf.video_upscale(frames_ref, scale_factor=rtx_scale,
+                                   node_id="45")
         frames_ref = [rtx_id, 0]
 
     if interpolate:

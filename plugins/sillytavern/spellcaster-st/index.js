@@ -15,6 +15,10 @@
  *   8. Generate interceptor: extracts scene context for visual generation
  */
 
+import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
+import { ARGUMENT_TYPE, SlashCommandArgument } from '../../../slash-commands/SlashCommandArgument.js';
+import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
+
 const PLUGIN_ID = 'spellcaster';
 const API_BASE = '/api/plugins/spellcaster';
 
@@ -429,8 +433,8 @@ async function onCharacterMessageRendered(messageIndex) {
 
         if (result.bg_filename) {
             const context = getContext();
-            if (context.SlashCommandParser) {
-                await context.SlashCommandParser.commands['bg']?.callback?.(null, result.bg_filename);
+            if (SlashCommandParser) {
+                await SlashCommandParser.commands['bg']?.callback?.(null, result.bg_filename);
             }
             const composited = result.characters_composited || 0;
             const label = composited > 0
@@ -488,12 +492,11 @@ async function generateExpression(characterName, emotion, messageText) {
 // ═══════════════════════════════════════════════════════════════════
 
 function registerSlashCommands() {
-    const context = getContext();
-    const SCP = context.SlashCommandParser;
-    if (!SCP) return;
+    // Modern SillyTavern API: use ES module imports (top of file)
+    // SlashCommandParser, SlashCommand, ARGUMENT_TYPE imported directly
 
     // /scene [description] — Generate and set a scene background
-    SCP.addCommandObject({
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'scene',
         callback: async (args, value) => {
             if (!value) return 'Usage: /scene [description of the scene]';
@@ -506,7 +509,7 @@ function registerSlashCommands() {
                     height: settings.scene_height,
                 });
                 if (result.bg_filename) {
-                    await SCP.commands['bg']?.callback?.(null, result.bg_filename);
+                    await SlashCommandParser.commands['bg']?.callback?.(null, result.bg_filename);
                     return `Scene generated: ${result.bg_filename}`;
                 }
                 return 'Scene generated (no background directory configured)';
@@ -515,10 +518,10 @@ function registerSlashCommands() {
             }
         },
         helpString: 'Generate a scene background from a description and set it as the chat background.',
-    });
+    }));
 
     // /portrait [description] — Generate a character portrait
-    SCP.addCommandObject({
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'portrait',
         callback: async (args, value) => {
             if (!value) return 'Usage: /portrait [description of the character]';
@@ -535,10 +538,10 @@ function registerSlashCommands() {
             }
         },
         helpString: 'Generate a character portrait from a description.',
-    });
+    }));
 
     // /restyle [style] — Restyle current character's avatar (persists to disk with backup)
-    SCP.addCommandObject({
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'restyle',
         callback: async (args, value) => {
             const style = value || getSettings().restyle_prompt;
@@ -579,10 +582,10 @@ function registerSlashCommands() {
             }
         },
         helpString: 'Restyle the current character\'s avatar. Original is backed up automatically — use /restyle-undo to revert.',
-    });
+    }));
 
     // /restyle-all [style] — Restyle ALL character avatars in current group/chat
-    SCP.addCommandObject({
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'restyle-all',
         callback: async (args, value) => {
             const style = value || getSettings().restyle_prompt;
@@ -623,10 +626,10 @@ function registerSlashCommands() {
             return `Restyled ${restyled}/${chars.length} characters (originals backed up — use /restyle-undo-all to revert)`;
         },
         helpString: 'Restyle ALL character avatars. Originals are backed up — use /restyle-undo-all to revert.',
-    });
+    }));
 
     // /restyle-undo — Restore the current character's original avatar from backup
-    SCP.addCommandObject({
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'restyle-undo',
         callback: async (args, value) => {
             const context = getContext();
@@ -642,10 +645,10 @@ function registerSlashCommands() {
             }
         },
         helpString: 'Restore the current character\'s original avatar (before restyle).',
-    });
+    }));
 
     // /restyle-undo-all — Restore ALL character avatars from backups
-    SCP.addCommandObject({
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'restyle-undo-all',
         callback: async (args, value) => {
             const context = getContext();
@@ -668,10 +671,10 @@ function registerSlashCommands() {
             return `Restored ${restored} avatar(s)`;
         },
         helpString: 'Restore ALL character avatars to their originals (before restyle).',
-    });
+    }));
 
     // /animate [prompt] — Animate the current character's avatar as a short GIF
-    SCP.addCommandObject({
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'animate',
         callback: async (args, value) => {
             const context = getContext();
@@ -707,14 +710,14 @@ function registerSlashCommands() {
             }
         },
         helpString: 'Animate the current character\'s avatar as a short looping GIF.',
-    });
+    }));
 
     // ═══════════════════════════════════════════════════════════════
     //  Magic Studios — Character Pipeline Commands
     // ═══════════════════════════════════════════════════════════════
 
     // /studio-cast — Generate face model from current character's avatar
-    SCP.addCommandObject({
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'studio-cast',
         callback: async (args, value) => {
             const context = getContext();
@@ -742,10 +745,10 @@ function registerSlashCommands() {
             }
         },
         helpString: 'Generate a face model from the current character\'s avatar (Act 1: Casting Polaroids).',
-    });
+    }));
 
     // /studio-cast-all — Cast all characters in the current chat
-    SCP.addCommandObject({
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'studio-cast-all',
         callback: async (args, value) => {
             const context = getContext();
@@ -775,10 +778,10 @@ function registerSlashCommands() {
             return `Cast ${cast}/${chars.length} characters — face models ready`;
         },
         helpString: 'Generate face models for ALL characters in the chat (batch cast).',
-    });
+    }));
 
     // /studio-body [description] — Generate full-body transparent PNG
-    SCP.addCommandObject({
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'studio-body',
         callback: async (args, value) => {
             const context = getContext();
@@ -803,10 +806,10 @@ function registerSlashCommands() {
             }
         },
         helpString: 'Generate a full-body transparent PNG for the current character (Act 2: Body Double). Include attire in the description.',
-    });
+    }));
 
     // /studio-body-all [attire] — Generate bodies for all cast characters
-    SCP.addCommandObject({
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'studio-body-all',
         callback: async (args, value) => {
             const context = getContext();
@@ -833,10 +836,10 @@ function registerSlashCommands() {
             return `Generated ${done} body doubles — ready for scene compositing`;
         },
         helpString: 'Generate bodies for all cast characters. Optional: specify attire (e.g., /studio-body-all medieval fantasy clothing).',
-    });
+    }));
 
     // /studio-scene [description] — Generate scene with characters composited in
-    SCP.addCommandObject({
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'studio-scene',
         callback: async (args, value) => {
             if (!value) return 'Usage: /studio-scene [scene description]. Characters with bodies will be composited in.';
@@ -876,7 +879,7 @@ function registerSlashCommands() {
 
                 if (result.bg_filename) {
                     const ctx = getContext();
-                    await ctx.SlashCommandParser?.commands['bg']?.callback?.(null, result.bg_filename);
+                    await SlashCommandParser.commands['bg']?.callback?.(null, result.bg_filename);
                 }
 
                 if (result.images?.[0]) {
@@ -893,10 +896,10 @@ function registerSlashCommands() {
             }
         },
         helpString: 'Generate a scene background with characters composited in. Characters are auto-dressed for the scene.',
-    });
+    }));
 
     // /studio-status — Show which characters are ready
-    SCP.addCommandObject({
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'studio-status',
         callback: async (args, value) => {
             try {
@@ -917,10 +920,10 @@ function registerSlashCommands() {
             }
         },
         helpString: 'Show which characters have been cast and have bodies ready.',
-    });
+    }));
 
     // /spellcaster — Toggle extension on/off
-    SCP.addCommandObject({
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'spellcaster',
         callback: async (args, value) => {
             const settings = getSettings();
@@ -950,7 +953,7 @@ function registerSlashCommands() {
             }
         },
         helpString: 'Toggle Spellcaster features. Usage: /spellcaster [on|off|auto-bg on|auto-bg off]',
-    });
+    }));
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -990,7 +993,7 @@ function registerFunctionTools() {
                 });
                 if (result.bg_filename && args.set_as_background !== false) {
                     const ctx = getContext();
-                    await ctx.SlashCommandParser?.commands['bg']?.callback?.(null, result.bg_filename);
+                    await SlashCommandParser.commands['bg']?.callback?.(null, result.bg_filename);
                 }
                 if (result.images?.[0]) {
                     return `![scene](data:image/png;base64,${result.images[0].base64})\n*Scene: ${args.scene_description.substring(0, 80)}...*`;
@@ -1066,7 +1069,7 @@ function registerFunctionTools() {
                 });
                 if (result.bg_filename) {
                     const ctx = getContext();
-                    await ctx.SlashCommandParser?.commands['bg']?.callback?.(null, result.bg_filename);
+                    await SlashCommandParser.commands['bg']?.callback?.(null, result.bg_filename);
                 }
                 return `Atmosphere set: ${args.atmosphere}`;
             } catch (e) {
@@ -1342,10 +1345,4 @@ async function autoCastOnStartup() {
 
     // Configure server plugin
     const settings = getSettings();
-    spellcasterAPI('/settings', { comfyui_url: settings.comfyui_url }).catch(() => {});
-
-    // Auto-cast all characters in background (non-blocking, 5s delay)
-    setTimeout(() => autoCastOnStartup(), 5000);
-
-    console.log('[Spellcaster] Extension loaded. ComfyUI:', settings.comfyui_url);
-})();
+    spellcasterAPI('/settings', { comfy
