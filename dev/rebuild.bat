@@ -231,6 +231,8 @@ if errorlevel 1 (
     echo   No source changes to commit.
 )
 
+echo   Pulling latest...
+git pull --rebase origin main 2>nul
 echo   Pushing...
 git push origin main
 if errorlevel 1 (
@@ -319,6 +321,8 @@ if errorlevel 1 (
     echo   No changes in NSFW.
 )
 
+echo   Pulling latest...
+git pull --rebase origin main 2>nul
 echo   Pushing...
 git push origin main
 if errorlevel 1 (
@@ -337,7 +341,11 @@ echo [7/7] Uploading binaries to GitHub Release...
 
 :: Auto-detect tag if not set
 if not defined RELEASE_TAG (
-    for /f "tokens=*" %%V in ('python -c "import re; m=re.search(r'VERSION\s*=\s*[\"'']([^\"'']+)[\"'']', open('tavern/guild_launcher.py').read()); print('v'+m.group(1) if m else '')" 2^>nul') do set "RELEASE_TAG=%%V"
+    pushd "%SFW_ROOT%"
+    > "%TEMP%\_spellcaster_ver.py" echo import re; f=open("tavern/guild_launcher.py").read(); m=re.search(r"VERSION\s*=\s*[\"']([^\"']+)[\"']",f); print("v"+m.group(1) if m else "")
+    for /f "tokens=*" %%V in ('python "%TEMP%\_spellcaster_ver.py" 2^>nul') do set "RELEASE_TAG=%%V"
+    del "%TEMP%\_spellcaster_ver.py" 2>nul
+    popd
 )
 if not defined RELEASE_TAG (
     echo   [WARN] No --tag provided and could not auto-detect version.
