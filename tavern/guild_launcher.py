@@ -63,9 +63,9 @@ from guild_common import (
 # SFW defaults are the public repo; NSFW overrides point to the private
 # repo with an embedded auth token.
 
-_GUILD_REPO = "laboratoiresonore/spellcaster_NSFW"
+_GUILD_REPO = "laboratoiresonore/spellcaster"
 _GUILD_BRANCH = "main"
-_GUILD_AUTH_TOKEN = "<REDACTED_GH_PAT>"  # NSFW: PAT for private repo access
+_GUILD_AUTH_TOKEN = ""  # empty for SFW (public); PAT for NSFW (private)
 
 # ── Runtime NSFW detection ──
 # If running from source (not a patched build), check for nsfw/.github_token
@@ -144,6 +144,7 @@ _DEFAULT_CONFIG = {
     "llm_mode": "local",           # "local" (KoboldAI) or "horde" (AI Horde)
     "horde_api_key": "",           # AI Horde API key (empty = anonymous)
     "horde_model": "",             # Preferred Horde model (empty = any)
+    "prompt_enhance": True,        # LLM-based prompt enhancement before ComfyUI
 }
 
 
@@ -1768,6 +1769,7 @@ def main():
     server.LLM_MODE = config.get("llm_mode", "local")
     server.HORDE_API_KEY = config.get("horde_api_key", "")
     server.HORDE_MODEL = config.get("horde_model", "")
+    server.PROMPT_ENHANCE = config.get("prompt_enhance", True)
     server.NSFW_MODE = bool(_GUILD_AUTH_TOKEN)
 
     # ── Runtime NSFW content injection ──────────────────────────────

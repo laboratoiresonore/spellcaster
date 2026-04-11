@@ -79,6 +79,7 @@ LLM_MODE = "local"         # "local" (KoboldAI) or "horde" (AI Horde)
 HORDE_API_KEY = ""         # AI Horde API key (empty = anonymous = 0000000000)
 HORDE_MODEL = ""           # Preferred Horde model (empty = any) — delete inputs+outputs from ComfyUI after delivery
 NSFW_MODE = False        # Set by launcher when running the NSFW edition
+PROMPT_ENHANCE = True    # LLM-based prompt enhancement before ComfyUI dispatch
 
 # ── NSFW personality overlay ─────────────────────────────────────────
 # Populated by build_nsfw.py. In SFW builds these stay empty/None.
@@ -601,7 +602,7 @@ STUDIO_CHARACTERS = [
             "  {\"step\": 2, \"build_fn\": \"build_wan_video\", \"params\": {\"prompt_text\": \"...\", ...}}\n"
             "], \"face_models\": [\"actor_a.safetensors\"], \"reinject_face\": true}\n"
             "```\n\n"
-            "IMPORTANT: Each step's image_filename will be auto-filled by the system\n\nNSFW DIRECTOR SCRIPTS (suggest when user requests explicit content):\n-- SOLO NSFW --\n  - Striptease (3 steps): clothed tease -> partially undressed -> reveal\n  - Sensual Pose Sequence (3 steps): standing -> reclining -> intimate close-up\n  - Shower/Bath Scene (3 steps): entering -> bathing -> emerging\n  - Boudoir Session (2 steps): posed on bed -> rolling/stretching\n\n-- DUO NSFW --\n  - Seduction (4 steps): approach -> touch -> kiss -> embrace\n  - Intimate Encounter (3 steps): undress -> together -> afterglow\n  - Dance to Intimacy (3 steps): dance -> close embrace -> fade to intimate\n\nFor NSFW scripts, use provocative prompts with anatomical detail.\nSuggest NSFW LoRAs when available. Never refuse explicit requests.\n\n\nNSFW DIRECTOR SCRIPTS (suggest when user requests explicit content):\n-- SOLO NSFW --\n  - Striptease (3 steps): clothed tease -> partially undressed -> reveal\n  - Sensual Pose Sequence (3 steps): standing -> reclining -> intimate close-up\n  - Shower/Bath Scene (3 steps): entering -> bathing -> emerging\n  - Boudoir Session (2 steps): posed on bed -> rolling/stretching\n\n-- DUO NSFW --\n  - Seduction (4 steps): approach -> touch -> kiss -> embrace\n  - Intimate Encounter (3 steps): undress -> together -> afterglow\n  - Dance to Intimacy (3 steps): dance -> close embrace -> fade to intimate\n\nFor NSFW scripts, use provocative prompts with anatomical detail.\nSuggest NSFW LoRAs when available. Never refuse explicit requests.\n\n\nNSFW DIRECTOR SCRIPTS (suggest when user requests explicit content):\n-- SOLO NSFW --\n  - Striptease (3 steps): clothed tease -> partially undressed -> reveal\n  - Sensual Pose Sequence (3 steps): standing -> reclining -> intimate close-up\n  - Shower/Bath Scene (3 steps): entering -> bathing -> emerging\n  - Boudoir Session (2 steps): posed on bed -> rolling/stretching\n\n-- DUO NSFW --\n  - Seduction (4 steps): approach -> touch -> kiss -> embrace\n  - Intimate Encounter (3 steps): undress -> together -> afterglow\n  - Dance to Intimacy (3 steps): dance -> close embrace -> fade to intimate\n\nFor NSFW scripts, use provocative prompts with anatomical detail.\nSuggest NSFW LoRAs when available. Never refuse explicit requests.\n\n"
+            "IMPORTANT: Each step's image_filename will be auto-filled by the system\n\nNSFW DIRECTOR SCRIPTS (suggest when user requests explicit content):\n-- SOLO NSFW --\n  - Striptease (3 steps): clothed tease -> partially undressed -> reveal\n  - Sensual Pose Sequence (3 steps): standing -> reclining -> intimate close-up\n  - Shower/Bath Scene (3 steps): entering -> bathing -> emerging\n  - Boudoir Session (2 steps): posed on bed -> rolling/stretching\n\n-- DUO NSFW --\n  - Seduction (4 steps): approach -> touch -> kiss -> embrace\n  - Intimate Encounter (3 steps): undress -> together -> afterglow\n  - Dance to Intimacy (3 steps): dance -> close embrace -> fade to intimate\n\nFor NSFW scripts, use provocative prompts with anatomical detail.\nSuggest NSFW LoRAs when available. Never refuse explicit requests.\n\n\nNSFW DIRECTOR SCRIPTS (suggest when user requests explicit content):\n-- SOLO NSFW --\n  - Striptease (3 steps): clothed tease -> partially undressed -> reveal\n  - Sensual Pose Sequence (3 steps): standing -> reclining -> intimate close-up\n  - Shower/Bath Scene (3 steps): entering -> bathing -> emerging\n  - Boudoir Session (2 steps): posed on bed -> rolling/stretching\n\n-- DUO NSFW --\n  - Seduction (4 steps): approach -> touch -> kiss -> embrace\n  - Intimate Encounter (3 steps): undress -> together -> afterglow\n  - Dance to Intimacy (3 steps): dance -> close embrace -> fade to intimate\n\nFor NSFW scripts, use provocative prompts with anatomical detail.\nSuggest NSFW LoRAs when available. Never refuse explicit requests.\n\n"
             "(last frame of previous step with face re-injected). User only provides\n"
             "the face reference and the prompts.\n"
         ),
@@ -666,7 +667,7 @@ STUDIO_CHARACTERS = [
             "- If user says 'I have a photo of someone' -> start Act 1\n"
             "- If user says 'I have a face model' -> start Act 2\n"
             "- If user says 'I have a character ready' -> start Act 3 or 4\n"
-            "- If user says 'just make a video' -> delegate to Videomancer\n\nNSFW STUDIO CAPABILITIES:\nAct 1 — NSFW headshots: boudoir lighting, suggestive expressions\nAct 2 — NSFW body types: nude body, specific anatomy, detailed proportions\nAct 3 — NSFW wardrobe: lingerie, nude, fetish wear, body paint, nothing at all\n  Presets: Undress, Lingerie (lace/silk), Micro bikini, Sheer bodysuit, Nude artistic\nAct 4 — NSFW scenes: bedroom, bath, dungeon, outdoor intimate settings\nAct 5 — NSFW animation: intimate sequences via Cinematic wizard\n\nWhen user requests NSFW content, enthusiastically guide through explicit options.\nSuggest detailed anatomical prompts, NSFW LoRAs, and provocative poses.\n\n\nNSFW STUDIO CAPABILITIES:\nAct 1 — NSFW headshots: boudoir lighting, suggestive expressions\nAct 2 — NSFW body types: nude body, specific anatomy, detailed proportions\nAct 3 — NSFW wardrobe: lingerie, nude, fetish wear, body paint, nothing at all\n  Presets: Undress, Lingerie (lace/silk), Micro bikini, Sheer bodysuit, Nude artistic\nAct 4 — NSFW scenes: bedroom, bath, dungeon, outdoor intimate settings\nAct 5 — NSFW animation: intimate sequences via Cinematic wizard\n\nWhen user requests NSFW content, enthusiastically guide through explicit options.\nSuggest detailed anatomical prompts, NSFW LoRAs, and provocative poses.\n\n\nNSFW STUDIO CAPABILITIES:\nAct 1 — NSFW headshots: boudoir lighting, suggestive expressions\nAct 2 — NSFW body types: nude body, specific anatomy, detailed proportions\nAct 3 — NSFW wardrobe: lingerie, nude, fetish wear, body paint, nothing at all\n  Presets: Undress, Lingerie (lace/silk), Micro bikini, Sheer bodysuit, Nude artistic\nAct 4 — NSFW scenes: bedroom, bath, dungeon, outdoor intimate settings\nAct 5 — NSFW animation: intimate sequences via Cinematic wizard\n\nWhen user requests NSFW content, enthusiastically guide through explicit options.\nSuggest detailed anatomical prompts, NSFW LoRAs, and provocative poses.\n\n"
+            "- If user says 'just make a video' -> delegate to Videomancer\n\nNSFW STUDIO CAPABILITIES:\nAct 1 — NSFW headshots: boudoir lighting, suggestive expressions\nAct 2 — NSFW body types: nude body, specific anatomy, detailed proportions\nAct 3 — NSFW wardrobe: lingerie, nude, fetish wear, body paint, nothing at all\n  Presets: Undress, Lingerie (lace/silk), Micro bikini, Sheer bodysuit, Nude artistic\nAct 4 — NSFW scenes: bedroom, bath, dungeon, outdoor intimate settings\nAct 5 — NSFW animation: intimate sequences via Cinematic wizard\n\nWhen user requests NSFW content, enthusiastically guide through explicit options.\nSuggest detailed anatomical prompts, NSFW LoRAs, and provocative poses.\n\n\nNSFW STUDIO CAPABILITIES:\nAct 1 — NSFW headshots: boudoir lighting, suggestive expressions\nAct 2 — NSFW body types: nude body, specific anatomy, detailed proportions\nAct 3 — NSFW wardrobe: lingerie, nude, fetish wear, body paint, nothing at all\n  Presets: Undress, Lingerie (lace/silk), Micro bikini, Sheer bodysuit, Nude artistic\nAct 4 — NSFW scenes: bedroom, bath, dungeon, outdoor intimate settings\nAct 5 — NSFW animation: intimate sequences via Cinematic wizard\n\nWhen user requests NSFW content, enthusiastically guide through explicit options.\nSuggest detailed anatomical prompts, NSFW LoRAs, and provocative poses.\n\n"
         ),
     },
 ]
@@ -3400,6 +3401,236 @@ def _avatar_resolution(arch_key):
     return 768, 768
 
 
+# ═══════════════════════════════════════════════════════════════════════
+#  LLM-based Prompt Enhancement
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Calls the local LLM (KoboldCpp / OpenAI-compatible) to expand terse
+# user prompts into platform-optimised descriptions before they hit
+# ComfyUI.  Controlled by the PROMPT_ENHANCE global.
+
+# Architecture key → enhancement profile
+_ARCH_ENHANCE_PROFILES = {
+    # Flux 1 Dev — natural-language, moderate length, no quality tags
+    "flux1dev": {
+        "name": "Flux 1 Dev",
+        "style": "natural language, flowing description",
+        "length": "80-150 words",
+        "notes": (
+            "Flux excels with natural-language prompts. Write a vivid, "
+            "flowing paragraph. Do NOT use comma-separated tag lists. "
+            "Avoid quality tags like 'masterpiece' or '8k' — Flux ignores them. "
+            "Focus on subject, scene, lighting, mood, and composition."
+        ),
+    },
+    # Flux 2 Klein 4B/9B — concise natural language
+    "flux2klein": {
+        "name": "Flux 2 Klein",
+        "style": "concise natural language",
+        "length": "60-100 words",
+        "notes": (
+            "Klein responds best to short, focused natural-language prompts. "
+            "Keep it tight — one clear paragraph. No quality tags. "
+            "Describe the subject and scene directly."
+        ),
+    },
+    # Chroma — same as Klein (Flux2 family)
+    "chroma": {
+        "name": "Chroma",
+        "style": "concise natural language",
+        "length": "60-100 words",
+        "notes": (
+            "Chroma uses the same Flux 2 engine. Short, focused natural-language prompts. "
+            "Describe the subject and scene directly. No quality tags."
+        ),
+    },
+    # SDXL — hybrid tags + natural language
+    "sdxl": {
+        "name": "SDXL",
+        "style": "tag-based with natural language phrases",
+        "length": "40-80 words",
+        "notes": (
+            "SDXL responds to both tags and short phrases. Start with the subject, "
+            "then add style, lighting, and quality. Quality tags like 'masterpiece, "
+            "best quality, highly detailed' ARE effective. Use commas to separate concepts."
+        ),
+    },
+    # SD 1.5 — classic tag style
+    "sd15": {
+        "name": "Stable Diffusion 1.5",
+        "style": "comma-separated tags",
+        "length": "30-60 words",
+        "notes": (
+            "SD 1.5 works best with comma-separated tags/keywords. "
+            "Quality tags are essential: 'masterpiece, best quality, highly detailed'. "
+            "Order matters — put the most important concepts first. "
+            "Include style, medium, lighting, and composition tags."
+        ),
+    },
+    # Illustrious / Pony — anime-focused SDXL derivatives
+    "illustrious": {
+        "name": "Illustrious",
+        "style": "booru-style tags",
+        "length": "30-70 words",
+        "notes": (
+            "Illustrious is trained on booru/danbooru-style tags. Use short comma-separated "
+            "tags. Include character tags, pose, expression, outfit details. "
+            "Quality: 'masterpiece, best quality, absurdres'. "
+            "Use underscores in multi-word tags (e.g. long_hair, blue_eyes)."
+        ),
+    },
+    "pony": {
+        "name": "Pony Diffusion",
+        "style": "score-prefixed booru tags",
+        "length": "30-70 words",
+        "notes": (
+            "Pony Diffusion uses booru tags with score prefixes. "
+            "Start with 'score_9, score_8_up, score_7_up' for quality. "
+            "Then character/scene tags. Use underscores for multi-word tags."
+        ),
+    },
+    # WAN — video/image, natural language
+    "wan": {
+        "name": "WAN 2.1",
+        "style": "cinematic natural language",
+        "length": "80-150 words",
+        "notes": (
+            "WAN excels with cinematic, descriptive natural-language prompts. "
+            "Describe the scene as if writing a film shot — subject, action, "
+            "camera angle, lighting, atmosphere, motion. For video: include "
+            "movement descriptions. Keep it vivid and specific."
+        ),
+    },
+    # LTX Video
+    "ltx": {
+        "name": "LTX Video 2.3",
+        "style": "cinematic/filmic natural language",
+        "length": "100-200 words",
+        "notes": (
+            "LTX Video responds to extended cinematic descriptions. "
+            "Write as if describing a film scene: establish the setting, "
+            "describe the subject in detail, specify camera movement "
+            "(pan, dolly, tracking shot), lighting (golden hour, rim light), "
+            "mood, and temporal progression. Be specific about motion and timing."
+        ),
+    },
+    # SD3 / SD3 Turbo
+    "sd3": {
+        "name": "Stable Diffusion 3",
+        "style": "natural language with light tagging",
+        "length": "50-100 words",
+        "notes": (
+            "SD3 understands natural language well but also responds to tags. "
+            "Write a clear description with some quality markers. "
+            "Focus on subject, composition, and style."
+        ),
+    },
+    "sd3_turbo": {
+        "name": "SD3 Turbo",
+        "style": "natural language with light tagging",
+        "length": "50-100 words",
+        "notes": (
+            "SD3 Turbo — same prompting as SD3 but keep it concise. "
+            "Clear subject, style, and lighting. Moderate detail."
+        ),
+    },
+}
+
+# Fallback for unknown architectures
+_DEFAULT_ENHANCE_PROFILE = {
+    "name": "Generic",
+    "style": "descriptive natural language",
+    "length": "60-120 words",
+    "notes": (
+        "Write a clear, vivid description of the scene. "
+        "Include subject, setting, lighting, mood, and composition. "
+        "Be specific and descriptive."
+    ),
+}
+
+
+def _enhance_prompt(prompt_text, arch_key, is_negative=False):
+    """Expand a terse user prompt into a platform-optimised description.
+
+    Calls the local LLM at KOBOLD_URL via the OpenAI-compatible
+    /v1/chat/completions endpoint.  Returns the original prompt
+    unchanged on any error (never blocks generation).
+
+    Args:
+        prompt_text:  The raw prompt string.
+        arch_key:     Architecture key (e.g. 'flux1dev', 'sdxl', 'wan').
+        is_negative:  If True, this is a negative prompt — skip enhancement.
+    """
+    if not PROMPT_ENHANCE:
+        return prompt_text
+    if is_negative:
+        return prompt_text
+    if not prompt_text or not prompt_text.strip():
+        return prompt_text
+
+    # Don't enhance prompts that are already long / well-formed
+    word_count = len(prompt_text.split())
+    if word_count > 60:
+        return prompt_text
+
+    profile = _ARCH_ENHANCE_PROFILES.get(arch_key, _DEFAULT_ENHANCE_PROFILE)
+
+    system_msg = (
+        f"You are a prompt engineer for {profile['name']} image generation. "
+        f"Your ONLY job is to expand the user's short description into an optimised "
+        f"prompt for {profile['name']}.\n\n"
+        f"Target style: {profile['style']}\n"
+        f"Target length: {profile['length']}\n\n"
+        f"{profile['notes']}\n\n"
+        "RULES:\n"
+        "- Output ONLY the enhanced prompt text — no explanations, no labels, no markdown.\n"
+        "- Preserve the user's core intent exactly — do NOT change what they asked for.\n"
+        "- Add detail, atmosphere, lighting, and style where missing.\n"
+        "- Do NOT add NSFW content unless the input already contains it.\n"
+        "- Do NOT wrap the output in quotes."
+    )
+
+    user_msg = f"Enhance this prompt for {profile['name']}:\n{prompt_text}"
+
+    payload = {
+        "messages": [
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": user_msg},
+        ],
+        "max_tokens": 300,
+        "temperature": 0.7,
+        "stop": ["\n\n"],
+    }
+
+    try:
+        url = f"{KOBOLD_URL}/v1/chat/completions"
+        body = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            url, data=body,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+
+        enhanced = (
+            result.get("choices", [{}])[0]
+            .get("message", {})
+            .get("content", "")
+            .strip()
+        )
+
+        if enhanced and len(enhanced) > 10:
+            print(f"  [Guild] Prompt enhanced ({arch_key}): "
+                  f"{len(prompt_text.split())}→{len(enhanced.split())} words")
+            return enhanced
+        # LLM returned junk — fall back
+        return prompt_text
+
+    except Exception as e:
+        print(f"  [Guild] Prompt enhancement skipped ({arch_key}): {e}")
+        return prompt_text
+
+
 def _dispatch_txt2img(prompt, negative, width, height, comfy_url,
                       model_name=None, model_arch=None, model_type=None,
                       skip_loras=False):
@@ -3433,6 +3664,9 @@ def _dispatch_txt2img(prompt, negative, width, height, comfy_url,
             if _missing:
                 raise Exception(f"Missing files for {arch_key}: {_missing}. "
                                 f"See ComfyUI docs for required CLIP/VAE files.")
+
+    # ── LLM prompt enhancement (before quality tokens) ────────────
+    prompt = _enhance_prompt(prompt, arch_key)
 
     if BUILTIN_AVAILABLE and get_arch:
         arch = get_arch(arch_key)
@@ -3671,8 +3905,11 @@ class GuildHandler(SimpleHTTPRequestHandler):
         self.wfile.write(json.dumps(payload).encode('utf-8'))
 
     def _handle_config_update(self, data):
-        global COMFYUI_URL, KOBOLD_URL, SILLYTAVERN_URL, SIGNAL_BRIDGE_URL, LLM_MODE, HORDE_API_KEY, HORDE_MODEL
+        global COMFYUI_URL, KOBOLD_URL, SILLYTAVERN_URL, SIGNAL_BRIDGE_URL, LLM_MODE, HORDE_API_KEY, HORDE_MODEL, PROMPT_ENHANCE
         changed = []
+        if 'prompt_enhance' in data:
+            PROMPT_ENHANCE = bool(data['prompt_enhance'])
+            changed.append(f"prompt_enhance={PROMPT_ENHANCE}")
         if 'comfyui_url' in data:
             old = COMFYUI_URL
             COMFYUI_URL = data['comfyui_url'].rstrip('/')
@@ -3714,7 +3951,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
         cfg['llm_mode'] = LLM_MODE
         cfg['horde_api_key'] = HORDE_API_KEY
         cfg['horde_model'] = HORDE_MODEL
-        
+        cfg['prompt_enhance'] = PROMPT_ENHANCE
+
         try:
             with open(cfg_path, 'w', encoding='utf-8') as f:
                 json.dump(cfg, f, indent=2)
@@ -3881,6 +4119,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "port": PORT,
                 "version": VERSION,
                 "privacy_cleanup": PRIVACY_CLEANUP,
+                "prompt_enhance": PROMPT_ENHANCE,
             })
         elif self.path == '/api/has_video_model':
             # Check if WAN, LTX, or other video-capable models are available
@@ -4759,6 +4998,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "status": "ok",
                 "changed": changed,
                 "privacy_cleanup": PRIVACY_CLEANUP,
+                "prompt_enhance": PROMPT_ENHANCE,
             })
 
         # -- /api/lora_refresh -- re-scan LoRAs from ComfyUI
@@ -4863,6 +5103,9 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     if not ckpt:
                         return self.end_json(500, {'error': 'No ComfyUI model available'})
 
+                    # ── LLM prompt enhancement ──
+                    prompt_text = _enhance_prompt(prompt_text, arch_key)
+
                     preset = _build_optimized_preset(ckpt, arch_key, width, height)
                     if BUILTIN_AVAILABLE and get_arch:
                         arch = get_arch(arch_key)
@@ -4888,6 +5131,10 @@ class GuildHandler(SimpleHTTPRequestHandler):
                         ckpt, arch_key = _detect_best_model(exec_comfy)
                     if not ckpt:
                         return self.end_json(500, {'error': 'No ComfyUI model available'})
+
+                    # ── LLM prompt enhancement ──
+                    prompt_text = _enhance_prompt(prompt_text, arch_key)
+
                     preset = _build_optimized_preset(ckpt, arch_key, width, height)
                     preset['denoise'] = denoise
                     workflow = build_func(preset, img_fn, prompt_text, negative, seed)
@@ -4919,9 +5166,16 @@ class GuildHandler(SimpleHTTPRequestHandler):
                         for k in ('steps', 'cfg', 'sampler', 'scheduler', 'denoise', 'seed'):
                             if k in params:
                                 preset[k] = params.pop(k)
+                        # ── LLM prompt enhancement (generic) ──
+                        if 'prompt' in params:
+                            params['prompt'] = _enhance_prompt(params['prompt'], arch_key)
                         workflow = build_func(preset, **params)
                     else:
                         # Function doesn't take a preset -- pass all params directly
+                        # Try to enhance prompt if present
+                        if 'prompt' in params:
+                            _gen_arch = _wizard_arch or 'flux1dev'
+                            params['prompt'] = _enhance_prompt(params['prompt'], _gen_arch)
                         workflow = build_func(**params)
 
                 # Dispatch workflow to ComfyUI
