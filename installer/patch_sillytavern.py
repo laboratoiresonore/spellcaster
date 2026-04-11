@@ -8,7 +8,7 @@ SillyTavern installation. Safe to run multiple times (idempotent).
 Usage:
     python patch_sillytavern.py                          # Auto-detect ST location
     python patch_sillytavern.py --st-dir /path/to/ST     # Explicit path
-    python patch_sillytavern.py --st-dir /path/to/ST --comfyui-url http://192.168.1.50:8188
+    python patch_sillytavern.py --st-dir /path/to/ST --comfyui-url http://<SERVER-IP>:8188
 """
 
 import argparse

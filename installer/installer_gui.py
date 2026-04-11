@@ -1253,13 +1253,12 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                 width=320,
                 border_color="#3A2863",
                 fg_color="#100B1A",
-                placeholder_text="http://192.168.1.50:8188",
+                placeholder_text="http://<SERVER-IP>:8188",
             )
             self._welcome_server_entry.pack(side="left", padx=(0, 8))
             _ToolTip(
                 self._welcome_server_entry,
                 "Enter the IP and port of a ComfyUI server running on another machine.\n"
-                "Example: http://192.168.1.50:8188\n"
                 "The installer will configure plugins to talk to this server\n"
                 "instead of looking for a local ComfyUI installation.",
             )
@@ -1294,6 +1293,27 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                 text_color=self.text_muted,
                 justify="left",
             ).pack(anchor="w", pady=(4, 0))
+
+            # Antenna installer offer — hidden until connection test succeeds
+            self._antenna_offer_frame = ctk.CTkFrame(remote_frame, fg_color="transparent")
+            # (not packed yet — shown by _test_remote_comfyui on success)
+            antenna_sep = ctk.CTkFrame(self._antenna_offer_frame, fg_color="#3A2863", height=1)
+            antenna_sep.pack(fill="x", pady=(8, 6))
+            ctk.CTkLabel(
+                self._antenna_offer_frame,
+                text="Only need local plugins + Wizard Guild? (no models, no ComfyUI install)",
+                font=ctk.CTkFont(family="Inter", size=12, weight="bold"),
+                text_color=self.text_main,
+            ).pack(anchor="w", pady=(0, 4))
+            ctk.CTkButton(
+                self._antenna_offer_frame,
+                text="\U0001F4E1  Antenna Installer  \u2014  plugins & shortcuts only",
+                height=34,
+                font=ctk.CTkFont(family="Inter", size=13, weight="bold"),
+                fg_color="#2b2b2b", hover_color="#3a3a3a",
+                border_width=1, border_color=self.accent_color,
+                command=self._launch_antenna_installer,
+            ).pack(anchor="w", pady=(0, 4))
 
         # --- All good ---
         if _has_comfy and _has_editor:
@@ -1419,10 +1439,16 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                     self._conn_status_label.configure(
                         text=f"  Connected!{detail}",
                         text_color=self.accent_green)
+                    # Show antenna installer offer on successful remote connection
+                    if hasattr(self, "_antenna_offer_frame"):
+                        self._antenna_offer_frame.pack(fill="x", pady=(4, 0))
                 else:
                     self._conn_status_label.configure(
                         text=f"  Failed{detail}",
                         text_color=self.accent_amber)
+                    # Hide antenna offer on failure
+                    if hasattr(self, "_antenna_offer_frame"):
+                        self._antenna_offer_frame.pack_forget()
 
             self.after(0, _update)
 
