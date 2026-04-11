@@ -45,7 +45,7 @@ if getattr(sys, 'frozen', False):
 else:
     SCRIPT_DIR = Path(__file__).resolve().parent
 MANIFEST_PATH = SCRIPT_DIR / "manifest.json"
-VERSION = "1.3"
+VERSION = "1.4"
 DEFAULT_SERVER_URL = "http://127.0.0.1:8188"
 _BOX_LINE = "═" * 50
 
@@ -1875,6 +1875,10 @@ def step_install_nodes(manifest: dict, selected: dict[str, bool], paths: dict,
             print(f"  {C_YELLOW}⚠ Unknown node: {node_name}{C_RESET}")
             continue
 
+        # Skip local node packs (handled separately by _install_spellcaster_nodes)
+        if node_info.get("local"):
+            continue
+
         dest = custom_nodes_dir / node_name
         success = git_clone(node_info["repo"], dest, dry_run)
 
@@ -1894,6 +1898,61 @@ def step_install_nodes(manifest: dict, selected: dict[str, bool], paths: dict,
     if failed_nodes:
         print(f"\n  {C_RED}Failed to install nodes: {', '.join(failed_nodes)}{C_RESET}")
         print(f"  Install these manually into: {custom_nodes_dir}")
+
+    # ── Install Spellcaster's own node pack (local copy, not a git clone) ──
+    _install_spellcaster_nodes(custom_nodes_dir, dry_run)
+
+
+def _find_spellcaster_nodepack_src() -> Path | None:
+    """Locate the comfyui-spellcaster source directory relative to the installer."""
+    candidates = [
+        SCRIPT_DIR.parent / "comfyui-spellcaster",
+        SCRIPT_DIR / "comfyui-spellcaster",
+        SCRIPT_DIR.parent.parent / "comfyui-spellcaster",
+    ]
+    for d in candidates:
+        if (d / "__init__.py").exists() and (d / "spellcaster_core").is_dir():
+            return d
+    return None
+
+
+def _install_spellcaster_nodes(custom_nodes_dir: Path, dry_run: bool = False):
+    """Install the Spellcaster node pack into ComfyUI custom_nodes.
+
+    Unlike third-party nodes (git cloned), this is a local copy from the
+    Spellcaster repository. It includes spellcaster_core/ which is the
+    ONE SOURCE OF TRUTH for architecture definitions, composites, etc.
+    """
+    src = _find_spellcaster_nodepack_src()
+    if not src:
+        print(f"  {C_YELLOW}⚠ Spellcaster node pack source not found, skipping.{C_RESET}")
+        return
+
+    dest = custom_nodes_dir / "ComfyUI-Spellcaster"
+    print(f"\n  {C_CYAN}Installing Spellcaster node pack…{C_RESET}")
+
+    if dry_run:
+        print(f"  {C_DIM}[dry-run] Would copy: {src} → {dest}{C_RESET}")
+        return
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    # Full replacement to clear stale files
+    if dest.exists():
+        # If it's a symlink (dev setup), remove the link only
+        if dest.is_symlink():
+            dest.unlink()
+        else:
+            shutil.rmtree(dest)
+
+    # Copy everything except __pycache__
+    shutil.copytree(
+        src, dest,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".git"),
+    )
+    print(f"  {C_GREEN}✓ Installed Spellcaster nodes: {dest}{C_RESET}")
+    print(f"    4 nodes: Loader (Auto-Arch), Prompt Enhance (LLM),")
+    print(f"    Sampler (Auto-Config), Output (Privacy)")
 
 
 def step_install_models(manifest: dict, selected: dict[str, bool], paths: dict,
