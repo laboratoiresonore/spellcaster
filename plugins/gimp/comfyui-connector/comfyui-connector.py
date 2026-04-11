@@ -266,6 +266,7 @@ _GITHUB_API    = f"https://api.github.com/repos/{_GITHUB_REPO}/commits?sha=main&
 _GITHUB_TREE   = f"https://api.github.com/repos/{_GITHUB_REPO}/git/trees/main?recursive=1"
 _RAW_BASE      = f"https://raw.githubusercontent.com/{_GITHUB_REPO}/main"
 _GIMP_PLUGIN_PREFIX = "plugins/gimp/comfyui-connector/"
+_CORE_LIB_PREFIX    = "comfyui-spellcaster/spellcaster_core/"
 
 
 def _find_all_gimp_pluginrc_paths():
@@ -516,12 +517,20 @@ def _auto_update():
             tree = json.loads(r.read())
 
         # Step 3: Filter for files in our plugin directory (including subdirectories)
-        remote_files = []  # list of (path, expected_size)
+        # Also grab spellcaster_core/ — the shims need it at runtime.
+        remote_files = []  # list of (path, local_remainder, expected_size)
         for item in tree.get("tree", []):
-            if item["type"] == "blob" and item["path"].startswith(_GIMP_PLUGIN_PREFIX):
+            if item["type"] != "blob":
+                continue
+            if item["path"].startswith(_GIMP_PLUGIN_PREFIX):
                 remainder = item["path"][len(_GIMP_PLUGIN_PREFIX):]
                 if remainder:
-                    remote_files.append((item["path"], item.get("size", 0)))
+                    remote_files.append((item["path"], remainder, item.get("size", 0)))
+            elif item["path"].startswith(_CORE_LIB_PREFIX):
+                # Map comfyui-spellcaster/spellcaster_core/X → spellcaster_core/X
+                remainder = item["path"][len("comfyui-spellcaster/"):]
+                if remainder:
+                    remote_files.append((item["path"], remainder, item.get("size", 0)))
 
         if not remote_files:
             return  # Something went wrong with API, don't touch local files
@@ -535,8 +544,7 @@ def _auto_update():
         staged = 0
         failed = 0
         remote_filenames = set()
-        for rel_path, expected_size in remote_files:
-            remainder = rel_path[len(_GIMP_PLUGIN_PREFIX):]
+        for rel_path, remainder, expected_size in remote_files:
             remote_filenames.add(remainder)
             try:
                 url = f"{_RAW_BASE}/{rel_path}"
@@ -19882,19 +19890,24 @@ class Spellcaster(Gimp.PlugIn):
                 req_tree = urllib.request.Request(_GITHUB_TREE, headers=_hdrs)
                 with urllib.request.urlopen(req_tree, timeout=15) as r:
                     tree = json.loads(r.read())
-                remote_files = []
+                remote_files = []  # (github_path, local_remainder)
                 for item in tree.get("tree", []):
-                    if item["type"] == "blob" and item["path"].startswith(_GIMP_PLUGIN_PREFIX):
+                    if item["type"] != "blob":
+                        continue
+                    if item["path"].startswith(_GIMP_PLUGIN_PREFIX):
                         remainder = item["path"][len(_GIMP_PLUGIN_PREFIX):]
                         if remainder:
-                            remote_files.append(item["path"])
+                            remote_files.append((item["path"], remainder))
+                    elif item["path"].startswith(_CORE_LIB_PREFIX):
+                        remainder = item["path"][len("comfyui-spellcaster/"):]
+                        if remainder:
+                            remote_files.append((item["path"], remainder))
                 if not remote_files:
                     update_status.set_markup('<span foreground="#FF5252">No files found on server</span>')
                     btn.set_sensitive(True)
                     return
                 updated = 0
-                for rel_path in remote_files:
-                    remainder = rel_path[len(_GIMP_PLUGIN_PREFIX):]
+                for rel_path, remainder in remote_files:
                     try:
                         url = f"{_RAW_BASE}/{rel_path}"
                         dest = _PLUGIN_DIR / remainder
