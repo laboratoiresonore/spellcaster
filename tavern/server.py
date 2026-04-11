@@ -4672,6 +4672,17 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 return self.end_json(200, _DIAGNOSTIC_REPORT.to_json())
             return self.end_json(200, {"status": "pending", "message": "Diagnostic still running"})
 
+        elif self.path == '/api/calibration':
+            # GET /api/calibration — compatibility matrix
+            cal_path = os.path.join(_STATE_DIR, "calibration_matrix.json")
+            if os.path.exists(cal_path):
+                try:
+                    with open(cal_path, 'r', encoding='utf-8') as f:
+                        return self.end_json(200, json.load(f))
+                except Exception:
+                    pass
+            return self.end_json(200, {"status": "not_run", "message": "Run calibration from Settings"})
+
         elif self.path == '/api/lora_registry':
             # GET /api/lora_registry — full registry summary
             return self.end_json(200, {
@@ -5399,6 +5410,26 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "status": "refreshing",
                 "current_total": len(_LORA_REGISTRY),
             })
+
+        # -- /api/calibrate -- run compatibility calibration
+        elif self.path == '/api/calibrate':
+            def _run_calibration():
+                try:
+                    from spellcaster_core.calibration import calibrate, save_matrix
+                    matrix = calibrate(
+                        data.get('comfy_url', COMFYUI_URL),
+                        callback=lambda msg: print(f"  [Calibration] {msg}"),
+                        test_loras=data.get('test_loras', True),
+                        max_loras_per_model=data.get('max_loras', 3),
+                    )
+                    cal_path = os.path.join(_STATE_DIR, "calibration_matrix.json")
+                    save_matrix(matrix, cal_path)
+                    print(f"  [Calibration] Complete: {matrix.combos_tested} tested, "
+                          f"{matrix.combos_passed} passed")
+                except Exception as e:
+                    print(f"  [Calibration] Error: {e}")
+            threading.Thread(target=_run_calibration, daemon=True).start()
+            return self.end_json(200, {"status": "calibrating"})
 
         # -- /api/reinitialize -- nuke non-core wizards, re-detect from ComfyUI
         elif self.path == '/api/reinitialize':
