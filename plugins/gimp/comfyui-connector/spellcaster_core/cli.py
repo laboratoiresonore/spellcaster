@@ -368,6 +368,19 @@ def cmd_vram(args):
     return 0
 
 
+def cmd_diagnostic(args):
+    """Run the full diagnostic test suite."""
+    from spellcaster_core.diagnostic import run_diagnostic
+    report = run_diagnostic(args.server, callback=print)
+    # Save report
+    import json as _j
+    report_path = os.path.join(args.output, "diagnostic_report.json")
+    with open(report_path, "w") as f:
+        _j.dump(report.to_json(), f, indent=2)
+    print(f"\nReport saved: {report_path}")
+    return 0 if not report.broken else 1
+
+
 def cmd_recommend(args):
     """Recommend the best model and settings for a prompt."""
     from spellcaster_core.recommend import recommend
@@ -486,6 +499,10 @@ def main():
     sub.add_parser("models", aliases=["ls"],
                    help="List available models")
 
+    # diagnostic
+    sub.add_parser("diagnostic", aliases=["diag", "test"],
+                   help="Test every capability and generate a health report")
+
     # recommend
     p_rec = sub.add_parser("recommend", aliases=["rec"],
                            help="Recommend best model for a prompt")
@@ -521,6 +538,8 @@ def main():
         return cmd_vram(args)
     elif cmd in ("recommend", "rec"):
         return cmd_recommend(args)
+    elif cmd in ("diagnostic", "diag", "test"):
+        return cmd_diagnostic(args)
     else:
         parser.print_help()
         return 1
