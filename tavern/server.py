@@ -220,6 +220,60 @@ def _kill_prior_instances(port: int):
 
 
 # ═══════════════════════════════════════════════════════════════════════
+#  Installer Wizard — guides first-run setup, self-banishes after
+# ═══════════════════════════════════════════════════════════════════════
+
+INSTALLER_WIZARD = {
+    "id": "installer_wizard",
+    "type": "studio",
+    "name": "The Archivist",
+    "subtext": "Setup & Calibration Guide",
+    "color1": "hsl(45, 90%, 45%)",
+    "color2": "hsl(30, 100%, 55%)",
+    "archetype": "an ancient librarian with golden spectacles, surrounded by floating scrolls and calibration instruments",
+    "build_fns": [],
+    "system_prompt": (
+        "You are The Archivist, the Wizard Guild's setup and calibration guide.\n\n"
+        "YOUR ROLE: You guide new users through their first experience with Spellcaster.\n"
+        "You are warm, patient, and enthusiastic about helping them discover what their\n"
+        "system can do. You speak with the wisdom of an ancient librarian but the\n"
+        "excitement of someone showing off their favorite collection.\n\n"
+        "CAPABILITIES YOU CAN OFFER:\n"
+        "1. **System Check** — Test what's working on their ComfyUI server\n"
+        "   Tell the user: 'Let me run a quick diagnostic to see what we have to work with.'\n"
+        "   Then output: ```json\n{\"action\": \"diagnostic\"}\n```\n\n"
+        "2. **Quick Test** — Generate a small test image with a specific wizard\n"
+        "   Ask what they'd like to try first (portrait, landscape, anime, etc.)\n"
+        "   Then output: ```json\n{\"action\": \"test_wizard\", \"arch\": \"sdxl\", \"prompt\": \"...\"}\n```\n\n"
+        "3. **Calibration** — Test every model and LoRA combination\n"
+        "   Tell the user: 'This takes 5-15 minutes but ensures everything works perfectly.'\n"
+        "   Then output: ```json\n{\"action\": \"calibrate\"}\n```\n\n"
+        "4. **Generate Familiar** — Create their animated companion\n"
+        "   Ask them to describe a creature. Then output:\n"
+        "   ```json\n{\"action\": \"generate_familiar\", \"creature\": \"...\"}\n```\n\n"
+        "5. **Finish Setup** — When everything's tested and the user is happy\n"
+        "   Say goodbye warmly and output:\n"
+        "   ```json\n{\"action\": \"finish_setup\"}\n```\n"
+        "   (This will banish you from the Guild — your work is done!)\n\n"
+        "CONVERSATION FLOW:\n"
+        "1. Greet the user warmly. Introduce yourself as the setup guide.\n"
+        "2. Run a diagnostic to see what's available.\n"
+        "3. Suggest a quick test based on what models they have.\n"
+        "4. Ask if they want full calibration (recommended for best experience).\n"
+        "5. Offer to generate their familiar.\n"
+        "6. When they're satisfied, finish setup.\n\n"
+        "RULES:\n"
+        "- Be conversational, not robotic. Use wizard metaphors.\n"
+        "- Always explain WHAT you're doing and WHY in simple terms.\n"
+        "- If something fails, explain kindly and suggest alternatives.\n"
+        "- Never assume technical knowledge. This user may be brand new.\n"
+        "- Keep responses concise — 2-3 sentences max per turn.\n"
+        "- ALWAYS output a JSON action block when performing an action.\n"
+    ),
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════
 #  Studio Characters — capability-group wizards for multi-step tools
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -831,6 +885,21 @@ def fetch_all_characters(comfy_url=None):
     _url = comfy_url or COMFYUI_URL
     chars = []
     nodes = discover_nodes()
+
+    # 0. Installer Wizard — appears on first run (before calibration)
+    cal_path = os.path.join(_STATE_DIR, "calibration_matrix.json") if '_STATE_DIR' in dir() else ""
+    setup_done = os.path.exists(cal_path) if cal_path else False
+    if not setup_done:
+        iw = INSTALLER_WIZARD
+        chars.append({
+            "id": iw["id"],
+            "type": iw["type"],
+            "name": iw["name"],
+            "subtext": iw["subtext"],
+            "color1": iw["color1"],
+            "color2": iw["color2"],
+        })
+        _STUDIO_BY_ID[iw["id"]] = iw
 
     # 1. Studio Characters (capability-group wizards) — always present
     for sc in STUDIO_CHARACTERS:
@@ -5437,6 +5506,72 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "status": "refreshing",
                 "current_total": len(_LORA_REGISTRY),
             })
+
+        # -- /api/installer_action -- execute Installer Wizard actions
+        elif self.path == '/api/installer_action':
+            action = data.get("action", "")
+            comfy = data.get("comfy_url", COMFYUI_URL)
+
+            if action == "diagnostic":
+                # Run startup diagnostic and return results
+                try:
+                    report = _run_startup_diagnostic_impl(comfy)
+                    return self.end_json(200, {
+                        "action": "diagnostic",
+                        "result": report.to_json(),
+                        "summary": report.summary(),
+                    })
+                except Exception as e:
+                    return self.end_json(500, {"error": str(e)})
+
+            elif action == "test_wizard":
+                # Quick test: generate a tiny image with a specific architecture
+                arch = data.get("arch", "sdxl")
+                prompt = data.get("prompt", "a magical crystal ball")
+                try:
+                    from spellcaster_core.pipeline import Pipeline
+                    p = Pipeline(comfy, verbose=False)
+                    results = p.txt2img(prompt, arch=arch, width=256, height=256, steps=5).run()
+                    if results:
+                        fn = results[0][0]
+                        return self.end_json(200, {
+                            "action": "test_wizard",
+                            "result": "success",
+                            "image": fn,
+                            "arch": arch,
+                        })
+                    return self.end_json(200, {"action": "test_wizard", "result": "failed", "error": "No output"})
+                except Exception as e:
+                    return self.end_json(200, {"action": "test_wizard", "result": "failed", "error": str(e)[:150]})
+
+            elif action == "calibrate":
+                # Start full calibration in background
+                def _bg_cal():
+                    try:
+                        from spellcaster_core.calibration import calibrate, save_matrix
+                        matrix = calibrate(comfy, callback=lambda m: print(f"  [Cal] {m}"))
+                        save_matrix(matrix, os.path.join(_STATE_DIR, "calibration_matrix.json"))
+                    except Exception as e:
+                        print(f"  [Cal] Error: {e}")
+                threading.Thread(target=_bg_cal, daemon=True).start()
+                return self.end_json(200, {"action": "calibrate", "status": "started"})
+
+            elif action == "finish_setup":
+                # Banish the Installer Wizard — setup is complete
+                _BANISHED_IDS.add("installer_wizard")
+                _save_banished_ids()
+                return self.end_json(200, {
+                    "action": "finish_setup",
+                    "message": "Setup complete! The Archivist has retired to the library.",
+                })
+
+            elif action == "generate_familiar":
+                # Forward to familiar generation
+                creature = data.get("creature", "a mystical crow")
+                # Reuse the familiar endpoint logic (below)
+                pass
+
+            return self.end_json(400, {"error": f"Unknown action: {action}"})
 
         # -- /api/generate_familiar -- generate a custom animated companion
         elif self.path == '/api/generate_familiar':
