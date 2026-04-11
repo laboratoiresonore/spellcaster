@@ -226,6 +226,109 @@ import urllib.error
 import threading
 from pathlib import Path
 
+# ═══════════════════════════════════════════════════════════════════════════
+#  EARLY BOOT: apply staged .update files BEFORE importing plugin modules.
+#  The auto-updater writes new .py files as .update (can't replace while
+#  loaded).  We must swap them in now, before _workflows_v2 / _nodes / etc.
+#  are imported — otherwise Python loads the OLD code and the new stubs
+#  (with try/except safety) never take effect.
+# ═══════════════════════════════════════════════════════════════════════════
+_PLUGIN_DIR    = Path(__file__).parent
+_VERSION_FILE  = _PLUGIN_DIR / ".spellcaster_version"
+
+
+def _find_all_gimp_pluginrc_paths():
+    """Find ALL pluginrc files across any GIMP version (3.0, 3.2, etc.)."""
+    candidates = []
+    if platform.system() == "Windows":
+        appdata = os.environ.get("APPDATA", "")
+        if appdata:
+            gimp_base = Path(appdata) / "GIMP"
+            if gimp_base.is_dir():
+                for d in gimp_base.iterdir():
+                    if d.is_dir() and d.name.startswith("3"):
+                        candidates.append(d / "pluginrc")
+    elif platform.system() == "Darwin":
+        gimp_base = Path.home() / "Library" / "Application Support" / "GIMP"
+        if gimp_base.is_dir():
+            for d in gimp_base.iterdir():
+                if d.is_dir() and d.name.startswith("3"):
+                    candidates.append(d / "pluginrc")
+    else:
+        gimp_base = Path.home() / ".config" / "GIMP"
+        if gimp_base.is_dir():
+            for d in gimp_base.iterdir():
+                if d.is_dir() and d.name.startswith("3"):
+                    candidates.append(d / "pluginrc")
+    return candidates
+
+
+def _delete_all_gimp_pluginrc():
+    """Delete pluginrc from ALL GIMP versions to force procedure re-scan."""
+    for rc in _find_all_gimp_pluginrc_paths():
+        if rc.exists():
+            try:
+                rc.unlink()
+            except Exception:
+                pass
+
+
+def _apply_staged_updates():
+    """On startup, apply any .update files staged by a previous auto-update.
+
+    On Windows, the running .py file cannot be replaced while GIMP has it loaded.
+    The auto-updater writes the new version as 'filename.update' instead.
+    This function (called before any plugin modules are imported) detects those
+    staged files and performs the replacement so Python loads the fresh code.
+
+    Also deletes pluginrc to ensure new menu items are discovered.
+    """
+    applied = 0
+    try:
+        for staged in _PLUGIN_DIR.rglob("*.update"):
+            target = staged.with_suffix("")  # remove .update suffix
+            try:
+                if target.exists():
+                    target.unlink()
+                staged.rename(target)
+                applied += 1
+            except Exception:
+                # Retry with copy+delete (more robust on Windows)
+                try:
+                    import shutil
+                    shutil.copy2(staged, target)
+                    staged.unlink()
+                    applied += 1
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    # If we applied staged updates, delete pluginrc so GIMP re-scans
+    if applied > 0:
+        _delete_all_gimp_pluginrc()
+        # Also purge __pycache__ so GIMP uses fresh bytecode
+        for _pc in _PLUGIN_DIR.rglob("__pycache__"):
+            try:
+                import shutil as _shutil
+                _shutil.rmtree(_pc)
+            except Exception:
+                pass
+
+    # If spellcaster_core/ is missing, invalidate version to force a full
+    # re-fetch on this startup.  Older auto-updaters didn't know about
+    # spellcaster_core, so the first restart after an update applies new
+    # shims but never downloads the core library.  Clearing the SHA makes
+    # the new auto-updater see a mismatch and pull everything.
+    _core_dir = _PLUGIN_DIR / "spellcaster_core"
+    if not _core_dir.is_dir() or not any(_core_dir.glob("*.py")):
+        try:
+            _VERSION_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+_apply_staged_updates()
+
 # ── v2 workflow builders (modular replacements) ──────────────────────────
 from _workflows_v2 import (
     # ── Shared constants (single source of truth) ──
@@ -257,9 +360,6 @@ from _workflows_v2 import (
 # ═══════════════════════════════════════════════════════════════════════════
 #  Auto-updater — runs once per GIMP session in the background
 # ═══════════════════════════════════════════════════════════════════════════
-_PLUGIN_DIR    = Path(__file__).parent
-_VERSION_FILE  = _PLUGIN_DIR / ".spellcaster_version"
-
 _GITHUB_REPO = "laboratoiresonore/spellcaster"
 
 _GITHUB_API    = f"https://api.github.com/repos/{_GITHUB_REPO}/commits?sha=main&per_page=1"
@@ -267,46 +367,6 @@ _GITHUB_TREE   = f"https://api.github.com/repos/{_GITHUB_REPO}/git/trees/main?re
 _RAW_BASE      = f"https://raw.githubusercontent.com/{_GITHUB_REPO}/main"
 _GIMP_PLUGIN_PREFIX = "plugins/gimp/comfyui-connector/"
 _CORE_LIB_PREFIX    = "comfyui-spellcaster/spellcaster_core/"
-
-
-def _find_all_gimp_pluginrc_paths():
-    """Find ALL pluginrc files across any GIMP version (3.0, 3.2, etc.).
-
-    Scans for GIMP/3.x directories on all platforms. Returns list of Path objects.
-    """
-    candidates = []
-    if platform.system() == "Windows":
-        appdata = os.environ.get("APPDATA", "")
-        if appdata:
-            gimp_base = Path(appdata) / "GIMP"
-            if gimp_base.is_dir():
-                for d in gimp_base.iterdir():
-                    if d.is_dir() and d.name.startswith("3"):
-                        rc = d / "pluginrc"
-                        candidates.append(rc)
-    elif platform.system() == "Darwin":
-        gimp_base = Path.home() / "Library" / "Application Support" / "GIMP"
-        if gimp_base.is_dir():
-            for d in gimp_base.iterdir():
-                if d.is_dir() and d.name.startswith("3"):
-                    candidates.append(d / "pluginrc")
-    else:
-        gimp_base = Path.home() / ".config" / "GIMP"
-        if gimp_base.is_dir():
-            for d in gimp_base.iterdir():
-                if d.is_dir() and d.name.startswith("3"):
-                    candidates.append(d / "pluginrc")
-    return candidates
-
-
-def _delete_all_gimp_pluginrc():
-    """Delete pluginrc from ALL GIMP versions to force procedure re-scan."""
-    for rc in _find_all_gimp_pluginrc_paths():
-        if rc.exists():
-            try:
-                rc.unlink()
-            except Exception:
-                pass
 
 def _github_headers():
     """Return HTTP headers for GitHub API/raw requests."""
@@ -434,64 +494,6 @@ def _style_dialog_buttons(dialog):
 
 
 _apply_spellcaster_theme()
-
-def _apply_staged_updates():
-    """On startup, apply any .update files staged by a previous auto-update.
-
-    On Windows, the running .py file cannot be replaced while GIMP has it loaded.
-    The auto-updater writes the new version as 'filename.update' instead.
-    This function (called before the updater runs) detects those staged files
-    and performs the replacement before the old code is imported.
-
-    Also deletes pluginrc to ensure new menu items are discovered.
-    """
-    applied = 0
-    try:
-        for staged in _PLUGIN_DIR.rglob("*.update"):
-            target = staged.with_suffix("")  # remove .update suffix
-            try:
-                if target.exists():
-                    target.unlink()
-                staged.rename(target)
-                applied += 1
-            except Exception:
-                # Retry with copy+delete (more robust on Windows)
-                try:
-                    import shutil
-                    shutil.copy2(staged, target)
-                    staged.unlink()
-                    applied += 1
-                except Exception:
-                    pass
-    except Exception:
-        pass
-
-    # If we applied staged updates, delete pluginrc so GIMP re-scans
-    if applied > 0:
-        _delete_all_gimp_pluginrc()
-        # Also purge __pycache__ so GIMP uses fresh bytecode
-        for _pc in _PLUGIN_DIR.rglob("__pycache__"):
-            try:
-                import shutil as _shutil
-                _shutil.rmtree(_pc)
-            except Exception:
-                pass
-
-    # If spellcaster_core/ is missing, invalidate version to force a full
-    # re-fetch on this startup.  This solves the chicken-and-egg problem:
-    # older auto-updaters didn't know about spellcaster_core, so the first
-    # restart after an update applies the new shims but never downloads the
-    # core library.  Clearing the SHA makes the NEW auto-updater (just
-    # staged-in) see a mismatch and pull everything including the core.
-    _core_dir = _PLUGIN_DIR / "spellcaster_core"
-    if not _core_dir.is_dir() or not any(_core_dir.glob("*.py")):
-        try:
-            _VERSION_FILE.unlink(missing_ok=True)
-        except Exception:
-            pass
-
-_apply_staged_updates()
-
 
 def _auto_update():
     """Check GitHub for a newer commit and download ALL plugin files dynamically.
