@@ -649,7 +649,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                           "This only installs local plugins and shortcuts — it does NOT install ComfyUI or models.",
                      font=ctk.CTkFont(family="Inter", size=12), text_color=self.text_muted,
                      justify="left").pack(anchor="w", padx=30, pady=(0, 6))
-        ctk.CTkButton(f_welcome, text="\U0001F4E1  Antenna Installer  (local plugins only)", height=36,
+        ctk.CTkButton(f_welcome, text="\u2192  Antenna Installer  (local plugins only)", height=36,
                        font=ctk.CTkFont(family="Inter", size=14),
                        fg_color="#2b2b2b", hover_color="#3a3a3a",
                        border_width=1, border_color=self.accent_color,
@@ -1253,7 +1253,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                 width=320,
                 border_color="#3A2863",
                 fg_color="#100B1A",
-                placeholder_text="http://<SERVER-IP>:8188",
+                placeholder_text="http://your-server-ip:8188",
             )
             self._welcome_server_entry.pack(side="left", padx=(0, 8))
             _ToolTip(
@@ -1307,7 +1307,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
             ).pack(anchor="w", pady=(0, 4))
             ctk.CTkButton(
                 self._antenna_offer_frame,
-                text="\U0001F4E1  Antenna Installer  \u2014  plugins & shortcuts only",
+                text="\u2192  Antenna Installer  \u2014  plugins & shortcuts only",
                 height=34,
                 font=ctk.CTkFont(family="Inter", size=13, weight="bold"),
                 fg_color="#2b2b2b", hover_color="#3a3a3a",
