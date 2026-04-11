@@ -67,11 +67,27 @@ if defined NSFW_REPO (
     )
 )
 
-:: Not found — clone it automatically as sibling
+:: Not found — clone it using the same credentials as the SFW repo
 echo.
 echo   NSFW repo not found — cloning as sibling...
+
+:: Extract auth from SFW remote URL (e.g. https://TOKEN@github.com/org/repo)
+set "NSFW_CLONE_URL="
+pushd "%SFW_ROOT%"
+for /f "tokens=*" %%U in ('git remote get-url origin 2^>nul') do set "SFW_REMOTE=%%U"
+popd
+
+:: Replace /spellcaster.git with /spellcaster_NSFW.git in the remote URL
+:: This preserves any embedded PAT or credential helper config
+if defined SFW_REMOTE (
+    set "NSFW_CLONE_URL=%SFW_REMOTE:spellcaster.git=spellcaster_NSFW.git%"
+)
+if not defined NSFW_CLONE_URL (
+    set "NSFW_CLONE_URL=https://github.com/laboratoiresonore/spellcaster_NSFW.git"
+)
+
 pushd "%SFW_ROOT%\.."
-git clone https://github.com/laboratoiresonore/spellcaster_NSFW.git spellcaster_NSFW
+git clone "%NSFW_CLONE_URL%" spellcaster_NSFW
 if errorlevel 1 (
     echo   [WARN] Failed to clone NSFW repo. Continuing with SFW only.
     popd
