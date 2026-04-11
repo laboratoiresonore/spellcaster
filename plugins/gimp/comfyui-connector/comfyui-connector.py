@@ -3853,15 +3853,38 @@ def _write_grayscale_png(filepath, width, height, pixel_rows):
         f.write(_png_chunk(b'IDAT', compressed))
         f.write(_png_chunk(b'IEND', b''))
 
-def _download_image(server, filename, subfolder="", folder_type="output"):
-    """Download a generated image/video from ComfyUI's /view endpoint as raw bytes.
+# Pre-download cache: maps (filename, subfolder, type) → local temp path
+_download_cache = {}
 
-    Uses a longer timeout for large files (video MP4s can be 50-200MB).
-    Retries once on timeout/network errors (Windows semaphore timeout WinError 121).
+
+def _precache_results(server, results):
+    """Download all output files to local temp storage before server cleanup.
+
+    After _repatriate_outputs overwrites server files with tiny PNGs,
+    any subsequent _download_image call for the same file would get garbage.
+    This pre-downloads everything so _download_image can serve from cache.
     """
+    for fn, sf, ft in results:
+        key = (fn, sf, ft)
+        if key in _download_cache:
+            continue
+        try:
+            data = _download_image_raw(server, fn, sf, ft)
+            if len(data) > 100:  # not already wiped
+                tmp = tempfile.NamedTemporaryFile(
+                    suffix=os.path.splitext(fn)[1] or ".bin",
+                    prefix="spellcaster_cache_", delete=False)
+                tmp.write(data)
+                tmp.close()
+                _download_cache[key] = tmp.name
+        except Exception:
+            pass
+
+
+def _download_image_raw(server, filename, subfolder="", folder_type="output"):
+    """Download from ComfyUI's /view endpoint. No caching."""
     params = urllib.parse.urlencode({"filename": filename, "subfolder": subfolder, "type": folder_type})
     url = f"{server.rstrip('/')}/view?{params}"
-    # Video files need much longer timeout than images
     dl_timeout = 300 if any(filename.lower().endswith(ext) for ext in (".mp4", ".gif", ".webm", ".avi")) else 120
     for attempt in range(2):
         try:
@@ -3869,9 +3892,24 @@ def _download_image(server, filename, subfolder="", folder_type="output"):
                 return resp.read()
         except (OSError, urllib.error.URLError) as e:
             if attempt == 0:
-                time.sleep(2)  # brief pause before retry
+                time.sleep(2)
                 continue
             raise RuntimeError(f"Download failed after retry: {filename} — {e}") from e
+
+
+def _download_image(server, filename, subfolder="", folder_type="output"):
+    """Download a generated image/video from ComfyUI's /view endpoint as raw bytes.
+
+    Checks the pre-download cache first (populated by _precache_results before
+    server cleanup). Falls back to direct download if not cached.
+    """
+    key = (filename, subfolder, folder_type)
+    cached_path = _download_cache.get(key)
+    if cached_path and os.path.isfile(cached_path):
+        data = Path(cached_path).read_bytes()
+        if len(data) > 100:
+            return data
+    return _download_image_raw(server, filename, subfolder, folder_type)
 
 def _wait_for_prompt(server, prompt_id, timeout=300):
     """Poll ComfyUI's /history endpoint until the prompt finishes or times out.
@@ -5206,6 +5244,16 @@ def _run_comfyui_workflow(server, workflow, timeout=300):
         # can poll their results concurrently
         with _workflow_lock:
             _flush_pending_uploads()
+            # ── Diagnostic: dump workflow JSON for debugging ──
+            try:
+                import json as _json_diag
+                _diag_path = os.path.join(tempfile.gettempdir(), "spellcaster_last_workflow.json")
+                with open(_diag_path, "w") as _df:
+                    _json_diag.dump(workflow, _df, indent=2)
+                print(f"[Spellcaster] Workflow dumped to {_diag_path}")
+            except Exception:
+                pass
+            # ── End diagnostic ──
             result = _api_post_json(server, "/prompt", {
                 "prompt": workflow,
                 "extra_pnginfo": {"workflow": workflow},
@@ -5215,11 +5263,17 @@ def _run_comfyui_workflow(server, workflow, timeout=300):
                 raise RuntimeError(f"ComfyUI did not return a prompt_id: {result}")
         # Poll for results outside the lock
         images = _get_output_images(server, prompt_id, timeout)
-        # Repatriate outputs to user's directory (if configured)
+        # Pre-download all outputs to local temp files BEFORE cleanup.
+        # _repatriate_outputs overwrites server files with tiny PNGs,
+        # so any later re-download (e.g. _import_video_results) would
+        # get empty data. We cache each output as a temp file and
+        # replace the server reference with the local path.
+        _precache_results(server, images)
+        # Now safe to clean up the server
         try:
             _repatriate_outputs(server, images)
         except Exception:
-            pass  # never fail the generation over repatriation
+            pass
         return images
     finally:
         _workflow_queue_depth -= 1
