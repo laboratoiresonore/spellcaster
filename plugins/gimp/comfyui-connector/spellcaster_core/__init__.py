@@ -26,6 +26,13 @@ from .architectures import ARCHITECTURES, ArchConfig, get_arch
 from .model_detect import classify_unet_model, classify_ckpt_model
 from .node_factory import NodeFactory
 
+# Load custom architectures from archs/ directory at import time
+try:
+    from .arch_registry import load_custom_archs
+    load_custom_archs()
+except Exception:
+    pass  # never block import over missing custom archs
+
 __all__ = [
     "ARCHITECTURES",
     "ArchConfig",
