@@ -477,6 +477,19 @@ def _apply_staged_updates():
             except Exception:
                 pass
 
+    # If spellcaster_core/ is missing, invalidate version to force a full
+    # re-fetch on this startup.  This solves the chicken-and-egg problem:
+    # older auto-updaters didn't know about spellcaster_core, so the first
+    # restart after an update applies the new shims but never downloads the
+    # core library.  Clearing the SHA makes the NEW auto-updater (just
+    # staged-in) see a mismatch and pull everything including the core.
+    _core_dir = _PLUGIN_DIR / "spellcaster_core"
+    if not _core_dir.is_dir() or not any(_core_dir.glob("*.py")):
+        try:
+            _VERSION_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass
+
 _apply_staged_updates()
 
 
