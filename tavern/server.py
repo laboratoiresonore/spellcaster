@@ -3645,6 +3645,11 @@ MAX_POST_BYTES = 5 * 1024 * 1024  # 5 MB
 
 class GuildHandler(SimpleHTTPRequestHandler):
 
+    def __init__(self, *args, **kwargs):
+        # Serve static files from the tavern/ directory (where server.py lives),
+        # not from os.getcwd() which may be wrong in PyInstaller bundles.
+        super().__init__(*args, directory=_THIS_DIR, **kwargs)
+
     def end_json(self, status, payload):
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
