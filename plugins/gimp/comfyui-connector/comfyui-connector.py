@@ -5280,7 +5280,16 @@ def _run_comfyui_workflow(server, workflow, timeout=300):
                     f"Missing ComfyUI nodes: {', '.join(missing)}. "
                     f"Install the required custom nodes on your server.")
         except ImportError:
-            pass  # spellcaster_core not available
+            pass
+
+        # Optimizer: VRAM check, resolution capping, auto-tuning
+        try:
+            from spellcaster_core.optimizer import optimize_workflow
+            workflow, opt_warnings = optimize_workflow(workflow, comfy_url=server)
+            for w in opt_warnings:
+                print(f"[Spellcaster Optimizer] {w}")
+        except ImportError:
+            pass
 
         # Wait for ComfyUI's queue before acquiring the lock
         _wait_for_comfy_queue_empty(server)
