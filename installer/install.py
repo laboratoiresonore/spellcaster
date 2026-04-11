@@ -2,7 +2,7 @@
 """
 Spellcaster Installer
 =====================
-Interactive installer for Spellcaster — AI superpowers — uncensored for GIMP 3 and Darktable.
+Interactive installer for Spellcaster — AI superpowers for GIMP 3 and Darktable.
 Downloads and installs models, custom nodes, and patches the host applications.
 
 Usage:
@@ -45,8 +45,9 @@ if getattr(sys, 'frozen', False):
 else:
     SCRIPT_DIR = Path(__file__).resolve().parent
 MANIFEST_PATH = SCRIPT_DIR / "manifest.json"
-VERSION = "1.3-NSFW"
+VERSION = "1.5"
 DEFAULT_SERVER_URL = "http://127.0.0.1:8188"
+DEFAULT_LLM_URL = "http://127.0.0.1:5001"
 _BOX_LINE = "═" * 50
 
 # ANSI colors — enabled on real terminals, but only on Windows when running
@@ -71,7 +72,7 @@ def banner():
 {C_BOLD}{C_CYAN}╔══════════════════════════════════════════════════╗
 ║       ✦  SPELLCASTER INSTALLER  v{VERSION}  ✦       ║
 ║                                                  ║
-║  AI superpowers — uncensored for GIMP 3 & Darktable           ║
+║  AI superpowers for GIMP 3 & Darktable           ║
 ║  Every preset expertly tuned for instant results ║
 ╚══════════════════════════════════════════════════╝{C_RESET}
 """)
@@ -1487,6 +1488,262 @@ def step_detect_server(args) -> str:
         return raw.strip().rstrip("/")
 
 
+def step_detect_llm_server(args) -> str:
+    """Determine the local LLM server URL (KoboldCpp / Ollama / OpenAI-compatible)."""
+    print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
+    print(f"{C_BOLD}  LLM Server (Prompt Enhancement & Wizard Guild){C_RESET}")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
+
+    print(f"  Spellcaster can use a local LLM to enhance prompts and power")
+    print(f"  the Wizard Guild's intelligent workflow scaffolding.")
+    print(f"  {C_DIM}Supports: KoboldCpp, Ollama, or any OpenAI-compatible server{C_RESET}\n")
+
+    if hasattr(args, 'llm_url') and args.llm_url:
+        print(f"  {C_GREEN}Using specified LLM URL:{C_RESET} {args.llm_url}")
+        return args.llm_url
+
+    choice = ask_choice(
+        "Do you have a local LLM server?",
+        [
+            f"Yes, on this machine  ({DEFAULT_LLM_URL})",
+            "Yes, on another machine  (enter URL)",
+            "No / Skip for now",
+        ],
+        default=0,
+        auto_yes=args.yes,
+    )
+
+    if choice == 0:
+        return DEFAULT_LLM_URL
+    elif choice == 1:
+        print(f"\n  {C_DIM}Example: http://192.168.1.50:5001{C_RESET}")
+        raw = ask_text("  Enter LLM server URL", default=DEFAULT_LLM_URL, auto_yes=args.yes)
+        raw = raw.strip().rstrip("/")
+        if not raw.startswith("http"):
+            raw = "http://" + raw
+        return raw
+    else:
+        return ""
+
+
+def step_probe_server(server_url: str, args) -> dict:
+    """Probe the ComfyUI server to discover installed nodes, models, and LoRAs.
+
+    Returns a dict with:
+        - 'available_nodes': set of class_type strings available on the server
+        - 'checkpoints': list of checkpoint model names
+        - 'unet_models': list of diffusion_model names
+        - 'loras': list of LoRA names (full relative paths)
+        - 'vaes': list of VAE names
+        - 'clip_models': list of text_encoder names
+        - 'controlnets': list of controlnet names
+        - 'reachable': bool
+    """
+    print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
+    print(f"{C_BOLD}  Probing ComfyUI Server{C_RESET}")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
+
+    result = {
+        'available_nodes': set(),
+        'checkpoints': [],
+        'unet_models': [],
+        'loras': [],
+        'vaes': [],
+        'clip_models': [],
+        'controlnets': [],
+        'reachable': False,
+    }
+
+    print(f"  Connecting to {C_CYAN}{server_url}{C_RESET}...")
+
+    # Test connectivity
+    try:
+        req = urllib.request.Request(f"{server_url}/system_stats")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            stats = json.loads(resp.read().decode('utf-8'))
+            vram_total = stats.get('devices', [{}])[0].get('vram_total', 0)
+            vram_gb = vram_total / (1024**3) if vram_total else 0
+            print(f"  {C_GREEN}✓ Server reachable{C_RESET}")
+            if vram_gb > 0:
+                print(f"    Remote GPU VRAM: {vram_gb:.1f} GB")
+        result['reachable'] = True
+    except Exception as e:
+        print(f"  {C_YELLOW}⚠ Cannot reach ComfyUI at {server_url}: {e}{C_RESET}")
+        print(f"    Features will be based on manifest defaults.")
+        return result
+
+    # Fetch installed nodes (class types)
+    try:
+        req = urllib.request.Request(f"{server_url}/object_info")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+            result['available_nodes'] = set(data.keys())
+            print(f"    Installed nodes: {len(result['available_nodes'])}")
+    except Exception as e:
+        print(f"  {C_YELLOW}⚠ Could not fetch node info: {e}{C_RESET}")
+
+    # Fetch model lists from specific node endpoints
+    MODEL_QUERIES = {
+        'checkpoints': ('CheckpointLoaderSimple', 'ckpt_name'),
+        'loras': ('LoraLoader', 'lora_name'),
+        'vaes': ('VAELoader', 'vae_name'),
+        'controlnets': ('ControlNetLoader', 'control_net_name'),
+    }
+
+    for key, (node_type, param_name) in MODEL_QUERIES.items():
+        try:
+            req = urllib.request.Request(f"{server_url}/object_info/{node_type}")
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                items = data.get(node_type, {}).get('input', {}).get('required', {}).get(param_name, [None])[0]
+                if isinstance(items, list):
+                    result[key] = items
+                    print(f"    {key}: {len(items)}")
+        except Exception:
+            pass
+
+    # Fetch UNET/diffusion models
+    for node_type in ['UNETLoader', 'UnetLoaderGGUF']:
+        if node_type in result['available_nodes']:
+            try:
+                req = urllib.request.Request(f"{server_url}/object_info/{node_type}")
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data = json.loads(resp.read().decode('utf-8'))
+                    items = data.get(node_type, {}).get('input', {}).get('required', {}).get('unet_name', [None])[0]
+                    if isinstance(items, list):
+                        result['unet_models'] = items
+                        print(f"    unet_models: {len(items)}")
+            except Exception:
+                pass
+            break
+
+    # Fetch CLIP/text_encoder models
+    for node_type in ['CLIPLoader', 'DualCLIPLoader']:
+        if node_type in result['available_nodes']:
+            try:
+                req = urllib.request.Request(f"{server_url}/object_info/{node_type}")
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data = json.loads(resp.read().decode('utf-8'))
+                    # CLIPLoader uses clip_name, DualCLIPLoader uses clip_name1
+                    for pname in ['clip_name', 'clip_name1']:
+                        items = data.get(node_type, {}).get('input', {}).get('required', {}).get(pname, [None])[0]
+                        if isinstance(items, list):
+                            result['clip_models'] = items
+                            print(f"    clip_models: {len(items)}")
+                            break
+            except Exception:
+                pass
+            break
+
+    return result
+
+
+def _classify_server_loras(loras: list) -> dict:
+    """Classify LoRAs by architecture using ComfyUI path prefixes + name hints.
+
+    Returns dict mapping lora_name → list of compatible arch keys.
+    """
+    # Try to import from spellcaster_core, but fall back to inline dicts if not available
+    try:
+        from spellcaster_core.model_detect import LORA_ARCH_PREFIXES, LORA_NAME_ARCH_HINTS
+    except ImportError:
+        # Fallback: basic architecture classification
+        LORA_ARCH_PREFIXES = {
+            "sd15": ["models/loras/sd15"],
+            "sdxl": ["models/loras/sdxl"],
+            "flux": ["models/loras/flux"],
+        }
+        LORA_NAME_ARCH_HINTS = [
+            ("sd15", "sd15"),
+            ("sdxl", "sdxl"),
+            ("flux", "flux"),
+        ]
+
+    result = {}
+    for lora in loras:
+        archs = []
+        for arch, prefixes in LORA_ARCH_PREFIXES.items():
+            if not prefixes:
+                continue
+            for p in prefixes:
+                alt = p.replace("\\", "/") if "\\" in p else p.replace("/", "\\")
+                if lora.startswith(p) or lora.startswith(alt):
+                    archs.append(arch)
+                    break
+
+        if not archs:
+            lora_lower = lora.lower().replace("\\", "/")
+            for hint_kw, hint_arch in LORA_NAME_ARCH_HINTS:
+                if hint_kw in lora_lower:
+                    archs = [hint_arch]
+                    break
+
+        # CRITICAL FIX: Do NOT default to sd15 — unmatched LoRAs get "unknown"
+        # so they don't pollute architecture-specific dropdowns.
+        # They remain accessible in manual mode but won't auto-appear
+        if not archs:
+            archs = ["unknown"]
+
+        result[lora] = archs
+    return result
+
+
+def _write_shared_settings(paths: dict, server_url: str, llm_url: str,
+                           server_info: dict, dry_run: bool = False):
+    """Write spellcaster_settings.json — the ONE shared config all plugins read.
+
+    Stored alongside the installer (or in a platform-appropriate location).
+    Each plugin also gets a copy written into its own directory.
+    """
+    # Classify LoRAs by architecture
+    lora_archs = {}
+    if server_info.get('loras'):
+        try:
+            lora_archs = _classify_server_loras(server_info['loras'])
+        except Exception as e:
+            print(f"  {C_YELLOW}⚠ LoRA classification failed: {e}{C_RESET}")
+
+    settings = {
+        "version": VERSION,
+        "comfyui_url": server_url,
+        "llm_url": llm_url,
+        "server_reachable": server_info.get('reachable', False),
+        "available_nodes": sorted(server_info.get('available_nodes', set())),
+        "models": {
+            "checkpoints": server_info.get('checkpoints', []),
+            "unet_models": server_info.get('unet_models', []),
+            "loras": server_info.get('loras', []),
+            "vaes": server_info.get('vaes', []),
+            "clip_models": server_info.get('clip_models', []),
+            "controlnets": server_info.get('controlnets', []),
+        },
+        "lora_architectures": lora_archs,
+    }
+
+    if dry_run:
+        print(f"  {C_DIM}[dry-run] Would write spellcaster_settings.json{C_RESET}")
+        return settings
+
+    # Write to installer directory (master copy)
+    master_path = SCRIPT_DIR / "spellcaster_settings.json"
+    try:
+        master_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+        print(f"  {C_GREEN}✓ Wrote master settings: {master_path}{C_RESET}")
+    except Exception as e:
+        print(f"  {C_YELLOW}⚠ Failed to write master settings: {e}{C_RESET}")
+
+    # Copy to GIMP plugin directory
+    if paths.get("gimp"):
+        gimp_dest = paths["gimp"] / "comfyui-connector" / "spellcaster_settings.json"
+        try:
+            gimp_dest.parent.mkdir(parents=True, exist_ok=True)
+            gimp_dest.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    return settings
+
+
 def step_detect_paths(args) -> dict:
     """Step 2: Detect or ask for application paths."""
     print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
@@ -1894,6 +2151,8 @@ def step_install_nodes(manifest: dict, selected: dict[str, bool], paths: dict,
     if failed_nodes:
         print(f"\n  {C_RED}Failed to install nodes: {', '.join(failed_nodes)}{C_RESET}")
         print(f"  Install these manually into: {custom_nodes_dir}")
+
+    # ComfyUI-Spellcaster is now a standard git-cloned repo (auto-updates via git pull)
 
 
 def step_install_models(manifest: dict, selected: dict[str, bool], paths: dict,
@@ -2365,7 +2624,7 @@ def _create_shortcut_unix(target_script: Path, shortcut_name: str,
         return desktop_path
 
 
-def step_install_tavern(paths: dict, server_url: str, selected: dict,
+def step_install_tavern(paths: dict, server_url: str, llm_url: str, selected: dict,
                         dry_run: bool = False, auto_yes: bool = False):
     """Deploy the Wizard Guild standalone interface.
 
@@ -2456,6 +2715,8 @@ def step_install_tavern(paths: dict, server_url: str, selected: dict,
     if not guild_config.exists():
         guild_config.write_text(json.dumps({
             "comfyui_url": server_url,
+            "kobold_url": llm_url or "http://127.0.0.1:5001",
+            "prompt_enhance": bool(llm_url),
             "auto_update": True,
         }, indent=2), encoding="utf-8")
         print(f"  {C_GREEN}\u2713 Wrote guild_config.json (ComfyUI: {server_url}){C_RESET}")
@@ -2786,7 +3047,7 @@ def load_manifest() -> dict:
 def build_arg_parser():
     """Build the argparse parser with all CLI flags."""
     parser = argparse.ArgumentParser(
-        description="Spellcaster \u2014 AI superpowers — uncensored for GIMP 3 & Darktable",
+        description="Spellcaster \u2014 AI superpowers for GIMP 3 & Darktable",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
             Examples:
@@ -2830,6 +3091,8 @@ def build_arg_parser():
                         help="Skip model downloads (install plugins and nodes only)")
     parser.add_argument("--skip-nodes", action="store_true",
                         help="Skip custom node installation")
+    parser.add_argument("--llm-url", default="",
+                        help="Local LLM server URL (KoboldCpp/Ollama). Empty = skip prompt enhancement")
     parser.add_argument("--version", action="version",
                         version=f"Spellcaster Installer v{VERSION}")
     return parser
@@ -2850,12 +3113,16 @@ def main():
         args.civitai_key = getattr(args, 'civitai_key', '') or ''
     if not hasattr(args, 'hf_token'):
         args.hf_token = getattr(args, 'hf_token', '') or ''
+    if not hasattr(args, 'llm_url'):
+        args.llm_url = getattr(args, 'llm_url', '') or ''
 
     # \u2500\u2500 Execute the installation pipeline \u2500\u2500
     step_system_detection(args)
     step_api_keys(args)
     server_url = step_detect_server(args)
+    llm_url = step_detect_llm_server(args)
     paths = step_detect_paths(args)
+    server_info = step_probe_server(server_url, args)
     selected = step_select_features(manifest, paths, args)
 
     if not args.skip_nodes:
@@ -2864,8 +3131,9 @@ def main():
         print(f"\n  {C_YELLOW}--skip-nodes specified \u2014 skipping custom node installation.{C_RESET}")
 
     step_install_models(manifest, selected, paths, args)
+    settings = _write_shared_settings(paths, server_url, llm_url, server_info, args.dry_run)
     step_install_plugins(paths, server_url, args.dry_run)
-    step_install_tavern(paths, server_url, selected, args.dry_run, args.yes)
+    step_install_tavern(paths, server_url, llm_url, selected, args.dry_run, args.yes)
     step_import_luts(paths, args)
     step_apply_theme(paths, args.dry_run, args.yes)
     step_final_summary(manifest, selected, paths, server_url)

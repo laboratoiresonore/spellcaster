@@ -1483,10 +1483,40 @@ function ScaffoldEditor({ scaffolds, setScaffolds }) {
   const [rightPanel, setRightPanel] = useState("props");
   const [showImportPanel, setShowImportPanel] = useState(false);
   const [selectedStep, setSelectedStep] = useState(null);
+  const [saveStatus, setSaveStatus] = useState(""); // "" | "saving" | "saved" | "error"
+  const saveTimerRef = useRef(null);
   const scaffold = scaffolds.find(s => s.id === selectedId);
+
+  // Debounced save to server — persists scaffold edits after 800ms of inactivity
+  const persistScaffold = (updated) => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      setSaveStatus("saving");
+      fetch("/api/scaffold_edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: updated.id,
+          name: updated.name,
+          subtext: updated.description || updated.subtext || "",
+          archetype: updated.archetype || "",
+          system_prompt: [
+            updated.system_prompt_header || "",
+            ...(updated.system_prompt_rules || []).map(r => `- ${r}`)
+          ].join("\n"),
+          color1: updated.color1 || "",
+          color2: updated.color2 || "",
+        }),
+      })
+        .then(r => r.json())
+        .then(() => { setSaveStatus("saved"); setTimeout(() => setSaveStatus(""), 2000); })
+        .catch(() => { setSaveStatus("error"); setTimeout(() => setSaveStatus(""), 3000); });
+    }, 800);
+  };
 
   const updateScaffold = (updated) => {
     setScaffolds(prev => prev.map(s => s.id === selectedId ? updated : s));
+    persistScaffold(updated);
   };
 
   const addScaffold = () => {
@@ -1562,7 +1592,12 @@ function ScaffoldEditor({ scaffolds, setScaffolds }) {
 
       {/* Center: Steps */}
       <div className="col-span-2 bg-slate-900 border border-amber-600/30 rounded-xl p-4 overflow-y-auto">
-        <h3 className="text-sm font-medium text-amber-200 mb-3">Workflow Steps</h3>
+        <div className="flex items-center gap-2 mb-3">
+          <h3 className="text-sm font-medium text-amber-200">Workflow Steps</h3>
+          {saveStatus === "saving" && <span className="text-[10px] text-slate-500 animate-pulse">saving...</span>}
+          {saveStatus === "saved" && <span className="text-[10px] text-emerald-400">saved</span>}
+          {saveStatus === "error" && <span className="text-[10px] text-red-400">save failed</span>}
+        </div>
         <div className="space-y-2">
           {scaffold.steps.map((step, idx) => (
             <StepCard key={step.id} step={step} index={idx} total={scaffold.steps.length}
@@ -2760,6 +2795,41 @@ function SignalBridgeSettings() {
   const [importError, setImportError] = useState("");
   const [guildOpen, setGuildOpen] = useState(false);
   const fileInputRef = useRef(null);
+
+  // Load server-side scaffolds (auto-detected wizards) and merge with built-ins
+  useEffect(() => {
+    fetch("/api/scaffolds")
+      .then(r => r.ok ? r.json() : [])
+      .then(serverScaffs => {
+        if (!serverScaffs.length) return;
+        setScaffolds(prev => {
+          const existingIds = new Set(prev.map(s => s.id));
+          const newOnes = serverScaffs
+            .filter(s => !existingIds.has(s.id))
+            .map(s => ({
+              id: s.id,
+              name: s.name,
+              description: s.subtext || "",
+              workflow_key: s.id,
+              system_prompt_header: s.system_prompt || "",
+              system_prompt_rules: [],
+              steps: [],
+              nsfw: false,
+              admin_only: false,
+              lora_slots: [],
+              color1: s.color1 || "",
+              color2: s.color2 || "",
+              archetype: s.archetype || "",
+              source: s.source || "auto_model",
+              banished: s.banished || false,
+              default_model: s.default_model || "",
+              default_arch: s.default_arch || "",
+            }));
+          return newOnes.length ? [...prev, ...newOnes] : prev;
+        });
+      })
+      .catch(() => {}); // fail silently if guild not running
+  }, []);
 
   const tabs = [
     { id: "workflows", label: "Workflows", icon: <Icons.Film /> },
