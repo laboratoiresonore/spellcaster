@@ -1404,6 +1404,9 @@ def _server_init(comfy_url=None):
         print(f"  [Guild] Privacy mode: OFF — files remain on ComfyUI server")
         print(f"  [Guild] Creations folder: {_CREATIONS_DIR}")
 
+    # Run diagnostic in background — tests capabilities and auto-banishes broken wizards
+    threading.Thread(target=_run_startup_diagnostic, args=(url,), daemon=True).start()
+
     # LLM-powered scaffold enhancement (background, non-blocking)
     # Names auto-detected wizards using the local LLM if available
     if PROMPT_ENHANCE:
@@ -1455,6 +1458,109 @@ def _save_banished_ids():
             json.dump(list(_BANISHED_IDS), f)
     except Exception as e:
         print(f"  [State] Failed to save banished IDs: {e}")
+
+
+_DIAGNOSTIC_REPORT = None  # Populated by startup diagnostic
+
+
+def _run_startup_diagnostic(comfy_url):
+    """Background diagnostic — tests capabilities and auto-banishes broken wizards.
+
+    Runs after _server_init so CHARS_CACHE is populated. Updates _BANISHED_IDS
+    with wizards whose capabilities are broken (missing nodes, etc.).
+    """
+    global _DIAGNOSTIC_REPORT, _BANISHED_IDS
+    try:
+        from spellcaster_core.diagnostic import run_diagnostic
+    except ImportError:
+        return  # spellcaster_core not available
+
+    print("  [Guild] Running startup diagnostic...")
+    report = _run_startup_diagnostic_impl(comfy_url)
+    _DIAGNOSTIC_REPORT = report
+
+    if report.banish_wizards:
+        # Auto-banish wizards with broken capabilities
+        new_banished = set()
+        for wiz_id in report.banish_wizards:
+            # Only auto-banish if not already manually un-banished by user
+            if wiz_id not in _BANISHED_IDS:
+                # Check if this wizard exists in CHARS_CACHE
+                if any(c.get("id") == wiz_id for c in CHARS_CACHE):
+                    new_banished.add(wiz_id)
+
+        if new_banished:
+            _BANISHED_IDS.update(new_banished)
+            _save_banished_ids()
+            names = []
+            for wid in new_banished:
+                c = next((c for c in CHARS_CACHE if c.get("id") == wid), None)
+                if c:
+                    names.append(c.get("name", wid))
+            print(f"  [Diagnostic] Auto-banished {len(new_banished)} wizard(s) "
+                  f"with broken capabilities: {', '.join(names)}")
+
+    working = len(report.working)
+    broken = len(report.broken)
+    print(f"  [Diagnostic] Complete: {working} working, {broken} broken, "
+          f"{len(report.models)} arch(s)")
+
+
+def _run_startup_diagnostic_impl(comfy_url):
+    """Lightweight diagnostic — skip slow video tests at startup."""
+    from spellcaster_core.diagnostic import DiagnosticReport, get_available_nodes, _get_models
+    import urllib.request
+
+    report = DiagnosticReport()
+    report.server_url = comfy_url
+
+    # GPU info
+    try:
+        r = urllib.request.urlopen(f"{comfy_url}/system_stats", timeout=5)
+        stats = json.loads(r.read())
+        dev = stats["devices"][0]
+        report.gpu_name = dev["name"]
+        report.vram_total = dev["vram_total"] / 1e9
+        report.vram_free = dev["vram_free"] / 1e9
+    except Exception:
+        return report
+
+    # Nodes
+    nodes = get_available_nodes(comfy_url, force_refresh=True)
+    report.node_count = len(nodes)
+
+    # Models
+    report.models = _get_models(comfy_url)
+
+    # Quick capability checks (no actual generation — just node + model availability)
+    checks = [
+        ("txt2img", ["CheckpointLoaderSimple", "KSampler", "SaveImage"],
+         ["sd15", "sdxl", "illustrious", "flux2klein"],
+         ["studio_imaginus"]),
+        ("upscale", ["UpscaleModelLoader", "ImageUpscaleWithModel"], [], ["studio_restorex"]),
+        ("rembg", ["ImageRembg"], [], ["studio_erasex"]),
+        ("faceswap", ["ReActorFaceSwapOpt"], [], ["studio_masquerade"]),
+        ("face_restore", ["ReActorRestoreFace"], [], ["studio_masquerade"]),
+        ("wan_video", ["WanImageToVideo", "UnetLoaderGGUF"], ["wan"], ["studio_videomancer", "studio_cinematic"]),
+        ("ltx_video", ["UnetLoaderGGUF"], ["ltx"], ["studio_videomancer"]),
+        ("video_combine", ["VHS_VideoCombine"], [], ["studio_videomancer", "studio_cinematic"]),
+    ]
+
+    for cap_id, required_nodes, required_archs, related_wizards in checks:
+        missing_nodes = [n for n in required_nodes if n not in nodes]
+        missing_models = [a for a in required_archs if a not in report.models]
+
+        if missing_nodes:
+            report.broken.append((cap_id, f"Missing nodes: {', '.join(missing_nodes)}"))
+            report.banish_wizards.extend(related_wizards)
+        elif missing_models:
+            report.broken.append((cap_id, f"No {'/'.join(missing_models)} models"))
+            report.banish_wizards.extend(related_wizards)
+        else:
+            report.working.append(cap_id)
+
+    report.banish_wizards = list(set(report.banish_wizards))
+    return report
 
 
 def _load_generated_assets():
@@ -4560,6 +4666,12 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "interrogated": interrogated,
                 "total_registry": len(_LORA_REGISTRY),
             })
+        elif self.path == '/api/diagnostic':
+            # GET /api/diagnostic — startup diagnostic report
+            if _DIAGNOSTIC_REPORT:
+                return self.end_json(200, _DIAGNOSTIC_REPORT.to_json())
+            return self.end_json(200, {"status": "pending", "message": "Diagnostic still running"})
+
         elif self.path == '/api/lora_registry':
             # GET /api/lora_registry — full registry summary
             return self.end_json(200, {

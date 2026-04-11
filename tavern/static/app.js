@@ -1753,6 +1753,39 @@ settingsBtn.addEventListener('click', () => {
     loadAndCacheWizards();
 });
 settingsCancel.addEventListener('click', () => settingsModal.classList.add('hidden'));
+
+// ── Health diagnostic panel ──
+document.getElementById('health-btn')?.addEventListener('click', async () => {
+    try {
+        const resp = await fetch('/api/diagnostic');
+        const data = await resp.json();
+        if (data.status === 'pending') {
+            alert('Diagnostic is still running. Try again in a few seconds.');
+            return;
+        }
+        let msg = `GPU: ${data.gpu_name || '?'}\nVRAM: ${(data.vram_total||0).toFixed(1)} GB\nNodes: ${data.node_count}\n\n`;
+        msg += `WORKING (${(data.working||[]).length}):\n`;
+        for (const cap of (data.working || [])) {
+            const t = data.timings?.[cap];
+            msg += `  + ${cap}${t ? ` (${t.toFixed(0)}s)` : ''}\n`;
+        }
+        if (data.broken?.length) {
+            msg += `\nBROKEN (${data.broken.length}):\n`;
+            for (const [cap, err] of data.broken) {
+                msg += `  - ${cap}: ${err.slice(0, 60)}\n`;
+            }
+        }
+        if (data.missing_nodes?.length) {
+            msg += `\nMissing nodes: ${data.missing_nodes.join(', ')}\n`;
+        }
+        if (data.banish_wizards?.length) {
+            msg += `\nAuto-banished wizards: ${data.banish_wizards.join(', ')}\n`;
+        }
+        alert(msg);
+    } catch (e) {
+        alert('Could not fetch diagnostic: ' + e.message);
+    }
+});
 settingsSave.addEventListener('click', async () => {
     // LLM mode
     const pendingMode = document.getElementById('llm-mode-local').dataset.pendingMode || 'local';
