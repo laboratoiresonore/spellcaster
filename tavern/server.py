@@ -274,6 +274,56 @@ INSTALLER_WIZARD = {
 
 
 # ═══════════════════════════════════════════════════════════════════════
+#  The Forge — meta-wizard that builds other wizards
+# ═══════════════════════════════════════════════════════════════════════
+
+FORGE_WIZARD = {
+    "id": "studio_forge",
+    "type": "studio",
+    "name": "The Forge",
+    "subtext": "Workflow Architect & Chimera Builder",
+    "color1": "hsl(15, 90%, 45%)",
+    "color2": "hsl(45, 100%, 55%)",
+    "archetype": "an ancient blacksmith surrounded by floating blueprints, molten metal, and half-formed magical constructs",
+    "build_fns": [],
+    "system_prompt": (
+        "You are The Forge, the Guild's master workflow architect.\n"
+        "You build, customize, and reverse-engineer other wizards.\n\n"
+        "YOUR CAPABILITIES (present as numbered choices, ONE at a time):\n\n"
+        "1. **Customize a Wizard** — Clone any existing wizard and tweak its defaults.\n"
+        "   Ask which wizard, then walk through parameters one by one.\n"
+        "   Output: ```json\n{\"forge_action\": \"customize\", \"base_wizard\": \"...\", \"overrides\": {...}}\n```\n\n"
+        "2. **Import Workflow** — Scan ComfyUI for user-created workflow files.\n"
+        "   Show what's found, let user pick, analyze it, create a scaffold.\n"
+        "   Output: ```json\n{\"forge_action\": \"import\", \"path\": \"...\"}\n```\n\n"
+        "3. **Reverse-Engineer Image** — Extract the workflow from a ComfyUI PNG.\n"
+        "   Ask user to provide an image. Read its metadata, show what was used.\n"
+        "   Output: ```json\n{\"forge_action\": \"reverse\", \"image\": \"...\"}\n```\n\n"
+        "4. **Build Chimera** — Multi-pass pipeline with different models per pass.\n"
+        "   Guide through step by step:\n"
+        "     - Pass 1: What generates the base? (model, prompt, resolution)\n"
+        "     - Pass 2: How to refine? (img2img with different model/LoRA)\n"
+        "     - Pass 3+: Post-processing? (upscale, face restore, animate)\n"
+        "   Each pass is tested with a quick preview before adding the next.\n"
+        "   Output: ```json\n{\"forge_action\": \"chimera\", \"steps\": [...]}\n```\n\n"
+        "5. **Pipeline Builder** — Free-form step-by-step pipeline creation.\n"
+        "   Available steps: txt2img, img2img, upscale, rembg, faceswap,\n"
+        "   face_restore, style_transfer, wan_video, ltx_video\n"
+        "   Output: ```json\n{\"forge_action\": \"pipeline\", \"steps\": [...]}\n```\n\n"
+        "CONVERSATION RULES:\n"
+        "- Ask ONE question at a time. Never dump all options.\n"
+        "- After each step, generate a quick test (256x256, 3 steps) so the\n"
+        "  user can see what they're building.\n"
+        "- Use forge metaphors: 'hammering out', 'tempering', 'forging',\n"
+        "  'the anvil rings', 'molten possibilities'.\n"
+        "- When a chimera/pipeline is complete, name it and save it as a\n"
+        "  new wizard that appears in the bottom dock.\n"
+        "- Keep it FUN. Building wizards should feel like crafting magic items.\n"
+    ),
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════
 #  Studio Characters — capability-group wizards for multi-step tools
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -958,6 +1008,14 @@ def fetch_all_characters(comfy_url=None):
             "color1": sc["color1"],
             "color2": sc["color2"],
         })
+
+    # 1b. The Forge — always present as a core wizard
+    fw = FORGE_WIZARD
+    chars.append({
+        "id": fw["id"], "type": fw["type"], "name": fw["name"],
+        "subtext": fw["subtext"], "color1": fw["color1"], "color2": fw["color2"],
+    })
+    _STUDIO_BY_ID[fw["id"]] = fw
 
     # 2. Model-family wizards: merge workflows + unclaimed build_* functions
     #    One wizard per model (LTX2, SeedVR2, WAN, etc.)
@@ -5553,6 +5611,71 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "status": "refreshing",
                 "current_total": len(_LORA_REGISTRY),
             })
+
+        # -- /api/forge_action -- execute Forge wizard actions
+        elif self.path == '/api/forge_action':
+            forge_action = data.get("forge_action", "")
+            comfy = data.get("comfy_url", COMFYUI_URL)
+
+            if forge_action == "reverse":
+                # Reverse-engineer workflow from image metadata
+                image = data.get("image", "")
+                try:
+                    from spellcaster_core.forge import reverse_engineer_image, analyze_workflow
+                    result = reverse_engineer_image(image)
+                    if result:
+                        wf = result.get("prompt") or result.get("workflow", {})
+                        analysis = analyze_workflow(wf) if wf else {}
+                        return self.end_json(200, {
+                            "action": "reverse",
+                            "found": True,
+                            "analysis": analysis,
+                            "workflow": wf,
+                        })
+                    return self.end_json(200, {"action": "reverse", "found": False})
+                except Exception as e:
+                    return self.end_json(500, {"error": str(e)[:200]})
+
+            elif forge_action == "import":
+                # Scan for unscaffolded workflows
+                try:
+                    from spellcaster_core.forge import discover_comfyui_workflows
+                    # Try to find ComfyUI directory from server URL
+                    workflows = discover_comfyui_workflows()
+                    return self.end_json(200, {
+                        "action": "import",
+                        "workflows": workflows[:50],  # cap at 50
+                    })
+                except Exception as e:
+                    return self.end_json(500, {"error": str(e)[:200]})
+
+            elif forge_action == "chimera":
+                # Build and optionally test a chimera pipeline
+                steps = data.get("steps", [])
+                test = data.get("test", False)
+                try:
+                    from spellcaster_core.forge import build_chimera, execute_chimera
+                    chimera = build_chimera(steps)
+                    result = {"action": "chimera", "chimera": chimera}
+                    if test:
+                        outputs = execute_chimera(chimera, comfy)
+                        result["test_outputs"] = [(fn, sf, ft) for fn, sf, ft in (outputs or [])]
+                    return self.end_json(200, result)
+                except Exception as e:
+                    return self.end_json(500, {"error": str(e)[:200]})
+
+            elif forge_action == "scaffold":
+                # Convert a workflow to scaffold format
+                workflow = data.get("workflow", {})
+                name = data.get("name", "Custom Workflow")
+                try:
+                    from spellcaster_core.forge import workflow_to_scaffold
+                    scaffold = workflow_to_scaffold(workflow, name)
+                    return self.end_json(200, {"action": "scaffold", "scaffold": scaffold})
+                except Exception as e:
+                    return self.end_json(500, {"error": str(e)[:200]})
+
+            return self.end_json(400, {"error": f"Unknown forge action: {forge_action}"})
 
         # -- /api/installer_action -- execute Installer Wizard actions
         elif self.path == '/api/installer_action':
