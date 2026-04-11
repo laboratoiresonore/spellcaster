@@ -28,5 +28,15 @@ else:
             sys.path.insert(0, _core_parent)
 
 # Re-export everything from the canonical source
-from spellcaster_core.architectures import *
-from spellcaster_core.architectures import ARCHITECTURES, ArchConfig, get_arch, _reg
+try:
+    from spellcaster_core.architectures import *
+    from spellcaster_core.architectures import ARCHITECTURES, ArchConfig, get_arch, _reg
+except ImportError:
+    print("[Spellcaster] WARNING: spellcaster_core not found. "
+          "Use Repair/Update in Settings or reinstall.", file=sys.stderr)
+    ARCHITECTURES = {}
+    _reg = {}
+    class ArchConfig:
+        pass
+    def get_arch(name, default=None):
+        return default

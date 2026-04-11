@@ -28,4 +28,20 @@ else:
             sys.path.insert(0, _core_parent)
 
 # Re-export everything from the canonical source
-from spellcaster_core.composites import *
+try:
+    from spellcaster_core.composites import *
+except ImportError:
+    print("[Spellcaster] WARNING: spellcaster_core/composites not found.", file=sys.stderr)
+
+    # Stubs so the plugin can load. Functions raise at call time.
+    def _missing(*a, **kw):
+        raise RuntimeError(
+            "spellcaster_core is missing. Open Spellcaster Settings "
+            "and click Repair/Update, or reinstall the plugin.")
+    load_model_stack = _missing
+    inject_lora_chain = _missing
+    encode_prompts = _missing
+    sample_standard = _missing
+    sample_klein_img2img = _missing
+    inject_controlnet = _missing
+    inject_controlnet_pair = _missing

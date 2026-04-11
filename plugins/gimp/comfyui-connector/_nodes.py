@@ -28,4 +28,21 @@ else:
             sys.path.insert(0, _core_parent)
 
 # Re-export everything from the canonical source
-from spellcaster_core.node_factory import *
+try:
+    from spellcaster_core.node_factory import *
+except ImportError:
+    print("[Spellcaster] WARNING: spellcaster_core not found. "
+          "Use Repair/Update in Settings or reinstall.", file=sys.stderr)
+
+    # Minimal stub so the plugin can still load and show menus.
+    # Workflows will fail with a clear error when actually called.
+    class NodeFactory:
+        _MISSING = True
+        def __init__(self, *a, **kw):
+            raise RuntimeError(
+                "spellcaster_core is missing. Open Spellcaster Settings "
+                "and click Repair/Update, or reinstall the plugin.")
+        def __getattr__(self, name):
+            raise RuntimeError(
+                "spellcaster_core is missing. Open Spellcaster Settings "
+                "and click Repair/Update, or reinstall the plugin.")
