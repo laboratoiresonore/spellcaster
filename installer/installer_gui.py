@@ -637,7 +637,23 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         ctk.CTkButton(f_welcome, text="\u2728 Let's Go  \u2192", height=42,
                        font=ctk.CTkFont(family="Inter", size=16, weight="bold"),
                        fg_color=self.accent_color, hover_color=self.accent_hover,
-                       command=lambda: self.select_frame("usecases")).pack(padx=30, pady=(5, 25), anchor="w")
+                       command=lambda: self.select_frame("usecases")).pack(padx=30, pady=(5, 10), anchor="w")
+
+        # Antenna installer — for users whose ComfyUI runs on a different machine
+        ctk.CTkLabel(f_welcome, text="ComfyUI already running on another machine?",
+                     font=ctk.CTkFont(family="Inter", size=13, weight="bold"),
+                     text_color=self.text_muted).pack(anchor="w", padx=30, pady=(10, 2))
+        ctk.CTkLabel(f_welcome,
+                     text="If your AI backend is on a separate computer, use the Antenna Installer\n"
+                          "to connect this PC's apps (GIMP, Darktable, Wizard Guild) to it over the network.\n"
+                          "This only installs local plugins and shortcuts — it does NOT install ComfyUI or models.",
+                     font=ctk.CTkFont(family="Inter", size=12), text_color=self.text_muted,
+                     justify="left").pack(anchor="w", padx=30, pady=(0, 6))
+        ctk.CTkButton(f_welcome, text="\U0001F4E1  Antenna Installer  (local plugins only)", height=36,
+                       font=ctk.CTkFont(family="Inter", size=14),
+                       fg_color="#2b2b2b", hover_color="#3a3a3a",
+                       border_width=1, border_color=self.accent_color,
+                       command=self._launch_antenna_installer).pack(padx=30, pady=(0, 25), anchor="w")
 
         # ================================================================
         # STEP 2: WHAT YOU WANT — use-case driven feature pre-selection
@@ -1289,6 +1305,67 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                               "Click \"2. What You Want\" on the left to continue.",
                          font=ctk.CTkFont(family="Inter", size=15, weight="bold"),
                          text_color=self.accent_green, justify="left").pack(padx=20, pady=15)
+
+    def _launch_antenna_installer(self):
+        """Launch the antenna installer for remote/network ComfyUI setups.
+
+        Opens install_remote.py in a new terminal window with --interactive
+        mode so the user can enter their server address.  Works from both
+        a normal Python environment and a PyInstaller-frozen bundle.
+        """
+        # Locate install_remote.py next to this script (or inside the bundle)
+        if getattr(sys, "frozen", False):
+            base = Path(sys._MEIPASS)
+        else:
+            base = Path(__file__).resolve().parent
+
+        script = base / "install_remote.py"
+        if not script.exists():
+            # Fallback: try relative to install.py / working dir
+            script = Path(os.getcwd()) / "install_remote.py"
+
+        if not script.exists():
+            from tkinter import messagebox
+            messagebox.showerror(
+                "Antenna Installer",
+                "Could not find install_remote.py.\n\n"
+                "Make sure it is in the same folder as the installer."
+            )
+            return
+
+        # Launch in a new terminal so the user can interact with it
+        try:
+            if sys.platform == "win32":
+                subprocess.Popen(
+                    ["cmd", "/c", "start", "Spellcaster Antenna Installer",
+                     sys.executable, str(script), "--interactive"],
+                    cwd=str(script.parent),
+                )
+            elif sys.platform == "darwin":
+                # osascript opens a new Terminal.app window
+                apple_cmd = (
+                    f'tell application "Terminal" to do script '
+                    f'"{sys.executable} {script} --interactive"'
+                )
+                subprocess.Popen(["osascript", "-e", apple_cmd])
+            else:
+                # Linux — try common terminal emulators
+                for term in ["x-terminal-emulator", "gnome-terminal", "konsole", "xfce4-terminal", "xterm"]:
+                    if os.system(f"which {term} >/dev/null 2>&1") == 0:
+                        if term == "gnome-terminal":
+                            subprocess.Popen([term, "--", sys.executable, str(script), "--interactive"])
+                        else:
+                            subprocess.Popen([term, "-e", f"{sys.executable} {script} --interactive"])
+                        break
+                else:
+                    # Last resort — run without a terminal wrapper
+                    subprocess.Popen([sys.executable, str(script), "--interactive"])
+        except Exception as exc:
+            from tkinter import messagebox
+            messagebox.showerror(
+                "Antenna Installer",
+                f"Failed to launch antenna installer:\n{exc}"
+            )
 
     def _browse_dir(self, var):
         """Open a native directory picker and write the result into *var*."""
