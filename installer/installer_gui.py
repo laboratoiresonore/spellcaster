@@ -1329,57 +1329,75 @@ class InstallerApp(MagicalEffects, ctk.CTk):
     def _launch_antenna_installer(self):
         """Launch the antenna installer for remote/network ComfyUI setups.
 
-        Opens install_remote.py in a new terminal window with --interactive
-        mode so the user can enter their server address.  Works from both
-        a normal Python environment and a PyInstaller-frozen bundle.
+        When running from a frozen .exe, looks for spellcaster-remote-installer.exe
+        next to the main installer.  When running from source, launches
+        install_remote.py via the current Python interpreter.
+
+        Both cases open a new terminal window with --interactive mode and
+        pass the current server URL if one has been entered.
         """
-        # Locate install_remote.py next to this script (or inside the bundle)
+        # Build the extra args — pass server URL if the user already entered one
+        extra_args = ["--interactive"]
+        srv = self.server_url.get().strip().rstrip("/")
+        if srv and srv != "http://127.0.0.1:8188":
+            extra_args = [srv] + extra_args  # positional server_url arg
+
         if getattr(sys, "frozen", False):
-            base = Path(sys._MEIPASS)
+            # ── Frozen .exe mode ─────────────────────────────────────
+            # The remote installer is a separate .exe built alongside us
+            exe_dir = Path(sys.executable).resolve().parent
+            remote_exe = exe_dir / "spellcaster-remote-installer.exe"
+            if not remote_exe.exists():
+                # Also check dist/ subfolder (dev layout)
+                remote_exe = exe_dir / "dist" / "spellcaster-remote-installer.exe"
+            if not remote_exe.exists():
+                from tkinter import messagebox
+                messagebox.showerror(
+                    "Antenna Installer",
+                    "Could not find spellcaster-remote-installer.exe.\n\n"
+                    "Make sure it is in the same folder as the main installer."
+                )
+                return
+            launch_cmd = [str(remote_exe)] + extra_args
+            launch_cwd = str(remote_exe.parent)
         else:
+            # ── Running from source ──────────────────────────────────
             base = Path(__file__).resolve().parent
+            script = base / "install_remote.py"
+            if not script.exists():
+                script = Path(os.getcwd()) / "install_remote.py"
+            if not script.exists():
+                from tkinter import messagebox
+                messagebox.showerror(
+                    "Antenna Installer",
+                    "Could not find install_remote.py.\n\n"
+                    "Make sure it is in the same folder as the installer."
+                )
+                return
+            launch_cmd = [sys.executable, str(script)] + extra_args
+            launch_cwd = str(script.parent)
 
-        script = base / "install_remote.py"
-        if not script.exists():
-            # Fallback: try relative to install.py / working dir
-            script = Path(os.getcwd()) / "install_remote.py"
-
-        if not script.exists():
-            from tkinter import messagebox
-            messagebox.showerror(
-                "Antenna Installer",
-                "Could not find install_remote.py.\n\n"
-                "Make sure it is in the same folder as the installer."
-            )
-            return
-
-        # Launch in a new terminal so the user can interact with it
+        # Open in a new terminal window
         try:
             if sys.platform == "win32":
                 subprocess.Popen(
-                    ["cmd", "/c", "start", "Spellcaster Antenna Installer",
-                     sys.executable, str(script), "--interactive"],
-                    cwd=str(script.parent),
+                    ["cmd", "/c", "start", "Spellcaster Antenna Installer"] + launch_cmd,
+                    cwd=launch_cwd,
                 )
             elif sys.platform == "darwin":
-                # osascript opens a new Terminal.app window
-                apple_cmd = (
-                    f'tell application "Terminal" to do script '
-                    f'"{sys.executable} {script} --interactive"'
-                )
+                cmd_str = " ".join(f'"{c}"' for c in launch_cmd)
+                apple_cmd = f'tell application "Terminal" to do script "{cmd_str}"'
                 subprocess.Popen(["osascript", "-e", apple_cmd])
             else:
-                # Linux — try common terminal emulators
                 for term in ["x-terminal-emulator", "gnome-terminal", "konsole", "xfce4-terminal", "xterm"]:
                     if os.system(f"which {term} >/dev/null 2>&1") == 0:
                         if term == "gnome-terminal":
-                            subprocess.Popen([term, "--", sys.executable, str(script), "--interactive"])
+                            subprocess.Popen([term, "--"] + launch_cmd)
                         else:
-                            subprocess.Popen([term, "-e", f"{sys.executable} {script} --interactive"])
+                            subprocess.Popen([term, "-e", " ".join(launch_cmd)])
                         break
                 else:
-                    # Last resort — run without a terminal wrapper
-                    subprocess.Popen([sys.executable, str(script), "--interactive"])
+                    subprocess.Popen(launch_cmd)
         except Exception as exc:
             from tkinter import messagebox
             messagebox.showerror(
