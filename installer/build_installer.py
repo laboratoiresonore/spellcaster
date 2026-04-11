@@ -261,7 +261,7 @@ def build_remote_installer(target_platform: str):
         output = f"dist/spellcaster-remote-installer{ext}"
         print(f"\nRemote installer built: {output}")
         print(f"  Full path: {REPO_ROOT / output}")
-        print(f"\n  Usage: {output} http://192.168.1.50:8188")
+        print(f"\n  Usage: {output} http://<SERVER-IP>:8188")
         print(f"         {output} --scan")
     else:
         print(f"\nRemote installer build failed (exit code {result.returncode})")
