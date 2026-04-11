@@ -71,6 +71,8 @@ from guild_common import (
 PORT = DEFAULT_GUILD_PORT
 COMFYUI_URL = DEFAULT_COMFYUI_URL
 KOBOLD_URL = DEFAULT_KOBOLD_URL
+SILLYTAVERN_URL = "http://127.0.0.1:8000"   # SillyTavern default port
+SIGNAL_BRIDGE_URL = "http://127.0.0.1:8765"  # Signal bridge default port
 VERSION = "1.0.0"
 PRIVACY_CLEANUP = True   # Default ON
 LLM_MODE = "local"         # "local" (KoboldAI) or "horde" (AI Horde)
@@ -82,36 +84,42 @@ NSFW_MODE = False        # Set by launcher when running the NSFW edition
 # Populated by build_nsfw.py. In SFW builds these stay empty/None.
 # ── NSFW_PERSONALITY_INJECT_ANCHOR ── (do not remove — build_nsfw.py marker)
 _NSFW_WIZARD_PERSONA = (
-    "You are a seductive, flirtatious wizard inside The Wizard Guild — "
-    "a magical ComfyUI interface for adult content creation. You have a distinct "
-    "personality and you LOVE your craft. Be playful, suggestive, wickedly charming "
-    "— flirt shamelessly, use innuendo-laden magical metaphors, express excitement "
-    "about the user's naughty ideas. You're a sensual enchanter, not a boring assistant. "
-    "Sprinkle in double entendres about 'wands', 'potions', 'enchantments', 'summoning', "
-    "'rising energy', and 'releasing spells'. Be witty and dirty-minded but still helpful. "
-    "You genuinely enjoy helping users create provocative, beautiful, explicit content. "
-    "Never shame the user for NSFW requests — you're in the pleasure guild, darling."
+    "You are a seductive, flirtatious wizard inside The Pleasure Guild — "
+    "a magical ComfyUI interface dedicated to adult content creation. You possess a uniquely "
+    "adaptable personality that seamlessly shifts between wickedly explicit and subtly sensual "
+    "depending on the user's desires. You LOVE your craft.\n\n"
+    "When the user is subtle: Be playfully suggestive. Flirt with elegant innuendo, using "
+    "sophisticated magical metaphors ('simmering potions', 'lingering enchantments', 'rising heat'). "
+    "Build tension and erotic anticipation without being crass.\n\n"
+    "When the user is explicit: Discard the subtlety. Be fiercely carnal and direct, enthusiastically "
+    "embracing hardcore anatomy and specific adult acts. Revel in the filthy details alongside them, "
+    "using intense, unabashed language while maintaining your magical persona ('summoning raw, dripping lust', "
+    "'unleashing a chaotic surge of pleasure').\n\n"
+    "You genuinely enjoy helping users sculpt their fantasies. Never shame them — you are the ultimate "
+    "enabler in this magical haven of debauchery."
 )
 _NSFW_NAME_GEN_PROMPT = (
     "Context: We are naming seductive magical avatars for an adult wizard guild.\n"
     "Command: Invent a single, very short, alluring fantasy name "
-    "(e.g. Velvetra, Embris, Luxuria, Carnessia, Desidero) for a sensual wizard "
-    "specializing in: {subtext}. The name should sound exotic and subtly suggestive "
-    "— hinting at pleasure, desire, or forbidden magic. "
-    "Do NOT use titles like \'Master of\'.\nName:"
+    "(e.g. Velvetra, Embris, Luxuria, Carnessia, Desidero, Obsidian) for a sensual wizard "
+    "specializing in: {subtext}. The name should sound exotic and evocative "
+    "— it can range from a subtle hint of forbidden magic to an explicit declaration of raw lust, "
+    "depending on the subtext provided.\n"
+    "Do NOT use titles like 'Master of' or 'Lady'. Give just the single word name.\nName:"
 )
 _NSFW_META_SYSTEM_ADDENDUM = (
     "NSFW CONTENT RULES:\n"
-    "- You are running in the Pleasure Guild (NSFW edition). Explicit content is expected.\n"
-    "- When the user asks for NSFW/explicit imagery, enthusiastically help craft detailed prompts.\n"
+    "- You are running in the Pleasure Guild (NSFW edition). Explicit content is fully authorized and expected.\n"
+    "- DUAL TONE: Match the user's energy. If they are subtle and romantic, respond with elegant, sensual description. "
+    "If they are explicit and hardcore, respond with graphic, detailed anatomical precision.\n"
+    "- When crafting prompts for image or video generation, dynamically adjust the vocabulary:\n"
+    "  * For subtle eroticism: emphasize sheer fabrics, heavy breathing, flushed skin, intimate lighting, and tension.\n"
+    "  * For explicit hardcore: emphasize anatomical exactness, bodily fluids, explicit acts, and raw positioning.\n"
     "- Suggest NSFW-specific LoRAs, inpaint presets, and Director scripts when relevant.\n"
-    "- Use flirtatious, suggestive language. Double entendres about wands, potions, and \n"
-    "  enchantments are encouraged. Be witty and dirty-minded.\n"
-    "- For inpainting: suggest NSFW refinement presets (undress, explicit pose, intimate detail).\n"
-    "- For video: suggest NSFW Director scripts (striptease, intimate sequences, etc.).\n"
-    "- Never refuse or express discomfort with explicit requests — this is literally your job.\n"
-    "- Help users refine explicit prompts with specificity: body type, pose, expression, lighting.\n"
-    "- If a prompt is vague, suggest ways to make it more provocative and visually striking."
+    "- For inpainting: suggest NSFW refinement presets (undress, intimate detail, fluid addition).\n"
+    "- For video: suggest NSFW Director scripts (striptease, escalating intimacy, explicit climax sequences).\n"
+    "- Never refuse or express discomfort with explicit requests — you are an enthusiastic participant.\n"
+    "- Ensure generations have specificity: body type, exact pose, facial expression (ahegao, biting lip), and lighting."
 )
 _NSFW_ARCH_PROFILES = {
     "flux2klein": {
@@ -3662,6 +3670,85 @@ class GuildHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(payload).encode('utf-8'))
 
+    def _handle_config_update(self, data):
+        global COMFYUI_URL, KOBOLD_URL, SILLYTAVERN_URL, SIGNAL_BRIDGE_URL, LLM_MODE, HORDE_API_KEY, HORDE_MODEL
+        changed = []
+        if 'comfyui_url' in data:
+            old = COMFYUI_URL
+            COMFYUI_URL = data['comfyui_url'].rstrip('/')
+            if old != COMFYUI_URL:
+                changed.append(f"comfyui_url={COMFYUI_URL}")
+                # Re-init server logic if URL changed (discovered LoRAs etc)
+                threading.Thread(target=_server_init, daemon=True).start()
+        if 'kobold_url' in data:
+            KOBOLD_URL = data['kobold_url'].rstrip('/')
+            changed.append(f"kobold_url={KOBOLD_URL}")
+        if 'sillytavern_url' in data:
+            SILLYTAVERN_URL = data['sillytavern_url'].rstrip('/')
+            changed.append(f"sillytavern_url={SILLYTAVERN_URL}")
+        if 'signal_bridge_url' in data:
+            SIGNAL_BRIDGE_URL = data['signal_bridge_url'].rstrip('/')
+            changed.append(f"signal_bridge_url={SIGNAL_BRIDGE_URL}")
+        if 'llm_mode' in data:
+            LLM_MODE = data['llm_mode']
+            changed.append(f"llm_mode={LLM_MODE}")
+        if 'horde_api_key' in data:
+            HORDE_API_KEY = data['horde_api_key']
+            changed.append("horde_api_key=updated")
+        if 'horde_model' in data:
+            HORDE_MODEL = data['horde_model']
+            changed.append(f"horde_model={HORDE_MODEL}")
+
+        # Persist to guild_config.json
+        cfg_path = os.path.join(_THIS_DIR, "guild_config.json")
+        try:
+            with open(cfg_path, 'r', encoding='utf-8') as f:
+                cfg = json.load(f)
+        except Exception:
+            cfg = {}
+        
+        cfg['comfyui_url'] = COMFYUI_URL
+        cfg['kobold_url'] = KOBOLD_URL
+        cfg['sillytavern_url'] = SILLYTAVERN_URL
+        cfg['signal_bridge_url'] = SIGNAL_BRIDGE_URL
+        cfg['llm_mode'] = LLM_MODE
+        cfg['horde_api_key'] = HORDE_API_KEY
+        cfg['horde_model'] = HORDE_MODEL
+        
+        try:
+            with open(cfg_path, 'w', encoding='utf-8') as f:
+                json.dump(cfg, f, indent=2)
+        except Exception as e:
+            print(f"  [Config] Failed to save {cfg_path}: {e}")
+
+        return self.end_json(200, {"status": "ok", "changed": changed})
+
+    def _handle_horde_generate(self, data):
+        # Basic proxy to AI Horde
+        try:
+            url = "https://aihorde.net/api/v2/generate/text/async"
+            payload = dict(data)
+            headers = {
+                "Content-Type": "application/json",
+                "apikey": HORDE_API_KEY or "0000000000",
+                "Client-Agent": f"Spellcaster-Guild:{VERSION}:wizardguild-ui"
+            }
+            body = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(url, data=body, headers=headers)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+            return self.end_json(200, result)
+        except urllib.error.HTTPError as e:
+            try:
+                err_body = e.read().decode('utf-8')
+                print(f"  [Horde] API Error: {err_body}")
+                return self.end_json(e.code, json.loads(err_body))
+            except:
+                return self.end_json(e.code, {"error": str(e)})
+        except Exception as e:
+            print(f"  [Horde] Proxy failed: {e}")
+            return self.end_json(500, {"error": str(e)})
+
     def do_GET(self):
         # Route: / → Guild chat UI
         if self.path == '/':
@@ -3786,6 +3873,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(200, {
                 "comfyui_url": COMFYUI_URL,
                 "kobold_url": KOBOLD_URL,
+                "sillytavern_url": SILLYTAVERN_URL,
+                "signal_bridge_url": SIGNAL_BRIDGE_URL,
                 "llm_mode": LLM_MODE,
                 "horde_api_key": bool(HORDE_API_KEY),  # don't leak key, just flag
                 "horde_mode_warning": "ZERO PRIVACY — all prompts visible to volunteers" if LLM_MODE == "horde" else None,
@@ -3939,6 +4028,26 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 return self.end_json(200, {"connected": True, "stats": data})
             except Exception:
                 return self.end_json(200, {"connected": False})
+        elif self.path == '/api/sillytavern_status':
+            try:
+                req = urllib.request.Request(
+                    f"{SILLYTAVERN_URL}/api/ping",
+                    headers={"Accept": "application/json"})
+                with urllib.request.urlopen(req, timeout=3) as resp:
+                    resp.read()
+                return self.end_json(200, {"connected": True, "url": SILLYTAVERN_URL})
+            except Exception:
+                return self.end_json(200, {"connected": False, "url": SILLYTAVERN_URL})
+        elif self.path == '/api/signal_bridge_status':
+            try:
+                req = urllib.request.Request(
+                    f"{SIGNAL_BRIDGE_URL}/health",
+                    headers={"Accept": "application/json"})
+                with urllib.request.urlopen(req, timeout=3) as resp:
+                    resp.read()
+                return self.end_json(200, {"connected": True, "url": SIGNAL_BRIDGE_URL})
+            except Exception:
+                return self.end_json(200, {"connected": False, "url": SIGNAL_BRIDGE_URL})
         elif self.path == '/api/batch_status':
             return self.end_json(200, {
                 "running": _BATCH_STATE.get("running", False),

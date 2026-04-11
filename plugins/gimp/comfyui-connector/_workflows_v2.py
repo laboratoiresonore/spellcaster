@@ -2523,7 +2523,7 @@ def build_video_upscale(video_name, upscale_model="4x-UltraSharp.pth",
         nf.update({
             "10": {"class_type": "TS_Video_Upscale_With_Model",
                    "inputs": {"model_name": upscale_model, "images": video_ref,
-                              "upscale_method": "lanczos", "factor": upscale_factor,
+                              "upscale_method": "bicubic", "factor": upscale_factor,
                               "device_strategy": "auto"}},
         })
         video_ref = ["10", 0]
@@ -2569,7 +2569,7 @@ def build_video_reactor(video_name, face_models, upscale_model="4x-UltraSharp.pt
         nf.update({
             "10": {"class_type": "TS_Video_Upscale_With_Model",
                    "inputs": {"model_name": upscale_model, "images": video_ref,
-                              "upscale_method": "lanczos", "factor": upscale_factor,
+                              "upscale_method": "bicubic", "factor": upscale_factor,
                               "device_strategy": "auto"}},
         })
         video_ref = ["10", 0]

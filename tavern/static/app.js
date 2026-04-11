@@ -33,6 +33,10 @@ const llmDot = document.getElementById('llm-dot');
 const llmStatus = document.getElementById('llm-status');
 const comfyDot = document.getElementById('comfy-dot');
 const comfyStatus = document.getElementById('comfy-status');
+const stDot = document.getElementById('st-dot');
+const stStatus = document.getElementById('st-status');
+const bridgeDot = document.getElementById('bridge-dot');
+const bridgeStatus = document.getElementById('bridge-status');
 
 // Settings
 const settingsBtn = document.getElementById('settings-btn');
@@ -41,6 +45,8 @@ const settingsCancel = document.getElementById('settings-cancel');
 const settingsSave = document.getElementById('settings-save');
 const koboldUrlInput = document.getElementById('kobold-url-input');
 const comfyUrlInput = document.getElementById('comfy-url-input');
+const stUrlInput = document.getElementById('st-url-input');
+const bridgeUrlInput = document.getElementById('bridge-url-input');
 
 // Rename Elements
 const renameModal = document.getElementById('rename-modal');
@@ -52,6 +58,8 @@ const renameLlmBtn = document.getElementById('rename-llm-btn');
 // Defaults — will be overridden by server config or localStorage
 let koboldUrl = localStorage.getItem('kobold_url') || 'http://127.0.0.1:5001';
 let comfyUrl = localStorage.getItem('comfy_url') || 'http://127.0.0.1:8188';
+let stUrl = localStorage.getItem('sillytavern_url') || 'http://127.0.0.1:8000';
+let bridgeUrl = localStorage.getItem('signal_bridge_url') || 'http://127.0.0.1:8765';
 let llmMode = 'local';  // 'local' (KoboldAI) or 'horde' (AI Horde)
 
 let characters = [];
@@ -359,6 +367,40 @@ async function checkComfyConnection() {
     }
 }
 
+async function checkSillyTavernConnection() {
+    try {
+        const testRes = await fetch('/api/sillytavern_status');
+        const data = await testRes.json();
+        if(data.connected) {
+            stDot.className = "dot green";
+            stStatus.textContent = "SillyTavern: Connected";
+        } else {
+            stDot.className = "dot red";
+            stStatus.textContent = "SillyTavern: Disconnected";
+        }
+    } catch(e) {
+        stDot.className = "dot red";
+        stStatus.textContent = "SillyTavern: Disconnected";
+    }
+}
+
+async function checkSignalBridgeConnection() {
+    try {
+        const testRes = await fetch('/api/signal_bridge_status');
+        const data = await testRes.json();
+        if(data.connected) {
+            bridgeDot.className = "dot green";
+            bridgeStatus.textContent = "Signal Bridge: Connected";
+        } else {
+            bridgeDot.className = "dot red";
+            bridgeStatus.textContent = "Signal Bridge: Disconnected";
+        }
+    } catch(e) {
+        bridgeDot.className = "dot red";
+        bridgeStatus.textContent = "Signal Bridge: Disconnected";
+    }
+}
+
 function addTypingIndicator() {
     const div = document.createElement('div');
     div.className = 'message ai-message';
@@ -419,6 +461,12 @@ async function initialize() {
         if(cfg.llm_mode) {
             llmMode = cfg.llm_mode;
         }
+        if(cfg.sillytavern_url) {
+            stUrl = cfg.sillytavern_url;
+        }
+        if(cfg.signal_bridge_url) {
+            bridgeUrl = cfg.signal_bridge_url;
+        }
         // Show persistent privacy banner when in horde mode
         _updatePrivacyBanner();
     } catch(e) {
@@ -426,10 +474,16 @@ async function initialize() {
     }
     koboldUrlInput.value = koboldUrl;
     comfyUrlInput.value = comfyUrl;
+    stUrlInput.value = stUrl;
+    bridgeUrlInput.value = bridgeUrl;
 
-    // Check ComfyUI connection
+    // Check connections
     checkComfyConnection();
+    checkSillyTavernConnection();
+    checkSignalBridgeConnection();
     setInterval(checkComfyConnection, 30000);
+    setInterval(checkSillyTavernConnection, 30000);
+    setInterval(checkSignalBridgeConnection, 30000);
 
     // Check if video models available (for Animate All button)
     checkVideoModelAvailable();
@@ -1717,7 +1771,13 @@ settingsSave.addEventListener('click', async () => {
     comfyUrl = comfyUrlInput.value.trim();
     localStorage.setItem('comfy_url', comfyUrl);
 
-    // Push LLM config to server (persists to guild_config.json)
+    stUrl = stUrlInput.value.trim();
+    localStorage.setItem('sillytavern_url', stUrl);
+
+    bridgeUrl = bridgeUrlInput.value.trim();
+    localStorage.setItem('signal_bridge_url', bridgeUrl);
+
+    // Push config to server (persists to guild_config.json)
     try {
         await fetch('/api/config', {
             method: 'POST',
@@ -1726,6 +1786,8 @@ settingsSave.addEventListener('click', async () => {
                 llm_mode: llmMode,
                 kobold_url: koboldUrl,
                 comfyui_url: comfyUrl,
+                sillytavern_url: stUrl,
+                signal_bridge_url: bridgeUrl,
                 horde_api_key: hordeKey.trim(),
                 horde_model: hordeModel.trim()
             })
@@ -1740,6 +1802,8 @@ settingsSave.addEventListener('click', async () => {
     // Re-check connections with new URLs
     await checkLlmAndGenerateNames();
     await checkComfyConnection();
+    await checkSillyTavernConnection();
+    await checkSignalBridgeConnection();
 });
 
 // ═══════════════════════════════════════════════════════════════════════
