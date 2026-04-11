@@ -207,17 +207,11 @@ That's it. [ComfyUI](https://github.com/comfyanonymous/ComfyUI) is the AI engine
 
 If ComfyUI runs on a **different computer** on your local network (a server, a friend's gaming PC, a cloud box), use the **Remote Installer** instead. It sets up everything on *your* machine — GIMP plugin, Darktable plugin, Wizard Guild, desktop shortcuts — pre-configured to talk to the remote ComfyUI. No ComfyUI needed locally.
 
-<p align="center">
-  <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-remote-installer.exe">
-    <img src="https://img.shields.io/badge/Windows-remote--installer.exe-e879f9?style=for-the-badge&logo=windows&logoColor=white" alt="Download Remote Installer for Windows"/>
-  </a>
-  &nbsp;
-  <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-remote-installer">
-    <img src="https://img.shields.io/badge/Linux%20%7C%20macOS-remote--installer-e879f9?style=for-the-badge&logo=linux&logoColor=white" alt="Download Remote Installer for Linux/macOS"/>
-  </a>
-</p>
-
 ```bash
+# Clone the repo (or use your existing clone)
+git clone https://github.com/laboratoiresonore/spellcaster
+cd spellcaster
+
 # Point it at your ComfyUI server — everything else is automatic
 python installer/install_remote.py http://192.168.1.50:8188
 
@@ -227,6 +221,8 @@ python installer/install_remote.py --scan
 # Also have a local LLM on the server machine?
 python installer/install_remote.py http://192.168.1.50:8188 --llm-url http://192.168.1.50:5001
 ```
+
+> **Want a standalone .exe?** Build it yourself with `python installer/build_installer.py --remote-only` — produces a single `spellcaster-remote-installer.exe` that bundles everything. Standalone binaries will also be available in future releases.
 
 <details>
 <summary><strong>What the remote installer does</strong></summary>
