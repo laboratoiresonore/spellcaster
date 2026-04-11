@@ -2,7 +2,7 @@
 """
 Spellcaster Installer
 =====================
-Interactive installer for Spellcaster — AI superpowers — uncensored for GIMP 3 and Darktable.
+Interactive installer for Spellcaster — AI superpowers for GIMP 3 and Darktable.
 Downloads and installs models, custom nodes, and patches the host applications.
 
 Usage:
@@ -45,7 +45,7 @@ if getattr(sys, 'frozen', False):
 else:
     SCRIPT_DIR = Path(__file__).resolve().parent
 MANIFEST_PATH = SCRIPT_DIR / "manifest.json"
-VERSION = "1.5-NSFW"
+VERSION = "1.5"
 DEFAULT_SERVER_URL = "http://127.0.0.1:8188"
 DEFAULT_LLM_URL = "http://127.0.0.1:5001"
 _BOX_LINE = "═" * 50
@@ -72,7 +72,7 @@ def banner():
 {C_BOLD}{C_CYAN}╔══════════════════════════════════════════════════╗
 ║       ✦  SPELLCASTER INSTALLER  v{VERSION}  ✦       ║
 ║                                                  ║
-║  AI superpowers — uncensored for GIMP 3 & Darktable           ║
+║  AI superpowers for GIMP 3 & Darktable           ║
 ║  Every preset expertly tuned for instant results ║
 ╚══════════════════════════════════════════════════╝{C_RESET}
 """)
@@ -3209,7 +3209,7 @@ def load_manifest() -> dict:
 def build_arg_parser():
     """Build the argparse parser with all CLI flags."""
     parser = argparse.ArgumentParser(
-        description="Spellcaster \u2014 AI superpowers — uncensored for GIMP 3 & Darktable",
+        description="Spellcaster \u2014 AI superpowers for GIMP 3 & Darktable",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
             Examples:

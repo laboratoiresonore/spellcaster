@@ -1,11 +1,9 @@
 """
-guild_common.py — Shared constants, helpers, and architecture profiles
-for The Wizard Guild.  Imported by both server.py and guild_launcher.py
-to eliminate duplicated definitions.
+guild_common.py — Shared constants and helpers for The Wizard Guild.
 
-This module now imports architecture detection rules from the canonical
-spellcaster_core.model_detect source to implement the ONE SOURCE OF TRUTH
-principle. Guild-specific helpers (network tests) remain local.
+All model/architecture detection is imported from the canonical
+spellcaster_core.model_detect (ONE SOURCE OF TRUTH).
+Guild-specific helpers (network tests, default ports) live here.
 """
 
 import os
@@ -19,9 +17,17 @@ import urllib.request
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.dirname(_THIS_DIR)
-_CORE_PARENT = os.path.join(_REPO_ROOT, "comfyui-spellcaster")
-if _CORE_PARENT not in sys.path:
-    sys.path.insert(0, _CORE_PARENT)
+
+# Try multiple locations for spellcaster_core
+for _candidate in [
+    os.path.join(_REPO_ROOT, "comfyui-spellcaster"),          # dev checkout
+    os.path.join(_REPO_ROOT, "plugins", "gimp", "comfyui-connector"),  # bundled in GIMP plugin
+    _THIS_DIR,  # might be alongside server.py in packaged build
+]:
+    if os.path.isdir(os.path.join(_candidate, "spellcaster_core")):
+        if _candidate not in sys.path:
+            sys.path.insert(0, _candidate)
+        break
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -36,170 +42,19 @@ HORDE_ANONYMOUS_KEY = "0000000000"
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  Architecture / Model-Name → Arch-Key Mapping (from canonical source)
+#  Architecture / Model Detection (from canonical spellcaster_core)
 # ═══════════════════════════════════════════════════════════════════════
-#
-# All architecture detection rules are now imported from the canonical
-# spellcaster_core.model_detect module. This ensures a single source of
-# truth across the entire codebase:
-#   - Guild server (model detection in ComfyUI)
-#   - GIMP plugin (model selection UI)
-#   - Workflow builders (arch-specific node construction)
 
-try:
-    from spellcaster_core.model_detect import (
-        UNET_ARCH_RULES,
-        CKPT_ARCH_RULES,
-        BEST_MODEL_PRIORITY,
-        FAMILY_MODEL_KEYWORDS,
-        LORA_ARCH_PREFIXES,
-        LORA_NAME_ARCH_HINTS,
-        classify_unet_model,
-        classify_ckpt_model,
-    )
-except ImportError as e:
-    # Fallback: define these locally if spellcaster_core is unavailable
-    # (e.g., during development or in a broken installation)
-    print(f"Warning: Could not import from spellcaster_core: {e}")
-    print("  Falling back to local definitions (may be stale)")
-
-    # UNET model-name keywords → arch key
-    UNET_ARCH_RULES = [
-        # (substring, arch_key)  — order = priority, first match wins
-        ("klein",     "flux2klein"),
-        ("kontext",   "flux_kontext"),
-        ("kaleidoscope", "flux2klein"),  # chroma2_kaleidoscope is a Klein 4B finetune
-        ("chroma",    "chroma"),        # Chroma v1/v2 — single CLIPLoader type="chroma"
-        ("flux",      "flux1dev"),
-        ("wan",       "wan"),
-        ("ltx",       "ltx"),
-        ("seedvr",    "seedvr"),
-        ("pixart",    "pixart"),
-        ("auraflow",  "auraflow"),
-        ("aura_flow", "auraflow"),
-        ("hunyuan_dit", "hunyuan_dit"),
-        ("hunyuandit",  "hunyuan_dit"),
-        ("sd3.5_large_turbo", "sd3_turbo"),
-        ("sd3_turbo",   "sd3_turbo"),
-        ("sd3.5",       "sd3"),
-        ("sd3_",        "sd3"),
-        ("sd3medium",   "sd3"),
-    ]
-
-    # Checkpoint model-name keywords → arch key   (order = priority)
-    CKPT_ARCH_RULES = [
-        ("playground",  "playground"),
-        ("sdxl_turbo",  "sdxl_turbo"),
-        ("sdxl_lightning", "sdxl_turbo"),
-        ("lcm",         "sdxl_turbo"),
-        ("turbo",       "sdxl_turbo"),     # generic turbo → sdxl_turbo (unless caught above)
-        ("kolors",      "kolors"),
-        ("sd3.5_large_turbo", "sd3_turbo"),
-        ("sd3_turbo",   "sd3_turbo"),
-        ("sd3.5",       "sd3"),
-        ("sd3_",        "sd3"),
-        ("sd3medium",   "sd3"),
-        ("hunyuan_dit", "hunyuan_dit"),
-        ("hunyuandit",  "hunyuan_dit"),
-        ("kaleidoscope", "flux2klein"),     # chroma2_kaleidoscope is a Klein 4B finetune
-        ("chroma",      "chroma"),         # Chroma v1/v2 — single CLIPLoader type="chroma"
-        ("sdxl",        "sdxl"),
-        ("xl",          "sdxl"),
-        ("illu",        "illustrious"),
-        ("pony",        "pony"),
-        ("flux",        "flux1dev"),
-        # fallthrough → "sd15"
-    ]
-
-    # ── Best-model priority (highest first) ──
-    # Each entry: (match_pool, substring_test, arch_key)
-    #   match_pool: "unet" or "ckpt"
-    BEST_MODEL_PRIORITY = [
-        ("unet",  lambda ml: "klein" in ml and "9b" in ml,  "flux2klein"),
-        ("unet",  lambda ml: "klein" in ml and "4b" in ml,  "flux2klein"),
-        ("unet",  lambda ml: "kaleidoscope" in ml,           "flux2klein"),
-        ("unet",  lambda ml: "chroma" in ml and "kaleidoscope" not in ml, "chroma"),
-        ("unet",  lambda ml: "flux" in ml and "dev" in ml,  "flux1dev"),
-        ("unet",  lambda ml: "flux" in ml,                  "flux1dev"),
-        ("unet",  lambda ml: "sd3.5" in ml and "turbo" not in ml, "sd3"),
-        ("unet",  lambda ml: "sd3" in ml,                   "sd3"),
-        ("unet",  lambda ml: "pixart" in ml,                "pixart"),
-        ("unet",  lambda ml: "auraflow" in ml or "aura_flow" in ml, "auraflow"),
-        ("ckpt",  lambda ml: "kaleidoscope" in ml,           "flux2klein"),
-        ("ckpt",  lambda ml: "chroma" in ml and "kaleidoscope" not in ml, "chroma"),
-        ("ckpt",  lambda ml: "sd3.5" in ml and "turbo" not in ml, "sd3"),
-        ("ckpt",  lambda ml: "playground" in ml,            "playground"),
-        ("ckpt",  lambda ml: "kolors" in ml,                "kolors"),
-        ("ckpt",  lambda ml: "illu" in ml,                  "illustrious"),
-        ("ckpt",  lambda ml: "xl" in ml and "turbo" not in ml, "sdxl"),
-        ("ckpt",  lambda ml: "xl" in ml,                    "sdxl"),
-    ]
-
-    # ── Model-family → keyword map for wizard-gating ──
-    # If at least one installed model name contains any of these substrings,
-    # the corresponding model_wizard family is shown.
-    FAMILY_MODEL_KEYWORDS = {
-        "ltx2":        ["ltx"],
-        "seedvr2":     ["seedvr"],
-        "wan":         ["wan"],
-        "video_tools": ["wan", "ltx", "seedvr", "svd", "animate", "rife",
-                        "video_upscale", "reactor"],
-    }
-
-    # ── LoRA prefix → arch mapping ──
-    # Maps architecture keys to the subfolder prefixes used in ComfyUI's
-    # LoRA directory layout.  Cross-platform: callers check both / and \.
-    LORA_ARCH_PREFIXES = {
-        "sd15":         [],
-        "sdxl":         ["SDXL\\", "Illustrious\\", "Illustrious-Pony\\", "Pony\\"],
-        "illustrious":  ["Illustrious\\", "Illustrious-Pony\\"],
-        "pony":         ["Pony\\", "Illustrious-Pony\\"],
-        "flux2klein":   ["Flux-2-Klein\\"],
-        "flux1dev":     ["Flux-1-Dev\\", "Flux\\"],
-        "flux_kontext": ["Flux-1-Dev\\"],
-        "ltx":          ["ltxv\\", "LTX\\"],
-        "wan":          ["Wan\\", "WAN\\", "Wan-2.2-I2V\\"],
-        "seedvr":       ["SeedVR\\", "seedvr\\"],
-    }
-
-    # LoRA name keyword → arch (fallback when prefix matching fails)
-    LORA_NAME_ARCH_HINTS = [
-        ("sdxl",      "sdxl"),
-        ("xl",        "sdxl"),
-        ("flux",      "flux1dev"),
-        ("klein",     "flux2klein"),
-        ("illu",      "illustrious"),
-        ("pony",      "pony"),
-        ("sd3",       "sd3"),
-        ("sd35",      "sd3"),
-        ("hunyuan",   "hunyuan_dit"),
-        ("pixart",    "pixart"),
-        ("auraflow",  "auraflow"),
-        ("kolors",    "kolors"),
-        ("playground", "playground"),
-        ("ltx",       "ltx"),
-        ("ltxv",      "ltx"),
-        ("wan",       "wan"),
-        ("seedvr",    "seedvr"),
-        ("cogvideo",  "cogvideo"),
-        ("svd",       "svd"),
-    ]
-
-    def classify_unet_model(name):
-        """Return arch key for a UNET model name, or 'unknown'."""
-        ml = name.lower()
-        for substring, arch_key in UNET_ARCH_RULES:
-            if substring in ml:
-                return arch_key
-        return "unknown"
-
-    def classify_ckpt_model(name):
-        """Return arch key for a checkpoint model name, or 'sd15' (default)."""
-        ml = name.lower()
-        for substring, arch_key in CKPT_ARCH_RULES:
-            if substring in ml:
-                return arch_key
-        return "sd15"
+from spellcaster_core.model_detect import (
+    UNET_ARCH_RULES,
+    CKPT_ARCH_RULES,
+    BEST_MODEL_PRIORITY,
+    FAMILY_MODEL_KEYWORDS,
+    LORA_ARCH_PREFIXES,
+    LORA_NAME_ARCH_HINTS,
+    classify_unet_model,
+    classify_ckpt_model,
+)
 
 
 # ═══════════════════════════════════════════════════════════════════════

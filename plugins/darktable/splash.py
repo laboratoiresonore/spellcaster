@@ -8,10 +8,10 @@ import os
 # Exits when the lock file is deleted by the Lua plugin.
 
 # Theme constants
-_BG = '#150B07'
-_ACCENT = '#E32234'
-_TEXT = '#EBE2DF'
-_SUBTEXT = '#A87C7F'
+_BG = '#0B0715'
+_ACCENT = '#D122E3'
+_TEXT = '#E2DFEB'
+_SUBTEXT = '#8B7CA8'
 _FONTS = ("Segoe UI", "Inter", "Cantarell", "Arial")
 
 def _best_font(size=16, bold=False):
@@ -74,7 +74,7 @@ def show_splash():
     # Status message (animated)
     status_label = tk.Label(
         overlay,
-        text="Processing uncensored AI...",
+        text="Processing with AI...",
         font=_best_font(11),
         fg=_TEXT,
         bg=_BG,
@@ -83,7 +83,7 @@ def show_splash():
     status_label.pack(fill='x')
 
     # ── Progress bar ──
-    bar_frame = tk.Frame(overlay, bg='#3B2115', height=4, bd=0)
+    bar_frame = tk.Frame(overlay, bg='#21153B', height=4, bd=0)
     bar_frame.pack(fill='x', pady=(6, 0))
     bar_frame.pack_propagate(False)
 
@@ -102,9 +102,9 @@ def show_splash():
 
     # ── Animated progress messages ──
     messages = [
-        "Processing uncensored AI...",
-        "Generating forbidden magic...",
-        "Applying dark spells...",
+        "Processing with AI...",
+        "Generating magic...",
+        "Applying neural spells...",
         "Compositing result...",
         "Almost there...",
     ]
@@ -139,12 +139,12 @@ def show_splash():
     # Simulate pulsing by cycling the title color brightness
     pulse_state = {'step': 0}
     _PULSE_COLORS = []
-    # Pre-compute 40 color steps: from accent (#E32234) dimmed to bright and back
+    # Pre-compute 40 color steps: from accent (#D122E3) dimmed to bright and back
     for i in range(20):
         t = i / 19.0  # 0.0 .. 1.0
-        r = int(160 + t * (227 - 160))
+        r = int(140 + t * (209 - 140))
         g = int(20 + t * (34 - 20))
-        b = int(30 + t * (52 - 30))
+        b = int(160 + t * (227 - 160))
         _PULSE_COLORS.append(f'#{r:02x}{g:02x}{b:02x}')
     _PULSE_COLORS += list(reversed(_PULSE_COLORS))
 
