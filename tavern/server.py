@@ -30,7 +30,7 @@ try:
     from _workflows_v2 import build_txt2img
     from _architectures import ARCHITECTURES, get_arch
     BUILTIN_AVAILABLE = True
-except (ImportError, SyntaxError):
+except (ImportError, SyntaxError, ValueError, Exception):
     BUILTIN_AVAILABLE = False
     _workflows_v2 = None
     build_txt2img = None
@@ -2318,26 +2318,28 @@ def _dispatch_workflow(workflow, comfy_url, timeout=180):
                         for img in node_out["images"]:
                             fn = img.get("filename", "")
                             sub = img.get("subfolder", "")
-                            url = f"{comfy_url}/view?filename={fn}&type=output"
+                            ftype = img.get("type", "output")
+                            url = f"{comfy_url}/view?filename={fn}&type={ftype}"
                             if sub:
                                 url += f"&subfolder={sub}"
                             images.append(url)
                         return {"type": "images", "urls": images,
                                 "prompt_id": prompt_id}
 
-                    # Video output (VHS_VideoCombine)
-                    if "gifs" in node_out:
-                        gifs = node_out["gifs"]
-                        urls = []
-                        for g in gifs:
-                            fn = g.get("filename", "")
-                            sub = g.get("subfolder", "")
-                            url = f"{comfy_url}/view?filename={fn}&type=output"
-                            if sub:
-                                url += f"&subfolder={sub}"
-                            urls.append(url)
-                        return {"type": "videos", "urls": urls,
-                                "prompt_id": prompt_id}
+                    # Video output (VHS_VideoCombine → "gifs", SaveVideo → "videos")
+                    for vkey in ("gifs", "videos"):
+                        if vkey in node_out:
+                            urls = []
+                            for g in node_out[vkey]:
+                                fn = g.get("filename", "")
+                                sub = g.get("subfolder", "")
+                                ftype = g.get("type", "output")
+                                url = f"{comfy_url}/view?filename={fn}&type={ftype}"
+                                if sub:
+                                    url += f"&subfolder={sub}"
+                                urls.append(url)
+                            return {"type": "videos", "urls": urls,
+                                    "prompt_id": prompt_id}
         except Exception as e:
             if "ComfyUI execution failed" in str(e):
                 raise
@@ -2373,8 +2375,9 @@ def _cache_comfyui_asset(comfy_url_str, asset_type="image"):
 
         # Download if not already cached
         if not os.path.exists(cache_path):
+            dl_timeout = 300 if asset_type == "video" else 60
             req = urllib.request.Request(comfy_url_str)
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=dl_timeout) as resp:
                 data = resp.read()
             if len(data) < 100:
                 return comfy_url_str  # too small, probably already wiped
@@ -2442,21 +2445,20 @@ def _privacy_cleanup(comfy_url, workflow, result):
         except Exception:
             pass
 
-    # 2. Delete output files from ComfyUI's output folder
+    # 2. Delete output files from ComfyUI (output or temp folder)
+    from urllib.parse import urlparse, parse_qs
     for url in result.get("urls", []):
         try:
-            # Parse filename from URL like /view?filename=foo.png&type=output
-            from urllib.parse import urlparse, parse_qs
             parsed = urlparse(url)
             params = parse_qs(parsed.query)
             fname = params.get("filename", [""])[0]
             subfolder = params.get("subfolder", [""])[0]
+            ftype = params.get("type", ["output"])[0]  # respect actual type
             if not fname:
                 continue
-            # ComfyUI doesn't have a delete API, but we can overwrite with tiny PNG
+            # ComfyUI lacks a delete API — overwrite with tiny PNG
             upload_url = f"{comfy_url}/upload/image"
             boundary = _uuid.uuid4().hex
-            # Upload to output subfolder to overwrite
             body = (
                 f"--{boundary}\r\n"
                 f'Content-Disposition: form-data; name="image"; filename="{fname}"\r\n'
@@ -2467,7 +2469,7 @@ def _privacy_cleanup(comfy_url, workflow, result):
                 f"{subfolder}\r\n"
                 f"--{boundary}\r\n"
                 f'Content-Disposition: form-data; name="type"\r\n\r\n'
-                f"output\r\n"
+                f"{ftype}\r\n"
                 f"--{boundary}--\r\n"
             ).encode()
             req = urllib.request.Request(upload_url, data=body,
@@ -3303,13 +3305,16 @@ def _poll_animated_avatars(comfy_url):
                 check_nids = ([output_nid] if output_nid else []) + list(outputs.keys())
                 for nid in check_nids:
                     out = outputs.get(nid, {})
-                    # Videos
-                    gifs = out.get("gifs", [])
-                    if gifs:
-                        g = gifs[0]
-                        result_url = (f"{comfy_url}/view?filename={g['filename']}"
-                                      f"&subfolder={g.get('subfolder', '')}"
-                                      f"&type={g.get('type', 'output')}")
+                    # Videos (VHS_VideoCombine → "gifs", SaveVideo → "videos")
+                    for vkey in ("gifs", "videos"):
+                        items = out.get(vkey, [])
+                        if items:
+                            g = items[0]
+                            result_url = (f"{comfy_url}/view?filename={g['filename']}"
+                                          f"&subfolder={g.get('subfolder', '')}"
+                                          f"&type={g.get('type', 'output')}")
+                            break
+                    if result_url:
                         break
                     # Images fallback
                     imgs = out.get("images", [])
@@ -4886,4 +4891,15 @@ if __name__ == "__main__":
         httpd.serve_forever()
     except KeyboardInterrupt:
         pass
+    httpd.server_close()
+
+
+if __name__ == "__main__":
+    print(f"Starting The Wizard Guild on port {PORT}...")
+    httpd = HTTPServer(('0.0.0.0', PORT), GuildHandler)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    httpd.server_close()
     httpd.server_close()
