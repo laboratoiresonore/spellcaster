@@ -781,9 +781,17 @@ end
 -- those in folders matching the selected model's architecture.
 
 local ARCH_LORA_PREFIXES = {
-  sd15  = {},  -- no dedicated SD 1.5 LoRA folders currently
-  sdxl  = {"SDXL\\", "Illustrious\\", "Illustrious-Pony\\", "Pony\\"},
-  zit   = {"Z-Image-Turbo\\"},
+  sd15         = {},  -- no dedicated SD 1.5 LoRA folders currently
+  sdxl         = {"SDXL\\", "Illustrious\\", "Illustrious-Pony\\", "Pony\\"},
+  zit          = {"Z-Image-Turbo\\"},
+  illustrious  = {"Illustrious\\", "Illustrious-Pony\\"},
+  pony         = {"Pony\\", "Illustrious-Pony\\"},
+  flux2klein   = {"Flux-2-Klein\\"},
+  flux1dev     = {"Flux-1-Dev\\", "Flux\\"},
+  flux_kontext = {"Flux-1-Dev\\"},
+  ltx          = {"ltxv\\", "LTX\\"},
+  wan          = {"Wan\\", "WAN\\", "Wan-2.2-I2V\\"},
+  seedvr       = {"SeedVR\\", "seedvr\\"},
 }
 
 local function starts_with(str, prefix)
@@ -796,7 +804,9 @@ local function filter_loras_for_arch(all_loras, arch)
   local filtered = {}
   for _, lora in ipairs(all_loras) do
     for _, prefix in ipairs(prefixes) do
-      if starts_with(lora, prefix) or lora == prefix:gsub("/$", "") then
+      -- Check both backslash and forward-slash variants (OS-dependent)
+      local alt = prefix:gsub("\\", "/")
+      if starts_with(lora, prefix) or starts_with(lora, alt) then
         table.insert(filtered, lora)
         break
       end
