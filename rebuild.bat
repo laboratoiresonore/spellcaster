@@ -7,7 +7,7 @@ setlocal enabledelayedexpansion
 ::
 ::  Rebuilds ALL executables (installer, manual-update, wizard-guild),
 ::  pushes source changes to both SFW and NSFW repos, and uploads
-::  binaries to a GitHub Release (never committed to git — too large).
+::  binaries to a GitHub Release.
 ::
 ::  Usage:
 ::      rebuild.bat                    — rebuild everything + push + release
@@ -15,7 +15,7 @@ setlocal enabledelayedexpansion
 ::      rebuild.bat --installer-only   — only rebuild installer + updater
 ::      rebuild.bat --guild-only       — only rebuild wizard guild
 ::      rebuild.bat --push-only        — skip builds, just push source + release
-::      rebuild.bat --tag v2.2         — set release tag (default: auto from VERSION)
+::      rebuild.bat --tag v2.2         — set release tag (default: auto)
 ::
 ::  Requirements:
 ::      - Python 3.10+ with pip
@@ -24,8 +24,7 @@ setlocal enabledelayedexpansion
 ::
 ::  This script MUST be run on Windows (PyInstaller cannot cross-compile).
 ::
-::  NOTE: Built .exe files go into dist/ which is gitignored. They are
-::  uploaded to GitHub Releases, NOT committed to the repo.
+::  NOTE: Built .exe files are uploaded to GitHub Releases, NOT committed.
 :: ══════════════════════════════════════════════════════════════════════
 
 title Spellcaster Rebuild
@@ -69,7 +68,7 @@ if defined NSFW_REPO (
 )
 echo.
 echo   [WARN] NSFW repo not found as sibling directory.
-echo          Set NSFW_REPO=path\to\spellcaster_NSFW or place it next to this repo.
+echo          Set NSFW_REPO env var or place it next to this repo.
 echo          Continuing with SFW only...
 echo.
 :found_nsfw
@@ -77,7 +76,7 @@ echo.
 :: ── Verify Python ───────────────────────────────────────────────────
 python --version >nul 2>&1
 if errorlevel 1 (
-    echo ERROR: Python not found in PATH. Install Python 3.10+ and try again.
+    echo ERROR: Python not found in PATH.
     exit /b 1
 )
 
@@ -92,6 +91,7 @@ if defined NSFW_ROOT (
 ) else (
     echo   NSFW repo:  [not found]
 )
+if defined RELEASE_TAG echo   Tag:        %RELEASE_TAG%
 echo.
 
 :: ══════════════════════════════════════════════════════════════════════
@@ -110,7 +110,7 @@ if "%PUSH_ONLY%"=="1" goto skip_builds
 echo [2/7] Cleaning previous builds...
 if exist "%SFW_ROOT%\dist" (
     del /q "%SFW_ROOT%\dist\*.exe" 2>nul
-    echo   Cleaned dist\*.exe
+    echo   Cleaned dist\
 )
 if exist "%SFW_ROOT%\build" (
     rmdir /s /q "%SFW_ROOT%\build" 2>nul
@@ -132,7 +132,7 @@ popd
 
 if not "%INSTALLER_EXIT%"=="0" (
     echo.
-    echo   ERROR: Installer build FAILED ^^!
+    echo   ERROR: Installer build FAILED!
     exit /b %INSTALLER_EXIT%
 )
 
@@ -162,11 +162,10 @@ popd
 
 if not "%GUILD_EXIT%"=="0" (
     echo.
-    echo   ERROR: Wizard Guild build FAILED ^^!
+    echo   ERROR: Wizard Guild build FAILED!
     exit /b %GUILD_EXIT%
 )
 
-:: Copy with release naming convention
 if exist "%SFW_ROOT%\dist\wizard-guild.exe" (
     copy /y "%SFW_ROOT%\dist\wizard-guild.exe" "%SFW_ROOT%\dist\Wizard_Guild.exe" >nul
     for %%F in ("%SFW_ROOT%\dist\Wizard_Guild.exe") do echo   Wizard_Guild.exe ............. %%~zF bytes  OK
@@ -183,43 +182,11 @@ if "%NO_PUSH%"=="1" (
 
 :: ══════════════════════════════════════════════════════════════════════
 ::  STEP 5 — Commit & push SOURCE to SFW repo
-::           (dist/ is NOT committed — binaries go to GitHub Releases)
 :: ══════════════════════════════════════════════════════════════════════
 echo [5/7] Pushing source changes to SFW repo...
 pushd "%SFW_ROOT%"
 
 if exist ".git\index.lock" del /f ".git\index.lock" 2>nul
-
-:: Make sure dist/ and build/ are gitignored (don't commit 300MB binaries)
-if not exist ".gitignore" (
-    echo Creating .gitignore...
-    (
-        echo # Build artifacts — uploaded to GitHub Releases, not committed
-        echo dist/
-        echo build/
-        echo *.spec
-        echo *.spec.bak
-        echo.
-        echo # Virtual environments
-        echo .build-venv/
-        echo .venv/
-        echo venv/
-        echo.
-        echo # Python
-        echo __pycache__/
-        echo *.py[cod]
-        echo *.pyo
-        echo *.pyd
-        echo *.egg-info/
-        echo .eggs/
-        echo.
-        echo # OS
-        echo .DS_Store
-        echo Thumbs.db
-        echo Desktop.ini
-    ) > .gitignore
-    git add .gitignore
-)
 
 :: Stage source changes (dist/ excluded by .gitignore)
 git add -A
@@ -245,12 +212,11 @@ echo.
 
 :: ══════════════════════════════════════════════════════════════════════
 ::  STEP 6 — Mirror source to NSFW repo & push
-::           Uses selective copy (NOT /mir) to preserve NSFW-only content
 :: ══════════════════════════════════════════════════════════════════════
 echo [6/7] Mirroring source to NSFW repo...
 
 if not defined NSFW_ROOT (
-    echo   Skipped — NSFW repo not found.
+    echo   Skipped.
     goto upload_release
 )
 
@@ -262,22 +228,21 @@ for %%F in (server.py guild_launcher.py guild_common.py build_guild.py) do (
         copy /y "%SFW_ROOT%\tavern\%%F" "%NSFW_ROOT%\tavern\%%F" >nul 2>&1
     )
 )
-:: Tavern static — full sync is safe (no NSFW-specific frontend files)
+:: Tavern static
 robocopy "%SFW_ROOT%\tavern\static" "%NSFW_ROOT%\tavern\static" /s /xd __pycache__ >nul 2>&1
 
-:: Installer — full sync (no NSFW-specific installer files)
+:: Installer
 robocopy "%SFW_ROOT%\installer" "%NSFW_ROOT%\installer" /s /xd __pycache__ .build-venv dist build >nul 2>&1
 
-:: Plugins — full sync
+:: Plugins
 robocopy "%SFW_ROOT%\plugins" "%NSFW_ROOT%\plugins" /s /xd __pycache__ >nul 2>&1
 
-:: Scaffold — copy individual files, preserve any NSFW-only modules
+:: Scaffold — individual files to preserve NSFW-only modules
 for %%F in (meta_wizard.py introspector.py workflow_wizard.py workflow_parser.py comfyui_runner.py presets.py prompt_builder.py wizard.py bridge_launcher.py pipeline_wizard.py __init__.py) do (
     if exist "%SFW_ROOT%\scaffold\%%F" (
         copy /y "%SFW_ROOT%\scaffold\%%F" "%NSFW_ROOT%\scaffold\%%F" >nul 2>&1
     )
 )
-:: Scaffold workflows — full sync
 if exist "%SFW_ROOT%\scaffold\workflows" (
     robocopy "%SFW_ROOT%\scaffold\workflows" "%NSFW_ROOT%\scaffold\workflows" /s >nul 2>&1
 )
@@ -286,7 +251,7 @@ if exist "%SFW_ROOT%\scaffold\workflows" (
 robocopy "%SFW_ROOT%\.github" "%NSFW_ROOT%\.github" /s >nul 2>&1
 
 :: Root scripts
-for %%F in (rebuild.bat install.bat update.bat settings.bat) do (
+for %%F in (rebuild.bat install.bat update.bat settings.bat release_upload.py) do (
     if exist "%SFW_ROOT%\%%F" (
         copy /y "%SFW_ROOT%\%%F" "%NSFW_ROOT%\%%F" >nul 2>&1
     )
@@ -303,7 +268,7 @@ if errorlevel 1 (
     git commit -m "build: rebuild all executables (mirrored from SFW)"
     echo   Committed.
 ) else (
-    echo   No changes to commit in NSFW.
+    echo   No changes in NSFW.
 )
 
 echo   Pushing...
@@ -322,40 +287,31 @@ echo.
 :upload_release
 echo [7/7] Uploading binaries to GitHub Release...
 
+:: Auto-detect tag if not set
+if not defined RELEASE_TAG (
+    for /f "tokens=*" %%V in ('python -c "import re; m=re.search(r'VERSION\s*=\s*[\"'']([^\"'']+)[\"'']', open('tavern/guild_launcher.py').read()); print('v'+m.group(1) if m else '')" 2^>nul') do set "RELEASE_TAG=%%V"
+)
+if not defined RELEASE_TAG (
+    echo   [WARN] No --tag provided and could not auto-detect version.
+    echo          Use: rebuild.bat --tag v2.2
+    goto show_summary
+)
+
 :: Check if gh CLI is available
 where gh >nul 2>&1
-if errorlevel 1 (
-    echo.
-    echo   GitHub CLI (gh) not found. Falling back to Python uploader...
-    echo.
-    goto python_upload
-)
+if errorlevel 1 goto use_python_upload
 
-:: Use gh CLI
+:: ── Upload via gh CLI ───────────────────────────────────────────────
 pushd "%SFW_ROOT%"
-
-:: Determine tag
-if not defined RELEASE_TAG (
-    :: Try to read version from guild_launcher or use date-based tag
-    for /f "tokens=*" %%V in ('python -c "import re,sys; m=re.search(r'VERSION\s*=\s*\"([^\"]+)\"', open('tavern/guild_launcher.py').read()); print('v'+m.group(1) if m else '')" 2^>nul') do set "RELEASE_TAG=%%V"
-)
-if not defined RELEASE_TAG (
-    :: Fallback: date-based tag
-    for /f "tokens=*" %%D in ('python -c "import datetime; print('v'+datetime.date.today().strftime('%%Y.%%m.%%d'))"') do set "RELEASE_TAG=%%D"
-)
-
+echo   Using gh CLI...
 echo   Release tag: %RELEASE_TAG%
 
-:: Check if release already exists
 gh release view %RELEASE_TAG% >nul 2>&1
 if errorlevel 1 (
-    echo   Creating new release %RELEASE_TAG%...
+    echo   Creating release %RELEASE_TAG%...
     gh release create %RELEASE_TAG% --title "%RELEASE_TAG%" --notes "Rebuilt Windows executables." --latest
-) else (
-    echo   Release %RELEASE_TAG% exists — uploading assets...
 )
 
-:: Upload each binary (--clobber overwrites existing assets with same name)
 if exist "%SFW_ROOT%\dist\spellcaster-installer.exe" (
     echo   Uploading spellcaster-installer.exe...
     gh release upload %RELEASE_TAG% "%SFW_ROOT%\dist\spellcaster-installer.exe" --clobber
@@ -368,103 +324,20 @@ if exist "%SFW_ROOT%\dist\Wizard_Guild.exe" (
     echo   Uploading Wizard_Guild.exe...
     gh release upload %RELEASE_TAG% "%SFW_ROOT%\dist\Wizard_Guild.exe" --clobber
 )
-
-echo   Release upload complete.
+echo   Done.
 popd
 goto show_summary
 
-:: ── Python fallback uploader (no gh CLI) ────────────────────────────
-:python_upload
+:: ── Upload via Python (no gh CLI) ───────────────────────────────────
+:use_python_upload
+echo   gh CLI not found, using Python uploader...
 pushd "%SFW_ROOT%"
 
-python -c "
-import json, os, sys, urllib.request, urllib.error, glob
-
-TOKEN = None
-# Try reading token from git remote URL
-try:
-    import subprocess
-    remote = subprocess.check_output(['git', 'remote', 'get-url', 'origin'], text=True).strip()
-    if '@' in remote and 'github.com' in remote:
-        TOKEN = remote.split('//')[1].split('@')[0]
-except: pass
-
-if not TOKEN:
-    print('  No GitHub token found in git remote. Cannot upload.')
-    print('  Install gh CLI (https://cli.github.com) or add token to remote URL.')
-    sys.exit(1)
-
-REPO = 'laboratoiresonore/spellcaster'
-API = 'https://api.github.com'
-UPLOAD = 'https://uploads.github.com'
-tag = os.environ.get('RELEASE_TAG', '')
-if not tag:
-    print('  No release tag set.')
-    sys.exit(1)
-
-headers = {
-    'Authorization': f'token {TOKEN}',
-    'Accept': 'application/vnd.github+json',
-}
-
-# Get or create release
-try:
-    req = urllib.request.Request(f'{API}/repos/{REPO}/releases/tags/{tag}', headers=headers)
-    with urllib.request.urlopen(req) as r:
-        release = json.loads(r.read())
-    release_id = release['id']
-    upload_url = release['upload_url'].split('{')[0]
-    print(f'  Found existing release: {tag} (id={release_id})')
-except urllib.error.HTTPError as e:
-    if e.code == 404:
-        # Create release
-        body = json.dumps({'tag_name': tag, 'name': tag, 'body': 'Rebuilt Windows executables.', 'draft': False}).encode()
-        req = urllib.request.Request(f'{API}/repos/{REPO}/releases', data=body, headers={**headers, 'Content-Type': 'application/json'})
-        with urllib.request.urlopen(req) as r:
-            release = json.loads(r.read())
-        release_id = release['id']
-        upload_url = release['upload_url'].split('{')[0]
-        print(f'  Created release: {tag} (id={release_id})')
-    else:
-        raise
-
-# Delete existing assets with same names, then upload new ones
-existing = {}
-try:
-    req = urllib.request.Request(f'{API}/repos/{REPO}/releases/{release_id}/assets', headers=headers)
-    with urllib.request.urlopen(req) as r:
-        for a in json.loads(r.read()):
-            existing[a['name']] = a['id']
-except: pass
-
-dist = os.path.join(os.environ.get('SFW_ROOT', '.'), 'dist')
-for exe in ['spellcaster-installer.exe', 'spellcaster-manual-update.exe', 'Wizard_Guild.exe']:
-    fpath = os.path.join(dist, exe)
-    if not os.path.exists(fpath):
-        continue
-    # Delete old asset if exists
-    if exe in existing:
-        try:
-            req = urllib.request.Request(f'{API}/repos/{REPO}/releases/assets/{existing[exe]}', headers=headers, method='DELETE')
-            urllib.request.urlopen(req)
-            print(f'  Deleted old {exe}')
-        except: pass
-    # Upload
-    fsize = os.path.getsize(fpath)
-    print(f'  Uploading {exe} ({fsize:,} bytes)...')
-    with open(fpath, 'rb') as f:
-        data = f.read()
-    upload_headers = {**headers, 'Content-Type': 'application/octet-stream'}
-    req = urllib.request.Request(f'{upload_url}?name={exe}', data=data, headers=upload_headers)
-    try:
-        with urllib.request.urlopen(req, timeout=600) as r:
-            result = json.loads(r.read())
-        print(f'  Uploaded {exe} -> {result.get(\"browser_download_url\", \"ok\")}')
-    except Exception as ex:
-        print(f'  FAILED to upload {exe}: {ex}')
-
-print('  Release upload complete.')
-"
+if exist "%SFW_ROOT%\release_upload.py" (
+    python "%SFW_ROOT%\release_upload.py" --tag %RELEASE_TAG% --dist "%SFW_ROOT%\dist"
+) else (
+    echo   ERROR: release_upload.py not found. Install gh CLI or restore release_upload.py.
+)
 popd
 
 :: ══════════════════════════════════════════════════════════════════════
