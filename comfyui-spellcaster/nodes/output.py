@@ -1,177 +1,115 @@
-"""SpellcasterOutput — VAE decode + privacy-aware metadata stripping.
+"""SpellcasterOutput — VAE decode + privacy-aware save.
 
-Decodes latent tensors to images, optionally strips EXIF/generation metadata,
-and saves to output directory with clean filenames.
+Combines VAEDecode + SaveImage in one node, with metadata stripping
+enabled by default so generation parameters don't leak into saved PNGs.
+
+Follows the exact same save pattern as ComfyUI's built-in SaveImage.
 """
 
 import os
-import sys
-import datetime
+import json
+import numpy as np
 import folder_paths
 
-try:
-    import comfy.sd
-except ImportError:
-    comfy = None
-
-try:
-    from PIL import Image
-    import numpy as np
-except ImportError:
-    Image = None
-    np = None
+from PIL import Image
+from PIL.PngImagePlugin import PngInfo
 
 
 class SpellcasterOutput:
-    """VAE decode + save with privacy-aware metadata stripping.
+    """VAE decode + save with privacy-aware metadata stripping."""
 
-    Decodes latent to image, strips EXIF/generation metadata,
-    and saves to output with clean filenames (no generation info embedded).
-
-    Returns:
-      - image: Decoded image tensor (for chaining to other nodes)
-    """
+    def __init__(self):
+        self.output_dir = folder_paths.get_output_directory()
+        self.type = "output"
+        self.compress_level = 4
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "samples": ("LATENT",),
-                "vae": ("VAE",),
-                "filename_prefix": ("STRING", {"default": "Spellcaster"}),
+                "samples": ("LATENT", {
+                    "tooltip": "Latent samples from the sampler.",
+                }),
+                "vae": ("VAE", {
+                    "tooltip": "VAE decoder (from Spellcaster Loader or standalone).",
+                }),
+                "filename_prefix": ("STRING", {
+                    "default": "Spellcaster",
+                    "tooltip": "Prefix for saved files. Supports ComfyUI formatting "
+                               "like %date:yyyy-MM-dd%.",
+                }),
             },
             "optional": {
-                "strip_metadata": ("BOOLEAN", {"default": True}),
-            }
+                "strip_metadata": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "Strip generation parameters from PNG metadata "
+                               "(prompt, workflow). Enabled by default for privacy.",
+                }),
+            },
+            "hidden": {
+                "prompt": "PROMPT",
+                "extra_pnginfo": "EXTRA_PNGINFO",
+            },
         }
 
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("image",)
+    OUTPUT_TOOLTIPS = ("Decoded image tensor (for chaining to preview/other nodes).",)
     FUNCTION = "decode_and_save"
-    CATEGORY = "Spellcaster"
     OUTPUT_NODE = True
-    DESCRIPTION = "Decode latent + save with metadata stripping for privacy."
+    CATEGORY = "Spellcaster"
+    DESCRIPTION = (
+        "VAE decode + save with metadata stripping. "
+        "Combines VAEDecode and SaveImage — strips generation params by default."
+    )
+    SEARCH_ALIASES = ["spellcaster save", "privacy save", "clean save"]
 
-    def decode_and_save(self, samples, vae, filename_prefix="Spellcaster", strip_metadata=True):
-        """Decode latent and save image.
+    def decode_and_save(self, samples, vae, filename_prefix="Spellcaster",
+                        strip_metadata=True, prompt=None, extra_pnginfo=None):
 
-        Args:
-            samples: Latent tensor (LATENT)
-            vae: VAE decoder (VAE)
-            filename_prefix: Prefix for saved filename (str)
-            strip_metadata: If True, don't embed generation info in PNG (bool)
+        # ── 1. VAE decode ──────────────────────────────────────────────
+        images = vae.decode(samples["samples"])
+        print(f"\033[36m[Spellcaster]\033[0m Decoded {images.shape[0]} image(s) "
+              f"@ {images.shape[2]}×{images.shape[1]}")
 
-        Returns:
-            Tuple (decoded_images,)
-        """
-        if not comfy:
-            raise RuntimeError("[SpellcasterOutput] ComfyUI comfy module not available")
+        # ── 2. Save images (follows SaveImage pattern exactly) ─────────
+        full_output_folder, filename, counter, subfolder, filename_prefix = \
+            folder_paths.get_save_image_path(
+                filename_prefix, self.output_dir,
+                images[0].shape[1], images[0].shape[0],
+            )
 
-        if not Image or not np:
-            raise RuntimeError("[SpellcasterOutput] PIL/numpy not available")
+        results = []
+        for batch_number, image in enumerate(images):
+            i = 255.0 * image.cpu().numpy()
+            img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8))
 
-        print(f"[SpellcasterOutput] Decoding {samples['samples'].shape}...")
-
-        # Decode latent to images
-        try:
-            images = vae.decode(samples["samples"])
-        except Exception as e:
-            raise RuntimeError(f"[SpellcasterOutput] VAE decode failed: {e}")
-
-        # Convert to numpy and then PIL for saving
-        try:
-            img_list = self._tensor_to_pil(images)
-        except Exception as e:
-            raise RuntimeError(f"[SpellcasterOutput] Tensor conversion failed: {e}")
-
-        # Save images
-        saved_paths = []
-        for i, img in enumerate(img_list):
-            try:
-                path = self._save_image(img, filename_prefix, i, strip_metadata)
-                saved_paths.append(path)
-                print(f"[SpellcasterOutput] Saved: {path}")
-            except Exception as e:
-                print(f"[SpellcasterOutput] Save failed for image {i}: {e}")
-                raise
-
-        # Prepare output
-        # Return images as tensor for downstream nodes
-        return (images,)
-
-    def _tensor_to_pil(self, tensor):
-        """Convert tensor (shape: B,H,W,C, values 0-1) to PIL images."""
-        if hasattr(tensor, 'cpu'):
-            tensor = tensor.cpu()
-        if hasattr(tensor, 'numpy'):
-            tensor = tensor.numpy()
-
-        # Ensure shape is (B, H, W, C)
-        if len(tensor.shape) == 3:
-            tensor = np.expand_dims(tensor, 0)
-
-        images = []
-        for i in range(tensor.shape[0]):
-            img_array = (tensor[i] * 255).astype(np.uint8)
-
-            if img_array.shape[2] == 4:
-                # RGBA
-                img = Image.fromarray(img_array, 'RGBA')
-            elif img_array.shape[2] == 3:
-                # RGB
-                img = Image.fromarray(img_array, 'RGB')
-            else:
-                raise ValueError(f"Unsupported image channels: {img_array.shape[2]}")
-
-            images.append(img)
-
-        return images
-
-    def _save_image(self, img, filename_prefix, index, strip_metadata):
-        """Save PIL image to output folder.
-
-        Args:
-            img: PIL Image
-            filename_prefix: Prefix for filename
-            index: Image index (for batch)
-            strip_metadata: If True, save without PNG metadata
-
-        Returns:
-            Saved file path (str)
-        """
-        # Get output directory
-        output_dir = folder_paths.get_output_directory()
-        os.makedirs(output_dir, exist_ok=True)
-
-        # Create filename with timestamp
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{filename_prefix}_{timestamp}_{index:03d}.png"
-        filepath = os.path.join(output_dir, filename)
-
-        # Save with or without metadata
-        if strip_metadata:
-            # Save without any metadata (clean PNG, no generation info)
-            img.save(filepath, "PNG", pnginfo=None)
-        else:
-            # Save with basic metadata
-            try:
-                from PIL import PngImagePlugin
-                metadata = PngImagePlugin.PngInfo()
+            # Build metadata — or skip entirely for privacy
+            metadata = None
+            if not strip_metadata:
+                metadata = PngInfo()
                 metadata.add_text("Generator", "Spellcaster")
-                metadata.add_text("Model", "Spellcaster")
-                img.save(filepath, "PNG", pnginfo=metadata)
-            except:
-                # Fallback: just save without metadata
-                img.save(filepath, "PNG", pnginfo=None)
+                if prompt is not None:
+                    metadata.add_text("prompt", json.dumps(prompt))
+                if extra_pnginfo is not None:
+                    for key in extra_pnginfo:
+                        metadata.add_text(key, json.dumps(extra_pnginfo[key]))
 
-        return filepath
+            filename_with_batch = filename.replace("%batch_num%", str(batch_number))
+            file = f"{filename_with_batch}_{counter:05}_.png"
+            filepath = os.path.join(full_output_folder, file)
 
+            img.save(filepath, pnginfo=metadata, compress_level=self.compress_level)
 
-# Node registry (for ComfyUI)
-NODE_CLASS_MAPPINGS = {
-    "SpellcasterOutput": SpellcasterOutput,
-}
+            results.append({
+                "filename": file,
+                "subfolder": subfolder,
+                "type": self.type,
+            })
+            counter += 1
 
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "SpellcasterOutput": "Spellcaster Output (Save)",
-}
+        label = "clean" if strip_metadata else "with metadata"
+        print(f"\033[36m[Spellcaster]\033[0m Saved {len(results)} image(s) ({label})")
+
+        # Return both UI results (for ComfyUI frontend) and tensor (for chaining)
+        return {"ui": {"images": results}, "result": (images,)}

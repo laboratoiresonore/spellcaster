@@ -1,40 +1,30 @@
 """SpellcasterSampler — Architecture-aware sampler with auto-configuration.
 
-Automatically selects KSampler vs SamplerCustomAdvanced based on architecture.
-All parameters are auto-populated from ArchConfig defaults, with optional overrides.
+Automatically selects KSampler vs SamplerCustomAdvanced+CFGGuider based on
+architecture.  All parameters auto-populated from ArchConfig defaults.
+
+Uses the exact same comfy.sample / comfy.samplers APIs as ComfyUI builtins.
 """
 
 import os
 import sys
+import torch
 
-# Add parent to path for spellcaster_core imports
+import comfy.sample
+import comfy.samplers
+import comfy.utils
+import latent_preview
+
+# ── spellcaster_core import ────────────────────────────────────────────
 _pack_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _pack_dir not in sys.path:
     sys.path.insert(0, _pack_dir)
 
-try:
-    import comfy.sample
-    import comfy.samplers
-except ImportError:
-    comfy = None
-
-try:
-    from spellcaster_core.architectures import get_arch
-except ImportError as e:
-    print(f"[SpellcasterSampler] WARNING: Failed to import spellcaster_core: {e}")
-    get_arch = None
+from spellcaster_core.architectures import get_arch
 
 
 class SpellcasterSampler:
-    """Architecture-aware sampler — auto-selects KSampler vs SamplerCustomAdvanced.
-
-    For most architectures (sd15, sdxl, flux1dev): uses standard KSampler.
-    For flux2klein: uses SamplerCustomAdvanced + CFGGuider pipeline.
-    All parameters auto-populated from ArchConfig defaults.
-
-    Returns:
-      - samples: Latent tensor ready for VAE decoding
-    """
+    """Architecture-aware sampler — one node for every model type."""
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -45,190 +35,165 @@ class SpellcasterSampler:
                 "negative": ("CONDITIONING",),
                 "latent_image": ("LATENT",),
                 "arch_key": ("STRING", {"default": "sdxl"}),
-                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
+                "seed": ("INT", {
+                    "default": 0, "min": 0, "max": 0xffffffffffffffff,
+                    "control_after_generate": True,
+                }),
             },
             "optional": {
-                "steps_override": ("INT", {"default": 0, "min": 0, "max": 200,
-                                          "tooltip": "0 = use arch default"}),
-                "cfg_override": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 100.0,
-                                          "step": 0.1, "tooltip": "0 = use arch default"}),
-                "denoise": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "sampler_override": ("STRING", {"default": "", "tooltip": "Override sampler name"}),
-                "scheduler_override": ("STRING", {"default": "", "tooltip": "Override scheduler"}),
-            }
+                "steps_override": ("INT", {
+                    "default": 0, "min": 0, "max": 10000,
+                    "tooltip": "0 = use architecture default",
+                }),
+                "cfg_override": ("FLOAT", {
+                    "default": 0.0, "min": 0.0, "max": 100.0,
+                    "step": 0.1, "round": 0.01,
+                    "tooltip": "0 = use architecture default",
+                }),
+                "denoise": ("FLOAT", {
+                    "default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01,
+                }),
+                "sampler_override": (
+                    ["auto"] + comfy.samplers.KSampler.SAMPLERS,
+                    {"default": "auto"},
+                ),
+                "scheduler_override": (
+                    ["auto"] + comfy.samplers.KSampler.SCHEDULERS,
+                    {"default": "auto"},
+                ),
+            },
         }
 
     RETURN_TYPES = ("LATENT",)
     RETURN_NAMES = ("samples",)
+    OUTPUT_TOOLTIPS = ("The denoised latent.",)
     FUNCTION = "sample"
     CATEGORY = "Spellcaster"
-    DESCRIPTION = "Architecture-aware sampler with auto-configured parameters."
+    DESCRIPTION = (
+        "Architecture-aware sampler with auto-configured parameters. "
+        "Standard KSampler for most models, SamplerCustomAdvanced for Klein."
+    )
+    SEARCH_ALIASES = ["spellcaster sampler", "auto sampler", "smart sampler"]
 
     def sample(self, model, positive, negative, latent_image, arch_key, seed,
                steps_override=0, cfg_override=0.0, denoise=1.0,
-               sampler_override="", scheduler_override=""):
-        """Sample with architecture-aware defaults.
-
-        Args:
-            model: Diffusion model (MODEL)
-            positive: Positive conditioning (CONDITIONING)
-            negative: Negative conditioning (CONDITIONING)
-            latent_image: Starting latent (LATENT) - may be empty for txt2img
-            arch_key: Architecture identifier (e.g., "sdxl", "flux2klein")
-            seed: Random seed (int)
-            steps_override: Override steps (0 = use arch default)
-            cfg_override: Override CFG scale (0.0 = use arch default)
-            denoise: Denoise strength (1.0 = full generation, 0.0 = preserve input)
-            sampler_override: Override sampler algorithm
-            scheduler_override: Override noise scheduler
-
-        Returns:
-            Tuple (sampled_latent,)
-        """
-        if not comfy:
-            raise RuntimeError("[SpellcasterSampler] ComfyUI comfy module not available")
-        if not get_arch:
-            raise RuntimeError("[SpellcasterSampler] spellcaster_core not available")
+               sampler_override="auto", scheduler_override="auto"):
 
         arch = get_arch(arch_key)
-        if not arch:
-            raise ValueError(f"[SpellcasterSampler] Unknown architecture: {arch_key}")
 
-        # Get parameters from architecture defaults, with overrides
-        steps = steps_override if steps_override > 0 else arch.default_steps
-        cfg = cfg_override if cfg_override > 0.0 else arch.default_cfg
-        sampler_name = sampler_override or arch.default_sampler
-        scheduler = scheduler_override or arch.default_scheduler
+        # Resolve final parameters
+        steps     = steps_override     if steps_override > 0    else arch.default_steps
+        cfg       = cfg_override       if cfg_override   > 0.0  else arch.default_cfg
+        sampler   = sampler_override   if sampler_override   != "auto" else arch.default_sampler
+        scheduler = scheduler_override if scheduler_override != "auto" else arch.default_scheduler
 
-        print(f"[SpellcasterSampler] {arch_key}: steps={steps}, cfg={cfg}, "
-              f"sampler={sampler_name}, scheduler={scheduler}, denoise={denoise}")
+        print(f"\033[36m[Spellcaster]\033[0m Sampling {arch_key}: "
+              f"steps={steps}, cfg={cfg}, sampler={sampler}, "
+              f"scheduler={scheduler}, denoise={denoise}")
 
-        # Route to appropriate sampler based on architecture
         if arch.sampler == "custom_advanced":
-            # Flux2 Klein: use SamplerCustomAdvanced + CFGGuider
-            print(f"[SpellcasterSampler] Using custom_advanced pipeline for {arch_key}")
-            samples = self._sample_custom_advanced(
+            return self._sample_custom_advanced(
                 model, positive, negative, latent_image,
-                seed, steps, cfg, sampler_name, scheduler, denoise
-            )
-        else:
-            # Standard KSampler path (sd15, sdxl, flux1dev, etc)
-            print(f"[SpellcasterSampler] Using KSampler for {arch_key}")
-            samples = self._sample_standard(
-                model, positive, negative, latent_image,
-                seed, steps, cfg, sampler_name, scheduler, denoise
+                seed, steps, cfg, sampler, denoise,
             )
 
-        return (samples,)
+        # Standard KSampler  (identical to ComfyUI's common_ksampler)
+        return self._sample_ksampler(
+            model, positive, negative, latent_image,
+            seed, steps, cfg, sampler, scheduler, denoise,
+        )
 
-    def _sample_standard(self, model, positive, negative, latent_image,
+    # ── standard path (copy of common_ksampler) ───────────────────────
+    @staticmethod
+    def _sample_ksampler(model, positive, negative, latent,
                          seed, steps, cfg, sampler_name, scheduler, denoise):
-        """Standard KSampler path for most architectures."""
-        try:
-            # Use comfy.sample.sample() if available (preferred)
-            if hasattr(comfy.sample, 'sample'):
-                samples = comfy.sample.sample(
-                    model,
-                    seed,
-                    steps,
-                    cfg,
-                    sampler_name,
-                    scheduler,
-                    positive,
-                    negative,
-                    latent_image,
-                    denoise=denoise,
-                )
-                return samples
-            else:
-                # Fallback: use KSampler node logic directly
-                raise RuntimeError("comfy.sample.sample not available")
+        latent_image = latent["samples"]
+        latent_image = comfy.sample.fix_empty_latent_channels(
+            model, latent_image,
+            latent.get("downscale_ratio_spacial", None),
+        )
 
-        except Exception as e:
-            print(f"[SpellcasterSampler] KSampler failed: {e}")
-            raise RuntimeError(f"Sampling failed: {e}")
+        batch_inds = latent.get("batch_index", None)
+        noise = comfy.sample.prepare_noise(latent_image, seed, batch_inds)
 
-    def _sample_custom_advanced(self, model, positive, negative, latent_image,
-                                seed, steps, cfg, sampler_name, scheduler, denoise):
-        """Flux2 Klein sampling pipeline (SamplerCustomAdvanced + CFGGuider)."""
-        try:
-            # Klein pipeline requires special handling:
-            # 1. CFGGuider wraps model + conditioning
-            # 2. SamplerCustomAdvanced orchestrates the sampling
+        noise_mask = latent.get("noise_mask", None)
+        callback   = latent_preview.prepare_callback(model, steps)
+        disable_pbar = not comfy.utils.PROGRESS_BAR_ENABLED
 
-            # Create CFGGuider
-            if not hasattr(comfy.samplers, 'CFGGuider'):
-                raise RuntimeError("CFGGuider not available in comfy.samplers")
+        samples = comfy.sample.sample(
+            model, noise, steps, cfg, sampler_name, scheduler,
+            positive, negative, latent_image,
+            denoise=denoise,
+            noise_mask=noise_mask,
+            callback=callback,
+            disable_pbar=disable_pbar,
+            seed=seed,
+        )
 
-            guider = comfy.samplers.CFGGuider(model)
-            guider.set_conds(positive, negative)
-            guider.set_cfg(cfg)
+        out = latent.copy()
+        out.pop("downscale_ratio_spacial", None)
+        out["samples"] = samples
+        return (out,)
 
-            # Create sampler
-            sampler_obj = comfy.samplers.sampler_object(sampler_name)
+    # ── Klein path (CFGGuider + SamplerCustomAdvanced) ─────────────────
+    @staticmethod
+    def _sample_custom_advanced(model, positive, negative, latent,
+                                seed, steps, cfg, sampler_name, denoise):
+        """Flux 2 Klein pipeline: CFGGuider → SamplerCustomAdvanced."""
 
-            # Get sigmas from scheduler
-            if hasattr(comfy.samplers, 'Flux2Scheduler'):
-                # Get latent dimensions for Flux2Scheduler
-                batch_size = latent_image.get("samples", None).shape[0] if isinstance(latent_image, dict) else 1
-                height = latent_image.get("samples", None).shape[2] * 8 if isinstance(latent_image, dict) else 1024
-                width = latent_image.get("samples", None).shape[3] * 8 if isinstance(latent_image, dict) else 1024
+        # Build guider
+        guider = comfy.samplers.CFGGuider(model)
+        guider.set_conds(positive, negative)
+        guider.set_cfg(cfg)
 
-                sigmas = comfy.samplers.Flux2Scheduler(steps, height, width)
-            else:
-                # Fallback: use standard scheduler
-                sigmas = comfy.samplers.calculate_sigmas(sampler_obj, steps, scheduler)
+        # Build sampler object
+        sampler_obj = comfy.samplers.sampler_object(sampler_name)
 
-            # Prepare noise
-            noise = self._prepare_noise(seed, latent_image)
+        # Build sigmas  ─  use the model's built-in sigma calculator
+        sigmas = comfy.samplers.calculate_sigmas(
+            model.get_model_object("model_sampling"),
+            "simple", steps,
+        ).cpu()
 
-            # Sample using SamplerCustomAdvanced
-            if hasattr(comfy.samplers, 'SamplerCustomAdvanced'):
-                samples = comfy.samplers.SamplerCustomAdvanced().sample(
-                    noise, guider, sampler_obj, sigmas, latent_image, steps
-                )
-                return samples
-            else:
-                # Fallback: use basic sampling flow
-                samples = comfy.sample.sample(
-                    model, seed, steps, cfg, sampler_name, scheduler,
-                    positive, negative, latent_image, denoise=denoise
-                )
-                return samples
+        # Truncate sigmas for denoise < 1.0
+        if denoise < 1.0:
+            total = len(sigmas) - 1
+            start = max(0, total - int(total * denoise))
+            sigmas = sigmas[start:]
 
-        except Exception as e:
-            print(f"[SpellcasterSampler] custom_advanced failed: {e}")
-            # Fallback to standard sampling
-            print(f"[SpellcasterSampler] Falling back to standard KSampler")
-            return self._sample_standard(
-                model, positive, negative, latent_image,
-                seed, steps, cfg, "euler", scheduler, denoise
-            )
+        # Prepare latent
+        latent_image = latent["samples"]
+        latent_image = comfy.sample.fix_empty_latent_channels(
+            guider.model_patcher, latent_image,
+            latent.get("downscale_ratio_spacial", None),
+        )
+        latent_copy = latent.copy()
+        latent_copy["samples"] = latent_image
 
-    def _prepare_noise(self, seed, latent_image):
-        """Prepare noise for sampling."""
-        try:
-            if hasattr(comfy, 'utils') and hasattr(comfy.utils, 'RandomNoise'):
-                return comfy.utils.RandomNoise(seed).sample()
-            else:
-                # Fallback: create noise directly
-                import torch
-                torch.manual_seed(seed)
-                if isinstance(latent_image, dict) and "samples" in latent_image:
-                    shape = latent_image["samples"].shape
-                else:
-                    shape = (1, 4, 128, 128)  # Default Flux2 shape
-                return torch.randn(shape)
-        except Exception as e:
-            print(f"[SpellcasterSampler] Noise preparation failed: {e}")
-            raise
+        # Prepare noise
+        from comfy_extras.nodes_custom_sampler import Noise_RandomNoise
+        noise_gen = Noise_RandomNoise(seed)
 
+        noise_mask = latent.get("noise_mask", None)
+        callback   = latent_preview.prepare_callback(
+            guider.model_patcher, sigmas.shape[-1] - 1,
+        )
+        disable_pbar = not comfy.utils.PROGRESS_BAR_ENABLED
 
-# Node registry (for ComfyUI)
-NODE_CLASS_MAPPINGS = {
-    "SpellcasterSampler": SpellcasterSampler,
-}
+        # Sample
+        samples = guider.sample(
+            noise_gen.generate_noise(latent_copy),
+            latent_image,
+            sampler_obj,
+            sigmas,
+            denoise_mask=noise_mask,
+            callback=callback,
+            disable_pbar=disable_pbar,
+            seed=noise_gen.seed,
+        )
+        samples = samples.to(comfy.model_management.intermediate_device())
 
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "SpellcasterSampler": "Spellcaster Sampler (Auto-Config)",
-}
+        out = latent.copy()
+        out.pop("downscale_ratio_spacial", None)
+        out["samples"] = samples
+        return (out,)
