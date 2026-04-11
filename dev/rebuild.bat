@@ -49,8 +49,8 @@ exit /b 1
 :args_done
 
 :: ── Locate repo roots ───────────────────────────────────────────────
-set "SFW_ROOT=%~dp0"
-if "%SFW_ROOT:~-1%"=="\" set "SFW_ROOT=%SFW_ROOT:~0,-1%"
+:: This script lives in dev/ — repo root is one level up
+for %%I in ("%~dp0..") do set "SFW_ROOT=%%~fI"
 
 :: Try to find NSFW repo as sibling
 set "NSFW_ROOT="
@@ -250,10 +250,17 @@ if exist "%SFW_ROOT%\scaffold\workflows" (
 :: GitHub workflows
 robocopy "%SFW_ROOT%\.github" "%NSFW_ROOT%\.github" /s >nul 2>&1
 
-:: Root scripts
-for %%F in (rebuild.bat install.bat update.bat settings.bat release_upload.py) do (
-    if exist "%SFW_ROOT%\%%F" (
-        copy /y "%SFW_ROOT%\%%F" "%NSFW_ROOT%\%%F" >nul 2>&1
+:: Root scripts (user-facing)
+for %%F in (Install.bat Settings.bat "Wizard Guild.bat") do (
+    if exist "%SFW_ROOT%\%%~F" (
+        copy /y "%SFW_ROOT%\%%~F" "%NSFW_ROOT%\%%~F" >nul 2>&1
+    )
+)
+:: Dev scripts
+if not exist "%NSFW_ROOT%\dev" mkdir "%NSFW_ROOT%\dev"
+for %%F in (rebuild.bat release_upload.py update.bat) do (
+    if exist "%SFW_ROOT%\dev\%%F" (
+        copy /y "%SFW_ROOT%\dev\%%F" "%NSFW_ROOT%\dev\%%F" >nul 2>&1
     )
 )
 
@@ -333,10 +340,10 @@ goto show_summary
 echo   gh CLI not found, using Python uploader...
 pushd "%SFW_ROOT%"
 
-if exist "%SFW_ROOT%\release_upload.py" (
-    python "%SFW_ROOT%\release_upload.py" --tag %RELEASE_TAG% --dist "%SFW_ROOT%\dist"
+if exist "%SFW_ROOT%\dev\release_upload.py" (
+    python "%SFW_ROOT%\dev\release_upload.py" --tag %RELEASE_TAG% --dist "%SFW_ROOT%\dist"
 ) else (
-    echo   ERROR: release_upload.py not found. Install gh CLI or restore release_upload.py.
+    echo   ERROR: dev\release_upload.py not found. Install gh CLI or restore it.
 )
 popd
 
