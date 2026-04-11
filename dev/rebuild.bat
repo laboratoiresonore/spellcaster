@@ -66,10 +66,20 @@ if defined NSFW_REPO (
         goto found_nsfw
     )
 )
+
+:: Not found — clone it automatically as sibling
 echo.
-echo   [WARN] NSFW repo not found as sibling directory.
-echo          Set NSFW_REPO env var or place it next to this repo.
-echo          Continuing with SFW only...
+echo   NSFW repo not found — cloning as sibling...
+pushd "%SFW_ROOT%\.."
+git clone https://github.com/laboratoiresonore/spellcaster_NSFW.git spellcaster_NSFW
+if errorlevel 1 (
+    echo   [WARN] Failed to clone NSFW repo. Continuing with SFW only.
+    popd
+    goto found_nsfw
+)
+popd
+set "NSFW_ROOT=%SFW_ROOT%\..\spellcaster_NSFW"
+echo   Cloned to %NSFW_ROOT%
 echo.
 :found_nsfw
 
