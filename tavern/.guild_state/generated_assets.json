@@ -1,1 +1,50 @@
-{}
+{
+  "studio_imaginus": {
+    "avatar_url": "/api/cached_asset/47f407f10cdd20a9.png"
+  },
+  "studio_transmutex": {
+    "avatar_url": "/api/cached_asset/b918c825475e15c2.png"
+  },
+  "studio_masquerade": {
+    "avatar_url": "/api/cached_asset/81cc286efc6643d2.png"
+  },
+  "studio_restorix": {
+    "avatar_url": "/api/cached_asset/190d18b446d66888.png"
+  },
+  "studio_erasure": {
+    "avatar_url": "/api/cached_asset/4274d3b2160c756d.png"
+  },
+  "studio_videomancer": {
+    "avatar_url": "/api/cached_asset/614713f8e7757f8d.png"
+  },
+  "studio_cinematic": {
+    "avatar_url": "/api/cached_asset/3c273a2a71ffb4c4.png"
+  },
+  "studio_studiocraft": {
+    "avatar_url": "/api/cached_asset/cdf2de12c2ed0cd4.png"
+  },
+  "model_ltx2": {
+    "avatar_url": "/api/cached_asset/6b83165eb800342e.png"
+  },
+  "comfyui_A-Flux_Flux2_flux-2-klein-9b_safetensors": {
+    "avatar_url": "/api/cached_asset/1f4a6e14d142df9e.png"
+  },
+  "comfyui_A-Flux_flux-2-klein-4b-fp8_safetensors": {
+    "avatar_url": "/api/cached_asset/edfaf1874b4918cb.png"
+  },
+  "comfyui_A-Flux_flux-2-klein-base-4b-fp8_safetensors": {
+    "avatar_url": "/api/cached_asset/5708d16a22423a46.png"
+  },
+  "comfyui_Chroma_Chroma1-HD-fp8_scaled_defaultloader_hybrid_large_rev2_safetensors": {
+    "avatar_url": "/api/cached_asset/67940753250e1b8e.png"
+  },
+  "comfyui_Chroma_chroma2_kaleidoscope_safetensors": {
+    "avatar_url": "/api/cached_asset/1ccae8ce4e0f4ff1.png"
+  },
+  "comfyui_Flux_FLUX1 Dev fp8_safetensors": {
+    "avatar_url": "/api/cached_asset/b1ab2ecf1d81714a.png"
+  },
+  "comfyui_Flux_HyFU-8-step-v1_0-pruned_safetensors": {
+    "avatar_url": "/api/cached_asset/d5be15412aa81b07.png"
+  }
+}

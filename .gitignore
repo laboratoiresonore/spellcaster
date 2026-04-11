@@ -1,10 +1,10 @@
-# Build artifacts
-build/
+# Build artifacts — uploaded to GitHub Releases, not committed
 dist/
+build/
 *.spec
 *.spec.bak
 
-# Virtual environments (created by build scripts)
+# Virtual environments
 .build-venv/
 .venv/
 venv/
@@ -16,82 +16,8 @@ __pycache__/
 *.pyd
 *.egg-info/
 .eggs/
-*.egg
 
-# macOS
+# OS
 .DS_Store
-.AppleDouble
-.LSOverride
-._*
-
-# Windows
 Thumbs.db
-ehthumbs.db
 Desktop.ini
-
-# Linters / formatters
-.ruff_cache/
-
-# IDEs
-.vscode/
-.idea/
-*.sublime-project
-*.sublime-workspace
-
-# Temporary files
-*.tmp
-*.bak
-*.swp
-*~
-
-# Compiled installers at root (built from installer/ dir, too large for git)
-*.exe
-
-# Loose test images at root
-selfie*.png
-
-# User data — personal presets, session state, config
-user_presets.json
-session_state.json
-config.json
-*.spellcaster_version
-
-# Generated content — ignore all video/gif except assets/ gifs
-*.mp4
-*.gif
-!assets/*.gif
-!assets/**/*.gif
-
-# Signal Bridge — machine-specific config with IPs, API keys, paths
-signal_bridge_config.json
-signal_bridge_*.log
-
-# Machine-specific settings — never commit local network config
-local_settings.json
-.env
-.env.*
-
-# NSFW builds — never push to public repo
-nsfw/
-*_nsfw*
-manifest_nsfbuild_all.bat
-rebuild.bat
-push_fix.bat
-push_now.bat
-
-# Tavern runtime data — user-generated, not source
-tavern/creations/
-tavern/.guild_state/
-tavern/.guild_version
-
-# Root-level runtime/dev files (keep root clean for users)
-guild_config.json
-.guild_version
-generate_readme_gifs.py
-creations/
-
-# Test scripts
-test_*.py
-
-# Self — stop tracking local gitignore changes
-.gitignore

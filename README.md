@@ -160,7 +160,7 @@ That's it. [ComfyUI](https://github.com/comfyanonymous/ComfyUI) is the AI engine
 
 > **Never heard of ComfyUI?** That's fine. The installer can download and set it up for you. You'll never need to open it — Spellcaster talks to it behind the scenes. Think of it like an engine under the hood.
 >
-> **Don't have a GPU?** No problem. You can connect to a ComfyUI server running on another computer on your network (a friend's gaming PC, a cloud instance, etc.). The installer has a remote server mode.
+> **Don't have a GPU?** No problem. The installer's **Antenna Installer** connects to a ComfyUI server on another computer on your network (a friend's gaming PC, a cloud instance, etc.).
 >
 > **Don't want to use GIMP or Darktable at all?** You can skip them entirely and control Spellcaster through [The Wizard Guild](#just-talk-to-it-the-wizard-guild--scaffold-system) — an AI chatbot that handles everything for you.
 
@@ -203,6 +203,10 @@ That's it. [ComfyUI](https://github.com/comfyanonymous/ComfyUI) is the AI engine
 >
 > **Plugin not showing up?** Download the [**Manual Update & Repair tool**](https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-manual-update.exe) ([Linux version](https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-manual-update)) — it finds and fixes broken installations automatically.
 
+### ComfyUI on Another Machine?
+
+If ComfyUI runs on a different computer on your network, click the **Antenna Installer** button on the Welcome page — it auto-detects your server and sets up all local plugins and shortcuts.
+
 ### Already Using ComfyUI Manager?
 
 If you installed [ComfyUI-Spellcaster](https://github.com/laboratoiresonore/ComfyUI-Spellcaster) through ComfyUI Manager (or `git clone`), you already have the nodes — but you're missing the rest of the suite. On first load, Spellcaster drops a ready-to-run **`Install_Spellcaster_Suite.bat`** into your `custom_nodes` folder. Double-click it to get Wizard Guild, GIMP/Darktable plugins, desktop shortcuts, and the model downloader. You'll also see a toast notification in the ComfyUI web UI with a link.
@@ -227,7 +231,7 @@ The installer is an 8-step guided wizard. It's designed so you never have to mak
 
 **The installer detects your GPU** and only shows features your hardware can run. If you have 4 GB of VRAM, you won't see options that need 16 GB. No guesswork.
 
-**Remote server mode**: Don't have a GPU? The installer can connect to a ComfyUI server running on another computer on your network. Just enter the IP address — everything else works the same.
+**Remote server mode**: Don't have a GPU? Use the **Antenna Installer** button on the Welcome page — it connects to a ComfyUI server on another machine and sets up everything locally.
 
 </details>
 
@@ -350,7 +354,7 @@ Dual ControlNet support in img2img and inpaint workflows. Models auto-selected p
 
 | Tool | What It Does | Details |
 |---|---|---|
-| **LTX2.2 Text-to-Video** | Generate video from a text prompt — no input image needed | phr00t merge model (fp8_e4m3fn), 8-step LCM schedule, 80 prompt templates (55 SFW + 25 NSFW) |
+| **LTX2.2 Text-to-Video** | Generate video from a text prompt — no input image needed | phr00t merge model (fp8_e4m3fn), 8-step LCM schedule, 80 prompt templates |
 | **LTX2.2 Image-to-Video** | Animate any photo with text guidance | Same pipeline with image conditioning and adjustable strength |
 
 **Hardware-aware quality presets**: 8 presets including Auto-Detect — queries ComfyUI `/system_stats` to classify your GPU tier and auto-selects optimal resolution, duration, and post-processing chain. Supports LoRA injection (distilled, motion-track, union-control), ChunkFeedForward VRAM optimization, and the full post-processing stack below.

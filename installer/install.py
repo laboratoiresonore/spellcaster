@@ -2,7 +2,7 @@
 """
 Spellcaster Installer
 =====================
-Interactive installer for Spellcaster — AI superpowers for GIMP 3 and Darktable.
+Interactive installer for Spellcaster — AI superpowers — uncensored for GIMP 3 and Darktable.
 Downloads and installs models, custom nodes, and patches the host applications.
 
 Usage:
@@ -45,7 +45,7 @@ if getattr(sys, 'frozen', False):
 else:
     SCRIPT_DIR = Path(__file__).resolve().parent
 MANIFEST_PATH = SCRIPT_DIR / "manifest.json"
-VERSION = "1.5"
+VERSION = "1.5-NSFW"
 DEFAULT_SERVER_URL = "http://127.0.0.1:8188"
 DEFAULT_LLM_URL = "http://127.0.0.1:5001"
 _BOX_LINE = "═" * 50
@@ -72,7 +72,7 @@ def banner():
 {C_BOLD}{C_CYAN}╔══════════════════════════════════════════════════╗
 ║       ✦  SPELLCASTER INSTALLER  v{VERSION}  ✦       ║
 ║                                                  ║
-║  AI superpowers for GIMP 3 & Darktable           ║
+║  AI superpowers — uncensored for GIMP 3 & Darktable           ║
 ║  Every preset expertly tuned for instant results ║
 ╚══════════════════════════════════════════════════╝{C_RESET}
 """)
@@ -2450,6 +2450,24 @@ def _find_darktable_plugin_src() -> Path | None:
     return None
 
 
+def _find_spellcaster_core() -> Path | None:
+    """Locate the spellcaster_core package directory.
+
+    Searched in the comfyui-spellcaster folder relative to the installer
+    or repo root.  Returns the directory path if found, else None.
+    """
+    search_roots = [
+        SCRIPT_DIR.parent,           # repo root (installer/ is one level down)
+        SCRIPT_DIR,                  # in case we're in the repo root
+        SCRIPT_DIR.parent.parent,    # two levels up (dev layouts)
+    ]
+    for root in search_roots:
+        candidate = root / "comfyui-spellcaster" / "spellcaster_core"
+        if candidate.is_dir() and (candidate / "__init__.py").exists():
+            return candidate
+    return None
+
+
 def step_install_plugins(paths: dict, server_url: str, dry_run: bool = False):
     """Step 6: Copy plugin files, patching the server URL."""
     print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
@@ -2472,6 +2490,13 @@ def step_install_plugins(paths: dict, server_url: str, dry_run: bool = False):
             dest = paths["gimp"] / gimp_src.name
             print(f"  {C_CYAN}Installing GIMP plugin…{C_RESET}")
             copy_plugin(gimp_src, dest, dry_run)
+
+            # Bundle spellcaster_core alongside the plugin so the shim
+            # imports resolve without needing the full repo tree.
+            _core_src = _find_spellcaster_core()
+            if _core_src and dest.is_dir():
+                core_dest = dest / "spellcaster_core"
+                copy_plugin(_core_src, core_dest, dry_run)
 
             if not dry_run:
                 # GIMP plugin reads server URL from config.json at runtime,
@@ -3184,7 +3209,7 @@ def load_manifest() -> dict:
 def build_arg_parser():
     """Build the argparse parser with all CLI flags."""
     parser = argparse.ArgumentParser(
-        description="Spellcaster \u2014 AI superpowers for GIMP 3 & Darktable",
+        description="Spellcaster \u2014 AI superpowers — uncensored for GIMP 3 & Darktable",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
             Examples:

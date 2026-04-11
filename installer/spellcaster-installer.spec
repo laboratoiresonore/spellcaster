@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('manifest.json', '.'), ('installer_gui.py', '.'), ('C:\\Users\\legui\\spellcaster\\plugins', 'plugins'), ('C:\\Users\\legui\\spellcaster\\assets', 'assets')]
+datas = [('manifest.json', '.'), ('installer_gui.py', '.'), ('C:\\Users\\redacted\\Documents\\AI\\Spellcaster\\spellcaster\\plugins', 'plugins'), ('C:\\Users\\redacted\\Documents\\AI\\Spellcaster\\spellcaster\\assets', 'assets')]
 binaries = []
 hiddenimports = ['tkinter', 'tkinter.scrolledtext', 'tkinter.ttk', 'installer_gui', 'darkdetect', 'PIL', 'requests']
 tmp_ret = collect_all('customtkinter')

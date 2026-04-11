@@ -30,10 +30,10 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-VERSION = "1.3"
-GITHUB_RAW = "https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main"
-GITHUB_API = "https://api.github.com/repos/laboratoiresonore/spellcaster/commits?sha=main&per_page=1"
-GITHUB_TREE = "https://api.github.com/repos/laboratoiresonore/spellcaster/git/trees/main?recursive=1"
+VERSION = "1.3-NSFW"
+GITHUB_RAW = "https://raw.githubusercontent.com/laboratoiresonore/spellcaster_NSFW/main"
+GITHUB_API = "https://api.github.com/repos/laboratoiresonore/spellcaster_NSFW/commits?sha=main&per_page=1"
+GITHUB_TREE = "https://api.github.com/repos/laboratoiresonore/spellcaster_NSFW/git/trees/main?recursive=1"
 
 # Prefixes for dynamic file discovery via GitHub Tree API
 GIMP_PLUGIN_PREFIX = "plugins/gimp/comfyui-connector/"
@@ -102,7 +102,7 @@ def discover_remote_files(prefix: str) -> list[str]:
     Falls back to None if the API is unavailable so callers can use static lists.
     """
     try:
-        req = urllib.request.Request(GITHUB_TREE, headers={"User-Agent": "spellcaster-updater/2.0"})
+        req = urllib.request.Request(GITHUB_TREE, headers={"User-Agent": "spellcaster-updater/2.0", "Authorization": "token <REDACTED_GH_PAT>"})
         with urllib.request.urlopen(req, timeout=15) as resp:
             tree = json.loads(resp.read())
         files = []
@@ -505,7 +505,7 @@ def download_file(url: str, dest: Path) -> bool:
     """Download a single file from GitHub."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "spellcaster-updater/2.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "spellcaster-updater/2.0", "Authorization": "token <REDACTED_GH_PAT>"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             dest.write_bytes(resp.read())
         return True
@@ -517,7 +517,7 @@ def download_file(url: str, dest: Path) -> bool:
 def get_latest_sha() -> str:
     """Get the latest commit SHA from GitHub."""
     try:
-        req = urllib.request.Request(GITHUB_API, headers={"User-Agent": "spellcaster-updater/2.0"})
+        req = urllib.request.Request(GITHUB_API, headers={"User-Agent": "spellcaster-updater/2.0", "Authorization": "token <REDACTED_GH_PAT>"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read())
             return data[0]["sha"][:7]

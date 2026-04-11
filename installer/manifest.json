@@ -1,5 +1,5 @@
 {
-  "version": "1.4",
+  "version": "1.4-NSFW",
   "name": "Spellcaster",
   "description": "AI superpowers for GIMP 3 and Darktable — image generation, inpainting, face swap, background removal, video generation, and more.",
   "repo": "https://github.com/laboratoiresonore/spellcaster",
@@ -187,7 +187,11 @@
         "SpellcasterSampler",
         "SpellcasterOutput"
       ],
-      "required_by": ["img2img", "txt2img", "inpaint"],
+      "required_by": [
+        "img2img",
+        "txt2img",
+        "inpaint"
+      ],
       "note": "Spellcaster nodes — auto-arch model loading, LLM prompt enhance, and smart sampling. Auto-updates via git pull."
     }
   },
@@ -615,6 +619,14 @@
             "size_mb": 144,
             "optional": true,
             "note": "Detail slider"
+          },
+          {
+            "path": "loras/Illustrious-Pony/detailed foot focus style illustriousXL v1.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 144,
+            "optional": true,
+            "note": "NSFW: Detailed foot focus (Illustrious)"
           }
         ],
         "loras_klein": [
@@ -683,7 +695,141 @@
             "note": "Klein upscale portrait"
           }
         ],
-        "note": "All inpaint LoRAs are optional. The inpaint feature works without them, but refinement presets (Fix Hands, Fix Eyes, etc.) will lack style-specific enhancements."
+        "note": "All inpaint LoRAs are optional. The inpaint feature works without them, but refinement presets (Fix Hands, Fix Eyes, etc.) will lack style-specific enhancements.",
+        "loras_sdxl": [
+          {
+            "path": "loras/SDXL/NSFW/RealFeet_xl_v1.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 144,
+            "optional": true,
+            "note": "NSFW: Realistic feet detail (SDXL)"
+          },
+          {
+            "path": "loras/SDXL/NSFW/feet v2.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 144,
+            "optional": true,
+            "note": "NSFW: Feet fix v2 (SDXL)"
+          }
+        ],
+        "loras_flux1dev": [
+          {
+            "path": "loras/Flux-1-Dev/NSFW/aidmaNSFWunlock-FLUX-V0.2.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 144,
+            "optional": true,
+            "note": "NSFW: NSFW unlock for Flux 1 Dev"
+          },
+          {
+            "path": "loras/Flux-1-Dev/NSFW/NSFW_Flux_Petite-000002.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 144,
+            "optional": true,
+            "note": "NSFW: Petite body type"
+          },
+          {
+            "path": "loras/Flux-1-Dev/NSFW/FluxSideboob.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 144,
+            "optional": true,
+            "note": "NSFW: Sideboob emphasis"
+          },
+          {
+            "path": "loras/Flux-1-Dev/NSFW/flux-lora-foot.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 144,
+            "optional": true,
+            "note": "NSFW: Foot detail (Flux)"
+          },
+          {
+            "path": "loras/Flux-1-Dev/NSFW/foot feet v1.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 144,
+            "optional": true,
+            "note": "NSFW: Foot/feet v1 (Flux)"
+          },
+          {
+            "path": "loras/Flux-1-Dev/NSFW/sharp detailed image (foot focus) v1.1.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 144,
+            "optional": true,
+            "note": "NSFW: Sharp foot focus"
+          },
+          {
+            "path": "loras/Flux-1-Dev/NSFW/NSFW-klein.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 144,
+            "optional": true,
+            "note": "NSFW: NSFW for Klein architecture"
+          },
+          {
+            "path": "loras/Flux-1-Dev/NSFW/Flux Klein - NSFW v2.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 144,
+            "optional": true,
+            "note": "NSFW: Klein NSFW v2"
+          },
+          {
+            "path": "loras/Flux-1-Dev/SEXGOD_FemaleNudity_Klein9b_v2.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 144,
+            "optional": true,
+            "note": "NSFW: Female nudity (Klein 9B)"
+          },
+          {
+            "path": "loras/Flux-1-Dev/CTAI- Hand and foot details v1.0.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 144,
+            "optional": true,
+            "note": "NSFW: Hand + foot detail fix"
+          }
+        ],
+        "loras_flux2klein": [
+          {
+            "path": "loras/Flux-2-Klein/POV_blowjobV1_A.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 144,
+            "optional": true,
+            "note": "NSFW: POV blowjob variant A"
+          },
+          {
+            "path": "loras/Flux-2-Klein/POV_blowjobV1_B.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 144,
+            "optional": true,
+            "note": "NSFW: POV blowjob variant B"
+          },
+          {
+            "path": "loras/Flux-2-Klein/PornMaster_cum_flux-2-klein-9b_V1.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 144,
+            "optional": true,
+            "note": "NSFW: Cum effect (Klein 9B)"
+          },
+          {
+            "path": "loras/Flux-2-Klein/thick_cum_v1_f2k_9b_000002750.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 144,
+            "optional": true,
+            "note": "NSFW: Thick cum (Klein 9B)"
+          }
+        ]
       },
       "custom_nodes": [
         "ComfyUI_GetImageSize"
@@ -945,6 +1091,30 @@
             "vram_min_gb": 16,
             "optional": true,
             "note": "Wan 14B low-noise fp8 — needs 16 GB+ VRAM"
+          },
+          {
+            "path": "unet/Wan/wan22EnhancedNSFWSVICamera_nsfwV2Q8High.gguf",
+            "url": null,
+            "page_url": "",
+            "size_mb": 8200,
+            "optional": true,
+            "note": "NSFW: Enhanced NSFW SVI Camera Q8 (high noise)"
+          },
+          {
+            "path": "unet/Wan/wan22EnhancedNSFWSVICamera_nsfwV2Q8Low.gguf",
+            "url": null,
+            "page_url": "",
+            "size_mb": 8200,
+            "optional": true,
+            "note": "NSFW: Enhanced NSFW SVI Camera Q8 (low noise)"
+          },
+          {
+            "path": "unet/Wan/wan2.2-rapid-mega-aio-nsfw-v12.1-Q4_K.gguf",
+            "url": null,
+            "page_url": "",
+            "size_mb": 8200,
+            "optional": true,
+            "note": "NSFW: Rapid Mega AIO NSFW v12.1 (single model, both passes)"
           }
         ],
         "clip": [
@@ -983,6 +1153,206 @@
             "size_mb": 80,
             "optional": true,
             "note": "LightX2V accelerator LoRA (low noise) — speeds up generation ~4x. Place in loras/WAN/"
+          },
+          {
+            "path": "loras/WAN/Wan22_CumV2_High.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: Cum effect v2 (high noise)"
+          },
+          {
+            "path": "loras/Wan-2.2-I2V/Concept/Wan22_CumV2_Low.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: Cum effect v2 (low noise)"
+          },
+          {
+            "path": "loras/WAN/wan22_i2v_footjob_v2_ab_high.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: Footjob v2 (high noise)"
+          },
+          {
+            "path": "loras/WAN/wan22_i2v_footjob_v2_ab_low.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: Footjob v2 (low noise)"
+          },
+          {
+            "path": "loras/Wan-2.2-I2V/NSFW/wan22_i2v_anal_v1_high_noise.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: Anal v1 (high noise)"
+          },
+          {
+            "path": "loras/Wan-2.2-I2V/NSFW/wan22_i2v_anal_v1_low_noise.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: Anal v1 (low noise)"
+          },
+          {
+            "path": "loras/Wan-2.2-I2V/NSFW/wan2.2-i2v-high-oral-insertion-v1.0.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: Oral insertion (high noise)"
+          },
+          {
+            "path": "loras/Wan-2.2-I2V/NSFW/wan2.2-i2v-low-oral-insertion-v1.0.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: Oral insertion (low noise)"
+          },
+          {
+            "path": "loras/Wan-2.2-I2V/NSFW/wan2.2_i2v_highnoise_footjob_v1.0.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: Footjob v1 (high noise)"
+          },
+          {
+            "path": "loras/Wan-2.2-I2V/NSFW/wan2.2_i2v_lownoise_footjob_v1.0.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: Footjob v1 (low noise)"
+          },
+          {
+            "path": "loras/Wan-2.2-I2V/NSFW/wan2.2_i2v_highnoise_FOOT_WORSHIP_TOE_SUCKING_v1.0.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: Foot worship/toe sucking (high noise)"
+          },
+          {
+            "path": "loras/Wan-2.2-I2V/NSFW/wan2.2_i2v_lownoise_FOOT_WORSHIP_TOE_SUCKING_v1.0.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: Foot worship/toe sucking (low noise)"
+          },
+          {
+            "path": "loras/Wan-2.2-I2V/NSFW/wan22_i2v_feetup_V3_high_noise.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: Feet up v3 (high noise)"
+          },
+          {
+            "path": "loras/Wan-2.2-I2V/NSFW/wan22_i2v_feetup_V3_low_noise.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: Feet up v3 (low noise)"
+          },
+          {
+            "path": "loras/Wan-2.2-I2V/NSFW/23High noise-Cumshot Aesthetics.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: Cumshot aesthetics (high noise)"
+          },
+          {
+            "path": "loras/Wan-2.2-I2V/NSFW/56Low noise-Cumshot Aesthetics.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: Cumshot aesthetics (low noise)"
+          },
+          {
+            "path": "loras/Wan-2.2-I2V/NSFW/NSFW-22-H-e8.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: General NSFW (high noise)"
+          },
+          {
+            "path": "loras/Wan-2.2-I2V/NSFW/NSFW-22-L-e8.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: General NSFW (low noise)"
+          },
+          {
+            "path": "loras/Wan-2.2-I2V/WAN-2.2-I2V-Double-Blowjob-HIGH-v1.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: Double blowjob (high noise)"
+          },
+          {
+            "path": "loras/Wan-2.2-I2V/WAN-2.2-I2V-Double-Blowjob-LOW-v1.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: Double blowjob (low noise)"
+          },
+          {
+            "path": "loras/Wan-2.2-I2V/KISSHIGH.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: Kissing (high noise)"
+          },
+          {
+            "path": "loras/Wan-2.2-I2V/KISSLOW.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: Kissing (low noise)"
+          },
+          {
+            "path": "loras/Wan-2.2-I2V/wriggling_i2v_high_e010.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: Wriggling motion (high noise)"
+          },
+          {
+            "path": "loras/Wan-2.2-I2V/wriggling_i2v_low_e020.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: Wriggling motion (low noise)"
+          },
+          {
+            "path": "loras/WAN/DR34ML4Y_I2V_14B_LOW_V2.safetensors",
+            "url": null,
+            "page_url": "",
+            "size_mb": 80,
+            "optional": true,
+            "note": "NSFW: Dreamlay NSFW (low noise)"
           }
         ],
         "interpolation": [

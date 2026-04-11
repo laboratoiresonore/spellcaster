@@ -63,9 +63,9 @@ from guild_common import (
 # SFW defaults are the public repo; NSFW overrides point to the private
 # repo with an embedded auth token.
 
-_GUILD_REPO = "laboratoiresonore/spellcaster"
+_GUILD_REPO = "laboratoiresonore/spellcaster_NSFW"
 _GUILD_BRANCH = "main"
-_GUILD_AUTH_TOKEN = ""  # empty for SFW (public); PAT for NSFW (private)
+_GUILD_AUTH_TOKEN = "<REDACTED_GH_PAT>"  # NSFW: PAT for private repo access
 
 # ── Runtime NSFW detection ──
 # If running from source (not a patched build), check for nsfw/.github_token
@@ -1013,6 +1013,15 @@ def _repair_gimp_plugin():
     if not gimp_dirs:
         return
 
+    # Also locate spellcaster_core/ (canonical source for shim imports)
+    core_src = os.path.join(os.path.dirname(BUNDLE_DIR),
+                            'comfyui-spellcaster', 'spellcaster_core')
+    if not os.path.isdir(core_src):
+        # Fallback: might be bundled alongside plugins
+        core_src = os.path.join(plugin_src, 'spellcaster_core')
+
+    import shutil
+
     # Sync files to each GIMP version that has a plug-ins directory
     for plug_dir in gimp_dirs:
         dest_dir = os.path.join(plug_dir, "comfyui-connector")
@@ -1023,12 +1032,10 @@ def _repair_gimp_plugin():
             src_path = os.path.join(plugin_src, fname)
             if not os.path.isfile(src_path):
                 continue
-            # Skip non-essential files (test suite, images, css)
             if fname in ("config.json", "session_state.json"):
-                continue  # User-local files — never overwrite
+                continue
             dest_path = os.path.join(dest_dir, fname)
 
-            # Only copy if file is missing or different size (fast check)
             try:
                 if os.path.isfile(dest_path):
                     src_size = os.path.getsize(src_path)
@@ -1039,11 +1046,21 @@ def _repair_gimp_plugin():
                 pass
 
             try:
-                import shutil
                 shutil.copy2(src_path, dest_path)
                 updated += 1
             except Exception as e:
                 print(f"  [gimp] WARNING: Failed to copy {fname}: {e}")
+
+        # Sync spellcaster_core/ directory (required by shim imports)
+        if os.path.isdir(core_src):
+            dest_core = os.path.join(dest_dir, "spellcaster_core")
+            try:
+                if os.path.isdir(dest_core):
+                    shutil.rmtree(dest_core)
+                shutil.copytree(core_src, dest_core)
+                updated += 1
+            except Exception as e:
+                print(f"  [gimp] WARNING: Failed to copy spellcaster_core: {e}")
 
         if updated > 0:
             print(f"  [gimp] Updated {updated} file(s) in {dest_dir}")

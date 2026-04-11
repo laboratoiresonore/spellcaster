@@ -1,15 +1,15 @@
 [project]
-name = "comfyui-spellcaster-nsfw"
-description = "Architecture-aware nodes for AI image generation + NSFW LoRA presets. Extends ComfyUI-Spellcaster with curated adult LoRA categories per architecture."
+name = "comfyui-spellcaster"
+description = "Architecture-aware nodes for AI image generation. Auto-detects model architecture (SD1.5, SDXL, Flux, Klein, Chroma), loads correct CLIP/VAE, enhances prompts via local LLM, and samples with optimal settings."
 version = "1.0.0"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 
 [project.urls]
-Repository = "https://github.com/laboratoiresonore/ComfyUI-Spellcaster-NSFW"
-Issues = "https://github.com/laboratoiresonore/ComfyUI-Spellcaster-NSFW/issues"
+Repository = "https://github.com/laboratoiresonore/ComfyUI-Spellcaster"
+Issues = "https://github.com/laboratoiresonore/ComfyUI-Spellcaster/issues"
 
 [tool.comfy]
 PublisherId = "laboratoiresonore"
-DisplayName = "Spellcaster Nodes (NSFW)"
+DisplayName = "Spellcaster Nodes"
 Icon = ""
