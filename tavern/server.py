@@ -887,8 +887,8 @@ def fetch_all_characters(comfy_url=None):
     nodes = discover_nodes()
 
     # 0. Installer Wizard — appears on first run (before calibration)
-    cal_path = os.path.join(_STATE_DIR, "calibration_matrix.json") if '_STATE_DIR' in dir() else ""
-    setup_done = os.path.exists(cal_path) if cal_path else False
+    cal_path = os.path.join(_STATE_DIR, "calibration_matrix.json")
+    setup_done = os.path.exists(cal_path)
     if not setup_done:
         iw = INSTALLER_WIZARD
         chars.append({
@@ -900,6 +900,53 @@ def fetch_all_characters(comfy_url=None):
             "color2": iw["color2"],
         })
         _STUDIO_BY_ID[iw["id"]] = iw
+
+    # 0b. SillyTavern wizard — appears when ST is detected
+    _st_dir = ""
+    try:
+        _guild_cfg = {}
+        _cfg_path = os.path.join(_THIS_DIR, "guild_config.json")
+        if os.path.exists(_cfg_path):
+            with open(_cfg_path, "r") as _f:
+                _guild_cfg = json.load(_f)
+        _st_dir = _guild_cfg.get("sillytavern_dir", "")
+    except Exception:
+        pass
+    if _st_dir and os.path.isdir(_st_dir):
+        st_wizard = {
+            "id": "studio_sillytavern",
+            "type": "studio",
+            "name": "Tavern Keeper",
+            "subtext": "SillyTavern Enhancement Suite",
+            "color1": "hsl(200, 85%, 40%)",
+            "color2": "hsl(170, 100%, 50%)",
+        }
+        chars.append(st_wizard)
+        _STUDIO_BY_ID["studio_sillytavern"] = {
+            **st_wizard,
+            "archetype": "a jovial innkeeper with a magical tavern, enchanted mugs floating around",
+            "build_fns": [],
+            "system_prompt": (
+                "You are the Tavern Keeper, the Guild's link to SillyTavern.\n\n"
+                "YOUR TOOLS (SillyTavern enhancements):\n"
+                "1. **Background Generator** — Generate and set tavern backgrounds\n"
+                "2. **Character Restyler** — Restyle character card PNGs\n"
+                "3. **Expression Generator** — Generate emotion expression sprites\n"
+                "4. **Casting Polaroid** — Build a reusable face model for a character\n"
+                "5. **Body Double** — Generate full-body reference with face swap\n"
+                "6. **Scene Compositor** — Composite characters into backgrounds\n"
+                "7. **Animator** — Animate character portraits as living GIFs\n\n"
+                "PROTOCOL:\n"
+                "- Ask the user WHICH SillyTavern feature they want to use\n"
+                "- Explain what each tool does in simple terms\n"
+                "- Guide them step by step\n"
+                "- For actions, output a JSON block:\n"
+                "  ```json\n{\"st_action\": \"generate_bg\", \"params\": {...}}\n```\n\n"
+                "PERSONALITY: You're a warm, slightly tipsy tavern keeper who loves\n"
+                "making the tavern look beautiful. You call the characters 'guests'\n"
+                "and the user 'innkeeper' or 'boss'.\n"
+            ),
+        }
 
     # 1. Studio Characters (capability-group wizards) — always present
     for sc in STUDIO_CHARACTERS:
