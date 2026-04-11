@@ -237,6 +237,9 @@ robocopy "%SFW_ROOT%\installer" "%NSFW_ROOT%\installer" /s /xd __pycache__ .buil
 :: Plugins
 robocopy "%SFW_ROOT%\plugins" "%NSFW_ROOT%\plugins" /s /xd __pycache__ >nul 2>&1
 
+:: ComfyUI Spellcaster node pack (ONE SOURCE OF TRUTH)
+robocopy "%SFW_ROOT%\comfyui-spellcaster" "%NSFW_ROOT%\comfyui-spellcaster" /s /xd __pycache__ >nul 2>&1
+
 :: Scaffold — individual files to preserve NSFW-only modules
 for %%F in (meta_wizard.py introspector.py workflow_wizard.py workflow_parser.py comfyui_runner.py presets.py prompt_builder.py wizard.py bridge_launcher.py pipeline_wizard.py __init__.py) do (
     if exist "%SFW_ROOT%\scaffold\%%F" (
