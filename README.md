@@ -160,7 +160,7 @@ That's it. [ComfyUI](https://github.com/comfyanonymous/ComfyUI) is the AI engine
 
 > **Never heard of ComfyUI?** That's fine. The installer can download and set it up for you. You'll never need to open it — Spellcaster talks to it behind the scenes. Think of it like an engine under the hood.
 >
-> **Don't have a GPU?** No problem. You can connect to a ComfyUI server running on another computer on your network (a friend's gaming PC, a cloud instance, etc.). The installer has a remote server mode.
+> **Don't have a GPU?** No problem. The installer's **Antenna Installer** connects to a ComfyUI server on another computer on your network (a friend's gaming PC, a cloud instance, etc.).
 >
 > **Don't want to use GIMP or Darktable at all?** You can skip them entirely and control Spellcaster through [The Wizard Guild](#just-talk-to-it-the-wizard-guild--scaffold-system) — an AI chatbot that handles everything for you.
 
@@ -203,54 +203,9 @@ That's it. [ComfyUI](https://github.com/comfyanonymous/ComfyUI) is the AI engine
 >
 > **Plugin not showing up?** Download the [**Manual Update & Repair tool**](https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-manual-update.exe) ([Linux version](https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-manual-update)) — it finds and fixes broken installations automatically.
 
-### ComfyUI on Another Machine? (Remote / Network Install)
+### ComfyUI on Another Machine?
 
-If ComfyUI runs on a **different computer** on your local network (a server, a friend's gaming PC, a cloud box), use the **Remote Installer** instead. It sets up everything on *your* machine — GIMP plugin, Darktable plugin, Wizard Guild, desktop shortcuts — pre-configured to talk to the remote ComfyUI. No ComfyUI needed locally.
-
-```bash
-# Clone the repo (or use your existing clone)
-git clone https://github.com/laboratoiresonore/spellcaster
-cd spellcaster
-
-# Point it at your ComfyUI server — everything else is automatic
-python installer/install_remote.py http://<COMFYUI-IP>:8188
-
-# Don't know the IP? Let it scan your network
-python installer/install_remote.py --scan
-
-# Also have a local LLM on the server machine?
-python installer/install_remote.py http://<COMFYUI-IP>:8188 --llm-url http://<LLM-IP>:5001
-```
-
-> **Want a standalone .exe?** Build it yourself with `python installer/build_installer.py --remote-only` — produces a single `spellcaster-remote-installer.exe` that bundles everything. Standalone binaries will also be available in future releases.
-
-<details>
-<summary><strong>What the remote installer does</strong></summary>
-
-1. **Probes the remote ComfyUI** — queries `/system_stats` and `/object_info` to discover GPU, VRAM, installed nodes, checkpoints, LoRAs, VAEs, and ControlNets
-2. **Detects server edition** — identifies the installed edition and configures the local install accordingly
-3. **Identifies available features** — cross-references server capabilities against the feature manifest to show what's ready to use
-4. **Auto-detects GIMP and Darktable** — finds your local installations (Windows registry, macOS Application Support, Linux config dirs, Flatpak/Snap)
-5. **Installs plugins** — copies the GIMP and Darktable plugins with the remote server URL pre-configured
-6. **Deploys the Wizard Guild** — full standalone web UI installation with launcher scripts
-7. **Creates desktop shortcuts** — Windows Start Menu, macOS .command, Linux .desktop entries
-8. **Writes shared settings** — `spellcaster_settings.json` with all detected models, LoRA architecture classification, and server config
-
-Everything is **completely autonomous** — no prompts, no decisions. Just give it the server URL and walk away. Use `--dry-run` to preview without making changes.
-
-| Flag | What It Does |
-|---|---|
-| `--scan` | Auto-discover ComfyUI servers on your local network |
-| `--port 8188` | Port to scan (default: 8188) |
-| `--llm-url URL` | LLM server for Wizard Guild prompt enhancement |
-| `--skip-gimp` | Don't install the GIMP plugin |
-| `--skip-darktable` | Don't install the Darktable plugin |
-| `--skip-guild` | Don't install the Wizard Guild |
-| `--skip-shortcuts` | Don't create desktop shortcuts |
-| `--interactive` | Use guided prompts instead of auto-detection |
-| `--dry-run` | Preview what would happen without making changes |
-
-</details>
+If ComfyUI runs on a different computer on your network, click the **Antenna Installer** button on the Welcome page — it auto-detects your server and sets up all local plugins and shortcuts.
 
 ### Already Using ComfyUI Manager?
 
@@ -276,7 +231,7 @@ The installer is an 8-step guided wizard. It's designed so you never have to mak
 
 **The installer detects your GPU** and only shows features your hardware can run. If you have 4 GB of VRAM, you won't see options that need 16 GB. No guesswork.
 
-**Remote server mode**: Don't have a GPU? Use the [Remote Installer](#comfyui-on-another-machine-remote--network-install) — it connects to a ComfyUI server on another machine and sets up everything locally. Or use the main installer with `--server-url http://<COMFYUI-IP>:8188`.
+**Remote server mode**: Don't have a GPU? Use the **Antenna Installer** button on the Welcome page — it connects to a ComfyUI server on another machine and sets up everything locally.
 
 </details>
 
