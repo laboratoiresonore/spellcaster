@@ -2430,11 +2430,37 @@ def _find_output_node(workflow):
 def _dispatch_workflow(workflow, comfy_url, timeout=180):
     """Submit an arbitrary workflow to ComfyUI, poll for results.
 
+    Runs preflight check first — verifies all nodes exist on the server
+    and applies automatic fallbacks for known-broken nodes.
+
     Returns dict with output info (image URLs, video URLs, etc.).
     Raises Exception on failure or timeout.
     """
-    # Submit
-    # Debug: log workflow node types for troubleshooting
+    # Preflight: check node availability and apply fallbacks
+    try:
+        from spellcaster_core.preflight import preflight_workflow
+        ok, workflow, report = preflight_workflow(workflow, comfy_url)
+        if report.get("substituted"):
+            for orig, desc in report["substituted"]:
+                print(f"  [Preflight] {orig} -> {desc}")
+        if not ok:
+            missing = report.get("missing", [])
+            raise Exception(
+                f"Missing ComfyUI nodes (no fallback): {', '.join(missing)}. "
+                f"Install the required custom nodes on your ComfyUI server.")
+    except ImportError:
+        pass  # spellcaster_core not available — skip preflight
+
+    # Optimizer: VRAM check, resolution capping, auto-tuning
+    try:
+        from spellcaster_core.optimizer import optimize_workflow
+        workflow, opt_warnings = optimize_workflow(workflow, comfy_url=comfy_url)
+        for w in opt_warnings:
+            print(f"  [Optimizer] {w}")
+    except ImportError:
+        pass
+
+    # Debug: log workflow node types
     node_types = {nid: n.get('class_type', '?') for nid, n in workflow.items()}
     print(f"  [Guild] Workflow nodes: {node_types}")
     try:
