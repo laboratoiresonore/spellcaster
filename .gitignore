@@ -1,0 +1,23 @@
+# Build artifacts — uploaded to GitHub Releases, not committed
+dist/
+build/
+*.spec
+*.spec.bak
+
+# Virtual environments
+.build-venv/
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
