@@ -203,6 +203,10 @@ That's it. [ComfyUI](https://github.com/comfyanonymous/ComfyUI) is the AI engine
 >
 > **Plugin not showing up?** Download the [**Manual Update & Repair tool**](https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-manual-update.exe) ([Linux version](https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-manual-update)) — it finds and fixes broken installations automatically.
 
+### Already Using ComfyUI Manager?
+
+If you installed [ComfyUI-Spellcaster](https://github.com/laboratoiresonore/ComfyUI-Spellcaster) through ComfyUI Manager (or `git clone`), you already have the nodes — but you're missing the rest of the suite. On first load, Spellcaster drops a ready-to-run **`Install_Spellcaster_Suite.bat`** into your `custom_nodes` folder. Double-click it to get Wizard Guild, GIMP/Darktable plugins, desktop shortcuts, and the model downloader. You'll also see a toast notification in the ComfyUI web UI with a link.
+
 ### What the Installer Does For You
 
 The installer is an 8-step guided wizard. It's designed so you never have to make a decision you don't understand.

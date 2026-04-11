@@ -1,80 +1,105 @@
-# ComfyUI-Spellcaster-NSFW
+# ComfyUI-Spellcaster
 
-Architecture-aware nodes for AI image generation **+ NSFW LoRA presets and management**. Extends [ComfyUI-Spellcaster](https://github.com/laboratoiresonore/ComfyUI-Spellcaster) with curated adult LoRA categories per architecture.
+Architecture-aware nodes for AI image generation. Auto-detects your model architecture (SD 1.5, SDXL, Illustrious, Pony, ZIT, Flux Dev, Flux 2 Klein, Chroma), loads the correct CLIP and VAE, enhances prompts via local LLM, and samples with optimal settings — all automatically.
 
-Part of the [Spellcaster NSFW](https://github.com/laboratoiresonore/spellcaster_NSFW) ecosystem.
-
-> **Important:** Install this **instead of** the SFW version, not alongside it. This pack includes all 4 base nodes plus 2 NSFW-specific nodes.
+Part of the [Spellcaster](https://github.com/laboratoiresonore/spellcaster) ecosystem. ONE SOURCE OF TRUTH: the same architecture definitions power the GIMP plugin, Darktable plugin, and Wizard Guild.
 
 ## Nodes
 
-### Base Nodes (inherited from SFW)
+### Spellcaster Loader (Auto-Arch)
 
-All 4 nodes from [ComfyUI-Spellcaster](https://github.com/laboratoiresonore/ComfyUI-Spellcaster) are included:
+Drop in any model and it figures out the rest. Detects architecture from the filename, loads the right CLIP encoder(s) and VAE automatically.
 
-- **Spellcaster Loader (Auto-Arch)** — Auto-detect architecture, load MODEL + CLIP + VAE
-- **Spellcaster Prompt Enhance (LLM)** — LLM-powered prompt rewriting per architecture
-- **Spellcaster Sampler (Auto-Config)** — Auto-select KSampler vs CustomAdvanced
-- **Spellcaster Output (Privacy)** — VAE decode + privacy-aware save
+- **Checkpoint models** (SD 1.5, SDXL, Illustrious, Pony, ZIT): single-file load
+- **Separate loaders** (Flux Dev, Klein, Chroma): auto-selects UNET + correct CLIP type + correct VAE
+- **Klein CLIP auto-detect**: picks `qwen_3_8b` for 9B models, `qwen_3_4b` for 4B models
+- **Flux dual CLIP**: loads both `clip_l` and `t5xxl` with correct type
+- **Override inputs**: force architecture, CLIP, or VAE if auto-detect gets it wrong
 
-### NSFW Additions
+**Outputs:** `MODEL`, `CLIP`, `VAE`, `arch_key` (string for downstream nodes)
 
-#### Spellcaster NSFW LoRA (Presets)
+### Spellcaster Prompt Enhance (LLM)
 
-Architecture-aware NSFW LoRA loader with curated categories. Connect the `arch_key` output from Spellcaster Loader to auto-filter presets.
+Sends your prompt to a local LLM (KoboldCpp, Ollama, or any OpenAI-compatible server) for rewriting, tuned per architecture.
 
-**Three modes:**
+- **Booru tag style** for SD 1.5 / SDXL / Illustrious: comma-separated tags with quality boosters
+- **Natural language** for Flux / Klein / Chroma: descriptive sentences, no tag spam
+- **Architecture guidance**: the LLM receives expert rules specific to each model
+- **Graceful fallback**: if the LLM is offline, returns your original prompt unchanged
 
-- **preset** — Pick a single LoRA from an NSFW category (use `preset_index` to cycle through options)
-- **manual** — Select any LoRA from your full loras/ folder
-- **stack** — Apply ALL LoRAs in a category at once (with shared strength)
+**Inputs:** prompt text, `arch_key` from Loader, LLM URL, enable/disable toggle
 
-**Inputs:** MODEL, CLIP, mode, strength_model, strength_clip, arch_key, category, preset_index
+### Spellcaster Sampler (Auto-Config)
 
-**Outputs:** MODEL, CLIP, applied_loras (string listing what was loaded)
+One sampler node that works for every architecture. Auto-selects the correct sampling pipeline and fills in optimal defaults.
 
-#### Spellcaster NSFW LoRA (Model Only)
+- **Standard KSampler** for SD 1.5, SDXL, Illustrious, ZIT, Flux Dev
+- **SamplerCustomAdvanced + CFGGuider** for Flux 2 Klein (automatic)
+- **Auto-defaults**: steps, CFG, sampler algorithm, scheduler all populated from architecture config
+- **Override anything**: steps, CFG, sampler, scheduler, denoise all accept manual overrides (0 = use default)
 
-Same as above but applies to MODEL only (no CLIP modification). Designed for video pipelines (WAN I2V) where CLIP is handled separately.
+### Spellcaster Output (Privacy)
 
-## NSFW LoRA Categories
+VAE decode + save with metadata stripping enabled by default.
 
-| Architecture | Categories |
-|---|---|
-| Flux 1 Dev | nsfw_unlock, body_type, anatomy_detail, klein_nsfw |
-| Flux 2 Klein | acts, effects |
-| SDXL | anatomy_detail |
-| Illustrious | anatomy_detail |
-| WAN I2V | effects, acts, anatomy_detail, general_nsfw, motion |
-
-The node auto-discovers which LoRAs are installed. Missing LoRAs are silently skipped.
+- Decodes latent to image
+- Strips generation parameters from PNG metadata (no prompt leaks)
+- Clean timestamped filenames
+- Toggle metadata stripping on/off
 
 ## Install
+
+### ComfyUI Manager (recommended)
+
+Search for **"Spellcaster"** in ComfyUI Manager and click Install.
+
+> After install, you'll see a console banner and a toast in the ComfyUI web UI pointing you to the **full Spellcaster suite** (Wizard Guild, GIMP/Darktable plugins, desktop shortcut, model downloader). A ready-to-run `Install_Spellcaster_Suite.bat` is automatically placed in your `custom_nodes` folder — double-click it to set everything up.
 
 ### Manual (git clone)
 
 ```bash
 cd ComfyUI/custom_nodes
-git clone https://github.com/laboratoiresonore/ComfyUI-Spellcaster-NSFW.git
+git clone https://github.com/laboratoiresonore/ComfyUI-Spellcaster.git
 ```
 
 Restart ComfyUI. No pip dependencies required.
 
-### Via Spellcaster NSFW Installer
+### Via Spellcaster Installer
 
-If you're using the [Spellcaster NSFW installer](https://github.com/laboratoiresonore/spellcaster_NSFW), the node pack is installed automatically.
+If you're using the [Spellcaster installer](https://github.com/laboratoiresonore/spellcaster), the node pack is installed automatically along with the full suite.
+
+## Full Spellcaster Suite
+
+The nodes work standalone, but Spellcaster is much more than a ComfyUI node pack. The full suite includes:
+
+- **Wizard Guild** — AI chat interface with per-model wizards, scaffold editor, and LoRA management
+- **GIMP 3 plugin** — ComfyUI connector with architecture-aware menus and LoRA filtering
+- **Darktable plugin** — same ComfyUI connector for the Darktable photo editor
+- **Desktop shortcuts** — one-click launch for Wizard Guild
+- **Model downloader** — guided install of checkpoints, VAEs, LoRAs, and ControlNets
+
+If you installed via ComfyUI Manager, run `Install_Spellcaster_Suite.bat` in your `custom_nodes` folder (it's created automatically on first load). Or visit the [main repo](https://github.com/laboratoiresonore/spellcaster) to install from scratch.
 
 ## Workflow Templates
 
 Drag these into ComfyUI to get started:
 
-- `example_workflows/spellcaster_txt2img.json` — text-to-image (base nodes)
-- `example_workflows/spellcaster_img2img.json` — image-to-image (base nodes)
-- `example_workflows/spellcaster_nsfw_lora.json` — NSFW LoRA stacking workflow
+- `example_workflows/spellcaster_txt2img.json` — text-to-image with all 4 nodes
+- `example_workflows/spellcaster_img2img.json` — image-to-image with prompt enhancement
 
-## Updating
+## Supported Architectures
 
-All core updates come from the SFW version. NSFW LoRA presets are maintained separately. `git pull` updates both.
+| Architecture | Loader | Sampler | Negative Prompt | Default Steps | Default CFG |
+|---|---|---|---|---|---|
+| SD 1.5 | checkpoint | KSampler | Yes | 25 | 7.0 |
+| SDXL | checkpoint | KSampler | Yes | 30 | 6.5 |
+| Illustrious | checkpoint | KSampler | Yes | 28 | 5.5 |
+| Pony | checkpoint | KSampler | Yes | 28 | 5.5 |
+| ZIT (turbo) | checkpoint | KSampler | Yes | 6 | 2.0 |
+| Flux 1 Dev | unet+clip+vae | KSampler | No | 25 | 3.5 |
+| Chroma | unet+clip+vae | KSampler | No | 25 | 3.0 |
+| Flux 2 Klein | unet+clip+vae | CustomAdvanced | No | 4 | 1.0 |
+| Flux Kontext | unet+clip+vae | KSampler | No | 25 | 3.5 |
 
 ## License
 
