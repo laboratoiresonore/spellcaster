@@ -26,4 +26,12 @@
         "function_tools": [
           "spellcaster_generate_scene",
           "spellcaster_generate_portrait",
-          "spellcaster_set_at
+          "spellcaster_set_atmosphere"
+        ],
+        "requires_function_calling": true,
+        "body_description": "mysterious half-human half-AI figure, one organic eye one digital glowing eye, dark hair with circuit patterns, sleek dark coat with glowing seams, contemplative stance"
+      }
+    },
+    "avatar": ""
+  }
+}

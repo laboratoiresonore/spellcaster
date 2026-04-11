@@ -30,4 +30,13 @@
         "event_hooks": [
           "CHARACTER_MESSAGE_RENDERED"
         ],
-        "f
+        "function_tools": [
+          "spellcaster_generate_scene",
+          "spellcaster_set_atmosphere"
+        ],
+        "body_description": "ethereal being, hair flowing green-to-blue gradient, robes layered with miniature landscapes, emerging from a portal, surrounded by world fragments"
+      }
+    },
+    "avatar": ""
+  }
+}

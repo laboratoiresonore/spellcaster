@@ -22,4 +22,12 @@
       "spellcaster": {
         "type": "st_modifier",
         "feature": "animate",
-        "slash_command
+        "slash_commands": [
+          "/animate"
+        ],
+        "body_description": "playful sprite being, gravity-defying turquoise hair, large violet eyes, gossamer robes trailing like animation cels, dynamic mid-motion pose"
+      }
+    },
+    "avatar": ""
+  }
+}
