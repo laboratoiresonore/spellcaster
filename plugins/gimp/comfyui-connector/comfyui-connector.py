@@ -5340,6 +5340,11 @@ _HERO_PATH = str(Path(__file__).parent / "installer_background.png")
 _SPINNER_GIF_PATH = str(Path(__file__).parent / "spinner.gif")
 _DIALOG_GIF_PATH = str(Path(__file__).parent / "wizard_banner.gif")
 
+# Familiar — user's custom animated companion that replaces the spinner.
+# Generated in the Wizard Guild or via the GIMP plugin's Generate Familiar command.
+# Falls back to spinner.gif if no familiar has been generated yet.
+_FAMILIAR_PATH = str(Path(__file__).parent / "familiar.gif")
+
 def _make_banner_image(width=220, use_hero=False):
     """Load a Spellcaster image, scaled to `width` px. Returns Gtk.Image or None.
 
@@ -5359,18 +5364,25 @@ def _make_banner_image(width=220, use_hero=False):
 
 
 def _make_spinner_image():
-    """Load the animated spinner GIF for the processing window.
+    """Load the familiar (or fallback spinner) GIF for the processing window.
 
-    Returns a Gtk.Image configured with the animation, or None if
-    the GIF file is missing or cannot be loaded.
+    Priority: familiar.gif (user-generated) > spinner.gif (default).
+    The familiar is an animated companion the user generates in the
+    Wizard Guild — e.g., a crow that caws while processing.
+
+    Returns a Gtk.Image configured with the animation, or None.
     """
-    try:
-        anim = GdkPixbuf.PixbufAnimation.new_from_file(_SPINNER_GIF_PATH)
-        img = Gtk.Image()
-        img.set_from_animation(anim)
-        return img
-    except Exception:
-        return None
+    # Try user's familiar first
+    for gif_path in [_FAMILIAR_PATH, _SPINNER_GIF_PATH]:
+        try:
+            if os.path.isfile(gif_path) and os.path.getsize(gif_path) > 1000:
+                anim = GdkPixbuf.PixbufAnimation.new_from_file(gif_path)
+                img = Gtk.Image()
+                img.set_from_animation(anim)
+                return img
+        except Exception:
+            continue
+    return None
 
 
 def _make_dialog_banner():

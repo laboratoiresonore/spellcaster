@@ -1754,6 +1754,33 @@ settingsBtn.addEventListener('click', () => {
 });
 settingsCancel.addEventListener('click', () => settingsModal.classList.add('hidden'));
 
+// ── Familiar generator ──
+document.getElementById('familiar-btn')?.addEventListener('click', async () => {
+    const creature = prompt(
+        "Describe your familiar companion!\n\n" +
+        "This animated creature will replace the spinner in GIMP\n" +
+        "and appear while your images are being generated.\n\n" +
+        "Examples:\n" +
+        "  - a mystical crow with glowing purple eyes\n" +
+        "  - a tiny fire dragon curled on a crystal\n" +
+        "  - a ghost cat made of starlight\n" +
+        "  - an owl with rune-covered feathers\n",
+        "a mystical crow with glowing purple eyes");
+    if (!creature) return;
+
+    try {
+        const resp = await fetch('/api/generate_familiar', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({creature}),
+        });
+        const data = await resp.json();
+        alert(data.message + "\n\nThis will take 1-2 minutes. Your familiar will appear in the GIMP spinner next time you generate.");
+    } catch (e) {
+        alert('Failed to start familiar generation: ' + e.message);
+    }
+});
+
 // ── Health diagnostic panel ──
 document.getElementById('health-btn')?.addEventListener('click', async () => {
     try {
