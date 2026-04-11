@@ -103,7 +103,7 @@ class _ToolTip:
         self._tip = tk.Toplevel(self.widget)
         self._tip.wm_overrideredirect(True)
         self._tip.wm_geometry(f"+{x}+{y}")
-        label = tk.Label(self._tip, text=self.text, background="#1a1a2e", foreground="#ebe2df",
+        label = tk.Label(self._tip, text=self.text, background="#1a1a2e", foreground="#e2dfeb",
                          relief="solid", borderwidth=1, font=("Inter", 14),
                          wraplength=500, justify="left", padx=12, pady=8)
         label.pack()
@@ -301,7 +301,7 @@ class MagicalEffects:
         px = cx + 3 * math.sin(a * 0.5) * s
         py = cy + 2 * math.cos(a * 0.7) * s
         c.create_oval(px - pupil_r, py - pupil_r, px + pupil_r, py + pupil_r,
-                      fill="#E32234", outline="")
+                      fill="#D122E3", outline="")
 
         # Orbiting sparks
         for i in range(4):
@@ -393,7 +393,7 @@ class MagicalEffects:
 
         # Color shift as progress increases
         if fraction < 0.33:
-            self.progress_bar.configure(progress_color="#E32234")  # magenta
+            self.progress_bar.configure(progress_color="#D122E3")  # magenta
         elif fraction < 0.66:
             self.progress_bar.configure(progress_color="#8E44AD")  # purple
         elif fraction < 1.0:
@@ -462,15 +462,15 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         self.minsize(860, 540)
 
         # Premium Magical Theme Colors
-        self.bg_color = "#150B07"
-        self.sidebar_color = "#261510"
-        self.accent_color = "#E32234"
-        self.accent_hover = "#F74D5E"
+        self.bg_color = "#0B0715"
+        self.sidebar_color = "#150D26"
+        self.accent_color = "#D122E3"
+        self.accent_hover = "#E84DF7"
         self.accent_green = "#00E676"
         self.accent_amber = "#FFB300"
         self.accent_red = "#FF5252"
         self.text_main = "#FFFFFF"
-        self.text_muted = "#9D8E88"
+        self.text_muted = "#8E889D"
 
         ctk.set_appearance_mode("dark")
         self.configure(fg_color=self.bg_color)
@@ -548,7 +548,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         # Helper for themed buttons
         def mk_btn(text, cmd, row):
             b = ctk.CTkButton(self.sidebar_frame, text=text, anchor="w", command=cmd,
-                              fg_color="transparent", hover_color="#3B2115",
+                              fg_color="transparent", hover_color="#21153B",
                               text_color=self.text_main,
                               font=ctk.CTkFont(family="Inter", size=13, weight="bold"),
                               height=28)
@@ -605,7 +605,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         ctk.CTkLabel(f_welcome, text="\u2728 Welcome to Spellcaster \u2728",
                      font=ctk.CTkFont(family="Inter", size=30, weight="bold"),
                      text_color=self.accent_hover).pack(anchor="w", padx=30, pady=(35, 5))
-        ctk.CTkLabel(f_welcome, text="Spellcaster gives you AI superpowers — uncensored inside GIMP and Darktable.\n"
+        ctk.CTkLabel(f_welcome, text="Spellcaster gives you AI superpowers inside GIMP and Darktable.\n"
                      "You'll be able to create images from text, fix photos, swap faces, remove\n"
                      "backgrounds, change lighting, and much more — all with one click.",
                      font=ctk.CTkFont(family="Inter", size=15), text_color=self.text_muted,
@@ -637,7 +637,23 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         ctk.CTkButton(f_welcome, text="\u2728 Let's Go  \u2192", height=42,
                        font=ctk.CTkFont(family="Inter", size=16, weight="bold"),
                        fg_color=self.accent_color, hover_color=self.accent_hover,
-                       command=lambda: self.select_frame("usecases")).pack(padx=30, pady=(5, 25), anchor="w")
+                       command=lambda: self.select_frame("usecases")).pack(padx=30, pady=(5, 10), anchor="w")
+
+        # Antenna installer — for users whose ComfyUI runs on a different machine
+        ctk.CTkLabel(f_welcome, text="ComfyUI already running on another machine?",
+                     font=ctk.CTkFont(family="Inter", size=13, weight="bold"),
+                     text_color=self.text_muted).pack(anchor="w", padx=30, pady=(10, 2))
+        ctk.CTkLabel(f_welcome,
+                     text="If your AI backend is on a separate computer, use the Antenna Installer\n"
+                          "to connect this PC's apps (GIMP, Darktable, Wizard Guild) to it over the network.\n"
+                          "This only installs local plugins and shortcuts — it does NOT install ComfyUI or models.",
+                     font=ctk.CTkFont(family="Inter", size=12), text_color=self.text_muted,
+                     justify="left").pack(anchor="w", padx=30, pady=(0, 6))
+        ctk.CTkButton(f_welcome, text="\u2192  Antenna Installer  (local plugins only)", height=36,
+                       font=ctk.CTkFont(family="Inter", size=14),
+                       fg_color="#2b2b2b", hover_color="#3a3a3a",
+                       border_width=1, border_color=self.accent_color,
+                       command=self._launch_antenna_installer).pack(padx=30, pady=(0, 25), anchor="w")
 
         # ================================================================
         # STEP 2: WHAT YOU WANT — use-case driven feature pre-selection
@@ -707,7 +723,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         self._usecase_vars = {}
         for label, desc, features in _use_cases:
             card = ctk.CTkFrame(f_use, fg_color="#110A1F", corner_radius=10,
-                                border_width=1, border_color="#633A32")
+                                border_width=1, border_color="#3A2863")
             card.pack(fill="x", padx=30, pady=5)
             var = ctk.BooleanVar(value=False)
             self._usecase_vars[label] = (var, features)
@@ -771,7 +787,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
             "Unchecks ALL features so you start from a blank slate.\n"
             "You'll go through Steps 4-7 and check exactly what you want.\n"
             "For advanced users who know which models they need.",
-            "#633A32", self._quick_nothing)
+            "#3A2863", self._quick_nothing)
 
         # ================================================================
         # STEP 4: MODEL ADVISOR — Flux2-aware smart guidance
@@ -831,7 +847,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
 
         # General model advice
         tips_frame = ctk.CTkFrame(f_advisor, fg_color="#110A1F", corner_radius=10,
-                                   border_width=1, border_color="#633A32")
+                                   border_width=1, border_color="#3A2863")
         tips_frame.pack(fill="x", padx=30, pady=8)
         ctk.CTkLabel(tips_frame, text="Model Tips",
                      font=ctk.CTkFont(family="Inter", size=16, weight="bold"),
@@ -876,7 +892,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                        command=lambda: self.select_frame("paths")).pack(side="left")
         ctk.CTkButton(nav_row, text="Skip to Review & Deploy  \u21E5", height=42,
                        font=ctk.CTkFont(family="Inter", size=14),
-                       fg_color="#633A32", hover_color="#3B2115",
+                       fg_color="#3A2863", hover_color="#21153B",
                        command=lambda: self.select_frame("install")).pack(side="left", padx=15)
 
         # ================================================================
@@ -896,11 +912,11 @@ class InstallerApp(MagicalEffects, ctk.CTk):
             ctk.CTkLabel(row, text=label, width=170, anchor="w",
                          font=ctk.CTkFont(family="Inter", size=13, weight="bold")).pack(side="left")
             entry = ctk.CTkEntry(row, textvariable=var, width=350,
-                         border_color="#633A32", fg_color="#100B1A")
+                         border_color="#3A2863", fg_color="#100B1A")
             entry.pack(side="left", padx=10)
             btn = ctk.CTkButton(row, text="Browse", width=80, command=lambda: self._browse_dir(var),
-                          fg_color=self.sidebar_color, hover_color="#633A32",
-                          border_width=1, border_color="#633A32")
+                          fg_color=self.sidebar_color, hover_color="#3A2863",
+                          border_width=1, border_color="#3A2863")
             btn.pack(side="left")
             if entry_tip:
                 _ToolTip(entry, entry_tip)
@@ -943,7 +959,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
 
         # --- Summary panel ---
         summary_outer = ctk.CTkFrame(f_inst, fg_color=self.sidebar_color, corner_radius=10,
-                                      border_width=1, border_color="#633A32")
+                                      border_width=1, border_color="#3A2863")
         summary_outer.pack(fill="x", padx=30, pady=(0, 15))
 
         ctk.CTkLabel(summary_outer, text="Installation Summary",
@@ -973,7 +989,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         self.summary_details = ctk.CTkTextbox(summary_outer, wrap="word", height=140,
                                                font=ctk.CTkFont(family="Consolas", size=12),
                                                fg_color="#0A0610", text_color="#A9A4B3",
-                                               border_width=1, border_color="#3B2115")
+                                               border_width=1, border_color="#21153B")
         self.summary_details.pack(fill="x", padx=20, pady=(5, 15))
         self.summary_details.configure(state="disabled")
 
@@ -1001,7 +1017,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         self.log_box = ctk.CTkTextbox(f_inst, wrap="word", height=250,
                                        font=ctk.CTkFont(family="Consolas", size=13),
                                        fg_color="#0A0610", text_color="#A9A4B3",
-                                       border_width=1, border_color="#3B2115")
+                                       border_width=1, border_color="#21153B")
         self.log_box.pack(fill="both", expand=True, padx=30, pady=(0, 20))
         _ToolTip(self.log_box, "Live installation log. Shows each step as it executes: plugin copies, git clones, model downloads, and any warnings or errors. Scroll up to review earlier messages.")
 
@@ -1029,14 +1045,14 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         ctk.CTkLabel(lut_row, text="LUT Source Folder:", width=170, anchor="w",
                      font=ctk.CTkFont(family="Inter", size=13, weight="bold")).pack(side="left")
         lut_entry = ctk.CTkEntry(lut_row, textvariable=self.lut_path, width=350,
-                     border_color="#633A32", fg_color="#100B1A",
+                     border_color="#3A2863", fg_color="#100B1A",
                      placeholder_text="Optional — .cube/.3dl files from Davinci Resolve…")
         lut_entry.pack(side="left", padx=10)
         _ToolTip(lut_entry, "Optional: Point this to a folder containing .cube or .3dl LUT files (e.g. exported from DaVinci Resolve). They will be copied into ComfyUI's models/luts/ folder for use in Color Grading workflows. Leave blank to skip.")
         lut_browse = ctk.CTkButton(lut_row, text="Browse", width=80,
                       command=lambda: self._browse_dir(self.lut_path),
-                      fg_color=self.sidebar_color, hover_color="#633A32",
-                      border_width=1, border_color="#633A32")
+                      fg_color=self.sidebar_color, hover_color="#3A2863",
+                      border_width=1, border_color="#3A2863")
         lut_browse.pack(side="left")
         _ToolTip(lut_browse, "Open a folder picker to locate your LUT files directory.")
         ctk.CTkLabel(f_paths,
@@ -1050,7 +1066,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         ctk.CTkLabel(row, text="ComfyUI Endpoint:", width=170, anchor="w",
                      font=ctk.CTkFont(family="Inter", size=13, weight="bold")).pack(side="left")
         server_entry = ctk.CTkEntry(row, textvariable=self.server_url, width=350,
-                     border_color="#633A32", fg_color="#100B1A")
+                     border_color="#3A2863", fg_color="#100B1A")
         server_entry.pack(side="left", padx=10)
         _ToolTip(server_entry, "The URL where ComfyUI's API server is running. Default is http://127.0.0.1:8188. Only change this if you run ComfyUI on a different port or on a remote machine.")
 
@@ -1060,14 +1076,14 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         ctk.CTkLabel(out_row, text="Output Directory:", width=170, anchor="w",
                      font=ctk.CTkFont(family="Inter", size=13, weight="bold")).pack(side="left")
         out_entry = ctk.CTkEntry(out_row, textvariable=self.output_dir, width=350,
-                     border_color="#633A32", fg_color="#100B1A",
+                     border_color="#3A2863", fg_color="#100B1A",
                      placeholder_text="Optional — where Spellcaster saves its outputs")
         out_entry.pack(side="left", padx=10)
         _ToolTip(out_entry, "After each AI generation, Spellcaster copies the output files (images, videos) from ComfyUI to this folder. Leave blank to keep files only in ComfyUI's output folder.")
         out_browse = ctk.CTkButton(out_row, text="Browse", width=80,
                       command=lambda: self._browse_dir(self.output_dir),
-                      fg_color=self.sidebar_color, hover_color="#633A32",
-                      border_width=1, border_color="#633A32")
+                      fg_color=self.sidebar_color, hover_color="#3A2863",
+                      border_width=1, border_color="#3A2863")
         out_browse.pack(side="left")
         _ToolTip(out_browse, "Open a folder picker to select your Spellcaster output directory.")
         ctk.CTkLabel(f_paths,
@@ -1084,13 +1100,13 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                      text_color=self.text_muted).pack(side="left")
         ctk.CTkButton(redetect_row, text="Re-detect All", width=110, height=30,
                        font=ctk.CTkFont(family="Inter", size=12, weight="bold"),
-                       fg_color="#633A32", hover_color="#3B2115",
+                       fg_color="#3A2863", hover_color="#21153B",
                        border_width=1, border_color=self.accent_color,
                        command=self._redetect_apps).pack(side="left", padx=10)
 
         # Theme override checkbox
-        theme_frame = ctk.CTkFrame(f_paths, fg_color="#261510", corner_radius=8,
-                                   border_width=1, border_color="#633A32")
+        theme_frame = ctk.CTkFrame(f_paths, fg_color="#150D26", corner_radius=8,
+                                   border_width=1, border_color="#3A2863")
         theme_frame.pack(fill="x", padx=30, pady=(10, 20))
         theme_cb = ctk.CTkCheckBox(
             theme_frame,
@@ -1140,7 +1156,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
 
         # --- Prereq checklist ---
         prereq_frame = ctk.CTkFrame(parent, fg_color="#110A1F", corner_radius=12,
-                                     border_width=1, border_color="#633A32")
+                                     border_width=1, border_color="#3A2863")
         prereq_frame.pack(fill="x", padx=30, pady=(0, 15))
 
         header_row = ctk.CTkFrame(prereq_frame, fg_color="transparent")
@@ -1149,7 +1165,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                      font=ctk.CTkFont(family="Inter", size=16, weight="bold")).pack(side="left")
         ctk.CTkButton(header_row, text="Re-detect", width=100, height=30,
                        font=ctk.CTkFont(family="Inter", size=12, weight="bold"),
-                       fg_color="#633A32", hover_color="#3B2115",
+                       fg_color="#3A2863", hover_color="#21153B",
                        border_width=1, border_color=self.accent_color,
                        command=self._redetect_apps).pack(side="right")
 
@@ -1210,12 +1226,12 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                              text_color=self.text_main, width=100, anchor="w").pack(side="left")
                 link_btn = ctk.CTkButton(link_row, text=app_url,
                                           font=ctk.CTkFont(family="Inter", size=13, underline=True),
-                                          fg_color="transparent", hover_color="#3B2115",
+                                          fg_color="transparent", hover_color="#21153B",
                                           text_color="#7c9dff", anchor="w",
                                           command=lambda u=app_url: __import__('webbrowser').open(u))
                 link_btn.pack(side="left", padx=5)
             # ── Remote ComfyUI quick-connect ──
-            remote_sep = ctk.CTkFrame(dl_frame, fg_color="#633A32", height=1)
+            remote_sep = ctk.CTkFrame(dl_frame, fg_color="#3A2863", height=1)
             remote_sep.pack(fill="x", padx=20, pady=(8, 0))
 
             remote_frame = ctk.CTkFrame(dl_frame, fg_color="transparent")
@@ -1235,15 +1251,14 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                 input_row,
                 textvariable=self.server_url,
                 width=320,
-                border_color="#633A32",
+                border_color="#3A2863",
                 fg_color="#100B1A",
-                placeholder_text="http://192.168.1.50:8188",
+                placeholder_text="http://your-server-ip:8188",
             )
             self._welcome_server_entry.pack(side="left", padx=(0, 8))
             _ToolTip(
                 self._welcome_server_entry,
                 "Enter the IP and port of a ComfyUI server running on another machine.\n"
-                "Example: http://192.168.1.50:8188\n"
                 "The installer will configure plugins to talk to this server\n"
                 "instead of looking for a local ComfyUI installation.",
             )
@@ -1254,8 +1269,8 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                 width=130,
                 height=32,
                 font=ctk.CTkFont(family="Inter", size=12, weight="bold"),
-                fg_color="#633A32",
-                hover_color="#3B2115",
+                fg_color="#3A2863",
+                hover_color="#21153B",
                 border_width=1,
                 border_color=self.accent_color,
                 command=self._test_remote_comfyui,
@@ -1279,6 +1294,27 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                 justify="left",
             ).pack(anchor="w", pady=(4, 0))
 
+            # Antenna installer offer — hidden until connection test succeeds
+            self._antenna_offer_frame = ctk.CTkFrame(remote_frame, fg_color="transparent")
+            # (not packed yet — shown by _test_remote_comfyui on success)
+            antenna_sep = ctk.CTkFrame(self._antenna_offer_frame, fg_color="#3A2863", height=1)
+            antenna_sep.pack(fill="x", pady=(8, 6))
+            ctk.CTkLabel(
+                self._antenna_offer_frame,
+                text="Only need local plugins + Wizard Guild? (no models, no ComfyUI install)",
+                font=ctk.CTkFont(family="Inter", size=12, weight="bold"),
+                text_color=self.text_main,
+            ).pack(anchor="w", pady=(0, 4))
+            ctk.CTkButton(
+                self._antenna_offer_frame,
+                text="\u2192  Antenna Installer  \u2014  plugins & shortcuts only",
+                height=34,
+                font=ctk.CTkFont(family="Inter", size=13, weight="bold"),
+                fg_color="#2b2b2b", hover_color="#3a3a3a",
+                border_width=1, border_color=self.accent_color,
+                command=self._launch_antenna_installer,
+            ).pack(anchor="w", pady=(0, 4))
+
         # --- All good ---
         if _has_comfy and _has_editor:
             ok_frame = ctk.CTkFrame(parent, fg_color="#0d1a0d", corner_radius=10,
@@ -1289,6 +1325,85 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                               "Click \"2. What You Want\" on the left to continue.",
                          font=ctk.CTkFont(family="Inter", size=15, weight="bold"),
                          text_color=self.accent_green, justify="left").pack(padx=20, pady=15)
+
+    def _launch_antenna_installer(self):
+        """Launch the antenna installer for remote/network ComfyUI setups.
+
+        When running from a frozen .exe, looks for spellcaster-remote-installer.exe
+        next to the main installer.  When running from source, launches
+        install_remote.py via the current Python interpreter.
+
+        Both cases open a new terminal window with --interactive mode and
+        pass the current server URL if one has been entered.
+        """
+        # Build the extra args — pass server URL if the user already entered one
+        extra_args = ["--interactive"]
+        srv = self.server_url.get().strip().rstrip("/")
+        if srv and srv != "http://127.0.0.1:8188":
+            extra_args = [srv] + extra_args  # positional server_url arg
+
+        if getattr(sys, "frozen", False):
+            # ── Frozen .exe mode ─────────────────────────────────────
+            # The remote installer is a separate .exe built alongside us
+            exe_dir = Path(sys.executable).resolve().parent
+            remote_exe = exe_dir / "spellcaster-remote-installer.exe"
+            if not remote_exe.exists():
+                # Also check dist/ subfolder (dev layout)
+                remote_exe = exe_dir / "dist" / "spellcaster-remote-installer.exe"
+            if not remote_exe.exists():
+                from tkinter import messagebox
+                messagebox.showerror(
+                    "Antenna Installer",
+                    "Could not find spellcaster-remote-installer.exe.\n\n"
+                    "Make sure it is in the same folder as the main installer."
+                )
+                return
+            launch_cmd = [str(remote_exe)] + extra_args
+            launch_cwd = str(remote_exe.parent)
+        else:
+            # ── Running from source ──────────────────────────────────
+            base = Path(__file__).resolve().parent
+            script = base / "install_remote.py"
+            if not script.exists():
+                script = Path(os.getcwd()) / "install_remote.py"
+            if not script.exists():
+                from tkinter import messagebox
+                messagebox.showerror(
+                    "Antenna Installer",
+                    "Could not find install_remote.py.\n\n"
+                    "Make sure it is in the same folder as the installer."
+                )
+                return
+            launch_cmd = [sys.executable, str(script)] + extra_args
+            launch_cwd = str(script.parent)
+
+        # Open in a new terminal window
+        try:
+            if sys.platform == "win32":
+                subprocess.Popen(
+                    ["cmd", "/c", "start", "Spellcaster Antenna Installer"] + launch_cmd,
+                    cwd=launch_cwd,
+                )
+            elif sys.platform == "darwin":
+                cmd_str = " ".join(f'"{c}"' for c in launch_cmd)
+                apple_cmd = f'tell application "Terminal" to do script "{cmd_str}"'
+                subprocess.Popen(["osascript", "-e", apple_cmd])
+            else:
+                for term in ["x-terminal-emulator", "gnome-terminal", "konsole", "xfce4-terminal", "xterm"]:
+                    if os.system(f"which {term} >/dev/null 2>&1") == 0:
+                        if term == "gnome-terminal":
+                            subprocess.Popen([term, "--"] + launch_cmd)
+                        else:
+                            subprocess.Popen([term, "-e", " ".join(launch_cmd)])
+                        break
+                else:
+                    subprocess.Popen(launch_cmd)
+        except Exception as exc:
+            from tkinter import messagebox
+            messagebox.showerror(
+                "Antenna Installer",
+                f"Failed to launch antenna installer:\n{exc}"
+            )
 
     def _browse_dir(self, var):
         """Open a native directory picker and write the result into *var*."""
@@ -1342,10 +1457,16 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                     self._conn_status_label.configure(
                         text=f"  Connected!{detail}",
                         text_color=self.accent_green)
+                    # Show antenna installer offer on successful remote connection
+                    if hasattr(self, "_antenna_offer_frame"):
+                        self._antenna_offer_frame.pack(fill="x", pady=(4, 0))
                 else:
                     self._conn_status_label.configure(
                         text=f"  Failed{detail}",
                         text_color=self.accent_amber)
+                    # Hide antenna offer on failure
+                    if hasattr(self, "_antenna_offer_frame"):
+                        self._antenna_offer_frame.pack_forget()
 
             self.after(0, _update)
 
@@ -1466,7 +1587,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
             # Category container
             cat_frame = ctk.CTkFrame(self.feat_container,
                                       fg_color="#110A1F", corner_radius=12,
-                                      border_width=1, border_color="#633A32")
+                                      border_width=1, border_color="#3A2863")
             cat_frame.pack(fill="x", padx=30, pady=(0, 18))
 
             # Category header
@@ -1497,7 +1618,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                 var.trace_add("write", lambda *args, k=fkey: self._on_feature_toggle(k))
 
                 feat_card = ctk.CTkFrame(cat_frame, fg_color=self.sidebar_color,
-                                          corner_radius=8, border_width=1, border_color="#3B2115")
+                                          corner_radius=8, border_width=1, border_color="#21153B")
                 feat_card.pack(fill="x", padx=20, pady=5)
 
                 # Top row: checkbox + badges
@@ -1519,7 +1640,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                         vram_badge_text = f"{vram_min}-{vram_rec} GB VRAM"
                     ctk.CTkLabel(top_row, text=vram_badge_text,
                                  font=ctk.CTkFont(family="Inter", size=10, weight="bold"),
-                                 text_color="#150B07", fg_color="#633A32",
+                                 text_color="#0B0715", fg_color="#3A2863",
                                  corner_radius=4, width=90, height=22).pack(side="right", padx=(5, 0))
 
                 # Compatibility badge
@@ -1828,7 +1949,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
     def _base_select_frame(self, name):
         """Show the frame for *name* and highlight its sidebar button."""
         for key, btn in self._sidebar_btns.items():
-            btn.configure(fg_color="#3B2115" if key == name else "transparent")
+            btn.configure(fg_color="#21153B" if key == name else "transparent")
 
         for k, f in self.frames.items():
             if k == name:

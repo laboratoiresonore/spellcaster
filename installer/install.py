@@ -10,7 +10,7 @@ Usage:
     python install.py --cli                    # Force terminal mode
     python install.py --dry-run                # Preview without changes
     python install.py --yes                    # Auto-accept all defaults
-    python install.py --server-url http://192.168.1.50:8188  # Remote ComfyUI
+    python install.py --server-url http://<SERVER-IP>:8188  # Remote ComfyUI
     python install.py --features img2img,inpaint,face_swap_reactor
     python install.py --comfyui ~/ComfyUI --gimp ~/.config/GIMP/3.2/plug-ins
     python install.py --skip-models            # Plugins + nodes only
@@ -1555,7 +1555,7 @@ def step_detect_server(args) -> str:
     if choice == 0:
         return DEFAULT_SERVER_URL
     elif choice == 1:
-        print(f"\n  {C_DIM}Example: 192.168.1.50:8188{C_RESET}")
+        print(f"\n  {C_DIM}Example: <SERVER-IP>:8188{C_RESET}")
         raw = ask_text("  Enter IP:port of the ComfyUI machine", auto_yes=args.yes)
         raw = raw.strip().rstrip("/")
         if not raw.startswith("http"):
@@ -1594,7 +1594,7 @@ def step_detect_llm_server(args) -> str:
     if choice == 0:
         return DEFAULT_LLM_URL
     elif choice == 1:
-        print(f"\n  {C_DIM}Example: http://192.168.1.50:5001{C_RESET}")
+        print(f"\n  {C_DIM}Example: http://<SERVER-IP>:5001{C_RESET}")
         raw = ask_text("  Enter LLM server URL", default=DEFAULT_LLM_URL, auto_yes=args.yes)
         raw = raw.strip().rstrip("/")
         if not raw.startswith("http"):
@@ -3190,7 +3190,7 @@ def build_arg_parser():
             Examples:
               python install.py
               python install.py --cli --yes
-              python install.py --server-url http://192.168.1.50:8188
+              python install.py --server-url http://<SERVER-IP>:8188
               python install.py --features img2img,inpaint,face_swap_reactor
               python install.py --comfyui ~/ComfyUI --gimp ~/.config/GIMP/3.2/plug-ins
               python install.py --dry-run

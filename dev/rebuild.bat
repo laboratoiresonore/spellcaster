@@ -66,10 +66,20 @@ if defined NSFW_REPO (
         goto found_nsfw
     )
 )
+
+:: Not found — clone it automatically as sibling
 echo.
-echo   [WARN] NSFW repo not found as sibling directory.
-echo          Set NSFW_REPO env var or place it next to this repo.
-echo          Continuing with SFW only...
+echo   NSFW repo not found — cloning as sibling...
+pushd "%SFW_ROOT%\.."
+git clone https://github.com/laboratoiresonore/spellcaster_NSFW.git spellcaster_NSFW
+if errorlevel 1 (
+    echo   [WARN] Failed to clone NSFW repo. Continuing with SFW only.
+    popd
+    goto found_nsfw
+)
+popd
+set "NSFW_ROOT=%SFW_ROOT%\..\spellcaster_NSFW"
+echo   Cloned to %NSFW_ROOT%
 echo.
 :found_nsfw
 
@@ -123,10 +133,10 @@ echo.
 :: ══════════════════════════════════════════════════════════════════════
 if "%GUILD_ONLY%"=="1" goto skip_installer
 
-echo [3/7] Building installer + manual update tool...
+echo [3/7] Building installer + manual update + antenna installer...
 echo.
 pushd "%SFW_ROOT%\installer"
-python build_installer.py --platform windows --update-tool
+python build_installer.py --platform windows --update-tool --remote
 set "INSTALLER_EXIT=%errorlevel%"
 popd
 
@@ -137,12 +147,17 @@ if not "%INSTALLER_EXIT%"=="0" (
 )
 
 if exist "%SFW_ROOT%\dist\spellcaster-installer.exe" (
-    for %%F in ("%SFW_ROOT%\dist\spellcaster-installer.exe") do echo   spellcaster-installer.exe ...... %%~zF bytes  OK
+    for %%F in ("%SFW_ROOT%\dist\spellcaster-installer.exe") do echo   spellcaster-installer.exe .......... %%~zF bytes  OK
 ) else (
     echo   [WARN] spellcaster-installer.exe not found in dist\
 )
 if exist "%SFW_ROOT%\dist\spellcaster-manual-update.exe" (
-    for %%F in ("%SFW_ROOT%\dist\spellcaster-manual-update.exe") do echo   spellcaster-manual-update.exe . %%~zF bytes  OK
+    for %%F in ("%SFW_ROOT%\dist\spellcaster-manual-update.exe") do echo   spellcaster-manual-update.exe ..... %%~zF bytes  OK
+)
+if exist "%SFW_ROOT%\dist\spellcaster-remote-installer.exe" (
+    for %%F in ("%SFW_ROOT%\dist\spellcaster-remote-installer.exe") do echo   spellcaster-remote-installer.exe .. %%~zF bytes  OK
+) else (
+    echo   [WARN] spellcaster-remote-installer.exe not found in dist\
 )
 echo.
 
@@ -237,7 +252,7 @@ robocopy "%SFW_ROOT%\installer" "%NSFW_ROOT%\installer" /s /xd __pycache__ .buil
 :: Plugins
 robocopy "%SFW_ROOT%\plugins" "%NSFW_ROOT%\plugins" /s /xd __pycache__ >nul 2>&1
 
-:: ComfyUI-Spellcaster — sync base files from SFW, preserve NSFW-only additions
+:: ComfyUI-Spellcaster — sync base files only, preserve NSFW-only additions
 :: (nsfw_loras.py, __init__.py, web/spellcaster.js, README, pyproject.toml are NSFW-specific)
 robocopy "%SFW_ROOT%\comfyui-spellcaster\spellcaster_core" "%NSFW_ROOT%\comfyui-spellcaster\spellcaster_core" /s /xd __pycache__ >nul 2>&1
 for %%F in (loader.py sampler.py output.py prompt.py) do (
@@ -337,6 +352,10 @@ if exist "%SFW_ROOT%\dist\spellcaster-manual-update.exe" (
     echo   Uploading spellcaster-manual-update.exe...
     gh release upload %RELEASE_TAG% "%SFW_ROOT%\dist\spellcaster-manual-update.exe" --clobber
 )
+if exist "%SFW_ROOT%\dist\spellcaster-remote-installer.exe" (
+    echo   Uploading spellcaster-remote-installer.exe...
+    gh release upload %RELEASE_TAG% "%SFW_ROOT%\dist\spellcaster-remote-installer.exe" --clobber
+)
 if exist "%SFW_ROOT%\dist\Wizard_Guild.exe" (
     echo   Uploading Wizard_Guild.exe...
     gh release upload %RELEASE_TAG% "%SFW_ROOT%\dist\Wizard_Guild.exe" --clobber
@@ -370,13 +389,16 @@ echo.
 if not "%PUSH_ONLY%"=="1" (
     echo   Built executables in dist\:
     if exist "%SFW_ROOT%\dist\spellcaster-installer.exe" (
-        for %%F in ("%SFW_ROOT%\dist\spellcaster-installer.exe") do echo     spellcaster-installer.exe ...... %%~zF bytes
+        for %%F in ("%SFW_ROOT%\dist\spellcaster-installer.exe") do echo     spellcaster-installer.exe .......... %%~zF bytes
     )
     if exist "%SFW_ROOT%\dist\spellcaster-manual-update.exe" (
-        for %%F in ("%SFW_ROOT%\dist\spellcaster-manual-update.exe") do echo     spellcaster-manual-update.exe . %%~zF bytes
+        for %%F in ("%SFW_ROOT%\dist\spellcaster-manual-update.exe") do echo     spellcaster-manual-update.exe ..... %%~zF bytes
+    )
+    if exist "%SFW_ROOT%\dist\spellcaster-remote-installer.exe" (
+        for %%F in ("%SFW_ROOT%\dist\spellcaster-remote-installer.exe") do echo     spellcaster-remote-installer.exe .. %%~zF bytes
     )
     if exist "%SFW_ROOT%\dist\Wizard_Guild.exe" (
-        for %%F in ("%SFW_ROOT%\dist\Wizard_Guild.exe") do echo     Wizard_Guild.exe ............. %%~zF bytes
+        for %%F in ("%SFW_ROOT%\dist\Wizard_Guild.exe") do echo     Wizard_Guild.exe .................. %%~zF bytes
     )
     echo.
 )
