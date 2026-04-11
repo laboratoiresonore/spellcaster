@@ -3135,15 +3135,21 @@ ARCH_LORA_PREFIXES = {
     # compatible with. When the user selects a model preset, only LoRAs
     # whose server-reported path starts with one of these prefixes are
     # shown in the UI dropdown. This prevents mismatches (e.g. SDXL LoRAs
-    # on a Flux model) which would cause ComfyUI errors.
+    # on a Flux model, or WAN video LoRAs on an SDXL model).
     # Both slash directions are checked by _filter_loras_for_arch().
+    # MUST stay in sync with spellcaster_core/model_detect.py LORA_ARCH_PREFIXES
     "sd15":         [],                                                      # no dedicated LoRA folders yet
     "sdxl":         ["SDXL\\", "Illustrious\\", "Illustrious-Pony\\", "Pony\\"],
     "zit":          ["Z-Image-Turbo\\"],
     "illustrious":  ["Illustrious\\", "Illustrious-Pony\\"],
+    "pony":         ["Pony\\", "Illustrious-Pony\\"],
     "flux2klein":   ["Flux-2-Klein\\"],
-    "flux1dev":     ["Flux-1-Dev\\"],
+    "flux1dev":     ["Flux-1-Dev\\", "Flux\\"],
     "flux_kontext": ["Flux-1-Dev\\"],                                        # Kontext can use Dev LoRAs
+    "chroma":       [],                                                      # Chroma uses Flux LoRAs via flux1dev
+    "ltx":          ["ltxv\\", "LTX\\"],                                     # LTX video LoRAs
+    "wan":          ["Wan\\", "WAN\\", "Wan-2.2-I2V\\"],                     # WAN video LoRAs
+    "seedvr":       ["SeedVR\\", "seedvr\\"],                                # SeedVR video LoRAs
 }
 
 

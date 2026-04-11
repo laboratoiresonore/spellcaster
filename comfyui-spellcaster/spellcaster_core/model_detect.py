@@ -129,7 +129,7 @@ LORA_ARCH_PREFIXES = {
     "flux1dev":     ["Flux-1-Dev\\", "Flux\\"],
     "flux_kontext": ["Flux-1-Dev\\"],
     "ltx":          ["ltxv\\", "LTX\\"],
-    "wan":          ["Wan\\", "WAN\\"],
+    "wan":          ["Wan\\", "WAN\\", "Wan-2.2-I2V\\"],
     "seedvr":       ["SeedVR\\", "seedvr\\"],
 }
 
