@@ -77,6 +77,18 @@
             </div>
         </aside>
 
+        <!-- Bottom Dock: Per-Model & Chimera Wizards -->
+        <div id="bottom-dock" class="bottom-dock">
+            <div class="dock-header" onclick="toggleBottomDock()">
+                <span id="dock-label">Per-Model Wizards</span>
+                <span id="dock-count" class="dock-count">0</span>
+                <span id="dock-chevron" class="dock-chevron">&#9650;</span>
+            </div>
+            <div id="dock-list" class="dock-list">
+                <!-- Dynamically populated with per-model wizard cards -->
+            </div>
+        </div>
+
         <!-- Main Chat Area -->
         <main id="chat-arena">
             <header id="chat-header">

@@ -1034,3 +1034,118 @@ textarea::placeholder { color: #555; }
     border-top: 1px solid rgba(255,255,255,0.06);
     line-height: 1.4;
 }
+
+/* ── Bottom Dock: Per-Model & Chimera Wizards ── */
+.bottom-dock {
+    position: fixed;
+    bottom: 0;
+    left: var(--sidebar-width, 280px);
+    right: 0;
+    z-index: 100;
+    background: rgba(16, 14, 24, 0.95);
+    border-top: 1px solid rgba(178, 70, 242, 0.2);
+    backdrop-filter: blur(12px);
+    transition: transform 0.3s ease;
+}
+.bottom-dock.dock-collapsed .dock-list {
+    max-height: 0;
+    padding: 0 12px;
+    overflow: hidden;
+}
+.dock-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    cursor: pointer;
+    user-select: none;
+}
+.dock-header:hover {
+    background: rgba(178, 70, 242, 0.08);
+}
+#dock-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #8F8C9E;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.dock-count {
+    font-size: 10px;
+    background: rgba(178, 70, 242, 0.25);
+    color: #c4b5fd;
+    padding: 1px 6px;
+    border-radius: 8px;
+}
+.dock-chevron {
+    margin-left: auto;
+    font-size: 10px;
+    color: #6b6881;
+    transition: transform 0.2s;
+}
+.dock-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 4px 12px 10px;
+    max-height: 120px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(178,70,242,0.2) transparent;
+    transition: max-height 0.3s ease, padding 0.3s ease;
+}
+.dock-card {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    border-radius: 8px;
+    background: rgba(25, 23, 38, 0.6);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-width: 180px;
+    max-width: 260px;
+}
+.dock-card:hover {
+    background: rgba(178, 70, 242, 0.1);
+    border-color: rgba(178, 70, 242, 0.2);
+}
+.dock-card.active {
+    background: rgba(178, 70, 242, 0.18);
+    border-color: rgba(178, 70, 242, 0.4);
+}
+.dock-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background-size: cover;
+    background-position: center top;
+    flex-shrink: 0;
+    border: 1px solid rgba(178, 70, 242, 0.2);
+}
+.dock-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.dock-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: #E2DFEB;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.dock-sub {
+    font-size: 10px;
+    color: #6b6881;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Adjust chat area to not be hidden by dock */
+#chat-arena {
+    padding-bottom: 50px;
+}
