@@ -7847,6 +7847,15 @@ local function spellcaster_auto_update()
   local raw_base = "https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main"
   local dt_prefix = "plugins/darktable/"
 
+  -- Protected files: user config and version tracker -- never overwrite
+  local protected_files = {
+    [".spellcaster_version"] = true,
+    ["config.json"] = true,
+    ["user_presets.json"] = true,
+    ["session_state.json"] = true,
+  }
+  local protected_suffixes = { ".pyc", ".update", ".tmp", ".onnx", ".safetensors" }
+
   -- Read local SHA (fast path: if matches remote, no downloads needed)
   local local_sha = ""
   local fv = io.open(version_file, "r")
@@ -7865,8 +7874,8 @@ local function spellcaster_auto_update()
   if not latest_sha or latest_sha == local_sha then return end  -- already up to date
 
   -- Dynamic file discovery: fetch the repo tree to find ALL darktable plugin files
-  -- This replaces the old hardcoded list so new files are automatically picked up.
   local update_files = {}
+  local remote_filenames = {}  -- track for stale-file cleanup
   local tree_tmp = os.tmpname()
   local tree_ok = os.execute(string.format(
     'curl -s -A "spellcaster-dt/2.0" --max-time 15 -o "%s" "%s"', shell_esc(tree_tmp), shell_esc(tree_url)))
@@ -7874,13 +7883,18 @@ local function spellcaster_auto_update()
     local ft = io.open(tree_tmp, "r")
     if ft then
       local tree_body = ft:read("*a"); ft:close()
-      -- Extract file paths under plugins/darktable/ from the JSON tree
-      -- Pattern matches: "path":"plugins/darktable/filename.ext","type":"blob"
-      for path in tree_body:gmatch('"path"%s*:%s*"(' .. dt_prefix:gsub("/", "/") .. '[^"]-)"') do
-        -- Only top-level files (no subdirectories)
-        local filename = path:sub(#dt_prefix + 1)
-        if not filename:find("/") and filename ~= "" then
-          table.insert(update_files, { src = path, dst = filename })
+      -- Extract file paths and sizes from the JSON tree
+      -- Each blob entry: {"path":"...","type":"blob","size":NNN,...}
+      for blob_entry in tree_body:gmatch('{[^{}]-"type"%s*:%s*"blob"[^{}]-}') do
+        local path = blob_entry:match('"path"%s*:%s*"([^"]-)"')
+        local size = tonumber(blob_entry:match('"size"%s*:%s*(%d+)')) or 0
+        if path and path:sub(1, #dt_prefix) == dt_prefix then
+          local filename = path:sub(#dt_prefix + 1)
+          -- Only top-level files (no subdirectories)
+          if not filename:find("/") and filename ~= "" and not protected_files[filename] then
+            table.insert(update_files, { src = path, dst = filename, expected_size = size })
+            remote_filenames[filename] = true
+          end
         end
       end
     end
@@ -7890,16 +7904,21 @@ local function spellcaster_auto_update()
   -- Fallback to static list if tree API returned nothing
   if #update_files == 0 then
     update_files = {
-      { src = "plugins/darktable/comfyui_connector.lua",     dst = "comfyui_connector.lua" },
-      { src = "plugins/darktable/installer_background.png",  dst = "installer_background.png" },
-      { src = "plugins/darktable/splash.py",                 dst = "splash.py" },
-      { src = "plugins/darktable/spellcaster_steg.py",       dst = "spellcaster_steg.py" },
-      { src = "plugins/darktable/darktable_splash.jpg",      dst = "darktable_splash.jpg" },
+      { src = "plugins/darktable/comfyui_connector.lua",     dst = "comfyui_connector.lua", expected_size = 0 },
+      { src = "plugins/darktable/installer_background.png",  dst = "installer_background.png", expected_size = 0 },
+      { src = "plugins/darktable/splash.py",                 dst = "splash.py", expected_size = 0 },
+      { src = "plugins/darktable/spellcaster_steg.py",       dst = "spellcaster_steg.py", expected_size = 0 },
+      { src = "plugins/darktable/darktable_splash.jpg",      dst = "darktable_splash.jpg", expected_size = 0 },
     }
+    for _, f in ipairs(update_files) do remote_filenames[f.dst] = true end
   end
+
+  -- Text file extensions for null-byte scrubbing
+  local text_exts = { lua=true, py=true, js=true, jsx=true, css=true, json=true, md=true, txt=true, html=true }
 
   -- Download updated files: write to .tmp first, then rename for atomic replacement
   local updated = 0
+  local failed = 0
   for _, f in ipairs(update_files) do
     local url = raw_base .. "/" .. f.src
     local dest = plugin_dir .. f.dst
@@ -7907,19 +7926,70 @@ local function spellcaster_auto_update()
     local dl = os.execute(string.format(
       'curl -s -A "spellcaster-dt/2.0" --max-time 30 -o "%s" "%s"', shell_esc(tmp), shell_esc(url)))
     if dl == 0 or dl == true then
-      os.execute(string.format('%s "%s" "%s"', mv, shell_esc(tmp), shell_esc(dest)))
-      updated = updated + 1
+      -- Integrity check: verify download size matches expected
+      local fh = io.open(tmp, "rb")
+      local ok_size = true
+      if fh then
+        local content = fh:read("*a"); fh:close()
+        if f.expected_size > 0 and #content ~= f.expected_size then
+          ok_size = false
+          os.remove(tmp)
+          failed = failed + 1
+        else
+          -- Scrub null bytes from text files (NTFS corruption guard)
+          local ext = f.dst:match("%.(%w+)$")
+          if ext and text_exts[ext] and content:find("%z") then
+            content = content:gsub("%z", "")
+            local fw = io.open(tmp, "wb")
+            if fw then fw:write(content); fw:close() end
+          end
+        end
+      end
+      if ok_size then
+        os.execute(string.format('%s "%s" "%s"', mv, shell_esc(tmp), shell_esc(dest)))
+        updated = updated + 1
+      end
     else
       os.remove(tmp)  -- clean up failed download
+      failed = failed + 1
     end
   end
+
+  -- Remove local files that no longer exist in the repo
+  local ls_tmp = os.tmpname()
+  local ls_cmd = (sep == "\\")
+    and string.format('dir /b "%s" > "%s" 2>nul', shell_esc(plugin_dir), shell_esc(ls_tmp))
+    or  string.format('ls -1 "%s" > "%s" 2>/dev/null', shell_esc(plugin_dir), shell_esc(ls_tmp))
+  os.execute(ls_cmd)
+  local ls_fh = io.open(ls_tmp, "r")
+  if ls_fh then
+    for line in ls_fh:lines() do
+      local fn = line:match("^%s*(.-)%s*$")  -- trim whitespace
+      if fn and fn ~= "" and not protected_files[fn] then
+        local dominated = false
+        for _, suf in ipairs(protected_suffixes) do
+          if fn:sub(-#suf) == suf then dominated = true; break end
+        end
+        if not dominated and not remote_filenames[fn] then
+          os.remove(plugin_dir .. fn)
+        end
+      end
+    end
+    ls_fh:close()
+  end
+  os.remove(ls_tmp)
 
   -- Record the new SHA so the next startup skips the download
   if updated > 0 then
     local fv2 = io.open(version_file, "w")
     if fv2 then fv2:write(latest_sha); fv2:close() end
-    dt.print(string.format(_("Spellcaster updated to %s (%d files). Please restart Darktable."),
-             latest_sha:sub(1, 7), updated))
+    local msg = string.format(_("Spellcaster updated to %s (%d files)."),
+                latest_sha:sub(1, 7), updated)
+    if failed > 0 then
+      msg = msg .. string.format(" %d file(s) failed.", failed)
+    end
+    msg = msg .. " " .. _("Please restart Darktable.")
+    dt.print(msg)
   end
 end
 

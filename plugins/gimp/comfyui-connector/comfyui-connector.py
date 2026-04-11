@@ -509,12 +509,12 @@ def _auto_update():
             tree = json.loads(r.read())
 
         # Step 3: Filter for files in our plugin directory (including subdirectories)
-        remote_files = []
+        remote_files = []  # list of (path, expected_size)
         for item in tree.get("tree", []):
             if item["type"] == "blob" and item["path"].startswith(_GIMP_PLUGIN_PREFIX):
                 remainder = item["path"][len(_GIMP_PLUGIN_PREFIX):]
                 if remainder:
-                    remote_files.append(item["path"])
+                    remote_files.append((item["path"], item.get("size", 0)))
 
         if not remote_files:
             return  # Something went wrong with API, don't touch local files
@@ -528,7 +528,7 @@ def _auto_update():
         staged = 0
         failed = 0
         remote_filenames = set()
-        for rel_path in remote_files:
+        for rel_path, expected_size in remote_files:
             remainder = rel_path[len(_GIMP_PLUGIN_PREFIX):]
             remote_filenames.add(remainder)
             try:
@@ -539,6 +539,13 @@ def _auto_update():
                 req_dl = urllib.request.Request(url, headers=_hdrs)
                 with urllib.request.urlopen(req_dl, timeout=60) as r2:
                     blob = r2.read()
+
+                    # Integrity check: reject incomplete downloads
+                    if expected_size > 0 and len(blob) != expected_size:
+                        raise IOError(
+                            f"Incomplete download: got {len(blob)} bytes, "
+                            f"expected {expected_size}")
+
                     # Scrub ALL NTFS null-byte corruption from text files
                     # (NTFS can embed nulls mid-file AND append trailing nulls)
                     if remainder.endswith((".py", ".js", ".jsx", ".css", ".json", ".md", ".txt", ".html")):

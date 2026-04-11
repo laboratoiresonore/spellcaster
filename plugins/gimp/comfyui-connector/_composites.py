@@ -111,6 +111,7 @@ def load_model_stack(nf, preset, node_id="1"):
         elif arch.clip_mode == "single_flux2":
             # Klein: single CLIPLoader, CLIP selection is model-dependent
             # 9B (dev) needs qwen_3_8b, 4B (schnell/lite) needs qwen_3_4b
+            extra = arch.extra
             ckpt_lower = preset["ckpt"].lower()
             is_9b = ("9b" in ckpt_lower or
                      ("dev" in ckpt_lower and "4b" not in ckpt_lower))
@@ -118,9 +119,12 @@ def load_model_stack(nf, preset, node_id="1"):
                      or "lite" in ckpt_lower or "kaleidoscope" in ckpt_lower)
             # Explicit 4B wins, else default to 9B (dev is more common,
             # and 9B CLIP with 4B model fails loudly vs silently)
-            clip_name = ("qwen_3_4b.safetensors"
-                         if is_4b
-                         else "qwen_3_8b_fp8mixed.safetensors")
+            if is_9b:
+                clip_name = extra.get("clip_name_9b", "qwen_3_8b.safetensors")
+            else:
+                clip_name = "qwen_3_4b.safetensors" if is_4b else "qwen_3_8b.safetensors"
+                clip_name = extra.get("clip_name_4b", clip_name)
+
             print(f"  [Klein CLIP] ckpt={preset['ckpt']} is_9b={is_9b} is_4b={is_4b} -> clip={clip_name}")
             clip_id = nf.clip_loader(clip_name, clip_type="flux2",
                                      device="default",

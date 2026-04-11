@@ -413,6 +413,59 @@ def _write_local_sha(sha):
         print(f"  [update] Could not write version file: {e}")
 
 
+def _apply_staged_updates(verbose=True):
+    """Apply any .update files staged by a previous auto-update.
+
+    On Windows, a running .py file cannot be replaced while the process has it
+    loaded. The auto-updater writes the new version as 'filename.update' instead.
+    This function (called before the updater runs) detects those staged files
+    and performs the replacement before the old code is imported.
+    """
+    if getattr(sys, 'frozen', False):
+        write_base = APP_DIR
+    else:
+        write_base = os.path.dirname(BUNDLE_DIR)
+    applied = 0
+    for prefix in (_TAVERN_PREFIX, _SCAFFOLD_PREFIX):
+        prefix_dir = os.path.join(write_base, prefix)
+        if not os.path.isdir(prefix_dir):
+            continue
+        for dirpath, _dirs, filenames in os.walk(prefix_dir):
+            for fn in filenames:
+                if fn.endswith('.update'):
+                    staged = os.path.join(dirpath, fn)
+                    target = staged[:-7]  # strip .update suffix
+                    try:
+                        if os.path.exists(target):
+                            os.remove(target)
+                        os.rename(staged, target)
+                        applied += 1
+                    except Exception:
+                        # Retry with copy+delete (more robust on Windows)
+                        try:
+                            import shutil
+                            shutil.copy2(staged, target)
+                            os.remove(staged)
+                            applied += 1
+                        except Exception:
+                            pass
+    if applied and verbose:
+        print(f"  [update] Applied {applied} staged update(s) from previous run")
+    # Purge __pycache__ so Python uses fresh bytecode
+    if applied:
+        for prefix in (_TAVERN_PREFIX, _SCAFFOLD_PREFIX):
+            prefix_dir = os.path.join(write_base, prefix)
+            if not os.path.isdir(prefix_dir):
+                continue
+            for dirpath, dirs, _files in os.walk(prefix_dir):
+                if "__pycache__" in dirs:
+                    import shutil
+                    try:
+                        shutil.rmtree(os.path.join(dirpath, "__pycache__"))
+                    except Exception:
+                        pass
+
+
 def check_for_updates(verbose=True):
     """Check GitHub for a newer commit and apply updates if available.
 
@@ -519,9 +572,9 @@ def check_for_updates(verbose=True):
                     f"expected {expected_size}")
 
             # Scrub null bytes from text files (NTFS corruption guard)
-                if rel_path.endswith(('.py', '.js', '.css', '.html',
-                                      '.json', '.jsx', '.md', '.txt')):
-                    blob = blob.replace(b'\x00', b'')
+            if rel_path.endswith(('.py', '.js', '.css', '.html',
+                                  '.json', '.jsx', '.md', '.txt')):
+                blob = blob.replace(b'\x00', b'')
 
             # Write via temp file for atomic replacement
             tmp = dest + ".tmp"
@@ -541,6 +594,42 @@ def check_for_updates(verbose=True):
             failed += 1
             if verbose:
                 print(f"    FAIL: {rel_path}: {e}")
+
+    # Step 5b: Remove local files that no longer exist in the repo
+    remote_rel_set = {rp for rp, _ in remote_files}
+    remote_rel_set.update(_PROTECTED_FILES)
+    stale_removed = 0
+    for prefix in (_TAVERN_PREFIX, _SCAFFOLD_PREFIX):
+        prefix_dir = os.path.join(write_base, prefix)
+        if not os.path.isdir(prefix_dir):
+            continue
+        for dirpath, _dirs, filenames in os.walk(prefix_dir):
+            for fn in filenames:
+                if fn.endswith(('.pyc', '.update', '.tmp')):
+                    continue
+                full = os.path.join(dirpath, fn)
+                rel = os.path.relpath(full, write_base).replace("\\", "/")
+                if rel not in remote_rel_set:
+                    try:
+                        os.remove(full)
+                        stale_removed += 1
+                    except Exception:
+                        pass
+    if stale_removed and verbose:
+        print(f"  [update] Removed {stale_removed} stale file(s)")
+
+    # Step 5c: Purge __pycache__ to prevent stale bytecode
+    for prefix in (_TAVERN_PREFIX, _SCAFFOLD_PREFIX):
+        prefix_dir = os.path.join(write_base, prefix)
+        if not os.path.isdir(prefix_dir):
+            continue
+        for dirpath, dirs, _files in os.walk(prefix_dir):
+            if "__pycache__" in dirs:
+                import shutil
+                try:
+                    shutil.rmtree(os.path.join(dirpath, "__pycache__"))
+                except Exception:
+                    pass
 
     if verbose:
         print(f"  [update] Updated {updated}/{len(remote_files)} files"
@@ -1618,6 +1707,12 @@ def main():
     port = args.port or config["guild_port"]
     comfyui_url = (args.comfyui or config["comfyui_url"]).rstrip('/')
     kobold_url = (args.kobold or config["kobold_url"]).rstrip('/')
+
+    # ── Apply staged updates from previous run ────────────────────────
+    try:
+        _apply_staged_updates(verbose=True)
+    except Exception:
+        pass  # never block startup
 
     # ── Auto-update ──────────────────────────────────────────────────
     if config.get("auto_update", True) and not args.no_update:
