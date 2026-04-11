@@ -1,6 +1,6 @@
 # ComfyUI-Spellcaster
 
-Architecture-aware nodes for AI image generation. Auto-detects your model architecture (SD 1.5, SDXL, Illustrious, ZIT, Flux Dev, Flux 2 Klein, Chroma), loads the correct CLIP and VAE, enhances prompts via local LLM, and samples with optimal settings — all automatically.
+Architecture-aware nodes for AI image generation. Auto-detects your model architecture (SD 1.5, SDXL, Illustrious, Pony, ZIT, Flux Dev, Flux 2 Klein, Chroma), loads the correct CLIP and VAE, enhances prompts via local LLM, and samples with optimal settings — all automatically.
 
 Part of the [Spellcaster](https://github.com/laboratoiresonore/spellcaster) ecosystem. ONE SOURCE OF TRUTH: the same architecture definitions power the GIMP plugin, Darktable plugin, and Wizard Guild.
 
@@ -10,7 +10,7 @@ Part of the [Spellcaster](https://github.com/laboratoiresonore/spellcaster) ecos
 
 Drop in any model and it figures out the rest. Detects architecture from the filename, loads the right CLIP encoder(s) and VAE automatically.
 
-- **Checkpoint models** (SD 1.5, SDXL, Illustrious, ZIT): single-file load
+- **Checkpoint models** (SD 1.5, SDXL, Illustrious, Pony, ZIT): single-file load
 - **Separate loaders** (Flux Dev, Klein, Chroma): auto-selects UNET + correct CLIP type + correct VAE
 - **Klein CLIP auto-detect**: picks `qwen_3_8b` for 9B models, `qwen_3_4b` for 4B models
 - **Flux dual CLIP**: loads both `clip_l` and `t5xxl` with correct type
@@ -53,6 +53,8 @@ VAE decode + save with metadata stripping enabled by default.
 
 Search for **"Spellcaster"** in ComfyUI Manager and click Install.
 
+> After install, you'll see a console banner and a toast in the ComfyUI web UI pointing you to the **full Spellcaster suite** (Wizard Guild, GIMP/Darktable plugins, desktop shortcut, model downloader). A ready-to-run `Install_Spellcaster_Suite.bat` is automatically placed in your `custom_nodes` folder — double-click it to set everything up.
+
 ### Manual (git clone)
 
 ```bash
@@ -64,7 +66,19 @@ Restart ComfyUI. No pip dependencies required.
 
 ### Via Spellcaster Installer
 
-If you're using the [Spellcaster installer](https://github.com/laboratoiresonore/spellcaster), the node pack is installed automatically.
+If you're using the [Spellcaster installer](https://github.com/laboratoiresonore/spellcaster), the node pack is installed automatically along with the full suite.
+
+## Full Spellcaster Suite
+
+The nodes work standalone, but Spellcaster is much more than a ComfyUI node pack. The full suite includes:
+
+- **Wizard Guild** — AI chat interface with per-model wizards, scaffold editor, and LoRA management
+- **GIMP 3 plugin** — ComfyUI connector with architecture-aware menus and LoRA filtering
+- **Darktable plugin** — same ComfyUI connector for the Darktable photo editor
+- **Desktop shortcuts** — one-click launch for Wizard Guild
+- **Model downloader** — guided install of checkpoints, VAEs, LoRAs, and ControlNets
+
+If you installed via ComfyUI Manager, run `Install_Spellcaster_Suite.bat` in your `custom_nodes` folder (it's created automatically on first load). Or visit the [main repo](https://github.com/laboratoiresonore/spellcaster) to install from scratch.
 
 ## Workflow Templates
 
@@ -80,6 +94,7 @@ Drag these into ComfyUI to get started:
 | SD 1.5 | checkpoint | KSampler | Yes | 25 | 7.0 |
 | SDXL | checkpoint | KSampler | Yes | 30 | 6.5 |
 | Illustrious | checkpoint | KSampler | Yes | 28 | 5.5 |
+| Pony | checkpoint | KSampler | Yes | 28 | 5.5 |
 | ZIT (turbo) | checkpoint | KSampler | Yes | 6 | 2.0 |
 | Flux 1 Dev | unet+clip+vae | KSampler | No | 25 | 3.5 |
 | Chroma | unet+clip+vae | KSampler | No | 25 | 3.0 |
