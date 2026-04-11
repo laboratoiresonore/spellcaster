@@ -37,6 +37,7 @@ UNET_ARCH_RULES = [
     # (substring, arch_key)  — order = priority, first match wins
     ("klein",     "flux2klein"),
     ("kontext",   "flux_kontext"),
+    ("kaleidoscope", "flux2klein"),  # chroma2_kaleidoscope is a Klein 4B finetune
     ("chroma",    "chroma"),        # Chroma v1/v2 — single CLIPLoader type="chroma"
     ("flux",      "flux1dev"),
     ("wan",       "wan"),
@@ -69,6 +70,7 @@ CKPT_ARCH_RULES = [
     ("sd3medium",   "sd3"),
     ("hunyuan_dit", "hunyuan_dit"),
     ("hunyuandit",  "hunyuan_dit"),
+    ("kaleidoscope", "flux2klein"),     # chroma2_kaleidoscope is a Klein 4B finetune
     ("chroma",      "chroma"),         # Chroma v1/v2 — single CLIPLoader type="chroma"
     ("sdxl",        "sdxl"),
     ("xl",          "sdxl"),
@@ -84,14 +86,16 @@ CKPT_ARCH_RULES = [
 BEST_MODEL_PRIORITY = [
     ("unet",  lambda ml: "klein" in ml and "9b" in ml,  "flux2klein"),
     ("unet",  lambda ml: "klein" in ml and "4b" in ml,  "flux2klein"),
-    ("unet",  lambda ml: "chroma" in ml,                "chroma"),
+    ("unet",  lambda ml: "kaleidoscope" in ml,           "flux2klein"),
+    ("unet",  lambda ml: "chroma" in ml and "kaleidoscope" not in ml, "chroma"),
     ("unet",  lambda ml: "flux" in ml and "dev" in ml,  "flux1dev"),
     ("unet",  lambda ml: "flux" in ml,                  "flux1dev"),
     ("unet",  lambda ml: "sd3.5" in ml and "turbo" not in ml, "sd3"),
     ("unet",  lambda ml: "sd3" in ml,                   "sd3"),
     ("unet",  lambda ml: "pixart" in ml,                "pixart"),
     ("unet",  lambda ml: "auraflow" in ml or "aura_flow" in ml, "auraflow"),
-    ("ckpt",  lambda ml: "chroma" in ml,                "chroma"),
+    ("ckpt",  lambda ml: "kaleidoscope" in ml,           "flux2klein"),
+    ("ckpt",  lambda ml: "chroma" in ml and "kaleidoscope" not in ml, "chroma"),
     ("ckpt",  lambda ml: "sd3.5" in ml and "turbo" not in ml, "sd3"),
     ("ckpt",  lambda ml: "playground" in ml,            "playground"),
     ("ckpt",  lambda ml: "kolors" in ml,                "kolors"),

@@ -114,7 +114,8 @@ def load_model_stack(nf, preset, node_id="1"):
             ckpt_lower = preset["ckpt"].lower()
             is_9b = ("9b" in ckpt_lower or
                      ("dev" in ckpt_lower and "4b" not in ckpt_lower))
-            is_4b = "4b" in ckpt_lower or "schnell" in ckpt_lower or "lite" in ckpt_lower
+            is_4b = ("4b" in ckpt_lower or "schnell" in ckpt_lower
+                     or "lite" in ckpt_lower or "kaleidoscope" in ckpt_lower)
             # Explicit 4B wins, else default to 9B (dev is more common,
             # and 9B CLIP with 4B model fails loudly vs silently)
             clip_name = ("qwen_3_4b.safetensors"
