@@ -228,7 +228,7 @@ python installer/install_remote.py http://192.168.1.50:8188 --llm-url http://192
 <summary><strong>What the remote installer does</strong></summary>
 
 1. **Probes the remote ComfyUI** — queries `/system_stats` and `/object_info` to discover GPU, VRAM, installed nodes, checkpoints, LoRAs, VAEs, and ControlNets
-2. **Detects SFW / NSFW edition** — scans the server's model list for known NSFW patterns and configures the local install accordingly
+2. **Detects server edition** — identifies the installed edition and configures the local install accordingly
 3. **Identifies available features** — cross-references server capabilities against the feature manifest to show what's ready to use
 4. **Auto-detects GIMP and Darktable** — finds your local installations (Windows registry, macOS Application Support, Linux config dirs, Flatpak/Snap)
 5. **Installs plugins** — copies the GIMP and Darktable plugins with the remote server URL pre-configured
@@ -247,8 +247,6 @@ Everything is **completely autonomous** — no prompts, no decisions. Just give 
 | `--skip-darktable` | Don't install the Darktable plugin |
 | `--skip-guild` | Don't install the Wizard Guild |
 | `--skip-shortcuts` | Don't create desktop shortcuts |
-| `--nsfw-token PAT` | GitHub PAT for NSFW repo auto-updates |
-| `--force-sfw` | Force SFW mode even if NSFW content detected |
 | `--interactive` | Use guided prompts instead of auto-detection |
 | `--dry-run` | Preview what would happen without making changes |
 
@@ -401,7 +399,7 @@ Dual ControlNet support in img2img and inpaint workflows. Models auto-selected p
 
 | Tool | What It Does | Details |
 |---|---|---|
-| **LTX2.2 Text-to-Video** | Generate video from a text prompt — no input image needed | phr00t merge model (fp8_e4m3fn), 8-step LCM schedule, 80 prompt templates (55 SFW + 25 NSFW) |
+| **LTX2.2 Text-to-Video** | Generate video from a text prompt — no input image needed | phr00t merge model (fp8_e4m3fn), 8-step LCM schedule, 80 prompt templates |
 | **LTX2.2 Image-to-Video** | Animate any photo with text guidance | Same pipeline with image conditioning and adjustable strength |
 
 **Hardware-aware quality presets**: 8 presets including Auto-Detect — queries ComfyUI `/system_stats` to classify your GPU tier and auto-selects optimal resolution, duration, and post-processing chain. Supports LoRA injection (distilled, motion-track, union-control), ChunkFeedForward VRAM optimization, and the full post-processing stack below.
