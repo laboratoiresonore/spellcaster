@@ -849,6 +849,84 @@ def feature_compatible(feat: dict, vram_mb: int) -> tuple[str, str]:
     return ("ok", "")
 
 
+def feature_already_installed(feat: dict, manifest: dict,
+                              server_info: dict) -> tuple[bool, str]:
+    """Check if a feature's components are already present on the ComfyUI server.
+
+    Cross-references the feature's custom_nodes (via their 'provides' node
+    class names) and required models against what server probing detected.
+
+    Returns:
+        (True, reason)  — all required components are installed
+        (False, "")     — something is missing
+    """
+    if not server_info.get('reachable'):
+        return (False, "")
+
+    available_nodes = server_info.get('available_nodes', set())
+
+    # ── Check custom nodes ──
+    # Each feature lists node pack names (e.g., "comfyui-reactor-node")
+    # which have a "provides" array of node class names in the manifest.
+    node_packs = feat.get("custom_nodes", [])
+    for pack_name in node_packs:
+        pack_def = manifest.get("custom_nodes", {}).get(pack_name, {})
+        provides = pack_def.get("provides", [])
+        if provides and not any(p in available_nodes for p in provides):
+            return (False, "")
+
+    # ── Check required models ──
+    # Collect all model names that the server reports (flatten all lists).
+    # Model paths in the manifest use subdirectory prefixes like
+    # "checkpoints/SDXL/model.safetensors" but ComfyUI returns just the
+    # relative path from the model root (e.g., "SDXL\\model.safetensors"
+    # or "SDXL/model.safetensors").
+    server_models: set[str] = set()
+    for key in ('checkpoints', 'unet_models', 'loras', 'vaes',
+                'clip_models', 'controlnets'):
+        for m in server_info.get(key, []):
+            # Normalize to lowercase for comparison
+            server_models.add(m.lower())
+            # Also add just the filename for loose matching
+            basename = m.rsplit('/', 1)[-1].rsplit('\\', 1)[-1]
+            server_models.add(basename.lower())
+
+    models = collect_models_for_feature(feat)
+    required_models = [m for m in models if not m.get("optional", False)]
+
+    if required_models:
+        missing = 0
+        for model in required_models:
+            rel_path = model["path"]
+            # Strip the top-level ComfyUI model type dir
+            # e.g., "checkpoints/SDXL/foo.safetensors" → "SDXL/foo.safetensors"
+            parts = rel_path.split("/", 1)
+            inner_path = parts[1] if len(parts) > 1 else parts[0]
+            basename = rel_path.rsplit("/", 1)[-1]
+
+            # Check multiple matching strategies
+            found = (
+                inner_path.lower() in server_models
+                or inner_path.replace("/", "\\").lower() in server_models
+                or basename.lower() in server_models
+                or rel_path.lower() in server_models
+            )
+            if not found:
+                missing += 1
+
+        if missing > 0:
+            return (False, "")
+
+    # Everything is present
+    parts = []
+    if node_packs:
+        parts.append(f"{len(node_packs)} node pack(s)")
+    if required_models:
+        parts.append(f"{len(required_models)} model(s)")
+    reason = "Already on server: " + " + ".join(parts) if parts else "Already installed"
+    return (True, reason)
+
+
 def download_file(url: str, dest: Path, dry_run: bool = False,
                   civitai_key: str = "", hf_token: str = "") -> bool:
     """Download a file from *url* to *dest* with a progress bar.
@@ -1885,11 +1963,15 @@ def step_detect_paths(args) -> dict:
     return {"comfyui": comfyui_path, "gimp": gimp_path, "darktable": dt_path}
 
 
-def step_select_features(manifest: dict, paths: dict, args) -> dict[str, bool]:
+def step_select_features(manifest: dict, paths: dict, args,
+                         server_info: dict | None = None) -> dict[str, bool]:
     """Step 3: Feature selection with VRAM-aware pre-selection."""
     print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
     print(f"{C_BOLD}  STEP 3: Select Features{C_RESET}")
     print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
+
+    if server_info is None:
+        server_info = {}
 
     vram_mb = getattr(args, '_vram_mb', 0)
     features = manifest["features"]
@@ -1904,17 +1986,22 @@ def step_select_features(manifest: dict, paths: dict, args) -> dict[str, bool]:
 
     # \u2500\u2500 Phase 1: Classify every feature \u2500\u2500
     # Build a list of (key, feat, status, reason, default_checked)
-    feature_list: list[tuple[str, dict, str, str, bool]] = []
+    # Each entry: (key, feat, status, reason, default_checked, locked)
+    # locked=True means the feature's nodes+models are already on the server
+    # and the user cannot toggle it — it's a no-op to reinstall.
+    feature_list: list[tuple[str, dict, str, str, bool, bool]] = []
     feature_compat: dict[str, tuple[str, str]] = {}
+    locked_features: set[str] = set()
 
     for key, feat in features.items():
         status, reason = feature_compatible(feat, vram_mb)
 
         # Auto-check logic:
-        # - "ok"    -> checked by default
-        # - "warn"  -> checked but with warning
-        # - "no"    -> unchecked, greyed out
-        # - "nogpu" -> unchecked
+        # - "ok"        -> checked by default
+        # - "warn"      -> checked but with warning
+        # - "no"        -> unchecked, greyed out
+        # - "nogpu"     -> unchecked
+        # - "installed" -> locked on, already present on server
         default_on = status in ("ok", "warn")
 
         # Also check if the host app is available
@@ -1926,7 +2013,18 @@ def step_select_features(manifest: dict, paths: dict, args) -> dict[str, bool]:
                 status = "no"
                 reason = "No compatible host app detected"
 
-        feature_list.append((key, feat, status, reason, default_on))
+        # Check if feature is already fully installed on the ComfyUI server
+        locked = False
+        already_ok, installed_reason = feature_already_installed(
+            feat, manifest, server_info)
+        if already_ok:
+            locked = True
+            default_on = True
+            status = "installed"
+            reason = installed_reason
+            locked_features.add(key)
+
+        feature_list.append((key, feat, status, reason, default_on, locked))
         feature_compat[key] = (status, reason)
 
     # \u2500\u2500 Phase 2: Display grouped features with status indicators \u2500\u2500
@@ -1942,14 +2040,20 @@ def step_select_features(manifest: dict, paths: dict, args) -> dict[str, bool]:
     vram_label = f"{vram_mb/1024:.0f} GB VRAM" if vram_mb > 0 else "no GPU detected"
     print(f"  Features are pre-selected based on your hardware ({vram_label}):\n")
 
+    if locked_features:
+        print(f"  {C_CYAN}{len(locked_features)} feature(s) already installed on your"
+              f" ComfyUI server — these are locked.{C_RESET}\n")
+
     for cat_name, cat_keys in categories.items():
         print(f"  {C_BOLD}\u2500\u2500 {cat_name} \u2500\u2500{C_RESET}")
-        for key, feat, status, reason, default_on in feature_list:
+        for key, feat, status, reason, default_on, locked in feature_list:
             if key not in cat_keys:
                 continue
 
             # Status icons
-            if status == "ok":
+            if status == "installed":
+                icon = f"{C_CYAN}[\u2713]{C_RESET}"
+            elif status == "ok":
                 icon = f"{C_GREEN}[+]{C_RESET}"
             elif status == "warn":
                 icon = f"{C_YELLOW}[~]{C_RESET}"
@@ -1968,6 +2072,7 @@ def step_select_features(manifest: dict, paths: dict, args) -> dict[str, bool]:
                 print(f"    {icon} {label}{size_str}")
         print()
 
+    print(f"  {C_CYAN}[\u2713]{C_RESET} = already installed on server (locked)")
     print(f"  {C_GREEN}[+]{C_RESET} = compatible & pre-selected")
     print(f"  {C_YELLOW}[~]{C_RESET} = works but may be slow on your hardware")
     print(f"  {C_RED}[x]{C_RESET} = incompatible with your VRAM or no host app detected\n")
@@ -1976,27 +2081,36 @@ def step_select_features(manifest: dict, paths: dict, args) -> dict[str, bool]:
     selected: dict[str, bool] = {}
 
     if forced_features is not None:
-        # --features flag overrides everything
-        for key, feat, status, reason, default_on in feature_list:
-            selected[key] = key in forced_features
+        # --features flag overrides everything (but locked features stay on)
+        for key, feat, status, reason, default_on, locked in feature_list:
+            selected[key] = (key in forced_features) or locked
     elif args.yes:
         # Auto mode: use smart defaults
-        for key, feat, status, reason, default_on in feature_list:
+        for key, feat, status, reason, default_on, locked in feature_list:
             selected[key] = default_on
     else:
         # Interactive: show the grid, ask if they want to customize
-        for key, feat, status, reason, default_on in feature_list:
+        for key, feat, status, reason, default_on, locked in feature_list:
             selected[key] = default_on
 
         if ask_yn("  Use these recommended selections?", default=True):
             pass  # Keep defaults
         else:
             # Let user toggle individual features
-            print(f"\n  {C_DIM}Answer y/n for each feature. Features marked [x] are not recommended.{C_RESET}\n")
+            print(f"\n  {C_DIM}Answer y/n for each feature.")
+            if locked_features:
+                print(f"  Features marked [\u2713] are already on your server and cannot be toggled.")
+            print(f"  Features marked [x] are not recommended.{C_RESET}\n")
             handled = set()
 
-            for key, feat, status, reason, default_on in feature_list:
+            for key, feat, status, reason, default_on, locked in feature_list:
                 if key in handled:
+                    continue
+
+                # Locked features cannot be toggled — skip the prompt
+                if locked:
+                    handled.add(key)
+                    print(f"    {C_CYAN}[\u2713] {feat['label']}{C_RESET}  {C_DIM}\u2014 {reason}{C_RESET}")
                     continue
 
                 # \u2500\u2500 Special case: ReActor vs MTB face swap grouped choice \u2500\u2500
@@ -2004,12 +2118,17 @@ def step_select_features(manifest: dict, paths: dict, args) -> dict[str, bool]:
                     handled.add("face_swap_reactor")
                     handled.add("face_swap_mtb")
 
+                    # If both are locked, skip entirely
+                    if "face_swap_reactor" in locked_features and "face_swap_mtb" in locked_features:
+                        print(f"    {C_CYAN}[\u2713] Face Swap (ReActor + MTB){C_RESET}  {C_DIM}\u2014 already installed{C_RESET}")
+                        continue
+
                     # Check app availability for face swap
                     fs_plugins = feat.get("plugins", [])
                     fs_available = ("gimp" in fs_plugins and has_gimp) or ("darktable" in fs_plugins and has_dt)
                     if not fs_available:
-                        selected["face_swap_reactor"] = False
-                        selected["face_swap_mtb"] = False
+                        selected["face_swap_reactor"] = "face_swap_reactor" in locked_features
+                        selected["face_swap_mtb"] = "face_swap_mtb" in locked_features
                         continue
 
                     reactor_feat = features.get("face_swap_reactor", {})
@@ -2038,8 +2157,8 @@ def step_select_features(manifest: dict, paths: dict, args) -> dict[str, bool]:
                         default=0 if default_on else 3,
                         auto_yes=args.yes,
                     )
-                    selected["face_swap_reactor"] = choice in (0, 1)
-                    selected["face_swap_mtb"] = choice in (0, 2)
+                    selected["face_swap_reactor"] = choice in (0, 1) or "face_swap_reactor" in locked_features
+                    selected["face_swap_mtb"] = choice in (0, 2) or "face_swap_mtb" in locked_features
                     if selected.get("face_swap_reactor") or selected.get("face_swap_mtb"):
                         if reactor_status == "no":
                             print(f"    {C_YELLOW}Warning: Overriding recommendation \u2014 this may not work with your VRAM!{C_RESET}")
@@ -2056,13 +2175,16 @@ def step_select_features(manifest: dict, paths: dict, args) -> dict[str, bool]:
                     selected[key] = ask_yn(f"    {feat['label']}?", default=default_on)
 
     # \u2500\u2500 Hardware profile summary \u2500\u2500
-    ok_count = sum(1 for k in selected if selected[k] and feature_compat.get(k, ("ok", ""))[0] == "ok")
-    warn_count = sum(1 for k in selected if selected[k] and feature_compat.get(k, ("ok", ""))[0] == "warn")
-    force_count = sum(1 for k in selected if selected[k] and feature_compat.get(k, ("ok", ""))[0] in ("no", "nogpu"))
+    installed_count = sum(1 for k in selected if selected[k] and k in locked_features)
+    ok_count = sum(1 for k in selected if selected[k] and k not in locked_features and feature_compat.get(k, ("ok", ""))[0] == "ok")
+    warn_count = sum(1 for k in selected if selected[k] and k not in locked_features and feature_compat.get(k, ("ok", ""))[0] == "warn")
+    force_count = sum(1 for k in selected if selected[k] and k not in locked_features and feature_compat.get(k, ("ok", ""))[0] in ("no", "nogpu"))
 
     print(f"\n  {C_BOLD}Hardware Profile:{C_RESET}")
     print(f"    GPU: {getattr(args, '_gpu_name', 'Unknown')}")
     print(f"    VRAM: {vram_mb/1024:.0f} GB ({getattr(args, '_vram_tier', 'unknown')})")
+    if installed_count:
+        print(f"    {C_CYAN}{installed_count} feature(s) already installed on server{C_RESET}")
     print(f"    {C_GREEN}{ok_count} feature(s) fully compatible{C_RESET}")
     if warn_count:
         print(f"    {C_YELLOW}{warn_count} feature(s) may be slow{C_RESET}")
@@ -2092,7 +2214,7 @@ def step_select_features(manifest: dict, paths: dict, args) -> dict[str, bool]:
 
 
 def step_install_nodes(manifest: dict, selected: dict[str, bool], paths: dict,
-                       dry_run: bool = False):
+                       dry_run: bool = False, server_info: dict | None = None):
     """Step 4: Install required custom nodes."""
     if not paths["comfyui"]:
         print(f"\n  {C_YELLOW}Skipping custom node installation (no ComfyUI path).{C_RESET}")
@@ -2103,6 +2225,10 @@ def step_install_nodes(manifest: dict, selected: dict[str, bool], paths: dict,
         print(f"  {C_YELLOW}Custom nodes require git to clone. Skipping node installation.{C_RESET}")
         print(f"  {C_YELLOW}Install git from https://git-scm.com/ and re-run the installer.{C_RESET}\n")
         return
+
+    if server_info is None:
+        server_info = {}
+    available_nodes = server_info.get('available_nodes', set())
 
     print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
     print(f"{C_BOLD}  STEP 4: Install Custom Nodes{C_RESET}")
@@ -2125,11 +2251,19 @@ def step_install_nodes(manifest: dict, selected: dict[str, bool], paths: dict,
 
     node_defs = manifest.get("custom_nodes", {})
     failed_nodes = []
+    already_on_server = 0
 
     for node_name in sorted(needed_nodes):
         node_info = node_defs.get(node_name)
         if not node_info:
             print(f"  {C_YELLOW}⚠ Unknown node: {node_name}{C_RESET}")
+            continue
+
+        # Skip node packs whose provided class types are already on the server
+        provides = node_info.get("provides", [])
+        if provides and available_nodes and all(p in available_nodes for p in provides):
+            print(f"  {C_CYAN}✓ Already on server:{C_RESET} {node_name}")
+            already_on_server += 1
             continue
 
         dest = custom_nodes_dir / node_name
@@ -2147,6 +2281,9 @@ def step_install_nodes(manifest: dict, selected: dict[str, bool], paths: dict,
 
         if "note" in node_info:
             print(f"  {C_DIM}Note: {node_info['note']}{C_RESET}")
+
+    if already_on_server:
+        print(f"\n  {C_CYAN}{already_on_server} node pack(s) already on server — skipped.{C_RESET}")
 
     if failed_nodes:
         print(f"\n  {C_RED}Failed to install nodes: {', '.join(failed_nodes)}{C_RESET}")
@@ -3123,10 +3260,10 @@ def main():
     llm_url = step_detect_llm_server(args)
     paths = step_detect_paths(args)
     server_info = step_probe_server(server_url, args)
-    selected = step_select_features(manifest, paths, args)
+    selected = step_select_features(manifest, paths, args, server_info)
 
     if not args.skip_nodes:
-        step_install_nodes(manifest, selected, paths, args.dry_run)
+        step_install_nodes(manifest, selected, paths, args.dry_run, server_info)
     else:
         print(f"\n  {C_YELLOW}--skip-nodes specified \u2014 skipping custom node installation.{C_RESET}")
 
