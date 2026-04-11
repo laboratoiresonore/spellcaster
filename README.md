@@ -203,6 +203,61 @@ That's it. [ComfyUI](https://github.com/comfyanonymous/ComfyUI) is the AI engine
 >
 > **Plugin not showing up?** Download the [**Manual Update & Repair tool**](https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-manual-update.exe) ([Linux version](https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-manual-update)) — it finds and fixes broken installations automatically.
 
+### ComfyUI on Another Machine? (Remote / Network Install)
+
+If ComfyUI runs on a **different computer** on your local network (a server, a friend's gaming PC, a cloud box), use the **Remote Installer** instead. It sets up everything on *your* machine — GIMP plugin, Darktable plugin, Wizard Guild, desktop shortcuts — pre-configured to talk to the remote ComfyUI. No ComfyUI needed locally.
+
+<p align="center">
+  <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-remote-installer.exe">
+    <img src="https://img.shields.io/badge/Windows-remote--installer.exe-e879f9?style=for-the-badge&logo=windows&logoColor=white" alt="Download Remote Installer for Windows"/>
+  </a>
+  &nbsp;
+  <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-remote-installer">
+    <img src="https://img.shields.io/badge/Linux%20%7C%20macOS-remote--installer-e879f9?style=for-the-badge&logo=linux&logoColor=white" alt="Download Remote Installer for Linux/macOS"/>
+  </a>
+</p>
+
+```bash
+# Point it at your ComfyUI server — everything else is automatic
+python installer/install_remote.py http://192.168.1.50:8188
+
+# Don't know the IP? Let it scan your network
+python installer/install_remote.py --scan
+
+# Also have a local LLM on the server machine?
+python installer/install_remote.py http://192.168.1.50:8188 --llm-url http://192.168.1.50:5001
+```
+
+<details>
+<summary><strong>What the remote installer does</strong></summary>
+
+1. **Probes the remote ComfyUI** — queries `/system_stats` and `/object_info` to discover GPU, VRAM, installed nodes, checkpoints, LoRAs, VAEs, and ControlNets
+2. **Detects SFW / NSFW edition** — scans the server's model list for known NSFW patterns and configures the local install accordingly
+3. **Identifies available features** — cross-references server capabilities against the feature manifest to show what's ready to use
+4. **Auto-detects GIMP and Darktable** — finds your local installations (Windows registry, macOS Application Support, Linux config dirs, Flatpak/Snap)
+5. **Installs plugins** — copies the GIMP and Darktable plugins with the remote server URL pre-configured
+6. **Deploys the Wizard Guild** — full standalone web UI installation with launcher scripts
+7. **Creates desktop shortcuts** — Windows Start Menu, macOS .command, Linux .desktop entries
+8. **Writes shared settings** — `spellcaster_settings.json` with all detected models, LoRA architecture classification, and server config
+
+Everything is **completely autonomous** — no prompts, no decisions. Just give it the server URL and walk away. Use `--dry-run` to preview without making changes.
+
+| Flag | What It Does |
+|---|---|
+| `--scan` | Auto-discover ComfyUI servers on your local network |
+| `--port 8188` | Port to scan (default: 8188) |
+| `--llm-url URL` | LLM server for Wizard Guild prompt enhancement |
+| `--skip-gimp` | Don't install the GIMP plugin |
+| `--skip-darktable` | Don't install the Darktable plugin |
+| `--skip-guild` | Don't install the Wizard Guild |
+| `--skip-shortcuts` | Don't create desktop shortcuts |
+| `--nsfw-token PAT` | GitHub PAT for NSFW repo auto-updates |
+| `--force-sfw` | Force SFW mode even if NSFW content detected |
+| `--interactive` | Use guided prompts instead of auto-detection |
+| `--dry-run` | Preview what would happen without making changes |
+
+</details>
+
 ### Already Using ComfyUI Manager?
 
 If you installed [ComfyUI-Spellcaster](https://github.com/laboratoiresonore/ComfyUI-Spellcaster) through ComfyUI Manager (or `git clone`), you already have the nodes — but you're missing the rest of the suite. On first load, Spellcaster drops a ready-to-run **`Install_Spellcaster_Suite.bat`** into your `custom_nodes` folder. Double-click it to get Wizard Guild, GIMP/Darktable plugins, desktop shortcuts, and the model downloader. You'll also see a toast notification in the ComfyUI web UI with a link.
@@ -227,7 +282,7 @@ The installer is an 8-step guided wizard. It's designed so you never have to mak
 
 **The installer detects your GPU** and only shows features your hardware can run. If you have 4 GB of VRAM, you won't see options that need 16 GB. No guesswork.
 
-**Remote server mode**: Don't have a GPU? The installer can connect to a ComfyUI server running on another computer on your network. Just enter the IP address — everything else works the same.
+**Remote server mode**: Don't have a GPU? Use the [Remote Installer](#comfyui-on-another-machine-remote--network-install) — it connects to a ComfyUI server on another machine and sets up everything locally. Or use the main installer with `--server-url http://192.168.1.50:8188`.
 
 </details>
 
