@@ -5710,19 +5710,53 @@ class GuildHandler(SimpleHTTPRequestHandler):
             name = data.get("name", "")
             gen_id = data.get("generation_id", "")
             params = data.get("params", {})
+            color = data.get("color", "#B246F2")
+            wizard_id = data.get("wizard_id", "")
+            icon = data.get("icon", "")
+            tags = data.get("tags", [])
             if not name:
                 return self.end_json(400, {"error": "Spell name required"})
             try:
                 from spellcaster_core.memory import WizardMemory
                 mem_path = os.path.join(_STATE_DIR, "wizard_memory.json")
                 mem = WizardMemory.load(mem_path)
-                preset = mem.save_preset(name, gen_id=gen_id, params=params or None)
+                preset = mem.save_preset(name, gen_id=gen_id, params=params or None,
+                                         color=color, wizard_id=wizard_id,
+                                         icon=icon, tags=tags)
                 if preset:
                     mem.save(mem_path)
                     return self.end_json(200, {"status": "saved", "spell": preset.to_dict()})
                 return self.end_json(400, {"error": "Could not find generation to save"})
             except Exception as e:
                 return self.end_json(500, {"error": str(e)[:150]})
+
+        # -- /api/spells/color -- change a Spell's color
+        elif self.path == '/api/spells/color':
+            name = data.get("name", "")
+            color = data.get("color", "")
+            if not name or not color:
+                return self.end_json(400, {"error": "name and color required"})
+            try:
+                from spellcaster_core.memory import WizardMemory
+                mem_path = os.path.join(_STATE_DIR, "wizard_memory.json")
+                mem = WizardMemory.load(mem_path)
+                if mem.update_spell_color(name, color):
+                    mem.save(mem_path)
+                    return self.end_json(200, {"status": "ok"})
+                return self.end_json(404, {"error": f"Spell '{name}' not found"})
+            except Exception as e:
+                return self.end_json(500, {"error": str(e)[:150]})
+
+        # -- /api/spells/for_wizard -- get spells for a specific wizard
+        elif self.path.startswith('/api/spells/for_wizard/'):
+            wiz_id = self.path.split('/api/spells/for_wizard/')[-1]
+            try:
+                from spellcaster_core.memory import WizardMemory
+                mem = WizardMemory.load(os.path.join(_STATE_DIR, "wizard_memory.json"))
+                spells = [p.to_dict() for p in mem.spells_for_wizard(wiz_id)]
+                return self.end_json(200, {"spells": spells, "wizard_id": wiz_id})
+            except Exception as e:
+                return self.end_json(200, {"spells": [], "error": str(e)[:100]})
 
         # -- /api/spells/use -- load a Spell's settings
         elif self.path == '/api/spells/use':

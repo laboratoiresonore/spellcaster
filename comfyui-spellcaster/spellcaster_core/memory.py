@@ -67,7 +67,19 @@ class GenerationRecord:
 
 
 class NamedPreset:
-    """A user-saved workflow preset with ALL settings."""
+    """A user-saved Spell — complete workflow preset with ALL settings."""
+
+    # Default spell colors (user can change)
+    SPELL_COLORS = {
+        "purple": "#B246F2",  # default
+        "blue": "#3B82F6",
+        "green": "#10B981",
+        "red": "#EF4444",     # NSFW convention
+        "orange": "#F59E0B",
+        "pink": "#EC4899",
+        "cyan": "#06B6D4",
+        "gold": "#D4A017",
+    }
 
     def __init__(self, name, params, source_gen_id=""):
         self.name = name
@@ -76,6 +88,11 @@ class NamedPreset:
         self.created = time.time()
         self.use_count = 0
         self.last_used = 0
+        self.color = "#B246F2"   # default purple
+        self.icon = ""           # optional emoji
+        self.wizard_id = ""      # which wizard this spell belongs to
+        self.shortcut = ""       # keyboard shortcut (e.g., "1", "2", "a")
+        self.tags = []           # user tags for filtering
 
     def to_dict(self):
         return {
@@ -85,6 +102,11 @@ class NamedPreset:
             "created": self.created,
             "use_count": self.use_count,
             "last_used": self.last_used,
+            "color": self.color,
+            "icon": self.icon,
+            "wizard_id": self.wizard_id,
+            "shortcut": self.shortcut,
+            "tags": self.tags,
         }
 
     @classmethod
@@ -93,6 +115,11 @@ class NamedPreset:
         p.created = d.get("created", 0)
         p.use_count = d.get("use_count", 0)
         p.last_used = d.get("last_used", 0)
+        p.color = d.get("color", "#B246F2")
+        p.icon = d.get("icon", "")
+        p.wizard_id = d.get("wizard_id", "")
+        p.shortcut = d.get("shortcut", "")
+        p.tags = d.get("tags", [])
         return p
 
 
@@ -134,10 +161,11 @@ class WizardMemory:
 
     # ── Presets ──────────────────────────────────────────────────
 
-    def save_preset(self, name, gen_id=None, params=None):
-        """Save a named preset from a generation or raw params.
+    def save_preset(self, name, gen_id=None, params=None,
+                    color="#B246F2", wizard_id="", icon="", tags=None):
+        """Save a named Spell from a generation or raw params.
 
-        The preset contains ALL workflow settings — model, arch, LoRAs,
+        The Spell contains ALL workflow settings — model, arch, LoRAs,
         resolution, steps, CFG, sampler, scheduler, prompt template.
         """
         if gen_id:
@@ -150,8 +178,24 @@ class WizardMemory:
             return None
 
         preset = NamedPreset(name, params, gen_id or "")
+        preset.color = color
+        preset.wizard_id = wizard_id
+        preset.icon = icon
+        preset.tags = tags or []
         self.presets[name] = preset
         return preset
+
+    def update_spell_color(self, name, color):
+        """Change a Spell's color."""
+        p = self.presets.get(name)
+        if p:
+            p.color = color
+            return True
+        return False
+
+    def spells_for_wizard(self, wizard_id):
+        """Get all Spells associated with a specific wizard."""
+        return [p for p in self.presets.values() if p.wizard_id == wizard_id]
 
     def use_preset(self, name):
         """Get a preset's params and increment its use counter."""
