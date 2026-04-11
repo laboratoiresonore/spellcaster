@@ -4874,6 +4874,31 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 return self.end_json(200, _DIAGNOSTIC_REPORT.to_json())
             return self.end_json(200, {"status": "pending", "message": "Diagnostic still running"})
 
+        elif self.path == '/api/memory/presets':
+            # GET /api/memory/presets — list all saved presets
+            try:
+                from spellcaster_core.memory import WizardMemory
+                mem = WizardMemory.load(os.path.join(_STATE_DIR, "wizard_memory.json"))
+                presets = [p.to_dict() for p in mem.list_presets()]
+                return self.end_json(200, {"presets": presets})
+            except Exception as e:
+                return self.end_json(200, {"presets": [], "error": str(e)[:100]})
+
+        elif self.path == '/api/memory/suggest':
+            # GET /api/memory/suggest?prompt=... — get learned preferences
+            from urllib.parse import urlparse, parse_qs
+            params = parse_qs(urlparse(self.path).query)
+            prompt = params.get("prompt", [""])[0]
+            try:
+                from spellcaster_core.memory import WizardMemory
+                mem = WizardMemory.load(os.path.join(_STATE_DIR, "wizard_memory.json"))
+                suggestions = mem.suggest(prompt)
+                # Filter out internal tracking keys
+                clean = {k: v for k, v in suggestions.items() if not k.startswith("_")}
+                return self.end_json(200, {"suggestions": clean})
+            except Exception as e:
+                return self.end_json(200, {"suggestions": {}, "error": str(e)[:100]})
+
         elif self.path == '/api/vision_nodes':
             # GET /api/vision_nodes — which vision/LLM backends are available
             vision_info = {"backends": [], "llm": [], "vision_methods": []}
@@ -5639,6 +5664,105 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "status": "refreshing",
                 "current_total": len(_LORA_REGISTRY),
             })
+
+        # -- /api/memory/feedback -- thumbs up/down on a generation
+        elif self.path == '/api/memory/feedback':
+            gen_id = data.get("generation_id", "")
+            thumbs_up = data.get("thumbs_up")
+            if not gen_id or thumbs_up is None:
+                return self.end_json(400, {"error": "generation_id and thumbs_up required"})
+            try:
+                from spellcaster_core.memory import WizardMemory
+                mem_path = os.path.join(_STATE_DIR, "wizard_memory.json")
+                mem = WizardMemory.load(mem_path)
+                found = mem.set_feedback(gen_id, bool(thumbs_up))
+                if found:
+                    # Check if this is a novel method worth naming
+                    rec = next((r for r in reversed(mem.generations) if r.id == gen_id), None)
+                    novelty = mem.detect_new_method(rec.params) if rec and thumbs_up else None
+                    mem.save(mem_path)
+                    result = {"status": "ok", "found": True}
+                    if novelty:
+                        result["new_spell"] = novelty
+                    return self.end_json(200, result)
+                return self.end_json(200, {"status": "ok", "found": False})
+            except Exception as e:
+                return self.end_json(500, {"error": str(e)[:150]})
+
+        # -- /api/memory/record -- record a generation (called after every ComfyUI completion)
+        elif self.path == '/api/memory/record':
+            gen_id = data.get("generation_id", "")
+            params = data.get("params", {})
+            if not gen_id or not params:
+                return self.end_json(400, {"error": "generation_id and params required"})
+            try:
+                from spellcaster_core.memory import WizardMemory
+                mem_path = os.path.join(_STATE_DIR, "wizard_memory.json")
+                mem = WizardMemory.load(mem_path)
+                mem.record(gen_id, params)
+                mem.save(mem_path)
+                return self.end_json(200, {"status": "recorded"})
+            except Exception as e:
+                return self.end_json(500, {"error": str(e)[:150]})
+
+        # -- /api/spells/save -- save a named Spell (preset with ALL settings)
+        elif self.path == '/api/spells/save':
+            name = data.get("name", "")
+            gen_id = data.get("generation_id", "")
+            params = data.get("params", {})
+            if not name:
+                return self.end_json(400, {"error": "Spell name required"})
+            try:
+                from spellcaster_core.memory import WizardMemory
+                mem_path = os.path.join(_STATE_DIR, "wizard_memory.json")
+                mem = WizardMemory.load(mem_path)
+                preset = mem.save_preset(name, gen_id=gen_id, params=params or None)
+                if preset:
+                    mem.save(mem_path)
+                    return self.end_json(200, {"status": "saved", "spell": preset.to_dict()})
+                return self.end_json(400, {"error": "Could not find generation to save"})
+            except Exception as e:
+                return self.end_json(500, {"error": str(e)[:150]})
+
+        # -- /api/spells/use -- load a Spell's settings
+        elif self.path == '/api/spells/use':
+            name = data.get("name", "")
+            if not name:
+                return self.end_json(400, {"error": "Spell name required"})
+            try:
+                from spellcaster_core.memory import WizardMemory
+                mem_path = os.path.join(_STATE_DIR, "wizard_memory.json")
+                mem = WizardMemory.load(mem_path)
+                params = mem.use_preset(name)
+                if params:
+                    mem.save(mem_path)
+                    return self.end_json(200, {"params": params})
+                return self.end_json(404, {"error": f"Spell '{name}' not found"})
+            except Exception as e:
+                return self.end_json(500, {"error": str(e)[:150]})
+
+        # -- /api/spells/delete -- remove a Spell
+        elif self.path == '/api/spells/delete':
+            name = data.get("name", "")
+            try:
+                from spellcaster_core.memory import WizardMemory
+                mem_path = os.path.join(_STATE_DIR, "wizard_memory.json")
+                mem = WizardMemory.load(mem_path)
+                deleted = mem.delete_preset(name)
+                mem.save(mem_path)
+                return self.end_json(200, {"deleted": deleted})
+            except Exception as e:
+                return self.end_json(500, {"error": str(e)[:150]})
+
+        # -- /api/spells/list -- same as /api/memory/presets but with "spells" naming
+        elif self.path == '/api/spells/list':
+            try:
+                from spellcaster_core.memory import WizardMemory
+                mem = WizardMemory.load(os.path.join(_STATE_DIR, "wizard_memory.json"))
+                spells = [p.to_dict() for p in mem.list_presets()]
+                return self.end_json(200, {"spells": spells})
+            except Exception as e:
+                return self.end_json(200, {"spells": [], "error": str(e)[:100]})
 
         # -- /api/forge_action -- execute Forge wizard actions
         elif self.path == '/api/forge_action':
