@@ -180,8 +180,7 @@
       ]
     },
     "ComfyUI-Spellcaster": {
-      "local": true,
-      "source": "comfyui-spellcaster",
+      "repo": "https://github.com/laboratoiresonore/ComfyUI-Spellcaster",
       "provides": [
         "SpellcasterLoader",
         "SpellcasterPromptEnhance",
@@ -189,7 +188,7 @@
         "SpellcasterOutput"
       ],
       "required_by": ["img2img", "txt2img", "inpaint"],
-      "note": "Bundled with Spellcaster — auto-arch model loading, LLM prompt enhance, and smart sampling."
+      "note": "Spellcaster nodes — auto-arch model loading, LLM prompt enhance, and smart sampling. Auto-updates via git pull."
     }
   },
   "features": {

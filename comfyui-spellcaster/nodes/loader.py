@@ -1,244 +1,233 @@
 """SpellcasterLoader — Auto-detect architecture and load model stack.
 
-This node replaces the need for separate CheckpointLoaderSimple / UNETLoader +
-CLIPLoader + VAELoader nodes. It reads the model filename, detects the
-architecture (sd15, sdxl, flux1dev, flux2klein, chroma, etc.), and loads
-everything correctly in one step.
+Replaces the need for separate CheckpointLoaderSimple / UNETLoader +
+CLIPLoader + VAELoader nodes.  Reads the model filename, detects the
+architecture, and loads MODEL + CLIP + VAE in one step.
+
+Uses the exact same comfy.sd APIs as ComfyUI's built-in loaders.
 """
 
 import os
 import sys
+import torch
 import folder_paths
+import comfy.sd
+import comfy.utils
 
-try:
-    import comfy.sd
-except ImportError:
-    comfy = None
-
-# Add parent to path for spellcaster_core imports
+# ── spellcaster_core import ────────────────────────────────────────────
 _pack_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _pack_dir not in sys.path:
     sys.path.insert(0, _pack_dir)
 
-try:
-    from spellcaster_core.architectures import ARCHITECTURES, get_arch
-    from spellcaster_core.model_detect import classify_unet_model, classify_ckpt_model
-except ImportError as e:
-    print(f"[SpellcasterLoader] WARNING: Failed to import spellcaster_core: {e}")
-    ARCHITECTURES = {}
-    get_arch = None
-    classify_unet_model = None
-    classify_ckpt_model = None
+from spellcaster_core.architectures import ARCHITECTURES, get_arch
+from spellcaster_core.model_detect import classify_unet_model, classify_ckpt_model
 
 
 class SpellcasterLoader:
-    """Auto-detect architecture and load MODEL + CLIP + VAE in one node.
-
-    Replaces the need for separate CheckpointLoaderSimple / UNETLoader +
-    CLIPLoader + VAELoader nodes. Reads the model filename, detects the
-    architecture (sd15, sdxl, flux1dev, flux2klein, chroma, etc.), and
-    loads everything correctly.
-
-    Returns:
-      - model: Diffusion model (UNET)
-      - clip: Text encoder (CLIP)
-      - vae: VAE for latent encoding/decoding
-      - arch_key: Detected architecture key (for downstream nodes)
-    """
+    """Auto-detect architecture and load MODEL + CLIP + VAE in one node."""
 
     @classmethod
     def INPUT_TYPES(cls):
-        # Combine checkpoints and diffusion_models (UNETs)
         checkpoints = folder_paths.get_filename_list("checkpoints")
         unet_models = folder_paths.get_filename_list("diffusion_models")
-        all_models = sorted(set(checkpoints + unet_models))
-
-        arch_keys = ["auto"] + sorted(ARCHITECTURES.keys()) if ARCHITECTURES else ["auto"]
+        all_models  = sorted(set(checkpoints + unet_models))
+        arch_keys   = ["auto"] + sorted(ARCHITECTURES.keys())
 
         return {
             "required": {
-                "model_name": (all_models, {"tooltip": "Model file — architecture auto-detected from name"}),
+                "model_name": (all_models, {
+                    "tooltip": "Model file — architecture auto-detected from filename",
+                }),
             },
             "optional": {
-                "arch_override": (arch_keys, {"default": "auto", "tooltip": "Override auto-detection"}),
-                "clip_override": ("STRING", {"default": "", "tooltip": "Override CLIP model filename"}),
-                "vae_override": ("STRING", {"default": "", "tooltip": "Override VAE filename"}),
-            }
+                "arch_override": (arch_keys, {
+                    "default": "auto",
+                    "tooltip": "Override auto-detection",
+                }),
+                "clip_override": (["auto"] + folder_paths.get_filename_list("text_encoders"), {
+                    "default": "auto",
+                    "tooltip": "Override CLIP file (auto = use architecture default)",
+                }),
+                "vae_override": (["auto"] + folder_paths.get_filename_list("vae"), {
+                    "default": "auto",
+                    "tooltip": "Override VAE file (auto = use architecture default)",
+                }),
+                "weight_dtype": (["default", "fp8_e4m3fn", "fp8_e4m3fn_fast", "fp8_e5m2"], {
+                    "default": "default",
+                    "tooltip": "Weight data type for UNET models",
+                }),
+            },
         }
 
     RETURN_TYPES = ("MODEL", "CLIP", "VAE", "STRING")
     RETURN_NAMES = ("model", "clip", "vae", "arch_key")
+    OUTPUT_TOOLTIPS = (
+        "Diffusion model (UNET) for denoising latents.",
+        "CLIP text encoder for prompt encoding.",
+        "VAE for encoding/decoding images ↔ latent space.",
+        "Detected architecture key (pass to Sampler / Prompt Enhance).",
+    )
     FUNCTION = "load"
     CATEGORY = "Spellcaster"
-    DESCRIPTION = "Auto-detect architecture and load model stack. ONE loader for all architectures."
+    DESCRIPTION = (
+        "Auto-detect model architecture and load the full stack. "
+        "Handles checkpoint (SD1.5/SDXL) and separate-loader (Flux/Klein/Chroma) "
+        "models transparently."
+    )
+    SEARCH_ALIASES = ["spellcaster", "auto loader", "smart loader", "auto arch"]
 
-    def load(self, model_name, arch_override="auto", clip_override="", vae_override=""):
-        """Load model stack with architecture auto-detection.
+    # ── main entry point ───────────────────────────────────────────────
+    def load(self, model_name, arch_override="auto",
+             clip_override="auto", vae_override="auto",
+             weight_dtype="default"):
 
-        Args:
-            model_name: Model filename (str)
-            arch_override: Architecture key override ("auto" = detect from name)
-            clip_override: Override CLIP model filename
-            vae_override: Override VAE filename
+        # ── 1. Detect architecture ─────────────────────────────────────
+        checkpoints = folder_paths.get_filename_list("checkpoints")
+        unet_models = folder_paths.get_filename_list("diffusion_models")
 
-        Returns:
-            Tuple (model, clip, vae, arch_key)
-        """
-        if not comfy:
-            raise RuntimeError("[SpellcasterLoader] ComfyUI comfy module not available")
-        if not get_arch or not classify_unet_model or not classify_ckpt_model:
-            raise RuntimeError("[SpellcasterLoader] spellcaster_core not available")
+        is_checkpoint = model_name in checkpoints
+        is_unet       = model_name in unet_models
 
-        # Detect architecture
         if arch_override != "auto":
             arch_key = arch_override
-            print(f"[SpellcasterLoader] Using override arch: {arch_key}")
+        elif is_unet:
+            arch_key = classify_unet_model(model_name)
+        elif is_checkpoint:
+            arch_key = classify_ckpt_model(model_name)
         else:
-            # Check if model is in checkpoints or diffusion_models
-            checkpoints = folder_paths.get_filename_list("checkpoints")
-            unet_models = folder_paths.get_filename_list("diffusion_models")
-
-            if model_name in checkpoints:
-                arch_key = classify_ckpt_model(model_name)
-                print(f"[SpellcasterLoader] Detected checkpoint model: {arch_key}")
-            elif model_name in unet_models:
-                arch_key = classify_unet_model(model_name)
-                print(f"[SpellcasterLoader] Detected UNET model: {arch_key}")
-            else:
-                # Fallback: try to classify as checkpoint
-                arch_key = classify_ckpt_model(model_name)
-                print(f"[SpellcasterLoader] Fallback classification: {arch_key}")
+            arch_key = classify_ckpt_model(model_name)  # best-effort
 
         arch = get_arch(arch_key)
-        if not arch:
-            raise ValueError(f"[SpellcasterLoader] Unknown architecture: {arch_key}")
+        print(f"\033[36m[Spellcaster]\033[0m {model_name} → arch={arch_key}, "
+              f"loader={arch.loader}, clip_mode={arch.clip_mode}")
 
-        # Get full path for model
-        try:
-            model_path = folder_paths.get_full_path("checkpoints", model_name)
-        except:
-            try:
-                model_path = folder_paths.get_full_path("diffusion_models", model_name)
-            except:
-                raise ValueError(f"[SpellcasterLoader] Could not find model: {model_name}")
-
-        print(f"[SpellcasterLoader] Loading {arch.loader} model from: {model_path}")
-
-        # Load based on architecture loader strategy
-        if arch.loader == "checkpoint":
-            # Checkpoint-based: single file contains MODEL, CLIP, VAE
-            try:
-                model, clip, vae = comfy.sd.load_checkpoint_guess_config(
-                    model_path, output_vae=True, output_clip=True
-                )
-                print(f"[SpellcasterLoader] Loaded checkpoint: model, clip, vae from {model_name}")
-            except Exception as e:
-                raise RuntimeError(f"[SpellcasterLoader] Failed to load checkpoint: {e}")
-
-        elif arch.loader == "unet_clip_vae":
-            # Separate loaders: UNET, CLIP, VAE loaded separately
-            model = self._load_unet(model_path)
-            clip = self._load_clip(arch, clip_override)
-            vae = self._load_vae(arch, vae_override)
-            print(f"[SpellcasterLoader] Loaded separate: unet, clip, vae for {arch_key}")
+        # ── 2. Load based on architecture strategy ─────────────────────
+        if arch.loader == "checkpoint" or (arch.loader == "unet_clip_vae" and is_checkpoint and not is_unet):
+            # Checkpoint path  ─  single file → (MODEL, CLIP, VAE)
+            ckpt_path = folder_paths.get_full_path_or_raise("checkpoints", model_name)
+            out = comfy.sd.load_checkpoint_guess_config(
+                ckpt_path,
+                output_vae=True,
+                output_clip=True,
+                embedding_directory=folder_paths.get_folder_paths("embeddings"),
+            )
+            model, clip, vae = out[:3]
 
         else:
-            raise ValueError(f"[SpellcasterLoader] Unknown loader type: {arch.loader}")
+            # Separate loaders  ─  UNET + CLIP + VAE loaded independently
+            model = self._load_unet(model_name, weight_dtype)
+            clip  = self._load_clip(arch, model_name, clip_override)
+            vae   = self._load_vae(arch, vae_override)
 
         return (model, clip, vae, arch_key)
 
-    def _load_unet(self, unet_path):
-        """Load UNET/diffusion model."""
-        try:
-            # Try load_diffusion_model first (preferred for newer ComfyUI)
-            if hasattr(comfy.sd, 'load_diffusion_model'):
-                return comfy.sd.load_diffusion_model(unet_path)
-            # Fallback to load_unet
-            elif hasattr(comfy.sd, 'load_unet'):
-                return comfy.sd.load_unet(unet_path)
+    # ── UNET loader ────────────────────────────────────────────────────
+    def _load_unet(self, unet_name, weight_dtype):
+        model_options = {}
+        if weight_dtype == "fp8_e4m3fn":
+            model_options["dtype"] = torch.float8_e4m3fn
+        elif weight_dtype == "fp8_e4m3fn_fast":
+            model_options["dtype"] = torch.float8_e4m3fn
+            model_options["fp8_optimizations"] = True
+        elif weight_dtype == "fp8_e5m2":
+            model_options["dtype"] = torch.float8_e5m2
+
+        unet_path = folder_paths.get_full_path_or_raise("diffusion_models", unet_name)
+        return comfy.sd.load_diffusion_model(unet_path, model_options=model_options)
+
+    # ── CLIP loader ────────────────────────────────────────────────────
+    def _load_clip(self, arch, model_name, clip_override):
+        embeddings = folder_paths.get_folder_paths("embeddings")
+
+        if clip_override != "auto":
+            # Manual override — single CLIP, let ComfyUI figure out type
+            clip_path = folder_paths.get_full_path_or_raise("text_encoders", clip_override)
+            clip_type = self._resolve_clip_type(arch)
+            return comfy.sd.load_clip(
+                ckpt_paths=[clip_path],
+                embedding_directory=embeddings,
+                clip_type=clip_type,
+            )
+
+        # ── Auto CLIP selection per clip_mode ──────────────────────────
+        if arch.clip_mode == "dual":
+            # Flux Dev / Kontext  —  DualCLIPLoader (clip_l + t5xxl)
+            c1 = arch.extra.get("clip_name1", "clip_l.safetensors")
+            c2 = arch.extra.get("clip_name2", "t5xxl_fp8_e4m3fn.safetensors")
+            clip_type_str = arch.extra.get("clip_type", "flux")
+            clip_type = getattr(comfy.sd.CLIPType, clip_type_str.upper(),
+                                comfy.sd.CLIPType.FLUX)
+
+            p1 = folder_paths.get_full_path_or_raise("text_encoders", c1)
+            p2 = folder_paths.get_full_path_or_raise("text_encoders", c2)
+            print(f"\033[36m[Spellcaster]\033[0m Dual CLIP: {c1} + {c2} (type={clip_type_str})")
+            return comfy.sd.load_clip(
+                ckpt_paths=[p1, p2],
+                embedding_directory=embeddings,
+                clip_type=clip_type,
+            )
+
+        elif arch.clip_mode == "single_flux2":
+            # Klein  —  auto-detect 9B vs 4B CLIP from model name
+            ml = model_name.lower()
+            is_4b = ("4b" in ml or "schnell" in ml
+                     or "lite" in ml or "kaleidoscope" in ml)
+            if is_4b:
+                clip_name = arch.extra.get("clip_name_4b", "qwen_3_4b.safetensors")
             else:
-                raise RuntimeError("No UNET loader available in comfy.sd")
-        except Exception as e:
-            raise RuntimeError(f"[SpellcasterLoader] Failed to load UNET: {e}")
+                clip_name = arch.extra.get("clip_name_9b", "qwen_3_8b.safetensors")
 
-    def _load_clip(self, arch, clip_override):
-        """Load CLIP text encoder based on architecture."""
-        try:
-            embeddings_dir = folder_paths.get_folder_paths("embeddings")[0] if folder_paths.get_folder_paths("embeddings") else None
+            clip_type = getattr(comfy.sd.CLIPType, "FLUX2",
+                                comfy.sd.CLIPType.STABLE_DIFFUSION)
+            clip_path = folder_paths.get_full_path_or_raise("text_encoders", clip_name)
+            print(f"\033[36m[Spellcaster]\033[0m Klein CLIP: {clip_name} "
+                  f"(4b={is_4b})")
+            return comfy.sd.load_clip(
+                ckpt_paths=[clip_path],
+                embedding_directory=embeddings,
+                clip_type=clip_type,
+            )
 
-            if clip_override:
-                clip_path = folder_paths.get_full_path("clip", clip_override)
-                print(f"[SpellcasterLoader] Loading override CLIP: {clip_override}")
-            else:
-                # Determine CLIP based on clip_mode
-                if arch.clip_mode == "dual":
-                    # Flux Dev / Kontext: DualCLIPLoader
-                    clip1_name = arch.extra.get("clip_name1", "clip_l.safetensors")
-                    clip2_name = arch.extra.get("clip_name2", "t5xxl_fp8_e4m3fn.safetensors")
-                    clip_type = arch.extra.get("clip_type", "flux")
+        elif arch.clip_mode == "single_chroma":
+            # Chroma  —  T5-XXL with type="chroma"
+            clip_name = arch.extra.get("clip_name", "t5xxl_fp8_e4m3fn.safetensors")
+            clip_type = getattr(comfy.sd.CLIPType, "CHROMA",
+                                comfy.sd.CLIPType.STABLE_DIFFUSION)
+            clip_path = folder_paths.get_full_path_or_raise("text_encoders", clip_name)
+            print(f"\033[36m[Spellcaster]\033[0m Chroma CLIP: {clip_name}")
+            return comfy.sd.load_clip(
+                ckpt_paths=[clip_path],
+                embedding_directory=embeddings,
+                clip_type=clip_type,
+            )
 
-                    clip1_path = folder_paths.get_full_path("clip", clip1_name)
-                    clip2_path = folder_paths.get_full_path("clip", clip2_name)
+        else:
+            # Bundled or unknown — should have been caught by checkpoint path
+            raise ValueError(f"Unexpected clip_mode '{arch.clip_mode}' "
+                             f"for separate-loader architecture {arch.key}")
 
-                    # Use DualCLIPLoader if available
-                    if hasattr(comfy.sd, 'load_clip_vision'):
-                        # Newer API: load_clip_vision or similar
-                        clip1 = comfy.sd.load_clip([clip1_path], embedding_directory=embeddings_dir)
-                        clip2 = comfy.sd.load_clip([clip2_path], embedding_directory=embeddings_dir)
-                        # Combine them (this is simplified; actual dual loading is more complex)
-                        return clip1
-                    else:
-                        # Fallback: load first CLIP
-                        clip1_path = folder_paths.get_full_path("clip", clip1_name)
-                        return comfy.sd.load_clip([clip1_path], embedding_directory=embeddings_dir)
-
-                elif arch.clip_mode == "single_flux2":
-                    # Klein: auto-detect CLIP based on model name
-                    # (This is a simplified version; full logic would need model_name)
-                    clip_name = arch.extra.get("clip_name_9b", "qwen_3_8b.safetensors")
-                    clip_path = folder_paths.get_full_path("clip", clip_name)
-                    print(f"[SpellcasterLoader] Loading Flux2 CLIP: {clip_name}")
-
-                elif arch.clip_mode == "single_chroma":
-                    # Chroma: single CLIPLoader with type="chroma"
-                    clip_name = arch.extra.get("clip_name", "t5xxl_fp8_e4m3fn.safetensors")
-                    clip_path = folder_paths.get_full_path("clip", clip_name)
-                    print(f"[SpellcasterLoader] Loading Chroma CLIP: {clip_name}")
-
-                else:
-                    # Default: load standard CLIP
-                    clip_name = arch.extra.get("clip_name", "clip_l.safetensors")
-                    clip_path = folder_paths.get_full_path("clip", clip_name)
-
-            # Load CLIP
-            clip = comfy.sd.load_clip([clip_path], embedding_directory=embeddings_dir)
-            return clip
-
-        except Exception as e:
-            raise RuntimeError(f"[SpellcasterLoader] Failed to load CLIP: {e}")
-
+    # ── VAE loader ─────────────────────────────────────────────────────
     def _load_vae(self, arch, vae_override):
-        """Load VAE decoder/encoder."""
-        try:
-            if vae_override:
-                vae_path = folder_paths.get_full_path("vae", vae_override)
-                print(f"[SpellcasterLoader] Loading override VAE: {vae_override}")
-            else:
-                vae_name = arch.extra.get("vae_name", "ae.safetensors")
-                vae_path = folder_paths.get_full_path("vae", vae_name)
+        if vae_override != "auto":
+            vae_name = vae_override
+        else:
+            vae_name = arch.extra.get("vae_name", "ae.safetensors")
 
-            vae = comfy.sd.load_vae(vae_path)
-            return vae
+        vae_path = folder_paths.get_full_path_or_raise("vae", vae_name)
+        sd, metadata = comfy.utils.load_torch_file(vae_path, return_metadata=True)
+        vae = comfy.sd.VAE(sd=sd, metadata=metadata)
+        vae.throw_exception_if_invalid()
+        print(f"\033[36m[Spellcaster]\033[0m VAE: {vae_name}")
+        return vae
 
-        except Exception as e:
-            raise RuntimeError(f"[SpellcasterLoader] Failed to load VAE: {e}")
-
-
-# Node registry (for ComfyUI)
-NODE_CLASS_MAPPINGS = {
-    "SpellcasterLoader": SpellcasterLoader,
-}
-
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "SpellcasterLoader": "Spellcaster Loader (Auto-Detect)",
-}
+    # ── helpers ─────────────────────────────────────────────────────────
+    @staticmethod
+    def _resolve_clip_type(arch):
+        """Map arch clip_mode to comfy.sd.CLIPType enum."""
+        mapping = {
+            "dual":          "FLUX",
+            "single_flux2":  "FLUX2",
+            "single_chroma": "CHROMA",
+        }
+        name = mapping.get(arch.clip_mode, "STABLE_DIFFUSION")
+        return getattr(comfy.sd.CLIPType, name, comfy.sd.CLIPType.STABLE_DIFFUSION)
