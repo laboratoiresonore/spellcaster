@@ -5438,6 +5438,98 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "current_total": len(_LORA_REGISTRY),
             })
 
+        # -- /api/generate_familiar -- generate a custom animated companion
+        elif self.path == '/api/generate_familiar':
+            creature = data.get("creature", "a mystical crow with glowing purple eyes")
+            style = data.get("style", "dark fantasy, magical particles, ethereal glow")
+            prompt = (f"looping animation of {creature}, {style}, "
+                      "subtle movement, breathing, magical aura, dark background, "
+                      "centered subject, seamless loop")
+            comfy = data.get("comfy_url", COMFYUI_URL)
+
+            def _gen_familiar():
+                try:
+                    # Step 1: Generate a static image of the familiar
+                    from spellcaster_core.pipeline import Pipeline
+                    p = Pipeline(comfy, verbose=False)
+                    results = p.txt2img(prompt, arch="sdxl", width=512, height=512, steps=15).run()
+                    if not results:
+                        print("  [Familiar] Image generation failed")
+                        return
+
+                    # Step 2: Animate it with WAN (short loop)
+                    img_fn = results[0][0]  # filename on server
+                    # Re-upload to input
+                    import urllib.request as _ur
+                    img_data = _ur.urlopen(
+                        f"{comfy}/view?filename={img_fn}&type=output", timeout=30).read()
+                    import uuid
+                    input_name = f"familiar_{uuid.uuid4().hex[:8]}.png"
+                    p2 = Pipeline(comfy, verbose=False)
+                    p2._upload_raw(input_name, img_data)
+
+                    wan_preset = p2._detect_wan_preset()
+                    from spellcaster_core.workflows import build_wan_video
+                    seed = __import__('random').randint(1, 2**31)
+                    wf = build_wan_video(
+                        input_name, wan_preset,
+                        "subtle breathing, gentle sway, magical particles floating",
+                        "blurry static distorted text",
+                        seed, width=512, height=512, length=33,
+                        turbo=True, rtx_scale=0, interpolate=False,
+                        face_swap=False, pingpong=True, fps=12)
+
+                    # Submit and wait
+                    import json as _j
+                    body = _j.dumps({"prompt": wf}).encode()
+                    req = _ur.Request(f"{comfy}/prompt", data=body,
+                                     headers={"Content-Type": "application/json"})
+                    r = _ur.urlopen(req, timeout=10)
+                    pid = _j.loads(r.read()).get("prompt_id")
+                    if not pid:
+                        print("  [Familiar] WAN submission failed")
+                        return
+
+                    # Poll for completion
+                    import time as _t
+                    for _ in range(120):
+                        _t.sleep(3)
+                        try:
+                            r2 = _ur.urlopen(f"{comfy}/history/{pid}", timeout=5)
+                            d = _j.loads(r2.read())
+                            if pid in d and d[pid].get("status", {}).get("completed"):
+                                # Find the video/gif output
+                                for out in d[pid].get("outputs", {}).values():
+                                    for key in ("gifs", "videos"):
+                                        for item in out.get(key, []):
+                                            fn = item["filename"]
+                                            ft = item.get("type", "output")
+                                            sf = item.get("subfolder", "")
+                                            vid_data = _ur.urlopen(
+                                                f"{comfy}/view?filename={fn}&subfolder={sf}&type={ft}",
+                                                timeout=60).read()
+                                            # Save as familiar in creations
+                                            fam_path = os.path.join(_CREATIONS_DIR, "familiar.gif")
+                                            # If MP4, we need to note it (GIMP needs GIF)
+                                            if fn.endswith(".mp4"):
+                                                fam_path = os.path.join(_CREATIONS_DIR, "familiar.mp4")
+                                            with open(fam_path, 'wb') as f:
+                                                f.write(vid_data)
+                                            print(f"  [Familiar] Generated: {fam_path} ({len(vid_data)/1024:.0f} KB)")
+                                            return
+                                break
+                        except Exception:
+                            pass
+                    print("  [Familiar] Timeout waiting for video")
+                except Exception as e:
+                    print(f"  [Familiar] Error: {e}")
+
+            threading.Thread(target=_gen_familiar, daemon=True).start()
+            return self.end_json(200, {
+                "status": "generating",
+                "message": f"Generating your familiar: {creature}",
+            })
+
         # -- /api/guild_chat -- embedded LLM chat (auto-detects backend)
         elif self.path == '/api/guild_chat':
             message = data.get("message", "")
