@@ -3888,6 +3888,55 @@ _DEFAULT_ENHANCE_PROFILE = {
 }
 
 
+def _is_direct_generation_prompt(text):
+    """Heuristic: does this user message look like a direct image-gen request?
+
+    True for things like "generate a dragon", "make me a sunset",
+    "a wizard in a forest". False for questions, multi-sentence chatter,
+    or anything that smells conversational.
+
+    Used by /api/direct_cast to bypass the LLM entirely when the user
+    clearly just wants an image — the LLM can't be trusted to consistently
+    emit a JSON block, so we route past it on confident matches.
+    """
+    if not text:
+        return False
+    t = text.strip()
+    if not t:
+        return False
+    # Reject obvious chat
+    if '?' in t:
+        return False
+    if len(t) > 240:
+        return False
+    # Reject multi-sentence requests (likely conversational)
+    if t.count('.') >= 2:
+        return False
+    low = t.lower()
+    chat_markers = (
+        'what ', 'who ', 'why ', 'how ', 'when ', 'where ', 'which ',
+        'can you', 'could you', 'would you', 'do you', 'are you',
+        'tell me about', 'explain', 'help me understand', 'list ',
+        'hello', 'hi ', 'hey ', 'thanks', 'thank you',
+    )
+    for m in chat_markers:
+        if low.startswith(m) or f' {m}' in low:
+            return False
+    gen_verbs = (
+        'generate', 'make ', 'create', 'render', 'cast ', 'draw ',
+        'paint ', 'show me', 'conjure', 'summon', 'produce',
+        'imagine', 'picture ', 'give me',
+    )
+    if any(v in low for v in gen_verbs):
+        return True
+    # Bare descriptive prompt: short, no verbs, looks like an image caption.
+    # ("a dragon in a forest", "cyberpunk samurai at dusk")
+    word_count = len(t.split())
+    if 2 <= word_count <= 25 and not any(c in low for c in (':', ';')):
+        return True
+    return False
+
+
 def _enhance_prompt(prompt_text, arch_key, is_negative=False):
     """Expand a terse user prompt into a platform-optimised description.
 
@@ -5473,6 +5522,104 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "removed": old_nonstudio,
                 "kept_core": old_total - old_nonstudio,
             })
+
+        # -- /api/direct_cast -- bypass the LLM for obvious image-gen prompts
+        # The LLM cannot be trusted to consistently emit a JSON block, so when
+        # the user clearly just wants an image (e.g. "generate a dragon"), we
+        # build the workflow server-side and dispatch directly. The LLM is
+        # still used for conversational chat, parameter collection, and
+        # multi-step flows that require disambiguation.
+        elif self.path == '/api/direct_cast':
+            char_id = data.get('char_id')
+            user_prompt = (data.get('prompt') or '').strip()
+            exec_comfy = data.get('comfy_url', COMFYUI_URL)
+            if not char_id or not user_prompt:
+                return self.end_json(400, {'error': 'char_id and prompt are required'})
+            if not _is_direct_generation_prompt(user_prompt):
+                return self.end_json(409, {'error': 'Prompt is not a direct generation request'})
+            if not BUILTIN_AVAILABLE or not _workflows_v2:
+                return self.end_json(500, {'error': 'Workflow engine not available'})
+
+            # Resolve wizard
+            wizard = None
+            for _c in CHARS_CACHE:
+                if _c.get('id') == char_id:
+                    wizard = _c
+                    break
+            if not wizard:
+                return self.end_json(404, {'error': f'Unknown wizard: {char_id}'})
+
+            # Find studio metadata for build_fns list
+            studio = _STUDIO_BY_ID.get(char_id)
+            if not studio:
+                for sc in STUDIO_CHARACTERS:
+                    if sc.get('id') == char_id:
+                        studio = sc
+                        break
+            build_fns = (studio or {}).get('build_fns', []) if studio else []
+            # Direct casting only makes sense for txt2img wizards. Anything
+            # else needs an image_filename or other params the user can't
+            # provide in a one-shot direct prompt — fall back to LLM.
+            if 'build_txt2img' not in build_fns:
+                return self.end_json(409, {'error': 'Wizard does not support direct txt2img casting'})
+
+            try:
+                ckpt = wizard.get('model_name')
+                arch_key = wizard.get('model_arch')
+                if not ckpt:
+                    ckpt, arch_key = _detect_best_model(exec_comfy)
+                if not ckpt:
+                    return self.end_json(500, {'error': 'No ComfyUI model available'})
+                if not arch_key or arch_key == 'unknown':
+                    arch_key = classify_unet_model(ckpt)
+                    if arch_key == 'unknown':
+                        arch_key = classify_ckpt_model(ckpt)
+
+                width, height = 1024, 1024
+                seed = random.randint(1, 1000000000)
+                negative = 'text, watermark, blurry, deformed, ugly, low quality'
+
+                prompt_text = _enhance_prompt(user_prompt, arch_key)
+                preset = _build_optimized_preset(ckpt, arch_key, width, height)
+                if get_arch:
+                    arch = get_arch(arch_key)
+                    if arch and arch.quality_positive:
+                        prompt_text = f'{prompt_text}, {arch.quality_positive}'
+                    if arch and arch.supports_negative and arch.quality_negative:
+                        negative = f'{negative}, {arch.quality_negative}'
+
+                workflow = build_txt2img(preset, prompt_text, negative, seed)
+                result = _dispatch_workflow(workflow, exec_comfy)
+
+                _original_urls = list(result.get('urls', []))
+                if result.get('type') == 'images' and result.get('urls'):
+                    cached = [_cache_comfyui_asset(u, 'image') for u in result['urls']]
+                    result['cached_urls'] = cached
+                    result['urls'] = cached
+                elif result.get('type') == 'videos' and result.get('urls'):
+                    cached = [_cache_comfyui_asset(u, 'video') for u in result['urls']]
+                    result['cached_urls'] = cached
+                    result['urls'] = cached
+
+                if PRIVACY_CLEANUP:
+                    try:
+                        _privacy_cleanup(exec_comfy, workflow, {'urls': _original_urls})
+                    except Exception:
+                        pass
+
+                if result.get('urls'):
+                    return self.end_json(200, {
+                        'type': result['type'],
+                        'urls': result['urls'],
+                        'prompt_id': result.get('prompt_id'),
+                        'direct_cast': True,
+                    })
+                return self.end_json(200, dict(result, direct_cast=True))
+            except Exception as e:
+                print(f'  [DirectCast] failed: {e}')
+                import traceback; traceback.print_exc()
+                return self.end_json(500, {'error': str(e)})
+
 
         # -- /api/execute -- generic workflow execution from LLM chat
         elif self.path == '/api/execute':
