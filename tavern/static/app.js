@@ -1312,6 +1312,37 @@ function addSystemMessage(htmlContent) {
     _messageEntrance(msg);
 }
 
+// Client-side mirror of server's _is_direct_generation_prompt heuristic.
+// Used as a cheap pre-check; the server still validates before bypassing.
+function _looksLikeDirectGenPrompt(text) {
+    if (!text) return false;
+    const t = text.trim();
+    if (!t || t.length > 240) return false;
+    if (t.indexOf('?') !== -1) return false;
+    if ((t.match(/\./g) || []).length >= 2) return false;
+    const low = t.toLowerCase();
+    const chatMarkers = [
+        'what ', 'who ', 'why ', 'how ', 'when ', 'where ', 'which ',
+        'can you', 'could you', 'would you', 'do you', 'are you',
+        'tell me about', 'explain', 'help me understand', 'list ',
+        'hello', 'hi ', 'hey ', 'thanks', 'thank you',
+    ];
+    for (const m of chatMarkers) {
+        if (low.startsWith(m) || low.indexOf(' ' + m) !== -1) return false;
+    }
+    const genVerbs = [
+        'generate', 'make ', 'create', 'render', 'cast ', 'draw ',
+        'paint ', 'show me', 'conjure', 'summon', 'produce',
+        'imagine', 'picture ', 'give me',
+    ];
+    if (genVerbs.some(v => low.indexOf(v) !== -1)) return true;
+    const wc = t.split(/\s+/).length;
+    if (wc >= 2 && wc <= 25 && low.indexOf(':') === -1 && low.indexOf(';') === -1) {
+        return true;
+    }
+    return false;
+}
+
 async function askKobold(text) {
     sendBtn.disabled = true;
     addTypingIndicator();
@@ -1320,6 +1351,42 @@ async function askKobold(text) {
         if (!char) {
             addSystemMessage("<strong>Summon Status:</strong> No active wizard selected. Please select one from the sidebar first.");
             return;
+        }
+
+        // Direct-cast bypass: if the user clearly typed an image-gen prompt,
+        // skip the LLM round-trip entirely. The LLM can't be trusted to emit
+        // a JSON block reliably, so we hand the prompt straight to ComfyUI.
+        // Server returns 409 if the wizard doesn't support direct casting,
+        // in which case we fall through to the normal LLM path.
+        if (_looksLikeDirectGenPrompt(text)) {
+            try {
+                const dcRes = await fetch('/api/direct_cast', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        char_id: activeCharacterId,
+                        prompt: text,
+                        comfy_url: comfyUrl,
+                    }),
+                });
+                if (dcRes.ok) {
+                    const dcData = await dcRes.json();
+                    chatHistory.push({ role: 'assistant', content: '[direct cast]' });
+                    if (dcData.type === 'images' && dcData.urls && dcData.urls.length) {
+                        const imgs = dcData.urls.map(u => `<img src="${u}" class="generated-image" style="max-width:100%;border-radius:8px;margin:4px 0;">`).join('');
+                        addSystemMessage(`<strong>Spell Complete!</strong><br>${imgs}`);
+                    } else if (dcData.type === 'videos' && dcData.urls && dcData.urls.length) {
+                        const vids = dcData.urls.map(u => `<video src="${u}" controls autoplay loop muted style="max-width:100%;border-radius:8px;margin:4px 0;"></video>`).join('');
+                        addSystemMessage(`<strong>Spell Complete!</strong><br>${vids}`);
+                    } else {
+                        addSystemMessage(`<strong>Spell Complete!</strong>`);
+                    }
+                    return;
+                }
+                // 409 = wizard not eligible for direct cast → fall through to LLM
+            } catch (e) {
+                console.warn('direct_cast failed, falling back to LLM:', e);
+            }
         }
 
         // Fetch per-character system prompt if available, else use global
