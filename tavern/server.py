@@ -5540,23 +5540,29 @@ class GuildHandler(SimpleHTTPRequestHandler):
             if not BUILTIN_AVAILABLE or not _workflows_v2:
                 return self.end_json(500, {'error': 'Workflow engine not available'})
 
-            # Resolve wizard
+            # Resolve wizard. Studios live in _STUDIO_BY_ID; user-summoned
+            # wizards live in CHARS_CACHE. Studios may also have a CHARS_CACHE
+            # mirror with model_name attached. Check both, prefer CHARS_CACHE
+            # since that's where assigned model info lives.
             wizard = None
             for _c in CHARS_CACHE:
                 if _c.get('id') == char_id:
                     wizard = _c
                     break
-            if not wizard:
-                return self.end_json(404, {'error': f'Unknown wizard: {char_id}'})
-
-            # Find studio metadata for build_fns list
             studio = _STUDIO_BY_ID.get(char_id)
             if not studio:
                 for sc in STUDIO_CHARACTERS:
                     if sc.get('id') == char_id:
                         studio = sc
                         break
+            if not wizard and not studio:
+                return self.end_json(404, {'error': f'Unknown wizard: {char_id}'})
+
+            # build_fns come from the studio definition (the static catalog),
+            # not from the per-user CHARS_CACHE entry.
             build_fns = (studio or {}).get('build_fns', []) if studio else []
+            if not build_fns and wizard:
+                build_fns = wizard.get('build_fns', [])
             # Direct casting only makes sense for txt2img wizards. Anything
             # else needs an image_filename or other params the user can't
             # provide in a one-shot direct prompt — fall back to LLM.
@@ -5564,8 +5570,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 return self.end_json(409, {'error': 'Wizard does not support direct txt2img casting'})
 
             try:
-                ckpt = wizard.get('model_name')
-                arch_key = wizard.get('model_arch')
+                ckpt = (wizard or {}).get('model_name')
+                arch_key = (wizard or {}).get('model_arch')
                 if not ckpt:
                     ckpt, arch_key = _detect_best_model(exec_comfy)
                 if not ckpt:
