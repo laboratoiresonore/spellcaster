@@ -22,7 +22,43 @@ __pycache__/
 Thumbs.db
 Desktop.ini
 
-# NSFW Content
+# NSFW Content — NEVER commit
 nsfw/
 *_NSFW.*
+*_nsfw.*
+*nsfw*
 Wizard_Guild_NSFW.exe
+
+# User-generated content — never commit (could contain NSFW images)
+tavern/creations/
+tavern/.guild_state/
+tavern/.guild_version
+
+# Large binaries — go to GitHub Releases, not git
+*.exe
+*.dmg
+*.pkg
+*.app/
+Wizard_Guild.exe
+spellcaster-installer.exe
+spellcaster-manual-update.exe
+
+# Machine-specific runtime files
+guild_config.json
+.guild_version
+rebuild.bat
+push_*.bat
+
+# Dev tools & scratch files
+tools/generate_readme_gifs.py
+test_live.py
+test_guild.py
+
+# Spell icons (user-generated during install, not source)
+assets/spells/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*~
