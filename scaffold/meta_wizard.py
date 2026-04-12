@@ -525,10 +525,11 @@ After configuring one node, offer:
   3. Start over
 
 OUTPUT FORMAT:
-When confirmed, output JSON:
+When confirmed, output JSON wrapped in code blocks:
 ```json
 {{"node": "NodeClassName", "params": {{"key": value}}}}
 ```
+(Skip conversation if a prompt was provided.)
 
 PRIVACY:
 When privacy cleanup is enabled (the default), tell the user BEFORE execution:
