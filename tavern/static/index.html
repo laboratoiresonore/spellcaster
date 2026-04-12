@@ -77,25 +77,6 @@
             </div>
         </aside>
 
-        <!-- Spell Bar: Quick-cast spells for the active wizard -->
-        <div id="spell-bar" class="spell-bar" style="display:none;">
-            <div id="spell-list" class="spell-list">
-                <!-- Dynamically populated with spell buttons -->
-            </div>
-        </div>
-
-        <!-- Bottom Dock: Per-Model & Chimera Wizards -->
-        <div id="bottom-dock" class="bottom-dock">
-            <div class="dock-header" onclick="toggleBottomDock()">
-                <span id="dock-label">Per-Model Wizards</span>
-                <span id="dock-count" class="dock-count">0</span>
-                <span id="dock-chevron" class="dock-chevron">&#9650;</span>
-            </div>
-            <div id="dock-list" class="dock-list">
-                <!-- Dynamically populated with per-model wizard cards -->
-            </div>
-        </div>
-
         <!-- Main Chat Area -->
         <main id="chat-arena">
             <header id="chat-header">
@@ -115,8 +96,6 @@
                     <button id="reset-btn">Reset Memory</button>
                     <button id="batch-generate-btn" title="Generate avatars for all guild members + tavern background">⚡ Generate All</button>
                     <button id="animate-all-btn" onclick="onAnimateAllClick()" title="Checking for video models..." disabled style="display:inline-flex;align-items:center;gap:4px;">✨ Animate All Avatars</button>
-                    <button id="familiar-btn" title="Generate your magical familiar companion" style="display:inline-flex;align-items:center;gap:4px;">Familiar</button>
-                    <button id="health-btn" title="System Health" style="display:inline-flex;align-items:center;gap:4px;">Health</button>
                     <a href="/static/guild.html" id="scaffold-link" title="Open The Travelling Wizard — scaffolds, workflows, configuration & more" style="display:inline-flex;align-items:center;gap:4px;text-decoration:none;">🧙 Travelling Wizard</a>
                 </div>
             </header>
