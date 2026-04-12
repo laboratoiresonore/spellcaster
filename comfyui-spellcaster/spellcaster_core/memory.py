@@ -69,17 +69,8 @@ class GenerationRecord:
 class NamedPreset:
     """A user-saved Spell — complete workflow preset with ALL settings."""
 
-    # Default spell colors (user can change)
-    SPELL_COLORS = {
-        "purple": "#B246F2",  # default
-        "blue": "#3B82F6",
-        "green": "#10B981",
-        "red": "#EF4444",     # NSFW convention
-        "orange": "#F59E0B",
-        "pink": "#EC4899",
-        "cyan": "#06B6D4",
-        "gold": "#D4A017",
-    }
+    # Animated spell icons (GIF filenames in assets/spells/)
+    SPELL_ICONS = ["blue", "globe", "green", "red", "spheres", "stars"]
 
     def __init__(self, name, params, source_gen_id=""):
         self.name = name
@@ -88,11 +79,15 @@ class NamedPreset:
         self.created = time.time()
         self.use_count = 0
         self.last_used = 0
-        self.color = "#B246F2"   # default purple
-        self.icon = ""           # optional emoji
+        self.spell_icon = ""     # GIF name from SPELL_ICONS (e.g., "blue", "red", "stars")
+        self.icon = ""           # optional emoji prefix
         self.wizard_id = ""      # which wizard this spell belongs to
         self.shortcut = ""       # keyboard shortcut (e.g., "1", "2", "a")
         self.tags = []           # user tags for filtering
+        # Auto-assign random spell icon if not set
+        if not self.spell_icon:
+            import random as _r
+            self.spell_icon = _r.choice(self.SPELL_ICONS)
 
     def to_dict(self):
         return {
@@ -102,7 +97,7 @@ class NamedPreset:
             "created": self.created,
             "use_count": self.use_count,
             "last_used": self.last_used,
-            "color": self.color,
+            "spell_icon": self.spell_icon,
             "icon": self.icon,
             "wizard_id": self.wizard_id,
             "shortcut": self.shortcut,
@@ -115,7 +110,11 @@ class NamedPreset:
         p.created = d.get("created", 0)
         p.use_count = d.get("use_count", 0)
         p.last_used = d.get("last_used", 0)
-        p.color = d.get("color", "#B246F2")
+        p.spell_icon = d.get("spell_icon", d.get("color", "blue"))  # migrate from old "color" field
+        if p.spell_icon.startswith("#"):
+            # Old hex color — map to closest icon
+            p.spell_icon = {"#EF4444": "red", "#3B82F6": "blue", "#10B981": "green"}.get(
+                p.spell_icon, p.SPELL_ICONS[hash(p.name) % len(p.SPELL_ICONS)])
         p.icon = d.get("icon", "")
         p.wizard_id = d.get("wizard_id", "")
         p.shortcut = d.get("shortcut", "")
@@ -162,7 +161,7 @@ class WizardMemory:
     # ── Presets ──────────────────────────────────────────────────
 
     def save_preset(self, name, gen_id=None, params=None,
-                    color="#B246F2", wizard_id="", icon="", tags=None):
+                    spell_icon="", wizard_id="", icon="", tags=None):
         """Save a named Spell from a generation or raw params.
 
         The Spell contains ALL workflow settings — model, arch, LoRAs,
@@ -178,18 +177,19 @@ class WizardMemory:
             return None
 
         preset = NamedPreset(name, params, gen_id or "")
-        preset.color = color
+        if spell_icon:
+            preset.spell_icon = spell_icon
         preset.wizard_id = wizard_id
         preset.icon = icon
         preset.tags = tags or []
         self.presets[name] = preset
         return preset
 
-    def update_spell_color(self, name, color):
-        """Change a Spell's color."""
+    def update_spell_icon(self, name, spell_icon):
+        """Change a Spell's animated icon (GIF name)."""
         p = self.presets.get(name)
         if p:
-            p.color = color
+            p.spell_icon = spell_icon
             return True
         return False
 
