@@ -276,7 +276,7 @@ body {
     50% { text-shadow: 0 0 30px var(--glow-strong), 0 0 60px var(--glow-soft); }
 }
 
-#llm-indicator-container, #comfy-indicator-container { font-size: 11px; color: var(--text-muted); margin-top: 6px; display: flex; align-items: center; }
+#llm-indicator-container, #comfy-indicator-container, #st-indicator-container, #bridge-indicator-container { font-family: 'Outfit', sans-serif; font-size: 11px; color: var(--text-muted); margin-top: 6px; display: flex; align-items: center; }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; transition: all 0.3s; }
 .dot.red { background: #ff4757; box-shadow: 0 0 8px rgba(255, 71, 87, 0.6); animation: dotPulse 2s ease-in-out infinite; }
 .dot.green { background: #2ed573; box-shadow: 0 0 8px rgba(46, 213, 115, 0.6); animation: dotPulse 2s ease-in-out infinite; }

@@ -121,26 +121,31 @@ FAMILY_MODEL_KEYWORDS = {
 # Maps architecture keys to the subfolder prefixes used in ComfyUI's
 # LoRA directory layout.  Cross-platform: callers check both / and \.
 LORA_ARCH_PREFIXES = {
-    "sd15":         [],
-    "sdxl":         ["SDXL\\", "Illustrious\\", "Illustrious-Pony\\", "Pony\\"],
-    "illustrious":  ["Illustrious\\", "Illustrious-Pony\\"],
-    "pony":         ["Pony\\", "Illustrious-Pony\\"],
-    "flux2klein":   ["Flux-2-Klein\\"],
-    "flux1dev":     ["Flux-1-Dev\\", "Flux\\"],
-    "flux_kontext": ["Flux-1-Dev\\"],
-    "ltx":          ["ltxv\\", "LTX\\"],
-    "wan":          ["Wan\\", "WAN\\", "Wan-2.2-I2V\\"],
-    "seedvr":       ["SeedVR\\", "seedvr\\"],
+    "sd15":         ["SD15\\", "v1.5\\", "sd1.5\\", "StableDiffusion15\\", "SD15/"],
+    "sdxl":         ["SDXL\\", "Illustrious\\", "Illustrious-Pony\\", "Pony\\", "SDXL/", "Pony/"],
+    "illustrious":  ["Illustrious\\", "Illustrious-Pony\\", "Illustrious/"],
+    "pony":         ["Pony\\", "Illustrious-Pony\\", "Pony/"],
+    "flux2klein":   ["Flux-2-Klein\\", "Flux2/"],
+    "flux1dev":     ["Flux-1-Dev\\", "Flux\\", "Flux/"],
+    "flux_kontext": ["Flux-1-Dev\\", "Flux/"],
+    "ltx":          ["ltxv\\", "LTX\\", "ltxv/", "LTX/"],
+    "wan":          ["Wan\\", "WAN\\", "Wan-2.2-I2V\\", "Wan/", "WAN/"],
+    "seedvr":       ["SeedVR\\", "seedvr\\", "SeedVR/", "seedvr/"],
 }
 
 # LoRA name keyword → arch (fallback when prefix matching fails)
 LORA_NAME_ARCH_HINTS = [
     ("sdxl",      "sdxl"),
     ("xl",        "sdxl"),
+    ("sd15",      "sd15"),
+    ("v15",       "sd15"),
+    ("v1.5",      "sd15"),
     ("flux",      "flux1dev"),
+    ("flx",       "flux1dev"),
     ("klein",     "flux2klein"),
     ("illu",      "illustrious"),
     ("pony",      "pony"),
+    ("ponv6",     "pony"),
     ("sd3",       "sd3"),
     ("sd35",      "sd3"),
     ("hunyuan",   "hunyuan_dit"),
@@ -154,6 +159,9 @@ LORA_NAME_ARCH_HINTS = [
     ("seedvr",    "seedvr"),
     ("cogvideo",  "cogvideo"),
     ("svd",       "svd"),
+    ("realism",   "sdxl"),  # majority of recent realism LoRAs are XL
+    ("detail",    "sdxl"),
+    ("aesthetic", "sdxl"),
 ]
 
 

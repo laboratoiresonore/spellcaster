@@ -906,6 +906,10 @@ function saveIdentity(char) {
     let savedIdentities = JSON.parse(localStorage.getItem('guild_identities') || '{}');
     savedIdentities[char.id] = identity;
     localStorage.setItem('guild_identities', JSON.stringify(savedIdentities));
+    // Invalidate tooltip cache so hover bubble syncs immediately
+    if (typeof _tooltipCache !== 'undefined') {
+        delete _tooltipCache[char.id];
+    }
     // Persist to server (fire-and-forget)
     fetch('/api/wizard_identities', {
         method: 'POST',
@@ -1014,8 +1018,13 @@ searchInput.addEventListener('input', (e) => {
 
 let _wizardTooltip = null;
 let _tooltipCache = {};  // Cache fetched info to avoid re-fetching
+let _tooltipDismissTimer = null;
 
 function hideWizardTooltip() {
+    if (_tooltipDismissTimer) {
+        clearTimeout(_tooltipDismissTimer);
+        _tooltipDismissTimer = null;
+    }
     if (_wizardTooltip) {
         _wizardTooltip.remove();
         _wizardTooltip = null;
@@ -1024,6 +1033,9 @@ function hideWizardTooltip() {
 
 async function showWizardTooltip(char, cardEl) {
     hideWizardTooltip();
+
+    // Set auto-dismiss timer
+    _tooltipDismissTimer = setTimeout(hideWizardTooltip, 5000);
 
     // Fetch detailed info (cached)
     let info = _tooltipCache[char.id];
@@ -1132,9 +1144,9 @@ async function showWizardTooltip(char, cardEl) {
     tooltip.innerHTML = `
         <div class="wt-header" style="background: ${gradient};">
             <img class="wt-avatar" src="${avatarUrl}" alt="" onerror="this.style.display='none'"/>
-            <div class="wt-header-text">
-                <div class="wt-name">${info.name}</div>
-                <div class="wt-subtext">${info.subtext}</div>
+            <div class="wt-header-text" style="position:relative; width:100%;">
+                <div class="wt-name">${char.name} ${char.id === activeCharacterId ? '<span title="Currently active wizard" style="margin-left:8px; font-size:16px;">\u2705</span>' : ''}</div>
+                <div class="wt-subtext">${char.subtext}</div>
                 <span class="wt-badge ${catClass}">${catLabel}</span>
             </div>
         </div>
@@ -1303,61 +1315,104 @@ function addSystemMessage(htmlContent) {
 async function askKobold(text) {
     sendBtn.disabled = true;
     addTypingIndicator();
-    chatHistory.push({ role: 'user', content: text });
+    try {
+        const char = characters.find(c => c.id === activeCharacterId);
+        if (!char) {
+            addSystemMessage("<strong>Summon Status:</strong> No active wizard selected. Please select one from the sidebar first.");
+            return;
+        }
 
-    const char = characters.find(c => c.id === activeCharacterId);
-
-    // Fetch per-character system prompt if available, else use global
-    let charPrompt = systemPrompt;
-    if (char && char.id) {
+        // Fetch per-character system prompt if available, else use global
+        let charPrompt = systemPrompt;
         try {
             const cpRes = await fetch(`/api/system_prompt/${char.id}`);
             const cpData = await cpRes.json();
             if (cpData.prompt) charPrompt = cpData.prompt;
         } catch(e) { /* fallback to global */ }
-    }
 
-    // Build the mega prompt
-    let context = `${charPrompt}\n\nYour Persona:\nYou are ${char.name}, a magical expert in ${char.subtext}.\n${char.personality || ''}\n\n`;
-    for(let h of chatHistory) {
-        context += `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.content}\n`;
-    }
-    context += "Assistant: ";
+        // Build the mega prompt
+        let context = `${charPrompt}\n\nYour Persona:\nYou are ${char.name}, a magical expert in ${char.subtext}.\n${char.personality || ''}\n\n`;
+        for(let h of chatHistory) {
+            context += `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.content}\n`;
+        }
+        context += "Assistant: ";
 
-    try {
         // Warn in chat on first horde message per session
-            if (llmMode === 'horde' && !window._hordeWarnShown) {
-                addSystemMessage(
-                    '\u26a0 <strong>Horde Mode Active</strong> — Your message is being sent to ' +
-                    'volunteer workers on the AI Horde network. <strong>Do not share personal or sensitive info.</strong>'
-                );
-                window._hordeWarnShown = true;
-            }
+        if (llmMode === 'horde' && !window._hordeWarnShown) {
+            addSystemMessage(
+                '\u26a0 <strong>Horde Mode Active</strong> — Your message is being sent to ' +
+                'volunteer workers on the AI Horde network. <strong>Do not share personal or sensitive info.</strong>'
+            );
+            window._hordeWarnShown = true;
+        }
 
-            const data = await llmGenerate({
-                prompt: context,
-                max_context_length: 4096,
-                max_length: 300,
-                temperature: 0.7,
-                stop_sequence: ["User:", "\nUser"]
-            });
+        // Nudge the LLM to output JSON if the user prompt is direct
+        let activePrompt = context;
+        const directKeywords = ['generate', 'make', 'create', 'render', 'cast', 'show me', 'conjure'];
+        const isDirect = text.length < 100 && directKeywords.some(k => text.toLowerCase().includes(k));
+        if (isDirect && !context.includes('```json')) {
+            activePrompt += "(The user is requesting a direct conjuration. Skip the chatter and output the JSON block now.)\nAssistant: ";
+        }
+
+        const data = await llmGenerate({
+            prompt: activePrompt,
+            max_context_length: 4096,
+            max_length: 800,
+            temperature: 0.7,
+            rep_pen: 1.15,
+            rep_pen_range: 512,
+            stop_sequence: ["User:", "\nUser"]
+        });
         let aiReply = data.results[0].text.trim();
         
         chatHistory.push({ role: 'assistant', content: aiReply });
 
         // Did the AI output a JSON payload to execute?
-        const jsonMatch = aiReply.match(/```json\n([\s\S]*?)\n```/);
-        
-        if (jsonMatch) {
-            // Strip the JSON out so the bubble just shows the conversational text array
-            const cleanText = aiReply.replace(jsonMatch[0], '').trim();
-            if (cleanText) addAIMessage(cleanText);
+        let jsonMatch = aiReply.match(/```json\s*([\s\S]*?)\s*```/i);
+        let payloadStr = null;
 
-            const payloadStr = jsonMatch[1];
-            addSystemMessage(`<strong>Spell Succeeded!</strong><br>Executing JSON Workflow payload...`);
-            
-            // Dispatch to python backend for comfy execution
-            dispatchToComfy(JSON.parse(payloadStr));
+        if (jsonMatch) {
+            payloadStr = jsonMatch[1];
+        } else {
+            // Fallback 1: structural check
+            const firstBrace = aiReply.indexOf('{');
+            const lastBrace = aiReply.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+                const candidate = aiReply.substring(firstBrace, lastBrace + 1);
+                if (candidate.includes('"build_fn"') || candidate.includes('"node"')) {
+                    payloadStr = candidate;
+                    jsonMatch = [candidate]; 
+                }
+            }
+
+            // Fallback 2: Truncated JSON Repair
+            if (!payloadStr) {
+                const fenceIdx = aiReply.indexOf('```json');
+                const startIdx = fenceIdx !== -1 ? fenceIdx + 7 : aiReply.indexOf('{');
+                if (startIdx !== -1 && (aiReply.includes('"build_fn"') || aiReply.includes('"node"'))) {
+                    let candidate = aiReply.substring(startIdx).trim();
+                    let openCount = (candidate.match(/\{/g) || []).length;
+                    let closeCount = (candidate.match(/\}/g) || []).length;
+                    if (openCount > closeCount) candidate += '}'.repeat(openCount - closeCount);
+                    if (candidate.startsWith('{')) {
+                        payloadStr = candidate;
+                        jsonMatch = [aiReply.substring(startIdx)];
+                    }
+                }
+            }
+        }
+        
+        if (payloadStr) {
+            try {
+                const payload = JSON.parse(payloadStr);
+                const cleanText = aiReply.replace(jsonMatch[0], '').trim();
+                if (cleanText) addAIMessage(cleanText);
+                addSystemMessage(`<strong>Spell Succeeded!</strong><br>Executing JSON Workflow payload...`);
+                dispatchToComfy(payload);
+            } catch (e) {
+                console.error("Failed to parse intercepted JSON:", e);
+                addAIMessage(aiReply);
+            }
         } else {
             addAIMessage(aiReply);
         }
@@ -1365,10 +1420,10 @@ async function askKobold(text) {
     } catch (err) {
         addAIMessage(`[Error: Could not connect to LLM at ${koboldUrl}. Click Settings to configure.]`);
         console.error(err);
+    } finally {
+        removeTypingIndicator();
+        sendBtn.disabled = false;
     }
-
-    removeTypingIndicator();
-    sendBtn.disabled = false;
 }
 
 async function dispatchToComfy(payload) {
