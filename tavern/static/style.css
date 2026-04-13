@@ -1224,21 +1224,30 @@ textarea::placeholder { color: #555; }
     background-blend-mode: lighten;
     filter: saturate(0.8);
 }
+/* Pending placeholder pulse — opacity ONLY, no brightness filter. The
+   previous version used filter: brightness() which caused a strobe-like
+   flash on the wizard whose portrait was being generated. We now use
+   pure opacity oscillation + a static soft glow ring on the active
+   state for a slow elegant breathing effect. */
 @keyframes pendingQueuedFade {
-    0%, 100% { opacity: 0.18; filter: saturate(0.4) brightness(0.7); }
-    50%      { opacity: 0.38; filter: saturate(0.6) brightness(0.85); }
+    0%, 100% { opacity: 0.20; }
+    50%      { opacity: 0.42; }
 }
 @keyframes pendingActiveFade {
-    0%, 100% { opacity: 0.6; filter: saturate(1.0) brightness(0.95); }
-    50%      { opacity: 1.0; filter: saturate(1.3) brightness(1.15); }
+    0%, 100% { opacity: 0.55; }
+    50%      { opacity: 0.85; }
 }
 .avatar.pending-queued {
-    animation: pendingQueuedFade 4.5s ease-in-out infinite;
+    animation: pendingQueuedFade 5s ease-in-out infinite;
+    filter: saturate(0.4);  /* static desaturation, no brightness flicker */
 }
 .avatar.pending-active {
-    animation: pendingActiveFade 1.0s ease-in-out infinite;
-    box-shadow: 0 0 12px rgba(252, 211, 77, 0.4),
-                0 0 24px rgba(252, 211, 77, 0.2);
+    animation: pendingActiveFade 4s ease-in-out infinite;
+    filter: saturate(0.85);
+    /* Static soft gold glow ring — no animation on the shadow itself
+       so it reads as a calm halo rather than a strobe. */
+    box-shadow: 0 0 14px rgba(252, 211, 77, 0.35),
+                0 0 28px rgba(252, 211, 77, 0.15);
 }
 /* Animate All button — visually distinct disabled state when blocked
    by the setup-completion gate (vs the video-model gate which uses
@@ -1294,9 +1303,20 @@ textarea::placeholder { color: #555; }
    ComfyUI URL if connection failed. */
 body.archivist-lockdown .character-card {
     pointer-events: none;
-    opacity: 0.45;
-    filter: grayscale(0.5);
+    opacity: 0.12;
+    filter: grayscale(0.85);
     cursor: not-allowed;
+    transition: opacity 0.6s ease, filter 0.6s ease;
+}
+/* The Archivist himself stays fully visible and clickable while the
+   rest of the wizards are dimmed to ghosts. */
+body.archivist-lockdown .character-card[data-id="studio_archivist"] {
+    pointer-events: auto;
+    opacity: 1;
+    filter: none;
+    cursor: pointer;
+    box-shadow: 0 0 0 2px rgba(252, 211, 77, 0.5),
+                0 0 24px rgba(252, 211, 77, 0.2);
 }
 body.archivist-lockdown .chat-header-actions button,
 body.archivist-lockdown .chat-header-actions a {
