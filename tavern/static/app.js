@@ -1520,6 +1520,8 @@ searchInput.addEventListener('input', (e) => {
 let _wizardTooltip = null;
 let _tooltipCache = {};  // Cache fetched info to avoid re-fetching
 let _tooltipDismissTimer = null;
+let _tooltipEscHandler = null;
+let _tooltipOutsideHandler = null;
 
 function hideWizardTooltip() {
     if (_tooltipDismissTimer) {
@@ -1529,6 +1531,15 @@ function hideWizardTooltip() {
     if (_wizardTooltip) {
         _wizardTooltip.remove();
         _wizardTooltip = null;
+    }
+    // Tear down the global escape-hatch listeners so they don't pile up
+    if (_tooltipEscHandler) {
+        document.removeEventListener('keydown', _tooltipEscHandler);
+        _tooltipEscHandler = null;
+    }
+    if (_tooltipOutsideHandler) {
+        document.removeEventListener('click', _tooltipOutsideHandler);
+        _tooltipOutsideHandler = null;
     }
 }
 
@@ -1643,6 +1654,7 @@ async function showWizardTooltip(char, cardEl) {
     }
 
     tooltip.innerHTML = `
+        <button class="wt-close" type="button" title="Close (Esc)" aria-label="Close">&times;</button>
         <div class="wt-header" style="background: ${gradient};">
             <img class="wt-avatar" src="${avatarUrl}" alt="" onerror="this.style.display='none'"/>
             <div class="wt-header-text" style="position:relative; width:100%;">
@@ -1657,6 +1669,37 @@ async function showWizardTooltip(char, cardEl) {
         ${loraHtml}
         ${settingsHint}
     `;
+
+    // Manual close button — fixes the "tooltip got stuck and won't go
+    // away" symptom that happens when the user moves the cursor in a
+    // way the mouseleave handler misses (e.g. Alt-tab, fast diagonal
+    // exit, browser focus loss).
+    const closeBtn = tooltip.querySelector('.wt-close');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            hideWizardTooltip();
+        });
+    }
+    // Escape key as a backup escape hatch
+    if (!_tooltipEscHandler) {
+        _tooltipEscHandler = (e) => {
+            if (e.key === 'Escape' && _wizardTooltip) hideWizardTooltip();
+        };
+        document.addEventListener('keydown', _tooltipEscHandler);
+    }
+    // Click outside the tooltip dismisses it too
+    if (!_tooltipOutsideHandler) {
+        _tooltipOutsideHandler = (e) => {
+            if (_wizardTooltip && !_wizardTooltip.contains(e.target)
+                && !e.target.closest('.character-card')) {
+                hideWizardTooltip();
+            }
+        };
+        // Defer attaching so the click that opened the tooltip doesn't
+        // immediately close it
+        setTimeout(() => document.addEventListener('click', _tooltipOutsideHandler), 0);
+    }
 
     // Position tooltip to the right of the card
     document.body.appendChild(tooltip);

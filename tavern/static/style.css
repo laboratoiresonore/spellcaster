@@ -1153,3 +1153,39 @@ textarea::placeholder { color: #555; }
     cursor: not-allowed;
     filter: grayscale(0.6);
 }
+
+/* ── Wizard tooltip close button ──────────────────────────────────── */
+/* The .wizard-tooltip wrapper uses pointer-events: none so it's
+   click-through by default. The close X is the only element that
+   intercepts clicks — a manual escape hatch for when the tooltip
+   gets "stuck" (e.g. focus loss, fast mouse exit, alt-tab). */
+.wt-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: #fff;
+    font-size: 18px;
+    line-height: 22px;
+    padding: 0;
+    cursor: pointer;
+    z-index: 10;
+    pointer-events: auto;
+    transition: background 0.15s ease, transform 0.1s ease, border-color 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Outfit', sans-serif;
+}
+.wt-close:hover {
+    background: rgba(178, 70, 242, 0.85);
+    border-color: rgba(255, 255, 255, 0.4);
+    transform: scale(1.08);
+}
+.wt-close:active {
+    transform: scale(0.95);
+}
