@@ -350,6 +350,51 @@ async function syncServerLoraToggles() {
     }
 }
 
+// Convert a number of bytes into a short GB string ("12.4").
+function _fmtGB(bytes) {
+    if (!bytes || bytes <= 0) return "0.0";
+    return (bytes / (1024 ** 3)).toFixed(1);
+}
+
+// Build one meter HTML block: "label used/total GB [=====]"
+function _buildMeter(label, used, total) {
+    if (!total || total <= 0) return "";
+    const pct = Math.max(0, Math.min(100, (used / total) * 100));
+    let cls = "";
+    if (pct >= 90) cls = "crit";
+    else if (pct >= 75) cls = "warn";
+    return `<span class="meter">${label} ${_fmtGB(used)}/${_fmtGB(total)}`
+        + `<span class="meter-bar"><span class="meter-fill ${cls}" style="width:${pct.toFixed(0)}%"></span></span>`
+        + `</span>`;
+}
+
+function _renderComfyStats(stats) {
+    const el = document.getElementById("comfy-health-stats");
+    if (!el) return;
+    if (!stats) {
+        el.classList.remove("visible");
+        el.innerHTML = "";
+        return;
+    }
+    const dev = (stats.devices && stats.devices[0]) || {};
+    const sys = stats.system || {};
+    const vramUsed = (dev.vram_total || 0) - (dev.vram_free || 0);
+    const ramUsed = (sys.ram_total || 0) - (sys.ram_free || 0);
+    const cacheUsed = (dev.torch_vram_total || 0) - (dev.torch_vram_free || 0);
+    const parts = [
+        _buildMeter("VRAM", vramUsed, dev.vram_total),
+        _buildMeter("RAM",  ramUsed,  sys.ram_total),
+        _buildMeter("Cache", cacheUsed, dev.torch_vram_total),
+    ].filter(Boolean).join("");
+    if (parts) {
+        el.innerHTML = parts;
+        el.classList.add("visible");
+    } else {
+        el.classList.remove("visible");
+        el.innerHTML = "";
+    }
+}
+
 async function checkComfyConnection() {
     try {
         const testRes = await fetch('/api/comfy_status');
@@ -357,13 +402,16 @@ async function checkComfyConnection() {
         if(data.connected) {
             comfyDot.className = "dot green";
             comfyStatus.textContent = "ComfyUI: Connected";
+            _renderComfyStats(data.stats);
         } else {
             comfyDot.className = "dot red";
             comfyStatus.textContent = "ComfyUI: Disconnected";
+            _renderComfyStats(null);
         }
     } catch(e) {
         comfyDot.className = "dot red";
         comfyStatus.textContent = "ComfyUI: Disconnected";
+        _renderComfyStats(null);
     }
 }
 
@@ -477,11 +525,12 @@ async function initialize() {
     stUrlInput.value = stUrl;
     bridgeUrlInput.value = bridgeUrl;
 
-    // Check connections
+    // Check connections — ComfyUI polls faster so the VRAM/RAM/cache
+    // meters feel live during generation.
     checkComfyConnection();
     checkSillyTavernConnection();
     checkSignalBridgeConnection();
-    setInterval(checkComfyConnection, 30000);
+    setInterval(checkComfyConnection, 5000);
     setInterval(checkSillyTavernConnection, 30000);
     setInterval(checkSignalBridgeConnection, 30000);
 

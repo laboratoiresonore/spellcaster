@@ -3475,6 +3475,20 @@ def _fetch_loras(server):
     except Exception:
         return []
 
+
+def _fetch_wan_ipadapter_models(server):
+    """Fetch available IPAdapterWANLoader model names from ComfyUI server.
+
+    Returns a list (possibly empty) of filenames known to the server's
+    IPAdapterWANLoader node. Used to decide whether the Face Identity Lock
+    block in the Wan i2v workflow should be built or silently skipped.
+    """
+    try:
+        info = _api_get(server, "/object_info/IPAdapterWANLoader")
+        return info["IPAdapterWANLoader"]["input"]["required"]["ipadapter"][0]
+    except Exception:
+        return []
+
 def _fetch_reactor_models(server):
     """Fetch available ReActor swap_model and face_restore_model lists from the server."""
     try:
@@ -4703,8 +4717,25 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
                       motion_mask=None,
                       pingpong=False, fps=16,
                       end_image_filename=None):
-    """→ Delegated to v2 builder (resolves preset_key → preset dict)."""
+    """→ Delegated to v2 builder (resolves preset_key → preset dict).
+
+    Probes the ComfyUI server for the IPAdapterWANLoader model named in the
+    preset. If the model is missing, logs a warning and disables the
+    IP-Adapter block so the workflow still runs instead of failing
+    validation with 'Value not in list: ipadapter'.
+    """
     preset = WAN_I2V_PRESETS[preset_key]
+    # IP-Adapter WAN model probe — gracefully skip if the model isn't
+    # installed on the server. Prevents the "Value not in list" validation
+    # error that otherwise kills the whole workflow.
+    if ip_adapter_image and server_url:
+        required_model = preset.get("ip_adapter_model", "ip-adapter.bin")
+        available = _fetch_wan_ipadapter_models(server_url)
+        if available and required_model not in available:
+            print(f"[Spellcaster] Wan i2v: IP-Adapter model '{required_model}' "
+                  f"not found on server — disabling Face Identity Lock for this run. "
+                  f"Available: {available}")
+            ip_adapter_image = None
     return build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
                            width=width, height=height, length=length,
                            steps=steps, cfg=cfg, shift=shift, second_step=second_step,
@@ -7626,7 +7657,7 @@ class FaceSwapModelDialog(Gtk.Dialog):
 class WanI2VDialog(Gtk.Dialog):
     """Wan 2.2 Image-to-Video with LoRA management."""
 
-    def __init__(self, server_url=COMFYUI_DEFAULT_URL):
+    def __init__(self, server_url=COMFYUI_DEFAULT_URL, src_w=0, src_h=0):
         super().__init__(title="ComfyUI - Wan 2.2 Image to Video")
         self.set_default_size(680, 800)
         self.add_button("_Cancel", Gtk.ResponseType.CANCEL)
@@ -7636,6 +7667,10 @@ class WanI2VDialog(Gtk.Dialog):
 
         self._all_wan_loras = []
         self._wan_loras = []
+        # Source canvas dimensions — used by quality presets to preserve
+        # aspect ratio instead of hardcoding 832x480 landscape.
+        self._src_w = int(src_w) if src_w else 0
+        self._src_h = int(src_h) if src_h else 0
 
         # Scrollable content for smaller screens
         content_area = self.get_content_area()
@@ -7701,10 +7736,22 @@ class WanI2VDialog(Gtk.Dialog):
             self._quality_combo.append(qid, qlabel)
         self._quality_combo.set_active_id("standard")
 
+        def _dims_for(target_long):
+            """Compute W/H for this quality preset, preserving source aspect.
+            Falls back to 832x480 (landscape) if no source dims were provided.
+            """
+            if self._src_w > 0 and self._src_h > 0:
+                return _wan_video_dims(self._src_w, self._src_h, target_long=target_long)
+            # No source info — legacy default (landscape)
+            if target_long <= 576:
+                return 576, 320
+            return 832, 480
+
         def _on_quality_changed(combo):
             qid = combo.get_active_id()
             if qid == "fast":
-                self.w_spin.set_value(576); self.h_spin.set_value(320)
+                w, h = _dims_for(576)
+                self.w_spin.set_value(w); self.h_spin.set_value(h)
                 self.length_spin.set_value(33); self.steps_spin.set_value(6)
                 self.cfg_spin.set_value(1.0); self.shift_spin.set_value(8.0)
                 self.second_step_spin.set_value(3)
@@ -7713,7 +7760,8 @@ class WanI2VDialog(Gtk.Dialog):
                 self.interpolate_check.set_active(False)
                 self.face_swap_check.set_active(False)
             elif qid == "standard":
-                self.w_spin.set_value(832); self.h_spin.set_value(480)
+                w, h = _dims_for(832)
+                self.w_spin.set_value(w); self.h_spin.set_value(h)
                 self.length_spin.set_value(81); self.steps_spin.set_value(6)
                 self.cfg_spin.set_value(1.0); self.shift_spin.set_value(8.0)
                 self.second_step_spin.set_value(3)
@@ -7722,7 +7770,8 @@ class WanI2VDialog(Gtk.Dialog):
                 self.interpolate_check.set_active(True)
                 self.face_swap_check.set_active(True)
             elif qid == "high":
-                self.w_spin.set_value(832); self.h_spin.set_value(480)
+                w, h = _dims_for(832)
+                self.w_spin.set_value(w); self.h_spin.set_value(h)
                 self.length_spin.set_value(81); self.steps_spin.set_value(20)
                 self.cfg_spin.set_value(1.0); self.shift_spin.set_value(3.0)
                 self.second_step_spin.set_value(10)
@@ -7731,7 +7780,8 @@ class WanI2VDialog(Gtk.Dialog):
                 self.interpolate_check.set_active(True)
                 self.face_swap_check.set_active(True)
             elif qid == "long":
-                self.w_spin.set_value(832); self.h_spin.set_value(480)
+                w, h = _dims_for(832)
+                self.w_spin.set_value(w); self.h_spin.set_value(h)
                 self.length_spin.set_value(161); self.steps_spin.set_value(6)
                 self.cfg_spin.set_value(1.0); self.shift_spin.set_value(8.0)
                 self.second_step_spin.set_value(3)
@@ -9885,8 +9935,8 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-klein-headswap": "klein_flux2",
             "spellcaster-klein-headswap-face": "klein_flux2",
             "spellcaster-klein-inpaint": "klein_flux2",
-            "spellcaster-ltx-t2v": "ltx_video",
-            "spellcaster-ltx-i2v": "ltx_video",
+            "spellcaster-ltx-t2v": None,   # always register — LTX added post-installer, no feature gate
+            "spellcaster-ltx-i2v": None,   # always register — LTX added post-installer, no feature gate
             "spellcaster-wan-i2v": "wan_i2v",
             "spellcaster-wan-flf": "wan_i2v",
             "spellcaster-wan-director": "wan_i2v",
@@ -10548,11 +10598,11 @@ class Spellcaster(Gimp.PlugIn):
         # Check for selection — if present, use selection region as start image
         has_sel, sx1, sy1, sx2, sy2 = _get_selection_bounds(image)
 
-        dlg = WanI2VDialog()
         if has_sel:
             src_w, src_h = sx2 - sx1, sy2 - sy1
         else:
             src_w, src_h = image.get_width(), image.get_height()
+        dlg = WanI2VDialog(src_w=src_w, src_h=src_h)
         vw, vh = _wan_video_dims(src_w, src_h)
         dlg.w_spin.set_value(vw)
         dlg.h_spin.set_value(vh)
@@ -10681,7 +10731,8 @@ class Spellcaster(Gimp.PlugIn):
         GimpUi.init("spellcaster")
 
         # Reuse the I2V dialog but add an end-image file chooser
-        dlg = WanI2VDialog()
+        _src_w, _src_h = image.get_width(), image.get_height()
+        dlg = WanI2VDialog(src_w=_src_w, src_h=_src_h)
         dlg.set_title("ComfyUI - Wan 2.2 First + Last Frame to Video")
 
         # Insert end-image file chooser into the dialog

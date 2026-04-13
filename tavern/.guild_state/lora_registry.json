@@ -368,10 +368,10 @@
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "",
+      "purpose": "Realism",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
@@ -396,10 +396,10 @@
         "flux1dev",
         "flux_kontext"
       ],
-      "purpose": "",
+      "purpose": "Pose",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
@@ -408,10 +408,10 @@
       "archs": [
         "flux1dev"
       ],
-      "purpose": "",
+      "purpose": "Realism",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
@@ -2553,6 +2553,19 @@
     "ltxv\\ltx2\\ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors": {
       "archs": [
         "ltx"
+      ],
+      "purpose": "",
+      "tags": [],
+      "user_desc": "",
+      "source": "discovered",
+      "civitai_name": "",
+      "civitai_url": "",
+      "description": ""
+    },
+    "Flux-1-Dev\\aidmaFeetFix-FLUX-V0.1.safetensors": {
+      "archs": [
+        "flux1dev",
+        "flux_kontext"
       ],
       "purpose": "",
       "tags": [],
