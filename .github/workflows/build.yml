@@ -4,13 +4,23 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
-    inputs:
-      build_nsfw:
-        description: 'Also build NSFW edition'
-        required: false
-        default: 'false'
-        type: boolean
+  workflow_dispatch: {}
+
+# This workflow builds the full set of Spellcaster distributables for
+# Windows, macOS, and Linux. On tag push (v*), a draft GitHub Release is
+# created with every artifact attached. On workflow_dispatch, artifacts
+# are uploaded to the run itself but no release is created.
+#
+# Artifacts produced per platform:
+#   * spellcaster-installer         (main GUI installer)
+#   * spellcaster-installer-llm     (experimental LLM-enabled installer)
+#   * spellcaster-manual-update     (repair / update tool)
+#   * wizard-guild                  (standalone Wizard Guild launcher)
+#
+# The NSFW build intentionally has no job here — NSFW distribution is
+# handled by the private spellcaster_NSFW repo's own workflow (the
+# build.yml gets copied into the NSFW staging by nsfw/build_nsfw.py
+# and runs from there with NSFW patches already applied to the source).
 
 jobs:
   build-windows:
@@ -24,37 +34,19 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller customtkinter pillow requests darkdetect
-      - name: Build Windows installer + updater
-        run: python installer/build_installer.py --platform windows --update-tool
+      - name: Build Windows installer + manual update + LLM variant
+        run: python installer/build_installer.py --platform windows --update-tool --llm-variant
+      - name: Build Wizard Guild standalone
+        run: python tavern/build_guild.py --platform windows
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-installer
           path: |
             dist/spellcaster-installer.exe
+            dist/spellcaster-installer-llm.exe
             dist/spellcaster-manual-update.exe
-
-  build-windows-nsfw:
-    runs-on: windows-latest
-    if: ${{ github.event.inputs.build_nsfw == 'true' || startsWith(github.ref, 'refs/tags/') }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pyinstaller customtkinter pillow requests darkdetect
-      - name: Build NSFW Windows installer
-        run: python nsfw/build_nsfw.py
-      - name: Upload NSFW artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-nsfw-installer
-          path: |
-            nsfw/dist/spellcaster-nsfw-installer.exe
-            nsfw/dist/spellcaster-nsfw-updater.exe
+            dist/wizard-guild.exe
 
   build-macos:
     runs-on: macos-latest
@@ -69,9 +61,11 @@ jobs:
           pip install pyinstaller customtkinter pillow requests darkdetect
       - name: Build macOS .app bundle
         run: python installer/build_installer.py --platform macos --onedir
-      - name: Build macOS single binary + updater
-        run: python installer/build_installer.py --platform macos --update-tool
-      - name: Zip macOS app bundle
+      - name: Build macOS single binary + manual update + LLM variant
+        run: python installer/build_installer.py --platform macos --update-tool --llm-variant
+      - name: Build Wizard Guild standalone
+        run: python tavern/build_guild.py --platform macos
+      - name: Zip macOS .app bundle
         run: cd dist && zip -r "../spellcaster-installer-macos.zip" "Spellcaster Installer.app"
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
@@ -80,7 +74,9 @@ jobs:
           path: |
             spellcaster-installer-macos.zip
             dist/spellcaster-installer
+            dist/spellcaster-installer-llm
             dist/spellcaster-manual-update
+            dist/wizard-guild
 
   build-linux:
     runs-on: ubuntu-latest
@@ -95,15 +91,19 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller customtkinter pillow requests darkdetect
-      - name: Build Linux installer + updater
-        run: python installer/build_installer.py --platform linux --update-tool
+      - name: Build Linux installer + manual update + LLM variant
+        run: python installer/build_installer.py --platform linux --update-tool --llm-variant
+      - name: Build Wizard Guild standalone
+        run: python tavern/build_guild.py --platform linux
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-installer
           path: |
             dist/spellcaster-installer
+            dist/spellcaster-installer-llm
             dist/spellcaster-manual-update
+            dist/wizard-guild
 
   release:
     needs: [build-windows, build-macos, build-linux]
@@ -114,16 +114,24 @@ jobs:
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
-      - name: Create GitHub Release
+      - name: List downloaded artifacts
+        run: find . -type f -name '*' | head -50
+      - name: Create GitHub Release (draft)
         uses: softprops/action-gh-release@v2
         with:
           files: |
             windows-installer/spellcaster-installer.exe
+            windows-installer/spellcaster-installer-llm.exe
             windows-installer/spellcaster-manual-update.exe
+            windows-installer/wizard-guild.exe
             macos-installer/spellcaster-installer-macos.zip
             macos-installer/spellcaster-installer
+            macos-installer/spellcaster-installer-llm
             macos-installer/spellcaster-manual-update
+            macos-installer/wizard-guild
             linux-installer/spellcaster-installer
+            linux-installer/spellcaster-installer-llm
             linux-installer/spellcaster-manual-update
+            linux-installer/wizard-guild
           generate_release_notes: true
           draft: true
