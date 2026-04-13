@@ -1573,18 +1573,24 @@ function applyGlobalBackground() {
             localStorage.setItem('guild_global_bg', bgUrl);
         }
     }
-    if(bgUrl) {
-        document.body.style.backgroundImage = `url('${bgUrl}')`;
-        document.body.style.backgroundSize = "cover";
-        document.body.style.backgroundPosition = "center";
-        document.body.style.backgroundRepeat = "no-repeat";
-        document.body.style.backgroundAttachment = "fixed";
-        // Magical transition when background changes
-        if (typeof gsap !== 'undefined') {
-            gsap.fromTo(document.body, { filter: 'brightness(1.5) saturate(1.5)' },
-                { filter: 'brightness(1) saturate(1)', duration: 1.5, ease: 'power2.out' });
-        }
-    }
+    if (!bgUrl) return;
+    // Idempotency guard. The Archivist setup poll calls this function
+    // every 2 seconds, and we previously re-set the background-image
+    // (a no-op in CSS) AND ran a GSAP body brightness fromTo every
+    // single time, which strobed the entire screen on every poll. We
+    // now bail out unless the URL actually changed.
+    if (document.body.dataset.bgUrl === bgUrl) return;
+    document.body.dataset.bgUrl = bgUrl;
+    document.body.style.backgroundImage = `url('${bgUrl}')`;
+    document.body.style.backgroundSize = "cover";
+    document.body.style.backgroundPosition = "center";
+    document.body.style.backgroundRepeat = "no-repeat";
+    document.body.style.backgroundAttachment = "fixed";
+    // No GSAP brightness/saturate transition. The previous version
+    // ran gsap.fromTo(body, brightness(1.5)→brightness(1), 1.5s) on
+    // every call, which combined with the 2-second poll cadence
+    // produced a near-continuous full-screen strobe. The new
+    // background just appears.
 }
 
 // Helper to get optimal background resolution for user's display
