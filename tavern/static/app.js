@@ -4102,16 +4102,38 @@ function _avatarSelectBurst(avatarEl) {
 }
 
 function _messageEntrance(msgEl) {
-    // Intentionally a no-op. The CSS animation `.message { animation:
-    // msgSlideIn ... }` already handles the entrance. The previous
-    // GSAP fromTo with `back.out(1.2)` ease added a noticeable overshoot
-    // pop on top of that, which combined with the gold Archivist
-    // bubble background read as a flash on every line of dialogue.
-    // The earlier version also burst 6 sparkle particles per message
-    // which made it strictly worse. We now rely on the gentle CSS-only
-    // slide-in and reserve sparkles for the dedicated wizard-arrival
-    // event in _renderNewAvatars.
-    return;
+    // Bubble entrance: spring overshoot slide-in + a 6-particle
+    // sparkle burst. Earlier rounds blamed this for the screen flash
+    // and stripped it out, but the actual culprit was the body-wide
+    // brightness fromTo in applyGlobalBackground that fired every poll
+    // tick. With that removed (commit dd5eab5), the per-bubble GSAP
+    // is harmless and the user wants the polish back.
+    if (typeof gsap === 'undefined' || !msgEl) return;
+    const isUser = msgEl.classList.contains('user-message');
+    gsap.fromTo(msgEl,
+        { opacity: 0, y: 30, x: isUser ? 40 : -40, scale: 0.9 },
+        { opacity: 1, y: 0, x: 0, scale: 1, duration: 0.6, ease: 'back.out(1.2)' }
+    );
+    // Tiny sparkles around the new message — radial burst from the
+    // bubble centre, fading out over 0.6s with a small per-particle
+    // stagger so it reads as a sparkle trail rather than one pop.
+    const bubble = msgEl.querySelector('.bubble');
+    if (bubble) {
+        for (let i = 0; i < 6; i++) {
+            const spark = document.createElement('div');
+            spark.className = 'msg-sparkle';
+            bubble.appendChild(spark);
+            const angle = (i / 6) * Math.PI * 2;
+            gsap.fromTo(spark,
+                { x: 0, y: 0, opacity: 1, scale: 1 },
+                { x: Math.cos(angle) * 40, y: Math.sin(angle) * 40,
+                  opacity: 0, scale: 0,
+                  duration: 0.6, delay: i * 0.05, ease: 'power2.out',
+                  onComplete: () => spark.remove()
+                }
+            );
+        }
+    }
 }
 
 function _typingIndicatorMagic(el) {

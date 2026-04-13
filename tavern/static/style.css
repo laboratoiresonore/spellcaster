@@ -518,14 +518,10 @@ body {
 #chat-stream::-webkit-scrollbar-track { background: transparent; }
 #chat-stream::-webkit-scrollbar-thumb { background: rgba(178,70,242,0.2); border-radius: 4px; }
 
-.message { display: flex; max-width: 82%; animation: msgSlideIn 0.55s ease-out; }
-/* Gentle pure-translate fade-in. No scale, no overshoot, no double-
-   animation. Faster than the brain registers as a "pop" — the eye
-   sees the bubble already in place and just notices it appearing. */
-@keyframes msgSlideIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
+.message { display: flex; max-width: 82%; }
+/* No CSS keyframe entrance — the GSAP _messageEntrance handles the
+   spring overshoot slide-in + sparkle burst. Having both here would
+   double-animate and fight each other. */
 .user-message { align-self: flex-end; flex-direction: row-reverse; }
 .ai-message { align-self: flex-start; }
 .bubble {
