@@ -4736,15 +4736,43 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 )
             return self.end_json(200, {"prompt": prompt})
         elif self.path == '/api/comfy_status':
+            # Cache the last successful result for 15 s. This serves two
+            # purposes:
+            #   1. Avoid hammering ComfyUI's /system_stats during heavy
+            #      generation — under load a single probe can block for
+            #      several seconds and the old 3 s timeout fired the catch
+            #      branch repeatedly, painting the indicator dot red even
+            #      though ComfyUI was healthy and just busy.
+            #   2. Give the frontend a stable view of VRAM/RAM/cache
+            #      meters that doesn't flicker between live and missing.
+            global _COMFY_STATUS_CACHE
+            try:
+                _COMFY_STATUS_CACHE
+            except NameError:
+                _COMFY_STATUS_CACHE = {"ts": 0.0, "payload": None}
+            now = time.time()
+            cache_ttl = 15.0
+            if _COMFY_STATUS_CACHE["payload"] and (now - _COMFY_STATUS_CACHE["ts"]) < cache_ttl:
+                return self.end_json(200, _COMFY_STATUS_CACHE["payload"])
             try:
                 req = urllib.request.Request(
                     f"{COMFYUI_URL}/system_stats",
                     headers={"Accept": "application/json"})
-                with urllib.request.urlopen(req, timeout=3) as resp:
+                # Bumped from 3s → 10s so a busy ComfyUI doesn't get
+                # mistakenly reported as disconnected.
+                with urllib.request.urlopen(req, timeout=10) as resp:
                     data = json.loads(resp.read())
-                return self.end_json(200, {"connected": True, "stats": data})
+                payload = {"connected": True, "stats": data}
+                _COMFY_STATUS_CACHE = {"ts": now, "payload": payload}
+                return self.end_json(200, payload)
             except Exception:
-                # Silently return disconnected for health checks
+                # If we have a recent cached success (< 60 s old), keep
+                # returning it and mark "stale" so the frontend can show a
+                # transient busy state instead of going hard red.
+                if _COMFY_STATUS_CACHE["payload"] and (now - _COMFY_STATUS_CACHE["ts"]) < 60.0:
+                    stale = dict(_COMFY_STATUS_CACHE["payload"])
+                    stale["stale"] = True
+                    return self.end_json(200, stale)
                 return self.end_json(200, {"connected": False})
         elif self.path == '/api/sillytavern_status':
             try:

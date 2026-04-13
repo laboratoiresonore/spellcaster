@@ -398,23 +398,49 @@ function _renderComfyStats(stats) {
     }
 }
 
+// Track consecutive failed connection probes so a single transient
+// timeout (e.g. while ComfyUI is busy generating) doesn't immediately
+// flip the indicator to red and panic the user.
+let _comfyMissCount = 0;
+const COMFY_MISS_THRESHOLD = 3;
+
 async function checkComfyConnection() {
     try {
         const testRes = await fetch('/api/comfy_status');
         const data = await testRes.json();
-        if(data.connected) {
+        if (data.connected) {
+            // Server returned a fresh success (or a "stale" cached one
+            // during a transient ComfyUI hiccup — both count as alive).
+            _comfyMissCount = 0;
             comfyDot.className = "dot green";
-            comfyStatus.textContent = "ComfyUI: Connected";
+            comfyStatus.textContent = data.stale
+                ? "ComfyUI: Connected (busy)"
+                : "ComfyUI: Connected";
             _renderComfyStats(data.stats);
         } else {
+            // Server reports disconnected. Wait for THRESHOLD consecutive
+            // misses before going red — single transient failures are
+            // common when ComfyUI is mid-generation.
+            _comfyMissCount += 1;
+            if (_comfyMissCount >= COMFY_MISS_THRESHOLD) {
+                comfyDot.className = "dot red";
+                comfyStatus.textContent = "ComfyUI: Disconnected";
+                _renderComfyStats(null);
+            } else {
+                comfyDot.className = "dot yellow";
+                comfyStatus.textContent = "ComfyUI: Checking…";
+            }
+        }
+    } catch(e) {
+        _comfyMissCount += 1;
+        if (_comfyMissCount >= COMFY_MISS_THRESHOLD) {
             comfyDot.className = "dot red";
             comfyStatus.textContent = "ComfyUI: Disconnected";
             _renderComfyStats(null);
+        } else {
+            comfyDot.className = "dot yellow";
+            comfyStatus.textContent = "ComfyUI: Checking…";
         }
-    } catch(e) {
-        comfyDot.className = "dot red";
-        comfyStatus.textContent = "ComfyUI: Disconnected";
-        _renderComfyStats(null);
     }
 }
 
