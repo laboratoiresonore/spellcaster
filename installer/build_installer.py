@@ -210,6 +210,88 @@ def build_manual_update():
     return result.returncode
 
 
+def build_llm_variant(target_platform: str):
+    """Build the experimental LLM-enabled installer from install_with_llm.py.
+
+    This is a second installer binary that wraps install.py's pipeline with
+    a pre-step that auto-downloads KoboldCpp + a small GGUF chat model into
+    the user's ComfyUI folder, launches the LLM, runs the regular installer
+    non-interactively, then creates desktop shortcuts. Opt-in: users who
+    want the standard installer run spellcaster-installer, users who want
+    the full hands-off LLM experience run spellcaster-installer-llm.
+
+    install_with_llm.py imports install.py at runtime, so PyInstaller needs
+    install.py + installer_gui.py + manifest.json + plugins/ bundled too —
+    the same data set as the regular installer.
+    """
+    sep = os.pathsep
+    print("Building LLM-enabled installer variant…")
+
+    common = [
+        sys.executable, "-m", "PyInstaller",
+        "--noconfirm",
+        "--hidden-import", "install",             # imported dynamically by install_with_llm
+        "--hidden-import", "installer_gui",
+        "--hidden-import", "tkinter",
+        "--hidden-import", "tkinter.scrolledtext",
+        "--hidden-import", "tkinter.ttk",
+        "--collect-all", "customtkinter",
+        "--hidden-import", "darkdetect",
+        "--hidden-import", "PIL",
+        "--hidden-import", "requests",
+        "--add-data", f"manifest.json{sep}.",
+        "--add-data", f"install.py{sep}.",
+        "--add-data", f"installer_gui.py{sep}.",
+        "--add-data", f"{REPO_ROOT / 'plugins'}{sep}plugins",
+        "--distpath", str(REPO_ROOT / "dist"),
+        "--workpath", str(REPO_ROOT / "build"),
+    ]
+    if (REPO_ROOT / "assets").is_dir():
+        common += ["--add-data", f"{REPO_ROOT / 'assets'}{sep}assets"]
+
+    if target_platform == "windows":
+        icon_flag = []
+        icon_path = REPO_ROOT / "assets" / "spellcaster.ico"
+        if icon_path.exists():
+            icon_flag = ["--icon", str(icon_path)]
+        cmd = common + icon_flag + [
+            "--onefile",
+            "--console",   # experimental — keep console visible for LLM download progress
+            "--name", "spellcaster-installer-llm",
+            "install_with_llm.py",
+        ]
+        output = "dist/spellcaster-installer-llm.exe"
+    elif target_platform == "macos":
+        icon_flag = []
+        icon_path = REPO_ROOT / "assets" / "spellcaster.icns"
+        if icon_path.exists():
+            icon_flag = ["--icon", str(icon_path)]
+        cmd = common + icon_flag + [
+            "--onefile",
+            "--console",
+            "--name", "spellcaster-installer-llm",
+            "--osx-bundle-identifier", "com.laboratoiresonore.spellcaster.llm",
+            "install_with_llm.py",
+        ]
+        output = "dist/spellcaster-installer-llm"
+    else:  # linux
+        cmd = common + [
+            "--onefile",
+            "--console",
+            "--name", "spellcaster-installer-llm",
+            "install_with_llm.py",
+        ]
+        output = "dist/spellcaster-installer-llm"
+
+    print("Command:", " ".join(str(c) for c in cmd))
+    result = subprocess.run(cmd, cwd=str(HERE))
+    if result.returncode == 0:
+        print(f"\nLLM installer variant built: {output}")
+    else:
+        print(f"\nLLM variant build failed (exit code {result.returncode})")
+    return result.returncode
+
+
 def build_remote_installer(target_platform: str):
     """Build the standalone remote installer binary.
 
@@ -292,6 +374,10 @@ def main():
         "--remote-only", action="store_true",
         help="Build ONLY the remote network installer (skip main installer)",
     )
+    parser.add_argument(
+        "--llm-variant", action="store_true",
+        help="Also build the experimental LLM-enabled installer (install_with_llm.py)",
+    )
     args = parser.parse_args()
 
     # Auto-detect platform from the current OS if not explicitly provided
@@ -313,6 +399,9 @@ def main():
 
     if args.update_tool:
         build_manual_update()
+
+    if args.llm_variant:
+        build_llm_variant(target)
 
     if args.remote or args.remote_only:
         build_remote_installer(target)

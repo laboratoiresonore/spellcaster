@@ -45,7 +45,7 @@ if getattr(sys, 'frozen', False):
 else:
     SCRIPT_DIR = Path(__file__).resolve().parent
 MANIFEST_PATH = SCRIPT_DIR / "manifest.json"
-VERSION = "1.5"
+VERSION = "2.2"
 DEFAULT_SERVER_URL = "http://127.0.0.1:8188"
 DEFAULT_LLM_URL = "http://127.0.0.1:5001"
 _BOX_LINE = "═" * 50
