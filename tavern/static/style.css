@@ -1120,3 +1120,36 @@ textarea::placeholder { color: #555; }
     width: 32px;
     height: 32px;
 }
+
+/* ── Avatar placeholder + pending state ───────────────────────────── */
+.avatar.avatar-placeholder {
+    background-size: 70%;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-blend-mode: lighten;
+    filter: saturate(0.8);
+}
+@keyframes pendingQueuedFade {
+    0%, 100% { opacity: 0.18; filter: saturate(0.4) brightness(0.7); }
+    50%      { opacity: 0.38; filter: saturate(0.6) brightness(0.85); }
+}
+@keyframes pendingActiveFade {
+    0%, 100% { opacity: 0.6; filter: saturate(1.0) brightness(0.95); }
+    50%      { opacity: 1.0; filter: saturate(1.3) brightness(1.15); }
+}
+.avatar.pending-queued {
+    animation: pendingQueuedFade 4.5s ease-in-out infinite;
+}
+.avatar.pending-active {
+    animation: pendingActiveFade 1.0s ease-in-out infinite;
+    box-shadow: 0 0 12px rgba(252, 211, 77, 0.4),
+                0 0 24px rgba(252, 211, 77, 0.2);
+}
+/* Animate All button — visually distinct disabled state when blocked
+   by the setup-completion gate (vs the video-model gate which uses
+   the default disabled style) */
+#animate-all-btn.setup-blocked {
+    opacity: 0.45;
+    cursor: not-allowed;
+    filter: grayscale(0.6);
+}

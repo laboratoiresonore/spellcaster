@@ -607,20 +607,49 @@ async function initialize() {
     await checkLlmAndGenerateNames();
 
     // First Time Global Generation (Avatars + Background)
-    // Two paths:
+    // Three paths:
     //   1. Server-driven setup is already running in a background thread
     //      (the launcher kicked it off via /api/setup/start). We enter
     //      "Archivist mode" — chat-lock UI, speech streaming, avatar
     //      arrivals piped into the chat as they happen.
-    //   2. Setup has already finished on this machine OR the server
-    //      hasn't started one. We use the legacy generateMissingAvatars
-    //      for any wizards that still lack a portrait.
-    const setupActive = await _maybeEnterArchivistMode();
+    //   2. Setup is NOT running but some wizards are missing portraits
+    //      (e.g. user closed the server mid-generation, or new wizards
+    //      were added since the last run). Trigger a partial-setup pass
+    //      that only generates the missing ones, then enter Archivist
+    //      mode to stream their arrivals into the chat.
+    //   3. Every wizard already has a portrait — nothing to do.
+    let setupActive = await _maybeEnterArchivistMode();
     if (!setupActive) {
-        // No background setup running — just fill in any missing avatars
-        // for wizards that were added after the last setup pass.
+        const missing = (typeof characters !== 'undefined')
+            ? characters.filter(c => !c.avatar_url) : [];
+        if (missing.length > 0) {
+            // Partial restart-recovery setup. The server's bg worker
+            // honours skip_existing=True by default, so the call only
+            // generates the ones we need.
+            try {
+                await fetch('/api/setup/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ comfy_url: comfyUrl }),
+                });
+                // Give the server a beat to flip the phase, then retry
+                // the Archivist mode entry so we get the chat-lock UI
+                // for the partial run.
+                await new Promise(r => setTimeout(r, 300));
+                setupActive = await _maybeEnterArchivistMode();
+            } catch (e) {
+                console.warn('[Guild] could not start recovery setup:', e);
+            }
+        }
+    }
+    if (!setupActive) {
+        // No background setup running, no missing avatars — keep the
+        // legacy fast-path for any edge case the server didn't pick up.
         await generateMissingAvatars();
     }
+    // Final pass: paint placeholders + gate Animate All in case any
+    // wizards landed in the sidebar with no avatar and no setup running.
+    _refreshSidebarPlaceholders();
 
     // Select first by default
     if (characters.length > 0) {
@@ -837,6 +866,22 @@ async function _archivistPollOnce() {
         return;  // transient, retry next poll
     }
     const newCount = _renderNewAvatars(snapshot);
+    // Update the per-wizard pending state map so the sidebar shows
+    // the right animation: 'active' for whichever wizard ComfyUI is
+    // currently rendering, 'queued' for everyone still waiting.
+    _avatarPendingState = {};
+    const pendingIds = snapshot.pending_ids || [];
+    const activeId = snapshot.current_id;
+    for (const cid of pendingIds) {
+        _avatarPendingState[cid] = (cid === activeId) ? 'active' : 'queued';
+    }
+    if (activeId && !_avatarPendingState[activeId]) {
+        _avatarPendingState[activeId] = 'active';
+    }
+    // Repaint the sidebar placeholders so the queued/active animations
+    // follow the live snapshot, then re-gate the Animate All button.
+    _refreshSidebarPlaceholders();
+
     // Drip a speech section between every couple of avatar arrivals
     // (or unconditionally on poll if no new avatars came in)
     if (newCount === 0 || (snapshot.generated_count % 2 === 0)) {
@@ -1090,14 +1135,22 @@ async function checkVideoModelAvailable() {
             btn.disabled = false;
             btn.title = 'Animate all wizard avatars using ' + (data.engine || 'video').toUpperCase() +
                 ' (queues to ComfyUI in background)';
+            btn.dataset.savedTitle = btn.title;
+            btn.dataset.videoModelOk = '1';
         } else {
             btn.disabled = true;
             btn.title = 'No video model detected in ComfyUI (needs WAN, LTX, SVD, or CogVideo)';
+            btn.dataset.videoModelOk = '0';
         }
     } catch(e) {
         btn.disabled = true;
         btn.title = 'Cannot check for video models — ComfyUI may be offline';
+        btn.dataset.videoModelOk = '0';
     }
+    // Apply the avatar-completeness gate on top of the video-model gate.
+    // _refreshAnimateAllButtonGate disables the button if any wizard
+    // still lacks a portrait (you can't animate an empty image).
+    _refreshAnimateAllButtonGate();
 }
 
 function onAnimateAllClick() {
@@ -1273,6 +1326,111 @@ function saveIdentity(char) {
     }).catch(() => {});
 }
 
+// ── Avatar placeholder + pending state ───────────────────────────────
+//
+// Wizards without a generated portrait fall back to the Spellcaster icon
+// (served by /api/placeholder_avatar). Two animation states layered on
+// top of the placeholder tell the user what's happening:
+//
+//   queued   — slow fade, low opacity. Wizard is in the setup queue
+//              waiting for ComfyUI to get to it.
+//   active   — fast fade, full opacity. ComfyUI is generating this
+//              wizard's portrait right now.
+//
+// _avatarStateForChar picks the right state based on the current setup
+// snapshot (see _archivistRefreshSidebarPending below).
+
+const _PLACEHOLDER_AVATAR_URL = '/api/placeholder_avatar';
+
+// Map: charId -> 'active' | 'queued' | undefined
+let _avatarPendingState = {};
+
+function _avatarStateForChar(char) {
+    if (!char) return null;
+    if (char.avatar_url) return null;
+    return _avatarPendingState[char.id] || 'queued';
+}
+
+function _avatarHtmlForCard(char, gradient) {
+    // Returns the inner HTML for a sidebar card's avatar div, including
+    // the placeholder + pending classes when the wizard's portrait is
+    // missing. Centralized so the legacy renderCard, the search modal,
+    // and any future renderer all stay in sync.
+    if (char.animated_url) {
+        return `
+            <div class="avatar avatar-animated" style="background: ${gradient};">
+                <video src="${char.animated_url}" autoplay loop muted playsinline></video>
+            </div>`;
+    }
+    if (char.avatar_url) {
+        return `
+            <div class="avatar" style="background: ${gradient}; background-image: url('${char.avatar_url}');"></div>`;
+    }
+    // Placeholder branch
+    const state = _avatarStateForChar(char) || 'queued';
+    return `
+        <div class="avatar avatar-placeholder pending-${state}" style="background: ${gradient}; background-image: url('${_PLACEHOLDER_AVATAR_URL}');"></div>`;
+}
+
+function _refreshAnimateAllButtonGate() {
+    // Disable "Animate All Avatars" while ANY wizard's portrait is
+    // still missing. You can't animate an empty image — wait until
+    // every initial avatar has finished.
+    const btn = document.getElementById('animate-all-btn');
+    if (!btn) return;
+    const everyoneHasAvatar = (typeof characters !== 'undefined')
+        && characters.every(c => !!c.avatar_url);
+    if (everyoneHasAvatar) {
+        // Allow the existing video-model gate to take over (don't override
+        // it — checkVideoModelAvailable owns the "no video model" state)
+        if (btn.dataset.setupBlocked === '1') {
+            btn.dataset.setupBlocked = '0';
+            btn.disabled = false;
+            btn.title = btn.dataset.savedTitle ||
+                'Animate all wizard avatars (queues to ComfyUI in background)';
+            btn.classList.remove('setup-blocked');
+        }
+    } else {
+        if (btn.dataset.setupBlocked !== '1') {
+            btn.dataset.savedTitle = btn.title;
+        }
+        btn.dataset.setupBlocked = '1';
+        btn.disabled = true;
+        btn.title = "Wait until every wizard's portrait has been generated.";
+        btn.classList.add('setup-blocked');
+    }
+}
+
+function _refreshSidebarPlaceholders() {
+    // Walk every rendered card in the sidebar and update its avatar's
+    // placeholder/pending classes to match the current state. Used after
+    // each /api/setup/status poll so the queued/active animation moves
+    // along with the background generation.
+    if (!characterList) return;
+    const cards = characterList.querySelectorAll('.character-card[data-id]');
+    cards.forEach(card => {
+        const cid = card.dataset.id;
+        const char = (typeof characters !== 'undefined')
+            ? characters.find(c => c.id === cid) : null;
+        if (!char) return;
+        const av = card.querySelector('.avatar');
+        if (!av) return;
+        // Already has a portrait? clear placeholder state.
+        if (char.avatar_url) {
+            av.classList.remove('avatar-placeholder', 'pending-queued', 'pending-active');
+            return;
+        }
+        // Missing — apply placeholder + the right pending class
+        av.classList.add('avatar-placeholder');
+        av.style.backgroundImage = `url('${_PLACEHOLDER_AVATAR_URL}')`;
+        const state = _avatarStateForChar(char) || 'queued';
+        av.classList.toggle('pending-active', state === 'active');
+        av.classList.toggle('pending-queued', state !== 'active');
+    });
+    _refreshAnimateAllButtonGate();
+}
+
+
 function renderSidebar(filter = "") {
     characterList.innerHTML = '';
     const lowFilter = filter.toLowerCase();
@@ -1296,27 +1454,15 @@ function renderSidebar(filter = "") {
         card.dataset.id = char.id;
 
         const gradient = `linear-gradient(135deg, ${char.color1}, ${char.color2})`;
-        const avatarUrl = char.avatar_url || `/api/avatar/${char.id}`;
-
-        if (char.animated_url) {
-            card.innerHTML = `
-                <div class="avatar avatar-animated" style="background: ${gradient};">
-                    <video src="${char.animated_url}" autoplay loop muted playsinline></video>
-                </div>
-                <div class="character-info">
-                    <h3>${char.name}</h3>
-                    <p>${char.subtext}</p>
-                </div>
-            `;
-        } else {
-            card.innerHTML = `
-                <div class="avatar" style="background: ${gradient}; background-image: url('${avatarUrl}');"></div>
-                <div class="character-info">
-                    <h3>${char.name}</h3>
-                    <p>${char.subtext}</p>
-                </div>
-            `;
-        }
+        // Avatar HTML — handles avatar_url, animated_url, and the
+        // placeholder/pending fallback in one place.
+        card.innerHTML = `
+            ${_avatarHtmlForCard(char, gradient)}
+            <div class="character-info">
+                <h3>${char.name}</h3>
+                <p>${char.subtext}</p>
+            </div>
+        `;
 
         card.addEventListener('click', () => { selectCharacter(char.id); onMobileCharacterSelect(); });
 
