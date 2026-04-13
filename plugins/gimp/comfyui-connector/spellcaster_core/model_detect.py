@@ -121,39 +121,70 @@ FAMILY_MODEL_KEYWORDS = {
 # Maps architecture keys to the subfolder prefixes used in ComfyUI's
 # LoRA directory layout.  Cross-platform: callers check both / and \.
 LORA_ARCH_PREFIXES = {
-    "sd15":         [],
-    "sdxl":         ["SDXL\\", "Illustrious\\", "Illustrious-Pony\\", "Pony\\"],
-    "illustrious":  ["Illustrious\\", "Illustrious-Pony\\"],
-    "pony":         ["Pony\\", "Illustrious-Pony\\"],
-    "flux2klein":   ["Flux-2-Klein\\"],
-    "flux1dev":     ["Flux-1-Dev\\", "Flux\\"],
-    "flux_kontext": ["Flux-1-Dev\\"],
-    "ltx":          ["ltxv\\", "LTX\\"],
-    "wan":          ["Wan\\", "WAN\\", "Wan-2.2-I2V\\"],
-    "seedvr":       ["SeedVR\\", "seedvr\\"],
+    "sd15":         ["SD15\\", "v1.5\\", "sd1.5\\", "StableDiffusion15\\", "SD15/"],
+    "sdxl":         ["SDXL\\", "Illustrious\\", "Illustrious-Pony\\", "Pony\\", "SDXL/", "Pony/"],
+    "illustrious":  ["Illustrious\\", "Illustrious-Pony\\", "Illustrious/"],
+    "pony":         ["Pony\\", "Illustrious-Pony\\", "Pony/"],
+    "flux2klein":   ["Flux-2-Klein\\", "Flux2/"],
+    "flux1dev":     ["Flux-1-Dev\\", "Flux\\", "Flux/"],
+    "flux_kontext": ["Flux-1-Dev\\", "Flux/"],
+    "ltx":          ["ltxv\\", "LTX\\", "ltxv/", "LTX/"],
+    "wan":          ["Wan\\", "WAN\\", "Wan-2.2-I2V\\", "Wan/", "WAN/"],
+    "seedvr":       ["SeedVR\\", "seedvr\\", "SeedVR/", "seedvr/"],
 }
 
-# LoRA name keyword → arch (fallback when prefix matching fails)
+# LoRA name keyword → arch (fallback when prefix matching fails).
+# Order matters: first match wins. More-specific / less-ambiguous keywords
+# come FIRST so short generic suffixes like "xl" don't swallow names that
+# contain them incidentally (e.g. "wan_mixl" would match "xl" before "wan"
+# if "xl" came first). Video-model hints are also up front so we don't
+# mis-classify video LoRAs as image ones.
+#
+# DO NOT add "realism"/"detail"/"aesthetic" → sdxl defaults. They fire on
+# video LoRAs too (e.g. "Wan_realism_enhance") and pollute SDXL wizards
+# with Wan LoRAs, which is the exact bug we're guarding against.
 LORA_NAME_ARCH_HINTS = [
-    ("sdxl",      "sdxl"),
-    ("xl",        "sdxl"),
-    ("flux",      "flux1dev"),
-    ("klein",     "flux2klein"),
-    ("illu",      "illustrious"),
-    ("pony",      "pony"),
-    ("sd3",       "sd3"),
-    ("sd35",      "sd3"),
-    ("hunyuan",   "hunyuan_dit"),
-    ("pixart",    "pixart"),
-    ("auraflow",  "auraflow"),
-    ("kolors",    "kolors"),
+    # --- Video models first (unambiguous keywords) ---
+    ("ltxv",       "ltx"),
+    ("ltx-video",  "ltx"),
+    ("ltx_video",  "ltx"),
+    ("ltx",        "ltx"),
+    ("wan2.2",     "wan"),
+    ("wan-2.2",    "wan"),
+    ("wan_2.2",    "wan"),
+    ("wan2",       "wan"),
+    ("wan_i2v",    "wan"),
+    ("wani2v",     "wan"),
+    ("wan_t2v",    "wan"),
+    ("wan-",       "wan"),
+    ("wan_",       "wan"),
+    ("seedvr",     "seedvr"),
+    ("cogvideo",   "cogvideo"),
+    ("hunyuan",    "hunyuan_dit"),
+    # --- Image models ---
+    ("flux2klein", "flux2klein"),
+    ("flux-2-klein", "flux2klein"),
+    ("flux_2_klein", "flux2klein"),
+    ("klein",      "flux2klein"),
+    ("flux",       "flux1dev"),
+    ("flx",        "flux1dev"),
+    ("illustrious", "illustrious"),
+    ("illu",       "illustrious"),
+    ("ponv6",      "pony"),
+    ("pony",       "pony"),
+    ("sdxl",       "sdxl"),
+    ("sd15",       "sd15"),
+    ("sd1.5",      "sd15"),
+    ("v1.5",       "sd15"),
+    ("v15",        "sd15"),
+    ("sd35",       "sd3"),
+    ("sd3",        "sd3"),
+    ("pixart",     "pixart"),
+    ("auraflow",   "auraflow"),
+    ("kolors",     "kolors"),
     ("playground", "playground"),
-    ("ltx",       "ltx"),
-    ("ltxv",      "ltx"),
-    ("wan",       "wan"),
-    ("seedvr",    "seedvr"),
-    ("cogvideo",  "cogvideo"),
-    ("svd",       "svd"),
+    # --- 2-char suffix hint (last, weakest) — only matches if nothing above did ---
+    ("xl",         "sdxl"),
 ]
 
 

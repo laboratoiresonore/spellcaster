@@ -315,6 +315,31 @@ def _apply_staged_updates():
             except Exception:
                 pass
 
+    # Plugin-source change detection — pluginrc only gets invalidated when
+    # the auto-updater applies staged files, so manual edits / git pulls
+    # leave GIMP with a stale procedure cache and new menu items (LTX,
+    # etc.) silently fail to appear. Hash the main plugin file's content
+    # and clear pluginrc whenever the hash changes.
+    try:
+        import hashlib as _hashlib
+        _self_path = Path(__file__) if "__file__" in globals() else None
+        if _self_path and _self_path.exists():
+            _self_hash = _hashlib.md5(_self_path.read_bytes()).hexdigest()
+            _hash_file = _PLUGIN_DIR / ".spellcaster_procs_hash"
+            _prev_hash = ""
+            try:
+                _prev_hash = _hash_file.read_text(encoding="utf-8").strip()
+            except Exception:
+                pass
+            if _prev_hash != _self_hash:
+                _delete_all_gimp_pluginrc()
+                try:
+                    _hash_file.write_text(_self_hash, encoding="utf-8")
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     # If spellcaster_core/ is missing, invalidate version to force a full
     # re-fetch on this startup.  Older auto-updaters didn't know about
     # spellcaster_core, so the first restart after an update applies new
