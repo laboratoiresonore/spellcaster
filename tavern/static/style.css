@@ -276,12 +276,43 @@ body {
     50% { text-shadow: 0 0 30px var(--glow-strong), 0 0 60px var(--glow-soft); }
 }
 
-#llm-indicator-container, #comfy-indicator-container, #st-indicator-container, #bridge-indicator-container { font-family: 'Outfit', sans-serif; font-size: 11px; color: var(--text-muted); margin-top: 6px; display: flex; align-items: center; }
+#llm-indicator-container, #comfy-indicator-container, #st-indicator-container, #bridge-indicator-container { font-family: 'Outfit', sans-serif; font-size: 11px; color: var(--text-muted); margin-top: 6px; display: flex; align-items: center; flex-wrap: wrap; }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; transition: all 0.3s; }
-.dot.red { background: #ff4757; box-shadow: 0 0 8px rgba(255, 71, 87, 0.6); animation: dotPulse 2s ease-in-out infinite; }
-.dot.green { background: #2ed573; box-shadow: 0 0 8px rgba(46, 213, 115, 0.6); animation: dotPulse 2s ease-in-out infinite; }
-.dot.yellow { background: #ffa502; box-shadow: 0 0 8px rgba(255, 165, 2, 0.6); animation: dotPulse 2s ease-in-out infinite; }
-@keyframes dotPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.3); } }
+.dot.red { background: #ff4757; box-shadow: 0 0 8px rgba(255, 71, 87, 0.6); }
+.dot.green { background: #2ed573; box-shadow: 0 0 8px rgba(46, 213, 115, 0.6); }
+.dot.yellow { background: #ffa502; box-shadow: 0 0 8px rgba(255, 165, 2, 0.6); }
+/* Health stats — VRAM / RAM / cache line under the ComfyUI indicator.
+   flex-basis:100% breaks the line so stats appear on their own row. */
+.health-stats {
+    flex-basis: 100%;
+    font-family: monospace;
+    font-size: 10px;
+    opacity: 0.75;
+    margin-top: 2px;
+    margin-left: 14px;
+    line-height: 1.35;
+    display: none;   /* hidden until first successful stats update */
+}
+.health-stats.visible { display: block; }
+.health-stats .meter { display: inline-block; margin-right: 10px; white-space: nowrap; }
+.health-stats .meter-bar {
+    display: inline-block;
+    width: 32px;
+    height: 4px;
+    vertical-align: middle;
+    margin-left: 3px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 2px;
+    overflow: hidden;
+}
+.health-stats .meter-fill {
+    display: block;
+    height: 100%;
+    background: #2ed573;
+    transition: width 0.4s ease-out, background 0.4s;
+}
+.health-stats .meter-fill.warn { background: #ffa502; }
+.health-stats .meter-fill.crit { background: #ff4757; }
 #animate-all-btn {
     background: linear-gradient(135deg, #6c5ce7, #a29bfe);
     color: #fff; border: none; border-radius: 8px; padding: 6px 14px;
