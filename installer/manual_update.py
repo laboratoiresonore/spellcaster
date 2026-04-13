@@ -30,7 +30,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-VERSION = "1.3-NSFW"
+VERSION = "2.2-NSFW"
 GITHUB_RAW = "https://raw.githubusercontent.com/laboratoiresonore/spellcaster_NSFW/main"
 GITHUB_API = "https://api.github.com/repos/laboratoiresonore/spellcaster_NSFW/commits?sha=main&per_page=1"
 GITHUB_TREE = "https://api.github.com/repos/laboratoiresonore/spellcaster_NSFW/git/trees/main?recursive=1"
