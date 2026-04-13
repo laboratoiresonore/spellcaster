@@ -5880,6 +5880,21 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     "build_fns": studio.get("build_fns", []),
                 })
             return self.end_json(200, scaffolds)
+        elif self.path == '/api/signal_bridge_config':
+            # GET — read the persisted Signal Bridge config the
+            # Travelling Wizard edits. Returns an empty object if no
+            # config has been saved yet (the client merges with its
+            # own DEFAULT_CONFIG so missing keys are filled in).
+            cfg_path = os.path.join(_THIS_DIR, "signal_bridge_config.json")
+            if not os.path.exists(cfg_path):
+                return self.end_json(200, {})
+            try:
+                with open(cfg_path, 'r', encoding='utf-8') as f:
+                    cfg = json.load(f)
+                return self.end_json(200, cfg)
+            except Exception as e:
+                print(f"  [Bridge] Failed to load signal config: {e}")
+                return self.end_json(500, {"error": str(e)})
         elif self.path.startswith('/api/cached_asset/'):
             # Serve locally cached assets (downloaded from ComfyUI before privacy cleanup)
             asset_name = self.path.split('/api/cached_asset/')[-1]
@@ -6648,6 +6663,36 @@ class GuildHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 print(f"  [Telemetry] dispatch_ok log failed: {e}")
             return self.end_json(200, {"status": "ok"})
+
+        # -- /api/signal_bridge_config -- POST persists the Travelling
+        # Wizard's Signal Bridge config (phone numbers, signal-cli path,
+        # webui/ollama URLs, users, paths, privacy). Whole-document
+        # replacement: client sends the full merged config, server
+        # writes it atomically. The actual bridge launcher reads this
+        # file directly when it starts.
+        elif self.path == '/api/signal_bridge_config':
+            if not isinstance(data, dict):
+                return self.end_json(400, {"error": "expected object"})
+            cfg_path = os.path.join(_THIS_DIR, "signal_bridge_config.json")
+            tmp_path = cfg_path + ".tmp"
+            try:
+                payload = json.dumps(data, indent=2)
+                with open(tmp_path, 'w', encoding='utf-8') as f:
+                    f.write(payload)
+                    f.flush()
+                    os.fsync(f.fileno())
+                if os.path.exists(cfg_path):
+                    os.replace(tmp_path, cfg_path)
+                else:
+                    os.rename(tmp_path, cfg_path)
+                return self.end_json(200, {"status": "ok"})
+            except Exception as e:
+                print(f"  [Bridge] Failed to save signal config: {e}")
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+                return self.end_json(500, {"error": str(e)})
 
         # -- /api/settings -- update Guild settings (privacy, etc.)
         elif self.path == '/api/settings':

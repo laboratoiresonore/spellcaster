@@ -2794,7 +2794,76 @@ function SignalBridgeSettings() {
   const [saved, setSaved] = useState(false);
   const [importError, setImportError] = useState("");
   const [guildOpen, setGuildOpen] = useState(false);
+  // Server config status: "" (idle) | "loading" | "loaded" | "saving" |
+  // "saved" | "error". Surfaced in the header so the user knows their
+  // edits are actually persisting.
+  const [configStatus, setConfigStatus] = useState("loading");
   const fileInputRef = useRef(null);
+  // Suppresses the auto-save effect on the very first render (right
+  // after we hydrate from the server) so we don't immediately POST a
+  // copy of what we just received.
+  const hydratedRef = useRef(false);
+  const saveTimerRef = useRef(null);
+
+  // Hydrate config from the server's signal_bridge_config.json. Missing
+  // keys are filled in from DEFAULT_CONFIG so partial files don't break
+  // the editor. If the request fails we leave the defaults in place but
+  // mark the status as "error" so the user knows nothing will persist.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/signal_bridge_config")
+      .then(r => r.ok ? r.json() : null)
+      .then(serverCfg => {
+        if (cancelled) return;
+        if (serverCfg && typeof serverCfg === "object") {
+          // Deep merge: top-level keys from server override defaults,
+          // nested objects (paths, privacy, google) merge field-by-field
+          // so a server file missing one privacy flag still hydrates the
+          // others from DEFAULT_CONFIG.
+          const merged = deepClone(DEFAULT_CONFIG);
+          for (const k of Object.keys(serverCfg)) {
+            const v = serverCfg[k];
+            if (v && typeof v === "object" && !Array.isArray(v)
+                && merged[k] && typeof merged[k] === "object" && !Array.isArray(merged[k])) {
+              merged[k] = { ...merged[k], ...v };
+            } else {
+              merged[k] = v;
+            }
+          }
+          setConfig(merged);
+        }
+        setConfigStatus("loaded");
+        // Defer so the setConfig above commits before we arm auto-save.
+        setTimeout(() => { hydratedRef.current = true; }, 0);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setConfigStatus("error");
+        // Still allow editing locally — Import/Export remains the
+        // escape hatch if the server is unreachable.
+        setTimeout(() => { hydratedRef.current = true; }, 0);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Debounced auto-save: any change to `config` after hydration POSTs
+  // the full document to /api/signal_bridge_config 800ms later. Skips
+  // the first render so we don't echo back what we just loaded.
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    setConfigStatus("saving");
+    saveTimerRef.current = setTimeout(() => {
+      fetch("/api/signal_bridge_config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(config),
+      })
+        .then(r => r.ok ? setConfigStatus("saved") : setConfigStatus("error"))
+        .catch(() => setConfigStatus("error"));
+    }, 800);
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+  }, [config]);
 
   // Load server-side scaffolds (auto-detected wizards) and merge with built-ins
   useEffect(() => {
@@ -2896,6 +2965,27 @@ function SignalBridgeSettings() {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <span title="Server config sync status"
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border ${
+                  configStatus === "saved" ? "bg-emerald-900/30 border-emerald-600/40 text-emerald-300"
+                  : configStatus === "saving" ? "bg-amber-900/30 border-amber-600/40 text-amber-300 animate-pulse"
+                  : configStatus === "error" ? "bg-red-900/30 border-red-600/40 text-red-300"
+                  : configStatus === "loaded" ? "bg-slate-800 border-slate-600/40 text-slate-300"
+                  : "bg-slate-800 border-slate-600/40 text-slate-400 animate-pulse"
+                }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${
+                  configStatus === "saved" ? "bg-emerald-400"
+                  : configStatus === "saving" ? "bg-amber-400"
+                  : configStatus === "error" ? "bg-red-400"
+                  : configStatus === "loaded" ? "bg-slate-400"
+                  : "bg-slate-500"
+                }`} />
+                {configStatus === "loading" ? "loading…"
+                  : configStatus === "loaded" ? "synced"
+                  : configStatus === "saving" ? "saving…"
+                  : configStatus === "saved" ? "saved"
+                  : "offline"}
+              </span>
               <input type="file" ref={fileInputRef} accept=".json" onChange={importAll} className="hidden" />
               <button onClick={() => fileInputRef.current?.click()} className={btnGhost}><Icons.Upload /> Import</button>
               <button onClick={exportAll} className={btnGhost}><Icons.Download /> Export</button>
