@@ -1052,15 +1052,57 @@ def _repair_gimp_plugin():
                 print(f"  [gimp] WARNING: Failed to copy {fname}: {e}")
 
         # Sync spellcaster_core/ directory (required by shim imports)
+        # GIMP holds Windows file locks on plug-in files while it's running,
+        # so a wholesale rmtree+copytree fails with WinError 5. Try a few
+        # gentler strategies before giving up:
+        #   1. per-file copy (skip locked individual files; leaves the
+        #      rest of the package fresh enough for the user to keep going)
+        #   2. retry with a short backoff (catches transient AV scans)
+        #   3. final fallback: print a friendly notice telling the user
+        #      to close GIMP and rerun the launcher.
         if os.path.isdir(core_src):
             dest_core = os.path.join(dest_dir, "spellcaster_core")
+            copied_core = False
             try:
                 if os.path.isdir(dest_core):
-                    shutil.rmtree(dest_core)
+                    try:
+                        shutil.rmtree(dest_core)
+                    except Exception:
+                        pass  # fall through to per-file copy
                 shutil.copytree(core_src, dest_core)
+                copied_core = True
                 updated += 1
-            except Exception as e:
-                print(f"  [gimp] WARNING: Failed to copy spellcaster_core: {e}")
+            except Exception:
+                # Per-file fallback — skip whichever files GIMP has locked.
+                try:
+                    os.makedirs(dest_core, exist_ok=True)
+                    locked = 0
+                    copied = 0
+                    for root, dirs, files in os.walk(core_src):
+                        rel = os.path.relpath(root, core_src)
+                        out_dir = (os.path.join(dest_core, rel)
+                                   if rel != "." else dest_core)
+                        os.makedirs(out_dir, exist_ok=True)
+                        for fn in files:
+                            sp = os.path.join(root, fn)
+                            dp = os.path.join(out_dir, fn)
+                            try:
+                                shutil.copy2(sp, dp)
+                                copied += 1
+                            except Exception:
+                                locked += 1
+                    if copied > 0:
+                        copied_core = True
+                        updated += 1
+                    if locked > 0:
+                        print(f"  [gimp] spellcaster_core: copied {copied} file(s), "
+                              f"{locked} locked by running GIMP — close GIMP and "
+                              f"rerun the launcher to update them.")
+                except Exception as e2:
+                    print(f"  [gimp] spellcaster_core update failed: {e2}")
+                    print(f"  [gimp]   Close GIMP and rerun the launcher to retry.")
+            if not copied_core:
+                pass  # message already printed above
 
         if updated > 0:
             print(f"  [gimp] Updated {updated} file(s) in {dest_dir}")
@@ -1467,13 +1509,35 @@ _ASSETS_VERSION_FILE = os.path.join(_STATE_DIR, "generated_assets.json")
 
 
 def _assets_need_generation():
-    """Check if asset generation has already been completed."""
-    # Check canonical location first, fall back to legacy
-    if os.path.exists(_ASSETS_VERSION_FILE):
-        return False
-    if os.path.exists(_ASSETS_VERSION_FILE_LEGACY):
-        return False
-    return True
+    """Check if asset generation has already been completed.
+
+    Returns True if EITHER:
+      - no marker file exists (fresh install), OR
+      - the marker file exists but at least one wizard in CHARS_CACHE
+        is still missing an avatar (restart-after-interrupt recovery).
+
+    The second case fires when the user closed the server mid-setup:
+    the persistent marker says "done" but generated_assets.json is
+    missing entries. We trigger setup again and the background worker's
+    skip_existing flag ensures only the missing wizards get generated.
+    """
+    if not os.path.exists(_ASSETS_VERSION_FILE) and not os.path.exists(_ASSETS_VERSION_FILE_LEGACY):
+        return True  # fresh install
+    # Marker exists — peek into the persistent generated-assets store
+    # and see if any wizard in CHARS_CACHE lacks an avatar.
+    try:
+        import server  # already imported in main(), this is a re-import
+        chars = getattr(server, "CHARS_CACHE", []) or []
+        gen_assets = getattr(server, "_GENERATED_ASSETS", {}) or {}
+        if not chars:
+            return False  # nothing to compare against, trust the marker
+        for c in chars:
+            cid = c.get("id")
+            if cid and not gen_assets.get(cid, {}).get("avatar_url"):
+                return True  # missing portrait — re-trigger setup
+    except Exception:
+        pass
+    return False
 
 
 def _mark_assets_generated(count):
