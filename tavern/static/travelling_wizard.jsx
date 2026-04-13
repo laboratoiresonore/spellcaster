@@ -693,12 +693,16 @@ const LEGACY_BUILDER_TEMPLATES = [
 ];
 
 // ─── Tool Detection Definitions ────────────────────────────────────
+// Each tool declares either `urlConfigKey` (resolved from live config)
+// or `defaultUrl` (a sane local-host default). `configureTab` is the
+// SignalBridgeSettings tab the "Setup" button jumps the user to.
 const TOOL_DEFINITIONS = [
   {
     id: "sillytavern",
     name: "SillyTavern",
     icon: Icons.MessageSquare,
-    url: "localhost:8000",
+    defaultUrl: "http://localhost:8000",
+    configureTab: "paths",
     description: "Full-featured AI chat interface with character cards, lorebooks, and group chats",
     setupSteps: [
       "Download SillyTavern from https://github.com/SillyTavern/SillyTavern",
@@ -711,7 +715,8 @@ const TOOL_DEFINITIONS = [
     id: "openwebui",
     name: "Open WebUI",
     icon: Icons.Monitor,
-    url: "config.webui_url",
+    urlConfigKey: "webui_url",
+    configureTab: "network",
     description: "Open-source ChatGPT-style interface with model management",
     setupSteps: [
       "Install via Docker: docker run -d -p 8080:8080 ghcr.io/open-webui/open-webui:latest",
@@ -724,7 +729,8 @@ const TOOL_DEFINITIONS = [
     id: "lmstudio",
     name: "LM Studio",
     icon: Icons.Server,
-    url: "localhost:1234",
+    defaultUrl: "http://localhost:1234",
+    configureTab: "network",
     description: "Desktop app for running local LLMs with OpenAI-compatible API",
     setupSteps: [
       "Download LM Studio from https://lmstudio.ai",
@@ -737,7 +743,8 @@ const TOOL_DEFINITIONS = [
     id: "koboldcpp",
     name: "KoboldCpp",
     icon: Icons.Zap,
-    url: "localhost:5001",
+    defaultUrl: "http://localhost:5001",
+    configureTab: "network",
     description: "Lightweight local LLM server optimized for roleplay and stories",
     setupSteps: [
       "Download KoboldCpp from https://github.com/LostRuins/koboldcpp",
@@ -750,13 +757,28 @@ const TOOL_DEFINITIONS = [
     id: "comfyui",
     name: "ComfyUI",
     icon: Icons.Image,
-    url: "config.comfyui_url",
+    urlConfigKey: "comfyui_url",
+    configureTab: "network",
     description: "Node-based image generation pipeline with Spellcaster nodes",
     setupSteps: [
       "Clone ComfyUI: git clone https://github.com/comfyanonymous/ComfyUI.git",
       "Install Spellcaster custom nodes in custom_nodes folder",
       "Run: python main.py",
       "Verify Spellcaster nodes are loaded in the UI"
+    ]
+  },
+  {
+    id: "ollama",
+    name: "Ollama",
+    icon: Icons.Server,
+    urlConfigKey: "ollama_url",
+    configureTab: "network",
+    description: "Local LLM runner with a simple HTTP API and model library",
+    setupSteps: [
+      "Download from https://ollama.com",
+      "ollama pull llama3 (or any model)",
+      "ollama serve (default port 11434)",
+      "Update ollama_url in Network settings"
     ]
   }
 ];
@@ -1761,15 +1783,53 @@ function ScaffoldEditor({ scaffolds, setScaffolds }) {
 
 // ─── Tool Detection Card ──────────────────────────────────────────
 
-function ToolDetectionCard({ tool }) {
+function ToolDetectionCard({ tool, config, onConfigure }) {
   const [status, setStatus] = useState("unchecked"); // unchecked | checking | found | not_found
+  const [probeInfo, setProbeInfo] = useState(""); // server-returned status text
   const [expanded, setExpanded] = useState(false);
 
-  const handleDetect = () => {
+  // Resolve the probe URL from live config when the tool declares a
+  // configKey — falls back to the hardcoded defaultUrl. SillyTavern,
+  // LM Studio, KoboldCpp don't have config fields yet so they always
+  // probe their canonical local-host port.
+  const effectiveUrl = (tool.urlConfigKey && config && config[tool.urlConfigKey])
+    || tool.defaultUrl
+    || "";
+
+  const handleDetect = async () => {
+    if (!effectiveUrl) {
+      setStatus("not_found");
+      setProbeInfo("no URL configured");
+      return;
+    }
     setStatus("checking");
-    setTimeout(() => {
-      setStatus(Math.random() > 0.4 ? "found" : "not_found");
-    }, 1000 + Math.random() * 1000);
+    setProbeInfo("");
+    try {
+      const r = await fetch("/api/probe_tool", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tool: tool.id, url: effectiveUrl }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (data && data.found) {
+        setStatus("found");
+        setProbeInfo(data.info ? `HTTP ${data.status} via ${data.endpoint || ""}` : `HTTP ${data.status}`);
+      } else {
+        setStatus("not_found");
+        setProbeInfo(data.info || "no response");
+      }
+    } catch (e) {
+      setStatus("not_found");
+      setProbeInfo(String(e && e.message || e));
+    }
+  };
+
+  const handleSetup = () => {
+    if (onConfigure && tool.configureTab) onConfigure(tool.configureTab);
+  };
+
+  const handleOpen = () => {
+    if (effectiveUrl) window.open(effectiveUrl, "_blank", "noopener");
   };
 
   const statusColors = {
@@ -1781,9 +1841,9 @@ function ToolDetectionCard({ tool }) {
 
   const statusText = {
     unchecked: "Not checked",
-    checking: "Checking...",
-    found: "Found",
-    not_found: "Not found"
+    checking: "Probing...",
+    found: "Online",
+    not_found: "Offline"
   };
 
   const ToolIcon = tool.icon;
@@ -1805,25 +1865,33 @@ function ToolDetectionCard({ tool }) {
           </div>
         </div>
 
-        <div className="space-y-2 mb-3">
+        <div className="space-y-1 mb-3">
           <p className="text-xs text-slate-400">
-            <span className="font-mono text-amber-300">{tool.url}</span>
+            <span className="font-mono text-amber-300">{effectiveUrl || "(no URL)"}</span>
           </p>
+          {probeInfo && (
+            <p className={`text-xs font-mono ${status === "found" ? "text-emerald-400/80" : "text-red-400/80"}`}>
+              {probeInfo}
+            </p>
+          )}
         </div>
 
         <div className="flex gap-2">
-          <button onClick={handleDetect} className={btnSmall + " bg-amber-600/50 text-amber-100 hover:bg-amber-600 flex-1"}>
+          <button onClick={handleDetect} disabled={status === "checking"}
+            className={btnSmall + " bg-amber-600/50 text-amber-100 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-wait flex-1"}>
             <Icons.Search size={16} /> Detect
           </button>
-          {status === "found" && (
-            <>
-              <button className={btnSmall + " bg-emerald-600/50 text-emerald-100 hover:bg-emerald-600 flex-1"}>
-                <Icons.Check size={16} /> Setup
-              </button>
-              <button className={btnSmall + " bg-purple-600/50 text-purple-100 hover:bg-purple-600 flex-1"}>
-                <Icons.ExternalLink size={16} /> Push
-              </button>
-            </>
+          {tool.configureTab && (
+            <button onClick={handleSetup}
+              className={btnSmall + " bg-emerald-600/50 text-emerald-100 hover:bg-emerald-600 flex-1"}>
+              <Icons.Check size={16} /> Configure
+            </button>
+          )}
+          {status === "found" && effectiveUrl && (
+            <button onClick={handleOpen}
+              className={btnSmall + " bg-purple-600/50 text-purple-100 hover:bg-purple-600 flex-1"}>
+              <Icons.ExternalLink size={16} /> Open
+            </button>
           )}
         </div>
 
@@ -1852,7 +1920,7 @@ function ToolDetectionCard({ tool }) {
 
 // ─── Integrations Panel ───────────────────────────────────────────
 
-function IntegrationsPanel() {
+function IntegrationsPanel({ config, onConfigure }) {
   return (
     <div className="space-y-4">
       <div className="bg-amber-500/10 border border-amber-600/30 rounded-lg p-3 flex items-start gap-3">
@@ -1863,7 +1931,8 @@ function IntegrationsPanel() {
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {TOOL_DEFINITIONS.map(tool => (
-          <ToolDetectionCard key={tool.id} tool={tool} />
+          <ToolDetectionCard key={tool.id} tool={tool}
+            config={config} onConfigure={onConfigure} />
         ))}
       </div>
     </div>
@@ -3042,7 +3111,7 @@ function SignalBridgeSettings() {
 
         {/* ── Integrations Tab ── */}
         {activeTab === "integrations" && (
-          <IntegrationsPanel />
+          <IntegrationsPanel config={config} onConfigure={(tabId) => setActiveTab(tabId)} />
         )}
 
         {/* ── Network Tab ── */}

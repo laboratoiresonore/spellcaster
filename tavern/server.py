@@ -6664,6 +6664,82 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 print(f"  [Telemetry] dispatch_ok log failed: {e}")
             return self.end_json(200, {"status": "ok"})
 
+        # -- /api/probe_tool -- server-side health probe for the
+        # Travelling Wizard's Integrations panel. Each known tool has
+        # a fixed health endpoint; we fetch it from THIS process so
+        # the probe works against private-network hosts without CORS
+        # and without exposing the user to mixed-content blocking.
+        # Body: {tool: "comfyui"|..., url: "http://host:port"}.
+        # Returns {found: bool, status: int, info: str}.
+        elif self.path == '/api/probe_tool':
+            tool = (data.get('tool') or '').strip().lower()
+            raw_url = (data.get('url') or '').strip()
+            if not tool or not raw_url:
+                return self.end_json(400, {"error": "tool and url required"})
+            # Only allow http/https schemes — refuse file://, gopher://, etc.
+            if not (raw_url.startswith('http://') or raw_url.startswith('https://')):
+                return self.end_json(400, {"error": "url must be http(s)"})
+            base = raw_url.rstrip('/')
+            # Tool → (probe_path, optional fallback path) tuples. The
+            # primary path is the canonical health endpoint; the
+            # fallback is a generic "anything responds" check used
+            # when the canonical endpoint is missing on older builds.
+            _PROBE_ROUTES = {
+                'comfyui':    ('/system_stats', '/'),
+                'openwebui':  ('/api/config', '/'),
+                'lmstudio':   ('/v1/models', '/'),
+                'koboldcpp':  ('/api/v1/model', '/'),
+                'sillytavern':('/api/version', '/'),
+                'ollama':     ('/api/tags', '/'),
+            }
+            routes = _PROBE_ROUTES.get(tool)
+            if not routes:
+                return self.end_json(400, {"error": f"unknown tool: {tool}"})
+            for path in routes:
+                probe_url = base + path
+                try:
+                    req = urllib.request.Request(
+                        probe_url,
+                        headers={'User-Agent': 'Spellcaster-Probe/1.0'})
+                    with urllib.request.urlopen(req, timeout=3) as resp:
+                        status = resp.status
+                        body = resp.read(2048).decode('utf-8', errors='replace')
+                        return self.end_json(200, {
+                            "found": True,
+                            "status": status,
+                            "info": body[:200],
+                            "endpoint": path,
+                        })
+                except urllib.error.HTTPError as e:
+                    # Some tools return 401/403 to unauthenticated
+                    # probes — that still proves something is listening.
+                    if e.code in (401, 403, 405):
+                        return self.end_json(200, {
+                            "found": True,
+                            "status": e.code,
+                            "info": f"HTTP {e.code} (auth required)",
+                            "endpoint": path,
+                        })
+                    # 404 → try fallback path; other HTTP errors mean
+                    # something is listening but unhealthy
+                    if e.code == 404:
+                        continue
+                    return self.end_json(200, {
+                        "found": True,
+                        "status": e.code,
+                        "info": f"HTTP {e.code}",
+                        "endpoint": path,
+                    })
+                except (urllib.error.URLError, TimeoutError, OSError) as e:
+                    # Network-level failure — try the next path
+                    last_err = str(e)
+                    continue
+            return self.end_json(200, {
+                "found": False,
+                "status": 0,
+                "info": "no response on any probe endpoint",
+            })
+
         # -- /api/signal_bridge_config -- POST persists the Travelling
         # Wizard's Signal Bridge config (phone numbers, signal-cli path,
         # webui/ollama URLs, users, paths, privacy). Whole-document
