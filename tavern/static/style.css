@@ -1065,3 +1065,58 @@ textarea::placeholder { color: #555; }
     border-top: 1px solid rgba(255,255,255,0.06);
     line-height: 1.4;
 }
+
+/* ── Archivist setup-mode bubbles ─────────────────────────────── */
+.archivist-bubble {
+    background: linear-gradient(135deg, rgba(252, 211, 77, 0.08), rgba(245, 158, 11, 0.05));
+    border: 1px solid rgba(252, 211, 77, 0.25);
+    border-radius: 12px;
+    padding: 12px 16px;
+    color: #f4e4bc;
+}
+.archivist-bubble p { margin: 0 0 8px 0; line-height: 1.55; }
+.archivist-bubble p:last-child { margin-bottom: 0; }
+.archivist-bubble strong { color: #fde68a; }
+.archivist-bubble em { color: #fbbf24; font-style: italic; }
+.archivist-bubble code {
+    background: rgba(0,0,0,0.3);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+}
+.archivist-bubble pre {
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(252, 211, 77, 0.15);
+    padding: 10px 14px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 8px 0;
+}
+.archivist-bubble pre code {
+    background: transparent;
+    padding: 0;
+    color: #fde68a;
+    font-size: 11px;
+}
+.archivist-bubble ul, .archivist-bubble ol {
+    margin: 6px 0 8px 0;
+    padding-left: 22px;
+}
+.archivist-bubble li { margin: 3px 0; line-height: 1.45; }
+.archivist-bubble a { color: #fcd34d; }
+.archivist-portrait {
+    display: block;
+    margin: 8px auto 0;
+    max-width: 240px;
+    width: 100%;
+    border-radius: 8px;
+    border: 2px solid rgba(252, 211, 77, 0.4);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.archivist-message .archivist-avatar,
+.archivist-arrival .archivist-avatar {
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+}

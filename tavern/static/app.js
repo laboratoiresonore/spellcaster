@@ -607,16 +607,18 @@ async function initialize() {
     await checkLlmAndGenerateNames();
 
     // First Time Global Generation (Avatars + Background)
-    // Skip if server already generated assets during installation
-    const hasServerAssets = characters.some(c => c.avatar_url);
-    if (!localStorage.getItem('guild_setup_complete') && !hasServerAssets) {
-        await runFirstTimeSetup();
-    } else {
-        if (hasServerAssets && !localStorage.getItem('guild_setup_complete')) {
-            // Server did the work — mark setup as complete
-            localStorage.setItem('guild_setup_complete', 'true');
-        }
-        // Generate avatars for any NEW wizards that don't have one yet
+    // Two paths:
+    //   1. Server-driven setup is already running in a background thread
+    //      (the launcher kicked it off via /api/setup/start). We enter
+    //      "Archivist mode" — chat-lock UI, speech streaming, avatar
+    //      arrivals piped into the chat as they happen.
+    //   2. Setup has already finished on this machine OR the server
+    //      hasn't started one. We use the legacy generateMissingAvatars
+    //      for any wizards that still lack a portrait.
+    const setupActive = await _maybeEnterArchivistMode();
+    if (!setupActive) {
+        // No background setup running — just fill in any missing avatars
+        // for wizards that were added after the last setup pass.
         await generateMissingAvatars();
     }
 
@@ -624,6 +626,276 @@ async function initialize() {
     if (characters.length > 0) {
         selectCharacter(characters[0].id);
     }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Archivist mode — chat-locked first-run experience
+// ════════════════════════════════════════════════════════════════════
+//
+// When the launcher kicks off background avatar generation, the frontend
+// detects it on page load via /api/setup/status. We then:
+//   1. Lock the chat input with a friendly explanation
+//   2. Greet the user as "The Archivist" and read out a tour of the
+//      app architecture from README sections (single source of truth)
+//   3. Poll /api/setup/status every 2 s and render each new wizard
+//      avatar into the chat as it lands
+//   4. Drip the README speech sections in between avatar arrivals so
+//      the wait is informative rather than empty
+//   5. Unlock the chat once phase === 'complete'
+//
+// All of this runs in parallel so the user has something to read
+// while the GPU renders 32 portraits.
+
+const _ARCHIVIST_AVATAR_STYLE =
+    "background: radial-gradient(circle at 30% 30%, #facc15, #b45309); "
+    + "color: #1a1a2e; display: flex; align-items: center; "
+    + "justify-content: center; font-weight: 700; font-size: 14px;";
+const _ARCHIVIST_AVATAR_HTML = "📜";
+
+function _addArchivistMessage(markdown) {
+    // Render Archivist speech as a system-style bubble with the scroll
+    // emoji. Markdown bold/italic gets rendered as HTML; everything
+    // else stays as paragraphs.
+    const html = _renderSimpleMarkdown(markdown);
+    const msg = document.createElement('div');
+    msg.className = 'message ai-message archivist-message';
+    msg.innerHTML = `
+        <div class="avatar-small archivist-avatar" style="${_ARCHIVIST_AVATAR_STYLE}">${_ARCHIVIST_AVATAR_HTML}</div>
+        <div class="bubble archivist-bubble">${html}</div>
+    `;
+    chatStream.appendChild(msg);
+    chatStream.scrollTop = chatStream.scrollHeight;
+    if (typeof _messageEntrance === 'function') _messageEntrance(msg);
+}
+
+function _renderSimpleMarkdown(md) {
+    // Tiny, safe-by-construction markdown renderer for the Archivist
+    // speech blocks. Handles **bold**, *italic*, `code`, paragraph breaks,
+    // simple ``` code blocks, [link](url), and unordered lists. We do
+    // basic HTML escaping first so user-controlled content can't inject.
+    if (!md) return '';
+    const esc = (s) => s
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    let s = md.trim();
+    // Pull out fenced code blocks first so other rules don't touch them
+    const codeBlocks = [];
+    s = s.replace(/```[a-z]*\n([\s\S]*?)```/gi, (_, body) => {
+        codeBlocks.push(esc(body));
+        return `\u0000CODE${codeBlocks.length - 1}\u0000`;
+    });
+    s = esc(s);
+    // Bold, italic, inline code, links
+    s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+    s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+    s = s.replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g,
+                  '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    // Numbered + bullet lists
+    const lines = s.split('\n');
+    let out = [];
+    let inList = null;  // 'ul' | 'ol' | null
+    let para = [];
+    const flushPara = () => {
+        if (para.length) {
+            out.push('<p>' + para.join(' ') + '</p>');
+            para = [];
+        }
+    };
+    const closeList = () => {
+        if (inList) {
+            out.push(`</${inList}>`);
+            inList = null;
+        }
+    };
+    for (const raw of lines) {
+        const line = raw;
+        if (/^\s*$/.test(line)) {
+            flushPara();
+            closeList();
+            continue;
+        }
+        const ulMatch = line.match(/^\s*[-*]\s+(.*)$/);
+        const olMatch = line.match(/^\s*\d+\.\s+(.*)$/);
+        if (ulMatch) {
+            flushPara();
+            if (inList !== 'ul') { closeList(); out.push('<ul>'); inList = 'ul'; }
+            out.push(`<li>${ulMatch[1]}</li>`);
+            continue;
+        }
+        if (olMatch) {
+            flushPara();
+            if (inList !== 'ol') { closeList(); out.push('<ol>'); inList = 'ol'; }
+            out.push(`<li>${olMatch[1]}</li>`);
+            continue;
+        }
+        closeList();
+        para.push(line);
+    }
+    flushPara();
+    closeList();
+    let html = out.join('');
+    html = html.replace(/\u0000CODE(\d+)\u0000/g, (_, i) => `<pre><code>${codeBlocks[+i]}</code></pre>`);
+    return html;
+}
+
+let _archivistLocked = false;
+let _archivistRenderedAvatarIds = new Set();
+let _archivistSpokenSections = new Set();
+let _archivistSpeechSections = null;
+let _archivistSpeechOrder = [];
+let _archivistPollTimer = null;
+
+function _lockChatForArchivist() {
+    _archivistLocked = true;
+    if (chatInput) {
+        chatInput.disabled = true;
+        chatInput.placeholder = "The Archivist is finishing setup… one moment.";
+    }
+    if (sendBtn) sendBtn.disabled = true;
+}
+
+function _unlockChatAfterArchivist() {
+    if (!_archivistLocked) return;
+    _archivistLocked = false;
+    if (chatInput) {
+        chatInput.disabled = false;
+        chatInput.placeholder = "Speak to the wizard…";
+    }
+    if (sendBtn) sendBtn.disabled = false;
+}
+
+async function _fetchArchivistSpeech() {
+    try {
+        const res = await fetch('/api/setup/speech');
+        const data = await res.json();
+        _archivistSpeechSections = data.sections || {};
+        _archivistSpeechOrder = data.order || Object.keys(_archivistSpeechSections);
+    } catch (e) {
+        console.warn('[Archivist] could not fetch speech sections', e);
+        _archivistSpeechSections = {};
+        _archivistSpeechOrder = [];
+    }
+}
+
+function _speakNextSection() {
+    // Walk the speech section order and emit the next un-spoken one.
+    // Returns true if a section was emitted, false if we've recited all.
+    for (const name of _archivistSpeechOrder) {
+        if (_archivistSpokenSections.has(name)) continue;
+        if (name === 'ready') continue;  // 'ready' is reserved for the end
+        const body = _archivistSpeechSections[name];
+        if (!body) continue;
+        _archivistSpokenSections.add(name);
+        _addArchivistMessage(body);
+        return true;
+    }
+    return false;
+}
+
+function _renderNewAvatars(snapshot) {
+    // Walk the snapshot's avatar list and add a chat message for each
+    // one we haven't rendered yet. Also updates the live wizard list
+    // so the sidebar avatar appears.
+    const arrivals = snapshot.avatars || [];
+    let newCount = 0;
+    for (const av of arrivals) {
+        if (_archivistRenderedAvatarIds.has(av.id)) continue;
+        _archivistRenderedAvatarIds.add(av.id);
+        newCount++;
+        // Update in-memory character list
+        const char = (typeof characters !== 'undefined')
+            ? characters.find(c => c.id === av.id) : null;
+        if (char) {
+            char.avatar_url = av.avatar_url;
+            char.name = char.name || av.name;
+        }
+        // Render the avatar arrival as a tall portrait card
+        const msg = document.createElement('div');
+        msg.className = 'message ai-message archivist-arrival';
+        msg.innerHTML = `
+            <div class="avatar-small archivist-avatar" style="${_ARCHIVIST_AVATAR_STYLE}">${_ARCHIVIST_AVATAR_HTML}</div>
+            <div class="bubble archivist-bubble">
+                <p><strong>${av.name}</strong> has arrived.</p>
+                <img src="${av.avatar_url}" alt="${av.name}" class="archivist-portrait"/>
+            </div>
+        `;
+        chatStream.appendChild(msg);
+        chatStream.scrollTop = chatStream.scrollHeight;
+        if (typeof _messageEntrance === 'function') _messageEntrance(msg);
+    }
+    return newCount;
+}
+
+async function _archivistPollOnce() {
+    let snapshot;
+    try {
+        const res = await fetch('/api/setup/status');
+        snapshot = await res.json();
+    } catch (e) {
+        return;  // transient, retry next poll
+    }
+    const newCount = _renderNewAvatars(snapshot);
+    // Drip a speech section between every couple of avatar arrivals
+    // (or unconditionally on poll if no new avatars came in)
+    if (newCount === 0 || (snapshot.generated_count % 2 === 0)) {
+        _speakNextSection();
+    }
+    // Re-render sidebar so newly-arrived avatars show up there too
+    if (newCount > 0 && typeof renderSidebar === 'function') {
+        try { renderSidebar(); } catch (e) {}
+    }
+    if (snapshot.phase === 'complete') {
+        // Recite any remaining sections, then the closing 'ready' block
+        while (_speakNextSection()) { /* drain */ }
+        const ready = (_archivistSpeechSections || {}).ready;
+        if (ready && !_archivistSpokenSections.has('ready')) {
+            _archivistSpokenSections.add('ready');
+            _addArchivistMessage(ready);
+        }
+        _unlockChatAfterArchivist();
+        if (_archivistPollTimer) {
+            clearInterval(_archivistPollTimer);
+            _archivistPollTimer = null;
+        }
+        try {
+            localStorage.setItem('guild_setup_complete', 'true');
+        } catch (e) {}
+    }
+}
+
+async function _maybeEnterArchivistMode() {
+    // Returns true if we entered Archivist mode (background setup is
+    // running on the server), false otherwise.
+    let snapshot;
+    try {
+        const res = await fetch('/api/setup/status');
+        snapshot = await res.json();
+    } catch (e) {
+        return false;
+    }
+    // Don't enter Archivist mode if setup is already complete or never started
+    if (snapshot.phase === 'idle' || snapshot.phase === 'complete') {
+        return false;
+    }
+    // We're in the middle of background avatar generation — take over
+    _lockChatForArchivist();
+    await _fetchArchivistSpeech();
+    // Recite the welcome immediately so the user sees something
+    const welcome = (_archivistSpeechSections || {}).welcome;
+    if (welcome) {
+        _archivistSpokenSections.add('welcome');
+        _addArchivistMessage(welcome);
+    }
+    // Render any avatars that already finished before the page loaded
+    _renderNewAvatars(snapshot);
+    // Drip the next section right away so there's content before the
+    // first avatar lands
+    _speakNextSection();
+    // Start polling — every 2 seconds is plenty
+    _archivistPollTimer = setInterval(_archivistPollOnce, 2000);
+    return true;
 }
 
 async function checkLlmAndGenerateNames() {
