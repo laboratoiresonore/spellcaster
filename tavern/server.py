@@ -2153,6 +2153,22 @@ _IDENTITIES_PATH = os.path.join(_STATE_DIR, "wizard_identities.json")
 _ANIM_QUEUE_PATH = os.path.join(_STATE_DIR, "anim_queue.json")
 _SCAFFOLD_OVERRIDES_PATH = os.path.join(_STATE_DIR, "scaffold_overrides.json")
 
+# Persistent chat history — one JSONL file per wizard, stored under
+# tavern/.guild_state/chat_history/. CHAT_HISTORY_MAX caps how many
+# records the GET endpoint returns; older lines stay on disk for
+# inspection but the client only sees the tail.
+_CHAT_HISTORY_DIR = os.path.join(_STATE_DIR, "chat_history")
+CHAT_HISTORY_MAX = 500
+
+
+def _chat_history_path(char_id):
+    """Return the on-disk JSONL path for a wizard's chat history.
+
+    Caller must validate char_id (no slashes, no '..') before calling.
+    The directory is created lazily on first write.
+    """
+    return os.path.join(_CHAT_HISTORY_DIR, f"{char_id}.jsonl")
+
 
 def _load_banished_ids():
     """Load banished wizard IDs from disk."""
@@ -5907,6 +5923,36 @@ class GuildHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 print(f"  [Bridge] Failed to load signal config: {e}")
                 return self.end_json(500, {"error": str(e)})
+        elif self.path.startswith('/api/chat_history/'):
+            # GET — read the persistent chat log for one wizard.
+            # Stored as JSONL in tavern/.guild_state/chat_history/
+            # so partial writes don't corrupt the whole file. Returns
+            # the latest CHAT_HISTORY_MAX records (currently 500) so
+            # extremely long histories don't hammer the browser on
+            # character switch.
+            char_id = self.path[len('/api/chat_history/'):].strip()
+            if not char_id or '/' in char_id or '..' in char_id:
+                return self.end_json(400, {"error": "invalid char_id"})
+            log_path = _chat_history_path(char_id)
+            if not os.path.exists(log_path):
+                return self.end_json(200, {"records": []})
+            try:
+                records = []
+                with open(log_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            records.append(json.loads(line))
+                        except Exception:
+                            continue
+                if len(records) > CHAT_HISTORY_MAX:
+                    records = records[-CHAT_HISTORY_MAX:]
+                return self.end_json(200, {"records": records})
+            except Exception as e:
+                print(f"  [ChatHist] read failed for {char_id}: {e}")
+                return self.end_json(500, {"error": str(e)})
         elif self.path.startswith('/api/cached_asset/'):
             # Serve locally cached assets (downloaded from ComfyUI before privacy cleanup)
             asset_name = self.path.split('/api/cached_asset/')[-1]
@@ -6833,6 +6879,44 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "status": 0,
                 "info": "no response on any probe endpoint",
             })
+
+        # -- /api/chat_history/append -- append one record to a
+        # wizard's persistent chat log. Records are arbitrary JSON
+        # dicts; the client decides the schema (role, content, ts,
+        # payload, urls, type). Append is line-buffered so concurrent
+        # writes from multiple tabs don't corrupt the file.
+        elif self.path == '/api/chat_history/append':
+            char_id = (data.get('char_id') or '').strip()
+            record = data.get('record')
+            if not char_id or '/' in char_id or '..' in char_id:
+                return self.end_json(400, {"error": "invalid char_id"})
+            if not isinstance(record, dict):
+                return self.end_json(400, {"error": "record must be object"})
+            try:
+                os.makedirs(_CHAT_HISTORY_DIR, exist_ok=True)
+                log_path = _chat_history_path(char_id)
+                with open(log_path, 'a', encoding='utf-8') as f:
+                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
+                return self.end_json(200, {"status": "ok"})
+            except Exception as e:
+                print(f"  [ChatHist] append failed for {char_id}: {e}")
+                return self.end_json(500, {"error": str(e)})
+
+        # -- /api/chat_history/clear -- wipe the persistent chat log
+        # for one wizard. Triggered by the existing reset button so
+        # the user gets a clean slate that survives a refresh.
+        elif self.path == '/api/chat_history/clear':
+            char_id = (data.get('char_id') or '').strip()
+            if not char_id or '/' in char_id or '..' in char_id:
+                return self.end_json(400, {"error": "invalid char_id"})
+            log_path = _chat_history_path(char_id)
+            try:
+                if os.path.exists(log_path):
+                    os.remove(log_path)
+                return self.end_json(200, {"status": "ok"})
+            except Exception as e:
+                print(f"  [ChatHist] clear failed for {char_id}: {e}")
+                return self.end_json(500, {"error": str(e)})
 
         # -- /api/signal_bridge_config -- POST persists the Travelling
         # Wizard's Signal Bridge config (phone numbers, signal-cli path,
