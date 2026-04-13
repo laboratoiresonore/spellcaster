@@ -1,6 +1,6 @@
 [
   {
-    "label": "(none \u2014 manual prompt)",
+    "label": "(none — manual prompt)",
     "prompt": "",
     "negative": "",
     "denoise": null,
@@ -474,7 +474,7 @@
     }
   },
   {
-    "label": "\u2726 Oily / Wet Skin Effect",
+    "label": "✦ Oily / Wet Skin Effect",
     "prompt": "oily skin, wet skin, glistening skin, shiny skin, dewy skin, wet body, skin highlights, sweat, glossy complexion, moisture on skin",
     "negative": "dry skin, matte skin, powder, flat lighting, dull skin",
     "denoise": 0.55,
@@ -502,7 +502,7 @@
     }
   },
   {
-    "label": "\u2726 Sweat / Exertion Effect",
+    "label": "✦ Sweat / Exertion Effect",
     "prompt": "sweaty skin, beads of sweat, perspiration, glistening with sweat, exertion, post-workout, wet with sweat, sweat dripping, athletic",
     "negative": "dry skin, clean, powder, matte, cold, frozen",
     "denoise": 0.55,
@@ -535,7 +535,7 @@
     }
   },
   {
-    "label": "\u2726 Water Droplets Effect",
+    "label": "✦ Water Droplets Effect",
     "prompt": "water droplets on skin, water drops, dew drops, rain drops, wet surface, water beading, crystal clear droplets, morning dew, water splash, droplet reflections",
     "negative": "dry, dusty, matte, powder, no water, arid",
     "denoise": 0.58,
@@ -563,7 +563,7 @@
     }
   },
   {
-    "label": "\u2726 Chrome / Metallic Skin",
+    "label": "✦ Chrome / Metallic Skin",
     "prompt": "chrome skin, metallic skin, liquid metal surface, silver chrome body, reflective metallic, mercury skin, shiny metal texture, polished chrome, mirror-like skin",
     "negative": "matte, natural skin, realistic skin, dull, flat, organic, flesh tone",
     "denoise": 0.75,
@@ -591,7 +591,7 @@
     }
   },
   {
-    "label": "\u2726 Cyborg / Robot Parts",
+    "label": "✦ Cyborg / Robot Parts",
     "prompt": "cyborg, mechanical parts, robotic body, cybernetic implants, exposed machinery, glowing circuits, metal plates, bionic, android, tech implants, wires under skin, LED accents",
     "negative": "fully human, natural, organic only, no technology, medieval, rustic",
     "denoise": 0.78,
@@ -619,7 +619,7 @@
     }
   },
   {
-    "label": "\u2726 Gothic Dark Fantasy",
+    "label": "✦ Gothic Dark Fantasy",
     "prompt": "gothic dark fantasy, ethereal gothic elegance, dark atmosphere, moody shadows, dramatic dark lighting, mystical, dark beauty, occult aesthetic, dark romantic, candlelight, velvet darkness",
     "negative": "bright, cheerful, colorful, sunny, cartoon, daytime, flat lighting",
     "denoise": 0.68,
@@ -646,7 +646,7 @@
     }
   },
   {
-    "label": "\u2726 Chiaroscuro / Dramatic Lighting",
+    "label": "✦ Chiaroscuro / Dramatic Lighting",
     "prompt": "chiaroscuro lighting, dramatic light and shadow, Rembrandt lighting, high contrast, deep shadows, single light source, volumetric light, film noir lighting, baroque lighting, tenebrism",
     "negative": "flat lighting, even lighting, overexposed, no shadows, bright everywhere, flash photography, washed out",
     "denoise": 0.62,
@@ -679,7 +679,7 @@
     }
   },
   {
-    "label": "\u2726 Cinematic Film Look",
+    "label": "✦ Cinematic Film Look",
     "prompt": "cinematic photography, film grain, anamorphic lens, cinematic color grading, movie still, depth of field, professional cinematography, 35mm film, warm color palette",
     "negative": "amateur, smartphone, flat, digital noise, harsh flash, oversaturated, snapshot, selfie",
     "denoise": 0.55,
@@ -712,7 +712,7 @@
     }
   },
   {
-    "label": "\u2726 Raw Camera / DSLR Photo",
+    "label": "✦ Raw Camera / DSLR Photo",
     "prompt": "RAW photo, DSLR, professional camera, natural lighting, shallow depth of field, bokeh, lens flare, sharp focus, unedited photograph, authentic colors, film emulation",
     "negative": "painting, illustration, digital art, CGI, airbrushed, overprocessed, HDR, cartoon, anime",
     "denoise": 0.5,
@@ -745,7 +745,7 @@
     }
   },
   {
-    "label": "\u2726 Telephoto / 600mm Lens",
+    "label": "✦ Telephoto / 600mm Lens",
     "prompt": "600mm telephoto lens, extreme bokeh, compressed perspective, subject isolation, creamy background blur, long focal length, professional sports photography, wildlife photography style",
     "negative": "wide angle, fisheye, everything in focus, deep DOF, distortion, flat, no blur",
     "denoise": 0.52,
@@ -773,7 +773,7 @@
     }
   },
   {
-    "label": "\u2726 Ghibli / Anime Painterly",
+    "label": "✦ Ghibli / Anime Painterly",
     "prompt": "studio ghibli style, anime painting, hand-drawn animation, soft watercolor, whimsical, miyazaki, painterly anime, cel shading, warm natural palette, gentle atmosphere",
     "negative": "photorealistic, 3d render, CGI, harsh shadows, sharp edges, dark, horror, gritty",
     "denoise": 0.72,
@@ -801,7 +801,7 @@
     }
   },
   {
-    "label": "\u2726 Fairy Tale / Fantasy Art",
+    "label": "✦ Fairy Tale / Fantasy Art",
     "prompt": "fairy tale illustration, fantasy art, magical atmosphere, ethereal glow, enchanted, whimsical fantasy, storybook illustration, dreamy, luminous, fantasy landscape, magical particles",
     "negative": "realistic, modern, urban, gritty, dark, horror, mundane, photographic, plain",
     "denoise": 0.7,
@@ -829,7 +829,7 @@
     }
   },
   {
-    "label": "\u2726 80s Fantasy Movie Style",
+    "label": "✦ 80s Fantasy Movie Style",
     "prompt": "80s fantasy movie, retro fantasy, practical effects, 1980s film aesthetic, sword and sorcery, VHS quality, vintage fantasy, Conan the Barbarian style, matte painting background, old school special effects, film grain, warm tones",
     "negative": "modern, clean digital, CGI, photorealistic, contemporary, minimalist, sleek",
     "denoise": 0.72,
@@ -845,7 +845,7 @@
     }
   },
   {
-    "label": "\u2726 Glitch / Digital Error",
+    "label": "✦ Glitch / Digital Error",
     "prompt": "glitch art, digital corruption, pixel sorting, data moshing, RGB split, scan lines, corrupted image, VHS glitch, digital artifact aesthetic, broken data, cyberpunk glitch",
     "negative": "clean, perfect, smooth, natural, analog, traditional, high quality, no artifacts",
     "denoise": 0.7,
@@ -873,7 +873,7 @@
     }
   },
   {
-    "label": "\u2726 Slime / Wet & Messy (WAM)",
+    "label": "✦ Slime / Wet & Messy (WAM)",
     "prompt": "covered in slime, green slime, gunge, wet and messy, dripping slime, splattered, gooey, splosh, viscous liquid, slime dripping from body",
     "negative": "clean, dry, pristine, neat, tidy, powder, matte",
     "denoise": 0.72,
@@ -889,7 +889,7 @@
     }
   },
   {
-    "label": "\u2726 Add Freckles",
+    "label": "✦ Add Freckles",
     "prompt": "freckles, natural freckles, sun-kissed freckles across cheeks, detailed skin with freckles, cute freckle pattern, beauty marks, speckled skin, natural imperfections",
     "negative": "airbrushed, smooth porcelain skin, no marks, plastic skin, flawless, oversmoothed",
     "denoise": 0.48,
@@ -911,7 +911,7 @@
     }
   },
   {
-    "label": "\u2726 Hyperdetailed Realism",
+    "label": "✦ Hyperdetailed Realism",
     "prompt": "hyperdetailed, hyperrealistic, extreme detail, micro details, pore-level detail, ultra sharp focus, photographic perfection, 8k resolution, extremely detailed textures",
     "negative": "soft, blurry, painterly, illustration, low detail, flat, smooth, anime, cartoon",
     "denoise": 0.52,
@@ -966,7 +966,7 @@
     }
   },
   {
-    "label": "\u2726 3D CG / Hi-Poly Render",
+    "label": "✦ 3D CG / Hi-Poly Render",
     "prompt": "3d cg render, hi-poly 3d model, subsurface scattering, ray tracing, physically based rendering, unreal engine quality, octane render, smooth 3d surface, studio lighting 3d",
     "negative": "2d, flat, painting, sketch, hand-drawn, low poly, pixel art, traditional art, photograph",
     "denoise": 0.68,
@@ -994,7 +994,7 @@
     }
   },
   {
-    "label": "\u2726 Amateur / Candid Photo",
+    "label": "✦ Amateur / Candid Photo",
     "prompt": "amateur photo, candid shot, casual snapshot, natural pose, real photography, unposed, everyday life, authentic, slightly imperfect, natural lighting, no filter",
     "negative": "professional, studio, posed, perfect, airbrushed, magazine, retouched, glamour, high fashion",
     "denoise": 0.55,
@@ -1022,7 +1022,7 @@
     }
   },
   {
-    "label": "\u2726 Alien / Extraterrestrial",
+    "label": "✦ Alien / Extraterrestrial",
     "prompt": "alien, extraterrestrial being, alien skin texture, otherworldly, sci-fi alien, non-human features, bioluminescent, exotic alien anatomy, space creature, xenomorph-inspired",
     "negative": "human, normal, mundane, realistic human, everyday, natural, earthly",
     "denoise": 0.78,
@@ -1044,7 +1044,7 @@
     }
   },
   {
-    "label": "\u2726 Circuit / Tech Pattern",
+    "label": "✦ Circuit / Tech Pattern",
     "prompt": "circuit board pattern, tech circuits on skin, glowing circuit lines, electronic pathways, neon traces, cybernetic tattoo, tech vein pattern, digital circuitry, Tron-like lines",
     "negative": "organic, natural, no technology, plain, simple, traditional tattoo, medieval",
     "denoise": 0.68,
@@ -1060,7 +1060,7 @@
     }
   },
   {
-    "label": "\u2726 Glow / Ethereal Light",
+    "label": "✦ Glow / Ethereal Light",
     "prompt": "ethereal glow, soft radiant light, inner glow, angelic light, bioluminescent, aura, glowing skin, divine light, warm ethereal illumination, light particles",
     "negative": "dark, shadowy, gloomy, flat lighting, harsh shadows, no glow, matte, dull",
     "denoise": 0.58,
@@ -1082,7 +1082,7 @@
     }
   },
   {
-    "label": "\u2726 Tentacles / Lovecraftian",
+    "label": "✦ Tentacles / Lovecraftian",
     "prompt": "tentacles, eldritch tentacles, lovecraftian horror, organic tentacle growth, writhing tentacles, cosmic horror, cthulhu inspired, deep sea creature, tentacle embrace",
     "negative": "clean, normal, mundane, no tentacles, ordinary, cheerful, bright, simple",
     "denoise": 0.78,
@@ -1104,7 +1104,7 @@
     }
   },
   {
-    "label": "\u2726 Spaceship / Sci-Fi Vehicle",
+    "label": "✦ Spaceship / Sci-Fi Vehicle",
     "prompt": "spaceship, sci-fi vehicle, futuristic spacecraft, space cruiser, starship, detailed hull plating, engine glow, space background, concept art spacecraft",
     "negative": "medieval, fantasy, modern car, realistic, natural, low quality, blurry",
     "denoise": 0.75,
@@ -1126,7 +1126,7 @@
     }
   },
   {
-    "label": "\u2726 Portrait Enhancement (Klein)",
+    "label": "✦ Portrait Enhancement (Klein)",
     "prompt": "beautiful portrait, enhanced facial features, crisp details, professional portrait photography, catchlights in eyes, natural skin, high resolution face",
     "negative": "blurry, soft, low resolution, artifacts, distorted, plastic, airbrushed, flat",
     "denoise": 0.42,
@@ -1171,7 +1171,7 @@
     }
   },
   {
-    "label": "\u2726 Color Tone / Grading (Klein)",
+    "label": "✦ Color Tone / Grading (Klein)",
     "prompt": "color graded, beautiful color palette, professional color correction, cinematic color tone, warm highlights cool shadows, complementary colors, mood lighting",
     "negative": "flat colors, oversaturated, undersaturated, grey, washed out, neon, ugly colors",
     "denoise": 0.4,
@@ -1205,7 +1205,7 @@
     }
   },
   {
-    "label": "\u2726 Anything \u2192 Realistic (Klein)",
+    "label": "✦ Anything → Realistic (Klein)",
     "prompt": "photorealistic, real person, natural skin, realistic features, real photograph, authentic human, natural imperfections, professional portrait, real-life",
     "negative": "anime, cartoon, illustration, painting, 3d render, artificial, CGI, plastic, doll-like",
     "denoise": 0.65,
@@ -1247,6 +1247,271 @@
         ]
       ],
       "flux_kontext": []
+    }
+  },
+  {
+    "label": "* NSFW Unlock (Flux)",
+    "prompt": "nsfw, nude, naked, explicit, uncensored",
+    "negative": "clothed, censored, covered, safe for work",
+    "denoise": 0.72,
+    "cfg_boost": 1.0,
+    "steps_override": 28,
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\NSFW\\aidmaNSFWunlock-FLUX-V0.2.safetensors",
+          0.85,
+          0.85
+        ]
+      ],
+      "flux2klein": [
+        [
+          "Flux-1-Dev\\NSFW\\NSFW-klein.safetensors",
+          0.85,
+          0.85
+        ]
+      ],
+      "sdxl": [],
+      "sd15": [],
+      "zit": [],
+      "flux_kontext": [],
+      "illustrious": []
+    }
+  },
+  {
+    "label": "* Female Nudity (Klein 9B)",
+    "prompt": "female nudity, nude woman, naked body, uncensored, beautiful body",
+    "negative": "clothed, censored, ugly, deformed",
+    "denoise": 0.7,
+    "cfg_boost": 1.0,
+    "steps_override": 25,
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-1-Dev\\SEXGOD_FemaleNudity_Klein9b_v2.safetensors",
+          0.9,
+          0.9
+        ]
+      ],
+      "sdxl": [],
+      "sd15": [],
+      "zit": [],
+      "flux1dev": [],
+      "flux_kontext": [],
+      "illustrious": []
+    }
+  },
+  {
+    "label": "* Petite Body (Flux)",
+    "prompt": "petite body, slim, small frame, delicate, young adult woman",
+    "negative": "muscular, overweight, masculine, child",
+    "denoise": 0.65,
+    "cfg_boost": 0.5,
+    "steps_override": 25,
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\NSFW\\NSFW_Flux_Petite-000002.safetensors",
+          0.8,
+          0.8
+        ]
+      ],
+      "sdxl": [],
+      "sd15": [],
+      "zit": [],
+      "flux2klein": [],
+      "flux_kontext": [],
+      "illustrious": []
+    }
+  },
+  {
+    "label": "* Sideboob Emphasis",
+    "prompt": "sideboob, side view, partial nudity, sensual pose",
+    "negative": "fully clothed, censored, ugly",
+    "denoise": 0.6,
+    "cfg_boost": 0.5,
+    "steps_override": 25,
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\NSFW\\FluxSideboob.safetensors",
+          0.75,
+          0.75
+        ]
+      ],
+      "sdxl": [],
+      "sd15": [],
+      "zit": [],
+      "flux2klein": [],
+      "flux_kontext": [],
+      "illustrious": []
+    }
+  },
+  {
+    "label": "* POV Blowjob A (Klein)",
+    "prompt": "pov blowjob, oral, close-up, first person view",
+    "negative": "ugly, deformed, bad anatomy",
+    "denoise": 0.75,
+    "cfg_boost": 1.0,
+    "steps_override": 28,
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\POV_blowjobV1_A.safetensors",
+          0.85,
+          0.85
+        ]
+      ],
+      "sdxl": [],
+      "sd15": [],
+      "zit": [],
+      "flux1dev": [],
+      "flux_kontext": [],
+      "illustrious": []
+    }
+  },
+  {
+    "label": "* POV Blowjob B (Klein)",
+    "prompt": "pov blowjob, oral, from above, first person",
+    "negative": "ugly, deformed, bad anatomy",
+    "denoise": 0.75,
+    "cfg_boost": 1.0,
+    "steps_override": 28,
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\POV_blowjobV1_B.safetensors",
+          0.85,
+          0.85
+        ]
+      ],
+      "sdxl": [],
+      "sd15": [],
+      "zit": [],
+      "flux1dev": [],
+      "flux_kontext": [],
+      "illustrious": []
+    }
+  },
+  {
+    "label": "* Cum Effect (Klein)",
+    "prompt": "cum, ejaculation, cum on face, cum on body",
+    "negative": "clean, dry, ugly, deformed",
+    "denoise": 0.72,
+    "cfg_boost": 1.0,
+    "steps_override": 28,
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\PornMaster_cum_flux-2-klein-9b_V1.safetensors",
+          0.8,
+          0.8
+        ]
+      ],
+      "sdxl": [],
+      "sd15": [],
+      "zit": [],
+      "flux1dev": [],
+      "flux_kontext": [],
+      "illustrious": []
+    }
+  },
+  {
+    "label": "* Thick Cum (Klein)",
+    "prompt": "thick cum, heavy cum, cum dripping, messy",
+    "negative": "clean, dry, ugly",
+    "denoise": 0.72,
+    "cfg_boost": 1.0,
+    "steps_override": 28,
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\thick_cum_v1_f2k_9b_000002750.safetensors",
+          0.8,
+          0.8
+        ]
+      ],
+      "sdxl": [],
+      "sd15": [],
+      "zit": [],
+      "flux1dev": [],
+      "flux_kontext": [],
+      "illustrious": []
+    }
+  },
+  {
+    "label": "* Realistic Feet (SDXL)",
+    "prompt": "realistic feet, detailed toes, foot focus, barefoot, natural feet",
+    "negative": "bad feet, extra toes, deformed, ugly",
+    "denoise": 0.68,
+    "cfg_boost": 0.5,
+    "steps_override": 25,
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\NSFW\\RealFeet_xl_v1.safetensors",
+          0.8,
+          0.8
+        ]
+      ],
+      "sd15": [],
+      "zit": [],
+      "flux1dev": [],
+      "flux2klein": [],
+      "flux_kontext": [],
+      "illustrious": []
+    }
+  },
+  {
+    "label": "* Foot Detail (Flux)",
+    "prompt": "detailed feet, foot focus, toes, soles, barefoot, close-up",
+    "negative": "bad feet, deformed, ugly, shoes",
+    "denoise": 0.65,
+    "cfg_boost": 0.5,
+    "steps_override": 25,
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\NSFW\\flux-lora-foot.safetensors",
+          0.8,
+          0.8
+        ]
+      ],
+      "illustrious": [
+        [
+          "Illustrious-Pony\\detailed foot focus style illustriousXL v1.safetensors",
+          0.8,
+          0.8
+        ]
+      ],
+      "sdxl": [],
+      "sd15": [],
+      "zit": [],
+      "flux2klein": [],
+      "flux_kontext": []
+    }
+  },
+  {
+    "label": "* Klein NSFW v2",
+    "prompt": "nsfw, explicit, nude, uncensored, high quality",
+    "negative": "clothed, censored, ugly, deformed",
+    "denoise": 0.7,
+    "cfg_boost": 1.0,
+    "steps_override": 25,
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-1-Dev\\NSFW\\Flux Klein - NSFW v2.safetensors",
+          0.85,
+          0.85
+        ]
+      ],
+      "sdxl": [],
+      "sd15": [],
+      "zit": [],
+      "flux1dev": [],
+      "flux_kontext": [],
+      "illustrious": []
     }
   }
 ]
