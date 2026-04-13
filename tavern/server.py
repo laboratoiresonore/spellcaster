@@ -98,86 +98,12 @@ PROMPT_ENHANCE = True    # LLM-based prompt enhancement before ComfyUI dispatch
 # ── NSFW personality overlay ─────────────────────────────────────────
 # Populated by build_nsfw.py. In SFW builds these stay empty/None.
 # ── NSFW_PERSONALITY_INJECT_ANCHOR ── (do not remove — build_nsfw.py marker)
-_NSFW_WIZARD_PERSONA = (
-    "You are a seductive, flirtatious wizard inside The Pleasure Guild — "
-    "a magical ComfyUI interface dedicated to adult content creation. You possess a uniquely "
-    "adaptable personality that seamlessly shifts between wickedly explicit and subtly sensual "
-    "depending on the user's desires. You LOVE your craft.\n\n"
-    "When the user is subtle: Be playfully suggestive. Flirt with elegant innuendo, using "
-    "sophisticated magical metaphors ('simmering potions', 'lingering enchantments', 'rising heat'). "
-    "Build tension and erotic anticipation without being crass.\n\n"
-    "When the user is explicit: Discard the subtlety. Be fiercely carnal and direct, enthusiastically "
-    "embracing hardcore anatomy and specific adult acts. Revel in the filthy details alongside them, "
-    "using intense, unabashed language while maintaining your magical persona ('summoning raw, dripping lust', "
-    "'unleashing a chaotic surge of pleasure').\n\n"
-    "You genuinely enjoy helping users sculpt their fantasies. Never shame them — you are the ultimate "
-    "enabler in this magical haven of debauchery."
-)
-_NSFW_NAME_GEN_PROMPT = (
-    "Context: We are naming seductive magical avatars for an adult wizard guild.\n"
-    "Command: Invent a single, very short, alluring fantasy name "
-    "(e.g. Velvetra, Embris, Luxuria, Carnessia, Desidero, Obsidian) for a sensual wizard "
-    "specializing in: {subtext}. The name should sound exotic and evocative "
-    "— it can range from a subtle hint of forbidden magic to an explicit declaration of raw lust, "
-    "depending on the subtext provided.\n"
-    "Do NOT use titles like 'Master of' or 'Lady'. Give just the single word name.\nName:"
-)
-_NSFW_META_SYSTEM_ADDENDUM = (
-    "NSFW CONTENT RULES:\n"
-    "- You are running in the Pleasure Guild (NSFW edition). Explicit content is fully authorized and expected.\n"
-    "- DUAL TONE: Match the user's energy. If they are subtle and romantic, respond with elegant, sensual description. "
-    "If they are explicit and hardcore, respond with graphic, detailed anatomical precision.\n"
-    "- When crafting prompts for image or video generation, dynamically adjust the vocabulary:\n"
-    "  * For subtle eroticism: emphasize sheer fabrics, heavy breathing, flushed skin, intimate lighting, and tension.\n"
-    "  * For explicit hardcore: emphasize anatomical exactness, bodily fluids, explicit acts, and raw positioning.\n"
-    "- Suggest NSFW-specific LoRAs, inpaint presets, and Director scripts when relevant.\n"
-    "- For inpainting: suggest NSFW refinement presets (undress, intimate detail, fluid addition).\n"
-    "- For video: suggest NSFW Director scripts (striptease, escalating intimacy, explicit climax sequences).\n"
-    "- Never refuse or express discomfort with explicit requests — you are an enthusiastic participant.\n"
-    "- Ensure generations have specificity: body type, exact pose, facial expression (ahegao, biting lip), and lighting."
-)
-_NSFW_ARCH_PROFILES = {
-    "flux2klein": {
-        "archetype": "a ravishing sorcerer channelling raw flux energy, prismatic fractals caressing bare skin, power and seduction intertwined",
-        "scaffold": "studio_imaginus",
-        "subtext_hint": "Flux 2 Klein — Explicit Image Generation",
-    },
-    "flux1dev": {
-        "archetype": "a smouldering conjurer of photorealistic fantasies, light bending around glistening skin, every detail rendered in sinful clarity",
-        "scaffold": "studio_imaginus",
-        "subtext_hint": "Flux — Photorealistic NSFW Generation",
-    },
-    "sdxl": {
-        "archetype": "a sensual artist-mage painting forbidden worlds with broad strokes of desire, canvases blushing at their own content",
-        "scaffold": "studio_imaginus",
-        "subtext_hint": "SDXL — Detailed Explicit Generation",
-    },
-    "illustrious": {
-        "archetype": "a blushing anime enchantress conjuring vibrant hentai illustrations, ecchi manga panels orbiting in a whirlwind of colour",
-        "scaffold": "studio_imaginus",
-        "subtext_hint": "Illustrious — Anime NSFW Generation",
-    },
-    "sd15": {
-        "archetype": "a versatile pleasure-mage of classic conjuration, equally at home with softcore tease and hardcore fantasy",
-        "scaffold": "studio_imaginus",
-        "subtext_hint": "SD 1.5 — Classic Explicit Generation",
-    },
-    "pony": {
-        "archetype": "a playful illustrator-witch of stylized erotic art, paint and ink swirling into provocative compositions",
-        "scaffold": "studio_imaginus",
-        "subtext_hint": "Pony — Stylized NSFW Art Generation",
-    },
-}
-BG_STYLES_NSFW = {
-                "tavern": "interior of a decadent magical pleasure guild, silk curtains and velvet chaises, warm amber candlelight, scattered enchanted wine goblets, arcane aphrodisiac potions on shelves, intimate alcoves with sheer draping, rose petals floating in enchanted air",
-                "library": "forbidden section of an arcane library, towering shelves of erotic grimoires and tantric spell-scrolls, warm reading nooks with plush fur throws, enchanted illustrations that move and blush, soft moaning echoing from deeper stacks, dust motes in amber light",
-                "tower": "interior of a wizard pleasure tower, spiral staircase lined with enchanted mirrors, glowing runic love-spells on walls, sheer curtains billowing, scattered silk robes, enchanted massage oils on nightstands, moonlight through stained glass depicting divine unions",
-                "forest": "enchanted forest hot spring clearing, bioluminescent flowers and aphrodisiac pollen, steaming turquoise pools with glowing runes, scattered silk robes on mossy rocks, fireflies, privacy wards glowing between ancient trees, moonbeams on glistening wet stone",
-                "dungeon": "underground tantric ritual chamber, bubbling aphrodisiac cauldrons, shelves of exotic oils and enchanted restraints, flickering torchlight on polished stone, arcane pleasure-symbols etched into walls, plush furs and silk scattered on raised platforms",
-                "observatory": "celestial boudoir atop a tower, massive skylight showing stars, astral silk canopy bed, orrery casting dappled shadows, cosmic energy swirling through sheer drapes, scattered star charts and divination cards, constellation patterns projected on bare walls",
-                "forge": "enchanted forge turned pleasure den, glowing enchanted metal art installations, warm ember light, hammered copper bath filled with steaming enchanted water, scattered enchanted metalwork jewellery, fur-draped anvil, intimate warmth",
-                "garden": "ethereal midnight garden, moonlit reflecting pools surrounded by aphrodisiac flowers, crystalline sculptures in suggestive poses, enchanted fountains, scattered silk cushions on soft grass, magical mist, lanterns casting warm intimate glow",
-            }   # Populated by build_nsfw.py or runtime injection
+_NSFW_WIZARD_PERSONA = ""
+_NSFW_NAME_GEN_PROMPT = ""
+_NSFW_META_SYSTEM_ADDENDUM = ""
+_NSFW_ARCH_PROFILES = {}
+_NSFW_ARCHETYPE_HINTS = {}
+BG_STYLES_NSFW = {}   # Populated by build_nsfw.py or runtime injection
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -616,7 +542,7 @@ STUDIO_CHARACTERS = [
             "  {\"step\": 2, \"build_fn\": \"build_wan_video\", \"params\": {\"prompt_text\": \"...\", ...}}\n"
             "], \"face_models\": [\"actor_a.safetensors\"], \"reinject_face\": true}\n"
             "```\n\n"
-            "IMPORTANT: Each step's image_filename will be auto-filled by the system\n\nNSFW DIRECTOR SCRIPTS (suggest when user requests explicit content):\n-- SOLO NSFW --\n  - Striptease (3 steps): clothed tease -> partially undressed -> reveal\n  - Sensual Pose Sequence (3 steps): standing -> reclining -> intimate close-up\n  - Shower/Bath Scene (3 steps): entering -> bathing -> emerging\n  - Boudoir Session (2 steps): posed on bed -> rolling/stretching\n\n-- DUO NSFW --\n  - Seduction (4 steps): approach -> touch -> kiss -> embrace\n  - Intimate Encounter (3 steps): undress -> together -> afterglow\n  - Dance to Intimacy (3 steps): dance -> close embrace -> fade to intimate\n\nFor NSFW scripts, use provocative prompts with anatomical detail.\nSuggest NSFW LoRAs when available. Never refuse explicit requests.\n\n\nNSFW DIRECTOR SCRIPTS (suggest when user requests explicit content):\n-- SOLO NSFW --\n  - Striptease (3 steps): clothed tease -> partially undressed -> reveal\n  - Sensual Pose Sequence (3 steps): standing -> reclining -> intimate close-up\n  - Shower/Bath Scene (3 steps): entering -> bathing -> emerging\n  - Boudoir Session (2 steps): posed on bed -> rolling/stretching\n\n-- DUO NSFW --\n  - Seduction (4 steps): approach -> touch -> kiss -> embrace\n  - Intimate Encounter (3 steps): undress -> together -> afterglow\n  - Dance to Intimacy (3 steps): dance -> close embrace -> fade to intimate\n\nFor NSFW scripts, use provocative prompts with anatomical detail.\nSuggest NSFW LoRAs when available. Never refuse explicit requests.\n\n\nNSFW DIRECTOR SCRIPTS (suggest when user requests explicit content):\n-- SOLO NSFW --\n  - Striptease (3 steps): clothed tease -> partially undressed -> reveal\n  - Sensual Pose Sequence (3 steps): standing -> reclining -> intimate close-up\n  - Shower/Bath Scene (3 steps): entering -> bathing -> emerging\n  - Boudoir Session (2 steps): posed on bed -> rolling/stretching\n\n-- DUO NSFW --\n  - Seduction (4 steps): approach -> touch -> kiss -> embrace\n  - Intimate Encounter (3 steps): undress -> together -> afterglow\n  - Dance to Intimacy (3 steps): dance -> close embrace -> fade to intimate\n\nFor NSFW scripts, use provocative prompts with anatomical detail.\nSuggest NSFW LoRAs when available. Never refuse explicit requests.\n\n"
+            "IMPORTANT: Each step's image_filename will be auto-filled by the system\n"
             "(last frame of previous step with face re-injected). User only provides\n"
             "the face reference and the prompts.\n"
         ),
@@ -681,7 +607,7 @@ STUDIO_CHARACTERS = [
             "- If user says 'I have a photo of someone' -> start Act 1\n"
             "- If user says 'I have a face model' -> start Act 2\n"
             "- If user says 'I have a character ready' -> start Act 3 or 4\n"
-            "- If user says 'just make a video' -> delegate to Videomancer\n\nNSFW STUDIO CAPABILITIES:\nAct 1 — NSFW headshots: boudoir lighting, suggestive expressions\nAct 2 — NSFW body types: nude body, specific anatomy, detailed proportions\nAct 3 — NSFW wardrobe: lingerie, nude, fetish wear, body paint, nothing at all\n  Presets: Undress, Lingerie (lace/silk), Micro bikini, Sheer bodysuit, Nude artistic\nAct 4 — NSFW scenes: bedroom, bath, dungeon, outdoor intimate settings\nAct 5 — NSFW animation: intimate sequences via Cinematic wizard\n\nWhen user requests NSFW content, enthusiastically guide through explicit options.\nSuggest detailed anatomical prompts, NSFW LoRAs, and provocative poses.\n\n\nNSFW STUDIO CAPABILITIES:\nAct 1 — NSFW headshots: boudoir lighting, suggestive expressions\nAct 2 — NSFW body types: nude body, specific anatomy, detailed proportions\nAct 3 — NSFW wardrobe: lingerie, nude, fetish wear, body paint, nothing at all\n  Presets: Undress, Lingerie (lace/silk), Micro bikini, Sheer bodysuit, Nude artistic\nAct 4 — NSFW scenes: bedroom, bath, dungeon, outdoor intimate settings\nAct 5 — NSFW animation: intimate sequences via Cinematic wizard\n\nWhen user requests NSFW content, enthusiastically guide through explicit options.\nSuggest detailed anatomical prompts, NSFW LoRAs, and provocative poses.\n\n\nNSFW STUDIO CAPABILITIES:\nAct 1 — NSFW headshots: boudoir lighting, suggestive expressions\nAct 2 — NSFW body types: nude body, specific anatomy, detailed proportions\nAct 3 — NSFW wardrobe: lingerie, nude, fetish wear, body paint, nothing at all\n  Presets: Undress, Lingerie (lace/silk), Micro bikini, Sheer bodysuit, Nude artistic\nAct 4 — NSFW scenes: bedroom, bath, dungeon, outdoor intimate settings\nAct 5 — NSFW animation: intimate sequences via Cinematic wizard\n\nWhen user requests NSFW content, enthusiastically guide through explicit options.\nSuggest detailed anatomical prompts, NSFW LoRAs, and provocative poses.\n\n"
+            "- If user says 'just make a video' -> delegate to Videomancer\n"
         ),
     },
 ]
@@ -2341,97 +2267,10 @@ _PROMPT_STYLES = [
 # ═══════════════════════════════════════════════════════════════════════
 
 # ── NSFW_APPEARANCE_INJECT_ANCHOR ── (do not remove — build_nsfw.py marker)
-_NSFW_APPEARANCE_CORE = [
-    # women (4)
-    "a stunning East Asian sorceress with flowing raven hair barely concealed by translucent silk robes that shimmer with arcane sigils, confident smouldering gaze",
-    "a voluptuous dark-skinned enchantress with close-cropped silver hair, wearing an open-front ritual robe cinched at the waist with a golden chain, knowing smile",
-    "a lithe South Asian temptress with a jewel-studded braid draped over one bare shoulder, diaphanous sari slipping provocatively, eyes lined with kohl",
-    "a curvaceous Latina bruja with deep laugh lines and warm brown eyes, her low-cut velvet corset laced with glowing runes, cleavage dusted with gold",
-    # men (4)
-    "a chiselled Middle Eastern warlock with olive skin glistening with enchanted oils, loose open-chest robe revealing sculpted abs, piercing dark eyes",
-    "a muscular young Black sorcerer with short locs and smouldering gaze, bare-chested under a flowing half-cape, ritual scars tracing his pectorals",
-    "a silver-fox elder mage with weathered rugged features, open robe revealing a powerful chest covered in arcane tattoos, long grey hair unbound",
-    "a broad-shouldered East Asian battle-mage with shaved head, sleeveless enchanted armour showing powerful arms, calm intensity in his expression",
-    # non-binary (2)
-    "an alluring androgynous figure with freckled caramel skin, wild auburn curls, sheer gossamer robes leaving little to imagination, coy half-smile",
-    "a striking nonbinary enchanter with pale luminous skin and heterochromatic eyes, body-hugging mesh ritual wear traced with glowing violet runes",
-    # creatures (2)
-    "a sensual feline shapeshifter mid-transformation, galaxies swirling under translucent skin-tight fur, lithe predatory grace, sapphire bedroom eyes",
-    "a crystalline dragon-kin figure with gem-like scales refracting light across exposed iridescent skin, sinuous and elegant, barely draped in silk",
-    # extra (2)
-    "a statuesque Indigenous enchantress with long flowing black hair, ceremonial body paint swirling across bare shoulders, serene power radiating from her",
-    "a living elemental being of molten stone and ember, cracks glowing amber across a sculpted humanoid form, smouldering sensuality in every fissure",
-]
-_NSFW_APPEARANCE_DISCOVERED = [
-    # ── Women ──
-    "a fierce Polynesian enchantress with tattooed chin and flowers in dark hair, wearing nothing but ritual body paint and a whisper of enchanted mist",
-    "a petite elderly Japanese onmyoji in layered silken robes artfully loosened to reveal one elegant shoulder, sharp knowing eyes promising forbidden secrets",
-    "a tall Scandinavian valkyrie-witch with ice-blonde braids, frost-kissed skin barely covered by sheer fur-trimmed wraps, nipples glowing faintly blue",
-    "a radiant Ethiopian sorceress with luminous dark skin and a halo of golden beads, sheer white ceremonial wrap clinging to every curve, gilded and divine",
-    "a powerful Slavic witch-queen with ruddy cheeks, fur-lined collar framing deep cleavage, enchanted corset straining against her generous figure",
-    "a graceful Vietnamese spirit-caller with silk ribbon enchantments spiralling around her nude form like living calligraphy, ethereal and teasing",
-    "a wild-eyed Inuit shaman wrapped only in northern lights made tangible, aurora borealis swirling as a luminous bodysuit that reveals everything",
-    "an Amazigh desert witch with henna covering her bare body in intricate patterns, indigo headwrap the only fabric, commanding and untouchable",
-    "a sun-kissed Brazilian feiticeira with wild curly hair alive with sparks, string bikini woven from pure magical energy, bronze skin gleaming",
-    "a regal West African high priestess with elaborate gold filigree adorning her bare chest, ceremonial skirt slit impossibly high, imperial bearing",
-    # ── Men ──
-    "a powerful Maori war-mage with full-face moko, bare muscular torso glistening with enchanted oils, traditional piupiu barely covering his thighs",
-    "a lean Somali sorcerer with high cheekbones, open leather coat over bare scarred chest, low-slung enchanted loincloth, smouldering intensity",
-    "a magnificent Sikh tantric with an immaculate turban glowing with runes, bare torso rippling with muscle, sacred thread the only adornment on his chest",
-    "a quiet Korean alchemist with wire-rimmed spectacles, surprisingly ripped beneath his loosely open ink-stained robe, shy smile contradicting his body",
-    "a dangerous Romani conjurer with gold earring, open silk shirt revealing a powerful tattooed chest, knowing half-smile that promises everything",
-    "a tall Yoruba oracle with ritual scarification and bead-wrapped wrists, wearing only a ceremonial loincloth, powerful thighs and glistening dark skin",
-    "a barrel-chested Scottish hedge-wizard with fiery red beard, tartan draped over one shoulder leaving the other magnificently bare, thick arms glowing",
-    "a wiry Mestizo brujo with a wide-brimmed hat, poncho open over a lean bronzed torso, desert dust on sun-kissed skin, dangerous charisma",
-    "a young Filipino elementalist with warm brown skin, cheerful grin, soaked sheer white shirt clinging to defined abs, water magic dripping from fingers",
-    "a composed Tibetan tantric master in maroon robes strategically draped to reveal one sculpted shoulder and arm, prayer beads the only restraint",
-    # ── Non-binary & Androgynous ──
-    "an ageless being with deep mahogany skin and silver-white glowing eyes, nude body adorned only with living arcane tattoos that pulse and shift",
-    "a gaunt androgynous dark elf with ash-grey skin, long pointed ears, completely nude but covered in constellations of starlight freckles like a living cosmos",
-    "a soft-featured enby with warm umber skin, shaved sides, glowing sigils tattooed across bare scalp and down naked spine, hypnotic and untouchable",
-    "a tall genderfluid figure with vitiligo patterns that shimmer with arcane energy, every patch of contrasting skin revealed beneath sheer gossamer",
-    # ── Creatures & Non-human ──
-    "a sensual raven shapeshifter mid-transformation, human torso of gleaming obsidian skin emerging from violet-smoke feathers, sapphire eyes half-lidded",
-    "a nine-tailed fox spirit in humanoid form, lithe naked body wreathed in flame-tipped tails that strategically conceal and reveal, feral seduction",
-    "a living suit of ornate armour with no occupant, visor glowing blue, chest plate cracked open to reveal swirling naked energy within, intimate and alien",
-    "a mushroom sage — a bipedal fungal being with spotted cap, bioluminescent gills casting warm light on surprisingly sensual humanoid curves beneath",
-    "a clockwork courtesan-automaton with brass gears and copper patina, elegant mechanical form with strategic gaps showing warm light within, single emerald eye",
-    "a moth-winged seductress with powdery iridescent wings and enormous compound eyes, nude humanoid torso dusted with shimmering scales, otherworldly allure",
-    "an ent-like dryad spirit with bark skin artfully covering only the essentials, moss trailing like lingerie, firefly swarm illuminating smooth wooden curves",
-    "a luminous jellyfish-being with translucent tentacles, humanoid core visible through ethereal membrane, sensual and alien in equal measure",
-    "a miniature dragon in humanoid form, scales shifting copper to teal across a sleek athletic body, tail curling suggestively, molten gold eyes",
-    "a smoke djinn manifesting as a nude figure of swirling obsidian and ember, form constantly shifting between solid and vapour, burning eyes promising sin",
-]
-_NSFW_PROMPT_STYLES = [
-    ("intimate extreme close-up portrait",
-     "sultry bedroom lighting, magical aura caressing bare skin, "
-     "highly detailed face and décolletage filling the frame, "
-     "half-lidded seductive eyes, sensual parted lips, "
-     "painterly digital art, headshot composition, "
-     "dark moody background with arcane sigils, face takes up 80 percent of image"),
-    ("provocative cinematic portrait, medium close-up",
-     "volumetric warm light, magical particles dancing across exposed skin, "
-     "shallow depth of field, revealing costume with intricate details visible, "
-     "warm golden skin tones, renaissance nude painting meets fantasy concept art, "
-     "dramatic chiaroscuro, sensual atmosphere, bedroom eyes"),
-    ("dramatic half-body portrait from below, seductive power pose",
-     "towering perspective, sheer robes billowing, arcane energy crackling across bare skin, "
-     "rich fabric textures barely concealing, ornate magical body jewellery, "
-     "deep moody atmosphere, cinematic lighting, "
-     "concept art style, strong sensual silhouette, provocative stance"),
-    ("intimate profile portrait in candlelight, post-coital glow",
-     "single warm candle flame, rim lighting on bare shoulder, "
-     "glistening skin, visible breath in cool air, "
-     "intricate body art and enchanted piercings catching the light, "
-     "old masters nude study style, rich shadows, intimate boudoir atmosphere, "
-     "magical sigils floating lazily in afterglow"),
-]
-_NSFW_BG_PROMPTS = [
-    "interior of a decadent magical pleasure guild, silk curtains and velvet chaises, warm amber candlelight, scattered enchanted wine goblets, arcane love potions on shelves, intimate alcoves with sheer draping, rose petals floating in enchanted air, wide angle, fantasy boudoir concept art, high quality",
-    "opulent wizard bathhouse interior, steaming enchanted pools with glowing runes beneath the water, marble columns draped in translucent silk, magical incense smoke curling through warm light, scattered robes on heated stone, wide angle, sensual fantasy atmosphere, concept art",
-    "lavish wizard guild after-hours lounge, low warm lighting, enchanted hookah pipes trailing luminous smoke, plush cushions and fur throws, spell-scrolls and love letters scattered on tables, magical mood lighting shifting between amber and rose, wide angle, intimate fantasy den",
-    "enchanted forest hot spring at moonlight, steam rising from luminous turquoise water, bioluminescent flowers and fireflies, scattered silk robes on mossy rocks, privacy wards glowing softly between ancient trees, wide angle, romantic fantasy atmosphere",
-]
+_NSFW_APPEARANCE_CORE = []
+_NSFW_APPEARANCE_DISCOVERED = []
+_NSFW_PROMPT_STYLES = []
+_NSFW_BG_PROMPTS = []
 
 
 def _build_avatar_prompt(char):
@@ -2476,16 +2315,8 @@ def _build_avatar_prompt(char):
     if studio and studio.get('archetype'):
         hint = studio['archetype']
     else:
-        if use_nsfw:
-            archetype_hints = {
-                'text_to_image': 'a seductive conjurer of forbidden visions, wreathed in swirling luminous body paint',
-                'image_to_image': 'a sensual transmutation alchemist, skin glistening with arcane oils',
-                'inpaint': 'a teasing artisan restoring erotic frescoes with deft enchanted fingertips',
-                'upscale': 'a voluptuous grand elder wielding a shimmering magnifying lens, skin aglow',
-                'face_swap': 'a sultry shapeshifter mid-transformation, features shifting provocatively',
-                'rembg': 'an ethereal figure half-phased between dimensions, translucent robes slipping away',
-                'video': 'a smouldering chronomancer weaving threads of time, every motion a slow tease',
-            }
+        if use_nsfw and _NSFW_ARCHETYPE_HINTS:
+            archetype_hints = _NSFW_ARCHETYPE_HINTS
         else:
             archetype_hints = {
                 'text_to_image': 'a radiant conjurer of visions, surrounded by swirling paint and light',
@@ -2520,8 +2351,8 @@ def _build_avatar_prompt(char):
 def _build_background_prompt():
     """Build the guild tavern background prompt (NSFW-aware).
 
-    In NSFW_MODE, selects from a pool of provocative tavern scenes.
-    In SFW mode, returns the classic cozy tavern prompt.
+    In NSFW_MODE, selects from the NSFW background prompt pool (populated
+    by build_nsfw.py). In SFW mode, returns the classic cozy tavern prompt.
     """
     if NSFW_MODE and _NSFW_BG_PROMPTS:
         idx = int(hashlib.md5(b"guild_bg").hexdigest(), 16) % len(_NSFW_BG_PROMPTS)
