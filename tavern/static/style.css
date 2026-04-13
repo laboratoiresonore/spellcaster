@@ -742,6 +742,8 @@ textarea::placeholder { color: #555; }
     cursor: pointer; padding: 6px; z-index: 20;
     -webkit-tap-highlight-color: transparent;
 }
+/* Mobile-only sidebar close (shown via the max-width: 768px rule below) */
+#mobile-sidebar-close { display: none; }
 
 /* Backdrop overlay when sidebar is open on mobile */
 #sidebar-backdrop {
@@ -756,15 +758,51 @@ textarea::placeholder { color: #555; }
     #app-container { flex-direction: column; }
 
     /* ── Sidebar: slide-out drawer from left ── */
+    /* SOLID opaque background — the desktop default uses
+       rgba(19,18,28,0.92) + backdrop-filter: blur(16px), which on
+       mobile (where the sidebar overlays the chat at z-index 100)
+       lets the chat bleed through the 8% transparency and aggressively
+       blurs that bleed, leaving the sidebar contents looking like they
+       sit on a smeared ghost layer. Override both here. */
     #sidebar {
         position: fixed; top: 0; left: 0; bottom: 0;
         width: 280px; min-width: 280px; max-width: 280px;
         transform: translateX(-100%);
         transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         z-index: 100;
+        background-color: var(--bg-sidebar);   /* solid opaque */
+        backdrop-filter: none;                 /* no chat bleed-through */
+        -webkit-backdrop-filter: none;
+        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
     }
     #sidebar.open { transform: translateX(0); }
     #sidebar-backdrop.visible { display: block; }
+    /* Mobile-only close button in the sidebar header — escape hatch
+       for when the user opened the drawer but doesn't want to pick a
+       wizard. Falls back to .open class state so it only renders
+       inside the slide-out drawer. */
+    #sidebar #mobile-sidebar-close {
+        display: flex;
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 32px;
+        height: 32px;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.4);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 50%;
+        color: #fff;
+        font-size: 18px;
+        cursor: pointer;
+        z-index: 5;
+        -webkit-tap-highlight-color: transparent;
+    }
+    #sidebar #mobile-sidebar-close:active {
+        transform: scale(0.92);
+        background: rgba(178, 70, 242, 0.5);
+    }
 
     /* ── Show hamburger button ── */
     #mobile-menu-btn { display: flex; align-items: center; }
