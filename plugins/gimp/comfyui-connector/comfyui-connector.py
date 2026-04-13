@@ -9875,18 +9875,28 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-bridge": None,
         }
 
+        # ── Feature-gate logic: denylist, not allowlist ──
+        # Old behaviour was an allowlist: the user's installed_features
+        # list was the source of truth, and any procedure whose feature
+        # wasn't in it got hidden from the menu. That broke every time we
+        # added a NEW feature post-install — older config.json files
+        # didn't know about wan_i2v / ltx_video / etc., so the new menu
+        # items silently never appeared even though the underlying models
+        # were installed and working. Users had no way to recover except
+        # by deleting their config.
+        #
+        # New behaviour is a denylist: every procedure registers by
+        # default, unless the user has explicitly disabled its feature
+        # via 'disabled_features' in config.json. Missing-model errors
+        # are caught at dialog-open time by runtime probes (per the
+        # "don't show broken" policy), not by a stale install manifest.
         cfg = _load_config()
-        installed = cfg.get("installed_features")  # list of feature keys, or None
-
+        disabled = set(cfg.get("disabled_features") or [])
         procs = []
         for name, feature in _PROC_FEATURES.items():
-            if feature is None:
-                procs.append(name)  # always register
-            elif installed is None:
-                procs.append(name)  # no config = register everything
-            elif feature in installed:
-                procs.append(name)  # feature was installed
-
+            if feature is not None and feature in disabled:
+                continue
+            procs.append(name)
         return procs
 
     def do_create_procedure(self, name):
