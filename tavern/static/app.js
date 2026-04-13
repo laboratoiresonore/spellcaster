@@ -544,6 +544,13 @@ async function initialize() {
         if(cfg.signal_bridge_url) {
             bridgeUrl = cfg.signal_bridge_url;
         }
+        // Tag the body with .nsfw-build so the avatar dropdown unhides
+        // the NSFW optgroup. SFW builds never see those entries.
+        if (cfg.nsfw_mode) {
+            document.body.classList.add('nsfw-build');
+        } else {
+            document.body.classList.remove('nsfw-build');
+        }
         // Show persistent privacy banner when in horde mode
         _updatePrivacyBanner();
     } catch(e) {
@@ -775,6 +782,7 @@ let _archivistSpokenSections = new Set();
 let _archivistSpeechSections = null;
 let _archivistSpeechOrder = [];
 let _archivistPollTimer = null;
+let _archivistRenderedNarrationCount = 0;
 
 function _lockChatForArchivist() {
     _archivistLocked = true;
@@ -783,6 +791,9 @@ function _lockChatForArchivist() {
         chatInput.placeholder = "The Archivist is finishing setup… one moment.";
     }
     if (sendBtn) sendBtn.disabled = true;
+    // Lockdown class on <body> so CSS can dim every wizard card and
+    // disable every header/sidebar button except #settings-btn.
+    document.body.classList.add('archivist-lockdown');
 }
 
 function _unlockChatAfterArchivist() {
@@ -793,6 +804,51 @@ function _unlockChatAfterArchivist() {
         chatInput.placeholder = "Speak to the wizard…";
     }
     if (sendBtn) sendBtn.disabled = false;
+    document.body.classList.remove('archivist-lockdown');
+}
+
+function _renderNewNarration(snapshot) {
+    // Stream any backend narration entries that we haven't rendered yet.
+    // Each entry has {ts, kind, text}. Kind controls the bubble style:
+    //   heading  — main archivist bubble (markdown)
+    //   progress — small italic line ("Summoning Imaginus 1/32")
+    //   detail   — secondary info bubble
+    //   question — interactive (future use — F10)
+    //   error    — red-tinted error bubble
+    //   done     — green-tinted closing line
+    const narration = snapshot.narration || [];
+    if (narration.length <= _archivistRenderedNarrationCount) return;
+    for (let i = _archivistRenderedNarrationCount; i < narration.length; i++) {
+        const entry = narration[i];
+        if (!entry || !entry.text) continue;
+        const text = entry.text;
+        const kind = entry.kind || 'detail';
+        if (kind === 'heading' || kind === 'done') {
+            _addArchivistMessage(text);
+        } else if (kind === 'error') {
+            const msg = document.createElement('div');
+            msg.className = 'message ai-message archivist-message archivist-error';
+            msg.innerHTML = `
+                <div class="avatar-small archivist-avatar" style="${_ARCHIVIST_AVATAR_STYLE}">${_ARCHIVIST_AVATAR_HTML}</div>
+                <div class="bubble archivist-bubble" style="border-color: rgba(255, 71, 87, 0.45);">
+                    <p>${_renderSimpleMarkdown(text)}</p>
+                </div>`;
+            chatStream.appendChild(msg);
+            chatStream.scrollTop = chatStream.scrollHeight;
+            if (typeof _messageEntrance === 'function') _messageEntrance(msg);
+        } else if (kind === 'progress') {
+            // Inline progress lines — small italic, no bubble chrome
+            const msg = document.createElement('div');
+            msg.className = 'archivist-progress-line';
+            msg.innerHTML = _renderSimpleMarkdown(text);
+            chatStream.appendChild(msg);
+            chatStream.scrollTop = chatStream.scrollHeight;
+        } else {
+            // detail / question / unknown — small archivist bubble
+            _addArchivistMessage(text);
+        }
+    }
+    _archivistRenderedNarrationCount = narration.length;
 }
 
 async function _fetchArchivistSpeech() {
@@ -865,6 +921,12 @@ async function _archivistPollOnce() {
     } catch (e) {
         return;  // transient, retry next poll
     }
+    // Render any new backend narration entries first — these are the
+    // verbose substage messages (detecting, painting tavern, summoning
+    // Imaginus 5/32, etc.) and they should appear in chronological
+    // order with the avatar arrivals interleaved.
+    _renderNewNarration(snapshot);
+
     const newCount = _renderNewAvatars(snapshot);
     // Update the per-wizard pending state map so the sidebar shows
     // the right animation: 'active' for whichever wizard ComfyUI is
@@ -882,10 +944,18 @@ async function _archivistPollOnce() {
     // follow the live snapshot, then re-gate the Animate All button.
     _refreshSidebarPlaceholders();
 
-    // Drip a speech section between every couple of avatar arrivals
-    // (or unconditionally on poll if no new avatars came in)
-    if (newCount === 0 || (snapshot.generated_count % 2 === 0)) {
+    // README speech sections now drip in only AFTER all backend narration
+    // is caught up — they're complementary tour content rather than the
+    // primary status feed.
+    if (newCount === 0 && snapshot.narration && snapshot.narration.length === _archivistRenderedNarrationCount) {
         _speakNextSection();
+    }
+    // Apply the live tavern background as soon as setup finishes painting it
+    if (snapshot.background_url) {
+        try {
+            localStorage.setItem('guild_global_bg', snapshot.background_url);
+            if (typeof applyGlobalBackground === 'function') applyGlobalBackground();
+        } catch (e) {}
     }
     // Re-render sidebar so newly-arrived avatars show up there too
     if (newCount > 0 && typeof renderSidebar === 'function') {
@@ -2210,28 +2280,106 @@ resetBtn.addEventListener('click', () => {
     if(activeCharacterId) selectCharacter(activeCharacterId);
 });
 
-generateAvatarBtn.addEventListener('click', async () => {
-    if(!activeCharacterId) return;
+// ── Avatar Generate Modal (mirrors the bg modal layout) ─────────────
+//
+// Opens a small dropdown with SFW preset styles, NSFW preset styles
+// (only visible on patched NSFW builds), and Custom (which prepopulates
+// a best-guess prompt for the active wizard's model architecture so
+// the user can edit before submitting).
+const avatarModal = document.getElementById('avatar-modal');
+const avatarStyleSelect = document.getElementById('avatar-style-select');
+const avatarCustomPrompt = document.getElementById('avatar-custom-prompt');
+const avatarNsfwGroup = document.getElementById('avatar-nsfw-group');
+
+// Per-style prompt presets. Sent to the server as `style_prompt` along
+// with the wizard ID — the server combines it with the wizard's archetype
+// hint and generates the avatar through _dispatch_txt2img.
+const _AVATAR_STYLE_PROMPTS = {
+    sfw_default: "",  // empty = let the server use the default _build_avatar_prompt
+    sfw_dramatic: "dramatic chiaroscuro portrait, intense gaze, deep shadows, single warm light source, painterly digital art, headshot composition, dark moody background",
+    sfw_heroic: "heroic half-body portrait from below, towering perspective, dynamic pose, billowing cape, energy crackling from hands, rich fabric textures, ornate magical accessories, deep moody atmosphere, cinematic lighting, concept art style",
+    sfw_painted: "renaissance-style oil painting portrait, chiaroscuro lighting, painterly brushwork, ornate background, dignified pose, classical composition, museum quality",
+    sfw_anime: "anime-style half-body portrait, expressive eyes, cel-shaded, vibrant colors, dynamic composition, magical aura, fantasy character design",
+    sfw_neutral: "studio portrait, clean neutral background, soft three-point lighting, sharp focus, professional headshot, magical attire visible, calm confident expression",
+    nsfw_alluring: "sultry portrait, suggestive pose, warm bedroom lighting, half-lidded eyes, parted lips, sensual atmosphere, painterly digital art",
+    nsfw_boudoir: "boudoir portrait, low intimate lighting, sheer fabrics, candlelight, sensual pose, painterly atmosphere, evocative mood",
+    nsfw_revealing: "tasteful revealing portrait, sheer enchanted robes, glistening skin, soft warm light, romantic atmosphere, painterly art",
+    nsfw_explicit: "explicit anatomical portrait, hardcore detail, raw sensuality, dramatic lighting, evocative pose, photorealistic",
+};
+
+function _avatarBestGuessPrompt(char) {
+    // Fallback custom prompt — describes the active wizard's
+    // architecture + specialty so the user has a template to edit.
+    if (!char) return "";
+    const arch = char.model_arch || "auto";
+    const subtext = char.subtext || "magical specialist";
+    return `portrait of a wizard named ${char.name || "the wizard"}, `
+        + `${subtext}, magical aura, fantasy character design, painterly digital art, `
+        + `expressive eyes, intricate magical attire, cinematic lighting`
+        + (arch !== "auto" ? `, ${arch} architecture` : "");
+}
+
+generateAvatarBtn.addEventListener('click', () => {
+    if (!activeCharacterId) return;
+    const char = characters.find(c => c.id === activeCharacterId);
+    if (!char) return;
+    // Reset modal state
+    avatarStyleSelect.value = 'sfw_default';
+    avatarCustomPrompt.style.display = 'none';
+    avatarCustomPrompt.value = _avatarBestGuessPrompt(char);
+    // Show the NSFW optgroup only on patched NSFW builds. The server
+    // injects a body class via /api/config when NSFW_MODE is on.
+    if (avatarNsfwGroup) {
+        avatarNsfwGroup.style.display =
+            document.body.classList.contains('nsfw-build') ? '' : 'none';
+    }
+    avatarModal.classList.remove('hidden');
+});
+
+avatarStyleSelect.addEventListener('change', () => {
+    avatarCustomPrompt.style.display =
+        avatarStyleSelect.value === 'custom' ? 'block' : 'none';
+});
+
+document.getElementById('avatar-cancel').addEventListener('click', () => {
+    avatarModal.classList.add('hidden');
+});
+
+document.getElementById('avatar-generate-now').addEventListener('click', async () => {
+    if (!activeCharacterId) return;
+    avatarModal.classList.add('hidden');
     overlay.classList.remove('hidden');
     document.querySelector('#loading-overlay p').textContent = "Synthesizing Avatar...";
     _showGenerationCircle('Conjuring avatar...');
+    const styleKey = avatarStyleSelect.value;
+    const customPrompt = (styleKey === 'custom')
+        ? avatarCustomPrompt.value.trim()
+        : (_AVATAR_STYLE_PROMPTS[styleKey] || "");
     try {
         const response = await fetch('/api/avatar_generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: activeCharacterId, comfy_url: comfyUrl })
+            body: JSON.stringify({
+                id: activeCharacterId,
+                comfy_url: comfyUrl,
+                style_prompt: customPrompt,   // server appends to base prompt
+                style_key: styleKey,
+            })
         });
         const data = await response.json();
-        if(data.avatar_url) {
+        if (data.avatar_url) {
             const char = characters.find(c => c.id === activeCharacterId);
             const refreshUrl = data.avatar_url + "&t=" + new Date().getTime();
             char.avatar_url = refreshUrl;
             saveIdentity(char);
             activeAvatar.style.backgroundImage = `url('${char.avatar_url}')`;
             renderSidebar(searchInput.value);
-            addSystemMessage(`<strong>Avatar Updated!</strong><br>Generated new avatar visually representing ${char.subtext}.`);
+            addSystemMessage(`<strong>Avatar Updated!</strong><br>Generated new ${styleKey.replace('_', ' ')} avatar for ${char.name}.`);
+        } else if (data.error) {
+            addSystemMessage(`<strong>Avatar Failed!</strong><br>${data.error}`);
         }
-    } catch(e) {
+    } catch (e) {
+        addSystemMessage(`<strong>Avatar Failed!</strong><br>${e.message}`);
         console.error(e);
     }
     document.querySelector('#loading-overlay p').textContent = "The Guild is thinking...";
@@ -2594,6 +2742,65 @@ settingsSave.addEventListener('click', async () => {
 // ═══════════════════════════════════════════════════════════════════════
 //  Re-initialize / Nuke — wipe non-core wizards and re-detect
 // ═══════════════════════════════════════════════════════════════════════
+
+// Wipe-everything button — calls /api/setup/wipe to delete every
+// generated avatar and background, clear the persistent setup marker,
+// and reset _SETUP_STATE so the Archivist re-fires on next reload.
+const wipeAssetsBtn = document.getElementById('wipe-assets-btn');
+const wipeStatus = document.getElementById('wipe-status');
+if (wipeAssetsBtn) {
+    wipeAssetsBtn.addEventListener('click', async () => {
+        if (!confirm(
+            'This will DELETE every avatar, every background, and every '
+            + 'cached generation file from your Wizard Guild folder.\n\n'
+            + 'On next page reload the Archivist will re-fire setup mode '
+            + 'and you can pick fresh avatar styles for each wizard.\n\n'
+            + 'Wizard names, personalities, custom presets, and LoRA toggles '
+            + 'are NOT touched — only generated images.\n\n'
+            + 'Continue?'
+        )) return;
+
+        wipeAssetsBtn.disabled = true;
+        wipeAssetsBtn.textContent = 'Wiping...';
+        wipeStatus.style.display = 'block';
+        wipeStatus.textContent = 'Deleting generated assets...';
+
+        try {
+            const res = await fetch('/api/setup/wipe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+            const data = await res.json();
+            if (res.ok && data.ok) {
+                // Clear localStorage too so a fresh load isn't tricked
+                // by a stale cached avatar URL.
+                try {
+                    const ids = JSON.parse(localStorage.getItem('guild_identities') || '{}');
+                    for (const k of Object.keys(ids)) {
+                        if (ids[k]) {
+                            delete ids[k].avatar_url;
+                            delete ids[k].animated_url;
+                        }
+                    }
+                    localStorage.setItem('guild_identities', JSON.stringify(ids));
+                    localStorage.removeItem('guild_global_bg');
+                    localStorage.removeItem('guild_setup_complete');
+                } catch (e) {}
+                wipeStatus.textContent = `Wiped ${data.wiped_assets} entries + ${data.wiped_files} files. Reloading...`;
+                setTimeout(() => location.reload(), 800);
+            } else {
+                wipeStatus.textContent = `Failed: ${(data.errors || []).join(', ') || 'unknown'}`;
+                wipeAssetsBtn.disabled = false;
+                wipeAssetsBtn.textContent = '⚠ Wipe Every Avatar & Background';
+            }
+        } catch (e) {
+            wipeStatus.textContent = `Error: ${e.message}`;
+            wipeAssetsBtn.disabled = false;
+            wipeAssetsBtn.textContent = '⚠ Wipe Every Avatar & Background';
+        }
+    });
+}
 
 const reinitBtn = document.getElementById('reinit-btn');
 const reinitKeepAssets = document.getElementById('reinit-keep-assets');
