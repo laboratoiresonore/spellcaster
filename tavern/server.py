@@ -1620,6 +1620,7 @@ _SETUP_STATE = {
     "generated_count": 0,
     "avatars": [],           # list of {id, name, avatar_url, ts}
     "current": None,         # name of wizard currently generating
+    "current_id": None,      # id of wizard currently generating
     "errors": [],            # human-readable strings, capped to 10
     "started_by": None,      # 'launcher' | 'browser'
 }
@@ -1628,9 +1629,14 @@ _SETUP_MARKER_PATH = os.path.join(_STATE_DIR, "setup_marker.json")
 
 
 def _setup_state_snapshot():
-    """Thread-safe shallow copy of _SETUP_STATE for JSON serialization."""
+    """Thread-safe shallow copy of _SETUP_STATE for JSON serialization.
+
+    Also computes the live list of wizard IDs that don't yet have an
+    avatar in _GENERATED_ASSETS, so the frontend can render placeholder
+    icons for them with the appropriate pending state.
+    """
     with _SETUP_LOCK:
-        return {
+        snap = {
             "phase": _SETUP_STATE["phase"],
             "started_at": _SETUP_STATE["started_at"],
             "completed_at": _SETUP_STATE["completed_at"],
@@ -1639,8 +1645,23 @@ def _setup_state_snapshot():
             "generated_count": _SETUP_STATE["generated_count"],
             "avatars": list(_SETUP_STATE["avatars"]),
             "current": _SETUP_STATE["current"],
+            "current_id": _SETUP_STATE.get("current_id"),
             "errors": list(_SETUP_STATE["errors"]),
         }
+    # Compute pending list outside the lock so we don't hold it during
+    # potentially-slow CHARS_CACHE iteration.
+    pending = []
+    try:
+        for c in CHARS_CACHE:
+            cid = c.get("id")
+            if not cid:
+                continue
+            if not _GENERATED_ASSETS.get(cid, {}).get("avatar_url"):
+                pending.append(cid)
+    except Exception:
+        pass
+    snap["pending_ids"] = pending
+    return snap
 
 
 def _setup_state_update(**fields):
@@ -1688,7 +1709,8 @@ def _setup_marker_exists():
         return False
 
 
-def _run_avatar_setup_in_background(comfy_url, char_filter=None):
+def _run_avatar_setup_in_background(comfy_url, char_filter=None,
+                                     skip_existing=True):
     """Background worker that generates avatars one by one and updates
     _SETUP_STATE as each finishes.
 
@@ -1698,13 +1720,21 @@ def _run_avatar_setup_in_background(comfy_url, char_filter=None):
     Args:
         comfy_url: ComfyUI server URL (already detected by launcher)
         char_filter: optional list of char IDs to limit generation to.
-                     If None, every wizard in CHARS_CACHE gets a portrait.
+                     If None, every wizard in CHARS_CACHE is considered.
+        skip_existing: if True (default), wizards that already have a
+                       persisted avatar in _GENERATED_ASSETS are skipped.
+                       This is the resume-after-interrupt behaviour: if
+                       the user closed the server mid-setup, on restart
+                       we only generate the missing portraits.
     """
     try:
         chars = list(CHARS_CACHE)
         if char_filter:
             wanted = set(char_filter)
             chars = [c for c in chars if c.get("id") in wanted]
+        if skip_existing:
+            chars = [c for c in chars
+                     if not _GENERATED_ASSETS.get(c.get("id"), {}).get("avatar_url")]
         _setup_state_update(
             phase="generating",
             started_at=time.time(),
@@ -1714,12 +1744,32 @@ def _run_avatar_setup_in_background(comfy_url, char_filter=None):
             current=None,
             errors=[],
         )
+        # Pre-seed the avatars list with anything _GENERATED_ASSETS already
+        # has, so the frontend's pending-vs-done classification works on a
+        # fresh page load even if no new avatars arrive yet.
+        try:
+            preseed = []
+            for c in CHARS_CACHE:
+                cid = c.get("id")
+                url = _GENERATED_ASSETS.get(cid, {}).get("avatar_url")
+                if url:
+                    preseed.append({
+                        "id": cid,
+                        "name": c.get("name") or cid,
+                        "avatar_url": url,
+                        "ts": 0.0,
+                    })
+            with _SETUP_LOCK:
+                _SETUP_STATE["avatars"] = preseed
+        except Exception:
+            pass
 
         for char in chars:
             char_id = char.get("id")
             name = char.get("name") or char_id
             with _SETUP_LOCK:
                 _SETUP_STATE["current"] = name
+                _SETUP_STATE["current_id"] = char_id
             try:
                 url = _generate_avatar_for_setup(char, comfy_url)
                 if url:
@@ -1736,9 +1786,65 @@ def _run_avatar_setup_in_background(comfy_url, char_filter=None):
             except Exception as e:
                 _setup_state_record_error(f"{name}: {e}")
     finally:
+        with _SETUP_LOCK:
+            _SETUP_STATE["current"] = None
+            _SETUP_STATE["current_id"] = None
         _setup_state_update(
-            phase="complete", completed_at=time.time(), current=None)
+            phase="complete", completed_at=time.time())
         _setup_marker_done()
+
+
+_PLACEHOLDER_ICON_CACHE = {"bytes": None, "ts": 0.0}
+_PLACEHOLDER_ICON_PATHS = [
+    os.path.join(_THIS_DIR, "..", "assets", "spellcaster_darktable_icon.png"),
+    os.path.join(_THIS_DIR, "static", "spellcaster_darktable_icon.png"),
+    os.path.join(os.path.dirname(_THIS_DIR), "assets",
+                  "spellcaster_darktable_icon.png"),
+]
+
+
+def _load_placeholder_icon_bytes():
+    """Read the placeholder icon PNG once and cache the bytes in memory.
+
+    Tries a few likely locations in priority order so the file resolves
+    in dev checkouts, packaged installs, and the NSFW staging tree.
+    Returns None if no copy of the icon can be found.
+    """
+    if _PLACEHOLDER_ICON_CACHE["bytes"] is not None:
+        return _PLACEHOLDER_ICON_CACHE["bytes"]
+    for p in _PLACEHOLDER_ICON_PATHS:
+        try:
+            with open(p, "rb") as f:
+                data = f.read()
+            if data:
+                _PLACEHOLDER_ICON_CACHE["bytes"] = data
+                _PLACEHOLDER_ICON_CACHE["ts"] = time.time()
+                return data
+        except Exception:
+            continue
+    return None
+
+
+def _serve_placeholder_icon(handler):
+    """Serve the cached placeholder PNG with long-lived browser caching.
+
+    Falls back to a minimal transparent PNG if the asset can't be
+    located, so the frontend always gets *something* and never shows
+    a broken-image icon.
+    """
+    data = _load_placeholder_icon_bytes()
+    if not data:
+        # 1x1 transparent PNG — last resort
+        data = (b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+                b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+                b"\x00\x00\x00\rIDATx\x9cc\xfc\xcf\xc0\x00\x00\x00\x03"
+                b"\x00\x01\x95\xfa\x9b\x12\x00\x00\x00\x00IEND\xaeB`\x82")
+    handler.send_response(200)
+    handler.send_header("Content-Type", "image/png")
+    handler.send_header("Cache-Control", "public, max-age=86400")
+    handler.send_header("Content-Length", str(len(data)))
+    handler.end_headers()
+    handler.wfile.write(data)
 
 
 def _generate_avatar_for_setup(char, comfy_url):
@@ -2033,14 +2139,21 @@ def _save_anim_queue():
 # ── Load persisted state ──
 _BANISHED_IDS = _load_banished_ids()
 
-def _llm_generate_local(payload):
+def _llm_generate_local(payload, timeout=180):
     """Call the local KoboldAI instance to generate text.
-    
+
     Compatible with the payload format used in the frontend:
     {prompt, max_length, temperature, stop_sequence, ...}
+
+    Default timeout is 180 s — long enough for a remote KoboldCpp on
+    a modest CPU to respond even with a long prompt. The previous 60 s
+    was firing during avatar prompt enhancement on slower setups,
+    printing scary "Local generation failed: timed out" messages even
+    though the avatar still generated successfully without the LLM
+    enhancement (the caller's contract is that None means "skip the
+    enhancement, use the raw prompt").
     """
     try:
-        # Map fields to KoboldAI API
         kobold_payload = {
             "prompt": payload.get("prompt", ""),
             "max_context_length": payload.get("max_context_length", 4096),
@@ -2051,17 +2164,20 @@ def _llm_generate_local(payload):
             "rep_pen_range": payload.get("rep_pen_range", 512),
             "stop_sequence": payload.get("stop_sequence", []),
         }
-        
         url = f"{KOBOLD_URL}/api/v1/generate"
         body = json.dumps(kobold_payload).encode("utf-8")
         req = urllib.request.Request(
             url, data=body,
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except Exception as e:
-        print(f"  [LLM] Local generation failed: {e}")
+        # Downgrade from "Local generation failed" (alarming) to a
+        # measured "enhancement skipped" since the caller treats None
+        # as a graceful fallback to the raw prompt.
+        print(f"  [LLM] Enhancement skipped ({type(e).__name__}: {e}) — "
+              f"continuing with un-enhanced prompt")
         return None
 _GENERATED_ASSETS = _load_generated_assets()
 _LORA_TOGGLES = _load_lora_toggles()
@@ -5353,22 +5469,18 @@ class GuildHandler(SimpleHTTPRequestHandler):
             except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
                 pass
             return
+        elif self.path == '/api/placeholder_avatar':
+            # Returns the permanent app icon used as the placeholder
+            # avatar for any wizard whose portrait hasn't been generated
+            # yet. Frontend animates this with the pending CSS classes
+            # (queued = slow + transparent, active = fast + vivid).
+            return _serve_placeholder_icon(self)
         elif self.path.startswith('/api/avatar/'):
             char_id = self.path.split('/api/avatar/')[-1]
-            hue = int(hashlib.md5(char_id.encode()).hexdigest(), 16) % 360
-            svg = (
-                f'<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128">'
-                f'<rect width="128" height="128" rx="64" '
-                f'fill="hsl({hue},70%,40%)"/>'
-                f'<text x="64" y="80" text-anchor="middle" '
-                f'font-size="60" fill="white" font-family="sans-serif">'
-                f'{char_id[0:1].upper()}</text></svg>'
-            )
-            self.send_response(200)
-            self.send_header('Content-Type', 'image/svg+xml')
-            self.end_headers()
-            self.wfile.write(svg.encode())
-            return
+            # The legacy SVG colored-letter placeholder is gone. Every
+            # ungenerated wizard now uses the same Spellcaster icon so
+            # the UI looks coherent and the pending fade animation works.
+            return _serve_placeholder_icon(self)
 
         # Static routing
         if not self.path.startswith('/static/') and not self.path.startswith('/api/'):
