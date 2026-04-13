@@ -105,104 +105,104 @@
     },
     "Flux-1-Dev\\NSFW\\Flux Klein - NSFW v2.safetensors": {
       "archs": [
-        "flux1dev",
-        "flux_kontext"
+        "flux_kontext",
+        "flux1dev"
       ],
-      "purpose": "",
+      "purpose": "NSFW enhancements",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Flux-1-Dev\\NSFW\\FluxSideboob.safetensors": {
       "archs": [
-        "flux1dev",
-        "flux_kontext"
+        "flux_kontext",
+        "flux1dev"
       ],
-      "purpose": "",
+      "purpose": "Sideboob enhancement",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Flux-1-Dev\\NSFW\\NSFW-klein.safetensors": {
       "archs": [
-        "flux1dev",
-        "flux_kontext"
+        "flux_kontext",
+        "flux1dev"
       ],
-      "purpose": "",
+      "purpose": "NSFW enhancements",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Flux-1-Dev\\NSFW\\NSFW_Flux_Petite-000002.safetensors": {
       "archs": [
-        "flux1dev",
-        "flux_kontext"
+        "flux_kontext",
+        "flux1dev"
       ],
-      "purpose": "",
+      "purpose": "Petite enhancements",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Flux-1-Dev\\NSFW\\aidmaNSFWunlock-FLUX-V0.2.safetensors": {
       "archs": [
-        "flux1dev",
-        "flux_kontext"
+        "flux_kontext",
+        "flux1dev"
       ],
-      "purpose": "",
+      "purpose": "Unlocking AIDMA NSFW features",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Flux-1-Dev\\NSFW\\flux-lora-foot.safetensors": {
       "archs": [
-        "flux1dev",
-        "flux_kontext"
+        "flux_kontext",
+        "flux1dev"
       ],
-      "purpose": "",
+      "purpose": "Foot enhancements",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Flux-1-Dev\\NSFW\\foot feet v1.safetensors": {
       "archs": [
-        "flux1dev",
-        "flux_kontext"
+        "flux_kontext",
+        "flux1dev"
       ],
-      "purpose": "",
+      "purpose": "Foot enhancements",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Flux-1-Dev\\NSFW\\sharp detailed image (foot focus) v1.1.safetensors": {
       "archs": [
-        "flux1dev",
-        "flux_kontext"
+        "flux_kontext",
+        "flux1dev"
       ],
-      "purpose": "",
+      "purpose": "Sharp, detailed foot focus",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
@@ -313,52 +313,52 @@
     },
     "Flux-1-Dev\\Style\\UltraRealPhoto.safetensors": {
       "archs": [
-        "flux1dev",
-        "flux_kontext"
+        "flux_kontext",
+        "flux1dev"
       ],
-      "purpose": "",
+      "purpose": "Ultra Real Photo",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Flux-1-Dev\\Style\\aidmaMJ6.1-FLUX-v0.5.safetensors": {
       "archs": [
-        "flux1dev",
-        "flux_kontext"
+        "flux_kontext",
+        "flux1dev"
       ],
-      "purpose": "",
+      "purpose": "Aidma MJ6.1 Style",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Flux-1-Dev\\Style\\ck-shadow-circuit-000021.safetensors": {
       "archs": [
-        "flux1dev",
-        "flux_kontext"
+        "flux_kontext",
+        "flux1dev"
       ],
-      "purpose": "",
+      "purpose": "Ck Shadow Circuit",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Flux-1-Dev\\detail_enhancer_flux_v1.safetensors": {
       "archs": [
-        "flux1dev",
-        "flux_kontext"
+        "flux_kontext",
+        "flux1dev"
       ],
-      "purpose": "",
+      "purpose": "Detail Enhancer",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
@@ -461,13 +461,15 @@
       "archs": [
         "flux2klein"
       ],
-      "purpose": "",
-      "tags": [],
+      "purpose": "artistic style",
+      "tags": [
+        "style"
+      ],
       "user_desc": "",
-      "source": "discovered",
-      "civitai_name": "",
-      "civitai_url": "",
-      "description": ""
+      "source": "civitai",
+      "civitai_name": "bfs",
+      "civitai_url": "https://civitai.com/models/1816299",
+      "description": "bfs"
     },
     "Flux-2-Klein\\Character\\1A_Back_Pose_Enhancer.safetensors": {
       "archs": [
@@ -559,24 +561,26 @@
     },
     "Flux-2-Klein\\FK4B_Image_Repair_V1.safetensors": {
       "archs": [
-        "flux2klein"
+        "flux2klein",
+        "flux1dev"
       ],
-      "purpose": "",
+      "purpose": "Image Repair",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Flux-2-Klein\\FK_povfootjobfront.safetensors": {
       "archs": [
-        "flux2klein"
+        "flux2klein",
+        "flux1dev"
       ],
-      "purpose": "",
+      "purpose": "POV Footjob Front",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
@@ -751,12 +755,13 @@
     },
     "Flux-2-Klein\\Sliders\\klein_slider_glow.safetensors": {
       "archs": [
-        "flux2klein"
+        "flux2klein",
+        "flux1dev"
       ],
-      "purpose": "",
+      "purpose": "Glow Slider",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
@@ -847,24 +852,26 @@
     },
     "Flux-2-Klein\\flux2klein_vulva_and_anus_from_behind_v1.safetensors": {
       "archs": [
-        "flux2klein"
+        "flux2klein",
+        "flux1dev"
       ],
-      "purpose": "",
+      "purpose": "Vulva & Anus From Behind",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Flux-2-Klein\\footjob_ab_f2k9b_1.safetensors": {
       "archs": [
-        "flux2klein"
+        "flux2klein",
+        "flux1dev"
       ],
-      "purpose": "",
+      "purpose": "Foot Job",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
@@ -943,102 +950,107 @@
     },
     "Flux-2-Klein\\pussydiffusion-f2-klein-9b_v2.safetensors": {
       "archs": [
-        "flux2klein"
+        "flux2klein",
+        "flux1dev"
       ],
-      "purpose": "",
+      "purpose": "Aesthetic style",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Flux-2-Klein\\spread_legs_beta1.safetensors": {
       "archs": [
-        "flux2klein"
+        "flux2klein",
+        "flux1dev"
       ],
-      "purpose": "",
+      "purpose": "Hand fix",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Flux-2-Klein\\thick_cum_v1_f2k_9b_000002750.safetensors": {
       "archs": [
-        "flux2klein"
+        "flux2klein",
+        "flux1dev"
       ],
-      "purpose": "",
+      "purpose": "Explicit content",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Flux-2-Klein\\ultra_real_v2.safetensors": {
       "archs": [
-        "flux2klein"
+        "flux2klein",
+        "flux1dev"
       ],
-      "purpose": "",
+      "purpose": "Realism",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Flux-2-Klein\\upscale_portrait_9bklein.safetensors": {
       "archs": [
-        "flux2klein"
+        "flux2klein",
+        "flux1dev"
       ],
-      "purpose": "",
+      "purpose": "Upscaling",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Illustrious-Pony\\Chiaroscuro  film style pony v1.safetensors": {
       "archs": [
+        "pony",
         "sdxl",
-        "illustrious",
-        "pony"
+        "illustrious"
       ],
-      "purpose": "",
+      "purpose": "Film style",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Illustrious-Pony\\Cinematic Photography Style pony v1.safetensors": {
       "archs": [
+        "pony",
         "sdxl",
-        "illustrious",
-        "pony"
+        "illustrious"
       ],
-      "purpose": "",
+      "purpose": "Cinematic photography",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Illustrious-Pony\\Ethereal_Gothic_Elegance.safetensors": {
       "archs": [
+        "pony",
         "sdxl",
-        "illustrious",
-        "pony"
+        "illustrious"
       ],
-      "purpose": "",
+      "purpose": "Ethereal gothic elegance",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
@@ -1157,14 +1169,14 @@
     },
     "Illustrious-Pony\\perfect sclera eye style pony v1.3.safetensors": {
       "archs": [
+        "pony",
         "sdxl",
-        "illustrious",
-        "pony"
+        "illustrious"
       ],
-      "purpose": "",
+      "purpose": "Perfect Sclera Eye Style",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
@@ -1174,10 +1186,10 @@
         "sdxl",
         "illustrious"
       ],
-      "purpose": "",
+      "purpose": "Beautiful Female Model Face Adjustment",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
@@ -1187,75 +1199,75 @@
         "sdxl",
         "illustrious"
       ],
-      "purpose": "",
+      "purpose": "Detailed Realistic Eyes",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Pony\\Body\\thicc_v1.4-pony_done.safetensors": {
       "archs": [
-        "sdxl",
-        "pony"
+        "pony",
+        "sdxl"
       ],
-      "purpose": "",
+      "purpose": "Thicc Body",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Pony\\Slider\\Pony Realism Slider.safetensors": {
       "archs": [
-        "sdxl",
-        "pony"
+        "pony",
+        "sdxl"
       ],
-      "purpose": "",
+      "purpose": "Realism Slider",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Pony\\Slider\\Skin Color_alpha1.0_rank4_noxattn_250steps.safetensors": {
       "archs": [
-        "sdxl",
-        "pony"
+        "pony",
+        "sdxl"
       ],
-      "purpose": "",
+      "purpose": "Skin Color Slider",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Pony\\Style\\MoriiMee_Gothic_Niji_Style__Pony_LoRA.safetensors": {
       "archs": [
-        "sdxl",
-        "pony"
+        "pony",
+        "sdxl"
       ],
-      "purpose": "",
+      "purpose": "MoriiMee Gothic Niji Style",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
     },
     "Pony\\Style\\amateur_style_v1_pony.safetensors": {
       "archs": [
-        "sdxl",
-        "pony"
+        "pony",
+        "sdxl"
       ],
-      "purpose": "",
+      "purpose": "Amateur Style",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
@@ -1288,10 +1300,10 @@
       "archs": [
         "sdxl"
       ],
-      "purpose": "",
+      "purpose": "Hand Fix",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
@@ -1300,10 +1312,10 @@
       "archs": [
         "sdxl"
       ],
-      "purpose": "",
+      "purpose": "Nipple Enhancement",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
@@ -1312,10 +1324,10 @@
       "archs": [
         "sdxl"
       ],
-      "purpose": "",
+      "purpose": "Booty Improvement",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
@@ -1324,10 +1336,10 @@
       "archs": [
         "sdxl"
       ],
-      "purpose": "",
+      "purpose": "Hand Improvement",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
@@ -1336,10 +1348,10 @@
       "archs": [
         "sdxl"
       ],
-      "purpose": "",
+      "purpose": "Thickness Enhancement",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
@@ -1348,10 +1360,10 @@
       "archs": [
         "sdxl"
       ],
-      "purpose": "",
+      "purpose": "Clothing Detail",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
@@ -1360,10 +1372,10 @@
       "archs": [
         "sdxl"
       ],
-      "purpose": "",
+      "purpose": "Robotic Girl Concept",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""
@@ -1372,10 +1384,10 @@
       "archs": [
         "sdxl"
       ],
-      "purpose": "",
+      "purpose": "Alien Concept",
       "tags": [],
       "user_desc": "",
-      "source": "discovered",
+      "source": "llm_interrogated",
       "civitai_name": "",
       "civitai_url": "",
       "description": ""

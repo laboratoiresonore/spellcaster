@@ -1,0 +1,44 @@
+{
+    "id": "com.laboratoiresonore.spellcaster",
+    "name": "Spellcaster",
+    "version": "2.2.0",
+    "main": "spellcaster.js",
+    "host": [
+        { "app": "PS", "minVersion": "24.0.0" }
+    ],
+    "manifestVersion": 5,
+    "entrypoints": [
+        {
+            "type": "panel",
+            "id": "spellcaster-panel",
+            "label": { "default": "Spellcaster" },
+            "minimumSize": { "width": 230, "height": 200 },
+            "maximumSize": { "width": 400, "height": 800 },
+            "preferredDockedSize": { "width": 260, "height": 400 },
+            "preferredFloatingSize": { "width": 300, "height": 500 }
+        },
+        {
+            "type": "command",
+            "id": "spellcasterGenerate",
+            "label": { "default": "Smart Generate" }
+        },
+        {
+            "type": "command",
+            "id": "spellcasterUpscale",
+            "label": { "default": "AI Upscale (4x)" }
+        },
+        {
+            "type": "command",
+            "id": "spellcasterRembg",
+            "label": { "default": "Remove Background" }
+        },
+        {
+            "type": "command",
+            "id": "spellcasterGuild",
+            "label": { "default": "Open Wizard Guild" }
+        }
+    ],
+    "icons": [
+        { "width": 48, "height": 48, "path": "icon.png" }
+    ]
+}
