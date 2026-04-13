@@ -7,6 +7,7 @@ Handles character discovery, ComfyUI workflow dispatch, and static file serving.
 
 import json
 import re
+import shutil
 import urllib.request
 import urllib.error
 from http.server import HTTPServer, SimpleHTTPRequestHandler
@@ -1613,6 +1614,8 @@ def _load_wizard_speech_sections(force_refresh=False):
 
 _SETUP_STATE = {
     "phase": "idle",         # idle / generating / complete
+    "stage": None,           # finer-grained: background / wizards / lora / done
+    "stage_label": "",       # human-readable description for the chat
     "started_at": 0.0,
     "completed_at": 0.0,
     "background_url": None,
@@ -1622,8 +1625,29 @@ _SETUP_STATE = {
     "current": None,         # name of wizard currently generating
     "current_id": None,      # id of wizard currently generating
     "errors": [],            # human-readable strings, capped to 10
+    "narration": [],         # list of {ts, kind, text} substage events
     "started_by": None,      # 'launcher' | 'browser'
 }
+
+
+def _setup_narrate(kind, text):
+    """Append a narration line that the frontend will recite in chat.
+
+    'kind' is one of: heading / progress / detail / question / done / error
+    The frontend uses kind to choose a bubble style (heading = bold,
+    detail = small italic, error = red, etc.).
+    """
+    with _SETUP_LOCK:
+        _SETUP_STATE["narration"].append({
+            "ts": time.time(),
+            "kind": kind,
+            "text": text,
+        })
+        # Cap at 200 entries so a long-running setup doesn't balloon
+        # the response payload to absurd sizes.
+        if len(_SETUP_STATE["narration"]) > 200:
+            _SETUP_STATE["narration"] = _SETUP_STATE["narration"][-200:]
+    print(f"  [Setup:{kind}] {text}")
 _SETUP_LOCK = threading.Lock()
 _SETUP_MARKER_PATH = os.path.join(_STATE_DIR, "setup_marker.json")
 
@@ -1638,18 +1662,20 @@ def _setup_state_snapshot():
     with _SETUP_LOCK:
         snap = {
             "phase": _SETUP_STATE["phase"],
+            "stage": _SETUP_STATE.get("stage"),
+            "stage_label": _SETUP_STATE.get("stage_label", ""),
             "started_at": _SETUP_STATE["started_at"],
             "completed_at": _SETUP_STATE["completed_at"],
-            "background_url": _SETUP_STATE["background_url"],
+            "background_url": _SETUP_STATE.get("background_url"),
             "total_wizards": _SETUP_STATE["total_wizards"],
             "generated_count": _SETUP_STATE["generated_count"],
             "avatars": list(_SETUP_STATE["avatars"]),
             "current": _SETUP_STATE["current"],
             "current_id": _SETUP_STATE.get("current_id"),
             "errors": list(_SETUP_STATE["errors"]),
+            "narration": list(_SETUP_STATE.get("narration", [])),
         }
-    # Compute pending list outside the lock so we don't hold it during
-    # potentially-slow CHARS_CACHE iteration.
+    # Compute pending list + background-missing flag outside the lock.
     pending = []
     try:
         for c in CHARS_CACHE:
@@ -1661,6 +1687,8 @@ def _setup_state_snapshot():
     except Exception:
         pass
     snap["pending_ids"] = pending
+    snap["background_missing"] = not bool(
+        _GENERATED_ASSETS.get("_global", {}).get("bg_url"))
     return snap
 
 
@@ -1711,11 +1739,17 @@ def _setup_marker_exists():
 
 def _run_avatar_setup_in_background(comfy_url, char_filter=None,
                                      skip_existing=True):
-    """Background worker that generates avatars one by one and updates
-    _SETUP_STATE as each finishes.
+    """Background worker that drives the entire first-run / restart-recovery
+    setup pipeline and updates _SETUP_STATE as it progresses.
 
-    The frontend polls /api/setup/status every couple of seconds and
-    streams each new avatar entry into the chat as a wizard message.
+    Sequence:
+        1. Survey ComfyUI for installed models / wizards
+        2. Generate the guild background (if missing)
+        3. Generate each wizard avatar (skipping any that already exist)
+        4. Survey the LoRA registry and emit a summary narration
+
+    Each substage emits a narration line via _setup_narrate which the
+    frontend's setup-mode UI streams into the chat as Archivist speech.
 
     Args:
         comfy_url: ComfyUI server URL (already detected by launcher)
@@ -1723,33 +1757,58 @@ def _run_avatar_setup_in_background(comfy_url, char_filter=None,
                      If None, every wizard in CHARS_CACHE is considered.
         skip_existing: if True (default), wizards that already have a
                        persisted avatar in _GENERATED_ASSETS are skipped.
-                       This is the resume-after-interrupt behaviour: if
-                       the user closed the server mid-setup, on restart
-                       we only generate the missing portraits.
+                       Restart-after-interrupt resume behaviour.
     """
     try:
-        chars = list(CHARS_CACHE)
-        if char_filter:
-            wanted = set(char_filter)
-            chars = [c for c in chars if c.get("id") in wanted]
-        if skip_existing:
-            chars = [c for c in chars
-                     if not _GENERATED_ASSETS.get(c.get("id"), {}).get("avatar_url")]
+        # ── Stage 0: detection / survey ──────────────────────────────
         _setup_state_update(
             phase="generating",
+            stage="detecting",
+            stage_label="Detecting wizards",
             started_at=time.time(),
-            total_wizards=len(chars),
+            total_wizards=0,
             generated_count=0,
             avatars=[],
             current=None,
+            current_id=None,
             errors=[],
+            narration=[],
         )
-        # Pre-seed the avatars list with anything _GENERATED_ASSETS already
-        # has, so the frontend's pending-vs-done classification works on a
-        # fresh page load even if no new avatars arrive yet.
+        all_chars = list(CHARS_CACHE)
+        _setup_narrate(
+            "heading",
+            f"**Detecting wizards…** Found {len(all_chars)} entries in your "
+            f"Wizard Guild — a mix of core Spellcasters and per-model wizards "
+            f"auto-generated from the checkpoints, GGUFs, and custom nodes "
+            f"installed on your ComfyUI server."
+        )
+        chars = all_chars
+        if char_filter:
+            wanted = set(char_filter)
+            chars = [c for c in chars if c.get("id") in wanted]
+            _setup_narrate(
+                "detail",
+                f"Restricting setup to {len(chars)} requested wizards."
+            )
+        if skip_existing:
+            already = [c for c in chars
+                       if _GENERATED_ASSETS.get(c.get("id"), {}).get("avatar_url")]
+            chars = [c for c in chars
+                     if not _GENERATED_ASSETS.get(c.get("id"), {}).get("avatar_url")]
+            if already:
+                _setup_narrate(
+                    "detail",
+                    f"Resuming a partial setup — {len(already)} portraits "
+                    f"already exist on disk, {len(chars)} still need to be "
+                    f"summoned."
+                )
+        _setup_state_update(total_wizards=len(chars))
+
+        # Pre-seed avatars list with anything that's already done, so the
+        # frontend's pending/done classification works on a fresh page load.
         try:
             preseed = []
-            for c in CHARS_CACHE:
+            for c in all_chars:
                 cid = c.get("id")
                 url = _GENERATED_ASSETS.get(cid, {}).get("avatar_url")
                 if url:
@@ -1764,18 +1823,62 @@ def _run_avatar_setup_in_background(comfy_url, char_filter=None,
         except Exception:
             pass
 
-        for char in chars:
+        # ── Stage 1: background image (always before avatars) ────────
+        existing_bg = _GENERATED_ASSETS.get("_global", {}).get("bg_url")
+        if not existing_bg:
+            _setup_state_update(stage="background",
+                                stage_label="Painting the guild tavern")
+            _setup_narrate(
+                "heading",
+                "**Painting the guild tavern…** Every great wizard needs a "
+                "place to call home. I'm rendering the guild background now "
+                "— it'll be the backdrop you see behind every chat. This "
+                "takes about as long as a single avatar."
+            )
+            bg_url = _generate_background_for_setup(comfy_url)
+            if bg_url:
+                _setup_state_update(background_url=bg_url)
+                _setup_narrate("done", "The guild tavern is ready.")
+            else:
+                _setup_state_record_error("Background generation failed")
+                _setup_narrate(
+                    "error",
+                    "I couldn't paint the tavern background — ComfyUI may "
+                    "have refused the request. Continuing with avatars; you "
+                    "can retry the background later from Settings."
+                )
+        else:
+            _setup_state_update(background_url=existing_bg)
+            _setup_narrate(
+                "detail",
+                "The guild tavern is already painted — skipping background."
+            )
+
+        # ── Stage 2: wizard avatars ──────────────────────────────────
+        if chars:
+            _setup_state_update(stage="avatars",
+                                stage_label=f"Summoning {len(chars)} wizards")
+            _setup_narrate(
+                "heading",
+                f"**Summoning {len(chars)} wizard avatars…** Each wizard "
+                f"generates its own portrait through the model best matched "
+                f"to its specialty. Image-gen wizards (Imaginus, Klein, Flux) "
+                f"use their own checkpoint; per-model wizards use themselves; "
+                f"video and utility wizards borrow Imaginus' brush."
+            )
+        for i, char in enumerate(chars, 1):
             char_id = char.get("id")
             name = char.get("name") or char_id
             with _SETUP_LOCK:
                 _SETUP_STATE["current"] = name
                 _SETUP_STATE["current_id"] = char_id
+                _SETUP_STATE["stage_label"] = (
+                    f"Summoning {name} ({i}/{len(chars)})")
+            _setup_narrate("progress", f"Summoning **{name}** ({i}/{len(chars)})")
             try:
                 url = _generate_avatar_for_setup(char, comfy_url)
                 if url:
                     _setup_state_record_avatar(char_id, name, url)
-                    # Mirror into the persistent generated-assets store
-                    # so a refresh after setup picks it up too.
                     try:
                         _GENERATED_ASSETS.setdefault(char_id, {})["avatar_url"] = url
                         _save_generated_assets()
@@ -1783,12 +1886,75 @@ def _run_avatar_setup_in_background(comfy_url, char_filter=None,
                         pass
                 else:
                     _setup_state_record_error(f"No avatar for {name}")
+                    _setup_narrate(
+                        "error",
+                        f"{name} refused to materialise. Their portrait will "
+                        f"stay as the placeholder icon — try regenerating from "
+                        f"the chat once setup is done."
+                    )
             except Exception as e:
                 _setup_state_record_error(f"{name}: {e}")
+                _setup_narrate("error", f"{name}: {e}")
+
+        # ── Stage 3: LoRA inspection summary ─────────────────────────
+        _setup_state_update(stage="loras",
+                            stage_label="Inspecting your LoRA collection")
+        try:
+            n_loras = len(_LORA_REGISTRY)
+            n_known = sum(1 for info in _LORA_REGISTRY.values()
+                          if info.get("purpose"))
+            n_unknown = n_loras - n_known
+            arch_counts = {}
+            for info in _LORA_REGISTRY.values():
+                for a in info.get("archs", []):
+                    arch_counts[a] = arch_counts.get(a, 0) + 1
+            top_archs = sorted(arch_counts.items(), key=lambda kv: -kv[1])[:6]
+            arch_summary = ", ".join(f"{a}:{n}" for a, n in top_archs) or "(none)"
+            _setup_narrate(
+                "heading",
+                f"**Inspecting your LoRA collection…** Found **{n_loras} "
+                f"LoRAs** on the server. {n_known} are already classified "
+                f"(name + architecture + purpose), {n_unknown} still need "
+                f"identification."
+            )
+            _setup_narrate(
+                "detail",
+                f"Architecture breakdown: {arch_summary}. The Wizard Guild "
+                f"only ever offers a LoRA to a wizard whose model architecture "
+                f"matches — SDXL wizards never see Wan LoRAs, Flux wizards "
+                f"never see SDXL LoRAs, and so on."
+            )
+            if n_unknown > 0:
+                _setup_narrate(
+                    "detail",
+                    f"For the {n_unknown} unknown LoRAs, I'll quietly query "
+                    f"CivitAI in the background and ask the local LLM to "
+                    f"guess the rest. If any are still unclear after that, "
+                    f"I'll ask you directly the next time you open the "
+                    f"Enchantments panel."
+                )
+            _setup_narrate(
+                "detail",
+                "When you enable a LoRA on a wizard, I save its trigger "
+                "keywords (like \"detail enhance\") so you can summon it "
+                "in any prompt without remembering the exact filename. "
+                "Default strength is 0.7; tune it from the LoRA panel. "
+                "Stack at most three LoRAs per generation — beyond that "
+                "they fight each other."
+            )
+        except Exception as e:
+            _setup_narrate("error", f"LoRA survey failed: {e}")
     finally:
         with _SETUP_LOCK:
             _SETUP_STATE["current"] = None
             _SETUP_STATE["current_id"] = None
+            _SETUP_STATE["stage"] = "done"
+            _SETUP_STATE["stage_label"] = "Setup complete"
+        _setup_narrate(
+            "done",
+            "**Setup complete.** The chat is yours. Pick any wizard from "
+            "the sidebar and tell them what you want."
+        )
         _setup_state_update(
             phase="complete", completed_at=time.time())
         _setup_marker_done()
@@ -1878,6 +2044,45 @@ def _generate_avatar_for_setup(char, comfy_url):
         )
     except Exception as e:
         print(f"  [Setup] Avatar dispatch failed for {char.get('id')}: {e}")
+        return None
+
+
+def _generate_background_for_setup(comfy_url, style="tavern",
+                                    width=1280, height=720):
+    """Render the guild background inline for the setup state machine.
+
+    Mirrors the simpler 'auto' path of /api/background_generate so the
+    setup worker can produce a tavern background as the very first step
+    of first-run / restart-recovery, before any avatars run.
+    Returns the bg URL or None on failure.
+    """
+    try:
+        # Use the same SFW prompt the /api/background_generate endpoint
+        # uses for the default 'tavern' style (NSFW build patches this
+        # via the BG_STYLES_NSFW dict at runtime via _NSFW_BG_PROMPTS).
+        prompt = (
+            "interior of a magical wizard guild tavern, warm candlelight, "
+            "wooden beams, mystical artifacts on shelves, medieval fantasy "
+            "atmosphere, cozy and inviting, tankards and spell scrolls on "
+            "tables, wide angle shot, detailed environment concept art, "
+            "high quality, atmospheric lighting, fantasy illustration"
+        )
+        if NSFW_MODE and _NSFW_BG_PROMPTS:
+            try:
+                idx = int(hashlib.md5(b"setup_bg").hexdigest(), 16) % len(_NSFW_BG_PROMPTS)
+                prompt = _NSFW_BG_PROMPTS[idx]
+            except Exception:
+                pass
+        negative = ("text, watermark, blurry, people, characters, faces, "
+                    "hands, low quality, jpeg artifacts")
+        url = _dispatch_txt2img(
+            prompt, negative, width, height, comfy_url, skip_loras=True)
+        if url:
+            _GENERATED_ASSETS.setdefault("_global", {})["bg_url"] = url
+            _save_generated_assets()
+        return url
+    except Exception as e:
+        print(f"  [Setup] Background dispatch failed: {e}")
         return None
 
 
@@ -2432,31 +2637,48 @@ def _build_lora_registry(comfy_url):
 
     print(f"  [LoRA] Discovered {len(all_loras)} LoRAs from ComfyUI")
 
-    # Determine which architectures each LoRA is compatible with
+    # Determine which architectures each LoRA is compatible with.
+    # Matching is case-INsensitive on both the lora path and the prefix
+    # so a folder named 'wan/' or 'WAN_2.2/' or 'Wan-I2V/' all map to
+    # the same arch. The previous case-sensitive matcher silently let
+    # video LoRAs in unconventional folders fall through to the LLM
+    # interrogator, which would default-guess them as SDXL and pollute
+    # SDXL wizards.
+    lora_name_lower_cache = {}
     for lora_name in all_loras:
         if lora_name in _LORA_REGISTRY:
             continue  # already registered, skip (preserves user descriptions)
 
-        # Determine compatible architectures
+        # Normalise to forward-slashes + lowercase ONCE, also keep the
+        # un-normalised form for prefix matching (some prefixes are
+        # path-component anchored).
+        lora_norm = lora_name.replace("\\", "/").lower()
+        lora_name_lower_cache[lora_name] = lora_norm
+
         compatible_archs = []
         for arch, prefixes in _GUILD_LORA_PREFIXES.items():
             if not prefixes:
                 continue  # sd15 has no prefix filter
             for p in prefixes:
-                alt = p.replace("\\", "/") if "\\" in p else p.replace("/", "\\")
-                if lora_name.startswith(p) or lora_name.startswith(alt):
+                p_norm = p.replace("\\", "/").lower()
+                if lora_norm.startswith(p_norm):
+                    compatible_archs.append(arch)
+                    break
+                # Also catch the case where the prefix appears as any
+                # path component, not just the leading segment — e.g.
+                # 'something/wan/foo.safetensors' should still map to wan.
+                if f"/{p_norm}" in ("/" + lora_norm):
                     compatible_archs.append(arch)
                     break
 
-        # If no architecture matched by prefix, infer from name keywords
+        # If no architecture matched by prefix, infer from name keywords.
         if not compatible_archs:
-            lora_lower = lora_name.lower().replace("\\", "/")
             for hint_kw, hint_arch in LORA_NAME_ARCH_HINTS:
-                if hint_kw in lora_lower:
+                if hint_kw in lora_norm:
                     compatible_archs = [hint_arch]
                     break
             else:
-                compatible_archs = ["unknown"]  # unmatched — don't pollute arch dropdowns
+                compatible_archs = ["unknown"]  # don't pollute arch dropdowns
 
         _LORA_REGISTRY[lora_name] = {
             "archs": compatible_archs,
@@ -5041,6 +5263,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "version": VERSION,
                 "privacy_cleanup": PRIVACY_CLEANUP,
                 "prompt_enhance": PROMPT_ENHANCE,
+                "nsfw_mode": NSFW_MODE,  # frontend uses this to gate the NSFW avatar dropdown
             })
         elif self.path == '/api/has_video_model':
             # Check if WAN, LTX, or other video-capable models are available
@@ -5541,6 +5764,74 @@ class GuildHandler(SimpleHTTPRequestHandler):
             _setup_marker_done()
             return self.end_json(200, {"ok": True})
 
+        # -- /api/setup/wipe -- nuke every generated asset and force
+        # a fresh setup pass on next page load. Used by the "regenerate
+        # everything" button when the user wants a clean slate.
+        # Optional: char_ids list to wipe only specific wizards
+        # (default: wipe all).
+        if self.path == '/api/setup/wipe':
+            global _GENERATED_ASSETS
+            requested = data.get("char_ids")
+            wiped_assets = 0
+            wiped_files = 0
+            errors = []
+            try:
+                if requested:
+                    for cid in requested:
+                        if cid in _GENERATED_ASSETS:
+                            del _GENERATED_ASSETS[cid]
+                            wiped_assets += 1
+                else:
+                    wiped_assets = len(_GENERATED_ASSETS)
+                    _GENERATED_ASSETS = {}
+                _save_generated_assets()
+            except Exception as e:
+                errors.append(f"assets state: {e}")
+            # Also wipe the on-disk creations cache (or just the avatar
+            # files if we can identify them) so nothing lingers.
+            try:
+                if not requested and os.path.isdir(_CREATIONS_DIR):
+                    for entry in os.listdir(_CREATIONS_DIR):
+                        full = os.path.join(_CREATIONS_DIR, entry)
+                        try:
+                            if os.path.isfile(full):
+                                os.unlink(full)
+                                wiped_files += 1
+                            elif os.path.isdir(full):
+                                shutil.rmtree(full, ignore_errors=True)
+                        except Exception as e:
+                            errors.append(f"{entry}: {e}")
+            except Exception as e:
+                errors.append(f"creations dir: {e}")
+            # Reset the persistent setup marker so the next launch
+            # re-fires the Archivist setup flow.
+            try:
+                if _SETUP_MARKER_PATH and os.path.isfile(_SETUP_MARKER_PATH):
+                    os.unlink(_SETUP_MARKER_PATH)
+            except Exception as e:
+                errors.append(f"marker: {e}")
+            # Reset the in-memory setup state so /api/setup/status
+            # immediately reflects the wipe.
+            with _SETUP_LOCK:
+                _SETUP_STATE.update({
+                    "phase": "idle",
+                    "started_at": 0.0,
+                    "completed_at": 0.0,
+                    "background_url": None,
+                    "total_wizards": 0,
+                    "generated_count": 0,
+                    "avatars": [],
+                    "current": None,
+                    "current_id": None,
+                    "errors": [],
+                })
+            return self.end_json(200, {
+                "ok": True,
+                "wiped_assets": wiped_assets,
+                "wiped_files": wiped_files,
+                "errors": errors,
+            })
+
         # -- /api/avatar_generate --
         if self.path == '/api/avatar_generate':
             char_id = data.get('id', '')
@@ -5552,7 +5843,17 @@ class GuildHandler(SimpleHTTPRequestHandler):
             if not char:
                 return self.end_json(404, {"error": "Character not found"})
 
-            prompt_text = _build_avatar_prompt(char)
+            # Optional style override from the new Avatar Generate dropdown.
+            # If style_prompt is empty, fall back to the default
+            # _build_avatar_prompt (auto-best for this model). Otherwise we
+            # APPEND the user's chosen style to the wizard's archetype hint
+            # so the model gets both context and the user's intent.
+            style_prompt = (data.get("style_prompt") or "").strip()
+            base_prompt = _build_avatar_prompt(char)
+            if style_prompt:
+                prompt_text = f"{base_prompt}, {style_prompt}"
+            else:
+                prompt_text = base_prompt
             negative = "text, watermark, blurry, deformed, ugly, low quality, frame, border"
 
             # Per-model wizards (comfyui_model / custom_*) use their OWN model

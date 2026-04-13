@@ -75,6 +75,8 @@
             </div>
             
             <div class="sidebar-footer">
+                <button id="animate-all-btn" onclick="onAnimateAllClick()" title="Checking for video models..." disabled>✨ Animate All Avatars</button>
+                <a href="/static/guild.html" id="scaffold-link" title="Open The Travelling Wizard — scaffolds, workflows, configuration &amp; more">🧙 Travelling Wizard</a>
                 <button id="settings-btn">⚙️ Settings</button>
             </div>
         </aside>
@@ -97,8 +99,6 @@
                     <button id="lora-btn" title="Manage LoRA Enchantments for this wizard">Enchantments</button>
                     <button id="reset-btn">Reset Memory</button>
                     <button id="batch-generate-btn" title="Generate avatars for all guild members + tavern background">⚡ Generate All</button>
-                    <button id="animate-all-btn" onclick="onAnimateAllClick()" title="Checking for video models..." disabled style="display:inline-flex;align-items:center;gap:4px;">✨ Animate All Avatars</button>
-                    <a href="/static/guild.html" id="scaffold-link" title="Open The Travelling Wizard — scaffolds, workflows, configuration & more" style="display:inline-flex;align-items:center;gap:4px;text-decoration:none;">🧙 Travelling Wizard</a>
                 </div>
             </header>
             
@@ -175,6 +175,12 @@
             </div>
 
             <hr style="border:none;border-top:1px solid #333;margin:20px 0;">
+            <h3 style="margin-bottom:8px;">Wipe Generated Assets</h3>
+            <p style="margin-bottom:8px;color:#aaa;font-size:13px;">Delete <strong>every generated avatar and background</strong> from disk and from the in-memory state. The Archivist will re-fire setup mode on next page load and you can pick fresh styles for each wizard via the Generate Avatar dropdown. Use this if you've outgrown the auto-generated portraits and want to curate your own.</p>
+            <button id="wipe-assets-btn" style="background:#dc2626;color:#fff;padding:10px 20px;border-radius:8px;border:none;cursor:pointer;font-family:'Outfit';font-size:13px;font-weight:600;width:100%;transition:all 0.2s;">⚠ Wipe Every Avatar &amp; Background</button>
+            <p id="wipe-status" style="color:#888;font-size:12px;margin-top:6px;display:none;"></p>
+
+            <hr style="border:none;border-top:1px solid #333;margin:20px 0;">
             <h3 style="margin-bottom:8px;">Re-initialize Guild</h3>
             <p style="margin-bottom:8px;color:#aaa;font-size:13px;">Nuke all auto-detected and custom wizards, then re-scan ComfyUI for models. Core wizards (Imaginus, Transmutex, etc.) and their assets are preserved.</p>
             <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
@@ -208,6 +214,39 @@
     </div>
 
     <!-- Background Options Modal -->
+    <!-- Avatar Generate Modal — same shape as the bg modal but with
+         SFW / NSFW / Custom style buckets. NSFW options stay hidden
+         on SFW builds via the body.nsfw-build class gate (see app.js). -->
+    <div id="avatar-modal" class="modal hidden">
+        <div class="modal-content">
+            <h3>Generate Avatar</h3>
+            <p style="margin-bottom:12px;">Pick a portrait style for this wizard.</p>
+            <label style="color:#aaa;font-size:13px;">Style</label>
+            <select id="avatar-style-select" style="width:100%;padding:8px;margin:6px 0 14px;border-radius:8px;border:1px solid #444;background:#1e1e2e;color:#eee;font-size:14px;">
+                <optgroup label="SFW">
+                    <option value="sfw_default">Default (auto-best for this model)</option>
+                    <option value="sfw_dramatic">Dramatic Portrait (chiaroscuro, intense gaze)</option>
+                    <option value="sfw_heroic">Heroic Half-Body (low-angle, dynamic pose)</option>
+                    <option value="sfw_painted">Painted Renaissance (oil-on-canvas style)</option>
+                    <option value="sfw_anime">Anime Half-Body (cel-shaded, expressive)</option>
+                    <option value="sfw_neutral">Studio Neutral (clean background, soft light)</option>
+                </optgroup>
+                <optgroup label="NSFW" id="avatar-nsfw-group" style="display:none;">
+                    <option value="nsfw_alluring">Alluring Portrait (sultry, suggestive)</option>
+                    <option value="nsfw_boudoir">Boudoir (low light, intimate)</option>
+                    <option value="nsfw_revealing">Revealing (tasteful, sheer)</option>
+                    <option value="nsfw_explicit">Explicit (anatomical, hardcore)</option>
+                </optgroup>
+                <option value="custom">Custom (write your own prompt below)</option>
+            </select>
+            <textarea id="avatar-custom-prompt" placeholder="The app's best guess will appear here when you pick Custom — edit freely." style="width:100%;min-height:80px;padding:8px;border-radius:8px;border:1px solid #444;background:#1e1e2e;color:#eee;font-size:14px;display:none;resize:vertical;"></textarea>
+            <div class="modal-actions" style="margin-top:16px;">
+                <button id="avatar-cancel">Cancel</button>
+                <button id="avatar-generate-now" style="background:var(--accent);color:white;">Generate</button>
+            </div>
+        </div>
+    </div>
+
     <div id="bg-modal" class="modal hidden">
         <div class="modal-content">
             <h3>Generate Background</h3>

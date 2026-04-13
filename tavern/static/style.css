@@ -191,13 +191,24 @@
     inherits: false;
 }
 
-/* ── Active character name shimmer ── */
+/* ── Active character name shimmer ──
+   Uses --text-main (the actual defined variable). The previous
+   --text-primary reference was undefined, which made the linear
+   gradient invalid and -webkit-text-fill-color: transparent rendered
+   the wizard name completely invisible in the chat header. */
 #active-character-name {
-    background: linear-gradient(90deg, var(--text-primary) 0%, var(--text-primary) 40%, rgba(178,70,242,0.9) 50%, var(--text-primary) 60%, var(--text-primary) 100%);
+    background: linear-gradient(90deg,
+        var(--text-main) 0%,
+        var(--text-main) 40%,
+        rgba(178,70,242,0.9) 50%,
+        var(--text-main) 60%,
+        var(--text-main) 100%);
     background-size: 200% 100%;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+    /* Fallback for browsers that don't support background-clip: text */
+    color: var(--text-main);
     animation: nameShimmer 4s ease-in-out infinite;
 }
 @keyframes nameShimmer {
@@ -404,16 +415,62 @@ body {
 .character-info h3, .header-titles h2 { font-size: 14px; font-weight: 600; color: #fff; }
 .character-info p, .header-titles p { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 
-.sidebar-footer { padding: 12px; border-top: 1px solid var(--border-color); }
-#settings-btn {
-    width: 100%; border: 1px solid var(--border-color); background: var(--bg-panel);
-    color: #ddd; padding: 8px; border-radius: 8px; cursor: pointer;
-    font-family: 'Outfit'; font-weight: 600; font-size: 13px;
+.sidebar-footer {
+    padding: 12px;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.sidebar-footer #animate-all-btn,
+.sidebar-footer #scaffold-link,
+.sidebar-footer #settings-btn {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--border-color);
+    background: var(--bg-panel);
+    color: #ddd;
+    padding: 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    text-align: center;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
     transition: all 0.3s;
 }
-#settings-btn:hover {
+.sidebar-footer #settings-btn:hover {
     background: var(--accent); color: #fff; border-color: var(--accent);
     box-shadow: 0 0 20px var(--accent-glow);
+    transform: translateY(-1px);
+}
+.sidebar-footer #animate-all-btn {
+    /* Override the chat-header gradient style — in the sidebar it should
+       match the other footer buttons unless explicitly enabled. */
+    background: var(--bg-panel) !important;
+    color: #ddd !important;
+}
+.sidebar-footer #animate-all-btn:not(:disabled):hover {
+    background: linear-gradient(135deg, #6c5ce7, #a29bfe) !important;
+    color: #fff !important;
+    border-color: #8b83f5;
+    box-shadow: 0 0 20px rgba(108, 92, 231, 0.4);
+    transform: translateY(-1px);
+}
+.sidebar-footer #animate-all-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+.sidebar-footer #scaffold-link:hover {
+    background: rgba(178, 70, 242, 0.15);
+    color: #fff;
+    border-color: var(--accent);
+    box-shadow: 0 0 15px var(--accent-glow);
     transform: translateY(-1px);
 }
 
@@ -1226,4 +1283,71 @@ textarea::placeholder { color: #555; }
 }
 .wt-close:active {
     transform: scale(0.95);
+}
+
+/* ── Archivist lockdown mode ─────────────────────────────────────── */
+/* Applied to <body> while first-run / restart-recovery setup is
+   running. The Archivist is the only thing the user can interact with;
+   every other wizard, the chat header buttons, and the sidebar
+   footer's Animate-All / Travelling Wizard links are disabled.
+   Only #settings-btn stays clickable so the user can fix a bad LLM /
+   ComfyUI URL if connection failed. */
+body.archivist-lockdown .character-card {
+    pointer-events: none;
+    opacity: 0.45;
+    filter: grayscale(0.5);
+    cursor: not-allowed;
+}
+body.archivist-lockdown .chat-header-actions button,
+body.archivist-lockdown .chat-header-actions a {
+    pointer-events: none;
+    opacity: 0.4;
+    filter: grayscale(0.6);
+    cursor: not-allowed;
+}
+body.archivist-lockdown #animate-all-btn,
+body.archivist-lockdown #scaffold-link {
+    pointer-events: none;
+    opacity: 0.4;
+    filter: grayscale(0.6);
+    cursor: not-allowed;
+}
+/* Settings button stays alive — user may need it to fix LLM/ComfyUI URLs */
+body.archivist-lockdown #settings-btn {
+    pointer-events: auto;
+    opacity: 1;
+    filter: none;
+    cursor: pointer;
+    /* Subtle highlight so the user notices it's the only escape */
+    box-shadow: 0 0 0 2px rgba(252, 211, 77, 0.35),
+                0 0 16px rgba(252, 211, 77, 0.25);
+}
+/* Lockdown banner above the chat input */
+body.archivist-lockdown #chat-input-area::before {
+    content: "🔒 Setup in progress — chat unlocks when the Archivist finishes.";
+    display: block;
+    text-align: center;
+    padding: 6px 12px;
+    background: linear-gradient(90deg, rgba(252, 211, 77, 0.12), rgba(245, 158, 11, 0.08));
+    border-top: 1px solid rgba(252, 211, 77, 0.3);
+    color: #fcd34d;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: 'Outfit', sans-serif;
+    letter-spacing: 0.02em;
+}
+/* Inline progress lines from the backend narration */
+.archivist-progress-line {
+    margin: 4px 0 4px 56px;
+    padding: 4px 12px;
+    font-size: 11px;
+    font-style: italic;
+    color: #fde68a;
+    opacity: 0.8;
+    font-family: 'Outfit', sans-serif;
+}
+.archivist-progress-line strong {
+    color: #fff;
+    font-weight: 700;
+    font-style: normal;
 }
