@@ -1509,7 +1509,9 @@ function ScaffoldEditor({ scaffolds, setScaffolds }) {
   const saveTimerRef = useRef(null);
   const scaffold = scaffolds.find(s => s.id === selectedId);
 
-  // Debounced save to server — persists scaffold edits after 800ms of inactivity
+  // Debounced save to server — persists scaffold edits after 800ms of inactivity.
+  // Sends the full editable surface so the step editor, lora slots, and
+  // access flags actually round-trip through the server.
   const persistScaffold = (updated) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
@@ -1521,6 +1523,7 @@ function ScaffoldEditor({ scaffolds, setScaffolds }) {
           id: updated.id,
           name: updated.name,
           subtext: updated.description || updated.subtext || "",
+          description: updated.description || "",
           archetype: updated.archetype || "",
           system_prompt: [
             updated.system_prompt_header || "",
@@ -1528,6 +1531,14 @@ function ScaffoldEditor({ scaffolds, setScaffolds }) {
           ].join("\n"),
           color1: updated.color1 || "",
           color2: updated.color2 || "",
+          default_model: updated.default_model || "",
+          default_arch: updated.default_arch || "",
+          // Full visual step editor state
+          steps: updated.steps || [],
+          lora_slots: updated.lora_slots || [],
+          workflow_key: updated.workflow_key || "",
+          nsfw: !!updated.nsfw,
+          admin_only: !!updated.admin_only,
         }),
       })
         .then(r => r.json())
@@ -1541,31 +1552,132 @@ function ScaffoldEditor({ scaffolds, setScaffolds }) {
     persistScaffold(updated);
   };
 
+  // Create a new scaffold both locally and on the server so a page
+  // refresh doesn't wipe it. The server assigns the canonical id (with
+  // custom_ prefix); we adopt whatever it returns.
   const addScaffold = () => {
     const newScaff = newScaffold();
-    setScaffolds(prev => [...prev, newScaff]);
-    setSelectedId(newScaff.id);
+    const id = "custom_" + newScaff.id;
+    fetch("/api/scaffold_create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: id,
+        name: newScaff.name || "New Scaffold",
+        description: newScaff.description || "",
+        subtext: newScaff.description || "",
+        archetype: newScaff.archetype || "",
+        system_prompt: "",
+        color1: newScaff.color1 || "#7c3aed",
+        color2: newScaff.color2 || "#f59e0b",
+        steps: newScaff.steps || [],
+      }),
+    })
+      .then(r => r.json())
+      .then(() => {
+        const local = { ...newScaff, id };
+        setScaffolds(prev => [...prev, local]);
+        setSelectedId(id);
+      })
+      .catch(() => {
+        // Network down — still add locally so the user isn't stuck,
+        // but the save will be lost on refresh.
+        setScaffolds(prev => [...prev, newScaff]);
+        setSelectedId(newScaff.id);
+      });
   };
 
   // Create scaffold from a parsed workflow object
   const importFromWorkflow = (wf) => {
     const newScaff = scaffoldFromParsedWorkflow(wf);
-    setScaffolds(prev => [...prev, newScaff]);
-    setSelectedId(newScaff.id);
-    setShowImportPanel(false);
+    const id = "custom_" + newScaff.id;
+    fetch("/api/scaffold_create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: id,
+        name: newScaff.name || "Imported Scaffold",
+        description: newScaff.description || "",
+        subtext: newScaff.description || "",
+        archetype: newScaff.archetype || "",
+        system_prompt: "",
+        color1: newScaff.color1 || "#7c3aed",
+        color2: newScaff.color2 || "#f59e0b",
+        steps: newScaff.steps || [],
+        workflow_key: newScaff.workflow_key || "",
+      }),
+    })
+      .then(() => {
+        const local = { ...newScaff, id };
+        setScaffolds(prev => [...prev, local]);
+        setSelectedId(id);
+        setShowImportPanel(false);
+      })
+      .catch(() => {
+        setScaffolds(prev => [...prev, newScaff]);
+        setSelectedId(newScaff.id);
+        setShowImportPanel(false);
+      });
   };
 
   const deleteScaffold = () => {
-    setScaffolds(prev => prev.filter(s => s.id !== selectedId));
-    if (scaffolds.length > 1) setSelectedId(scaffolds.find(s => s.id !== selectedId)?.id);
+    if (!selectedId) return;
+    // Built-in studios can't be deleted — warn and bail.
+    if (!selectedId.startsWith("custom_")) {
+      alert("Built-in scaffolds can't be deleted. Use the Guild's banish flow instead.");
+      return;
+    }
+    const nextId = scaffolds.find(s => s.id !== selectedId)?.id;
+    fetch("/api/scaffold_delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: selectedId }),
+    })
+      .then(() => {
+        setScaffolds(prev => prev.filter(s => s.id !== selectedId));
+        if (nextId) setSelectedId(nextId);
+      })
+      .catch(() => {
+        // Server unreachable — remove locally anyway so the UI isn't stuck
+        setScaffolds(prev => prev.filter(s => s.id !== selectedId));
+        if (nextId) setSelectedId(nextId);
+      });
   };
 
   const duplicateScaffold = () => {
+    if (!scaffold) return;
     const dup = deepClone(scaffold);
     dup.id = uid();
     dup.name = dup.name + " (Copy)";
-    setScaffolds(prev => [...prev, dup]);
-    setSelectedId(dup.id);
+    const id = "custom_" + dup.id;
+    fetch("/api/scaffold_create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id,
+        name: dup.name,
+        description: dup.description || "",
+        subtext: dup.description || "",
+        archetype: dup.archetype || "",
+        system_prompt: "",
+        color1: dup.color1 || "#7c3aed",
+        color2: dup.color2 || "#f59e0b",
+        steps: dup.steps || [],
+        lora_slots: dup.lora_slots || [],
+        workflow_key: dup.workflow_key || "",
+        nsfw: !!dup.nsfw,
+        admin_only: !!dup.admin_only,
+      }),
+    })
+      .then(() => {
+        const local = { ...dup, id };
+        setScaffolds(prev => [...prev, local]);
+        setSelectedId(id);
+      })
+      .catch(() => {
+        setScaffolds(prev => [...prev, dup]);
+        setSelectedId(dup.id);
+      });
   };
 
   if (showImportPanel) {
@@ -2934,7 +3046,10 @@ function SignalBridgeSettings() {
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
   }, [config]);
 
-  // Load server-side scaffolds (auto-detected wizards) and merge with built-ins
+  // Load server-side scaffolds (auto-detected wizards + persisted
+  // overrides) and merge with built-ins. The server now returns the
+  // full editable surface (steps, lora_slots, nsfw flags, workflow_key)
+  // so refreshing the page restores the user's edits from disk.
   useEffect(() => {
     fetch("/api/scaffolds")
       .then(r => r.ok ? r.json() : [])
@@ -2947,14 +3062,14 @@ function SignalBridgeSettings() {
             .map(s => ({
               id: s.id,
               name: s.name,
-              description: s.subtext || "",
-              workflow_key: s.id,
+              description: s.description || s.subtext || "",
+              workflow_key: s.workflow_key || s.id,
               system_prompt_header: s.system_prompt || "",
               system_prompt_rules: [],
-              steps: [],
-              nsfw: false,
-              admin_only: false,
-              lora_slots: [],
+              steps: s.steps || [],
+              nsfw: !!s.nsfw,
+              admin_only: !!s.admin_only,
+              lora_slots: s.lora_slots || [],
               color1: s.color1 || "",
               color2: s.color2 || "",
               archetype: s.archetype || "",

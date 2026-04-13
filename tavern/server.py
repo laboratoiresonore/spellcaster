@@ -5861,11 +5861,17 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 is_custom = char_id.startswith("custom_")
                 is_model = char_id.startswith("comfyui_") or char_id.startswith("model_")
                 banished = char_id in _BANISHED_IDS
+                # Pull per-scaffold overrides so the Travelling Wizard's
+                # step editor / lora slot config / access flags survive
+                # a page reload. These fields are opt-in — scaffolds
+                # without overrides get sensible defaults on the client.
+                ov = _SCAFFOLD_OVERRIDES.get(char_id, {}) or {}
 
                 scaffolds.append({
                     "id": char_id,
                     "name": studio.get("name", "Unknown"),
                     "subtext": studio.get("subtext", ""),
+                    "description": ov.get("description", ""),
                     "type": studio.get("type", "studio"),
                     "archetype": studio.get("archetype", ""),
                     "system_prompt": studio.get("system_prompt", ""),
@@ -5878,6 +5884,12 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     "source": "studio" if is_studio else "custom" if is_custom
                               else "auto_model" if is_model else "generated",
                     "build_fns": studio.get("build_fns", []),
+                    # Extended editor state (batch C) — all optional
+                    "steps": ov.get("steps", []),
+                    "lora_slots": ov.get("lora_slots", []),
+                    "workflow_key": ov.get("workflow_key", ""),
+                    "nsfw": ov.get("nsfw", False),
+                    "admin_only": ov.get("admin_only", False),
                 })
             return self.end_json(200, scaffolds)
         elif self.path == '/api/signal_bridge_config':
@@ -6357,10 +6369,16 @@ class GuildHandler(SimpleHTTPRequestHandler):
             char_id = data.get('id', '')
             if not char_id:
                 return self.end_json(400, {"error": "Missing scaffold id"})
-            # Editable fields — anything the scaffold editor can change
+            # Editable fields — anything the scaffold editor can change.
+            # Extended in batch C to include the entire visual step
+            # editor (steps, lora_slots, workflow_key) plus the access
+            # flags (nsfw, admin_only) so refreshing the Travelling
+            # Wizard no longer wipes a user's edits.
             EDITABLE = {
                 "name", "subtext", "archetype", "system_prompt",
                 "color1", "color2", "default_model", "default_arch",
+                "steps", "lora_slots", "nsfw", "admin_only",
+                "workflow_key", "description",
             }
             overrides = {k: v for k, v in data.items()
                          if k in EDITABLE and v is not None}
@@ -6387,6 +6405,82 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "status": "ok", "id": char_id,
                 "updated": list(overrides.keys()),
             })
+
+        # -- /api/scaffold_create -- create a new custom scaffold
+        # entry. Used by the Travelling Wizard's "Blank Scaffold" /
+        # "Duplicate" buttons so newly-added scaffolds survive a
+        # refresh. The created entry is stored in _SCAFFOLD_OVERRIDES
+        # AND added to _STUDIO_BY_ID + CHARS_CACHE so the Wizard Guild
+        # picks it up immediately (no restart needed).
+        elif self.path == '/api/scaffold_create':
+            char_id = (data.get('id') or '').strip()
+            if not char_id:
+                return self.end_json(400, {"error": "Missing scaffold id"})
+            if not char_id.startswith('custom_'):
+                char_id = 'custom_' + char_id
+            if char_id in _STUDIO_BY_ID:
+                return self.end_json(409, {"error": "scaffold already exists"})
+            entry = {
+                "id": char_id,
+                "name": data.get('name') or 'New Scaffold',
+                "subtext": data.get('subtext') or data.get('description') or '',
+                "description": data.get('description') or '',
+                "archetype": data.get('archetype') or '',
+                "system_prompt": data.get('system_prompt') or '',
+                "color1": data.get('color1') or '#7c3aed',
+                "color2": data.get('color2') or '#f59e0b',
+                "default_model": data.get('default_model') or '',
+                "default_arch": data.get('default_arch') or '',
+                "type": "custom",
+                "source": "custom",
+                "build_fns": data.get('build_fns') or [],
+                "steps": data.get('steps') or [],
+                "lora_slots": data.get('lora_slots') or [],
+                "workflow_key": data.get('workflow_key') or '',
+                "nsfw": bool(data.get('nsfw', False)),
+                "admin_only": bool(data.get('admin_only', False)),
+            }
+            _SCAFFOLD_OVERRIDES[char_id] = dict(entry)
+            _save_scaffold_overrides()
+            _STUDIO_BY_ID[char_id] = dict(entry)
+            # Mirror into CHARS_CACHE so the wizard sidebar refreshes
+            CHARS_CACHE.append({
+                "id": char_id,
+                "name": entry["name"],
+                "subtext": entry["subtext"],
+                "color1": entry["color1"],
+                "color2": entry["color2"],
+                "archetype": entry["archetype"],
+                "type": "custom",
+                "source": "custom",
+            })
+            print(f"  [Guild] Scaffold created: {char_id} ({entry['name']})")
+            return self.end_json(200, {"status": "ok", "id": char_id})
+
+        # -- /api/scaffold_delete -- remove a custom scaffold and
+        # purge it from the override store. Built-in studios cannot
+        # be deleted (only banished, which is a separate flow).
+        elif self.path == '/api/scaffold_delete':
+            char_id = (data.get('id') or '').strip()
+            if not char_id:
+                return self.end_json(400, {"error": "Missing scaffold id"})
+            if not char_id.startswith('custom_'):
+                return self.end_json(403, {
+                    "error": "only custom_* scaffolds can be deleted; "
+                             "use banish for built-in studios"})
+            removed = False
+            if char_id in _SCAFFOLD_OVERRIDES:
+                del _SCAFFOLD_OVERRIDES[char_id]
+                _save_scaffold_overrides()
+                removed = True
+            if char_id in _STUDIO_BY_ID:
+                del _STUDIO_BY_ID[char_id]
+                removed = True
+            CHARS_CACHE[:] = [c for c in CHARS_CACHE if c.get('id') != char_id]
+            if not removed:
+                return self.end_json(404, {"error": "scaffold not found"})
+            print(f"  [Guild] Scaffold deleted: {char_id}")
+            return self.end_json(200, {"status": "ok", "id": char_id})
 
         # -- /api/summon_wizard -- create a new wizard character from a model
         elif self.path == '/api/summon_wizard':
