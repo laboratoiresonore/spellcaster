@@ -2473,6 +2473,16 @@ _LORA_REGISTRY_PATH = os.path.join(_STATE_DIR, "lora_registry.json")
 # Track which wizards have had their LoRA interrogation completed
 _LORA_INTERROGATED = set()
 
+# Auto-blacklist tunables: a LoRA accumulates failure entries against the
+# specific checkpoint it was paired with. After this many failures within
+# the TTL window, _get_loras_for_wizard marks it as `blocked` so the F10
+# panel can grey it out. The user can manually unblock from the panel.
+LORA_FAILURE_THRESHOLD = 3
+LORA_FAILURE_TTL_DAYS = 30
+# Per-LoRA failure list is hard-capped so a runaway error loop can't bloat
+# the registry file unbounded.
+_LORA_FAILURE_HISTORY_MAX = 50
+
 
 def _load_lora_registry():
     """Load persisted LoRA registry from disk."""
@@ -2513,6 +2523,87 @@ def _save_lora_registry():
             os.remove(tmp_path)
         except Exception:
             pass
+
+
+_CKPT_LOADER_CLASSES = (
+    "CheckpointLoaderSimple", "CheckpointLoader", "CheckpointLoaderNF4",
+    "CheckpointLoaderGGUF", "UNETLoader", "UnetLoaderGGUF", "UNetLoader",
+)
+_LORA_LOADER_CLASSES = (
+    "LoraLoader", "LoraLoaderModelOnly", "LoraLoaderTagsQuery", "Power Lora Loader (rgthree)",
+)
+
+
+def _extract_workflow_loras_and_ckpt(workflow):
+    """Pull (checkpoint_name, [lora_names]) out of a workflow dict.
+
+    Used to pair a failed dispatch with the LoRAs that were active at the
+    time, so we can record blame against the (lora, model) pair.
+    """
+    if not isinstance(workflow, dict):
+        return None, []
+    ckpt = None
+    loras = []
+    for nid, node in workflow.items():
+        if not isinstance(node, dict):
+            continue
+        ct = node.get("class_type", "")
+        inputs = node.get("inputs", {}) or {}
+        if ct in _CKPT_LOADER_CLASSES and not ckpt:
+            ckpt = (inputs.get("ckpt_name") or inputs.get("unet_name")
+                    or inputs.get("model_name") or "")
+        elif ct in _LORA_LOADER_CLASSES:
+            ln = inputs.get("lora_name", "")
+            if ln:
+                loras.append(ln)
+    return ckpt, loras
+
+
+def _record_lora_failure(workflow, error_msg):
+    """Record a failed dispatch against every LoRA in the workflow.
+
+    Pairs each LoRA with the checkpoint that was loaded so failures are
+    model-specific (a LoRA that fails on Klein may be fine on SDXL).
+    Trims old entries past LORA_FAILURE_TTL_DAYS to keep the registry
+    bounded. Silently no-ops if no checkpoint or LoRAs found.
+    """
+    ckpt, loras = _extract_workflow_loras_and_ckpt(workflow)
+    if not ckpt or not loras:
+        return
+    now_ts = time.time()
+    cutoff = now_ts - (LORA_FAILURE_TTL_DAYS * 86400)
+    err_short = (str(error_msg) or "")[:200]
+    touched = False
+    for lora_name in loras:
+        entry = _LORA_REGISTRY.get(lora_name)
+        if entry is None:
+            entry = {"archs": [], "purpose": "", "tags": [], "source": "discovered"}
+            _LORA_REGISTRY[lora_name] = entry
+        failures = entry.get("failures") or []
+        failures = [f for f in failures if f.get("ts", 0) >= cutoff]
+        failures.append({"model": ckpt, "error": err_short, "ts": now_ts})
+        entry["failures"] = failures[-_LORA_FAILURE_HISTORY_MAX:]
+        touched = True
+    if touched:
+        try:
+            _save_lora_registry()
+        except Exception as e:
+            print(f"  [LoRA] Failed to persist failure record: {e}")
+        print(f"  [LoRA] Recorded failure against {ckpt} for "
+              f"{len(loras)} lora(s): {err_short[:80]}")
+
+
+def _lora_blocked_for_model(info, wizard_model):
+    """Return (blocked, recent_count) for a LoRA against a specific model."""
+    if not wizard_model:
+        return False, 0
+    failures = info.get("failures") or []
+    if not failures:
+        return False, 0
+    cutoff = time.time() - (LORA_FAILURE_TTL_DAYS * 86400)
+    recent = [f for f in failures
+              if f.get("model") == wizard_model and f.get("ts", 0) >= cutoff]
+    return (len(recent) >= LORA_FAILURE_THRESHOLD), len(recent)
 
 
 def _fetch_all_loras_from_comfyui(comfy_url):
@@ -2977,6 +3068,7 @@ def _get_loras_for_wizard(char_id):
     # video wizard for the SAME video arch.
     VIDEO_ARCHS = {"wan", "ltx", "seedvr", "cogvideo", "svd", "hunyuan_dit"}
     wizard_is_video = arch in VIDEO_ARCHS
+    wizard_model = char.get("model_name", "")
 
     compatible = []
     for lora_name, info in _LORA_REGISTRY.items():
@@ -2992,6 +3084,10 @@ def _get_loras_for_wizard(char_id):
             continue
         if wizard_is_video and lora_video_tags and arch not in lora_video_tags:
             continue
+        # Auto-blacklist: if this LoRA has racked up failures against
+        # this wizard's exact checkpoint, mark blocked so the F10 panel
+        # can grey it out (and the user can manually unblock).
+        blocked, failure_count = _lora_blocked_for_model(info, wizard_model)
         # Get per-wizard enabled state from localStorage (frontend manages this)
         compatible.append({
             "name": lora_name,
@@ -3007,10 +3103,16 @@ def _get_loras_for_wizard(char_id):
             # via the F10 LoRA interrogation flow.
             "trigger_words": info.get("trigger_words", ""),
             "default_strength": info.get("default_strength", 0.7),
+            # Auto-blacklist surface for the F10 panel.
+            "blocked": blocked,
+            "failure_count": failure_count,
         })
 
-    # Sort: known purpose first, then alphabetical
-    compatible.sort(key=lambda x: (0 if x["purpose"] else 1, x["display_name"].lower()))
+    # Sort: known purpose first, then alphabetical. Blocked rows sink to
+    # the bottom so working LoRAs are always front-and-center.
+    compatible.sort(key=lambda x: (1 if x["blocked"] else 0,
+                                   0 if x["purpose"] else 1,
+                                   x["display_name"].lower()))
     return compatible
 
 
@@ -3370,6 +3472,43 @@ def _find_output_node(workflow):
     return None
 
 
+def _image_is_degenerate(image_url):
+    """Return True if a generated image is essentially uniform.
+
+    A "degenerate" output is one where the model produced a black frame,
+    solid color, or pure noise — usually the symptom of a broken LoRA
+    pairing or a busted preset. Detected by computing the mean luminance
+    and checking what fraction of pixels are within ±6/255 of it; if 98%+
+    of pixels are within that band, the image carries no real content.
+
+    Defensive: PIL is an optional dep — if it isn't available, return
+    False so the dispatch path is unchanged.
+    """
+    try:
+        from PIL import Image
+        import io
+    except ImportError:
+        return False
+    try:
+        with urllib.request.urlopen(image_url, timeout=10) as resp:
+            data = resp.read()
+        if len(data) < 200:
+            return True  # truncated / empty payload
+        img = Image.open(io.BytesIO(data)).convert("L")
+        # Downsample for speed — full-res histogram is overkill.
+        img.thumbnail((256, 256))
+        pixels = list(img.getdata())
+        if not pixels:
+            return True
+        mean = sum(pixels) / len(pixels)
+        within = sum(1 for p in pixels if abs(p - mean) <= 6)
+        ratio = within / len(pixels)
+        return ratio >= 0.98
+    except Exception as e:
+        print(f"  [Quality] degeneracy check failed: {e}")
+        return False
+
+
 def _dispatch_workflow(workflow, comfy_url, timeout=180):
     """Submit an arbitrary workflow to ComfyUI, poll for results.
 
@@ -3434,6 +3573,13 @@ def _dispatch_workflow(workflow, comfy_url, timeout=180):
         except Exception:
             detail = str(e)
         print(f"  [Guild] ComfyUI rejected workflow: {detail}")
+        # Record (lora, model) failure pairs so repeat offenders get
+        # auto-blacklisted by _get_loras_for_wizard. Network/offline
+        # errors are NOT recorded — only ComfyUI-side rejections.
+        try:
+            _record_lora_failure(workflow, detail)
+        except Exception:
+            pass
         raise Exception(f"ComfyUI rejected workflow: {detail}")
     except urllib.error.URLError as e:
         raise Exception(f"ComfyUI is offline at {comfy_url}: {e}")
@@ -3461,6 +3607,10 @@ def _dispatch_workflow(workflow, comfy_url, timeout=180):
                 if status.get("status_str") == "error":
                     msgs = status.get("messages", [])
                     err_msg = msgs[-1][1].get("exception_message", "Unknown error") if msgs else "Unknown error"
+                    try:
+                        _record_lora_failure(workflow, err_msg)
+                    except Exception:
+                        pass
                     raise Exception(f"ComfyUI execution failed: {err_msg}")
 
                 outputs = entry.get("outputs", {})
@@ -3483,6 +3633,16 @@ def _dispatch_workflow(workflow, comfy_url, timeout=180):
                             if sub:
                                 url += f"&subfolder={sub}"
                             images.append(url)
+                        # Quality gate: if the first image is essentially
+                        # uniform (blank / solid color / pure noise) treat
+                        # as a failure so the LoRA blacklist can learn.
+                        if images and _image_is_degenerate(images[0]):
+                            err = "ComfyUI produced degenerate output (blank or solid color)"
+                            try:
+                                _record_lora_failure(workflow, err)
+                            except Exception:
+                                pass
+                            raise Exception(err)
                         return {"type": "images", "urls": images,
                                 "prompt_id": prompt_id}
 
@@ -3501,7 +3661,11 @@ def _dispatch_workflow(workflow, comfy_url, timeout=180):
                             return {"type": "videos", "urls": urls,
                                     "prompt_id": prompt_id}
         except Exception as e:
-            if "ComfyUI execution failed" in str(e):
+            # Propagate hard failures (execution errors, degenerate output);
+            # transient polling hiccups fall through to the next iteration.
+            es = str(e)
+            if ("ComfyUI execution failed" in es
+                    or "degenerate output" in es):
                 raise
             pass
 
@@ -6437,6 +6601,53 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "updated": updated,
                 "char_id": char_id,
             })
+
+        # -- /api/lora_unblock -- clear the auto-blacklist for one LoRA
+        elif self.path == '/api/lora_unblock':
+            lora_name = data.get('lora_name', '')
+            model = data.get('model', '')  # optional: only this model
+            if not lora_name or lora_name not in _LORA_REGISTRY:
+                return self.end_json(404, {"error": "unknown lora"})
+            entry = _LORA_REGISTRY[lora_name]
+            failures = entry.get("failures") or []
+            before = len(failures)
+            if model:
+                entry["failures"] = [f for f in failures
+                                     if f.get("model") != model]
+            else:
+                entry["failures"] = []
+            cleared = before - len(entry["failures"])
+            try:
+                _save_lora_registry()
+            except Exception as e:
+                print(f"  [LoRA] unblock save failed: {e}")
+            return self.end_json(200, {"status": "ok", "cleared": cleared})
+
+        # -- /api/telemetry/parse_miss -- record JSON-leak near-misses
+        elif self.path == '/api/telemetry/parse_miss':
+            fragment = (data.get('fragment') or '')[:500]
+            ts = data.get('ts') or time.time()
+            try:
+                log_path = os.path.join(_STATE_DIR, 'parse_miss.jsonl')
+                with open(log_path, 'a', encoding='utf-8') as f:
+                    f.write(json.dumps({"ts": ts, "fragment": fragment}) + "\n")
+            except Exception as e:
+                print(f"  [Telemetry] parse_miss log failed: {e}")
+            return self.end_json(200, {"status": "ok"})
+
+        # -- /api/telemetry/dispatch_ok -- record successful dispatches
+        elif self.path == '/api/telemetry/dispatch_ok':
+            build_fn = (data.get('build_fn') or '')[:80]
+            char_id = (data.get('char_id') or '')[:80]
+            ts = data.get('ts') or time.time()
+            try:
+                log_path = os.path.join(_STATE_DIR, 'dispatch_log.jsonl')
+                with open(log_path, 'a', encoding='utf-8') as f:
+                    f.write(json.dumps({"ts": ts, "build_fn": build_fn,
+                                        "char_id": char_id}) + "\n")
+            except Exception as e:
+                print(f"  [Telemetry] dispatch_ok log failed: {e}")
+            return self.end_json(200, {"status": "ok"})
 
         # -- /api/settings -- update Guild settings (privacy, etc.)
         elif self.path == '/api/settings':
