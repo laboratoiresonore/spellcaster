@@ -60,7 +60,7 @@ Sections (must match the names the backend looks for):
 <!-- WIZARD_SPEECH:welcome -->
 *Ahem.* **Welcome to the Wizard Guild.**
 
-![Spellcaster](/asset_image/wizard_banner.gif)
+![Spellcaster](assets/wizard_banner.gif)
 
 I'm The Archivist — the wizard who shows up first to keep you company
 while the others get themselves dressed. Right now every wizard you'll
@@ -98,7 +98,7 @@ VRAM. Everything runs locally. Nothing leaves your machine.
 <!-- WIZARD_SPEECH:scaffolding -->
 **Why "scaffolding" matters.**
 
-![The Wizard Guild](/asset_image/wizardguild.png)
+![The Wizard Guild](assets/wizardguild.png)
 
 Local language models are *small*. A 7B-parameter model is brilliant
 at conversation but terrible at remembering long instructions or
@@ -158,7 +158,7 @@ with other Guild users.
 <!-- WIZARD_SPEECH:sillytavern -->
 **The Wizard Guild as a SillyTavern back end.**
 
-![Imaginus](/character_image/Imaginus.png) ![Sceneshifter](/character_image/Sceneshifter.png) ![Restyler](/character_image/Restyler.png) ![Cinematic](/character_image/Cinematic.png)
+![Imaginus](tavern/characters/Imaginus.png) ![Sceneshifter](tavern/characters/Sceneshifter.png) ![Restyler](tavern/characters/Restyler.png) ![Cinematic](tavern/characters/Cinematic.png)
 
 If you use [SillyTavern](https://github.com/SillyTavern/SillyTavern) for
 character roleplay, the Guild plugs straight into it. SillyTavern keeps
@@ -184,7 +184,7 @@ speaks LLM, it can ask the Guild to generate art.
 <!-- WIZARD_SPEECH:gimp -->
 **When you want a real image editor: GIMP.**
 
-![Inpaint demo](/asset_image/demo_step2_inpaint.png)
+![Inpaint demo](assets/demo_step2_inpaint.png)
 
 The Wizard Guild is built for *conversation* — describe what you want,
 get a result. But sometimes you want pixel-level control: a selection
