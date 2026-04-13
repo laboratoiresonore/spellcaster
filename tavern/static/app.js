@@ -903,12 +903,32 @@ function _renderSimpleMarkdown(md) {
     });
     // Pull out images BEFORE escaping so the markup survives.
     // Format: ![alt text](url)
-    // Allowed URL schemes: relative paths starting with /, or http/https.
+    // Accepts:
+    //   - http(s) absolute URLs
+    //   - server-rooted paths (/asset_image/foo.png — legacy)
+    //   - repo-relative paths (assets/foo.png, tavern/characters/foo.png)
+    // The repo-relative form is what GitHub renders natively, so the
+    // README is the single source of truth. We rewrite those paths to
+    // the matching server route so the in-Guild markdown renderer can
+    // serve them through tavern/server.py's image endpoints.
     const images = [];
-    s = s.replace(/!\[([^\]]*)\]\((\/[^)\s]+|https?:\/\/[^)\s]+)\)/g,
-                  (_, alt, url) => {
+    const _rewriteImageUrl = (url) => {
+        if (/^https?:\/\//i.test(url)) return url;
+        if (url.startsWith('/')) return url;
+        // Strip "./" if present
+        const clean = url.replace(/^\.\//, '');
+        if (clean.startsWith('assets/')) {
+            return '/asset_image/' + clean.substring('assets/'.length);
+        }
+        if (clean.startsWith('tavern/characters/')) {
+            return '/character_image/' + clean.substring('tavern/characters/'.length);
+        }
+        // Unknown relative path — pass through and let the browser try
+        return url;
+    };
+    s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt, url) => {
         const safeAlt = esc(alt);
-        const safeUrl = esc(url);
+        const safeUrl = esc(_rewriteImageUrl(url));
         images.push(`<img class="archivist-inline-img" src="${safeUrl}" alt="${safeAlt}" loading="lazy">`);
         return `\u0000IMG${images.length - 1}\u0000`;
     });
