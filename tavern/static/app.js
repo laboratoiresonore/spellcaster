@@ -2285,6 +2285,25 @@ function _extractSpellPayload(reply) {
         }
     }
 
+    // Telemetry: if we found one or more spell-marker bare blocks but
+    // none of them parsed, log the first fragment so we can fix the LLM
+    // output shape before users hit it. Fire-and-forget — never blocks.
+    // bareRanges only contain blocks that already matched build_fn/node
+    // markers, so any entry here is a confirmed near-miss.
+    if (!payload && bareRanges.length > 0) {
+        try {
+            fetch('/api/telemetry/parse_miss', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    fragment: String(bareRanges[0].full).substring(0, 500),
+                    ts: Date.now() / 1000,
+                }),
+                keepalive: true,
+            }).catch(() => {});
+        } catch (e) { /* ignore */ }
+    }
+
     // 4. Sanitize the displayText: strip ALL fenced blocks AND all bare
     //    JSON-looking blocks, parsed or not. This guarantees no leak even
     //    when parsing fails — the user sees the LLM's prose only.
@@ -2437,6 +2456,20 @@ async function dispatchToComfy(payload) {
     try {
         payload.comfy_url = comfyUrl; // Intercept and attach user's Comfy URL natively
         payload.char_id = activeCharacterId; // Tell the server which wizard is requesting
+        // Telemetry: log the dispatch shape (no prompt content). Fire-and-
+        // forget so it never blocks the actual /api/execute call.
+        try {
+            fetch('/api/telemetry/dispatch_ok', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    build_fn: String(payload.build_fn || payload.node || ''),
+                    char_id: String(activeCharacterId || ''),
+                    ts: Date.now() / 1000,
+                }),
+                keepalive: true,
+            }).catch(() => {});
+        } catch (e) { /* ignore */ }
         const response = await fetch('/api/execute', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -3444,18 +3477,34 @@ function renderLoraList(loras, charId) {
             ? `<span style="display:inline-block;padding:1px 6px;margin-left:4px;background:rgba(178,70,242,0.15);border:1px solid rgba(178,70,242,0.3);border-radius:4px;font-size:10px;color:#c4b5fd;">str ${lora.default_strength}</span>`
             : '';
 
+        // Auto-blacklist surface: a LoRA that has racked up failures
+        // against this wizard's checkpoint shows a red badge + Unblock
+        // button. The checkbox is force-disabled so the user can't enable
+        // a known-broken LoRA without clearing the failures first.
+        const blockedBadge = lora.blocked
+            ? `<span title="Auto-blocked after ${lora.failure_count} failed attempt(s) with this wizard's model" style="display:inline-block;padding:1px 6px;margin-left:4px;background:rgba(239,68,68,0.18);border:1px solid rgba(239,68,68,0.45);border-radius:4px;font-size:10px;color:#fca5a5;font-weight:600;">⚠ auto-blocked</span>`
+            : '';
+        const unblockBtn = lora.blocked
+            ? `<button type="button" data-unblock="${lora.name}" style="margin-left:6px;padding:2px 8px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.4);border-radius:4px;color:#fca5a5;font-size:10px;cursor:pointer;">Unblock</button>`
+            : '';
+
         const row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #222;';
+        const blockedRowStyle = lora.blocked
+            ? 'opacity:0.55;background:rgba(239,68,68,0.04);'
+            : '';
+        row.style.cssText = `display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #222;${blockedRowStyle}`;
         row.innerHTML = `
-            <label style="display:flex;align-items:center;cursor:pointer;flex-shrink:0;">
-                <input type="checkbox" data-lora="${lora.name}" ${enabled ? 'checked' : ''}
-                    style="width:18px;height:18px;accent-color:#B246F2;cursor:pointer;">
+            <label style="display:flex;align-items:center;cursor:${lora.blocked ? 'not-allowed' : 'pointer'};flex-shrink:0;">
+                <input type="checkbox" data-lora="${lora.name}" ${enabled && !lora.blocked ? 'checked' : ''} ${lora.blocked ? 'disabled' : ''}
+                    style="width:18px;height:18px;accent-color:#B246F2;cursor:${lora.blocked ? 'not-allowed' : 'pointer'};">
             </label>
             <div style="flex:1;min-width:0;">
                 <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
                     <span style="font-weight:600;color:#eee;font-size:13px;">${lora.display_name}</span>
                     <span style="font-size:11px;color:#888;" title="${lora.source}">${sourceIcon}</span>
                     ${strengthChip}
+                    ${blockedBadge}
+                    ${unblockBtn}
                     ${civitLink}
                 </div>
                 <p style="color:#aaa;font-size:12px;margin-top:2px;">${purposeText}</p>
@@ -3466,9 +3515,45 @@ function renderLoraList(loras, charId) {
 
         const checkbox = row.querySelector('input[type="checkbox"]');
         checkbox.addEventListener('change', () => {
+            if (lora.blocked) { checkbox.checked = false; return; }
             state[lora.name] = checkbox.checked;
             saveLoraState();
         });
+
+        const unblockEl = row.querySelector('button[data-unblock]');
+        if (unblockEl) {
+            unblockEl.addEventListener('click', async (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                unblockEl.disabled = true;
+                unblockEl.textContent = '...';
+                try {
+                    const char = characters.find(c => c.id === charId);
+                    const r = await fetch('/api/lora_unblock', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            lora_name: lora.name,
+                            model: (char && char.model_name) || '',
+                        }),
+                    });
+                    if (r.ok) {
+                        // Refresh the LoRA list so blocked state recomputes.
+                        const refresh = await fetch(`/api/lora_registry/${charId}`);
+                        if (refresh.ok) {
+                            const fresh = await refresh.json();
+                            renderLoraList(fresh.loras, charId);
+                        }
+                    } else {
+                        unblockEl.disabled = false;
+                        unblockEl.textContent = 'Unblock';
+                    }
+                } catch (e) {
+                    unblockEl.disabled = false;
+                    unblockEl.textContent = 'Unblock';
+                }
+            });
+        }
 
         loraList.appendChild(row);
     });
