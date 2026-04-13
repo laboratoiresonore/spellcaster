@@ -1837,13 +1837,31 @@ def main():
     else:
         print(f"  [server] Wizard Guild is live at {guild_url}")
 
-    # ── First-run asset generation (ComfyUI + LLM detected) ─────────
+    # ── First-run asset generation ────────────────────────────────────
+    # Used to be a blocking 16-minute wait that kept the browser closed
+    # until every wizard's portrait was rendered. New flow: kick off
+    # avatar generation in a server-side BACKGROUND thread, open the
+    # browser immediately, and let the frontend's setup-mode UI lock the
+    # chat input + stream wizards in as their portraits arrive.
     if (comfy_alive and _assets_need_generation()
             and not args.no_assets):
-        asset_count = _generate_all_assets(guild_url, comfyui_url, kobold_url)
-        if asset_count > 0:
-            _mark_assets_generated(asset_count)
-            print("  [assets] Assets saved. The browser will load them automatically.")
+        try:
+            payload = json.dumps({"comfy_url": comfyui_url}).encode("utf-8")
+            req = urllib.request.Request(
+                f"{guild_url}/api/setup/start",
+                data=payload,
+                headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                resp.read()
+            print("  [assets] Background setup started — browser will open immediately,")
+            print("           wizards will appear in chat as their portraits render.")
+            _mark_assets_generated(0)  # marker file so we don't restart this every launch
+        except Exception as e:
+            print(f"  [assets] Could not start background setup: {e}")
+            print("           Falling back to blocking generation.")
+            asset_count = _generate_all_assets(guild_url, comfyui_url, kobold_url)
+            if asset_count > 0:
+                _mark_assets_generated(asset_count)
     elif not _assets_need_generation():
         print("  [assets] Assets already generated (delete .guild_assets_version to regenerate)")
 
