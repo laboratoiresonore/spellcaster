@@ -2812,18 +2812,38 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
     neg_id = nf.clip_encode(["1", 0], negative_text or "", node_id="6")
     img_id = nf.load_image(image_filename, node_id="7")
 
+    # Pre-resize the start image to EXACTLY width × height before handing it
+    # to WanImageToVideo. Without this, the WAN node's internal VAE encoder
+    # makes its own decision about how to fit the source into the latent
+    # spatial dimensions — typically a center-crop that loses content on
+    # whichever axis doesn't match. Users who pick a target size that's
+    # close-but-not-identical to their source aspect ratio see horizontal
+    # cutoff in the output even though they expected a clean down-scale.
+    # Using ImageScale with crop="center" (Lanczos) produces a deterministic
+    # exact-size frame that matches the latent dimensions perfectly.
+    nf.image_scale(["7", 0], width, height,
+                    upscale_method="lanczos", crop="center", node_id="7r")
+    start_img_ref_for_wan = ["7r", 0]
+
     # CLIPVision: encode start image for WanImageToVideo/WanFirstLastFrameToVideo
     # The WAN v2 API requires CLIP_VISION_OUTPUT, not raw IMAGE.
+    # Use the ORIGINAL full-resolution image for CLIP Vision (more semantic
+    # detail = better conditioning), not the down-scaled "7r".
     cv_loader_id = nf.clip_vision_loader("clip_vision_h.safetensors", node_id="7cv")
     cv_enc_id = nf.clip_vision_encode([cv_loader_id, 0], ["7", 0], node_id="7ce")
     cv_start_ref = [cv_enc_id, 0]
 
     if end_image_filename and not loop:
         nf.load_image(end_image_filename, node_id="7b")
+        # Same pre-resize for the end image so FLF gets a matched pair.
+        nf.image_scale(["7b", 0], width, height,
+                        upscale_method="lanczos", crop="center", node_id="7br")
+        end_img_ref_for_wan = ["7br", 0]
         cv_enc_end_id = nf.clip_vision_encode([cv_loader_id, 0], ["7b", 0], node_id="7be")
         cv_end_ref = [cv_enc_end_id, 0]
     else:
-        cv_end_ref = cv_start_ref  # loop uses same start/end
+        end_img_ref_for_wan = start_img_ref_for_wan  # loop uses same start/end
+        cv_end_ref = cv_start_ref
 
     # LoRA chains
     high_ref = ["2", 0]
@@ -2907,8 +2927,8 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
             width, height, length,
             clip_vision_start_ref=cv_start_ref,
             clip_vision_end_ref=cv_end_ref,
-            start_image_ref=["7", 0],
-            end_image_ref=(["7b", 0] if (end_image_filename and not loop) else ["7", 0]),
+            start_image_ref=start_img_ref_for_wan,
+            end_image_ref=end_img_ref_for_wan,
             node_id="40",
         )
     else:
@@ -2916,7 +2936,7 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
             ["5", 0], ["6", 0], ["4", 0],
             width, height, length,
             clip_vision_output_ref=cv_start_ref,
-            start_image_ref=["7", 0],
+            start_image_ref=start_img_ref_for_wan,
             node_id="40",
         )
 
@@ -2952,14 +2972,22 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
 
     video_ref = [dec_id, 0]
     prefix = "gimp_wan_loop" if loop else ("gimp_wan_flf" if use_flf else "gimp_wan_i2v")
+    # Force boolean — VHS_VideoCombine's INPUT_TYPES expects BOOLEAN, but
+    # mis-typed values (None, "false") have caused the pingpong flag to be
+    # silently ignored in some VHS releases. Casting here is cheap insurance.
+    pingpong_bool = bool(pingpong)
 
-    # Save raw (optional)
+    # Save raw (optional). When the user has BOTH save_raw and pingpong
+    # enabled we apply pingpong to the raw save too — otherwise the raw
+    # MP4 plays forward-only while the final MP4 pingpongs, and the user's
+    # video player shows them BOTH (because GIMP imports every result),
+    # creating the false impression that pingpong is broken.
     if save_raw:
         nf.update({
             "80": {"class_type": "VHS_VideoCombine",
                    "inputs": {"images": video_ref, "frame_rate": float(fps),
                               "loop_count": 0, "filename_prefix": f"{prefix}_raw",
-                              "format": "video/h264-mp4", "pingpong": False,
+                              "format": "video/h264-mp4", "pingpong": pingpong_bool,
                               "save_output": True, "pix_fmt": "yuv420p", "crf": 19}},
         })
 
@@ -2995,7 +3023,7 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
                "inputs": {"images": video_ref, "frame_rate": final_fps,
                           "loop_count": 0, "filename_prefix": f"{prefix}_final",
                           "format": "video/h264-mp4", "pix_fmt": "yuv420p",
-                          "crf": 17, "pingpong": pingpong,
+                          "crf": 17, "pingpong": pingpong_bool,
                           "save_output": True}},
     })
 

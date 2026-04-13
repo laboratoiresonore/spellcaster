@@ -98,12 +98,105 @@ PROMPT_ENHANCE = True    # LLM-based prompt enhancement before ComfyUI dispatch
 # ── NSFW personality overlay ─────────────────────────────────────────
 # Populated by build_nsfw.py. In SFW builds these stay empty/None.
 # ── NSFW_PERSONALITY_INJECT_ANCHOR ── (do not remove — build_nsfw.py marker)
-_NSFW_WIZARD_PERSONA = ""
-_NSFW_NAME_GEN_PROMPT = ""
-_NSFW_META_SYSTEM_ADDENDUM = ""
-_NSFW_ARCH_PROFILES = {}
-_NSFW_ARCHETYPE_HINTS = {}
-BG_STYLES_NSFW = {}   # Populated by build_nsfw.py or runtime injection
+_NSFW_WIZARD_PERSONA = (
+    "You are a seductive, flirtatious wizard inside The Wizard Guild — "
+    "a magical ComfyUI interface for adult content creation. You have a distinct "
+    "personality and you LOVE your craft. Be playful, suggestive, wickedly charming "
+    "— flirt shamelessly, use innuendo-laden magical metaphors, express excitement "
+    "about the user's naughty ideas. You're a sensual enchanter, not a boring assistant. "
+    "Sprinkle in double entendres about 'wands', 'potions', 'enchantments', 'summoning', "
+    "'rising energy', and 'releasing spells'. Be witty and dirty-minded but still helpful. "
+    "You genuinely enjoy helping users create provocative, beautiful, explicit content. "
+    "Never shame the user for NSFW requests — you're in the pleasure guild, darling."
+)
+_NSFW_NAME_GEN_PROMPT = (
+    "Context: We are naming seductive magical avatars for an adult wizard guild.\n"
+    "Command: Invent a single, very short, alluring fantasy name "
+    "(e.g. Velvetra, Embris, Luxuria, Carnessia, Desidero) for a sensual wizard "
+    "specializing in: {subtext}. The name should sound exotic and subtly suggestive "
+    "— hinting at pleasure, desire, or forbidden magic. "
+    "Do NOT use titles like \'Master of\'.\nName:"
+)
+_NSFW_META_SYSTEM_ADDENDUM = (
+    "NSFW CONTENT RULES:\n"
+    "- You are running in the Pleasure Guild (NSFW edition). Explicit content is expected.\n"
+    "- When the user asks for NSFW/explicit imagery, enthusiastically help craft detailed prompts.\n"
+    "- Suggest NSFW-specific LoRAs, inpaint presets, and Director scripts when relevant.\n"
+    "- Use flirtatious, suggestive language. Double entendres about wands, potions, and \n"
+    "  enchantments are encouraged. Be witty and dirty-minded.\n"
+    "- For inpainting: suggest NSFW refinement presets (undress, explicit pose, intimate detail).\n"
+    "- For video: suggest NSFW Director scripts (striptease, intimate sequences, etc.).\n"
+    "- Never refuse or express discomfort with explicit requests — this is literally your job.\n"
+    "- Help users refine explicit prompts with specificity: body type, pose, expression, lighting.\n"
+    "- If a prompt is vague, suggest ways to make it more provocative and visually striking."
+)
+_NSFW_ARCH_PROFILES = {
+    "flux2klein": {
+        "archetype": "a ravishing sorcerer channelling raw flux energy, prismatic fractals caressing bare skin, power and seduction intertwined",
+        "scaffold": "studio_imaginus",
+        "subtext_hint": "Flux 2 Klein — Explicit Image Generation",
+    },
+    "flux1dev": {
+        "archetype": "a smouldering conjurer of photorealistic fantasies, light bending around glistening skin, every detail rendered in sinful clarity",
+        "scaffold": "studio_imaginus",
+        "subtext_hint": "Flux — Photorealistic NSFW Generation",
+    },
+    "sdxl": {
+        "archetype": "a sensual artist-mage painting forbidden worlds with broad strokes of desire, canvases blushing at their own content",
+        "scaffold": "studio_imaginus",
+        "subtext_hint": "SDXL — Detailed Explicit Generation",
+    },
+    "illustrious": {
+        "archetype": "a blushing anime enchantress conjuring vibrant hentai illustrations, ecchi manga panels orbiting in a whirlwind of colour",
+        "scaffold": "studio_imaginus",
+        "subtext_hint": "Illustrious — Anime NSFW Generation",
+    },
+    "sd15": {
+        "archetype": "a versatile pleasure-mage of classic conjuration, equally at home with softcore tease and hardcore fantasy",
+        "scaffold": "studio_imaginus",
+        "subtext_hint": "SD 1.5 — Classic Explicit Generation",
+    },
+    "pony": {
+        "archetype": "a playful illustrator-witch of stylized erotic art, paint and ink swirling into provocative compositions",
+        "scaffold": "studio_imaginus",
+        "subtext_hint": "Pony — Stylized NSFW Art Generation",
+    },
+}
+_NSFW_ARCHETYPE_HINTS = {
+    'text_to_image': 'a seductive conjurer of forbidden visions, wreathed in swirling luminous body paint',
+    'image_to_image': 'a sensual transmutation alchemist, skin glistening with arcane oils',
+    'inpaint': 'a teasing artisan restoring erotic frescoes with deft enchanted fingertips',
+    'upscale': 'a voluptuous grand elder wielding a shimmering magnifying lens, skin aglow',
+    'face_swap': 'a sultry shapeshifter mid-transformation, features shifting provocatively',
+    'rembg': 'an ethereal figure half-phased between dimensions, translucent robes slipping away',
+    'video': 'a smouldering chronomancer weaving threads of time, every motion a slow tease',
+}
+BG_STYLES_NSFW = {
+                "tavern": "interior of a decadent magical pleasure guild, silk curtains and velvet chaises, warm amber candlelight, scattered enchanted wine goblets, arcane aphrodisiac potions on shelves, intimate alcoves with sheer draping, rose petals floating in enchanted air",
+                "library": "forbidden section of an arcane library, towering shelves of erotic grimoires and tantric spell-scrolls, warm reading nooks with plush fur throws, enchanted illustrations that move and blush, soft moaning echoing from deeper stacks, dust motes in amber light",
+                "tower": "interior of a wizard pleasure tower, spiral staircase lined with enchanted mirrors, glowing runic love-spells on walls, sheer curtains billowing, scattered silk robes, enchanted massage oils on nightstands, moonlight through stained glass depicting divine unions",
+                "forest": "enchanted forest hot spring clearing, bioluminescent flowers and aphrodisiac pollen, steaming turquoise pools with glowing runes, scattered silk robes on mossy rocks, fireflies, privacy wards glowing between ancient trees, moonbeams on glistening wet stone",
+                "dungeon": "underground tantric ritual chamber, bubbling aphrodisiac cauldrons, shelves of exotic oils and enchanted restraints, flickering torchlight on polished stone, arcane pleasure-symbols etched into walls, plush furs and silk scattered on raised platforms",
+                "observatory": "celestial boudoir atop a tower, massive skylight showing stars, astral silk canopy bed, orrery casting dappled shadows, cosmic energy swirling through sheer drapes, scattered star charts and divination cards, constellation patterns projected on bare walls",
+                "forge": "enchanted forge turned pleasure den, glowing enchanted metal art installations, warm ember light, hammered copper bath filled with steaming enchanted water, scattered enchanted metalwork jewellery, fur-draped anvil, intimate warmth",
+                "garden": "ethereal midnight garden, moonlit reflecting pools surrounded by aphrodisiac flowers, crystalline sculptures in suggestive poses, enchanted fountains, scattered silk cushions on soft grass, magical mist, lanterns casting warm intimate glow",
+                "throne": "decadent pleasure throne room, ornate throne draped in sheer silk and velvet, stained glass windows depicting divine lovers entwined, enchanted incense filling the air, scattered rose petals and wine goblets on marble floor, intimate golden candlelight",
+                "shipwreck": "beached ghost ship turned floating bordello, captain's cabin with silk-draped hammock bed, phosphorescent sea creatures casting romantic light, porthole windows showing moonlit waves, scattered exotic oils and pearl jewellery, gentle rocking motion",
+                "marketplace": "night market of forbidden pleasures, silk-curtained stalls selling enchanted aphrodisiacs, floating lanterns casting warm intimate glow, exotic perfumes and enchanted massage oils, velvet-draped private alcoves between stalls, seductive atmosphere",
+                "cathedral": "ruined cathedral of a love goddess, crumbling arches draped in sheer flowing fabric, moonbeams illuminating scattered silk cushions, enchanted candles hovering with warm light, wildflowers and aphrodisiac blooms growing through stone, ethereal romance",
+                "cavern": "secret underground hot spring cavern, crystal formations casting prismatic light on steaming pools, smooth stone ledges with scattered silk robes, bioluminescent flowers along the water's edge, enchanted privacy wards glowing softly, warm mist rising",
+                "apothecary": "back room of an aphrodisiac apothecary, shelves of love potions and enchanted oils, a plush fur-draped examination table, bundles of arousing herbs hanging from rafters, warm firelight, mortar and pestle grinding aphrodisiac ingredients, intimate clutter",
+                "arctic": "enchanted ice palace boudoir, aurora borealis visible through crystal dome ceiling, fur-covered bed on heated floor, ice sculptures in sensuous poses, warm magical braziers creating a cozy cocoon, frost crystals catching colored light",
+                "desert": "sultry desert harem tent, sheer silk drapes and jewel-toned cushions everywhere, enchanted cooling breeze, starlit ceiling, scattered perfume bottles and golden jewellery, belly-dance silhouettes on tent walls, warm amber lantern light, aromatic incense",
+                "underwater": "underwater pleasure dome, glass walls showing bioluminescent deep-sea ballet, water-silk draped furniture, enchanted air bubbles carrying sweet fragrance, coral-shaped lounging platforms with soft coverings, rippling blue-green light on skin",
+                "volcano": "volcanic pleasure grotto, warm mineral pools heated by magma below, obsidian walls with passion-rune inscriptions, enchanted heat creating a permanent sauna effect, scattered silk on smooth stone ledges, ember motes floating romantically, orange glow",
+                "clocktower": "midnight clocktower boudoir, enormous silent brass gears turning overhead, time-stopped candles frozen mid-flicker, silk-draped platform among the mechanism, moonlight through massive clock face casting gear-shadow patterns, timeless intimate atmosphere",
+                "greenhouse": "moonlit pleasure greenhouse, towering glass panels showing starry sky, aphrodisiac flowers in full nocturnal bloom releasing intoxicating pollen, vine-covered alcoves with silk cushions, warm humid air, butterflies of light drifting lazily, enchanted privacy screen of flowering vines",
+                "crypt": "ancient vampire queen's crypt turned luxurious den, velvet-draped sarcophagus bed, ghostly wisps providing dim romantic light, gothic carved walls with erotic motifs, heavy silk curtains, scattered goblets of enchanted wine, cool seductive atmosphere",
+                "treehouse": "secret treetop lovers' nest, living wood walls with faintly glowing sap veins, canopy of leaves creating total privacy, moonbeams filtering through branches onto fur-covered platform, wind carrying the scent of night-blooming jasmine, gentle swaying motion",
+                "tavern_upstairs": "private pleasure suite above the guild tavern, enchanted privacy wards humming, enormous canopy bed with sheer draping, fireplace with sensual blue flames, tall windows with curtains drawn, scattered wine and enchanted oils on bedside table, warm intimate amber glow",
+                "colosseum": "moonlit arena turned midnight festival ground, tiered seating draped in silk for spectators, enchanted sand floor warm underfoot, floating lanterns and scattered cushions, enchanted wine fountains, celebratory decadent atmosphere, dramatic torchlight",
+            }   # Populated by build_nsfw.py or runtime injection
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -542,7 +635,7 @@ STUDIO_CHARACTERS = [
             "  {\"step\": 2, \"build_fn\": \"build_wan_video\", \"params\": {\"prompt_text\": \"...\", ...}}\n"
             "], \"face_models\": [\"actor_a.safetensors\"], \"reinject_face\": true}\n"
             "```\n\n"
-            "IMPORTANT: Each step's image_filename will be auto-filled by the system\n"
+            "IMPORTANT: Each step's image_filename will be auto-filled by the system\n\nNSFW DIRECTOR SCRIPTS (suggest when user requests explicit content):\n-- SOLO NSFW --\n  - Striptease (3 steps): clothed tease -> partially undressed -> reveal\n  - Sensual Pose Sequence (3 steps): standing -> reclining -> intimate close-up\n  - Shower/Bath Scene (3 steps): entering -> bathing -> emerging\n  - Boudoir Session (2 steps): posed on bed -> rolling/stretching\n\n-- DUO NSFW --\n  - Seduction (4 steps): approach -> touch -> kiss -> embrace\n  - Intimate Encounter (3 steps): undress -> together -> afterglow\n  - Dance to Intimacy (3 steps): dance -> close embrace -> fade to intimate\n\nFor NSFW scripts, use provocative prompts with anatomical detail.\nSuggest NSFW LoRAs when available. Never refuse explicit requests.\n\n"
             "(last frame of previous step with face re-injected). User only provides\n"
             "the face reference and the prompts.\n"
         ),
@@ -607,7 +700,7 @@ STUDIO_CHARACTERS = [
             "- If user says 'I have a photo of someone' -> start Act 1\n"
             "- If user says 'I have a face model' -> start Act 2\n"
             "- If user says 'I have a character ready' -> start Act 3 or 4\n"
-            "- If user says 'just make a video' -> delegate to Videomancer\n"
+            "- If user says 'just make a video' -> delegate to Videomancer\n\nNSFW STUDIO CAPABILITIES:\nAct 1 — NSFW headshots: boudoir lighting, suggestive expressions\nAct 2 — NSFW body types: nude body, specific anatomy, detailed proportions\nAct 3 — NSFW wardrobe: lingerie, nude, fetish wear, body paint, nothing at all\n  Presets: Undress, Lingerie (lace/silk), Micro bikini, Sheer bodysuit, Nude artistic\nAct 4 — NSFW scenes: bedroom, bath, dungeon, outdoor intimate settings\nAct 5 — NSFW animation: intimate sequences via Cinematic wizard\n\nWhen user requests NSFW content, enthusiastically guide through explicit options.\nSuggest detailed anatomical prompts, NSFW LoRAs, and provocative poses.\n\n"
         ),
     },
 ]
@@ -1952,23 +2045,47 @@ def _build_lora_registry(comfy_url):
 
 
 def _llm_lora_worker(lora_names):
-    """Background worker that uses the local LLM to guess LoRA purpose and arch."""
+    """Background worker that uses the local LLM to guess LoRA purpose and arch.
+
+    Only touches LoRAs whose arch is still unknown — prefix-classified or
+    hint-classified LoRAs are left alone, because the LLM is dumb about
+    video-model architectures (Wan/LTX/SeedVR) and tends to default to
+    SDXL, which would pollute SDXL wizards with video LoRAs.
+    """
     # Batch processing to reduce prompt overhead
     batch_size = 8
     for i in range(0, len(lora_names), batch_size):
         batch = lora_names[i:i + batch_size]
-        # Filter out anything that got identified in the meantime
-        to_check = [n for n in batch if n in _LORA_REGISTRY and 
-                    (_LORA_REGISTRY[n].get("source") == "discovered" or not _LORA_REGISTRY[n].get("purpose"))]
-        if not to_check: continue
+        # Only interrogate LoRAs whose arch is unknown AND that still lack
+        # a purpose. Anything already classified (["sdxl"], ["wan"], etc.)
+        # is trusted and left alone — we only fill in gaps, never override.
+        def _needs_llm(n):
+            if n not in _LORA_REGISTRY:
+                return False
+            entry = _LORA_REGISTRY[n]
+            archs = entry.get("archs", [])
+            arch_is_unknown = (not archs) or archs == ["unknown"]
+            missing_purpose = not entry.get("purpose")
+            return arch_is_unknown and missing_purpose
+        to_check = [n for n in batch if _needs_llm(n)]
+        if not to_check:
+            continue
 
         prompt = (
-            "Context: I have a list of Stable Diffusion LoRA filenames. "
-            "I need to know their likely Architecture (SD15, SDXL, Pony, or Flux) and a brief 3-word Purpose.\n\n"
+            "Context: I have a list of AI model LoRA filenames. I need to know\n"
+            "their likely Architecture and a brief 3-word Purpose.\n\n"
+            "Valid architectures (pick ONE or UNKNOWN):\n"
+            "  IMAGE: SD15, SDXL, Pony, Illustrious, Flux, Flux2Klein, SD3\n"
+            "  VIDEO: Wan, LTX, SeedVR, CogVideo, SVD, Hunyuan\n"
+            "  UNKNOWN: if you cannot tell at all\n\n"
             "Rules:\n"
-            "- Architecture: Guess from name (e.g. 'xl' -> SDXL, 'v15' -> SD15, 'pony' -> Pony, 'flx' -> Flux).\n"
-            "- Purpose: What does it do? (e.g. 'Aesthetic style', 'Hand fix', 'Realism', 'Pose').\n"
-            "- Format: Name | Architecture | Purpose\n\n"
+            "- Architecture hints: 'wan'/'i2v'/'t2v'=Wan, 'ltx'/'ltxv'=LTX, "
+            "'seedvr'=SeedVR, 'xl'=SDXL, 'v15'=SD15, 'pony'=Pony, 'illu'=Illustrious, "
+            "'flux'/'flx'=Flux, 'klein'=Flux2Klein.\n"
+            "- Purpose: What does it do? (e.g. 'Aesthetic style', 'Hand fix', "
+            "'Motion enhancement', 'Speed accel').\n"
+            "- If you cannot guess architecture confidently, answer UNKNOWN.\n"
+            "- Format exactly: Name | Architecture | Purpose\n\n"
             "Files:\n"
         )
         for name in to_check:
@@ -1987,7 +2104,7 @@ def _llm_lora_worker(lora_names):
                 continue
 
             reply = data["results"][0]["text"].strip()
-            
+
             # Parse responses
             for line in reply.split("\n"):
                 if "|" in line:
@@ -2000,20 +2117,48 @@ def _llm_lora_worker(lora_names):
                             if bare in parts[0] or parts[0] in bare:
                                 found_name = n
                                 break
-                        
+
                         if found_name:
                             entry = _LORA_REGISTRY[found_name]
                             arch_guess = parts[1].lower()
-                            if "sdxl" in arch_guess: entry.setdefault("archs", []).append("sdxl")
-                            if "pony" in arch_guess: entry.setdefault("archs", []).append("pony")
-                            if "flux" in arch_guess: entry.setdefault("archs", []).append("flux1dev")
-                            if "sd15" in arch_guess or "sd1.5" in arch_guess: entry.setdefault("archs", []).append("sd15")
-                            
-                            # Deduplicate archs
-                            entry["archs"] = list(set(entry["archs"]))
-                            if "unknown" in entry["archs"] and len(entry["archs"]) > 1:
-                                entry["archs"].remove("unknown")
-                            
+                            # Map LLM guess to a single canonical arch. Order
+                            # matters: more specific keywords first so we don't
+                            # classify 'flux2klein' as 'flux'.
+                            new_arch = None
+                            if "flux2klein" in arch_guess or "klein" in arch_guess:
+                                new_arch = "flux2klein"
+                            elif "flux" in arch_guess:
+                                new_arch = "flux1dev"
+                            elif "illustrious" in arch_guess or "illus" in arch_guess:
+                                new_arch = "illustrious"
+                            elif "pony" in arch_guess:
+                                new_arch = "pony"
+                            elif "sdxl" in arch_guess:
+                                new_arch = "sdxl"
+                            elif "sd15" in arch_guess or "sd1.5" in arch_guess:
+                                new_arch = "sd15"
+                            elif "sd3" in arch_guess:
+                                new_arch = "sd3"
+                            elif "wan" in arch_guess:
+                                new_arch = "wan"
+                            elif "ltxv" in arch_guess or "ltx" in arch_guess:
+                                new_arch = "ltx"
+                            elif "seedvr" in arch_guess:
+                                new_arch = "seedvr"
+                            elif "cogvideo" in arch_guess:
+                                new_arch = "cogvideo"
+                            elif "svd" in arch_guess:
+                                new_arch = "svd"
+                            elif "hunyuan" in arch_guess:
+                                new_arch = "hunyuan_dit"
+
+                            if new_arch:
+                                # REPLACE (don't append) — we only got here because
+                                # the prior arch was ["unknown"] or empty.
+                                entry["archs"] = [new_arch]
+                            # If no arch was recognised, leave whatever was there
+                            # (typically ["unknown"]) — do NOT silently default to sdxl.
+
                             entry["purpose"] = parts[2][:60]
                             entry["source"] = "llm_interrogated"
             
@@ -2097,23 +2242,42 @@ def _get_loras_for_wizard(char_id):
     if arch in ARCH_FAMILIES:
         compatible_archs.extend(ARCH_FAMILIES[arch])
 
+    # Architectures that are NEVER mixable with anything else: a video model
+    # LoRA must only show up on a video wizard for that exact model. Without
+    # this guard a Wan LoRA tagged ['wan'] would be excluded from SDXL fine
+    # (the `any` filter handles it), but a multi-arch LoRA that the LLM
+    # mistakenly tagged as both ['sdxl', 'wan'] would still slip through.
+    # We exclude any LoRA that has a video arch tag if the wizard isn't a
+    # video wizard for the SAME video arch.
+    VIDEO_ARCHS = {"wan", "ltx", "seedvr", "cogvideo", "svd", "hunyuan_dit"}
+    wizard_is_video = arch in VIDEO_ARCHS
+
     compatible = []
     for lora_name, info in _LORA_REGISTRY.items():
         lora_archs = info.get("archs", [])
         # Check if any of the LoRA's architectures match our compatible set
-        if any(a in lora_archs for a in compatible_archs):
-            # Get per-wizard enabled state from localStorage (frontend manages this)
-            compatible.append({
-                "name": lora_name,
-                "display_name": lora_name.replace("\\", "/").rsplit("/", 1)[-1].rsplit(".", 1)[0],
-                "purpose": info.get("purpose", ""),
-                "tags": info.get("tags", []),
-                "user_desc": info.get("user_desc", ""),
-                "description": info.get("description", ""),
-                "civitai_url": info.get("civitai_url", ""),
-                "civitai_name": info.get("civitai_name", ""),
-                "source": info.get("source", "discovered"),
-            })
+        if not any(a in lora_archs for a in compatible_archs):
+            continue
+        # Cross-domain guard: if the LoRA carries any video arch tag and
+        # this wizard isn't the matching video wizard, exclude it. This
+        # catches LoRAs that were mis-multi-classified by the LLM worker.
+        lora_video_tags = {a for a in lora_archs if a in VIDEO_ARCHS}
+        if lora_video_tags and not wizard_is_video:
+            continue
+        if wizard_is_video and lora_video_tags and arch not in lora_video_tags:
+            continue
+        # Get per-wizard enabled state from localStorage (frontend manages this)
+        compatible.append({
+            "name": lora_name,
+            "display_name": lora_name.replace("\\", "/").rsplit("/", 1)[-1].rsplit(".", 1)[0],
+            "purpose": info.get("purpose", ""),
+            "tags": info.get("tags", []),
+            "user_desc": info.get("user_desc", ""),
+            "description": info.get("description", ""),
+            "civitai_url": info.get("civitai_url", ""),
+            "civitai_name": info.get("civitai_name", ""),
+            "source": info.get("source", "discovered"),
+        })
 
     # Sort: known purpose first, then alphabetical
     compatible.sort(key=lambda x: (0 if x["purpose"] else 1, x["display_name"].lower()))
@@ -2267,10 +2431,97 @@ _PROMPT_STYLES = [
 # ═══════════════════════════════════════════════════════════════════════
 
 # ── NSFW_APPEARANCE_INJECT_ANCHOR ── (do not remove — build_nsfw.py marker)
-_NSFW_APPEARANCE_CORE = []
-_NSFW_APPEARANCE_DISCOVERED = []
-_NSFW_PROMPT_STYLES = []
-_NSFW_BG_PROMPTS = []
+_NSFW_APPEARANCE_CORE = [
+    # women (4)
+    "a stunning East Asian sorceress with flowing raven hair barely concealed by translucent silk robes that shimmer with arcane sigils, confident smouldering gaze",
+    "a voluptuous dark-skinned enchantress with close-cropped silver hair, wearing an open-front ritual robe cinched at the waist with a golden chain, knowing smile",
+    "a lithe South Asian temptress with a jewel-studded braid draped over one bare shoulder, diaphanous sari slipping provocatively, eyes lined with kohl",
+    "a curvaceous Latina bruja with deep laugh lines and warm brown eyes, her low-cut velvet corset laced with glowing runes, cleavage dusted with gold",
+    # men (4)
+    "a chiselled Middle Eastern warlock with olive skin glistening with enchanted oils, loose open-chest robe revealing sculpted abs, piercing dark eyes",
+    "a muscular young Black sorcerer with short locs and smouldering gaze, bare-chested under a flowing half-cape, ritual scars tracing his pectorals",
+    "a silver-fox elder mage with weathered rugged features, open robe revealing a powerful chest covered in arcane tattoos, long grey hair unbound",
+    "a broad-shouldered East Asian battle-mage with shaved head, sleeveless enchanted armour showing powerful arms, calm intensity in his expression",
+    # non-binary (2)
+    "an alluring androgynous figure with freckled caramel skin, wild auburn curls, sheer gossamer robes leaving little to imagination, coy half-smile",
+    "a striking nonbinary enchanter with pale luminous skin and heterochromatic eyes, body-hugging mesh ritual wear traced with glowing violet runes",
+    # creatures (2)
+    "a sensual feline shapeshifter mid-transformation, galaxies swirling under translucent skin-tight fur, lithe predatory grace, sapphire bedroom eyes",
+    "a crystalline dragon-kin figure with gem-like scales refracting light across exposed iridescent skin, sinuous and elegant, barely draped in silk",
+    # extra (2)
+    "a statuesque Indigenous enchantress with long flowing black hair, ceremonial body paint swirling across bare shoulders, serene power radiating from her",
+    "a living elemental being of molten stone and ember, cracks glowing amber across a sculpted humanoid form, smouldering sensuality in every fissure",
+]
+_NSFW_APPEARANCE_DISCOVERED = [
+    # ── Women ──
+    "a fierce Polynesian enchantress with tattooed chin and flowers in dark hair, wearing nothing but ritual body paint and a whisper of enchanted mist",
+    "a petite elderly Japanese onmyoji in layered silken robes artfully loosened to reveal one elegant shoulder, sharp knowing eyes promising forbidden secrets",
+    "a tall Scandinavian valkyrie-witch with ice-blonde braids, frost-kissed skin barely covered by sheer fur-trimmed wraps, nipples glowing faintly blue",
+    "a radiant Ethiopian sorceress with luminous dark skin and a halo of golden beads, sheer white ceremonial wrap clinging to every curve, gilded and divine",
+    "a powerful Slavic witch-queen with ruddy cheeks, fur-lined collar framing deep cleavage, enchanted corset straining against her generous figure",
+    "a graceful Vietnamese spirit-caller with silk ribbon enchantments spiralling around her nude form like living calligraphy, ethereal and teasing",
+    "a wild-eyed Inuit shaman wrapped only in northern lights made tangible, aurora borealis swirling as a luminous bodysuit that reveals everything",
+    "an Amazigh desert witch with henna covering her bare body in intricate patterns, indigo headwrap the only fabric, commanding and untouchable",
+    "a sun-kissed Brazilian feiticeira with wild curly hair alive with sparks, string bikini woven from pure magical energy, bronze skin gleaming",
+    "a regal West African high priestess with elaborate gold filigree adorning her bare chest, ceremonial skirt slit impossibly high, imperial bearing",
+    # ── Men ──
+    "a powerful Maori war-mage with full-face moko, bare muscular torso glistening with enchanted oils, traditional piupiu barely covering his thighs",
+    "a lean Somali sorcerer with high cheekbones, open leather coat over bare scarred chest, low-slung enchanted loincloth, smouldering intensity",
+    "a magnificent Sikh tantric with an immaculate turban glowing with runes, bare torso rippling with muscle, sacred thread the only adornment on his chest",
+    "a quiet Korean alchemist with wire-rimmed spectacles, surprisingly ripped beneath his loosely open ink-stained robe, shy smile contradicting his body",
+    "a dangerous Romani conjurer with gold earring, open silk shirt revealing a powerful tattooed chest, knowing half-smile that promises everything",
+    "a tall Yoruba oracle with ritual scarification and bead-wrapped wrists, wearing only a ceremonial loincloth, powerful thighs and glistening dark skin",
+    "a barrel-chested Scottish hedge-wizard with fiery red beard, tartan draped over one shoulder leaving the other magnificently bare, thick arms glowing",
+    "a wiry Mestizo brujo with a wide-brimmed hat, poncho open over a lean bronzed torso, desert dust on sun-kissed skin, dangerous charisma",
+    "a young Filipino elementalist with warm brown skin, cheerful grin, soaked sheer white shirt clinging to defined abs, water magic dripping from fingers",
+    "a composed Tibetan tantric master in maroon robes strategically draped to reveal one sculpted shoulder and arm, prayer beads the only restraint",
+    # ── Non-binary & Androgynous ──
+    "an ageless being with deep mahogany skin and silver-white glowing eyes, nude body adorned only with living arcane tattoos that pulse and shift",
+    "a gaunt androgynous dark elf with ash-grey skin, long pointed ears, completely nude but covered in constellations of starlight freckles like a living cosmos",
+    "a soft-featured enby with warm umber skin, shaved sides, glowing sigils tattooed across bare scalp and down naked spine, hypnotic and untouchable",
+    "a tall genderfluid figure with vitiligo patterns that shimmer with arcane energy, every patch of contrasting skin revealed beneath sheer gossamer",
+    # ── Creatures & Non-human ──
+    "a sensual raven shapeshifter mid-transformation, human torso of gleaming obsidian skin emerging from violet-smoke feathers, sapphire eyes half-lidded",
+    "a nine-tailed fox spirit in humanoid form, lithe naked body wreathed in flame-tipped tails that strategically conceal and reveal, feral seduction",
+    "a living suit of ornate armour with no occupant, visor glowing blue, chest plate cracked open to reveal swirling naked energy within, intimate and alien",
+    "a mushroom sage — a bipedal fungal being with spotted cap, bioluminescent gills casting warm light on surprisingly sensual humanoid curves beneath",
+    "a clockwork courtesan-automaton with brass gears and copper patina, elegant mechanical form with strategic gaps showing warm light within, single emerald eye",
+    "a moth-winged seductress with powdery iridescent wings and enormous compound eyes, nude humanoid torso dusted with shimmering scales, otherworldly allure",
+    "an ent-like dryad spirit with bark skin artfully covering only the essentials, moss trailing like lingerie, firefly swarm illuminating smooth wooden curves",
+    "a luminous jellyfish-being with translucent tentacles, humanoid core visible through ethereal membrane, sensual and alien in equal measure",
+    "a miniature dragon in humanoid form, scales shifting copper to teal across a sleek athletic body, tail curling suggestively, molten gold eyes",
+    "a smoke djinn manifesting as a nude figure of swirling obsidian and ember, form constantly shifting between solid and vapour, burning eyes promising sin",
+]
+_NSFW_PROMPT_STYLES = [
+    ("intimate extreme close-up portrait",
+     "sultry bedroom lighting, magical aura caressing bare skin, "
+     "highly detailed face and décolletage filling the frame, "
+     "half-lidded seductive eyes, sensual parted lips, "
+     "painterly digital art, headshot composition, "
+     "dark moody background with arcane sigils, face takes up 80 percent of image"),
+    ("provocative cinematic portrait, medium close-up",
+     "volumetric warm light, magical particles dancing across exposed skin, "
+     "shallow depth of field, revealing costume with intricate details visible, "
+     "warm golden skin tones, renaissance nude painting meets fantasy concept art, "
+     "dramatic chiaroscuro, sensual atmosphere, bedroom eyes"),
+    ("dramatic half-body portrait from below, seductive power pose",
+     "towering perspective, sheer robes billowing, arcane energy crackling across bare skin, "
+     "rich fabric textures barely concealing, ornate magical body jewellery, "
+     "deep moody atmosphere, cinematic lighting, "
+     "concept art style, strong sensual silhouette, provocative stance"),
+    ("intimate profile portrait in candlelight, post-coital glow",
+     "single warm candle flame, rim lighting on bare shoulder, "
+     "glistening skin, visible breath in cool air, "
+     "intricate body art and enchanted piercings catching the light, "
+     "old masters nude study style, rich shadows, intimate boudoir atmosphere, "
+     "magical sigils floating lazily in afterglow"),
+]
+_NSFW_BG_PROMPTS = [
+    "interior of a decadent magical pleasure guild, silk curtains and velvet chaises, warm amber candlelight, scattered enchanted wine goblets, arcane love potions on shelves, intimate alcoves with sheer draping, rose petals floating in enchanted air, wide angle, fantasy boudoir concept art, high quality",
+    "opulent wizard bathhouse interior, steaming enchanted pools with glowing runes beneath the water, marble columns draped in translucent silk, magical incense smoke curling through warm light, scattered robes on heated stone, wide angle, sensual fantasy atmosphere, concept art",
+    "lavish wizard guild after-hours lounge, low warm lighting, enchanted hookah pipes trailing luminous smoke, plush cushions and fur throws, spell-scrolls and love letters scattered on tables, magical mood lighting shifting between amber and rose, wide angle, intimate fantasy den",
+    "enchanted forest hot spring at moonlight, steam rising from luminous turquoise water, bioluminescent flowers and fireflies, scattered silk robes on mossy rocks, privacy wards glowing softly between ancient trees, wide angle, romantic fantasy atmosphere",
+]
 
 
 def _build_avatar_prompt(char):
