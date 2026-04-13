@@ -665,6 +665,77 @@ async function initialize() {
 }
 
 // ════════════════════════════════════════════════════════════════════
+// The Archivist — synthetic setup-mode wizard persona
+// ════════════════════════════════════════════════════════════════════
+//
+// During first-run / restart-recovery setup we inject a synthetic
+// "studio_archivist" wizard into the local `characters` array. He
+// appears at the top of the sidebar, gets auto-selected so the chat
+// header reads "The Archivist", and every other wizard is dimmed by
+// the lockdown CSS. When setup completes, the Archivist is removed
+// from the sidebar and the user is auto-switched to the first real
+// wizard (preferring Imaginus if she's installed). The Archivist is
+// purely a frontend artifact — the backend never knows about him.
+
+const ARCHIVIST_ID = "studio_archivist";
+
+function _buildArchivistCharacter() {
+    return {
+        id: ARCHIVIST_ID,
+        type: "studio",
+        name: "The Archivist",
+        subtext: "First-run guide — banishes himself when setup is done",
+        color1: "hsl(45, 95%, 55%)",
+        color2: "hsl(20, 95%, 50%)",
+        archetype: "an ancient bespectacled wizard surrounded by floating scrolls and arcane diagrams",
+        // Use the placeholder icon URL so we don't need a generated avatar
+        avatar_url: _PLACEHOLDER_AVATAR_URL,
+        personality: "Patient, professorial, slightly self-deprecating. Knows he'll be banished as soon as the real wizards arrive.",
+        is_archivist: true,  // sentinel for css/js gates
+    };
+}
+
+let _previousActiveCharacterId = null;
+
+function _injectArchivistIntoSidebar() {
+    if (typeof characters === 'undefined') return;
+    if (characters.find(c => c.id === ARCHIVIST_ID)) return;
+    const archivist = _buildArchivistCharacter();
+    characters.unshift(archivist);
+    _previousActiveCharacterId = activeCharacterId;
+    if (typeof renderSidebar === 'function') {
+        try { renderSidebar(); } catch (e) {}
+    }
+    // Auto-select the Archivist so the chat header shows his name
+    if (typeof selectCharacter === 'function') {
+        try { selectCharacter(ARCHIVIST_ID); } catch (e) {}
+    }
+}
+
+function _banishArchivistFromSidebar() {
+    if (typeof characters === 'undefined') return;
+    const idx = characters.findIndex(c => c.id === ARCHIVIST_ID);
+    if (idx === -1) return;
+    characters.splice(idx, 1);
+    if (typeof renderSidebar === 'function') {
+        try { renderSidebar(); } catch (e) {}
+    }
+    // Switch the user to a real wizard. Prefer Imaginus if she's
+    // installed, otherwise the first remaining character.
+    let nextId = _previousActiveCharacterId;
+    if (!nextId || nextId === ARCHIVIST_ID
+        || !characters.find(c => c.id === nextId)) {
+        const imaginus = characters.find(c => c.id === "studio_imaginus");
+        nextId = imaginus ? imaginus.id
+                          : (characters[0] && characters[0].id);
+    }
+    if (nextId && typeof selectCharacter === 'function') {
+        try { selectCharacter(nextId); } catch (e) {}
+    }
+    _previousActiveCharacterId = null;
+}
+
+// ════════════════════════════════════════════════════════════════════
 // Archivist mode — chat-locked first-run experience
 // ════════════════════════════════════════════════════════════════════
 //
@@ -794,6 +865,9 @@ function _lockChatForArchivist() {
     // Lockdown class on <body> so CSS can dim every wizard card and
     // disable every header/sidebar button except #settings-btn.
     document.body.classList.add('archivist-lockdown');
+    // Inject the synthetic Archivist persona so the chat header reads
+    // "The Archivist" instead of whichever wizard happened to be active.
+    _injectArchivistIntoSidebar();
 }
 
 function _unlockChatAfterArchivist() {
@@ -805,6 +879,9 @@ function _unlockChatAfterArchivist() {
     }
     if (sendBtn) sendBtn.disabled = false;
     document.body.classList.remove('archivist-lockdown');
+    // Banish the Archivist from the sidebar and switch the user to a
+    // real wizard now that setup is complete.
+    _banishArchivistFromSidebar();
 }
 
 function _renderNewNarration(snapshot) {
