@@ -1467,6 +1467,12 @@ _WIZARD_SPEECH_SECTION_ORDER = [
     "sillytavern", "gimp", "ready",
 ]
 _WIZARD_SPEECH_GITHUB_URL = (
+    "https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main/tavern/wizard_speech.md"
+)
+# Legacy fallback — older builds shipped the speech inline in README.md.
+# We still try this URL second so a self-update from an old install
+# doesn't end up with a fallback voice.
+_WIZARD_SPEECH_GITHUB_URL_LEGACY = (
     "https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main/README.md"
 )
 _WIZARD_SPEECH_CACHE = {"sections": None, "ts": 0.0, "source": None}
@@ -1554,8 +1560,13 @@ def _load_wizard_speech_sections(force_refresh=False):
             and (now - _WIZARD_SPEECH_CACHE["ts"]) < _WIZARD_SPEECH_TTL):
         return _WIZARD_SPEECH_CACHE["sections"]
 
-    # 1. Bundled README — try a few likely locations
+    # 1. Bundled wizard_speech.md — try a few likely locations. README
+    # fallback comes after so old installs still find SOMETHING.
     bundled_paths = [
+        os.path.join(_THIS_DIR, "wizard_speech.md"),
+        os.path.join(_THIS_DIR, "..", "tavern", "wizard_speech.md"),
+        os.path.join(_THIS_DIR, "..", "wizard_speech.md"),
+        # README fallback for legacy installs — speech used to live here
         os.path.join(_THIS_DIR, "..", "README.md"),
         os.path.join(_THIS_DIR, "README.md"),
         os.path.join(os.path.dirname(_THIS_DIR), "README.md"),
@@ -1572,20 +1583,21 @@ def _load_wizard_speech_sections(force_refresh=False):
         except Exception:
             continue
 
-    # 2. GitHub raw fetch
-    try:
-        req = urllib.request.Request(
-            _WIZARD_SPEECH_GITHUB_URL,
-            headers={"User-Agent": "Spellcaster-Guild"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            md = resp.read().decode("utf-8")
-        sections = _parse_wizard_speech_markdown(md)
-        if sections:
-            _WIZARD_SPEECH_CACHE.update(
-                sections=sections, ts=now, source="github")
-            return sections
-    except Exception as e:
-        print(f"  [Guild] Wizard-speech GitHub fetch failed: {e}")
+    # 2. GitHub raw fetch — try the new dedicated speech file first,
+    # then the legacy README path for older deployments.
+    for url in (_WIZARD_SPEECH_GITHUB_URL, _WIZARD_SPEECH_GITHUB_URL_LEGACY):
+        try:
+            req = urllib.request.Request(
+                url, headers={"User-Agent": "Spellcaster-Guild"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                md = resp.read().decode("utf-8")
+            sections = _parse_wizard_speech_markdown(md)
+            if sections:
+                _WIZARD_SPEECH_CACHE.update(
+                    sections=sections, ts=now, source="github")
+                return sections
+        except Exception as e:
+            print(f"  [Guild] Wizard-speech fetch failed for {url}: {e}")
 
     # 3. Hardcoded fallback
     _WIZARD_SPEECH_CACHE.update(
