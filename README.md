@@ -60,6 +60,8 @@ Sections (must match the names the backend looks for):
 <!-- WIZARD_SPEECH:welcome -->
 *Ahem.* **Welcome to the Wizard Guild.**
 
+![Spellcaster](/asset_image/wizard_banner.gif)
+
 I'm The Archivist — the wizard who shows up first to keep you company
 while the others get themselves dressed. Right now every wizard you'll
 meet is busy painting their own portrait through your ComfyUI server,
@@ -96,6 +98,8 @@ VRAM. Everything runs locally. Nothing leaves your machine.
 <!-- WIZARD_SPEECH:scaffolding -->
 **Why "scaffolding" matters.**
 
+![The Wizard Guild](/asset_image/wizardguild.png)
+
 Local language models are *small*. A 7B-parameter model is brilliant
 at conversation but terrible at remembering long instructions or
 producing valid JSON. If you just asked one to "drive ComfyUI", it
@@ -120,6 +124,12 @@ For every wizard you meet, the scaffold:
 That's how a 7B model can flawlessly drive a 49-tool image suite.
 The intelligence isn't in the LLM — it's in the *constraints* we
 wrap around it.
+
+You can inspect every wizard's scaffold yourself in the **Travelling
+Wizard** — the 🧙 button in the lower-left corner of the sidebar (right
+above ⚙️ Settings). It shows the live workflow JSON, the parameter
+menus, and the auto-discovered LoRA list each wizard sees. If a wizard
+is misbehaving, that's where you go to debug them.
 <!-- /WIZARD_SPEECH:scaffolding -->
 
 <!-- WIZARD_SPEECH:spells -->
@@ -148,6 +158,8 @@ with other Guild users.
 <!-- WIZARD_SPEECH:sillytavern -->
 **The Wizard Guild as a SillyTavern back end.**
 
+![Imaginus](/character_image/Imaginus.png) ![Sceneshifter](/character_image/Sceneshifter.png) ![Restyler](/character_image/Restyler.png) ![Cinematic](/character_image/Cinematic.png)
+
 If you use [SillyTavern](https://github.com/SillyTavern/SillyTavern) for
 character roleplay, the Guild plugs straight into it. SillyTavern keeps
 doing what it does best — long-form conversation, character cards,
@@ -157,9 +169,11 @@ the Guild's wizards.
 Your roleplay gets *eyes*: backgrounds change as the story moves,
 character portraits shift with emotions, dramatic moments get
 illustrated automatically. Spellcaster ships **13 SillyTavern character
-cards** (Imaginus, Transmutex, Sceneshifter, Restyler, etc.) that map
-cleanly onto the Guild's wizards, so the AI in your story can call them
-mid-scene without you ever leaving the chat window.
+cards** that map cleanly onto the Guild's wizards (Imaginus draws,
+Sceneshifter rebuilds the scene background, Restyler restyles a
+character mid-conversation, Cinematic stitches multi-shot animations),
+so the AI in your story can call them mid-scene without you ever
+leaving the chat window.
 
 The Guild also exposes the same back end to **any other front end** that
 can talk to a local LLM — OpenWebUI, LM Studio, even a Signal bot via
@@ -169,6 +183,8 @@ speaks LLM, it can ask the Guild to generate art.
 
 <!-- WIZARD_SPEECH:gimp -->
 **When you want a real image editor: GIMP.**
+
+![Inpaint demo](/asset_image/demo_step2_inpaint.png)
 
 The Wizard Guild is built for *conversation* — describe what you want,
 get a result. But sometimes you want pixel-level control: a selection

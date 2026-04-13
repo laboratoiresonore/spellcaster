@@ -518,10 +518,13 @@ body {
 #chat-stream::-webkit-scrollbar-track { background: transparent; }
 #chat-stream::-webkit-scrollbar-thumb { background: rgba(178,70,242,0.2); border-radius: 4px; }
 
-.message { display: flex; max-width: 82%; animation: msgSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.message { display: flex; max-width: 82%; animation: msgSlideIn 0.55s ease-out; }
+/* Gentle pure-translate fade-in. No scale, no overshoot, no double-
+   animation. Faster than the brain registers as a "pop" — the eye
+   sees the bubble already in place and just notices it appearing. */
 @keyframes msgSlideIn {
-    from { opacity: 0; transform: translateY(16px) scale(0.98); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 .user-message { align-self: flex-end; flex-direction: row-reverse; }
 .ai-message { align-self: flex-start; }
@@ -1370,4 +1373,131 @@ body.archivist-lockdown #chat-input-area::before {
     color: #fff;
     font-weight: 700;
     font-style: normal;
+}
+
+/* ── Archivist inline images (markdown ![alt](url)) ───────────────── */
+.archivist-bubble .archivist-inline-img {
+    display: block;
+    max-width: 100%;
+    margin: 8px auto;
+    border-radius: 8px;
+    border: 1px solid rgba(252, 211, 77, 0.25);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+    cursor: zoom-in;
+}
+.archivist-bubble .archivist-inline-img + .archivist-inline-img {
+    /* Multiple images side-by-side stack instead of inflating the bubble */
+    margin-top: 6px;
+}
+
+/* ── Wizard arrival sparkle + shake (NO brightness) ───────────────── */
+@keyframes arrivalShake {
+    0%, 100% { transform: translateX(0); }
+    15%      { transform: translateX(-4px) rotate(-0.6deg); }
+    30%      { transform: translateX(4px)  rotate(0.6deg); }
+    45%      { transform: translateX(-3px) rotate(-0.4deg); }
+    60%      { transform: translateX(3px)  rotate(0.4deg); }
+    75%      { transform: translateX(-2px); }
+    90%      { transform: translateX(2px); }
+}
+.archivist-arrival .archivist-portrait {
+    animation: arrivalShake 0.9s cubic-bezier(0.36, 0.07, 0.19, 0.97) 0.15s;
+    transform-origin: center;
+}
+/* Sparkle particles overlaid on the portrait bubble. Each particle is
+   a positioned pseudo-element / span. The container manages four of
+   them at the corners with a one-shot keyframe. */
+.archivist-arrival .archivist-bubble {
+    position: relative;
+    overflow: visible;
+}
+.archivist-arrival .archivist-sparkle {
+    position: absolute;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #fde68a 0%, rgba(252, 211, 77, 0.6) 50%, transparent 100%);
+    pointer-events: none;
+    opacity: 0;
+    animation: arrivalSparkle 1.4s ease-out forwards;
+}
+.archivist-arrival .archivist-sparkle:nth-child(1) {
+    top: 10%; left: 8%;  animation-delay: 0.10s;
+}
+.archivist-arrival .archivist-sparkle:nth-child(2) {
+    top: 8%; right: 10%; animation-delay: 0.30s;
+}
+.archivist-arrival .archivist-sparkle:nth-child(3) {
+    bottom: 12%; left: 14%; animation-delay: 0.50s;
+}
+.archivist-arrival .archivist-sparkle:nth-child(4) {
+    bottom: 10%; right: 12%; animation-delay: 0.20s;
+}
+.archivist-arrival .archivist-sparkle:nth-child(5) {
+    top: 50%; left: 5%; animation-delay: 0.40s;
+}
+.archivist-arrival .archivist-sparkle:nth-child(6) {
+    top: 50%; right: 5%; animation-delay: 0.60s;
+}
+@keyframes arrivalSparkle {
+    0%   { opacity: 0; transform: scale(0.5) translate(0, 0); }
+    20%  { opacity: 1; transform: scale(1.2) translate(0, -4px); }
+    100% { opacity: 0; transform: scale(0.6) translate(0, -28px); }
+}
+
+/* ── Universal lightbox (click any image to expand) ───────────────── */
+#image-lightbox {
+    position: fixed; inset: 0;
+    background: rgba(0, 0, 0, 0.92);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 10500;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+    cursor: zoom-out;
+    -webkit-tap-highlight-color: transparent;
+}
+#image-lightbox.open {
+    opacity: 1;
+    pointer-events: auto;
+}
+#image-lightbox img {
+    max-width: 92vw;
+    max-height: 92vh;
+    object-fit: contain;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7),
+                0 0 60px rgba(178, 70, 242, 0.2);
+    transform: scale(0.92);
+    transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+#image-lightbox.open img { transform: scale(1); }
+#image-lightbox .lightbox-close {
+    position: absolute;
+    top: 16px;
+    right: 20px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    color: #fff;
+    font-size: 26px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: auto;
+    transition: background 0.15s, transform 0.1s;
+}
+#image-lightbox .lightbox-close:hover {
+    background: rgba(178, 70, 242, 0.85);
+    transform: scale(1.08);
+}
+#image-lightbox .lightbox-close:active {
+    transform: scale(0.95);
+}
+/* Visual hint that any image is clickable */
+.chat-stream img.generated-image,
+.archivist-portrait,
+.archivist-inline-img,
+.character-card .avatar {
+    cursor: zoom-in;
 }

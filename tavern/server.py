@@ -1967,6 +1967,59 @@ _PLACEHOLDER_ICON_PATHS = [
     os.path.join(os.path.dirname(_THIS_DIR), "assets",
                   "spellcaster_darktable_icon.png"),
 ]
+_CHARACTERS_DIR = os.path.join(_THIS_DIR, "characters")
+_REPO_ASSETS_DIR = os.path.join(os.path.dirname(_THIS_DIR), "assets")
+_IMAGE_EXTENSIONS_ALLOWED = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"}
+
+
+def _serve_repo_image(handler, name, base_dir):
+    """Serve an illustration image from a known repo directory.
+
+    Used by /character_image/<name> and /asset_image/<name> to surface
+    the SillyTavern character portraits in `tavern/characters/` and the
+    `assets/` images referenced by the Archivist's README-driven speech
+    sections.
+
+    Path traversal protection: only allows simple basenames with safe
+    extensions. Symlinks and `..` components are rejected.
+    """
+    try:
+        # Strip any query string
+        if "?" in name:
+            name = name.split("?", 1)[0]
+        # Reject anything that looks like path traversal
+        if "/" in name or "\\" in name or ".." in name or not name:
+            handler.send_error(404)
+            return
+        ext = os.path.splitext(name)[1].lower()
+        if ext not in _IMAGE_EXTENSIONS_ALLOWED:
+            handler.send_error(404)
+            return
+        full = os.path.join(base_dir, name)
+        if not os.path.isfile(full):
+            handler.send_error(404)
+            return
+        with open(full, "rb") as f:
+            data = f.read()
+        # Pick a sensible content type
+        ctype = {
+            ".png": "image/png", ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg", ".gif": "image/gif",
+            ".webp": "image/webp", ".svg": "image/svg+xml",
+        }.get(ext, "application/octet-stream")
+        handler.send_response(200)
+        handler.send_header("Content-Type", ctype)
+        handler.send_header("Cache-Control", "public, max-age=86400")
+        handler.send_header("Content-Length", str(len(data)))
+        handler.end_headers()
+        handler.wfile.write(data)
+    except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+        pass
+    except Exception:
+        try:
+            handler.send_error(500)
+        except Exception:
+            pass
 
 
 def _load_placeholder_icon_bytes():
@@ -2950,6 +3003,10 @@ def _get_loras_for_wizard(char_id):
             "civitai_url": info.get("civitai_url", ""),
             "civitai_name": info.get("civitai_name", ""),
             "source": info.get("source", "discovered"),
+            # Activation keywords + recommended strength from user input
+            # via the F10 LoRA interrogation flow.
+            "trigger_words": info.get("trigger_words", ""),
+            "default_strength": info.get("default_strength", 0.7),
         })
 
     # Sort: known purpose first, then alphabetical
@@ -5698,6 +5755,21 @@ class GuildHandler(SimpleHTTPRequestHandler):
             # yet. Frontend animates this with the pending CSS classes
             # (queued = slow + transparent, active = fast + vivid).
             return _serve_placeholder_icon(self)
+        elif self.path.startswith('/character_image/'):
+            # Serves illustration PNGs from tavern/characters/. Used by
+            # the Archivist's README-driven speech sections that embed
+            # SillyTavern character portraits inline.
+            return _serve_repo_image(
+                self, self.path[len('/character_image/'):],
+                _CHARACTERS_DIR)
+        elif self.path.startswith('/asset_image/'):
+            # Serves illustration assets (PNG/GIF/JPG/WEBP) from the
+            # repo's top-level assets/ directory. Used by inline images
+            # in Archivist speech sections (scaffolding screenshot,
+            # banner GIF, etc.).
+            return _serve_repo_image(
+                self, self.path[len('/asset_image/'):],
+                _REPO_ASSETS_DIR)
         elif self.path.startswith('/api/avatar/'):
             char_id = self.path.split('/api/avatar/')[-1]
             # The legacy SVG colored-letter placeholder is gone. Every
@@ -6309,20 +6381,52 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(200, {"status": "ok", "total": len(_WIZARD_IDENTITIES)})
 
         # -- /api/lora_describe -- user provides descriptions for unknown LoRAs
+        # Now also accepts an optional trigger_words map and a default
+        # strength override so the Archivist's "ask the user about LoRAs"
+        # flow can capture activation keywords + recommended strength
+        # alongside the free-text purpose.
+        #
+        # Payload shape:
+        #   {
+        #     "descriptions":  {lora_name: "free text purpose"},
+        #     "trigger_words": {lora_name: "comma, separated, words"},
+        #     "strengths":     {lora_name: 0.7},
+        #     "char_id":       "studio_imaginus"  (optional)
+        #   }
         elif self.path == '/api/lora_describe':
             descriptions = data.get('descriptions', {})
+            trigger_words = data.get('trigger_words', {}) or {}
+            strengths = data.get('strengths', {}) or {}
             char_id = data.get('char_id', '')
-            if not descriptions:
-                return self.end_json(400, {"error": "descriptions dict required"})
+            if not descriptions and not trigger_words and not strengths:
+                return self.end_json(400, {"error": "nothing to update"})
 
             updated = 0
-            for lora_name, desc in descriptions.items():
-                if lora_name in _LORA_REGISTRY:
-                    _LORA_REGISTRY[lora_name]["user_desc"] = desc
-                    _LORA_REGISTRY[lora_name]["source"] = "user"
-                    if not _LORA_REGISTRY[lora_name].get("purpose"):
-                        _LORA_REGISTRY[lora_name]["purpose"] = desc
-                    updated += 1
+            for lora_name in set(list(descriptions.keys())
+                                 + list(trigger_words.keys())
+                                 + list(strengths.keys())):
+                if lora_name not in _LORA_REGISTRY:
+                    continue
+                entry = _LORA_REGISTRY[lora_name]
+                desc = descriptions.get(lora_name)
+                if desc:
+                    entry["user_desc"] = desc
+                    if not entry.get("purpose"):
+                        entry["purpose"] = desc
+                tw = trigger_words.get(lora_name)
+                if tw:
+                    # Normalise to a clean comma-separated string
+                    parts = [w.strip() for w in str(tw).split(",")
+                             if w.strip()]
+                    entry["trigger_words"] = ", ".join(parts)
+                strength = strengths.get(lora_name)
+                if strength is not None:
+                    try:
+                        entry["default_strength"] = float(strength)
+                    except (TypeError, ValueError):
+                        pass
+                entry["source"] = "user"
+                updated += 1
 
             if char_id:
                 _LORA_INTERROGATED.add(char_id)

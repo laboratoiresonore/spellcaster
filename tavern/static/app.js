@@ -573,6 +573,9 @@ async function initialize() {
     // Check if video models available (for Animate All button)
     checkVideoModelAvailable();
 
+    // Click any image to expand fullscreen
+    _initLightboxDelegation();
+
     // Fetch System Prompt
     const promptRes = await fetch('/api/system_prompt');
     const promptData = await promptRes.json();
@@ -662,6 +665,111 @@ async function initialize() {
     if (characters.length > 0) {
         selectCharacter(characters[0].id);
     }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Global image lightbox — click any image to expand fullscreen
+// ════════════════════════════════════════════════════════════════════
+//
+// Click any <img> inside the chat, sidebar avatar, generated image,
+// archivist portrait, or markdown inline image to open it in a
+// fullscreen modal. Esc / click-outside / X to close.
+//
+// We use event delegation off document.body so it works for elements
+// added dynamically (avatar arrivals, generated images in chat, etc.)
+// without needing per-element wiring. Background-image div avatars
+// (the sidebar character cards + active wizard header) are handled by
+// reading their computed background-image URL when clicked.
+
+let _lightboxEl = null;
+let _lightboxImgEl = null;
+let _lightboxEscHandler = null;
+
+function _ensureLightbox() {
+    if (_lightboxEl) return _lightboxEl;
+    const el = document.createElement('div');
+    el.id = 'image-lightbox';
+    el.innerHTML = `
+        <button class="lightbox-close" type="button" title="Close (Esc)" aria-label="Close">&times;</button>
+        <img alt="" src=""/>
+    `;
+    document.body.appendChild(el);
+    _lightboxEl = el;
+    _lightboxImgEl = el.querySelector('img');
+    // Click anywhere on the backdrop to close
+    el.addEventListener('click', (ev) => {
+        if (ev.target === el || ev.target.tagName === 'IMG') {
+            // Image clicks pass through (they're inside the modal),
+            // so we close on backdrop click only
+            if (ev.target === el) closeLightbox();
+        }
+    });
+    el.querySelector('.lightbox-close').addEventListener('click', closeLightbox);
+    return el;
+}
+
+function openLightbox(src, alt) {
+    if (!src) return;
+    _ensureLightbox();
+    _lightboxImgEl.src = src;
+    _lightboxImgEl.alt = alt || '';
+    _lightboxEl.classList.add('open');
+    if (!_lightboxEscHandler) {
+        _lightboxEscHandler = (e) => {
+            if (e.key === 'Escape' && _lightboxEl && _lightboxEl.classList.contains('open')) {
+                closeLightbox();
+            }
+        };
+        document.addEventListener('keydown', _lightboxEscHandler);
+    }
+}
+
+function closeLightbox() {
+    if (!_lightboxEl) return;
+    _lightboxEl.classList.remove('open');
+    if (_lightboxEscHandler) {
+        document.removeEventListener('keydown', _lightboxEscHandler);
+        _lightboxEscHandler = null;
+    }
+}
+
+function _extractCssBgUrl(el) {
+    if (!el) return null;
+    const bg = window.getComputedStyle(el).backgroundImage;
+    if (!bg || bg === 'none') return null;
+    const m = bg.match(/url\(["']?([^"')]+)["']?\)/);
+    return m ? m[1] : null;
+}
+
+function _initLightboxDelegation() {
+    document.body.addEventListener('click', (ev) => {
+        // Skip if a tooltip/modal/lockdown intercepted the click
+        if (ev.defaultPrevented) return;
+        let el = ev.target;
+        // Walk up a few levels in case the click hit a child of the avatar
+        for (let i = 0; i < 4 && el && el !== document.body; i++) {
+            if (el.tagName === 'IMG') {
+                // Skip the lightbox itself + the wizard tooltip avatar
+                if (el.closest('#image-lightbox')) return;
+                openLightbox(el.src, el.alt);
+                ev.preventDefault();
+                return;
+            }
+            // Background-image avatar divs (sidebar cards, header avatar)
+            if (el.classList && (
+                el.classList.contains('avatar')
+                || el.classList.contains('avatar-small')
+            )) {
+                const url = _extractCssBgUrl(el);
+                if (url) {
+                    openLightbox(url, el.getAttribute('aria-label') || '');
+                    ev.preventDefault();
+                    return;
+                }
+            }
+            el = el.parentElement;
+        }
+    });
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -778,8 +886,9 @@ function _addArchivistMessage(markdown) {
 function _renderSimpleMarkdown(md) {
     // Tiny, safe-by-construction markdown renderer for the Archivist
     // speech blocks. Handles **bold**, *italic*, `code`, paragraph breaks,
-    // simple ``` code blocks, [link](url), and unordered lists. We do
-    // basic HTML escaping first so user-controlled content can't inject.
+    // simple ``` code blocks, [link](url), ![alt](url) images, and
+    // unordered lists. We do basic HTML escaping first so user-
+    // controlled content can't inject.
     if (!md) return '';
     const esc = (s) => s
         .replace(/&/g, '&amp;')
@@ -791,6 +900,17 @@ function _renderSimpleMarkdown(md) {
     s = s.replace(/```[a-z]*\n([\s\S]*?)```/gi, (_, body) => {
         codeBlocks.push(esc(body));
         return `\u0000CODE${codeBlocks.length - 1}\u0000`;
+    });
+    // Pull out images BEFORE escaping so the markup survives.
+    // Format: ![alt text](url)
+    // Allowed URL schemes: relative paths starting with /, or http/https.
+    const images = [];
+    s = s.replace(/!\[([^\]]*)\]\((\/[^)\s]+|https?:\/\/[^)\s]+)\)/g,
+                  (_, alt, url) => {
+        const safeAlt = esc(alt);
+        const safeUrl = esc(url);
+        images.push(`<img class="archivist-inline-img" src="${safeUrl}" alt="${safeAlt}" loading="lazy">`);
+        return `\u0000IMG${images.length - 1}\u0000`;
     });
     s = esc(s);
     // Bold, italic, inline code, links
@@ -844,6 +964,7 @@ function _renderSimpleMarkdown(md) {
     closeList();
     let html = out.join('');
     html = html.replace(/\u0000CODE(\d+)\u0000/g, (_, i) => `<pre><code>${codeBlocks[+i]}</code></pre>`);
+    html = html.replace(/\u0000IMG(\d+)\u0000/g, (_, i) => images[+i] || '');
     return html;
 }
 
@@ -973,12 +1094,21 @@ function _renderNewAvatars(snapshot) {
             char.avatar_url = av.avatar_url;
             char.name = char.name || av.name;
         }
-        // Render the avatar arrival as a tall portrait card
+        // Render the avatar arrival as a tall portrait card with
+        // sparkle particles + a brief shake on the portrait. The
+        // sparkles are CSS-driven (no brightness flicker), the shake
+        // is a 0.9 s one-shot transform translate keyframe.
         const msg = document.createElement('div');
         msg.className = 'message ai-message archivist-arrival';
         msg.innerHTML = `
             <div class="avatar-small archivist-avatar" style="${_ARCHIVIST_AVATAR_STYLE}">${_ARCHIVIST_AVATAR_HTML}</div>
             <div class="bubble archivist-bubble">
+                <span class="archivist-sparkle"></span>
+                <span class="archivist-sparkle"></span>
+                <span class="archivist-sparkle"></span>
+                <span class="archivist-sparkle"></span>
+                <span class="archivist-sparkle"></span>
+                <span class="archivist-sparkle"></span>
                 <p><strong>${av.name}</strong> has arrived.</p>
                 <img src="${av.avatar_url}" alt="${av.name}" class="archivist-portrait"/>
             </div>
@@ -3300,6 +3430,20 @@ function renderLoraList(loras, charId) {
             ? `<a href="${lora.civitai_url}" target="_blank" style="color:#B246F2;font-size:11px;text-decoration:none;margin-left:6px;">CivitAI ↗</a>`
             : '';
 
+        // Trigger keyword badges + recommended strength chip — surface
+        // anything the user (or CivitAI metadata) has captured about
+        // how to invoke this LoRA.
+        let triggerBadges = '';
+        if (lora.trigger_words) {
+            const words = String(lora.trigger_words).split(',').map(w => w.trim()).filter(Boolean);
+            triggerBadges = words.map(w =>
+                `<span style="display:inline-block;padding:1px 6px;margin:2px 3px 0 0;background:rgba(252,211,77,0.15);border:1px solid rgba(252,211,77,0.3);border-radius:4px;font-size:10px;color:#fde68a;font-family:monospace;">${w}</span>`
+            ).join('');
+        }
+        const strengthChip = (lora.default_strength != null && lora.default_strength !== 0.7)
+            ? `<span style="display:inline-block;padding:1px 6px;margin-left:4px;background:rgba(178,70,242,0.15);border:1px solid rgba(178,70,242,0.3);border-radius:4px;font-size:10px;color:#c4b5fd;">str ${lora.default_strength}</span>`
+            : '';
+
         const row = document.createElement('div');
         row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #222;';
         row.innerHTML = `
@@ -3310,10 +3454,12 @@ function renderLoraList(loras, charId) {
             <div style="flex:1;min-width:0;">
                 <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
                     <span style="font-weight:600;color:#eee;font-size:13px;">${lora.display_name}</span>
-                    <span style="font-size:11px;color:#888;">${sourceIcon}</span>
+                    <span style="font-size:11px;color:#888;" title="${lora.source}">${sourceIcon}</span>
+                    ${strengthChip}
                     ${civitLink}
                 </div>
                 <p style="color:#aaa;font-size:12px;margin-top:2px;">${purposeText}</p>
+                ${triggerBadges ? `<div style="margin-top:3px;">${triggerBadges}</div>` : ''}
                 ${lora.description ? `<p style="color:#666;font-size:11px;margin-top:2px;max-height:40px;overflow:hidden;">${lora.description.substring(0, 120)}</p>` : ''}
             </div>
         `;
@@ -3337,27 +3483,62 @@ function renderLoraInterrogation(unknownLoras, charId) {
     loraInterrogation.style.display = 'block';
     loraInterrogationList.innerHTML = '';
 
+    // Helpful tips header so users know what they're doing
+    const tips = document.createElement('div');
+    tips.style.cssText = 'margin-bottom:12px;padding:10px 12px;background:rgba(252,211,77,0.06);border:1px solid rgba(252,211,77,0.2);border-radius:8px;color:#fde68a;font-size:12px;line-height:1.5;';
+    tips.innerHTML = `
+        <strong>Help me classify these LoRAs.</strong> For each one, tell me:
+        <ul style="margin:6px 0 4px 18px;padding:0;">
+            <li><strong>What it does</strong> (e.g. "hand refinement", "anime style", "detail enhance")</li>
+            <li><strong>Trigger words</strong> if it has them — comma-separated keywords that activate the LoRA</li>
+            <li><strong>Default strength</strong> — the recommended weight (0.0–2.0). Start with <code>0.7</code> and tune from there.</li>
+        </ul>
+        <span style="opacity:0.85;">Tip: don't stack more than 3 LoRAs in a single generation — they fight each other and quality drops.</span>
+    `;
+    loraInterrogationList.appendChild(tips);
+
     unknownLoras.forEach(lora => {
         const row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;';
+        row.style.cssText = 'display:grid;grid-template-columns:160px 1fr 1fr 60px;gap:8px;margin-bottom:10px;align-items:center;';
         row.innerHTML = `
-            <span style="font-weight:600;color:#ddd;font-size:13px;min-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${lora.name}">${lora.display_name}</span>
-            <input type="text" data-lora-name="${lora.name}" placeholder="e.g. hand refinement, anime style..."
-                style="flex:1;padding:6px 10px;border-radius:6px;border:1px solid #444;background:#1a1a2e;color:#eee;font-size:12px;">
+            <span style="font-weight:600;color:#ddd;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${lora.name}">${lora.display_name}</span>
+            <input type="text" data-lora-name="${lora.name}" data-field="purpose"
+                placeholder="What does it do? (e.g. hand fix, anime style)"
+                style="padding:6px 10px;border-radius:6px;border:1px solid #444;background:#1a1a2e;color:#eee;font-size:12px;min-width:0;">
+            <input type="text" data-lora-name="${lora.name}" data-field="trigger_words"
+                placeholder="Trigger words (comma-separated, optional)"
+                style="padding:6px 10px;border-radius:6px;border:1px solid #444;background:#1a1a2e;color:#eee;font-size:12px;min-width:0;">
+            <input type="number" data-lora-name="${lora.name}" data-field="strength"
+                placeholder="0.7" min="0" max="2" step="0.05" value="0.7"
+                style="padding:6px 8px;border-radius:6px;border:1px solid #444;background:#1a1a2e;color:#eee;font-size:12px;text-align:center;">
         `;
         loraInterrogationList.appendChild(row);
     });
 }
 
 loraInterrogationSave.addEventListener('click', async () => {
+    // Three columns of inputs per LoRA: purpose, trigger_words, strength.
+    // Group by lora name and only send fields the user actually filled in.
     const inputs = loraInterrogationList.querySelectorAll('input[data-lora-name]');
     const descriptions = {};
+    const trigger_words = {};
+    const strengths = {};
     inputs.forEach(inp => {
+        const name = inp.dataset.loraName;
+        const field = inp.dataset.field;
         const val = inp.value.trim();
-        if (val) descriptions[inp.dataset.loraName] = val;
+        if (!name || !val) return;
+        if (field === 'purpose') descriptions[name] = val;
+        else if (field === 'trigger_words') trigger_words[name] = val;
+        else if (field === 'strength') {
+            const num = parseFloat(val);
+            if (!isNaN(num)) strengths[name] = num;
+        }
     });
 
-    if (Object.keys(descriptions).length === 0) {
+    if (Object.keys(descriptions).length === 0
+        && Object.keys(trigger_words).length === 0
+        && Object.keys(strengths).length === 0) {
         loraInterrogation.style.display = 'none';
         return;
     }
@@ -3366,9 +3547,12 @@ loraInterrogationSave.addEventListener('click', async () => {
         await fetch('/api/lora_describe', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ descriptions }),
+            body: JSON.stringify({
+                descriptions, trigger_words, strengths,
+                char_id: activeCharacterId,
+            }),
         });
-        // Refresh the LoRA modal
+        // Refresh the LoRA modal so the user sees their saved input
         loraBtn.click();
     } catch(e) {
         console.error('Failed to save LoRA descriptions:', e);
@@ -3534,29 +3718,16 @@ function _avatarSelectBurst(avatarEl) {
 }
 
 function _messageEntrance(msgEl) {
-    if (typeof gsap === 'undefined' || !msgEl) return;
-    const isUser = msgEl.classList.contains('user-message');
-    gsap.fromTo(msgEl,
-        { opacity: 0, y: 30, x: isUser ? 40 : -40, scale: 0.9 },
-        { opacity: 1, y: 0, x: 0, scale: 1, duration: 0.6, ease: 'back.out(1.2)' }
-    );
-    // Tiny sparkles around the new message
-    const bubble = msgEl.querySelector('.bubble');
-    if (bubble) {
-        for (let i = 0; i < 6; i++) {
-            const spark = document.createElement('div');
-            spark.className = 'msg-sparkle';
-            bubble.appendChild(spark);
-            const angle = (i / 6) * Math.PI * 2;
-            gsap.fromTo(spark,
-                { x: 0, y: 0, opacity: 1, scale: 1 },
-                { x: Math.cos(angle) * 40, y: Math.sin(angle) * 40, opacity: 0, scale: 0,
-                  duration: 0.6, delay: i * 0.05, ease: 'power2.out',
-                  onComplete: () => spark.remove()
-                }
-            );
-        }
-    }
+    // Intentionally a no-op. The CSS animation `.message { animation:
+    // msgSlideIn ... }` already handles the entrance. The previous
+    // GSAP fromTo with `back.out(1.2)` ease added a noticeable overshoot
+    // pop on top of that, which combined with the gold Archivist
+    // bubble background read as a flash on every line of dialogue.
+    // The earlier version also burst 6 sparkle particles per message
+    // which made it strictly worse. We now rely on the gentle CSS-only
+    // slide-in and reserve sparkles for the dedicated wizard-arrival
+    // event in _renderNewAvatars.
+    return;
 }
 
 function _typingIndicatorMagic(el) {
