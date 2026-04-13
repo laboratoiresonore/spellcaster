@@ -2000,7 +2000,55 @@ async function showWizardTooltip(char, cardEl) {
     tooltip.classList.add('wt-visible');
 }
 
-function selectCharacter(id) {
+// ─── Persistent chat history ───────────────────────────────────────
+//
+// The Wizard Guild now keeps a permanent JSONL log per wizard on the
+// server. Every user/assistant/system message and every successful
+// generation is appended; selectCharacter() replays the log so a
+// page refresh (or a different device pointing at the same Guild)
+// shows the full conversation. Generation records also get a
+// "Cast Again" button that re-fires the saved spell payload, with
+// optional batching (cast N times).
+function _persistChatRecord(record) {
+    if (!activeCharacterId) return;
+    try {
+        fetch('/api/chat_history/append', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ char_id: activeCharacterId, record }),
+            keepalive: true,
+        }).catch(() => {});
+    } catch (e) { /* fire-and-forget */ }
+}
+
+async function _loadChatHistoryFor(charId) {
+    try {
+        const r = await fetch(`/api/chat_history/${encodeURIComponent(charId)}`);
+        if (!r.ok) return [];
+        const data = await r.json();
+        return Array.isArray(data.records) ? data.records : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function _replayChatRecord(rec) {
+    if (!rec || typeof rec !== 'object') return;
+    const role = rec.role;
+    if (role === 'user') {
+        addUserMessage(rec.content || '', { skipPersist: true });
+    } else if (role === 'assistant') {
+        addAIMessage(rec.content || '', { skipPersist: true });
+    } else if (role === 'system') {
+        addSystemMessage(rec.content || '', { skipPersist: true });
+    } else if (role === 'generation') {
+        addGenerationMessage(
+            rec.payload || {}, rec.type || 'images', rec.urls || [],
+            { skipPersist: true });
+    }
+}
+
+async function selectCharacter(id) {
     activeCharacterId = id;
     const char = characters.find(c => c.id === id);
     if (!char) return;
@@ -2030,16 +2078,25 @@ function selectCharacter(id) {
     // Reset Chat Memory
     chatHistory = [];
     chatStream.innerHTML = '';
-    
-    // Initial greeting — studio characters get a tool-aware intro
-    let intro;
-    if (char.type === "studio") {
-        intro = `Greetings. I am ${char.name}, the Guild's specialist in ${char.subtext}. Describe what you need, and I shall present my tools for you to choose from.`;
+
+    // Replay persistent history first. If nothing on disk, drop the
+    // initial greeting and persist it so future loads see it too.
+    const history = await _loadChatHistoryFor(id);
+    if (history.length) {
+        for (const rec of history) {
+            chatHistory.push(rec);
+            _replayChatRecord(rec);
+        }
     } else {
-        intro = `Greetings. I am ${char.name}, master of ${char.subtext}. Tell me what you wish to conjure, and I shall guide your spellcraft.`;
+        let intro;
+        if (char.type === "studio") {
+            intro = `Greetings. I am ${char.name}, the Guild's specialist in ${char.subtext}. Describe what you need, and I shall present my tools for you to choose from.`;
+        } else {
+            intro = `Greetings. I am ${char.name}, master of ${char.subtext}. Tell me what you wish to conjure, and I shall guide your spellcraft.`;
+        }
+        chatHistory.push({ role: 'assistant', content: intro });
+        addAIMessage(intro);
     }
-    chatHistory.push({ role: 'assistant', content: intro });
-    addAIMessage(intro);
 
     // GSAP: burst effect on avatar selection
     _avatarSelectBurst(activeAvatar);
@@ -2065,7 +2122,7 @@ function _parseNumberedOptions(text) {
     return { prose: prose.join('\n').trim(), options };
 }
 
-function addAIMessage(text) {
+function addAIMessage(text, opts = {}) {
     const msg = document.createElement('div');
     msg.className = 'message ai-message';
 
@@ -2107,9 +2164,12 @@ function addAIMessage(text) {
     chatStream.appendChild(msg);
     chatStream.scrollTop = chatStream.scrollHeight;
     _messageEntrance(msg);
+    if (!opts.skipPersist) {
+        _persistChatRecord({ role: 'assistant', content: text, ts: Date.now() / 1000 });
+    }
 }
 
-function addUserMessage(text) {
+function addUserMessage(text, opts = {}) {
     const msg = document.createElement('div');
     msg.className = 'message user-message';
     msg.innerHTML = `
@@ -2119,9 +2179,12 @@ function addUserMessage(text) {
     chatStream.appendChild(msg);
     chatStream.scrollTop = chatStream.scrollHeight;
     _messageEntrance(msg);
+    if (!opts.skipPersist) {
+        _persistChatRecord({ role: 'user', content: text, ts: Date.now() / 1000 });
+    }
 }
 
-function addSystemMessage(htmlContent) {
+function addSystemMessage(htmlContent, opts = {}) {
     const msg = document.createElement('div');
     msg.className = 'message ai-message';
     msg.innerHTML = `
@@ -2131,6 +2194,191 @@ function addSystemMessage(htmlContent) {
     chatStream.appendChild(msg);
     chatStream.scrollTop = chatStream.scrollHeight;
     _messageEntrance(msg);
+    if (!opts.skipPersist) {
+        _persistChatRecord({ role: 'system', content: htmlContent, ts: Date.now() / 1000 });
+    }
+}
+
+// ─── Generation bubble + recast button ──────────────────────────────
+//
+// Renders a "Spell Complete!" bubble for one or more generated images
+// or videos and attaches a "Cast Again" button that re-fires the
+// saved spell payload. The payload is embedded in a data attribute so
+// the button still works after a refresh+replay (the closure is gone
+// but the JSON survives in the DOM).
+function addGenerationMessage(payload, mediaType, urls, opts = {}) {
+    if (!Array.isArray(urls)) urls = [];
+    const msg = document.createElement('div');
+    msg.className = 'message ai-message';
+
+    let mediaHtml = '';
+    if (mediaType === 'images') {
+        mediaHtml = urls.map(u =>
+            `<img src="${u}" class="generated-image" style="max-width:100%;border-radius:8px;margin:4px 0;">`
+        ).join('');
+    } else if (mediaType === 'videos') {
+        mediaHtml = urls.map(u =>
+            `<video src="${u}" controls autoplay loop muted style="max-width:100%;border-radius:8px;margin:4px 0;"></video>`
+        ).join('');
+    }
+
+    // Recast button — only renders if we actually have a payload to
+    // re-fire. Direct casts and historical replays both qualify.
+    let recastBtnHtml = '';
+    if (payload && (payload.build_fn || payload.node)) {
+        // Embed the payload as a base64-encoded JSON blob on the button
+        // so the click handler can recover it after a page refresh.
+        const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+        recastBtnHtml = `
+            <div class="recast-row" style="margin-top:8px;display:flex;gap:6px;align-items:center;">
+                <button class="recast-btn" data-payload="${encoded}"
+                    title="Cast this spell again, optionally in a batch"
+                    style="padding:4px 12px;background:linear-gradient(135deg,rgba(178,70,242,0.2),rgba(252,211,77,0.2));border:1px solid rgba(252,211,77,0.4);border-radius:6px;color:#fde68a;font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px;">
+                    \u2728 Cast Again
+                </button>
+            </div>
+        `;
+    }
+
+    msg.innerHTML = `
+        <div class="avatar-small comfyui-logo">${COMFYUI_LOGO_SVG}</div>
+        <div class="bubble system-bubble">
+            <p><strong>Spell Complete!</strong></p>
+            ${mediaHtml}
+            ${recastBtnHtml}
+        </div>
+    `;
+
+    // Wire the recast button — opens the inline batch form below the bubble.
+    const rb = msg.querySelector('.recast-btn');
+    if (rb) {
+        rb.addEventListener('click', () => {
+            try {
+                const json = decodeURIComponent(escape(atob(rb.dataset.payload)));
+                const restored = JSON.parse(json);
+                _openRecastFlow(restored);
+            } catch (e) {
+                addSystemMessage('<em>Could not recover the saved spell payload.</em>');
+            }
+        });
+    }
+
+    chatStream.appendChild(msg);
+    chatStream.scrollTop = chatStream.scrollHeight;
+    _messageEntrance(msg);
+    if (!opts.skipPersist) {
+        _persistChatRecord({
+            role: 'generation',
+            payload: payload || null,
+            type: mediaType || 'images',
+            urls: urls,
+            ts: Date.now() / 1000,
+        });
+    }
+}
+
+// Open the Archivist's recast prompt with an inline N-times batch form.
+// Triggered by clicking a "Cast Again" button on any past generation.
+function _openRecastFlow(payload) {
+    const archivistText = "I see that you are interested in this spell. Would you like me to cast it again? If so, how many times?";
+    addAIMessage(archivistText);
+
+    // Inline form: number input + Cast button. Persisted as a system
+    // message so a refresh shows the user the form they had open.
+    const formMsg = document.createElement('div');
+    formMsg.className = 'message ai-message';
+    formMsg.innerHTML = `
+        <div class="avatar-small comfyui-logo">${COMFYUI_LOGO_SVG}</div>
+        <div class="bubble system-bubble">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                <label style="font-size:12px;color:#fde68a;">How many times?</label>
+                <input type="number" min="1" max="20" value="1"
+                    class="recast-count"
+                    style="width:60px;padding:4px 8px;border-radius:6px;border:1px solid rgba(252,211,77,0.4);background:#1a1a2e;color:#eee;font-size:13px;text-align:center;">
+                <button class="recast-go"
+                    style="padding:5px 14px;background:linear-gradient(135deg,#B246F2,#f59e0b);border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">
+                    Cast
+                </button>
+                <button class="recast-cancel"
+                    style="padding:5px 12px;background:transparent;border:1px solid #444;border-radius:6px;color:#888;font-size:11px;cursor:pointer;">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    `;
+    chatStream.appendChild(formMsg);
+    chatStream.scrollTop = chatStream.scrollHeight;
+    _messageEntrance(formMsg);
+
+    const countInput = formMsg.querySelector('.recast-count');
+    const goBtn = formMsg.querySelector('.recast-go');
+    const cancelBtn = formMsg.querySelector('.recast-cancel');
+
+    cancelBtn.addEventListener('click', () => {
+        formMsg.remove();
+    });
+
+    goBtn.addEventListener('click', async () => {
+        let n = parseInt(countInput.value, 10);
+        if (!Number.isFinite(n) || n < 1) n = 1;
+        if (n > 20) n = 20;
+        // Remove the form so it can't be double-submitted
+        formMsg.remove();
+        addUserMessage(n === 1 ? 'Cast it again.' : `Cast it ${n} times.`);
+        // Sequential dispatch — one at a time so each result lands in
+        // the chat as it completes. Direct casts route to a different
+        // endpoint than studio build_fn dispatches.
+        for (let i = 0; i < n; i++) {
+            const fresh = JSON.parse(JSON.stringify(payload));
+            if (fresh.params && typeof fresh.params === 'object'
+                && fresh.params.seed !== undefined) {
+                fresh.params.seed = Math.floor(Math.random() * 1000000000);
+            }
+            // eslint-disable-next-line no-await-in-loop
+            if (fresh.build_fn === 'direct_cast') {
+                await _recastDirect(fresh);
+            } else {
+                await dispatchToComfy(fresh);
+            }
+        }
+    });
+}
+
+// Re-fire a direct-cast snapshot through /api/direct_cast and render
+// the result via addGenerationMessage so the new bubble also gets a
+// recast button (and gets persisted to the chat log).
+async function _recastDirect(snapshot) {
+    const promptText = (snapshot && snapshot.params && snapshot.params.prompt) || '';
+    if (!promptText) {
+        addSystemMessage('<em>Direct cast snapshot missing prompt.</em>');
+        return;
+    }
+    try {
+        const r = await fetch('/api/direct_cast', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                char_id: activeCharacterId,
+                prompt: promptText,
+                comfy_url: comfyUrl,
+            }),
+        });
+        if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            addSystemMessage(`<strong>Spell Failed!</strong><br>${err.error || ('HTTP ' + r.status)}`);
+            return;
+        }
+        const data = await r.json();
+        if (data.type === 'images' && data.urls && data.urls.length) {
+            addGenerationMessage(snapshot, 'images', data.urls);
+        } else if (data.type === 'videos' && data.urls && data.urls.length) {
+            addGenerationMessage(snapshot, 'videos', data.urls);
+        } else {
+            addSystemMessage(`<strong>Spell Complete!</strong>`);
+        }
+    } catch (e) {
+        addSystemMessage(`<strong>Spell Failed!</strong><br>${e.message}`);
+    }
 }
 
 // Client-side mirror of server's _is_direct_generation_prompt heuristic.
@@ -2355,12 +2603,20 @@ async function askKobold(text) {
                 if (dcRes.ok) {
                     const dcData = await dcRes.json();
                     chatHistory.push({ role: 'assistant', content: '[direct cast]' });
+                    // Direct casts re-fire through the same code path
+                    // as LLM-routed dispatches: build a synthetic
+                    // payload with build_fn=direct_cast + the prompt
+                    // text so the recast button has something to
+                    // re-submit. The server accepts this shape via a
+                    // fall-through in /api/direct_cast.
+                    const dcSnapshot = {
+                        build_fn: 'direct_cast',
+                        params: { prompt: text },
+                    };
                     if (dcData.type === 'images' && dcData.urls && dcData.urls.length) {
-                        const imgs = dcData.urls.map(u => `<img src="${u}" class="generated-image" style="max-width:100%;border-radius:8px;margin:4px 0;">`).join('');
-                        addSystemMessage(`<strong>Spell Complete!</strong><br>${imgs}`);
+                        addGenerationMessage(dcSnapshot, 'images', dcData.urls);
                     } else if (dcData.type === 'videos' && dcData.urls && dcData.urls.length) {
-                        const vids = dcData.urls.map(u => `<video src="${u}" controls autoplay loop muted style="max-width:100%;border-radius:8px;margin:4px 0;"></video>`).join('');
-                        addSystemMessage(`<strong>Spell Complete!</strong><br>${vids}`);
+                        addGenerationMessage(dcSnapshot, 'videos', dcData.urls);
                     } else {
                         addSystemMessage(`<strong>Spell Complete!</strong>`);
                     }
@@ -2481,14 +2737,19 @@ async function dispatchToComfy(payload) {
             addSystemMessage(`<strong>Spell Failed!</strong><br>${data.error || 'Unknown server error (HTTP ' + response.status + ')'}`);
             return;
         }
+        // Snapshot the spell payload (without the runtime fields the
+        // server injected) so the recast button has something safe to
+        // re-fire later. comfy_url and char_id are added back at
+        // dispatch time, not stored.
+        const snapshot = { ...payload };
+        delete snapshot.comfy_url;
+        delete snapshot.char_id;
         if (data.type === 'images' && data.urls && data.urls.length) {
-            const imgs = data.urls.map(u => `<img src="${u}" class="generated-image" style="max-width:100%;border-radius:8px;margin:4px 0;">`).join('');
-            addSystemMessage(`<strong>Spell Complete!</strong><br>${imgs}`);
+            addGenerationMessage(snapshot, 'images', data.urls);
         } else if (data.type === 'videos' && data.urls && data.urls.length) {
-            const vids = data.urls.map(u => `<video src="${u}" controls autoplay loop muted style="max-width:100%;border-radius:8px;margin:4px 0;"></video>`).join('');
-            addSystemMessage(`<strong>Spell Complete!</strong><br>${vids}`);
+            addGenerationMessage(snapshot, 'videos', data.urls);
         } else if (data.mock_img) {
-            addSystemMessage(`<strong>Image Rendered!</strong><br><img src="${data.mock_img}" class="generated-image">`);
+            addGenerationMessage(snapshot, 'images', [data.mock_img]);
         } else {
             addSystemMessage(`<strong>Spell Complete!</strong><br>Result: ${JSON.stringify(data).substring(0, 200)}`);
         }
@@ -2517,7 +2778,19 @@ chatInput.addEventListener('keydown', (e) => {
 chatInput.addEventListener('input', function() { this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px'; });
 
 resetBtn.addEventListener('click', () => {
-    if(activeCharacterId) selectCharacter(activeCharacterId);
+    if (!activeCharacterId) return;
+    // Clear the persistent server-side log first so the replay on
+    // re-select doesn't immediately restore the messages we just
+    // wiped from the DOM. Fire-and-forget; if the server is down the
+    // local reset still happens.
+    const charId = activeCharacterId;
+    fetch('/api/chat_history/clear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ char_id: charId }),
+    }).catch(() => {}).finally(() => {
+        selectCharacter(charId);
+    });
 });
 
 // ── Avatar Generate Modal (mirrors the bg modal layout) ─────────────
