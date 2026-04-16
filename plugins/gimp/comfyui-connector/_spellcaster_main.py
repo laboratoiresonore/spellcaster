@@ -10580,7 +10580,7 @@ class Spellcaster(Gimp.PlugIn):
                                      "Upscale with AI detail hallucination and scale control"),
             "spellcaster-settings": ("Settings...", self._run_settings,
                                       "Configure Spellcaster: server URL, defaults, and preferences"),
-            "spellcaster-my-presets": ("My Presets...", self._run_my_presets,
+            "spellcaster-my-presets": ("★ My Presets...", self._run_my_presets,
                                        "Quick access to saved prompt and settings presets"),
             "spellcaster-bridge": ("Workflow Library...", self._run_bridge,
                                     "Browse workflows, import from server, edit scaffolds"),
@@ -10615,8 +10615,8 @@ class Spellcaster(Gimp.PlugIn):
         label, callback, doc = menu_map[name]
 
         # Menu path mapping — TOP-LEVEL Spellcaster menu in the menu bar.
-        # ◆ = purple diamond prefix for the top-level menu name.
-        _S = "<Image>/◆ Spellcaster"
+        # ◆ = purple diamond brackets for the top-level menu name.
+        _S = "<Image>/◆ Spellcaster ◆"
         _menu_paths = {
             # Presets at top level
             "spellcaster-my-presets":       _S,
