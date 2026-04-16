@@ -189,6 +189,17 @@
       ],
       "required_by": ["img2img", "txt2img", "inpaint"],
       "note": "Spellcaster nodes — auto-arch model loading, LLM prompt enhance, and smart sampling. Auto-updates via git pull."
+    },
+    "ComfyUI-Flux2Klein-Enhancer": {
+      "repo": "https://github.com/capitan01R/ComfyUI-Flux2Klein-Enhancer",
+      "provides": [
+        "FLUX.2 Klein Ref Latent Controller",
+        "FLUX.2 Klein Text/Ref Balance",
+        "FLUX.2 Klein Mask Ref Controller",
+        "Color Anchor"
+      ],
+      "required_by": ["klein_flux2"],
+      "note": "Optional quality upgrade for Klein pipelines — reference strength control, text/ref balance, and color drift correction. Auto-detected by Spellcaster; if not installed, standard pipelines run unchanged."
     }
   },
   "features": {
@@ -897,7 +908,7 @@
           }
         ]
       },
-      "custom_nodes": []
+      "custom_nodes": ["ComfyUI-Flux2Klein-Enhancer"]
     },
     "wan_i2v": {
       "vram_min_gb": 8,
