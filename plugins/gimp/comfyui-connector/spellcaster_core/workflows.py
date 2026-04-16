@@ -512,6 +512,133 @@ def build_txt2img(preset, prompt_text, negative_text, seed, loras=None):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  Generate Anything — any model → transparent object layer
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_generate_anything(prompt_text, negative_text, seed, preset,
+                             loras=None, scene_filename=None):
+    """Generate any object/person as a transparent layer using ANY model.
+
+    Architecture-universal version of Klein Generate Object. Works with
+    SDXL, SD1.5, Illustrious, Flux Dev, Klein, Kontext — any model.
+
+    Pipeline:
+      1. txt2img with "on plain white background" appended for clean cutout
+      2. If scene_filename provided AND arch is Klein/Flux: use it as
+         ReferenceLatent for lighting/style matching
+      3. BiRefNet removes background → transparent PNG
+      4. Two outputs: raw generation + transparent cutout
+
+    For Klein: uses ReferenceLatent + Enhancer chain (max quality)
+    For SDXL/SD15: uses standard KSampler with quality tokens
+    For Flux Dev: uses KSampler with natural language prompt
+
+    Args:
+        prompt_text (str): What to generate (the object/person).
+        negative_text (str): What to avoid.
+        seed (int): Random seed.
+        preset (dict): Model preset with arch, ckpt, steps, cfg, etc.
+        loras (list): Optional LoRAs.
+        scene_filename (str): Optional scene image for lighting reference
+            (Klein/Flux only — SDXL ignores this).
+
+    Returns:
+        dict: ComfyUI workflow with two SaveImage outputs.
+    """
+    nf = NodeFactory()
+    arch_key = preset.get("arch", "sdxl")
+
+    # ── Model stack ──────────────────────────────────────────────────
+    model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "1")
+    model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [],
+                                                     model_ref, clip_ref)
+
+    # ── Klein enhancer chain ─────────────────────────────────────────
+    if arch_key == "flux2klein":
+        model_ref = _klein_enhance_model(nf, model_ref)
+
+    # ── Prompt: append isolation instructions ────────────────────────
+    _bg_instruction = (
+        ", isolated on a plain solid white background, centered in frame, "
+        "studio product photography, clean edges, professional lighting"
+    )
+    full_prompt = prompt_text + _bg_instruction
+
+    # Architecture-specific negative
+    arch = get_arch(arch_key)
+    if arch.supports_negative:
+        full_negative = (negative_text or "") + (
+            ", busy background, clutter, multiple objects, watermark, text"
+        )
+    else:
+        full_negative = ""
+
+    # ── Encode prompts ───────────────────────────────────────────────
+    pos_id, neg_id = encode_prompts(nf, arch_key, clip_ref,
+                                     full_prompt, full_negative,
+                                     pos_id="2", neg_id="3")
+
+    # ── Scene reference (Klein/Flux only) ────────────────────────────
+    if scene_filename and arch_key in ("flux2klein", "flux1dev"):
+        scene_id = nf.load_image(scene_filename, node_id="80")
+        scene_scaled = nf.image_scale_to_total_pixels([scene_id, 0],
+                                                        megapixels=1.0,
+                                                        node_id="81")
+        scene_enc = nf.vae_encode([scene_scaled, 0], vae_ref, node_id="82")
+        # Wrap conditioning with scene reference for style matching
+        ref_pos = nf.reference_latent([pos_id, 0], [scene_enc, 0], node_id="83")
+        ref_neg = nf.reference_latent([neg_id, 0], [scene_enc, 0], node_id="84")
+        pos_ref = [ref_pos, 0]
+        neg_ref = [ref_neg, 0]
+    else:
+        pos_ref = [pos_id, 0]
+        neg_ref = [neg_id, 0]
+
+    # ── Empty latent ─────────────────────────────────────────────────
+    empty_id = nf.empty_latent_image(preset["width"], preset["height"],
+                                      batch_size=1, node_id="4")
+
+    # ── Sample (architecture-aware) ──────────────────────────────────
+    if arch_key == "flux2klein":
+        guider_id = nf.cfg_guider(model_ref, pos_ref, neg_ref,
+                                  preset.get("cfg", 1.0), node_id="60")
+        sampler_sel = nf.ksampler_select("euler", node_id="61")
+        sched_id = nf.basic_scheduler(model_ref, preset.get("steps", 6),
+                                       1.0, scheduler="simple", node_id="62")
+        noise_id = nf.random_noise(seed, node_id="63")
+        samp_id = nf.sampler_custom_advanced(
+            [noise_id, 0], [guider_id, 0], [sampler_sel, 0],
+            [sched_id, 0], [empty_id, 0], node_id="5",
+        )
+    else:
+        samp_id = nf.ksampler(
+            model_ref, pos_ref, neg_ref, [empty_id, 0],
+            seed, preset["steps"], preset["cfg"],
+            preset.get("sampler", "euler"),
+            preset.get("scheduler", "normal"),
+            1.0, node_id="5",
+        )
+
+    dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="6")
+    nf.save_image([dec_id, 0], "generated_raw", node_id="7")
+
+    # ── BiRefNet background removal → transparent cutout ─────────────
+    rmbg_id = nf._add("BiRefNetRMBG", {
+        "model": "BiRefNet-general",
+        "mask_blur": 2,
+        "mask_offset": 0,
+        "invert_output": False,
+        "refine_foreground": True,
+        "background": "Alpha",
+        "background_color": "#000000",
+        "image": [dec_id, 0],
+    }, node_id="50")
+    nf.save_image([rmbg_id, 0], "generated_object", node_id="51")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  rembg — Background removal
 # ═══════════════════════════════════════════════════════════════════════════
 

@@ -10347,6 +10347,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-iclight": "iclight",
             "spellcaster-klein-detail": "klein_flux2",
             "spellcaster-klein-generate": "klein_flux2",
+            "spellcaster-generate-anything": None,  # works with all models
             "spellcaster-settings": None,
             "spellcaster-my-presets": None,
             "spellcaster-bridge": None,
@@ -10451,6 +10452,8 @@ class Spellcaster(Gimp.PlugIn):
                                           "Enhance any region — face, eyes, hands, skin, hair, clothing — with Klein AI"),
             "spellcaster-klein-generate": ("◇ Klein Generate Object...", self._run_klein_generate,
                                             "Generate any object or person as a transparent layer — matches your scene's lighting"),
+            "spellcaster-generate-anything": ("Generate Anything...", self._run_generate_anything,
+                                               "Generate any object as a transparent layer — works with ALL models"),
             "spellcaster-ltx-t2v": ("LTX 2.3 Text to Video...", self._run_ltx_t2v,
                                     "Generate video from text using LTX Video 2.3"),
             "spellcaster-ltx-i2v": ("LTX 2.3 Image to Video...", self._run_ltx_i2v,
@@ -10545,6 +10548,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-outpaint":         f"{_S}/Generate",
             "spellcaster-batch-variations": f"{_S}/Generate",
             "spellcaster-kontext":          f"{_S}/Generate",
+            "spellcaster-generate-anything":f"{_S}/Generate",
 
             # Klein — next-gen Flux 2 tools
             "spellcaster-klein-img2img":     f"{_S}/Klein",
@@ -14579,6 +14583,170 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Klein Generate Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Generate Anything (all models) ────────────────────────────────
+    def _run_generate_anything(self, procedure, run_mode, image, drawables, config, data):
+        """Generate Anything: create any object as a transparent layer with ANY model."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+        _apply_spellcaster_theme()
+        dlg = Gtk.Dialog(title="Spellcaster — Generate Anything")
+        dlg.set_default_size(560, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Generate", Gtk.ResponseType.OK)
+        dlg.set_default_response(Gtk.ResponseType.OK)
+        _style_dialog_buttons(dlg)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+        _hdr = _make_branded_header()
+        if _hdr:
+            bx.pack_start(_hdr, False, False, 0)
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
+        hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        # Model selector — ALL models
+        bx.pack_start(Gtk.Label(label="Model:", xalign=0), False, False, 0)
+        model_combo = Gtk.ComboBoxText()
+        model_combo.set_tooltip_text(
+            "Any model works. Klein/Flux use scene reference for lighting.\n"
+            "SDXL/SD15 use quality tokens. Each model is auto-optimized.")
+        for i, p in enumerate(MODEL_PRESETS):
+            arch = p.get("arch", "")
+            # Add diamond indicators per architecture
+            if arch == "flux2klein":
+                prefix = "◇ "
+            elif arch == "flux_kontext":
+                prefix = "◆ "
+            elif arch in ("flux1dev",):
+                prefix = "◈ "
+            else:
+                prefix = ""
+            model_combo.append(str(i), f"{prefix}{p['label']}")
+        _fav = _load_config().get("favourite_model", -1)
+        if 0 <= _fav < len(MODEL_PRESETS):
+            model_combo.set_active_id(str(_fav))
+        if model_combo.get_active() < 0:
+            model_combo.set_active(0)
+        bx.pack_start(model_combo, False, False, 0)
+        # Object description
+        bx.pack_start(Gtk.Separator(), False, False, 4)
+        bx.pack_start(Gtk.Label(label="What to Generate:", xalign=0), False, False, 0)
+        prompt_tv = Gtk.TextView()
+        prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        prompt_tv.set_tooltip_text(
+            "Describe what to generate. The AI will create it on a white\n"
+            "background and cut it out as a transparent layer.\n\n"
+            "  'a red sports car, side view'\n"
+            "  'a tabby cat sitting'\n"
+            "  'a medieval sword with ornate handle'\n"
+            "  'a woman in a blue dress, full body'")
+        sw = Gtk.ScrolledWindow(); sw.set_min_content_height(70); sw.add(prompt_tv)
+        bx.pack_start(sw, False, False, 0)
+        # Negative prompt
+        bx.pack_start(Gtk.Label(label="Negative (optional):", xalign=0), False, False, 0)
+        neg_entry = Gtk.Entry()
+        neg_entry.set_text("blurry, low quality, deformed")
+        neg_entry.set_tooltip_text("What to avoid. Ignored by Flux/Klein models.")
+        bx.pack_start(neg_entry, False, False, 0)
+        # Info
+        info = Gtk.Label()
+        info.set_markup(
+            '<span size="small" color="#8B7FA8">'
+            'Your canvas provides lighting/style reference for Flux/Klein models.\n'
+            'Result: transparent PNG layer — position and scale freely.\n'
+            '◇ = Flux 2 Klein  ◆ = Flux Kontext  ◈ = Flux Dev</span>')
+        info.set_line_wrap(True)
+        bx.pack_start(info, False, False, 4)
+        # Seed
+        seed_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        seed_row.pack_start(Gtk.Label(label="Seed (-1=rand):"), False, False, 0)
+        seed_spin = Gtk.SpinButton.new_with_range(-1, 2**31, 1); seed_spin.set_value(-1)
+        seed_row.pack_start(seed_spin, False, False, 0)
+        bx.pack_start(seed_row, False, False, 0)
+        # Runs
+        _add_runs_spinner(dlg, bx)
+        bx.show_all()
+        # Recall
+        last = _SESSION.get("generate_anything")
+        if last:
+            if "model_idx" in last:
+                model_combo.set_active_id(str(last["model_idx"]))
+            if "prompt" in last:
+                prompt_tv.get_buffer().set_text(last["prompt"])
+            if "negative" in last:
+                neg_entry.set_text(last["negative"])
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        srv = se.get_text().strip(); _propagate_server_url(srv)
+        idx = int(model_combo.get_active_id() or "0")
+        preset = dict(MODEL_PRESETS[idx])
+        preset["width"] = image.get_width()
+        preset["height"] = image.get_height()
+        buf = prompt_tv.get_buffer()
+        prompt = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
+        negative = neg_entry.get_text().strip()
+        seed = int(seed_spin.get_value())
+        if seed < 0:
+            seed = random.randint(0, 2**32 - 1)
+        runs = int(dlg._runs_spin.get_value())
+        _SESSION["generate_anything"] = {
+            "model_idx": idx, "prompt": prompt, "negative": negative,
+        }
+        _save_session()
+        dlg.destroy()
+        if not prompt.strip():
+            Gimp.message("Please describe what to generate.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        try:
+            _update_spinner_status("Generate Anything: preparing...")
+            # Upload scene as reference (for Klein/Flux lighting matching)
+            scene_uname = None
+            arch_key = preset.get("arch", "sdxl")
+            if arch_key in ("flux2klein", "flux1dev"):
+                tmp = _export_image_to_tmp(image)
+                scene_uname = f"gimp_scene_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, tmp, scene_uname); os.unlink(tmp)
+            # Auto-enhance prompt if enabled
+            prompt, negative = _auto_enhance(prompt, arch_key, negative)
+            base_seed = seed
+            for run_i in range(runs):
+                _seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+                wf = build_generate_anything(
+                    prompt, negative, _seed, preset,
+                    scene_filename=scene_uname,
+                )
+                label = f"run {run_i+1}/{runs}" if runs > 1 else "generating"
+                _wf = wf
+                results = _run_with_spinner(f"Generate Anything: {label}...",
+                                            lambda: list(_run_comfyui_workflow(srv, _wf)))
+                # Import the transparent cutout (generated_object), not raw
+                for fn, sf, ft in results:
+                    if 'object' in fn.lower() or 'rmbg' in fn.lower():
+                        _import_result_as_layer(
+                            image, _download_image(srv, fn, sf, ft),
+                            f"Generated: {prompt[:35]}... #{run_i+1}",
+                            keep_size=True)
+                        break
+                else:
+                    if results:
+                        fn, sf, ft = results[0]
+                        _import_result_as_layer(
+                            image, _download_image(srv, fn, sf, ft),
+                            f"Generated #{run_i+1}", keep_size=True)
+                Gimp.displays_flush()
+            _LAST_PROCEDURE["name"] = "spellcaster-generate-anything"
+            _LAST_PROCEDURE["session_key"] = "generate_anything"
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Generate Anything Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     # ── Layer Blend by Ratio (utility) ────────────────────────────────
