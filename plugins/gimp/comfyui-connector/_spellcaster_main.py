@@ -3831,49 +3831,60 @@ def _mask_image_to_gimp_selection(image, mask_path, feather=4):
         mask_path (str): Path to the downloaded mask PNG (grayscale).
         feather (int): Feather radius in pixels (0 = hard edge).
     """
+    mask_layer = None
     try:
-        # Load mask as a new layer — use Gimp.file_load_layer which returns
-        # a proper GimpLayer directly (avoids GimpValueArray extraction issues
-        # with the PDB wrapper).
-        mask_layer = Gimp.file_load_layer(
-            Gimp.RunMode.NONINTERACTIVE, image,
-            Gio.File.new_for_path(mask_path))
-        if mask_layer is None:
-            raise RuntimeError("Failed to load mask as layer")
-        image.insert_layer(mask_layer, None, 0)
-        # Scale mask layer to match image dimensions if needed
-        iw = image.get_width(); ih = image.get_height()
-        lw = mask_layer.get_width(); lh = mask_layer.get_height()
-        if lw != iw or lh != ih:
-            _pdb_run('gimp-layer-scale', {
-                'layer': mask_layer, 'new-width': iw, 'new-height': ih,
-                'local-origin': False,
-            })
-        # Select white regions via gimp-by-color-select on the mask layer
-        _pdb_run('gimp-image-set-active-layer', {
-            'image': image, 'layer': mask_layer,
-        })
-        white = Gimp.RGB()
-        white.set(1.0, 1.0, 1.0)
-        _pdb_run('gimp-by-color-select', {
-            'drawable': mask_layer,
-            'color': white,
-            'threshold': 80,
-            'operation': 2,  # CHANNEL_OP_REPLACE
-            'antialias': True,
-            'feather': feather > 0,
-            'feather-radius': float(feather),
-            'sample-merged': False,
-        })
-        # Remove the temporary mask layer — selection persists
-        _pdb_run('gimp-image-remove-layer', {
-            'image': image, 'layer': mask_layer,
-        })
+        # Load the mask image as a separate GIMP image, then convert it
+        # to a selection channel. This avoids ALL fragile PDB calls
+        # (gimp-image-set-active-layer, gimp-by-color-select, etc.)
+        # that break across GIMP 3.x versions.
+        mask_file = Gio.File.new_for_path(mask_path)
+        mask_img = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, mask_file)
+        if mask_img is None:
+            raise RuntimeError("Failed to load mask image")
+
+        # Flatten and convert to grayscale if needed
+        mask_img.flatten()
+        if mask_img.get_base_type() != Gimp.ImageBaseType.GRAY:
+            Gimp.get_pdb().run_procedure('gimp-image-convert-grayscale',
+                                          [GObject.Value(Gimp.Image, mask_img)])
+
+        # Scale mask to match target image dimensions
+        iw, ih = image.get_width(), image.get_height()
+        mw, mh = mask_img.get_width(), mask_img.get_height()
+        if mw != iw or mh != ih:
+            mask_img.scale(iw, ih)
+
+        # Get the mask's single layer as a drawable
+        mask_drawable = mask_img.get_layers()[0]
+
+        # Create a selection channel from the mask: add mask as a channel
+        # to the TARGET image, then convert that channel to a selection.
+        sel_channel = Gimp.Channel.new_from_visible(mask_img, image,
+                                                      "SAM3_mask_channel")
+        image.insert_channel(sel_channel, None, 0)
+
+        # Convert channel to selection
+        image.select_item(Gimp.ChannelOps.REPLACE, sel_channel)
+
+        # Apply feathering if requested
+        if feather > 0:
+            Gimp.get_pdb().run_procedure('gimp-selection-feather',
+                [GObject.Value(Gimp.Image, image),
+                 GObject.Value(GObject.TYPE_DOUBLE, float(feather))])
+
+        # Clean up: remove the temp channel and close the mask image
+        image.remove_channel(sel_channel)
+        mask_img.delete()
+
     except Exception as e:
-        # Fallback: if API calls fail, remove the temp mask layer and let
-        # the user convert manually
+        # Clean up on failure
         try:
-            _pdb_run('gimp-image-remove-layer', {'image': image, 'layer': mask_layer})
+            if mask_layer:
+                image.remove_layer(mask_layer)
+        except Exception:
+            pass
+        try:
+            mask_img.delete()
         except Exception:
             pass
         raise RuntimeError(f"Could not convert SAM3 mask to selection: {e}.\n"
