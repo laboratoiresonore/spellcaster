@@ -25,7 +25,7 @@ All workflows are built using NodeFactory (from _nodes.py):
     nf = NodeFactory()
     ckpt_id = nf.checkpoint_loader("model.safetensors", node_id="1")
     clip_id = nf.clip_loader("clip.safetensors", node_id="2")
-    pos_id = nf.clip_encode([clip_id, 0], "a beautiful photo", node_id="3")
+    pos_id = nf.clip_encode(_ref(clip_id), "a beautiful photo", node_id="3")
     workflow = nf.build()  # Returns the node dict
 
 Benefits:
@@ -172,6 +172,19 @@ dicts. The pattern here:
 All original _build_* functions have been migrated to this pattern for consistency
 and maintainability.
 """
+
+def _ref(var, slot=0):
+    """Normalize a node reference to [node_id, slot] format.
+
+    Handles both raw strings from loaders (e.g. "2") and full refs
+    from LoRA chains (e.g. ["100", 1]).  After inject_lora_chain(),
+    unet_id is ["100", 0] and clip_id is ["100", 1].  This helper
+    ensures [_ref(clip_id, 0)] never produces nested lists.
+    """
+    if isinstance(var, list):
+        return var  # already [node_id, slot] — use as-is
+    return [var, slot]
+
 
 try:
     # When running as part of spellcaster_core package (CLI, ComfyUI nodes)
@@ -985,11 +998,11 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
 
     # Apply LoRA chain
     if loras:
-        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
-        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
-        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
+        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+        # After LoRA chain, refs are [node_id, slot] lists.
+        # Leave them as-is. Use _ref() for all downstream references.
     # Text conditioning
-    pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="4")
+    pos_id = nf.clip_encode(_ref(clip_id), prompt_text, node_id="4")
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="5")
 
     # Input image processing
@@ -1007,15 +1020,15 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
 
     # Optional Flux2Klein-Enhancer — wraps the model with reference
     # strength control + text/ref balance + color anchor if installed.
-    model_for_guider = [unet_id, 0]
+    model_for_guider = _ref(unet_id)
     if enhance:
-        model_for_guider = _klein_enhance_model(nf, [unet_id, 0], [ref_pos_id, 0])
+        model_for_guider = _klein_enhance_model(nf, _ref(unet_id), [ref_pos_id, 0])
 
     # Sampler setup
     guider_id = nf.cfg_guider(model_for_guider, [ref_pos_id, 0], [ref_neg_id, 0],
                               guidance, node_id="30")
     sampler_id = nf.ksampler_select("euler", node_id="31")
-    sched_id = nf.basic_scheduler([unet_id, 0], steps, denoise,
+    sched_id = nf.basic_scheduler(_ref(unet_id), steps, denoise,
                                    scheduler="simple", node_id="32")
     noise_id = nf.random_noise(seed, node_id="33")
 
@@ -2499,7 +2512,7 @@ def build_pulid_flux(target_filename, face_ref_filename,
 
     # UNET loader
     unet_id = nf.unet_loader(flux_model, "default", node_id="1")
-    model_ref = [unet_id, 0]
+    model_ref = _ref(unet_id)
 
     # CLIP loader (architecture-dependent)
     # Klein 9B → qwen_3_8b, Klein 4B/Base → qwen_3_4b (must match KLEIN_MODELS)
@@ -2514,7 +2527,7 @@ def build_pulid_flux(target_filename, face_ref_filename,
             "clip_l.safetensors", "t5xxl_fp8_e4m3fn.safetensors",
             clip_type="flux", node_id="7",
         )
-    clip_ref = [clip_id, 0]
+    clip_ref = _ref(clip_id)
 
     # LoRA chain
     model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [], model_ref, clip_ref)
@@ -2600,11 +2613,11 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
 
     # Apply LoRA chain
     if loras:
-        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
-        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
-        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
+        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+        # After LoRA chain, refs are [node_id, slot] lists.
+        # Leave them as-is. Use _ref() for all downstream references.
     # Text conditioning
-    pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="4")
+    pos_id = nf.clip_encode(_ref(clip_id), prompt_text, node_id="4")
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="5")
 
     # Main input image processing
@@ -2623,9 +2636,9 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
     ref_neg_id = nf.reference_latent([neg_id, 0], [ref_latent_id, 0], node_id="21")
 
     # Enhancer chain (Flux2Klein-Enhancer nodes for quality boost)
-    model_for_guider = [unet_id, 0]
+    model_for_guider = _ref(unet_id)
     if enhance:
-        model_for_guider = _klein_enhance_model(nf, [unet_id, 0], [ref_pos_id, 0])
+        model_for_guider = _klein_enhance_model(nf, _ref(unet_id), [ref_pos_id, 0])
 
     # Sampler setup
     guider_id = nf.cfg_guider(model_for_guider, [ref_pos_id, 0], [ref_neg_id, 0],
@@ -2800,10 +2813,10 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
 
     # Apply LoRA chain
     if loras:
-        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
-        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
-        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
-    pos_id = nf.clip_encode([clip_id, 0], prompt, node_id="23")
+        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+        # After LoRA chain, refs are [node_id, slot] lists.
+        # Leave them as-is. Use _ref() for all downstream references.
+    pos_id = nf.clip_encode(_ref(clip_id), prompt, node_id="23")
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="24")
 
     # Scale swapped image + encode
@@ -2816,7 +2829,7 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
     ref_neg_id = nf.reference_latent([neg_id, 0], [latent_id, 0], node_id="34")
 
     # Enhancer chain (Klein quality boost)
-    _hs_model = _klein_enhance_model(nf, [unet_id, 0], [ref_pos_id, 0], node_base_id=910) if enhance else [unet_id, 0]
+    _hs_model = _klein_enhance_model(nf, _ref(unet_id), [ref_pos_id, 0], node_base_id=910) if enhance else _ref(unet_id)
 
     # Sampling — uses BasicScheduler for denoise support
     guider_id = nf.cfg_guider(_hs_model, [ref_pos_id, 0], [ref_neg_id, 0],
@@ -3677,7 +3690,7 @@ def build_photobooth(ref_filename, prompt_text, seed,
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="12")
 
     # Text conditioning
-    pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="13")
+    pos_id = nf.clip_encode(_ref(clip_id), prompt_text, node_id="13")
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="14")
 
     # Encode reference — scale to 1 MP but ReferenceLatent only needs
@@ -3691,7 +3704,7 @@ def build_photobooth(ref_filename, prompt_text, seed,
     ref_neg_id = nf.reference_latent([neg_id, 0], [latent_id, 0], node_id="19")
 
     # Enhancer chain for maximum quality
-    _pb_model = _klein_enhance_model(nf, [unet_id, 0], [ref_pos_id, 0], node_base_id=970)
+    _pb_model = _klein_enhance_model(nf, _ref(unet_id), [ref_pos_id, 0], node_base_id=970)
 
     # Sampling at FIXED portrait dimensions (not derived from reference)
     guider_id = nf.cfg_guider(_pb_model, [ref_pos_id, 0], [ref_neg_id, 0],
@@ -3785,11 +3798,11 @@ def build_klein_repose(image_filename, klein_model_key, prompt_text, seed,
 
     # Apply LoRA chain
     if loras:
-        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
-        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
-        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
+        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+        # After LoRA chain, refs are [node_id, slot] lists.
+        # Leave them as-is. Use _ref() for all downstream references.
     # Text conditioning
-    pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="4")
+    pos_id = nf.clip_encode(_ref(clip_id), prompt_text, node_id="4")
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="5")
 
     # Input image processing
@@ -3804,7 +3817,7 @@ def build_klein_repose(image_filename, klein_model_key, prompt_text, seed,
     ref_neg_id = nf.reference_latent([neg_id, 0], [latent_id, 0], node_id="21")
 
     # Enhancer chain
-    _rp_model = _klein_enhance_model(nf, [unet_id, 0], [ref_pos_id, 0], node_base_id=920) if enhance else [unet_id, 0]
+    _rp_model = _klein_enhance_model(nf, _ref(unet_id), [ref_pos_id, 0], node_base_id=920) if enhance else _ref(unet_id)
 
     # Sampler setup — BasicScheduler with denoise (unlike Flux2Scheduler)
     guider_id = nf.cfg_guider(_rp_model, [ref_pos_id, 0], [ref_neg_id, 0],
@@ -3877,11 +3890,11 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
 
     # Apply LoRA chain
     if loras:
-        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
-        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
-        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
+        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+        # After LoRA chain, refs are [node_id, slot] lists.
+        # Leave them as-is. Use _ref() for all downstream references.
     # Text conditioning
-    pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="13")
+    pos_id = nf.clip_encode(_ref(clip_id), prompt_text, node_id="13")
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="14")
 
     # Prepare composited image
@@ -3895,7 +3908,7 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
     ref_neg_id = nf.reference_latent([neg_id, 0], [latent_id, 0], node_id="21")
 
     # Enhancer chain
-    _bl_model = _klein_enhance_model(nf, [unet_id, 0], [ref_pos_id, 0], node_base_id=930) if enhance else [unet_id, 0]
+    _bl_model = _klein_enhance_model(nf, _ref(unet_id), [ref_pos_id, 0], node_base_id=930) if enhance else _ref(unet_id)
 
     # Sampler — BasicScheduler with low denoise
     guider_id = nf.cfg_guider(_bl_model, [ref_pos_id, 0], [ref_neg_id, 0],
@@ -3954,9 +3967,9 @@ def build_klein_inpaint(image_filename, mask_filename, prompt_text, seed,
 
     # Apply LoRA chain
     if loras:
-        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
-        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
-        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
+        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+        # After LoRA chain, refs are [node_id, slot] lists.
+        # Leave them as-is. Use _ref() for all downstream references.
     # Source image
     img_id = nf.load_image(image_filename, node_id="10")
 
@@ -3978,7 +3991,7 @@ def build_klein_inpaint(image_filename, mask_filename, prompt_text, seed,
 
     # Image size + text conditioning
     size_id = nf.get_image_size_plus([img_id, 0], node_id="14")
-    pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="15")
+    pos_id = nf.clip_encode(_ref(clip_id), prompt_text, node_id="15")
     guided_id = nf.flux_guidance([pos_id, 0], guidance, node_id="16")
     neg_id = nf.conditioning_zero_out([guided_id, 0], node_id="19")
 
@@ -3988,7 +4001,7 @@ def build_klein_inpaint(image_filename, mask_filename, prompt_text, seed,
                                                   node_id="21")
 
     # Optional DifferentialDiffusion + Enhancer chain
-    model_ref = [unet_id, 0]
+    model_ref = _ref(unet_id)
     if enhance:
         model_ref = _klein_enhance_model(nf, model_ref, [guided_id, 0], node_base_id=960)
     if use_differential_diffusion:
@@ -4093,12 +4106,12 @@ def build_klein_virtual_tryon(face_filename, outfit_filename, prompt_text, seed,
     # LoRA chain
     if loras:
         unet_id, clip_id, _trig = inject_lora_chain(
-            nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
-        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
-        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
+            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+        # After LoRA chain, refs are [node_id, slot] lists.
+        # Leave them as-is. Use _ref() for all downstream references.
 
     # Text conditioning
-    pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="4")
+    pos_id = nf.clip_encode(_ref(clip_id), prompt_text, node_id="4")
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="5")
 
     # Load + scale + encode each reference, then chain as ReferenceLatent.
@@ -4137,15 +4150,15 @@ def build_klein_virtual_tryon(face_filename, outfit_filename, prompt_text, seed,
         }, node_id="16")
 
     # Optional Flux2Klein-Enhancer
-    model_for_guider = [unet_id, 0]
+    model_for_guider = _ref(unet_id)
     if enhance:
-        model_for_guider = _klein_enhance_model(nf, [unet_id, 0], [pos_id, 0])
+        model_for_guider = _klein_enhance_model(nf, _ref(unet_id), [pos_id, 0])
 
     # Sampler — full denoise since references provide all structure
     guider_id = nf.cfg_guider(model_for_guider, cond_chain, [neg_id, 0],
                               guidance, node_id="30")
     sampler_id = nf.ksampler_select("euler", node_id="31")
-    sched_id = nf.basic_scheduler([unet_id, 0], steps, denoise,
+    sched_id = nf.basic_scheduler(_ref(unet_id), steps, denoise,
                                    scheduler="simple", node_id="32")
     noise_id = nf.random_noise(seed, node_id="33")
 
@@ -4195,14 +4208,14 @@ def build_klein_scene_img2img(image_filename, prompt_text, seed,
 
     # Apply LoRA chain
     if loras:
-        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
-        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
-        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
+        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+        # After LoRA chain, refs are [node_id, slot] lists.
+        # Leave them as-is. Use _ref() for all downstream references.
     # Source images (scene + actor — actor not used in workflow but loaded for context)
     scene_id = nf.load_image(image_filename, node_id="10")
 
     # Text conditioning with FluxGuidance
-    pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="15")
+    pos_id = nf.clip_encode(_ref(clip_id), prompt_text, node_id="15")
     guided_id = nf.flux_guidance([pos_id, 0], guidance, node_id="16")
     neg_id = nf.conditioning_zero_out([guided_id, 0], node_id="17")
 
@@ -4211,7 +4224,7 @@ def build_klein_scene_img2img(image_filename, prompt_text, seed,
     size_id = nf.get_image_size([scene_id, 0], node_id="25")
 
     # Enhancer chain
-    _sc_model = _klein_enhance_model(nf, [unet_id, 0], [guided_id, 0], node_base_id=940) if enhance else [unet_id, 0]
+    _sc_model = _klein_enhance_model(nf, _ref(unet_id), [guided_id, 0], node_base_id=940) if enhance else _ref(unet_id)
 
     # Sampler — BasicScheduler with denoise
     guider_id = nf.cfg_guider(_sc_model, [guided_id, 0], [neg_id, 0],
@@ -4315,12 +4328,12 @@ def build_klein_refine(image_filename, klein_model_key, prompt_text, seed,
     # LoRA chain
     if loras:
         unet_id, clip_id, _trig = inject_lora_chain(
-            nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
-        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
-        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
+            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+        # After LoRA chain, refs are [node_id, slot] lists.
+        # Leave them as-is. Use _ref() for all downstream references.
 
     # Text conditioning
-    pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="4")
+    pos_id = nf.clip_encode(_ref(clip_id), prompt_text, node_id="4")
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="5")
 
     # Load and scale input image
@@ -4358,15 +4371,15 @@ def build_klein_refine(image_filename, klein_model_key, prompt_text, seed,
     orig_enc_id = nf.vae_encode([scaled_id, 0], [vae_id, 0], node_id="13")
 
     # Optional Flux2Klein-Enhancer
-    model_for_guider = [unet_id, 0]
+    model_for_guider = _ref(unet_id)
     if enhance:
-        model_for_guider = _klein_enhance_model(nf, [unet_id, 0], [pos_id, 0])
+        model_for_guider = _klein_enhance_model(nf, _ref(unet_id), [pos_id, 0])
 
     # Sampler — full denoise (1.0) since the references provide structure
     guider_id = nf.cfg_guider(model_for_guider, cond_chain, [neg_id, 0],
                               guidance, node_id="30")
     sampler_id = nf.ksampler_select("euler", node_id="31")
-    sched_id = nf.basic_scheduler([unet_id, 0], steps, 1.0,
+    sched_id = nf.basic_scheduler(_ref(unet_id), steps, 1.0,
                                    scheduler="simple", node_id="32")
     noise_id = nf.random_noise(seed, node_id="33")
 
@@ -4451,12 +4464,12 @@ def build_klein_auto_inpaint(image_filename, mask_prompt, inpaint_prompt, seed,
     # LoRA chain
     if loras:
         unet_id, clip_id, _trig = inject_lora_chain(
-            nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
-        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
-        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
+            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+        # After LoRA chain, refs are [node_id, slot] lists.
+        # Leave them as-is. Use _ref() for all downstream references.
 
     # Text conditioning
-    pos_id = nf.clip_encode([clip_id, 0], inpaint_prompt, node_id="4")
+    pos_id = nf.clip_encode(_ref(clip_id), inpaint_prompt, node_id="4")
     neg_zero = nf.conditioning_zero_out([pos_id, 0], node_id="5")
 
     # Input image
@@ -4502,7 +4515,7 @@ def build_klein_auto_inpaint(image_filename, mask_prompt, inpaint_prompt, seed,
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="22")
 
     # Enhancer chain
-    _ai_model = _klein_enhance_model(nf, [unet_id, 0], [pos_id, 0], node_base_id=950) if enhance else [unet_id, 0]
+    _ai_model = _klein_enhance_model(nf, _ref(unet_id), [pos_id, 0], node_base_id=950) if enhance else _ref(unet_id)
 
     # Sampler
     guider_id = nf.cfg_guider(_ai_model, [ref2_pos, 0], [neg_id, 0],
@@ -4806,9 +4819,9 @@ def build_klein_sam3_inpaint(image_filename, segment_prompt, inpaint_prompt, see
     # LoRA chain
     if loras:
         unet_id, clip_id, _trig = inject_lora_chain(
-            nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
-        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
-        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
+            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+        # After LoRA chain, refs are [node_id, slot] lists.
+        # Leave them as-is. Use _ref() for all downstream references.
 
     # Load source image
     img_id = nf.load_image(image_filename, node_id="10")
@@ -4844,9 +4857,9 @@ def build_klein_sam3_inpaint(image_filename, segment_prompt, inpaint_prompt, see
     }, node_id="21")
 
     # Text conditioning
-    pos_id = nf.clip_encode([clip_id, 0], inpaint_prompt, node_id="4")
+    pos_id = nf.clip_encode(_ref(clip_id), inpaint_prompt, node_id="4")
     guided_id = nf.flux_guidance([pos_id, 0], guidance, node_id="5")
-    neg_id = nf.clip_encode([clip_id, 0], "", node_id="6")
+    neg_id = nf.clip_encode(_ref(clip_id), "", node_id="6")
 
     # Build conditioning chain — optionally with reference image
     cond_for_inpaint = [guided_id, 0]
@@ -4930,7 +4943,7 @@ def build_klein_sam3_inpaint(image_filename, segment_prompt, inpaint_prompt, see
     # denoise control — smoother than plain DifferentialDiffusion)
     diff_model = nf._add("DifferentialDiffusionAdvanced", {
         "multiplier": 1,
-        "model": [unet_id, 0],
+        "model": _ref(unet_id),
         "samples": [inpaint_cond_id, 2],
         "mask": [crop_id, 2],
     }, node_id="31")
@@ -5047,18 +5060,18 @@ def build_klein_face_detail(image_filename, prompt_text, seed,
     # LoRA chain
     if loras:
         unet_id, clip_id, _trig = inject_lora_chain(
-            nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
-        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
-        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
+            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+        # After LoRA chain, refs are [node_id, slot] lists.
+        # Leave them as-is. Use _ref() for all downstream references.
 
     # Text conditioning
-    pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="4")
+    pos_id = nf.clip_encode(_ref(clip_id), prompt_text, node_id="4")
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="5")
 
     # Optional enhancer
-    model_for_detail = [unet_id, 0]
+    model_for_detail = _ref(unet_id)
     if enhance:
-        model_for_detail = _klein_enhance_model(nf, [unet_id, 0], [pos_id, 0])
+        model_for_detail = _klein_enhance_model(nf, _ref(unet_id), [pos_id, 0])
 
     # Load input image
     img_id = nf.load_image(image_filename, node_id="10")
@@ -5072,7 +5085,7 @@ def build_klein_face_detail(image_filename, prompt_text, seed,
     detail_id = nf._add("FaceDetailer", {
         "image": [img_id, 0],
         "model": model_for_detail,
-        "clip": [clip_id, 0],
+        "clip": _ref(clip_id),
         "vae": [vae_id, 0],
         "positive": [pos_id, 0],
         "negative": [neg_id, 0],
@@ -5166,9 +5179,9 @@ def build_klein_generate_object(scene_filename, prompt_text, seed,
     # LoRA chain
     if loras:
         unet_id, clip_id, _trig = inject_lora_chain(
-            nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
-        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
-        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
+            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+        # After LoRA chain, refs are [node_id, slot] lists.
+        # Leave them as-is. Use _ref() for all downstream references.
 
     # ── NSFW unlock LoRAs (NSFW edition only — patched by build_nsfw.py)
     # These LoRAs remove content filters from Klein so it can generate
@@ -5187,7 +5200,7 @@ def build_klein_generate_object(scene_filename, prompt_text, seed,
                                  "strength_clip": _str})
         if _nsfw_chain:
             _u, _c, _ = inject_lora_chain(nf, _nsfw_chain,
-                                           [unet_id, 0], [clip_id, 0], base_id=150)
+                                           _ref(unet_id), _ref(clip_id), base_id=150)
             unet_id = _u if isinstance(_u, str) else _u[0]
             clip_id = _c if isinstance(_c, str) else _c[0]
 
@@ -5200,13 +5213,13 @@ def build_klein_generate_object(scene_filename, prompt_text, seed,
     )
 
     # Text conditioning
-    pos_id = nf.clip_encode([clip_id, 0], full_prompt, node_id="4")
+    pos_id = nf.clip_encode(_ref(clip_id), full_prompt, node_id="4")
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="5")
 
     # ── Enhancer chain ───────────────────────────────────────────────
-    model_ref = [unet_id, 0]
+    model_ref = _ref(unet_id)
     if enhance:
-        model_ref = _klein_enhance_model(nf, [unet_id, 0], [pos_id, 0])
+        model_ref = _klein_enhance_model(nf, _ref(unet_id), [pos_id, 0])
 
     # ── Load scene image as style/lighting reference ─────────────────
     scene_id = nf.load_image(scene_filename, node_id="10")
@@ -5390,18 +5403,18 @@ def build_klein_detail(image_filename, preset_key, prompt_text, seed,
     # LoRA chain
     if loras:
         unet_id, clip_id, _trig = inject_lora_chain(
-            nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
-        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
-        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
+            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+        # After LoRA chain, refs are [node_id, slot] lists.
+        # Leave them as-is. Use _ref() for all downstream references.
 
     # Text conditioning
-    pos_id = nf.clip_encode([clip_id, 0], _prompt, node_id="4")
+    pos_id = nf.clip_encode(_ref(clip_id), _prompt, node_id="4")
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="5")
 
     # Enhancer chain
-    model_ref = [unet_id, 0]
+    model_ref = _ref(unet_id)
     if enhance:
-        model_ref = _klein_enhance_model(nf, [unet_id, 0], [pos_id, 0])
+        model_ref = _klein_enhance_model(nf, _ref(unet_id), [pos_id, 0])
 
     # Load input image
     img_id = nf.load_image(image_filename, node_id="10")
@@ -5416,7 +5429,7 @@ def build_klein_detail(image_filename, preset_key, prompt_text, seed,
         detail_id = nf._add("FaceDetailer", {
             "image": [img_id, 0],
             "model": model_ref,
-            "clip": [clip_id, 0],
+            "clip": _ref(clip_id),
             "vae": [vae_id, 0],
             "positive": [pos_id, 0],
             "negative": [neg_id, 0],
@@ -5779,7 +5792,7 @@ def build_ltx_video(preset, prompt_text, seed,
     unet_id = nf.unet_loader_gguf(unet_name, node_id="1")
 
     # Distilled LoRA (applied before chunking)
-    model_ref = [unet_id, 0]
+    model_ref = _ref(unet_id)
     if distilled:
         lora_id = nf.lora_loader_model_only(model_ref, distilled_lora, 1.0,
                                              node_id="1b")
