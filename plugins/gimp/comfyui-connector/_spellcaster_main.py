@@ -3852,55 +3852,53 @@ def _mask_image_to_gimp_selection(image, mask_path, feather=4):
         if mask_img.get_width() != iw or mask_img.get_height() != ih:
             mask_img.scale(iw, ih)
 
-        # 3. Copy the mask's layer into the TARGET image as a temp layer
+        # 3. The mask is grayscale: white=subject, black=background.
+        # Convert it to a GIMP channel in the target image, then load
+        # that channel as the selection via gimp-image-select-item
+        # (proven working at line 4021 in _create_selection_mask_png).
         mask_layers = mask_img.get_layers()
         if not mask_layers:
             raise RuntimeError("Mask image has no layers")
+
+        # Create a channel in the TARGET image from the mask's layer
+        chan = Gimp.Channel.new(image, "_SAM3_sel", iw, ih, 100.0,
+                                Gegl.Color.new("black"))
+        image.insert_channel(chan, None, 0)
+
+        # Copy mask pixels into the channel: add mask as temp layer,
+        # then flatten into the channel via copy-paste
         tmp_layer = Gimp.Layer.new_from_drawable(mask_layers[0], image)
         tmp_layer.set_name("_SAM3_mask_tmp")
         image.insert_layer(tmp_layer, None, 0)
 
-        # 4. Add the layer as alpha to a new channel, then select it.
-        # gimp-selection-save + gimp-image-select-item is the proven
-        # pattern from _create_selection_mask_png that works everywhere.
-        #
-        # But we need to select FROM the mask, not save the current
-        # selection. So: select-all on the mask layer, then use
-        # gimp-image-select-item with the layer's alpha channel.
-        #
-        # Simplest working approach: use gimp-by-color-select via
-        # the Gimp.get_pdb().run_procedure API which takes positional args.
-        pdb = Gimp.get_pdb()
-        white = Gimp.RGB()
-        white.set(1.0, 1.0, 1.0)
-
-        # Try the modern positional API first
-        try:
-            pdb.run_procedure('gimp-by-color-select', [
-                GObject.Value(Gimp.Drawable, tmp_layer),
-                GObject.Value(Gimp.RGB, white),
-                GObject.Value(GObject.TYPE_INT, 80),           # threshold
-                GObject.Value(GObject.TYPE_INT, 2),            # CHANNEL_OP_REPLACE
-                GObject.Value(GObject.TYPE_BOOLEAN, True),     # antialias
-                GObject.Value(GObject.TYPE_BOOLEAN, feather > 0),
-                GObject.Value(GObject.TYPE_DOUBLE, float(feather)),
-                GObject.Value(GObject.TYPE_BOOLEAN, False),    # sample-merged
-            ])
-        except Exception:
-            # Fallback: try the _pdb_run wrapper
-            _pdb_run('gimp-by-color-select', {
-                'drawable': tmp_layer,
-                'color': white,
-                'threshold': 80,
-                'operation': 2,
-                'antialias': True,
-                'feather': feather > 0,
-                'feather-radius': float(feather),
-                'sample-merged': False,
-            })
-
-        # 5. Remove the temp mask layer — selection persists
+        # Select all on the tmp layer, copy, paste into channel
+        _pdb_run('gimp-selection-all', {'image': image})
+        _pdb_run('gimp-edit-copy', {'drawables': Gimp.ObjectArray.new(
+            Gimp.Drawable, [tmp_layer], False)})
+        floating = _pdb_run('gimp-edit-paste', {
+            'drawable': chan, 'paste-into': False})
+        _pdb_run('gimp-floating-sel-anchor', {'floating-sel': floating.index(0)})
         image.remove_layer(tmp_layer)
+
+        # Now load the channel as selection
+        for op_val in [Gimp.ChannelOps.REPLACE, 2]:
+            try:
+                _pdb_run('gimp-image-select-item', {
+                    'image': image, 'operation': op_val, 'item': chan})
+                break
+            except Exception:
+                continue
+
+        # Feather if requested
+        if feather > 0:
+            try:
+                _pdb_run('gimp-selection-feather', {
+                    'image': image, 'radius': float(feather)})
+            except Exception:
+                pass
+
+        # Clean up channel
+        image.remove_channel(chan)
         mask_img.delete()
 
     except Exception as e:
