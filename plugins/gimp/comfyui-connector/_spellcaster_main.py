@@ -10439,6 +10439,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-quick-upscale": "upscale",
             "spellcaster-quick-face-restore": "face_restore",
             "spellcaster-quick-rembg": "rembg",
+            "spellcaster-quick-erase": None,
             # Re-run Last
             "spellcaster-rerun-last": None,
             # AI Color Match
@@ -10601,6 +10602,8 @@ class Spellcaster(Gimp.PlugIn):
                                                  "Instant face restoration — no dialog"),
             "spellcaster-quick-rembg": ("⚡ Quick Remove Background", self._run_quick_rembg,
                                           "Instant background removal — no dialog"),
+            "spellcaster-quick-erase": ("⚡ AI Eraser", self._run_ai_eraser,
+                                          "Select anything and erase it — AI fills in the background seamlessly"),
             # Re-run Last
             "spellcaster-rerun-last": ("⚡ Re-run Last...", self._run_rerun_last,
                                         "Repeat your last Spellcaster operation instantly"),
@@ -10692,6 +10695,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-quick-upscale":     f"{_S}/Quick",
             "spellcaster-quick-face-restore":f"{_S}/Quick",
             "spellcaster-quick-rembg":       f"{_S}/Quick",
+            "spellcaster-quick-erase":       f"{_S}/Quick",
 
             # Tools — utility and config
             "spellcaster-layer-blend-ratio": f"{_S}/Tools",
@@ -10713,6 +10717,8 @@ class Spellcaster(Gimp.PlugIn):
             # Select menu — AI-powered selection belongs here
             "spellcaster-sam3-select":       "<Image>/Select",
             "spellcaster-sam3-extract":      "<Image>/Select",
+            # Filters menu — AI eraser alongside other AI tools
+            "spellcaster-quick-erase":       "<Image>/Filters",
             # Colors menu — color manipulation tools
             "spellcaster-color-match":       "<Image>/Colors",
             "spellcaster-colorize":          "<Image>/Colors",
@@ -21467,6 +21473,87 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Quick Remove BG Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ══════════════════════════════════════════════════════════════════════
+    #  AI Eraser — select anything, erase it, AI fills the gap
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _run_ai_eraser(self, procedure, run_mode, image, drawables, config, data):
+        """AI Eraser: select any object and erase it — AI fills the background.
+
+        Works with any selection method (manual, SAM3 AI Select, fuzzy select,
+        lasso, etc.). Uses LaMa inpainting for fast, prompt-free removal.
+        The selected area is replaced with a seamless continuation of the
+        surrounding background.
+
+        No dialog, no prompt, no configuration — just select and erase.
+        """
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        try:
+            srv = COMFYUI_DEFAULT_URL
+
+            # Check for active selection
+            try:
+                sel_exists = Gimp.Selection.bounds(image).non_empty
+            except Exception:
+                try:
+                    sel_exists, *_ = Gimp.Selection.bounds(image)
+                except Exception:
+                    sel_exists = False
+
+            if not sel_exists:
+                Gimp.message("AI Eraser: No selection found.\n\n"
+                             "Select what you want to erase first:\n"
+                             "  • SAM3 AI Select (type what to select)\n"
+                             "  • Fuzzy Select (magic wand)\n"
+                             "  • Free Select (lasso)\n"
+                             "  • Any GIMP selection tool\n\n"
+                             "Then run AI Eraser again.")
+                return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+            # Create mask from selection (white = erase, black = keep)
+            mask_tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+            mask_tmp.close()
+            _create_selection_mask_png(mask_tmp.name, image)
+
+            # Export the full image
+            img_tmp = _export_image_to_tmp(image)
+
+            # Upload both to ComfyUI
+            img_uname = f"gimp_erase_{uuid.uuid4().hex[:8]}.png"
+            mask_uname = f"gimp_erase_mask_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, img_tmp, img_uname)
+            _upload_image(srv, mask_tmp.name, mask_uname)
+            os.unlink(img_tmp)
+            os.unlink(mask_tmp.name)
+
+            # Build LaMa removal workflow (fast, deterministic, no prompt)
+            wf = build_lama_remove(img_uname, mask_uname)
+
+            # Run on ComfyUI
+            results = _run_with_spinner("AI Eraser: removing selection...",
+                                        lambda: list(_run_comfyui_workflow(srv, wf)))
+
+            # Import result as new layer
+            for i, (fn, sf, ft) in enumerate(results):
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
+                                 f"AI Erased #{i+1}", False)
+
+            # Clear the selection (the object is gone)
+            try:
+                Gimp.Selection.none(image)
+            except Exception:
+                pass
+
+            _LAST_PROCEDURE["name"] = "spellcaster-quick-erase"
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+
+        except Exception as e:
+            Gimp.message(f"AI Eraser Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     # ══════════════════════════════════════════════════════════════════════
