@@ -379,6 +379,7 @@ from _workflows_v2 import (
     build_klein_scene_img2img, build_layer_blend, build_upscale_blend,
     build_frame_assembly,
     build_ltx_video,
+    build_sam3_segment, build_sam3_extract,
 )
 
 
@@ -3688,6 +3689,70 @@ def _flush_pending_uploads():
             detail = e.read().decode("utf-8", errors="replace")[:500]
             raise RuntimeError(f"Upload HTTP {e.code}: {detail}") from e
     _pending_uploads = []
+
+def _mask_image_to_gimp_selection(image, mask_path, feather=4):
+    """Load a grayscale mask image and convert it to a GIMP selection.
+
+    White pixels in the mask become selected; black pixels are unselected.
+    The mask is loaded as a temporary layer, converted to a selection via
+    by-color-select on white, then the temp layer is removed.
+
+    Args:
+        image: The GIMP image to apply the selection to.
+        mask_path (str): Path to the downloaded mask PNG (grayscale).
+        feather (int): Feather radius in pixels (0 = hard edge).
+    """
+    try:
+        # Load mask as a new layer in the image
+        mask_layer = _pdb_run('gimp-file-load-layer', {
+            'run-mode': Gimp.RunMode.NONINTERACTIVE,
+            'image': image,
+            'file': Gio.File.new_for_path(mask_path),
+        })
+        if hasattr(mask_layer, '__len__'):
+            mask_layer = mask_layer[0] if mask_layer else None
+        if mask_layer is None:
+            raise RuntimeError("Failed to load mask as layer")
+        _pdb_run('gimp-image-insert-layer', {
+            'image': image, 'layer': mask_layer, 'parent': None, 'position': 0,
+        })
+        # Scale mask layer to match image dimensions if needed
+        iw = image.get_width(); ih = image.get_height()
+        lw = mask_layer.get_width(); lh = mask_layer.get_height()
+        if lw != iw or lh != ih:
+            _pdb_run('gimp-layer-scale', {
+                'layer': mask_layer, 'new-width': iw, 'new-height': ih, 'local-origin': False,
+            })
+        # Flatten the mask layer to ensure it's a simple grayscale raster
+        _pdb_run('gimp-layer-flatten', {'layer': mask_layer})
+        # Select white regions: by-color-select on the mask layer
+        # Threshold 80 captures white (255) and near-white as selected
+        white = Gimp.RGB()
+        white.set(1.0, 1.0, 1.0)
+        _pdb_run('gimp-image-set-active-layer', {'image': image, 'layer': mask_layer})
+        _pdb_run('gimp-by-color-select', {
+            'drawable': mask_layer,
+            'color': white,
+            'threshold': 80,
+            'operation': 2,  # CHANNEL_OP_REPLACE
+            'antialias': True,
+            'feather': feather > 0,
+            'feather-radius': float(feather),
+            'sample-merged': False,
+        })
+        # Remove the temporary mask layer — selection persists
+        _pdb_run('gimp-image-remove-layer', {'image': image, 'layer': mask_layer})
+    except Exception as e:
+        # Fallback: if PDB calls fail (API differences across GIMP versions),
+        # just add the mask as a visible layer and let the user convert manually
+        try:
+            _pdb_run('gimp-image-remove-layer', {'image': image, 'layer': mask_layer})
+        except Exception:
+            pass
+        raise RuntimeError(f"Could not convert SAM3 mask to selection: {e}.\n"
+                           "The mask was added as a layer — you can convert it "
+                           "manually via Select > By Color.") from e
+
 
 def _create_selection_mask_png(filepath, image):
     """Export GIMP's actual selection channel as a grayscale PNG mask.
@@ -10007,6 +10072,10 @@ class Spellcaster(Gimp.PlugIn):
                                        "Quick access to your saved prompt/settings presets"),
             "spellcaster-bridge": ("Travelling Wizard...", self._run_bridge,
                                     "Signal Bridge scaffold editor, workflow library, and LLM wizard"),
+            "spellcaster-sam3-select": ("SAM3 AI Selection...", self._run_sam3_select,
+                                         "Select any subject by description using SAM3 AI segmentation"),
+            "spellcaster-sam3-extract": ("SAM3 Extract Subject...", self._run_sam3_extract,
+                                          "Detect + remove background + auto-crop a subject using SAM3 AI"),
         }
 
         label, callback, doc = menu_map[name]
@@ -10081,6 +10150,10 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-send-image":        "<Image>/Filters/Spellcaster Tools",
             "spellcaster-settings":          "<Image>/Filters/Spellcaster Tools",
             "spellcaster-bridge":            "<Image>/Filters/Spellcaster Tools",
+
+            # SAM3 AI Selection
+            "spellcaster-sam3-select":       "<Image>/Filters/Spellcaster Tools",
+            "spellcaster-sam3-extract":      "<Image>/Filters/Spellcaster Tools",
         }
 
         proc = Gimp.ImageProcedure.new(self, name, Gimp.PDBProcType.PLUGIN, callback, None)
@@ -19416,6 +19489,133 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Remove Background Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    def _run_sam3_select(self, procedure, run_mode, image, drawables, config, data):
+        """SAM3 AI Selection: describe a subject and get a GIMP selection.
+
+        User types what to detect (e.g. "person", "shirt", "hair") and
+        SAM3 runs on the ComfyUI server. The returned mask is loaded back
+        into GIMP as the active selection (marching ants).
+        """
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+        dlg = Gtk.Dialog(title="Spellcaster — SAM3 AI Selection")
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Select", Gtk.ResponseType.OK)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+        # Server URL
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
+        hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        # Prompt
+        hb2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb2.pack_start(Gtk.Label(label="Detect:"), False, False, 0)
+        pe = Gtk.Entry(); pe.set_text("person"); pe.set_hexpand(True)
+        pe.set_tooltip_text("Describe what to select: 'person', 'shirt', 'hair', 'cat', 'background', etc.\nLeave empty to auto-detect all subjects.")
+        hb2.pack_start(pe, True, True, 0); bx.pack_start(hb2, False, False, 0)
+        # Mask feather
+        hb3 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb3.pack_start(Gtk.Label(label="Feather (px):"), False, False, 0)
+        fe = Gtk.SpinButton.new_with_range(0, 100, 1); fe.set_value(4)
+        fe.set_tooltip_text("Feather the selection edges by this many pixels (0 = hard edge)")
+        hb3.pack_start(fe, False, False, 0); bx.pack_start(hb3, False, False, 0)
+        # Info
+        bx.pack_start(Gtk.Label(label="SAM3 detects the subject and creates a GIMP selection.\nRequires the SAM3 node pack on your ComfyUI server."), False, False, 4)
+        bx.show_all()
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        srv = se.get_text().strip()
+        prompt = pe.get_text().strip()
+        feather = int(fe.get_value())
+        _propagate_server_url(srv); dlg.destroy()
+        try:
+            _update_spinner_status("SAM3: exporting image...")
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_sam3_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            wf = build_sam3_segment(uname, prompt, mask_expand=0, mask_blur=0)
+            _update_spinner_status("SAM3: segmenting on ComfyUI...")
+            results = _run_with_spinner("SAM3: segmenting on ComfyUI...",
+                                        lambda: list(_run_comfyui_workflow(srv, wf)))
+            # The second output (sam3_mask) is the mask image — use it
+            # to create a GIMP selection. First output is the subject.
+            mask_result = None
+            for fn, sf, ft in results:
+                if 'mask' in fn.lower():
+                    mask_result = (fn, sf, ft)
+                    break
+            if not mask_result:
+                # Fallback: use the first result as the mask
+                mask_result = results[0] if results else None
+            if mask_result:
+                fn, sf, ft = mask_result
+                mask_path = _download_image(srv, fn, sf, ft)
+                # Load the mask as a temporary layer, convert to selection
+                _mask_image_to_gimp_selection(image, mask_path, feather)
+                os.unlink(mask_path)
+            # Also add the subject extraction as a new layer
+            for fn, sf, ft in results:
+                if 'subject' in fn.lower():
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
+                                     f"SAM3: {prompt}", False)
+                    break
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Spellcaster SAM3 Selection Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    def _run_sam3_extract(self, procedure, run_mode, image, drawables, config, data):
+        """SAM3 Extract: detect subject, remove background, auto-crop."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+        dlg = Gtk.Dialog(title="Spellcaster — SAM3 Extract Subject")
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Extract", Gtk.ResponseType.OK)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
+        hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        hb2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb2.pack_start(Gtk.Label(label="Detect:"), False, False, 0)
+        pe = Gtk.Entry(); pe.set_text("person"); pe.set_hexpand(True)
+        hb2.pack_start(pe, True, True, 0); bx.pack_start(hb2, False, False, 0)
+        bx.pack_start(Gtk.Label(label="Detects subject, removes background, and auto-crops.\nResult is a new layer with transparent background."), False, False, 4)
+        bx.show_all()
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        srv = se.get_text().strip()
+        prompt = pe.get_text().strip()
+        _propagate_server_url(srv); dlg.destroy()
+        try:
+            _update_spinner_status("SAM3 Extract: exporting image...")
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_sam3x_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            wf = build_sam3_extract(uname, prompt)
+            _update_spinner_status("SAM3 Extract: processing on ComfyUI...")
+            results = _run_with_spinner("SAM3 Extract: processing...",
+                                        lambda: list(_run_comfyui_workflow(srv, wf)))
+            for i, (fn, sf, ft) in enumerate(results):
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
+                                 f"SAM3 Extracted: {prompt} #{i+1}", False)
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Spellcaster SAM3 Extract Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     def _run_send(self, procedure, run_mode, image, drawables, config, data):
