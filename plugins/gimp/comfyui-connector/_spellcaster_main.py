@@ -858,6 +858,9 @@ def _auto_enhance(prompt, arch_key, negative=""):
     """
     if not _PROMPT_ENHANCE or not prompt or not prompt.strip():
         return prompt, negative
+    # Never enhance edit instructions (Kontext) or turbo models (ZIT)
+    if arch_key in ("flux_kontext", "zit"):
+        return prompt, negative
     try:
         from spellcaster_core.prompt_enhance import enhance_prompt
         enhanced = enhance_prompt(prompt, arch_key, _LLM_URL, is_negative=False)

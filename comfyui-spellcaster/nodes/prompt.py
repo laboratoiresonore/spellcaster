@@ -81,9 +81,11 @@ class SpellcasterPromptEnhance:
             try:
                 result = fn(prompt, system, llm_url)
                 if result and result.strip():
-                    print(f"\033[36m[Spellcaster]\033[0m Enhanced: "
-                          f"{len(prompt)} → {len(result)} chars")
-                    return (result.strip(),)
+                    result = self._clean_llm_output(result)
+                    if result and len(result) > 10:
+                        print(f"\033[36m[Spellcaster]\033[0m Enhanced: "
+                              f"{len(prompt)} → {len(result)} chars")
+                        return (result,)
             except Exception as e:
                 print(f"\033[36m[Spellcaster]\033[0m {fn.__name__} failed: {e}")
 
@@ -125,7 +127,25 @@ class SpellcasterPromptEnhance:
 
         return f"{task}\n\nExpert guidance for {arch.key}:\n{guidance}"
 
-    # ── API callers ────────────────────────────────────────────────────
+    # ── output cleaner ──────────────────────────────────────────────────
+    @staticmethod
+    def _clean_llm_output(text):
+        """Strip reasoning blocks, markdown fences, quotes, and meta-text."""
+        import re
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+        if text.startswith("```") and text.endswith("```"):
+            text = text[3:-3].strip()
+        if text.startswith('"') and text.endswith('"'):
+            text = text[1:-1].strip()
+        for prefix in ("Here is", "Here's", "Enhanced prompt:", "Sure,",
+                        "Certainly,", "Of course,"):
+            if text.lower().startswith(prefix.lower()):
+                text = text[len(prefix):].strip().lstrip(":")
+                text = text.strip().lstrip('"').rstrip('"').strip()
+                break
+        return text
+
+    # ── API callers (45s timeout for reasoning models) ────────────────
     @staticmethod
     def _call_openai(prompt, system, llm_url):
         """OpenAI-compatible /v1/chat/completions (KoboldCpp, vLLM, etc)."""
@@ -144,7 +164,7 @@ class SpellcasterPromptEnhance:
             url, data=data, method="POST",
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=45) as resp:
             body = json.loads(resp.read().decode("utf-8"))
             return body["choices"][0]["message"]["content"]
 
@@ -164,7 +184,7 @@ class SpellcasterPromptEnhance:
             url, data=data, method="POST",
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=45) as resp:
             body = json.loads(resp.read().decode("utf-8"))
             return body["results"][0]["text"]
 
@@ -184,6 +204,6 @@ class SpellcasterPromptEnhance:
             url, data=data, method="POST",
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=45) as resp:
             body = json.loads(resp.read().decode("utf-8"))
             return body["response"]
