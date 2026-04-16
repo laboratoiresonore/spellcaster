@@ -10528,97 +10528,95 @@ class Spellcaster(Gimp.PlugIn):
 
         label, callback, doc = menu_map[name]
 
-        # Menu path mapping — organise tools into logical submenus
+        # Menu path mapping — TOP-LEVEL Spellcaster menu in the menu bar.
+        # ◆ = purple diamond prefix for the top-level menu name.
+        _S = "<Image>/◆ Spellcaster"
         _menu_paths = {
-            # My Presets: TOP-LEVEL under Filters (outside Spellcaster submenus)
-            "spellcaster-my-presets":       "<Image>/Filters",
+            # Presets at top level
+            "spellcaster-my-presets":       _S,
 
-            # Expert: the do-it-all generation tools
-            "spellcaster-img2img":          "<Image>/Filters/Spellcaster Expert",
-            "spellcaster-txt2img":          "<Image>/Filters/Spellcaster Expert",
-            "spellcaster-inpaint":          "<Image>/Filters/Spellcaster Expert",
-            "spellcaster-outpaint":         "<Image>/Filters/Spellcaster Expert",
-            "spellcaster-batch-variations": "<Image>/Filters/Spellcaster Expert",
+            # Generate — core creation tools
+            "spellcaster-img2img":          f"{_S}/Generate",
+            "spellcaster-txt2img":          f"{_S}/Generate",
+            "spellcaster-inpaint":          f"{_S}/Generate",
+            "spellcaster-outpaint":         f"{_S}/Generate",
+            "spellcaster-batch-variations": f"{_S}/Generate",
+            "spellcaster-kontext":          f"{_S}/Generate",
 
-            # Face & Identity
-            "spellcaster-faceswap":         "<Image>/Filters/Spellcaster Face",
-            "spellcaster-faceswap-model":   "<Image>/Filters/Spellcaster Face",
-            "spellcaster-faceswap-mtb":     "<Image>/Filters/Spellcaster Face",
-            "spellcaster-faceid-img2img":    "<Image>/Filters/Spellcaster Face",
-            "spellcaster-pulid-flux":        "<Image>/Filters/Spellcaster Face",
-            "spellcaster-face-restore":      "<Image>/Filters/Spellcaster Face",
+            # Klein — next-gen Flux 2 tools
+            "spellcaster-klein-img2img":     f"{_S}/Klein",
+            "spellcaster-klein-outpaint":    f"{_S}/Klein",
+            "spellcaster-klein-img2img-ref": f"{_S}/Klein",
+            "spellcaster-klein-blend":       f"{_S}/Klein",
+            "spellcaster-klein-repose":      f"{_S}/Klein",
+            "spellcaster-klein-headswap":    f"{_S}/Klein",
+            "spellcaster-klein-inpaint":     f"{_S}/Klein",
+            "spellcaster-klein-detail":      f"{_S}/Klein",
 
-            # Photofixer: restoration, enhancement, repair
-            "spellcaster-upscale":           "<Image>/Filters/Spellcaster Photofixer",
-            "spellcaster-photo-restore":     "<Image>/Filters/Spellcaster Photofixer",
-            "spellcaster-detail-hallucinate":"<Image>/Filters/Spellcaster Photofixer",
-            "spellcaster-supir":             "<Image>/Filters/Spellcaster Photofixer",
-            "spellcaster-seedv2r":           "<Image>/Filters/Spellcaster Photofixer",
-            "spellcaster-colorize":          "<Image>/Filters/Spellcaster Photofixer",
-            "spellcaster-lama-remove":       "<Image>/Filters/Spellcaster Photofixer",
+            # Enhance — fix, upscale, restore
+            "spellcaster-upscale":           f"{_S}/Enhance",
+            "spellcaster-photo-restore":     f"{_S}/Enhance",
+            "spellcaster-detail-hallucinate":f"{_S}/Enhance",
+            "spellcaster-supir":             f"{_S}/Enhance",
+            "spellcaster-seedv2r":           f"{_S}/Enhance",
+            "spellcaster-colorize":          f"{_S}/Enhance",
+            "spellcaster-lama-remove":       f"{_S}/Enhance",
 
-            # Style & Lighting
-            "spellcaster-style-transfer":    "<Image>/Filters/Spellcaster Style",
-            "spellcaster-lut":               "<Image>/Filters/Spellcaster Style",
-            "spellcaster-iclight":           "<Image>/Filters/Spellcaster Style",
+            # Face — identity and face tools
+            "spellcaster-faceswap":          f"{_S}/Face",
+            "spellcaster-faceswap-model":    f"{_S}/Face",
+            "spellcaster-faceswap-mtb":      f"{_S}/Face",
+            "spellcaster-faceid-img2img":    f"{_S}/Face",
+            "spellcaster-pulid-flux":        f"{_S}/Face",
+            "spellcaster-face-restore":      f"{_S}/Face",
+            "spellcaster-klein-headswap-face": f"{_S}/Face",
 
-            # Klein / Flux 2
-            "spellcaster-klein-img2img":     "<Image>/Filters/Spellcaster Klein",
-            "spellcaster-klein-outpaint": "<Image>/Filters/Spellcaster Klein",
-            "spellcaster-klein-img2img-ref": "<Image>/Filters/Spellcaster Klein",
-            "spellcaster-klein-blend":    "<Image>/Filters/Spellcaster Klein",
-            "spellcaster-klein-repose":   "<Image>/Filters/Spellcaster Klein",
-            "spellcaster-klein-headswap": "<Image>/Filters/Spellcaster Klein",
-            "spellcaster-klein-headswap-face": "<Image>/Filters/Spellcaster Face",
-            "spellcaster-klein-inpaint":  "<Image>/Filters/Spellcaster Klein",
-            "spellcaster-klein-detail":  "<Image>/Filters/Spellcaster Klein",
+            # Style — visual transformation
+            "spellcaster-style-transfer":    f"{_S}/Style",
+            "spellcaster-lut":               f"{_S}/Style",
+            "spellcaster-iclight":           f"{_S}/Style",
+            "spellcaster-color-match":       f"{_S}/Style",
 
-            # Video
-            "spellcaster-ltx-t2v":           "<Image>/Filters/Spellcaster Video",
-            "spellcaster-ltx-i2v":           "<Image>/Filters/Spellcaster Video",
-            "spellcaster-wan-i2v":           "<Image>/Filters/Spellcaster Video",
-            "spellcaster-wan-flf":           "<Image>/Filters/Spellcaster Video",
-            "spellcaster-wan-director":      "<Image>/Filters/Spellcaster Magic Studios",
-            "spellcaster-wan-director-duo":  "<Image>/Filters/Spellcaster Magic Studios",
-            "spellcaster-wan-director-trio": "<Image>/Filters/Spellcaster Magic Studios",
-            "spellcaster-video-upscale":     "<Image>/Filters/Spellcaster Video",
-            "spellcaster-video-reactor":     "<Image>/Filters/Spellcaster Video",
-            "spellcaster-seedvr2-video":    "<Image>/Filters/Spellcaster Video",
+            # Select — AI-powered selection
+            "spellcaster-sam3-select":       f"{_S}/Select",
+            "spellcaster-sam3-extract":      f"{_S}/Select",
+            "spellcaster-rembg":             f"{_S}/Select",
 
-            # Magic Studios — character pipeline
-            "spellcaster-photobooth":        "<Image>/Filters/Spellcaster Magic Studios",
-            "spellcaster-body-factory":      "<Image>/Filters/Spellcaster Magic Studios",
-            "spellcaster-clothing-store":    "<Image>/Filters/Spellcaster Magic Studios",
-            "spellcaster-studio-set":       "<Image>/Filters/Spellcaster Magic Studios",
+            # Video — generation and processing
+            "spellcaster-ltx-t2v":           f"{_S}/Video",
+            "spellcaster-ltx-i2v":           f"{_S}/Video",
+            "spellcaster-wan-i2v":           f"{_S}/Video",
+            "spellcaster-wan-flf":           f"{_S}/Video",
+            "spellcaster-video-upscale":     f"{_S}/Video",
+            "spellcaster-video-reactor":     f"{_S}/Video",
+            "spellcaster-seedvr2-video":     f"{_S}/Video",
 
-            # AI Selection — SAM3-powered smart selection tools
-            "spellcaster-sam3-select":       "<Image>/Filters/Spellcaster AI Select",
-            "spellcaster-sam3-extract":      "<Image>/Filters/Spellcaster AI Select",
-            "spellcaster-rembg":             "<Image>/Filters/Spellcaster AI Select",
+            # Studios — full character pipeline
+            "spellcaster-photobooth":        f"{_S}/Studios",
+            "spellcaster-body-factory":      f"{_S}/Studios",
+            "spellcaster-clothing-store":    f"{_S}/Studios",
+            "spellcaster-studio-set":        f"{_S}/Studios",
+            "spellcaster-wan-director":      f"{_S}/Studios",
+            "spellcaster-wan-director-duo":  f"{_S}/Studios",
+            "spellcaster-wan-director-trio": f"{_S}/Studios",
 
-            # Tools & Utility
-            "spellcaster-layer-blend-ratio": "<Image>/Filters/Spellcaster Tools",
-            "spellcaster-upscale-blend":     "<Image>/Filters/Spellcaster Tools",
-            "spellcaster-gif-stitch":        "<Image>/Filters/Spellcaster Tools",
-            "spellcaster-embed-watermark":   "<Image>/Filters/Spellcaster Tools",
-            "spellcaster-read-watermark":    "<Image>/Filters/Spellcaster Tools",
-            "spellcaster-send-image":        "<Image>/Filters/Spellcaster Tools",
-            "spellcaster-settings":          "<Image>/Filters/Spellcaster Tools",
-            "spellcaster-bridge":            "<Image>/Filters/Spellcaster Tools",
+            # Quick — zero-dialog instant actions
+            "spellcaster-rerun-last":        f"{_S}/Quick",
+            "spellcaster-quick-enhance":     f"{_S}/Quick",
+            "spellcaster-quick-inpaint":     f"{_S}/Quick",
+            "spellcaster-quick-upscale":     f"{_S}/Quick",
+            "spellcaster-quick-face-restore":f"{_S}/Quick",
+            "spellcaster-quick-rembg":       f"{_S}/Quick",
 
-            # Flux Kontext — instruction-based editing
-            "spellcaster-kontext":           "<Image>/Filters/Spellcaster Expert",
-
-            # AI Color Match
-            "spellcaster-color-match":       "<Image>/Filters/Spellcaster Style",
-
-            # Quick Actions — zero-dialog instant tools (under Filters for visibility)
-            "spellcaster-rerun-last":        "<Image>/Filters/Spellcaster Quick",
-            "spellcaster-quick-enhance":     "<Image>/Filters/Spellcaster Quick",
-            "spellcaster-quick-inpaint":     "<Image>/Filters/Spellcaster Quick",
-            "spellcaster-quick-upscale":     "<Image>/Filters/Spellcaster Quick",
-            "spellcaster-quick-face-restore":"<Image>/Filters/Spellcaster Quick",
-            "spellcaster-quick-rembg":       "<Image>/Filters/Spellcaster Quick",
+            # Tools — utility and config
+            "spellcaster-layer-blend-ratio": f"{_S}/Tools",
+            "spellcaster-upscale-blend":     f"{_S}/Tools",
+            "spellcaster-gif-stitch":        f"{_S}/Tools",
+            "spellcaster-embed-watermark":   f"{_S}/Tools",
+            "spellcaster-read-watermark":    f"{_S}/Tools",
+            "spellcaster-send-image":        f"{_S}/Tools",
+            "spellcaster-settings":          f"{_S}/Tools",
+            "spellcaster-bridge":            f"{_S}/Tools",
         }
 
         # ── Native GIMP menu integration ─────────────────────────────
@@ -10643,8 +10641,8 @@ class Spellcaster(Gimp.PlugIn):
 
         proc = Gimp.ImageProcedure.new(self, name, Gimp.PDBProcType.PLUGIN, callback, None)
         proc.set_menu_label(label)
-        # Primary Spellcaster submenu path
-        proc.add_menu_path(_menu_paths.get(name, "<Image>/Filters/Spellcaster"))
+        # Primary Spellcaster top-level menu path
+        proc.add_menu_path(_menu_paths.get(name, _S))
         # Additional native GIMP menu path (if applicable)
         native = _native_paths.get(name)
         if native:
