@@ -192,6 +192,27 @@
             <button id="reinit-btn" style="background:#ff4757;color:#fff;padding:10px 20px;border-radius:8px;border:none;cursor:pointer;font-family:'Outfit';font-size:13px;font-weight:600;width:100%;transition:all 0.2s;">Re-initialize &amp; Re-detect All Models</button>
             <p id="reinit-status" style="color:#888;font-size:12px;margin-top:6px;display:none;"></p>
 
+            <hr style="border:none;border-top:1px solid #333;margin:20px 0;">
+            <h3 style="margin-bottom:8px;">Visual Theme</h3>
+            <p style="margin-bottom:12px;color:#aaa;font-size:13px;">
+                The Spellcaster theme reskins GIMP and Darktable with a premium dark-purple UI.
+                Toggle this to install or remove the theme from your photo editors.
+            </p>
+            <div style="display:flex;gap:12px;align-items:center;margin-bottom:10px;">
+                <label style="display:flex;align-items:center;gap:8px;color:#ccc;font-size:13px;cursor:pointer;">
+                    <input type="checkbox" id="theme-gimp-toggle" checked style="accent-color:#B246F2;">
+                    Apply Spellcaster theme to GIMP
+                </label>
+            </div>
+            <div style="display:flex;gap:12px;align-items:center;margin-bottom:10px;">
+                <label style="display:flex;align-items:center;gap:8px;color:#ccc;font-size:13px;cursor:pointer;">
+                    <input type="checkbox" id="theme-darktable-toggle" checked style="accent-color:#B246F2;">
+                    Apply Spellcaster theme to Darktable
+                </label>
+            </div>
+            <button id="theme-apply-btn" onclick="applyThemeSettings()" style="background:#B246F2;color:#fff;padding:10px 20px;border-radius:8px;border:none;cursor:pointer;font-family:'Outfit';font-size:13px;font-weight:600;width:100%;transition:all 0.2s;">Apply Theme Settings</button>
+            <p id="theme-status" style="color:#888;font-size:12px;margin-top:6px;display:none;"></p>
+
             <div class="modal-actions" style="margin-top: 24px;">
                 <button id="settings-cancel">Cancel</button>
                 <button id="settings-save">Save & Connect</button>
