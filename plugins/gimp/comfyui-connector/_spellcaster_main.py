@@ -13567,6 +13567,19 @@ class Spellcaster(Gimp.PlugIn):
             "Crane shot (elevated sweep)": "elevated crane shot, sweeping overhead perspective, cinematic grandeur, high-production-value framing",
             "Tracking follow (behind)":  "steadicam tracking shot from behind subject, following perspective, depth corridor, immersive",
 
+            # ── Orbit / pivot around subject ──
+            "Orbit 45° left":            "camera orbiting 45 degrees to the left of the subject, three-quarter view from the left side, subject remains centered, smooth arc movement",
+            "Orbit 90° left (profile)":  "camera orbiting 90 degrees to the left, full left-side profile view, subject facing perpendicular to camera, ear and jaw visible",
+            "Orbit 135° left (rear 3/4)":"camera orbiting 135 degrees to the left, rear three-quarter view, back of head and left ear visible, looking away from camera",
+            "Orbit 180° (behind)":       "camera orbiting to directly behind the subject, back of head centered, shoulders visible, looking away, nape of neck",
+            "Orbit 45° right":           "camera orbiting 45 degrees to the right of the subject, three-quarter view from the right side, subject remains centered",
+            "Orbit 90° right (profile)": "camera orbiting 90 degrees to the right, full right-side profile view, subject facing perpendicular to camera",
+            "Orbit 135° right (rear 3/4)":"camera orbiting 135 degrees to the right, rear three-quarter view, back of head and right ear visible",
+            "Orbit high 45° (above front)": "camera orbiting to 45 degrees above and in front of subject, slight downward look, face visible, environmental context from above",
+            "Orbit high 90° (directly above)": "camera orbiting to directly above the subject looking straight down, top of head centered, shoulders radiating outward, bird's eye orbit",
+            "Orbit low 45° (below front)": "camera orbiting to 45 degrees below and in front of subject, low angle upward look, chin and jaw prominent, heroic perspective from orbit",
+            "Orbit full 360° (frozen mid-rotate)": "camera in the middle of a 360-degree orbit around the subject, dynamic frozen rotation, sense of circular motion, subject centered at all times",
+
             # ── Lens effects ──
             "Wide angle (24mm, spacious)": "shot with wide angle 24mm lens, spacious expansive feel, slight barrel distortion at edges, deep depth of field",
             "Telephoto (200mm, compressed)": "shot with telephoto 200mm lens, compressed depth of field, bokeh background, subject isolated, flattened perspective",
