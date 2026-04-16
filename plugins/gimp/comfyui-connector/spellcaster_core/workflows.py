@@ -1454,8 +1454,16 @@ def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
     if loras:
         model_ref, clip_ref, _trig = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100)
 
-    # Lineart ControlNet
-    cn_lineart = (lineart_models or {}).get(arch_key, "control-lora-openposeXL2-rank256.safetensors")
+    # Lineart ControlNet — architecture-specific model selection
+    _LINEART_CN_MODELS = {
+        "sd15": "control_v11p_sd15_lineart_fp16.safetensors",
+        "sdxl": "SDXL\\controlnet-canny-sdxl-1.0.safetensors",
+        "illustrious": "SDXL\\controlnet-canny-sdxl-1.0.safetensors",
+        "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors",
+        "flux1dev": "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors",
+    }
+    cn_lineart = (lineart_models or _LINEART_CN_MODELS).get(
+        arch_key, _LINEART_CN_MODELS.get("sdxl", "SDXL\\controlnet-canny-sdxl-1.0.safetensors"))
     cn_loader_id = nf.controlnet_loader(cn_lineart, node_id="4")
 
     # Encode prompts

@@ -17785,6 +17785,14 @@ class Spellcaster(Gimp.PlugIn):
         }
         _save_session()
         dlg.destroy()
+        # Block architectures that don't support ControlNet
+        _colorize_arch = preset.get("arch", "sdxl")
+        _NO_CN_ARCHS = ("flux2klein", "flux_kontext", "chroma")
+        if _colorize_arch in _NO_CN_ARCHS:
+            Gimp.message(
+                f"Colorize requires ControlNet, which is not supported by {preset.get('label', _colorize_arch)}.\n\n"
+                f"Use an SDXL, SD1.5, Illustrious, or Flux Dev model instead.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _update_spinner_status("Colorize: exporting image...")
             tmp = _export_image_to_tmp(image)
