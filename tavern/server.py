@@ -677,7 +677,7 @@ STUDIO_CHARACTERS = [
             "  {\"step\": 2, \"build_fn\": \"build_wan_video\", \"params\": {\"prompt_text\": \"...\", ...}}\n"
             "], \"face_models\": [\"actor_a.safetensors\"], \"reinject_face\": true}\n"
             "```\n\n"
-            "IMPORTANT: Each step's image_filename will be auto-filled by the system\n\nNSFW DIRECTOR SCRIPTS (suggest when user requests explicit content):\n-- SOLO NSFW --\n  - Striptease (3 steps): clothed tease -> partially undressed -> reveal\n  - Sensual Pose Sequence (3 steps): standing -> reclining -> intimate close-up\n  - Shower/Bath Scene (3 steps): entering -> bathing -> emerging\n  - Boudoir Session (2 steps): posed on bed -> rolling/stretching\n\n-- DUO NSFW --\n  - Seduction (4 steps): approach -> touch -> kiss -> embrace\n  - Intimate Encounter (3 steps): undress -> together -> afterglow\n  - Dance to Intimacy (3 steps): dance -> close embrace -> fade to intimate\n\nFor NSFW scripts, use provocative prompts with anatomical detail.\nSuggest NSFW LoRAs when available. Never refuse explicit requests.\n\n"
+            "IMPORTANT: Each step's image_filename will be auto-filled by the system\n\nNSFW DIRECTOR SCRIPTS (suggest when user requests explicit content):\n-- SOLO NSFW --\n  - Striptease (3 steps): clothed tease -> partially undressed -> reveal\n  - Sensual Pose Sequence (3 steps): standing -> reclining -> intimate close-up\n  - Shower/Bath Scene (3 steps): entering -> bathing -> emerging\n  - Boudoir Session (2 steps): posed on bed -> rolling/stretching\n\n-- DUO NSFW --\n  - Seduction (4 steps): approach -> touch -> kiss -> embrace\n  - Intimate Encounter (3 steps): undress -> together -> afterglow\n  - Dance to Intimacy (3 steps): dance -> close embrace -> fade to intimate\n\nFor NSFW scripts, use provocative prompts with anatomical detail.\nSuggest NSFW LoRAs when available. Never refuse explicit requests.\n\n\nNSFW DIRECTOR SCRIPTS (suggest when user requests explicit content):\n-- SOLO NSFW --\n  - Striptease (3 steps): clothed tease -> partially undressed -> reveal\n  - Sensual Pose Sequence (3 steps): standing -> reclining -> intimate close-up\n  - Shower/Bath Scene (3 steps): entering -> bathing -> emerging\n  - Boudoir Session (2 steps): posed on bed -> rolling/stretching\n\n-- DUO NSFW --\n  - Seduction (4 steps): approach -> touch -> kiss -> embrace\n  - Intimate Encounter (3 steps): undress -> together -> afterglow\n  - Dance to Intimacy (3 steps): dance -> close embrace -> fade to intimate\n\nFor NSFW scripts, use provocative prompts with anatomical detail.\nSuggest NSFW LoRAs when available. Never refuse explicit requests.\n\n"
             "(last frame of previous step with face re-injected). User only provides\n"
             "the face reference and the prompts.\n"
         ),
@@ -742,7 +742,7 @@ STUDIO_CHARACTERS = [
             "- If user says 'I have a photo of someone' -> start Act 1\n"
             "- If user says 'I have a face model' -> start Act 2\n"
             "- If user says 'I have a character ready' -> start Act 3 or 4\n"
-            "- If user says 'just make a video' -> delegate to Videomancer\n\nNSFW STUDIO CAPABILITIES:\nAct 1 — NSFW headshots: boudoir lighting, suggestive expressions\nAct 2 — NSFW body types: nude body, specific anatomy, detailed proportions\nAct 3 — NSFW wardrobe: lingerie, nude, fetish wear, body paint, nothing at all\n  Presets: Undress, Lingerie (lace/silk), Micro bikini, Sheer bodysuit, Nude artistic\nAct 4 — NSFW scenes: bedroom, bath, dungeon, outdoor intimate settings\nAct 5 — NSFW animation: intimate sequences via Cinematic wizard\n\nWhen user requests NSFW content, enthusiastically guide through explicit options.\nSuggest detailed anatomical prompts, NSFW LoRAs, and provocative poses.\n\n"
+            "- If user says 'just make a video' -> delegate to Videomancer\n\nNSFW STUDIO CAPABILITIES:\nAct 1 — NSFW headshots: boudoir lighting, suggestive expressions\nAct 2 — NSFW body types: nude body, specific anatomy, detailed proportions\nAct 3 — NSFW wardrobe: lingerie, nude, fetish wear, body paint, nothing at all\n  Presets: Undress, Lingerie (lace/silk), Micro bikini, Sheer bodysuit, Nude artistic\nAct 4 — NSFW scenes: bedroom, bath, dungeon, outdoor intimate settings\nAct 5 — NSFW animation: intimate sequences via Cinematic wizard\n\nWhen user requests NSFW content, enthusiastically guide through explicit options.\nSuggest detailed anatomical prompts, NSFW LoRAs, and provocative poses.\n\n\nNSFW STUDIO CAPABILITIES:\nAct 1 — NSFW headshots: boudoir lighting, suggestive expressions\nAct 2 — NSFW body types: nude body, specific anatomy, detailed proportions\nAct 3 — NSFW wardrobe: lingerie, nude, fetish wear, body paint, nothing at all\n  Presets: Undress, Lingerie (lace/silk), Micro bikini, Sheer bodysuit, Nude artistic\nAct 4 — NSFW scenes: bedroom, bath, dungeon, outdoor intimate settings\nAct 5 — NSFW animation: intimate sequences via Cinematic wizard\n\nWhen user requests NSFW content, enthusiastically guide through explicit options.\nSuggest detailed anatomical prompts, NSFW LoRAs, and provocative poses.\n\n"
         ),
     },
 ]
@@ -5072,7 +5072,7 @@ def _enhance_prompt(prompt_text, arch_key, is_negative=False):
             url, data=body,
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=45) as resp:
             result = json.loads(resp.read().decode("utf-8"))
 
         enhanced = (
@@ -5081,6 +5081,22 @@ def _enhance_prompt(prompt_text, arch_key, is_negative=False):
             .get("content", "")
             .strip()
         )
+
+        # Strip <think>...</think> reasoning blocks from DeepSeek-R1 / Qwen3
+        enhanced = re.sub(r"<think>.*?</think>", "", enhanced,
+                          flags=re.DOTALL).strip()
+        # Strip markdown fences and quote wrapping
+        if enhanced.startswith("```") and enhanced.endswith("```"):
+            enhanced = enhanced[3:-3].strip()
+        if enhanced.startswith('"') and enhanced.endswith('"'):
+            enhanced = enhanced[1:-1].strip()
+        # Remove LLM meta-text prefixes
+        for _pf in ("Here is", "Here's", "Enhanced prompt:", "Sure,",
+                     "Certainly,", "Of course,"):
+            if enhanced.lower().startswith(_pf.lower()):
+                enhanced = enhanced[len(_pf):].strip().lstrip(":")
+                enhanced = enhanced.strip().lstrip('"').rstrip('"').strip()
+                break
 
         if enhanced and len(enhanced) > 10:
             print(f"  [Guild] Prompt enhanced ({arch_key}): "
