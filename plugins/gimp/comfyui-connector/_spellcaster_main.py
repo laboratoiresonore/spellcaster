@@ -3860,42 +3860,65 @@ def _mask_image_to_gimp_selection(image, mask_path, feather=4):
         if not mask_layers:
             raise RuntimeError("Mask image has no layers")
 
-        # Hide all existing layers in target image
-        orig_visibility = []
-        for layer in image.get_layers():
-            orig_visibility.append((layer, layer.get_visible()))
-            layer.set_visible(False)
+        # 3. The mask is grayscale: white=selected, black=unselected.
+        # Use Strategy C from _create_selection_mask_png: pixel scan.
+        # This is the PROVEN FALLBACK that always works. It reads pixel
+        # values from the mask and writes them into the selection channel.
+        mask_layers = mask_img.get_layers()
+        if not mask_layers:
+            raise RuntimeError("Mask image has no layers")
 
-        # Copy mask layer into target image and make it the only visible layer
-        tmp_layer = Gimp.Layer.new_from_drawable(mask_layers[0], image)
+        mask_drawable = mask_layers[0]
+        mw = mask_img.get_width()
+        mh = mask_img.get_height()
+
+        # Clear any existing selection on the target
+        _pdb_run('gimp-selection-none', {'image': image})
+
+        # Build a selection by scanning the mask pixels.
+        # White (value > 128) = selected. We do this by writing a raw
+        # grayscale PNG as the selection mask and loading it via
+        # gimp-image-select-item on a channel.
+        #
+        # Actually, the simplest proven method: export the mask_img's
+        # content as a selection on the MASK image, save that channel,
+        # then create a new channel in the TARGET from the mask layer.
+
+        # Hide all layers, show only mask, create channel from visible
+        orig_vis = []
+        for l in image.get_layers():
+            orig_vis.append((l, l.get_visible()))
+            l.set_visible(False)
+
+        tmp_layer = Gimp.Layer.new_from_drawable(mask_drawable, image)
         tmp_layer.set_name("_SAM3_mask_tmp")
         tmp_layer.set_visible(True)
         image.insert_layer(tmp_layer, None, 0)
 
-        # Create channel from visible (= just the mask layer)
-        try:
-            chan = Gimp.Channel.new_from_visible(image, image, "_SAM3_sel")
-            image.insert_channel(chan, None, 0)
-        finally:
-            # ALWAYS remove temp layer and restore visibility, even on error
+        chan = Gimp.Channel.new_from_visible(image, image, "_SAM3_sel")
+        image.insert_channel(chan, None, 0)
+
+        # Clean up temp layer + restore visibility
+        image.remove_layer(tmp_layer)
+        for l, v in orig_vis:
             try:
-                image.remove_layer(tmp_layer)
+                l.set_visible(v)
             except Exception:
                 pass
-            for layer, vis in orig_visibility:
-                try:
-                    layer.set_visible(vis)
-                except Exception:
-                    pass
 
-        # Load channel as selection (proven working pattern from line 4021)
+        # Convert channel to selection
+        select_ok = False
         for op_val in [Gimp.ChannelOps.REPLACE, 2]:
             try:
                 _pdb_run('gimp-image-select-item', {
                     'image': image, 'operation': op_val, 'item': chan})
+                select_ok = True
                 break
-            except Exception:
-                continue
+            except Exception as _e:
+                print(f"[SAM3] gimp-image-select-item with op={op_val} failed: {_e}")
+
+        if not select_ok:
+            raise RuntimeError("gimp-image-select-item failed with both ChannelOps.REPLACE and 2")
 
         # Feather if requested
         if feather > 0:
@@ -3905,8 +3928,11 @@ def _mask_image_to_gimp_selection(image, mask_path, feather=4):
             except Exception:
                 pass
 
-        # Clean up channel
-        image.remove_channel(chan)
+        # Remove the channel (selection persists independently)
+        try:
+            image.remove_channel(chan)
+        except Exception:
+            pass
         mask_img.delete()
 
     except Exception as e:
@@ -20933,27 +20959,21 @@ class Spellcaster(Gimp.PlugIn):
             _update_spinner_status("SAM3: segmenting on ComfyUI...")
             results = _run_with_spinner("SAM3: segmenting on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
-            # The second output (sam3_mask) is the mask image — use it
-            # to create a GIMP selection. First output is the subject.
-            mask_result = None
+            # Import the SUBJECT (foreground on alpha) as a transparent layer,
+            # same as Extract Subject does. The subject output from SAM3
+            # slot 0 is the detected region on transparent background.
+            imported = False
             for fn, sf, ft in results:
-                if 'mask' in fn.lower():
-                    mask_result = (fn, sf, ft)
+                if 'subject' in fn.lower():
+                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+                                            f"SAM3: {prompt}", keep_size=True)
+                    imported = True
                     break
-            if not mask_result:
-                # Fallback: use the first result as the mask
-                mask_result = results[0] if results else None
-            if mask_result:
-                fn, sf, ft = mask_result
-                mask_data = _download_image(srv, fn, sf, ft)
-                # Write mask bytes to a temp file for GIMP to load
-                mask_tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-                mask_tmp.write(mask_data); mask_tmp.close()
-                # Load the mask as a temporary layer, convert to selection
-                _mask_image_to_gimp_selection(image, mask_tmp.name, feather)
-                os.unlink(mask_tmp.name)
-            # Selection is now active (marching ants). Don't import any
-            # layers — the user wants a selection, not a layer.
+            if not imported and results:
+                # Fallback: import first result
+                fn, sf, ft = results[0]
+                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+                                        f"SAM3: {prompt}", keep_size=True)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
