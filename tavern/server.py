@@ -2827,7 +2827,7 @@ def _query_civitai_by_filename(lora_name):
             "User-Agent": "Spellcaster-Guild/1.0",
             "Accept": "application/json",
         })
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read().decode("utf-8"))
 
         items = data.get("items", [])
@@ -3152,24 +3152,32 @@ def _civitai_metadata_worker(lora_names):
     for lora_name in lora_names:
         if lora_name not in _LORA_REGISTRY:
             continue
-        try:
-            meta = _query_civitai_by_filename(lora_name)
-            if meta:
-                entry = _LORA_REGISTRY[lora_name]
-                entry["purpose"] = meta["purpose"]
-                entry["tags"] = meta["tags"]
-                entry["civitai_url"] = meta["civitai_url"]
-                entry["civitai_name"] = meta.get("civitai_name", "")
-                entry["description"] = meta.get("description", "")
-                entry["source"] = "civitai"
-                fetched += 1
-            else:
-                skipped += 1
-        except Exception as e:
-            errors += 1
-            print(f"  [LoRA] CivitAI error for '{lora_name}': {e}")
+        meta = None
+        # Retry up to 2 times with backoff (CivitAI can be slow)
+        for attempt in range(2):
+            try:
+                meta = _query_civitai_by_filename(lora_name)
+                break  # success or None — either way, done
+            except Exception as e:
+                if attempt == 0:
+                    time.sleep(3)  # backoff before retry
+                else:
+                    bare = lora_name.replace("\\", "/").rsplit("/", 1)[-1].rsplit(".", 1)[0]
+                    errors += 1
+                    print(f"  [LoRA] CivitAI lookup failed for '{bare}': {e}")
+        if meta:
+            entry = _LORA_REGISTRY[lora_name]
+            entry["purpose"] = meta["purpose"]
+            entry["tags"] = meta["tags"]
+            entry["civitai_url"] = meta["civitai_url"]
+            entry["civitai_name"] = meta.get("civitai_name", "")
+            entry["description"] = meta.get("description", "")
+            entry["source"] = "civitai"
+            fetched += 1
+        else:
+            skipped += 1
         # Rate limit: be polite to CivitAI's API
-        time.sleep(1.0)
+        time.sleep(1.5)
         # Save periodically to avoid losing progress
         if (fetched + skipped + errors) % 20 == 0:
             _save_lora_registry()
