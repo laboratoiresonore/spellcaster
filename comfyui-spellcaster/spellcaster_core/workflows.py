@@ -4588,18 +4588,65 @@ def build_klein_sam3_inpaint(image_filename, segment_prompt, inpaint_prompt, see
                                        node_id="55")
         cond_for_inpaint = [ref_cond, 0]
 
-    # InpaintModelConditioning — Klein's inpaint conditioning setup
+    # Smart crop around the masked region — InpaintCropImproved handles
+    # resizing, padding, and mask-aware context extraction. The inpaint
+    # runs at higher resolution (the crop is naturally smaller than the
+    # full image) for better detail, then stitches back seamlessly.
+    crop_id = nf._add("InpaintCropImproved", {
+        "downscale_algorithm": "bicubic",
+        "upscale_algorithm": "lanczos",
+        "preresize": True,
+        "preresize_mode": "ensure minimum resolution",
+        "preresize_min_width": 1024,
+        "preresize_min_height": 1024,
+        "preresize_max_width": 16384,
+        "preresize_max_height": 16384,
+        "mask_fill_holes": False,
+        "mask_expand_pixels": 0,
+        "mask_invert": False,
+        "mask_blend_pixels": 4,
+        "mask_hipass_filter": 0.1,
+        "extend_for_outpainting": False,
+        "extend_up_factor": 1,
+        "extend_down_factor": 1,
+        "extend_left_factor": 1,
+        "extend_right_factor": 1,
+        "context_from_mask_extend_factor": 1.1,
+        "output_resize_to_target_size": True,
+        "output_target_width": 1536,
+        "output_target_height": 1536,
+        "output_padding": "8",
+        "device_mode": "gpu (much faster)",
+        "image": [img_id, 0],
+        "mask": [grow_id, 0],
+    }, node_id="25")
+    # crop_id outputs: [0]=stitcher, [1]=cropped_image, [2]=cropped_mask
+
+    # Self-reference: encode the cropped region as a ReferenceLatent so
+    # Klein preserves the surrounding context during inpainting
+    crop_enc = nf.vae_encode([crop_id, 1], [vae_id, 0], node_id="26")
+    ref_cond = nf.reference_latent(cond_for_inpaint, [crop_enc, 0],
+                                   node_id="27")
+
+    # InpaintModelConditioning on the CROPPED image + mask
     inpaint_cond_id = nf._add("InpaintModelConditioning", {
         "noise_mask": True,
-        "positive": cond_for_inpaint,
+        "positive": [ref_cond, 0],
         "negative": [neg_id, 0],
         "vae": [vae_id, 0],
-        "pixels": [img_id, 0],
-        "mask": [grow_id, 0],
+        "pixels": [crop_id, 1],
+        "mask": [crop_id, 2],
     }, node_id="30")
 
-    # DifferentialDiffusion for smooth mask-edge blending
-    diff_model = nf.differential_diffusion([unet_id, 0], node_id="31")
+    # DifferentialDiffusionAdvanced for smooth mask-edge blending
+    # (Advanced variant takes the latent samples + mask for per-pixel
+    # denoise control — smoother than plain DifferentialDiffusion)
+    diff_model = nf._add("DifferentialDiffusionAdvanced", {
+        "multiplier": 1,
+        "model": [unet_id, 0],
+        "samples": [inpaint_cond_id, 2],
+        "mask": [crop_id, 2],
+    }, node_id="31")
 
     # Optional Flux2Klein-Enhancer
     model_for_guider = [diff_model, 0]
@@ -4623,12 +4670,17 @@ def build_klein_sam3_inpaint(image_filename, segment_prompt, inpaint_prompt, see
 
     sample_id = nf.sampler_custom_advanced(
         [noise_id, 0], [guider_id, 0], [sampler_id, 0],
-        [sched_id, 0], [inpaint_cond_id, 1],  # slot 1 = latent from InpaintModelConditioning
+        [sched_id, 0], [diff_model, 1],  # slot 1 from DifferentialDiffusionAdvanced
         node_id="40",
     )
 
+    # Decode the inpainted crop and stitch back into the original image
     dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="45")
-    nf.save_image([dec_id, 0], "klein_sam3", node_id="46")
+    stitch_id = nf._add("InpaintStitchImproved", {
+        "stitcher": [crop_id, 0],
+        "inpainted_image": [dec_id, 0],
+    }, node_id="46")
+    nf.save_image([stitch_id, 0], "klein_sam3", node_id="47")
 
     return nf.build()
 
