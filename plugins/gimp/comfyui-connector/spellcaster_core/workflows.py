@@ -769,7 +769,7 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
                          steps=4, denoise=0.65, guidance=1.0,
                          enhancer_mag=1.0, enhancer_contrast=0.0, loras=None,
                          lora_name=None, lora_strength=1.0,
-                         klein_models=None, enhance=False):
+                         klein_models=None, enhance=True):
     """Image-to-image with Flux 2 Klein (distilled fast model).
 
     Klein is a 4B/9B parameter distilled variant of Flux that runs 6-8x faster
@@ -2439,7 +2439,7 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
                              guidance=1.0, enhancer_mag=1.0, enhancer_contrast=0.0,
                              ref_strength=1.0, text_ref_balance=0.5,
                              loras=None, lora_name=None, lora_strength=1.0,
-                             klein_models=None):
+                             klein_models=None, enhance=True):
     """Klein img2img with separate reference image.
 
     Same pipeline as build_klein_img2img but uses the reference image
@@ -2488,11 +2488,16 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
     ref_pos_id = nf.reference_latent([pos_id, 0], [ref_latent_id, 0], node_id="20")
     ref_neg_id = nf.reference_latent([neg_id, 0], [ref_latent_id, 0], node_id="21")
 
+    # Enhancer chain (Flux2Klein-Enhancer nodes for quality boost)
+    model_for_guider = [unet_id, 0]
+    if enhance:
+        model_for_guider = _klein_enhance_model(nf, [unet_id, 0])
+
     # Sampler setup
-    guider_id = nf.cfg_guider([unet_id, 0], [ref_pos_id, 0], [ref_neg_id, 0],
+    guider_id = nf.cfg_guider(model_for_guider, [ref_pos_id, 0], [ref_neg_id, 0],
                               guidance, node_id="30")
     sampler_id = nf.ksampler_select("euler", node_id="31")
-    sched_id = nf.basic_scheduler([unet_id, 0], steps, denoise,
+    sched_id = nf.basic_scheduler(model_for_guider, steps, denoise,
                                    scheduler="simple", node_id="32")
     noise_id = nf.random_noise(seed, node_id="33")
 
@@ -2515,7 +2520,8 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
 def build_klein_headswap(target_filename, source_filename, klein_model_key,
                           prompt, seed, denoise=0.35, steps=20,
                           face_model=None, face_restore_vis=0.7,
-                          codeformer_weight=0.8, loras=None, klein_models=None):
+                          codeformer_weight=0.8, loras=None, klein_models=None,
+                          enhance=True):
     """Head swap with Klein Flux2 refinement.
 
     Two-stage head swap: first uses ReActor for fast face swap, then refines
@@ -2675,11 +2681,14 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
     ref_pos_id = nf.reference_latent([pos_id, 0], [latent_id, 0], node_id="33")
     ref_neg_id = nf.reference_latent([neg_id, 0], [latent_id, 0], node_id="34")
 
+    # Enhancer chain (Klein quality boost)
+    _hs_model = _klein_enhance_model(nf, [unet_id, 0], node_base_id=910) if enhance else [unet_id, 0]
+
     # Sampling — uses BasicScheduler for denoise support
-    guider_id = nf.cfg_guider([unet_id, 0], [ref_pos_id, 0], [ref_neg_id, 0],
+    guider_id = nf.cfg_guider(_hs_model, [ref_pos_id, 0], [ref_neg_id, 0],
                               1.0, node_id="40")
     sampler_id = nf.ksampler_select("euler", node_id="41")
-    sched_id = nf.basic_scheduler([unet_id, 0], steps, denoise, node_id="42")
+    sched_id = nf.basic_scheduler(_hs_model, steps, denoise, node_id="42")
     noise_id = nf.random_noise(seed, node_id="43")
 
     # Sample -- feed encoded image latent, NOT empty latent
@@ -3615,7 +3624,7 @@ def build_photobooth(ref_filename, prompt_text, seed,
 
 def build_klein_repose(image_filename, klein_model_key, prompt_text, seed,
                        steps=20, denoise=0.65, guidance=1.0, loras=None,
-                       klein_models=None):
+                       klein_models=None, enhance=True):
     """Klein Re-poser: change character pose using ReferenceLatent + BasicScheduler.
 
     Same as build_klein_img2img but uses BasicScheduler with denoise instead of
@@ -3657,11 +3666,14 @@ def build_klein_repose(image_filename, klein_model_key, prompt_text, seed,
     ref_pos_id = nf.reference_latent([pos_id, 0], [latent_id, 0], node_id="20")
     ref_neg_id = nf.reference_latent([neg_id, 0], [latent_id, 0], node_id="21")
 
+    # Enhancer chain
+    _rp_model = _klein_enhance_model(nf, [unet_id, 0], node_base_id=920) if enhance else [unet_id, 0]
+
     # Sampler setup — BasicScheduler with denoise (unlike Flux2Scheduler)
-    guider_id = nf.cfg_guider([unet_id, 0], [ref_pos_id, 0], [ref_neg_id, 0],
+    guider_id = nf.cfg_guider(_rp_model, [ref_pos_id, 0], [ref_neg_id, 0],
                               guidance, node_id="30")
     sampler_id = nf.ksampler_select("euler", node_id="31")
-    sched_id = nf.basic_scheduler([unet_id, 0], steps, denoise,
+    sched_id = nf.basic_scheduler(_rp_model, steps, denoise,
                                    scheduler="simple", node_id="32")
     noise_id = nf.random_noise(seed, node_id="33")
 
@@ -3686,7 +3698,8 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
                       blend_mode="normal", opacity=1.0,
                       scale=None, position_x=0.5, position_y=0.5,
                       klein_model_key="Klein 9B", steps=20, denoise=0.25,
-                      guidance=1.0, loras=None, klein_models=None):
+                      guidance=1.0, loras=None, klein_models=None,
+                      enhance=True):
     """Klein Blend: composite foreground onto background, then harmonize with Klein.
 
     Pipeline: LoadImage(FG) + LoadImage(BG) → AILab_ImageCombiner → Klein
@@ -3744,11 +3757,14 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
     ref_pos_id = nf.reference_latent([pos_id, 0], [latent_id, 0], node_id="20")
     ref_neg_id = nf.reference_latent([neg_id, 0], [latent_id, 0], node_id="21")
 
+    # Enhancer chain
+    _bl_model = _klein_enhance_model(nf, [unet_id, 0], node_base_id=930) if enhance else [unet_id, 0]
+
     # Sampler — BasicScheduler with low denoise
-    guider_id = nf.cfg_guider([unet_id, 0], [ref_pos_id, 0], [ref_neg_id, 0],
+    guider_id = nf.cfg_guider(_bl_model, [ref_pos_id, 0], [ref_neg_id, 0],
                               guidance, node_id="30")
     sampler_id = nf.ksampler_select("euler", node_id="31")
-    sched_id = nf.basic_scheduler([unet_id, 0], steps, denoise,
+    sched_id = nf.basic_scheduler(_bl_model, steps, denoise,
                                    scheduler="simple", node_id="32")
     noise_id = nf.random_noise(seed, node_id="33")
 
@@ -3774,7 +3790,7 @@ def build_klein_inpaint(image_filename, mask_filename, prompt_text, seed,
                         guidance=1.0, grow_px=0, use_differential_diffusion=False,
                         use_solid_mask=False, solid_mask_width=1024,
                         solid_mask_height=1024, loras=None,
-                        klein_models=None):
+                        klein_models=None, enhance=True):
     """Klein Inpaint: regenerate masked area using FluxGuidance + SetLatentNoiseMask.
 
     Supports two mask sources:
@@ -3834,10 +3850,12 @@ def build_klein_inpaint(image_filename, mask_filename, prompt_text, seed,
     masked_latent_id = nf.set_latent_noise_mask([enc_id, 0], mask_ref,
                                                   node_id="21")
 
-    # Optional DifferentialDiffusion
+    # Optional DifferentialDiffusion + Enhancer chain
     model_ref = [unet_id, 0]
+    if enhance:
+        model_ref = _klein_enhance_model(nf, model_ref, node_base_id=960)
     if use_differential_diffusion:
-        dd_id = nf.differential_diffusion([unet_id, 0], node_id="22")
+        dd_id = nf.differential_diffusion(model_ref, node_id="22")
         model_ref = [dd_id, 0]
 
     # Sampler — FluxGuidance (not ReferenceLatent) because
@@ -4014,7 +4032,7 @@ def build_klein_scene_img2img(image_filename, prompt_text, seed,
                                klein_model_key="Klein 9B", steps=20,
                                denoise=0.30, guidance=1.0,
                                klein_models=None,
-                               loras=None):
+                               loras=None, enhance=True):
     """Klein scene img2img: harmonize a composited scene.
 
     Unlike build_klein_img2img which uses ReferenceLatent (generates from noise
@@ -4055,11 +4073,14 @@ def build_klein_scene_img2img(image_filename, prompt_text, seed,
     enc_id = nf.vae_encode([scene_id, 0], [vae_id, 0], node_id="20")
     size_id = nf.get_image_size([scene_id, 0], node_id="25")
 
+    # Enhancer chain
+    _sc_model = _klein_enhance_model(nf, [unet_id, 0], node_base_id=940) if enhance else [unet_id, 0]
+
     # Sampler — BasicScheduler with denoise
-    guider_id = nf.cfg_guider([unet_id, 0], [guided_id, 0], [neg_id, 0],
+    guider_id = nf.cfg_guider(_sc_model, [guided_id, 0], [neg_id, 0],
                               1.0, node_id="30")
     sampler_id = nf.ksampler_select("euler", node_id="31")
-    sched_id = nf.basic_scheduler([unet_id, 0], steps, denoise,
+    sched_id = nf.basic_scheduler(_sc_model, steps, denoise,
                                    scheduler="simple", node_id="32")
     noise_id = nf.random_noise(seed, node_id="33")
 
@@ -4236,7 +4257,7 @@ def build_klein_auto_inpaint(image_filename, mask_prompt, inpaint_prompt, seed,
                               steps=4, denoise=1.0, guidance=1.0,
                               florence_model="microsoft/Florence-2-base",
                               loras=None, lora_name=None, lora_strength=1.0,
-                              klein_models=None):
+                              klein_models=None, enhance=True):
     """Klein Auto-Inpaint — describe what to mask, then inpaint it.
 
     Uses Florence2's referring_expression_segmentation to automatically
@@ -4343,11 +4364,14 @@ def build_klein_auto_inpaint(image_filename, mask_prompt, inpaint_prompt, seed,
                                    node_id="21")
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="22")
 
+    # Enhancer chain
+    _ai_model = _klein_enhance_model(nf, [unet_id, 0], node_base_id=950) if enhance else [unet_id, 0]
+
     # Sampler
-    guider_id = nf.cfg_guider([unet_id, 0], [ref2_pos, 0], [neg_id, 0],
+    guider_id = nf.cfg_guider(_ai_model, [ref2_pos, 0], [neg_id, 0],
                               guidance, node_id="30")
     sampler_id = nf.ksampler_select("euler", node_id="31")
-    sched_id = nf.basic_scheduler([unet_id, 0], steps, denoise,
+    sched_id = nf.basic_scheduler(_ai_model, steps, denoise,
                                    scheduler="simple", node_id="32")
     noise_id = nf.random_noise(seed, node_id="33")
 
