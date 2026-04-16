@@ -27,7 +27,7 @@
   <a href="#-the-wizard-guild">Wizard Guild</a> &bull;
   <a href="#-sillytavern-characters">SillyTavern</a> &bull;
   <a href="#-faq">FAQ</a> &bull;
-  <a href="https://www.reddit.com/r/spellcaster_ai/">Reddit</a>
+  <a href="https://www.reddit.com/r/Spellcaster_Studio/">Reddit</a>
 </p>
 
 ---
