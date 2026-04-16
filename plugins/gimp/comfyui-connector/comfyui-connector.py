@@ -444,7 +444,12 @@ def _apply_spellcaster_theme():
     2. Apply it to the current GTK screen at APPLICATION priority.
     3. Also install the CSS to GIMP's user theme directory for persistence.
     """
-    if not _load_config().get("apply_theme", False):
+    # Read config directly — _load_config() isn't defined yet at boot time.
+    try:
+        _cfg = json.loads((_PLUGIN_DIR / "config.json").read_text(encoding="utf-8"))
+    except Exception:
+        _cfg = {}
+    if not _cfg.get("apply_theme", False):
         return
     try:
         from gi.repository import Gdk, Gtk
