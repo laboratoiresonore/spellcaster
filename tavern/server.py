@@ -5989,6 +5989,16 @@ class GuildHandler(SimpleHTTPRequestHandler):
         if self.path == '/api/horde_generate':
             return self._handle_horde_generate(data)
 
+        # -- /api/llm_generate -- server-side LLM proxy
+        #    Routes through _llm_generate_local which tries ComfyUI LLM
+        #    nodes first, then falls back to KoboldCpp. The browser can't
+        #    call ComfyUI's workflow API directly for text generation.
+        if self.path == '/api/llm_generate':
+            result = _llm_generate_local(data)
+            if result:
+                return self.end_json(200, result)
+            return self.end_json(502, {"error": "LLM unavailable"})
+
         # -- /api/config (POST) -- update runtime config from settings UI
         if self.path == '/api/config':
             return self._handle_config_update(data)
