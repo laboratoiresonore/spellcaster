@@ -301,20 +301,15 @@ async function syncServerIdentities() {
         const serverIds = await res.json();
         if (Object.keys(serverIds).length === 0) return;
 
-        // Merge into localStorage — server is authoritative for keys it has
+        // Server OVERWRITES localStorage for all keys it has
         let local = JSON.parse(localStorage.getItem('guild_identities') || '{}');
         let synced = 0;
         for (const [charId, srvData] of Object.entries(serverIds)) {
-            if (!local[charId]) {
-                local[charId] = srvData;
-                synced++;
-            } else {
-                // Server fills in any gaps the local store is missing
-                for (const key of ['name', 'personality', 'avatar_url', 'animated_url']) {
-                    if (srvData[key] && !local[charId][key]) {
-                        local[charId][key] = srvData[key];
-                        synced++;
-                    }
+            if (!local[charId]) local[charId] = {};
+            for (const key of ['name', 'personality', 'avatar_url', 'animated_url']) {
+                if (srvData[key]) {
+                    local[charId][key] = srvData[key];
+                    synced++;
                 }
             }
         }
@@ -594,32 +589,24 @@ async function initialize() {
     // Sync server-persisted LoRA toggles (survives browser clears)
     await syncServerLoraToggles();
 
-    // Merge localStorage identities with server data.
-    // SERVER ALWAYS WINS for names — the server applies LLM-generated
-    // scaffold overrides. localStorage names are actively purged to
-    // prevent stale model filenames from overriding creative names.
+    // Server ALWAYS wins for wizard names. Nuke any stale localStorage
+    // names that differ from the server (LLM-generated scaffold overrides).
+    // Only user-explicit renames (via rename dialog) survive.
     let savedIdentities = JSON.parse(localStorage.getItem('guild_identities') || '{}');
-    let identitiesDirty = false;
     characters.forEach(char => {
-        if(savedIdentities[char.id]) {
-            // Server name always wins — purge stale localStorage name
-            // UNLESS the user explicitly renamed via the rename dialog
-            if (savedIdentities[char.id]._user_renamed) {
-                char.name = savedIdentities[char.id].name || char.name;
-            } else if (savedIdentities[char.id].name && savedIdentities[char.id].name !== char.name) {
-                // Stale localStorage name differs from server — nuke it
+        if (savedIdentities[char.id]) {
+            // Force server name — always — unless user explicitly renamed
+            if (!savedIdentities[char.id]._user_renamed) {
                 savedIdentities[char.id].name = char.name;
-                identitiesDirty = true;
+            } else {
+                char.name = savedIdentities[char.id].name || char.name;
             }
             char.personality = savedIdentities[char.id].personality || char.personality;
-            // Server wins for generated visuals; localStorage is fallback only
             char.avatar_url = char.avatar_url || savedIdentities[char.id].avatar_url;
             char.animated_url = char.animated_url || savedIdentities[char.id].animated_url;
         }
     });
-    if (identitiesDirty) {
-        localStorage.setItem('guild_identities', JSON.stringify(savedIdentities));
-    }
+    localStorage.setItem('guild_identities', JSON.stringify(savedIdentities));
 
     applyGlobalBackground();
     renderSidebar();
