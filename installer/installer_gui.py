@@ -455,7 +455,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         self.node_vars = {}     # {node_key: BooleanVar}
         self.lut_path = ctk.StringVar(value="")          # optional LUT import folder
         self.output_dir = ctk.StringVar(value="")        # Spellcaster output repatriation folder
-        self.apply_theme = ctk.BooleanVar(value=False)   # replace system splash screens
+        self.apply_theme = ctk.BooleanVar(value=False)   # replace system splash screens (opt-in only)
 
         self.title("Spellcaster Premium Setup")
         self.geometry("1020x700")

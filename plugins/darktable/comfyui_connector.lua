@@ -2926,6 +2926,46 @@ local INPAINT_REFINEMENTS = {
     negative = "clothed, censored, ugly, deformed",
     denoise = 0.7, cfg_boost = 1.0, steps_override = 25,
     loras = { flux2klein = { {"Flux-1-Dev\NSFW\Flux Klein - NSFW v2.safetensors", 0.85, 0.85} } } },
+  { label = "* Fix Nude Body Anatomy (NSFW)",
+    prompt = "correct nude anatomy, natural proportions, realistic nude body, accurate intimate anatomy, detailed skin, natural body structure",
+    negative = "bad anatomy, deformed genitals, extra limbs, missing parts, ugly, poorly drawn, anatomically incorrect, fused body parts",
+    denoise = 0.72, cfg_boost = 1.0, steps_override = 30,
+    loras = { flux2klein = { {"Flux-2-Klein\Sliders/klein_slider_anatomy_9B_v1.5.safetensors", 0.85, 0.85} }, sdxl = { {"SDXL\Body\HandFineTuning_XL.safetensors", 0.5, 0.5} }, flux1dev = { {"Flux-1-Dev\Detail/add_detail.safetensors", 0.5, 0.5} } } },
+  { label = "* Glistening / Oily Nude Skin (NSFW)",
+    prompt = "oily skin, glistening nude body, wet shiny skin, sweat, dewy skin highlights, moisture on nude form, glossy skin, sensual skin sheen",
+    negative = "dry, matte, dull, flat lighting, powder, covered",
+    denoise = 0.55, cfg_boost = 0.5, steps_override = 28,
+    loras = { sdxl = { {"SDXL\Oily skin style xl v1.safetensors", 0.9, 0.9}, {"SDXL\Detail\RealSkin_xxXL_v1.safetensors", 0.4, 0.4} }, flux2klein = { {"Flux-2-Klein\K9bSh4rpD3tails.safetensors", 0.6, 0.6} } } },
+  { label = "* Boudoir Lighting (NSFW)",
+    prompt = "boudoir photography lighting, warm diffused light, soft shadows on nude skin, rim lighting on bare body, intimate atelier lighting, vintage photographic nude, natural skin tones, sensual low-key lighting",
+    negative = "harsh flash, overexposed, flat lighting, cold light, bright everywhere, clinical",
+    denoise = 0.58, cfg_boost = 0.5, steps_override = 28,
+    loras = { sdxl = { {"SDXL\Detail\RealSkin_xxXL_v1.safetensors", 0.6, 0.6}, {"SDXL\Slider\Dramatic Lighting Slider.safetensors", 0.5, 0.5} }, flux2klein = { {"Flux-2-Klein\ultra_real_v2.safetensors", 0.6, 0.6} }, flux1dev = { {"Flux-1-Dev\Realism/flux_realism.safetensors", 0.65, 0.65} } } },
+  { label = "* Intimate Extreme Close-Up (NSFW)",
+    prompt = "macro intimate close-up, extreme shallow DOF, ultra-detailed skin pores, fine body hair detail, intimate body detail, close-up nude portrait, artistic nude macro photography",
+    negative = "wide angle, far away, full body, blurry micro details, flat, low resolution",
+    denoise = 0.62, cfg_boost = 0.5, steps_override = 30,
+    loras = { flux2klein = { {"Flux-2-Klein\K9bSh4rpD3tails.safetensors", 0.8, 0.8}, {"Flux-2-Klein\BFS_head_v1_flux-klein_9b_rank128.safetensors", 0.6, 0.6} }, sdxl = { {"SDXL\Detail\Wonderful_Details_XL_V1a.safetensors", 0.7, 0.7} }, flux1dev = { {"Flux-1-Dev\Detail/add_detail.safetensors", 0.7, 0.7} } } },
+  { label = "* Intimate Body Paint (NSFW)",
+    prompt = "artistic nude body paint, glowing body art, painted nude body, luminescent body paint patterns, arcane-style body decoration, ritual body art on nude skin",
+    negative = "clothed, opaque body paint covering, fully hidden, ugly, low quality",
+    denoise = 0.7, cfg_boost = 1.0, steps_override = 28,
+    loras = { sdxl = { {"Illustrious-Pony\MetallicGoldSilver_skinbody_paint-000019.safetensors", 0.8, 0.8} }, flux2klein = { {"Flux-2-Klein\ultra_real_v2.safetensors", 0.65, 0.65} } } },
+  { label = "* Post-Coital Glow (NSFW)",
+    prompt = "post-coital afterglow, flushed skin, warm intimate lighting, glistening sweat, dishevelled hair, heavy-lidded satisfied expression, intimate bedroom atmosphere, rumpled sheets, warm candlelight on nude skin",
+    negative = "formal, posed, clinical, cold, sharp, bright flash, fully dressed",
+    denoise = 0.6, cfg_boost = 0.5, steps_override = 28,
+    loras = { sdxl = { {"SDXL\Oily skin style xl v1.safetensors", 0.5, 0.5}, {"SDXL\Detail\RealSkin_xxXL_v1.safetensors", 0.55, 0.55} }, flux2klein = { {"Flux-2-Klein\ultra_real_v2.safetensors", 0.65, 0.65} }, flux1dev = { {"Flux-1-Dev\Realism/flux_realism.safetensors", 0.6, 0.6} } } },
+  { label = "* Old Masters Nude Study (NSFW)",
+    prompt = "Old Masters nude painting style, Rembrandt nude, chiaroscuro, classical figure painting, academic nude study, oil painting aesthetic, warm earth tones, dramatic shadow, renaissance nude, museum-quality figurative art",
+    negative = "photograph, digital, modern, anime, cartoon, flat colors, bright, contemporary filter",
+    denoise = 0.72, cfg_boost = 1.0, steps_override = 30,
+    loras = { sdxl = { {"Illustrious-Pony\Chiaroscuro  film style pony v1.safetensors", 0.8, 0.8}, {"SDXL\Style\dark.safetensors", 0.4, 0.4} } } },
+  { label = "* Anime NSFW Style (Klein / Illustrious)",
+    prompt = "nsfw anime art, explicit hentai, uncensored anime nude, high quality erotic anime illustration, vibrant saturated colors, clean anime line art, detailed anime body",
+    negative = "realistic photography, 3d render, western, ugly, bad anatomy, censored, low quality",
+    denoise = 0.72, cfg_boost = 1.0, steps_override = 28,
+    loras = { illustrious = { {"Illustrious-Pony\NSFW_Illustrious_v1.safetensors", 0.85, 0.85} }, sdxl = { {"Illustrious-Pony\MetallicGoldSilver_skinbody_paint-000019.safetensors", 0.3, 0.3} }, flux2klein = { {"Flux-1-Dev\NSFW\Flux Klein - NSFW v2.safetensors", 0.75, 0.75} } } },
 
 }
 
@@ -8066,5 +8106,84 @@ end
 -- Run update check wrapped in pcall: network/file errors must never
 -- prevent the plugin from loading and functioning normally.
 pcall(spellcaster_auto_update)
+
+-- ═══════════════════════════════════════════════════════════════════════
+--  Spellcaster Theme Auto-Install
+-- ═══════════════════════════════════════════════════════════════════════
+-- Copies spellcaster-darktable.css to the Darktable themes directory
+-- so the user can select it from Preferences > General > Theme.
+-- Non-destructive: only copies if the file is newer or missing.
+local function install_spellcaster_theme()
+  local plugin_dir = dt.configuration.config_dir .. "/lua/"
+  -- Find the CSS file next to this Lua script
+  local css_candidates = {
+    plugin_dir .. "spellcaster-darktable.css",
+    plugin_dir .. "contrib/spellcaster-darktable.css",
+  }
+  -- Also check the script's own directory
+  local script_dir = debug.getinfo(1, "S").source:match("@?(.*[/\\])")
+  if script_dir then
+    table.insert(css_candidates, 1, script_dir .. "spellcaster-darktable.css")
+  end
+
+  local css_source = nil
+  for _, path in ipairs(css_candidates) do
+    local f = io.open(path, "r")
+    if f then
+      f:close()
+      css_source = path
+      break
+    end
+  end
+  if not css_source then return end
+
+  -- Determine themes directory
+  local themes_dir = dt.configuration.config_dir .. "/themes"
+  local dest = themes_dir .. "/spellcaster-darktable.css"
+
+  -- Create themes directory if needed
+  local mkdir_cmd
+  if dt.configuration.running_os == "windows" then
+    mkdir_cmd = 'mkdir "' .. themes_dir:gsub("/", "\\") .. '" 2>NUL'
+  else
+    mkdir_cmd = 'mkdir -p "' .. themes_dir .. '" 2>/dev/null'
+  end
+  os.execute(mkdir_cmd)
+
+  -- Check if update needed (compare sizes as a simple freshness check)
+  local src_f = io.open(css_source, "rb")
+  if not src_f then return end
+  local src_data = src_f:read("*a")
+  src_f:close()
+
+  local dst_f = io.open(dest, "rb")
+  if dst_f then
+    local dst_data = dst_f:read("*a")
+    dst_f:close()
+    if dst_data == src_data then
+      return  -- already up to date
+    end
+  end
+
+  -- Copy the theme CSS
+  local out = io.open(dest, "wb")
+  if out then
+    out:write(src_data)
+    out:close()
+    dt.print(_("Spellcaster theme installed. Select it in Preferences > General > Theme."))
+  end
+end
+
+-- Only install theme if user opted in via config. Default is UNBRANDED.
+local _cfg_path = dt.configuration.config_dir .. "/lua/spellcaster_config.json"
+local _apply_theme = false
+do
+  local f = io.open(_cfg_path, "r")
+  if f then
+    local txt = f:read("*a"); f:close()
+    if txt:find('"apply_theme"%s*:%s*true') then _apply_theme = true end
+  end
+end
+if _apply_theme then pcall(install_spellcaster_theme) end
 
 return script_data

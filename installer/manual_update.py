@@ -30,13 +30,17 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-VERSION = "2.2-NSFW"
+VERSION = "2.3-NSFW"
+# Date the static fallback lists were last verified — used to warn users when
+# they are running from a stale local copy that the GitHub API could not reach.
+STATIC_LIST_DATE = "2026-04-16"
 GITHUB_RAW = "https://raw.githubusercontent.com/laboratoiresonore/spellcaster_NSFW/main"
 GITHUB_API = "https://api.github.com/repos/laboratoiresonore/spellcaster_NSFW/commits?sha=main&per_page=1"
 GITHUB_TREE = "https://api.github.com/repos/laboratoiresonore/spellcaster_NSFW/git/trees/main?recursive=1"
 
 # Prefixes for dynamic file discovery via GitHub Tree API
 GIMP_PLUGIN_PREFIX = "plugins/gimp/comfyui-connector/"
+CORE_LIB_PREFIX = "comfyui-spellcaster/spellcaster_core/"
 TAVERN_PREFIX = "tavern/"
 SCAFFOLD_PREFIX = "scaffold/"
 DARKTABLE_PLUGIN_PREFIX = "plugins/darktable/"
@@ -57,6 +61,9 @@ GIMP_PLUGIN_FILES = [
     "plugins/gimp/comfyui-connector/spellcaster_hero.png",
     "plugins/gimp/comfyui-connector/spinner.gif",
     "plugins/gimp/comfyui-connector/wizard_banner.gif",
+    "plugins/gimp/comfyui-connector/spellcaster_shortcuts.py",
+    "plugins/gimp/comfyui-connector/spellcaster_icon.png",
+    "plugins/gimp/comfyui-connector/spellcaster_header.png",
 ]
 TAVERN_FILES = [
     "tavern/server.py",
@@ -65,6 +72,10 @@ TAVERN_FILES = [
     "tavern/static/index.html",
     "tavern/static/app.js",
     "tavern/static/style.css",
+    "tavern/static/icons/wizard_banner.gif",
+    "tavern/static/icons/wizardguild.png",
+    "tavern/static/icons/demo_step2_inpaint.png",
+    "tavern/static/icons/summon-wand.svg",
     "scaffold/__init__.py",
     "scaffold/meta_wizard.py",
     "scaffold/introspector.py",
@@ -95,15 +106,16 @@ else:
     B = G = Y = R = C = D = X = ""
 
 
-def discover_remote_files(prefix: str) -> list[str]:
+def discover_remote_files(prefix: str) -> list[str] | None:
     """Dynamically discover ALL files under *prefix* in the repo via GitHub Tree API.
 
     Returns a list of full repo-relative paths including subdirectories.
-    Falls back to None if the API is unavailable so callers can use static lists.
+    Returns None if the API is unavailable — callers should then use static lists
+    and warn the user clearly.
     """
     try:
         req = urllib.request.Request(GITHUB_TREE, headers={"User-Agent": "spellcaster-updater/2.0", "Authorization": "token <REDACTED_GH_PAT>"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=20) as resp:
             tree = json.loads(resp.read())
         files = []
         for item in tree.get("tree", []):
@@ -111,6 +123,58 @@ def discover_remote_files(prefix: str) -> list[str]:
                 remainder = item["path"][len(prefix):]
                 if remainder:  # skip empty (the prefix dir itself)
                     files.append(item["path"])
+        return files if files else None
+    except Exception as _e:
+        print(f"    {Y}GitHub API unavailable ({type(_e).__name__}){X}")
+        return None
+
+
+def _warn_static_list_age():
+    """Warn the user if the static fallback file list is potentially stale."""
+    import datetime
+    try:
+        cutoff = datetime.date.fromisoformat(STATIC_LIST_DATE)
+        age_days = (datetime.date.today() - cutoff).days
+        if age_days > 30:
+            print(f"    {Y}⚠ Static file list is {age_days} days old — "
+                  f"some newer files may be missing. Check GitHub for an updater release.{X}")
+        else:
+            print(f"    {D}Static file list dated {STATIC_LIST_DATE} ({age_days} days old — OK){X}")
+    except Exception:
+        pass
+
+
+def discover_gimp_plugin_files() -> list[tuple[str, str]] | None:
+    """Discover GIMP plugin files with single-source-of-truth priority.
+
+    Returns list of (github_path, local_remainder) tuples.
+    The canonical spellcaster_core from comfyui-spellcaster/ always wins
+    over the bundled copy in plugins/gimp/comfyui-connector/spellcaster_core/.
+
+    This prevents the stale bundled copy from overwriting the canonical one
+    during updates — the exact bug that bricked GIMP plugins on multiple
+    machines.
+    """
+    try:
+        req = urllib.request.Request(GITHUB_TREE, headers={"User-Agent": "spellcaster-updater/2.0", "Authorization": "token <REDACTED_GH_PAT>"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            tree = json.loads(resp.read())
+        files = []
+        seen = set()
+        for item in tree.get("tree", []):
+            if item["type"] != "blob":
+                continue
+            # Canonical source FIRST — single source of truth
+            if item["path"].startswith(CORE_LIB_PREFIX):
+                remainder = item["path"][len("comfyui-spellcaster/"):]
+                if remainder and remainder not in seen:
+                    files.append((item["path"], remainder))
+                    seen.add(remainder)
+            elif item["path"].startswith(GIMP_PLUGIN_PREFIX):
+                remainder = item["path"][len(GIMP_PLUGIN_PREFIX):]
+                if remainder and remainder not in seen:
+                    files.append((item["path"], remainder))
+                    seen.add(remainder)
         return files if files else None
     except Exception:
         return None
@@ -501,17 +565,48 @@ def diagnose_gimp_install(plug_dir: Path) -> list[str]:
 
 # ─── Download from GitHub ───────────────────────────────────────────────────
 
-def download_file(url: str, dest: Path) -> bool:
-    """Download a single file from GitHub."""
+def download_file(url: str, dest: Path, retries: int = 3, timeout: int = 45) -> bool:
+    """Download a single file from GitHub with retry logic and atomic write.
+
+    Strategy:
+      1. Write to a temp file (.tmp) first — never leave a partial file at dest.
+      2. Verify Content-Length matches received bytes when the header is present.
+      3. Retry up to `retries` times with exponential back-off (1s, 2s, 4s).
+    """
+    import time
     dest.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "spellcaster-updater/2.0", "Authorization": "token <REDACTED_GH_PAT>"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            dest.write_bytes(resp.read())
-        return True
-    except (urllib.error.URLError, OSError) as e:
-        print(f"  {R}Failed to download {dest.name}: {e}{X}")
-        return False
+    tmp = dest.with_suffix(dest.suffix + ".tmp")
+    last_err: Exception | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "spellcaster-updater/2.0", "Authorization": "token <REDACTED_GH_PAT>"})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = resp.read()
+                # Content-Length validation (when server sends it)
+                cl = resp.headers.get("Content-Length")
+                if cl and int(cl) != len(data):
+                    raise OSError(
+                        f"Truncated download: expected {cl} bytes, got {len(data)}"
+                    )
+            tmp.write_bytes(data)
+            # Atomic rename — replaces dest only after a complete write
+            if dest.exists():
+                dest.unlink()
+            tmp.rename(dest)
+            return True
+        except (urllib.error.URLError, OSError, Exception) as e:
+            last_err = e
+            if tmp.exists():
+                try:
+                    tmp.unlink()
+                except Exception:
+                    pass
+            if attempt < retries:
+                wait = 2 ** (attempt - 1)  # 1s, 2s, 4s
+                print(f"  {Y}Attempt {attempt}/{retries} failed ({e}), retrying in {wait}s…{X}")
+                time.sleep(wait)
+    print(f"  {R}Failed to download {dest.name} after {retries} attempts: {last_err}{X}")
+    return False
 
 
 def get_latest_sha() -> str:
@@ -537,11 +632,54 @@ def _ask_yn(prompt, default=True):
     return raw[0] == "y"
 
 
-def _install_gimp_css_theme(gimp_plug_dir: Path):
-    """Install the Spellcaster GTK3 CSS theme into GIMP's user theme directory.
+def _write_gimprc_theme(ver_dir: Path, theme_name: str = "Spellcaster") -> bool:
+    """Upsert the active-theme directive in GIMP's gimprc.
 
-    Copies spellcaster-theme.css to the active GIMP version's theme directory.
-    Probes for 3.2, 3.0, and any other 3.x version present.
+    Without this step the CSS theme file exists on disk but GIMP never loads it
+    because it keeps whatever theme was previously selected (usually the default).
+
+    The directive looks like:  (theme "Spellcaster")
+    This function either:
+      - Replaces an existing (theme ...) line with the new value, OR
+      - Appends the directive when no theme line is present, OR
+      - Creates a minimal gimprc if the file does not yet exist.
+
+    Returns True if gimprc was successfully updated.
+    """
+    gimprc = ver_dir / "gimprc"
+    new_line = f'(theme "{theme_name}")\n'
+    try:
+        if gimprc.exists():
+            text = gimprc.read_text(encoding="utf-8", errors="replace")
+            import re as _re
+            if _re.search(r'\(theme\s+"[^"]*"\)', text):
+                # Replace whatever theme is active
+                text_new = _re.sub(r'\(theme\s+"[^"]*"\)', f'(theme "{theme_name}")', text)
+                if text_new != text:
+                    gimprc.write_text(text_new, encoding="utf-8")
+                    print(f"  {G}✓ gimprc theme updated to '{theme_name}':{X} {gimprc}")
+                else:
+                    print(f"  {G}✓ gimprc already set to '{theme_name}'{X}")
+            else:
+                # Append the directive
+                gimprc.write_text(text.rstrip() + "\n" + new_line, encoding="utf-8")
+                print(f"  {G}✓ gimprc: added (theme \"{theme_name}\"):{X} {gimprc}")
+        else:
+            # Create a minimal gimprc
+            gimprc.write_text(new_line, encoding="utf-8")
+            print(f"  {G}✓ Created gimprc with theme '{theme_name}':{X} {gimprc}")
+        return True
+    except OSError as e:
+        print(f"  {Y}Could not write gimprc theme line: {e}{X}")
+        return False
+
+
+def _install_gimp_css_theme(gimp_plug_dir: Path):
+    """Install the Spellcaster GTK3 CSS theme into GIMP's user theme directory
+    and activate it by writing the theme directive into gimprc.
+
+    Copies spellcaster-theme.css → themes/Spellcaster/gtk.css, then upserts
+    ``(theme "Spellcaster")`` in gimprc so GIMP actually switches to it.
 
     Example paths:
       - Windows: %APPDATA%/GIMP/3.2/themes/Spellcaster/gtk.css
@@ -562,7 +700,7 @@ def _install_gimp_css_theme(gimp_plug_dir: Path):
         print(f"  {Y}spellcaster-theme.css not available{X}")
         return
 
-    # Determine GIMP config root and find the active version directory
+    # --- Determine GIMP config root and find the active version directory ---
     def _find_gimp_ver_dir(gimp_root: Path) -> Path | None:
         """Return the highest 3.x version dir that exists, or None."""
         if not gimp_root.is_dir():
@@ -573,7 +711,7 @@ def _install_gimp_css_theme(gimp_plug_dir: Path):
         )
         return vers[0] if vers else None
 
-    gimp_root = None
+    gimp_root: Path | None = None
     if platform.system() == "Windows":
         appdata = os.environ.get("APPDATA", "")
         if appdata:
@@ -587,11 +725,16 @@ def _install_gimp_css_theme(gimp_plug_dir: Path):
         gimp_root = Path.home() / ".config" / "GIMP"
 
     # Use the plug-ins dir parent to infer version, then fall back to scanning
-    ver_dir = gimp_plug_dir.parent if gimp_plug_dir.parent.name.startswith("3.") else _find_gimp_ver_dir(gimp_root)
+    ver_dir: Path = (
+        gimp_plug_dir.parent
+        if gimp_plug_dir.parent.name.startswith("3.")
+        else _find_gimp_ver_dir(gimp_root)
+    )
     if ver_dir is None:
         # Last resort: use 3.2 (newest)
         ver_dir = gimp_root / "3.2"
 
+    # --- Install the CSS file ---
     theme_dir = ver_dir / "themes" / "Spellcaster"
     try:
         theme_dir.mkdir(parents=True, exist_ok=True)
@@ -599,7 +742,11 @@ def _install_gimp_css_theme(gimp_plug_dir: Path):
         shutil.copy2(css_src, dest)
         print(f"  {G}✓ GIMP Spellcaster theme installed:{X} {dest}")
     except OSError as e:
-        print(f"  {R}Error installing GIMP theme: {e}{X}")
+        print(f"  {R}Error installing GIMP theme CSS: {e}{X}")
+        return
+
+    # --- Activate the theme in gimprc (CRITICAL — without this GIMP ignores it) ---
+    _write_gimprc_theme(ver_dir, "Spellcaster")
 
 
 def apply_spellcaster_theme_gimp(gimp_plug_dir: Path):
@@ -813,22 +960,28 @@ def update_tavern(server_url: str = "http://127.0.0.1:8188") -> bool:
     print(f"  {C}Discovering tavern files from GitHub...{X}")
     remote_tavern = discover_remote_files(TAVERN_PREFIX)
     remote_scaffold = discover_remote_files(SCAFFOLD_PREFIX)
-    remote_files = (remote_tavern or []) + (remote_scaffold or [])
+    remote_core = discover_remote_files(CORE_LIB_PREFIX)
+    remote_files = (remote_tavern or []) + (remote_scaffold or []) + (remote_core or [])
     if not remote_files:
         remote_files = TAVERN_FILES
-        print(f"    {Y}Using static file list{X}")
+        print(f"    {Y}Using static file list (GitHub API unavailable){X}")
+        _warn_static_list_age()
     else:
-        print(f"    {G}✓{X} Found {len(remote_files)} files")
+        print(f"    {G}✓{X} Found {len(remote_files)} files (tavern + scaffold + spellcaster_core)")
 
     all_ok = True
     for rel_path in remote_files:
         filename = rel_path  # keep relative path structure
         url = f"{GITHUB_RAW}/{rel_path}"
-        # tavern/ files go to tavern_dir, scaffold/ to scaffold_dir
+        # Route files to the right directory
         if rel_path.startswith("tavern/"):
             dest = tavern_dir / rel_path[len("tavern/"):]
         elif rel_path.startswith("scaffold/"):
             dest = scaffold_dir / rel_path[len("scaffold/"):]
+        elif rel_path.startswith("comfyui-spellcaster/spellcaster_core/"):
+            # Canonical spellcaster_core goes INSIDE tavern/ so the Guild
+            # server can import from it at runtime
+            dest = tavern_dir.parent / rel_path[len("comfyui-spellcaster/"):]
         else:
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -874,36 +1027,54 @@ def repair_and_install_gimp(plug_dir: Path, server_url: str = "http://127.0.0.1:
     correct_dir.mkdir(parents=True, exist_ok=True)
 
     # Dynamic file discovery: fetch the actual file list from GitHub
-    # Falls back to the static list if the API is unavailable
+    # Uses single-source-of-truth priority: canonical spellcaster_core
+    # from comfyui-spellcaster/ wins over the bundled copy.
     print(f"  {C}Discovering latest plugin files from GitHub...{X}")
-    remote_files = discover_remote_files(GIMP_PLUGIN_PREFIX)
-    file_list = remote_files if remote_files else GIMP_PLUGIN_FILES
-    if remote_files:
-        print(f"    {G}✓{X} Found {len(remote_files)} files via GitHub API")
+    smart_files = discover_gimp_plugin_files()
+    if smart_files:
+        print(f"    {G}✓{X} Found {len(smart_files)} files via GitHub API (canonical source priority)")
     else:
         print(f"    {Y}Using static file list (GitHub API unavailable){X}")
+        _warn_static_list_age()
 
     all_ok = True
-    for rel_path in file_list:
-        filename = Path(rel_path).name
-        url = f"{GITHUB_RAW}/{rel_path}"
-        dest = correct_dir / filename
-        if download_file(url, dest):
-            print(f"    {G}✓{X} {filename}")
-        else:
-            all_ok = False
+    remote_remainders = set()
+    if smart_files:
+        for github_path, remainder in smart_files:
+            remote_remainders.add(remainder)
+            url = f"{GITHUB_RAW}/{github_path}"
+            # Preserve subdirectory structure (e.g. spellcaster_core/workflows.py)
+            dest = correct_dir / remainder.replace("/", os.sep)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if download_file(url, dest):
+                print(f"    {G}✓{X} {remainder}")
+            else:
+                all_ok = False
+    else:
+        for rel_path in GIMP_PLUGIN_FILES:
+            filename = Path(rel_path).name
+            remote_remainders.add(filename)
+            url = f"{GITHUB_RAW}/{rel_path}"
+            dest = correct_dir / filename
+            if download_file(url, dest):
+                print(f"    {G}✓{X} {filename}")
+            else:
+                all_ok = False
 
     # Remove stale local files not present in the remote list
-    if remote_files:
-        remote_filenames = {Path(p).name for p in remote_files}
-        protected = {"config.json"}  # only protect user config, force-update everything else
-        for local_file in correct_dir.iterdir():
-            if (local_file.is_file() and local_file.name not in protected
-                    and not local_file.name.endswith(".pyc")
-                    and local_file.name not in remote_filenames):
+    if remote_remainders:
+        protected = {"config.json", ".spellcaster_version"}
+        protected_suffixes = {".pyc", ".update", ".tmp"}
+        for local_file in correct_dir.rglob("*"):
+            if not local_file.is_file():
+                continue
+            rel = local_file.relative_to(correct_dir).as_posix()
+            if (rel not in remote_remainders
+                    and local_file.name not in protected
+                    and local_file.suffix not in protected_suffixes):
                 try:
                     local_file.unlink()
-                    print(f"    {Y}Removed stale:{X} {local_file.name}")
+                    print(f"    {Y}Removed stale:{X} {rel}")
                 except Exception:
                     pass
 
@@ -1002,23 +1173,23 @@ def _check_self_update():
 
     Fetches the remote manual_update.py, extracts its VERSION string,
     and compares with the local VERSION. If newer, offers to download
-    and re-launch the updated version.
+    the updated exe from the GitHub releases API (frozen exe) or
+    advises a git pull (source mode).
     """
+    import re as _re
     try:
-        url = f"{GITHUB_RAW}/manual_update.py"
+        url = f"{GITHUB_RAW}/installer/manual_update.py"
         req = urllib.request.Request(url, headers={"User-Agent": "spellcaster-updater/self-check"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             remote_src = resp.read().decode("utf-8", errors="replace")
-        # Extract VERSION = "x.y" from the remote source
-        import re
-        m = re.search(r'VERSION\s*=\s*"([^"]+)"', remote_src)
+        m = _re.search(r'VERSION\s*=\s*"([^"]+)"', remote_src)
         if not m:
             return
         remote_ver = m.group(1)
         if remote_ver == VERSION:
             return  # same version
-        # Compare as tuples: "1.2" < "1.3"
-        def ver_tuple(v):
+
+        def _ver_tuple(v: str) -> tuple:
             parts = []
             for p in v.replace("-", ".").split("."):
                 try:
@@ -1026,35 +1197,49 @@ def _check_self_update():
                 except ValueError:
                     parts.append(0)
             return tuple(parts)
-        if ver_tuple(remote_ver) <= ver_tuple(VERSION):
+
+        if _ver_tuple(remote_ver) <= _ver_tuple(VERSION):
             return  # not newer
 
         print(f"\n  {Y}A newer version of this updater is available: v{remote_ver} (you have v{VERSION}){X}")
 
-        # If running as frozen exe, download the new exe from GitHub releases
-        if getattr(sys, 'frozen', False):
-            print(f"  {B}Downloading updated updater from GitHub releases...{X}")
-            release_url = GITHUB_RAW.replace("/raw.githubusercontent.com/", "/github.com/").replace("/main", "/releases/latest/download/spellcaster-manual-update.exe")
-            # Use GitHub API to find latest release asset
+        if getattr(sys, "frozen", False):
+            # Running as a compiled exe — try to fetch it from GitHub Releases
+            print(f"  {B}Looking for updated updater in GitHub releases…{X}")
             try:
-                api_url = GITHUB_RAW.split("/raw.githubusercontent.com/")[0]
-                repo = GITHUB_RAW.split("raw.githubusercontent.com/")[1].split("/main")[0]
-                release_api = f"https://api.github.com/repos/{repo}/releases/latest"
-                req2 = urllib.request.Request(release_api, headers={"User-Agent": "spellcaster-updater"})
-                with urllib.request.urlopen(req2, timeout=15) as resp2:
+                # Derive the repo slug from GITHUB_RAW
+                # e.g. "https://raw.githubusercontent.com/laboratoiresonore/spellcaster_NSFW/main"
+                #   → "laboratoiresonore/spellcaster_NSFW"
+                raw_parts = GITHUB_RAW.split("raw.githubusercontent.com/", 1)
+                if len(raw_parts) == 2:
+                    repo_slug = raw_parts[1].rsplit("/main", 1)[0]
+                else:
+                    repo_slug = ""
+                if not repo_slug:
+                    raise ValueError("Cannot parse repo slug from GITHUB_RAW")
+                release_api = f"https://api.github.com/repos/{repo_slug}/releases/latest"
+                req2 = urllib.request.Request(
+                    release_api, headers={"User-Agent": "spellcaster-updater"}
+                )
+                with urllib.request.urlopen(req2, timeout=20) as resp2:
                     release = json.loads(resp2.read())
                 for asset in release.get("assets", []):
-                    if "manual-update" in asset["name"].lower():
+                    if "manual-update" in asset["name"].lower() and asset["name"].endswith(".exe"):
                         dl_url = asset["browser_download_url"]
-                        new_exe = Path(sys.executable).with_name("spellcaster-manual-update-new.exe")
+                        new_exe = Path(sys.executable).with_name(
+                            "spellcaster-manual-update-new.exe"
+                        )
                         print(f"  {D}Downloading: {dl_url}{X}")
-                        urllib.request.urlretrieve(dl_url, new_exe)
-                        print(f"  {G}Downloaded v{remote_ver} → {new_exe}{X}")
-                        print(f"  {Y}Please close this window and run the new updater.{X}")
-                        print(f"  {D}Then delete the old one.{X}\n")
+                        if download_file(dl_url, new_exe):
+                            print(f"  {G}Downloaded v{remote_ver} → {new_exe}{X}")
+                            print(f"  {Y}Please close this window and run the new updater.{X}")
+                            print(f"  {D}Then delete the old spellcaster-manual-update.exe.{X}\n")
+                        else:
+                            print(f"  {Y}Could not download new exe — continue with current version.{X}")
                         return
+                print(f"  {Y}No updater exe found in latest release.{X}")
             except Exception as e:
-                print(f"  {D}Could not download exe: {e}{X}")
+                print(f"  {D}Could not check GitHub releases: {e}{X}")
         else:
             # Running from source — just inform
             print(f"  {D}Run 'git pull' to get the latest version.{X}\n")
@@ -1222,10 +1407,34 @@ def main():
                 print()
 
     # ══════════════════════════════════════════════════════════════════════
-    # Summary
+    # Final validation pass
     # ══════════════════════════════════════════════════════════════════════
     print(f"{B}{'═' * 50}{X}")
-    print(f"{B}  UPDATE COMPLETE — version {sha}{X}")
+    print(f"{B}  VALIDATION{X}")
+    print(f"{B}{'═' * 50}{X}\n")
+
+    val_pass = True
+    for d in (gimp_dirs or []):
+        script = d / "comfyui-connector" / "comfyui-connector.py"
+        if script.exists():
+            size = script.stat().st_size
+            if size > 10_000:
+                print(f"  {G}✓ Plugin OK:{X} comfyui-connector.py ({size:,} bytes)")
+            else:
+                print(f"  {R}✗ Plugin suspicious — only {size:,} bytes (possible corrupt download){X}")
+                val_pass = False
+        else:
+            print(f"  {Y}⚠ Plugin not found at expected location: {d}{X}")
+            val_pass = False
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Summary
+    # ══════════════════════════════════════════════════════════════════════
+    print(f"\n{B}{'═' * 50}{X}")
+    if val_pass:
+        print(f"{B}{G}  UPDATE COMPLETE ✓ — version {sha}{X}")
+    else:
+        print(f"{B}{Y}  UPDATE COMPLETE ⚠ — version {sha} (some checks failed — see above){X}")
     print(f"{B}{'═' * 50}{X}")
     print(f"\n  {G}Plugin cache cleared — GIMP will re-scan all plugins on next start.{X}")
     print(f"  {G}All files updated to latest version from GitHub.{X}")

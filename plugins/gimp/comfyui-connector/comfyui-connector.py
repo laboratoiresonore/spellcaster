@@ -315,6 +315,31 @@ def _apply_staged_updates():
             except Exception:
                 pass
 
+    # Plugin-source change detection — pluginrc only gets invalidated when
+    # the auto-updater applies staged files, so manual edits / git pulls
+    # leave GIMP with a stale procedure cache and new menu items (LTX,
+    # etc.) silently fail to appear. Hash the main plugin file's content
+    # and clear pluginrc whenever the hash changes.
+    try:
+        import hashlib as _hashlib
+        _self_path = Path(__file__) if "__file__" in globals() else None
+        if _self_path and _self_path.exists():
+            _self_hash = _hashlib.md5(_self_path.read_bytes()).hexdigest()
+            _hash_file = _PLUGIN_DIR / ".spellcaster_procs_hash"
+            _prev_hash = ""
+            try:
+                _prev_hash = _hash_file.read_text(encoding="utf-8").strip()
+            except Exception:
+                pass
+            if _prev_hash != _self_hash:
+                _delete_all_gimp_pluginrc()
+                try:
+                    _hash_file.write_text(_self_hash, encoding="utf-8")
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     # If spellcaster_core/ is missing, invalidate version to force a full
     # re-fetch on this startup.  Older auto-updaters didn't know about
     # spellcaster_core, so the first restart after an update applies new
@@ -330,31 +355,28 @@ def _apply_staged_updates():
 _apply_staged_updates()
 
 # ── v2 workflow builders (modular replacements) ──────────────────────────
-from _workflows_v2 import (
-    # ── Shared constants (single source of truth) ──
-    KLEIN_MODELS, FLUX2_VAE,
-    STUDIO_FACE_W, STUDIO_FACE_H,
-    STUDIO_BODY_W, STUDIO_BODY_H,
-    STUDIO_SCENE_W, STUDIO_SCENE_H,
-    STUDIO_BODY_IN_SCENE_SCALE,
-    # ── Workflow builders ──
-    build_rembg, build_upscale, build_lama_remove, build_lut,
-    build_klein_img2img, build_txt2img, build_img2img,
-    build_faceswap, build_faceswap_model, build_save_face_model,
-    build_faceswap_mtb, build_face_restore, build_photo_restore,
-    build_detail_hallucinate, build_colorize, build_controlnet_gen,
-    build_iclight, build_supir, build_inpaint, build_outpaint,
-    build_faceid_img2img, build_pulid_flux,
-    build_klein_img2img_ref, build_klein_headswap,
-    build_video_upscale, build_video_reactor,
-    build_wan_video, build_wan_flf, build_seedvr2_video_upscale,
-    build_style_transfer, build_seedv2r,
-    build_photobooth,
-    build_klein_repose, build_klein_blend, build_klein_inpaint,
-    build_klein_scene_img2img, build_layer_blend, build_upscale_blend,
-    build_frame_assembly,
-    build_ltx_video,
-)
+# Import ALL workflow builders from the canonical source via the shim.
+# Using wildcard import so new functions added to spellcaster_core never
+# crash the plugin — the shim re-exports everything, and the plugin just
+# uses whatever names are available at runtime. Individual missing
+# functions get caught when the user actually clicks that menu entry,
+# NOT at plugin load time.
+from _workflows_v2 import *  # noqa: F403
+
+# Verify critical constants exist (these are load-time requirements)
+try:
+    KLEIN_MODELS  # noqa: F405
+    FLUX2_VAE  # noqa: F405
+except NameError:
+    print("[Spellcaster] WARNING: critical constants missing from _workflows_v2. "
+          "Use Settings > Repair/Update to sync.", file=__import__('sys').stderr)
+
+# ── Auto-install keyboard shortcuts on first load ─────────────────────
+try:
+    from spellcaster_shortcuts import install_shortcuts as _install_shortcuts
+    _install_shortcuts()
+except Exception:
+    pass  # non-fatal — shortcuts are a convenience, not a requirement
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -415,10 +437,15 @@ def _install_spellcaster_theme_to_disk():
 def _apply_spellcaster_theme():
     """Inject the Spellcaster premium dark CSS into GIMP's GTK3 environment.
 
+    Only applies if the user opted in via config.json {"apply_theme": true}.
+    Default is UNBRANDED — we never reskin GIMP without explicit consent.
+
     1. Load the full theme from spellcaster-theme.css (bundled next to this file).
     2. Apply it to the current GTK screen at APPLICATION priority.
     3. Also install the CSS to GIMP's user theme directory for persistence.
     """
+    if not _load_config().get("apply_theme", False):
+        return
     try:
         from gi.repository import Gdk, Gtk
 
@@ -493,6 +520,7 @@ def _style_dialog_buttons(dialog):
         pass
 
 
+# Apply premium theme only if the user opted in (check is inside the function).
 _apply_spellcaster_theme()
 
 def _auto_update():
@@ -534,18 +562,33 @@ def _auto_update():
         # Step 3: Filter for files in our plugin directory (including subdirectories)
         # Also grab spellcaster_core/ — the shims need it at runtime.
         remote_files = []  # list of (path, local_remainder, expected_size)
+        # Track which local remainders we've already seen so the canonical
+        # source (comfyui-spellcaster/) always wins over the bundled copy
+        # (plugins/gimp/.../spellcaster_core/). Without this, the stale
+        # bundled copy in the repo overwrites the canonical one because
+        # the tree API returns files alphabetically and plugins/ > comfyui-.
+        _seen_remainders = set()
         for item in tree.get("tree", []):
             if item["type"] != "blob":
                 continue
-            if item["path"].startswith(_GIMP_PLUGIN_PREFIX):
-                remainder = item["path"][len(_GIMP_PLUGIN_PREFIX):]
-                if remainder:
-                    remote_files.append((item["path"], remainder, item.get("size", 0)))
-            elif item["path"].startswith(_CORE_LIB_PREFIX):
-                # Map comfyui-spellcaster/spellcaster_core/X → spellcaster_core/X
+            # CANONICAL SOURCE FIRST: spellcaster_core from comfyui-spellcaster/
+            # This is the single source of truth — always takes priority.
+            if item["path"].startswith(_CORE_LIB_PREFIX):
                 remainder = item["path"][len("comfyui-spellcaster/"):]
                 if remainder:
                     remote_files.append((item["path"], remainder, item.get("size", 0)))
+                    _seen_remainders.add(remainder)
+            elif item["path"].startswith(_GIMP_PLUGIN_PREFIX):
+                remainder = item["path"][len(_GIMP_PLUGIN_PREFIX):]
+                if remainder:
+                    # Skip spellcaster_core/ files from the plugin dir if
+                    # we already have them from the canonical source. This
+                    # prevents the stale bundled copy from overwriting the
+                    # canonical one. Single source of truth.
+                    if remainder in _seen_remainders:
+                        continue
+                    remote_files.append((item["path"], remainder, item.get("size", 0)))
+                    _seen_remainders.add(remainder)
 
         if not remote_files:
             return  # Something went wrong with API, don't touch local files
@@ -637,8 +680,8 @@ def _auto_update():
 
         # Step 6: Re-apply appearance assets if user opted in
         cfg = _load_config()
-        if cfg.get("apply_theme", cfg.get("auto_update", True)):
-            # Re-install gimp.css to all GIMP config dirs
+        if cfg.get("apply_theme", False):
+            # Re-install gimp.css to all GIMP config dirs (opt-in only)
             _install_spellcaster_theme_to_disk()
 
             # Update the banner GIF in the parent plugins/gimp/ directory
@@ -1646,6 +1689,54 @@ LUT_PRESETS = {
     "Fujifilm P3 (wide gamut)": "DCI-P3_Fujifilm_3513DI_D65.cube",
     "ACES (HDR film)": "ACES_LMT_v0.1.1.cube",
 }
+
+# ── Flux Kontext — instruction-based image editing presets ────────────
+KONTEXT_TASKS = {
+    "Edit / Modify": {
+        "hint": "Change [element] to [description] while keeping the rest of the image exactly the same",
+        "denoise": 0.70, "cfg": 3.0, "steps": 25,
+    },
+    "Replace Element": {
+        "hint": "Replace [object/person] with [description], maintaining the same lighting, perspective, and background",
+        "denoise": 0.75, "cfg": 3.0, "steps": 25,
+    },
+    "Style Transfer": {
+        "hint": "Render the image in [target style, e.g. oil painting / anime / watercolor] while preserving the composition and subjects",
+        "denoise": 0.80, "cfg": 3.5, "steps": 25,
+    },
+    "Background Swap": {
+        "hint": "Replace the background with [new environment], keeping the subject, pose, and lighting direction identical",
+        "denoise": 0.75, "cfg": 3.0, "steps": 25,
+    },
+    "Portrait Retouch": {
+        "hint": "Refine the portrait — [change description] — while preserving the person's identity and expression",
+        "denoise": 0.55, "cfg": 2.5, "steps": 20,
+    },
+    "Localized Inpaint": {
+        "hint": "Fix [selected region] to show [description], seamlessly blending with the surrounding image",
+        "denoise": 0.60, "cfg": 2.5, "steps": 20,
+    },
+    "Light Touch": {
+        "hint": "Subtly [enhancement] while preserving the overall image, matching existing lighting and color exactly",
+        "denoise": 0.35, "cfg": 2.5, "steps": 20,
+    },
+}
+
+KONTEXT_DEFAULTS = {
+    "ckpt": "Flux\\flux1-dev-kontext_fp8_scaled.safetensors",
+    "sampler": "dpmpp_2m",
+    "scheduler": "sgm_uniform",
+}
+
+# ── AI Color Match — transfer methods ────────────────────────────────
+COLOR_MATCH_METHODS = {
+    "Monge-Kantorovitch (best for photos)": "mkl",
+    "Histogram Matching (fast)": "hm",
+    "Reinhard (classic)": "reinhard",
+}
+
+# ── Last-run tracking for Re-run Last ────────────────────────────────
+_LAST_PROCEDURE = {"name": None, "session_key": None}
 
 RESTORE_UPSCALE_PRESETS = {
     "4x Remacri (restoration)": "4x_foolhardy_Remacri.pth",
@@ -3765,6 +3856,70 @@ def _flush_pending_uploads():
             raise RuntimeError(f"Upload HTTP {e.code}: {detail}") from e
     _pending_uploads = []
 
+def _mask_image_to_gimp_selection(image, mask_path, feather=4):
+    """Load a grayscale mask image and convert it to a GIMP selection.
+
+    White pixels in the mask become selected; black pixels are unselected.
+    The mask is loaded as a temporary layer, converted to a selection via
+    by-color-select on white, then the temp layer is removed.
+
+    Args:
+        image: The GIMP image to apply the selection to.
+        mask_path (str): Path to the downloaded mask PNG (grayscale).
+        feather (int): Feather radius in pixels (0 = hard edge).
+    """
+    try:
+        # Load mask as a new layer in the image
+        mask_layer = _pdb_run('gimp-file-load-layer', {
+            'run-mode': Gimp.RunMode.NONINTERACTIVE,
+            'image': image,
+            'file': Gio.File.new_for_path(mask_path),
+        })
+        if hasattr(mask_layer, '__len__'):
+            mask_layer = mask_layer[0] if mask_layer else None
+        if mask_layer is None:
+            raise RuntimeError("Failed to load mask as layer")
+        _pdb_run('gimp-image-insert-layer', {
+            'image': image, 'layer': mask_layer, 'parent': None, 'position': 0,
+        })
+        # Scale mask layer to match image dimensions if needed
+        iw = image.get_width(); ih = image.get_height()
+        lw = mask_layer.get_width(); lh = mask_layer.get_height()
+        if lw != iw or lh != ih:
+            _pdb_run('gimp-layer-scale', {
+                'layer': mask_layer, 'new-width': iw, 'new-height': ih, 'local-origin': False,
+            })
+        # Flatten the mask layer to ensure it's a simple grayscale raster
+        _pdb_run('gimp-layer-flatten', {'layer': mask_layer})
+        # Select white regions: by-color-select on the mask layer
+        # Threshold 80 captures white (255) and near-white as selected
+        white = Gimp.RGB()
+        white.set(1.0, 1.0, 1.0)
+        _pdb_run('gimp-image-set-active-layer', {'image': image, 'layer': mask_layer})
+        _pdb_run('gimp-by-color-select', {
+            'drawable': mask_layer,
+            'color': white,
+            'threshold': 80,
+            'operation': 2,  # CHANNEL_OP_REPLACE
+            'antialias': True,
+            'feather': feather > 0,
+            'feather-radius': float(feather),
+            'sample-merged': False,
+        })
+        # Remove the temporary mask layer — selection persists
+        _pdb_run('gimp-image-remove-layer', {'image': image, 'layer': mask_layer})
+    except Exception as e:
+        # Fallback: if PDB calls fail (API differences across GIMP versions),
+        # just add the mask as a visible layer and let the user convert manually
+        try:
+            _pdb_run('gimp-image-remove-layer', {'image': image, 'layer': mask_layer})
+        except Exception:
+            pass
+        raise RuntimeError(f"Could not convert SAM3 mask to selection: {e}.\n"
+                           "The mask was added as a layer — you can convert it "
+                           "manually via Select > By Color.") from e
+
+
 def _create_selection_mask_png(filepath, image):
     """Export GIMP's actual selection channel as a grayscale PNG mask.
     White = selected (inpaint here), Black = unselected (keep).
@@ -4068,11 +4223,16 @@ def _wait_for_prompt(server, prompt_id, timeout=300):
 
     If WORKFLOW_TIMEOUT == 0 (default), timeouts are completely disabled —
     the function waits forever (only user cancel can stop it).
+
+    Live progress: polls ComfyUI's /queue endpoint for the currently
+    executing node and sampling step, reporting node-level and step-level
+    progress to the spinner window.
     """
     # Global override: 0 = wait forever
     effective_timeout = WORKFLOW_TIMEOUT if WORKFLOW_TIMEOUT > 0 else timeout
     no_timeout = (WORKFLOW_TIMEOUT == 0)
     deadline = time.time() + effective_timeout
+    _last_node_label = ""
     while True:
         now = time.time()
 
@@ -4092,7 +4252,7 @@ def _wait_for_prompt(server, prompt_id, timeout=300):
         except Exception:
             pass
 
-        # Smart timeout: check if there's a legitimate reason to keep waiting
+        # Smart timeout + live progress: check queue and executing node
         try:
             q = _api_get(server, "/queue")
             running = q.get("queue_running", [])
@@ -4108,9 +4268,44 @@ def _wait_for_prompt(server, prompt_id, timeout=300):
             if our_running or our_pending or queue_busy:
                 # Job is legitimately waiting or running — extend deadline
                 deadline = max(deadline, now + effective_timeout)
-                _update_spinner_status(
-                    f"{'Running' if our_running else 'Queued'}"
-                    f" ({len(running)} running, {len(pending)} pending)")
+
+            # ── Live progress: currently executing node ──────────────
+            progress_text = ""
+            if our_running:
+                # Find our job's data to extract the executing node
+                for item in running:
+                    if len(item) > 1 and item[1] == prompt_id:
+                        # item[2] is the workflow dict, item[3] is extra info
+                        wf_data = item[2] if len(item) > 2 else {}
+                        total_nodes = len(wf_data) if isinstance(wf_data, dict) else 0
+                        break
+                # Poll /queue for executing progress (step-level)
+                try:
+                    exec_info = _api_get(server, "/prompt")
+                    exec_node = exec_info.get("exec_info", {}).get("current_node")
+                    if exec_node:
+                        node_type = ""
+                        # Try to resolve node type from workflow
+                        if isinstance(wf_data, dict) and exec_node in wf_data:
+                            node_type = wf_data[exec_node].get("class_type", "")
+                        if node_type:
+                            _last_node_label = node_type
+                except Exception:
+                    pass
+                # Build progress display
+                if _last_node_label:
+                    progress_text = f"Running: {_last_node_label}"
+                else:
+                    progress_text = "Running"
+                if total_nodes > 0:
+                    progress_text += f" ({total_nodes} nodes)"
+            elif our_pending:
+                progress_text = f"Queued ({len(pending)} pending)"
+            else:
+                progress_text = f"Waiting ({len(running)} running, {len(pending)} pending)"
+
+            if progress_text:
+                _update_spinner_status(progress_text)
         except Exception:
             pass  # can't reach server — use existing deadline
 
@@ -9768,6 +9963,215 @@ class KleinDialog(Gtk.Dialog):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  Flux Kontext Editor Dialog
+# ═══════════════════════════════════════════════════════════════════════════
+
+class KontextDialog(Gtk.Dialog):
+    """Flux Kontext instruction-based image editor dialog.
+
+    Simpler than the full PresetDialog — focused on natural language edit
+    instructions. Task presets auto-fill the prompt hint and parameters.
+    """
+
+    def __init__(self, title="Spellcaster — Flux Kontext Editor",
+                 server_url=COMFYUI_DEFAULT_URL):
+        super().__init__(title=title)
+        self.set_default_size(560, -1)
+        self.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        self.add_button("_Run", Gtk.ResponseType.OK)
+        self.set_default_response(Gtk.ResponseType.OK)
+        _style_dialog_buttons(self)
+
+        box = self.get_content_area()
+        box.set_spacing(8)
+        box.set_margin_start(12); box.set_margin_end(12)
+        box.set_margin_top(12); box.set_margin_bottom(12)
+
+        _hdr = _make_branded_header()
+        if _hdr:
+            box.pack_start(_hdr, False, False, 0)
+
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        self.server_entry = Gtk.Entry()
+        self.server_entry.set_text(server_url)
+        self.server_entry.set_hexpand(True)
+        hb.pack_start(self.server_entry, True, True, 0)
+        box.pack_start(hb, False, False, 0)
+
+        # Task selector
+        box.pack_start(Gtk.Label(label="Edit Task:", xalign=0), False, False, 0)
+        self.task_combo = Gtk.ComboBoxText()
+        self.task_combo.set_tooltip_text(
+            "Select the type of edit you want to make.\n"
+            "Each task provides a prompt template and optimal parameters.")
+        for key in KONTEXT_TASKS:
+            self.task_combo.append(key, key)
+        self.task_combo.set_active(0)
+        self.task_combo.connect("changed", self._on_task_changed)
+        box.pack_start(self.task_combo, False, False, 0)
+
+        # Prompt (edit instruction)
+        box.pack_start(Gtk.Label(label="Edit Instruction:", xalign=0), False, False, 0)
+        self.prompt_tv = Gtk.TextView()
+        self.prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        self.prompt_tv.set_tooltip_text(
+            "Describe the edit in natural language.\n"
+            "Examples:\n"
+            "  'Change the hair color to red'\n"
+            "  'Make the sky a sunset orange'\n"
+            "  'Replace the car with a bicycle'\n"
+            "No quality tags or negative prompts needed.")
+        sw = Gtk.ScrolledWindow(); sw.set_min_content_height(80); sw.add(self.prompt_tv)
+        box.pack_start(sw, False, False, 0)
+
+        # Set initial hint
+        first_task = list(KONTEXT_TASKS.values())[0]
+        self.prompt_tv.get_buffer().set_text(first_task["hint"])
+
+        # Parameters
+        box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 4)
+        grid = Gtk.Grid(column_spacing=8, row_spacing=4)
+        r = 0
+
+        grid.attach(Gtk.Label(label="Steps:", xalign=1), 0, r, 1, 1)
+        self.steps_spin = Gtk.SpinButton.new_with_range(1, 100, 1)
+        self.steps_spin.set_value(first_task["steps"])
+        self.steps_spin.set_tooltip_text("Diffusion steps. 20-25 is recommended for Kontext.")
+        grid.attach(self.steps_spin, 1, r, 1, 1)
+
+        grid.attach(Gtk.Label(label="Denoise:", xalign=1), 2, r, 1, 1)
+        self.denoise_spin = Gtk.SpinButton.new_with_range(0.01, 1.0, 0.05)
+        self.denoise_spin.set_digits(2)
+        self.denoise_spin.set_value(first_task["denoise"])
+        self.denoise_spin.set_tooltip_text("How much to change the image.\nLower = subtle, higher = dramatic.")
+        grid.attach(self.denoise_spin, 3, r, 1, 1)
+        r += 1
+
+        grid.attach(Gtk.Label(label="CFG:", xalign=1), 0, r, 1, 1)
+        self.cfg_spin = Gtk.SpinButton.new_with_range(0.0, 30.0, 0.5)
+        self.cfg_spin.set_digits(1)
+        self.cfg_spin.set_value(first_task["cfg"])
+        self.cfg_spin.set_tooltip_text("Guidance scale. 2.5-3.5 recommended for Kontext.")
+        grid.attach(self.cfg_spin, 1, r, 1, 1)
+
+        grid.attach(Gtk.Label(label="Seed (-1=rand):", xalign=1), 2, r, 1, 1)
+        self.seed_spin = Gtk.SpinButton.new_with_range(-1, 2**31, 1)
+        self.seed_spin.set_value(-1)
+        self.seed_spin.set_tooltip_text("-1 = random seed each time.")
+        grid.attach(self.seed_spin, 3, r, 1, 1)
+
+        box.pack_start(grid, False, False, 0)
+
+        # LoRA section
+        box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 4)
+        lora_hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        lora_hdr.pack_start(Gtk.Label(label="LoRA (Flux Dev compatible):", xalign=0), False, False, 0)
+        self._lora_fetch_btn = Gtk.Button(label="Fetch LoRAs")
+        self._lora_fetch_btn.connect("clicked", self._on_fetch_loras)
+        lora_hdr.pack_end(self._lora_fetch_btn, False, False, 0)
+        box.pack_start(lora_hdr, False, False, 0)
+
+        self._all_lora_names = []
+        self._lora_names = []
+        self.lora_combo = Gtk.ComboBoxText()
+        self.lora_combo.append("none", "(none)")
+        self.lora_combo.set_active(0)
+        box.pack_start(self.lora_combo, False, False, 0)
+
+        lora_str_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        lora_str_box.pack_start(Gtk.Label(label="LoRA Strength:"), False, False, 0)
+        self.lora_str_spin = Gtk.SpinButton.new_with_range(-5.0, 5.0, 0.05)
+        self.lora_str_spin.set_digits(2); self.lora_str_spin.set_value(1.0)
+        lora_str_box.pack_start(self.lora_str_spin, False, False, 0)
+        box.pack_start(lora_str_box, False, False, 0)
+
+        # Runs spinner
+        _add_runs_spinner(self, box)
+
+        box.show_all()
+        GLib.idle_add(self._on_fetch_loras, None)
+
+    def _on_task_changed(self, combo):
+        task_key = combo.get_active_id()
+        if task_key and task_key in KONTEXT_TASKS:
+            task = KONTEXT_TASKS[task_key]
+            self.prompt_tv.get_buffer().set_text(task["hint"])
+            self.steps_spin.set_value(task["steps"])
+            self.denoise_spin.set_value(task["denoise"])
+            self.cfg_spin.set_value(task["cfg"])
+
+    def _on_fetch_loras(self, _btn):
+        server = self.server_entry.get_text().strip(); _propagate_server_url(server)
+        try:
+            self._all_lora_names = _fetch_loras(server)
+        except Exception:
+            self._all_lora_names = []
+        self._lora_names = _filter_loras_for_arch(self._all_lora_names, "flux_kontext")
+        self.lora_combo.remove_all()
+        self.lora_combo.append("none", "(none)")
+        for lname in self._lora_names:
+            short = lname.rsplit("/", 1)[-1] if "/" in lname else lname
+            self.lora_combo.append(lname, short)
+        self.lora_combo.set_active(0)
+        total = len(self._all_lora_names)
+        shown = len(self._lora_names)
+        self._lora_fetch_btn.set_label(f"{shown}/{total} LoRAs")
+
+    def _buf_text(self, tv):
+        buf = tv.get_buffer()
+        return buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
+
+    def _collect_user_preset(self):
+        return {
+            "task": self.task_combo.get_active_id(),
+            "prompt": self._buf_text(self.prompt_tv),
+            "seed": int(self.seed_spin.get_value()),
+            "steps": int(self.steps_spin.get_value()),
+            "denoise": self.denoise_spin.get_value(),
+            "cfg": self.cfg_spin.get_value(),
+            "lora_name": self.lora_combo.get_active_id() or "",
+            "lora_strength": self.lora_str_spin.get_value(),
+            "runs": int(self._runs_spin.get_value()),
+        }
+
+    def _apply_user_preset(self, p):
+        if "task" in p:
+            self.task_combo.set_active_id(p["task"])
+        if "prompt" in p:
+            self.prompt_tv.get_buffer().set_text(p["prompt"])
+        self.seed_spin.set_value(p.get("seed", -1))
+        self.steps_spin.set_value(p.get("steps", 25))
+        self.denoise_spin.set_value(p.get("denoise", 0.70))
+        self.cfg_spin.set_value(p.get("cfg", 3.0))
+        if "lora_name" in p and self.lora_combo:
+            self.lora_combo.set_active_id(p["lora_name"])
+        if "lora_strength" in p:
+            self.lora_str_spin.set_value(p["lora_strength"])
+        if "runs" in p:
+            self._runs_spin.set_value(p["runs"])
+
+    def get_values(self):
+        seed = int(self.seed_spin.get_value())
+        if seed < 0:
+            seed = random.randint(0, 2**32 - 1)
+        lora_id = self.lora_combo.get_active_id()
+        lora_name = lora_id if lora_id and lora_id != "none" else None
+        return {
+            "server": self.server_entry.get_text().strip(),
+            "prompt": self._buf_text(self.prompt_tv),
+            "seed": seed,
+            "steps": int(self.steps_spin.get_value()),
+            "denoise": self.denoise_spin.get_value(),
+            "cfg": self.cfg_spin.get_value(),
+            "lora_name": lora_name,
+            "lora_strength": self.lora_str_spin.get_value(),
+            "runs": int(self._runs_spin.get_value()),
+        }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  GIMP 3 Plug-In class — registers all Spellcaster menu entries
 # ═══════════════════════════════════════════════════════════════════════════
 # GIMP 3 plugins must subclass Gimp.PlugIn and implement three methods:
@@ -9961,20 +10365,42 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-settings": None,
             "spellcaster-my-presets": None,
             "spellcaster-bridge": None,
+            # Flux Kontext
+            "spellcaster-kontext": "flux_kontext",
+            # Quick context-menu actions
+            "spellcaster-quick-enhance": None,
+            "spellcaster-quick-inpaint": None,
+            "spellcaster-quick-upscale": "upscale",
+            "spellcaster-quick-face-restore": "face_restore",
+            "spellcaster-quick-rembg": "rembg",
+            # Re-run Last
+            "spellcaster-rerun-last": None,
+            # AI Color Match
+            "spellcaster-color-match": None,
         }
 
+        # ── Feature-gate logic: denylist, not allowlist ──
+        # Old behaviour was an allowlist: the user's installed_features
+        # list was the source of truth, and any procedure whose feature
+        # wasn't in it got hidden from the menu. That broke every time we
+        # added a NEW feature post-install — older config.json files
+        # didn't know about wan_i2v / ltx_video / etc., so the new menu
+        # items silently never appeared even though the underlying models
+        # were installed and working. Users had no way to recover except
+        # by deleting their config.
+        #
+        # New behaviour is a denylist: every procedure registers by
+        # default, unless the user has explicitly disabled its feature
+        # via 'disabled_features' in config.json. Missing-model errors
+        # are caught at dialog-open time by runtime probes (per the
+        # "don't show broken" policy), not by a stale install manifest.
         cfg = _load_config()
-        installed = cfg.get("installed_features")  # list of feature keys, or None
-
+        disabled = set(cfg.get("disabled_features") or [])
         procs = []
         for name, feature in _PROC_FEATURES.items():
-            if feature is None:
-                procs.append(name)  # always register
-            elif installed is None:
-                procs.append(name)  # no config = register everything
-            elif feature in installed:
-                procs.append(name)  # feature was installed
-
+            if feature is not None and feature in disabled:
+                continue
+            procs.append(name)
         return procs
 
     def do_create_procedure(self, name):
@@ -10085,6 +10511,30 @@ class Spellcaster(Gimp.PlugIn):
                                        "Quick access to your saved prompt/settings presets"),
             "spellcaster-bridge": ("Travelling Wizard...", self._run_bridge,
                                     "Signal Bridge scaffold editor, workflow library, and LLM wizard"),
+            "spellcaster-sam3-select": ("SAM3 AI Selection...", self._run_sam3_select,
+                                         "Select any subject by description using SAM3 AI segmentation"),
+            "spellcaster-sam3-extract": ("SAM3 Extract Subject...", self._run_sam3_extract,
+                                          "Detect + remove background + auto-crop a subject using SAM3 AI"),
+            # Flux Kontext
+            "spellcaster-kontext": ("Flux Kontext Editor...", self._run_kontext,
+                                     "Instruction-based image editing — type what to change and Kontext does it"),
+            # Quick context-menu actions (right-click canvas)
+            "spellcaster-quick-enhance": ("Quick Enhance (last settings)", self._run_quick_enhance,
+                                           "Re-run img2img with last settings — zero dialogs"),
+            "spellcaster-quick-inpaint": ("Quick Inpaint (last settings)", self._run_quick_inpaint,
+                                            "Inpaint current selection with last settings — zero dialogs"),
+            "spellcaster-quick-upscale": ("Quick Upscale 4x", self._run_quick_upscale,
+                                            "Upscale image 4x with default model — zero dialogs"),
+            "spellcaster-quick-face-restore": ("Quick Face Restore", self._run_quick_face_restore,
+                                                 "Restore all faces in image — zero dialogs"),
+            "spellcaster-quick-rembg": ("Quick Remove Background", self._run_quick_rembg,
+                                          "Remove background instantly — zero dialogs"),
+            # Re-run Last
+            "spellcaster-rerun-last": ("Re-run Last Spellcaster...", self._run_rerun_last,
+                                        "Repeat the last Spellcaster operation with same settings"),
+            # AI Color Match
+            "spellcaster-color-match": ("AI Color Match...", self._run_color_match,
+                                          "Transfer color palette from a reference image"),
         }
 
         label, callback, doc = menu_map[name]
@@ -10159,6 +10609,26 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-send-image":        "<Image>/Filters/Spellcaster Tools",
             "spellcaster-settings":          "<Image>/Filters/Spellcaster Tools",
             "spellcaster-bridge":            "<Image>/Filters/Spellcaster Tools",
+
+            # SAM3 AI Selection
+            "spellcaster-sam3-select":       "<Image>/Filters/Spellcaster Tools",
+            "spellcaster-sam3-extract":      "<Image>/Filters/Spellcaster Tools",
+
+            # Flux Kontext
+            "spellcaster-kontext":           "<Image>/Filters/Spellcaster Expert",
+
+            # AI Color Match
+            "spellcaster-color-match":       "<Image>/Filters/Spellcaster Style",
+
+            # Re-run Last (top-level for fast access)
+            "spellcaster-rerun-last":        "<Image>/Filters",
+
+            # Quick context-menu actions — canvas right-click
+            "spellcaster-quick-enhance":     "<Image>/Spellcaster",
+            "spellcaster-quick-inpaint":     "<Image>/Spellcaster",
+            "spellcaster-quick-upscale":     "<Image>/Spellcaster",
+            "spellcaster-quick-face-restore":"<Image>/Spellcaster",
+            "spellcaster-quick-rembg":       "<Image>/Spellcaster",
         }
 
         proc = Gimp.ImageProcedure.new(self, name, Gimp.PDBProcType.PLUGIN, callback, None)
@@ -10231,6 +10701,8 @@ class Spellcaster(Gimp.PlugIn):
                           else f"{v['preset'].get('label','')} #{i+1}"
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, mask_mode, False)
                 Gimp.displays_flush()  # show each run immediately
+            _LAST_PROCEDURE["name"] = "spellcaster-img2img"
+            _LAST_PROCEDURE["session_key"] = "img2img"
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -10279,6 +10751,8 @@ class Spellcaster(Gimp.PlugIn):
                           else f"{v['preset'].get('label','')} #{i+1}"
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, mask_mode, False)
                 Gimp.displays_flush()
+            _LAST_PROCEDURE["name"] = "spellcaster-txt2img"
+            _LAST_PROCEDURE["session_key"] = "txt2img"
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -10359,6 +10833,8 @@ class Spellcaster(Gimp.PlugIn):
                           else f"Inpaint {v['preset'].get('label','')} #{i+1}"
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, mask_mode, False)
                 Gimp.displays_flush()  # show each run immediately
+            _LAST_PROCEDURE["name"] = "spellcaster-inpaint"
+            _LAST_PROCEDURE["session_key"] = "inpaint"
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -12446,6 +12922,8 @@ class Spellcaster(Gimp.PlugIn):
                     lbl = f"Klein {v['klein_model']} run {run_i+1} #{i+1}" if runs > 1 \
                           else f"Klein {v['klein_model']} #{i+1}"
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
+            _LAST_PROCEDURE["name"] = "spellcaster-klein-img2img"
+            _LAST_PROCEDURE["session_key"] = "klein"
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -13073,24 +13551,75 @@ class Spellcaster(Gimp.PlugIn):
 
         POSITION_PRESETS = {
             "Keep current position":     "",
+            # ── In-frame placement ──
             "Move to center":            "positioned in the center of the frame",
-            "Move to left":              "positioned on the left side of the frame",
-            "Move to right":             "positioned on the right side of the frame",
-            "Move to foreground":        "positioned in the foreground, close to camera, larger in frame",
-            "Move to background":        "positioned in the background, further away, smaller in frame",
-            "Move to upper area":        "positioned in the upper portion of the frame",
-            "Move to lower area":        "positioned in the lower portion of the frame",
+            "Move to left third":        "positioned on the left third of the frame, rule-of-thirds placement",
+            "Move to right third":       "positioned on the right third of the frame, rule-of-thirds placement",
+            "Move to foreground":        "positioned in the foreground, close to camera, larger in frame, prominent",
+            "Move to background":        "positioned in the background, further away, smaller in frame, environmental scale",
+            "Move to upper area":        "positioned in the upper portion of the frame, sky/ceiling context",
+            "Move to lower area":        "positioned in the lower portion of the frame, grounded",
+            # ── Depth / distance changes ──
+            "Camera very close (intimate)":  "camera positioned very close to subject, intimate personal space, 1-2 feet away, detailed texture visible",
+            "Camera at conversation distance": "camera at natural conversation distance, 4-6 feet away, comfortable social framing",
+            "Camera far away (environmental)": "camera positioned far from subject, 20+ feet away, subject small in environment, wide context",
+            # ── Relative to subject ──
+            "Camera facing subject":     "camera positioned directly facing the subject, frontal view, direct eye contact possible",
+            "Camera at 45° left":        "camera positioned at 45 degrees to the left of the subject, three-quarter profile view",
+            "Camera at 45° right":       "camera positioned at 45 degrees to the right of the subject, three-quarter profile view",
+            "Camera at 90° (side profile)": "camera at 90 degrees to subject, full side profile view, silhouette potential",
+            "Camera behind subject":     "camera positioned behind the subject, over-shoulder or back-of-head view, POV perspective",
         }
 
         CAMERA_PRESETS = {
+            # ── Keep current ──
             "Keep current angle":        "",
-            "Low angle (heroic)":        "shot from low angle looking up, heroic perspective",
-            "High angle (vulnerable)":   "shot from high angle looking down, diminutive perspective",
-            "Eye level":                 "shot at eye level, neutral straight-on perspective",
-            "Dutch angle (dramatic)":    "tilted dutch angle shot, dramatic off-kilter framing",
-            "Over the shoulder":         "over the shoulder perspective, depth composition",
-            "Close-up":                  "close-up framing, head and shoulders, intimate",
-            "Wide shot":                 "wide shot showing full body and environment",
+
+            # ── Shot size / distance ──
+            "Extreme close-up (eyes)":   "extreme close-up shot, only the eyes and bridge of nose visible, macro-level skin texture detail, shallow depth of field",
+            "Close-up (face)":           "close-up shot, face fills the frame, detailed skin texture, shallow depth of field, 85mm lens",
+            "Medium close-up (head+shoulders)": "medium close-up, head and shoulders, portrait framing, 50mm lens aesthetic",
+            "Medium shot (waist up)":    "medium shot, waist up, conversational framing, natural perspective",
+            "Medium long shot (knees up)": "medium long shot, three-quarter body visible from knees up, relaxed framing",
+            "Full shot (entire body)":   "full body shot, entire figure visible head to toe, environmental context",
+            "Wide shot (body + environment)": "wide shot, full body with significant environment visible, establishing context",
+            "Extreme wide shot (landscape)": "extreme wide shot, tiny figure in vast landscape, epic scale, environmental storytelling",
+
+            # ── Camera angle / height ──
+            "Eye level (neutral)":       "shot at eye level, neutral straight-on perspective, natural viewer POV",
+            "Slight low angle (subtle hero)": "shot from slightly below eye level, subtle empowerment, 5-10 degree uptilt",
+            "Low angle (heroic)":        "shot from low angle looking up, heroic perspective, subject appears powerful and dominant",
+            "Extreme low angle (worm's eye)": "extreme low angle worm's eye view, camera near ground looking straight up, subject towering overhead, dramatic foreshortening",
+            "High angle (looking down)": "shot from high angle looking down at subject, diminutive vulnerable perspective",
+            "Bird's eye (overhead)":     "bird's eye view, camera directly overhead looking straight down, top-down perspective, flat geometric composition",
+            "Dutch angle (dramatic tilt)": "tilted dutch angle shot, 15-25 degree camera roll, tension and unease, off-kilter dramatic framing",
+            "Over the shoulder (OTS)":   "over the shoulder shot, camera behind one person looking at another, depth composition, conversational framing",
+
+            # ── Camera movement (frozen mid-move) ──
+            "Dolly in (moving closer)":  "camera dollying in toward subject, sense of approaching intimacy, narrowing perspective, slight motion blur on edges",
+            "Dolly out (pulling away)":  "camera pulling back from subject, widening reveal, increasing distance, environmental context expanding",
+            "Truck left (lateral move)": "camera tracking laterally to the left, parallel to subject, smooth lateral motion, cinematic panning movement",
+            "Truck right (lateral move)": "camera tracking laterally to the right, parallel to subject, smooth lateral motion",
+            "Pedestal up (rising)":      "camera rising vertically, pedestal up movement, subject revealed from feet to head, ascending perspective",
+            "Pedestal down (lowering)":  "camera lowering vertically, pedestal down, descending to subject's level, grounding perspective",
+            "Crane shot (elevated sweep)": "elevated crane shot, sweeping overhead perspective, cinematic grandeur, high-production-value framing",
+            "Tracking follow (behind)":  "steadicam tracking shot from behind subject, following perspective, depth corridor, immersive",
+
+            # ── Lens effects ──
+            "Wide angle (24mm, spacious)": "shot with wide angle 24mm lens, spacious expansive feel, slight barrel distortion at edges, deep depth of field",
+            "Telephoto (200mm, compressed)": "shot with telephoto 200mm lens, compressed depth of field, bokeh background, subject isolated, flattened perspective",
+            "Tilt-shift (miniature effect)": "tilt-shift photography, selective focus plane, miniature diorama effect, extreme shallow depth of field on edges",
+            "Fish-eye (extreme wide)":   "fish-eye lens extreme wide angle, spherical distortion, 180 degree field of view, warped perspective",
+            "Anamorphic (cinematic 2.39:1)": "anamorphic lens, horizontal lens flares, oval bokeh, cinematic 2.39:1 widescreen aesthetic, dramatic light streaks",
+            "Macro (extreme detail)":    "macro photography, extreme close-up detail, razor-thin depth of field, texture and pattern emphasis",
+
+            # ── Composition / framing ──
+            "Rule of thirds (off-center)": "rule of thirds composition, subject positioned off-center at power point, balanced negative space",
+            "Center-frame (symmetrical)": "subject perfectly centered in frame, symmetrical composition, direct confrontational framing",
+            "Negative space (minimal)":  "extensive negative space, subject small in frame, minimalist composition, isolation and contemplation",
+            "Frame within frame":        "frame within a frame composition, subject viewed through doorway or window or arch, layered depth",
+            "Leading lines":             "strong leading lines composition, perspective lines converging on subject, depth and direction",
+            "Symmetrical (mirror)":      "perfectly symmetrical composition, mirror-image framing, architectural precision, Kubrick-style",
         }
 
         MULTI_CHAR_PRESETS = {
@@ -19750,6 +20279,133 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.message(f"Spellcaster Remove Background Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
+    def _run_sam3_select(self, procedure, run_mode, image, drawables, config, data):
+        """SAM3 AI Selection: describe a subject and get a GIMP selection.
+
+        User types what to detect (e.g. "person", "shirt", "hair") and
+        SAM3 runs on the ComfyUI server. The returned mask is loaded back
+        into GIMP as the active selection (marching ants).
+        """
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+        dlg = Gtk.Dialog(title="Spellcaster — SAM3 AI Selection")
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Select", Gtk.ResponseType.OK)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+        # Server URL
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
+        hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        # Prompt
+        hb2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb2.pack_start(Gtk.Label(label="Detect:"), False, False, 0)
+        pe = Gtk.Entry(); pe.set_text("person"); pe.set_hexpand(True)
+        pe.set_tooltip_text("Describe what to select: 'person', 'shirt', 'hair', 'cat', 'background', etc.\nLeave empty to auto-detect all subjects.")
+        hb2.pack_start(pe, True, True, 0); bx.pack_start(hb2, False, False, 0)
+        # Mask feather
+        hb3 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb3.pack_start(Gtk.Label(label="Feather (px):"), False, False, 0)
+        fe = Gtk.SpinButton.new_with_range(0, 100, 1); fe.set_value(4)
+        fe.set_tooltip_text("Feather the selection edges by this many pixels (0 = hard edge)")
+        hb3.pack_start(fe, False, False, 0); bx.pack_start(hb3, False, False, 0)
+        # Info
+        bx.pack_start(Gtk.Label(label="SAM3 detects the subject and creates a GIMP selection.\nRequires the SAM3 node pack on your ComfyUI server."), False, False, 4)
+        bx.show_all()
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        srv = se.get_text().strip()
+        prompt = pe.get_text().strip()
+        feather = int(fe.get_value())
+        _propagate_server_url(srv); dlg.destroy()
+        try:
+            _update_spinner_status("SAM3: exporting image...")
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_sam3_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            wf = build_sam3_segment(uname, prompt, mask_expand=0, mask_blur=0)
+            _update_spinner_status("SAM3: segmenting on ComfyUI...")
+            results = _run_with_spinner("SAM3: segmenting on ComfyUI...",
+                                        lambda: list(_run_comfyui_workflow(srv, wf)))
+            # The second output (sam3_mask) is the mask image — use it
+            # to create a GIMP selection. First output is the subject.
+            mask_result = None
+            for fn, sf, ft in results:
+                if 'mask' in fn.lower():
+                    mask_result = (fn, sf, ft)
+                    break
+            if not mask_result:
+                # Fallback: use the first result as the mask
+                mask_result = results[0] if results else None
+            if mask_result:
+                fn, sf, ft = mask_result
+                mask_path = _download_image(srv, fn, sf, ft)
+                # Load the mask as a temporary layer, convert to selection
+                _mask_image_to_gimp_selection(image, mask_path, feather)
+                os.unlink(mask_path)
+            # Also add the subject extraction as a new layer
+            for fn, sf, ft in results:
+                if 'subject' in fn.lower():
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
+                                     f"SAM3: {prompt}", False)
+                    break
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Spellcaster SAM3 Selection Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    def _run_sam3_extract(self, procedure, run_mode, image, drawables, config, data):
+        """SAM3 Extract: detect subject, remove background, auto-crop."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+        dlg = Gtk.Dialog(title="Spellcaster — SAM3 Extract Subject")
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Extract", Gtk.ResponseType.OK)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
+        hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        hb2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb2.pack_start(Gtk.Label(label="Detect:"), False, False, 0)
+        pe = Gtk.Entry(); pe.set_text("person"); pe.set_hexpand(True)
+        hb2.pack_start(pe, True, True, 0); bx.pack_start(hb2, False, False, 0)
+        bx.pack_start(Gtk.Label(label="Detects subject, removes background, and auto-crops.\nResult is a new layer with transparent background."), False, False, 4)
+        bx.show_all()
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        srv = se.get_text().strip()
+        prompt = pe.get_text().strip()
+        _propagate_server_url(srv); dlg.destroy()
+        try:
+            _update_spinner_status("SAM3 Extract: exporting image...")
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_sam3x_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            wf = build_sam3_extract(uname, prompt)
+            _update_spinner_status("SAM3 Extract: processing on ComfyUI...")
+            results = _run_with_spinner("SAM3 Extract: processing...",
+                                        lambda: list(_run_comfyui_workflow(srv, wf)))
+            for i, (fn, sf, ft) in enumerate(results):
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
+                                 f"SAM3 Extracted: {prompt} #{i+1}", False)
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Spellcaster SAM3 Extract Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
     def _run_send(self, procedure, run_mode, image, drawables, config, data):
         """Upload current canvas to ComfyUI's input folder (no generation)."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
@@ -20074,6 +20730,374 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
+    # ══════════════════════════════════════════════════════════════════════
+    #  F5: Flux Kontext Editor
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _run_kontext(self, procedure, run_mode, image, drawables, config, data):
+        """Flux Kontext: instruction-based image editing."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+        dlg = KontextDialog("Spellcaster — Flux Kontext Editor")
+        last = _SESSION.get("kontext")
+        if last:
+            dlg._apply_user_preset(last)
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        v = dlg.get_values()
+        _SESSION["kontext"] = dlg._collect_user_preset()
+        _save_session()
+        dlg.destroy()
+        runs = v.get("runs", 1)
+        try:
+            _update_spinner_status("Kontext: exporting image...")
+            srv = v["server"]
+            _propagate_server_url(srv)
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_kontext_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            # Build a preset dict compatible with build_img2img
+            preset = {
+                "arch": "flux_kontext",
+                "ckpt": KONTEXT_DEFAULTS["ckpt"],
+                "width": image.get_width(), "height": image.get_height(),
+                "steps": v["steps"], "cfg": v["cfg"],
+                "denoise": v["denoise"],
+                "sampler": KONTEXT_DEFAULTS["sampler"],
+                "scheduler": KONTEXT_DEFAULTS["scheduler"],
+            }
+            loras = []
+            if v.get("lora_name"):
+                loras.append({"name": v["lora_name"],
+                              "strength_model": v["lora_strength"],
+                              "strength_clip": v["lora_strength"]})
+            base_seed = v["seed"]
+            for run_i in range(runs):
+                seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+                wf = _build_img2img(uname, preset, v["prompt"], "", seed,
+                                    loras=loras or None)
+                label = f"Kontext run {run_i+1}/{runs}" if runs > 1 else "Kontext"
+                _wf = wf
+                results = _run_with_spinner(f"{label}: processing on ComfyUI...",
+                                            lambda: list(_run_comfyui_workflow(srv, _wf)))
+                for i, (fn, sf, ft) in enumerate(results):
+                    lbl = f"Kontext run {run_i+1} #{i+1}" if runs > 1 \
+                          else f"Kontext #{i+1}"
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
+                Gimp.displays_flush()
+            _LAST_PROCEDURE["name"] = "spellcaster-kontext"
+            _LAST_PROCEDURE["session_key"] = "kontext"
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Spellcaster Kontext Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ══════════════════════════════════════════════════════════════════════
+    #  F2: Re-run Last
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _run_rerun_last(self, procedure, run_mode, image, drawables, config, data):
+        """Re-run the last Spellcaster operation with same settings."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        last_name = _LAST_PROCEDURE.get("name")
+        if not last_name:
+            Gimp.message("No previous Spellcaster operation to repeat.\n"
+                         "Run any Spellcaster tool first, then use Re-run Last.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        # Look up the procedure callback from the menu_map
+        try:
+            pdb = Gimp.get_pdb()
+            pdb_proc = pdb.lookup_procedure(last_name)
+            if pdb_proc:
+                pdb_config = pdb_proc.create_config()
+                pdb_config.set_property("run-mode", Gimp.RunMode.WITH_LAST_VALS)
+                pdb_config.set_property("image", image)
+                drawables_arg = image.get_selected_drawables()
+                result = pdb.run_procedure_config(last_name, pdb_config)
+                return result
+        except Exception:
+            pass
+        # Fallback: call the callback directly with interactive mode
+        # (shows dialog pre-filled with last settings via session recall)
+        GimpUi.init("spellcaster")
+        menu_map = self._get_menu_map()
+        if last_name in menu_map:
+            _label, callback, _doc = menu_map[last_name]
+            return callback(procedure, Gimp.RunMode.INTERACTIVE, image,
+                            drawables, config, data)
+        Gimp.message(f"Cannot re-run: procedure '{last_name}' not found.")
+        return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    def _get_menu_map(self):
+        """Return the procedure→callback mapping (for re-run-last fallback)."""
+        return {
+            "spellcaster-img2img": ("", self._run_img2img, ""),
+            "spellcaster-txt2img": ("", self._run_txt2img, ""),
+            "spellcaster-inpaint": ("", self._run_inpaint, ""),
+            "spellcaster-kontext": ("", self._run_kontext, ""),
+            "spellcaster-klein-img2img": ("", self._run_klein, ""),
+        }
+
+    # ══════════════════════════════════════════════════════════════════════
+    #  F3: Quick Context Menu Actions (right-click canvas)
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _run_quick_enhance(self, procedure, run_mode, image, drawables, config, data):
+        """Quick Enhance: re-run img2img with last settings, zero dialogs."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        v = _session_to_values("img2img", image)
+        if not v:
+            # No previous settings — open the full dialog instead
+            GimpUi.init("spellcaster")
+            return self._run_img2img(procedure, Gimp.RunMode.INTERACTIVE,
+                                      image, drawables, config, data)
+        try:
+            srv = v["server"]
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_qe_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            seed = random.randint(0, 2**32 - 1)
+            wf = _build_img2img(uname, v["preset"], v["prompt"], v["negative"],
+                                seed, loras=v.get("loras"),
+                                controlnet=v.get("controlnet"),
+                                controlnet_2=v.get("controlnet_2"))
+            results = _run_with_spinner("Quick Enhance...",
+                                        lambda: list(_run_comfyui_workflow(srv, wf)))
+            for i, (fn, sf, ft) in enumerate(results):
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
+                                 f"Quick Enhance #{i+1}", False)
+            _LAST_PROCEDURE["name"] = "spellcaster-img2img"
+            _LAST_PROCEDURE["session_key"] = "img2img"
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Quick Enhance Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    def _run_quick_inpaint(self, procedure, run_mode, image, drawables, config, data):
+        """Quick Inpaint: inpaint current selection with last settings."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        v = _session_to_values("inpaint", image)
+        if not v:
+            GimpUi.init("spellcaster")
+            return self._run_inpaint(procedure, Gimp.RunMode.INTERACTIVE,
+                                      image, drawables, config, data)
+        # Check for active selection
+        try:
+            sel_exists = Gimp.Selection.bounds(image).non_empty
+        except Exception:
+            try:
+                sel_exists, *_ = Gimp.Selection.bounds(image)
+            except Exception:
+                sel_exists = False
+        if not sel_exists:
+            Gimp.message("Quick Inpaint requires an active selection.\n"
+                         "Use any selection tool (or SAM3 AI Selection) first.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        try:
+            srv = v["server"]
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_qi_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            # Export selection as mask
+            mask_tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+            mask_tmp.close()
+            _create_selection_mask_png(mask_tmp.name, image)
+            mask_uname = f"gimp_qi_mask_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, mask_tmp.name, mask_uname); os.unlink(mask_tmp.name)
+            seed = random.randint(0, 2**32 - 1)
+            wf = _build_inpaint(uname, mask_uname, v["preset"], v["prompt"],
+                                v["negative"], seed, loras=v.get("loras"),
+                                controlnet=v.get("controlnet"),
+                                controlnet_2=v.get("controlnet_2"))
+            results = _run_with_spinner("Quick Inpaint...",
+                                        lambda: list(_run_comfyui_workflow(srv, wf)))
+            for i, (fn, sf, ft) in enumerate(results):
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
+                                 f"Quick Inpaint #{i+1}", False)
+            _LAST_PROCEDURE["name"] = "spellcaster-inpaint"
+            _LAST_PROCEDURE["session_key"] = "inpaint"
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Quick Inpaint Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    def _run_quick_upscale(self, procedure, run_mode, image, drawables, config, data):
+        """Quick Upscale 4x: upscale with default model, zero dialogs."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        try:
+            srv = COMFYUI_DEFAULT_URL
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_qu_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            wf = build_upscale(uname, "4x_foolhardy_Remacri.pth")
+            results = _run_with_spinner("Quick Upscale 4x...",
+                                        lambda: list(_run_comfyui_workflow(srv, wf)))
+            for i, (fn, sf, ft) in enumerate(results):
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
+                                 f"Upscale 4x #{i+1}", False)
+            _LAST_PROCEDURE["name"] = "spellcaster-upscale"
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Quick Upscale Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    def _run_quick_face_restore(self, procedure, run_mode, image, drawables, config, data):
+        """Quick Face Restore: restore all faces with default settings."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        try:
+            srv = COMFYUI_DEFAULT_URL
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_qfr_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            wf = build_face_restore(uname, "codeformer-v0.1.0.pth",
+                                     "retinaface_resnet50", 1.0, 0.5)
+            results = _run_with_spinner("Quick Face Restore...",
+                                        lambda: list(_run_comfyui_workflow(srv, wf)))
+            for i, (fn, sf, ft) in enumerate(results):
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
+                                 f"Face Restored #{i+1}", False)
+            _LAST_PROCEDURE["name"] = "spellcaster-face-restore"
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Quick Face Restore Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    def _run_quick_rembg(self, procedure, run_mode, image, drawables, config, data):
+        """Quick Remove Background: instant background removal."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        try:
+            srv = COMFYUI_DEFAULT_URL
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_qrm_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            wf = build_rembg(uname)
+            results = _run_with_spinner("Quick Remove Background...",
+                                        lambda: list(_run_comfyui_workflow(srv, wf)))
+            for i, (fn, sf, ft) in enumerate(results):
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
+                                 f"Background Removed #{i+1}", False)
+            _LAST_PROCEDURE["name"] = "spellcaster-rembg"
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Quick Remove BG Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ══════════════════════════════════════════════════════════════════════
+    #  F6: AI Color Match
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _run_color_match(self, procedure, run_mode, image, drawables, config, data):
+        """AI Color Match: transfer color palette from a reference image."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+        dlg = Gtk.Dialog(title="Spellcaster — AI Color Match")
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Match Colors", Gtk.ResponseType.OK)
+        _style_dialog_buttons(dlg)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
+        hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        # Reference image
+        bx.pack_start(Gtk.Label(label="Reference Image (color source):", xalign=0), False, False, 0)
+        ref_chooser = Gtk.FileChooserButton(title="Select reference image")
+        ref_chooser.set_action(Gtk.FileChooserAction.OPEN)
+        ref_chooser.set_tooltip_text(
+            "Select the image whose colors you want to match.\n"
+            "The canvas image will be recolored to match this reference.")
+        ff = Gtk.FileFilter(); ff.set_name("Images")
+        ff.add_pattern("*.png"); ff.add_pattern("*.jpg"); ff.add_pattern("*.jpeg")
+        ff.add_pattern("*.webp"); ff.add_pattern("*.bmp")
+        ref_chooser.add_filter(ff)
+        bx.pack_start(ref_chooser, False, False, 0)
+        # Method
+        hb2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb2.pack_start(Gtk.Label(label="Method:"), False, False, 0)
+        method_combo = Gtk.ComboBoxText()
+        method_combo.set_tooltip_text(
+            "Color transfer algorithm.\n"
+            "MKL is best for photographs, Reinhard is a classic option.")
+        for label_text in COLOR_MATCH_METHODS:
+            method_combo.append(label_text, label_text)
+        method_combo.set_active(0)
+        hb2.pack_start(method_combo, True, True, 0); bx.pack_start(hb2, False, False, 0)
+        # Strength
+        hb3 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb3.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
+        strength_spin = Gtk.SpinButton.new_with_range(0.0, 1.0, 0.05)
+        strength_spin.set_value(0.85)
+        strength_spin.set_digits(2)
+        strength_spin.set_tooltip_text("How strongly to apply the color transfer.\n0.0 = no change, 1.0 = full match.")
+        hb3.pack_start(strength_spin, True, True, 0); bx.pack_start(hb3, False, False, 0)
+        bx.show_all()
+        # Recall last settings
+        last = _SESSION.get("color_match")
+        if last:
+            if "method" in last:
+                method_combo.set_active_id(last["method"])
+            if "strength" in last:
+                strength_spin.set_value(last["strength"])
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        srv = se.get_text().strip(); _propagate_server_url(srv)
+        ref_path = ref_chooser.get_filename()
+        method_label = method_combo.get_active_id()
+        method_key = COLOR_MATCH_METHODS.get(method_label, "mkl")
+        strength = strength_spin.get_value()
+        _SESSION["color_match"] = {"method": method_label, "strength": strength}
+        _save_session()
+        dlg.destroy()
+        if not ref_path:
+            Gimp.message("No reference image selected.")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+        try:
+            _update_spinner_status("Color Match: exporting images...")
+            tmp = _export_image_to_tmp(image)
+            src_uname = f"gimp_cm_src_{uuid.uuid4().hex[:8]}.png"
+            ref_uname = f"gimp_cm_ref_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, src_uname); os.unlink(tmp)
+            _upload_image(srv, ref_path, ref_uname)
+            wf = build_color_match(src_uname, ref_uname, strength, method_key)
+            results = _run_with_spinner("Color Match: processing...",
+                                        lambda: list(_run_comfyui_workflow(srv, wf)))
+            for i, (fn, sf, ft) in enumerate(results):
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
+                                 f"Color Match ({method_label}) #{i+1}", False)
+            _LAST_PROCEDURE["name"] = "spellcaster-color-match"
+            _LAST_PROCEDURE["session_key"] = "color_match"
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Spellcaster Color Match Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
     def _run_settings(self, procedure, run_mode, image, drawables, config, data):
         """Spellcaster Settings: configure server URL, defaults, and preferences."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
@@ -20347,17 +21371,21 @@ class Spellcaster(Gimp.PlugIn):
                 with urllib.request.urlopen(req_tree, timeout=15) as r:
                     tree = json.loads(r.read())
                 remote_files = []  # (github_path, local_remainder)
+                _seen = set()
                 for item in tree.get("tree", []):
                     if item["type"] != "blob":
                         continue
-                    if item["path"].startswith(_GIMP_PLUGIN_PREFIX):
-                        remainder = item["path"][len(_GIMP_PLUGIN_PREFIX):]
-                        if remainder:
-                            remote_files.append((item["path"], remainder))
-                    elif item["path"].startswith(_CORE_LIB_PREFIX):
+                    # Canonical source first — single source of truth
+                    if item["path"].startswith(_CORE_LIB_PREFIX):
                         remainder = item["path"][len("comfyui-spellcaster/"):]
                         if remainder:
                             remote_files.append((item["path"], remainder))
+                            _seen.add(remainder)
+                    elif item["path"].startswith(_GIMP_PLUGIN_PREFIX):
+                        remainder = item["path"][len(_GIMP_PLUGIN_PREFIX):]
+                        if remainder and remainder not in _seen:
+                            remote_files.append((item["path"], remainder))
+                            _seen.add(remainder)
                 if not remote_files:
                     update_status.set_markup('<span foreground="#FF5252">No files found on server</span>')
                     btn.set_sensitive(True)

@@ -5,7 +5,7 @@
 <h1 align="center">✨ Spellcaster ✨</h1>
 
 <p align="center">
-  <strong>49 AI tools. Zero experience needed. Just talk to it.</strong><br/>
+  <strong>57 AI tools. Zero experience needed. Just talk to it.</strong><br/>
   <em>GIMP &bull; Darktable &bull; SillyTavern &bull; Standalone Web UI &bull; 100% Local &bull; No Cloud</em>
 </p>
 
@@ -38,12 +38,12 @@
 <tr>
 <td width="60%">
 
-**Spellcaster adds 49 AI tools to GIMP and Darktable** — create images from text, fix photos, swap faces, generate videos, remove backgrounds, change lighting, extend canvases, re-pose characters, and more.
+**Spellcaster adds 57 AI tools to GIMP and Darktable** — create images from text, fix photos, swap faces, generate videos, remove backgrounds, change lighting, extend canvases, re-pose characters, and more.
 
 **No AI experience needed.** Every tool has expert-tuned presets. Your first result looks like your hundredth.
 
 **Three ways to use it:**
-- 🎨 **GIMP / Darktable** — full plugin with 49 menu entries
+- 🎨 **GIMP / Darktable** — full plugin with 57 menu entries
 - 🧙 **The Wizard Guild** — standalone chat UI with AI wizards
 - 💬 **SillyTavern** — 13 character cards for live RP visuals
 
@@ -238,7 +238,7 @@ The installer is an 8-step guided wizard. It's designed so you never have to mak
 ---
 
 <details>
-<summary><h2>🛠️ Technical Reference — All 49 Features, Architectures, LoRAs, Models</h2></summary>
+<summary><h2>🛠️ Technical Reference — All 57 Features, Architectures, LoRAs, Models</h2></summary>
 
 ### Generation — Create and Edit Images
 
@@ -267,6 +267,17 @@ The installer is an 8-step guided wizard. It's designed so you never have to mak
 | **Klein Layer Blender** | AI-powered layer harmonization | Lighting and shadow matching between layers |
 | **Klein Re-poser** | Change character poses and positions | 26 poses, 8 camera angles |
 | **Klein Head Swap** | Face swap with Klein refinement pass | Hybrid pipeline: ReActor swap → Klein blend |
+
+</details>
+
+<details>
+<summary><strong>Flux Kontext — Instruction-Based Editing</strong> — type what to change in natural language</summary>
+
+| Tool | What It Does | Details |
+|---|---|---|
+| **Kontext Editor** | Type "make the sky orange" and it happens | 7 task presets (Edit, Replace, Style Transfer, Background Swap, Portrait Retouch, Localized Inpaint, Light Touch), each pre-fills optimal parameters |
+
+Kontext uses natural language edit instructions instead of traditional prompts. No quality tags, no negative prompts — just describe the change you want. Compatible with Flux Dev LoRAs. Keyboard shortcut: `Ctrl+Shift+K`.
 
 </details>
 
@@ -330,6 +341,7 @@ Dual ControlNet support in img2img and inpaint workflows. Models auto-selected p
 | **Style Transfer** | Copy the visual style of any reference image | IPAdapter-based, adjustable strength |
 | **IC-Light Relighting** | Change lighting direction on any photo | 10 presets: Left/Right/Top/Bottom light, Back light, Front Soft, Golden Hour, Blue Hour, Neon, Dramatic |
 | **Color Grading (LUT)** | Apply cinematic film looks | 3D LUT application with strength control |
+| **AI Color Match** | Transfer color palette from a reference image | 3 methods: Monge-Kantorovitch (best for photos), Histogram Matching (fast), Reinhard (classic) |
 
 </details>
 
@@ -385,8 +397,23 @@ Dual ControlNet support in img2img and inpaint workflows. Models auto-selected p
 | **Read Watermark** | Extract hidden metadata from watermarked images | LSB steganography reader |
 | **Send to Server** | Upload image to ComfyUI input folder | Manual upload tool |
 | **Clean Server Inputs** | Purge temp uploads from ComfyUI to reclaim disk space | Overwrites gimp_* files with 1x1 pixel PNGs |
+| **SAM3 AI Selection** | Select any subject by typing its name (e.g. "person", "shirt", "hair") | AI-powered selection beats manual wand tools |
+| **SAM3 Extract Subject** | One-click subject extraction with transparent background | Auto-detects, removes background, auto-crops |
 
 </details>
+
+### Quick Actions — Right-Click Canvas Menu
+
+Five zero-dialog tools accessible from the canvas right-click menu (`<Image> > Spellcaster`). These use your last settings — no dialog, no clicks, instant results.
+
+| Action | Shortcut | What It Does |
+|---|---|---|
+| **Quick Enhance** | `Ctrl+Alt+E` | Re-run img2img with last settings |
+| **Quick Inpaint** | `Ctrl+Alt+P` | Inpaint current selection with last settings |
+| **Quick Upscale 4x** | `Ctrl+Alt+U` | Upscale with Remacri model |
+| **Quick Face Restore** | `Ctrl+Alt+F` | CodeFormer face restoration |
+| **Quick Remove BG** | `Ctrl+Alt+B` | Instant background removal |
+| **Re-run Last** | `Ctrl+Alt+R` | Repeat whatever you did last |
 
 ### Magic Studios — Full Character Pipeline
 
@@ -425,6 +452,8 @@ Selfie → Casting Polaroids → Body Double → Wardrobe → Set Design → Dir
 | **Model Favorites** | Pin preferred checkpoints to top of every dialog |
 | **Clean Server Inputs** | One-click purge of all gimp_* temp files from ComfyUI |
 | **Debug Image Export** | Save intermediate workflow images for troubleshooting |
+| **Keyboard Shortcuts** | 17 default shortcuts auto-installed: Ctrl+Shift for primary tools, Ctrl+Alt for quick actions |
+| **Premium Visual Theme** | Opt-in dark-purple reskin for GIMP and Darktable (set "apply_theme": true in config.json) |
 
 </details>
 
@@ -938,3 +967,9 @@ Open `Filters > Spellcaster Tools > Travelling Wizard` and you'll see:
 
 - 🟢 **Live server status** — GPU name, VRAM, and connection indicator
 - 📂 **Browse Workflow Library** — lists every workflow on your Comfy
+
+---
+
+## 🏆 Credits & Acknowledgements
+
+- **Klein Refiner, Auto-Inpaint & Color Match** pipelines adapted from [Elusarca's Flux2 Klein 9B Ultimate 6-in-1 Workflow](https://civitai.com/models/2543188/flux2-klein-9b-ultimate-6-in-1-workflow-face-swap-inpaint-auto-mask-nag-refine-upscale-8gb-vram) (CivitAI), used with permission. The multi-reference refiner, Florence2 auto-mask inpainting, and ColorMatchV2 post-processing pipelines in `workflows.py` are derived from this workflow.

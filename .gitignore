@@ -45,6 +45,7 @@ spellcaster-manual-update.exe
 
 # Machine-specific runtime files
 guild_config.json
+signal_bridge_config.json
 .guild_version
 rebuild.bat
 push_*.bat

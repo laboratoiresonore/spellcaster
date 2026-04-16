@@ -693,12 +693,16 @@ const LEGACY_BUILDER_TEMPLATES = [
 ];
 
 // ─── Tool Detection Definitions ────────────────────────────────────
+// Each tool declares either `urlConfigKey` (resolved from live config)
+// or `defaultUrl` (a sane local-host default). `configureTab` is the
+// SignalBridgeSettings tab the "Setup" button jumps the user to.
 const TOOL_DEFINITIONS = [
   {
     id: "sillytavern",
     name: "SillyTavern",
     icon: Icons.MessageSquare,
-    url: "localhost:8000",
+    defaultUrl: "http://localhost:8000",
+    configureTab: "paths",
     description: "Full-featured AI chat interface with character cards, lorebooks, and group chats",
     setupSteps: [
       "Download SillyTavern from https://github.com/SillyTavern/SillyTavern",
@@ -711,7 +715,8 @@ const TOOL_DEFINITIONS = [
     id: "openwebui",
     name: "Open WebUI",
     icon: Icons.Monitor,
-    url: "config.webui_url",
+    urlConfigKey: "webui_url",
+    configureTab: "network",
     description: "Open-source ChatGPT-style interface with model management",
     setupSteps: [
       "Install via Docker: docker run -d -p 8080:8080 ghcr.io/open-webui/open-webui:latest",
@@ -724,7 +729,8 @@ const TOOL_DEFINITIONS = [
     id: "lmstudio",
     name: "LM Studio",
     icon: Icons.Server,
-    url: "localhost:1234",
+    defaultUrl: "http://localhost:1234",
+    configureTab: "network",
     description: "Desktop app for running local LLMs with OpenAI-compatible API",
     setupSteps: [
       "Download LM Studio from https://lmstudio.ai",
@@ -737,7 +743,8 @@ const TOOL_DEFINITIONS = [
     id: "koboldcpp",
     name: "KoboldCpp",
     icon: Icons.Zap,
-    url: "localhost:5001",
+    defaultUrl: "http://localhost:5001",
+    configureTab: "network",
     description: "Lightweight local LLM server optimized for roleplay and stories",
     setupSteps: [
       "Download KoboldCpp from https://github.com/LostRuins/koboldcpp",
@@ -750,13 +757,28 @@ const TOOL_DEFINITIONS = [
     id: "comfyui",
     name: "ComfyUI",
     icon: Icons.Image,
-    url: "config.comfyui_url",
+    urlConfigKey: "comfyui_url",
+    configureTab: "network",
     description: "Node-based image generation pipeline with Spellcaster nodes",
     setupSteps: [
       "Clone ComfyUI: git clone https://github.com/comfyanonymous/ComfyUI.git",
       "Install Spellcaster custom nodes in custom_nodes folder",
       "Run: python main.py",
       "Verify Spellcaster nodes are loaded in the UI"
+    ]
+  },
+  {
+    id: "ollama",
+    name: "Ollama",
+    icon: Icons.Server,
+    urlConfigKey: "ollama_url",
+    configureTab: "network",
+    description: "Local LLM runner with a simple HTTP API and model library",
+    setupSteps: [
+      "Download from https://ollama.com",
+      "ollama pull llama3 (or any model)",
+      "ollama serve (default port 11434)",
+      "Update ollama_url in Network settings"
     ]
   }
 ];
@@ -1487,7 +1509,9 @@ function ScaffoldEditor({ scaffolds, setScaffolds }) {
   const saveTimerRef = useRef(null);
   const scaffold = scaffolds.find(s => s.id === selectedId);
 
-  // Debounced save to server — persists scaffold edits after 800ms of inactivity
+  // Debounced save to server — persists scaffold edits after 800ms of inactivity.
+  // Sends the full editable surface so the step editor, lora slots, and
+  // access flags actually round-trip through the server.
   const persistScaffold = (updated) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
@@ -1499,6 +1523,7 @@ function ScaffoldEditor({ scaffolds, setScaffolds }) {
           id: updated.id,
           name: updated.name,
           subtext: updated.description || updated.subtext || "",
+          description: updated.description || "",
           archetype: updated.archetype || "",
           system_prompt: [
             updated.system_prompt_header || "",
@@ -1506,6 +1531,14 @@ function ScaffoldEditor({ scaffolds, setScaffolds }) {
           ].join("\n"),
           color1: updated.color1 || "",
           color2: updated.color2 || "",
+          default_model: updated.default_model || "",
+          default_arch: updated.default_arch || "",
+          // Full visual step editor state
+          steps: updated.steps || [],
+          lora_slots: updated.lora_slots || [],
+          workflow_key: updated.workflow_key || "",
+          nsfw: !!updated.nsfw,
+          admin_only: !!updated.admin_only,
         }),
       })
         .then(r => r.json())
@@ -1519,31 +1552,132 @@ function ScaffoldEditor({ scaffolds, setScaffolds }) {
     persistScaffold(updated);
   };
 
+  // Create a new scaffold both locally and on the server so a page
+  // refresh doesn't wipe it. The server assigns the canonical id (with
+  // custom_ prefix); we adopt whatever it returns.
   const addScaffold = () => {
     const newScaff = newScaffold();
-    setScaffolds(prev => [...prev, newScaff]);
-    setSelectedId(newScaff.id);
+    const id = "custom_" + newScaff.id;
+    fetch("/api/scaffold_create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: id,
+        name: newScaff.name || "New Scaffold",
+        description: newScaff.description || "",
+        subtext: newScaff.description || "",
+        archetype: newScaff.archetype || "",
+        system_prompt: "",
+        color1: newScaff.color1 || "#7c3aed",
+        color2: newScaff.color2 || "#f59e0b",
+        steps: newScaff.steps || [],
+      }),
+    })
+      .then(r => r.json())
+      .then(() => {
+        const local = { ...newScaff, id };
+        setScaffolds(prev => [...prev, local]);
+        setSelectedId(id);
+      })
+      .catch(() => {
+        // Network down — still add locally so the user isn't stuck,
+        // but the save will be lost on refresh.
+        setScaffolds(prev => [...prev, newScaff]);
+        setSelectedId(newScaff.id);
+      });
   };
 
   // Create scaffold from a parsed workflow object
   const importFromWorkflow = (wf) => {
     const newScaff = scaffoldFromParsedWorkflow(wf);
-    setScaffolds(prev => [...prev, newScaff]);
-    setSelectedId(newScaff.id);
-    setShowImportPanel(false);
+    const id = "custom_" + newScaff.id;
+    fetch("/api/scaffold_create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: id,
+        name: newScaff.name || "Imported Scaffold",
+        description: newScaff.description || "",
+        subtext: newScaff.description || "",
+        archetype: newScaff.archetype || "",
+        system_prompt: "",
+        color1: newScaff.color1 || "#7c3aed",
+        color2: newScaff.color2 || "#f59e0b",
+        steps: newScaff.steps || [],
+        workflow_key: newScaff.workflow_key || "",
+      }),
+    })
+      .then(() => {
+        const local = { ...newScaff, id };
+        setScaffolds(prev => [...prev, local]);
+        setSelectedId(id);
+        setShowImportPanel(false);
+      })
+      .catch(() => {
+        setScaffolds(prev => [...prev, newScaff]);
+        setSelectedId(newScaff.id);
+        setShowImportPanel(false);
+      });
   };
 
   const deleteScaffold = () => {
-    setScaffolds(prev => prev.filter(s => s.id !== selectedId));
-    if (scaffolds.length > 1) setSelectedId(scaffolds.find(s => s.id !== selectedId)?.id);
+    if (!selectedId) return;
+    // Built-in studios can't be deleted — warn and bail.
+    if (!selectedId.startsWith("custom_")) {
+      alert("Built-in scaffolds can't be deleted. Use the Guild's banish flow instead.");
+      return;
+    }
+    const nextId = scaffolds.find(s => s.id !== selectedId)?.id;
+    fetch("/api/scaffold_delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: selectedId }),
+    })
+      .then(() => {
+        setScaffolds(prev => prev.filter(s => s.id !== selectedId));
+        if (nextId) setSelectedId(nextId);
+      })
+      .catch(() => {
+        // Server unreachable — remove locally anyway so the UI isn't stuck
+        setScaffolds(prev => prev.filter(s => s.id !== selectedId));
+        if (nextId) setSelectedId(nextId);
+      });
   };
 
   const duplicateScaffold = () => {
+    if (!scaffold) return;
     const dup = deepClone(scaffold);
     dup.id = uid();
     dup.name = dup.name + " (Copy)";
-    setScaffolds(prev => [...prev, dup]);
-    setSelectedId(dup.id);
+    const id = "custom_" + dup.id;
+    fetch("/api/scaffold_create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id,
+        name: dup.name,
+        description: dup.description || "",
+        subtext: dup.description || "",
+        archetype: dup.archetype || "",
+        system_prompt: "",
+        color1: dup.color1 || "#7c3aed",
+        color2: dup.color2 || "#f59e0b",
+        steps: dup.steps || [],
+        lora_slots: dup.lora_slots || [],
+        workflow_key: dup.workflow_key || "",
+        nsfw: !!dup.nsfw,
+        admin_only: !!dup.admin_only,
+      }),
+    })
+      .then(() => {
+        const local = { ...dup, id };
+        setScaffolds(prev => [...prev, local]);
+        setSelectedId(id);
+      })
+      .catch(() => {
+        setScaffolds(prev => [...prev, dup]);
+        setSelectedId(dup.id);
+      });
   };
 
   if (showImportPanel) {
@@ -1761,15 +1895,53 @@ function ScaffoldEditor({ scaffolds, setScaffolds }) {
 
 // ─── Tool Detection Card ──────────────────────────────────────────
 
-function ToolDetectionCard({ tool }) {
+function ToolDetectionCard({ tool, config, onConfigure }) {
   const [status, setStatus] = useState("unchecked"); // unchecked | checking | found | not_found
+  const [probeInfo, setProbeInfo] = useState(""); // server-returned status text
   const [expanded, setExpanded] = useState(false);
 
-  const handleDetect = () => {
+  // Resolve the probe URL from live config when the tool declares a
+  // configKey — falls back to the hardcoded defaultUrl. SillyTavern,
+  // LM Studio, KoboldCpp don't have config fields yet so they always
+  // probe their canonical local-host port.
+  const effectiveUrl = (tool.urlConfigKey && config && config[tool.urlConfigKey])
+    || tool.defaultUrl
+    || "";
+
+  const handleDetect = async () => {
+    if (!effectiveUrl) {
+      setStatus("not_found");
+      setProbeInfo("no URL configured");
+      return;
+    }
     setStatus("checking");
-    setTimeout(() => {
-      setStatus(Math.random() > 0.4 ? "found" : "not_found");
-    }, 1000 + Math.random() * 1000);
+    setProbeInfo("");
+    try {
+      const r = await fetch("/api/probe_tool", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tool: tool.id, url: effectiveUrl }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (data && data.found) {
+        setStatus("found");
+        setProbeInfo(data.info ? `HTTP ${data.status} via ${data.endpoint || ""}` : `HTTP ${data.status}`);
+      } else {
+        setStatus("not_found");
+        setProbeInfo(data.info || "no response");
+      }
+    } catch (e) {
+      setStatus("not_found");
+      setProbeInfo(String(e && e.message || e));
+    }
+  };
+
+  const handleSetup = () => {
+    if (onConfigure && tool.configureTab) onConfigure(tool.configureTab);
+  };
+
+  const handleOpen = () => {
+    if (effectiveUrl) window.open(effectiveUrl, "_blank", "noopener");
   };
 
   const statusColors = {
@@ -1781,9 +1953,9 @@ function ToolDetectionCard({ tool }) {
 
   const statusText = {
     unchecked: "Not checked",
-    checking: "Checking...",
-    found: "Found",
-    not_found: "Not found"
+    checking: "Probing...",
+    found: "Online",
+    not_found: "Offline"
   };
 
   const ToolIcon = tool.icon;
@@ -1805,25 +1977,33 @@ function ToolDetectionCard({ tool }) {
           </div>
         </div>
 
-        <div className="space-y-2 mb-3">
+        <div className="space-y-1 mb-3">
           <p className="text-xs text-slate-400">
-            <span className="font-mono text-amber-300">{tool.url}</span>
+            <span className="font-mono text-amber-300">{effectiveUrl || "(no URL)"}</span>
           </p>
+          {probeInfo && (
+            <p className={`text-xs font-mono ${status === "found" ? "text-emerald-400/80" : "text-red-400/80"}`}>
+              {probeInfo}
+            </p>
+          )}
         </div>
 
         <div className="flex gap-2">
-          <button onClick={handleDetect} className={btnSmall + " bg-amber-600/50 text-amber-100 hover:bg-amber-600 flex-1"}>
+          <button onClick={handleDetect} disabled={status === "checking"}
+            className={btnSmall + " bg-amber-600/50 text-amber-100 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-wait flex-1"}>
             <Icons.Search size={16} /> Detect
           </button>
-          {status === "found" && (
-            <>
-              <button className={btnSmall + " bg-emerald-600/50 text-emerald-100 hover:bg-emerald-600 flex-1"}>
-                <Icons.Check size={16} /> Setup
-              </button>
-              <button className={btnSmall + " bg-purple-600/50 text-purple-100 hover:bg-purple-600 flex-1"}>
-                <Icons.ExternalLink size={16} /> Push
-              </button>
-            </>
+          {tool.configureTab && (
+            <button onClick={handleSetup}
+              className={btnSmall + " bg-emerald-600/50 text-emerald-100 hover:bg-emerald-600 flex-1"}>
+              <Icons.Check size={16} /> Configure
+            </button>
+          )}
+          {status === "found" && effectiveUrl && (
+            <button onClick={handleOpen}
+              className={btnSmall + " bg-purple-600/50 text-purple-100 hover:bg-purple-600 flex-1"}>
+              <Icons.ExternalLink size={16} /> Open
+            </button>
           )}
         </div>
 
@@ -1852,7 +2032,7 @@ function ToolDetectionCard({ tool }) {
 
 // ─── Integrations Panel ───────────────────────────────────────────
 
-function IntegrationsPanel() {
+function IntegrationsPanel({ config, onConfigure }) {
   return (
     <div className="space-y-4">
       <div className="bg-amber-500/10 border border-amber-600/30 rounded-lg p-3 flex items-start gap-3">
@@ -1863,7 +2043,8 @@ function IntegrationsPanel() {
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {TOOL_DEFINITIONS.map(tool => (
-          <ToolDetectionCard key={tool.id} tool={tool} />
+          <ToolDetectionCard key={tool.id} tool={tool}
+            config={config} onConfigure={onConfigure} />
         ))}
       </div>
     </div>
@@ -2794,9 +2975,81 @@ function SignalBridgeSettings() {
   const [saved, setSaved] = useState(false);
   const [importError, setImportError] = useState("");
   const [guildOpen, setGuildOpen] = useState(false);
+  // Server config status: "" (idle) | "loading" | "loaded" | "saving" |
+  // "saved" | "error". Surfaced in the header so the user knows their
+  // edits are actually persisting.
+  const [configStatus, setConfigStatus] = useState("loading");
   const fileInputRef = useRef(null);
+  // Suppresses the auto-save effect on the very first render (right
+  // after we hydrate from the server) so we don't immediately POST a
+  // copy of what we just received.
+  const hydratedRef = useRef(false);
+  const saveTimerRef = useRef(null);
 
-  // Load server-side scaffolds (auto-detected wizards) and merge with built-ins
+  // Hydrate config from the server's signal_bridge_config.json. Missing
+  // keys are filled in from DEFAULT_CONFIG so partial files don't break
+  // the editor. If the request fails we leave the defaults in place but
+  // mark the status as "error" so the user knows nothing will persist.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/signal_bridge_config")
+      .then(r => r.ok ? r.json() : null)
+      .then(serverCfg => {
+        if (cancelled) return;
+        if (serverCfg && typeof serverCfg === "object") {
+          // Deep merge: top-level keys from server override defaults,
+          // nested objects (paths, privacy, google) merge field-by-field
+          // so a server file missing one privacy flag still hydrates the
+          // others from DEFAULT_CONFIG.
+          const merged = deepClone(DEFAULT_CONFIG);
+          for (const k of Object.keys(serverCfg)) {
+            const v = serverCfg[k];
+            if (v && typeof v === "object" && !Array.isArray(v)
+                && merged[k] && typeof merged[k] === "object" && !Array.isArray(merged[k])) {
+              merged[k] = { ...merged[k], ...v };
+            } else {
+              merged[k] = v;
+            }
+          }
+          setConfig(merged);
+        }
+        setConfigStatus("loaded");
+        // Defer so the setConfig above commits before we arm auto-save.
+        setTimeout(() => { hydratedRef.current = true; }, 0);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setConfigStatus("error");
+        // Still allow editing locally — Import/Export remains the
+        // escape hatch if the server is unreachable.
+        setTimeout(() => { hydratedRef.current = true; }, 0);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Debounced auto-save: any change to `config` after hydration POSTs
+  // the full document to /api/signal_bridge_config 800ms later. Skips
+  // the first render so we don't echo back what we just loaded.
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    setConfigStatus("saving");
+    saveTimerRef.current = setTimeout(() => {
+      fetch("/api/signal_bridge_config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(config),
+      })
+        .then(r => r.ok ? setConfigStatus("saved") : setConfigStatus("error"))
+        .catch(() => setConfigStatus("error"));
+    }, 800);
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+  }, [config]);
+
+  // Load server-side scaffolds (auto-detected wizards + persisted
+  // overrides) and merge with built-ins. The server now returns the
+  // full editable surface (steps, lora_slots, nsfw flags, workflow_key)
+  // so refreshing the page restores the user's edits from disk.
   useEffect(() => {
     fetch("/api/scaffolds")
       .then(r => r.ok ? r.json() : [])
@@ -2809,14 +3062,14 @@ function SignalBridgeSettings() {
             .map(s => ({
               id: s.id,
               name: s.name,
-              description: s.subtext || "",
-              workflow_key: s.id,
+              description: s.description || s.subtext || "",
+              workflow_key: s.workflow_key || s.id,
               system_prompt_header: s.system_prompt || "",
               system_prompt_rules: [],
-              steps: [],
-              nsfw: false,
-              admin_only: false,
-              lora_slots: [],
+              steps: s.steps || [],
+              nsfw: !!s.nsfw,
+              admin_only: !!s.admin_only,
+              lora_slots: s.lora_slots || [],
               color1: s.color1 || "",
               color2: s.color2 || "",
               archetype: s.archetype || "",
@@ -2896,6 +3149,27 @@ function SignalBridgeSettings() {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <span title="Server config sync status"
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border ${
+                  configStatus === "saved" ? "bg-emerald-900/30 border-emerald-600/40 text-emerald-300"
+                  : configStatus === "saving" ? "bg-amber-900/30 border-amber-600/40 text-amber-300 animate-pulse"
+                  : configStatus === "error" ? "bg-red-900/30 border-red-600/40 text-red-300"
+                  : configStatus === "loaded" ? "bg-slate-800 border-slate-600/40 text-slate-300"
+                  : "bg-slate-800 border-slate-600/40 text-slate-400 animate-pulse"
+                }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${
+                  configStatus === "saved" ? "bg-emerald-400"
+                  : configStatus === "saving" ? "bg-amber-400"
+                  : configStatus === "error" ? "bg-red-400"
+                  : configStatus === "loaded" ? "bg-slate-400"
+                  : "bg-slate-500"
+                }`} />
+                {configStatus === "loading" ? "loading…"
+                  : configStatus === "loaded" ? "synced"
+                  : configStatus === "saving" ? "saving…"
+                  : configStatus === "saved" ? "saved"
+                  : "offline"}
+              </span>
               <input type="file" ref={fileInputRef} accept=".json" onChange={importAll} className="hidden" />
               <button onClick={() => fileInputRef.current?.click()} className={btnGhost}><Icons.Upload /> Import</button>
               <button onClick={exportAll} className={btnGhost}><Icons.Download /> Export</button>
@@ -2952,7 +3226,7 @@ function SignalBridgeSettings() {
 
         {/* ── Integrations Tab ── */}
         {activeTab === "integrations" && (
-          <IntegrationsPanel />
+          <IntegrationsPanel config={config} onConfigure={(tabId) => setActiveTab(tabId)} />
         )}
 
         {/* ── Network Tab ── */}
