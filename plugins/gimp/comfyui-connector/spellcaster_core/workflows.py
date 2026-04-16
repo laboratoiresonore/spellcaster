@@ -197,6 +197,64 @@ except ImportError:
 #  SHARED CONSTANTS — Single source of truth for Klein / Flux2 / Studio
 # ═══════════════════════════════════════════════════════════════════════════
 
+# ── Camera / cinematography presets ────────────────────────────────────
+# Shared between GIMP plugin (repose dialog) and Wizard Guild (LLM
+# system prompt). Each preset is a prompt fragment that works with any
+# architecture — the model interprets the description as a composition
+# directive. Organized by cinematic discipline.
+
+CAMERA_SHOT_PRESETS = {
+    "extreme_closeup": "extreme close-up shot, only the eyes visible, macro skin texture, shallow DOF",
+    "closeup":         "close-up shot, face fills frame, 85mm lens, shallow depth of field",
+    "medium_closeup":  "medium close-up, head and shoulders, portrait framing, 50mm lens",
+    "medium":          "medium shot, waist up, conversational framing",
+    "full":            "full body shot, entire figure head to toe",
+    "wide":            "wide shot, full body with environment, establishing context",
+    "extreme_wide":    "extreme wide shot, tiny figure in vast landscape, epic scale",
+}
+
+CAMERA_ANGLE_PRESETS = {
+    "eye_level":       "shot at eye level, neutral perspective",
+    "low_angle":       "shot from low angle looking up, heroic perspective",
+    "extreme_low":     "extreme low angle worm's eye view, camera near ground looking straight up",
+    "high_angle":      "shot from high angle looking down, diminutive perspective",
+    "birds_eye":       "bird's eye view, camera directly overhead, top-down",
+    "dutch":           "dutch angle shot, 15-25 degree tilt, dramatic tension",
+    "over_shoulder":   "over the shoulder shot, depth composition",
+}
+
+CAMERA_LENS_PRESETS = {
+    "wide_24mm":       "wide angle 24mm lens, spacious, slight barrel distortion",
+    "normal_50mm":     "50mm lens, natural perspective, no distortion",
+    "portrait_85mm":   "85mm portrait lens, shallow DOF, background separation",
+    "telephoto_200mm": "telephoto 200mm lens, compressed depth, bokeh background",
+    "anamorphic":      "anamorphic lens, horizontal flares, oval bokeh, cinematic widescreen",
+    "macro":           "macro photography, extreme detail, razor-thin DOF",
+    "tilt_shift":      "tilt-shift, selective focus, miniature diorama effect",
+    "fisheye":         "fish-eye lens, spherical distortion, 180 degree FOV",
+}
+
+CAMERA_MOVE_PRESETS = {
+    "dolly_in":        "camera dollying in toward subject, approaching intimacy",
+    "dolly_out":       "camera pulling back, widening reveal",
+    "truck_left":      "camera tracking laterally left, smooth panning",
+    "truck_right":     "camera tracking laterally right, smooth panning",
+    "pedestal_up":     "camera rising vertically, ascending perspective",
+    "pedestal_down":   "camera lowering, descending to subject level",
+    "crane":           "elevated crane shot, sweeping overhead, cinematic grandeur",
+    "tracking_follow": "steadicam tracking from behind, immersive follow",
+}
+
+CAMERA_COMPOSITION_PRESETS = {
+    "rule_of_thirds":  "rule of thirds, subject off-center at power point",
+    "center_frame":    "subject centered, symmetrical, direct confrontational",
+    "negative_space":  "extensive negative space, subject small, minimalist",
+    "frame_in_frame":  "frame within a frame, viewed through doorway or arch",
+    "leading_lines":   "strong leading lines converging on subject",
+    "symmetrical":     "perfectly symmetrical, mirror composition, Kubrick-style",
+}
+
+
 KLEIN_MODELS = {
     "Klein 9B": {
         "unet": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",

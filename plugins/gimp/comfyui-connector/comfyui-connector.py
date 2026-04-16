@@ -12990,24 +12990,75 @@ class Spellcaster(Gimp.PlugIn):
 
         POSITION_PRESETS = {
             "Keep current position":     "",
+            # ── In-frame placement ──
             "Move to center":            "positioned in the center of the frame",
-            "Move to left":              "positioned on the left side of the frame",
-            "Move to right":             "positioned on the right side of the frame",
-            "Move to foreground":        "positioned in the foreground, close to camera, larger in frame",
-            "Move to background":        "positioned in the background, further away, smaller in frame",
-            "Move to upper area":        "positioned in the upper portion of the frame",
-            "Move to lower area":        "positioned in the lower portion of the frame",
+            "Move to left third":        "positioned on the left third of the frame, rule-of-thirds placement",
+            "Move to right third":       "positioned on the right third of the frame, rule-of-thirds placement",
+            "Move to foreground":        "positioned in the foreground, close to camera, larger in frame, prominent",
+            "Move to background":        "positioned in the background, further away, smaller in frame, environmental scale",
+            "Move to upper area":        "positioned in the upper portion of the frame, sky/ceiling context",
+            "Move to lower area":        "positioned in the lower portion of the frame, grounded",
+            # ── Depth / distance changes ──
+            "Camera very close (intimate)":  "camera positioned very close to subject, intimate personal space, 1-2 feet away, detailed texture visible",
+            "Camera at conversation distance": "camera at natural conversation distance, 4-6 feet away, comfortable social framing",
+            "Camera far away (environmental)": "camera positioned far from subject, 20+ feet away, subject small in environment, wide context",
+            # ── Relative to subject ──
+            "Camera facing subject":     "camera positioned directly facing the subject, frontal view, direct eye contact possible",
+            "Camera at 45° left":        "camera positioned at 45 degrees to the left of the subject, three-quarter profile view",
+            "Camera at 45° right":       "camera positioned at 45 degrees to the right of the subject, three-quarter profile view",
+            "Camera at 90° (side profile)": "camera at 90 degrees to subject, full side profile view, silhouette potential",
+            "Camera behind subject":     "camera positioned behind the subject, over-shoulder or back-of-head view, POV perspective",
         }
 
         CAMERA_PRESETS = {
+            # ── Keep current ──
             "Keep current angle":        "",
-            "Low angle (heroic)":        "shot from low angle looking up, heroic perspective",
-            "High angle (vulnerable)":   "shot from high angle looking down, diminutive perspective",
-            "Eye level":                 "shot at eye level, neutral straight-on perspective",
-            "Dutch angle (dramatic)":    "tilted dutch angle shot, dramatic off-kilter framing",
-            "Over the shoulder":         "over the shoulder perspective, depth composition",
-            "Close-up":                  "close-up framing, head and shoulders, intimate",
-            "Wide shot":                 "wide shot showing full body and environment",
+
+            # ── Shot size / distance ──
+            "Extreme close-up (eyes)":   "extreme close-up shot, only the eyes and bridge of nose visible, macro-level skin texture detail, shallow depth of field",
+            "Close-up (face)":           "close-up shot, face fills the frame, detailed skin texture, shallow depth of field, 85mm lens",
+            "Medium close-up (head+shoulders)": "medium close-up, head and shoulders, portrait framing, 50mm lens aesthetic",
+            "Medium shot (waist up)":    "medium shot, waist up, conversational framing, natural perspective",
+            "Medium long shot (knees up)": "medium long shot, three-quarter body visible from knees up, relaxed framing",
+            "Full shot (entire body)":   "full body shot, entire figure visible head to toe, environmental context",
+            "Wide shot (body + environment)": "wide shot, full body with significant environment visible, establishing context",
+            "Extreme wide shot (landscape)": "extreme wide shot, tiny figure in vast landscape, epic scale, environmental storytelling",
+
+            # ── Camera angle / height ──
+            "Eye level (neutral)":       "shot at eye level, neutral straight-on perspective, natural viewer POV",
+            "Slight low angle (subtle hero)": "shot from slightly below eye level, subtle empowerment, 5-10 degree uptilt",
+            "Low angle (heroic)":        "shot from low angle looking up, heroic perspective, subject appears powerful and dominant",
+            "Extreme low angle (worm's eye)": "extreme low angle worm's eye view, camera near ground looking straight up, subject towering overhead, dramatic foreshortening",
+            "High angle (looking down)": "shot from high angle looking down at subject, diminutive vulnerable perspective",
+            "Bird's eye (overhead)":     "bird's eye view, camera directly overhead looking straight down, top-down perspective, flat geometric composition",
+            "Dutch angle (dramatic tilt)": "tilted dutch angle shot, 15-25 degree camera roll, tension and unease, off-kilter dramatic framing",
+            "Over the shoulder (OTS)":   "over the shoulder shot, camera behind one person looking at another, depth composition, conversational framing",
+
+            # ── Camera movement (frozen mid-move) ──
+            "Dolly in (moving closer)":  "camera dollying in toward subject, sense of approaching intimacy, narrowing perspective, slight motion blur on edges",
+            "Dolly out (pulling away)":  "camera pulling back from subject, widening reveal, increasing distance, environmental context expanding",
+            "Truck left (lateral move)": "camera tracking laterally to the left, parallel to subject, smooth lateral motion, cinematic panning movement",
+            "Truck right (lateral move)": "camera tracking laterally to the right, parallel to subject, smooth lateral motion",
+            "Pedestal up (rising)":      "camera rising vertically, pedestal up movement, subject revealed from feet to head, ascending perspective",
+            "Pedestal down (lowering)":  "camera lowering vertically, pedestal down, descending to subject's level, grounding perspective",
+            "Crane shot (elevated sweep)": "elevated crane shot, sweeping overhead perspective, cinematic grandeur, high-production-value framing",
+            "Tracking follow (behind)":  "steadicam tracking shot from behind subject, following perspective, depth corridor, immersive",
+
+            # ── Lens effects ──
+            "Wide angle (24mm, spacious)": "shot with wide angle 24mm lens, spacious expansive feel, slight barrel distortion at edges, deep depth of field",
+            "Telephoto (200mm, compressed)": "shot with telephoto 200mm lens, compressed depth of field, bokeh background, subject isolated, flattened perspective",
+            "Tilt-shift (miniature effect)": "tilt-shift photography, selective focus plane, miniature diorama effect, extreme shallow depth of field on edges",
+            "Fish-eye (extreme wide)":   "fish-eye lens extreme wide angle, spherical distortion, 180 degree field of view, warped perspective",
+            "Anamorphic (cinematic 2.39:1)": "anamorphic lens, horizontal lens flares, oval bokeh, cinematic 2.39:1 widescreen aesthetic, dramatic light streaks",
+            "Macro (extreme detail)":    "macro photography, extreme close-up detail, razor-thin depth of field, texture and pattern emphasis",
+
+            # ── Composition / framing ──
+            "Rule of thirds (off-center)": "rule of thirds composition, subject positioned off-center at power point, balanced negative space",
+            "Center-frame (symmetrical)": "subject perfectly centered in frame, symmetrical composition, direct confrontational framing",
+            "Negative space (minimal)":  "extensive negative space, subject small in frame, minimalist composition, isolation and contemplation",
+            "Frame within frame":        "frame within a frame composition, subject viewed through doorway or window or arch, layered depth",
+            "Leading lines":             "strong leading lines composition, perspective lines converging on subject, depth and direction",
+            "Symmetrical (mirror)":      "perfectly symmetrical composition, mirror-image framing, architectural precision, Kubrick-style",
         }
 
         MULTI_CHAR_PRESETS = {
