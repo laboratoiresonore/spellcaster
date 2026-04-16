@@ -13466,6 +13466,7 @@ class Spellcaster(Gimp.PlugIn):
 
         # ── Preset libraries ──────────────────────────────────────────
         CHAR_TEMPLATES = {
+            "Keep current subject": "",
             "Single character": "a single person",
             "Two characters": "two people",
             "Three characters": "three people",
@@ -13475,6 +13476,8 @@ class Spellcaster(Gimp.PlugIn):
         }
 
         POSE_PRESETS = {
+            # Keep current
+            "Keep current pose":         "",
             # Standing
             "Standing relaxed":          "standing relaxed with arms at sides, natural weight shift",
             "Standing arms crossed":     "standing with arms crossed over chest, confident posture",
@@ -13748,9 +13751,11 @@ class Spellcaster(Gimp.PlugIn):
 
             parts = []
             # Subject
-            parts.append(CHAR_TEMPLATES.get(char_key, "a person"))
+            char_txt = CHAR_TEMPLATES.get(char_key, "a person")
+            if char_txt: parts.append(char_txt)
             # Pose
-            parts.append(POSE_PRESETS.get(pose_key, "standing relaxed"))
+            pose_txt = POSE_PRESETS.get(pose_key, "standing relaxed")
+            if pose_txt: parts.append(pose_txt)
             # Multi-char interaction
             if multi_key != "(none)" and multi_key in MULTI_CHAR_PRESETS:
                 parts.append(MULTI_CHAR_PRESETS[multi_key])
