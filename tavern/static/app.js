@@ -4324,3 +4324,43 @@ function _completionBurst() {
         document.addEventListener('visibilitychange', _onFirstVisible);
     }
 })();
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Theme Management — apply/remove Spellcaster theme to GIMP & Darktable
+// ═══════════════════════════════════════════════════════════════════════
+async function applyThemeSettings() {
+    const gimpToggle = document.getElementById('theme-gimp-toggle');
+    const dtToggle = document.getElementById('theme-darktable-toggle');
+    const statusEl = document.getElementById('theme-status');
+    const btn = document.getElementById('theme-apply-btn');
+
+    btn.disabled = true;
+    btn.textContent = 'Applying...';
+    statusEl.style.display = 'block';
+    statusEl.style.color = '#aaa';
+    statusEl.textContent = 'Installing theme files...';
+
+    try {
+        const res = await fetch('/api/apply_theme', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                gimp: gimpToggle.checked,
+                darktable: dtToggle.checked,
+            }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+            statusEl.style.color = '#2ed573';
+            statusEl.textContent = data.message || 'Theme applied! Restart GIMP/Darktable to see changes.';
+        } else {
+            statusEl.style.color = '#ff4757';
+            statusEl.textContent = data.error || 'Failed to apply theme.';
+        }
+    } catch (err) {
+        statusEl.style.color = '#ff4757';
+        statusEl.textContent = 'Network error: ' + err.message;
+    }
+    btn.disabled = false;
+    btn.textContent = 'Apply Theme Settings';
+}

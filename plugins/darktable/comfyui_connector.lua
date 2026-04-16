@@ -8007,4 +8007,83 @@ end
 -- prevent the plugin from loading and functioning normally.
 pcall(spellcaster_auto_update)
 
+-- ═══════════════════════════════════════════════════════════════════════
+--  Spellcaster Theme Auto-Install
+-- ═══════════════════════════════════════════════════════════════════════
+-- Copies spellcaster-darktable.css to the Darktable themes directory
+-- so the user can select it from Preferences > General > Theme.
+-- Non-destructive: only copies if the file is newer or missing.
+local function install_spellcaster_theme()
+  local plugin_dir = dt.configuration.config_dir .. "/lua/"
+  -- Find the CSS file next to this Lua script
+  local css_candidates = {
+    plugin_dir .. "spellcaster-darktable.css",
+    plugin_dir .. "contrib/spellcaster-darktable.css",
+  }
+  -- Also check the script's own directory
+  local script_dir = debug.getinfo(1, "S").source:match("@?(.*[/\\])")
+  if script_dir then
+    table.insert(css_candidates, 1, script_dir .. "spellcaster-darktable.css")
+  end
+
+  local css_source = nil
+  for _, path in ipairs(css_candidates) do
+    local f = io.open(path, "r")
+    if f then
+      f:close()
+      css_source = path
+      break
+    end
+  end
+  if not css_source then return end
+
+  -- Determine themes directory
+  local themes_dir = dt.configuration.config_dir .. "/themes"
+  local dest = themes_dir .. "/spellcaster-darktable.css"
+
+  -- Create themes directory if needed
+  local mkdir_cmd
+  if dt.configuration.running_os == "windows" then
+    mkdir_cmd = 'mkdir "' .. themes_dir:gsub("/", "\\") .. '" 2>NUL'
+  else
+    mkdir_cmd = 'mkdir -p "' .. themes_dir .. '" 2>/dev/null'
+  end
+  os.execute(mkdir_cmd)
+
+  -- Check if update needed (compare sizes as a simple freshness check)
+  local src_f = io.open(css_source, "rb")
+  if not src_f then return end
+  local src_data = src_f:read("*a")
+  src_f:close()
+
+  local dst_f = io.open(dest, "rb")
+  if dst_f then
+    local dst_data = dst_f:read("*a")
+    dst_f:close()
+    if dst_data == src_data then
+      return  -- already up to date
+    end
+  end
+
+  -- Copy the theme CSS
+  local out = io.open(dest, "wb")
+  if out then
+    out:write(src_data)
+    out:close()
+    dt.print(_("Spellcaster theme installed. Select it in Preferences > General > Theme."))
+  end
+end
+
+-- Only install theme if user opted in via config. Default is UNBRANDED.
+local _cfg_path = dt.configuration.config_dir .. "/lua/spellcaster_config.json"
+local _apply_theme = false
+do
+  local f = io.open(_cfg_path, "r")
+  if f then
+    local txt = f:read("*a"); f:close()
+    if txt:find('"apply_theme"%s*:%s*true') then _apply_theme = true end
+  end
+end
+if _apply_theme then pcall(install_spellcaster_theme) end
+
 return script_data
