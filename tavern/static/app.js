@@ -1774,11 +1774,16 @@ function renderSidebar(filter = "") {
         // ── Wizard info tooltip on hover ──
         let hoverTimer = null;
         card.addEventListener('mouseenter', () => {
+            _tooltipHoverIntent = true;
             hoverTimer = setTimeout(() => showWizardTooltip(char, card), 420);
         });
         card.addEventListener('mouseleave', () => {
+            _tooltipHoverIntent = false;
             clearTimeout(hoverTimer);
-            hideWizardTooltip();
+            // Delay hide so user can move mouse to the tooltip itself
+            setTimeout(() => {
+                if (!_tooltipHoverIntent && !_tooltipHovering) hideWizardTooltip();
+            }, 150);
         });
 
         characterList.appendChild(card);
@@ -1827,8 +1832,13 @@ let _tooltipCache = {};  // Cache fetched info to avoid re-fetching
 let _tooltipDismissTimer = null;
 let _tooltipEscHandler = null;
 let _tooltipOutsideHandler = null;
+let _tooltipHoverIntent = false;  // true while mouse is over a card
+let _tooltipHovering = false;     // true while mouse is over the tooltip itself
+let _tooltipGeneration = 0;       // increments on each show, stale async checks against this
 
 function hideWizardTooltip() {
+    _tooltipGeneration++;
+    _tooltipHovering = false;
     if (_tooltipDismissTimer) {
         clearTimeout(_tooltipDismissTimer);
         _tooltipDismissTimer = null;
@@ -1837,7 +1847,6 @@ function hideWizardTooltip() {
         _wizardTooltip.remove();
         _wizardTooltip = null;
     }
-    // Tear down the global escape-hatch listeners so they don't pile up
     if (_tooltipEscHandler) {
         document.removeEventListener('keydown', _tooltipEscHandler);
         _tooltipEscHandler = null;
@@ -1850,9 +1859,10 @@ function hideWizardTooltip() {
 
 async function showWizardTooltip(char, cardEl) {
     hideWizardTooltip();
+    const myGen = ++_tooltipGeneration;
 
-    // Set auto-dismiss timer
-    _tooltipDismissTimer = setTimeout(hideWizardTooltip, 5000);
+    // Set auto-dismiss timer (reset if user hovers the tooltip)
+    _tooltipDismissTimer = setTimeout(hideWizardTooltip, 8000);
 
     // Fetch detailed info (cached)
     let info = _tooltipCache[char.id];
@@ -1864,6 +1874,9 @@ async function showWizardTooltip(char, cardEl) {
             _tooltipCache[char.id] = info;
         } catch { return; }
     }
+
+    // Stale check: if another show/hide happened during async fetch, abort
+    if (_tooltipGeneration !== myGen) return;
 
     // Build tooltip content
     const tooltip = document.createElement('div');
@@ -2005,6 +2018,20 @@ async function showWizardTooltip(char, cardEl) {
         // immediately close it
         setTimeout(() => document.addEventListener('click', _tooltipOutsideHandler), 0);
     }
+
+    // Keep tooltip alive while user hovers it (e.g. to read LoRA list)
+    tooltip.addEventListener('mouseenter', () => {
+        _tooltipHovering = true;
+        if (_tooltipDismissTimer) {
+            clearTimeout(_tooltipDismissTimer);
+            _tooltipDismissTimer = null;
+        }
+    });
+    tooltip.addEventListener('mouseleave', () => {
+        _tooltipHovering = false;
+        // Auto-dismiss shortly after leaving the tooltip
+        _tooltipDismissTimer = setTimeout(hideWizardTooltip, 400);
+    });
 
     // Position tooltip to the right of the card
     document.body.appendChild(tooltip);
