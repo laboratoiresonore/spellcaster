@@ -6355,7 +6355,6 @@ class PresetDialog(Gtk.Dialog):
         self.preset_combo = Gtk.ComboBoxText()
         for i, p in enumerate(MODEL_PRESETS):
             self.preset_combo.append(str(i), _model_label(p, mode))
-        preset_combo.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         # Default to favourite model from settings, or first model
         fav = _load_config().get("favourite_model", -1)
         if 0 <= fav < len(MODEL_PRESETS):
