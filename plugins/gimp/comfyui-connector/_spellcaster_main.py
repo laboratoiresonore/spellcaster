@@ -5202,12 +5202,18 @@ def _export_selection_to_tmp(image):
     raise RuntimeError("Failed to export selection region")
 
 
-def _import_result_as_layer(image, image_data, layer_name="ComfyUI Result"):
+def _import_result_as_layer(image, image_data, layer_name="ComfyUI Result",
+                            keep_size=False):
     """Import raw PNG bytes as a new layer on top of *image*.
 
     Handles mode mismatches (e.g. ComfyUI returns a grayscale PNG but the
     canvas is RGB) by converting the loaded result to match the destination
     image's colour mode before inserting the layer.
+
+    If keep_size=True, the layer is inserted at its natural size and
+    centered on the canvas instead of being scaled to fill it. Used for
+    SAM3 extraction where the result is a cropped subject that should
+    overlay at its original position, not be stretched to fit.
     """
     tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
     tmp.write(image_data)
@@ -5243,12 +5249,18 @@ def _import_result_as_layer(image, image_data, layer_name="ComfyUI Result"):
     new_layer = Gimp.Layer.new_from_drawable(layers[0], image)
     new_layer.set_name(layer_name)
     image.insert_layer(new_layer, None, 0)
-    if (new_layer.get_width() != image.get_width() or
+    if keep_size:
+        # Center the layer on canvas without scaling — for extracted subjects
+        cx = (image.get_width() - new_layer.get_width()) // 2
+        cy = (image.get_height() - new_layer.get_height()) // 2
+        new_layer.set_offsets(cx, cy)
+    elif (new_layer.get_width() != image.get_width() or
             new_layer.get_height() != image.get_height()):
         new_layer.scale(image.get_width(), image.get_height(), False)
     result_image.delete()
     os.unlink(tmp.name)
     Gimp.displays_flush()
+    return new_layer
 
 
 def _import_video_results(image, server, results):
@@ -5342,21 +5354,29 @@ _cancel_event = threading.Event()  # set when user clicks Cancel in spinner
 # shows the current processing phase in real time.
 _spinner_label_text = ""
 
+_gimp_progress_last_text = ""
+_gimp_progress_last_time = 0.0
+
 def _update_spinner_status(text):
     """Set the spinner window's status label from any thread.
 
     Also updates GIMP's native progress bar (bottom of canvas) so users
     see status even if the spinner window is behind other windows.
+    Throttled to 1 update/sec and only when text changes — prevents the
+    status bar from flashing between competing updates.
     """
-    global _spinner_label_text
+    global _spinner_label_text, _gimp_progress_last_text, _gimp_progress_last_time
     _spinner_label_text = text
-    # Mirror to GIMP's native status bar (safe to call from any thread
-    # via GLib.idle_add, but progress_init/set_text may not be available
-    # in all contexts — fail silently)
-    try:
-        GLib.idle_add(lambda: Gimp.progress_set_text(text) if text else None)
-    except Exception:
-        pass
+    # Throttle GIMP status bar updates: same text = skip, <1s gap = skip
+    now = time.time()
+    if text and (text != _gimp_progress_last_text) and (now - _gimp_progress_last_time > 1.0):
+        _gimp_progress_last_text = text
+        _gimp_progress_last_time = now
+        try:
+            _t = text  # capture for closure
+            GLib.idle_add(lambda: Gimp.progress_set_text(_t))
+        except Exception:
+            pass
 
 
 # ── Mask cache for inpaint ──────────────────────────────────────────
@@ -20063,11 +20083,11 @@ class Spellcaster(Gimp.PlugIn):
                 # Load the mask as a temporary layer, convert to selection
                 _mask_image_to_gimp_selection(image, mask_path, feather)
                 os.unlink(mask_path)
-            # Also add the subject extraction as a new layer
+            # Also add the subject extraction as a new layer (at natural size)
             for fn, sf, ft in results:
                 if 'subject' in fn.lower():
-                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
-                                     f"SAM3: {prompt}", False)
+                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+                                            f"SAM3: {prompt}", keep_size=True)
                     break
             Gimp.displays_flush()
             Gimp.progress_end()
@@ -20126,8 +20146,11 @@ class Spellcaster(Gimp.PlugIn):
             results = _run_with_spinner("SAM3 Extract: processing...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
             for i, (fn, sf, ft) in enumerate(results):
-                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
-                                 f"SAM3 Extracted: {prompt} #{i+1}", False)
+                # Import at natural size — the result is full-canvas with alpha,
+                # so it overlays exactly on top of the original subject position.
+                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+                                        f"SAM3 Extracted: {prompt} #{i+1}",
+                                        keep_size=True)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())

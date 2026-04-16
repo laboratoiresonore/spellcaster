@@ -4486,18 +4486,23 @@ def build_sam3_segment(image_filename, prompt, confidence=0.6,
 #  SAM3 + Background Remove + Auto-Crop — standalone subject extraction
 # ═══════════════════════════════════════════════════════════════════════════
 
-def build_sam3_extract(image_filename, prompt="person", confidence=0.6):
-    """SAM3 Extract — detect a subject, remove background, auto-crop.
+def build_sam3_extract(image_filename, prompt="person", confidence=0.6,
+                       auto_crop=False):
+    """SAM3 Extract — detect a subject, remove background.
 
-    Combines SAM3 segmentation with BiRefNet background removal and
-    auto-crop for a one-step subject extraction pipeline.
+    Combines SAM3 segmentation with BiRefNet background removal.
+    Output is a full-canvas-size PNG with the subject on transparent
+    background, preserving original position and scale.
 
-    Output: a cropped, background-removed PNG of the detected subject.
+    When auto_crop=True, additionally crops to subject bounds (useful
+    for standalone export, but not for GIMP layer overlay).
 
     Args:
         image_filename (str): Image containing the subject.
         prompt (str): What to extract, e.g. "person", "cat".
         confidence (float): Detection threshold.
+        auto_crop (bool): If True, crop to subject bounds. Default False
+            to preserve position when importing as a GIMP layer.
 
     Returns:
         dict: ComfyUI workflow.
@@ -4520,13 +4525,17 @@ def build_sam3_extract(image_filename, prompt="person", confidence=0.6):
         "image": [img_id, 0],
     }, node_id="10")
 
-    # Auto-crop to subject bounds
-    crop_id = nf._add("ImageCropByMask", {
-        "image": [rmbg_id, 0],
-        "mask": [rmbg_id, 1],
-    }, node_id="20")
+    output_ref = [rmbg_id, 0]
 
-    nf.save_image([crop_id, 0], "sam3_extracted", node_id="30")
+    # Optional auto-crop to subject bounds
+    if auto_crop:
+        crop_id = nf._add("ImageCropByMask", {
+            "image": [rmbg_id, 0],
+            "mask": [rmbg_id, 1],
+        }, node_id="20")
+        output_ref = [crop_id, 0]
+
+    nf.save_image(output_ref, "sam3_extracted", node_id="30")
 
     return nf.build()
 
