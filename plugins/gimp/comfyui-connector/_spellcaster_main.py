@@ -3844,19 +3844,16 @@ def _mask_image_to_gimp_selection(image, mask_path, feather=4):
         iw = image.get_width(); ih = image.get_height()
         lw = mask_layer.get_width(); lh = mask_layer.get_height()
         if lw != iw or lh != ih:
-            mask_layer.scale(iw, ih, False)
-        # Flatten to ensure simple grayscale raster
-        mask_layer.flatten()
-        # Select white regions: by-color-select on the mask layer
-        # Threshold 80 captures white (255) and near-white as selected
-        image.set_active_layer(mask_layer)
+            _pdb_run('gimp-layer-scale', {
+                'layer': mask_layer, 'new-width': iw, 'new-height': ih,
+                'local-origin': False,
+            })
+        # Select white regions via gimp-by-color-select on the mask layer
+        _pdb_run('gimp-image-set-active-layer', {
+            'image': image, 'layer': mask_layer,
+        })
         white = Gimp.RGB()
         white.set(1.0, 1.0, 1.0)
-        Gimp.context_set_sample_threshold(80 / 255.0)
-        Gimp.context_set_antialias(True)
-        Gimp.context_set_feather(feather > 0)
-        Gimp.context_set_feather_radius(float(feather), float(feather))
-        Gimp.context_set_sample_merged(False)
         _pdb_run('gimp-by-color-select', {
             'drawable': mask_layer,
             'color': white,
@@ -3868,12 +3865,14 @@ def _mask_image_to_gimp_selection(image, mask_path, feather=4):
             'sample-merged': False,
         })
         # Remove the temporary mask layer — selection persists
-        image.remove_layer(mask_layer)
+        _pdb_run('gimp-image-remove-layer', {
+            'image': image, 'layer': mask_layer,
+        })
     except Exception as e:
         # Fallback: if API calls fail, remove the temp mask layer and let
         # the user convert manually
         try:
-            image.remove_layer(mask_layer)
+            _pdb_run('gimp-image-remove-layer', {'image': image, 'layer': mask_layer})
         except Exception:
             pass
         raise RuntimeError(f"Could not convert SAM3 mask to selection: {e}.\n"
@@ -13568,17 +13567,20 @@ class Spellcaster(Gimp.PlugIn):
             "Tracking follow (behind)":  "steadicam tracking shot from behind subject, following perspective, depth corridor, immersive",
 
             # ── Orbit / pivot around subject ──
-            "Orbit 45° left":            "camera orbiting 45 degrees to the left of the subject, three-quarter view from the left side, subject remains centered, smooth arc movement",
-            "Orbit 90° left (profile)":  "camera orbiting 90 degrees to the left, full left-side profile view, subject facing perpendicular to camera, ear and jaw visible",
-            "Orbit 135° left (rear 3/4)":"camera orbiting 135 degrees to the left, rear three-quarter view, back of head and left ear visible, looking away from camera",
-            "Orbit 180° (behind)":       "camera orbiting to directly behind the subject, back of head centered, shoulders visible, looking away, nape of neck",
-            "Orbit 45° right":           "camera orbiting 45 degrees to the right of the subject, three-quarter view from the right side, subject remains centered",
-            "Orbit 90° right (profile)": "camera orbiting 90 degrees to the right, full right-side profile view, subject facing perpendicular to camera",
-            "Orbit 135° right (rear 3/4)":"camera orbiting 135 degrees to the right, rear three-quarter view, back of head and right ear visible",
-            "Orbit high 45° (above front)": "camera orbiting to 45 degrees above and in front of subject, slight downward look, face visible, environmental context from above",
-            "Orbit high 90° (directly above)": "camera orbiting to directly above the subject looking straight down, top of head centered, shoulders radiating outward, bird's eye orbit",
-            "Orbit low 45° (below front)": "camera orbiting to 45 degrees below and in front of subject, low angle upward look, chin and jaw prominent, heroic perspective from orbit",
-            "Orbit full 360° (frozen mid-rotate)": "camera in the middle of a 360-degree orbit around the subject, dynamic frozen rotation, sense of circular motion, subject centered at all times",
+            # These use forceful "the camera has moved" language to override
+            # Klein's ReferenceLatent which otherwise preserves the original viewpoint.
+            # The _rebuild_prompt handler auto-bumps denoise to 0.92 for orbit presets.
+            "Orbit 45° left":            "the camera has moved 45 degrees to the left of the subject, we now see a three-quarter view from the left side, the subject's right cheek and right ear are visible, left side of face partially hidden",
+            "Orbit 90° left (profile)":  "the camera has moved 90 degrees to the left, we now see a full left-side profile, only the left ear and jawline visible, nose in profile silhouette, subject facing perpendicular to camera",
+            "Orbit 135° left (rear 3/4)":"the camera has moved 135 degrees to the left, we now see the back of the head from a rear three-quarter angle, left ear and nape of neck visible, face mostly hidden",
+            "Orbit 180° (behind)":       "the camera has moved directly behind the subject, we now see the back of the head centered in frame, both shoulders visible, hair from behind, face completely hidden, nape of neck",
+            "Orbit 45° right":           "the camera has moved 45 degrees to the right of the subject, we now see a three-quarter view from the right side, the subject's left cheek and left ear are visible",
+            "Orbit 90° right (profile)": "the camera has moved 90 degrees to the right, we now see a full right-side profile, only the right ear and jawline visible, nose in profile silhouette",
+            "Orbit 135° right (rear 3/4)":"the camera has moved 135 degrees to the right, we now see the back of the head from a rear three-quarter angle, right ear visible, face mostly hidden",
+            "Orbit high 45° (above front)": "the camera has moved above and in front of the subject at 45 degrees elevation, looking down at the subject, top of head partially visible, foreshortened perspective",
+            "Orbit high 90° (directly above)": "the camera is now directly above the subject looking straight down, bird's eye view, top of head centered, shoulders radiating outward, completely different viewpoint from above",
+            "Orbit low 45° (below front)": "the camera has moved below the subject at 45 degrees, looking up, chin and underside of jaw prominent, nostrils partially visible, heroic low angle perspective",
+            "Orbit full 360° (frozen mid-rotate)": "the camera is captured mid-rotation in a 360 degree orbit around the subject, dynamic sense of circular motion, subject centered, motion blur on environment edges",
 
             # ── Lens effects ──
             "Wide angle (24mm, spacious)": "shot with wide angle 24mm lens, spacious expansive feel, slight barrel distortion at edges, deep depth of field",
@@ -13775,9 +13777,23 @@ class Spellcaster(Gimp.PlugIn):
             # Position
             pos_txt = POSITION_PRESETS.get(pos_key, "")
             if pos_txt: parts.append(pos_txt)
-            # Camera
+            # Camera — major viewpoint changes need high denoise to override
+            # ReferenceLatent which otherwise locks the original composition.
             cam_txt = CAMERA_PRESETS.get(cam_key, "")
-            if cam_txt: parts.append(cam_txt)
+            if cam_txt:
+                parts.append(cam_txt)
+                # Any camera preset that radically changes the viewpoint
+                _radical_cam = ("orbit" in cam_key.lower() or
+                                "bird" in cam_key.lower() or
+                                "worm" in cam_key.lower() or
+                                "behind" in cam_key.lower() or
+                                "overhead" in cam_key.lower() or
+                                "extreme" in cam_key.lower() or
+                                "low angle" in cam_key.lower() or
+                                "high angle" in cam_key.lower() or
+                                "dutch" in cam_key.lower())
+                if _radical_cam:
+                    denoise_sp.set_value(max(denoise_sp.get_value(), 0.95))
             # Style
             style_txt = STYLE_PRESETS.get(style_key, "")
             if style_txt: parts.append(style_txt)
