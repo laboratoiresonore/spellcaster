@@ -4962,6 +4962,249 @@ def build_klein_face_detail(image_filename, prompt_text, seed,
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  Klein Detail Enhancer — universal region detailer with presets
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Detection presets: each maps to either a YOLO model or SAM3 text prompt
+DETAIL_PRESETS = {
+    "Face (sharp eyes, skin)": {
+        "detector": "yolo", "model": "face_yolov8m.pt",
+        "prompt": "extremely detailed face, sharp eyes with visible iris texture, "
+                  "natural skin with pores, individual eyelashes, studio lighting",
+        "denoise": 0.35, "guide_size": 512, "steps": 6,
+    },
+    "Eyes (iris, reflection)": {
+        "detector": "sam3", "sam3_prompt": "eyes",
+        "prompt": "ultra detailed eyes, sharp iris with visible color striations, "
+                  "catchlight reflections, individual eyelashes, hyper-realistic eye detail",
+        "denoise": 0.40, "guide_size": 384, "steps": 6,
+    },
+    "Hands (fingers, nails)": {
+        "detector": "yolo", "model": "hand_yolov8s.pt",
+        "prompt": "perfectly detailed hands, correct anatomy, five fingers, "
+                  "natural fingernails, realistic skin texture, proper proportions",
+        "denoise": 0.45, "guide_size": 512, "steps": 8,
+    },
+    "Skin (pores, texture)": {
+        "detector": "sam3", "sam3_prompt": "skin",
+        "prompt": "hyper-detailed natural skin texture, visible pores, "
+                  "subsurface scattering, realistic skin imperfections, "
+                  "natural oil sheen, photorealistic dermis",
+        "denoise": 0.30, "guide_size": 512, "steps": 6,
+    },
+    "Hair (strands, volume)": {
+        "detector": "sam3", "sam3_prompt": "hair",
+        "prompt": "individual hair strands, flyaway hairs, natural hair texture, "
+                  "volumetric hair detail, light catching individual strands, "
+                  "realistic hair sheen and highlights",
+        "denoise": 0.35, "guide_size": 512, "steps": 6,
+    },
+    "Feet (toes, detail)": {
+        "detector": "sam3", "sam3_prompt": "feet",
+        "prompt": "detailed realistic feet, correct toe anatomy, "
+                  "natural toenails, skin texture, proper proportions",
+        "denoise": 0.40, "guide_size": 512, "steps": 6,
+    },
+    "Clothing (fabric, texture)": {
+        "detector": "sam3", "sam3_prompt": "clothing",
+        "prompt": "detailed fabric texture, realistic material surface, "
+                  "stitching detail, natural cloth folds and wrinkles, "
+                  "material-accurate sheen and weight",
+        "denoise": 0.30, "guide_size": 512, "steps": 6,
+    },
+    "Jewelry (metal, gems)": {
+        "detector": "sam3", "sam3_prompt": "jewelry",
+        "prompt": "hyper-detailed jewelry, sharp metallic reflections, "
+                  "gemstone facets, intricate metalwork, realistic sparkle",
+        "denoise": 0.35, "guide_size": 384, "steps": 6,
+    },
+    "Full Body (overall)": {
+        "detector": "yolo", "model": "person_yolov8m-seg.pt",
+        "prompt": "highly detailed full body, sharp features, "
+                  "realistic proportions, natural skin and clothing texture",
+        "denoise": 0.35, "guide_size": 768, "steps": 6,
+    },
+    "Custom (describe region)": {
+        "detector": "sam3", "sam3_prompt": "",
+        "prompt": "",
+        "denoise": 0.40, "guide_size": 512, "steps": 6,
+    },
+}
+
+
+def build_klein_detail(image_filename, preset_key, prompt_text, seed,
+                       klein_model_key="Klein 9B", steps=None, denoise=None,
+                       guidance=1.0, guide_size=None, max_size=1024,
+                       sam3_prompt=None, loras=None, lora_name=None,
+                       lora_strength=1.0, klein_models=None, enhance=True):
+    """Klein Detail Enhancer — detect ANY region and re-generate at high detail.
+
+    Universal detailer: works with YOLO bbox detection (face, hands, person)
+    or SAM3 text-prompted segmentation (eyes, skin, hair, clothing, custom).
+
+    Pipeline:
+      1. Load Klein UNET + CLIP + VAE + optional enhancers
+      2. Load image
+      3. Detect region (YOLO bbox or SAM3 text-prompted mask)
+      4. For YOLO: FaceDetailer (detect → crop → regen → composite)
+         For SAM3: SAM3Segment → GrowMask → InpaintCropImproved →
+                   Klein regen → InpaintStitchImproved
+      5. Save
+
+    Args:
+        image_filename (str): Image to enhance.
+        preset_key (str): Key from DETAIL_PRESETS (or "Custom").
+        prompt_text (str): Override prompt (or empty to use preset default).
+        seed (int): Random seed.
+        sam3_prompt (str): Override SAM3 detection prompt (for Custom preset).
+        Other args: same as build_klein_face_detail.
+
+    Returns:
+        dict: ComfyUI workflow.
+    """
+    preset = DETAIL_PRESETS.get(preset_key, DETAIL_PRESETS["Face (sharp eyes, skin)"])
+    _steps = steps or preset.get("steps", 6)
+    _denoise = denoise if denoise is not None else preset.get("denoise", 0.4)
+    _guide = guide_size or preset.get("guide_size", 512)
+    _prompt = prompt_text or preset.get("prompt", "detailed, sharp, realistic")
+    _det_type = preset.get("detector", "yolo")
+
+    if klein_models is None:
+        klein_models = KLEIN_MODELS
+    if lora_name and not loras:
+        loras = [{"name": lora_name, "strength": lora_strength}]
+
+    km = klein_models[klein_model_key]
+    nf = NodeFactory()
+
+    # Model loaders
+    unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
+    clip_id = nf.clip_loader(
+        km.get("clip", "qwen_3_8b.safetensors"),
+        clip_type="flux2", device="default", node_id="2",
+    )
+    vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
+
+    # LoRA chain
+    if loras:
+        unet_id, clip_id, _trig = inject_lora_chain(
+            nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
+        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
+        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
+
+    # Enhancer chain
+    model_ref = [unet_id, 0]
+    if enhance:
+        model_ref = _klein_enhance_model(nf, [unet_id, 0])
+
+    # Text conditioning
+    pos_id = nf.clip_encode([clip_id, 0], _prompt, node_id="4")
+    neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="5")
+
+    # Load input image
+    img_id = nf.load_image(image_filename, node_id="10")
+
+    if _det_type == "yolo":
+        # ── YOLO path: use FaceDetailer (works for any bbox detector) ──
+        yolo_model = preset.get("model", "face_yolov8m.pt")
+        detector_id = nf._add("UltralyticsDetectorProvider", {
+            "model_name": yolo_model,
+        }, node_id="20")
+
+        detail_id = nf._add("FaceDetailer", {
+            "image": [img_id, 0],
+            "model": model_ref,
+            "clip": [clip_id, 0],
+            "vae": [vae_id, 0],
+            "positive": [pos_id, 0],
+            "negative": [neg_id, 0],
+            "bbox_detector": [detector_id, 0],
+            "guide_size": _guide,
+            "guide_size_for": True,
+            "max_size": max_size,
+            "seed": seed,
+            "steps": _steps,
+            "cfg": guidance,
+            "sampler_name": "euler",
+            "scheduler": "simple",
+            "denoise": _denoise,
+            "feather": 5,
+            "noise_mask": True,
+            "force_inpaint": True,
+            "wildcard": "",
+            "cycle": 1,
+        }, node_id="30")
+        nf.save_image([detail_id, 0], "klein_detail", node_id="40")
+
+    else:
+        # ── SAM3 path: text-prompted segmentation → Klein inpaint ──
+        _sam3_text = sam3_prompt or preset.get("sam3_prompt", "subject")
+
+        sam3_id = nf._add("SAM3Segment", {
+            "prompt": _sam3_text,
+            "output_mode": "Merged",
+            "confidence_threshold": 0.5,
+            "max_segments": 0,
+            "segment_pick": 0,
+            "mask_blur": 0,
+            "mask_offset": 0,
+            "device": "Auto",
+            "invert_output": False,
+            "unload_model": False,
+            "background": "Alpha",
+            "background_color": "#222222",
+            "image": [img_id, 0],
+        }, node_id="20")
+
+        # Grow mask slightly for smooth blending
+        grow_id = nf._add("GrowMaskWithBlur", {
+            "expand": 8,
+            "incremental_expandrate": 0,
+            "tapered_corners": True,
+            "flip_input": False,
+            "blur_radius": 6,
+            "lerp_alpha": 1,
+            "decay_factor": 1,
+            "fill_holes": False,
+            "mask": [sam3_id, 1],
+        }, node_id="21")
+
+        # Encode image for Klein
+        scaled_id = nf.image_scale_to_total_pixels([img_id, 0], megapixels=1.0,
+                                                    node_id="22")
+        enc_id = nf.vae_encode([scaled_id, 0], [vae_id, 0], node_id="23")
+
+        # Set mask on latent
+        masked_id = nf.set_latent_noise_mask([enc_id, 0], [grow_id, 0],
+                                              node_id="24")
+
+        # FluxGuidance for inpaint (not ReferenceLatent)
+        guided_id = nf.flux_guidance([pos_id, 0], guidance, node_id="25")
+        neg2_id = nf.conditioning_zero_out([guided_id, 0], node_id="26")
+
+        # DifferentialDiffusion for smooth mask edges
+        dd_id = nf.differential_diffusion(model_ref, node_id="27")
+
+        # Sampler
+        guider_id = nf.cfg_guider([dd_id, 0], [guided_id, 0], [neg2_id, 0],
+                                  1.0, node_id="30")
+        sampler_id = nf.ksampler_select("euler", node_id="31")
+        sched_id = nf.basic_scheduler([dd_id, 0], _steps, _denoise,
+                                       scheduler="simple", node_id="32")
+        noise_id = nf.random_noise(seed, node_id="33")
+
+        sample_id = nf.sampler_custom_advanced(
+            [noise_id, 0], [guider_id, 0], [sampler_id, 0],
+            [sched_id, 0], [masked_id, 0], node_id="35",
+        )
+
+        dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="36")
+        nf.save_image([dec_id, 0], "klein_detail", node_id="40")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  Layer Blend — simple two-image blend
 # ═══════════════════════════════════════════════════════════════════════════
 
