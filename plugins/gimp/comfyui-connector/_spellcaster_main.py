@@ -3831,60 +3831,83 @@ def _mask_image_to_gimp_selection(image, mask_path, feather=4):
         mask_path (str): Path to the downloaded mask PNG (grayscale).
         feather (int): Feather radius in pixels (0 = hard edge).
     """
-    mask_layer = None
+    # Strategy: load mask as image → save as channel in target → convert
+    # channel to selection. Uses only proven API calls from
+    # _create_selection_mask_png (which works on GIMP 3.0-3.2).
+    mask_img = None
     try:
-        # Load the mask image as a separate GIMP image, then convert it
-        # to a selection channel. This avoids ALL fragile PDB calls
-        # (gimp-image-set-active-layer, gimp-by-color-select, etc.)
-        # that break across GIMP 3.x versions.
+        # 1. Load mask PNG as a separate GIMP image
         mask_file = Gio.File.new_for_path(mask_path)
         mask_img = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, mask_file)
         if mask_img is None:
             raise RuntimeError("Failed to load mask image")
 
-        # Flatten and convert to grayscale if needed
+        # 2. Flatten + grayscale + scale to match target
         mask_img.flatten()
-        if mask_img.get_base_type() != Gimp.ImageBaseType.GRAY:
-            Gimp.get_pdb().run_procedure('gimp-image-convert-grayscale',
-                                          [GObject.Value(Gimp.Image, mask_img)])
-
-        # Scale mask to match target image dimensions
+        try:
+            _pdb_run('gimp-image-convert-grayscale', {'image': mask_img})
+        except Exception:
+            pass  # might already be grayscale
         iw, ih = image.get_width(), image.get_height()
-        mw, mh = mask_img.get_width(), mask_img.get_height()
-        if mw != iw or mh != ih:
+        if mask_img.get_width() != iw or mask_img.get_height() != ih:
             mask_img.scale(iw, ih)
 
-        # Get the mask's single layer as a drawable
-        mask_drawable = mask_img.get_layers()[0]
+        # 3. Copy the mask's layer into the TARGET image as a temp layer
+        mask_layers = mask_img.get_layers()
+        if not mask_layers:
+            raise RuntimeError("Mask image has no layers")
+        tmp_layer = Gimp.Layer.new_from_drawable(mask_layers[0], image)
+        tmp_layer.set_name("_SAM3_mask_tmp")
+        image.insert_layer(tmp_layer, None, 0)
 
-        # Create a selection channel from the mask: add mask as a channel
-        # to the TARGET image, then convert that channel to a selection.
-        sel_channel = Gimp.Channel.new_from_visible(mask_img, image,
-                                                      "SAM3_mask_channel")
-        image.insert_channel(sel_channel, None, 0)
+        # 4. Add the layer as alpha to a new channel, then select it.
+        # gimp-selection-save + gimp-image-select-item is the proven
+        # pattern from _create_selection_mask_png that works everywhere.
+        #
+        # But we need to select FROM the mask, not save the current
+        # selection. So: select-all on the mask layer, then use
+        # gimp-image-select-item with the layer's alpha channel.
+        #
+        # Simplest working approach: use gimp-by-color-select via
+        # the Gimp.get_pdb().run_procedure API which takes positional args.
+        pdb = Gimp.get_pdb()
+        white = Gimp.RGB()
+        white.set(1.0, 1.0, 1.0)
 
-        # Convert channel to selection
-        image.select_item(Gimp.ChannelOps.REPLACE, sel_channel)
+        # Try the modern positional API first
+        try:
+            pdb.run_procedure('gimp-by-color-select', [
+                GObject.Value(Gimp.Drawable, tmp_layer),
+                GObject.Value(Gimp.RGB, white),
+                GObject.Value(GObject.TYPE_INT, 80),           # threshold
+                GObject.Value(GObject.TYPE_INT, 2),            # CHANNEL_OP_REPLACE
+                GObject.Value(GObject.TYPE_BOOLEAN, True),     # antialias
+                GObject.Value(GObject.TYPE_BOOLEAN, feather > 0),
+                GObject.Value(GObject.TYPE_DOUBLE, float(feather)),
+                GObject.Value(GObject.TYPE_BOOLEAN, False),    # sample-merged
+            ])
+        except Exception:
+            # Fallback: try the _pdb_run wrapper
+            _pdb_run('gimp-by-color-select', {
+                'drawable': tmp_layer,
+                'color': white,
+                'threshold': 80,
+                'operation': 2,
+                'antialias': True,
+                'feather': feather > 0,
+                'feather-radius': float(feather),
+                'sample-merged': False,
+            })
 
-        # Apply feathering if requested
-        if feather > 0:
-            Gimp.get_pdb().run_procedure('gimp-selection-feather',
-                [GObject.Value(Gimp.Image, image),
-                 GObject.Value(GObject.TYPE_DOUBLE, float(feather))])
-
-        # Clean up: remove the temp channel and close the mask image
-        image.remove_channel(sel_channel)
+        # 5. Remove the temp mask layer — selection persists
+        image.remove_layer(tmp_layer)
         mask_img.delete()
 
     except Exception as e:
         # Clean up on failure
         try:
-            if mask_layer:
-                image.remove_layer(mask_layer)
-        except Exception:
-            pass
-        try:
-            mask_img.delete()
+            if mask_img:
+                mask_img.delete()
         except Exception:
             pass
         raise RuntimeError(f"Could not convert SAM3 mask to selection: {e}.\n"
