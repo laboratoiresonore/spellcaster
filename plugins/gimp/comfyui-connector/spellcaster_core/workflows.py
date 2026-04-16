@@ -5283,7 +5283,7 @@ def build_klein_generate_object(scene_filename, prompt_text, seed,
 # Detection presets: each maps to either a YOLO model or SAM3 text prompt
 DETAIL_PRESETS = {
     "Face (sharp eyes, skin)": {
-        "detector": "yolo", "model": "face_yolov8m.pt",
+        "detector": "yolo", "model": "bbox/face_yolov8m.pt",
         "prompt": "extremely detailed face, sharp eyes with visible iris texture, "
                   "natural skin with pores, individual eyelashes, studio lighting",
         "denoise": 0.35, "guide_size": 512, "steps": 6,
@@ -5295,7 +5295,7 @@ DETAIL_PRESETS = {
         "denoise": 0.40, "guide_size": 384, "steps": 6,
     },
     "Hands (fingers, nails)": {
-        "detector": "yolo", "model": "hand_yolov8s.pt",
+        "detector": "yolo", "model": "bbox/hand_yolov8s.pt",
         "prompt": "perfectly detailed hands, correct anatomy, five fingers, "
                   "natural fingernails, realistic skin texture, proper proportions",
         "denoise": 0.45, "guide_size": 512, "steps": 8,
@@ -5334,7 +5334,7 @@ DETAIL_PRESETS = {
         "denoise": 0.35, "guide_size": 384, "steps": 6,
     },
     "Full Body (overall)": {
-        "detector": "yolo", "model": "person_yolov8m-seg.pt",
+        "detector": "yolo", "model": "segm/person_yolov8m-seg.pt",
         "prompt": "highly detailed full body, sharp features, "
                   "realistic proportions, natural skin and clothing texture",
         "denoise": 0.35, "guide_size": 768, "steps": 6,
