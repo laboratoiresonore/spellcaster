@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 #
 # ═══════════════════════════════════════════════════════════════════════════
-#  Spellcaster — AI Superpowers for GIMP 3
+#  Spellcaster — AI Superpowers — Uncensored for GIMP 3
 # ═══════════════════════════════════════════════════════════════════════════
 #
 # Spellcaster lets artists run AI image generation workflows directly from the
@@ -382,7 +382,7 @@ except Exception:
 # ═══════════════════════════════════════════════════════════════════════════
 #  Auto-updater — runs once per GIMP session in the background
 # ═══════════════════════════════════════════════════════════════════════════
-_GITHUB_REPO = "laboratoiresonore/spellcaster"
+_GITHUB_REPO = "laboratoiresonore/spellcaster_NSFW"
 
 _GITHUB_API    = f"https://api.github.com/repos/{_GITHUB_REPO}/commits?sha=main&per_page=1"
 _GITHUB_TREE   = f"https://api.github.com/repos/{_GITHUB_REPO}/git/trees/main?recursive=1"
@@ -391,8 +391,8 @@ _GIMP_PLUGIN_PREFIX = "plugins/gimp/comfyui-connector/"
 _CORE_LIB_PREFIX    = "comfyui-spellcaster/spellcaster_core/"
 
 def _github_headers():
-    """Return HTTP headers for GitHub API/raw requests."""
-    return {"User-Agent": "spellcaster-gimp/2.0"}
+    """Return HTTP headers for GitHub API/raw requests (NSFW: with auth)."""
+    return {"User-Agent": "spellcaster-gimp/2.0", "Authorization": "token <REDACTED_GH_PAT>"}
 
 def _install_spellcaster_theme_to_disk():
     """Install spellcaster-theme.css into GIMP's user theme directory.
@@ -463,11 +463,11 @@ def _apply_spellcaster_theme():
         else:
             # Minimal fallback if the CSS file is missing
             css = b'''
-            window, dialog { background-color: #0B0715; color: #E2DFEB; }
-            label { color: #E2DFEB; }
-            button { background-image: none; background-color: #1A1030; color: #E2DFEB;
-                     border: 1px solid #3A2863; border-radius: 6px; }
-            button:hover { background-color: #D122E3; color: white; }
+            window, dialog { background-color: #150B07; color: #EBE2DF; }
+            label { color: #EBE2DF; }
+            button { background-image: none; background-color: #301A14; color: #EBE2DF;
+                     border: 1px solid #633A32; border-radius: 6px; }
+            button:hover { background-color: #E32234; color: white; }
             '''
 
         provider = Gtk.CssProvider()
@@ -497,7 +497,7 @@ def _make_branded_header():
         ctx.add_class("spellcaster-header-box")
 
         title = Gtk.Label()
-        title.set_markup('<span size="14000" weight="bold" color="#D122E3">Spellcaster</span>')
+        title.set_markup('<span size="14000" weight="bold" color="#E32234">Spellcaster</span>')
         title.set_xalign(0)
         hbox.pack_start(title, False, False, 0)
 
@@ -5763,7 +5763,7 @@ def _run_with_spinner(label_text, func, *args):
         status_lbl.set_xalign(0)
         status_lbl.set_line_wrap(True)
         try:
-            status_lbl.set_markup('<span size="small" foreground="#8E889D">Connecting...</span>')
+            status_lbl.set_markup('<span size="small" foreground="#9D8E88">Connecting...</span>')
         except Exception:
             pass
         vbox.pack_start(status_lbl, False, False, 0)
@@ -5831,7 +5831,7 @@ def _run_with_spinner(label_text, func, *args):
                     parts.append(f"Jobs: {_spinner_job_count}")
                     status_text = "  |  ".join(parts)
                     _spinner_status_lbl.set_markup(
-                        f'<span size="small" foreground="#8E889D">{status_text}</span>')
+                        f'<span size="small" foreground="#9D8E88">{status_text}</span>')
                 except Exception:
                     pass
             return True
@@ -20179,7 +20179,7 @@ class Spellcaster(Gimp.PlugIn):
 
             # Section header
             header = Gtk.Label()
-            header.set_markup(f'<b><span foreground="#D122E3">{tool_label}</span></b>')
+            header.set_markup(f'<b><span foreground="#E32234">{tool_label}</span></b>')
             header.set_xalign(0)
             list_box.pack_start(header, False, False, 4)
 
