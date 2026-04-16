@@ -10345,6 +10345,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-lut": "lut_grading",
             "spellcaster-style-transfer": "style_transfer",
             "spellcaster-iclight": "iclight",
+            "spellcaster-klein-detail": "klein_flux2",
             "spellcaster-settings": None,
             "spellcaster-my-presets": None,
             "spellcaster-bridge": None,
@@ -10445,6 +10446,8 @@ class Spellcaster(Gimp.PlugIn):
                                                   "Swap a face and refine with Klein AI — under Face menu"),
             "spellcaster-klein-inpaint": ("Klein Inpaint Selection...", self._run_klein_inpaint,
                                            "Regenerate selected area with Klein AI — context-aware, smooth edges"),
+            "spellcaster-klein-detail": ("Klein Detail Enhancer...", self._run_klein_detail,
+                                          "Enhance any region — face, eyes, hands, skin, hair, clothing — with Klein AI"),
             "spellcaster-ltx-t2v": ("LTX 2.3 Text to Video...", self._run_ltx_t2v,
                                     "Generate video from text using LTX Video 2.3"),
             "spellcaster-ltx-i2v": ("LTX 2.3 Image to Video...", self._run_ltx_i2v,
@@ -10568,6 +10571,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-klein-headswap": "<Image>/Filters/Spellcaster Klein",
             "spellcaster-klein-headswap-face": "<Image>/Filters/Spellcaster Face",
             "spellcaster-klein-inpaint":  "<Image>/Filters/Spellcaster Klein",
+            "spellcaster-klein-detail":  "<Image>/Filters/Spellcaster Klein",
 
             # Video
             "spellcaster-ltx-t2v":           "<Image>/Filters/Spellcaster Video",
@@ -14279,6 +14283,140 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Klein Inpaint Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Klein Detail Enhancer ─────────────────────────────────────────
+    def _run_klein_detail(self, procedure, run_mode, image, drawables, config, data):
+        """Klein Detail Enhancer: enhance any region with presets."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+        _apply_spellcaster_theme()
+        dlg = Gtk.Dialog(title="Spellcaster — Klein Detail Enhancer")
+        dlg.set_default_size(560, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Enhance", Gtk.ResponseType.OK)
+        dlg.set_default_response(Gtk.ResponseType.OK)
+        _style_dialog_buttons(dlg)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+        _hdr = _make_branded_header()
+        if _hdr:
+            bx.pack_start(_hdr, False, False, 0)
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
+        hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        # Klein model
+        bx.pack_start(Gtk.Label(label="Klein Model:", xalign=0), False, False, 0)
+        klein_combo = Gtk.ComboBoxText()
+        for key in KLEIN_MODELS:
+            klein_combo.append(key, key)
+        klein_combo.set_active(0)
+        bx.pack_start(klein_combo, False, False, 0)
+        # Detail preset
+        bx.pack_start(Gtk.Separator(), False, False, 4)
+        bx.pack_start(Gtk.Label(label="Detail Region:", xalign=0), False, False, 0)
+        preset_combo = Gtk.ComboBoxText()
+        preset_combo.set_tooltip_text(
+            "Select what to enhance. Each preset uses the optimal\n"
+            "detection method and refinement prompt for that region.\n\n"
+            "YOLO presets (Face, Hands, Full Body): fast bbox detection\n"
+            "SAM3 presets (Eyes, Skin, Hair, etc.): AI text-prompted segmentation")
+        for key in DETAIL_PRESETS:
+            preset_combo.append(key, key)
+        preset_combo.set_active(0)
+        bx.pack_start(preset_combo, False, False, 0)
+        # Prompt (auto-filled from preset)
+        bx.pack_start(Gtk.Label(label="Refinement Prompt:", xalign=0), False, False, 0)
+        prompt_tv = Gtk.TextView()
+        prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        prompt_tv.set_tooltip_text("Describes how the region should look after enhancement.\nAuto-filled from the preset — edit to customize.")
+        sw = Gtk.ScrolledWindow(); sw.set_min_content_height(60); sw.add(prompt_tv)
+        bx.pack_start(sw, False, False, 0)
+        # SAM3 custom prompt (for Custom preset)
+        sam3_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        sam3_row.pack_start(Gtk.Label(label="Detect (SAM3):"), False, False, 0)
+        sam3_entry = Gtk.Entry(); sam3_entry.set_text(""); sam3_entry.set_hexpand(True)
+        sam3_entry.set_tooltip_text("For SAM3 presets: what to detect (e.g. 'eyes', 'shirt', 'ring').\nAuto-filled from preset — only edit for Custom.")
+        sam3_row.pack_start(sam3_entry, True, True, 0)
+        bx.pack_start(sam3_row, False, False, 0)
+        # Parameters
+        bx.pack_start(Gtk.Separator(), False, False, 4)
+        grid = Gtk.Grid(column_spacing=8, row_spacing=4)
+        r = 0
+        grid.attach(Gtk.Label(label="Steps:", xalign=1), 0, r, 1, 1)
+        steps_spin = Gtk.SpinButton.new_with_range(1, 50, 1); steps_spin.set_value(6)
+        grid.attach(steps_spin, 1, r, 1, 1)
+        grid.attach(Gtk.Label(label="Denoise:", xalign=1), 2, r, 1, 1)
+        denoise_spin = Gtk.SpinButton.new_with_range(0.05, 1.0, 0.05)
+        denoise_spin.set_digits(2); denoise_spin.set_value(0.40)
+        grid.attach(denoise_spin, 3, r, 1, 1)
+        r += 1
+        grid.attach(Gtk.Label(label="Seed:", xalign=1), 0, r, 1, 1)
+        seed_spin = Gtk.SpinButton.new_with_range(-1, 2**31, 1); seed_spin.set_value(-1)
+        grid.attach(seed_spin, 1, r, 1, 1)
+        bx.pack_start(grid, False, False, 0)
+        # Preset change handler
+        def _on_preset_changed(combo):
+            key = combo.get_active_id()
+            if key and key in DETAIL_PRESETS:
+                p = DETAIL_PRESETS[key]
+                prompt_tv.get_buffer().set_text(p.get("prompt", ""))
+                sam3_entry.set_text(p.get("sam3_prompt", ""))
+                denoise_spin.set_value(p.get("denoise", 0.40))
+                steps_spin.set_value(p.get("steps", 6))
+        preset_combo.connect("changed", _on_preset_changed)
+        _on_preset_changed(preset_combo)  # init
+        bx.show_all()
+        # Recall
+        last = _SESSION.get("klein_detail")
+        if last:
+            if "preset" in last:
+                preset_combo.set_active_id(last["preset"])
+            if "klein_model" in last:
+                klein_combo.set_active_id(last["klein_model"])
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        srv = se.get_text().strip(); _propagate_server_url(srv)
+        klein_key = klein_combo.get_active_id() or "Klein 9B"
+        preset_key = preset_combo.get_active_id() or "Face (sharp eyes, skin)"
+        buf = prompt_tv.get_buffer()
+        prompt = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
+        sam3_text = sam3_entry.get_text().strip()
+        _steps = int(steps_spin.get_value())
+        _denoise = denoise_spin.get_value()
+        seed = int(seed_spin.get_value())
+        if seed < 0:
+            seed = random.randint(0, 2**32 - 1)
+        _SESSION["klein_detail"] = {"preset": preset_key, "klein_model": klein_key}
+        _save_session()
+        dlg.destroy()
+        try:
+            _update_spinner_status("Klein Detail: exporting image...")
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_detail_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            wf = build_klein_detail(
+                uname, preset_key, prompt, seed,
+                klein_model_key=klein_key, steps=_steps, denoise=_denoise,
+                sam3_prompt=sam3_text if sam3_text else None,
+            )
+            results = _run_with_spinner(f"Klein Detail ({preset_key})...",
+                                        lambda: list(_run_comfyui_workflow(srv, wf)))
+            for i, (fn, sf, ft) in enumerate(results):
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
+                                 f"Detail: {preset_key} #{i+1}", False)
+            _LAST_PROCEDURE["name"] = "spellcaster-klein-detail"
+            _LAST_PROCEDURE["session_key"] = "klein_detail"
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Klein Detail Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     # ── Layer Blend by Ratio (utility) ────────────────────────────────
