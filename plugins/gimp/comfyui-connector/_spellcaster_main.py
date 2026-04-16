@@ -10346,6 +10346,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-style-transfer": "style_transfer",
             "spellcaster-iclight": "iclight",
             "spellcaster-klein-detail": "klein_flux2",
+            "spellcaster-klein-generate": "klein_flux2",
             "spellcaster-settings": None,
             "spellcaster-my-presets": None,
             "spellcaster-bridge": None,
@@ -10448,6 +10449,8 @@ class Spellcaster(Gimp.PlugIn):
                                            "Regenerate selected area with Klein AI — context-aware, smooth edges"),
             "spellcaster-klein-detail": ("Klein Detail Enhancer...", self._run_klein_detail,
                                           "Enhance any region — face, eyes, hands, skin, hair, clothing — with Klein AI"),
+            "spellcaster-klein-generate": ("Klein Generate Object...", self._run_klein_generate,
+                                            "Generate any object or person as a transparent layer — matches your scene's lighting"),
             "spellcaster-ltx-t2v": ("LTX 2.3 Text to Video...", self._run_ltx_t2v,
                                     "Generate video from text using LTX Video 2.3"),
             "spellcaster-ltx-i2v": ("LTX 2.3 Image to Video...", self._run_ltx_i2v,
@@ -10552,6 +10555,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-klein-headswap":    f"{_S}/Klein",
             "spellcaster-klein-inpaint":     f"{_S}/Klein",
             "spellcaster-klein-detail":      f"{_S}/Klein",
+            "spellcaster-klein-generate":    f"{_S}/Klein",
 
             # Enhance — fix, upscale, restore
             "spellcaster-upscale":           f"{_S}/Enhance",
@@ -14415,6 +14419,160 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Klein Detail Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Klein Generate Object ─────────────────────────────────────────
+    def _run_klein_generate(self, procedure, run_mode, image, drawables, config, data):
+        """Klein Generate Object: create any object/person as a transparent layer."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+        _apply_spellcaster_theme()
+        dlg = Gtk.Dialog(title="Spellcaster — Klein Generate Object")
+        dlg.set_default_size(560, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Generate", Gtk.ResponseType.OK)
+        dlg.set_default_response(Gtk.ResponseType.OK)
+        _style_dialog_buttons(dlg)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+        _hdr = _make_branded_header()
+        if _hdr:
+            bx.pack_start(_hdr, False, False, 0)
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
+        hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        # Klein model
+        bx.pack_start(Gtk.Label(label="Klein Model:", xalign=0), False, False, 0)
+        klein_combo = Gtk.ComboBoxText()
+        for key in KLEIN_MODELS:
+            klein_combo.append(key, key)
+        klein_combo.set_active(0)
+        bx.pack_start(klein_combo, False, False, 0)
+        # Object description
+        bx.pack_start(Gtk.Separator(), False, False, 4)
+        bx.pack_start(Gtk.Label(label="What to Generate:", xalign=0), False, False, 0)
+        prompt_tv = Gtk.TextView()
+        prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        prompt_tv.set_tooltip_text(
+            "Describe what you want to generate. Be specific:\n\n"
+            "  'a red sports car, side view'\n"
+            "  'a tabby cat sitting and looking at the camera'\n"
+            "  'a medieval sword with ornate golden handle'\n"
+            "  'a woman in a blue dress, full body, fashion pose'\n\n"
+            "The object will be generated to match your canvas's\n"
+            "lighting and color palette, then cut out as a\n"
+            "transparent layer you can move and scale freely.")
+        sw = Gtk.ScrolledWindow(); sw.set_min_content_height(80); sw.add(prompt_tv)
+        bx.pack_start(sw, False, False, 0)
+        # Info label
+        info = Gtk.Label()
+        info.set_markup(
+            '<span size="small" color="#8B7FA8">'
+            'Your current canvas is used as a lighting/style reference.\n'
+            'The generated object will match the scene automatically.\n'
+            'Result: transparent PNG layer — move and scale freely.</span>')
+        info.set_line_wrap(True)
+        bx.pack_start(info, False, False, 4)
+        # Parameters
+        bx.pack_start(Gtk.Separator(), False, False, 4)
+        grid = Gtk.Grid(column_spacing=8, row_spacing=4)
+        r = 0
+        grid.attach(Gtk.Label(label="Steps:", xalign=1), 0, r, 1, 1)
+        steps_spin = Gtk.SpinButton.new_with_range(1, 50, 1); steps_spin.set_value(6)
+        steps_spin.set_tooltip_text("More steps = higher quality, slower. 4-8 recommended for Klein.")
+        grid.attach(steps_spin, 1, r, 1, 1)
+        grid.attach(Gtk.Label(label="Guidance:", xalign=1), 2, r, 1, 1)
+        guidance_spin = Gtk.SpinButton.new_with_range(0.5, 10.0, 0.5)
+        guidance_spin.set_digits(1); guidance_spin.set_value(3.5)
+        guidance_spin.set_tooltip_text("How closely to follow the prompt. 3.0-5.0 recommended.")
+        grid.attach(guidance_spin, 3, r, 1, 1)
+        r += 1
+        grid.attach(Gtk.Label(label="Seed:", xalign=1), 0, r, 1, 1)
+        seed_spin = Gtk.SpinButton.new_with_range(-1, 2**31, 1); seed_spin.set_value(-1)
+        grid.attach(seed_spin, 1, r, 1, 1)
+        bx.pack_start(grid, False, False, 0)
+        # Runs
+        _add_runs_spinner(dlg, bx)
+        bx.show_all()
+        # Recall
+        last = _SESSION.get("klein_generate")
+        if last:
+            if "klein_model" in last:
+                klein_combo.set_active_id(last["klein_model"])
+            if "prompt" in last:
+                prompt_tv.get_buffer().set_text(last["prompt"])
+            if "steps" in last:
+                steps_spin.set_value(last["steps"])
+            if "guidance" in last:
+                guidance_spin.set_value(last["guidance"])
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        srv = se.get_text().strip(); _propagate_server_url(srv)
+        klein_key = klein_combo.get_active_id() or "Klein 9B"
+        buf = prompt_tv.get_buffer()
+        prompt = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
+        _steps = int(steps_spin.get_value())
+        _guidance = guidance_spin.get_value()
+        seed = int(seed_spin.get_value())
+        if seed < 0:
+            seed = random.randint(0, 2**32 - 1)
+        runs = int(dlg._runs_spin.get_value())
+        _SESSION["klein_generate"] = {
+            "klein_model": klein_key, "prompt": prompt,
+            "steps": _steps, "guidance": _guidance,
+        }
+        _save_session()
+        dlg.destroy()
+        if not prompt.strip():
+            Gimp.message("Please describe what you want to generate.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        try:
+            _update_spinner_status("Klein Generate: exporting scene reference...")
+            tmp = _export_image_to_tmp(image)
+            scene_uname = f"gimp_scene_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, scene_uname); os.unlink(tmp)
+            base_seed = seed
+            for run_i in range(runs):
+                _seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+                wf = build_klein_generate_object(
+                    scene_uname, prompt, _seed,
+                    klein_model_key=klein_key,
+                    width=image.get_width(), height=image.get_height(),
+                    steps=_steps, guidance=_guidance,
+                )
+                label = f"Generate run {run_i+1}/{runs}" if runs > 1 else "Generating object"
+                _wf = wf
+                results = _run_with_spinner(f"Klein Generate: {label}...",
+                                            lambda: list(_run_comfyui_workflow(srv, _wf)))
+                # Import ONLY the transparent cutout (klein_object), not the raw generation
+                for fn, sf, ft in results:
+                    if 'object' in fn.lower() or 'rmbg' in fn.lower():
+                        _import_result_as_layer(
+                            image, _download_image(srv, fn, sf, ft),
+                            f"Generated: {prompt[:40]}{'...' if len(prompt) > 40 else ''} #{run_i+1}",
+                            keep_size=True)
+                        break
+                else:
+                    # Fallback: import the first result as transparent
+                    if results:
+                        fn, sf, ft = results[0]
+                        _import_result_as_layer(
+                            image, _download_image(srv, fn, sf, ft),
+                            f"Generated: {prompt[:40]} #{run_i+1}",
+                            keep_size=True)
+                Gimp.displays_flush()
+            _LAST_PROCEDURE["name"] = "spellcaster-klein-generate"
+            _LAST_PROCEDURE["session_key"] = "klein_generate"
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Klein Generate Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     # ── Layer Blend by Ratio (utility) ────────────────────────────────

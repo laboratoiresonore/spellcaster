@@ -4962,6 +4962,148 @@ def build_klein_face_detail(image_filename, prompt_text, seed,
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  Klein Object Generator — generate anything as a transparent layer
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_klein_generate_object(scene_filename, prompt_text, seed,
+                                 klein_model_key="Klein 9B",
+                                 width=1024, height=1024,
+                                 steps=6, guidance=3.5,
+                                 loras=None, lora_name=None, lora_strength=1.0,
+                                 klein_models=None, enhance=True):
+    """Klein Object Generator — generate any object/person as a transparent layer.
+
+    State-of-the-art pipeline for generating objects that integrate
+    perfectly into an existing scene:
+
+    1. Uses the current canvas as a ReferenceLatent so the generated
+       object matches the scene's lighting, color palette, and style
+    2. Generates the object via Klein txt2img (from empty latent, NOT
+       img2img — the object is fully synthetic, not a modification)
+    3. Removes the background with BiRefNet (high-quality alpha matting)
+    4. Outputs a transparent PNG ready to layer on top
+
+    The result matches the scene because Klein's ReferenceLatent
+    injection ensures the generated object inherits the reference
+    image's color temperature, lighting direction, and visual style
+    — even though it's generating from scratch.
+
+    Args:
+        scene_filename (str): Current canvas image (used as style/lighting
+            reference, NOT as the generation input).
+        prompt_text (str): What to generate. Be specific:
+            "a red sports car, side view, matching studio lighting"
+            "a tabby cat sitting, natural daylight"
+            "a medieval sword with ornate handle, dramatic lighting"
+        seed (int): Random seed.
+        width, height: Output dimensions (should match canvas).
+        steps (int): Klein sampling steps (6-10 recommended).
+        guidance (float): How closely to follow the prompt (3.0-5.0).
+        enhance (bool): Use Flux2Klein-Enhancer nodes (default True).
+
+    Returns:
+        dict: ComfyUI workflow. Two outputs:
+            - "klein_generated": raw generation (with background)
+            - "klein_object": transparent cutout (background removed)
+
+    Requires: BiRefNet RMBG node pack.
+    """
+    if klein_models is None:
+        klein_models = KLEIN_MODELS
+    if lora_name and not loras:
+        loras = [{"name": lora_name, "strength": lora_strength}]
+
+    km = klein_models[klein_model_key]
+    nf = NodeFactory()
+
+    # ── Model loaders ────────────────────────────────────────────────
+    unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
+    clip_id = nf.clip_loader(
+        km.get("clip", "qwen_3_8b.safetensors"),
+        clip_type="flux2", device="default", node_id="2",
+    )
+    vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
+
+    # LoRA chain
+    if loras:
+        unet_id, clip_id, _trig = inject_lora_chain(
+            nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
+        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
+        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
+
+    # ── Enhancer chain ───────────────────────────────────────────────
+    model_ref = [unet_id, 0]
+    if enhance:
+        model_ref = _klein_enhance_model(nf, [unet_id, 0])
+
+    # ── Prompt: append "on a plain solid background" so BiRefNet can
+    #    cleanly separate the object from the background ──────────────
+    full_prompt = (
+        f"{prompt_text}, isolated on a plain solid white background, "
+        "centered in frame, studio product photography, clean edges, "
+        "no clutter, professional lighting matching the reference scene"
+    )
+
+    # Text conditioning
+    pos_id = nf.clip_encode([clip_id, 0], full_prompt, node_id="4")
+    neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="5")
+
+    # ── Load scene image as style/lighting reference ─────────────────
+    scene_id = nf.load_image(scene_filename, node_id="10")
+    scene_scaled = nf.image_scale_to_total_pixels([scene_id, 0],
+                                                    megapixels=1.0,
+                                                    node_id="11")
+    scene_enc = nf.vae_encode([scene_scaled, 0], [vae_id, 0], node_id="12")
+
+    # ReferenceLatent: scene provides lighting/style context
+    ref_pos = nf.reference_latent([pos_id, 0], [scene_enc, 0], node_id="20")
+    ref_neg = nf.reference_latent([neg_id, 0], [scene_enc, 0], node_id="21")
+
+    # ── Empty latent at target size (txt2img, NOT img2img) ───────────
+    empty_id = nf._add("EmptyLatentImage", {
+        "width": width,
+        "height": height,
+        "batch_size": 1,
+    }, node_id="25")
+
+    # ── Klein sampler ────────────────────────────────────────────────
+    guider_id = nf.cfg_guider(model_ref, [ref_pos, 0], [ref_neg, 0],
+                              guidance, node_id="30")
+    sampler_id = nf.ksampler_select("euler", node_id="31")
+    # Full denoise (1.0) — generating from scratch, not editing
+    sched_id = nf.basic_scheduler(model_ref, steps, 1.0,
+                                   scheduler="simple", node_id="32")
+    noise_id = nf.random_noise(seed, node_id="33")
+
+    sample_id = nf.sampler_custom_advanced(
+        [noise_id, 0], [guider_id, 0], [sampler_id, 0],
+        [sched_id, 0], [empty_id, 0], node_id="35",
+    )
+
+    dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="36")
+
+    # Save the raw generation (with background)
+    nf.save_image([dec_id, 0], "klein_generated", node_id="40")
+
+    # ── Background removal — BiRefNet for high-quality alpha ─────────
+    rmbg_id = nf._add("BiRefNetRMBG", {
+        "model": "BiRefNet-general",
+        "mask_blur": 2,
+        "mask_offset": 0,
+        "invert_output": False,
+        "refine_foreground": True,
+        "background": "Alpha",
+        "background_color": "#000000",
+        "image": [dec_id, 0],
+    }, node_id="50")
+
+    # Save the transparent cutout
+    nf.save_image([rmbg_id, 0], "klein_object", node_id="51")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  Klein Detail Enhancer — universal region detailer with presets
 # ═══════════════════════════════════════════════════════════════════════════
 
