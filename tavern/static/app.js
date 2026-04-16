@@ -107,12 +107,15 @@ async function llmGenerate(params) {
         });
         return await res.json();
     } else {
-        // Direct KoboldAI v1 call
-        const res = await fetch(`${koboldUrl}/api/v1/generate`, {
+        // Route through Guild server proxy — handles ComfyUI-native LLM,
+        // KoboldCpp, and Ollama fallback automatically. The browser can't
+        // call ComfyUI's workflow API directly for text generation.
+        const res = await fetch('/api/llm_generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(params)
         });
+        if (!res.ok) throw new Error(`LLM proxy returned ${res.status}`);
         return await res.json();
     }
 }
