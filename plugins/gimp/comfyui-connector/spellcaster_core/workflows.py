@@ -4726,7 +4726,7 @@ def build_sam3_extract(image_filename, prompt="person", confidence=0.6,
 def build_klein_sam3_inpaint(image_filename, segment_prompt, inpaint_prompt, seed,
                               ref_filename=None,
                               klein_model_key="Klein 9B",
-                              steps=10, guidance=4.0,
+                              steps=10, guidance=1.0,
                               mask_expand=120, mask_blur=15,
                               confidence=0.6,
                               loras=None, lora_name=None, lora_strength=1.0,
@@ -5101,7 +5101,7 @@ def build_klein_face_detail(image_filename, prompt_text, seed,
 def build_klein_generate_object(scene_filename, prompt_text, seed,
                                  klein_model_key="Klein 9B",
                                  width=1024, height=1024,
-                                 steps=6, guidance=3.5,
+                                 steps=6, guidance=1.0,
                                  loras=None, lora_name=None, lora_strength=1.0,
                                  klein_models=None, enhance=True,
                                  nsfw_unlock_loras=None):
@@ -5132,7 +5132,7 @@ def build_klein_generate_object(scene_filename, prompt_text, seed,
         seed (int): Random seed.
         width, height: Output dimensions (should match canvas).
         steps (int): Klein sampling steps (6-10 recommended).
-        guidance (float): How closely to follow the prompt (3.0-5.0).
+        guidance (float): How closely to follow the prompt (1.0 for Klein).
         enhance (bool): Use Flux2Klein-Enhancer nodes (default True).
 
     Returns:

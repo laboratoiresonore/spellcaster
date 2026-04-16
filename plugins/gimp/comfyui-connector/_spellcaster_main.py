@@ -14658,8 +14658,8 @@ class Spellcaster(Gimp.PlugIn):
         grid.attach(steps_spin, 1, r, 1, 1)
         grid.attach(Gtk.Label(label="Guidance:", xalign=1), 2, r, 1, 1)
         guidance_spin = Gtk.SpinButton.new_with_range(0.5, 10.0, 0.5)
-        guidance_spin.set_digits(1); guidance_spin.set_value(3.5)
-        guidance_spin.set_tooltip_text("How closely to follow the prompt. 3.0-5.0 recommended.")
+        guidance_spin.set_digits(1); guidance_spin.set_value(1.0)
+        guidance_spin.set_tooltip_text("How closely to follow the prompt. 1.0 for Klein.")
         grid.attach(guidance_spin, 3, r, 1, 1)
         r += 1
         grid.attach(Gtk.Label(label="Seed:", xalign=1), 0, r, 1, 1)
