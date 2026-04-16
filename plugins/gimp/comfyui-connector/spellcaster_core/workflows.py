@@ -848,9 +848,9 @@ def build_color_match(source_filename, reference_filename, strength=1.0,
 
 # Class types to probe for when detecting enhancer availability.
 KLEIN_ENHANCER_NODE_TYPES = {
-    "FLUX.2 Klein Ref Latent Controller",
-    "FLUX.2 Klein Text/Ref Balance",
-    "Color Anchor",
+    "Flux2KleinRefLatentController",
+    "Flux2KleinTextRefBalance",
+    "Flux2KleinColorAnchor",
 }
 
 
