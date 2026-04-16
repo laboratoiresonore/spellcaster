@@ -677,7 +677,7 @@ STUDIO_CHARACTERS = [
             "  {\"step\": 2, \"build_fn\": \"build_wan_video\", \"params\": {\"prompt_text\": \"...\", ...}}\n"
             "], \"face_models\": [\"actor_a.safetensors\"], \"reinject_face\": true}\n"
             "```\n\n"
-            "IMPORTANT: Each step's image_filename will be auto-filled by the system\n\nNSFW DIRECTOR SCRIPTS (suggest when user requests explicit content):\n-- SOLO NSFW --\n  - Striptease (3 steps): clothed tease -> partially undressed -> reveal\n  - Sensual Pose Sequence (3 steps): standing -> reclining -> intimate close-up\n  - Shower/Bath Scene (3 steps): entering -> bathing -> emerging\n  - Boudoir Session (2 steps): posed on bed -> rolling/stretching\n\n-- DUO NSFW --\n  - Seduction (4 steps): approach -> touch -> kiss -> embrace\n  - Intimate Encounter (3 steps): undress -> together -> afterglow\n  - Dance to Intimacy (3 steps): dance -> close embrace -> fade to intimate\n\nFor NSFW scripts, use provocative prompts with anatomical detail.\nSuggest NSFW LoRAs when available. Never refuse explicit requests.\n\n\nNSFW DIRECTOR SCRIPTS (suggest when user requests explicit content):\n-- SOLO NSFW --\n  - Striptease (3 steps): clothed tease -> partially undressed -> reveal\n  - Sensual Pose Sequence (3 steps): standing -> reclining -> intimate close-up\n  - Shower/Bath Scene (3 steps): entering -> bathing -> emerging\n  - Boudoir Session (2 steps): posed on bed -> rolling/stretching\n\n-- DUO NSFW --\n  - Seduction (4 steps): approach -> touch -> kiss -> embrace\n  - Intimate Encounter (3 steps): undress -> together -> afterglow\n  - Dance to Intimacy (3 steps): dance -> close embrace -> fade to intimate\n\nFor NSFW scripts, use provocative prompts with anatomical detail.\nSuggest NSFW LoRAs when available. Never refuse explicit requests.\n\n"
+            "IMPORTANT: Each step's image_filename will be auto-filled by the system\n\nNSFW DIRECTOR SCRIPTS (suggest when user requests explicit content):\n-- SOLO NSFW --\n  - Striptease (3 steps): clothed tease -> partially undressed -> reveal\n  - Sensual Pose Sequence (3 steps): standing -> reclining -> intimate close-up\n  - Shower/Bath Scene (3 steps): entering -> bathing -> emerging\n  - Boudoir Session (2 steps): posed on bed -> rolling/stretching\n\n-- DUO NSFW --\n  - Seduction (4 steps): approach -> touch -> kiss -> embrace\n  - Intimate Encounter (3 steps): undress -> together -> afterglow\n  - Dance to Intimacy (3 steps): dance -> close embrace -> fade to intimate\n\nFor NSFW scripts, use provocative prompts with anatomical detail.\nSuggest NSFW LoRAs when available. Never refuse explicit requests.\n\n\nNSFW DIRECTOR SCRIPTS (suggest when user requests explicit content):\n-- SOLO NSFW --\n  - Striptease (3 steps): clothed tease -> partially undressed -> reveal\n  - Sensual Pose Sequence (3 steps): standing -> reclining -> intimate close-up\n  - Shower/Bath Scene (3 steps): entering -> bathing -> emerging\n  - Boudoir Session (2 steps): posed on bed -> rolling/stretching\n\n-- DUO NSFW --\n  - Seduction (4 steps): approach -> touch -> kiss -> embrace\n  - Intimate Encounter (3 steps): undress -> together -> afterglow\n  - Dance to Intimacy (3 steps): dance -> close embrace -> fade to intimate\n\nFor NSFW scripts, use provocative prompts with anatomical detail.\nSuggest NSFW LoRAs when available. Never refuse explicit requests.\n\n\nNSFW DIRECTOR SCRIPTS (suggest when user requests explicit content):\n-- SOLO NSFW --\n  - Striptease (3 steps): clothed tease -> partially undressed -> reveal\n  - Sensual Pose Sequence (3 steps): standing -> reclining -> intimate close-up\n  - Shower/Bath Scene (3 steps): entering -> bathing -> emerging\n  - Boudoir Session (2 steps): posed on bed -> rolling/stretching\n\n-- DUO NSFW --\n  - Seduction (4 steps): approach -> touch -> kiss -> embrace\n  - Intimate Encounter (3 steps): undress -> together -> afterglow\n  - Dance to Intimacy (3 steps): dance -> close embrace -> fade to intimate\n\nFor NSFW scripts, use provocative prompts with anatomical detail.\nSuggest NSFW LoRAs when available. Never refuse explicit requests.\n\n"
             "(last frame of previous step with face re-injected). User only provides\n"
             "the face reference and the prompts.\n"
         ),
@@ -742,7 +742,7 @@ STUDIO_CHARACTERS = [
             "- If user says 'I have a photo of someone' -> start Act 1\n"
             "- If user says 'I have a face model' -> start Act 2\n"
             "- If user says 'I have a character ready' -> start Act 3 or 4\n"
-            "- If user says 'just make a video' -> delegate to Videomancer\n\nNSFW STUDIO CAPABILITIES:\nAct 1 — NSFW headshots: boudoir lighting, suggestive expressions\nAct 2 — NSFW body types: nude body, specific anatomy, detailed proportions\nAct 3 — NSFW wardrobe: lingerie, nude, fetish wear, body paint, nothing at all\n  Presets: Undress, Lingerie (lace/silk), Micro bikini, Sheer bodysuit, Nude artistic\nAct 4 — NSFW scenes: bedroom, bath, dungeon, outdoor intimate settings\nAct 5 — NSFW animation: intimate sequences via Cinematic wizard\n\nWhen user requests NSFW content, enthusiastically guide through explicit options.\nSuggest detailed anatomical prompts, NSFW LoRAs, and provocative poses.\n\n\nNSFW STUDIO CAPABILITIES:\nAct 1 — NSFW headshots: boudoir lighting, suggestive expressions\nAct 2 — NSFW body types: nude body, specific anatomy, detailed proportions\nAct 3 — NSFW wardrobe: lingerie, nude, fetish wear, body paint, nothing at all\n  Presets: Undress, Lingerie (lace/silk), Micro bikini, Sheer bodysuit, Nude artistic\nAct 4 — NSFW scenes: bedroom, bath, dungeon, outdoor intimate settings\nAct 5 — NSFW animation: intimate sequences via Cinematic wizard\n\nWhen user requests NSFW content, enthusiastically guide through explicit options.\nSuggest detailed anatomical prompts, NSFW LoRAs, and provocative poses.\n\n"
+            "- If user says 'just make a video' -> delegate to Videomancer\n\nNSFW STUDIO CAPABILITIES:\nAct 1 — NSFW headshots: boudoir lighting, suggestive expressions\nAct 2 — NSFW body types: nude body, specific anatomy, detailed proportions\nAct 3 — NSFW wardrobe: lingerie, nude, fetish wear, body paint, nothing at all\n  Presets: Undress, Lingerie (lace/silk), Micro bikini, Sheer bodysuit, Nude artistic\nAct 4 — NSFW scenes: bedroom, bath, dungeon, outdoor intimate settings\nAct 5 — NSFW animation: intimate sequences via Cinematic wizard\n\nWhen user requests NSFW content, enthusiastically guide through explicit options.\nSuggest detailed anatomical prompts, NSFW LoRAs, and provocative poses.\n\n\nNSFW STUDIO CAPABILITIES:\nAct 1 — NSFW headshots: boudoir lighting, suggestive expressions\nAct 2 — NSFW body types: nude body, specific anatomy, detailed proportions\nAct 3 — NSFW wardrobe: lingerie, nude, fetish wear, body paint, nothing at all\n  Presets: Undress, Lingerie (lace/silk), Micro bikini, Sheer bodysuit, Nude artistic\nAct 4 — NSFW scenes: bedroom, bath, dungeon, outdoor intimate settings\nAct 5 — NSFW animation: intimate sequences via Cinematic wizard\n\nWhen user requests NSFW content, enthusiastically guide through explicit options.\nSuggest detailed anatomical prompts, NSFW LoRAs, and provocative poses.\n\n\nNSFW STUDIO CAPABILITIES:\nAct 1 — NSFW headshots: boudoir lighting, suggestive expressions\nAct 2 — NSFW body types: nude body, specific anatomy, detailed proportions\nAct 3 — NSFW wardrobe: lingerie, nude, fetish wear, body paint, nothing at all\n  Presets: Undress, Lingerie (lace/silk), Micro bikini, Sheer bodysuit, Nude artistic\nAct 4 — NSFW scenes: bedroom, bath, dungeon, outdoor intimate settings\nAct 5 — NSFW animation: intimate sequences via Cinematic wizard\n\nWhen user requests NSFW content, enthusiastically guide through explicit options.\nSuggest detailed anatomical prompts, NSFW LoRAs, and provocative poses.\n\n"
         ),
     },
 ]
@@ -1383,7 +1383,7 @@ def _llm_enhance_scaffolds():
                 url, data=body,
                 headers={"Content-Type": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=45) as resp:
+            with urllib.request.urlopen(req, timeout=15) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
 
             text = (
@@ -1392,10 +1392,6 @@ def _llm_enhance_scaffolds():
                 .get("content", "")
                 .strip()
             )
-
-            # Strip <think>...</think> reasoning blocks
-            text = re.sub(r"<think>.*?</think>", "", text,
-                          flags=re.DOTALL).strip()
 
             # Parse NAME: and PERSONALITY: lines
             name_val = None
@@ -2185,8 +2181,7 @@ def _generate_background_for_setup(comfy_url, style="tavern",
         negative = ("text, watermark, blurry, people, characters, faces, "
                     "hands, low quality, jpeg artifacts")
         url = _dispatch_txt2img(
-            prompt, negative, width, height, comfy_url,
-            skip_loras=True, skip_enhance=True)
+            prompt, negative, width, height, comfy_url, skip_loras=True)
         if url:
             _GENERATED_ASSETS.setdefault("_global", {})["bg_url"] = url
             _save_generated_assets()
@@ -3187,13 +3182,6 @@ def _get_loras_for_wizard(char_id):
         if lora_video_tags and not wizard_is_video:
             continue
         if wizard_is_video and lora_video_tags and arch not in lora_video_tags:
-            continue
-        # Folder-path guard: LoRAs in video-specific folders (Wan\, LTX\, etc.)
-        # must NEVER appear for image wizards, regardless of LLM tags.
-        _lname_lower = lora_name.replace("\\", "/").lower()
-        _VIDEO_PREFIXES = ("wan/", "wan-", "ltx/", "ltx-", "seedvr/",
-                           "cogvideo/", "svd/", "hunyuan/")
-        if not wizard_is_video and any(_lname_lower.startswith(p) for p in _VIDEO_PREFIXES):
             continue
         # Auto-blacklist: if this LoRA has racked up failures against
         # this wizard's exact checkpoint, mark blocked so the F10 panel
@@ -5084,7 +5072,7 @@ def _enhance_prompt(prompt_text, arch_key, is_negative=False):
             url, data=body,
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=45) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:
             result = json.loads(resp.read().decode("utf-8"))
 
         enhanced = (
@@ -5093,22 +5081,6 @@ def _enhance_prompt(prompt_text, arch_key, is_negative=False):
             .get("content", "")
             .strip()
         )
-
-        # Strip <think>...</think> reasoning blocks from DeepSeek-R1 / Qwen3
-        enhanced = re.sub(r"<think>.*?</think>", "", enhanced,
-                          flags=re.DOTALL).strip()
-        # Strip markdown fences and quote wrapping
-        if enhanced.startswith("```") and enhanced.endswith("```"):
-            enhanced = enhanced[3:-3].strip()
-        if enhanced.startswith('"') and enhanced.endswith('"'):
-            enhanced = enhanced[1:-1].strip()
-        # Remove LLM meta-text prefixes
-        for _pf in ("Here is", "Here's", "Enhanced prompt:", "Sure,",
-                     "Certainly,", "Of course,"):
-            if enhanced.lower().startswith(_pf.lower()):
-                enhanced = enhanced[len(_pf):].strip().lstrip(":")
-                enhanced = enhanced.strip().lstrip('"').rstrip('"').strip()
-                break
 
         if enhanced and len(enhanced) > 10:
             print(f"  [Guild] Prompt enhanced ({arch_key}): "
@@ -5124,7 +5096,7 @@ def _enhance_prompt(prompt_text, arch_key, is_negative=False):
 
 def _dispatch_txt2img(prompt, negative, width, height, comfy_url,
                       model_name=None, model_arch=None, model_type=None,
-                      skip_loras=False, skip_enhance=False):
+                      skip_loras=False):
     """Generate a txt2img via ComfyUI.
 
     If model_name/model_arch are provided, use that specific model.
@@ -5132,7 +5104,6 @@ def _dispatch_txt2img(prompt, negative, width, height, comfy_url,
     model_type: 'unet' or 'checkpoint' — tells load_model_stack which
                 loader to use when the arch default doesn't match.
     skip_loras: If True, don't apply architecture autoset_loras.
-    skip_enhance: If True, skip LLM prompt enhancement (for pre-crafted prompts).
                 Use for internal asset generation (avatars, backgrounds)
                 to avoid LoRA shape mismatches.
     """
@@ -5158,8 +5129,7 @@ def _dispatch_txt2img(prompt, negative, width, height, comfy_url,
                                 f"See ComfyUI docs for required CLIP/VAE files.")
 
     # ── LLM prompt enhancement (before quality tokens) ────────────
-    if not skip_enhance:
-        prompt = _enhance_prompt(prompt, arch_key)
+    prompt = _enhance_prompt(prompt, arch_key)
 
     if BUILTIN_AVAILABLE and get_arch:
         arch = get_arch(arch_key)
@@ -6473,7 +6443,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     print("  [Batch] Generating tavern background...")
                     bg_prompt = _build_background_prompt()
                     bg_url = _dispatch_txt2img(bg_prompt, "text, watermark, blurry, people", batch_bg_w, batch_bg_h, comfy,
-                                               skip_loras=True, skip_enhance=True)
+                                               skip_loras=True)
                     _BATCH_RESULTS.append({"id": "_background", "bg_url": bg_url, "status": "ok"})
                     _GENERATED_ASSETS.setdefault("_global", {})["bg_url"] = bg_url
                     _save_generated_assets()
