@@ -561,6 +561,25 @@ body {
     box-shadow: 0 0 15px rgba(178, 70, 242, 0.1);
 }
 
+/* ── Quick Actions Bar ── */
+#quick-actions-bar {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    padding: 8px 20px 0; background: rgba(11, 10, 16, 0.85);
+    backdrop-filter: blur(16px);
+}
+#quick-actions-bar:empty { display: none; }
+#quick-actions-bar .qa-btn {
+    padding: 6px 14px; border-radius: 20px; border: 1px solid rgba(178, 70, 242, 0.4);
+    background: rgba(178, 70, 242, 0.12); color: #d4b8ff;
+    font-size: 13px; font-family: 'Outfit', sans-serif; cursor: pointer;
+    transition: all 0.2s;
+}
+#quick-actions-bar .qa-btn:hover {
+    background: rgba(178, 70, 242, 0.3); border-color: #B246F2;
+    color: #fff; transform: translateY(-1px);
+}
+#quick-actions-bar .qa-btn:active { transform: translateY(0); }
+
 /* ── Input Area ── */
 #chat-input-area {
     padding: 16px 20px; background: rgba(11, 10, 16, 0.85);
