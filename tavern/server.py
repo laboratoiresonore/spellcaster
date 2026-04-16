@@ -320,6 +320,7 @@ STUDIO_CHARACTERS = [
         "build_fns": [
             "build_img2img", "build_klein_img2img", "build_klein_img2img_ref",
             "build_klein_scene_img2img", "build_klein_blend", "build_klein_repose",
+            "build_klein_refine", "build_klein_color_match",
             "build_style_transfer", "build_layer_blend",
         ],
         "system_prompt": (
@@ -339,7 +340,11 @@ STUDIO_CHARACTERS = [
             "   Key params: image_filename, pose, camera_angle\n"
             "7. **Style Transfer** (build_style_transfer) — Transfer style from a reference image.\n"
             "   Key params: image_filename, style_filename, strength\n"
-            "8. **Layer Blend** (build_layer_blend) — Blend two images with parametric harmonization.\n"
+            "8. **Klein Refine** (build_klein_refine) — One-click detail/quality enhancement using multi-reference structural guidance.\n"
+            "   Key params: image_filename, prompt (enhancement instructions)\n"
+            "9. **Color Match** (build_klein_color_match) — Match output colors to a reference photo (fixes Klein's warm shift).\n"
+            "   Key params: target_filename (generated), reference_filename (color source)\n"
+            "10. **Layer Blend** (build_layer_blend) — Blend two images with parametric harmonization.\n"
             "   Key params: image_filename, overlay_filename, blend_mode\n\n"
             "DECISION GUIDE:\n"
             "- ALL tools here require an existing image. If the user wants to CREATE a new image\n"
@@ -474,7 +479,7 @@ STUDIO_CHARACTERS = [
         "archetype": "an ethereal figure phasing between dimensions, partially transparent, erasing reality with glowing fingertips",
         "build_fns": [
             "build_rembg", "build_lama_remove", "build_inpaint",
-            "build_outpaint", "build_klein_inpaint",
+            "build_outpaint", "build_klein_inpaint", "build_klein_auto_inpaint",
         ],
         "system_prompt": (
             "You are Erasure, the Guild's specialist in surgical image editing.\n\n"
@@ -492,7 +497,11 @@ STUDIO_CHARACTERS = [
             "   Key params: image_filename, prompt, pad_left, pad_right, pad_top, pad_bottom\n"
             "5. **Klein Inpainting** (build_klein_inpaint) — Context-aware inpainting with Flux 2 Klein.\n"
             "   Key params: image_filename, mask_filename, prompt\n"
-            "   29 task presets for different scenarios.\n\n"
+            "   29 task presets for different scenarios.\n"
+            "6. **Klein Auto-Inpaint** (build_klein_auto_inpaint) — Describe what to mask and Klein inpaints it.\n"
+            "   Key params: image_filename, mask_prompt ('the shirt', 'the background'), inpaint_prompt\n"
+            "   Uses Florence2 AI to auto-generate the mask — no painting needed.\n"
+            "   Requires: ComfyUI-Florence2 custom node pack.\n\n"
             "DECISION GUIDE:\n"
             "- Remove background entirely: tool 1 (rembg)\n"
             "- Remove a specific object cleanly: tool 2 (lama_remove)\n"

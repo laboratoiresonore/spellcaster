@@ -938,3 +938,9 @@ Open `Filters > Spellcaster Tools > Travelling Wizard` and you'll see:
 
 - 🟢 **Live server status** — GPU name, VRAM, and connection indicator
 - 📂 **Browse Workflow Library** — lists every workflow on your Comfy
+
+---
+
+## 🏆 Credits & Acknowledgements
+
+- **Klein Refiner, Auto-Inpaint & Color Match** pipelines adapted from [Elusarca's Flux2 Klein 9B Ultimate 6-in-1 Workflow](https://civitai.com/models/2543188/flux2-klein-9b-ultimate-6-in-1-workflow-face-swap-inpaint-auto-mask-nag-refine-upscale-8gb-vram) (CivitAI), used with permission. The multi-reference refiner, Florence2 auto-mask inpainting, and ColorMatchV2 post-processing pipelines in `workflows.py` are derived from this workflow.
