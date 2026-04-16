@@ -3754,6 +3754,344 @@ def build_klein_scene_img2img(image_filename, prompt_text, seed,
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  Klein Multi-Reference Refiner
+#  ─────────────────────────────────────────────────────────────────────────
+#  Inspired by Elusarca's "Flux2 Klein 9B Ultimate 6-in-1 Workflow"
+#  (https://civitai.com/models/2543188) — refiner pipeline adapted for
+#  Spellcaster with permission from the author.
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_klein_refine(image_filename, klein_model_key, prompt_text, seed,
+                       steps=4, guidance=1.0,
+                       preprocessors=None,
+                       loras=None, lora_name=None, lora_strength=1.0,
+                       klein_models=None):
+    """Klein Multi-Reference Refiner — enhance detail using structural references.
+
+    Runs the input image through multiple preprocessors (LineArt, HED, Tile,
+    DepthAnything) to extract structural features, then chains each as a
+    ReferenceLatent feeding into a single Klein pass at full denoise.
+    The result is a refined version of the input that preserves composition
+    and structure while enhancing detail, lighting, and texture.
+
+    This is the "make it look professional" one-click enhancement.
+
+    Pipeline:
+      1. Load Klein UNET + CLIP + VAE
+      2. Encode prompt (enhancement/refinement instructions)
+      3. Load and scale input image
+      4. Run input through up to 4 preprocessors:
+         - LineArtPreprocessor → structural lines
+         - HEDPreprocessor → soft edges
+         - TilePreprocessor → tile detail
+         - DepthAnythingV2Preprocessor → depth map
+      5. Encode each preprocessor output through VAE
+      6. Chain ReferenceLatent nodes: prompt → ref1 → ref2 → ref3 → ref4
+      7. Zero-out negative conditioning
+      8. Encode ORIGINAL image → latent for the sampler input
+      9. Run Klein sampler at full denoise (1.0)
+      10. Decode + optional ColorMatchV2 to preserve input colors
+      11. Save
+
+    Args:
+        image_filename (str): Path to input image.
+        klein_model_key (str): "Klein 9B", "Klein 4B", etc.
+        prompt_text (str): Enhancement prompt (e.g. "Cinematic studio
+            lighting, ultra-realistic skin texture, 8k resolution")
+        seed (int): Random seed.
+        steps (int): 4 is standard for Klein.
+        guidance (float): CFG, typically 1.0 for Klein.
+        preprocessors (list[str], optional): Which preprocessors to use.
+            Defaults to all four: ["lineart", "hed", "tile", "depth"].
+            Set to a subset to save VRAM or skip unavailable nodes.
+        loras (list, optional): LoRA chain dicts.
+        lora_name (str, optional): Single LoRA fallback.
+        lora_strength (float): Strength if lora_name used.
+        klein_models (dict, optional): Model path mapping.
+
+    Returns:
+        dict: ComfyUI workflow.
+
+    Credit: Refiner pipeline adapted from Elusarca's Flux2 Klein 9B
+    Ultimate 6-in-1 Workflow (CivitAI, April 2026) with permission.
+    """
+    if klein_models is None:
+        klein_models = KLEIN_MODELS
+    if preprocessors is None:
+        preprocessors = ["lineart", "hed", "tile", "depth"]
+    if lora_name and not loras:
+        loras = [{"name": lora_name, "strength": lora_strength}]
+
+    km = klein_models[klein_model_key]
+    nf = NodeFactory()
+
+    # Model loaders
+    unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
+    clip_id = nf.clip_loader(
+        km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+        clip_type="flux2", device="default", node_id="2",
+    )
+    vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
+
+    # LoRA chain
+    if loras:
+        unet_id, clip_id, _trig = inject_lora_chain(
+            nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
+        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
+        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
+
+    # Text conditioning
+    pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="4")
+    neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="5")
+
+    # Load and scale input image
+    img_id = nf.load_image(image_filename, node_id="10")
+    scaled_id = nf.image_scale_to_total_pixels([img_id, 0], megapixels=1.0,
+                                                node_id="11")
+
+    # Run preprocessors and chain ReferenceLatent nodes.
+    # Each preprocessor output is VAE-encoded, then fed as a
+    # ReferenceLatent so Klein sees multiple structural "hints"
+    # simultaneously.
+    _PREPROC_MAP = {
+        "lineart": ("LineArtPreprocessor", {"coarse": "disable", "resolution": 1024}),
+        "hed":     ("HEDPreprocessor", {"safe": "disable", "resolution": 1024}),
+        "tile":    ("TilePreprocessor", {"pyrUp_iters": 4, "resolution": 384}),
+        "depth":   ("DepthAnythingV2Preprocessor", {"ckpt_name": "depth_anything_v2_vitl.pth", "resolution": 1024}),
+    }
+
+    # Start the conditioning chain from the prompt
+    cond_chain = [pos_id, 0]
+    pp_base_id = 200
+    for i, pp_name in enumerate(preprocessors):
+        if pp_name not in _PREPROC_MAP:
+            continue
+        class_type, kwargs = _PREPROC_MAP[pp_name]
+        pp_id = nf.preprocessor(class_type, [scaled_id, 0],
+                                node_id=str(pp_base_id + i * 10), **kwargs)
+        enc_id = nf.vae_encode([pp_id, 0], [vae_id, 0],
+                               node_id=str(pp_base_id + i * 10 + 1))
+        ref_id = nf.reference_latent(cond_chain, [enc_id, 0],
+                                     node_id=str(pp_base_id + i * 10 + 2))
+        cond_chain = [ref_id, 0]
+
+    # Encode original image for the sampler latent input
+    orig_enc_id = nf.vae_encode([scaled_id, 0], [vae_id, 0], node_id="13")
+
+    # Sampler — full denoise (1.0) since the references provide structure
+    guider_id = nf.cfg_guider([unet_id, 0], cond_chain, [neg_id, 0],
+                              guidance, node_id="30")
+    sampler_id = nf.ksampler_select("euler", node_id="31")
+    sched_id = nf.basic_scheduler([unet_id, 0], steps, 1.0,
+                                   scheduler="simple", node_id="32")
+    noise_id = nf.random_noise(seed, node_id="33")
+
+    sample_id = nf.sampler_custom_advanced(
+        [noise_id, 0], [guider_id, 0], [sampler_id, 0],
+        [sched_id, 0], [orig_enc_id, 0], node_id="40",
+    )
+
+    dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="50")
+    nf.save_image([dec_id, 0], "klein_refine", node_id="51")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Klein Auto-Inpaint — Florence2 segmentation mask + Klein inpaint
+#  ─────────────────────────────────────────────────────────────────────────
+#  Inspired by Elusarca's "Flux2 Klein 9B Ultimate 6-in-1 Workflow"
+#  (https://civitai.com/models/2543188) — auto-mask pipeline adapted for
+#  Spellcaster with permission from the author.
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_klein_auto_inpaint(image_filename, mask_prompt, inpaint_prompt, seed,
+                              klein_model_key="Klein 9B",
+                              steps=4, denoise=1.0, guidance=1.0,
+                              florence_model="microsoft/Florence-2-base",
+                              loras=None, lora_name=None, lora_strength=1.0,
+                              klein_models=None):
+    """Klein Auto-Inpaint — describe what to mask, then inpaint it.
+
+    Uses Florence2's referring_expression_segmentation to automatically
+    generate a mask from a text description (e.g. "the shirt", "the
+    background", "her hair"), then feeds the mask into Klein's inpaint
+    pipeline. No manual mask painting needed.
+
+    Pipeline:
+      1. Load Klein UNET + CLIP + VAE
+      2. Load Florence2 model
+      3. Run Florence2 with mask_prompt → get segmentation mask
+      4. Encode image + mask with VAEEncodeForInpaint
+      5. ReferenceLatent chain with original encoded image
+      6. Klein sampler pass
+      7. Decode + save
+
+    Args:
+        image_filename (str): Path to input image.
+        mask_prompt (str): What to segment, e.g. "the shirt", "the hair".
+        inpaint_prompt (str): What should replace the masked area.
+        seed (int): Random seed.
+        klein_model_key (str): Model variant.
+        steps (int): Klein steps (default 4).
+        denoise (float): Inpaint strength (default 1.0).
+        guidance (float): CFG scale (default 1.0).
+        florence_model (str): Florence2 model name.
+        loras, lora_name, lora_strength: Optional LoRA.
+        klein_models (dict, optional): Model path mapping.
+
+    Returns:
+        dict: ComfyUI workflow.
+
+    Requires: ComfyUI-Florence2 custom node pack (kijai).
+
+    Credit: Auto-mask concept from Elusarca's Flux2 Klein 9B Ultimate
+    6-in-1 Workflow (CivitAI, April 2026) with permission.
+    """
+    if klein_models is None:
+        klein_models = KLEIN_MODELS
+    if lora_name and not loras:
+        loras = [{"name": lora_name, "strength": lora_strength}]
+
+    km = klein_models[klein_model_key]
+    nf = NodeFactory()
+
+    # Model loaders
+    unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
+    clip_id = nf.clip_loader(
+        km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+        clip_type="flux2", device="default", node_id="2",
+    )
+    vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
+
+    # LoRA chain
+    if loras:
+        unet_id, clip_id, _trig = inject_lora_chain(
+            nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
+        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
+        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
+
+    # Text conditioning
+    pos_id = nf.clip_encode([clip_id, 0], inpaint_prompt, node_id="4")
+    neg_zero = nf.conditioning_zero_out([pos_id, 0], node_id="5")
+
+    # Input image
+    img_id = nf.load_image(image_filename, node_id="10")
+    scaled_id = nf.image_scale_to_total_pixels([img_id, 0], megapixels=1.0,
+                                                node_id="11")
+
+    # Florence2 auto-segmentation → mask
+    fl2_model_id = nf._add("DownloadAndLoadFlorence2Model", {
+        "model": florence_model,
+        "precision": "fp32",
+        "attention": "sdpa",
+        "lora": False,
+    }, node_id="60")
+
+    fl2_run_id = nf._add("Florence2Run", {
+        "image": [scaled_id, 0],
+        "florence2_model": [fl2_model_id, 0],
+        "text_input": mask_prompt,
+        "task": "referring_expression_segmentation",
+        "fill_mask": True,
+        "output_mask_select": True,
+        "max_new_tokens": 1024,
+        "num_beams": 3,
+        "keep_model_loaded": True,
+        "seed": seed,
+    }, node_id="61")
+
+    # VAEEncodeForInpaint with Florence2's mask (output slot 1)
+    inpaint_enc_id = nf._add("VAEEncodeForInpaint", {
+        "pixels": [scaled_id, 0],
+        "vae": [vae_id, 0],
+        "mask": [fl2_run_id, 1],  # mask output
+        "grow_mask_by": 15,
+    }, node_id="13")
+
+    # ReferenceLatent chain — original image provides context
+    orig_enc_id = nf.vae_encode([scaled_id, 0], [vae_id, 0], node_id="14")
+    ref_pos = nf.reference_latent([pos_id, 0], [inpaint_enc_id, 0],
+                                  node_id="20")
+    ref2_pos = nf.reference_latent([ref_pos, 0], [orig_enc_id, 0],
+                                   node_id="21")
+    neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="22")
+
+    # Sampler
+    guider_id = nf.cfg_guider([unet_id, 0], [ref2_pos, 0], [neg_id, 0],
+                              guidance, node_id="30")
+    sampler_id = nf.ksampler_select("euler", node_id="31")
+    sched_id = nf.basic_scheduler([unet_id, 0], steps, denoise,
+                                   scheduler="simple", node_id="32")
+    noise_id = nf.random_noise(seed, node_id="33")
+
+    sample_id = nf.sampler_custom_advanced(
+        [noise_id, 0], [guider_id, 0], [sampler_id, 0],
+        [sched_id, 0], [inpaint_enc_id, 0], node_id="40",
+    )
+
+    dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="50")
+    nf.save_image([dec_id, 0], "klein_auto_inpaint", node_id="51")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Klein Color Match — post-generation color correction
+#  ─────────────────────────────────────────────────────────────────────────
+#  Inspired by Elusarca's "Flux2 Klein 9B Ultimate 6-in-1 Workflow"
+#  (https://civitai.com/models/2543188) — color match step adapted for
+#  Spellcaster with permission from the author.
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_klein_color_match(target_filename, reference_filename,
+                            method="mkl", strength=0.95):
+    """Color-match a generated image to a reference photo.
+
+    Useful when Klein's output drifts in color temperature compared to
+    the input (Klein has a known warm/red shift). Also works as a batch
+    consistency tool — generate N variants, then color-match them all
+    to one reference so they share a coherent palette.
+
+    Pipeline:
+      1. Load target image (the generated output)
+      2. Load reference image (the color source)
+      3. ColorMatchV2 (MKL / histogram / reinhard)
+      4. Save
+
+    Args:
+        target_filename (str): Image to color-correct.
+        reference_filename (str): Image whose colors to match.
+        method (str): "mkl" (default, best), "histogram", or "reinhard".
+        strength (float): Blend factor 0.0-1.0 (default 0.95).
+
+    Returns:
+        dict: ComfyUI workflow.
+
+    Requires: comfyui-kjnodes custom node pack.
+
+    Credit: Color match technique from Elusarca's Flux2 Klein 9B Ultimate
+    6-in-1 Workflow (CivitAI, April 2026) with permission.
+    """
+    nf = NodeFactory()
+
+    target_id = nf.load_image(target_filename, node_id="1")
+    ref_id = nf.load_image(reference_filename, node_id="2")
+
+    match_id = nf._add("ColorMatchV2", {
+        "image_target": [target_id, 0],
+        "image_ref": [ref_id, 0],
+        "method": method,
+        "strength": strength,
+        "keep_original_colors_on_error": True,
+    }, node_id="10")
+
+    nf.save_image([match_id, 0], "klein_color_match", node_id="20")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  Layer Blend — simple two-image blend
 # ═══════════════════════════════════════════════════════════════════════════
 
