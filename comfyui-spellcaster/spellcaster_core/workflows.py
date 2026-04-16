@@ -79,7 +79,7 @@ The load_model_stack() composite (from _composites.py) handles architecture diff
   - "sdxl": Uses SDXL checkpoint (unet + clip + vae in one file)
   - "flux": Uses Flux unet + dual CLIP (clip_l + t5xxl) + flux2-vae
   - "klein": Uses Flux2 Klein (9B/4B variants) with specific CLIP pairing:
-    * Klein 9B → qwen_3_8b_fp8mixed.safetensors
+    * Klein 9B → qwen_3_8b.safetensors
     * Klein 4B → qwen_3_4b.safetensors
 
 LoRA INJECTION
@@ -258,7 +258,7 @@ CAMERA_COMPOSITION_PRESETS = {
 KLEIN_MODELS = {
     "Klein 9B": {
         "unet": "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",
-        "clip": "qwen_3_8b_fp8mixed.safetensors",
+        "clip": "qwen_3_8b.safetensors",
     },
     "Klein 4B": {
         "unet": "A-Flux\\flux-2-klein-4b-fp8.safetensors",
@@ -275,7 +275,7 @@ FLUX2_VAE = "flux2-vae.safetensors"
 # ── Studio Canvas — canonical dimensions for the Magic Studio pipeline ──
 # All stages generate at these sizes so compositing has a shared spatial
 # reference.  Dimensions are multiples of 16 and ≈1 MP each.
-STUDIO_FACE_W, STUDIO_FACE_H = 1024, 1024   # square — passport headshots
+STUDIO_FACE_W, STUDIO_FACE_H = 896, 1152    # portrait ratio — optimized for faces
 STUDIO_BODY_W, STUDIO_BODY_H = 768, 1152    # 2:3 portrait — full-body
 STUDIO_SCENE_W, STUDIO_SCENE_H = 1152, 768  # 3:2 landscape — scene backdrops
 
@@ -937,7 +937,7 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
         dict: ComfyUI workflow with custom Flux2 sampler setup.
 
     CRITICAL: VAE/CLIP PAIRING
-      - Klein 9B REQUIRES qwen_3_8b_fp8mixed.safetensors
+      - Klein 9B REQUIRES qwen_3_8b.safetensors
       - Klein 4B REQUIRES qwen_3_4b.safetensors
       - Using wrong pairing = degraded quality or silent failures
       - See Klein Config in project memory
@@ -975,7 +975,7 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
     # Model loaders
     unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
     clip_id = nf.clip_loader(
-        km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+        km.get("clip", "qwen_3_8b.safetensors"),
         clip_type="flux2", device="default", node_id="2",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
@@ -2585,7 +2585,7 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
     # Model loaders
     unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
     clip_id = nf.clip_loader(
-        km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+        km.get("clip", "qwen_3_8b.safetensors"),
         clip_type="flux2", device="default", node_id="2",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
@@ -2699,7 +2699,7 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
         dict: ComfyUI workflow with ReActor + Klein two-stage pipeline
 
     CRITICAL VAE/CLIP Pairing:
-      - Klein 9B REQUIRES qwen_3_8b_fp8mixed.safetensors
+      - Klein 9B REQUIRES qwen_3_8b.safetensors
       - Klein 4B REQUIRES qwen_3_4b.safetensors
       - Mismatched pairing = degraded quality
 
@@ -2785,7 +2785,7 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
     # Klein refinement pass — harmonize the swapped face
     unet_id = nf.unet_loader(km["unet"], "default", node_id="20")
     clip_id = nf.clip_loader(
-        km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+        km.get("clip", "qwen_3_8b.safetensors"),
         clip_type="flux2", device="default", node_id="21",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="22")
@@ -3664,7 +3664,7 @@ def build_photobooth(ref_filename, prompt_text, seed,
     # ══════════════════════════════════════════════════════════════════
     unet_id = nf.unet_loader(km["unet"], "default", node_id="10")
     clip_id = nf.clip_loader(
-        km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+        km.get("clip", "qwen_3_8b.safetensors"),
         clip_type="flux2", device="default", node_id="11",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="12")
@@ -3683,8 +3683,11 @@ def build_photobooth(ref_filename, prompt_text, seed,
     ref_pos_id = nf.reference_latent([pos_id, 0], [latent_id, 0], node_id="18")
     ref_neg_id = nf.reference_latent([neg_id, 0], [latent_id, 0], node_id="19")
 
-    # Sampling at FIXED square dimensions (not derived from reference)
-    guider_id = nf.cfg_guider([unet_id, 0], [ref_pos_id, 0], [ref_neg_id, 0],
+    # Enhancer chain for maximum quality
+    _pb_model = _klein_enhance_model(nf, [unet_id, 0], node_base_id=970)
+
+    # Sampling at FIXED portrait dimensions (not derived from reference)
+    guider_id = nf.cfg_guider(_pb_model, [ref_pos_id, 0], [ref_neg_id, 0],
                               guidance, node_id="20")
     sampler_id = nf.ksampler_select("euler", node_id="21")
     sched_id = nf.flux2_scheduler(steps, STUDIO_FACE_W, STUDIO_FACE_H,
@@ -3767,7 +3770,7 @@ def build_klein_repose(image_filename, klein_model_key, prompt_text, seed,
     # Model loaders
     unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
     clip_id = nf.clip_loader(
-        km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+        km.get("clip", "qwen_3_8b.safetensors"),
         clip_type="flux2", device="default", node_id="2",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
@@ -3859,7 +3862,7 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
     # Klein model loaders
     unet_id = nf.unet_loader(km["unet"], "default", node_id="10")
     clip_id = nf.clip_loader(
-        km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+        km.get("clip", "qwen_3_8b.safetensors"),
         clip_type="flux2", device="default", node_id="11",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="12")
@@ -3936,7 +3939,7 @@ def build_klein_inpaint(image_filename, mask_filename, prompt_text, seed,
     # Model loaders
     unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
     clip_id = nf.clip_loader(
-        km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+        km.get("clip", "qwen_3_8b.safetensors"),
         clip_type="flux2", device="default", node_id="2",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
@@ -4075,7 +4078,7 @@ def build_klein_virtual_tryon(face_filename, outfit_filename, prompt_text, seed,
     # Model loaders
     unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
     clip_id = nf.clip_loader(
-        km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+        km.get("clip", "qwen_3_8b.safetensors"),
         clip_type="flux2", device="default", node_id="2",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
@@ -4177,7 +4180,7 @@ def build_klein_scene_img2img(image_filename, prompt_text, seed,
     # Model loaders
     unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
     clip_id = nf.clip_loader(
-        km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+        km.get("clip", "qwen_3_8b.safetensors"),
         clip_type="flux2", device="default", node_id="2",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
@@ -4297,7 +4300,7 @@ def build_klein_refine(image_filename, klein_model_key, prompt_text, seed,
     # Model loaders
     unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
     clip_id = nf.clip_loader(
-        km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+        km.get("clip", "qwen_3_8b.safetensors"),
         clip_type="flux2", device="default", node_id="2",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
@@ -4433,7 +4436,7 @@ def build_klein_auto_inpaint(image_filename, mask_prompt, inpaint_prompt, seed,
     # Model loaders
     unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
     clip_id = nf.clip_loader(
-        km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+        km.get("clip", "qwen_3_8b.safetensors"),
         clip_type="flux2", device="default", node_id="2",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
@@ -4788,7 +4791,7 @@ def build_klein_sam3_inpaint(image_filename, segment_prompt, inpaint_prompt, see
     # Model loaders
     unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
     clip_id = nf.clip_loader(
-        km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+        km.get("clip", "qwen_3_8b.safetensors"),
         clip_type="flux2", device="default", node_id="2",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
@@ -5028,7 +5031,7 @@ def build_klein_face_detail(image_filename, prompt_text, seed,
     # Model loaders
     unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
     clip_id = nf.clip_loader(
-        km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+        km.get("clip", "qwen_3_8b.safetensors"),
         clip_type="flux2", device="default", node_id="2",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
