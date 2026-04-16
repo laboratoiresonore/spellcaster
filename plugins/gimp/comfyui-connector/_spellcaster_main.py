@@ -13259,10 +13259,21 @@ class Spellcaster(Gimp.PlugIn):
                 "steps": steps, "cfg": 1.0, "denoise": 1.0,
                 "sampler": "euler", "scheduler": "simple",
             }
+            # Auto-inject anatomy LoRA for body completion presets
+            _outpaint_loras = None
+            _purpose = purpose_combo.get_active_id() or ""
+            if any(k in _purpose.lower() for k in ["person", "body", "reveal", "subject"]):
+                _outpaint_loras = [
+                    {"name": "Flux-2-Klein\\Sliders\\klein_slider_anatomy_9B_v1.5.safetensors",
+                     "strength": 0.6, "model_strength": 0.6, "clip_strength": 0.6},
+                    {"name": "Flux-2-Klein\\Character\\The_Body_Version_A_Flux2.k.9B.safetensors",
+                     "strength": 0.5, "model_strength": 0.5, "clip_strength": 0.5},
+                ]
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = _build_outpaint(uname, preset, prompt, "", seed,
-                                      pad_l, pad_t, pad_r, pad_b, feathering)
+                                      pad_l, pad_t, pad_r, pad_b, feathering,
+                                      loras=_outpaint_loras)
                 label = f"Klein Outpaint run {run_i+1}/{runs}" if runs > 1 else "Klein Outpaint"
                 _wf = wf
                 results = _run_with_spinner(f"{label}: processing...",
