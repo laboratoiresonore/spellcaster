@@ -20122,10 +20122,13 @@ class Spellcaster(Gimp.PlugIn):
                 mask_result = results[0] if results else None
             if mask_result:
                 fn, sf, ft = mask_result
-                mask_path = _download_image(srv, fn, sf, ft)
+                mask_data = _download_image(srv, fn, sf, ft)
+                # Write mask bytes to a temp file for GIMP to load
+                mask_tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                mask_tmp.write(mask_data); mask_tmp.close()
                 # Load the mask as a temporary layer, convert to selection
-                _mask_image_to_gimp_selection(image, mask_path, feather)
-                os.unlink(mask_path)
+                _mask_image_to_gimp_selection(image, mask_tmp.name, feather)
+                os.unlink(mask_tmp.name)
             # Also add the subject extraction as a new layer (at natural size)
             for fn, sf, ft in results:
                 if 'subject' in fn.lower():
