@@ -251,14 +251,15 @@ def enhance_prompt(prompt_text, arch_key, kobold_url, is_negative=False):
     }
 
     try:
-        # Call the LLM API
+        # Call the LLM API (45s timeout — reasoning models like DeepSeek-R1
+        # need 20-40s for short prompts due to chain-of-thought overhead)
         url = f"{kobold_url.rstrip('/')}/v1/chat/completions"
         body = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
             url, data=body,
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=45) as resp:
             result = json.loads(resp.read().decode("utf-8"))
 
         # Extract the enhanced prompt from the response
@@ -268,6 +269,26 @@ def enhance_prompt(prompt_text, arch_key, kobold_url, is_negative=False):
             .get("content", "")
             .strip()
         )
+
+        # Strip <think>...</think> reasoning blocks from models like
+        # DeepSeek-R1, Qwen3, etc. that output chain-of-thought before
+        # the actual content. We only want the final answer.
+        import re
+        enhanced = re.sub(r"<think>.*?</think>", "", enhanced,
+                          flags=re.DOTALL).strip()
+
+        # Strip markdown code fences, quotes, and meta-text wrappers
+        if enhanced.startswith("```") and enhanced.endswith("```"):
+            enhanced = enhanced[3:-3].strip()
+        if enhanced.startswith('"') and enhanced.endswith('"'):
+            enhanced = enhanced[1:-1].strip()
+        # Remove common LLM meta-text prefixes
+        for prefix in ("Here is", "Here's", "Enhanced prompt:", "Sure,",
+                       "Certainly,", "Of course,"):
+            if enhanced.lower().startswith(prefix.lower()):
+                enhanced = enhanced[len(prefix):].strip().lstrip(":")
+                enhanced = enhanced.strip().lstrip('"').rstrip('"').strip()
+                break
 
         # Only use enhancement if it's meaningful (>10 chars)
         if enhanced and len(enhanced) > 10:
