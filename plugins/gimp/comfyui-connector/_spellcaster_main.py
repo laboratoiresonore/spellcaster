@@ -16693,9 +16693,10 @@ class Spellcaster(Gimp.PlugIn):
             if removal_mode == "ai":
                 # AI-guided replacement using inpaint pipeline
                 preset = dict(MODEL_PRESETS[ai_idx] if 0 <= ai_idx < len(MODEL_PRESETS) else MODEL_PRESETS[0])
+                preset["denoise"] = ai_den
                 neg = f"{obj_desc}, visible {obj_desc}, trace of {obj_desc}, artifacts, seam" if obj_desc else "artifacts, seam, mismatch"
                 wf = _build_inpaint(iname, mname, preset, replacement_prompt, neg,
-                                     random.randint(0, 2**32 - 1), denoise=ai_den)
+                                     random.randint(0, 2**32 - 1))
                 label_text = "AI Replace"
             else:
                 # LaMa fast removal
