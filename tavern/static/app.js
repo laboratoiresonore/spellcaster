@@ -2457,11 +2457,14 @@ function _looksLikeDirectGenPrompt(text) {
     const genVerbs = [
         'generate', 'make ', 'create', 'render', 'cast ', 'draw ',
         'paint ', 'show me', 'conjure', 'summon', 'produce',
-        'imagine', 'picture ', 'give me',
+        'imagine', 'picture ', 'give me', 'i want a picture',
+        'i want an image', 'i want a photo', 'make me a', 'make me an',
+        'a photo of', 'a picture of', 'an image of', 'a portrait of',
+        'a painting of', 'a scene of', 'a scene with',
     ];
     if (genVerbs.some(v => low.indexOf(v) !== -1)) return true;
     const wc = t.split(/\s+/).length;
-    if (wc >= 2 && wc <= 25 && low.indexOf(':') === -1 && low.indexOf(';') === -1) {
+    if (wc >= 2 && wc <= 30 && low.indexOf(':') === -1 && low.indexOf(';') === -1) {
         return true;
     }
     return false;
@@ -2707,12 +2710,22 @@ async function askKobold(text) {
             window._hordeWarnShown = true;
         }
 
-        // Nudge the LLM to output JSON if the user prompt is direct
+        // Nudge the LLM to output JSON if the user prompt looks like a gen request
         let activePrompt = context;
-        const directKeywords = ['generate', 'make', 'create', 'render', 'cast', 'show me', 'conjure'];
-        const isDirect = text.length < 100 && directKeywords.some(k => text.toLowerCase().includes(k));
-        if (isDirect && !context.includes('```json')) {
-            activePrompt += "(The user is requesting a direct conjuration. Skip the chatter and output the JSON block now.)\nAssistant: ";
+        const directKeywords = ['generate', 'make', 'create', 'render', 'cast', 'show me', 'conjure',
+            'draw', 'paint', 'picture', 'image', 'photo', 'portrait', 'scene'];
+        const low = text.toLowerCase();
+        const isDirect = text.length < 200 && directKeywords.some(k => low.includes(k));
+        const isDescriptive = text.length < 200 && !low.includes('?') && text.split(/\s+/).length >= 3
+            && !low.startsWith('how') && !low.startsWith('what') && !low.startsWith('why');
+        if ((isDirect || isDescriptive) && !context.includes('```json')) {
+            activePrompt += `(IMPORTANT: The user wants you to generate an image. Do NOT describe what you would create. Do NOT rephrase their request. Output ONLY the JSON block now. Example format:
+\`\`\`json
+{"build_fn": "build_txt2img", "params": {"prompt": "the actual SDXL/Flux prompt here"}}
+\`\`\`
+Output the JSON block immediately — no preamble, no explanation.)
+Assistant: \`\`\`json
+`;
         }
 
         const data = await llmGenerate({
