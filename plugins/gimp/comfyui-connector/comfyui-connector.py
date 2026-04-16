@@ -355,32 +355,21 @@ def _apply_staged_updates():
 _apply_staged_updates()
 
 # ── v2 workflow builders (modular replacements) ──────────────────────────
-from _workflows_v2 import (
-    # ── Shared constants (single source of truth) ──
-    KLEIN_MODELS, FLUX2_VAE,
-    STUDIO_FACE_W, STUDIO_FACE_H,
-    STUDIO_BODY_W, STUDIO_BODY_H,
-    STUDIO_SCENE_W, STUDIO_SCENE_H,
-    STUDIO_BODY_IN_SCENE_SCALE,
-    # ── Workflow builders ──
-    build_rembg, build_upscale, build_lama_remove, build_lut,
-    build_klein_img2img, build_txt2img, build_img2img,
-    build_faceswap, build_faceswap_model, build_save_face_model,
-    build_faceswap_mtb, build_face_restore, build_photo_restore,
-    build_detail_hallucinate, build_colorize, build_controlnet_gen,
-    build_iclight, build_supir, build_inpaint, build_outpaint,
-    build_faceid_img2img, build_pulid_flux,
-    build_klein_img2img_ref, build_klein_headswap,
-    build_video_upscale, build_video_reactor,
-    build_wan_video, build_wan_flf, build_seedvr2_video_upscale,
-    build_style_transfer, build_seedv2r,
-    build_photobooth,
-    build_klein_repose, build_klein_blend, build_klein_inpaint,
-    build_klein_scene_img2img, build_layer_blend, build_upscale_blend,
-    build_frame_assembly,
-    build_ltx_video,
-    build_sam3_segment, build_sam3_extract,
-)
+# Import ALL workflow builders from the canonical source via the shim.
+# Using wildcard import so new functions added to spellcaster_core never
+# crash the plugin — the shim re-exports everything, and the plugin just
+# uses whatever names are available at runtime. Individual missing
+# functions get caught when the user actually clicks that menu entry,
+# NOT at plugin load time.
+from _workflows_v2 import *  # noqa: F403
+
+# Verify critical constants exist (these are load-time requirements)
+try:
+    KLEIN_MODELS  # noqa: F405
+    FLUX2_VAE  # noqa: F405
+except NameError:
+    print("[Spellcaster] WARNING: critical constants missing from _workflows_v2. "
+          "Use Settings > Repair/Update to sync.", file=__import__('sys').stderr)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
