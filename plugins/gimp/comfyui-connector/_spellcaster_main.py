@@ -395,11 +395,10 @@ def _github_headers():
     return {"User-Agent": "spellcaster-gimp/2.0"}
 
 def _install_spellcaster_theme_to_disk():
-    """Write spellcaster-theme.css as GIMP's user CSS override (gimp.css).
+    """Install spellcaster-theme.css into GIMP's user theme directory.
 
-    GIMP 3.x loads gimp.css from the user config directory on every startup,
-    applying it ON TOP of the selected color scheme (Dark Colors, etc.).
-    This is the correct way to customize the full application appearance.
+    GIMP 3.x loads themes from themes/<ThemeName>/gimp.css when
+    ``(theme "Spellcaster")`` is set in gimprc.
 
     Writes to all detected GIMP config versions (3.0, 3.2, etc.).
     """
@@ -413,6 +412,8 @@ def _install_spellcaster_theme_to_disk():
             if not appdata:
                 return
             gimp_base = Path(appdata) / "GIMP"
+        elif sys.platform == "darwin":
+            gimp_base = Path.home() / "Library" / "Application Support" / "GIMP"
         else:
             gimp_base = Path.home() / ".config" / "GIMP"
 
@@ -421,15 +422,16 @@ def _install_spellcaster_theme_to_disk():
 
         import shutil
         installed = False
-        # Write gimp.css to ALL GIMP version directories found
         for version_dir in gimp_base.iterdir():
             if version_dir.is_dir() and version_dir.name[0].isdigit():
-                dest = version_dir / "gimp.css"
+                theme_dir = version_dir / "themes" / "Spellcaster"
+                theme_dir.mkdir(parents=True, exist_ok=True)
+                dest = theme_dir / "gimp.css"
                 if not dest.exists() or css_src.stat().st_mtime > dest.stat().st_mtime:
                     shutil.copy2(css_src, dest)
                     installed = True
         if installed:
-            print(f"[Spellcaster] Theme installed as gimp.css")
+            print(f"[Spellcaster] Theme installed to themes/Spellcaster/gimp.css")
     except Exception as e:
         print(f"Note: Could not install persistent theme: {e}")
 
@@ -483,7 +485,11 @@ def _apply_spellcaster_theme():
 
 
 def _make_branded_header():
-    """Create a branded Spellcaster header widget for dialog tops."""
+    """Create a branded Spellcaster header with live server status indicator.
+
+    Shows a green/red dot next to the title so the user instantly knows
+    whether their ComfyUI server is reachable.
+    """
     try:
         from gi.repository import Gtk
         hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -495,11 +501,18 @@ def _make_branded_header():
         title.set_xalign(0)
         hbox.pack_start(title, False, False, 0)
 
-        tagline = Gtk.Label()
-        tagline.set_markup('<span size="9000" color="#8B7CA8">AI Superpowers</span>')
-        tagline.set_xalign(0)
-        tagline.set_valign(Gtk.Align.END)
-        hbox.pack_start(tagline, False, False, 0)
+        # Live server status indicator
+        status_label = Gtk.Label()
+        status_label.set_xalign(0)
+        status_label.set_valign(Gtk.Align.END)
+        try:
+            _api_get(COMFYUI_DEFAULT_URL, "/system_stats")
+            status_label.set_markup(
+                f'<span size="9000" color="#00E676">● Connected</span>')
+        except Exception:
+            status_label.set_markup(
+                f'<span size="9000" color="#FF5252">● Server offline — check Settings</span>')
+        hbox.pack_start(status_label, False, False, 0)
 
         return hbox
     except Exception:
@@ -5330,9 +5343,20 @@ _cancel_event = threading.Event()  # set when user clicks Cancel in spinner
 _spinner_label_text = ""
 
 def _update_spinner_status(text):
-    """Set the spinner window's status label from any thread."""
+    """Set the spinner window's status label from any thread.
+
+    Also updates GIMP's native progress bar (bottom of canvas) so users
+    see status even if the spinner window is behind other windows.
+    """
     global _spinner_label_text
     _spinner_label_text = text
+    # Mirror to GIMP's native status bar (safe to call from any thread
+    # via GLib.idle_add, but progress_init/set_text may not be available
+    # in all contexts — fail silently)
+    try:
+        GLib.idle_add(lambda: Gimp.progress_set_text(text) if text else None)
+    except Exception:
+        pass
 
 
 # ── Mask cache for inpaint ──────────────────────────────────────────
@@ -10320,8 +10344,8 @@ class Spellcaster(Gimp.PlugIn):
                                            "Regenerate image preserving face identity with IPAdapter FaceID"),
             "spellcaster-pulid-flux": ("PuLID Flux Face Identity...", self._run_pulid_flux,
                                        "Generate with Flux preserving face identity via PuLID"),
-            "spellcaster-klein-img2img": ("Klein Image Editor...", self._run_klein,
-                                          "Edit image with Flux 2 Klein model"),
+            "spellcaster-klein-img2img": ("Klein AI Editor (Flux 2)...", self._run_klein,
+                                          "Next-gen image editing with Flux 2 Klein — fast, high quality"),
             "spellcaster-photobooth": ("1. Casting Polaroids (Face Model)...", self._run_photobooth,
                                        "Headshot session — generate clean face photos and save as reusable actor model"),
             "spellcaster-body-factory": ("2. Body Double (Full Body Ref)...", self._run_body_factory,
@@ -10406,32 +10430,32 @@ class Spellcaster(Gimp.PlugIn):
                                       "Configure Spellcaster: server URL, defaults, and preferences"),
             "spellcaster-my-presets": ("My Spellcaster Presets...", self._run_my_presets,
                                        "Quick access to your saved prompt/settings presets"),
-            "spellcaster-bridge": ("Travelling Wizard...", self._run_bridge,
-                                    "Signal Bridge scaffold editor, workflow library, and LLM wizard"),
-            "spellcaster-sam3-select": ("SAM3 AI Selection...", self._run_sam3_select,
-                                         "Select any subject by description using SAM3 AI segmentation"),
-            "spellcaster-sam3-extract": ("SAM3 Extract Subject...", self._run_sam3_extract,
-                                          "Detect + remove background + auto-crop a subject using SAM3 AI"),
+            "spellcaster-bridge": ("Workflow Library & LLM Wizard...", self._run_bridge,
+                                    "Browse workflows, edit scaffolds, and chat with AI — powered by local LLM"),
+            "spellcaster-sam3-select": ("AI Select by Description...", self._run_sam3_select,
+                                         "Type what to select (person, shirt, hair) — AI creates the selection automatically"),
+            "spellcaster-sam3-extract": ("AI Extract Subject...", self._run_sam3_extract,
+                                          "One-click: detect subject, remove background, auto-crop to transparent PNG"),
             # Flux Kontext
-            "spellcaster-kontext": ("Flux Kontext Editor...", self._run_kontext,
-                                     "Instruction-based image editing — type what to change and Kontext does it"),
-            # Quick context-menu actions (right-click canvas)
-            "spellcaster-quick-enhance": ("Quick Enhance (last settings)", self._run_quick_enhance,
-                                           "Re-run img2img with last settings — zero dialogs"),
-            "spellcaster-quick-inpaint": ("Quick Inpaint (last settings)", self._run_quick_inpaint,
-                                            "Inpaint current selection with last settings — zero dialogs"),
-            "spellcaster-quick-upscale": ("Quick Upscale 4x", self._run_quick_upscale,
-                                            "Upscale image 4x with default model — zero dialogs"),
-            "spellcaster-quick-face-restore": ("Quick Face Restore", self._run_quick_face_restore,
-                                                 "Restore all faces in image — zero dialogs"),
-            "spellcaster-quick-rembg": ("Quick Remove Background", self._run_quick_rembg,
-                                          "Remove background instantly — zero dialogs"),
+            "spellcaster-kontext": ("Kontext: Edit by Instruction...", self._run_kontext,
+                                     "Type what to change in plain English — 'make the sky orange', 'remove the hat'"),
+            # Quick actions (zero-dialog, instant)
+            "spellcaster-quick-enhance": ("⚡ Quick Enhance", self._run_quick_enhance,
+                                           "Instant img2img with your last settings — no dialog"),
+            "spellcaster-quick-inpaint": ("⚡ Quick Inpaint", self._run_quick_inpaint,
+                                            "Instant inpaint on current selection — no dialog"),
+            "spellcaster-quick-upscale": ("⚡ Quick Upscale 4x", self._run_quick_upscale,
+                                            "Instant 4x upscale — no dialog"),
+            "spellcaster-quick-face-restore": ("⚡ Quick Face Restore", self._run_quick_face_restore,
+                                                 "Instant face restoration — no dialog"),
+            "spellcaster-quick-rembg": ("⚡ Quick Remove Background", self._run_quick_rembg,
+                                          "Instant background removal — no dialog"),
             # Re-run Last
-            "spellcaster-rerun-last": ("Re-run Last Spellcaster...", self._run_rerun_last,
-                                        "Repeat the last Spellcaster operation with same settings"),
+            "spellcaster-rerun-last": ("⚡ Re-run Last...", self._run_rerun_last,
+                                        "Repeat your last Spellcaster operation instantly"),
             # AI Color Match
             "spellcaster-color-match": ("AI Color Match...", self._run_color_match,
-                                          "Transfer color palette from a reference image"),
+                                          "Match your image's colors to a reference photo — automatic palette transfer"),
         }
 
         label, callback, doc = menu_map[name]
@@ -10492,12 +10516,18 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-video-reactor":     "<Image>/Filters/Spellcaster Video",
             "spellcaster-seedvr2-video":    "<Image>/Filters/Spellcaster Video",
 
-            # Tools & Utility
+            # Magic Studios — character pipeline
             "spellcaster-photobooth":        "<Image>/Filters/Spellcaster Magic Studios",
             "spellcaster-body-factory":      "<Image>/Filters/Spellcaster Magic Studios",
             "spellcaster-clothing-store":    "<Image>/Filters/Spellcaster Magic Studios",
             "spellcaster-studio-set":       "<Image>/Filters/Spellcaster Magic Studios",
-            "spellcaster-rembg":             "<Image>/Filters/Spellcaster Tools",
+
+            # AI Selection — SAM3-powered smart selection tools
+            "spellcaster-sam3-select":       "<Image>/Filters/Spellcaster AI Select",
+            "spellcaster-sam3-extract":      "<Image>/Filters/Spellcaster AI Select",
+            "spellcaster-rembg":             "<Image>/Filters/Spellcaster AI Select",
+
+            # Tools & Utility
             "spellcaster-layer-blend-ratio": "<Image>/Filters/Spellcaster Tools",
             "spellcaster-upscale-blend":     "<Image>/Filters/Spellcaster Tools",
             "spellcaster-gif-stitch":        "<Image>/Filters/Spellcaster Tools",
@@ -10507,25 +10537,19 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-settings":          "<Image>/Filters/Spellcaster Tools",
             "spellcaster-bridge":            "<Image>/Filters/Spellcaster Tools",
 
-            # SAM3 AI Selection
-            "spellcaster-sam3-select":       "<Image>/Filters/Spellcaster Tools",
-            "spellcaster-sam3-extract":      "<Image>/Filters/Spellcaster Tools",
-
-            # Flux Kontext
+            # Flux Kontext — instruction-based editing
             "spellcaster-kontext":           "<Image>/Filters/Spellcaster Expert",
 
             # AI Color Match
             "spellcaster-color-match":       "<Image>/Filters/Spellcaster Style",
 
-            # Re-run Last (top-level for fast access)
-            "spellcaster-rerun-last":        "<Image>/Filters",
-
-            # Quick context-menu actions — canvas right-click
-            "spellcaster-quick-enhance":     "<Image>/Spellcaster",
-            "spellcaster-quick-inpaint":     "<Image>/Spellcaster",
-            "spellcaster-quick-upscale":     "<Image>/Spellcaster",
-            "spellcaster-quick-face-restore":"<Image>/Spellcaster",
-            "spellcaster-quick-rembg":       "<Image>/Spellcaster",
+            # Quick Actions — zero-dialog instant tools (under Filters for visibility)
+            "spellcaster-rerun-last":        "<Image>/Filters/Spellcaster Quick",
+            "spellcaster-quick-enhance":     "<Image>/Filters/Spellcaster Quick",
+            "spellcaster-quick-inpaint":     "<Image>/Filters/Spellcaster Quick",
+            "spellcaster-quick-upscale":     "<Image>/Filters/Spellcaster Quick",
+            "spellcaster-quick-face-restore":"<Image>/Filters/Spellcaster Quick",
+            "spellcaster-quick-rembg":       "<Image>/Filters/Spellcaster Quick",
         }
 
         proc = Gimp.ImageProcedure.new(self, name, Gimp.PDBProcType.PLUGIN, callback, None)
@@ -19931,8 +19955,21 @@ class Spellcaster(Gimp.PlugIn):
         """
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # Preflight: check if SAM3 node pack is installed on the server
+        srv = COMFYUI_DEFAULT_URL
+        try:
+            _api_get(srv, "/object_info/SAM3Segment")
+        except Exception:
+            Gimp.message(
+                "SAM3 node pack is not installed on your ComfyUI server.\n\n"
+                "To install it:\n"
+                "1. Open ComfyUI Manager\n"
+                "2. Search for 'SAM3' or 'Segment Anything 3'\n"
+                "3. Install the node pack and restart ComfyUI\n\n"
+                f"Server checked: {srv}")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         GimpUi.init("spellcaster")
-        dlg = Gtk.Dialog(title="Spellcaster — SAM3 AI Selection")
+        dlg = Gtk.Dialog(title="Spellcaster — AI Select by Description")
         dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
         dlg.add_button("_Select", Gtk.ResponseType.OK)
         bx = dlg.get_content_area()
@@ -20007,8 +20044,21 @@ class Spellcaster(Gimp.PlugIn):
         """SAM3 Extract: detect subject, remove background, auto-crop."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # Preflight: check if SAM3 node pack is installed on the server
+        srv = COMFYUI_DEFAULT_URL
+        try:
+            _api_get(srv, "/object_info/SAM3Segment")
+        except Exception:
+            Gimp.message(
+                "SAM3 node pack is not installed on your ComfyUI server.\n\n"
+                "To install it:\n"
+                "1. Open ComfyUI Manager\n"
+                "2. Search for 'SAM3' or 'Segment Anything 3'\n"
+                "3. Install the node pack and restart ComfyUI\n\n"
+                f"Server checked: {srv}")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         GimpUi.init("spellcaster")
-        dlg = Gtk.Dialog(title="Spellcaster — SAM3 Extract Subject")
+        dlg = Gtk.Dialog(title="Spellcaster — AI Extract Subject")
         dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
         dlg.add_button("_Extract", Gtk.ResponseType.OK)
         bx = dlg.get_content_area()

@@ -678,13 +678,15 @@ def _install_gimp_css_theme(gimp_plug_dir: Path):
     """Install the Spellcaster GTK3 CSS theme into GIMP's user theme directory
     and activate it by writing the theme directive into gimprc.
 
-    Copies spellcaster-theme.css → themes/Spellcaster/gtk.css, then upserts
+    Copies spellcaster-theme.css → themes/Spellcaster/gimp.css, then upserts
     ``(theme "Spellcaster")`` in gimprc so GIMP actually switches to it.
 
+    GIMP 3.x requires the file to be named gimp.css (NOT gtk.css).
+
     Example paths:
-      - Windows: %APPDATA%/GIMP/3.2/themes/Spellcaster/gtk.css
-      - macOS:   ~/Library/Application Support/GIMP/3.2/themes/Spellcaster/gtk.css
-      - Linux:   ~/.config/GIMP/3.2/themes/Spellcaster/gtk.css
+      - Windows: %APPDATA%/GIMP/3.2/themes/Spellcaster/gimp.css
+      - macOS:   ~/Library/Application Support/GIMP/3.2/themes/Spellcaster/gimp.css
+      - Linux:   ~/.config/GIMP/3.2/themes/Spellcaster/gimp.css
     """
     import shutil
 
@@ -738,7 +740,7 @@ def _install_gimp_css_theme(gimp_plug_dir: Path):
     theme_dir = ver_dir / "themes" / "Spellcaster"
     try:
         theme_dir.mkdir(parents=True, exist_ok=True)
-        dest = theme_dir / "gtk.css"
+        dest = theme_dir / "gimp.css"
         shutil.copy2(css_src, dest)
         print(f"  {G}✓ GIMP Spellcaster theme installed:{X} {dest}")
     except OSError as e:
