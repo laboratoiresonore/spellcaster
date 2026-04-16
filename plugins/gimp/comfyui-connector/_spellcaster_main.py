@@ -501,17 +501,19 @@ def _make_branded_header():
         title.set_xalign(0)
         hbox.pack_start(title, False, False, 0)
 
-        # Live server status indicator
+        # Live server + enhance status indicator
         status_label = Gtk.Label()
         status_label.set_xalign(0)
         status_label.set_valign(Gtk.Align.END)
         try:
             _api_get(COMFYUI_DEFAULT_URL, "/system_stats")
+            enhance_tag = ' <span color="#B246F2">✦ AI Enhance</span>' if _PROMPT_ENHANCE else ''
             status_label.set_markup(
-                f'<span size="9000" color="#00E676">● Connected</span>')
+                f'<span size="9000" color="#00E676">● Connected</span>'
+                f'<span size="9000">{enhance_tag}</span>')
         except Exception:
             status_label.set_markup(
-                f'<span size="9000" color="#FF5252">● Server offline — check Settings</span>')
+                f'<span size="9000" color="#FF5252">● Server offline</span>')
         hbox.pack_start(status_label, False, False, 0)
 
         return hbox
@@ -835,6 +837,41 @@ COMFYUI_DEFAULT_URL = _load_config().get("server_url", "http://127.0.0.1:8188")
 # Default: disabled. Users generating massive tiled videos on slow GPUs
 # should never be interrupted by an arbitrary timeout.
 WORKFLOW_TIMEOUT = _load_config().get("workflow_timeout", 0)
+
+# ── AI Prompt Enhancement ─────────────────────────────────────────────
+# When enabled, every user prompt is automatically rewritten by a local
+# LLM (KoboldCpp, Ollama, or any OpenAI-compatible server) before being
+# sent to ComfyUI. The rewrite is architecture-aware: SDXL gets tag-style
+# prompts, Flux gets natural language, Klein gets concise descriptions.
+# Toggle via config.json {"prompt_enhance": true, "llm_url": "http://..."}
+# or via the Settings dialog.
+_PROMPT_ENHANCE = _load_config().get("prompt_enhance", False)
+_LLM_URL = _load_config().get("llm_url", "http://127.0.0.1:5001")
+
+
+def _auto_enhance(prompt, arch_key, negative=""):
+    """Enhance a prompt via local LLM if the global toggle is ON.
+
+    Returns (enhanced_prompt, enhanced_negative). If enhancement is
+    disabled, the LLM is unreachable, or the prompt is already detailed,
+    returns the originals unchanged. Never blocks generation — 15s timeout.
+    """
+    if not _PROMPT_ENHANCE or not prompt or not prompt.strip():
+        return prompt, negative
+    try:
+        from spellcaster_core.prompt_enhance import enhance_prompt
+        enhanced = enhance_prompt(prompt, arch_key, _LLM_URL, is_negative=False)
+        if enhanced and enhanced != prompt:
+            print(f"[Spellcaster] Prompt enhanced ({arch_key}): "
+                  f"{len(prompt.split())}→{len(enhanced.split())} words")
+        else:
+            enhanced = prompt
+        # Don't enhance negative — architecture quality_negative is already optimal
+        return enhanced, negative
+    except Exception as e:
+        print(f"[Spellcaster] Prompt enhance skipped: {e}")
+        return prompt, negative
+
 
 # ── Klein (Flux 2 distilled) model registry ─────────────────────────────
 # Used by all Klein-based workflows: img2img, repose, blend, headswap,
@@ -4379,13 +4416,17 @@ LORA_METADATA = {
 
 def _build_img2img(image_filename, preset, prompt_text, negative_text, seed,
                   loras=None, controlnet=None, controlnet_2=None):
-    """→ Delegated to v2 builder."""
+    """→ Delegated to v2 builder, with automatic prompt enhancement."""
+    arch_key = preset.get("arch", "sdxl")
+    prompt_text, negative_text = _auto_enhance(prompt_text, arch_key, negative_text)
     return build_img2img(image_filename, preset, prompt_text, negative_text, seed,
                          loras=loras, controlnet=controlnet, controlnet_2=controlnet_2,
                          guide_modes=CONTROLNET_GUIDE_MODES)
 
 def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_text, seed, loras=None, controlnet=None, controlnet_2=None):
-    """→ Delegated to v2 builder."""
+    """→ Delegated to v2 builder, with automatic prompt enhancement."""
+    arch_key = preset.get("arch", "sdxl")
+    prompt_text, negative_text = _auto_enhance(prompt_text, arch_key, negative_text)
     return build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_text, seed,
                          loras=loras, controlnet=controlnet, controlnet_2=controlnet_2,
                          guide_modes=CONTROLNET_GUIDE_MODES)
@@ -12843,11 +12884,12 @@ class Spellcaster(Gimp.PlugIn):
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_klein_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
+            _klein_prompt, _ = _auto_enhance(v["prompt"], "flux2klein")
             base_seed = v["seed"]
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = build_klein_img2img(
-                    uname, v["klein_model"], v["prompt"], seed,
+                    uname, v["klein_model"], _klein_prompt, seed,
                     steps=v["steps"], denoise=v["denoise"], guidance=v["guidance"],
                     enhancer_mag=v["enhancer_mag"], enhancer_contrast=v["enhancer_contrast"],
                     lora_name=v["lora_name"], lora_strength=v["lora_strength"],
@@ -12899,11 +12941,12 @@ class Spellcaster(Gimp.PlugIn):
             # Upload reference image
             ref_name = f"gimp_kleinr_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, v["ref_file"], ref_name)
+            _kleinr_prompt, _ = _auto_enhance(v["prompt"], "flux2klein")
             base_seed = v["seed"]
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = build_klein_img2img_ref(
-                    uname, ref_name, v["klein_model"], v["prompt"], seed,
+                    uname, ref_name, v["klein_model"], _kleinr_prompt, seed,
                     steps=v["steps"], denoise=v["denoise"], guidance=v["guidance"],
                     enhancer_mag=v["enhancer_mag"], enhancer_contrast=v["enhancer_contrast"],
                     ref_strength=v["ref_strength"], text_ref_balance=v["text_ref_balance"],
@@ -21084,6 +21127,59 @@ class Spellcaster(Gimp.PlugIn):
         clean_btn.connect("clicked", _clean_inputs_now)
         bx.pack_start(clean_btn, False, False, 0)
 
+        # ── AI Prompt Enhancement ──
+        bx.pack_start(Gtk.Separator(), False, False, 5)
+        bx.pack_start(Gtk.Label(label="AI Prompt Enhancement:", xalign=0), False, False, 0)
+        enhance_cb = Gtk.CheckButton(label="Automatically enhance prompts via local LLM")
+        enhance_cb.set_active(cfg.get("prompt_enhance", False))
+        enhance_cb.set_tooltip_text(
+            "When enabled, every prompt you type is automatically rewritten\n"
+            "by a local LLM (KoboldCpp, Ollama, or any OpenAI-compatible API)\n"
+            "before being sent to ComfyUI.\n\n"
+            "The rewrite is architecture-aware:\n"
+            "  • SDXL: tag-style with quality tokens\n"
+            "  • Flux/Kontext: natural language descriptions\n"
+            "  • Klein: concise, focused prompts\n"
+            "  • Illustrious: booru/danbooru tags\n\n"
+            "Requires a running LLM server (KoboldCpp recommended).\n"
+            "If the LLM is unreachable, your original prompt is used as-is.")
+        bx.pack_start(enhance_cb, False, False, 0)
+
+        llm_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        llm_row.pack_start(Gtk.Label(label="LLM Server:"), False, False, 0)
+        llm_entry = Gtk.Entry()
+        llm_entry.set_text(cfg.get("llm_url", "http://127.0.0.1:5001"))
+        llm_entry.set_hexpand(True)
+        llm_entry.set_tooltip_text(
+            "URL of your local LLM server for prompt enhancement.\n\n"
+            "KoboldCpp: http://127.0.0.1:5001 (default)\n"
+            "Ollama:    http://127.0.0.1:11434\n"
+            "LM Studio: http://127.0.0.1:1234\n\n"
+            "Must support OpenAI-compatible /v1/chat/completions endpoint.")
+        llm_row.pack_start(llm_entry, True, True, 0)
+        # Test LLM button
+        test_llm_btn = Gtk.Button(label="Test")
+        test_llm_status = Gtk.Label(label="")
+        def _on_test_llm(btn):
+            url = llm_entry.get_text().strip().rstrip("/")
+            try:
+                req = urllib.request.Request(f"{url}/api/v1/model", method="GET")
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    data = json.loads(resp.read())
+                model_name = data.get("result", "unknown")
+                test_llm_status.set_markup(f'<span foreground="#00E676">✓ {model_name}</span>')
+            except Exception:
+                try:
+                    req = urllib.request.Request(f"{url}/v1/models", method="GET")
+                    with urllib.request.urlopen(req, timeout=5) as resp:
+                        test_llm_status.set_markup('<span foreground="#00E676">✓ Connected</span>')
+                except Exception as e2:
+                    test_llm_status.set_markup(f'<span foreground="#FF5252">✗ Offline</span>')
+        test_llm_btn.connect("clicked", _on_test_llm)
+        llm_row.pack_start(test_llm_btn, False, False, 0)
+        llm_row.pack_start(test_llm_status, False, False, 0)
+        bx.pack_start(llm_row, False, False, 0)
+
         # ── Auto-update toggle ──
         bx.pack_start(Gtk.Separator(), False, False, 5)
         auto_update_cb = Gtk.CheckButton(label="Auto-update plugin from GitHub on startup")
@@ -21312,8 +21408,14 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
 
         # Apply timeout globally for this session
-        global WORKFLOW_TIMEOUT
+        global WORKFLOW_TIMEOUT, _PROMPT_ENHANCE, _LLM_URL
         WORKFLOW_TIMEOUT = new_timeout
+
+        # Apply prompt enhancement settings globally for this session
+        new_enhance = enhance_cb.get_active()
+        new_llm = llm_entry.get_text().strip().rstrip("/")
+        _PROMPT_ENHANCE = new_enhance
+        _LLM_URL = new_llm
 
         # Parse extra workflow dirs from expert settings
         _buf = extra_dirs_buf
@@ -21329,9 +21431,12 @@ class Spellcaster(Gimp.PlugIn):
             "output_dir": new_output_dir,
             "output_cleanup": new_cleanup,
             "extra_workflow_dirs": _extra_dirs,
+            "prompt_enhance": new_enhance,
+            "llm_url": new_llm,
         })
         _propagate_server_url(new_url)
-        Gimp.message(f"Settings saved. Server: {new_url}")
+        enhance_msg = " | AI Enhance: ON" if new_enhance else ""
+        Gimp.message(f"Settings saved. Server: {new_url}{enhance_msg}")
         return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
 
