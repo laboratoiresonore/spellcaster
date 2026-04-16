@@ -1190,6 +1190,7 @@ def _up_save(dialog):
     area.pack_start(Gtk.Label(label="Preset name:"), False, False, 0)
     name_entry = Gtk.Entry()
     name_entry.set_activates_default(True)
+    name_entry.set_tooltip_text("Name for saving. Use descriptive text like 'my_portrait'.")
     cur_idx = dialog._up_combo.get_active()
     if 0 <= cur_idx < len(dialog._up_presets):
         name_entry.set_text(dialog._up_presets[cur_idx]["name"])
@@ -6259,6 +6260,7 @@ class PresetDialog(Gtk.Dialog):
         self.preset_combo = Gtk.ComboBoxText()
         for i, p in enumerate(MODEL_PRESETS):
             self.preset_combo.append(str(i), _model_label(p, mode))
+        preset_combo.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         # Default to favourite model from settings, or first model
         fav = _load_config().get("favourite_model", -1)
         if 0 <= fav < len(MODEL_PRESETS):
@@ -6556,6 +6558,7 @@ class PresetDialog(Gtk.Dialog):
             cn_row_2.pack_start(Gtk.Label(label="CN2 Strength:"), False, False, 0)
             self._cn_strength_spin_2 = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
             self._cn_strength_spin_2.set_digits(2)
+            _cn_strength_spin_2.set_tooltip_text("ControlNet influence strength (0.0-1.0).")
             self._cn_strength_spin_2.set_value(0.6)
             cn_row_2.pack_start(self._cn_strength_spin_2, False, False, 0)
             cn_exp_box.pack_start(cn_row_2, False, False, 0)
@@ -6604,6 +6607,7 @@ class PresetDialog(Gtk.Dialog):
         exp.set_tooltip_text("Paste a raw ComfyUI workflow JSON here to bypass all presets.\nOnly for advanced users who export workflows from ComfyUI.")
         self.wf_tv = Gtk.TextView()
         self.wf_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        wf_tv.set_tooltip_text("Raw ComfyUI workflow JSON — for advanced users only.")
         self.wf_tv.set_monospace(True)
         sw3 = Gtk.ScrolledWindow(); sw3.set_min_content_height(80); sw3.add(self.wf_tv)
         exp.add(sw3)
@@ -7111,6 +7115,7 @@ class PresetDialog(Gtk.Dialog):
         area.pack_start(Gtk.Label(label="Preset name:"), False, False, 0)
         name_entry = Gtk.Entry()
         name_entry.set_activates_default(True)
+        name_entry.set_tooltip_text("Name for saving. Use descriptive text like 'my_portrait'.")
         cur_idx = self._user_preset_combo.get_active()
         if 0 <= cur_idx < len(self._user_presets):
             name_entry.set_text(self._user_presets[cur_idx]["name"])
@@ -7975,6 +7980,7 @@ class WanI2VDialog(Gtk.Dialog):
         self._video_preset_combo = Gtk.ComboBoxText()
         for i, vp in enumerate(WAN_VIDEO_PRESETS):
             self._video_preset_combo.append(str(i), vp["label"])
+        _video_preset_combo.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         self._video_preset_combo.set_active(0)
         # Not packed into the UI — hidden
 
@@ -8175,6 +8181,7 @@ class WanI2VDialog(Gtk.Dialog):
             "832×480 → 1664×960.  Uses native ComfyUI upscale model.")
         self.upscale_spin = Gtk.SpinButton.new_with_range(1.0, 4.0, 0.25)
         self.upscale_spin.set_digits(2); self.upscale_spin.set_value(2.0)
+        upscale_spin.set_tooltip_text("Scale factor for upscaling.")
         # Scale spinner hidden but still functional for get_values()
         pp_box.pack_start(self.upscale_check, False, False, 0)
 
@@ -8779,6 +8786,7 @@ class LtxVideoDialog(Gtk.Dialog):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         self.server_entry = Gtk.Entry()
         self.server_entry.set_text(server_url)
+        server_entry.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         self.server_entry.set_hexpand(True)
         hb.pack_start(self.server_entry, True, True, 0)
         box.pack_start(hb, False, False, 0)
@@ -9978,6 +9986,7 @@ class KontextDialog(Gtk.Dialog):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         self.server_entry = Gtk.Entry()
         self.server_entry.set_text(server_url)
+        server_entry.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         self.server_entry.set_hexpand(True)
         hb.pack_start(self.server_entry, True, True, 0)
         box.pack_start(hb, False, False, 0)
@@ -10060,12 +10069,14 @@ class KontextDialog(Gtk.Dialog):
         self.lora_combo = Gtk.ComboBoxText()
         self.lora_combo.append("none", "(none)")
         self.lora_combo.set_active(0)
+        lora_combo.set_tooltip_text("Optional LoRA to modify the model output style.")
         box.pack_start(self.lora_combo, False, False, 0)
 
         lora_str_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         lora_str_box.pack_start(Gtk.Label(label="LoRA Strength:"), False, False, 0)
         self.lora_str_spin = Gtk.SpinButton.new_with_range(-5.0, 5.0, 0.05)
         self.lora_str_spin.set_digits(2); self.lora_str_spin.set_value(1.0)
+        lora_str_spin.set_tooltip_text("LoRA effect strength. 1.0 = full effect.")
         lora_str_box.pack_start(self.lora_str_spin, False, False, 0)
         box.pack_start(lora_str_box, False, False, 0)
 
@@ -11480,6 +11491,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         # Actor A face reference
         a_frame = Gtk.Frame(label="  Actor A (closer/left/larger face)  ")
@@ -11587,6 +11599,7 @@ class Spellcaster(Gimp.PlugIn):
                 c = Gtk.ComboBoxText()
                 c.append("i2v", "Image to Video"); c.append("loop", "Looping Video"); c.append("flf", "First + Last Frame")
                 c.set_active_id("i2v")
+                c.set_tooltip_text("Select an option.")
                 row.pack_start(c, True, True, 0); modes_box.pack_start(row, False, False, 0); mode_combos.append(c)
             modes_box.show_all()
         steps_sp.connect("value-changed", _rebuild_modes); _rebuild_modes()
@@ -11861,6 +11874,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         # 3 actor face references
         actor_labels = ["Actor A (leftmost)", "Actor B (middle)", "Actor C (rightmost)"]
@@ -11874,6 +11888,7 @@ class Spellcaster(Gimp.PlugIn):
             src = Gtk.ComboBoxText()
             src.append("canvas", "Use face from canvas"); src.append("file", "Upload face photo...")
             src.set_active_id(default); fb.pack_start(src, False, False, 0)
+            src.set_tooltip_text("Input source selection.")
             ch = Gtk.FileChooserButton(title=f"{label} face")
             ch.set_action(Gtk.FileChooserAction.OPEN)
             ff = Gtk.FileFilter(); ff.set_name("Images"); ff.add_pattern("*.png"); ff.add_pattern("*.jpg"); ff.add_pattern("*.jpeg")
@@ -11888,12 +11903,15 @@ class Spellcaster(Gimp.PlugIn):
         script_combo = Gtk.ComboBoxText()
         for k in TRIO_SCRIPTS: script_combo.append(k, k)
         script_combo.set_active(0); bx.pack_start(script_combo, False, False, 0)
+        script_combo.set_tooltip_text("Script or sequence preset.")
 
         grid = Gtk.Grid(column_spacing=8, row_spacing=6)
         grid.attach(Gtk.Label(label="Steps:"), 0, 0, 1, 1)
         steps_sp = Gtk.SpinButton.new_with_range(1, 5, 1); steps_sp.set_value(3); grid.attach(steps_sp, 1, 0, 1, 1)
+        steps_sp.set_tooltip_text("Generation steps — more = better quality but slower.")
         grid.attach(Gtk.Label(label="Variations:"), 2, 0, 1, 1)
         vars_sp = Gtk.SpinButton.new_with_range(1, 3, 1); vars_sp.set_value(2); grid.attach(vars_sp, 3, 0, 1, 1)
+        vars_sp.set_tooltip_text("Number of variations to generate.")
         reinject_check = Gtk.CheckButton(label="Re-inject all 3 faces between steps")
         reinject_check.set_active(True)
         reinject_check.set_tooltip_text("Three sequential ReActor passes per chain frame:\n  face[0]←A | face[1]←B | face[2]←C")
@@ -11910,6 +11928,7 @@ class Spellcaster(Gimp.PlugIn):
                 c = Gtk.ComboBoxText()
                 c.append("i2v", "Image to Video"); c.append("loop", "Looping"); c.append("flf", "First+Last Frame")
                 c.set_active_id("i2v"); row.pack_start(c, True, True, 0); modes_box.pack_start(row, False, False, 0); mode_combos.append(c)
+                c.set_tooltip_text("Select an option.")
             modes_box.show_all()
         steps_sp.connect("value-changed", _rebuild); _rebuild()
         bx.pack_start(modes_box, False, False, 0)
@@ -12058,6 +12077,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         bx.pack_start(Gtk.Label(label="Select a video file from ComfyUI's input folder.\n"
                                       "The video will be upscaled frame-by-frame and re-encoded."),
@@ -12112,6 +12132,7 @@ class Spellcaster(Gimp.PlugIn):
         grid.attach(Gtk.Label(label="FPS:"), 0, 1, 1, 1)
         fps_sp = Gtk.SpinButton.new_with_range(1, 60, 1)
         fps_sp.set_value(16)
+        fps_sp.set_tooltip_text("Frames per second for video output.")
         grid.attach(fps_sp, 1, 1, 1, 1)
         bx.pack_start(grid, False, False, 4)
 
@@ -12171,6 +12192,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         bx.pack_start(Gtk.Label(label="Upscale + face swap a video.\n"
                                       "Faces are swapped using saved ReActor face models."),
@@ -12181,6 +12203,7 @@ class Spellcaster(Gimp.PlugIn):
         hv.pack_start(Gtk.Label(label="Video:"), False, False, 0)
         video_combo = Gtk.ComboBoxText()
         video_combo.set_hexpand(True)
+        video_combo.set_tooltip_text("Select a video file from the server.")
         hv.pack_start(video_combo, True, True, 0); bx.pack_start(hv, False, False, 0)
 
         # Face models (2 slots)
@@ -12220,6 +12243,7 @@ class Spellcaster(Gimp.PlugIn):
         grid = Gtk.Grid(column_spacing=8, row_spacing=4)
         grid.attach(Gtk.Label(label="Upscale Model:"), 0, 0, 1, 1)
         up_combo = Gtk.ComboBoxText()
+        up_combo.set_tooltip_text("Upscale model to use.")
         up_combo.append("(none)", "(none)")
         for label in UPSCALE_PRESETS:
             if UPSCALE_PRESETS[label]:
@@ -12230,16 +12254,19 @@ class Spellcaster(Gimp.PlugIn):
         grid.attach(Gtk.Label(label="Model factor:"), 2, 0, 1, 1)
         mf_sp = Gtk.SpinButton.new_with_range(1.0, 4.0, 0.5)
         mf_sp.set_value(1.0); mf_sp.set_digits(1)
+        mf_sp.set_tooltip_text("Scale factor for upscaling.")
         grid.attach(mf_sp, 3, 0, 1, 1)
 
         grid.attach(Gtk.Label(label="RTX factor:"), 0, 1, 1, 1)
         rtx_sp = Gtk.SpinButton.new_with_range(1.0, 4.0, 0.5)
         rtx_sp.set_value(2.0); rtx_sp.set_digits(1)
+        rtx_sp.set_tooltip_text("Scale factor for upscaling.")
         grid.attach(rtx_sp, 1, 1, 1, 1)
 
         grid.attach(Gtk.Label(label="FPS:"), 2, 1, 1, 1)
         fps_sp = Gtk.SpinButton.new_with_range(1, 60, 1)
         fps_sp.set_value(16)
+        fps_sp.set_tooltip_text("Frames per second for video output.")
         grid.attach(fps_sp, 3, 1, 1, 1)
 
         grid.attach(Gtk.Label(label="Restore vis:"), 0, 2, 1, 1)
@@ -12320,6 +12347,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         bx.pack_start(Gtk.Label(
             label="AI video upscaler — enhances resolution and detail.\n"
@@ -12679,6 +12707,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         # Klein model
         hm = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -12686,6 +12715,7 @@ class Spellcaster(Gimp.PlugIn):
         klein_combo = Gtk.ComboBoxText()
         for k in KLEIN_MODELS: klein_combo.append(k, k)
         klein_combo.set_active_id("Klein 9B")
+        klein_combo.set_tooltip_text("Flux 2 Klein model variant (9B = best quality, 4B = faster).")
         hm.pack_start(klein_combo, True, True, 0); bx.pack_start(hm, False, False, 0)
 
         # Face source: file OR saved model
@@ -12750,26 +12780,31 @@ class Spellcaster(Gimp.PlugIn):
         grid.attach(Gtk.Label(label="Steps:"), 2, 0, 1, 1)
         steps_sp = Gtk.SpinButton.new_with_range(8, 40, 1)
         steps_sp.set_value(20)
+        steps_sp.set_tooltip_text("Generation steps — more = better quality but slower.")
         grid.attach(steps_sp, 3, 0, 1, 1)
 
         grid.attach(Gtk.Label(label="Seed:"), 0, 1, 1, 1)
         seed_sp = Gtk.SpinButton.new_with_range(-1, 2**32, 1)
         seed_sp.set_value(-1)
+        seed_sp.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         grid.attach(seed_sp, 1, 1, 1, 1)
 
         grid.attach(Gtk.Label(label="Runs:"), 2, 1, 1, 1)
         runs_sp = Gtk.SpinButton.new_with_range(1, 99, 1)
         runs_sp.set_value(1)
+        runs_sp.set_tooltip_text("Generate multiple variations — each with a different seed.")
         grid.attach(runs_sp, 3, 1, 1, 1)
 
         grid.attach(Gtk.Label(label="Restore vis:"), 0, 2, 1, 1)
         vis_sp = Gtk.SpinButton.new_with_range(0.0, 1.0, 0.05)
         vis_sp.set_value(0.7); vis_sp.set_digits(2)
+        vis_sp.set_tooltip_text("Effect strength. Higher = more visible change.")
         grid.attach(vis_sp, 1, 2, 1, 1)
 
         grid.attach(Gtk.Label(label="CF weight:"), 2, 2, 1, 1)
         cf_sp = Gtk.SpinButton.new_with_range(0.0, 1.0, 0.05)
         cf_sp.set_value(0.8); cf_sp.set_digits(2)
+        cf_sp.set_tooltip_text("Effect strength. Higher = more visible change.")
         grid.attach(cf_sp, 3, 2, 1, 1)
         bx.pack_start(grid, False, False, 4)
 
@@ -12994,6 +13029,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         # Klein model selector
         bx.pack_start(Gtk.Label(label="Klein Model:", xalign=0), False, False, 0)
@@ -13033,6 +13069,7 @@ class Spellcaster(Gimp.PlugIn):
         bx.pack_start(Gtk.Label(label="Prompt:", xalign=0), False, False, 0)
         prompt_tv = Gtk.TextView(); prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         prompt_tv.set_size_request(-1, 60)
+        prompt_tv.set_tooltip_text("Describe what you want. Be specific about subject, style, lighting.")
         sw = Gtk.ScrolledWindow(); sw.add(prompt_tv); sw.set_min_content_height(60)
         bx.pack_start(sw, False, False, 0)
 
@@ -13048,21 +13085,27 @@ class Spellcaster(Gimp.PlugIn):
         grid.attach(Gtk.Label(label="Left:", xalign=1), 0, 0, 1, 1)
         left_sp = Gtk.SpinButton.new_with_range(0, 2048, 16); left_sp.set_value(0)
         grid.attach(left_sp, 1, 0, 1, 1)
+        left_sp.set_tooltip_text("Pixels to extend on this side.")
         grid.attach(Gtk.Label(label="Top:", xalign=1), 2, 0, 1, 1)
         top_sp = Gtk.SpinButton.new_with_range(0, 2048, 16); top_sp.set_value(0)
         grid.attach(top_sp, 3, 0, 1, 1)
+        top_sp.set_tooltip_text("Pixels to extend on this side.")
         grid.attach(Gtk.Label(label="Right:", xalign=1), 0, 1, 1, 1)
         right_sp = Gtk.SpinButton.new_with_range(0, 2048, 16); right_sp.set_value(0)
         grid.attach(right_sp, 1, 1, 1, 1)
+        right_sp.set_tooltip_text("Pixels to extend on this side.")
         grid.attach(Gtk.Label(label="Bottom:", xalign=1), 2, 1, 1, 1)
         bottom_sp = Gtk.SpinButton.new_with_range(0, 2048, 16); bottom_sp.set_value(256)
         grid.attach(bottom_sp, 3, 1, 1, 1)
+        bottom_sp.set_tooltip_text("Pixels to extend on this side.")
         grid.attach(Gtk.Label(label="Feathering:", xalign=1), 0, 2, 1, 1)
         feather_sp = Gtk.SpinButton.new_with_range(0, 256, 1); feather_sp.set_value(40)
         grid.attach(feather_sp, 1, 2, 1, 1)
+        feather_sp.set_tooltip_text("Feather radius — softens the edge transition.")
         grid.attach(Gtk.Label(label="Steps:", xalign=1), 2, 2, 1, 1)
         steps_sp = Gtk.SpinButton.new_with_range(4, 50, 1); steps_sp.set_value(20)
         grid.attach(steps_sp, 3, 2, 1, 1)
+        steps_sp.set_tooltip_text("Generation steps — more = better quality but slower.")
         bx.pack_start(grid, False, False, 0)
 
         # Seed + Runs
@@ -13070,6 +13113,7 @@ class Spellcaster(Gimp.PlugIn):
         hb_seed.pack_start(Gtk.Label(label="Seed:"), False, False, 0)
         seed_sp = Gtk.SpinButton.new_with_range(-1, 2**32-1, 1); seed_sp.set_value(-1)
         hb_seed.pack_start(seed_sp, True, True, 0)
+        seed_sp.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         hb_seed.pack_start(Gtk.Label(label="Runs:"), False, False, 6)
         runs_sp = Gtk.SpinButton.new_with_range(1, 99, 1); runs_sp.set_value(1)
         runs_sp.set_tooltip_text("Generate multiple variations — each with a different random seed")
@@ -13187,6 +13231,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         # Layer selection
         bx.pack_start(Gtk.Label(label="Foreground (element to integrate):", xalign=0), False, False, 0)
@@ -13211,6 +13256,7 @@ class Spellcaster(Gimp.PlugIn):
         for key in KLEIN_MODELS:
             klein_combo.append(key, key)
         klein_combo.set_active(0)
+        klein_combo.set_tooltip_text("Flux 2 Klein model variant (9B = best quality, 4B = faster).")
         bx.pack_start(klein_combo, False, False, 0)
 
         # Blend mode presets
@@ -13287,6 +13333,7 @@ class Spellcaster(Gimp.PlugIn):
         bx.pack_start(Gtk.Label(label="Integration Prompt:", xalign=0), False, False, 0)
         prompt_tv = Gtk.TextView(); prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         prompt_tv.set_size_request(-1, 50)
+        prompt_tv.set_tooltip_text("Describe what you want. Be specific about subject, style, lighting.")
         sw = Gtk.ScrolledWindow(); sw.add(prompt_tv); sw.set_min_content_height(50)
         bx.pack_start(sw, False, False, 0)
 
@@ -13320,16 +13367,19 @@ class Spellcaster(Gimp.PlugIn):
         comp_grid.attach(Gtk.Label(label="X Position %:", xalign=1), 0, 1, 1, 1)
         pos_x = Gtk.SpinButton.new_with_range(0, 100, 1); pos_x.set_value(50)
         comp_grid.attach(pos_x, 1, 1, 1, 1)
+        pos_x.set_tooltip_text("Horizontal position (0.0 = left, 0.5 = center, 1.0 = right).")
 
         comp_grid.attach(Gtk.Label(label="Y Position %:", xalign=1), 2, 1, 1, 1)
         pos_y = Gtk.SpinButton.new_with_range(0, 100, 1); pos_y.set_value(50)
         comp_grid.attach(pos_y, 3, 1, 1, 1)
+        pos_y.set_tooltip_text("Vertical position (0.0 = top, 0.5 = center, 1.0 = bottom).")
 
         comp_grid.attach(Gtk.Label(label="Blend:", xalign=1), 0, 2, 1, 1)
         blend_combo = Gtk.ComboBoxText()
         for m in ["normal", "multiply", "screen", "overlay", "add", "subtract"]:
             blend_combo.append(m, m)
         blend_combo.set_active(0)
+        blend_combo.set_tooltip_text("Layer blending mode for compositing.")
         comp_grid.attach(blend_combo, 1, 2, 1, 1)
 
         comp_box.pack_start(comp_grid, False, False, 0)
@@ -13341,6 +13391,7 @@ class Spellcaster(Gimp.PlugIn):
         hb_seed.pack_start(Gtk.Label(label="Seed:"), False, False, 0)
         seed_sp = Gtk.SpinButton.new_with_range(-1, 2**32-1, 1); seed_sp.set_value(-1)
         hb_seed.pack_start(seed_sp, True, True, 0)
+        seed_sp.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         hb_seed.pack_start(Gtk.Label(label="Runs:"), False, False, 6)
         runs_sp = Gtk.SpinButton.new_with_range(1, 99, 1); runs_sp.set_value(1)
         runs_sp.set_tooltip_text("Generate multiple variations — each with a different random seed")
@@ -14160,6 +14211,7 @@ class Spellcaster(Gimp.PlugIn):
         lora_combo = Gtk.ComboBoxText()
         lora_combo.append("none", "(none)")
         lora_combo.set_active_id("none")
+        lora_combo.set_tooltip_text("Optional LoRA to modify the model output style.")
         try:
             _all_loras = _fetch_loras(srv_e.get_text().strip())
             for _ln in _filter_loras_for_arch(_all_loras, "flux2klein"):
@@ -14349,12 +14401,14 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         # Klein model
         bx.pack_start(Gtk.Label(label="Klein Model:", xalign=0), False, False, 0)
         klein_combo = Gtk.ComboBoxText()
         for key in KLEIN_MODELS:
             klein_combo.append(key, key)
         klein_combo.set_active(0)
+        klein_combo.set_tooltip_text("Flux 2 Klein model variant (9B = best quality, 4B = faster).")
         bx.pack_start(klein_combo, False, False, 0)
         # Detail preset
         bx.pack_start(Gtk.Separator(), False, False, 4)
@@ -14390,14 +14444,17 @@ class Spellcaster(Gimp.PlugIn):
         grid.attach(Gtk.Label(label="Steps:", xalign=1), 0, r, 1, 1)
         steps_spin = Gtk.SpinButton.new_with_range(1, 50, 1); steps_spin.set_value(6)
         grid.attach(steps_spin, 1, r, 1, 1)
+        steps_spin.set_tooltip_text("Generation steps — more = better quality but slower.")
         grid.attach(Gtk.Label(label="Denoise:", xalign=1), 2, r, 1, 1)
         denoise_spin = Gtk.SpinButton.new_with_range(0.05, 1.0, 0.05)
         denoise_spin.set_digits(2); denoise_spin.set_value(0.40)
+        denoise_spin.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         grid.attach(denoise_spin, 3, r, 1, 1)
         r += 1
         grid.attach(Gtk.Label(label="Seed:", xalign=1), 0, r, 1, 1)
         seed_spin = Gtk.SpinButton.new_with_range(-1, 2**31, 1); seed_spin.set_value(-1)
         grid.attach(seed_spin, 1, r, 1, 1)
+        seed_spin.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         bx.pack_start(grid, False, False, 0)
         # Preset change handler
         def _on_preset_changed(combo):
@@ -14483,12 +14540,14 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         # Klein model
         bx.pack_start(Gtk.Label(label="Klein Model:", xalign=0), False, False, 0)
         klein_combo = Gtk.ComboBoxText()
         for key in KLEIN_MODELS:
             klein_combo.append(key, key)
         klein_combo.set_active(0)
+        klein_combo.set_tooltip_text("Flux 2 Klein model variant (9B = best quality, 4B = faster).")
         bx.pack_start(klein_combo, False, False, 0)
         # Object description
         bx.pack_start(Gtk.Separator(), False, False, 4)
@@ -14532,6 +14591,7 @@ class Spellcaster(Gimp.PlugIn):
         grid.attach(Gtk.Label(label="Seed:", xalign=1), 0, r, 1, 1)
         seed_spin = Gtk.SpinButton.new_with_range(-1, 2**31, 1); seed_spin.set_value(-1)
         grid.attach(seed_spin, 1, r, 1, 1)
+        seed_spin.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         bx.pack_start(grid, False, False, 0)
         # Runs
         _add_runs_spinner(dlg, bx)
@@ -14643,6 +14703,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         # Model selector — ALL models
         bx.pack_start(Gtk.Label(label="Model:", xalign=0), False, False, 0)
         model_combo = Gtk.ComboBoxText()
@@ -14701,6 +14762,7 @@ class Spellcaster(Gimp.PlugIn):
         seed_row.pack_start(Gtk.Label(label="Seed (-1=rand):"), False, False, 0)
         seed_spin = Gtk.SpinButton.new_with_range(-1, 2**31, 1); seed_spin.set_value(-1)
         seed_row.pack_start(seed_spin, False, False, 0)
+        seed_spin.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         bx.pack_start(seed_row, False, False, 0)
         # Runs
         _add_runs_spinner(dlg, bx)
@@ -14811,6 +14873,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         bx.pack_start(Gtk.Label(label="Blend two layers by a controllable ratio.\n"
                                       "0% = 100% Layer A, 100% = 100% Layer B."),
@@ -14930,6 +14993,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         bx.pack_start(Gtk.Label(label="Upscale with two different models and blend the results.\n"
                                       "Example: 40% ESRGAN (sharp) + 60% Remacri (smooth) for balanced output."),
@@ -15376,6 +15440,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         grid = Gtk.Grid(column_spacing=8, row_spacing=6)
         grid.attach(Gtk.Label(label="Number of steps:"), 0, 0, 1, 1)
@@ -15564,6 +15629,7 @@ class Spellcaster(Gimp.PlugIn):
                 hfe = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
                 end_entry = Gtk.Entry()
                 end_entry.set_placeholder_text("Browse for end frame...")
+                end_entry.set_tooltip_text("End value or target.")
                 end_entry.set_hexpand(True)
                 hfe.pack_start(end_entry, True, True, 0)
                 def _browse_end(e=end_entry):
@@ -16356,6 +16422,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         # What to remove
         bx.pack_start(Gtk.Label(label="What object are you removing?", xalign=0), False, False, 0)
@@ -16392,6 +16459,7 @@ class Spellcaster(Gimp.PlugIn):
 
         ai_box.pack_start(Gtk.Label(label="Checkpoint Model:", xalign=0), False, False, 0)
         ai_model_combo = Gtk.ComboBoxText()
+        ai_model_combo.set_tooltip_text("AI model to use for this operation.")
         for i, p in enumerate(MODEL_PRESETS):
             ai_model_combo.append(str(i), _model_label(p, "img2img"))
         _fav = _load_config().get("favourite_model", -1)
@@ -16412,6 +16480,7 @@ class Spellcaster(Gimp.PlugIn):
         ai_box.pack_start(Gtk.Label(label="Replacement prompt (auto-generated, editable):", xalign=0), False, False, 0)
         ai_prompt = Gtk.TextView(); ai_prompt.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         ai_prompt.set_size_request(-1, 50)
+        ai_prompt.set_tooltip_text("Text prompt for the AI — describe what you want.")
         sw_p = Gtk.ScrolledWindow(); sw_p.add(ai_prompt); sw_p.set_min_content_height(50)
         ai_box.pack_start(sw_p, False, False, 0)
 
@@ -16734,6 +16803,7 @@ class Spellcaster(Gimp.PlugIn):
         out_cn_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
         out_cn_strength = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
         out_cn_strength.set_digits(2); out_cn_strength.set_value(0.6)
+        out_cn_strength.set_tooltip_text("ControlNet influence strength (0.0-1.0).")
         out_cn_str_hb.pack_start(out_cn_strength, False, False, 0)
         cn_box.pack_start(out_cn_str_hb, False, False, 0)
         cn_frame.add(cn_box)
@@ -16886,6 +16956,7 @@ class Spellcaster(Gimp.PlugIn):
         st_cn_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
         st_cn_strength = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
         st_cn_strength.set_digits(2); st_cn_strength.set_value(0.6)
+        st_cn_strength.set_tooltip_text("ControlNet influence strength (0.0-1.0).")
         st_cn_str_hb.pack_start(st_cn_strength, False, False, 0)
         st_cn_box.pack_start(st_cn_str_hb, False, False, 0)
         # ControlNet 2 (optional)
@@ -16908,6 +16979,7 @@ class Spellcaster(Gimp.PlugIn):
         st_cn_str_hb_2.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
         st_cn_strength_2 = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
         st_cn_strength_2.set_digits(2); st_cn_strength_2.set_value(0.4)
+        st_cn_strength_2.set_tooltip_text("ControlNet influence strength (0.0-1.0).")
         st_cn_str_hb_2.pack_start(st_cn_strength_2, False, False, 0)
         st_cn_box.pack_start(st_cn_str_hb_2, False, False, 0)
         st_cn_exp.add(st_cn_box)
@@ -16923,6 +16995,7 @@ class Spellcaster(Gimp.PlugIn):
         lora_combo = Gtk.ComboBoxText()
         lora_combo.append("none", "(none)")
         lora_combo.set_active_id("none")
+        lora_combo.set_tooltip_text("Optional LoRA to modify the model output style.")
         try:
             _all_loras = _fetch_loras(se.get_text().strip())
             _arch = MODEL_PRESETS[model_combo.get_active()]["arch"] if model_combo.get_active() >= 0 else "sdxl"
@@ -16936,6 +17009,7 @@ class Spellcaster(Gimp.PlugIn):
         lora_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
         lora_str_spin = Gtk.SpinButton.new_with_range(0.0, 2.0, 0.05)
         lora_str_spin.set_digits(2); lora_str_spin.set_value(0.5)
+        lora_str_spin.set_tooltip_text("LoRA effect strength. 1.0 = full effect.")
         lora_str_hb.pack_start(lora_str_spin, False, False, 0)
         lora_box.pack_start(lora_str_hb, False, False, 0)
         lora_exp.add(lora_box)
@@ -17528,6 +17602,7 @@ class Spellcaster(Gimp.PlugIn):
         cn_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
         cn_strength = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
         cn_strength.set_digits(2); cn_strength.set_value(0.7)
+        cn_strength.set_tooltip_text("ControlNet influence strength (0.0-1.0).")
         cn_str_hb.pack_start(cn_strength, False, False, 0)
         hall_cn_box.pack_start(cn_str_hb, False, False, 0)
         # ControlNet 2 (optional)
@@ -17550,6 +17625,7 @@ class Spellcaster(Gimp.PlugIn):
         cn_str_hb_2.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
         cn_strength_2 = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
         cn_strength_2.set_digits(2); cn_strength_2.set_value(0.5)
+        cn_strength_2.set_tooltip_text("ControlNet influence strength (0.0-1.0).")
         cn_str_hb_2.pack_start(cn_strength_2, False, False, 0)
         hall_cn_box.pack_start(cn_str_hb_2, False, False, 0)
         hall_cn_exp.add(hall_cn_box)
@@ -17566,6 +17642,7 @@ class Spellcaster(Gimp.PlugIn):
         lora_combo = Gtk.ComboBoxText()
         lora_combo.append("none", "(none)")
         lora_combo.set_active_id("none")
+        lora_combo.set_tooltip_text("Optional LoRA to modify the model output style.")
         try:
             _all_loras = _fetch_loras(se.get_text().strip())
             _arch = MODEL_PRESETS[model_combo.get_active()]["arch"] if model_combo.get_active() >= 0 else "sdxl"
@@ -17579,6 +17656,7 @@ class Spellcaster(Gimp.PlugIn):
         lora_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
         lora_str_spin = Gtk.SpinButton.new_with_range(0.0, 2.0, 0.05)
         lora_str_spin.set_digits(2); lora_str_spin.set_value(0.5)
+        lora_str_spin.set_tooltip_text("LoRA effect strength. 1.0 = full effect.")
         lora_str_hb.pack_start(lora_str_spin, False, False, 0)
         lora_box.pack_start(lora_str_hb, False, False, 0)
         lora_exp.add(lora_box)
@@ -17598,6 +17676,7 @@ class Spellcaster(Gimp.PlugIn):
         runs_hb.pack_start(Gtk.Label(label="Runs:"), False, False, 0)
         runs_spin = Gtk.SpinButton.new_with_range(1, 99, 1); runs_spin.set_value(1)
         runs_hb.pack_start(runs_spin, False, False, 0)
+        runs_spin.set_tooltip_text("Generate multiple variations — each with a different seed.")
         hall_adv_box.pack_start(runs_hb, False, False, 0)
         hall_adv_exp.add(hall_adv_box)
         bx.pack_start(hall_adv_exp, False, False, 0)
@@ -17828,6 +17907,7 @@ class Spellcaster(Gimp.PlugIn):
         sv2r_cn_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
         sv2r_cn_strength = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
         sv2r_cn_strength.set_digits(2); sv2r_cn_strength.set_value(0.7)
+        sv2r_cn_strength.set_tooltip_text("ControlNet influence strength (0.0-1.0).")
         sv2r_cn_str_hb.pack_start(sv2r_cn_strength, False, False, 0)
         sv2r_cn_box.pack_start(sv2r_cn_str_hb, False, False, 0)
         # ControlNet 2 (optional)
@@ -17850,6 +17930,7 @@ class Spellcaster(Gimp.PlugIn):
         sv2r_cn_str_hb_2.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
         sv2r_cn_strength_2 = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
         sv2r_cn_strength_2.set_digits(2); sv2r_cn_strength_2.set_value(0.5)
+        sv2r_cn_strength_2.set_tooltip_text("ControlNet influence strength (0.0-1.0).")
         sv2r_cn_str_hb_2.pack_start(sv2r_cn_strength_2, False, False, 0)
         sv2r_cn_box.pack_start(sv2r_cn_str_hb_2, False, False, 0)
         sv2r_cn_exp.add(sv2r_cn_box)
@@ -17865,6 +17946,7 @@ class Spellcaster(Gimp.PlugIn):
         lora_combo = Gtk.ComboBoxText()
         lora_combo.append("none", "(none)")
         lora_combo.set_active_id("none")
+        lora_combo.set_tooltip_text("Optional LoRA to modify the model output style.")
         try:
             _all_loras = _fetch_loras(se.get_text().strip())
             _arch = MODEL_PRESETS[model_combo.get_active()]["arch"] if model_combo.get_active() >= 0 else "sdxl"
@@ -17878,6 +17960,7 @@ class Spellcaster(Gimp.PlugIn):
         lora_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
         lora_str_spin = Gtk.SpinButton.new_with_range(0.0, 2.0, 0.05)
         lora_str_spin.set_digits(2); lora_str_spin.set_value(0.5)
+        lora_str_spin.set_tooltip_text("LoRA effect strength. 1.0 = full effect.")
         lora_str_hb.pack_start(lora_str_spin, False, False, 0)
         lora_box.pack_start(lora_str_hb, False, False, 0)
         lora_exp.add(lora_box)
@@ -18145,6 +18228,7 @@ class Spellcaster(Gimp.PlugIn):
         col_cn2_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
         col_cn2_strength = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
         col_cn2_strength.set_digits(2); col_cn2_strength.set_value(0.5)
+        col_cn2_strength.set_tooltip_text("Effect strength (0.0-1.0). Higher = stronger influence.")
         col_cn2_str_hb.pack_start(col_cn2_strength, False, False, 0)
         col_cn_box.pack_start(col_cn2_str_hb, False, False, 0)
         col_cn_exp.add(col_cn_box)
@@ -18160,6 +18244,7 @@ class Spellcaster(Gimp.PlugIn):
         lora_combo = Gtk.ComboBoxText()
         lora_combo.append("none", "(none)")
         lora_combo.set_active_id("none")
+        lora_combo.set_tooltip_text("Optional LoRA to modify the model output style.")
         try:
             _all_loras = _fetch_loras(se.get_text().strip())
             _arch = MODEL_PRESETS[model_combo.get_active()]["arch"] if model_combo.get_active() >= 0 else "sdxl"
@@ -18173,6 +18258,7 @@ class Spellcaster(Gimp.PlugIn):
         lora_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
         lora_str_spin = Gtk.SpinButton.new_with_range(0.0, 2.0, 0.05)
         lora_str_spin.set_digits(2); lora_str_spin.set_value(0.5)
+        lora_str_spin.set_tooltip_text("LoRA effect strength. 1.0 = full effect.")
         lora_str_hb.pack_start(lora_str_spin, False, False, 0)
         lora_box.pack_start(lora_str_hb, False, False, 0)
         lora_exp.add(lora_box)
@@ -18497,6 +18583,7 @@ class Spellcaster(Gimp.PlugIn):
         lora_combo = Gtk.ComboBoxText()
         lora_combo.append("none", "(none)")
         lora_combo.set_active_id("none")
+        lora_combo.set_tooltip_text("Optional LoRA to modify the model output style.")
         try:
             _all_loras = _fetch_loras(se.get_text().strip())
             _arch = MODEL_PRESETS[model_combo.get_active()]["arch"] if model_combo.get_active() >= 0 else "sdxl"
@@ -18510,6 +18597,7 @@ class Spellcaster(Gimp.PlugIn):
         lora_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
         lora_str_spin = Gtk.SpinButton.new_with_range(0.0, 2.0, 0.05)
         lora_str_spin.set_digits(2); lora_str_spin.set_value(0.5)
+        lora_str_spin.set_tooltip_text("LoRA effect strength. 1.0 = full effect.")
         lora_str_hb.pack_start(lora_str_spin, False, False, 0)
         lora_box.pack_start(lora_str_hb, False, False, 0)
         lora_exp.add(lora_box)
@@ -19121,6 +19209,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         # Face source selector
         src_frame = Gtk.Frame(label="  Face Reference  ")
@@ -19797,6 +19886,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         # Face source
         bx.pack_start(Gtk.Label(label="Face Reference:", xalign=0), False, False, 0)
@@ -19993,6 +20083,7 @@ class Spellcaster(Gimp.PlugIn):
                 pick_combo = Gtk.ComboBoxText()
                 for i in range(len(results_data)): pick_combo.append(str(i), f"Body #{i+1}")
                 pick_combo.set_active(0)
+                pick_combo.set_tooltip_text("Select the best result from the generated variants.")
                 pbx.pack_start(pick_combo, False, False, 0)
                 pbx.show_all()
                 resp = pick_dlg.run()
@@ -20102,6 +20193,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         # Klein model
         bx.pack_start(Gtk.Label(label="Klein Model:", xalign=0), False, False, 0)
@@ -20303,6 +20395,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         # Background scene
         bg_frame = Gtk.Frame(label="  Background Scene  ")
@@ -20593,6 +20686,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         # Prompt
         hb2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         hb2.pack_start(Gtk.Label(label="Detect:"), False, False, 0)
@@ -20684,10 +20778,12 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         hb2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         hb2.pack_start(Gtk.Label(label="Detect:"), False, False, 0)
         pe = Gtk.Entry(); pe.set_text("person"); pe.set_hexpand(True)
         hb2.pack_start(pe, True, True, 0); bx.pack_start(hb2, False, False, 0)
+        pe.set_tooltip_text("What to detect — type a subject like 'person', 'shirt', 'hair'.")
         bx.pack_start(Gtk.Label(label="Detects subject, removes background, and auto-crops.\nResult is a new layer with transparent background."), False, False, 4)
         bx.show_all()
         if dlg.run() != Gtk.ResponseType.OK:
@@ -20823,7 +20919,7 @@ class Spellcaster(Gimp.PlugIn):
                     info_parts.append(f"Prompt: {p}...")
                 if preset.get("steps"):
                     info_parts.append(f"Steps: {preset['steps']}")
-                name_lbl.set_tooltip_text("\n".join(info_parts) if info_parts else "Saved preset")
+                name_lbl.set_tooltip_text("\n'.join(info_parts) if info_parts else 'Saved preset")
 
                 # Load button — applies preset to session and opens the tool
                 load_btn = Gtk.Button(label="Load")
@@ -21335,6 +21431,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         # Reference image
         bx.pack_start(Gtk.Label(label="Reference Image (color source):", xalign=0), False, False, 0)
         ref_chooser = Gtk.FileChooserButton(title="Select reference image")
