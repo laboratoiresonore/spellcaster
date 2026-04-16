@@ -10286,6 +10286,9 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-settings": None,
             "spellcaster-my-presets": None,
             "spellcaster-bridge": None,
+            # SAM3 AI Selection
+            "spellcaster-sam3-select": None,    # always register — preflight checks server at runtime
+            "spellcaster-sam3-extract": None,
             # Flux Kontext
             "spellcaster-kontext": "flux_kontext",
             # Quick context-menu actions
