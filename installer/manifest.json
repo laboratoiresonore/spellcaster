@@ -190,6 +190,17 @@
       "required_by": ["img2img", "txt2img", "inpaint"],
       "note": "Spellcaster nodes — auto-arch model loading, LLM prompt enhance, and smart sampling. Auto-updates via git pull."
     },
+    "ComfyUI-Impact-Pack": {
+      "repo": "https://github.com/ltdrdata/ComfyUI-Impact-Pack",
+      "provides": [
+        "FaceDetailer",
+        "UltralyticsDetectorProvider",
+        "SAMLoader",
+        "DetailerForEach"
+      ],
+      "required_by": ["klein_flux2"],
+      "note": "Face/hand detailer — auto-detect and re-generate faces at high detail. Used by build_klein_face_detail."
+    },
     "ComfyUI-Flux2Klein-Enhancer": {
       "repo": "https://github.com/capitan01R/ComfyUI-Flux2Klein-Enhancer",
       "provides": [
@@ -908,7 +919,7 @@
           }
         ]
       },
-      "custom_nodes": ["ComfyUI-Flux2Klein-Enhancer"]
+      "custom_nodes": ["ComfyUI-Flux2Klein-Enhancer", "ComfyUI-Impact-Pack"]
     },
     "wan_i2v": {
       "vram_min_gb": 8,
