@@ -10904,8 +10904,13 @@ class Spellcaster(Gimp.PlugIn):
             if not v:
                 return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         else:
-            GimpUi.init("spellcaster")
-            dlg = PresetDialog("Spellcaster — Inpaint Selection", mode="inpaint")
+            try:
+                GimpUi.init("spellcaster")
+                dlg = PresetDialog("Spellcaster — Inpaint Selection", mode="inpaint")
+            except Exception as _dlg_err:
+                Gimp.message(f"Inpaint dialog failed to open:\n{_dlg_err}")
+                import traceback; traceback.print_exc()
+                return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
             dlg.w_spin.set_value(image.get_width()); dlg.h_spin.set_value(image.get_height())
             last = _SESSION.get("inpaint")
             if last:
@@ -13006,8 +13011,13 @@ class Spellcaster(Gimp.PlugIn):
         """Klein img2img: edit image with Flux 2 Klein distilled model."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
-        GimpUi.init("spellcaster")
-        dlg = KleinDialog("Spellcaster — Klein Image Editor", with_reference=False)
+        try:
+            GimpUi.init("spellcaster")
+            dlg = KleinDialog("Spellcaster — Klein Image Editor", with_reference=False)
+        except Exception as _dlg_err:
+            Gimp.message(f"Klein dialog failed to open:\n{_dlg_err}")
+            import traceback; traceback.print_exc()
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
         last = _SESSION.get("klein")
         if last:
             dlg._apply_user_preset(last)
