@@ -7124,6 +7124,52 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "kept_core": old_total - old_nonstudio,
             })
 
+        # -- /api/apply_theme -- install/remove Spellcaster theme for GIMP/Darktable
+        elif self.path == '/api/apply_theme':
+            apply_gimp = data.get('gimp', True)
+            apply_dt = data.get('darktable', True)
+            results = []
+            try:
+                # GIMP theme: update config.json in the GIMP plugin directory
+                gimp_plugin_dir = os.path.join(
+                    os.path.dirname(os.path.dirname(_THIS_DIR)),
+                    "plugins", "gimp", "comfyui-connector")
+                gimp_cfg_path = os.path.join(gimp_plugin_dir, "config.json")
+                if os.path.isfile(gimp_cfg_path):
+                    with open(gimp_cfg_path, 'r', encoding='utf-8') as f:
+                        gimp_cfg = json.load(f)
+                    gimp_cfg['apply_theme'] = apply_gimp
+                    with open(gimp_cfg_path, 'w', encoding='utf-8') as f:
+                        json.dump(gimp_cfg, f, indent=2)
+                    results.append(f"GIMP theme {'enabled' if apply_gimp else 'disabled'}")
+
+                # Darktable theme: copy/remove CSS from themes directory
+                dt_plugin_dir = os.path.join(
+                    os.path.dirname(os.path.dirname(_THIS_DIR)),
+                    "plugins", "darktable")
+                dt_css_src = os.path.join(dt_plugin_dir, "spellcaster-darktable.css")
+                if apply_dt and os.path.isfile(dt_css_src):
+                    # Find Darktable config dir
+                    import platform as _plat
+                    if _plat.system() == "Windows":
+                        dt_cfg = os.path.join(os.environ.get("APPDATA", ""), "darktable")
+                    elif _plat.system() == "Darwin":
+                        dt_cfg = os.path.expanduser("~/Library/Application Support/darktable")
+                    else:
+                        dt_cfg = os.path.expanduser("~/.config/darktable")
+                    dt_themes = os.path.join(dt_cfg, "themes")
+                    os.makedirs(dt_themes, exist_ok=True)
+                    import shutil
+                    shutil.copy2(dt_css_src, os.path.join(dt_themes, "spellcaster-darktable.css"))
+                    results.append("Darktable theme installed")
+                elif not apply_dt:
+                    results.append("Darktable theme left as-is")
+
+                msg = ". ".join(results) + ". Restart GIMP/Darktable to see changes."
+                return self.end_json(200, {'ok': True, 'message': msg})
+            except Exception as e:
+                return self.end_json(500, {'ok': False, 'error': str(e)})
+
         # -- /api/direct_cast -- bypass the LLM for obvious image-gen prompts
         # The LLM cannot be trusted to consistently emit a JSON block, so when
         # the user clearly just wants an image (e.g. "generate a dragon"), we

@@ -668,6 +668,47 @@ def build_lut(image_filename, lut_name, strength):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  AI Color Match — transfer color palette from a reference image
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_color_match(source_filename, reference_filename, strength=1.0,
+                      method="mkl"):
+    """AI Color Match — transfer color palette from a reference image.
+
+    Uses histogram-based color transfer to match the source image's color
+    palette, tone, and mood to a reference image. Useful for:
+      - Matching lighting/color between composited layers
+      - Applying a color mood from a reference photo
+      - Color-correcting to match a series or scene
+
+    Args:
+        source_filename (str): Image to recolor.
+        reference_filename (str): Image whose colors to copy.
+        strength (float): Blend 0.0-1.0 (0=original, 1=full transfer).
+        method (str): Transfer algorithm:
+            "mkl" — Monge-Kantorovitch (best for photos)
+            "hm"  — Histogram matching (faster, less accurate)
+            "reinhard" — Reinhard et al. (classic, good for landscapes)
+
+    Returns:
+        dict: ComfyUI workflow.
+
+    Requires: ColorMatch node (ComfyUI_essentials or similar).
+    """
+    nf = NodeFactory()
+    src_id = nf.load_image(source_filename, node_id="1")
+    ref_id = nf.load_image(reference_filename, node_id="2")
+    match_id = nf._add("ColorMatch", {
+        "image_ref": [ref_id, 0],
+        "image_target": [src_id, 0],
+        "method": method,
+        "strength": strength,
+    }, node_id="3")
+    nf.save_image([match_id, 0], "spellcaster_colormatch", node_id="4")
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  Flux2Klein-Enhancer — optional quality upgrade for ALL Klein pipelines
 # ═══════════════════════════════════════════════════════════════════════════
 # If the ComfyUI-Flux2Klein-Enhancer custom node pack is installed, these

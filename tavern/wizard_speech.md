@@ -30,7 +30,7 @@ Sections (must match the names the backend looks for):
 <!-- WIZARD_SPEECH:welcome -->
 *Ahem.* **Welcome to the Wizard Guild.**
 
-![Spellcaster](../assets/wizard_banner.gif)
+![Spellcaster](/static/icons/wizard_banner.gif)
 
 I'm The Archivist — the wizard who shows up first to keep you company
 while the others get themselves dressed. Right now every wizard you'll
@@ -68,7 +68,7 @@ VRAM. Everything runs locally. Nothing leaves your machine.
 <!-- WIZARD_SPEECH:scaffolding -->
 **Why "scaffolding" matters.**
 
-![The Wizard Guild](../assets/wizardguild.png)
+![The Wizard Guild](/static/icons/wizardguild.png)
 
 Local language models are *small*. A 7B-parameter model is brilliant
 at conversation but terrible at remembering long instructions or
@@ -154,7 +154,7 @@ speaks LLM, it can ask the Guild to generate art.
 <!-- WIZARD_SPEECH:gimp -->
 **When you want a real image editor: GIMP.**
 
-![Inpaint demo](../assets/demo_step2_inpaint.png)
+![Inpaint demo](/static/icons/demo_step2_inpaint.png)
 
 The Wizard Guild is built for *conversation* — describe what you want,
 get a result. But sometimes you want pixel-level control: a selection
