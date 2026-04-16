@@ -549,18 +549,33 @@ def _auto_update():
         # Step 3: Filter for files in our plugin directory (including subdirectories)
         # Also grab spellcaster_core/ — the shims need it at runtime.
         remote_files = []  # list of (path, local_remainder, expected_size)
+        # Track which local remainders we've already seen so the canonical
+        # source (comfyui-spellcaster/) always wins over the bundled copy
+        # (plugins/gimp/.../spellcaster_core/). Without this, the stale
+        # bundled copy in the repo overwrites the canonical one because
+        # the tree API returns files alphabetically and plugins/ > comfyui-.
+        _seen_remainders = set()
         for item in tree.get("tree", []):
             if item["type"] != "blob":
                 continue
-            if item["path"].startswith(_GIMP_PLUGIN_PREFIX):
-                remainder = item["path"][len(_GIMP_PLUGIN_PREFIX):]
-                if remainder:
-                    remote_files.append((item["path"], remainder, item.get("size", 0)))
-            elif item["path"].startswith(_CORE_LIB_PREFIX):
-                # Map comfyui-spellcaster/spellcaster_core/X → spellcaster_core/X
+            # CANONICAL SOURCE FIRST: spellcaster_core from comfyui-spellcaster/
+            # This is the single source of truth — always takes priority.
+            if item["path"].startswith(_CORE_LIB_PREFIX):
                 remainder = item["path"][len("comfyui-spellcaster/"):]
                 if remainder:
                     remote_files.append((item["path"], remainder, item.get("size", 0)))
+                    _seen_remainders.add(remainder)
+            elif item["path"].startswith(_GIMP_PLUGIN_PREFIX):
+                remainder = item["path"][len(_GIMP_PLUGIN_PREFIX):]
+                if remainder:
+                    # Skip spellcaster_core/ files from the plugin dir if
+                    # we already have them from the canonical source. This
+                    # prevents the stale bundled copy from overwriting the
+                    # canonical one. Single source of truth.
+                    if remainder in _seen_remainders:
+                        continue
+                    remote_files.append((item["path"], remainder, item.get("size", 0)))
+                    _seen_remainders.add(remainder)
 
         if not remote_files:
             return  # Something went wrong with API, don't touch local files
@@ -20255,17 +20270,21 @@ class Spellcaster(Gimp.PlugIn):
                 with urllib.request.urlopen(req_tree, timeout=15) as r:
                     tree = json.loads(r.read())
                 remote_files = []  # (github_path, local_remainder)
+                _seen = set()
                 for item in tree.get("tree", []):
                     if item["type"] != "blob":
                         continue
-                    if item["path"].startswith(_GIMP_PLUGIN_PREFIX):
-                        remainder = item["path"][len(_GIMP_PLUGIN_PREFIX):]
-                        if remainder:
-                            remote_files.append((item["path"], remainder))
-                    elif item["path"].startswith(_CORE_LIB_PREFIX):
+                    # Canonical source first — single source of truth
+                    if item["path"].startswith(_CORE_LIB_PREFIX):
                         remainder = item["path"][len("comfyui-spellcaster/"):]
                         if remainder:
                             remote_files.append((item["path"], remainder))
+                            _seen.add(remainder)
+                    elif item["path"].startswith(_GIMP_PLUGIN_PREFIX):
+                        remainder = item["path"][len(_GIMP_PLUGIN_PREFIX):]
+                        if remainder and remainder not in _seen:
+                            remote_files.append((item["path"], remainder))
+                            _seen.add(remainder)
                 if not remote_files:
                     update_status.set_markup('<span foreground="#FF5252">No files found on server</span>')
                     btn.set_sensitive(True)
