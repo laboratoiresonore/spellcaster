@@ -19,7 +19,7 @@ Usage (Krita example):
             # Krita-specific: create new layer from PNG
             ...
 
-    plugin = KritaSpellcaster("http://<INTERNAL_HOST>:8188")
+    plugin = KritaSpellcaster("http://192.168.x.x:8188")
     plugin.txt2img("a magical forest", arch="sdxl")
     plugin.upscale()
     plugin.img2img("oil painting style", denoise=0.4)

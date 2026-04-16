@@ -8,21 +8,21 @@ Usage:
     from spellcaster_core.pipeline import Pipeline
 
     # Simple generation + upscale
-    Pipeline("http://<INTERNAL_HOST>:8188") \\
+    Pipeline("http://192.168.x.x:8188") \\
         .txt2img("a wizard in a forest", arch="sdxl", width=512, height=512) \\
         .upscale("4x-UltraSharp.pth") \\
         .save("output/wizard.png") \\
         .run()
 
     # Image to video with face swap
-    Pipeline("http://<INTERNAL_HOST>:8188") \\
+    Pipeline("http://192.168.x.x:8188") \\
         .load("portrait.png") \\
         .wan_video("gentle breathing, soft sway", length=33) \\
         .save("output/") \\
         .run()
 
     # Batch variation
-    Pipeline("http://<INTERNAL_HOST>:8188") \\
+    Pipeline("http://192.168.x.x:8188") \\
         .txt2img("a {color} dragon", arch="sdxl") \\
         .upscale() \\
         .save("output/") \\

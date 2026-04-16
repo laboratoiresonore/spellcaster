@@ -863,7 +863,8 @@ def _auto_enhance(prompt, arch_key, negative=""):
         return prompt, negative
     try:
         from spellcaster_core.prompt_enhance import enhance_prompt
-        enhanced = enhance_prompt(prompt, arch_key, _LLM_URL, is_negative=False)
+        enhanced = enhance_prompt(prompt, arch_key, _LLM_URL, is_negative=False,
+                                  comfy_url=COMFYUI_DEFAULT_URL)
         if enhanced and enhanced != prompt:
             print(f"[Spellcaster] Prompt enhanced ({arch_key}): "
                   f"{len(prompt.split())}→{len(enhanced.split())} words")
@@ -6338,7 +6339,7 @@ class PresetDialog(Gtk.Dialog):
         self.preset_combo = Gtk.ComboBoxText()
         for i, p in enumerate(MODEL_PRESETS):
             self.preset_combo.append(str(i), _model_label(p, mode))
-        preset_combo.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        preset_combo.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         # Default to favourite model from settings, or first model
         fav = _load_config().get("favourite_model", -1)
         if 0 <= fav < len(MODEL_PRESETS):
@@ -8058,7 +8059,7 @@ class WanI2VDialog(Gtk.Dialog):
         self._video_preset_combo = Gtk.ComboBoxText()
         for i, vp in enumerate(WAN_VIDEO_PRESETS):
             self._video_preset_combo.append(str(i), vp["label"])
-        _video_preset_combo.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        _video_preset_combo.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         self._video_preset_combo.set_active(0)
         # Not packed into the UI — hidden
 
@@ -8864,7 +8865,7 @@ class LtxVideoDialog(Gtk.Dialog):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         self.server_entry = Gtk.Entry()
         self.server_entry.set_text(server_url)
-        server_entry.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        server_entry.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         self.server_entry.set_hexpand(True)
         hb.pack_start(self.server_entry, True, True, 0)
         box.pack_start(hb, False, False, 0)
@@ -10064,7 +10065,7 @@ class KontextDialog(Gtk.Dialog):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         self.server_entry = Gtk.Entry()
         self.server_entry.set_text(server_url)
-        server_entry.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        server_entry.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         self.server_entry.set_hexpand(True)
         hb.pack_start(self.server_entry, True, True, 0)
         box.pack_start(hb, False, False, 0)
@@ -10849,10 +10850,11 @@ class Spellcaster(Gimp.PlugIn):
         try:
             srv = v["server"]
             base_seed = v["seed"]
+            _ep, _en = _auto_enhance(v["prompt"], v["preset"].get("arch", "sdxl"), v["negative"])
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = json.loads(v["custom_workflow"]) if v["custom_workflow"] else \
-                     build_txt2img(v["preset"], v["prompt"], v["negative"], seed, v.get("loras"))
+                     build_txt2img(v["preset"], _ep, _en, seed, v.get("loras"))
                 label = f"Run {run_i+1}/{runs}" if runs > 1 else "txt2img"
                 _wf = wf
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
@@ -11569,7 +11571,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
-        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         # Actor A face reference
         a_frame = Gtk.Frame(label="  Actor A (closer/left/larger face)  ")
@@ -11952,7 +11954,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
-        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         # 3 actor face references
         actor_labels = ["Actor A (leftmost)", "Actor B (middle)", "Actor C (rightmost)"]
@@ -12155,7 +12157,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
-        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         bx.pack_start(Gtk.Label(label="Select a video file from ComfyUI's input folder.\n"
                                       "The video will be upscaled frame-by-frame and re-encoded."),
@@ -12270,7 +12272,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
-        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         bx.pack_start(Gtk.Label(label="Upscale + face swap a video.\n"
                                       "Faces are swapped using saved ReActor face models."),
@@ -12425,7 +12427,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
-        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         bx.pack_start(Gtk.Label(
             label="AI video upscaler — enhances resolution and detail.\n"
@@ -12785,7 +12787,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
-        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         # Klein model
         hm = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -12864,7 +12866,7 @@ class Spellcaster(Gimp.PlugIn):
         grid.attach(Gtk.Label(label="Seed:"), 0, 1, 1, 1)
         seed_sp = Gtk.SpinButton.new_with_range(-1, 2**32, 1)
         seed_sp.set_value(-1)
-        seed_sp.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        seed_sp.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         grid.attach(seed_sp, 1, 1, 1, 1)
 
         grid.attach(Gtk.Label(label="Runs:"), 2, 1, 1, 1)
@@ -13107,7 +13109,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
-        se.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         # Klein model selector
         bx.pack_start(Gtk.Label(label="Klein Model:", xalign=0), False, False, 0)
@@ -13198,7 +13200,7 @@ class Spellcaster(Gimp.PlugIn):
         hb_seed.pack_start(Gtk.Label(label="Seed:"), False, False, 0)
         seed_sp = Gtk.SpinButton.new_with_range(-1, 2**32-1, 1); seed_sp.set_value(-1)
         hb_seed.pack_start(seed_sp, True, True, 0)
-        seed_sp.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        seed_sp.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         hb_seed.pack_start(Gtk.Label(label="Runs:"), False, False, 6)
         runs_sp = Gtk.SpinButton.new_with_range(1, 99, 1); runs_sp.set_value(1)
         runs_sp.set_tooltip_text("Generate multiple variations — each with a different random seed")
@@ -13316,7 +13318,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
-        se.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         # Layer selection
         bx.pack_start(Gtk.Label(label="Foreground (element to integrate):", xalign=0), False, False, 0)
@@ -13476,7 +13478,7 @@ class Spellcaster(Gimp.PlugIn):
         hb_seed.pack_start(Gtk.Label(label="Seed:"), False, False, 0)
         seed_sp = Gtk.SpinButton.new_with_range(-1, 2**32-1, 1); seed_sp.set_value(-1)
         hb_seed.pack_start(seed_sp, True, True, 0)
-        seed_sp.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        seed_sp.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         hb_seed.pack_start(Gtk.Label(label="Runs:"), False, False, 6)
         runs_sp = Gtk.SpinButton.new_with_range(1, 99, 1); runs_sp.set_value(1)
         runs_sp.set_tooltip_text("Generate multiple variations — each with a different random seed")
@@ -14623,7 +14625,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
-        se.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         # Klein model
         bx.pack_start(Gtk.Label(label="Klein Model:", xalign=0), False, False, 0)
         klein_combo = Gtk.ComboBoxText()
@@ -14670,13 +14672,13 @@ class Spellcaster(Gimp.PlugIn):
         grid.attach(Gtk.Label(label="Denoise:", xalign=1), 2, r, 1, 1)
         denoise_spin = Gtk.SpinButton.new_with_range(0.05, 1.0, 0.05)
         denoise_spin.set_digits(2); denoise_spin.set_value(0.40)
-        denoise_spin.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        denoise_spin.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         grid.attach(denoise_spin, 3, r, 1, 1)
         r += 1
         grid.attach(Gtk.Label(label="Seed:", xalign=1), 0, r, 1, 1)
         seed_spin = Gtk.SpinButton.new_with_range(-1, 2**31, 1); seed_spin.set_value(-1)
         grid.attach(seed_spin, 1, r, 1, 1)
-        seed_spin.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        seed_spin.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         bx.pack_start(grid, False, False, 0)
         # Preset change handler
         def _on_preset_changed(combo):
@@ -14762,7 +14764,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
-        se.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         # Klein model
         bx.pack_start(Gtk.Label(label="Klein Model:", xalign=0), False, False, 0)
         klein_combo = Gtk.ComboBoxText()
@@ -14813,7 +14815,7 @@ class Spellcaster(Gimp.PlugIn):
         grid.attach(Gtk.Label(label="Seed:", xalign=1), 0, r, 1, 1)
         seed_spin = Gtk.SpinButton.new_with_range(-1, 2**31, 1); seed_spin.set_value(-1)
         grid.attach(seed_spin, 1, r, 1, 1)
-        seed_spin.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        seed_spin.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         bx.pack_start(grid, False, False, 0)
         # Runs
         _add_runs_spinner(dlg, bx)
@@ -14936,7 +14938,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
-        se.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         # Model selector — ALL models
         bx.pack_start(Gtk.Label(label="Model:", xalign=0), False, False, 0)
         model_combo = Gtk.ComboBoxText()
@@ -14995,7 +14997,7 @@ class Spellcaster(Gimp.PlugIn):
         seed_row.pack_start(Gtk.Label(label="Seed (-1=rand):"), False, False, 0)
         seed_spin = Gtk.SpinButton.new_with_range(-1, 2**31, 1); seed_spin.set_value(-1)
         seed_row.pack_start(seed_spin, False, False, 0)
-        seed_spin.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        seed_spin.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         bx.pack_start(seed_row, False, False, 0)
         # Runs
         _add_runs_spinner(dlg, bx)
@@ -15106,7 +15108,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
-        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         bx.pack_start(Gtk.Label(label="Blend two layers by a controllable ratio.\n"
                                       "0% = 100% Layer A, 100% = 100% Layer B."),
@@ -15226,7 +15228,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
-        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         bx.pack_start(Gtk.Label(label="Upscale with two different models and blend the results.\n"
                                       "Example: 40% ESRGAN (sharp) + 60% Remacri (smooth) for balanced output."),
@@ -15673,7 +15675,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
-        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         grid = Gtk.Grid(column_spacing=8, row_spacing=6)
         grid.attach(Gtk.Label(label="Number of steps:"), 0, 0, 1, 1)
@@ -16655,7 +16657,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
-        se.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         # What to remove
         bx.pack_start(Gtk.Label(label="What object are you removing?", xalign=0), False, False, 0)
@@ -18684,10 +18686,11 @@ class Spellcaster(Gimp.PlugIn):
             srv = v["server"]
             _update_spinner_status("Batch Variations: generating on ComfyUI...")
             base_seed = v["seed"]
+            _ep, _en = _auto_enhance(v["prompt"], v["preset"].get("arch", "sdxl"), v["negative"])
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = json.loads(v["custom_workflow"]) if v["custom_workflow"] else \
-                     build_txt2img(v["preset"], v["prompt"], v["negative"], seed, v.get("loras"))
+                     build_txt2img(v["preset"], _ep, _en, seed, v.get("loras"))
                 # Patch the EmptyLatentImage node to set batch_size
                 for nid, node in wf.items():
                     if node.get("class_type") == "EmptyLatentImage":
@@ -19442,7 +19445,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
-        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         # Face source selector
         src_frame = Gtk.Frame(label="  Face Reference  ")
@@ -20119,7 +20122,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
-        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         # Face source
         bx.pack_start(Gtk.Label(label="Face Reference:", xalign=0), False, False, 0)
@@ -20434,7 +20437,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
-        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         # Klein model
         bx.pack_start(Gtk.Label(label="Klein Model:", xalign=0), False, False, 0)
@@ -20636,7 +20639,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         srv_e = Gtk.Entry(); srv_e.set_text(COMFYUI_DEFAULT_URL); srv_e.set_hexpand(True)
         hb.pack_start(srv_e, True, True, 0); bx.pack_start(hb, False, False, 0)
-        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        srv_e.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
 
         # Background scene
         bg_frame = Gtk.Frame(label="  Background Scene  ")
@@ -20927,7 +20930,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
-        se.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         # Prompt
         hb2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         hb2.pack_start(Gtk.Label(label="Detect:"), False, False, 0)
@@ -21009,7 +21012,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
-        se.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         hb2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         hb2.pack_start(Gtk.Label(label="Detect:"), False, False, 0)
         pe = Gtk.Entry(); pe.set_text("person"); pe.set_hexpand(True)
@@ -21662,7 +21665,7 @@ class Spellcaster(Gimp.PlugIn):
         hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
-        se.set_tooltip_text("ComfyUI server URL (e.g. http://<INTERNAL_HOST>:8188)")
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         # Reference image
         bx.pack_start(Gtk.Label(label="Reference Image (color source):", xalign=0), False, False, 0)
         ref_chooser = Gtk.FileChooserButton(title="Select reference image")
@@ -21979,24 +21982,44 @@ class Spellcaster(Gimp.PlugIn):
         enhance_cb.set_active(cfg.get("prompt_enhance", False))
         enhance_cb.set_tooltip_text(
             "When enabled, every prompt you type is automatically rewritten\n"
-            "by a local LLM (KoboldCpp, Ollama, or any OpenAI-compatible API)\n"
-            "before being sent to ComfyUI.\n\n"
+            "by a local LLM before being sent to ComfyUI.\n\n"
             "The rewrite is architecture-aware:\n"
             "  • SDXL: tag-style with quality tokens\n"
             "  • Flux/Kontext: natural language descriptions\n"
             "  • Klein: concise, focused prompts\n"
             "  • Illustrious: booru/danbooru tags\n\n"
-            "Requires a running LLM server (KoboldCpp recommended).\n"
-            "If the LLM is unreachable, your original prompt is used as-is.")
+            "Primary: uses LLM nodes on your ComfyUI server (auto-detected).\n"
+            "Fallback: external KoboldCpp/Ollama server (optional URL below).\n"
+            "If no LLM is available, your original prompt is used as-is.")
         bx.pack_start(enhance_cb, False, False, 0)
 
+        # Auto-detect LLM from ComfyUI server
+        llm_detect_label = Gtk.Label(xalign=0)
+        try:
+            from spellcaster_core.comfyui_llm import discover_llm
+            llm_info = discover_llm(COMFYUI_DEFAULT_URL)
+            if llm_info:
+                n = len(llm_info["models"])
+                llm_detect_label.set_markup(
+                    f'<span foreground="#00E676">ComfyUI LLM: '
+                    f'{llm_info["node_class"]} ({n} models)</span>')
+            else:
+                llm_detect_label.set_markup(
+                    '<span foreground="#FFA726">ComfyUI LLM: not detected '
+                    '— using external server below</span>')
+        except Exception:
+            llm_detect_label.set_markup(
+                '<span foreground="#888888">ComfyUI LLM: detection skipped</span>')
+        bx.pack_start(llm_detect_label, False, False, 0)
+
         llm_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        llm_row.pack_start(Gtk.Label(label="LLM Server:"), False, False, 0)
+        llm_row.pack_start(Gtk.Label(label="External LLM (fallback):"), False, False, 0)
         llm_entry = Gtk.Entry()
         llm_entry.set_text(cfg.get("llm_url", "http://127.0.0.1:5001"))
         llm_entry.set_hexpand(True)
         llm_entry.set_tooltip_text(
-            "URL of your local LLM server for prompt enhancement.\n\n"
+            "Optional fallback LLM server URL.\n"
+            "Used only when ComfyUI has no LLM nodes installed.\n\n"
             "KoboldCpp: http://127.0.0.1:5001 (default)\n"
             "Ollama:    http://127.0.0.1:11434\n"
             "LM Studio: http://127.0.0.1:1234\n\n"
@@ -22007,6 +22030,18 @@ class Spellcaster(Gimp.PlugIn):
         test_llm_status = Gtk.Label(label="")
         def _on_test_llm(btn):
             url = llm_entry.get_text().strip().rstrip("/")
+            # Test ComfyUI LLM first
+            try:
+                from spellcaster_core.comfyui_llm import discover_llm
+                llm_info = discover_llm(COMFYUI_DEFAULT_URL)
+                if llm_info:
+                    test_llm_status.set_markup(
+                        f'<span foreground="#00E676">✓ ComfyUI: '
+                        f'{llm_info["node_class"]}</span>')
+                    return
+            except Exception:
+                pass
+            # Test external LLM
             try:
                 req = urllib.request.Request(f"{url}/api/v1/model", method="GET")
                 with urllib.request.urlopen(req, timeout=5) as resp:
@@ -22018,8 +22053,8 @@ class Spellcaster(Gimp.PlugIn):
                     req = urllib.request.Request(f"{url}/v1/models", method="GET")
                     with urllib.request.urlopen(req, timeout=5) as resp:
                         test_llm_status.set_markup('<span foreground="#00E676">✓ Connected</span>')
-                except Exception as e2:
-                    test_llm_status.set_markup(f'<span foreground="#FF5252">✗ Offline</span>')
+                except Exception:
+                    test_llm_status.set_markup('<span foreground="#FF5252">✗ No LLM found</span>')
         test_llm_btn.connect("clicked", _on_test_llm)
         llm_row.pack_start(test_llm_btn, False, False, 0)
         llm_row.pack_start(test_llm_status, False, False, 0)

@@ -14,7 +14,7 @@ Usage:
     from spellcaster_core.calibration import calibrate, load_matrix
 
     # Full calibration (may take 5-20 minutes depending on model count)
-    matrix = calibrate("http://<INTERNAL_HOST>:8188", callback=print)
+    matrix = calibrate("http://192.168.x.x:8188", callback=print)
 
     # Quick check: is this combo verified?
     if matrix.is_verified("model.safetensors", "lora.safetensors"):

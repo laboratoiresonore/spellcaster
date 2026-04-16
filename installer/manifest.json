@@ -194,6 +194,18 @@
       ],
       "note": "Spellcaster nodes — auto-arch model loading, LLM prompt enhance, and smart sampling. Auto-updates via git pull."
     },
+    "ComfyUI-QwenVL-Mod": {
+      "repo": "https://github.com/Goekdeniz-Guelmez/ComfyUI-QwenVL-Mod",
+      "provides": [
+        "AILab_QwenVL_GGUF_PromptEnhancer",
+        "AILab_QwenVL_GGUF",
+        "AILab_QwenVL_GGUF_Advanced"
+      ],
+      "required_by": [
+        "prompt_enhance"
+      ],
+      "note": "Local GGUF LLM for prompt enhancement — runs natively in ComfyUI, no separate server needed. Auto-manages VRAM."
+    },
     "ComfyUI-Impact-Pack": {
       "repo": "https://github.com/ltdrdata/ComfyUI-Impact-Pack",
       "provides": [
@@ -1763,55 +1775,59 @@
       },
       "custom_nodes": []
     },
+    "prompt_enhance": {
+      "label": "AI Prompt Enhancement (LLM)",
+      "description": "Automatically rewrite short prompts into architecture-optimised descriptions using a local LLM running natively in ComfyUI. No separate server needed — ComfyUI manages VRAM automatically.",
+      "plugins": [
+        "gimp",
+        "darktable"
+      ],
+      "vram_min_gb": 4,
+      "custom_nodes": [
+        "ComfyUI-QwenVL-Mod"
+      ],
+      "models": {
+        "llm": [
+          {
+            "path": "LLM/GGUF/Qwen/Qwen3-4B-Instruct-GGUF/Qwen3-4B-Instruct-Q4_K_M.gguf",
+            "url": "https://huggingface.co/Qwen/Qwen3-4B-Instruct-GGUF/resolve/main/qwen3-4b-instruct-q4_k_m.gguf",
+            "page_url": "https://huggingface.co/Qwen/Qwen3-4B-Instruct-GGUF",
+            "size_mb": 2600,
+            "optional": false,
+            "note": "Qwen3 4B Instruct (Q4) — fast, small, excellent instruction following"
+          }
+        ]
+      },
+      "note": "Installs the ComfyUI-QwenVL-Mod node pack and downloads a small Qwen3 4B GGUF model (~2.5 GB). The LLM runs inside ComfyUI and auto-unloads during image generation to free VRAM."
+    },
     "wizard_guild": {
       "label": "Wizard Guild (Standalone Interface)",
-      "description": "Deploy the Wizard Guild web-based AI art studio. Chat with AI wizards to control all Spellcaster tools. The launcher can auto-download KoboldCPP and SillyTavern for a complete zero-setup experience.",
+      "description": "Deploy the Wizard Guild web-based AI art studio. Chat with AI wizards to control all Spellcaster tools. Uses ComfyUI-native LLM for wizard chat and prompt enhancement — no separate KoboldCPP needed.",
       "plugins": [],
       "vram_min_gb": 0,
-      "custom_nodes": [],
+      "custom_nodes": [
+        "ComfyUI-QwenVL-Mod"
+      ],
       "models": {},
       "llm_setup": {
-        "note": "The Wizard Guild needs a local LLM to power the chat. The launcher auto-detects or offers to download KoboldCPP.",
-        "recommended_engines": [
+        "note": "The Wizard Guild uses LLM nodes running natively in ComfyUI (default). Falls back to external KoboldCPP/Ollama if ComfyUI LLM nodes are not installed.",
+        "primary": {
+          "name": "ComfyUI-QwenVL-Mod",
+          "description": "Runs inside ComfyUI — zero setup, automatic VRAM management. Install the prompt_enhance feature to get the node pack and model.",
+          "node_class": "AILab_QwenVL_GGUF_PromptEnhancer"
+        },
+        "fallback_engines": [
           {
             "name": "KoboldCPP",
             "url": "https://github.com/LostRuins/koboldcpp/releases",
-            "description": "Simplest option — single .exe, no install. Download and run.",
+            "description": "Fallback — single .exe, no install. Download and run.",
             "default_port": 5001
           },
           {
             "name": "Ollama",
             "url": "https://ollama.com/download",
-            "description": "CLI-based LLM manager. Run: ollama serve && ollama run llama3.1",
+            "description": "Fallback — CLI-based LLM manager.",
             "default_port": 11434
-          },
-          {
-            "name": "LM Studio",
-            "url": "https://lmstudio.ai/",
-            "description": "Visual app for browsing and running local models.",
-            "default_port": 1234
-          }
-        ],
-        "recommended_models": [
-          {
-            "vram_max_gb": 4,
-            "name": "Phi-3-mini-4k-instruct Q4_K_M",
-            "size_gb": 2.3
-          },
-          {
-            "vram_max_gb": 8,
-            "name": "Mistral-7B-Instruct Q4_K_M",
-            "size_gb": 4.1
-          },
-          {
-            "vram_max_gb": 12,
-            "name": "Llama-3.1-8B-Instruct Q5_K_M",
-            "size_gb": 5.7
-          },
-          {
-            "vram_max_gb": 99,
-            "name": "Llama-3.1-8B-Instruct Q8_0",
-            "size_gb": 8.5
           }
         ]
       },

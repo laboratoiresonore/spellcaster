@@ -27,7 +27,7 @@
   <a href="#-the-wizard-guild">Wizard Guild</a> &bull;
   <a href="#-sillytavern-characters">SillyTavern</a> &bull;
   <a href="#-faq">FAQ</a> &bull;
-  <a href="https://www.reddit.com/r/spellcaster_ai/">Reddit</a>
+  <a href="https://www.reddit.com/r/Spellcaster_Studio/">Reddit</a>
 </p>
 
 ---
@@ -178,7 +178,7 @@ You don't need to understand models, samplers, CFG scales, or negative prompts. 
 
 **What makes it beginner-friendly:**
 - Every tool has **presets** that auto-set every parameter. Pick "Portrait" or "Landscape" and click Generate.
-- The **AI Prompt Enhancer** rewrites your simple prompt into an expert one automatically. It knows which model you're using (SDXL gets tags, Flux gets natural language) and adapts.
+- The **AI Prompt Enhancer** rewrites your simple prompt into an expert one automatically. It runs inside ComfyUI (no extra setup) and knows which model you're using — SDXL gets tags, Flux gets natural language, Klein gets concise descriptions. Just type "a cat" and it becomes a detailed, optimized prompt for your specific model.
 - **Quick actions** let you one-click enhance, inpaint, upscale, or remove backgrounds with zero configuration.
 - **Re-run Last** (`Ctrl+Alt+R`) repeats whatever you did with a new random seed — great for exploring variations.
 
@@ -406,7 +406,8 @@ Zero-dialog tools accessible from the canvas right-click menu (`<Image> > Spellc
 | Feature | Details |
 |---|---|
 | **Crash-safe boot shim** | 3-tier recovery on startup: backup restore, GitHub download, visible error. GIMP never bricks. |
-| **AI Prompt Enhancement** | Local LLM rewrites your prompts automatically. Architecture-aware: SDXL gets tags, Flux gets natural language. |
+| **AI Prompt Enhancement** | Local LLM rewrites your prompts automatically. Runs natively inside ComfyUI — no separate server needed. Architecture-aware: SDXL gets tags, Flux gets natural language, Klein gets concise descriptions. Falls back to KoboldCpp/Ollama if no ComfyUI LLM nodes are installed. |
+| **ComfyUI-native LLM** | Text generation runs inside ComfyUI via GGUF models (Qwen3 4B). Auto-discovers available models, auto-unloads during image generation to free VRAM. Zero config — install the node pack and a model, done. |
 | **17 keyboard shortcuts** | Auto-installed on first run. `Ctrl+Shift` for primary tools, `Ctrl+Alt` for quick actions. |
 | **Native GIMP menu integration** | Select, Colors, and Image menus get AI-powered entries alongside Spellcaster's own menu. |
 | **Premium dark-purple theme** | Opt-in visual theme for GIMP and Darktable. Set `"apply_theme": true` in config.json. |
@@ -431,12 +432,13 @@ Zero-dialog tools accessible from the canvas right-click menu (`<Image> > Spellc
 >
 > **Don't want to use GIMP or Darktable at all?** You can skip them entirely and control Spellcaster through [The Wizard Guild](#-the-wizard-guild) — an AI chatbot that handles everything for you.
 
-**Want the AI chatbot experience (The Wizard Guild)?** You'll also need a local LLM engine. See the [Wizard Guild setup guide](#how-to-set-up-the-wizard-guild) — it takes about 5 minutes.
+**Want the AI chatbot experience (The Wizard Guild)?** The installer adds a small LLM that runs natively inside ComfyUI — no separate server needed. See the [Wizard Guild setup guide](#how-to-set-up-the-wizard-guild).
 
 | App | What It Is | Why | Download |
 |---|---|---|---|
-| **KoboldCPP** | Local AI chatbot engine | Powers the Wizard Guild's conversational interface | [github.com/LostRuins/koboldcpp](https://github.com/LostRuins/koboldcpp/releases) |
 | **SillyTavern** *(optional)* | Chat frontend with character cards | Enhanced chat experience — auto-downloaded by the Guild launcher | [github.com/SillyTavern/SillyTavern](https://github.com/SillyTavern/SillyTavern) |
+
+> **What about KoboldCPP / Ollama?** You no longer need a separate LLM server. The installer adds a small Qwen3 4B GGUF model (~2.5 GB) that runs inside ComfyUI alongside your image generation models. ComfyUI handles VRAM automatically — the LLM unloads when image generation needs GPU memory and reloads when you need text generation. If you already have KoboldCPP or Ollama running, Spellcaster uses those as a fallback automatically.
 
 ### Install Spellcaster
 
@@ -508,7 +510,7 @@ The installer is an 8-step guided wizard. It's designed so you never have to mak
 
 You don't need to learn GIMP. You don't need to learn Darktable. You don't even need to open ComfyUI.
 
-**Just tell Spellcaster what you want in plain English.** Spellcaster comes with a standalone Web UI called **The Wizard Guild**. It connects any local LLM (like KoboldCPP) and your ComfyUI backend into an immersive, premium chat interface with 13+ AI wizard characters.
+**Just tell Spellcaster what you want in plain English.** Spellcaster comes with a standalone Web UI called **The Wizard Guild**. A small LLM runs natively inside ComfyUI — no separate server needed — powering an immersive, premium chat interface with 13+ AI wizard characters.
 
 Say *"upscale this photo"* or *"swap the face in this image"* — and it happens. The AI picks the right tool, asks you the right questions, runs the workflow, and delivers the result directly in your browser.
 
@@ -527,35 +529,16 @@ Say *"upscale this photo"* or *"swap the face in this image"* — and it happens
 
 ### How to Set Up The Wizard Guild
 
-The Guild needs two things running on your computer: **ComfyUI** (the AI engine) and a **local LLM** (the chatbot brain). Here's the simplest path:
+The Guild needs **ComfyUI** running with the Spellcaster node pack installed. That's it — the LLM runs natively inside ComfyUI.
 
 <details>
-<summary><strong>Step-by-step: get the Guild running in 5 minutes</strong></summary>
+<summary><strong>Step-by-step: get the Guild running in 2 minutes</strong></summary>
 
 **1. Make sure ComfyUI is running** (the Spellcaster installer handles this)
 
-**2. Get a local chatbot engine** — pick ONE:
+**2. Make sure the "AI Prompt Enhancement" feature is installed** — the installer adds the `ComfyUI-QwenVL-Mod` node pack and a small Qwen3 4B GGUF model (~2.5 GB). This LLM runs natively inside ComfyUI — no separate server, no extra processes, no configuration. ComfyUI auto-manages VRAM (the LLM unloads during image generation and reloads when needed).
 
-| Engine | What It Is | Best For | Download |
-|---|---|---|---|
-| **KoboldCPP** | One-file LLM server, no install needed | Simplest option — just download and run | [github.com/LostRuins/koboldcpp/releases](https://github.com/LostRuins/koboldcpp/releases) |
-| **Ollama** | CLI-based LLM manager | If you want to try many models easily | [ollama.com/download](https://ollama.com/download) |
-| **LM Studio** | GUI app for running local models | If you want a visual model browser | [lmstudio.ai](https://lmstudio.ai/) |
-
-> **Recommended for beginners: KoboldCPP.** Download `koboldcpp.exe` (Windows) or the Linux/macOS build. Download a GGUF chat model (see below). Run: `koboldcpp --model your-model.gguf --port 5001`. Done.
-
-**3. Download a chat model** (GGUF format):
-
-| Your GPU VRAM | Recommended Model | Size | Download |
-|---|---|---|---|
-| 4 GB or less | Phi-3-mini-4k Q4_K_M | ~2.3 GB | [HuggingFace](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf) |
-| 4-8 GB | Mistral-7B-Instruct Q4_K_M | ~4.1 GB | [HuggingFace](https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF) |
-| 8-12 GB | Llama-3.1-8B-Instruct Q5_K_M | ~5.7 GB | [HuggingFace](https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF) |
-| 12+ GB | Llama-3.1-8B-Instruct Q8_0 | ~8.5 GB | [HuggingFace](https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF) |
-
-> **Tip:** The Wizard Guild's scaffold system is designed to work with small 7B models — you don't need a massive model. It uses numbered menus, not open-ended conversation.
-
-**4. Launch the Guild:**
+**3. Launch the Guild:**
 
 ```bash
 # Windows
@@ -565,11 +548,30 @@ start_guild.bat
 python tavern/guild_launcher.py
 ```
 
-On first run, it walks you through connecting to ComfyUI and your LLM. After that, it auto-starts everything.
+On first run, it walks you through connecting to ComfyUI. After that, it auto-starts everything. The launcher auto-detects the ComfyUI LLM and logs:
+```
+[LLM] ComfyUI LLM node detected: AILab_QwenVL_GGUF_PromptEnhancer (45 models)
+[Guild] LLM backend: ComfyUI (AILab_QwenVL_GGUF_PromptEnhancer, 45 models)
+```
 
-**5. Optional: SillyTavern integration**
+**4. Optional: SillyTavern integration**
 
 The Guild can auto-download and launch [SillyTavern](https://github.com/SillyTavern/SillyTavern) alongside itself for character-card-based chat. The launcher handles the setup — just say "yes" when prompted.
+
+</details>
+
+<details>
+<summary><strong>Already have KoboldCPP or Ollama? (fallback mode)</strong></summary>
+
+If you prefer a separate LLM server, Spellcaster falls back automatically:
+
+| Engine | What It Is | Best For | Download |
+|---|---|---|---|
+| **KoboldCPP** | One-file LLM server | If you want a dedicated LLM on a different machine | [github.com/LostRuins/koboldcpp/releases](https://github.com/LostRuins/koboldcpp/releases) |
+| **Ollama** | CLI-based LLM manager | If you already use Ollama | [ollama.com/download](https://ollama.com/download) |
+| **LM Studio** | GUI app for local models | If you want a visual model browser | [lmstudio.ai](https://lmstudio.ai/) |
+
+The fallback chain is: **ComfyUI LLM nodes** → **KoboldCpp** → **Ollama** → original prompt unchanged. Configure the external URL in Settings.
 
 </details>
 
@@ -753,7 +755,7 @@ Takes any generated image and brings it to life as a short animation. Type `/ani
 | **SillyTavern** | The chat frontend these characters live in | [github.com/SillyTavern/SillyTavern](https://github.com/SillyTavern/SillyTavern) |
 | **ComfyUI** | The AI engine that generates images/video | Already installed if you use Spellcaster |
 | **Spellcaster server plugin** | Bridges SillyTavern to ComfyUI | Installed automatically (see below) |
-| **An LLM backend** | Powers the character conversations | KoboldCPP, Ollama, or any OpenAI-compatible API |
+| **An LLM backend** | Powers the character conversations | Runs natively in ComfyUI (installed with Spellcaster). Falls back to KoboldCPP/Ollama if preferred. |
 
 <details>
 <summary><h3>Tell me more — setup, commands, and technical details</h3></summary>
@@ -877,6 +879,13 @@ A 3-tier recovery system that prevents GIMP from bricking if the plugin files ge
 <summary><strong>Can I run ComfyUI on a different machine?</strong></summary>
 
 Yes. The Antenna Installer (on the installer Welcome page) auto-detects ComfyUI servers on your network and configures everything. You can also manually set the server URL in Settings. This means you can run GIMP on a laptop with no GPU and use a gaming PC or cloud instance for the AI processing.
+
+</details>
+
+<details>
+<summary><strong>How does the AI Prompt Enhancement work?</strong></summary>
+
+A small LLM (Qwen3 4B, ~2.5 GB) runs natively inside ComfyUI. When you type a short prompt like "a cat", the LLM rewrites it into an optimized prompt for your specific model — SDXL gets comma-separated tags with quality tokens, Flux gets flowing natural language, Klein gets concise descriptions. The LLM auto-unloads during image generation to free VRAM and reloads when needed. No separate server, no configuration. If you already run KoboldCPP or Ollama, Spellcaster uses those as a fallback automatically.
 
 </details>
 

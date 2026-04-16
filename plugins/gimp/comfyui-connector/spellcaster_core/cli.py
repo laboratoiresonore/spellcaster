@@ -5,7 +5,7 @@ No GIMP, no Wizard Guild, no browser needed. Just ComfyUI + this script.
 
 Usage:
     # Generate an image
-    python -m spellcaster_core.cli generate --prompt "a wizard in a forest" --server http://<INTERNAL_HOST>:8188
+    python -m spellcaster_core.cli generate --prompt "a wizard in a forest" --server http://192.168.x.x:8188
 
     # Generate with specific model
     python -m spellcaster_core.cli generate --prompt "anime girl" --model "Illustrious\\ilustreal.safetensors" --arch illustrious
@@ -14,13 +14,13 @@ Usage:
     python -m spellcaster_core.cli upscale --image "myfile.png" --model "4x-UltraSharp.pth"
 
     # Check what nodes are available
-    python -m spellcaster_core.cli doctor --server http://<INTERNAL_HOST>:8188
+    python -m spellcaster_core.cli doctor --server http://192.168.x.x:8188
 
     # Batch: generate variations
     python -m spellcaster_core.cli batch --prompt "a {color} dragon" --vary color=red,blue,green,gold
 
     # List available models on server
-    python -m spellcaster_core.cli models --server http://<INTERNAL_HOST>:8188
+    python -m spellcaster_core.cli models --server http://192.168.x.x:8188
 """
 
 import argparse

@@ -1566,34 +1566,51 @@ def step_detect_server(args) -> str:
         return raw.strip().rstrip("/")
 
 
-def step_detect_llm_server(args) -> str:
-    """Determine the local LLM server URL (KoboldCpp / Ollama / OpenAI-compatible)."""
+def step_detect_llm_server(args, server_url: str = "",
+                           server_info: dict | None = None) -> str:
+    """Determine LLM configuration.
+
+    Priority:
+      1. ComfyUI-native LLM nodes (auto-detected from server probe)
+         — installed via the prompt_enhance feature, zero config needed
+      2. External LLM server (KoboldCpp / Ollama / OpenAI-compatible)
+    """
     print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
-    print(f"{C_BOLD}  LLM Server (Prompt Enhancement & Wizard Guild){C_RESET}")
+    print(f"{C_BOLD}  LLM (Prompt Enhancement & Wizard Guild){C_RESET}")
     print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
 
-    print(f"  Spellcaster can use a local LLM to enhance prompts and power")
-    print(f"  the Wizard Guild's intelligent workflow scaffolding.")
-    print(f"  {C_DIM}Supports: KoboldCpp, Ollama, or any OpenAI-compatible server{C_RESET}\n")
+    # Check if ComfyUI already has native LLM nodes
+    available = (server_info or {}).get('available_nodes', set())
+    if "AILab_QwenVL_GGUF_PromptEnhancer" in available:
+        print(f"  {C_GREEN}✓ ComfyUI-native LLM detected on server{C_RESET}")
+        print(f"  {C_DIM}  Node: AILab_QwenVL_GGUF_PromptEnhancer{C_RESET}")
+        print(f"  {C_DIM}  No separate LLM server needed — ComfyUI manages VRAM automatically.{C_RESET}")
+        print(f"  {C_DIM}  Select the 'AI Prompt Enhancement' feature to install the GGUF model.{C_RESET}\n")
+        return ""  # No external LLM needed
+
+    print(f"  Spellcaster can enhance prompts using a local LLM.")
+    print(f"  {C_GREEN}Recommended:{C_RESET} Select the 'AI Prompt Enhancement' feature")
+    print(f"  to install ComfyUI-native LLM nodes (no separate server needed).\n")
+    print(f"  {C_DIM}Alternative: use an external LLM server (KoboldCpp, Ollama, etc.){C_RESET}\n")
 
     if hasattr(args, 'llm_url') and args.llm_url:
         print(f"  {C_GREEN}Using specified LLM URL:{C_RESET} {args.llm_url}")
         return args.llm_url
 
     choice = ask_choice(
-        "Do you have a local LLM server?",
+        "External LLM server? (skip if using ComfyUI-native via prompt_enhance feature)",
         [
+            "No external server needed  (recommended)",
             f"Yes, on this machine  ({DEFAULT_LLM_URL})",
             "Yes, on another machine  (enter URL)",
-            "No / Skip for now",
         ],
         default=0,
         auto_yes=args.yes,
     )
 
-    if choice == 0:
+    if choice == 1:
         return DEFAULT_LLM_URL
-    elif choice == 1:
+    elif choice == 2:
         print(f"\n  {C_DIM}Example: http://<SERVER-IP>:5001{C_RESET}")
         raw = ask_text("  Enter LLM server URL", default=DEFAULT_LLM_URL, auto_yes=args.yes)
         raw = raw.strip().rstrip("/")
@@ -3282,9 +3299,9 @@ def main():
     step_system_detection(args)
     step_api_keys(args)
     server_url = step_detect_server(args)
-    llm_url = step_detect_llm_server(args)
     paths = step_detect_paths(args)
     server_info = step_probe_server(server_url, args)
+    llm_url = step_detect_llm_server(args, server_url, server_info)
     selected = step_select_features(manifest, paths, args, server_info)
 
     if not args.skip_nodes:

@@ -6,7 +6,7 @@ a sunset") to the best architecture and model on the connected ComfyUI server.
 Usage:
     from spellcaster_core.recommend import recommend
 
-    rec = recommend("anime girl in a garden", server="http://<INTERNAL_HOST>:8188")
+    rec = recommend("anime girl in a garden", server="http://192.168.x.x:8188")
     print(rec)
     # {"arch": "illustrious", "model": "Illustrious\\ilustreal.safetensors",
     #  "reason": "anime/illustration content", "settings": {...}}

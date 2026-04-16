@@ -10,7 +10,7 @@ Runs a systematic probe of the connected ComfyUI server:
 Usage:
     from spellcaster_core.diagnostic import run_diagnostic
 
-    report = run_diagnostic("http://<INTERNAL_HOST>:8188", interactive=False)
+    report = run_diagnostic("http://192.168.x.x:8188", interactive=False)
     # report.working = ["txt2img_sd15", "txt2img_sdxl", "upscale", ...]
     # report.broken = ["iclight", "colorize", ...]
     # report.recommended_config = {...}

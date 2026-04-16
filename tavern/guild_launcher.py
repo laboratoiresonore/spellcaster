@@ -1607,20 +1607,10 @@ def _generate_all_assets(guild_url, comfyui_url, kobold_url=""):
     generated = 0
 
     # 2. Generate LLM names first (if LLM is available)
-    if kobold_url:
-        print("  [assets] Generating wizard names via LLM...")
-        try:
-            req = urllib.request.Request(
-                f"{kobold_url}/api/v1/model",
-                headers={"Accept": "application/json"})
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                if resp.status == 200:
-                    print("  [assets] LLM connected — generating names...")
-                    for char in characters:
-                        if char.get("name", "") in ("", "Unnamed Wizard"):
-                            _generate_wizard_name(char, kobold_url)
-        except Exception:
-            print("  [assets] LLM not available — using default names")
+    print("  [assets] Generating wizard names via LLM...")
+    for char in characters:
+        if char.get("name", "") in ("", "Unnamed Wizard"):
+            _generate_wizard_name(char, comfyui_url, kobold_url)
 
     # 3. Generate static avatars
     print()
@@ -1711,38 +1701,37 @@ def _generate_all_assets(guild_url, comfyui_url, kobold_url=""):
     return generated
 
 
-def _generate_wizard_name(char, kobold_url):
-    """Generate a wizard name for a character via the LLM.
+def _generate_wizard_name(char, comfyui_url, kobold_url=""):
+    """Generate a wizard name for a character via the shared LLM stack.
+
+    Uses guild_llm.chat() which tries ComfyUI LLM nodes first, then
+    KoboldCpp, then Ollama.
 
     In NSFW mode, uses a flirtier, more suggestive naming prompt
     (populated by build_nsfw.py into server._NSFW_NAME_GEN_PROMPT).
     """
     import server as _srv
     if getattr(_srv, 'NSFW_MODE', False) and getattr(_srv, '_NSFW_NAME_GEN_PROMPT', ''):
-        context = _srv._NSFW_NAME_GEN_PROMPT.format(
+        prompt = _srv._NSFW_NAME_GEN_PROMPT.format(
             subtext=char.get('subtext', 'magic'))
+        system = ""
     else:
-        context = (
-            f"Context: We are naming magical avatars.\n"
-            f"Command: Invent a single, very short, creative fantasy name "
-            f"(e.g. Zephyr) for a wizard specializing in: {char.get('subtext', 'magic')}. "
-            f"Do NOT use titles like 'Master of'.\nName:"
+        system = (
+            "You name magical avatars. Reply with ONLY a single short "
+            "creative fantasy name (e.g. Zephyr). No titles, no explanation."
         )
+        prompt = f"Invent a name for a wizard specializing in: {char.get('subtext', 'magic')}"
+
     try:
-        payload = json.dumps({
-            "prompt": context,
-            "max_length": 15,
-            "temperature": 0.8,
-            "stop_sequence": ["\n", "."],
-        }).encode("utf-8")
-        req = urllib.request.Request(
-            f"{kobold_url}/api/v1/generate",
-            data=payload,
-            headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            name = data["results"][0]["text"].strip().replace('"', '').replace("'", "")
-            if name:
+        from spellcaster_core.guild_llm import chat
+        result = chat(
+            prompt, system_prompt=system,
+            server=comfyui_url,
+            kobold_url=kobold_url or None,
+            max_tokens=15, temperature=0.8)
+        if result:
+            name = result.strip().split("\n")[0].strip().replace('"', '').replace("'", "")
+            if name and len(name) < 40:
                 char["name"] = name
                 print(f"    Named: {name} ({char.get('subtext', '')[:40]})")
     except Exception:

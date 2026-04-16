@@ -178,32 +178,23 @@ _DEFAULT_ENHANCE_PROFILE = {
 #  ENHANCEMENT FUNCTION
 # ═══════════════════════════════════════════════════════════════════════════
 
-def enhance_prompt(prompt_text, arch_key, kobold_url, is_negative=False):
+def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
+                   comfy_url=None):
     """Expand a terse user prompt into an architecture-optimised description.
 
-    Calls the local LLM at kobold_url via the OpenAI-compatible
-    /v1/chat/completions endpoint. Returns the original prompt unchanged
-    on any error (never blocks generation).
-
-    This function respects the architecture's prompt style preference
-    (booru_tags, natural language, etc) and expands the prompt accordingly.
+    Tries ComfyUI LLM nodes first (if comfy_url provided), then falls back
+    to the external LLM at kobold_url via OpenAI-compatible API.
+    Returns the original prompt unchanged on any error (never blocks generation).
 
     Args:
         prompt_text: The raw prompt string from the user
         arch_key: Architecture identifier (e.g. 'flux1dev', 'sdxl', 'wan')
-        kobold_url: Base URL of the LLM (e.g. 'http://127.0.0.1:5001')
+        kobold_url: Base URL of external LLM (e.g. 'http://127.0.0.1:5001')
         is_negative: If True, skip enhancement (negatives don't need expansion)
+        comfy_url: ComfyUI server URL — if set, tries native LLM nodes first
 
     Returns:
         Enhanced prompt string, or the original if enhancement fails
-
-    Example:
-        >>> enhanced = enhance_prompt(
-        ...     "cat",
-        ...     "sdxl",
-        ...     "http://127.0.0.1:5001"
-        ... )
-        >>> # Returns something like: "A detailed photograph of a cat..."
     """
     # Skip enhancement for negative prompts — they don't benefit from expansion
     if is_negative:
@@ -238,6 +229,22 @@ def enhance_prompt(prompt_text, arch_key, kobold_url, is_negative=False):
     )
 
     user_msg = f"Enhance this prompt for {profile['name']}:\n{prompt_text}"
+
+    # ── Try ComfyUI LLM nodes first (if server URL provided) ──
+    if comfy_url:
+        try:
+            from .comfyui_llm import generate_text
+            enhanced = generate_text(
+                comfy_url, prompt=user_msg, system_prompt=system_msg,
+                max_tokens=300, temperature=0.7)
+            if enhanced and len(enhanced) > 10:
+                return enhanced
+        except Exception:
+            pass  # Fall through to KoboldCpp
+
+    # ── Fall back to external LLM (KoboldCpp / OpenAI-compatible) ──
+    if not kobold_url:
+        return prompt_text
 
     # Prepare the API payload (OpenAI-compatible format)
     payload = {
