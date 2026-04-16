@@ -4483,10 +4483,27 @@ LORA_METADATA = {
 }
 
 
+# ── Architecture-aware CFG override ──────────────────────────────────
+# Klein/Flux2 models need CFG=1.0. Many presets embed SDXL-tuned CFG
+# values (3.0-7.0) which deepfry distilled models.  This function
+# fixes the preset before any workflow builder sees it.
+_CFG_OVERRIDE = {"flux2klein": 1.0, "chroma": 1.0}
+
+def _fix_preset_cfg(preset):
+    """Return a copy of preset with CFG clamped for the architecture."""
+    arch = preset.get("arch", "sdxl")
+    override = _CFG_OVERRIDE.get(arch)
+    if override is not None and preset.get("cfg", 0) > override:
+        preset = dict(preset)
+        preset["cfg"] = override
+    return preset
+
+
 def _build_img2img(image_filename, preset, prompt_text, negative_text, seed,
                   loras=None, controlnet=None, controlnet_2=None):
     """→ Delegated to v2 builder, with automatic prompt enhancement."""
     arch_key = preset.get("arch", "sdxl")
+    preset = _fix_preset_cfg(preset)
     prompt_text, negative_text = _auto_enhance(prompt_text, arch_key, negative_text)
     return build_img2img(image_filename, preset, prompt_text, negative_text, seed,
                          loras=loras, controlnet=controlnet, controlnet_2=controlnet_2,
@@ -4494,6 +4511,7 @@ def _build_img2img(image_filename, preset, prompt_text, negative_text, seed,
 
 def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_text, seed, loras=None, controlnet=None, controlnet_2=None):
     """→ Delegated to v2 builder, with automatic prompt enhancement."""
+    preset = _fix_preset_cfg(preset)
     arch_key = preset.get("arch", "sdxl")
     prompt_text, negative_text = _auto_enhance(prompt_text, arch_key, negative_text)
     return build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_text, seed,
@@ -4532,6 +4550,7 @@ def _rembg_post_process(server, filename, subfolder="", folder_type="output"):
 def _build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
                     left, top, right, bottom, feathering, loras=None, controlnet=None):
     """→ Delegated to v2 builder."""
+    preset = _fix_preset_cfg(preset)
     return build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
                           left, top, right, bottom, feathering, loras=loras, controlnet=controlnet,
                           guide_modes=CONTROLNET_GUIDE_MODES)
@@ -4542,6 +4561,7 @@ def _build_style_transfer(target_filename, style_ref_filename, preset,
                            weight=0.8, denoise=0.6,
                            controlnet=None, controlnet_2=None, loras=None):
     """→ Delegated to v2 builder."""
+    preset = _fix_preset_cfg(preset)
     return build_style_transfer(target_filename, style_ref_filename, preset,
                                 prompt_text, negative_text, seed,
                                 ipadapter_preset=ipadapter_preset,
@@ -4555,6 +4575,10 @@ def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text
                               orig_width=512, orig_height=512,
                               controlnet=None, controlnet_2=None, loras=None):
     """→ Delegated to v2 builder."""
+    preset = _fix_preset_cfg(preset)
+    arch = preset.get("arch", "sdxl")
+    if arch in _CFG_OVERRIDE and cfg > _CFG_OVERRIDE[arch]:
+        cfg = _CFG_OVERRIDE[arch]
     return build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text, negative_text,
                                     seed, denoise, cfg, steps=steps, scale_factor=scale_factor,
                                     orig_width=orig_width, orig_height=orig_height,
@@ -4566,6 +4590,10 @@ def _build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_
                     seed, denoise, cfg, steps, scale_factor, orig_width, orig_height,
                     controlnet=None, controlnet_2=None, loras=None):
     """→ Delegated to v2 builder."""
+    preset = _fix_preset_cfg(preset)
+    arch = preset.get("arch", "sdxl")
+    if arch in _CFG_OVERRIDE and cfg > _CFG_OVERRIDE[arch]:
+        cfg = _CFG_OVERRIDE[arch]
     return build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_text,
                          seed, denoise, cfg, steps, scale_factor, orig_width, orig_height,
                          controlnet=controlnet, controlnet_2=controlnet_2,
