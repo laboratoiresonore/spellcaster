@@ -10,7 +10,15 @@
       "Bash(cp comfyui-spellcaster/spellcaster_core/prompt_enhance.py \"C:/Users/redacted/AppData/Roaming/GIMP/3.2/plug-ins/comfyui-connector/spellcaster_core/prompt_enhance.py\")",
       "Bash(python3 -c ' *)",
       "Bash(rm -f \"C:/Users/redacted/AppData/Roaming/GIMP/3.2/plug-ins/comfyui-connector/__pycache__/_spellcaster_main.cpython-312.pyc\")",
-      "Bash(rm -rf \"C:/Users/redacted/AppData/Roaming/GIMP/3.2/plug-ins/comfyui-connector/__pycache__/\")"
+      "Bash(rm -rf \"C:/Users/redacted/AppData/Roaming/GIMP/3.2/plug-ins/comfyui-connector/__pycache__/\")",
+      "Bash(python nsfw/build_nsfw.py --push)",
+      "Bash(curl -s http://<INTERNAL_HOST>:8188/object_info/Reroute)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('Reroute',{}\\), indent=2\\)[:300]\\)\")",
+      "Bash(sed -n 6700,6710p c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/plugins/gimp/comfyui-connector/_spellcaster_main.py)",
+      "Bash(sed -n 8274,8284p c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/plugins/gimp/comfyui-connector/_spellcaster_main.py)",
+      "Bash(sed -n 8879,8889p c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/plugins/gimp/comfyui-connector/_spellcaster_main.py)",
+      "Bash(sed -n 10079,10089p c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/plugins/gimp/comfyui-connector/_spellcaster_main.py)",
+      "Bash(sed -n 10162,10178p c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/plugins/gimp/comfyui-connector/_spellcaster_main.py)"
     ]
   }
 }
