@@ -2450,7 +2450,7 @@ def _save_scaffold_overrides():
         print(f"  [State] Failed to save scaffold overrides: {e}")
 
 def _apply_scaffold_overrides():
-    """Apply saved scaffold overrides to _STUDIO_BY_ID entries."""
+    """Apply saved scaffold overrides to _STUDIO_BY_ID AND CHARS_CACHE."""
     if not _SCAFFOLD_OVERRIDES:
         return
     applied = 0
@@ -2459,6 +2459,12 @@ def _apply_scaffold_overrides():
             for key, val in overrides.items():
                 _STUDIO_BY_ID[char_id][key] = val
             applied += 1
+        # Also propagate to CHARS_CACHE so /api/characters returns updated names
+        for c in CHARS_CACHE:
+            if c["id"] == char_id:
+                for key, val in overrides.items():
+                    c[key] = val
+                break
     if applied:
         print(f"  [State] Applied scaffold overrides to {applied} wizard(s)")
 
