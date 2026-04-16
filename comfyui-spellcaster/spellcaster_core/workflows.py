@@ -610,6 +610,59 @@ def build_lut(image_filename, lut_name, strength):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  Flux2Klein-Enhancer — optional quality upgrade for ALL Klein pipelines
+# ═══════════════════════════════════════════════════════════════════════════
+# If the ComfyUI-Flux2Klein-Enhancer custom node pack is installed, these
+# nodes wrap the model to improve reference latent fidelity and fix color
+# drift. The helper below is called from every build_klein_* function
+# that accepts enhance=True. When enhance=False (default) it's a no-op.
+#
+# The node pack must be installed via ComfyUI Manager:
+#   https://civitai.com/models/2492746/comfyui-flux2klein-enhancer
+
+# Class types to probe for when detecting enhancer availability.
+KLEIN_ENHANCER_NODE_TYPES = {
+    "FLUX.2 Klein Ref Latent Controller",
+    "FLUX.2 Klein Text/Ref Balance",
+    "Color Anchor",
+}
+
+
+def _klein_enhance_model(nf, model_ref, ref_strength=500, text_ref_balance=0.5,
+                          color_anchor_strength=0.5, node_base_id=900):
+    """Wrap a Klein model with the Flux2Klein-Enhancer nodes.
+
+    Chains: model → RefLatentController → TextRefBalance → ColorAnchor.
+    Each node outputs MODEL and feeds into the next.
+
+    Called from build_klein_* functions when enhance=True. If enhance is
+    False the caller skips this entirely — there's no runtime check here
+    (the preflight system handles missing-node detection).
+
+    Args:
+        nf: NodeFactory instance.
+        model_ref: [node_id, slot] for the UNET/model output.
+        ref_strength: Reference latent injection strength (1-1000).
+        text_ref_balance: 0.0=text only, 0.999=reference only.
+        color_anchor_strength: Color drift correction (0.3-0.6 rec).
+        node_base_id: Starting node ID for the enhancer chain.
+
+    Returns:
+        Enhanced model reference [node_id, 0].
+    """
+    ref_ctrl = nf.flux2klein_ref_latent_controller(
+        model_ref, strength=ref_strength,
+        node_id=str(node_base_id))
+    balance = nf.flux2klein_text_ref_balance(
+        [ref_ctrl, 0], balance=text_ref_balance,
+        node_id=str(node_base_id + 1))
+    anchor = nf.flux2klein_color_anchor(
+        [balance, 0], strength=color_anchor_strength,
+        node_id=str(node_base_id + 2))
+    return [anchor, 0]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  klein_img2img — Flux 2 Klein distilled img2img
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -617,7 +670,7 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
                          steps=4, denoise=0.65, guidance=1.0,
                          enhancer_mag=1.0, enhancer_contrast=0.0, loras=None,
                          lora_name=None, lora_strength=1.0,
-                         klein_models=None):
+                         klein_models=None, enhance=False):
     """Image-to-image with Flux 2 Klein (distilled fast model).
 
     Klein is a 4B/9B parameter distilled variant of Flux that runs 6-8x faster
@@ -724,8 +777,14 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
     ref_pos_id = nf.reference_latent([pos_id, 0], [latent_id, 0], node_id="20")
     ref_neg_id = nf.reference_latent([neg_id, 0], [latent_id, 0], node_id="21")
 
+    # Optional Flux2Klein-Enhancer — wraps the model with reference
+    # strength control + text/ref balance + color anchor if installed.
+    model_for_guider = [unet_id, 0]
+    if enhance:
+        model_for_guider = _klein_enhance_model(nf, [unet_id, 0])
+
     # Sampler setup
-    guider_id = nf.cfg_guider([unet_id, 0], [ref_pos_id, 0], [ref_neg_id, 0],
+    guider_id = nf.cfg_guider(model_for_guider, [ref_pos_id, 0], [ref_neg_id, 0],
                               guidance, node_id="30")
     sampler_id = nf.ksampler_select("euler", node_id="31")
     sched_id = nf.basic_scheduler([unet_id, 0], steps, denoise,
@@ -3765,7 +3824,7 @@ def build_klein_refine(image_filename, klein_model_key, prompt_text, seed,
                        steps=4, guidance=1.0,
                        preprocessors=None,
                        loras=None, lora_name=None, lora_strength=1.0,
-                       klein_models=None):
+                       klein_models=None, enhance=False):
     """Klein Multi-Reference Refiner — enhance detail using structural references.
 
     Runs the input image through multiple preprocessors (LineArt, HED, Tile,
@@ -3878,8 +3937,13 @@ def build_klein_refine(image_filename, klein_model_key, prompt_text, seed,
     # Encode original image for the sampler latent input
     orig_enc_id = nf.vae_encode([scaled_id, 0], [vae_id, 0], node_id="13")
 
+    # Optional Flux2Klein-Enhancer
+    model_for_guider = [unet_id, 0]
+    if enhance:
+        model_for_guider = _klein_enhance_model(nf, [unet_id, 0])
+
     # Sampler — full denoise (1.0) since the references provide structure
-    guider_id = nf.cfg_guider([unet_id, 0], cond_chain, [neg_id, 0],
+    guider_id = nf.cfg_guider(model_for_guider, cond_chain, [neg_id, 0],
                               guidance, node_id="30")
     sampler_id = nf.ksampler_select("euler", node_id="31")
     sched_id = nf.basic_scheduler([unet_id, 0], steps, 1.0,
