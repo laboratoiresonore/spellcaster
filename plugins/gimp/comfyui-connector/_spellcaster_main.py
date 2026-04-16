@@ -8074,7 +8074,7 @@ class WanI2VDialog(Gtk.Dialog):
         self._video_preset_combo = Gtk.ComboBoxText()
         for i, vp in enumerate(WAN_VIDEO_PRESETS):
             self._video_preset_combo.append(str(i), vp["label"])
-        _video_preset_combo.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
+        self._video_preset_combo.set_tooltip_text("Video preset for WAN I2V generation.")
         self._video_preset_combo.set_active(0)
         # Not packed into the UI — hidden
 
