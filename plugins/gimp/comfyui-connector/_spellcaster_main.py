@@ -19241,9 +19241,10 @@ class Spellcaster(Gimp.PlugIn):
                     Gimp.message("Photobooth: no images were generated. Check server connection.")
                     return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
-                # Import all variants as layers so user can see them
+                # Import all variants as layers at native portrait size (not stretched)
                 for i, (fn, sf, ft, img_data) in enumerate(results_data):
-                    _import_result_as_layer(image, img_data, f"Photobooth #{i+1}")
+                    _import_result_as_layer(image, img_data, f"Photobooth #{i+1}",
+                                            keep_size=True)
                 Gimp.displays_flush()
 
                 # ═══════════════════════════════════════════════════════
