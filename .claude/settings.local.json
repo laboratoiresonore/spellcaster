@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/redacted/Documents/AI/Spellcaster/spellcaster/**)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f'{len\\(d\\)} entries'\\)\")",
+      "Bash(grep cache *)",
+      "Bash(curl -s http://127.0.0.1:7777/api/generated_assets)",
+      "WebSearch",
+      "Bash(cp comfyui-spellcaster/spellcaster_core/prompt_enhance.py plugins/gimp/comfyui-connector/spellcaster_core/prompt_enhance.py)",
+      "Bash(cp comfyui-spellcaster/spellcaster_core/prompt_enhance.py \"C:/Users/redacted/AppData/Roaming/GIMP/3.2/plug-ins/comfyui-connector/spellcaster_core/prompt_enhance.py\")",
+      "Bash(python3 -c ' *)",
+      "Bash(rm -f \"C:/Users/redacted/AppData/Roaming/GIMP/3.2/plug-ins/comfyui-connector/__pycache__/_spellcaster_main.cpython-312.pyc\")",
+      "Bash(rm -rf \"C:/Users/redacted/AppData/Roaming/GIMP/3.2/plug-ins/comfyui-connector/__pycache__/\")"
+    ]
+  }
+}

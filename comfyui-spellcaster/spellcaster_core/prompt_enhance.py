@@ -73,45 +73,71 @@ _ARCH_ENHANCE_PROFILES = {
     "sdxl": {
         "name": "SDXL",
         "style": "tag-based with natural language phrases",
-        "length": "40-80 words",
+        "length": "40-100 words",
         "notes": (
             "SDXL responds to both tags and short phrases. Start with the subject, "
             "then add style, lighting, and quality. Quality tags like 'masterpiece, "
-            "best quality, highly detailed' ARE effective. Use commas to separate concepts."
+            "best quality, highly detailed' ARE effective. Use commas to separate concepts.\n\n"
+            "MULTI-CHARACTER RULES (CRITICAL — follow these when the prompt has 2+ people):\n"
+            "- Start with the character count: '2girls', '1boy 1girl', '3people', etc.\n"
+            "- Use the BREAK keyword (uppercase) to separate each character's description into its own block.\n"
+            "- First block: scene/setting + character count + shared context.\n"
+            "- Each subsequent BREAK block: one character only with ALL their attributes "
+            "(hair, eyes, clothing, pose, position).\n"
+            "- Always specify position: 'on the left', 'on the right', 'in the center'.\n"
+            "- Make each character's attributes maximally DIFFERENT to prevent bleed.\n"
+            "- Boost unique features with attention weights: (red hair:1.3)\n"
+            "- Example: 'masterpiece, 2girls, fantasy tavern, warm lighting BREAK "
+            "1girl, (long red hair:1.3), green eyes, leather armor, on the left BREAK "
+            "1girl, (blonde bob:1.3), blue eyes, wizard robe, on the right'\n"
+            "- NEVER list two characters' attributes in the same BREAK block."
         ),
     },
     # SD 1.5 — classic tag style
     "sd15": {
         "name": "Stable Diffusion 1.5",
         "style": "comma-separated tags",
-        "length": "30-60 words",
+        "length": "30-80 words",
         "notes": (
             "SD 1.5 works best with comma-separated tags/keywords. "
             "Quality tags are essential: 'masterpiece, best quality, highly detailed'. "
             "Order matters — put the most important concepts first. "
-            "Include style, medium, lighting, and composition tags."
+            "Include style, medium, lighting, and composition tags.\n\n"
+            "MULTI-CHARACTER: Use BREAK to separate characters. Start with count "
+            "('2girls', '1boy 1girl'). Each BREAK block = one character with ALL their "
+            "attributes. Specify positions ('on the left', 'on the right'). "
+            "Use (attention:1.3) on distinguishing features to prevent attribute bleed."
         ),
     },
     # Illustrious / Pony — anime-focused SDXL derivatives
     "illustrious": {
         "name": "Illustrious",
         "style": "booru-style tags",
-        "length": "30-70 words",
+        "length": "30-80 words",
         "notes": (
             "Illustrious is trained on booru/danbooru-style tags. Use short comma-separated "
             "tags. Include character tags, pose, expression, outfit details. "
             "Quality: 'masterpiece, best quality, absurdres'. "
-            "Use underscores in multi-word tags (e.g. long_hair, blue_eyes)."
+            "Use underscores in multi-word tags (e.g. long_hair, blue_eyes).\n\n"
+            "MULTI-CHARACTER: Start with count tag (2girls, 1boy_1girl). Use BREAK "
+            "between character blocks. Each block: one character with all tags "
+            "(hair_color, eye_color, outfit, pose, position). "
+            "Example: 'masterpiece, 2girls, indoors BREAK "
+            "girl, red_hair, long_hair, green_eyes, armor, standing, on_the_left BREAK "
+            "girl, blonde_hair, bob_cut, blue_eyes, robe, standing, on_the_right'"
         ),
     },
     "pony": {
         "name": "Pony Diffusion",
         "style": "score-prefixed booru tags",
-        "length": "30-70 words",
+        "length": "30-80 words",
         "notes": (
             "Pony Diffusion uses booru tags with score prefixes. "
             "Start with 'score_9, score_8_up, score_7_up' for quality. "
-            "Then character/scene tags. Use underscores for multi-word tags."
+            "Then character/scene tags. Use underscores for multi-word tags.\n\n"
+            "MULTI-CHARACTER: After score tags, add count (2girls). Use BREAK "
+            "between character blocks. Each BREAK block = one character with ALL "
+            "their tags. Specify positions. Boost unique features with (tag:1.3)."
         ),
     },
     # WAN — video/image, natural language

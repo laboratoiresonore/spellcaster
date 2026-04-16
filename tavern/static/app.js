@@ -107,12 +107,15 @@ async function llmGenerate(params) {
         });
         return await res.json();
     } else {
-        // Direct KoboldAI v1 call
-        const res = await fetch(`${koboldUrl}/api/v1/generate`, {
+        // Route through Guild server proxy — handles ComfyUI-native LLM,
+        // KoboldCpp, and Ollama fallback automatically. The browser can't
+        // call ComfyUI's workflow API directly for text generation.
+        const res = await fetch('/api/llm_generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(params)
         });
+        if (!res.ok) throw new Error(`LLM proxy returned ${res.status}`);
         return await res.json();
     }
 }
@@ -301,20 +304,15 @@ async function syncServerIdentities() {
         const serverIds = await res.json();
         if (Object.keys(serverIds).length === 0) return;
 
-        // Merge into localStorage — server is authoritative for keys it has
+        // Server OVERWRITES localStorage for all keys it has
         let local = JSON.parse(localStorage.getItem('guild_identities') || '{}');
         let synced = 0;
         for (const [charId, srvData] of Object.entries(serverIds)) {
-            if (!local[charId]) {
-                local[charId] = srvData;
-                synced++;
-            } else {
-                // Server fills in any gaps the local store is missing
-                for (const key of ['name', 'personality', 'avatar_url', 'animated_url']) {
-                    if (srvData[key] && !local[charId][key]) {
-                        local[charId][key] = srvData[key];
-                        synced++;
-                    }
+            if (!local[charId]) local[charId] = {};
+            for (const key of ['name', 'personality', 'avatar_url', 'animated_url']) {
+                if (srvData[key]) {
+                    local[charId][key] = srvData[key];
+                    synced++;
                 }
             }
         }
@@ -594,21 +592,24 @@ async function initialize() {
     // Sync server-persisted LoRA toggles (survives browser clears)
     await syncServerLoraToggles();
 
-    // Merge in any locally-customised name/personality from localStorage,
-    // BUT keep the server-synced avatar/animated URLs (they were just set
-    // by syncServerAssets above and are the source of truth for generated
-    // visuals). Avatar/animated URLs only fall back to localStorage if the
-    // server has nothing — which is the cold-cache case.
+    // Server ALWAYS wins for wizard names. Nuke any stale localStorage
+    // names that differ from the server (LLM-generated scaffold overrides).
+    // Only user-explicit renames (via rename dialog) survive.
     let savedIdentities = JSON.parse(localStorage.getItem('guild_identities') || '{}');
     characters.forEach(char => {
-        if(savedIdentities[char.id]) {
-            char.name = savedIdentities[char.id].name || char.name;
+        if (savedIdentities[char.id]) {
+            // Force server name — always — unless user explicitly renamed
+            if (!savedIdentities[char.id]._user_renamed) {
+                savedIdentities[char.id].name = char.name;
+            } else {
+                char.name = savedIdentities[char.id].name || char.name;
+            }
             char.personality = savedIdentities[char.id].personality || char.personality;
-            // Server wins for generated visuals; localStorage is fallback only
             char.avatar_url = char.avatar_url || savedIdentities[char.id].avatar_url;
             char.animated_url = char.animated_url || savedIdentities[char.id].animated_url;
         }
     });
+    localStorage.setItem('guild_identities', JSON.stringify(savedIdentities));
 
     applyGlobalBackground();
     renderSidebar();
@@ -1613,6 +1614,7 @@ function saveIdentity(char) {
         personality: char.personality,
         avatar_url: char.avatar_url,
         animated_url: char.animated_url || undefined,
+        _user_renamed: char._user_renamed || undefined,
     };
     let savedIdentities = JSON.parse(localStorage.getItem('guild_identities') || '{}');
     savedIdentities[char.id] = identity;
@@ -1772,11 +1774,16 @@ function renderSidebar(filter = "") {
         // ── Wizard info tooltip on hover ──
         let hoverTimer = null;
         card.addEventListener('mouseenter', () => {
+            _tooltipHoverIntent = true;
             hoverTimer = setTimeout(() => showWizardTooltip(char, card), 420);
         });
         card.addEventListener('mouseleave', () => {
+            _tooltipHoverIntent = false;
             clearTimeout(hoverTimer);
-            hideWizardTooltip();
+            // Delay hide so user can move mouse to the tooltip itself
+            setTimeout(() => {
+                if (!_tooltipHoverIntent && !_tooltipHovering) hideWizardTooltip();
+            }, 150);
         });
 
         characterList.appendChild(card);
@@ -1825,8 +1832,13 @@ let _tooltipCache = {};  // Cache fetched info to avoid re-fetching
 let _tooltipDismissTimer = null;
 let _tooltipEscHandler = null;
 let _tooltipOutsideHandler = null;
+let _tooltipHoverIntent = false;  // true while mouse is over a card
+let _tooltipHovering = false;     // true while mouse is over the tooltip itself
+let _tooltipGeneration = 0;       // increments on each show, stale async checks against this
 
 function hideWizardTooltip() {
+    _tooltipGeneration++;
+    _tooltipHovering = false;
     if (_tooltipDismissTimer) {
         clearTimeout(_tooltipDismissTimer);
         _tooltipDismissTimer = null;
@@ -1835,7 +1847,6 @@ function hideWizardTooltip() {
         _wizardTooltip.remove();
         _wizardTooltip = null;
     }
-    // Tear down the global escape-hatch listeners so they don't pile up
     if (_tooltipEscHandler) {
         document.removeEventListener('keydown', _tooltipEscHandler);
         _tooltipEscHandler = null;
@@ -1848,9 +1859,10 @@ function hideWizardTooltip() {
 
 async function showWizardTooltip(char, cardEl) {
     hideWizardTooltip();
+    const myGen = ++_tooltipGeneration;
 
-    // Set auto-dismiss timer
-    _tooltipDismissTimer = setTimeout(hideWizardTooltip, 5000);
+    // Set auto-dismiss timer (reset if user hovers the tooltip)
+    _tooltipDismissTimer = setTimeout(hideWizardTooltip, 8000);
 
     // Fetch detailed info (cached)
     let info = _tooltipCache[char.id];
@@ -1862,6 +1874,9 @@ async function showWizardTooltip(char, cardEl) {
             _tooltipCache[char.id] = info;
         } catch { return; }
     }
+
+    // Stale check: if another show/hide happened during async fetch, abort
+    if (_tooltipGeneration !== myGen) return;
 
     // Build tooltip content
     const tooltip = document.createElement('div');
@@ -2003,6 +2018,20 @@ async function showWizardTooltip(char, cardEl) {
         // immediately close it
         setTimeout(() => document.addEventListener('click', _tooltipOutsideHandler), 0);
     }
+
+    // Keep tooltip alive while user hovers it (e.g. to read LoRA list)
+    tooltip.addEventListener('mouseenter', () => {
+        _tooltipHovering = true;
+        if (_tooltipDismissTimer) {
+            clearTimeout(_tooltipDismissTimer);
+            _tooltipDismissTimer = null;
+        }
+    });
+    tooltip.addEventListener('mouseleave', () => {
+        _tooltipHovering = false;
+        // Auto-dismiss shortly after leaving the tooltip
+        _tooltipDismissTimer = setTimeout(hideWizardTooltip, 400);
+    });
 
     // Position tooltip to the right of the card
     document.body.appendChild(tooltip);
@@ -2428,11 +2457,14 @@ function _looksLikeDirectGenPrompt(text) {
     const genVerbs = [
         'generate', 'make ', 'create', 'render', 'cast ', 'draw ',
         'paint ', 'show me', 'conjure', 'summon', 'produce',
-        'imagine', 'picture ', 'give me',
+        'imagine', 'picture ', 'give me', 'i want a picture',
+        'i want an image', 'i want a photo', 'make me a', 'make me an',
+        'a photo of', 'a picture of', 'an image of', 'a portrait of',
+        'a painting of', 'a scene of', 'a scene with',
     ];
     if (genVerbs.some(v => low.indexOf(v) !== -1)) return true;
     const wc = t.split(/\s+/).length;
-    if (wc >= 2 && wc <= 25 && low.indexOf(':') === -1 && low.indexOf(';') === -1) {
+    if (wc >= 2 && wc <= 30 && low.indexOf(':') === -1 && low.indexOf(';') === -1) {
         return true;
     }
     return false;
@@ -2678,12 +2710,22 @@ async function askKobold(text) {
             window._hordeWarnShown = true;
         }
 
-        // Nudge the LLM to output JSON if the user prompt is direct
+        // Nudge the LLM to output JSON if the user prompt looks like a gen request
         let activePrompt = context;
-        const directKeywords = ['generate', 'make', 'create', 'render', 'cast', 'show me', 'conjure'];
-        const isDirect = text.length < 100 && directKeywords.some(k => text.toLowerCase().includes(k));
-        if (isDirect && !context.includes('```json')) {
-            activePrompt += "(The user is requesting a direct conjuration. Skip the chatter and output the JSON block now.)\nAssistant: ";
+        const directKeywords = ['generate', 'make', 'create', 'render', 'cast', 'show me', 'conjure',
+            'draw', 'paint', 'picture', 'image', 'photo', 'portrait', 'scene'];
+        const low = text.toLowerCase();
+        const isDirect = text.length < 200 && directKeywords.some(k => low.includes(k));
+        const isDescriptive = text.length < 200 && !low.includes('?') && text.split(/\s+/).length >= 3
+            && !low.startsWith('how') && !low.startsWith('what') && !low.startsWith('why');
+        if ((isDirect || isDescriptive) && !context.includes('```json')) {
+            activePrompt += `(IMPORTANT: The user wants you to generate an image. Do NOT describe what you would create. Do NOT rephrase their request. Output ONLY the JSON block now. Example format:
+\`\`\`json
+{"build_fn": "build_txt2img", "params": {"prompt": "the actual SDXL/Flux prompt here"}}
+\`\`\`
+Output the JSON block immediately — no preamble, no explanation.)
+Assistant: \`\`\`json
+`;
         }
 
         const data = await llmGenerate({
@@ -3081,6 +3123,7 @@ renameSave.addEventListener('click', () => {
     const char = characters.find(c => c.id === activeCharacterId);
     const newName = renameInput.value.trim() || "Unnamed Wizard";
     char.name = newName;
+    char._user_renamed = true;
     saveIdentity(char);
     activeName.textContent = newName;
     renameModal.classList.add('hidden');

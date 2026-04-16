@@ -40,6 +40,7 @@ SPELLCASTER_SHORTCUTS = {
     "spellcaster-quick-upscale":     "<Ctrl><Alt>u",     # Quick Upscale
     "spellcaster-quick-face-restore":"<Ctrl><Alt>f",     # Quick Face Restore
     "spellcaster-quick-rembg":       "<Ctrl><Alt>b",     # Quick Remove BG
+    "spellcaster-quick-erase":       "<Ctrl><Alt>x",     # AI Eraser
     "spellcaster-rerun-last":        "<Ctrl><Alt>r",     # Re-run Last
 
     # ── Specialty (Ctrl+Alt+Shift) ────────────────────────────────────

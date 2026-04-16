@@ -4480,25 +4480,41 @@ LORA_METADATA = {
     "Z-Image-Professional_Photographer_3500.safetensors": {"trigger": "professional photo, studio lighting", "strength": 0.70},
     "feet v2.1.safetensors": {"trigger": "detailed feet, correct toes", "strength": 0.80},
     # ── NSFW LoRAs (auto-injected) ──
-    'nsfw_master_flux2_v2.safetensors': {"trigger": 'nsfw, nude', "strength": 0.75},
-    'detail_body_flux2.safetensors': {"trigger": 'detailed body, skin texture', "strength": 0.6},
-    'lingerie_flux2.safetensors': {"trigger": 'lingerie, lace, sheer', "strength": 0.7},
-    'feet_detail_flux2.safetensors': {"trigger": 'detailed feet, bare feet, perfect toes, foot soles', "strength": 0.75},
-    'FK_povfootjobfront.safetensors': {"trigger": 'dynamic shot, pov of the man lying on his back, she is giving a footjob', "strength": 0.9},
+    'KLEIN-Unchained-V1.safetensors': {"trigger": 'nsfw, nude', "strength": 0.85},
+    'klein_slider_anatomy_9B_v1.5.safetensors': {"trigger": 'detailed body, correct anatomy', "strength": 0.6},
+    'clothesonoffv2.safetensors': {"trigger": 'clothes off, nude, undressing', "strength": 0.85},
+    'pussydiffusion-f2-klein-9b_v2.safetensors': {"trigger": 'nude, detailed anatomy', "strength": 0.85},
+    'sharp detailed image (foot focus) v1.1.safetensors': {"trigger": 'detailed feet, bare feet, foot soles, toes', "strength": 0.75},
+    'FK_povfootjobfront.safetensors': {"trigger": 'dynamic shot, pov, she is giving a footjob', "strength": 0.9},
     'footjob_ab_f2k9b_1.safetensors': {"trigger": 'she is giving a footjob', "strength": 0.75},
-    'cum_on_face_v2.safetensors': {"trigger": 'cum on her face, semen on her face', "strength": 0.75},
-    'nsfw_master_sdxl.safetensors': {"trigger": 'nsfw, nude', "strength": 0.7},
-    'detail_body_sdxl.safetensors': {"trigger": 'detailed body', "strength": 0.55},
-    'feet_detail_sdxl.safetensors': {"trigger": 'detailed feet, bare feet, perfect toes', "strength": 0.7},
-    'CumOnFace_sdxl_v1.safetensors': {"trigger": 'cum on her face, semen on her face', "strength": 0.7},
+    'cum_on_face_v2.safetensors': {"trigger": 'cum on her face, semen', "strength": 0.75},
+    'RealFeet_xl_v1.safetensors': {"trigger": 'detailed feet, bare feet, realistic feet', "strength": 0.75},
+    'feet v2.safetensors': {"trigger": 'detailed feet, bare feet, perfect toes', "strength": 0.7},
     "Tentacledv1.safetensors": {"trigger": "tentacles, organic tendrils", "strength": 0.85},
 }
+
+
+# ── Architecture-aware CFG override ──────────────────────────────────
+# Klein/Flux2 models need CFG=1.0. Many presets embed SDXL-tuned CFG
+# values (3.0-7.0) which deepfry distilled models.  This function
+# fixes the preset before any workflow builder sees it.
+_CFG_OVERRIDE = {"flux2klein": 1.0, "chroma": 1.0}
+
+def _fix_preset_cfg(preset):
+    """Return a copy of preset with CFG clamped for the architecture."""
+    arch = preset.get("arch", "sdxl")
+    override = _CFG_OVERRIDE.get(arch)
+    if override is not None and preset.get("cfg", 0) > override:
+        preset = dict(preset)
+        preset["cfg"] = override
+    return preset
 
 
 def _build_img2img(image_filename, preset, prompt_text, negative_text, seed,
                   loras=None, controlnet=None, controlnet_2=None):
     """→ Delegated to v2 builder, with automatic prompt enhancement."""
     arch_key = preset.get("arch", "sdxl")
+    preset = _fix_preset_cfg(preset)
     prompt_text, negative_text = _auto_enhance(prompt_text, arch_key, negative_text)
     return build_img2img(image_filename, preset, prompt_text, negative_text, seed,
                          loras=loras, controlnet=controlnet, controlnet_2=controlnet_2,
@@ -4506,6 +4522,7 @@ def _build_img2img(image_filename, preset, prompt_text, negative_text, seed,
 
 def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_text, seed, loras=None, controlnet=None, controlnet_2=None):
     """→ Delegated to v2 builder, with automatic prompt enhancement."""
+    preset = _fix_preset_cfg(preset)
     arch_key = preset.get("arch", "sdxl")
     prompt_text, negative_text = _auto_enhance(prompt_text, arch_key, negative_text)
     return build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_text, seed,
@@ -4544,6 +4561,7 @@ def _rembg_post_process(server, filename, subfolder="", folder_type="output"):
 def _build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
                     left, top, right, bottom, feathering, loras=None, controlnet=None):
     """→ Delegated to v2 builder."""
+    preset = _fix_preset_cfg(preset)
     return build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
                           left, top, right, bottom, feathering, loras=loras, controlnet=controlnet,
                           guide_modes=CONTROLNET_GUIDE_MODES)
@@ -4554,6 +4572,7 @@ def _build_style_transfer(target_filename, style_ref_filename, preset,
                            weight=0.8, denoise=0.6,
                            controlnet=None, controlnet_2=None, loras=None):
     """→ Delegated to v2 builder."""
+    preset = _fix_preset_cfg(preset)
     return build_style_transfer(target_filename, style_ref_filename, preset,
                                 prompt_text, negative_text, seed,
                                 ipadapter_preset=ipadapter_preset,
@@ -4567,6 +4586,10 @@ def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text
                               orig_width=512, orig_height=512,
                               controlnet=None, controlnet_2=None, loras=None):
     """→ Delegated to v2 builder."""
+    preset = _fix_preset_cfg(preset)
+    arch = preset.get("arch", "sdxl")
+    if arch in _CFG_OVERRIDE and cfg > _CFG_OVERRIDE[arch]:
+        cfg = _CFG_OVERRIDE[arch]
     return build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text, negative_text,
                                     seed, denoise, cfg, steps=steps, scale_factor=scale_factor,
                                     orig_width=orig_width, orig_height=orig_height,
@@ -4578,6 +4601,10 @@ def _build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_
                     seed, denoise, cfg, steps, scale_factor, orig_width, orig_height,
                     controlnet=None, controlnet_2=None, loras=None):
     """→ Delegated to v2 builder."""
+    preset = _fix_preset_cfg(preset)
+    arch = preset.get("arch", "sdxl")
+    if arch in _CFG_OVERRIDE and cfg > _CFG_OVERRIDE[arch]:
+        cfg = _CFG_OVERRIDE[arch]
     return build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_text,
                          seed, denoise, cfg, steps, scale_factor, orig_width, orig_height,
                          controlnet=controlnet, controlnet_2=controlnet_2,
@@ -6339,7 +6366,6 @@ class PresetDialog(Gtk.Dialog):
         self.preset_combo = Gtk.ComboBoxText()
         for i, p in enumerate(MODEL_PRESETS):
             self.preset_combo.append(str(i), _model_label(p, mode))
-        preset_combo.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
         # Default to favourite model from settings, or first model
         fav = _load_config().get("favourite_model", -1)
         if 0 <= fav < len(MODEL_PRESETS):
@@ -8059,7 +8085,7 @@ class WanI2VDialog(Gtk.Dialog):
         self._video_preset_combo = Gtk.ComboBoxText()
         for i, vp in enumerate(WAN_VIDEO_PRESETS):
             self._video_preset_combo.append(str(i), vp["label"])
-        _video_preset_combo.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
+        self._video_preset_combo.set_tooltip_text("Video preset for WAN I2V generation.")
         self._video_preset_combo.set_active(0)
         # Not packed into the UI — hidden
 
@@ -10451,6 +10477,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-quick-upscale": "upscale",
             "spellcaster-quick-face-restore": "face_restore",
             "spellcaster-quick-rembg": "rembg",
+            "spellcaster-quick-erase": None,
             # Re-run Last
             "spellcaster-rerun-last": None,
             # AI Color Match
@@ -10591,7 +10618,7 @@ class Spellcaster(Gimp.PlugIn):
                                      "Upscale with AI detail hallucination and scale control"),
             "spellcaster-settings": ("Settings...", self._run_settings,
                                       "Configure Spellcaster: server URL, defaults, and preferences"),
-            "spellcaster-my-presets": ("My Presets...", self._run_my_presets,
+            "spellcaster-my-presets": ("★ My Presets...", self._run_my_presets,
                                        "Quick access to saved prompt and settings presets"),
             "spellcaster-bridge": ("Workflow Library...", self._run_bridge,
                                     "Browse workflows, import from server, edit scaffolds"),
@@ -10613,6 +10640,8 @@ class Spellcaster(Gimp.PlugIn):
                                                  "Instant face restoration — no dialog"),
             "spellcaster-quick-rembg": ("⚡ Quick Remove Background", self._run_quick_rembg,
                                           "Instant background removal — no dialog"),
+            "spellcaster-quick-erase": ("⚡ AI Eraser", self._run_ai_eraser,
+                                          "Select anything and erase it — AI fills in the background seamlessly"),
             # Re-run Last
             "spellcaster-rerun-last": ("⚡ Re-run Last...", self._run_rerun_last,
                                         "Repeat your last Spellcaster operation instantly"),
@@ -10624,8 +10653,8 @@ class Spellcaster(Gimp.PlugIn):
         label, callback, doc = menu_map[name]
 
         # Menu path mapping — TOP-LEVEL Spellcaster menu in the menu bar.
-        # ◆ = purple diamond prefix for the top-level menu name.
-        _S = "<Image>/◆ Spellcaster"
+        # ◆ = purple diamond brackets for the top-level menu name.
+        _S = "<Image>/◆ Spellcaster ◆"
         _menu_paths = {
             # Presets at top level
             "spellcaster-my-presets":       _S,
@@ -10704,6 +10733,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-quick-upscale":     f"{_S}/Quick",
             "spellcaster-quick-face-restore":f"{_S}/Quick",
             "spellcaster-quick-rembg":       f"{_S}/Quick",
+            "spellcaster-quick-erase":       f"{_S}/Quick",
 
             # Tools — utility and config
             "spellcaster-layer-blend-ratio": f"{_S}/Tools",
@@ -10725,6 +10755,8 @@ class Spellcaster(Gimp.PlugIn):
             # Select menu — AI-powered selection belongs here
             "spellcaster-sam3-select":       "<Image>/Select",
             "spellcaster-sam3-extract":      "<Image>/Select",
+            # Filters menu — AI eraser alongside other AI tools
+            "spellcaster-quick-erase":       "<Image>/Filters",
             # Colors menu — color manipulation tools
             "spellcaster-color-match":       "<Image>/Colors",
             "spellcaster-colorize":          "<Image>/Colors",
@@ -13136,6 +13168,12 @@ class Spellcaster(Gimp.PlugIn):
             'Extend bath / pool scene': 'seamless water continuation, matching reflections, wet surfaces, steam, same lighting, bathroom or pool tiles',
             'Reveal outfit below frame': 'natural clothing continuation below the frame, matching fabric texture and color, correct draping, same style',
             'Reveal bare feet below frame': 'natural continuation downward showing bare feet, correct anatomy, five toes per foot, matching skin tone, natural foot proportions, same lighting on skin, detailed soles and toes',
+            'Reveal bare feet (standing)': 'natural continuation downward revealing bare feet standing on floor, correct anatomy, five toes per foot, arched soles, matching skin tone, floor surface continuation, weight bearing on feet, natural shadow under feet, same lighting',
+            'Reveal bare feet (lying down)': 'natural downward continuation showing bare feet while lying on bed or couch, relaxed toes, soles partially visible, feet slightly apart, soft fabric beneath feet, matching skin tone, warm intimate lighting',
+            'Reveal bare feet (seated)': 'natural continuation showing bare feet while seated, legs extending downward, feet resting on floor, relaxed toes, matching skin tone, natural foot placement, correct ankle proportions, same lighting on skin',
+            'Reveal soles (feet toward camera)': 'natural continuation revealing bare foot soles facing toward camera, wrinkled soles, visible arches, detailed toe pads, soft skin texture, matching skin tone, feet raised or propped up, shallow depth of field on soles',
+            'Reveal bare feet on bed': 'downward extension showing bare feet on soft sheets, toes peeking from under covers, satin or cotton fabric around feet, relaxed foot position, warm bedroom lighting, matching skin tone, detailed toe nails',
+            'Reveal bare feet in water': 'downward continuation showing bare feet in shallow water, wet skin glistening, water ripples around ankles, sand or pool floor visible, matching skin tone, natural refraction, bright natural lighting',
             "Add floor / ground": "natural ground surface below subject, matching floor material, correct shadows, consistent perspective, seamless edge blending",
             "Add ceiling / sky above": "natural continuation upward, ceiling or sky matching scene context, correct lighting direction, consistent atmosphere",
             "Reveal hidden subject": "extending to reveal more of a partially visible person or object, natural body continuation, matching pose and proportions",
@@ -13272,10 +13310,21 @@ class Spellcaster(Gimp.PlugIn):
                 "steps": steps, "cfg": 1.0, "denoise": 1.0,
                 "sampler": "euler", "scheduler": "simple",
             }
+            # Auto-inject anatomy LoRA for body completion presets
+            _outpaint_loras = None
+            _purpose = purpose_combo.get_active_id() or ""
+            if any(k in _purpose.lower() for k in ["person", "body", "reveal", "subject"]):
+                _outpaint_loras = [
+                    {"name": "Flux-2-Klein\\Sliders\\klein_slider_anatomy_9B_v1.5.safetensors",
+                     "strength": 0.6, "model_strength": 0.6, "clip_strength": 0.6},
+                    {"name": "Flux-2-Klein\\Character\\The_Body_Version_A_Flux2.k.9B.safetensors",
+                     "strength": 0.5, "model_strength": 0.5, "clip_strength": 0.5},
+                ]
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = _build_outpaint(uname, preset, prompt, "", seed,
-                                      pad_l, pad_t, pad_r, pad_b, feathering)
+                                      pad_l, pad_t, pad_r, pad_b, feathering,
+                                      loras=_outpaint_loras)
                 label = f"Klein Outpaint run {run_i+1}/{runs}" if runs > 1 else "Klein Outpaint"
                 _wf = wf
                 results = _run_with_spinner(f"{label}: processing...",
@@ -14187,12 +14236,12 @@ class Spellcaster(Gimp.PlugIn):
             'Undress / remove clothing': {
                 "prompt_hint": 'nude body, bare skin, natural anatomy, smooth skin texture, realistic proportions, detailed skin',
                 "denoise": 0.9, "steps": 28,
-                "lora": {"path": 'A-Flux\\NSFW\\nsfw_master_flux2_v2.safetensors', "strength": 0.75},
+                "lora": {"path": 'Flux-2-Klein\\KLEIN-Unchained-V1.safetensors', "strength": 0.75},
             },
             'Change to lingerie': {
                 "prompt_hint": 'wearing lace lingerie, bra and panties, sheer fabric, delicate straps, sensual, detailed fabric texture',
                 "denoise": 0.8, "steps": 25,
-                "lora": {"path": 'A-Flux\\NSFW\\lingerie_flux2.safetensors', "strength": 0.7},
+                "lora": {"path": 'Flux-2-Klein\\clothesonoffv2.safetensors', "strength": 0.7},
             },
             'Change to swimwear / bikini': {
                 "prompt_hint": 'wearing bikini, swimwear, beach body, tanned skin, string bikini, tropical',
@@ -14201,7 +14250,7 @@ class Spellcaster(Gimp.PlugIn):
             'Enhance body features': {
                 "prompt_hint": 'enhanced curves, voluptuous figure, toned body, attractive proportions, smooth skin, perfect anatomy',
                 "denoise": 0.55, "steps": 22,
-                "lora": {"path": 'A-Flux\\NSFW\\detail_body_flux2.safetensors', "strength": 0.6},
+                "lora": {"path": 'Flux-2-Klein\\Sliders\\klein_slider_anatomy_9B_v1.5.safetensors', "strength": 0.6},
             },
             'Add tattoos / body art': {
                 "prompt_hint": 'detailed tattoo art, intricate ink design, body art, skin texture with tattoo, realistic tattoo shading',
@@ -14222,72 +14271,92 @@ class Spellcaster(Gimp.PlugIn):
             'Remove shoes / go barefoot': {
                 "prompt_hint": 'bare feet, no shoes, no socks, natural toes, detailed foot soles, smooth skin on feet, visible arches, relaxed bare feet on ground',
                 "denoise": 0.78, "steps": 25,
-                "lora": {"path": 'A-Flux\\NSFW\\feet_detail_flux2.safetensors', "strength": 0.75},
+                "lora": {"path": 'Flux-1-Dev\\NSFW\\sharp detailed image (foot focus) v1.1.safetensors', "strength": 0.65},
             },
             'Barefoot close-up detail': {
                 "prompt_hint": 'extreme detail bare feet close-up, perfect toes, soft smooth soles, natural skin texture, pedicured nails, delicate arches, high detail foot photography',
                 "denoise": 0.65, "steps": 22,
-                "lora": {"path": 'A-Flux\\NSFW\\feet_detail_flux2.safetensors', "strength": 0.75},
+                "lora": {"path": 'Flux-1-Dev\\NSFW\\sharp detailed image (foot focus) v1.1.safetensors', "strength": 0.7},
+            },
+            'Feet closeup (top view)': {
+                "prompt_hint": 'extreme macro closeup of bare feet from above, top-down view of toes, detailed nail beds, perfect pedicure, smooth skin between toes, natural skin texture, every pore visible, delicate toe proportions, professional foot photography, studio lighting, shallow depth of field, sharp focus on toes',
+                "denoise": 0.7, "steps": 25,
+                "lora": {"path": 'Flux-1-Dev\\NSFW\\sharp detailed image (foot focus) v1.1.safetensors', "strength": 0.75},
+            },
+            'Soles closeup (bottom view)': {
+                "prompt_hint": 'extreme macro closeup of bare foot soles filling entire frame, bottom of feet facing camera, every wrinkle and crease on soles visible, soft padded toe pads, detailed ball of foot, smooth high arches, heel texture, natural skin creases, intimate sole photography, warm soft lighting, shallow depth of field, photorealistic skin detail',
+                "denoise": 0.72, "steps": 25,
+                "lora": {"path": 'Flux-1-Dev\\NSFW\\sharp detailed image (foot focus) v1.1.safetensors', "strength": 0.8},
+            },
+            'Soles closeup (scrunched)': {
+                "prompt_hint": 'extreme closeup of scrunched bare foot soles, toes curled showing deep wrinkles on soles, ball of foot creased, defined arch lines, toe pads pressed together, natural skin folds, detailed texture of sole creases, warm intimate lighting, photorealistic, macro photography',
+                "denoise": 0.72, "steps": 25,
+                "lora": {"path": 'Flux-1-Dev\\NSFW\\sharp detailed image (foot focus) v1.1.safetensors', "strength": 0.8},
+            },
+            'Feet closeup (side profile)': {
+                "prompt_hint": 'closeup side profile view of bare foot, elegant arch visible, delicate ankle bone, smooth heel, toes pointed, graceful foot shape, natural skin texture, soft directional lighting casting gentle shadows under arch, professional photography, sharp detail',
+                "denoise": 0.68, "steps": 22,
+                "lora": {"path": 'Flux-1-Dev\\NSFW\\sharp detailed image (foot focus) v1.1.safetensors', "strength": 0.7},
             },
             'Feet with accessories': {
                 "prompt_hint": 'bare feet with ankle bracelet, toe rings, delicate gold anklet chain, pedicured toenails painted, jewelry on feet, detailed toes',
                 "denoise": 0.7, "steps": 24,
-                "lora": {"path": 'A-Flux\\NSFW\\feet_detail_flux2.safetensors', "strength": 0.75},
+                "lora": {"path": 'Flux-1-Dev\\NSFW\\sharp detailed image (foot focus) v1.1.safetensors', "strength": 0.65},
             },
             'Stockings / thigh-highs to barefoot': {
                 "prompt_hint": 'bare feet after removing stockings, one stocking halfway off, smooth legs, detailed bare toes and soles, sensual undressing',
                 "denoise": 0.82, "steps": 25,
-                "lora": {"path": 'A-Flux\\NSFW\\feet_detail_flux2.safetensors', "strength": 0.75},
+                "lora": {"path": 'Flux-1-Dev\\NSFW\\foot feet v1.safetensors', "strength": 0.7},
             },
             'Wet / sandy bare feet': {
                 "prompt_hint": 'wet bare feet, water droplets on skin, glistening toes, beach sand between toes, ocean foam around ankles, natural foot detail',
                 "denoise": 0.6, "steps": 22,
-                "lora": {"path": 'A-Flux\\NSFW\\feet_detail_flux2.safetensors', "strength": 0.75},
+                "lora": {"path": 'Flux-1-Dev\\NSFW\\sharp detailed image (foot focus) v1.1.safetensors', "strength": 0.65},
             },
             'Bare feet on fabric / texture': {
                 "prompt_hint": 'bare feet resting on satin sheets, toes curling in soft fabric, smooth soles against silk, sensual foot placement, intimate detail',
                 "denoise": 0.55, "steps": 20,
-                "lora": {"path": 'A-Flux\\NSFW\\feet_detail_flux2.safetensors', "strength": 0.75},
+                "lora": {"path": 'Flux-1-Dev\\NSFW\\sharp detailed image (foot focus) v1.1.safetensors', "strength": 0.6},
             },
             'Footjob POV (frontview)': {
                 "prompt_hint": 'dynamic shot, the image shows the girl and only one man, shot from pov of the man lying on his back, she is giving a footjob, she is smiling, keep her outfit and hair style and the setting, detailed bare feet, perfect toes wrapping',
                 "denoise": 0.92, "steps": 25,
-                "lora": {"path": 'A-Flux\\NSFW\\FK_povfootjobfront.safetensors', "strength": 0.9},
+                "lora": {"path": 'Flux-2-Klein\\FK_povfootjobfront.safetensors', "strength": 0.9},
             },
             'Footjob POV (hands behind head)': {
                 "prompt_hint": 'dynamic shot, pov of the man lying on his back, she is giving a footjob, she is smiling having her arms chilling behind her head, confident relaxed expression, bare feet detailed, natural skin texture',
                 "denoise": 0.92, "steps": 25,
-                "lora": {"path": 'A-Flux\\NSFW\\FK_povfootjobfront.safetensors', "strength": 0.9},
+                "lora": {"path": 'Flux-2-Klein\\FK_povfootjobfront.safetensors', "strength": 0.9},
             },
             'Sockjob / shoejob': {
                 "prompt_hint": 'she is giving a footjob, wearing socks, fabric texture on feet, sensual foot movement, intimate angle, detailed fabric and skin',
                 "denoise": 0.88, "steps": 25,
-                "lora": {"path": 'A-Flux\\NSFW\\footjob_ab_f2k9b_1.safetensors', "strength": 0.75},
+                "lora": {"path": 'Flux-2-Klein\\footjob_ab_f2k9b_1.safetensors', "strength": 0.75},
             },
             'Footjob (general)': {
                 "prompt_hint": 'she is giving a footjob, bare feet, detailed toes and soles, natural skin texture, intimate setting, soft lighting, realistic anatomy',
                 "denoise": 0.9, "steps": 25,
-                "lora": {"path": 'A-Flux\\NSFW\\footjob_ab_f2k9b_1.safetensors', "strength": 0.75},
+                "lora": {"path": 'Flux-2-Klein\\footjob_ab_f2k9b_1.safetensors', "strength": 0.75},
             },
             'Cumshot / facial': {
                 "prompt_hint": 'cum on her face, semen on her face, her face is covered with semen, cum dripping from chin, realistic fluid, glistening, detailed skin texture',
                 "denoise": 0.82, "steps": 25,
-                "lora": {"path": 'A-Flux\\NSFW\\cum_on_face_v2.safetensors', "strength": 0.75},
+                "lora": {"path": 'Flux-2-Klein\\cum_on_face_v2.safetensors', "strength": 0.75},
             },
             'Cum on lips / mouth': {
                 "prompt_hint": 'cum on her lips, cum in mouth, semen dripping from lips, open mouth, glistening wet lips, realistic fluid texture, detailed face',
                 "denoise": 0.78, "steps": 25,
-                "lora": {"path": 'A-Flux\\NSFW\\cum_on_face_v2.safetensors', "strength": 0.75},
+                "lora": {"path": 'Flux-2-Klein\\cum_on_face_v2.safetensors', "strength": 0.75},
             },
             'Cum on chest / body': {
                 "prompt_hint": 'cum on her chest, semen on breasts, cum on body, glistening fluid on skin, realistic droplets, warm lighting, detailed skin texture',
                 "denoise": 0.8, "steps": 25,
-                "lora": {"path": 'A-Flux\\NSFW\\cum_on_face_v2.safetensors', "strength": 0.7},
+                "lora": {"path": 'Flux-2-Klein\\cum_on_face_v2.safetensors', "strength": 0.7},
             },
             'Add cum effect to scene': {
                 "prompt_hint": 'cum on her face, semen on her face, cum dripping, realistic fluid, natural lighting on wet skin, glistening highlights',
                 "denoise": 0.65, "steps": 22,
-                "lora": {"path": 'A-Flux\\NSFW\\cum_on_face_v2.safetensors', "strength": 0.7},
+                "lora": {"path": 'Flux-2-Klein\\cum_on_face_v2.safetensors', "strength": 0.7},
             },
             "(custom — manual settings)": {
                 "prompt_hint": "",
@@ -14808,8 +14877,8 @@ class Spellcaster(Gimp.PlugIn):
         grid.attach(steps_spin, 1, r, 1, 1)
         grid.attach(Gtk.Label(label="Guidance:", xalign=1), 2, r, 1, 1)
         guidance_spin = Gtk.SpinButton.new_with_range(0.5, 10.0, 0.5)
-        guidance_spin.set_digits(1); guidance_spin.set_value(3.5)
-        guidance_spin.set_tooltip_text("How closely to follow the prompt. 3.0-5.0 recommended.")
+        guidance_spin.set_digits(1); guidance_spin.set_value(1.0)
+        guidance_spin.set_tooltip_text("How closely to follow the prompt. 1.0 for Klein.")
         grid.attach(guidance_spin, 3, r, 1, 1)
         r += 1
         grid.attach(Gtk.Label(label="Seed:", xalign=1), 0, r, 1, 1)
@@ -14866,12 +14935,17 @@ class Spellcaster(Gimp.PlugIn):
                 # NSFW_KLEIN_UNLOCK_BEGIN (do not remove — build anchor)
                 _nsfw_loras = [
                 {
-                                "path": "loras/Flux-1-Dev/NSFW/NSFW-klein.safetensors",
+                                "path": "Flux-2-Klein\\KLEIN-Unchained-V1.safetensors",
+                                "strength": 0.85,
+                                "note": "NSFW unlock for Klein"
+                },
+                {
+                                "path": "Flux-1-Dev\\NSFW\\NSFW-klein.safetensors",
                                 "strength": 0.85,
                                 "note": "NSFW for Klein architecture"
                 },
                 {
-                                "path": "loras/Flux-1-Dev/NSFW/Flux Klein - NSFW v2.safetensors",
+                                "path": "Flux-1-Dev\\NSFW\\Flux Klein - NSFW v2.safetensors",
                                 "strength": 0.85,
                                 "note": "Klein NSFW v2"
                 }
@@ -16815,9 +16889,10 @@ class Spellcaster(Gimp.PlugIn):
             if removal_mode == "ai":
                 # AI-guided replacement using inpaint pipeline
                 preset = dict(MODEL_PRESETS[ai_idx] if 0 <= ai_idx < len(MODEL_PRESETS) else MODEL_PRESETS[0])
+                preset["denoise"] = ai_den
                 neg = f"{obj_desc}, visible {obj_desc}, trace of {obj_desc}, artifacts, seam" if obj_desc else "artifacts, seam, mismatch"
                 wf = _build_inpaint(iname, mname, preset, replacement_prompt, neg,
-                                     random.randint(0, 2**32 - 1), denoise=ai_den)
+                                     random.randint(0, 2**32 - 1))
                 label_text = "AI Replace"
             else:
                 # LaMa fast removal
@@ -18338,10 +18413,15 @@ class Spellcaster(Gimp.PlugIn):
             _upload_image(srv, tmp, uname); os.unlink(tmp)
             orig_w = image.get_width()
             orig_h = image.get_height()
+            # Klein/Flux2 uses guidance=1.0 — never the SDXL-tuned preset CFG
+            _sv2r_arch = preset.get("arch", "sdxl")
+            _sv2r_cfg = hall_preset["cfg"]
+            if _sv2r_arch in ("flux2klein", "flux1dev", "flux_kontext", "chroma"):
+                _sv2r_cfg = 1.0
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = _build_seedv2r(uname, upscale_model, preset, prompt, negative,
-                                     seed, hall_preset["denoise"], hall_preset["cfg"],
+                                     seed, hall_preset["denoise"], _sv2r_cfg,
                                      hall_preset["steps"], scale_factor, orig_w, orig_h,
                                      controlnet=sv2r_cn1, controlnet_2=sv2r_cn2,
                                      loras=loras)
@@ -21642,6 +21722,68 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Quick Remove BG Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ══════════════════════════════════════════════════════════════════════
+    #  AI Eraser — select anything, erase it, AI fills the gap
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _run_ai_eraser(self, procedure, run_mode, image, drawables, config, data):
+        """AI Eraser: select any object and erase it — AI fills the background.
+
+        Mirrors the exact export/upload/workflow/download pattern used by
+        Quick Inpaint (_run_quick_inpaint) — same order, same temp file
+        handling, same result import.
+        """
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # Check for active selection (same guard as Quick Inpaint)
+        try:
+            sel_exists = Gimp.Selection.bounds(image).non_empty
+        except Exception:
+            try:
+                sel_exists, *_ = Gimp.Selection.bounds(image)
+            except Exception:
+                sel_exists = False
+        if not sel_exists:
+            Gimp.message("AI Eraser: No selection found.\n\n"
+                         "Select what you want to erase first:\n"
+                         "  \u2022 SAM3 AI Select (type what to select)\n"
+                         "  \u2022 Fuzzy Select (magic wand)\n"
+                         "  \u2022 Free Select (lasso)\n"
+                         "  \u2022 Any GIMP selection tool\n\n"
+                         "Then run AI Eraser again.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        try:
+            srv = COMFYUI_DEFAULT_URL
+            # Export image (same as Quick Inpaint line 21380)
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_erase_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            # Export selection as mask (same as Quick Inpaint line 21384)
+            mask_tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+            mask_tmp.close()
+            _create_selection_mask_png(mask_tmp.name, image)
+            mask_uname = f"gimp_erase_mask_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, mask_tmp.name, mask_uname); os.unlink(mask_tmp.name)
+            # Build LaMa removal workflow (no prompt, deterministic)
+            wf = build_lama_remove(uname, mask_uname)
+            results = _run_with_spinner("AI Eraser: removing selection...",
+                                        lambda: list(_run_comfyui_workflow(srv, wf)))
+            for i, (fn, sf, ft) in enumerate(results):
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
+                                 f"AI Erased #{i+1}", False)
+            # Clear the selection (the object is gone)
+            try:
+                Gimp.Selection.none(image)
+            except Exception:
+                pass
+            _LAST_PROCEDURE["name"] = "spellcaster-quick-erase"
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"AI Eraser Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     # ══════════════════════════════════════════════════════════════════════

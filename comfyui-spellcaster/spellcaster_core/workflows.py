@@ -553,10 +553,6 @@ def build_generate_anything(prompt_text, negative_text, seed, preset,
     model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [],
                                                      model_ref, clip_ref)
 
-    # ── Klein enhancer chain ─────────────────────────────────────────
-    if arch_key == "flux2klein":
-        model_ref = _klein_enhance_model(nf, model_ref)
-
     # ── Prompt: append isolation instructions ────────────────────────
     _bg_instruction = (
         ", isolated on a plain solid white background, centered in frame, "
@@ -577,6 +573,10 @@ def build_generate_anything(prompt_text, negative_text, seed, preset,
     pos_id, neg_id = encode_prompts(nf, arch_key, clip_ref,
                                      full_prompt, full_negative,
                                      pos_id="2", neg_id="3")
+
+    # ── Klein enhancer chain ─────────────────────────────────────────
+    if arch_key == "flux2klein":
+        model_ref = _klein_enhance_model(nf, model_ref, [pos_id, 0])
 
     # ── Scene reference (Klein/Flux only) ────────────────────────────
     if scene_filename and arch_key in ("flux2klein", "flux1dev"):
@@ -854,12 +854,13 @@ KLEIN_ENHANCER_NODE_TYPES = {
 }
 
 
-def _klein_enhance_model(nf, model_ref, ref_strength=500, text_ref_balance=0.5,
+def _klein_enhance_model(nf, model_ref, conditioning_ref,
+                          ref_strength=500, text_ref_balance=0.5,
                           color_anchor_strength=0.5, node_base_id=900):
     """Wrap a Klein model with the Flux2Klein-Enhancer nodes.
 
     Chains: model → RefLatentController → TextRefBalance → ColorAnchor.
-    Each node outputs MODEL and feeds into the next.
+    Each node takes MODEL + CONDITIONING and outputs MODEL.
 
     Called from build_klein_* functions when enhance=True. If enhance is
     False the caller skips this entirely — there's no runtime check here
@@ -868,6 +869,7 @@ def _klein_enhance_model(nf, model_ref, ref_strength=500, text_ref_balance=0.5,
     Args:
         nf: NodeFactory instance.
         model_ref: [node_id, slot] for the UNET/model output.
+        conditioning_ref: [node_id, slot] for the positive conditioning.
         ref_strength: Reference latent injection strength (1-1000).
         text_ref_balance: 0.0=text only, 0.999=reference only.
         color_anchor_strength: Color drift correction (0.3-0.6 rec).
@@ -877,13 +879,13 @@ def _klein_enhance_model(nf, model_ref, ref_strength=500, text_ref_balance=0.5,
         Enhanced model reference [node_id, 0].
     """
     ref_ctrl = nf.flux2klein_ref_latent_controller(
-        model_ref, strength=ref_strength,
+        model_ref, conditioning_ref, strength=ref_strength,
         node_id=str(node_base_id))
     balance = nf.flux2klein_text_ref_balance(
-        [ref_ctrl, 0], balance=text_ref_balance,
+        [ref_ctrl, 0], conditioning_ref, balance=text_ref_balance,
         node_id=str(node_base_id + 1))
     anchor = nf.flux2klein_color_anchor(
-        [balance, 0], strength=color_anchor_strength,
+        [balance, 0], conditioning_ref, strength=color_anchor_strength,
         node_id=str(node_base_id + 2))
     return [anchor, 0]
 
@@ -1007,7 +1009,7 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
     # strength control + text/ref balance + color anchor if installed.
     model_for_guider = [unet_id, 0]
     if enhance:
-        model_for_guider = _klein_enhance_model(nf, [unet_id, 0])
+        model_for_guider = _klein_enhance_model(nf, [unet_id, 0], [ref_pos_id, 0])
 
     # Sampler setup
     guider_id = nf.cfg_guider(model_for_guider, [ref_pos_id, 0], [ref_neg_id, 0],
@@ -2346,6 +2348,11 @@ def build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
     if is_klein:
         pos_id = nf.clip_encode(clip_ref, prompt_text, node_id="2")
         neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="3")
+
+        # Klein Enhancer chain for quality boost
+        enhanced_model = _klein_enhance_model(nf, model_ref, [pos_id, 0],
+                                               node_base_id=960)
+
         # Encode ORIGINAL (un-padded) image for ReferenceLatent context
         orig_enc_id = nf.vae_encode([img_id, 0], vae_ref, node_id="6o")
         # Encode PADDED image for the sampler latent (with noise mask)
@@ -2354,11 +2361,11 @@ def build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
         # ReferenceLatent uses the ORIGINAL image — not the padded one
         ref_pos_id = nf.reference_latent([pos_id, 0], [orig_enc_id, 0], node_id="20")
         ref_neg_id = nf.reference_latent([neg_id, 0], [orig_enc_id, 0], node_id="21")
-        # Custom sampler pipeline (required for Klein/Flux2)
-        guider_id = nf.cfg_guider(model_ref, [ref_pos_id, 0], [ref_neg_id, 0],
+        # Custom sampler pipeline with enhanced model
+        guider_id = nf.cfg_guider(enhanced_model, [ref_pos_id, 0], [ref_neg_id, 0],
                                   preset.get("cfg", 1.0), node_id="30")
         sampler_id = nf.ksampler_select("euler", node_id="31")
-        sched_id = nf.basic_scheduler(model_ref, preset.get("steps", 20),
+        sched_id = nf.basic_scheduler(enhanced_model, preset.get("steps", 20),
                                        0.92, scheduler="simple", node_id="32")
         noise_id = nf.random_noise(seed, node_id="33")
         samp_id = nf.sampler_custom_advanced(
@@ -2618,7 +2625,7 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
     # Enhancer chain (Flux2Klein-Enhancer nodes for quality boost)
     model_for_guider = [unet_id, 0]
     if enhance:
-        model_for_guider = _klein_enhance_model(nf, [unet_id, 0])
+        model_for_guider = _klein_enhance_model(nf, [unet_id, 0], [ref_pos_id, 0])
 
     # Sampler setup
     guider_id = nf.cfg_guider(model_for_guider, [ref_pos_id, 0], [ref_neg_id, 0],
@@ -2809,7 +2816,7 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
     ref_neg_id = nf.reference_latent([neg_id, 0], [latent_id, 0], node_id="34")
 
     # Enhancer chain (Klein quality boost)
-    _hs_model = _klein_enhance_model(nf, [unet_id, 0], node_base_id=910) if enhance else [unet_id, 0]
+    _hs_model = _klein_enhance_model(nf, [unet_id, 0], [ref_pos_id, 0], node_base_id=910) if enhance else [unet_id, 0]
 
     # Sampling — uses BasicScheduler for denoise support
     guider_id = nf.cfg_guider(_hs_model, [ref_pos_id, 0], [ref_neg_id, 0],
@@ -3684,7 +3691,7 @@ def build_photobooth(ref_filename, prompt_text, seed,
     ref_neg_id = nf.reference_latent([neg_id, 0], [latent_id, 0], node_id="19")
 
     # Enhancer chain for maximum quality
-    _pb_model = _klein_enhance_model(nf, [unet_id, 0], node_base_id=970)
+    _pb_model = _klein_enhance_model(nf, [unet_id, 0], [ref_pos_id, 0], node_base_id=970)
 
     # Sampling at FIXED portrait dimensions (not derived from reference)
     guider_id = nf.cfg_guider(_pb_model, [ref_pos_id, 0], [ref_neg_id, 0],
@@ -3797,7 +3804,7 @@ def build_klein_repose(image_filename, klein_model_key, prompt_text, seed,
     ref_neg_id = nf.reference_latent([neg_id, 0], [latent_id, 0], node_id="21")
 
     # Enhancer chain
-    _rp_model = _klein_enhance_model(nf, [unet_id, 0], node_base_id=920) if enhance else [unet_id, 0]
+    _rp_model = _klein_enhance_model(nf, [unet_id, 0], [ref_pos_id, 0], node_base_id=920) if enhance else [unet_id, 0]
 
     # Sampler setup — BasicScheduler with denoise (unlike Flux2Scheduler)
     guider_id = nf.cfg_guider(_rp_model, [ref_pos_id, 0], [ref_neg_id, 0],
@@ -3888,7 +3895,7 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
     ref_neg_id = nf.reference_latent([neg_id, 0], [latent_id, 0], node_id="21")
 
     # Enhancer chain
-    _bl_model = _klein_enhance_model(nf, [unet_id, 0], node_base_id=930) if enhance else [unet_id, 0]
+    _bl_model = _klein_enhance_model(nf, [unet_id, 0], [ref_pos_id, 0], node_base_id=930) if enhance else [unet_id, 0]
 
     # Sampler — BasicScheduler with low denoise
     guider_id = nf.cfg_guider(_bl_model, [ref_pos_id, 0], [ref_neg_id, 0],
@@ -3983,7 +3990,7 @@ def build_klein_inpaint(image_filename, mask_filename, prompt_text, seed,
     # Optional DifferentialDiffusion + Enhancer chain
     model_ref = [unet_id, 0]
     if enhance:
-        model_ref = _klein_enhance_model(nf, model_ref, node_base_id=960)
+        model_ref = _klein_enhance_model(nf, model_ref, [guided_id, 0], node_base_id=960)
     if use_differential_diffusion:
         dd_id = nf.differential_diffusion(model_ref, node_id="22")
         model_ref = [dd_id, 0]
@@ -4132,7 +4139,7 @@ def build_klein_virtual_tryon(face_filename, outfit_filename, prompt_text, seed,
     # Optional Flux2Klein-Enhancer
     model_for_guider = [unet_id, 0]
     if enhance:
-        model_for_guider = _klein_enhance_model(nf, [unet_id, 0])
+        model_for_guider = _klein_enhance_model(nf, [unet_id, 0], [pos_id, 0])
 
     # Sampler — full denoise since references provide all structure
     guider_id = nf.cfg_guider(model_for_guider, cond_chain, [neg_id, 0],
@@ -4204,7 +4211,7 @@ def build_klein_scene_img2img(image_filename, prompt_text, seed,
     size_id = nf.get_image_size([scene_id, 0], node_id="25")
 
     # Enhancer chain
-    _sc_model = _klein_enhance_model(nf, [unet_id, 0], node_base_id=940) if enhance else [unet_id, 0]
+    _sc_model = _klein_enhance_model(nf, [unet_id, 0], [guided_id, 0], node_base_id=940) if enhance else [unet_id, 0]
 
     # Sampler — BasicScheduler with denoise
     guider_id = nf.cfg_guider(_sc_model, [guided_id, 0], [neg_id, 0],
@@ -4353,7 +4360,7 @@ def build_klein_refine(image_filename, klein_model_key, prompt_text, seed,
     # Optional Flux2Klein-Enhancer
     model_for_guider = [unet_id, 0]
     if enhance:
-        model_for_guider = _klein_enhance_model(nf, [unet_id, 0])
+        model_for_guider = _klein_enhance_model(nf, [unet_id, 0], [pos_id, 0])
 
     # Sampler — full denoise (1.0) since the references provide structure
     guider_id = nf.cfg_guider(model_for_guider, cond_chain, [neg_id, 0],
@@ -4495,7 +4502,7 @@ def build_klein_auto_inpaint(image_filename, mask_prompt, inpaint_prompt, seed,
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="22")
 
     # Enhancer chain
-    _ai_model = _klein_enhance_model(nf, [unet_id, 0], node_base_id=950) if enhance else [unet_id, 0]
+    _ai_model = _klein_enhance_model(nf, [unet_id, 0], [pos_id, 0], node_base_id=950) if enhance else [unet_id, 0]
 
     # Sampler
     guider_id = nf.cfg_guider(_ai_model, [ref2_pos, 0], [neg_id, 0],
@@ -4724,7 +4731,7 @@ def build_sam3_extract(image_filename, prompt="person", confidence=0.6,
 def build_klein_sam3_inpaint(image_filename, segment_prompt, inpaint_prompt, seed,
                               ref_filename=None,
                               klein_model_key="Klein 9B",
-                              steps=10, guidance=4.0,
+                              steps=10, guidance=1.0,
                               mask_expand=120, mask_blur=15,
                               confidence=0.6,
                               loras=None, lora_name=None, lora_strength=1.0,
@@ -4932,6 +4939,7 @@ def build_klein_sam3_inpaint(image_filename, segment_prompt, inpaint_prompt, see
     model_for_guider = [diff_model, 0]
     if enhance:
         model_for_guider = _klein_enhance_model(nf, [diff_model, 0],
+                                                 [guided_id, 0],
                                                  node_base_id=900)
 
     # Sampler: BasicGuider + BetaSamplingScheduler (from the workflow)
@@ -5043,14 +5051,14 @@ def build_klein_face_detail(image_filename, prompt_text, seed,
         unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
         clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
 
-    # Optional enhancer
-    model_for_detail = [unet_id, 0]
-    if enhance:
-        model_for_detail = _klein_enhance_model(nf, [unet_id, 0])
-
     # Text conditioning
     pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="4")
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="5")
+
+    # Optional enhancer
+    model_for_detail = [unet_id, 0]
+    if enhance:
+        model_for_detail = _klein_enhance_model(nf, [unet_id, 0], [pos_id, 0])
 
     # Load input image
     img_id = nf.load_image(image_filename, node_id="10")
@@ -5098,7 +5106,7 @@ def build_klein_face_detail(image_filename, prompt_text, seed,
 def build_klein_generate_object(scene_filename, prompt_text, seed,
                                  klein_model_key="Klein 9B",
                                  width=1024, height=1024,
-                                 steps=6, guidance=3.5,
+                                 steps=6, guidance=1.0,
                                  loras=None, lora_name=None, lora_strength=1.0,
                                  klein_models=None, enhance=True,
                                  nsfw_unlock_loras=None):
@@ -5129,7 +5137,7 @@ def build_klein_generate_object(scene_filename, prompt_text, seed,
         seed (int): Random seed.
         width, height: Output dimensions (should match canvas).
         steps (int): Klein sampling steps (6-10 recommended).
-        guidance (float): How closely to follow the prompt (3.0-5.0).
+        guidance (float): How closely to follow the prompt (1.0 for Klein).
         enhance (bool): Use Flux2Klein-Enhancer nodes (default True).
 
     Returns:
@@ -5183,11 +5191,6 @@ def build_klein_generate_object(scene_filename, prompt_text, seed,
             unet_id = _u if isinstance(_u, str) else _u[0]
             clip_id = _c if isinstance(_c, str) else _c[0]
 
-    # ── Enhancer chain ───────────────────────────────────────────────
-    model_ref = [unet_id, 0]
-    if enhance:
-        model_ref = _klein_enhance_model(nf, [unet_id, 0])
-
     # ── Prompt: append "on a plain solid background" so BiRefNet can
     #    cleanly separate the object from the background ──────────────
     full_prompt = (
@@ -5199,6 +5202,11 @@ def build_klein_generate_object(scene_filename, prompt_text, seed,
     # Text conditioning
     pos_id = nf.clip_encode([clip_id, 0], full_prompt, node_id="4")
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="5")
+
+    # ── Enhancer chain ───────────────────────────────────────────────
+    model_ref = [unet_id, 0]
+    if enhance:
+        model_ref = _klein_enhance_model(nf, [unet_id, 0], [pos_id, 0])
 
     # ── Load scene image as style/lighting reference ─────────────────
     scene_id = nf.load_image(scene_filename, node_id="10")
@@ -5386,14 +5394,14 @@ def build_klein_detail(image_filename, preset_key, prompt_text, seed,
         unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
         clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
 
-    # Enhancer chain
-    model_ref = [unet_id, 0]
-    if enhance:
-        model_ref = _klein_enhance_model(nf, [unet_id, 0])
-
     # Text conditioning
     pos_id = nf.clip_encode([clip_id, 0], _prompt, node_id="4")
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="5")
+
+    # Enhancer chain
+    model_ref = [unet_id, 0]
+    if enhance:
+        model_ref = _klein_enhance_model(nf, [unet_id, 0], [pos_id, 0])
 
     # Load input image
     img_id = nf.load_image(image_filename, node_id="10")
