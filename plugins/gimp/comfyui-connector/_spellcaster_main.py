@@ -18188,10 +18188,15 @@ class Spellcaster(Gimp.PlugIn):
             _upload_image(srv, tmp, uname); os.unlink(tmp)
             orig_w = image.get_width()
             orig_h = image.get_height()
+            # Klein/Flux2 uses guidance=1.0 — never the SDXL-tuned preset CFG
+            _sv2r_arch = preset.get("arch", "sdxl")
+            _sv2r_cfg = hall_preset["cfg"]
+            if _sv2r_arch in ("flux2klein", "flux1dev", "flux_kontext", "chroma"):
+                _sv2r_cfg = 1.0
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = _build_seedv2r(uname, upscale_model, preset, prompt, negative,
-                                     seed, hall_preset["denoise"], hall_preset["cfg"],
+                                     seed, hall_preset["denoise"], _sv2r_cfg,
                                      hall_preset["steps"], scale_factor, orig_w, orig_h,
                                      controlnet=sv2r_cn1, controlnet_2=sv2r_cn2,
                                      loras=loras)
