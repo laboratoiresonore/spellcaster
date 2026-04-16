@@ -1591,6 +1591,7 @@ def build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
       - Preprocessor extracts spatial constraints from reference, doesn't use it directly
     """
     nf = NodeFactory()
+    arch_key = preset.get("arch", "sdxl")
 
     img_id = nf.load_image(image_filename, node_id="1")
     pre_id = nf.preprocessor(preprocessor_type, [img_id, 0], node_id="2")
@@ -1600,8 +1601,9 @@ def build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
 
     cn_loader_id = nf.controlnet_loader(controlnet_model, node_id="4")
 
-    pos_id = nf.clip_encode(clip_ref, prompt, node_id="5")
-    neg_id = nf.clip_encode(clip_ref, negative, node_id="6")
+    pos_id, neg_id = encode_prompts(nf, arch_key, clip_ref,
+                                     prompt, negative,
+                                     pos_id="5", neg_id="6")
 
     cn_apply_id = nf.controlnet_apply_advanced(
         [pos_id, 0], [neg_id, 0],
@@ -2253,13 +2255,15 @@ def build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="9")
     nf.save_image([dec_id, 0], "spellcaster_outpaint", node_id="10")
 
-    # ControlNet injection (optional)
-    if guide_modes and controlnet and controlnet.get("mode", "Off") != "Off":
+    # ControlNet injection (optional — skipped for Klein which can't use CN)
+    if (guide_modes and controlnet and controlnet.get("mode", "Off") != "Off"
+            and arch_key not in ("flux2klein", "flux_kontext", "chroma")):
+        # cn_base_id=40 avoids collision with Klein's reference_latent at 20-21
         cn_pos, cn_neg = inject_controlnet(
             nf, controlnet, guide_modes, arch_key, padded_ref,
             [pos_id, 0] if isinstance(pos_id, str) else pos_id,
             [neg_id, 0] if isinstance(neg_id, str) else neg_id,
-            cn_base_id=20,
+            cn_base_id=40,
         )
         nf.patch_input("8", "positive", cn_pos)
         nf.patch_input("8", "negative", cn_neg)
@@ -2304,9 +2308,11 @@ def build_faceid_img2img(target_filename, face_ref_filename, preset,
         weight=weight, weight_faceidv2=weight_v2, node_id="4",
     )
 
-    # Text encoding
-    pos_id = nf.clip_encode(clip_ref, prompt_text, node_id="5")
-    neg_id = nf.clip_encode(clip_ref, negative_text or "blurry, deformed, bad anatomy", node_id="6")
+    # Text encoding (architecture-aware: no-negative archs get zero_out)
+    pos_id, neg_id = encode_prompts(nf, arch_key, clip_ref,
+                                     prompt_text,
+                                     negative_text or "blurry, deformed, bad anatomy",
+                                     pos_id="5", neg_id="6")
 
     # Target image → VAE encode → sample → decode → save
     target_id = nf.load_image(target_filename, node_id="7")
@@ -2362,10 +2368,12 @@ def build_pulid_flux(target_filename, face_ref_filename,
     model_ref = [unet_id, 0]
 
     # CLIP loader (architecture-dependent)
+    # Klein 9B → qwen_3_8b, Klein 4B/Base → qwen_3_4b (must match KLEIN_MODELS)
     if is_flux2:
-        clip_name = "qwen_3_8b_fp8mixed.safetensors"
-        if "klein-4b" in lower or "klein_4b" in lower:
-            clip_name = "qwen_3_4b_fp8mixed.safetensors"
+        if "4b" in lower or "base" in lower or "schnell" in lower:
+            clip_name = "qwen_3_4b.safetensors"
+        else:
+            clip_name = "qwen_3_8b.safetensors"
         clip_id = nf.clip_loader(clip_name, clip_type="flux2", device="default", node_id="7")
     else:
         clip_id = nf.dual_clip_loader(
@@ -3309,10 +3317,11 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
         embeds_scaling="V only", node_id="4",
     )
 
-    # 3. Encode prompts
-    pos_id = nf.clip_encode(clip_ref, prompt_text, node_id="5")
-    neg_id = nf.clip_encode(clip_ref, negative_text or "blurry, deformed, bad anatomy",
-                             node_id="6")
+    # 3. Encode prompts (architecture-aware: no-negative archs get zero_out)
+    pos_id, neg_id = encode_prompts(nf, arch_key, clip_ref,
+                                     prompt_text,
+                                     negative_text or "blurry, deformed, bad anatomy",
+                                     pos_id="5", neg_id="6")
 
     # 4. Load target + encode
     target_img_id = nf.load_image(target_filename, node_id="7")
@@ -3415,9 +3424,10 @@ def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_t
     if loras:
         model_ref, clip_ref, _trig = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100)
 
-    # 5. Encode
-    pos_id = nf.clip_encode(clip_ref, prompt_text, node_id="5")
-    neg_id = nf.clip_encode(clip_ref, negative_text, node_id="6")
+    # 5. Encode (architecture-aware: no-negative archs get zero_out)
+    pos_id, neg_id = encode_prompts(nf, arch_key, clip_ref,
+                                     prompt_text, negative_text,
+                                     pos_id="5", neg_id="6")
 
     # 6. VAE encode + sample + decode
     enc_id = nf.vae_encode(img_ref, vae_ref, node_id="7")

@@ -3831,33 +3831,32 @@ def _mask_image_to_gimp_selection(image, mask_path, feather=4):
         feather (int): Feather radius in pixels (0 = hard edge).
     """
     try:
-        # Load mask as a new layer in the image
-        mask_layer = _pdb_run('gimp-file-load-layer', {
-            'run-mode': Gimp.RunMode.NONINTERACTIVE,
-            'image': image,
-            'file': Gio.File.new_for_path(mask_path),
-        })
-        if hasattr(mask_layer, '__len__'):
-            mask_layer = mask_layer[0] if mask_layer else None
+        # Load mask as a new layer — use Gimp.file_load_layer which returns
+        # a proper GimpLayer directly (avoids GimpValueArray extraction issues
+        # with the PDB wrapper).
+        mask_layer = Gimp.file_load_layer(
+            Gimp.RunMode.NONINTERACTIVE, image,
+            Gio.File.new_for_path(mask_path))
         if mask_layer is None:
             raise RuntimeError("Failed to load mask as layer")
-        _pdb_run('gimp-image-insert-layer', {
-            'image': image, 'layer': mask_layer, 'parent': None, 'position': 0,
-        })
+        image.insert_layer(mask_layer, None, 0)
         # Scale mask layer to match image dimensions if needed
         iw = image.get_width(); ih = image.get_height()
         lw = mask_layer.get_width(); lh = mask_layer.get_height()
         if lw != iw or lh != ih:
-            _pdb_run('gimp-layer-scale', {
-                'layer': mask_layer, 'new-width': iw, 'new-height': ih, 'local-origin': False,
-            })
-        # Flatten the mask layer to ensure it's a simple grayscale raster
-        _pdb_run('gimp-layer-flatten', {'layer': mask_layer})
+            mask_layer.scale(iw, ih, False)
+        # Flatten to ensure simple grayscale raster
+        mask_layer.flatten()
         # Select white regions: by-color-select on the mask layer
         # Threshold 80 captures white (255) and near-white as selected
+        image.set_active_layer(mask_layer)
         white = Gimp.RGB()
         white.set(1.0, 1.0, 1.0)
-        _pdb_run('gimp-image-set-active-layer', {'image': image, 'layer': mask_layer})
+        Gimp.context_set_sample_threshold(80 / 255.0)
+        Gimp.context_set_antialias(True)
+        Gimp.context_set_feather(feather > 0)
+        Gimp.context_set_feather_radius(float(feather), float(feather))
+        Gimp.context_set_sample_merged(False)
         _pdb_run('gimp-by-color-select', {
             'drawable': mask_layer,
             'color': white,
@@ -3869,12 +3868,12 @@ def _mask_image_to_gimp_selection(image, mask_path, feather=4):
             'sample-merged': False,
         })
         # Remove the temporary mask layer — selection persists
-        _pdb_run('gimp-image-remove-layer', {'image': image, 'layer': mask_layer})
+        image.remove_layer(mask_layer)
     except Exception as e:
-        # Fallback: if PDB calls fail (API differences across GIMP versions),
-        # just add the mask as a visible layer and let the user convert manually
+        # Fallback: if API calls fail, remove the temp mask layer and let
+        # the user convert manually
         try:
-            _pdb_run('gimp-image-remove-layer', {'image': image, 'layer': mask_layer})
+            image.remove_layer(mask_layer)
         except Exception:
             pass
         raise RuntimeError(f"Could not convert SAM3 mask to selection: {e}.\n"
@@ -16580,6 +16579,13 @@ class Spellcaster(Gimp.PlugIn):
         if not style_path:
             Gimp.message("No style reference image selected")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+        # Block architectures incompatible with IPAdapter
+        _st_arch = preset.get("arch", "sdxl")
+        if _st_arch in ("flux2klein", "flux_kontext", "chroma"):
+            Gimp.message(
+                f"Style Transfer uses IPAdapter, which is not supported by {preset.get('label', _st_arch)}.\n\n"
+                f"Use an SDXL, SD1.5, Illustrious, or Flux Dev model instead.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _update_spinner_status("Style Transfer: exporting images...")
             # Upload target (current canvas)
