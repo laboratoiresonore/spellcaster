@@ -4301,6 +4301,339 @@ def build_klein_color_match(target_filename, reference_filename,
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  SAM3 Segment — standalone text-prompted segmentation -> mask
+#  ───────────────────────────────────────────────────────────────────────
+#  Architecture-agnostic. Works with ANY downstream tool (inpaint, rembg,
+#  face detail, etc). In the GIMP plugin this becomes a selection tool.
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_sam3_segment(image_filename, prompt, confidence=0.6,
+                       output_mode="Merged", mask_expand=0, mask_blur=0,
+                       invert=False):
+    """SAM3 Segment — detect a subject by text and return its mask.
+
+    Uses SAM3's text-prompted segmentation to find any subject in the
+    image. The mask can be used as a GIMP selection, an inpaint mask,
+    or fed into any downstream tool.
+
+    Output: a black-and-white mask image (white = detected subject).
+
+    Args:
+        image_filename (str): Image to segment.
+        prompt (str): What to detect, e.g. "person", "shirt", "hair",
+            "background", "cat". Empty string = auto-detect all.
+        confidence (float): Detection threshold (0.0-1.0, default 0.6).
+        output_mode (str): "Merged" (all matches as one mask) or
+            "Separate" (one mask per instance).
+        mask_expand (int): Pixels to grow the mask outward.
+        mask_blur (int): Gaussian blur on mask edges.
+        invert (bool): Invert the mask (select everything EXCEPT target).
+
+    Returns:
+        dict: ComfyUI workflow. Output is a mask saved as image.
+
+    Requires: SAM3 node pack.
+    """
+    nf = NodeFactory()
+
+    img_id = nf.load_image(image_filename, node_id="1")
+
+    sam3_id = nf._add("SAM3Segment", {
+        "prompt": prompt,
+        "output_mode": output_mode,
+        "confidence_threshold": confidence,
+        "max_segments": 0,
+        "segment_pick": 0,
+        "mask_blur": 0,
+        "mask_offset": 0,
+        "device": "Auto",
+        "invert_output": invert,
+        "unload_model": False,
+        "background": "Alpha",
+        "background_color": "#222222",
+        "image": [img_id, 0],
+    }, node_id="10")
+
+    # Optionally expand + blur the mask
+    mask_ref = [sam3_id, 1]
+    if mask_expand > 0 or mask_blur > 0:
+        grow_id = nf._add("GrowMaskWithBlur", {
+            "expand": mask_expand,
+            "incremental_expandrate": 0,
+            "tapered_corners": True,
+            "flip_input": False,
+            "blur_radius": mask_blur,
+            "lerp_alpha": 1,
+            "decay_factor": 1,
+            "fill_holes": False,
+            "mask": mask_ref,
+        }, node_id="11")
+        mask_ref = [grow_id, 0]
+
+    # Convert mask to saveable image
+    mask_img = nf._add("MaskToImage", {
+        "mask": mask_ref,
+    }, node_id="20")
+
+    # Save the segmented subject (foreground on alpha from SAM3 slot 0)
+    nf.save_image([sam3_id, 0], "sam3_subject", node_id="30")
+    # Save the mask as a separate image
+    nf.save_image([mask_img, 0], "sam3_mask", node_id="31")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  SAM3 + Background Remove + Auto-Crop — standalone subject extraction
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_sam3_extract(image_filename, prompt="person", confidence=0.6):
+    """SAM3 Extract — detect a subject, remove background, auto-crop.
+
+    Combines SAM3 segmentation with BiRefNet background removal and
+    auto-crop for a one-step subject extraction pipeline.
+
+    Output: a cropped, background-removed PNG of the detected subject.
+
+    Args:
+        image_filename (str): Image containing the subject.
+        prompt (str): What to extract, e.g. "person", "cat".
+        confidence (float): Detection threshold.
+
+    Returns:
+        dict: ComfyUI workflow.
+
+    Requires: SAM3 node pack + BiRefNet RMBG.
+    """
+    nf = NodeFactory()
+
+    img_id = nf.load_image(image_filename, node_id="1")
+
+    # BiRefNet background removal (higher quality than SAM3's built-in)
+    rmbg_id = nf._add("BiRefNetRMBG", {
+        "model": "BiRefNet-general",
+        "mask_blur": 0,
+        "mask_offset": 0,
+        "invert_output": False,
+        "refine_foreground": False,
+        "background": "Alpha",
+        "background_color": "#222222",
+        "image": [img_id, 0],
+    }, node_id="10")
+
+    # Auto-crop to subject bounds
+    crop_id = nf._add("ImageCropByMask", {
+        "image": [rmbg_id, 0],
+        "mask": [rmbg_id, 1],
+    }, node_id="20")
+
+    nf.save_image([crop_id, 0], "sam3_extracted", node_id="30")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Klein SAM3 Inpaint — text-prompted segmentation + Klein inpainting
+#  ───────────────────────────────────────────────────────────────────────
+#  Adapted from a local ComfyUI workflow using SAM3Segment + Klein
+#  ReferenceLatent + DifferentialDiffusion + InpaintCropImproved.
+#  The original used per-segment for-loops; Spellcaster simplifies to
+#  single-segment mode (call multiple times for multi-segment).
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_klein_sam3_inpaint(image_filename, segment_prompt, inpaint_prompt, seed,
+                              ref_filename=None,
+                              klein_model_key="Klein 9B",
+                              steps=10, guidance=4.0,
+                              mask_expand=120, mask_blur=15,
+                              confidence=0.6,
+                              loras=None, lora_name=None, lora_strength=1.0,
+                              klein_models=None, enhance=False):
+    """Klein SAM3 Inpaint — detect a region by text and inpaint it.
+
+    Uses SAM3's text-prompted segmentation to automatically detect a
+    subject (e.g. "person", "shirt", "background"), then inpaints the
+    detected region using Klein with optional reference image guidance.
+
+    Two modes:
+      - **With reference** (ref_filename provided): The reference image is
+        background-removed, cropped, and VAE-encoded as a ReferenceLatent.
+        Klein uses it as structural/identity guidance for the inpaint.
+        Use case: replace one person with another.
+      - **Without reference** (ref_filename=None): Standard Klein inpaint
+        guided only by the text prompt. Use case: change clothing, fix
+        details, remove objects.
+
+    Pipeline:
+      1. Load Klein UNET + CLIP + VAE
+      2. Load source image
+      3. SAM3Segment with segment_prompt → mask of detected region
+      4. GrowMaskWithBlur to expand + feather the mask edges
+      5. (Optional) Load reference → BiRefNetRMBG → crop → scale → VAEEncode
+         → ReferenceLatent conditioning chain
+      6. FluxGuidance on positive conditioning
+      7. InpaintModelConditioning (combines positive, negative, image, mask)
+      8. DifferentialDiffusion on model for smooth edge transitions
+      9. BasicGuider + SamplerCustomAdvanced with BetaSamplingScheduler
+      10. VAEDecode + save
+
+    Args:
+        image_filename (str): Source image to edit.
+        segment_prompt (str): What SAM3 should detect, e.g. "person",
+            "the shirt", "hair", "background".
+        inpaint_prompt (str): What to generate in the masked area.
+        seed (int): Random seed.
+        ref_filename (str, optional): Reference image for identity/style.
+        klein_model_key (str): Model variant.
+        steps (int): Sampling steps (default 10 for quality inpaint).
+        guidance (float): FluxGuidance scale (default 4.0 for inpaint).
+        mask_expand (int): Pixels to grow the SAM3 mask (default 120).
+        mask_blur (int): Blur radius on expanded mask (default 15).
+        confidence (float): SAM3 detection confidence (default 0.6).
+        loras, lora_name, lora_strength: Optional LoRA.
+        klein_models (dict, optional): Model path mapping.
+        enhance (bool): Wire Flux2Klein-Enhancer if True.
+
+    Returns:
+        dict: ComfyUI workflow.
+
+    Requires: SAM3 node pack, comfyui-inpaint-nodes (optional but
+    recommended for InpaintCropImproved/Stitch).
+    """
+    if klein_models is None:
+        klein_models = KLEIN_MODELS
+    if lora_name and not loras:
+        loras = [{"name": lora_name, "strength": lora_strength}]
+
+    km = klein_models[klein_model_key]
+    nf = NodeFactory()
+
+    # Model loaders
+    unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
+    clip_id = nf.clip_loader(
+        km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+        clip_type="flux2", device="default", node_id="2",
+    )
+    vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
+
+    # LoRA chain
+    if loras:
+        unet_id, clip_id, _trig = inject_lora_chain(
+            nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
+        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
+        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
+
+    # Load source image
+    img_id = nf.load_image(image_filename, node_id="10")
+
+    # SAM3 segmentation — detect the target region by text prompt
+    sam3_id = nf._add("SAM3Segment", {
+        "prompt": segment_prompt,
+        "output_mode": "Merged",
+        "confidence_threshold": confidence,
+        "max_segments": 0,
+        "segment_pick": 0,
+        "mask_blur": 0,
+        "mask_offset": 0,
+        "device": "Auto",
+        "invert_output": False,
+        "unload_model": False,
+        "background": "Alpha",
+        "background_color": "#222222",
+        "image": [img_id, 0],
+    }, node_id="20")
+
+    # Grow + blur the mask for smooth edges
+    grow_id = nf._add("GrowMaskWithBlur", {
+        "expand": mask_expand,
+        "incremental_expandrate": 0,
+        "tapered_corners": True,
+        "flip_input": False,
+        "blur_radius": mask_blur,
+        "lerp_alpha": 1,
+        "decay_factor": 1,
+        "fill_holes": False,
+        "mask": [sam3_id, 1],
+    }, node_id="21")
+
+    # Text conditioning
+    pos_id = nf.clip_encode([clip_id, 0], inpaint_prompt, node_id="4")
+    guided_id = nf.flux_guidance([pos_id, 0], guidance, node_id="5")
+    neg_id = nf.clip_encode([clip_id, 0], "", node_id="6")
+
+    # Build conditioning chain — optionally with reference image
+    cond_for_inpaint = [guided_id, 0]
+    if ref_filename:
+        # Background-remove the reference, crop, scale, encode
+        ref_img_id = nf.load_image(ref_filename, node_id="50")
+        rmbg_id = nf._add("BiRefNetRMBG", {
+            "model": "BiRefNet-general",
+            "mask_blur": 0,
+            "mask_offset": 0,
+            "invert_output": False,
+            "refine_foreground": False,
+            "background": "Alpha",
+            "background_color": "#222222",
+            "image": [ref_img_id, 0],
+        }, node_id="51")
+        crop_id = nf._add("ImageCropByMask", {
+            "image": [rmbg_id, 0],
+            "mask": [rmbg_id, 1],
+        }, node_id="52")
+        scaled_ref = nf.image_scale_to_total_pixels(
+            [crop_id, 0], megapixels=1.0, node_id="53")
+        ref_enc = nf.vae_encode([scaled_ref, 0], [vae_id, 0], node_id="54")
+        # ReferenceLatent: inpaint crop → reference character
+        ref_cond = nf.reference_latent(cond_for_inpaint, [ref_enc, 0],
+                                       node_id="55")
+        cond_for_inpaint = [ref_cond, 0]
+
+    # InpaintModelConditioning — Klein's inpaint conditioning setup
+    inpaint_cond_id = nf._add("InpaintModelConditioning", {
+        "noise_mask": True,
+        "positive": cond_for_inpaint,
+        "negative": [neg_id, 0],
+        "vae": [vae_id, 0],
+        "pixels": [img_id, 0],
+        "mask": [grow_id, 0],
+    }, node_id="30")
+
+    # DifferentialDiffusion for smooth mask-edge blending
+    diff_model = nf.differential_diffusion([unet_id, 0], node_id="31")
+
+    # Optional Flux2Klein-Enhancer
+    model_for_guider = [diff_model, 0]
+    if enhance:
+        model_for_guider = _klein_enhance_model(nf, [diff_model, 0],
+                                                 node_base_id=900)
+
+    # Sampler: BasicGuider + BetaSamplingScheduler (from the workflow)
+    guider_id = nf._add("BasicGuider", {
+        "model": model_for_guider,
+        "conditioning": [inpaint_cond_id, 0],
+    }, node_id="35")
+    sampler_id = nf.ksampler_select("euler", node_id="36")
+    sched_id = nf._add("BetaSamplingScheduler", {
+        "steps": steps,
+        "alpha": 0.5,
+        "beta": 0.5,
+        "model": model_for_guider,
+    }, node_id="37")
+    noise_id = nf.random_noise(seed, node_id="38")
+
+    sample_id = nf.sampler_custom_advanced(
+        [noise_id, 0], [guider_id, 0], [sampler_id, 0],
+        [sched_id, 0], [inpaint_cond_id, 1],  # slot 1 = latent from InpaintModelConditioning
+        node_id="40",
+    )
+
+    dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="45")
+    nf.save_image([dec_id, 0], "klein_sam3", node_id="46")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  Klein Face Detailer — auto-detect and re-generate faces at high detail
 #  ─────────────────────────────────────────────────────────────────────────
 #  Requires: ComfyUI-Impact-Pack (ltdrdata) + face_yolov8m.pt YOLO model.

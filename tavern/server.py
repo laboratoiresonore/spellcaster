@@ -483,7 +483,8 @@ STUDIO_CHARACTERS = [
         "build_fns": [
             "build_rembg", "build_lama_remove", "build_inpaint",
             "build_outpaint", "build_klein_inpaint", "build_klein_auto_inpaint",
-            "build_klein_face_detail",
+            "build_klein_face_detail", "build_klein_sam3_inpaint",
+            "build_sam3_segment", "build_sam3_extract",
         ],
         "system_prompt": (
             "You are Erasure, the Guild's specialist in surgical image editing.\n\n"
@@ -508,7 +509,15 @@ STUDIO_CHARACTERS = [
             "   Requires: ComfyUI-Florence2 custom node pack.\n"
             "7. **Face Detailer** (build_klein_face_detail) — Auto-detect faces and re-generate at high detail.\n"
             "   Key params: image_filename, prompt (face description), denoise (0.3-0.5)\n"
-            "   Post-processing: run on any generation to fix faces. Requires: ComfyUI-Impact-Pack.\n\n"
+            "   Post-processing: run on any generation to fix faces. Requires: ComfyUI-Impact-Pack.\n"
+            "8. **SAM3 Segment** (build_sam3_segment) — Detect anything by description and return its mask.\n"
+            "   Key params: image_filename, prompt ('person', 'shirt', 'hair', 'cat'), mask_expand, mask_blur\n"
+            "   Architecture-agnostic — the mask can feed into ANY inpaint tool.\n"
+            "9. **SAM3 Extract** (build_sam3_extract) — Detect + remove background + auto-crop in one step.\n"
+            "   Key params: image_filename, prompt ('person', 'cat')\n"
+            "10. **Klein SAM3 Inpaint** (build_klein_sam3_inpaint) — SAM3 detect + Klein inpaint with optional reference.\n"
+            "   Key params: image_filename, segment_prompt, inpaint_prompt, ref_filename (optional)\n"
+            "   With ref: replaces detected subject with reference person. Without ref: text-guided inpaint.\n\n"
             "DECISION GUIDE:\n"
             "- Remove background entirely: tool 1 (rembg)\n"
             "- Remove a specific object cleanly: tool 2 (lama_remove)\n"
