@@ -954,6 +954,7 @@ textarea::placeholder { color: #555; }
 .wizard-tooltip.wt-visible {
     opacity: 1;
     transform: translateX(0) scale(1);
+    pointer-events: auto;
 }
 .wt-header {
     display: flex;
