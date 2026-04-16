@@ -5398,29 +5398,15 @@ _cancel_event = threading.Event()  # set when user clicks Cancel in spinner
 # shows the current processing phase in real time.
 _spinner_label_text = ""
 
-_gimp_progress_last_text = ""
-_gimp_progress_last_time = 0.0
-
 def _update_spinner_status(text):
     """Set the spinner window's status label from any thread.
 
-    Also updates GIMP's native progress bar (bottom of canvas) so users
-    see status even if the spinner window is behind other windows.
-    Throttled to 1 update/sec and only when text changes — prevents the
-    status bar from flashing between competing updates.
+    Only updates the spinner window's job label. GIMP's native status bar
+    is updated exclusively from the spinner's poll timer (_pulse) to
+    prevent flashing between competing update sources.
     """
-    global _spinner_label_text, _gimp_progress_last_text, _gimp_progress_last_time
+    global _spinner_label_text
     _spinner_label_text = text
-    # Throttle GIMP status bar updates: same text = skip, <1s gap = skip
-    now = time.time()
-    if text and (text != _gimp_progress_last_text) and (now - _gimp_progress_last_time > 1.0):
-        _gimp_progress_last_text = text
-        _gimp_progress_last_time = now
-        try:
-            _t = text  # capture for closure
-            GLib.idle_add(lambda: Gimp.progress_set_text(_t))
-        except Exception:
-            pass
 
 
 # ── Mask cache for inpaint ──────────────────────────────────────────
@@ -5770,11 +5756,6 @@ def _run_with_spinner(label_text, func, *args):
     global _spinner_status_lbl, _spinner_job_count, _spinner_start_time
     global _spinner_cleanup_id, _spinner_cleanup_gen
     _spinner_label_text = ""
-    # Activate GIMP's native progress bar alongside the spinner window
-    try:
-        Gimp.progress_init(label_text)
-    except Exception:
-        pass
     result_box = [None]
     error_box = [None]
     done_box = [False]
@@ -5797,12 +5778,17 @@ def _run_with_spinner(label_text, func, *args):
         _spinner_cleanup_gen += 1  # invalidate any already-dispatched callback
 
     # ── Create or reuse the singleton spinner window ────────────────
-    _win_alive = False
-    if _spinner_win is not None:
+    # Strict singleton: if _spinner_win is set, always reuse it.
+    # Only create a new window if _spinner_win is None (destroyed by cleanup).
+    _win_alive = _spinner_win is not None
+    if _win_alive:
+        # Make sure the window is actually visible (it might have been hidden)
         try:
-            _win_alive = _spinner_win.get_visible() or _spinner_win.get_realized()
+            _spinner_win.show_all()
+            _spinner_win.present()
         except Exception:
             _win_alive = False
+            _spinner_win = None
     if not _win_alive:
         win = Gtk.Window(title="Spellcaster")
         win.set_default_size(380, -1)
@@ -5879,13 +5865,15 @@ def _run_with_spinner(label_text, func, *args):
         if not done_box[0]:
             if _spinner_pb:
                 _spinner_pb.pulse()
-            # Update job label with live status
+            # Update job label with live status from _update_spinner_status
             live = _spinner_label_text
             if live and not cancel_box[0]:
                 job_label.set_text(live)
             # Poll ComfyUI status every ~3s (every 10th pulse at 300ms)
+            # This is the SOLE source of GIMP status bar updates — no other
+            # code path calls Gimp.progress_set_text, preventing flashing.
             _status_counter[0] += 1
-            if _status_counter[0] % 10 == 0 and _spinner_status_lbl:
+            if _status_counter[0] % 10 == 0:
                 try:
                     running, pending, gpu, vt, vf = _fetch_comfy_status(_status_server)
                     elapsed = int(time.time() - _spinner_start_time)
@@ -5895,12 +5883,18 @@ def _run_with_spinner(label_text, func, *args):
                         parts.append(f"Queue: {running} running, {pending} pending")
                     if gpu:
                         vram_pct = int((1 - vf / max(vt, 1)) * 100) if vt > 0 else 0
-                        parts.append(f"{gpu} — VRAM {vram_pct}% used ({vf:.1f}/{vt:.1f} GB free)")
-                    parts.append(f"Elapsed: {mins}m {secs:02d}s" if mins else f"Elapsed: {secs}s")
-                    parts.append(f"Jobs: {_spinner_job_count}")
+                        parts.append(f"{gpu} — VRAM {vram_pct}%")
+                    parts.append(f"{mins}m {secs:02d}s" if mins else f"{secs}s")
                     status_text = "  |  ".join(parts)
-                    _spinner_status_lbl.set_markup(
-                        f'<span size="small" foreground="#8E889D">{status_text}</span>')
+                    if _spinner_status_lbl:
+                        _spinner_status_lbl.set_markup(
+                            f'<span size="small" foreground="#8E889D">{status_text}</span>')
+                    # Mirror to GIMP's native status bar (single source, no flash)
+                    gimp_text = live or status_text
+                    try:
+                        Gimp.progress_set_text(gimp_text)
+                    except Exception:
+                        pass
                 except Exception:
                     pass
             return True
