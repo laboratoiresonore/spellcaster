@@ -4970,7 +4970,8 @@ def build_klein_generate_object(scene_filename, prompt_text, seed,
                                  width=1024, height=1024,
                                  steps=6, guidance=3.5,
                                  loras=None, lora_name=None, lora_strength=1.0,
-                                 klein_models=None, enhance=True):
+                                 klein_models=None, enhance=True,
+                                 nsfw_unlock_loras=None):
     """Klein Object Generator — generate any object/person as a transparent layer.
 
     State-of-the-art pipeline for generating objects that integrate
@@ -5030,6 +5031,27 @@ def build_klein_generate_object(scene_filename, prompt_text, seed,
             nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
         unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
         clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
+
+    # ── NSFW unlock LoRAs (NSFW edition only — patched by build_nsfw.py)
+    # These LoRAs remove content filters from Klein so it can generate
+    # adult content. Accepts both Flux 2 Klein native LoRAs and Flux 1
+    # Dev LoRAs (which Klein inherits compatibility with at lower strength).
+    # In the SFW edition this list is always empty/None.
+    if nsfw_unlock_loras:
+        _nsfw_chain = []
+        for l in nsfw_unlock_loras:
+            _path = l.get("path", l.get("name", ""))
+            _str = l.get("strength", 0.85)
+            # Flux Dev LoRAs on Klein need reduced strength to avoid artifacts
+            if "Flux-1-Dev" in _path or "flux-1-dev" in _path.lower():
+                _str = min(_str, 0.65)
+            _nsfw_chain.append({"name": _path, "strength_model": _str,
+                                 "strength_clip": _str})
+        if _nsfw_chain:
+            _u, _c, _ = inject_lora_chain(nf, _nsfw_chain,
+                                           [unet_id, 0], [clip_id, 0], base_id=150)
+            unet_id = _u if isinstance(_u, str) else _u[0]
+            clip_id = _c if isinstance(_c, str) else _c[0]
 
     # ── Enhancer chain ───────────────────────────────────────────────
     model_ref = [unet_id, 0]

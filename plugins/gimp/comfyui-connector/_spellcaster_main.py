@@ -14539,11 +14539,17 @@ class Spellcaster(Gimp.PlugIn):
             base_seed = seed
             for run_i in range(runs):
                 _seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+                # NSFW unlock LoRAs — injected by build_nsfw.py in NSFW edition.
+                # SFW: this is always None. NSFW: patched to a list of LoRA dicts.
+                # NSFW_KLEIN_UNLOCK_BEGIN (do not remove — build anchor)
+                _nsfw_loras = None
+                # NSFW_KLEIN_UNLOCK_END
                 wf = build_klein_generate_object(
                     scene_uname, prompt, _seed,
                     klein_model_key=klein_key,
                     width=image.get_width(), height=image.get_height(),
                     steps=_steps, guidance=_guidance,
+                    nsfw_unlock_loras=_nsfw_loras,
                 )
                 label = f"Generate run {run_i+1}/{runs}" if runs > 1 else "Generating object"
                 _wf = wf
