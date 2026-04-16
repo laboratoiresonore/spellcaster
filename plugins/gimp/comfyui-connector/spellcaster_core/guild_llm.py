@@ -54,7 +54,14 @@ def chat(message, system_prompt="", server=None, kobold_url=None,
     The LLM auto-unloads from VRAM during ComfyUI generation and
     reloads after the queue clears — no manual management needed.
     """
-    # Try KoboldCpp first (most common setup)
+    # Try ComfyUI LLM nodes first (zero external deps)
+    if server:
+        resp = _chat_comfyui(message, system_prompt, server, model,
+                             max_tokens, temperature)
+        if resp is not None:
+            return resp
+
+    # Try KoboldCpp (external server)
     if kobold_url:
         resp = _chat_kobold(message, system_prompt, kobold_url, max_tokens, temperature)
         if resp is not None:
@@ -67,6 +74,17 @@ def chat(message, system_prompt="", server=None, kobold_url=None,
 
     # No LLM available
     return None
+
+
+def _chat_comfyui(message, system_prompt, server, model, max_tokens, temperature):
+    """Chat via ComfyUI's native LLM nodes (GGUF models loaded on server)."""
+    try:
+        from .comfyui_llm import generate_text
+        return generate_text(
+            server, prompt=message, system_prompt=system_prompt,
+            model=model, max_tokens=max_tokens, temperature=temperature)
+    except Exception:
+        return None
 
 
 def _chat_kobold(message, system_prompt, url, max_tokens, temperature):
