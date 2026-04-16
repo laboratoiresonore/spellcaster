@@ -1887,6 +1887,48 @@ SEEDVR2_VRAM_PROFILES = {
     24: {"max_resolution": 2560, "batch_size": 6},
 }
 
+# LTX Video 2.3 — VRAM-aware max total pixels (width × height).
+# LTX is extremely memory-hungry for video generation.
+LTX_VRAM_MAX_PIXELS = {
+    8:  (512, 320),     # 163K px — tight, may still OOM with 25+ frames
+    10: (640, 416),     # 266K px
+    12: (768, 512),     # 393K px — default
+    16: (960, 640),     # 614K px
+    24: (1280, 832),    # 1.06M px
+}
+
+
+def _ltx_suggest_resolution(src_w, src_h, vram_gb=12):
+    """Suggest LTX video resolution that preserves aspect ratio and fits VRAM.
+
+    Returns (width, height) rounded to nearest 32 (LTX requirement).
+    """
+    # Find the max dimensions for this VRAM tier
+    max_w, max_h = LTX_VRAM_MAX_PIXELS.get(24, (1280, 832))
+    for tier in sorted(LTX_VRAM_MAX_PIXELS.keys()):
+        if vram_gb <= tier:
+            max_w, max_h = LTX_VRAM_MAX_PIXELS[tier]
+            break
+
+    max_pixels = max_w * max_h
+    aspect = src_w / max(src_h, 1)
+
+    # Scale down to fit max_pixels while preserving aspect ratio
+    # w * h = max_pixels, w/h = aspect → w = sqrt(max_pixels * aspect)
+    import math
+    w = math.sqrt(max_pixels * aspect)
+    h = w / aspect
+
+    # Round to nearest 32 (LTX requirement)
+    w = max(128, int((w + 16) // 32) * 32)
+    h = max(128, int((h + 16) // 32) * 32)
+
+    # Clamp to absolute limits
+    w = min(w, 1920)
+    h = min(h, 1920)
+
+    return w, h
+
 UPSCALE_PRESETS = {
     "(none — no upscale)": None,
     "4x UltraSharp (general)": "4x-UltraSharp.pth",
@@ -8925,17 +8967,30 @@ class LtxVideoDialog(Gtk.Dialog):
         sw.add(self.prompt_view)
         box.pack_start(sw, False, False, 0)
 
-        # Dimensions & Frames
+        # Dimensions & Frames — defaults are VRAM-aware
+        _def_w, _def_h = 768, 512
+        try:
+            _st = _api_get(server_url, "/system_stats")
+            _dv = _st.get("devices", [{}])
+            if _dv:
+                _vg = _dv[0].get("vram_total", 0) / (1024**3)
+                _def_w, _def_h = _ltx_suggest_resolution(768, 512, _vg)
+        except Exception:
+            pass
         grid = Gtk.Grid(column_spacing=8, row_spacing=4)
         grid.attach(Gtk.Label(label="Width:", xalign=1), 0, 0, 1, 1)
         self.w_spin = Gtk.SpinButton.new_with_range(128, 1920, 32)
-        self.w_spin.set_value(768)
-        self.w_spin.set_tooltip_text("Output width (multiple of 32). Default 768.")
+        self.w_spin.set_value(_def_w)
+        self.w_spin.set_tooltip_text(
+            f"Output width (multiple of 32). Auto-set to {_def_w} based on your GPU VRAM.\n"
+            "Lower = less VRAM, higher = better quality. Max safe for your GPU shown.")
         grid.attach(self.w_spin, 1, 0, 1, 1)
         grid.attach(Gtk.Label(label="Height:", xalign=1), 2, 0, 1, 1)
         self.h_spin = Gtk.SpinButton.new_with_range(128, 1920, 32)
-        self.h_spin.set_value(512)
-        self.h_spin.set_tooltip_text("Output height (multiple of 32). Default 512.")
+        self.h_spin.set_value(_def_h)
+        self.h_spin.set_tooltip_text(
+            f"Output height (multiple of 32). Auto-set to {_def_h} based on your GPU VRAM.\n"
+            "Lower = less VRAM, higher = better quality.")
         grid.attach(self.h_spin, 3, 0, 1, 1)
 
         grid.attach(Gtk.Label(label="Frames:", xalign=1), 0, 1, 1, 1)
@@ -11097,13 +11152,24 @@ class Spellcaster(Gimp.PlugIn):
         dlg = LtxVideoDialog()
 
         # If launched via LTX I2V menu, pre-enable I2V and size from canvas
+        # Uses VRAM-aware resolution to avoid OOM while preserving aspect ratio
         _i2v_auto = getattr(self, "_ltx_i2v_autostart", False)
         if _i2v_auto:
             self._ltx_i2v_autostart = False
             dlg.i2v_check.set_active(True)
             iw, ih = image.get_width(), image.get_height()
-            dlg.w_spin.set_value(max(128, min(1920, (iw + 16) // 32 * 32)))
-            dlg.h_spin.set_value(max(128, min(1920, (ih + 16) // 32 * 32)))
+            # Query server VRAM for resolution suggestion
+            _vram = 12  # default assumption
+            try:
+                _s = _api_get(COMFYUI_DEFAULT_URL, "/system_stats")
+                _devs = _s.get("devices", [{}])
+                if _devs:
+                    _vram = _devs[0].get("vram_total", 0) / (1024**3)
+            except Exception:
+                pass
+            lw, lh = _ltx_suggest_resolution(iw, ih, _vram)
+            dlg.w_spin.set_value(lw)
+            dlg.h_spin.set_value(lh)
 
         last = _SESSION.get("ltx_t2v")
         if last:
