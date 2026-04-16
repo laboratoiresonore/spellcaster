@@ -321,6 +321,7 @@ STUDIO_CHARACTERS = [
             "build_img2img", "build_klein_img2img", "build_klein_img2img_ref",
             "build_klein_scene_img2img", "build_klein_blend", "build_klein_repose",
             "build_klein_refine", "build_klein_color_match",
+            "build_klein_virtual_tryon",
             "build_style_transfer", "build_layer_blend",
         ],
         "system_prompt": (
@@ -344,7 +345,9 @@ STUDIO_CHARACTERS = [
             "   Key params: image_filename, prompt (enhancement instructions)\n"
             "9. **Color Match** (build_klein_color_match) — Match output colors to a reference photo (fixes Klein's warm shift).\n"
             "   Key params: target_filename (generated), reference_filename (color source)\n"
-            "10. **Layer Blend** (build_layer_blend) — Blend two images with parametric harmonization.\n"
+            "10. **Virtual Try-On** (build_klein_virtual_tryon) — 4-reference photoshoot: face + outfit + background + pose in one pass.\n"
+            "   Key params: face_filename, outfit_filename, prompt, bg_filename (opt), pose_filename (opt)\n"
+            "11. **Layer Blend** (build_layer_blend) — Blend two images with parametric harmonization.\n"
             "   Key params: image_filename, overlay_filename, blend_mode\n\n"
             "DECISION GUIDE:\n"
             "- ALL tools here require an existing image. If the user wants to CREATE a new image\n"
@@ -480,6 +483,7 @@ STUDIO_CHARACTERS = [
         "build_fns": [
             "build_rembg", "build_lama_remove", "build_inpaint",
             "build_outpaint", "build_klein_inpaint", "build_klein_auto_inpaint",
+            "build_klein_face_detail",
         ],
         "system_prompt": (
             "You are Erasure, the Guild's specialist in surgical image editing.\n\n"
@@ -501,7 +505,10 @@ STUDIO_CHARACTERS = [
             "6. **Klein Auto-Inpaint** (build_klein_auto_inpaint) — Describe what to mask and Klein inpaints it.\n"
             "   Key params: image_filename, mask_prompt ('the shirt', 'the background'), inpaint_prompt\n"
             "   Uses Florence2 AI to auto-generate the mask — no painting needed.\n"
-            "   Requires: ComfyUI-Florence2 custom node pack.\n\n"
+            "   Requires: ComfyUI-Florence2 custom node pack.\n"
+            "7. **Face Detailer** (build_klein_face_detail) — Auto-detect faces and re-generate at high detail.\n"
+            "   Key params: image_filename, prompt (face description), denoise (0.3-0.5)\n"
+            "   Post-processing: run on any generation to fix faces. Requires: ComfyUI-Impact-Pack.\n\n"
             "DECISION GUIDE:\n"
             "- Remove background entirely: tool 1 (rembg)\n"
             "- Remove a specific object cleanly: tool 2 (lama_remove)\n"

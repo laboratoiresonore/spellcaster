@@ -3744,6 +3744,151 @@ def build_klein_inpaint(image_filename, mask_filename, prompt_text, seed,
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  Klein Virtual Try-On — 4-reference photoshoot composition
+#  ─────────────────────────────────────────────────────────────────────────
+#  Inspired by Sarcastic TOFU's "Flux.2 Klein 9B KV Dress Photoshoot"
+#  workflow (CivitAI). Uses Klein's native multi-reference KV editing —
+#  NO ControlNet, NO IPAdapter — just 4 parallel ReferenceLatent inputs
+#  synthesised into one coherent output.
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_klein_virtual_tryon(face_filename, outfit_filename, prompt_text, seed,
+                               bg_filename=None, pose_filename=None,
+                               klein_model_key="Klein 9B", steps=4,
+                               denoise=1.0, guidance=1.0,
+                               loras=None, lora_name=None, lora_strength=1.0,
+                               klein_models=None, enhance=False):
+    """Klein Virtual Try-On — 4-reference photoshoot composition.
+
+    Combines up to 4 reference images in a single Klein pass using
+    chained ReferenceLatent nodes. Klein's KV editing natively
+    synthesises the references into a coherent output — no ControlNet
+    or IPAdapter needed.
+
+    References (in chain order):
+      1. Face / character identity (required)
+      2. Outfit / wardrobe (required)
+      3. Background / setting (optional — uses empty latent if omitted)
+      4. Pose reference (optional — omit for model-decided pose)
+
+    Pipeline:
+      1. Load Klein UNET + CLIP + VAE
+      2. Encode prompt (describes desired composition)
+      3. Load + scale each reference image
+      4. VAE-encode each reference to latent
+      5. Chain ReferenceLatent: prompt → face → outfit → [bg] → [pose]
+      6. Zero-out negative conditioning
+      7. Klein sampler at full denoise (1.0)
+      8. Decode + save
+
+    Args:
+        face_filename (str): Face / character identity reference.
+        outfit_filename (str): Outfit / wardrobe reference (headless body).
+        prompt_text (str): Scene description.
+        seed (int): Random seed.
+        bg_filename (str, optional): Background reference.
+        pose_filename (str, optional): Pose reference (DAZ 3D render, etc).
+        klein_model_key (str): "Klein 9B", "Klein 4B", etc.
+        steps (int): 4 is standard for Klein.
+        denoise (float): 1.0 for full generation from references.
+        guidance (float): CFG, typically 1.0 for Klein.
+        loras, lora_name, lora_strength: Optional LoRA.
+        klein_models (dict, optional): Model path mapping.
+        enhance (bool): Wire Flux2Klein-Enhancer nodes if True.
+
+    Returns:
+        dict: ComfyUI workflow.
+
+    Credit: Virtual try-on concept from Sarcastic TOFU's Klein 9B KV
+    Dress Photoshoot workflow (CivitAI).
+    """
+    if klein_models is None:
+        klein_models = KLEIN_MODELS
+    if lora_name and not loras:
+        loras = [{"name": lora_name, "strength": lora_strength}]
+
+    km = klein_models[klein_model_key]
+    nf = NodeFactory()
+
+    # Model loaders
+    unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
+    clip_id = nf.clip_loader(
+        km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+        clip_type="flux2", device="default", node_id="2",
+    )
+    vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
+
+    # LoRA chain
+    if loras:
+        unet_id, clip_id, _trig = inject_lora_chain(
+            nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
+        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
+        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
+
+    # Text conditioning
+    pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="4")
+    neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="5")
+
+    # Load + scale + encode each reference, then chain as ReferenceLatent.
+    # Required: face (slot 1), outfit (slot 2). Optional: bg (3), pose (4).
+    ref_inputs = [
+        ("face", face_filename),
+        ("outfit", outfit_filename),
+    ]
+    if bg_filename:
+        ref_inputs.append(("bg", bg_filename))
+    if pose_filename:
+        ref_inputs.append(("pose", pose_filename))
+
+    cond_chain = [pos_id, 0]
+    first_size_id = None
+    for i, (label, filename) in enumerate(ref_inputs):
+        base = 200 + i * 10
+        img = nf.load_image(filename, node_id=str(base))
+        scaled = nf.image_scale_to_total_pixels(
+            [img, 0], megapixels=1.0, node_id=str(base + 1))
+        enc = nf.vae_encode([scaled, 0], [vae_id, 0], node_id=str(base + 2))
+        ref = nf.reference_latent(cond_chain, [enc, 0], node_id=str(base + 3))
+        cond_chain = [ref, 0]
+        # Use first reference (face) dimensions for the empty latent
+        if i == 0:
+            first_size_id = nf.get_image_size([scaled, 0], node_id=str(base + 4))
+
+    # Empty latent at face-reference dimensions
+    empty_latent_id = nf.empty_latent_image(1024, 1024, node_id="15")
+    if first_size_id:
+        # Overwrite with dynamic size from face reference
+        empty_latent_id = nf._add("EmptyLatentImage", {
+            "width": [first_size_id, 0],
+            "height": [first_size_id, 1],
+            "batch_size": 1,
+        }, node_id="16")
+
+    # Optional Flux2Klein-Enhancer
+    model_for_guider = [unet_id, 0]
+    if enhance:
+        model_for_guider = _klein_enhance_model(nf, [unet_id, 0])
+
+    # Sampler — full denoise since references provide all structure
+    guider_id = nf.cfg_guider(model_for_guider, cond_chain, [neg_id, 0],
+                              guidance, node_id="30")
+    sampler_id = nf.ksampler_select("euler", node_id="31")
+    sched_id = nf.basic_scheduler([unet_id, 0], steps, denoise,
+                                   scheduler="simple", node_id="32")
+    noise_id = nf.random_noise(seed, node_id="33")
+
+    sample_id = nf.sampler_custom_advanced(
+        [noise_id, 0], [guider_id, 0], [sampler_id, 0],
+        [sched_id, 0], [empty_latent_id, 0], node_id="40",
+    )
+
+    dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="50")
+    nf.save_image([dec_id, 0], "klein_tryon", node_id="51")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  Klein Scene img2img — actual img2img (VAEEncode → latent_image)
 #                        NO ReferenceLatent, uses FluxGuidance + BasicScheduler
 # ═══════════════════════════════════════════════════════════════════════════
@@ -4151,6 +4296,132 @@ def build_klein_color_match(target_filename, reference_filename,
     }, node_id="10")
 
     nf.save_image([match_id, 0], "klein_color_match", node_id="20")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Klein Face Detailer — auto-detect and re-generate faces at high detail
+#  ─────────────────────────────────────────────────────────────────────────
+#  Requires: ComfyUI-Impact-Pack (ltdrdata) + face_yolov8m.pt YOLO model.
+#  The detailer crops each detected face, re-generates it through Klein at
+#  higher resolution, then composites back. Fixes hands/fingers too if the
+#  YOLO model detects them. This is a POST-PROCESSING step — run it on an
+#  already-generated image to clean up faces.
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_klein_face_detail(image_filename, prompt_text, seed,
+                             klein_model_key="Klein 9B",
+                             steps=4, denoise=0.4, guidance=1.0,
+                             guide_size=512, max_size=1024,
+                             detector_model="face_yolov8m.pt",
+                             loras=None, lora_name=None, lora_strength=1.0,
+                             klein_models=None, enhance=False):
+    """Klein Face Detailer — detect faces and re-generate them at high detail.
+
+    Post-processing step: takes an already-generated image, runs YOLO face
+    detection, crops each detected face, re-generates the crop through
+    Klein at higher resolution, and composites it back into the original.
+    Dramatically improves face quality, especially on full-body shots
+    where faces are small and lack detail.
+
+    Pipeline:
+      1. Load Klein UNET + CLIP + VAE
+      2. Load input image
+      3. Encode prompt (face-specific refinement instructions)
+      4. Load YOLO detector (face_yolov8m.pt)
+      5. FaceDetailer: detects → crops → re-generates → composites
+      6. Save
+
+    Args:
+        image_filename (str): Image to refine (from a previous generation).
+        prompt_text (str): Face description prompt (e.g. "detailed realistic
+            face, sharp eyes, smooth skin, studio lighting").
+        seed (int): Random seed.
+        klein_model_key (str): Model variant.
+        steps (int): Klein steps for face regeneration.
+        denoise (float): How much to change each face (0.3-0.5 recommended).
+        guidance (float): CFG scale.
+        guide_size (int): Target face crop size in pixels.
+        max_size (int): Max face crop size.
+        detector_model (str): YOLO model filename in ultralytics/ folder.
+        loras, lora_name, lora_strength: Optional LoRA.
+        klein_models (dict, optional): Model path mapping.
+        enhance (bool): Wire Flux2Klein-Enhancer if True.
+
+    Returns:
+        dict: ComfyUI workflow.
+
+    Requires: ComfyUI-Impact-Pack (install via ComfyUI Manager).
+    Model: face_yolov8m.pt in ComfyUI/models/ultralytics/bbox/
+    """
+    if klein_models is None:
+        klein_models = KLEIN_MODELS
+    if lora_name and not loras:
+        loras = [{"name": lora_name, "strength": lora_strength}]
+
+    km = klein_models[klein_model_key]
+    nf = NodeFactory()
+
+    # Model loaders
+    unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
+    clip_id = nf.clip_loader(
+        km.get("clip", "qwen_3_8b_fp8mixed.safetensors"),
+        clip_type="flux2", device="default", node_id="2",
+    )
+    vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
+
+    # LoRA chain
+    if loras:
+        unet_id, clip_id, _trig = inject_lora_chain(
+            nf, loras, [unet_id, 0], [clip_id, 0], base_id=100)
+        unet_id = unet_id if isinstance(unet_id, str) else unet_id[0]
+        clip_id = clip_id if isinstance(clip_id, str) else clip_id[0]
+
+    # Optional enhancer
+    model_for_detail = [unet_id, 0]
+    if enhance:
+        model_for_detail = _klein_enhance_model(nf, [unet_id, 0])
+
+    # Text conditioning
+    pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="4")
+    neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="5")
+
+    # Load input image
+    img_id = nf.load_image(image_filename, node_id="10")
+
+    # YOLO face detector
+    detector_id = nf._add("UltralyticsDetectorProvider", {
+        "model_name": detector_model,
+    }, node_id="20")
+
+    # FaceDetailer — the Impact Pack's monolithic detect→crop→regen→composite
+    detail_id = nf._add("FaceDetailer", {
+        "image": [img_id, 0],
+        "model": model_for_detail,
+        "clip": [clip_id, 0],
+        "vae": [vae_id, 0],
+        "positive": [pos_id, 0],
+        "negative": [neg_id, 0],
+        "bbox_detector": [detector_id, 0],
+        "guide_size": guide_size,
+        "guide_size_for": True,
+        "max_size": max_size,
+        "seed": seed,
+        "steps": steps,
+        "cfg": guidance,
+        "sampler_name": "euler",
+        "scheduler": "simple",
+        "denoise": denoise,
+        "feather": 5,
+        "noise_mask": True,
+        "force_inpaint": True,
+        "wildcard": "",
+        "cycle": 1,
+    }, node_id="30")
+
+    # FaceDetailer output slot 0 = refined image
+    nf.save_image([detail_id, 0], "klein_face_detail", node_id="40")
 
     return nf.build()
 
