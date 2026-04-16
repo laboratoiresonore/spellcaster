@@ -501,17 +501,19 @@ def _make_branded_header():
         title.set_xalign(0)
         hbox.pack_start(title, False, False, 0)
 
-        # Live server status indicator
+        # Live server + enhance status indicator
         status_label = Gtk.Label()
         status_label.set_xalign(0)
         status_label.set_valign(Gtk.Align.END)
         try:
             _api_get(COMFYUI_DEFAULT_URL, "/system_stats")
+            enhance_tag = ' <span color="#B246F2">✦ AI Enhance</span>' if _PROMPT_ENHANCE else ''
             status_label.set_markup(
-                f'<span size="9000" color="#00E676">● Connected</span>')
+                f'<span size="9000" color="#00E676">● Connected</span>'
+                f'<span size="9000">{enhance_tag}</span>')
         except Exception:
             status_label.set_markup(
-                f'<span size="9000" color="#FF5252">● Server offline — check Settings</span>')
+                f'<span size="9000" color="#FF5252">● Server offline</span>')
         hbox.pack_start(status_label, False, False, 0)
 
         return hbox
@@ -835,6 +837,44 @@ COMFYUI_DEFAULT_URL = _load_config().get("server_url", "http://127.0.0.1:8188")
 # Default: disabled. Users generating massive tiled videos on slow GPUs
 # should never be interrupted by an arbitrary timeout.
 WORKFLOW_TIMEOUT = _load_config().get("workflow_timeout", 0)
+
+# ── AI Prompt Enhancement ─────────────────────────────────────────────
+# When enabled, every user prompt is automatically rewritten by a local
+# LLM (KoboldCpp, Ollama, or any OpenAI-compatible server) before being
+# sent to ComfyUI. The rewrite is architecture-aware: SDXL gets tag-style
+# prompts, Flux gets natural language, Klein gets concise descriptions.
+# Toggle via config.json {"prompt_enhance": true, "llm_url": "http://..."}
+# or via the Settings dialog.
+_PROMPT_ENHANCE = _load_config().get("prompt_enhance", False)
+_LLM_URL = _load_config().get("llm_url", "http://127.0.0.1:5001")
+
+
+def _auto_enhance(prompt, arch_key, negative=""):
+    """Enhance a prompt via local LLM if the global toggle is ON.
+
+    Returns (enhanced_prompt, enhanced_negative). If enhancement is
+    disabled, the LLM is unreachable, or the prompt is already detailed,
+    returns the originals unchanged. Never blocks generation — 15s timeout.
+    """
+    if not _PROMPT_ENHANCE or not prompt or not prompt.strip():
+        return prompt, negative
+    # Never enhance edit instructions (Kontext) or turbo models (ZIT)
+    if arch_key in ("flux_kontext", "zit"):
+        return prompt, negative
+    try:
+        from spellcaster_core.prompt_enhance import enhance_prompt
+        enhanced = enhance_prompt(prompt, arch_key, _LLM_URL, is_negative=False)
+        if enhanced and enhanced != prompt:
+            print(f"[Spellcaster] Prompt enhanced ({arch_key}): "
+                  f"{len(prompt.split())}→{len(enhanced.split())} words")
+        else:
+            enhanced = prompt
+        # Don't enhance negative — architecture quality_negative is already optimal
+        return enhanced, negative
+    except Exception as e:
+        print(f"[Spellcaster] Prompt enhance skipped: {e}")
+        return prompt, negative
+
 
 # ── Klein (Flux 2 distilled) model registry ─────────────────────────────
 # Used by all Klein-based workflows: img2img, repose, blend, headswap,
@@ -3791,33 +3831,32 @@ def _mask_image_to_gimp_selection(image, mask_path, feather=4):
         feather (int): Feather radius in pixels (0 = hard edge).
     """
     try:
-        # Load mask as a new layer in the image
-        mask_layer = _pdb_run('gimp-file-load-layer', {
-            'run-mode': Gimp.RunMode.NONINTERACTIVE,
-            'image': image,
-            'file': Gio.File.new_for_path(mask_path),
-        })
-        if hasattr(mask_layer, '__len__'):
-            mask_layer = mask_layer[0] if mask_layer else None
+        # Load mask as a new layer — use Gimp.file_load_layer which returns
+        # a proper GimpLayer directly (avoids GimpValueArray extraction issues
+        # with the PDB wrapper).
+        mask_layer = Gimp.file_load_layer(
+            Gimp.RunMode.NONINTERACTIVE, image,
+            Gio.File.new_for_path(mask_path))
         if mask_layer is None:
             raise RuntimeError("Failed to load mask as layer")
-        _pdb_run('gimp-image-insert-layer', {
-            'image': image, 'layer': mask_layer, 'parent': None, 'position': 0,
-        })
+        image.insert_layer(mask_layer, None, 0)
         # Scale mask layer to match image dimensions if needed
         iw = image.get_width(); ih = image.get_height()
         lw = mask_layer.get_width(); lh = mask_layer.get_height()
         if lw != iw or lh != ih:
-            _pdb_run('gimp-layer-scale', {
-                'layer': mask_layer, 'new-width': iw, 'new-height': ih, 'local-origin': False,
-            })
-        # Flatten the mask layer to ensure it's a simple grayscale raster
-        _pdb_run('gimp-layer-flatten', {'layer': mask_layer})
+            mask_layer.scale(iw, ih, False)
+        # Flatten to ensure simple grayscale raster
+        mask_layer.flatten()
         # Select white regions: by-color-select on the mask layer
         # Threshold 80 captures white (255) and near-white as selected
+        image.set_active_layer(mask_layer)
         white = Gimp.RGB()
         white.set(1.0, 1.0, 1.0)
-        _pdb_run('gimp-image-set-active-layer', {'image': image, 'layer': mask_layer})
+        Gimp.context_set_sample_threshold(80 / 255.0)
+        Gimp.context_set_antialias(True)
+        Gimp.context_set_feather(feather > 0)
+        Gimp.context_set_feather_radius(float(feather), float(feather))
+        Gimp.context_set_sample_merged(False)
         _pdb_run('gimp-by-color-select', {
             'drawable': mask_layer,
             'color': white,
@@ -3829,12 +3868,12 @@ def _mask_image_to_gimp_selection(image, mask_path, feather=4):
             'sample-merged': False,
         })
         # Remove the temporary mask layer — selection persists
-        _pdb_run('gimp-image-remove-layer', {'image': image, 'layer': mask_layer})
+        image.remove_layer(mask_layer)
     except Exception as e:
-        # Fallback: if PDB calls fail (API differences across GIMP versions),
-        # just add the mask as a visible layer and let the user convert manually
+        # Fallback: if API calls fail, remove the temp mask layer and let
+        # the user convert manually
         try:
-            _pdb_run('gimp-image-remove-layer', {'image': image, 'layer': mask_layer})
+            image.remove_layer(mask_layer)
         except Exception:
             pass
         raise RuntimeError(f"Could not convert SAM3 mask to selection: {e}.\n"
@@ -4373,19 +4412,35 @@ LORA_METADATA = {
     "EFFECTSp001_zit.safetensors": {"trigger": "special effects, digital glitch", "strength": 0.70},
     "Z-Image-Professional_Photographer_3500.safetensors": {"trigger": "professional photo, studio lighting", "strength": 0.70},
     "feet v2.1.safetensors": {"trigger": "detailed feet, correct toes", "strength": 0.80},
+    # ── NSFW LoRAs (auto-injected) ──
+    'nsfw_master_flux2_v2.safetensors': {"trigger": 'nsfw, nude', "strength": 0.75},
+    'detail_body_flux2.safetensors': {"trigger": 'detailed body, skin texture', "strength": 0.6},
+    'lingerie_flux2.safetensors': {"trigger": 'lingerie, lace, sheer', "strength": 0.7},
+    'feet_detail_flux2.safetensors': {"trigger": 'detailed feet, bare feet, perfect toes, foot soles', "strength": 0.75},
+    'FK_povfootjobfront.safetensors': {"trigger": 'dynamic shot, pov of the man lying on his back, she is giving a footjob', "strength": 0.9},
+    'footjob_ab_f2k9b_1.safetensors': {"trigger": 'she is giving a footjob', "strength": 0.75},
+    'cum_on_face_v2.safetensors': {"trigger": 'cum on her face, semen on her face', "strength": 0.75},
+    'nsfw_master_sdxl.safetensors': {"trigger": 'nsfw, nude', "strength": 0.7},
+    'detail_body_sdxl.safetensors': {"trigger": 'detailed body', "strength": 0.55},
+    'feet_detail_sdxl.safetensors': {"trigger": 'detailed feet, bare feet, perfect toes', "strength": 0.7},
+    'CumOnFace_sdxl_v1.safetensors': {"trigger": 'cum on her face, semen on her face', "strength": 0.7},
     "Tentacledv1.safetensors": {"trigger": "tentacles, organic tendrils", "strength": 0.85},
 }
 
 
 def _build_img2img(image_filename, preset, prompt_text, negative_text, seed,
                   loras=None, controlnet=None, controlnet_2=None):
-    """→ Delegated to v2 builder."""
+    """→ Delegated to v2 builder, with automatic prompt enhancement."""
+    arch_key = preset.get("arch", "sdxl")
+    prompt_text, negative_text = _auto_enhance(prompt_text, arch_key, negative_text)
     return build_img2img(image_filename, preset, prompt_text, negative_text, seed,
                          loras=loras, controlnet=controlnet, controlnet_2=controlnet_2,
                          guide_modes=CONTROLNET_GUIDE_MODES)
 
 def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_text, seed, loras=None, controlnet=None, controlnet_2=None):
-    """→ Delegated to v2 builder."""
+    """→ Delegated to v2 builder, with automatic prompt enhancement."""
+    arch_key = preset.get("arch", "sdxl")
+    prompt_text, negative_text = _auto_enhance(prompt_text, arch_key, negative_text)
     return build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_text, seed,
                          loras=loras, controlnet=controlnet, controlnet_2=controlnet_2,
                          guide_modes=CONTROLNET_GUIDE_MODES)
@@ -5202,12 +5257,18 @@ def _export_selection_to_tmp(image):
     raise RuntimeError("Failed to export selection region")
 
 
-def _import_result_as_layer(image, image_data, layer_name="ComfyUI Result"):
+def _import_result_as_layer(image, image_data, layer_name="ComfyUI Result",
+                            keep_size=False):
     """Import raw PNG bytes as a new layer on top of *image*.
 
     Handles mode mismatches (e.g. ComfyUI returns a grayscale PNG but the
     canvas is RGB) by converting the loaded result to match the destination
     image's colour mode before inserting the layer.
+
+    If keep_size=True, the layer is inserted at its natural size and
+    centered on the canvas instead of being scaled to fill it. Used for
+    SAM3 extraction where the result is a cropped subject that should
+    overlay at its original position, not be stretched to fit.
     """
     tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
     tmp.write(image_data)
@@ -5243,12 +5304,18 @@ def _import_result_as_layer(image, image_data, layer_name="ComfyUI Result"):
     new_layer = Gimp.Layer.new_from_drawable(layers[0], image)
     new_layer.set_name(layer_name)
     image.insert_layer(new_layer, None, 0)
-    if (new_layer.get_width() != image.get_width() or
+    if keep_size:
+        # Center the layer on canvas without scaling — for extracted subjects
+        cx = (image.get_width() - new_layer.get_width()) // 2
+        cy = (image.get_height() - new_layer.get_height()) // 2
+        new_layer.set_offsets(cx, cy)
+    elif (new_layer.get_width() != image.get_width() or
             new_layer.get_height() != image.get_height()):
         new_layer.scale(image.get_width(), image.get_height(), False)
     result_image.delete()
     os.unlink(tmp.name)
     Gimp.displays_flush()
+    return new_layer
 
 
 def _import_video_results(image, server, results):
@@ -5345,18 +5412,12 @@ _spinner_label_text = ""
 def _update_spinner_status(text):
     """Set the spinner window's status label from any thread.
 
-    Also updates GIMP's native progress bar (bottom of canvas) so users
-    see status even if the spinner window is behind other windows.
+    Only updates the spinner window's job label. GIMP's native status bar
+    is updated exclusively from the spinner's poll timer (_pulse) to
+    prevent flashing between competing update sources.
     """
     global _spinner_label_text
     _spinner_label_text = text
-    # Mirror to GIMP's native status bar (safe to call from any thread
-    # via GLib.idle_add, but progress_init/set_text may not be available
-    # in all contexts — fail silently)
-    try:
-        GLib.idle_add(lambda: Gimp.progress_set_text(text) if text else None)
-    except Exception:
-        pass
 
 
 # ── Mask cache for inpaint ──────────────────────────────────────────
@@ -5728,12 +5789,17 @@ def _run_with_spinner(label_text, func, *args):
         _spinner_cleanup_gen += 1  # invalidate any already-dispatched callback
 
     # ── Create or reuse the singleton spinner window ────────────────
-    _win_alive = False
-    if _spinner_win is not None:
+    # Strict singleton: if _spinner_win is set, always reuse it.
+    # Only create a new window if _spinner_win is None (destroyed by cleanup).
+    _win_alive = _spinner_win is not None
+    if _win_alive:
+        # Make sure the window is actually visible (it might have been hidden)
         try:
-            _win_alive = _spinner_win.get_visible() or _spinner_win.get_realized()
+            _spinner_win.show_all()
+            _spinner_win.present()
         except Exception:
             _win_alive = False
+            _spinner_win = None
     if not _win_alive:
         win = Gtk.Window(title="Spellcaster")
         win.set_default_size(380, -1)
@@ -5810,13 +5876,15 @@ def _run_with_spinner(label_text, func, *args):
         if not done_box[0]:
             if _spinner_pb:
                 _spinner_pb.pulse()
-            # Update job label with live status
+            # Update job label with live status from _update_spinner_status
             live = _spinner_label_text
             if live and not cancel_box[0]:
                 job_label.set_text(live)
             # Poll ComfyUI status every ~3s (every 10th pulse at 300ms)
+            # This is the SOLE source of GIMP status bar updates — no other
+            # code path calls Gimp.progress_set_text, preventing flashing.
             _status_counter[0] += 1
-            if _status_counter[0] % 10 == 0 and _spinner_status_lbl:
+            if _status_counter[0] % 10 == 0:
                 try:
                     running, pending, gpu, vt, vf = _fetch_comfy_status(_status_server)
                     elapsed = int(time.time() - _spinner_start_time)
@@ -5826,12 +5894,18 @@ def _run_with_spinner(label_text, func, *args):
                         parts.append(f"Queue: {running} running, {pending} pending")
                     if gpu:
                         vram_pct = int((1 - vf / max(vt, 1)) * 100) if vt > 0 else 0
-                        parts.append(f"{gpu} — VRAM {vram_pct}% used ({vf:.1f}/{vt:.1f} GB free)")
-                    parts.append(f"Elapsed: {mins}m {secs:02d}s" if mins else f"Elapsed: {secs}s")
-                    parts.append(f"Jobs: {_spinner_job_count}")
+                        parts.append(f"{gpu} — VRAM {vram_pct}%")
+                    parts.append(f"{mins}m {secs:02d}s" if mins else f"{secs}s")
                     status_text = "  |  ".join(parts)
-                    _spinner_status_lbl.set_markup(
-                        f'<span size="small" foreground="#9D8E88">{status_text}</span>')
+                    if _spinner_status_lbl:
+                        _spinner_status_lbl.set_markup(
+                            f'<span size="small" foreground="#9D8E88">{status_text}</span>')
+                    # Mirror to GIMP's native status bar (single source, no flash)
+                    gimp_text = live or status_text
+                    try:
+                        Gimp.progress_set_text(gimp_text)
+                    except Exception:
+                        pass
                 except Exception:
                     pass
             return True
@@ -10283,9 +10357,15 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-lut": "lut_grading",
             "spellcaster-style-transfer": "style_transfer",
             "spellcaster-iclight": "iclight",
+            "spellcaster-klein-detail": "klein_flux2",
+            "spellcaster-klein-generate": "klein_flux2",
+            "spellcaster-generate-anything": None,  # works with all models
             "spellcaster-settings": None,
             "spellcaster-my-presets": None,
             "spellcaster-bridge": None,
+            # SAM3 AI Selection
+            "spellcaster-sam3-select": None,    # always register — preflight checks server at runtime
+            "spellcaster-sam3-extract": None,
             # Flux Kontext
             "spellcaster-kontext": "flux_kontext",
             # Quick context-menu actions
@@ -10344,7 +10424,7 @@ class Spellcaster(Gimp.PlugIn):
                                            "Regenerate image preserving face identity with IPAdapter FaceID"),
             "spellcaster-pulid-flux": ("PuLID Flux Face Identity...", self._run_pulid_flux,
                                        "Generate with Flux preserving face identity via PuLID"),
-            "spellcaster-klein-img2img": ("Klein AI Editor (Flux 2)...", self._run_klein,
+            "spellcaster-klein-img2img": ("◇ Klein AI Editor...", self._run_klein,
                                           "Next-gen image editing with Flux 2 Klein — fast, high quality"),
             "spellcaster-photobooth": ("1. Casting Polaroids (Face Model)...", self._run_photobooth,
                                        "Headshot session — generate clean face photos and save as reusable actor model"),
@@ -10366,20 +10446,26 @@ class Spellcaster(Gimp.PlugIn):
                                              "Hide encrypted metadata inside image pixels (LSB steganography)"),
             "spellcaster-read-watermark": ("Read Invisible Watermark...", self._run_read_watermark,
                                             "Extract hidden metadata from a watermarked image"),
-            "spellcaster-klein-outpaint": ("Klein Outpaint (extend canvas)...", self._run_klein_outpaint,
+            "spellcaster-klein-outpaint": ("◇ Klein Outpaint...", self._run_klein_outpaint,
                                           "Extend canvas using Flux 2 Klein — best outpaint quality"),
-            "spellcaster-klein-img2img-ref": ("Klein Image Editor + Reference...", self._run_klein_ref,
+            "spellcaster-klein-img2img-ref": ("◇ Klein Editor + Reference...", self._run_klein_ref,
                                               "Edit image with Flux 2 Klein using a reference image"),
-            "spellcaster-klein-blend": ("Klein Layer Blender...", self._run_klein_blend,
+            "spellcaster-klein-blend": ("◇ Klein Layer Blender...", self._run_klein_blend,
                                          "Blend foreground into background using AI-powered harmonization"),
-            "spellcaster-klein-repose": ("Klein Re-poser...", self._run_klein_repose,
+            "spellcaster-klein-repose": ("◇ Klein Re-poser...", self._run_klein_repose,
                                           "Change character pose or position using Flux 2 Klein"),
-            "spellcaster-klein-headswap": ("Klein Headswap...", self._run_klein_headswap,
+            "spellcaster-klein-headswap": ("◇ Klein Headswap...", self._run_klein_headswap,
                                             "Face swap + Klein AI refinement for natural integration"),
-            "spellcaster-klein-headswap-face": ("Klein Headswap (Face Swap)...", self._run_klein_headswap,
+            "spellcaster-klein-headswap-face": ("◇ Klein Headswap (Face)...", self._run_klein_headswap,
                                                   "Swap a face and refine with Klein AI — under Face menu"),
-            "spellcaster-klein-inpaint": ("Klein Inpaint Selection...", self._run_klein_inpaint,
+            "spellcaster-klein-inpaint": ("◇ Klein Inpaint...", self._run_klein_inpaint,
                                            "Regenerate selected area with Klein AI — context-aware, smooth edges"),
+            "spellcaster-klein-detail": ("◇ Klein Detail Enhancer...", self._run_klein_detail,
+                                          "Enhance any region — face, eyes, hands, skin, hair, clothing — with Klein AI"),
+            "spellcaster-klein-generate": ("◇ Klein Generate Object...", self._run_klein_generate,
+                                            "Generate any object or person as a transparent layer — matches your scene's lighting"),
+            "spellcaster-generate-anything": ("Generate Anything...", self._run_generate_anything,
+                                               "Generate any object as a transparent layer — works with ALL models"),
             "spellcaster-ltx-t2v": ("LTX 2.3 Text to Video...", self._run_ltx_t2v,
                                     "Generate video from text using LTX Video 2.3"),
             "spellcaster-ltx-i2v": ("LTX 2.3 Image to Video...", self._run_ltx_i2v,
@@ -10437,7 +10523,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-sam3-extract": ("AI Extract Subject...", self._run_sam3_extract,
                                           "One-click: detect subject, remove background, auto-crop to transparent PNG"),
             # Flux Kontext
-            "spellcaster-kontext": ("Kontext: Edit by Instruction...", self._run_kontext,
+            "spellcaster-kontext": ("◆ Kontext: Edit by Instruction...", self._run_kontext,
                                      "Type what to change in plain English — 'make the sky orange', 'remove the hat'"),
             # Quick actions (zero-dialog, instant)
             "spellcaster-quick-enhance": ("⚡ Quick Enhance", self._run_quick_enhance,
@@ -10460,101 +10546,130 @@ class Spellcaster(Gimp.PlugIn):
 
         label, callback, doc = menu_map[name]
 
-        # Menu path mapping — organise tools into logical submenus
+        # Menu path mapping — TOP-LEVEL Spellcaster menu in the menu bar.
+        # ◆ = purple diamond prefix for the top-level menu name.
+        _S = "<Image>/◆ Spellcaster"
         _menu_paths = {
-            # My Presets: TOP-LEVEL under Filters (outside Spellcaster submenus)
-            "spellcaster-my-presets":       "<Image>/Filters",
+            # Presets at top level
+            "spellcaster-my-presets":       _S,
 
-            # Expert: the do-it-all generation tools
-            "spellcaster-img2img":          "<Image>/Filters/Spellcaster Expert",
-            "spellcaster-txt2img":          "<Image>/Filters/Spellcaster Expert",
-            "spellcaster-inpaint":          "<Image>/Filters/Spellcaster Expert",
-            "spellcaster-outpaint":         "<Image>/Filters/Spellcaster Expert",
-            "spellcaster-batch-variations": "<Image>/Filters/Spellcaster Expert",
+            # Generate — core creation tools
+            "spellcaster-img2img":          f"{_S}/Generate",
+            "spellcaster-txt2img":          f"{_S}/Generate",
+            "spellcaster-inpaint":          f"{_S}/Generate",
+            "spellcaster-outpaint":         f"{_S}/Generate",
+            "spellcaster-batch-variations": f"{_S}/Generate",
+            "spellcaster-kontext":          f"{_S}/Generate",
+            "spellcaster-generate-anything":f"{_S}/Generate",
 
-            # Face & Identity
-            "spellcaster-faceswap":         "<Image>/Filters/Spellcaster Face",
-            "spellcaster-faceswap-model":   "<Image>/Filters/Spellcaster Face",
-            "spellcaster-faceswap-mtb":     "<Image>/Filters/Spellcaster Face",
-            "spellcaster-faceid-img2img":    "<Image>/Filters/Spellcaster Face",
-            "spellcaster-pulid-flux":        "<Image>/Filters/Spellcaster Face",
-            "spellcaster-face-restore":      "<Image>/Filters/Spellcaster Face",
+            # Klein — next-gen Flux 2 tools
+            "spellcaster-klein-img2img":     f"{_S}/Klein",
+            "spellcaster-klein-outpaint":    f"{_S}/Klein",
+            "spellcaster-klein-img2img-ref": f"{_S}/Klein",
+            "spellcaster-klein-blend":       f"{_S}/Klein",
+            "spellcaster-klein-repose":      f"{_S}/Klein",
+            "spellcaster-klein-headswap":    f"{_S}/Klein",
+            "spellcaster-klein-inpaint":     f"{_S}/Klein",
+            "spellcaster-klein-detail":      f"{_S}/Klein",
+            "spellcaster-klein-generate":    f"{_S}/Klein",
 
-            # Photofixer: restoration, enhancement, repair
-            "spellcaster-upscale":           "<Image>/Filters/Spellcaster Photofixer",
-            "spellcaster-photo-restore":     "<Image>/Filters/Spellcaster Photofixer",
-            "spellcaster-detail-hallucinate":"<Image>/Filters/Spellcaster Photofixer",
-            "spellcaster-supir":             "<Image>/Filters/Spellcaster Photofixer",
-            "spellcaster-seedv2r":           "<Image>/Filters/Spellcaster Photofixer",
-            "spellcaster-colorize":          "<Image>/Filters/Spellcaster Photofixer",
-            "spellcaster-lama-remove":       "<Image>/Filters/Spellcaster Photofixer",
+            # Enhance — fix, upscale, restore
+            "spellcaster-upscale":           f"{_S}/Enhance",
+            "spellcaster-photo-restore":     f"{_S}/Enhance",
+            "spellcaster-detail-hallucinate":f"{_S}/Enhance",
+            "spellcaster-supir":             f"{_S}/Enhance",
+            "spellcaster-seedv2r":           f"{_S}/Enhance",
+            "spellcaster-colorize":          f"{_S}/Enhance",
+            "spellcaster-lama-remove":       f"{_S}/Enhance",
 
-            # Style & Lighting
-            "spellcaster-style-transfer":    "<Image>/Filters/Spellcaster Style",
-            "spellcaster-lut":               "<Image>/Filters/Spellcaster Style",
-            "spellcaster-iclight":           "<Image>/Filters/Spellcaster Style",
+            # Face — identity and face tools
+            "spellcaster-faceswap":          f"{_S}/Face",
+            "spellcaster-faceswap-model":    f"{_S}/Face",
+            "spellcaster-faceswap-mtb":      f"{_S}/Face",
+            "spellcaster-faceid-img2img":    f"{_S}/Face",
+            "spellcaster-pulid-flux":        f"{_S}/Face",
+            "spellcaster-face-restore":      f"{_S}/Face",
+            "spellcaster-klein-headswap-face": f"{_S}/Face",
 
-            # Klein / Flux 2
-            "spellcaster-klein-img2img":     "<Image>/Filters/Spellcaster Klein",
-            "spellcaster-klein-outpaint": "<Image>/Filters/Spellcaster Klein",
-            "spellcaster-klein-img2img-ref": "<Image>/Filters/Spellcaster Klein",
-            "spellcaster-klein-blend":    "<Image>/Filters/Spellcaster Klein",
-            "spellcaster-klein-repose":   "<Image>/Filters/Spellcaster Klein",
-            "spellcaster-klein-headswap": "<Image>/Filters/Spellcaster Klein",
-            "spellcaster-klein-headswap-face": "<Image>/Filters/Spellcaster Face",
-            "spellcaster-klein-inpaint":  "<Image>/Filters/Spellcaster Klein",
+            # Style — visual transformation
+            "spellcaster-style-transfer":    f"{_S}/Style",
+            "spellcaster-lut":               f"{_S}/Style",
+            "spellcaster-iclight":           f"{_S}/Style",
+            "spellcaster-color-match":       f"{_S}/Style",
 
-            # Video
-            "spellcaster-ltx-t2v":           "<Image>/Filters/Spellcaster Video",
-            "spellcaster-ltx-i2v":           "<Image>/Filters/Spellcaster Video",
-            "spellcaster-wan-i2v":           "<Image>/Filters/Spellcaster Video",
-            "spellcaster-wan-flf":           "<Image>/Filters/Spellcaster Video",
-            "spellcaster-wan-director":      "<Image>/Filters/Spellcaster Magic Studios",
-            "spellcaster-wan-director-duo":  "<Image>/Filters/Spellcaster Magic Studios",
-            "spellcaster-wan-director-trio": "<Image>/Filters/Spellcaster Magic Studios",
-            "spellcaster-video-upscale":     "<Image>/Filters/Spellcaster Video",
-            "spellcaster-video-reactor":     "<Image>/Filters/Spellcaster Video",
-            "spellcaster-seedvr2-video":    "<Image>/Filters/Spellcaster Video",
+            # Select — AI-powered selection
+            "spellcaster-sam3-select":       f"{_S}/Select",
+            "spellcaster-sam3-extract":      f"{_S}/Select",
+            "spellcaster-rembg":             f"{_S}/Select",
 
-            # Magic Studios — character pipeline
-            "spellcaster-photobooth":        "<Image>/Filters/Spellcaster Magic Studios",
-            "spellcaster-body-factory":      "<Image>/Filters/Spellcaster Magic Studios",
-            "spellcaster-clothing-store":    "<Image>/Filters/Spellcaster Magic Studios",
-            "spellcaster-studio-set":       "<Image>/Filters/Spellcaster Magic Studios",
+            # Video — generation and processing
+            "spellcaster-ltx-t2v":           f"{_S}/Video",
+            "spellcaster-ltx-i2v":           f"{_S}/Video",
+            "spellcaster-wan-i2v":           f"{_S}/Video",
+            "spellcaster-wan-flf":           f"{_S}/Video",
+            "spellcaster-video-upscale":     f"{_S}/Video",
+            "spellcaster-video-reactor":     f"{_S}/Video",
+            "spellcaster-seedvr2-video":     f"{_S}/Video",
 
-            # AI Selection — SAM3-powered smart selection tools
-            "spellcaster-sam3-select":       "<Image>/Filters/Spellcaster AI Select",
-            "spellcaster-sam3-extract":      "<Image>/Filters/Spellcaster AI Select",
-            "spellcaster-rembg":             "<Image>/Filters/Spellcaster AI Select",
+            # Studios — full character pipeline
+            "spellcaster-photobooth":        f"{_S}/Studios",
+            "spellcaster-body-factory":      f"{_S}/Studios",
+            "spellcaster-clothing-store":    f"{_S}/Studios",
+            "spellcaster-studio-set":        f"{_S}/Studios",
+            "spellcaster-wan-director":      f"{_S}/Studios",
+            "spellcaster-wan-director-duo":  f"{_S}/Studios",
+            "spellcaster-wan-director-trio": f"{_S}/Studios",
 
-            # Tools & Utility
-            "spellcaster-layer-blend-ratio": "<Image>/Filters/Spellcaster Tools",
-            "spellcaster-upscale-blend":     "<Image>/Filters/Spellcaster Tools",
-            "spellcaster-gif-stitch":        "<Image>/Filters/Spellcaster Tools",
-            "spellcaster-embed-watermark":   "<Image>/Filters/Spellcaster Tools",
-            "spellcaster-read-watermark":    "<Image>/Filters/Spellcaster Tools",
-            "spellcaster-send-image":        "<Image>/Filters/Spellcaster Tools",
-            "spellcaster-settings":          "<Image>/Filters/Spellcaster Tools",
-            "spellcaster-bridge":            "<Image>/Filters/Spellcaster Tools",
+            # Quick — zero-dialog instant actions
+            "spellcaster-rerun-last":        f"{_S}/Quick",
+            "spellcaster-quick-enhance":     f"{_S}/Quick",
+            "spellcaster-quick-inpaint":     f"{_S}/Quick",
+            "spellcaster-quick-upscale":     f"{_S}/Quick",
+            "spellcaster-quick-face-restore":f"{_S}/Quick",
+            "spellcaster-quick-rembg":       f"{_S}/Quick",
 
-            # Flux Kontext — instruction-based editing
-            "spellcaster-kontext":           "<Image>/Filters/Spellcaster Expert",
+            # Tools — utility and config
+            "spellcaster-layer-blend-ratio": f"{_S}/Tools",
+            "spellcaster-upscale-blend":     f"{_S}/Tools",
+            "spellcaster-gif-stitch":        f"{_S}/Tools",
+            "spellcaster-embed-watermark":   f"{_S}/Tools",
+            "spellcaster-read-watermark":    f"{_S}/Tools",
+            "spellcaster-send-image":        f"{_S}/Tools",
+            "spellcaster-settings":          f"{_S}/Tools",
+            "spellcaster-bridge":            f"{_S}/Tools",
+        }
 
-            # AI Color Match
-            "spellcaster-color-match":       "<Image>/Filters/Spellcaster Style",
-
-            # Quick Actions — zero-dialog instant tools (under Filters for visibility)
-            "spellcaster-rerun-last":        "<Image>/Filters/Spellcaster Quick",
-            "spellcaster-quick-enhance":     "<Image>/Filters/Spellcaster Quick",
-            "spellcaster-quick-inpaint":     "<Image>/Filters/Spellcaster Quick",
-            "spellcaster-quick-upscale":     "<Image>/Filters/Spellcaster Quick",
-            "spellcaster-quick-face-restore":"<Image>/Filters/Spellcaster Quick",
-            "spellcaster-quick-rembg":       "<Image>/Filters/Spellcaster Quick",
+        # ── Native GIMP menu integration ─────────────────────────────
+        # Tools appear in their contextually appropriate GIMP menus
+        # IN ADDITION to the Spellcaster submenu. Users find AI Select
+        # under Select, AI Color Match under Colors, etc. — where they
+        # naturally look. add_menu_path() is callable multiple times.
+        _native_paths = {
+            # Select menu — AI-powered selection belongs here
+            "spellcaster-sam3-select":       "<Image>/Select",
+            "spellcaster-sam3-extract":      "<Image>/Select",
+            # Colors menu — color manipulation tools
+            "spellcaster-color-match":       "<Image>/Colors",
+            "spellcaster-colorize":          "<Image>/Colors",
+            "spellcaster-lut":               "<Image>/Colors",
+            "spellcaster-iclight":           "<Image>/Colors",
+            # Image menu — scaling / canvas operations
+            "spellcaster-upscale":           "<Image>/Image",
+            "spellcaster-outpaint":          "<Image>/Image",
+            "spellcaster-klein-outpaint":    "<Image>/Image",
         }
 
         proc = Gimp.ImageProcedure.new(self, name, Gimp.PDBProcType.PLUGIN, callback, None)
         proc.set_menu_label(label)
-        proc.add_menu_path(_menu_paths.get(name, "<Image>/Filters/Spellcaster"))
+        # Primary Spellcaster top-level menu path
+        proc.add_menu_path(_menu_paths.get(name, _S))
+        # Additional native GIMP menu path (if applicable)
+        native = _native_paths.get(name)
+        if native:
+            try:
+                proc.add_menu_path(native)
+            except Exception:
+                pass  # GIMP version may not support this path
         proc.set_documentation(doc, doc, name)
         proc.set_attribution("Spellcaster", "Spellcaster", "2026")
         proc.set_image_types("*")
@@ -12787,11 +12902,12 @@ class Spellcaster(Gimp.PlugIn):
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_klein_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
+            _klein_prompt, _ = _auto_enhance(v["prompt"], "flux2klein")
             base_seed = v["seed"]
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = build_klein_img2img(
-                    uname, v["klein_model"], v["prompt"], seed,
+                    uname, v["klein_model"], _klein_prompt, seed,
                     steps=v["steps"], denoise=v["denoise"], guidance=v["guidance"],
                     enhancer_mag=v["enhancer_mag"], enhancer_contrast=v["enhancer_contrast"],
                     lora_name=v["lora_name"], lora_strength=v["lora_strength"],
@@ -12843,11 +12959,12 @@ class Spellcaster(Gimp.PlugIn):
             # Upload reference image
             ref_name = f"gimp_kleinr_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, v["ref_file"], ref_name)
+            _kleinr_prompt, _ = _auto_enhance(v["prompt"], "flux2klein")
             base_seed = v["seed"]
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = build_klein_img2img_ref(
-                    uname, ref_name, v["klein_model"], v["prompt"], seed,
+                    uname, ref_name, v["klein_model"], _kleinr_prompt, seed,
                     steps=v["steps"], denoise=v["denoise"], guidance=v["guidance"],
                     enhancer_mag=v["enhancer_mag"], enhancer_contrast=v["enhancer_contrast"],
                     ref_strength=v["ref_strength"], text_ref_balance=v["text_ref_balance"],
@@ -12909,6 +13026,13 @@ class Spellcaster(Gimp.PlugIn):
             "Extend interior / room": "seamless room extension, matching wall color, consistent floor, same furniture style, correct perspective",
             "Add more background": "smooth background extension, matching colors and blur, consistent depth of field, natural continuation",
             "Widen panorama": "panoramic scene extension, wide angle continuation, matching horizon, consistent sky and ground",
+            # ── NSFW Outpaint Presets (auto-injected) ──
+            'Reveal more body': 'natural continuation of the human body, correct anatomy, matching skin tone, realistic proportions, smooth skin texture, same lighting on skin',
+            'Extend intimate scene': 'seamless continuation of bedroom scene, matching satin sheets, soft warm lighting, romantic atmosphere, same color palette',
+            'Complete figure (full body)': 'natural full body continuation, correct proportions, same clothing or lack thereof, matching skin tone, same pose direction, anatomically correct',
+            'Extend bath / pool scene': 'seamless water continuation, matching reflections, wet surfaces, steam, same lighting, bathroom or pool tiles',
+            'Reveal outfit below frame': 'natural clothing continuation below the frame, matching fabric texture and color, correct draping, same style',
+            'Reveal bare feet below frame': 'natural continuation downward showing bare feet, correct anatomy, five toes per foot, matching skin tone, natural foot proportions, same lighting on skin, detailed soles and toes',
             "Add floor / ground": "natural ground surface below subject, matching floor material, correct shadows, consistent perspective, seamless edge blending",
             "Add ceiling / sky above": "natural continuation upward, ceiling or sky matching scene context, correct lighting direction, consistent atmosphere",
             "Reveal hidden subject": "extending to reveal more of a partially visible person or object, natural body continuation, matching pose and proportions",
@@ -13401,6 +13525,28 @@ class Spellcaster(Gimp.PlugIn):
             "Lying down relaxed":        "lying down on back, relaxed, arms at sides",
             "Lying on side":             "lying on one side, head propped on hand",
             "Prone / face down":         "lying face down, head turned to one side",
+            # ── NSFW Poses (auto-injected) ──
+            'Lying seductively':             'lying seductively on bed, one arm above head, arched back, sensual body language',
+            'Pin-up pose':                   'classic pin-up pose, hand on hip, chest forward, playful smile, vintage glamour',
+            'On all fours':                  'on hands and knees, looking over shoulder, arched spine, seductive glance',
+            'Kneeling pin-up':               'kneeling with legs apart, hands on thighs, confident sensual expression',
+            'Bending forward':               'bending forward at waist, looking at camera, flirtatious, playful body language',
+            'Reclining on side':             'reclining on side, head propped on hand, curves accentuated, relaxed sensual pose',
+            'Standing back arch':            'standing with deep back arch, arms raised overhead, stretching, curves emphasized',
+            'Sitting legs crossed (sensual)': 'sitting cross-legged showing legs, leaning back on hands, confident sultry expression',
+            'Crawling toward camera':        'crawling toward camera on bed, intense eye contact, feline movement, seductive',
+            'Straddling':                    'straddling position, sitting upright, hands on thighs, dominant confident pose',
+            'Shower pose':                   'standing in shower, water running over body, wet hair, arms raised washing, steam',
+            'Mirror selfie pose':            'standing in front of mirror, phone in hand, hip popped, showing figure',
+            'Feet up / legs raised':         'lying on back with bare feet raised toward camera, soles visible, toes pointed, legs in the air, playful',
+            'Dangling feet off edge':        'sitting on edge of bed, bare feet dangling, toes pointed downward, relaxed legs, casual sensual',
+            'Tiptoe stretch':                'standing on tiptoes, bare feet, calves flexed, reaching upward, arched back, elegant stretch',
+            'Feet tucked under':             'kneeling sitting back on heels, bare feet visible beneath, toes curled, relaxed intimate pose',
+            'Crossed ankles (lying)':        'lying down with bare feet crossed at ankles, soles showing, relaxed playful pose on bed',
+            'Footjob POV pose':              'dynamic shot from pov of man lying on his back, she is giving a footjob, bare feet extended forward, toes wrapped, smiling, relaxed confident',
+            'Feet teasing (seated)':         'sitting facing camera, legs extended forward, bare feet close to viewer, playful toe wiggling, teasing expression, soles visible',
+            'Foot worship pose':             'lying on stomach, bare feet raised behind her, soles facing camera, chin resting on hands, playful look over shoulder',
+            'Soles closeup (keep pose)':     'same body position unchanged, extreme macro closeup of bare foot soles filling the entire frame, every wrinkle and line on the soles visible, soft smooth skin, detailed toe pads, high arches, relaxed toes, intimate foot photography, shallow depth of field focused on soles',
         }
 
         POSITION_PRESETS = {
@@ -13487,6 +13633,14 @@ class Spellcaster(Gimp.PlugIn):
             "Dancing together":          "two people dancing together, one leading, graceful movement",
             "Helping / supporting":      "one person helping another up, supportive gesture",
             "Sitting together":          "people sitting together on a bench, casual gathering",
+            # ── NSFW Interactions (auto-injected) ──
+            'Intimate embrace':              'two people in intimate embrace, bodies pressed together, holding each other, romantic tension',
+            'Kissing passionately':          'two people kissing passionately, hands on each other, intimate moment, romantic',
+            'Spooning':                      'two people spooning in bed, close body contact, intimate comfort, warm',
+            'Lap sitting':                   "one person sitting on another's lap, face to face, arms around neck, intimate",
+            'Against the wall':              'one person pinned against wall by another, passionate, intense body language',
+            'Dancing intimately':            'two people slow dancing extremely close, bodies touching, romantic tension, sensual movement',
+            'Footjob (two people)':          'she is giving a footjob, dynamic shot from pov of man lying on back, her bare feet on him, detailed toes, intimate, smiling',
         }
 
         STYLE_PRESETS = {
@@ -13875,6 +14029,113 @@ class Spellcaster(Gimp.PlugIn):
                 "prompt_hint": "Describe target appearance while keeping facial structure and expression identical",
                 "denoise": 0.55, "steps": 22,
             },
+
+            # ── NSFW Presets (auto-injected) ──
+            'Undress / remove clothing': {
+                "prompt_hint": 'nude body, bare skin, natural anatomy, smooth skin texture, realistic proportions, detailed skin',
+                "denoise": 0.9, "steps": 28,
+                "lora": {"path": 'A-Flux\\NSFW\\nsfw_master_flux2_v2.safetensors', "strength": 0.75},
+            },
+            'Change to lingerie': {
+                "prompt_hint": 'wearing lace lingerie, bra and panties, sheer fabric, delicate straps, sensual, detailed fabric texture',
+                "denoise": 0.8, "steps": 25,
+                "lora": {"path": 'A-Flux\\NSFW\\lingerie_flux2.safetensors', "strength": 0.7},
+            },
+            'Change to swimwear / bikini': {
+                "prompt_hint": 'wearing bikini, swimwear, beach body, tanned skin, string bikini, tropical',
+                "denoise": 0.78, "steps": 25,
+            },
+            'Enhance body features': {
+                "prompt_hint": 'enhanced curves, voluptuous figure, toned body, attractive proportions, smooth skin, perfect anatomy',
+                "denoise": 0.55, "steps": 22,
+                "lora": {"path": 'A-Flux\\NSFW\\detail_body_flux2.safetensors', "strength": 0.6},
+            },
+            'Add tattoos / body art': {
+                "prompt_hint": 'detailed tattoo art, intricate ink design, body art, skin texture with tattoo, realistic tattoo shading',
+                "denoise": 0.65, "steps": 22,
+            },
+            'Wet / oiled skin effect': {
+                "prompt_hint": 'glistening wet skin, oil sheen, water droplets on skin, dewy, reflective highlights on body',
+                "denoise": 0.5, "steps": 20,
+            },
+            'Boudoir / intimate setting': {
+                "prompt_hint": 'boudoir photography, soft bedroom lighting, satin sheets, intimate mood, warm tones, romantic atmosphere',
+                "denoise": 0.85, "steps": 25,
+            },
+            'BDSM outfit / accessories': {
+                "prompt_hint": 'leather harness, bondage straps, collar and cuffs, latex outfit, chains, dark aesthetic, edgy fashion',
+                "denoise": 0.82, "steps": 25,
+            },
+            'Remove shoes / go barefoot': {
+                "prompt_hint": 'bare feet, no shoes, no socks, natural toes, detailed foot soles, smooth skin on feet, visible arches, relaxed bare feet on ground',
+                "denoise": 0.78, "steps": 25,
+                "lora": {"path": 'A-Flux\\NSFW\\feet_detail_flux2.safetensors', "strength": 0.75},
+            },
+            'Barefoot close-up detail': {
+                "prompt_hint": 'extreme detail bare feet close-up, perfect toes, soft smooth soles, natural skin texture, pedicured nails, delicate arches, high detail foot photography',
+                "denoise": 0.65, "steps": 22,
+                "lora": {"path": 'A-Flux\\NSFW\\feet_detail_flux2.safetensors', "strength": 0.75},
+            },
+            'Feet with accessories': {
+                "prompt_hint": 'bare feet with ankle bracelet, toe rings, delicate gold anklet chain, pedicured toenails painted, jewelry on feet, detailed toes',
+                "denoise": 0.7, "steps": 24,
+                "lora": {"path": 'A-Flux\\NSFW\\feet_detail_flux2.safetensors', "strength": 0.75},
+            },
+            'Stockings / thigh-highs to barefoot': {
+                "prompt_hint": 'bare feet after removing stockings, one stocking halfway off, smooth legs, detailed bare toes and soles, sensual undressing',
+                "denoise": 0.82, "steps": 25,
+                "lora": {"path": 'A-Flux\\NSFW\\feet_detail_flux2.safetensors', "strength": 0.75},
+            },
+            'Wet / sandy bare feet': {
+                "prompt_hint": 'wet bare feet, water droplets on skin, glistening toes, beach sand between toes, ocean foam around ankles, natural foot detail',
+                "denoise": 0.6, "steps": 22,
+                "lora": {"path": 'A-Flux\\NSFW\\feet_detail_flux2.safetensors', "strength": 0.75},
+            },
+            'Bare feet on fabric / texture': {
+                "prompt_hint": 'bare feet resting on satin sheets, toes curling in soft fabric, smooth soles against silk, sensual foot placement, intimate detail',
+                "denoise": 0.55, "steps": 20,
+                "lora": {"path": 'A-Flux\\NSFW\\feet_detail_flux2.safetensors', "strength": 0.75},
+            },
+            'Footjob POV (frontview)': {
+                "prompt_hint": 'dynamic shot, the image shows the girl and only one man, shot from pov of the man lying on his back, she is giving a footjob, she is smiling, keep her outfit and hair style and the setting, detailed bare feet, perfect toes wrapping',
+                "denoise": 0.92, "steps": 25,
+                "lora": {"path": 'A-Flux\\NSFW\\FK_povfootjobfront.safetensors', "strength": 0.9},
+            },
+            'Footjob POV (hands behind head)': {
+                "prompt_hint": 'dynamic shot, pov of the man lying on his back, she is giving a footjob, she is smiling having her arms chilling behind her head, confident relaxed expression, bare feet detailed, natural skin texture',
+                "denoise": 0.92, "steps": 25,
+                "lora": {"path": 'A-Flux\\NSFW\\FK_povfootjobfront.safetensors', "strength": 0.9},
+            },
+            'Sockjob / shoejob': {
+                "prompt_hint": 'she is giving a footjob, wearing socks, fabric texture on feet, sensual foot movement, intimate angle, detailed fabric and skin',
+                "denoise": 0.88, "steps": 25,
+                "lora": {"path": 'A-Flux\\NSFW\\footjob_ab_f2k9b_1.safetensors', "strength": 0.75},
+            },
+            'Footjob (general)': {
+                "prompt_hint": 'she is giving a footjob, bare feet, detailed toes and soles, natural skin texture, intimate setting, soft lighting, realistic anatomy',
+                "denoise": 0.9, "steps": 25,
+                "lora": {"path": 'A-Flux\\NSFW\\footjob_ab_f2k9b_1.safetensors', "strength": 0.75},
+            },
+            'Cumshot / facial': {
+                "prompt_hint": 'cum on her face, semen on her face, her face is covered with semen, cum dripping from chin, realistic fluid, glistening, detailed skin texture',
+                "denoise": 0.82, "steps": 25,
+                "lora": {"path": 'A-Flux\\NSFW\\cum_on_face_v2.safetensors', "strength": 0.75},
+            },
+            'Cum on lips / mouth': {
+                "prompt_hint": 'cum on her lips, cum in mouth, semen dripping from lips, open mouth, glistening wet lips, realistic fluid texture, detailed face',
+                "denoise": 0.78, "steps": 25,
+                "lora": {"path": 'A-Flux\\NSFW\\cum_on_face_v2.safetensors', "strength": 0.75},
+            },
+            'Cum on chest / body': {
+                "prompt_hint": 'cum on her chest, semen on breasts, cum on body, glistening fluid on skin, realistic droplets, warm lighting, detailed skin texture',
+                "denoise": 0.8, "steps": 25,
+                "lora": {"path": 'A-Flux\\NSFW\\cum_on_face_v2.safetensors', "strength": 0.7},
+            },
+            'Add cum effect to scene': {
+                "prompt_hint": 'cum on her face, semen on her face, cum dripping, realistic fluid, natural lighting on wet skin, glistening highlights',
+                "denoise": 0.65, "steps": 22,
+                "lora": {"path": 'A-Flux\\NSFW\\cum_on_face_v2.safetensors', "strength": 0.7},
+            },
             "(custom — manual settings)": {
                 "prompt_hint": "",
                 "denoise": 0.80, "steps": 20,
@@ -14184,6 +14445,475 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Klein Inpaint Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Klein Detail Enhancer ─────────────────────────────────────────
+    def _run_klein_detail(self, procedure, run_mode, image, drawables, config, data):
+        """Klein Detail Enhancer: enhance any region with presets."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+        _apply_spellcaster_theme()
+        dlg = Gtk.Dialog(title="Spellcaster — Klein Detail Enhancer")
+        dlg.set_default_size(560, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Enhance", Gtk.ResponseType.OK)
+        dlg.set_default_response(Gtk.ResponseType.OK)
+        _style_dialog_buttons(dlg)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+        _hdr = _make_branded_header()
+        if _hdr:
+            bx.pack_start(_hdr, False, False, 0)
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
+        hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        # Klein model
+        bx.pack_start(Gtk.Label(label="Klein Model:", xalign=0), False, False, 0)
+        klein_combo = Gtk.ComboBoxText()
+        for key in KLEIN_MODELS:
+            klein_combo.append(key, key)
+        klein_combo.set_active(0)
+        bx.pack_start(klein_combo, False, False, 0)
+        # Detail preset
+        bx.pack_start(Gtk.Separator(), False, False, 4)
+        bx.pack_start(Gtk.Label(label="Detail Region:", xalign=0), False, False, 0)
+        preset_combo = Gtk.ComboBoxText()
+        preset_combo.set_tooltip_text(
+            "Select what to enhance. Each preset uses the optimal\n"
+            "detection method and refinement prompt for that region.\n\n"
+            "YOLO presets (Face, Hands, Full Body): fast bbox detection\n"
+            "SAM3 presets (Eyes, Skin, Hair, etc.): AI text-prompted segmentation")
+        for key in DETAIL_PRESETS:
+            preset_combo.append(key, key)
+        preset_combo.set_active(0)
+        bx.pack_start(preset_combo, False, False, 0)
+        # Prompt (auto-filled from preset)
+        bx.pack_start(Gtk.Label(label="Refinement Prompt:", xalign=0), False, False, 0)
+        prompt_tv = Gtk.TextView()
+        prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        prompt_tv.set_tooltip_text("Describes how the region should look after enhancement.\nAuto-filled from the preset — edit to customize.")
+        sw = Gtk.ScrolledWindow(); sw.set_min_content_height(60); sw.add(prompt_tv)
+        bx.pack_start(sw, False, False, 0)
+        # SAM3 custom prompt (for Custom preset)
+        sam3_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        sam3_row.pack_start(Gtk.Label(label="Detect (SAM3):"), False, False, 0)
+        sam3_entry = Gtk.Entry(); sam3_entry.set_text(""); sam3_entry.set_hexpand(True)
+        sam3_entry.set_tooltip_text("For SAM3 presets: what to detect (e.g. 'eyes', 'shirt', 'ring').\nAuto-filled from preset — only edit for Custom.")
+        sam3_row.pack_start(sam3_entry, True, True, 0)
+        bx.pack_start(sam3_row, False, False, 0)
+        # Parameters
+        bx.pack_start(Gtk.Separator(), False, False, 4)
+        grid = Gtk.Grid(column_spacing=8, row_spacing=4)
+        r = 0
+        grid.attach(Gtk.Label(label="Steps:", xalign=1), 0, r, 1, 1)
+        steps_spin = Gtk.SpinButton.new_with_range(1, 50, 1); steps_spin.set_value(6)
+        grid.attach(steps_spin, 1, r, 1, 1)
+        grid.attach(Gtk.Label(label="Denoise:", xalign=1), 2, r, 1, 1)
+        denoise_spin = Gtk.SpinButton.new_with_range(0.05, 1.0, 0.05)
+        denoise_spin.set_digits(2); denoise_spin.set_value(0.40)
+        grid.attach(denoise_spin, 3, r, 1, 1)
+        r += 1
+        grid.attach(Gtk.Label(label="Seed:", xalign=1), 0, r, 1, 1)
+        seed_spin = Gtk.SpinButton.new_with_range(-1, 2**31, 1); seed_spin.set_value(-1)
+        grid.attach(seed_spin, 1, r, 1, 1)
+        bx.pack_start(grid, False, False, 0)
+        # Preset change handler
+        def _on_preset_changed(combo):
+            key = combo.get_active_id()
+            if key and key in DETAIL_PRESETS:
+                p = DETAIL_PRESETS[key]
+                prompt_tv.get_buffer().set_text(p.get("prompt", ""))
+                sam3_entry.set_text(p.get("sam3_prompt", ""))
+                denoise_spin.set_value(p.get("denoise", 0.40))
+                steps_spin.set_value(p.get("steps", 6))
+        preset_combo.connect("changed", _on_preset_changed)
+        _on_preset_changed(preset_combo)  # init
+        bx.show_all()
+        # Recall
+        last = _SESSION.get("klein_detail")
+        if last:
+            if "preset" in last:
+                preset_combo.set_active_id(last["preset"])
+            if "klein_model" in last:
+                klein_combo.set_active_id(last["klein_model"])
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        srv = se.get_text().strip(); _propagate_server_url(srv)
+        klein_key = klein_combo.get_active_id() or "Klein 9B"
+        preset_key = preset_combo.get_active_id() or "Face (sharp eyes, skin)"
+        buf = prompt_tv.get_buffer()
+        prompt = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
+        sam3_text = sam3_entry.get_text().strip()
+        _steps = int(steps_spin.get_value())
+        _denoise = denoise_spin.get_value()
+        seed = int(seed_spin.get_value())
+        if seed < 0:
+            seed = random.randint(0, 2**32 - 1)
+        _SESSION["klein_detail"] = {"preset": preset_key, "klein_model": klein_key}
+        _save_session()
+        dlg.destroy()
+        try:
+            _update_spinner_status("Klein Detail: exporting image...")
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_detail_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            wf = build_klein_detail(
+                uname, preset_key, prompt, seed,
+                klein_model_key=klein_key, steps=_steps, denoise=_denoise,
+                sam3_prompt=sam3_text if sam3_text else None,
+            )
+            results = _run_with_spinner(f"Klein Detail ({preset_key})...",
+                                        lambda: list(_run_comfyui_workflow(srv, wf)))
+            for i, (fn, sf, ft) in enumerate(results):
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
+                                 f"Detail: {preset_key} #{i+1}", False)
+            _LAST_PROCEDURE["name"] = "spellcaster-klein-detail"
+            _LAST_PROCEDURE["session_key"] = "klein_detail"
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Klein Detail Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Klein Generate Object ─────────────────────────────────────────
+    def _run_klein_generate(self, procedure, run_mode, image, drawables, config, data):
+        """Klein Generate Object: create any object/person as a transparent layer."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+        _apply_spellcaster_theme()
+        dlg = Gtk.Dialog(title="Spellcaster — Klein Generate Object")
+        dlg.set_default_size(560, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Generate", Gtk.ResponseType.OK)
+        dlg.set_default_response(Gtk.ResponseType.OK)
+        _style_dialog_buttons(dlg)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+        _hdr = _make_branded_header()
+        if _hdr:
+            bx.pack_start(_hdr, False, False, 0)
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
+        hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        # Klein model
+        bx.pack_start(Gtk.Label(label="Klein Model:", xalign=0), False, False, 0)
+        klein_combo = Gtk.ComboBoxText()
+        for key in KLEIN_MODELS:
+            klein_combo.append(key, key)
+        klein_combo.set_active(0)
+        bx.pack_start(klein_combo, False, False, 0)
+        # Object description
+        bx.pack_start(Gtk.Separator(), False, False, 4)
+        bx.pack_start(Gtk.Label(label="What to Generate:", xalign=0), False, False, 0)
+        prompt_tv = Gtk.TextView()
+        prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        prompt_tv.set_tooltip_text(
+            "Describe what you want to generate. Be specific:\n\n"
+            "  'a red sports car, side view'\n"
+            "  'a tabby cat sitting and looking at the camera'\n"
+            "  'a medieval sword with ornate golden handle'\n"
+            "  'a woman in a blue dress, full body, fashion pose'\n\n"
+            "The object will be generated to match your canvas's\n"
+            "lighting and color palette, then cut out as a\n"
+            "transparent layer you can move and scale freely.")
+        sw = Gtk.ScrolledWindow(); sw.set_min_content_height(80); sw.add(prompt_tv)
+        bx.pack_start(sw, False, False, 0)
+        # Info label
+        info = Gtk.Label()
+        info.set_markup(
+            '<span size="small" color="#A88B7F">'
+            'Your current canvas is used as a lighting/style reference.\n'
+            'The generated object will match the scene automatically.\n'
+            'Result: transparent PNG layer — move and scale freely.</span>')
+        info.set_line_wrap(True)
+        bx.pack_start(info, False, False, 4)
+        # Parameters
+        bx.pack_start(Gtk.Separator(), False, False, 4)
+        grid = Gtk.Grid(column_spacing=8, row_spacing=4)
+        r = 0
+        grid.attach(Gtk.Label(label="Steps:", xalign=1), 0, r, 1, 1)
+        steps_spin = Gtk.SpinButton.new_with_range(1, 50, 1); steps_spin.set_value(6)
+        steps_spin.set_tooltip_text("More steps = higher quality, slower. 4-8 recommended for Klein.")
+        grid.attach(steps_spin, 1, r, 1, 1)
+        grid.attach(Gtk.Label(label="Guidance:", xalign=1), 2, r, 1, 1)
+        guidance_spin = Gtk.SpinButton.new_with_range(0.5, 10.0, 0.5)
+        guidance_spin.set_digits(1); guidance_spin.set_value(3.5)
+        guidance_spin.set_tooltip_text("How closely to follow the prompt. 3.0-5.0 recommended.")
+        grid.attach(guidance_spin, 3, r, 1, 1)
+        r += 1
+        grid.attach(Gtk.Label(label="Seed:", xalign=1), 0, r, 1, 1)
+        seed_spin = Gtk.SpinButton.new_with_range(-1, 2**31, 1); seed_spin.set_value(-1)
+        grid.attach(seed_spin, 1, r, 1, 1)
+        bx.pack_start(grid, False, False, 0)
+        # Runs
+        _add_runs_spinner(dlg, bx)
+        bx.show_all()
+        # Recall
+        last = _SESSION.get("klein_generate")
+        if last:
+            if "klein_model" in last:
+                klein_combo.set_active_id(last["klein_model"])
+            if "prompt" in last:
+                prompt_tv.get_buffer().set_text(last["prompt"])
+            if "steps" in last:
+                steps_spin.set_value(last["steps"])
+            if "guidance" in last:
+                guidance_spin.set_value(last["guidance"])
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        srv = se.get_text().strip(); _propagate_server_url(srv)
+        klein_key = klein_combo.get_active_id() or "Klein 9B"
+        buf = prompt_tv.get_buffer()
+        prompt = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
+        _steps = int(steps_spin.get_value())
+        _guidance = guidance_spin.get_value()
+        seed = int(seed_spin.get_value())
+        if seed < 0:
+            seed = random.randint(0, 2**32 - 1)
+        runs = int(dlg._runs_spin.get_value())
+        _SESSION["klein_generate"] = {
+            "klein_model": klein_key, "prompt": prompt,
+            "steps": _steps, "guidance": _guidance,
+        }
+        _save_session()
+        dlg.destroy()
+        if not prompt.strip():
+            Gimp.message("Please describe what you want to generate.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        try:
+            _update_spinner_status("Klein Generate: exporting scene reference...")
+            tmp = _export_image_to_tmp(image)
+            scene_uname = f"gimp_scene_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, scene_uname); os.unlink(tmp)
+            base_seed = seed
+            for run_i in range(runs):
+                _seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+                # NSFW unlock LoRAs — injected by build_nsfw.py in NSFW edition.
+                # SFW: this is always None. NSFW: patched to a list of LoRA dicts.
+                # NSFW_KLEIN_UNLOCK_BEGIN (do not remove — build anchor)
+                _nsfw_loras = [
+                {
+                                "path": "loras/Flux-1-Dev/NSFW/NSFW-klein.safetensors",
+                                "strength": 0.85,
+                                "note": "NSFW for Klein architecture"
+                },
+                {
+                                "path": "loras/Flux-1-Dev/NSFW/Flux Klein - NSFW v2.safetensors",
+                                "strength": 0.85,
+                                "note": "Klein NSFW v2"
+                }
+]
+                # NSFW_KLEIN_UNLOCK_END
+                wf = build_klein_generate_object(
+                    scene_uname, prompt, _seed,
+                    klein_model_key=klein_key,
+                    width=image.get_width(), height=image.get_height(),
+                    steps=_steps, guidance=_guidance,
+                    nsfw_unlock_loras=_nsfw_loras,
+                )
+                label = f"Generate run {run_i+1}/{runs}" if runs > 1 else "Generating object"
+                _wf = wf
+                results = _run_with_spinner(f"Klein Generate: {label}...",
+                                            lambda: list(_run_comfyui_workflow(srv, _wf)))
+                # Import ONLY the transparent cutout (klein_object), not the raw generation
+                for fn, sf, ft in results:
+                    if 'object' in fn.lower() or 'rmbg' in fn.lower():
+                        _import_result_as_layer(
+                            image, _download_image(srv, fn, sf, ft),
+                            f"Generated: {prompt[:40]}{'...' if len(prompt) > 40 else ''} #{run_i+1}",
+                            keep_size=True)
+                        break
+                else:
+                    # Fallback: import the first result as transparent
+                    if results:
+                        fn, sf, ft = results[0]
+                        _import_result_as_layer(
+                            image, _download_image(srv, fn, sf, ft),
+                            f"Generated: {prompt[:40]} #{run_i+1}",
+                            keep_size=True)
+                Gimp.displays_flush()
+            _LAST_PROCEDURE["name"] = "spellcaster-klein-generate"
+            _LAST_PROCEDURE["session_key"] = "klein_generate"
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Klein Generate Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Generate Anything (all models) ────────────────────────────────
+    def _run_generate_anything(self, procedure, run_mode, image, drawables, config, data):
+        """Generate Anything: create any object as a transparent layer with ANY model."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+        _apply_spellcaster_theme()
+        dlg = Gtk.Dialog(title="Spellcaster — Generate Anything")
+        dlg.set_default_size(560, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Generate", Gtk.ResponseType.OK)
+        dlg.set_default_response(Gtk.ResponseType.OK)
+        _style_dialog_buttons(dlg)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+        _hdr = _make_branded_header()
+        if _hdr:
+            bx.pack_start(_hdr, False, False, 0)
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
+        hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        # Model selector — ALL models
+        bx.pack_start(Gtk.Label(label="Model:", xalign=0), False, False, 0)
+        model_combo = Gtk.ComboBoxText()
+        model_combo.set_tooltip_text(
+            "Any model works. Klein/Flux use scene reference for lighting.\n"
+            "SDXL/SD15 use quality tokens. Each model is auto-optimized.")
+        for i, p in enumerate(MODEL_PRESETS):
+            arch = p.get("arch", "")
+            # Add diamond indicators per architecture
+            if arch == "flux2klein":
+                prefix = "◇ "
+            elif arch == "flux_kontext":
+                prefix = "◆ "
+            elif arch in ("flux1dev",):
+                prefix = "◈ "
+            else:
+                prefix = ""
+            model_combo.append(str(i), f"{prefix}{p['label']}")
+        _fav = _load_config().get("favourite_model", -1)
+        if 0 <= _fav < len(MODEL_PRESETS):
+            model_combo.set_active_id(str(_fav))
+        if model_combo.get_active() < 0:
+            model_combo.set_active(0)
+        bx.pack_start(model_combo, False, False, 0)
+        # Object description
+        bx.pack_start(Gtk.Separator(), False, False, 4)
+        bx.pack_start(Gtk.Label(label="What to Generate:", xalign=0), False, False, 0)
+        prompt_tv = Gtk.TextView()
+        prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        prompt_tv.set_tooltip_text(
+            "Describe what to generate. The AI will create it on a white\n"
+            "background and cut it out as a transparent layer.\n\n"
+            "  'a red sports car, side view'\n"
+            "  'a tabby cat sitting'\n"
+            "  'a medieval sword with ornate handle'\n"
+            "  'a woman in a blue dress, full body'")
+        sw = Gtk.ScrolledWindow(); sw.set_min_content_height(70); sw.add(prompt_tv)
+        bx.pack_start(sw, False, False, 0)
+        # Negative prompt
+        bx.pack_start(Gtk.Label(label="Negative (optional):", xalign=0), False, False, 0)
+        neg_entry = Gtk.Entry()
+        neg_entry.set_text("blurry, low quality, deformed")
+        neg_entry.set_tooltip_text("What to avoid. Ignored by Flux/Klein models.")
+        bx.pack_start(neg_entry, False, False, 0)
+        # Info
+        info = Gtk.Label()
+        info.set_markup(
+            '<span size="small" color="#A88B7F">'
+            'Your canvas provides lighting/style reference for Flux/Klein models.\n'
+            'Result: transparent PNG layer — position and scale freely.\n'
+            '◇ = Flux 2 Klein  ◆ = Flux Kontext  ◈ = Flux Dev</span>')
+        info.set_line_wrap(True)
+        bx.pack_start(info, False, False, 4)
+        # Seed
+        seed_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        seed_row.pack_start(Gtk.Label(label="Seed (-1=rand):"), False, False, 0)
+        seed_spin = Gtk.SpinButton.new_with_range(-1, 2**31, 1); seed_spin.set_value(-1)
+        seed_row.pack_start(seed_spin, False, False, 0)
+        bx.pack_start(seed_row, False, False, 0)
+        # Runs
+        _add_runs_spinner(dlg, bx)
+        bx.show_all()
+        # Recall
+        last = _SESSION.get("generate_anything")
+        if last:
+            if "model_idx" in last:
+                model_combo.set_active_id(str(last["model_idx"]))
+            if "prompt" in last:
+                prompt_tv.get_buffer().set_text(last["prompt"])
+            if "negative" in last:
+                neg_entry.set_text(last["negative"])
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        srv = se.get_text().strip(); _propagate_server_url(srv)
+        idx = int(model_combo.get_active_id() or "0")
+        preset = dict(MODEL_PRESETS[idx])
+        preset["width"] = image.get_width()
+        preset["height"] = image.get_height()
+        buf = prompt_tv.get_buffer()
+        prompt = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
+        negative = neg_entry.get_text().strip()
+        seed = int(seed_spin.get_value())
+        if seed < 0:
+            seed = random.randint(0, 2**32 - 1)
+        runs = int(dlg._runs_spin.get_value())
+        _SESSION["generate_anything"] = {
+            "model_idx": idx, "prompt": prompt, "negative": negative,
+        }
+        _save_session()
+        dlg.destroy()
+        if not prompt.strip():
+            Gimp.message("Please describe what to generate.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        try:
+            _update_spinner_status("Generate Anything: preparing...")
+            # Upload scene as reference (for Klein/Flux lighting matching)
+            scene_uname = None
+            arch_key = preset.get("arch", "sdxl")
+            if arch_key in ("flux2klein", "flux1dev"):
+                tmp = _export_image_to_tmp(image)
+                scene_uname = f"gimp_scene_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, tmp, scene_uname); os.unlink(tmp)
+            # Auto-enhance prompt if enabled
+            prompt, negative = _auto_enhance(prompt, arch_key, negative)
+            base_seed = seed
+            for run_i in range(runs):
+                _seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+                wf = build_generate_anything(
+                    prompt, negative, _seed, preset,
+                    scene_filename=scene_uname,
+                )
+                label = f"run {run_i+1}/{runs}" if runs > 1 else "generating"
+                _wf = wf
+                results = _run_with_spinner(f"Generate Anything: {label}...",
+                                            lambda: list(_run_comfyui_workflow(srv, _wf)))
+                # Import the transparent cutout (generated_object), not raw
+                for fn, sf, ft in results:
+                    if 'object' in fn.lower() or 'rmbg' in fn.lower():
+                        _import_result_as_layer(
+                            image, _download_image(srv, fn, sf, ft),
+                            f"Generated: {prompt[:35]}... #{run_i+1}",
+                            keep_size=True)
+                        break
+                else:
+                    if results:
+                        fn, sf, ft = results[0]
+                        _import_result_as_layer(
+                            image, _download_image(srv, fn, sf, ft),
+                            f"Generated #{run_i+1}", keep_size=True)
+                Gimp.displays_flush()
+            _LAST_PROCEDURE["name"] = "spellcaster-generate-anything"
+            _LAST_PROCEDURE["session_key"] = "generate_anything"
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Generate Anything Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     # ── Layer Blend by Ratio (utility) ────────────────────────────────
@@ -16484,6 +17214,13 @@ class Spellcaster(Gimp.PlugIn):
         if not style_path:
             Gimp.message("No style reference image selected")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+        # Block architectures incompatible with IPAdapter
+        _st_arch = preset.get("arch", "sdxl")
+        if _st_arch in ("flux2klein", "flux_kontext", "chroma"):
+            Gimp.message(
+                f"Style Transfer uses IPAdapter, which is not supported by {preset.get('label', _st_arch)}.\n\n"
+                f"Use an SDXL, SD1.5, Illustrious, or Flux Dev model instead.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _update_spinner_status("Style Transfer: exporting images...")
             # Upload target (current canvas)
@@ -17689,6 +18426,14 @@ class Spellcaster(Gimp.PlugIn):
         }
         _save_session()
         dlg.destroy()
+        # Block architectures that don't support ControlNet
+        _colorize_arch = preset.get("arch", "sdxl")
+        _NO_CN_ARCHS = ("flux2klein", "flux_kontext", "chroma")
+        if _colorize_arch in _NO_CN_ARCHS:
+            Gimp.message(
+                f"Colorize requires ControlNet, which is not supported by {preset.get('label', _colorize_arch)}.\n\n"
+                f"Use an SDXL, SD1.5, Illustrious, or Flux Dev model instead.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _update_spinner_status("Colorize: exporting image...")
             tmp = _export_image_to_tmp(image)
@@ -19428,6 +20173,14 @@ class Spellcaster(Gimp.PlugIn):
             "Uniform — nurse / medical": "wearing medical scrubs, stethoscope, professional healthcare uniform, clean pressed",
             "Uniform — military": "wearing military combat uniform, camouflage pattern, tactical boots, dog tags",
             "Costume — superhero": "wearing a colorful superhero costume, cape flowing, spandex bodysuit, mask, heroic pose",
+
+            # ── NSFW outfits (auto-injected) ──
+            "Nude — artistic": "nude, artistic nude photography, tasteful, natural body, museum-quality fine art",
+            "Nude — casual": "nude, casual nudity, natural body, relaxed pose, authentic, no clothing",
+            "Lingerie — lace": "wearing delicate lace lingerie, sheer bra and panties, sensual, detailed fabric texture",
+            "Lingerie — silk": "wearing silk lingerie, satin chemise, elegant, smooth fabric draping",
+            "Swimwear — micro bikini": "wearing a micro bikini, string bikini, minimal coverage, beach body",
+            "Bodysuit — sheer": "wearing a sheer bodysuit, see-through fabric, body-hugging, mesh texture",
             # ── More casual ──
             "Casual — hoodie & joggers": "wearing a cozy oversized hoodie and jogger pants, comfortable loungewear, cotton fabric, relaxed fit",
             "Casual — crop top & skirt": "wearing a cropped top and mini skirt, trendy casual outfit, youthful style",
@@ -20023,15 +20776,18 @@ class Spellcaster(Gimp.PlugIn):
                 mask_result = results[0] if results else None
             if mask_result:
                 fn, sf, ft = mask_result
-                mask_path = _download_image(srv, fn, sf, ft)
+                mask_data = _download_image(srv, fn, sf, ft)
+                # Write mask bytes to a temp file for GIMP to load
+                mask_tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                mask_tmp.write(mask_data); mask_tmp.close()
                 # Load the mask as a temporary layer, convert to selection
-                _mask_image_to_gimp_selection(image, mask_path, feather)
-                os.unlink(mask_path)
-            # Also add the subject extraction as a new layer
+                _mask_image_to_gimp_selection(image, mask_tmp.name, feather)
+                os.unlink(mask_tmp.name)
+            # Also add the subject extraction as a new layer (at natural size)
             for fn, sf, ft in results:
                 if 'subject' in fn.lower():
-                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
-                                     f"SAM3: {prompt}", False)
+                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+                                            f"SAM3: {prompt}", keep_size=True)
                     break
             Gimp.displays_flush()
             Gimp.progress_end()
@@ -20090,8 +20846,11 @@ class Spellcaster(Gimp.PlugIn):
             results = _run_with_spinner("SAM3 Extract: processing...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
             for i, (fn, sf, ft) in enumerate(results):
-                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
-                                 f"SAM3 Extracted: {prompt} #{i+1}", False)
+                # Import at natural size — the result is full-canvas with alpha,
+                # so it overlays exactly on top of the original subject position.
+                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+                                        f"SAM3 Extracted: {prompt} #{i+1}",
+                                        keep_size=True)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -21025,6 +21784,59 @@ class Spellcaster(Gimp.PlugIn):
         clean_btn.connect("clicked", _clean_inputs_now)
         bx.pack_start(clean_btn, False, False, 0)
 
+        # ── AI Prompt Enhancement ──
+        bx.pack_start(Gtk.Separator(), False, False, 5)
+        bx.pack_start(Gtk.Label(label="AI Prompt Enhancement:", xalign=0), False, False, 0)
+        enhance_cb = Gtk.CheckButton(label="Automatically enhance prompts via local LLM")
+        enhance_cb.set_active(cfg.get("prompt_enhance", False))
+        enhance_cb.set_tooltip_text(
+            "When enabled, every prompt you type is automatically rewritten\n"
+            "by a local LLM (KoboldCpp, Ollama, or any OpenAI-compatible API)\n"
+            "before being sent to ComfyUI.\n\n"
+            "The rewrite is architecture-aware:\n"
+            "  • SDXL: tag-style with quality tokens\n"
+            "  • Flux/Kontext: natural language descriptions\n"
+            "  • Klein: concise, focused prompts\n"
+            "  • Illustrious: booru/danbooru tags\n\n"
+            "Requires a running LLM server (KoboldCpp recommended).\n"
+            "If the LLM is unreachable, your original prompt is used as-is.")
+        bx.pack_start(enhance_cb, False, False, 0)
+
+        llm_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        llm_row.pack_start(Gtk.Label(label="LLM Server:"), False, False, 0)
+        llm_entry = Gtk.Entry()
+        llm_entry.set_text(cfg.get("llm_url", "http://127.0.0.1:5001"))
+        llm_entry.set_hexpand(True)
+        llm_entry.set_tooltip_text(
+            "URL of your local LLM server for prompt enhancement.\n\n"
+            "KoboldCpp: http://127.0.0.1:5001 (default)\n"
+            "Ollama:    http://127.0.0.1:11434\n"
+            "LM Studio: http://127.0.0.1:1234\n\n"
+            "Must support OpenAI-compatible /v1/chat/completions endpoint.")
+        llm_row.pack_start(llm_entry, True, True, 0)
+        # Test LLM button
+        test_llm_btn = Gtk.Button(label="Test")
+        test_llm_status = Gtk.Label(label="")
+        def _on_test_llm(btn):
+            url = llm_entry.get_text().strip().rstrip("/")
+            try:
+                req = urllib.request.Request(f"{url}/api/v1/model", method="GET")
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    data = json.loads(resp.read())
+                model_name = data.get("result", "unknown")
+                test_llm_status.set_markup(f'<span foreground="#00E676">✓ {model_name}</span>')
+            except Exception:
+                try:
+                    req = urllib.request.Request(f"{url}/v1/models", method="GET")
+                    with urllib.request.urlopen(req, timeout=5) as resp:
+                        test_llm_status.set_markup('<span foreground="#00E676">✓ Connected</span>')
+                except Exception as e2:
+                    test_llm_status.set_markup(f'<span foreground="#FF5252">✗ Offline</span>')
+        test_llm_btn.connect("clicked", _on_test_llm)
+        llm_row.pack_start(test_llm_btn, False, False, 0)
+        llm_row.pack_start(test_llm_status, False, False, 0)
+        bx.pack_start(llm_row, False, False, 0)
+
         # ── Auto-update toggle ──
         bx.pack_start(Gtk.Separator(), False, False, 5)
         auto_update_cb = Gtk.CheckButton(label="Auto-update plugin from GitHub on startup")
@@ -21253,8 +22065,14 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
 
         # Apply timeout globally for this session
-        global WORKFLOW_TIMEOUT
+        global WORKFLOW_TIMEOUT, _PROMPT_ENHANCE, _LLM_URL
         WORKFLOW_TIMEOUT = new_timeout
+
+        # Apply prompt enhancement settings globally for this session
+        new_enhance = enhance_cb.get_active()
+        new_llm = llm_entry.get_text().strip().rstrip("/")
+        _PROMPT_ENHANCE = new_enhance
+        _LLM_URL = new_llm
 
         # Parse extra workflow dirs from expert settings
         _buf = extra_dirs_buf
@@ -21270,9 +22088,12 @@ class Spellcaster(Gimp.PlugIn):
             "output_dir": new_output_dir,
             "output_cleanup": new_cleanup,
             "extra_workflow_dirs": _extra_dirs,
+            "prompt_enhance": new_enhance,
+            "llm_url": new_llm,
         })
         _propagate_server_url(new_url)
-        Gimp.message(f"Settings saved. Server: {new_url}")
+        enhance_msg = " | AI Enhance: ON" if new_enhance else ""
+        Gimp.message(f"Settings saved. Server: {new_url}{enhance_msg}")
         return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
 
