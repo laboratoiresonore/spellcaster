@@ -3873,16 +3873,20 @@ def _mask_image_to_gimp_selection(image, mask_path, feather=4):
         image.insert_layer(tmp_layer, None, 0)
 
         # Create channel from visible (= just the mask layer)
-        chan = Gimp.Channel.new_from_visible(image, image, "_SAM3_sel")
-        image.insert_channel(chan, None, 0)
-
-        # Remove temp layer and restore original visibility
-        image.remove_layer(tmp_layer)
-        for layer, vis in orig_visibility:
+        try:
+            chan = Gimp.Channel.new_from_visible(image, image, "_SAM3_sel")
+            image.insert_channel(chan, None, 0)
+        finally:
+            # ALWAYS remove temp layer and restore visibility, even on error
             try:
-                layer.set_visible(vis)
+                image.remove_layer(tmp_layer)
             except Exception:
                 pass
+            for layer, vis in orig_visibility:
+                try:
+                    layer.set_visible(vis)
+                except Exception:
+                    pass
 
         # Load channel as selection (proven working pattern from line 4021)
         for op_val in [Gimp.ChannelOps.REPLACE, 2]:
@@ -20773,12 +20777,8 @@ class Spellcaster(Gimp.PlugIn):
                 # Load the mask as a temporary layer, convert to selection
                 _mask_image_to_gimp_selection(image, mask_tmp.name, feather)
                 os.unlink(mask_tmp.name)
-            # Also add the subject extraction as a new layer (at natural size)
-            for fn, sf, ft in results:
-                if 'subject' in fn.lower():
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                            f"SAM3: {prompt}", keep_size=True)
-                    break
+            # Selection is now active (marching ants). Don't import any
+            # layers — the user wants a selection, not a layer.
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
