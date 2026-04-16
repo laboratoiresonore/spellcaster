@@ -395,11 +395,10 @@ def _github_headers():
     return {"User-Agent": "spellcaster-gimp/2.0"}
 
 def _install_spellcaster_theme_to_disk():
-    """Write spellcaster-theme.css as GIMP's user CSS override (gimp.css).
+    """Install spellcaster-theme.css into GIMP's user theme directory.
 
-    GIMP 3.x loads gimp.css from the user config directory on every startup,
-    applying it ON TOP of the selected color scheme (Dark Colors, etc.).
-    This is the correct way to customize the full application appearance.
+    GIMP 3.x loads themes from themes/<ThemeName>/gimp.css when
+    ``(theme "Spellcaster")`` is set in gimprc.
 
     Writes to all detected GIMP config versions (3.0, 3.2, etc.).
     """
@@ -413,6 +412,8 @@ def _install_spellcaster_theme_to_disk():
             if not appdata:
                 return
             gimp_base = Path(appdata) / "GIMP"
+        elif sys.platform == "darwin":
+            gimp_base = Path.home() / "Library" / "Application Support" / "GIMP"
         else:
             gimp_base = Path.home() / ".config" / "GIMP"
 
@@ -421,15 +422,16 @@ def _install_spellcaster_theme_to_disk():
 
         import shutil
         installed = False
-        # Write gimp.css to ALL GIMP version directories found
         for version_dir in gimp_base.iterdir():
             if version_dir.is_dir() and version_dir.name[0].isdigit():
-                dest = version_dir / "gimp.css"
+                theme_dir = version_dir / "themes" / "Spellcaster"
+                theme_dir.mkdir(parents=True, exist_ok=True)
+                dest = theme_dir / "gimp.css"
                 if not dest.exists() or css_src.stat().st_mtime > dest.stat().st_mtime:
                     shutil.copy2(css_src, dest)
                     installed = True
         if installed:
-            print(f"[Spellcaster] Theme installed as gimp.css")
+            print(f"[Spellcaster] Theme installed to themes/Spellcaster/gimp.css")
     except Exception as e:
         print(f"Note: Could not install persistent theme: {e}")
 
