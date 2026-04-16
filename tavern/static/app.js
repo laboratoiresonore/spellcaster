@@ -595,17 +595,21 @@ async function initialize() {
     await syncServerLoraToggles();
 
     // Merge localStorage identities with server data.
-    // SERVER WINS for names and personalities (LLM-generated scaffold
-    // overrides are applied server-side). localStorage only provides
-    // fallback for avatar/animated URLs (cold-cache case) and
-    // user-explicit renames (detected by _user_renamed flag).
+    // SERVER ALWAYS WINS for names — the server applies LLM-generated
+    // scaffold overrides. localStorage names are actively purged to
+    // prevent stale model filenames from overriding creative names.
     let savedIdentities = JSON.parse(localStorage.getItem('guild_identities') || '{}');
+    let identitiesDirty = false;
     characters.forEach(char => {
         if(savedIdentities[char.id]) {
-            // Only use localStorage name if the USER explicitly renamed
-            // (not if it was auto-cached from a previous session)
+            // Server name always wins — purge stale localStorage name
+            // UNLESS the user explicitly renamed via the rename dialog
             if (savedIdentities[char.id]._user_renamed) {
                 char.name = savedIdentities[char.id].name || char.name;
+            } else if (savedIdentities[char.id].name && savedIdentities[char.id].name !== char.name) {
+                // Stale localStorage name differs from server — nuke it
+                savedIdentities[char.id].name = char.name;
+                identitiesDirty = true;
             }
             char.personality = savedIdentities[char.id].personality || char.personality;
             // Server wins for generated visuals; localStorage is fallback only
@@ -613,6 +617,9 @@ async function initialize() {
             char.animated_url = char.animated_url || savedIdentities[char.id].animated_url;
         }
     });
+    if (identitiesDirty) {
+        localStorage.setItem('guild_identities', JSON.stringify(savedIdentities));
+    }
 
     applyGlobalBackground();
     renderSidebar();
