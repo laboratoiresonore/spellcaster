@@ -1320,14 +1320,26 @@ def _llm_enhance_scaffolds():
     the wizard keeps its default name/description.
     """
     global _SCAFFOLD_OVERRIDES
+
+    # Check if any LLM is reachable (ComfyUI or KoboldCpp)
+    llm_available = False
     try:
-        # Quick reachability check — bail if LLM is down
-        test_url = f"{KOBOLD_URL}/v1/models"
-        req = urllib.request.Request(test_url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            if resp.status != 200:
-                return
+        from spellcaster_core.comfyui_llm import discover_llm
+        if discover_llm(COMFYUI_URL):
+            llm_available = True
     except Exception:
+        pass
+    if not llm_available:
+        try:
+            test_url = f"{KOBOLD_URL}/v1/models"
+            req = urllib.request.Request(test_url,
+                                        headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                if resp.status == 200:
+                    llm_available = True
+        except Exception:
+            pass
+    if not llm_available:
         print("  [Guild] LLM unreachable — skipping scaffold enhancement")
         return
 
@@ -1367,32 +1379,47 @@ def _llm_enhance_scaffolds():
         )
         user_msg = f"Model: {model_name}\nArchitecture: {arch}"
 
-        payload = {
-            "messages": [
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": user_msg},
-            ],
-            "max_tokens": 80,
-            "temperature": 0.8,
-        }
+        # Try ComfyUI LLM first, then KoboldCpp
+        text = None
+        try:
+            from spellcaster_core.comfyui_llm import generate_text
+            text = generate_text(
+                COMFYUI_URL, prompt=user_msg, system_prompt=system_msg,
+                max_tokens=80, temperature=0.8)
+        except Exception:
+            pass
+
+        if not text:
+            try:
+                payload = {
+                    "messages": [
+                        {"role": "system", "content": system_msg},
+                        {"role": "user", "content": user_msg},
+                    ],
+                    "max_tokens": 80,
+                    "temperature": 0.8,
+                }
+                url = f"{KOBOLD_URL}/v1/chat/completions"
+                body = json.dumps(payload).encode("utf-8")
+                req = urllib.request.Request(
+                    url, data=body,
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    result = json.loads(resp.read().decode("utf-8"))
+                text = (
+                    result.get("choices", [{}])[0]
+                    .get("message", {})
+                    .get("content", "")
+                    .strip()
+                )
+            except Exception:
+                pass
+
+        if not text:
+            continue
 
         try:
-            url = f"{KOBOLD_URL}/v1/chat/completions"
-            body = json.dumps(payload).encode("utf-8")
-            req = urllib.request.Request(
-                url, data=body,
-                headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
-
-            text = (
-                result.get("choices", [{}])[0]
-                .get("message", {})
-                .get("content", "")
-                .strip()
-            )
-
             # Parse NAME: and PERSONALITY: lines
             name_val = None
             personality_val = None
@@ -1425,7 +1452,7 @@ def _llm_enhance_scaffolds():
         except Exception as e:
             # Non-fatal — skip this wizard
             print(f"  [Guild] LLM scaffold enhance failed for {char_id}: {e}")
-            continue
+            continue  # noqa: E501
 
     if enhanced:
         _save_scaffold_overrides()
@@ -1463,6 +1490,18 @@ def _server_init(comfy_url=None):
     else:
         print(f"  [Guild] Privacy mode: OFF — files remain on ComfyUI server")
         print(f"  [Guild] Creations folder: {_CREATIONS_DIR}")
+
+    # LLM auto-detection — log which backend will be used
+    try:
+        from spellcaster_core.comfyui_llm import discover_llm
+        llm_info = discover_llm(COMFYUI_URL)
+        if llm_info:
+            print(f"  [Guild] LLM backend: ComfyUI ({llm_info['node_class']}, "
+                  f"{len(llm_info['models'])} models)")
+        else:
+            print(f"  [Guild] LLM backend: external ({KOBOLD_URL})")
+    except Exception:
+        print(f"  [Guild] LLM backend: external ({KOBOLD_URL})")
 
     # LLM-powered scaffold enhancement (background, non-blocking)
     # Names auto-detected wizards using the local LLM if available
@@ -2466,25 +2505,39 @@ def _save_anim_queue():
 _BANISHED_IDS = _load_banished_ids()
 
 def _llm_generate_local(payload, timeout=180):
-    """Call the local KoboldAI instance to generate text.
+    """Call a local LLM to generate text.
+
+    Tries ComfyUI LLM nodes first (if available), then falls back to
+    KoboldCpp's /api/v1/generate endpoint.
 
     Compatible with the payload format used in the frontend:
     {prompt, max_length, temperature, stop_sequence, ...}
 
-    Default timeout is 180 s — long enough for a remote KoboldCpp on
-    a modest CPU to respond even with a long prompt. The previous 60 s
-    was firing during avatar prompt enhancement on slower setups,
-    printing scary "Local generation failed: timed out" messages even
-    though the avatar still generated successfully without the LLM
-    enhancement (the caller's contract is that None means "skip the
-    enhancement, use the raw prompt").
+    Returns the KoboldCpp-format response dict, or None on failure.
     """
+    prompt_text = payload.get("prompt", "")
+    max_length = payload.get("max_length", 300)
+    temperature = payload.get("temperature", 0.7)
+
+    # ── Try ComfyUI LLM nodes first ──
+    try:
+        from spellcaster_core.comfyui_llm import generate_text
+        result = generate_text(
+            COMFYUI_URL, prompt=prompt_text,
+            max_tokens=max_length, temperature=temperature)
+        if result:
+            # Wrap in KoboldCpp-compatible response format
+            return {"results": [{"text": result}]}
+    except Exception:
+        pass
+
+    # ── Fall back to KoboldCpp ──
     try:
         kobold_payload = {
-            "prompt": payload.get("prompt", ""),
+            "prompt": prompt_text,
             "max_context_length": payload.get("max_context_length", 4096),
-            "max_length": payload.get("max_length", 300),
-            "temperature": payload.get("temperature", 0.7),
+            "max_length": max_length,
+            "temperature": temperature,
             "top_p": payload.get("top_p", 0.9),
             "rep_pen": payload.get("rep_pen", 1.15),
             "rep_pen_range": payload.get("rep_pen_range", 512),
@@ -2499,9 +2552,6 @@ def _llm_generate_local(payload, timeout=180):
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except Exception as e:
-        # Downgrade from "Local generation failed" (alarming) to a
-        # measured "enhancement skipped" since the caller treats None
-        # as a graceful fallback to the raw prompt.
         print(f"  [LLM] Enhancement skipped ({type(e).__name__}: {e}) — "
               f"continuing with un-enhanced prompt")
         return None
@@ -4819,149 +4869,9 @@ def _avatar_resolution(arch_key):
 #  LLM-based Prompt Enhancement
 # ═══════════════════════════════════════════════════════════════════════
 #
-# Calls the local LLM (KoboldCpp / OpenAI-compatible) to expand terse
-# user prompts into platform-optimised descriptions before they hit
-# ComfyUI.  Controlled by the PROMPT_ENHANCE global.
-
-# Architecture key → enhancement profile
-_ARCH_ENHANCE_PROFILES = {
-    # Flux 1 Dev — natural-language, moderate length, no quality tags
-    "flux1dev": {
-        "name": "Flux 1 Dev",
-        "style": "natural language, flowing description",
-        "length": "80-150 words",
-        "notes": (
-            "Flux excels with natural-language prompts. Write a vivid, "
-            "flowing paragraph. Do NOT use comma-separated tag lists. "
-            "Avoid quality tags like 'masterpiece' or '8k' — Flux ignores them. "
-            "Focus on subject, scene, lighting, mood, and composition."
-        ),
-    },
-    # Flux 2 Klein 4B/9B — concise natural language
-    "flux2klein": {
-        "name": "Flux 2 Klein",
-        "style": "concise natural language",
-        "length": "60-100 words",
-        "notes": (
-            "Klein responds best to short, focused natural-language prompts. "
-            "Keep it tight — one clear paragraph. No quality tags. "
-            "Describe the subject and scene directly."
-        ),
-    },
-    # Chroma — same as Klein (Flux2 family)
-    "chroma": {
-        "name": "Chroma",
-        "style": "concise natural language",
-        "length": "60-100 words",
-        "notes": (
-            "Chroma uses the same Flux 2 engine. Short, focused natural-language prompts. "
-            "Describe the subject and scene directly. No quality tags."
-        ),
-    },
-    # SDXL — hybrid tags + natural language
-    "sdxl": {
-        "name": "SDXL",
-        "style": "tag-based with natural language phrases",
-        "length": "40-80 words",
-        "notes": (
-            "SDXL responds to both tags and short phrases. Start with the subject, "
-            "then add style, lighting, and quality. Quality tags like 'masterpiece, "
-            "best quality, highly detailed' ARE effective. Use commas to separate concepts."
-        ),
-    },
-    # SD 1.5 — classic tag style
-    "sd15": {
-        "name": "Stable Diffusion 1.5",
-        "style": "comma-separated tags",
-        "length": "30-60 words",
-        "notes": (
-            "SD 1.5 works best with comma-separated tags/keywords. "
-            "Quality tags are essential: 'masterpiece, best quality, highly detailed'. "
-            "Order matters — put the most important concepts first. "
-            "Include style, medium, lighting, and composition tags."
-        ),
-    },
-    # Illustrious / Pony — anime-focused SDXL derivatives
-    "illustrious": {
-        "name": "Illustrious",
-        "style": "booru-style tags",
-        "length": "30-70 words",
-        "notes": (
-            "Illustrious is trained on booru/danbooru-style tags. Use short comma-separated "
-            "tags. Include character tags, pose, expression, outfit details. "
-            "Quality: 'masterpiece, best quality, absurdres'. "
-            "Use underscores in multi-word tags (e.g. long_hair, blue_eyes)."
-        ),
-    },
-    "pony": {
-        "name": "Pony Diffusion",
-        "style": "score-prefixed booru tags",
-        "length": "30-70 words",
-        "notes": (
-            "Pony Diffusion uses booru tags with score prefixes. "
-            "Start with 'score_9, score_8_up, score_7_up' for quality. "
-            "Then character/scene tags. Use underscores for multi-word tags."
-        ),
-    },
-    # WAN — video/image, natural language
-    "wan": {
-        "name": "WAN 2.1",
-        "style": "cinematic natural language",
-        "length": "80-150 words",
-        "notes": (
-            "WAN excels with cinematic, descriptive natural-language prompts. "
-            "Describe the scene as if writing a film shot — subject, action, "
-            "camera angle, lighting, atmosphere, motion. For video: include "
-            "movement descriptions. Keep it vivid and specific."
-        ),
-    },
-    # LTX Video
-    "ltx": {
-        "name": "LTX Video 2.3",
-        "style": "cinematic/filmic natural language",
-        "length": "100-200 words",
-        "notes": (
-            "LTX Video responds to extended cinematic descriptions. "
-            "Write as if describing a film scene: establish the setting, "
-            "describe the subject in detail, specify camera movement "
-            "(pan, dolly, tracking shot), lighting (golden hour, rim light), "
-            "mood, and temporal progression. Be specific about motion and timing."
-        ),
-    },
-    # SD3 / SD3 Turbo
-    "sd3": {
-        "name": "Stable Diffusion 3",
-        "style": "natural language with light tagging",
-        "length": "50-100 words",
-        "notes": (
-            "SD3 understands natural language well but also responds to tags. "
-            "Write a clear description with some quality markers. "
-            "Focus on subject, composition, and style."
-        ),
-    },
-    "sd3_turbo": {
-        "name": "SD3 Turbo",
-        "style": "natural language with light tagging",
-        "length": "50-100 words",
-        "notes": (
-            "SD3 Turbo — same prompting as SD3 but keep it concise. "
-            "Clear subject, style, and lighting. Moderate detail."
-        ),
-    },
-}
-
-# Fallback for unknown architectures
-_DEFAULT_ENHANCE_PROFILE = {
-    "name": "Generic",
-    "style": "descriptive natural language",
-    "length": "60-120 words",
-    "notes": (
-        "Write a clear, vivid description of the scene. "
-        "Include subject, setting, lighting, mood, and composition. "
-        "Be specific and descriptive."
-    ),
-}
-
+# Prompt enhancement — delegates to spellcaster_core.prompt_enhance
+# (single source of truth for arch profiles + LLM calling logic).
+# Tries ComfyUI LLM nodes first, then falls back to external KoboldCpp.
 
 def _is_direct_generation_prompt(text):
     """Heuristic: does this user message look like a direct image-gen request?
@@ -5015,80 +4925,27 @@ def _is_direct_generation_prompt(text):
 def _enhance_prompt(prompt_text, arch_key, is_negative=False):
     """Expand a terse user prompt into a platform-optimised description.
 
-    Calls the local LLM at KOBOLD_URL via the OpenAI-compatible
-    /v1/chat/completions endpoint.  Returns the original prompt
-    unchanged on any error (never blocks generation).
-
-    Args:
-        prompt_text:  The raw prompt string.
-        arch_key:     Architecture key (e.g. 'flux1dev', 'sdxl', 'wan').
-        is_negative:  If True, this is a negative prompt — skip enhancement.
+    Delegates to spellcaster_core.prompt_enhance which tries ComfyUI LLM
+    nodes first, then falls back to external KoboldCpp.  Returns the
+    original prompt unchanged on any error (never blocks generation).
     """
     if not PROMPT_ENHANCE:
         return prompt_text
-    if is_negative:
-        return prompt_text
-    if not prompt_text or not prompt_text.strip():
-        return prompt_text
-
-    # Don't enhance prompts that are already long / well-formed
-    word_count = len(prompt_text.split())
-    if word_count > 60:
-        return prompt_text
-
-    profile = _ARCH_ENHANCE_PROFILES.get(arch_key, _DEFAULT_ENHANCE_PROFILE)
-
-    system_msg = (
-        f"You are a prompt engineer for {profile['name']} image generation. "
-        f"Your ONLY job is to expand the user's short description into an optimised "
-        f"prompt for {profile['name']}.\n\n"
-        f"Target style: {profile['style']}\n"
-        f"Target length: {profile['length']}\n\n"
-        f"{profile['notes']}\n\n"
-        "RULES:\n"
-        "- Output ONLY the enhanced prompt text — no explanations, no labels, no markdown.\n"
-        "- Preserve the user's core intent exactly — do NOT change what they asked for.\n"
-        "- Add detail, atmosphere, lighting, and style where missing.\n"
-        "- Do NOT add NSFW content unless the input already contains it.\n"
-        "- Do NOT wrap the output in quotes."
-    )
-
-    user_msg = f"Enhance this prompt for {profile['name']}:\n{prompt_text}"
-
-    payload = {
-        "messages": [
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": user_msg},
-        ],
-        "max_tokens": 300,
-        "temperature": 0.7,
-        "stop": ["\n\n"],
-    }
 
     try:
-        url = f"{KOBOLD_URL}/v1/chat/completions"
-        body = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            url, data=body,
-            headers={"Content-Type": "application/json"},
+        from spellcaster_core.prompt_enhance import enhance_prompt
+        enhanced = enhance_prompt(
+            prompt_text, arch_key,
+            kobold_url=KOBOLD_URL,
+            is_negative=is_negative,
+            comfy_url=COMFYUI_URL,
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            result = json.loads(resp.read().decode("utf-8"))
-
-        enhanced = (
-            result.get("choices", [{}])[0]
-            .get("message", {})
-            .get("content", "")
-            .strip()
-        )
-
-        if enhanced and len(enhanced) > 10:
+        if enhanced and enhanced != prompt_text:
             print(f"  [Guild] Prompt enhanced ({arch_key}): "
                   f"{len(prompt_text.split())}→{len(enhanced.split())} words")
-            return enhanced
-        # LLM returned junk — fall back
+        return enhanced
+    except ImportError:
         return prompt_text
-
     except Exception as e:
         print(f"  [Guild] Prompt enhancement skipped ({arch_key}): {e}")
         return prompt_text

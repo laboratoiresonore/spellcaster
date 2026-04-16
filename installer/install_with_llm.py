@@ -1,28 +1,24 @@
 """
-Spellcaster Installer — LLM-Enabled (EXPERIMENTAL)
-===================================================
+Spellcaster Installer — LLM-Enabled
+====================================
 
-This is a SEPARATE installer that auto-downloads and configures KoboldCpp
-plus a small GGUF chat model alongside the normal Spellcaster install.
-The regular installer (install.py) is untouched and remains the supported
-path for users who already have an LLM or don't want one.
+Installs Spellcaster with local LLM support for prompt enhancement
+and Wizard Guild chat.
 
-What this script does, in order:
-    1. Confirms the user really wants the experimental path.
-    2. Reuses install.py's path/server detection so we know where ComfyUI lives.
-    3. Downloads the latest KoboldCpp release for the user's platform into
-       <comfyui>/spellcaster_llm/.
-    4. Downloads a small GGUF chat model into <comfyui>/models/LLM/.
-    5. Generates a launch script (.bat / .sh) for KoboldCpp.
-    6. Spawns the launch script in the background and waits for the server
-       to come up on http://127.0.0.1:5001.
-    7. Continues install.py's normal pipeline with --llm-url pre-set so the
-       LLM step runs non-interactively.
-    8. Creates desktop / start-menu shortcuts so the user can re-launch the
-       LLM server on next boot.
+Two modes:
+    ComfyUI-native (default):
+        Installs the ComfyUI-QwenVL-Mod node pack and downloads a small
+        Qwen3 4B GGUF model into ComfyUI's models folder.  The LLM runs
+        inside ComfyUI — zero external dependencies, automatic VRAM
+        management.  This is the recommended path.
 
-Nothing in install.py is modified. If anything in this script fails the user
-can fall back to the regular installer at any time.
+    Standalone KoboldCpp (legacy):
+        Downloads KoboldCpp + a GGUF model, launches it as a separate
+        process on port 5001.  Use this if you want a dedicated LLM
+        server or if your ComfyUI server is remote.
+
+Nothing in install.py is modified. If anything in this script fails the
+user can fall back to the regular installer at any time.
 """
 
 from __future__ import annotations
@@ -86,33 +82,50 @@ C_CYAN = install.C_CYAN
 C_DIM = install.C_DIM
 
 
+COMFYUI_NATIVE_MODEL = {
+    "label": "Qwen3-4B-Instruct (Q4_K_M, ~2.5 GB) — runs inside ComfyUI",
+    "filename": "Qwen3-4B-Instruct-Q4_K_M.gguf",
+    "url": "https://huggingface.co/Qwen/Qwen3-4B-Instruct-GGUF/resolve/main/qwen3-4b-instruct-q4_k_m.gguf",
+    "dest_subdir": "LLM/GGUF/Qwen/Qwen3-4B-Instruct-GGUF",
+}
+
+COMFYUI_NODE_REPO = "https://github.com/Goekdeniz-Guelmez/ComfyUI-QwenVL-Mod"
+
+
 def banner():
     bar = "═" * 70
     print(f"\n{C_BOLD}{bar}{C_RESET}")
-    print(f"{C_BOLD}  SPELLCASTER INSTALLER — LLM-ENABLED  ({C_YELLOW}EXPERIMENTAL{C_BOLD}){C_RESET}")
+    print(f"{C_BOLD}  SPELLCASTER INSTALLER — WITH LLM{C_RESET}")
     print(f"{C_BOLD}{bar}{C_RESET}")
     print()
-    print(f"  This is the {C_YELLOW}experimental{C_RESET} installer. It will:")
-    print(f"    • Download KoboldCpp ({C_DIM}~80 MB{C_RESET})")
-    print(f"    • Download a small chat model ({C_DIM}~2 GB{C_RESET})")
-    print(f"    • Install both inside your ComfyUI folder")
-    print(f"    • Auto-launch the LLM and run the regular Spellcaster installer")
-    print(f"    • Create desktop / start-menu shortcuts")
+    print(f"  This installer adds local LLM support for:")
+    print(f"    • Architecture-aware prompt enhancement")
+    print(f"    • Wizard Guild wizard chat & naming")
     print()
-    print(f"  {C_DIM}If you just want the supported installer with no LLM auto-setup,")
-    print(f"  {C_DIM}cancel and run:  {C_CYAN}python install.py{C_RESET}")
+    print(f"  {C_GREEN}Recommended:{C_RESET} ComfyUI-native mode")
+    print(f"    Installs a small LLM inside ComfyUI ({C_DIM}~2.5 GB{C_RESET})")
+    print(f"    Zero external dependencies, automatic VRAM management.")
+    print()
+    print(f"  {C_DIM}Alternative: standalone KoboldCpp (separate process on port 5001){C_RESET}")
     print()
 
 
-def confirm_proceed(args) -> bool:
+def choose_llm_mode(args) -> str:
+    """Let the user choose between ComfyUI-native and standalone KoboldCpp."""
     if getattr(args, "yes", False):
-        print(f"  {C_DIM}--yes specified, skipping confirmation.{C_RESET}\n")
-        return True
-    try:
-        ans = input(f"  Type {C_BOLD}yes{C_RESET} to proceed with the experimental installer: ").strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        return False
-    return ans == "yes"
+        print(f"  {C_DIM}--yes specified, using ComfyUI-native mode.{C_RESET}\n")
+        return "comfyui"
+
+    choice = install.ask_choice(
+        "LLM installation mode",
+        [
+            "ComfyUI-native  (recommended — runs inside ComfyUI, zero config)",
+            "Standalone KoboldCpp  (separate process, legacy mode)",
+        ],
+        default=0,
+        auto_yes=args.yes,
+    )
+    return "comfyui" if choice == 0 else "koboldcpp"
 
 
 # ── KoboldCpp download ───────────────────────────────────────────────────────
@@ -488,12 +501,53 @@ def install_llm_shortcuts(launch_script: Path) -> list[Path]:
 
 # ── Pipeline ─────────────────────────────────────────────────────────────────
 
+def _install_comfyui_native(args, comfyui_root, paths, server_url):
+    """Install LLM natively inside ComfyUI (recommended path)."""
+    custom_nodes_dir = comfyui_root / "custom_nodes"
+    models_dir = comfyui_root / "models"
+
+    # 1. Install ComfyUI-QwenVL-Mod node pack
+    dest = custom_nodes_dir / "ComfyUI-QwenVL-Mod"
+    if dest.exists():
+        print(f"  {C_CYAN}✓ ComfyUI-QwenVL-Mod already installed{C_RESET}")
+    else:
+        print(f"  Installing ComfyUI-QwenVL-Mod node pack...")
+        if not args.dry_run:
+            success = install.git_clone(COMFYUI_NODE_REPO, dest, False)
+            if success:
+                install.install_node_requirements(dest, comfyui_root, False)
+                print(f"  {C_GREEN}✓ ComfyUI-QwenVL-Mod installed{C_RESET}")
+            else:
+                print(f"  {C_RED}✗ Failed to install ComfyUI-QwenVL-Mod{C_RESET}")
+                return 3
+
+    # 2. Download GGUF model
+    model_info = COMFYUI_NATIVE_MODEL
+    model_dir = models_dir / model_info["dest_subdir"]
+    model_path = model_dir / model_info["filename"]
+
+    if model_path.exists():
+        print(f"  {C_CYAN}✓ Model already downloaded: {model_info['filename']}{C_RESET}")
+    else:
+        print(f"  Downloading {model_info['filename']} (~2.5 GB)...")
+        if not args.dry_run:
+            model_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                install.download_file(model_info["url"], model_path)
+                print(f"  {C_GREEN}✓ Model downloaded: {model_path}{C_RESET}")
+            except Exception as e:
+                print(f"  {C_RED}✗ Download failed: {e}{C_RESET}")
+                return 4
+
+    print(f"\n  {C_GREEN}ComfyUI-native LLM ready.{C_RESET}")
+    print(f"  {C_DIM}The LLM loads inside ComfyUI when needed and auto-unloads{C_RESET}")
+    print(f"  {C_DIM}during image generation to free VRAM. Zero config needed.{C_RESET}")
+    return 0
+
+
 def main():
     args = install.build_arg_parser().parse_args()
     banner()
-    if not confirm_proceed(args):
-        print(f"\n  {C_YELLOW}Aborted by user. Run install.py for the supported installer.{C_RESET}\n")
-        return 1
 
     if args.dry_run:
         print(f"  {C_YELLOW}DRY RUN MODE — no changes will be made{C_RESET}\n")
@@ -511,88 +565,101 @@ def main():
     install.step_system_detection(args)
     install.step_api_keys(args)
     server_url = install.step_detect_server(args)
-
-    # We need ComfyUI's path BEFORE downloading anything so the LLM and
-    # the GGUF land in the right folders. install.main() runs detect_paths
-    # later, but the function is idempotent enough to call early.
     paths = install.step_detect_paths(args)
+
     comfyui_root = paths.get("comfyui")
     if not comfyui_root:
-        print(f"\n  {C_RED}✗ ComfyUI path not detected. The LLM installer needs a ComfyUI{C_RESET}")
-        print(f"  {C_RED}  install to put files into. Re-run with --comfyui <path>.{C_RESET}\n")
+        print(f"\n  {C_RED}✗ ComfyUI path not detected. Re-run with --comfyui <path>.{C_RESET}\n")
         return 2
     comfyui_root = Path(comfyui_root)
-    print(f"\n  {C_GREEN}Installing LLM stack into:{C_RESET} {comfyui_root}")
 
-    llm_dir = comfyui_root / "spellcaster_llm"
-    models_dir = comfyui_root / "models" / "LLM"
-
-    # Skip downloads in dry-run
-    if args.dry_run:
-        print(f"\n  {C_YELLOW}[dry-run] would download KoboldCpp → {llm_dir}{C_RESET}")
-        print(f"  {C_YELLOW}[dry-run] would download GGUF model → {models_dir}{C_RESET}")
-        print(f"  {C_YELLOW}[dry-run] would launch LLM and run install.py pipeline{C_RESET}")
-        return 0
-
-    kobold_path = download_koboldcpp(llm_dir)
-    if not kobold_path:
-        print(f"\n  {C_RED}KoboldCpp download failed. Aborting.{C_RESET}")
-        print(f"  {C_DIM}You can re-run install.py to install Spellcaster without an LLM.{C_RESET}\n")
-        return 3
-
-    model_choice = choose_model(args)
-    model_path: Path | None = None
-    if model_choice:
-        model_path = download_model(model_choice, models_dir)
-        if not model_path:
-            print(f"\n  {C_RED}Model download failed. Aborting.{C_RESET}")
-            print(f"  {C_DIM}You can re-run install.py to install Spellcaster without an LLM.{C_RESET}\n")
-            return 4
-    else:
-        print(f"  {C_YELLOW}No model selected. You will need to point KoboldCpp at one yourself.{C_RESET}")
-
-    # Generate launch script (only if we actually have a model)
+    # ── Choose LLM mode ──
+    mode = choose_llm_mode(args)
     launch_script = None
-    if model_path:
-        launch_script = write_launch_script(kobold_path, model_path, llm_dir)
 
-        proc = spawn_llm(launch_script)
-        if proc and wait_for_llm_ready():
-            args.llm_url = LLM_LOCAL_URL
-        else:
-            print(f"\n  {C_YELLOW}LLM did not start cleanly. Continuing install without LLM URL.{C_RESET}")
-            print(f"  {C_DIM}You can launch it manually later: {launch_script}{C_RESET}")
+    if mode == "comfyui":
+        # ── ComfyUI-native path (recommended) ──
+        print(f"\n  {C_GREEN}Installing ComfyUI-native LLM into:{C_RESET} {comfyui_root}")
+        rc = _install_comfyui_native(args, comfyui_root, paths, server_url)
+        if rc != 0:
+            return rc
+        # Auto-select prompt_enhance feature
+        args.llm_url = ""  # No external LLM needed
+
     else:
-        print(f"  {C_DIM}Skipping LLM launch (no model).{C_RESET}")
+        # ── Standalone KoboldCpp path (legacy) ──
+        print(f"\n  {C_GREEN}Installing standalone KoboldCpp into:{C_RESET} {comfyui_root}")
+
+        llm_dir = comfyui_root / "spellcaster_llm"
+        models_dir = comfyui_root / "models" / "LLM"
+
+        if args.dry_run:
+            print(f"\n  {C_YELLOW}[dry-run] would download KoboldCpp → {llm_dir}{C_RESET}")
+            print(f"  {C_YELLOW}[dry-run] would download GGUF model → {models_dir}{C_RESET}")
+        else:
+            kobold_path = download_koboldcpp(llm_dir)
+            if not kobold_path:
+                print(f"\n  {C_RED}KoboldCpp download failed. Aborting.{C_RESET}")
+                return 3
+
+            model_choice = choose_model(args)
+            model_path: Path | None = None
+            if model_choice:
+                model_path = download_model(model_choice, models_dir)
+                if not model_path:
+                    print(f"\n  {C_RED}Model download failed. Aborting.{C_RESET}")
+                    return 4
+            else:
+                print(f"  {C_YELLOW}No model selected.{C_RESET}")
+
+            if model_path:
+                launch_script = write_launch_script(kobold_path, model_path,
+                                                    llm_dir)
+                proc = spawn_llm(launch_script)
+                if proc and wait_for_llm_ready():
+                    args.llm_url = LLM_LOCAL_URL
+                else:
+                    print(f"\n  {C_YELLOW}LLM did not start. Launch manually: "
+                          f"{launch_script}{C_RESET}")
 
     # ── Continue install.py's normal pipeline ──
     print(f"\n{C_BOLD}── Continuing Spellcaster install ──{C_RESET}")
-    llm_url = install.step_detect_llm_server(args)  # picks up args.llm_url non-interactively
     server_info = install.step_probe_server(server_url, args)
+    llm_url = install.step_detect_llm_server(args, server_url, server_info)
     selected = install.step_select_features(manifest, paths, args, server_info)
 
+    # Auto-select prompt_enhance if ComfyUI-native mode
+    if mode == "comfyui" and "prompt_enhance" in selected:
+        selected["prompt_enhance"] = True
+
     if not args.skip_nodes:
-        install.step_install_nodes(manifest, selected, paths, args.dry_run, server_info)
-    else:
-        print(f"\n  {C_YELLOW}--skip-nodes specified — skipping custom node installation.{C_RESET}")
+        install.step_install_nodes(manifest, selected, paths, args.dry_run,
+                                   server_info)
 
     install.step_install_models(manifest, selected, paths, args)
-    install._write_shared_settings(paths, server_url, llm_url, server_info, args.dry_run)
+    install._write_shared_settings(paths, server_url, llm_url, server_info,
+                                   args.dry_run)
     install.step_install_plugins(paths, server_url, args.dry_run)
-    install.step_install_tavern(paths, server_url, llm_url, selected, args.dry_run, args.yes)
+    install.step_install_tavern(paths, server_url, llm_url, selected,
+                                args.dry_run, args.yes)
     install.step_import_luts(paths, args)
     install.step_apply_theme(paths, args.dry_run, args.yes)
     install.step_final_summary(manifest, selected, paths, server_url)
 
-    # ── Post-install: shortcuts for the LLM launcher ──
+    # ── Post-install cleanup ──
     if launch_script:
         install_llm_shortcuts(launch_script)
 
-    print(f"\n{C_BOLD}{'═' * 70}{C_RESET}")
-    print(f"{C_BOLD}  Done. The LLM is running on {LLM_LOCAL_URL}.{C_RESET}")
-    if launch_script:
-        print(f"  {C_DIM}Re-launch later with:{C_RESET} {launch_script}")
-    print(f"{C_BOLD}{'═' * 70}{C_RESET}\n")
+    bar = "═" * 70
+    print(f"\n{C_BOLD}{bar}{C_RESET}")
+    if mode == "comfyui":
+        print(f"{C_BOLD}  Done. LLM runs natively inside ComfyUI — no extra setup.{C_RESET}")
+        print(f"  {C_DIM}Restart ComfyUI to activate the new LLM nodes.{C_RESET}")
+    else:
+        print(f"{C_BOLD}  Done. LLM running on {LLM_LOCAL_URL}.{C_RESET}")
+        if launch_script:
+            print(f"  {C_DIM}Re-launch later with:{C_RESET} {launch_script}")
+    print(f"{C_BOLD}{bar}{C_RESET}\n")
     return 0
 
 

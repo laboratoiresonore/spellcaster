@@ -178,32 +178,23 @@ _DEFAULT_ENHANCE_PROFILE = {
 #  ENHANCEMENT FUNCTION
 # ═══════════════════════════════════════════════════════════════════════════
 
-def enhance_prompt(prompt_text, arch_key, kobold_url, is_negative=False):
+def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
+                   comfy_url=None):
     """Expand a terse user prompt into an architecture-optimised description.
 
-    Calls the local LLM at kobold_url via the OpenAI-compatible
-    /v1/chat/completions endpoint. Returns the original prompt unchanged
-    on any error (never blocks generation).
-
-    This function respects the architecture's prompt style preference
-    (booru_tags, natural language, etc) and expands the prompt accordingly.
+    Tries ComfyUI LLM nodes first (if comfy_url provided), then falls back
+    to the external LLM at kobold_url via OpenAI-compatible API.
+    Returns the original prompt unchanged on any error (never blocks generation).
 
     Args:
         prompt_text: The raw prompt string from the user
         arch_key: Architecture identifier (e.g. 'flux1dev', 'sdxl', 'wan')
-        kobold_url: Base URL of the LLM (e.g. 'http://127.0.0.1:5001')
+        kobold_url: Base URL of external LLM (e.g. 'http://127.0.0.1:5001')
         is_negative: If True, skip enhancement (negatives don't need expansion)
+        comfy_url: ComfyUI server URL — if set, tries native LLM nodes first
 
     Returns:
         Enhanced prompt string, or the original if enhancement fails
-
-    Example:
-        >>> enhanced = enhance_prompt(
-        ...     "cat",
-        ...     "sdxl",
-        ...     "http://127.0.0.1:5001"
-        ... )
-        >>> # Returns something like: "A detailed photograph of a cat..."
     """
     # Skip enhancement for negative prompts — they don't benefit from expansion
     if is_negative:
@@ -239,6 +230,22 @@ def enhance_prompt(prompt_text, arch_key, kobold_url, is_negative=False):
 
     user_msg = f"Enhance this prompt for {profile['name']}:\n{prompt_text}"
 
+    # ── Try ComfyUI LLM nodes first (if server URL provided) ──
+    if comfy_url:
+        try:
+            from .comfyui_llm import generate_text
+            enhanced = generate_text(
+                comfy_url, prompt=user_msg, system_prompt=system_msg,
+                max_tokens=300, temperature=0.7)
+            if enhanced and len(enhanced) > 10:
+                return enhanced
+        except Exception:
+            pass  # Fall through to KoboldCpp
+
+    # ── Fall back to external LLM (KoboldCpp / OpenAI-compatible) ──
+    if not kobold_url:
+        return prompt_text
+
     # Prepare the API payload (OpenAI-compatible format)
     payload = {
         "messages": [
@@ -251,15 +258,14 @@ def enhance_prompt(prompt_text, arch_key, kobold_url, is_negative=False):
     }
 
     try:
-        # Call the LLM API (45s timeout — reasoning models like DeepSeek-R1
-        # need 20-40s for short prompts due to chain-of-thought overhead)
+        # Call the LLM API
         url = f"{kobold_url.rstrip('/')}/v1/chat/completions"
         body = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
             url, data=body,
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=45) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:
             result = json.loads(resp.read().decode("utf-8"))
 
         # Extract the enhanced prompt from the response
@@ -269,26 +275,6 @@ def enhance_prompt(prompt_text, arch_key, kobold_url, is_negative=False):
             .get("content", "")
             .strip()
         )
-
-        # Strip <think>...</think> reasoning blocks from models like
-        # DeepSeek-R1, Qwen3, etc. that output chain-of-thought before
-        # the actual content. We only want the final answer.
-        import re
-        enhanced = re.sub(r"<think>.*?</think>", "", enhanced,
-                          flags=re.DOTALL).strip()
-
-        # Strip markdown code fences, quotes, and meta-text wrappers
-        if enhanced.startswith("```") and enhanced.endswith("```"):
-            enhanced = enhanced[3:-3].strip()
-        if enhanced.startswith('"') and enhanced.endswith('"'):
-            enhanced = enhanced[1:-1].strip()
-        # Remove common LLM meta-text prefixes
-        for prefix in ("Here is", "Here's", "Enhanced prompt:", "Sure,",
-                       "Certainly,", "Of course,"):
-            if enhanced.lower().startswith(prefix.lower()):
-                enhanced = enhanced[len(prefix):].strip().lstrip(":")
-                enhanced = enhanced.strip().lstrip('"').rstrip('"').strip()
-                break
 
         # Only use enhancement if it's meaningful (>10 chars)
         if enhanced and len(enhanced) > 10:
