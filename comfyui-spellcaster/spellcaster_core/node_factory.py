@@ -524,6 +524,59 @@ class NodeFactory:
                          {"model": model_ref, "shift": shift}, node_id)
 
     # ═══════════════════════════════════════════════════════════════════
+    #  FLUX2KLEIN-ENHANCER (OPTIONAL — from Sarcastic TOFU node pack)
+    # ═══════════════════════════════════════════════════════════════════
+    # These nodes are from the ComfyUI-Flux2Klein-Enhancer custom node
+    # pack. They hook into the sampler to improve Klein's reference
+    # latent fidelity and color stability. ALL are optional — workflows
+    # work without them, just with slightly lower reference fidelity.
+    # Spellcaster auto-detects whether they're installed and wires them
+    # in if available.
+
+    def flux2klein_ref_latent_controller(self, model_ref, strength=500,
+                                          node_id=None):
+        """FLUX.2 Klein Ref Latent Controller — controls reference latent
+        injection strength during sampling (1-1000, default 500).
+        Outputs: [0]=MODEL
+        """
+        return self._add("FLUX.2 Klein Ref Latent Controller", {
+            "model": model_ref, "strength": strength,
+        }, node_id)
+
+    def flux2klein_text_ref_balance(self, model_ref, balance=0.5,
+                                     node_id=None):
+        """FLUX.2 Klein Text/Ref Balance — balances text prompt adherence
+        vs reference preservation (0.0=text only, 0.999=ref only).
+        Outputs: [0]=MODEL
+        """
+        return self._add("FLUX.2 Klein Text/Ref Balance", {
+            "model": model_ref, "balance": min(balance, 0.999),
+        }, node_id)
+
+    def flux2klein_color_anchor(self, model_ref, strength=0.5,
+                                 ramp_curve=1.0, node_id=None):
+        """Color Anchor Node — measures per-channel color drift during
+        sampling and nudges it back to match the reference, fixing Klein's
+        known warm/red shift. strength 0.3-0.6 recommended.
+        Outputs: [0]=MODEL
+        """
+        return self._add("Color Anchor", {
+            "model": model_ref, "strength": strength,
+            "ramp_curve": ramp_curve,
+        }, node_id)
+
+    def flux2klein_mask_ref_controller(self, model_ref, mask_ref,
+                                        strength=0.5, node_id=None):
+        """FLUX.2 Klein Mask Ref Controller — mask-guided regional
+        conditioning: masked areas follow the prompt, unmasked areas
+        preserve the original structure. Beta/experimental.
+        Outputs: [0]=MODEL
+        """
+        return self._add("FLUX.2 Klein Mask Ref Controller", {
+            "model": model_ref, "mask": mask_ref, "strength": strength,
+        }, node_id)
+
+    # ═══════════════════════════════════════════════════════════════════
     #  LATENT OPERATIONS
     # ═══════════════════════════════════════════════════════════════════
     # Latents are the compressed (lower-dimensional) representation of images

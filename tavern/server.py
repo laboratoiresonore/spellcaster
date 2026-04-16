@@ -2643,6 +2643,37 @@ def _lora_blocked_for_model(info, wizard_model):
     return (len(recent) >= LORA_FAILURE_THRESHOLD), len(recent)
 
 
+# ═══════════════════════════════════════════════════════════════════════
+#  Flux2Klein-Enhancer detection — probe once per ComfyUI URL, cache
+# ═══════════════════════════════════════════════════════════════════════
+_KLEIN_ENHANCER_CACHE = {}  # {comfy_url: bool}
+
+def _klein_enhancer_available(comfy_url):
+    """Return True if the ComfyUI-Flux2Klein-Enhancer node pack is
+    installed on the given ComfyUI server. Cached per URL so we only
+    probe once per server process lifetime.
+
+    Checks for the 'FLUX.2 Klein Ref Latent Controller' class_type in
+    /object_info — if that node exists the rest of the pack is assumed
+    present (they're all in the same custom_nodes install).
+    """
+    if comfy_url in _KLEIN_ENHANCER_CACHE:
+        return _KLEIN_ENHANCER_CACHE[comfy_url]
+    try:
+        url = f"{comfy_url}/object_info/FLUX.2 Klein Ref Latent Controller"
+        url = url.replace(" ", "%20")
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            found = bool(data)
+    except Exception:
+        found = False
+    _KLEIN_ENHANCER_CACHE[comfy_url] = found
+    if found:
+        print("  [Klein] Flux2Klein-Enhancer nodes detected — enabling enhanced Klein pipelines")
+    return found
+
+
 def _fetch_all_loras_from_comfyui(comfy_url):
     """Fetch the complete LoRA list from ComfyUI's /object_info/LoraLoader."""
     try:
@@ -7298,6 +7329,11 @@ class GuildHandler(SimpleHTTPRequestHandler):
                         if 'prompt' in params:
                             _gen_arch = _wizard_arch or 'flux1dev'
                             params['prompt'] = _enhance_prompt(params['prompt'], _gen_arch)
+                        # Auto-inject Klein enhancer if the build function
+                        # supports it and the enhancer nodes are installed.
+                        if (build_fn_name.startswith('build_klein_')
+                                and 'enhance' not in params):
+                            params['enhance'] = _klein_enhancer_available(exec_comfy)
                         workflow = build_func(**params)
 
                 # Dispatch workflow to ComfyUI
