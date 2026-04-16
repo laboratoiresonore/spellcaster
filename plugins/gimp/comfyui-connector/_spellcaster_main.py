@@ -3853,34 +3853,38 @@ def _mask_image_to_gimp_selection(image, mask_path, feather=4):
             mask_img.scale(iw, ih)
 
         # 3. The mask is grayscale: white=subject, black=background.
-        # Convert it to a GIMP channel in the target image, then load
-        # that channel as the selection via gimp-image-select-item
-        # (proven working at line 4021 in _create_selection_mask_png).
+        # Strategy: make the mask the ONLY visible thing, then create a
+        # channel from the visible content. This avoids ALL broken APIs
+        # (Gimp.RGB, Gimp.ObjectArray, gimp-by-color-select, copy-paste).
         mask_layers = mask_img.get_layers()
         if not mask_layers:
             raise RuntimeError("Mask image has no layers")
 
-        # Create a channel in the TARGET image from the mask's layer
-        chan = Gimp.Channel.new(image, "_SAM3_sel", iw, ih, 100.0,
-                                Gegl.Color.new("black"))
-        image.insert_channel(chan, None, 0)
+        # Hide all existing layers in target image
+        orig_visibility = []
+        for layer in image.get_layers():
+            orig_visibility.append((layer, layer.get_visible()))
+            layer.set_visible(False)
 
-        # Copy mask pixels into the channel: add mask as temp layer,
-        # then flatten into the channel via copy-paste
+        # Copy mask layer into target image and make it the only visible layer
         tmp_layer = Gimp.Layer.new_from_drawable(mask_layers[0], image)
         tmp_layer.set_name("_SAM3_mask_tmp")
+        tmp_layer.set_visible(True)
         image.insert_layer(tmp_layer, None, 0)
 
-        # Select all on the tmp layer, copy, paste into channel
-        _pdb_run('gimp-selection-all', {'image': image})
-        _pdb_run('gimp-edit-copy', {'drawables': Gimp.ObjectArray.new(
-            Gimp.Drawable, [tmp_layer], False)})
-        floating = _pdb_run('gimp-edit-paste', {
-            'drawable': chan, 'paste-into': False})
-        _pdb_run('gimp-floating-sel-anchor', {'floating-sel': floating.index(0)})
-        image.remove_layer(tmp_layer)
+        # Create channel from visible (= just the mask layer)
+        chan = Gimp.Channel.new_from_visible(image, image, "_SAM3_sel")
+        image.insert_channel(chan, None, 0)
 
-        # Now load the channel as selection
+        # Remove temp layer and restore original visibility
+        image.remove_layer(tmp_layer)
+        for layer, vis in orig_visibility:
+            try:
+                layer.set_visible(vis)
+            except Exception:
+                pass
+
+        # Load channel as selection (proven working pattern from line 4021)
         for op_val in [Gimp.ChannelOps.REPLACE, 2]:
             try:
                 _pdb_run('gimp-image-select-item', {
