@@ -594,15 +594,19 @@ async function initialize() {
     // Sync server-persisted LoRA toggles (survives browser clears)
     await syncServerLoraToggles();
 
-    // Merge in any locally-customised name/personality from localStorage,
-    // BUT keep the server-synced avatar/animated URLs (they were just set
-    // by syncServerAssets above and are the source of truth for generated
-    // visuals). Avatar/animated URLs only fall back to localStorage if the
-    // server has nothing — which is the cold-cache case.
+    // Merge localStorage identities with server data.
+    // SERVER WINS for names and personalities (LLM-generated scaffold
+    // overrides are applied server-side). localStorage only provides
+    // fallback for avatar/animated URLs (cold-cache case) and
+    // user-explicit renames (detected by _user_renamed flag).
     let savedIdentities = JSON.parse(localStorage.getItem('guild_identities') || '{}');
     characters.forEach(char => {
         if(savedIdentities[char.id]) {
-            char.name = savedIdentities[char.id].name || char.name;
+            // Only use localStorage name if the USER explicitly renamed
+            // (not if it was auto-cached from a previous session)
+            if (savedIdentities[char.id]._user_renamed) {
+                char.name = savedIdentities[char.id].name || char.name;
+            }
             char.personality = savedIdentities[char.id].personality || char.personality;
             // Server wins for generated visuals; localStorage is fallback only
             char.avatar_url = char.avatar_url || savedIdentities[char.id].avatar_url;
@@ -1613,6 +1617,7 @@ function saveIdentity(char) {
         personality: char.personality,
         avatar_url: char.avatar_url,
         animated_url: char.animated_url || undefined,
+        _user_renamed: char._user_renamed || undefined,
     };
     let savedIdentities = JSON.parse(localStorage.getItem('guild_identities') || '{}');
     savedIdentities[char.id] = identity;
@@ -3081,6 +3086,7 @@ renameSave.addEventListener('click', () => {
     const char = characters.find(c => c.id === activeCharacterId);
     const newName = renameInput.value.trim() || "Unnamed Wizard";
     char.name = newName;
+    char._user_renamed = true;
     saveIdentity(char);
     activeName.textContent = newName;
     renameModal.classList.add('hidden');
