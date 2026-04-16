@@ -5706,6 +5706,11 @@ def _run_with_spinner(label_text, func, *args):
     global _spinner_status_lbl, _spinner_job_count, _spinner_start_time
     global _spinner_cleanup_id, _spinner_cleanup_gen
     _spinner_label_text = ""
+    # Activate GIMP's native progress bar alongside the spinner window
+    try:
+        Gimp.progress_init(label_text)
+    except Exception:
+        pass
     result_box = [None]
     error_box = [None]
     done_box = [False]
@@ -10555,9 +10560,37 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-quick-rembg":       "<Image>/Filters/Spellcaster Quick",
         }
 
+        # ── Native GIMP menu integration ─────────────────────────────
+        # Tools appear in their contextually appropriate GIMP menus
+        # IN ADDITION to the Spellcaster submenu. Users find AI Select
+        # under Select, AI Color Match under Colors, etc. — where they
+        # naturally look. add_menu_path() is callable multiple times.
+        _native_paths = {
+            # Select menu — AI-powered selection belongs here
+            "spellcaster-sam3-select":       "<Image>/Select",
+            "spellcaster-sam3-extract":      "<Image>/Select",
+            # Colors menu — color manipulation tools
+            "spellcaster-color-match":       "<Image>/Colors",
+            "spellcaster-colorize":          "<Image>/Colors",
+            "spellcaster-lut":               "<Image>/Colors",
+            "spellcaster-iclight":           "<Image>/Colors",
+            # Image menu — scaling / canvas operations
+            "spellcaster-upscale":           "<Image>/Image",
+            "spellcaster-outpaint":          "<Image>/Image",
+            "spellcaster-klein-outpaint":    "<Image>/Image",
+        }
+
         proc = Gimp.ImageProcedure.new(self, name, Gimp.PDBProcType.PLUGIN, callback, None)
         proc.set_menu_label(label)
+        # Primary Spellcaster submenu path
         proc.add_menu_path(_menu_paths.get(name, "<Image>/Filters/Spellcaster"))
+        # Additional native GIMP menu path (if applicable)
+        native = _native_paths.get(name)
+        if native:
+            try:
+                proc.add_menu_path(native)
+            except Exception:
+                pass  # GIMP version may not support this path
         proc.set_documentation(doc, doc, name)
         proc.set_attribution("Spellcaster", "Spellcaster", "2026")
         proc.set_image_types("*")
