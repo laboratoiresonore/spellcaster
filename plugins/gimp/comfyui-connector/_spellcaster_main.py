@@ -20825,18 +20825,40 @@ class Spellcaster(Gimp.PlugIn):
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
         se.set_tooltip_text("ComfyUI server address. Default: http://127.0.0.1:8188")
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
-        bx.pack_start(Gtk.Label(label="Removes background using isnet-general-use model.\nResult is a transparent PNG layer."), False, False, 4)
+        # Model selector
+        model_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        model_hb.pack_start(Gtk.Label(label="Engine:"), False, False, 0)
+        engine_combo = Gtk.ComboBoxText()
+        engine_combo.append("rembg", "rembg (fast, good)")
+        engine_combo.append("birefnet", "BiRefNet (slower, best hair/detail)")
+        engine_combo.append("birefnet-portrait", "BiRefNet Portrait (people)")
+        engine_combo.set_active(0)
+        engine_combo.set_tooltip_text(
+            "Background removal engine:\n\n"
+            "rembg: Fast, good for clean backgrounds (default)\n"
+            "BiRefNet: Better for hair, fur, transparent objects\n"
+            "BiRefNet Portrait: Optimized for people/headshots")
+        model_hb.pack_start(engine_combo, True, True, 0)
+        bx.pack_start(model_hb, False, False, 0)
+        bx.pack_start(Gtk.Label(label="Result is a transparent PNG layer.", xalign=0), False, False, 4)
         bx.show_all()
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
-        srv = se.get_text().strip(); _propagate_server_url(srv); dlg.destroy()
+        srv = se.get_text().strip(); _propagate_server_url(srv)
+        _engine = engine_combo.get_active_id()
+        dlg.destroy()
         try:
             _update_spinner_status("Remove Background: exporting image...")
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_rembg_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
-            wf = build_rembg(uname)
+            if _engine == "birefnet":
+                wf = build_rembg_birefnet(uname, model="BiRefNet-general")
+            elif _engine == "birefnet-portrait":
+                wf = build_rembg_birefnet(uname, model="BiRefNet-portrait")
+            else:
+                wf = build_rembg(uname)
             _update_spinner_status("Remove Background: processing on ComfyUI...")
             results = _run_with_spinner("Remove Background: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
