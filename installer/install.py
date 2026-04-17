@@ -1987,6 +1987,32 @@ def step_select_features(manifest: dict, paths: dict, args,
     print(f"{C_BOLD}  STEP 3: Select Features{C_RESET}")
     print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
 
+    vram_gb = getattr(args, '_vram_mb', 0) / 1024
+
+    # ── Smart auto-profile based on VRAM ──────────────────────────
+    # Shows the user what we recommend BEFORE the detailed grid.
+    if vram_gb >= 12:
+        print(f"  {C_GREEN}Your GPU has {vram_gb:.0f} GB VRAM — you can run Flux 2 Klein.{C_RESET}")
+        print(f"  {C_BOLD}Recommended: Klein-first install (~37 GB){C_RESET}")
+        print(f"  Klein replaces most SDXL/SD1.5 tools with faster, higher-quality")
+        print(f"  equivalents. No ControlNet models needed. Dramatically smaller install.\n")
+        print(f"  {C_DIM}Alternative: Full install with SDXL+Klein+ControlNet (~150 GB)")
+        print(f"  Use this if you need SD1.5/SDXL compatibility or anime models.{C_RESET}\n")
+    elif vram_gb >= 8:
+        print(f"  {C_GREEN}Your GPU has {vram_gb:.0f} GB VRAM — good for SDXL and video.{C_RESET}")
+        print(f"  {C_BOLD}Recommended: SDXL essentials (~45 GB){C_RESET}")
+        print(f"  Includes image generation, upscaling, face tools, and video.\n")
+    elif vram_gb >= 4:
+        print(f"  {C_YELLOW}Your GPU has {vram_gb:.0f} GB VRAM — SD 1.5 is your best bet.{C_RESET}")
+        print(f"  {C_BOLD}Recommended: Lightweight install (~15 GB){C_RESET}")
+        print(f"  Includes SD 1.5 generation, upscaling, and basic face tools.\n")
+    else:
+        print(f"  {C_YELLOW}GPU VRAM not detected or very low.{C_RESET}")
+        print(f"  {C_BOLD}Recommended: Minimal install (~5 GB){C_RESET}\n")
+
+    print(f"  {C_DIM}You can always re-run this installer later to add more models,")
+    print(f"  switch generation engines, or install additional features.{C_RESET}\n")
+
     if server_info is None:
         server_info = {}
 
@@ -2046,12 +2072,15 @@ def step_select_features(manifest: dict, paths: dict, args,
 
     # \u2500\u2500 Phase 2: Display grouped features with status indicators \u2500\u2500
     categories = {
-        "Generation": ["img2img", "txt2img", "inpaint", "outpaint", "batch_variations", "controlnet"],
-        "Restoration": ["upscale", "seedv2r", "face_restore", "photo_restore", "detail_hallucinate", "supir", "lama_remove", "colorize"],
-        "Style & Color": ["style_transfer", "lut_grading", "iclight"],
-        "Face & Identity": ["face_swap_reactor", "face_swap_mtb", "faceid_img2img", "pulid_flux"],
-        "Video": ["wan_i2v", "klein_flux2"],
-        "Utility": ["rembg"],
+        "Core (recommended)": ["klein_flux2", "img2img", "txt2img", "inpaint", "upscale",
+                                "face_swap_reactor", "rembg", "prompt_enhance"],
+        "Enhancement": ["photo_restore", "detail_hallucinate", "seedv2r", "supir",
+                         "face_restore", "lama_remove", "colorize"],
+        "Style & Lighting": ["style_transfer", "lut_grading", "iclight"],
+        "Face (alternatives)": ["face_swap_mtb", "faceid_img2img", "pulid_flux"],
+        "Video": ["wan_i2v"],
+        "Advanced (power users)": ["outpaint", "batch_variations", "controlnet"],
+        "Chat Interface": ["wizard_guild"],
     }
 
     vram_label = f"{vram_mb/1024:.0f} GB VRAM" if vram_mb > 0 else "no GPU detected"
