@@ -5104,6 +5104,16 @@ def build_klein_face_detail(image_filename, prompt_text, seed,
         "force_inpaint": True,
         "wildcard": "",
         "cycle": 1,
+        "drop_size": 10,
+        "bbox_threshold": 0.5,
+        "bbox_dilation": 10,
+        "bbox_crop_factor": 3.0,
+        "sam_detection_hint": "center-1",
+        "sam_dilation": 0,
+        "sam_threshold": 0.93,
+        "sam_bbox_expansion": 0,
+        "sam_mask_hint_threshold": 0.7,
+        "sam_mask_hint_use_negative": "False",
     }, node_id="30")
 
     # FaceDetailer output slot 0 = refined image
@@ -5448,6 +5458,16 @@ def build_klein_detail(image_filename, preset_key, prompt_text, seed,
             "force_inpaint": True,
             "wildcard": "",
             "cycle": 1,
+            "drop_size": 10,
+            "bbox_threshold": 0.5,
+            "bbox_dilation": 10,
+            "bbox_crop_factor": 3.0,
+            "sam_detection_hint": "center-1",
+            "sam_dilation": 0,
+            "sam_threshold": 0.93,
+            "sam_bbox_expansion": 0,
+            "sam_mask_hint_threshold": 0.7,
+            "sam_mask_hint_use_negative": "False",
         }, node_id="30")
         nf.save_image([detail_id, 0], "klein_detail", node_id="40")
 
