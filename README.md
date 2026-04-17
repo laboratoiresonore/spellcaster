@@ -5,8 +5,8 @@
 <h1 align="center">Spellcaster</h1>
 
 <p align="center">
-  <strong>69 AI tools inside GIMP. No experience needed.</strong><br/>
-  <em>100% Local &bull; No Cloud &bull; No Subscriptions &bull; No Content Filters</em>
+  <strong>Dynamic middleware between ComfyUI and everything else,<br/>hellbent on removing every bit of difficulty out of AI image generation.</strong><br/>
+  <em>69 AI tools &bull; GIMP &bull; Darktable &bull; Chat UI &bull; 100% Local &bull; Zero Config</em>
 </p>
 
 <p align="center">
@@ -39,7 +39,7 @@ Meanwhile, GIMP is already an ultra-capable image editor with an intuitive inter
 
 ## The Solution
 
-**Spellcaster is free middleware that connects ComfyUI to any interface you want to use.** It turns ComfyUI's raw power into simple menu items and one-click tools.
+**Spellcaster is dynamic middleware that sits between ComfyUI and any interface you want to use.** It absorbs all the complexity — models, nodes, samplers, schedulers, LoRAs, VAEs, ControlNets — and exposes it as simple menu items and one-click tools. Its entire purpose is to make ComfyUI's power accessible to people who have no interest in learning ComfyUI.
 
 - **GIMP / Darktable** — 69 AI tools appear in your menus. Generate, edit, upscale, swap faces, remove backgrounds, create videos — all from the same editor you already know.
 - **The Wizard Guild** — a standalone chat UI where AI wizard characters walk you through every tool conversationally. No GIMP needed.
