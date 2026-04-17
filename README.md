@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Dynamic middleware between ComfyUI and everything else,<br/>hellbent on removing every bit of difficulty out of AI image generation.</strong><br/>
-  <em>69 AI tools &bull; GIMP &bull; Darktable &bull; Chat UI &bull; 100% Local &bull; Zero Config</em>
+  <em>69 AI tools (nice) &bull; GIMP &bull; Darktable &bull; Chat UI &bull; 100% Local &bull; Zero Config</em>
 </p>
 
 <p align="center">
@@ -166,7 +166,7 @@ If you don't want to use GIMP at all, the [Wizard Guild](#under-the-hood) is a c
 
 ---
 
-## All 69 Tools
+## All 69 Tools <!-- nice -->
 
 <details open>
 <summary><h3>Generate (7)</h3></summary>
