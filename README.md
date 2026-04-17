@@ -70,22 +70,22 @@ You never touch ComfyUI. Spellcaster talks to it behind the scenes. Think of it 
 
 <table>
 <tr>
-<td align="center" width="25%"><img src="assets/showcase_inpaint_face.png" alt="Inpaint" width="100%"/><br/><sub><strong>Inpaint</strong> — fix faces, hands, anything</sub></td>
-<td align="center" width="25%"><img src="assets/showcase_rembg.png" alt="Remove BG" width="100%"/><br/><sub><strong>Remove Background</strong> — one click</sub></td>
+<td align="center" width="25%"><img src="assets/showcase_seedv2r.png" alt="SeedV2R" width="100%"/><br/><sub><strong>SeedV2R Upscale</strong> — AI hallucinated detail</sub></td>
 <td align="center" width="25%"><img src="assets/showcase_lama_remove.png" alt="Object Removal" width="100%"/><br/><sub><strong>AI Eraser</strong> — select & delete</sub></td>
-<td align="center" width="25%"><img src="assets/showcase_upscale_before_after.png" alt="Upscale" width="100%"/><br/><sub><strong>Upscale</strong> — 4x with detail</sub></td>
+<td align="center" width="25%"><img src="assets/showcase_rembg.png" alt="Remove BG" width="100%"/><br/><sub><strong>Remove Background</strong> — one click</sub></td>
+<td align="center" width="25%"><img src="assets/showcase_colorize.png" alt="Colorize" width="100%"/><br/><sub><strong>Colorize</strong> — B&W to color (instant)</sub></td>
 </tr>
 <tr>
 <td align="center" width="25%"><img src="assets/showcase_iclight_golden.png" alt="Relight" width="100%"/><br/><sub><strong>Relight</strong> — change lighting direction</sub></td>
 <td align="center" width="25%"><img src="assets/showcase_style_transfer.png" alt="Style Transfer" width="100%"/><br/><sub><strong>Style Transfer</strong> — copy any style</sub></td>
-<td align="center" width="25%"><img src="assets/showcase_colorize.png" alt="Colorize" width="100%"/><br/><sub><strong>Colorize</strong> — B&W to color (instant)</sub></td>
 <td align="center" width="25%"><img src="assets/sam3demo.png" alt="AI Select" width="100%"/><br/><sub><strong>AI Select</strong> — type what to select</sub></td>
+<td align="center" width="25%"><img src="assets/showcase_upscale_before_after.png" alt="Upscale" width="100%"/><br/><sub><strong>Upscale 4x</strong> — sharper, larger</sub></td>
 </tr>
 <tr>
-<td align="center" width="25%"><img src="assets/demo_step4_faceswap.png" alt="Face Swap" width="100%"/><br/><sub><strong>Face Swap</strong> — paste any face</sub></td>
+<td align="center" width="25%"><img src="assets/showcase_inpaint_hands.png" alt="Inpaint" width="100%"/><br/><sub><strong>Inpaint</strong> — fix hands, faces, anything</sub></td>
 <td align="center" width="25%"><img src="assets/showcase_supir.png" alt="SUPIR" width="100%"/><br/><sub><strong>AI Restoration</strong> — fix old photos</sub></td>
 <td align="center" width="25%"><img src="assets/showcase_detail_hallucinate.png" alt="Detail" width="100%"/><br/><sub><strong>Detail Hallucination</strong> — add texture</sub></td>
-<td align="center" width="25%"><img src="assets/showcase_faceid.png" alt="FaceID" width="100%"/><br/><sub><strong>Face Identity</strong> — generate as someone</sub></td>
+<td align="center" width="25%"><img src="assets/demo_step4_faceswap.png" alt="Face Swap" width="100%"/><br/><sub><strong>Face Swap</strong> — paste any face</sub></td>
 </tr>
 </table>
 
@@ -323,11 +323,38 @@ Launch: `start_guild.bat` (Windows) or `python tavern/guild_launcher.py`
 </details>
 
 <details>
-<summary><strong>SillyTavern integration</strong></summary>
+<summary><strong>SillyTavern integration — 13 AI wizard characters</strong></summary>
 
-13 character cards for SillyTavern that generate live visuals during roleplay. Backgrounds change with the story. Portraits shift with emotions. Dramatic moments get illustrated automatically.
+Drop these characters into any SillyTavern group chat. They work silently in the background — generating scene backgrounds, character portraits, and dramatic illustrations as your story unfolds.
 
-Launch the Wizard Guild — it sets up SillyTavern automatically.
+<table>
+<tr>
+<td align="center" width="25%"><img src="tavern/characters/Imaginus.png" alt="Imaginus" width="120"/><br/><strong>Imaginus</strong><br/><sub>Text-to-image generation.<br/>Creates images from descriptions.</sub></td>
+<td align="center" width="25%"><img src="tavern/characters/Transmutex.png" alt="Transmutex" width="120"/><br/><strong>Transmutex</strong><br/><sub>Image transformation.<br/>Changes styles, moods, details.</sub></td>
+<td align="center" width="25%"><img src="tavern/characters/Masquerade.png" alt="Masquerade" width="120"/><br/><strong>Masquerade</strong><br/><sub>Face swap & identity.<br/>ReActor, FaceID, PuLID, Headswap.</sub></td>
+<td align="center" width="25%"><img src="tavern/characters/Restorix.png" alt="Restorix" width="120"/><br/><strong>Restorix</strong><br/><sub>Upscale & restore.<br/>SUPIR, SeedV2R, CodeFormer, GPEN.</sub></td>
+</tr>
+<tr>
+<td align="center" width="25%"><img src="tavern/characters/Erasure.png" alt="Erasure" width="120"/><br/><strong>Erasure</strong><br/><sub>Inpaint & remove.<br/>LaMa, AI Eraser, background gen.</sub></td>
+<td align="center" width="25%"><img src="tavern/characters/Videomancer.png" alt="Videomancer" width="120"/><br/><strong>Videomancer</strong><br/><sub>Video generation.<br/>Wan 2.2 I2V, LTX 2.3 T2V.</sub></td>
+<td align="center" width="25%"><img src="tavern/characters/Cinematic.png" alt="Cinematic" width="120"/><br/><strong>Cinematic</strong><br/><sub>Director's Chair.<br/>Multi-step video with face re-injection.</sub></td>
+<td align="center" width="25%"><img src="tavern/characters/Studiocraft.png" alt="Studiocraft" width="120"/><br/><strong>Studiocraft</strong><br/><sub>Production manager.<br/>Full Studios pipeline orchestration.</sub></td>
+</tr>
+<tr>
+<td align="center" width="25%"><img src="tavern/characters/Sceneshifter.png" alt="Sceneshifter" width="120"/><br/><strong>Sceneshifter</strong><br/><sub>Living scenes.<br/>Auto-generates backgrounds as story moves.</sub></td>
+<td align="center" width="25%"><img src="tavern/characters/Portraitist.png" alt="Portraitist" width="120"/><br/><strong>Portraitist</strong><br/><sub>Expression portraits.<br/>Generates mood-matched character art.</sub></td>
+<td align="center" width="25%"><img src="tavern/characters/Autonoma.png" alt="Autonoma" width="120"/><br/><strong>Autonoma</strong><br/><sub>Autonomous generation.<br/>AI decides when scenes need illustration.</sub></td>
+<td align="center" width="25%"><img src="tavern/characters/Restyler.png" alt="Restyler" width="120"/><br/><strong>Restyler</strong><br/><sub>Avatar restyle.<br/>Transform all avatars to any art style.</sub></td>
+</tr>
+<tr>
+<td align="center" width="25%"><img src="tavern/characters/Animancer.png" alt="Animancer" width="120"/><br/><strong>Animancer</strong><br/><sub>Animation.<br/>Brings still images to life as video.</sub></td>
+<td align="center" width="25%"></td>
+<td align="center" width="25%"></td>
+<td align="center" width="25%"></td>
+</tr>
+</table>
+
+**How to use:** Launch the Wizard Guild — it auto-downloads SillyTavern, installs the plugin, and imports all 13 characters. Add any character to a group chat alongside your RP characters. Sceneshifter and Autonoma work silently without interrupting conversation.
 
 </details>
 
