@@ -408,6 +408,41 @@ Yes. The Antenna Installer auto-detects ComfyUI servers on your network. Or set 
 ---
 
 <details>
+<summary><strong>Wall of Love from r/GIMP</strong></summary>
+
+We posted Spellcaster to r/GIMP. They were... *thrilled.*
+
+> *"No, I use GIMP because I don't want to make AI slop."*
+> — u/Ill_Morning_4282 (130 upvotes, community hero)
+
+> *"No one fucking uses GIMP to make AI slop"*
+> — u/Capable_Basket1661 (50 upvotes, keeper of the sacred flame)
+
+> *"Ew, AI slop... and you didn't even code it yourself? lmao how ridiculous can you get"*
+> — u/FentonTheIIV (correct! 22,000 lines of Python, vibe-coded at 3 AM while arguing with an AI that kept setting Klein's CFG to 3.5. We are not ashamed. We are tired.)
+
+> *"No. Go away, sloperator!"*
+> — u/chris020891 (coined a new word though, we respect that)
+
+> *"the smugness radiates 'I'm better than everyone' it kills the interest"*
+> — u/kanatakkun (fair point honestly, we were kind of a dick about it)
+
+> *"Man this is the kind of phrasing you can use in your incel-fueled, ragebaiting and redpilled nutjobed clanckers spaces"*
+> — u/MrSumNemo (we had to look up "clanckers" and we're still not sure what it means)
+
+> *"Nice persecution complex, some of us don't need to steal others' artwork in order to pretend to be creative."*
+> — u/Ill_Morning_4282 (back for round two, still swinging)
+
+> *"Everyone with even a minor self respect would hate on this."*
+> — u/chris020891 (our self-respect was already in critical condition, but thanks for checking)
+
+Meanwhile, u/stilgarpl said *"Background removal has been the worst and most tedious task for me for years... I can finally focus on actual creative work"* and got buried by downvotes. u/darkhalfkz said *"thank you"* and survived. Barely.
+
+We love you, r/GIMP. Never change. The tool is still free. The source is still open. The LICENSE still lets you print it and shove it wherever you want. We'll be here when you're ready. ❤️
+
+</details>
+
+<details>
 <summary><strong>Credits & Acknowledgements</strong></summary>
 
 *Proudly vibe-coded as a pure pineapple-pen innovation.* 🍍🖊️ *I have a pen. I have ComfyUI. Ugh — Spellcaster.*
