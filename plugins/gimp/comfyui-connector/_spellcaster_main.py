@@ -17967,7 +17967,9 @@ class Spellcaster(Gimp.PlugIn):
                 wf = _build_detail_hallucinate(uname, upscale_model, preset, prompt, negative,
                                                 seed, h_preset["denoise"], h_preset["cfg"],
                                                 steps=h_preset.get("steps"),
-                                                upscale_factor=upscale_factor,
+                                                scale_factor=upscale_factor,
+                                                orig_width=image.get_width(),
+                                                orig_height=image.get_height(),
                                                 controlnet=cn1, controlnet_2=cn2,
                                                 loras=loras)
                 label = f"Detail Hallucinate run {run_i+1}/{runs}" if runs > 1 else "Detail Hallucinate"
