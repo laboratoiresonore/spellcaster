@@ -1553,6 +1553,7 @@ FACE_RESTORE_MODELS = [
 
 FACE_RESTORE_PRESETS = {
     "CodeFormer (best quality)": {"model": "codeformer-v0.1.0.pth", "weight": 0.7},
+    "GPEN 2048 (best speed+quality)": {"model": "GPEN-BFR-2048.onnx", "weight": 0.8},
     "GFPGAN v1.4 (fast, good)": {"model": "GFPGANv1.4.pth", "weight": 0.8},
     "GFPGAN v1.3 (classic)": {"model": "GFPGANv1.3.pth", "weight": 0.8},
     "GPEN 1024 (high-res faces)": {"model": "GPEN-BFR-1024.onnx", "weight": 0.8},
@@ -18340,6 +18341,21 @@ class Spellcaster(Gimp.PlugIn):
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
         se.set_tooltip_text("ComfyUI server address. Default: http://127.0.0.1:8188")
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        # Engine selector: DDColor (fast) vs ControlNet (quality)
+        engine_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        engine_hb.pack_start(Gtk.Label(label="Engine:"), False, False, 0)
+        colorize_engine = Gtk.ComboBoxText()
+        colorize_engine.append("controlnet", "ControlNet + Diffusion (best quality, slower)")
+        colorize_engine.append("ddcolor_artistic", "DDColor Artistic (fast, vivid)")
+        colorize_engine.append("ddcolor_natural", "DDColor Natural (fast, accurate)")
+        colorize_engine.set_active(0)
+        colorize_engine.set_tooltip_text(
+            "Colorization engine:\n\n"
+            "ControlNet: Uses diffusion model + lineart guide. Best quality, slower.\n"
+            "DDColor Artistic: Fast AI colorization, vivid creative colors.\n"
+            "DDColor Natural: Fast AI colorization, most accurate colors.")
+        engine_hb.pack_start(colorize_engine, True, True, 0)
+        bx.pack_start(engine_hb, False, False, 0)
         # Checkpoint model dropdown
         bx.pack_start(Gtk.Label(label="Checkpoint Model:", xalign=0), False, False, 0)
         model_combo = Gtk.ComboBoxText()
@@ -18573,15 +18589,37 @@ class Spellcaster(Gimp.PlugIn):
             "runs": runs,
             "lora_id": _lora_id or "", "lora_str": _lora_str,
         }
+        _colorize_engine = colorize_engine.get_active_id()
         _save_session()
         dlg.destroy()
-        # Block architectures that don't support ControlNet
+
+        # DDColor path: fast, no diffusion model needed
+        if _colorize_engine and _colorize_engine.startswith("ddcolor"):
+            try:
+                _update_spinner_status("DDColor: exporting image...")
+                tmp = _export_image_to_tmp(image)
+                uname = f"gimp_colorize_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, tmp, uname); os.unlink(tmp)
+                ckpt = "ddcolor_artistic.pth" if "artistic" in _colorize_engine else "ddcolor_modelscope.pth"
+                wf = build_ddcolor(uname, checkpoint=ckpt)
+                results = _run_with_spinner("DDColor: colorizing...",
+                                            lambda: list(_run_comfyui_workflow(srv, wf)))
+                for i, (fn, sf, ft) in enumerate(results):
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
+                                     f"DDColor {_colorize_engine.split('_')[-1]} #{i+1}", False)
+                Gimp.displays_flush(); Gimp.progress_end()
+                return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+            except Exception as e:
+                Gimp.message(f"DDColor Error: {e}")
+                return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+        # ControlNet path: high quality, needs diffusion model
         _colorize_arch = preset.get("arch", "sdxl")
         _NO_CN_ARCHS = ("flux2klein", "flux_kontext", "chroma")
         if _colorize_arch in _NO_CN_ARCHS:
             Gimp.message(
-                f"Colorize requires ControlNet, which is not supported by {preset.get('label', _colorize_arch)}.\n\n"
-                f"Use an SDXL, SD1.5, Illustrious, or Flux Dev model instead.")
+                f"ControlNet colorization is not supported by {preset.get('label', _colorize_arch)}.\n\n"
+                f"Use an SDXL/SD1.5 model, or switch to DDColor engine (no model needed).")
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _update_spinner_status("Colorize: exporting image...")
