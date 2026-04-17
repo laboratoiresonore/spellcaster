@@ -342,6 +342,28 @@ class NodeFactory:
         return self._add("ConditioningZeroOut",
                          {"conditioning": conditioning_ref}, node_id)
 
+    def conditioning_set_area(self, conditioning_ref, x, y, width, height,
+                              strength=1.0, node_id=None):
+        """ConditioningSetArea — restrict conditioning to a spatial region.
+        Used for multi-character regional prompting.
+        Outputs: [0]=CONDITIONING
+        """
+        return self._add("ConditioningSetArea", {
+            "conditioning": conditioning_ref,
+            "x": x, "y": y, "width": width, "height": height,
+            "strength": strength,
+        }, node_id)
+
+    def conditioning_combine(self, cond_a, cond_b, node_id=None):
+        """ConditioningCombine — merge two conditioning tensors.
+        Used to combine regional + global conditioning for multi-character.
+        Outputs: [0]=CONDITIONING
+        """
+        return self._add("ConditioningCombine", {
+            "conditioning_1": cond_a,
+            "conditioning_2": cond_b,
+        }, node_id)
+
     def flux_guidance(self, conditioning_ref, guidance, node_id=None):
         """FluxGuidance — apply guidance scale to Flux conditioning.
         Outputs: [0]=CONDITIONING

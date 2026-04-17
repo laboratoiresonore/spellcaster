@@ -691,6 +691,30 @@ def build_rembg(image_filename, alpha_matting=False,
     return nf.build()
 
 
+def build_rembg_birefnet(image_filename, model="BiRefNet-general"):
+    """Background removal using BiRefNet (higher quality than rembg).
+
+    BiRefNet produces significantly better results for hair, fur, and
+    transparent/semi-transparent objects. Uses the ComfyUI-RMBG node pack.
+
+    Models:
+      - BiRefNet-general: best all-around (default)
+      - BiRefNet-portrait: optimized for people
+      - BiRefNet-HR: highest detail but may over-correct
+
+    Returns:
+        dict: ComfyUI workflow (load -> BiRefNetRMBG -> save)
+    """
+    nf = NodeFactory()
+    img_id = nf.load_image(image_filename, node_id="1")
+    biref_id = nf._add("BiRefNetRMBG", {
+        "image": [img_id, 0],
+        "model": model,
+    }, node_id="2")
+    nf.save_image([biref_id, 0], "spellcaster_rembg", node_id="3")
+    return nf.build()
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  upscale — Model-based super-resolution
 # ═══════════════════════════════════════════════════════════════════════════
