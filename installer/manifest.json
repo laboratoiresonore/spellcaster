@@ -200,6 +200,30 @@
       "required_by": ["prompt_enhance"],
       "note": "Local GGUF LLM for prompt enhancement — runs natively in ComfyUI, no separate server needed. Auto-manages VRAM."
     },
+    "ComfyUI-DDColor": {
+      "repo": "https://github.com/kijai/ComfyUI-DDColor",
+      "provides": ["DDColor_Colorize"],
+      "required_by": [],
+      "note": "DDColor instant B&W colorization — fast, no diffusion model needed. Optional upgrade for Colorize tool."
+    },
+    "ComfyUI-RMBG": {
+      "repo": "https://github.com/1038lab/ComfyUI-RMBG",
+      "provides": ["BiRefNetRMBG", "RMBG"],
+      "required_by": [],
+      "note": "BiRefNet/RMBG-2.0 background removal — better hair and fine detail than standard rembg."
+    },
+    "ComfyUI-DepthAnythingV3": {
+      "repo": "https://github.com/PozzettiAndrea/ComfyUI-DepthAnythingV3",
+      "provides": ["DownloadAndLoadDepthAnythingV3Model", "DepthAnything_V3"],
+      "required_by": [],
+      "note": "DepthAnythingV3 — 35% better depth estimation than V2. Optional upgrade for ControlNet depth."
+    },
+    "ComfyUI-NormalCrafter": {
+      "repo": "https://github.com/ComfyUI-NormalCrafter/ComfyUI-NormalCrafter",
+      "provides": ["NormalCrafterNode"],
+      "required_by": [],
+      "note": "NormalCrafter — generate 3D surface normal maps for relighting and reconstruction."
+    },
     "ComfyUI-Impact-Pack": {
       "repo": "https://github.com/ltdrdata/ComfyUI-Impact-Pack",
       "provides": [
