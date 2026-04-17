@@ -45,28 +45,22 @@ Meanwhile, GIMP is already an ultra-capable image editor with an intuitive inter
 - **The Wizard Guild** — a standalone chat UI where AI wizard characters walk you through every tool conversationally. No GIMP needed.
 - **SillyTavern** — 13 character cards that generate live visuals during roleplay.
 
-You never touch ComfyUI. Spellcaster talks to it behind the scenes. Think of it like an engine under the hood — you just press the gas.
+You never touch ComfyUI. Spellcaster talks to it behind the scenes. Think of it like an engine under the hood — you just press the gas. With your eyes closed. Going 140 in a school zone. Spellcaster is the responsible adult in this relationship.
+
+Every tool starts with expert-tuned presets that just work. But as you get comfortable, you can fine-tune every parameter, save your own presets, build custom workflows, and inject LoRAs — the training wheels come off whenever you're ready.
 
 <table>
 <tr>
-<td width="50%">
-
-<img src="assets/demo_step1_generate.png" alt="Generate in GIMP" width="100%"/>
-<sub>Generate images from text, right inside GIMP</sub>
-
-</td>
-<td width="50%">
-
-<img src="assets/showcase_klein_flux2.png" alt="Klein Flux 2 editing" width="100%"/>
-<sub>Edit with Flux 2 Klein — 4-step AI editing</sub>
-
-</td>
+<td width="25%"><img src="assets/demo_step1_inpaint.png" alt="Step 1" width="100%"/><br/><sub>1. Select what to fix</sub></td>
+<td width="25%"><img src="assets/demo_step2_inpaint.png" alt="Step 2" width="100%"/><br/><sub>2. Pick a preset</sub></td>
+<td width="25%"><img src="assets/demo_step3_inpaint.png" alt="Step 3" width="100%"/><br/><sub>3. Click Generate</sub></td>
+<td width="25%"><img src="assets/demo_step4_inpaint.png" alt="Step 4" width="100%"/><br/><sub>4. Result on a new layer</sub></td>
 </tr>
 </table>
 
 ---
 
-## See It in Action
+## 69 Finely Tuned AI Tools, Each One Click Away
 
 <table>
 <tr>
@@ -377,21 +371,23 @@ Drop these characters into any SillyTavern group chat. They work silently in the
 <details>
 <summary><strong>What GPU do I need?</strong></summary>
 
-Any NVIDIA GPU with 4+ GB VRAM. AMD works too (ROCm/DirectML). The installer auto-detects your GPU and only shows features your hardware can run. 8+ GB handles most tools. 16+ GB runs everything.
+Any NVIDIA GPU with 4+ GB VRAM. AMD works too (ROCm/DirectML). The installer looks at your GPU and says "here's what you can run" — no guesswork. 4GB gets you the basics. 8GB is the sweet spot. 16GB unlocks the good stuff. 24GB and you're basically a wizard yourself, at which point you should be the one writing this README.
 
 </details>
 
 <details>
 <summary><strong>Do I need to understand ComfyUI?</strong></summary>
 
-No. Every tool has expert-tuned presets. You never need to open ComfyUI, pick a sampler, or write a negative prompt.
+No. God no. The whole point of this project is that you don't. Every tool has expert-tuned presets. You never need to open ComfyUI, pick a sampler, write a negative prompt, or learn what "Euler ancestral CFG++ with Karras scheduling at 0.85 denoise" means. That sentence just gave you a headache. See? We saved you from that.
+
+(But if you *want* to go deeper — every parameter is exposed, you can save custom presets, import raw ComfyUI workflows, and inject LoRAs. The power is there when you're ready for it.)
 
 </details>
 
 <details>
 <summary><strong>Does anything leave my computer?</strong></summary>
 
-No. Everything runs 100% locally. No cloud, no accounts, no telemetry.
+No. Nothing. Nada. Zero bytes. Your GPU does all the work, your images stay on your hard drive, and absolutely no one — not us, not OpenAI, not the ghost of Steve Jobs — ever sees what you generate. The only network traffic is between GIMP and your own ComfyUI server, which can literally be `localhost`. Generate whatever you want. We're not watching. We don't *want* to watch.
 
 </details>
 
