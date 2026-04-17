@@ -715,6 +715,34 @@ def build_rembg_birefnet(image_filename, model="BiRefNet-general"):
     return nf.build()
 
 
+def build_ddcolor(image_filename, checkpoint="ddcolor_artistic.pth",
+                  model_input_size=512):
+    """Colorize B&W photo using DDColor (fast, no diffusion).
+
+    DDColor uses dual decoders for state-of-the-art automatic
+    colorization without requiring a text prompt or diffusion model.
+    Much faster than ControlNet-guided colorization.
+
+    Checkpoints:
+      - ddcolor_artistic.pth: best for artistic/creative colors (default)
+      - ddcolor_modelscope.pth: most accurate/natural colors
+      - ddcolor_paper.pth: academic baseline
+      - ddcolor_paper_tiny.pth: fastest, lower quality
+
+    Returns:
+        dict: ComfyUI workflow (load -> DDColor_Colorize -> save)
+    """
+    nf = NodeFactory()
+    img_id = nf.load_image(image_filename, node_id="1")
+    dd_id = nf._add("DDColor_Colorize", {
+        "image": [img_id, 0],
+        "checkpoint": checkpoint,
+        "model_input_size": model_input_size,
+    }, node_id="2")
+    nf.save_image([dd_id, 0], "spellcaster_colorize", node_id="3")
+    return nf.build()
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  upscale — Model-based super-resolution
 # ═══════════════════════════════════════════════════════════════════════════
