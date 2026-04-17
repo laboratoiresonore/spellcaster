@@ -4614,16 +4614,16 @@ def _build_style_transfer(target_filename, style_ref_filename, preset,
 
 def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text, negative_text,
                               seed, denoise, cfg, steps=None, scale_factor=2.0,
-                              orig_width=512, orig_height=512,
-                              controlnet=None, controlnet_2=None, loras=None):
+                              controlnet=None, controlnet_2=None, loras=None,
+                              orig_width=512, orig_height=512):
     """→ Delegated to v2 builder."""
     preset = _fix_preset_cfg(preset)
     arch = preset.get("arch", "sdxl")
     if arch in _CFG_OVERRIDE and cfg > _CFG_OVERRIDE[arch]:
         cfg = _CFG_OVERRIDE[arch]
     return build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text, negative_text,
-                                    seed, denoise, cfg, steps=steps, scale_factor=scale_factor,
-                                    orig_width=orig_width, orig_height=orig_height,
+                                    seed, denoise, cfg, steps=steps,
+                                    upscale_factor=scale_factor,
                                     controlnet=controlnet, controlnet_2=controlnet_2,
                                     guide_modes=CONTROLNET_GUIDE_MODES,
                                     loras=loras)
