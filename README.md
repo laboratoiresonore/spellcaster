@@ -79,7 +79,7 @@ You never touch ComfyUI. Spellcaster talks to it behind the scenes. Think of it 
 <td align="center" width="25%"><img src="assets/showcase_iclight_golden.png" alt="Relight" width="100%"/><br/><sub><strong>Relight</strong> — change lighting direction</sub></td>
 <td align="center" width="25%"><img src="assets/showcase_style_transfer.png" alt="Style Transfer" width="100%"/><br/><sub><strong>Style Transfer</strong> — copy any style</sub></td>
 <td align="center" width="25%"><img src="assets/sam3demo.png" alt="AI Select" width="100%"/><br/><sub><strong>AI Select</strong> — type what to select</sub></td>
-<td align="center" width="25%"><img src="assets/showcase_upscale_before_after.png" alt="Upscale" width="100%"/><br/><sub><strong>Upscale 4x</strong> — sharper, larger</sub></td>
+<td align="center" width="25%"><img src="assets/showcase_wan_breathing.gif" alt="Video Gen" width="100%"/><br/><sub><strong>Video Generation</strong> — Wan 2.2 I2V</sub></td>
 </tr>
 <tr>
 <td align="center" width="25%"><img src="assets/showcase_inpaint_chrome.png" alt="Inpaint" width="100%"/><br/><sub><strong>Inpaint</strong> — replace any selected area</sub></td>
