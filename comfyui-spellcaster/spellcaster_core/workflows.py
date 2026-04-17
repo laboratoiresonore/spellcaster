@@ -784,6 +784,39 @@ def build_upscale(image_filename, model_name, upscale_factor=1.0):
     return nf.build()
 
 
+def build_wavespeed_upscale(image_filename, model="SeedVR2", target="2K"):
+    """WaveSpeed AI upscale — fast one-node upscale to 2K/4K/8K.
+
+    Uses WaveSpeed's optimized SeedVR2 or Ultimate model for fast,
+    high-quality upscaling without manual model selection.
+
+    Args:
+        image_filename: Input image
+        model: "SeedVR2" (default) or "Ultimate"
+        target: "2K", "4K", or "8K"
+    """
+    nf = NodeFactory()
+    img_id = nf.load_image(image_filename, node_id="1")
+    up_id = nf.wavespeed_upscale([img_id, 0], model=model,
+                                  target=target, node_id="2")
+    nf.save_image([up_id, 0], "spellcaster_upscale", node_id="3")
+    return nf.build()
+
+
+def build_normal_map(image_filename, seed=42, max_res=1024):
+    """Generate 3D surface normal map using NormalCrafter.
+
+    Produces a normal map image useful for relighting, 3D reconstruction,
+    and ControlNet normal guidance.
+    """
+    nf = NodeFactory()
+    img_id = nf.load_image(image_filename, node_id="1")
+    normal_id = nf.normal_crafter([img_id, 0], seed=seed,
+                                   max_res=max_res, node_id="2")
+    nf.save_image([normal_id, 0], "spellcaster_normals", node_id="3")
+    return nf.build()
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  lama_remove — Object removal without diffusion
 # ═══════════════════════════════════════════════════════════════════════════

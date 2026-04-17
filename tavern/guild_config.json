@@ -1,7 +1,7 @@
 {
   "guild_port": 7777,
   "comfyui_url": "http://192.168.x.x:8188",
-  "kobold_url": "http://192.168.x.x:5001",
+  "kobold_url": "http://192.168.x.x:8188",
   "sillytavern_dir": "c:/Users/redacted/Documents/AI/Spellcaster/test-st-fresh",
   "koboldcpp_dir": "",
   "kobold_model": "",
@@ -9,5 +9,11 @@
   "auto_update": true,
   "auto_launch_st": true,
   "auto_launch_kobold": false,
-  "privacy_cleanup": true
+  "privacy_cleanup": true,
+  "sillytavern_url": "http://127.0.0.1:8000",
+  "signal_bridge_url": "http://127.0.0.1:8765",
+  "llm_mode": "local",
+  "horde_api_key": "",
+  "horde_model": "",
+  "prompt_enhance": true
 }
