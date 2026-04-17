@@ -4480,9 +4480,7 @@ def build_klein_auto_inpaint(image_filename, mask_prompt, inpaint_prompt, seed,
     # Florence2 auto-segmentation → mask
     fl2_model_id = nf._add("DownloadAndLoadFlorence2Model", {
         "model": florence_model,
-        "precision": "fp32",
-        "attention": "sdpa",
-        "lora": False,
+        "precision": "fp16",
     }, node_id="60")
 
     fl2_run_id = nf._add("Florence2Run", {
@@ -4583,7 +4581,7 @@ def build_klein_color_match(target_filename, reference_filename,
         "image_ref": [ref_id, 0],
         "method": method,
         "strength": strength,
-        "keep_original_colors_on_error": True,
+        "multithread": True,
     }, node_id="10")
 
     nf.save_image([match_id, 0], "klein_color_match", node_id="20")
