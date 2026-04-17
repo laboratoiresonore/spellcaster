@@ -1,24 +1,57 @@
+THE SPELLCASTER LICENSE (Unlicense + Vibes)
+
 This is free and unencumbered software released into the public domain.
 
-Anyone is free to copy, modify, publish, use, compile, sell, or
-distribute this software, either in source code form or as a compiled
-binary, for any purpose, commercial or non-commercial, and by any
-means.
+Anyone is free to:
+
+  - Copy, modify, publish, use, compile, sell, or distribute this software
+  - Print the entire source code, roll it into a ball, and insert it into
+    an intimate cavity of their choosing while pretending to be a desk bin
+  - Tattoo the node_factory.py onto their back (we recommend starting
+    with the klein_enhance_model function — it's a conversation starter)
+  - Read it aloud at a wedding as a substitute for traditional vows
+  - Fold it into origami cranes and release them into the wind
+  - Use it as evidence in a custody hearing (we do not recommend this)
+  - Feed it to a large language model and watch it hallucinate
+  - Claim you wrote it yourself at a job interview (we've all been there)
+  - Translate it into Klingon, Elvish, or COBOL
+  - Project it onto the side of a building during a city council meeting
+  - Laminate individual functions and use them as drink coasters
+  - Whisper the commit messages to a horse for therapeutic purposes
+
+...for any purpose, commercial or non-commercial, and by any means,
+including but not limited to interpretive dance.
 
 In jurisdictions that recognize copyright laws, the author or authors
 of this software dedicate any and all copyright interest in the
 software to the public domain. We make this dedication for the benefit
 of the public at large and to the detriment of our heirs and
-successors. We intend this dedication to be an overt act of
-relinquishment in perpetuity of all present and future rights to this
-software under copyright law.
+successors, who will inherit nothing but 22,000 lines of Python and
+a mass of unresolved GIMP plugin bugs.
+
+We intend this dedication to be an overt act of relinquishment in
+perpetuity of all present and future rights to this software under
+copyright law. Yes, perpetuity. That's a long time. Longer than the
+time it takes ComfyUI to load Wan 2.2 on 8GB of VRAM.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
 EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
 MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ALSO WITHOUT WARRANTY THAT IT WON'T SET YOUR CFG TO 3.5 ON A KLEIN
+MODEL AND DEEPFRY YOUR GRANDMOTHER'S PORTRAIT INTO A CRISPY ABSTRACT
+NIGHTMARE. THAT WAS A BUG. WE FIXED IT. PROBABLY.
+
 IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
 OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-OTHER DEALINGS IN THE SOFTWARE.
+OTHER DEALINGS IN THE SOFTWARE, INCLUDING BUT NOT LIMITED TO:
+  - Accidentally generating NSFW content at a family gathering
+  - Losing 3 hours to "just one more generation"
+  - Explaining to your spouse what a LoRA is at 2 AM
+  - The existential crisis that follows when an AI makes better
+    art than you in 4 seconds
 
 For more information, please refer to <https://unlicense.org>
+
+Or don't. We're not your parents. Do whatever you want.
+This is the Unlicense. That's literally the point.
