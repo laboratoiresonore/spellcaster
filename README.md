@@ -82,7 +82,7 @@ You never touch ComfyUI. Spellcaster talks to it behind the scenes. Think of it 
 <td align="center" width="25%"><img src="assets/showcase_upscale_before_after.png" alt="Upscale" width="100%"/><br/><sub><strong>Upscale 4x</strong> — sharper, larger</sub></td>
 </tr>
 <tr>
-<td align="center" width="25%"><img src="assets/showcase_inpaint_hands.png" alt="Inpaint" width="100%"/><br/><sub><strong>Inpaint</strong> — fix hands, faces, anything</sub></td>
+<td align="center" width="25%"><img src="assets/showcase_inpaint_chrome.png" alt="Inpaint" width="100%"/><br/><sub><strong>Inpaint</strong> — replace any selected area</sub></td>
 <td align="center" width="25%"><img src="assets/showcase_supir.png" alt="SUPIR" width="100%"/><br/><sub><strong>AI Restoration</strong> — fix old photos</sub></td>
 <td align="center" width="25%"><img src="assets/showcase_detail_hallucinate.png" alt="Detail" width="100%"/><br/><sub><strong>Detail Hallucination</strong> — add texture</sub></td>
 <td align="center" width="25%"><img src="assets/demo_step4_faceswap.png" alt="Face Swap" width="100%"/><br/><sub><strong>Face Swap</strong> — paste any face</sub></td>
