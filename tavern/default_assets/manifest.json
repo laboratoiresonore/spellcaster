@@ -1,0 +1,18 @@
+{
+  "_comment": "Pre-generated wizard avatars + tavern background. Loaded on first run to skip the 10-minute generation step. Only per-model wizards (detected from ComfyUI) need to be generated at runtime.",
+  "background": {
+    "filename": "f0df8a07f9cb2687.png",
+    "asset_key": "_global",
+    "asset_field": "bg_url"
+  },
+  "avatars": {
+    "studio_imaginus": "8ff0d5c1d9c81e4b.png",
+    "studio_transmutex": "661d55cefde98c9f.png",
+    "studio_masquerade": "be14827f125906f5.png",
+    "studio_restorix": "1a3a7ce13ebbbeed.png",
+    "studio_erasure": "fb02a9d3c6b8eb12.png",
+    "studio_videomancer": "d8a80508b37d5077.png",
+    "studio_cinematic": "ec4e4e0929f28523.png",
+    "studio_studiocraft": "ec41708386a43c25.png"
+  }
+}
