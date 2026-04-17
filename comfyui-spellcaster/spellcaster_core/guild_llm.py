@@ -54,26 +54,30 @@ def chat(message, system_prompt="", server=None, kobold_url=None,
     The LLM auto-unloads from VRAM during ComfyUI generation and
     reloads after the queue clears — no manual management needed.
     """
-    # Try ComfyUI LLM nodes first (zero external deps)
+    # Fallback chain: try each backend in order until one returns a response.
+    # WHY this order:
+    #   1. ComfyUI LLM = zero external deps, VRAM-managed natively, preferred
+    #   2. KoboldCpp   = user-configured external server, reliable if running
+    #   3. Ollama      = common local LLM runner, auto-detected on default ports
+    # Each backend returns None on failure, allowing the chain to continue.
+    # The chain stops at the first non-None response.
     if server:
         resp = _chat_comfyui(message, system_prompt, server, model,
                              max_tokens, temperature)
         if resp is not None:
             return resp
 
-    # Try KoboldCpp (external server)
     if kobold_url:
         resp = _chat_kobold(message, system_prompt, kobold_url, max_tokens, temperature)
         if resp is not None:
             return resp
 
-    # Try Ollama
+    # Ollama doesn't need a URL — we probe localhost on known ports
     resp = _chat_ollama(message, system_prompt, max_tokens, temperature)
     if resp is not None:
         return resp
 
-    # No LLM available
-    return None
+    return None  # All backends exhausted
 
 
 def _chat_comfyui(message, system_prompt, server, model, max_tokens, temperature):
@@ -111,19 +115,26 @@ def _chat_kobold(message, system_prompt, url, max_tokens, temperature):
 
 
 def _chat_ollama(message, system_prompt, max_tokens, temperature):
-    """Chat via Ollama's API (if running locally)."""
+    """Chat via Ollama's API (if running locally).
+
+    Ollama's default port is 11434; 11435 is checked as a secondary because
+    some users run multiple instances or have port conflicts.
+    """
     for port in [11434, 11435]:
         try:
+            # Build payload with conditional system message. We serialize,
+            # re-parse, and filter Nones because json.dumps can't handle
+            # conditional list elements inline without this round-trip.
+            # TODO: build the messages list directly to avoid the double-encode.
             body = json.dumps({
-                "model": "qwen3:4b",
+                "model": "qwen3:4b",  # matches RECOMMENDED_LLM family
                 "messages": [
                     {"role": "system", "content": system_prompt} if system_prompt else None,
                     {"role": "user", "content": message},
                 ],
-                "stream": False,
+                "stream": False,  # we need the full response, not SSE chunks
                 "options": {"num_predict": max_tokens, "temperature": temperature},
             }).encode()
-            # Filter None messages
             payload = json.loads(body)
             payload["messages"] = [m for m in payload["messages"] if m]
             body = json.dumps(payload).encode()
@@ -157,6 +168,10 @@ def describe_image(image_filename, server, method="auto"):
 
     Returns description string, or None if no vision node available.
     """
+    # Auto mode: try vision models in order of quality/reliability.
+    # Florence2 is preferred (best accuracy, small footprint).
+    # Moondream is the fallback (even smaller, slightly less accurate).
+    # JoyCaption is last (art-focused, may not be installed).
     if method == "auto":
         for m in ["florence2", "moondream", "joycaption"]:
             result = describe_image(image_filename, server, method=m)
@@ -178,7 +193,8 @@ def describe_image(image_filename, server, method="auto"):
         if not pid:
             return None
 
-        # Poll for result
+        # Poll every 1 second for up to 60 seconds. Vision models (Florence2,
+        # Moondream) typically finish in 3-15s depending on image size and GPU.
         for _ in range(60):
             time.sleep(1)
             try:
@@ -187,15 +203,15 @@ def describe_image(image_filename, server, method="auto"):
                 if pid in d:
                     st = d[pid].get("status", {})
                     if st.get("completed"):
-                        # Extract text output
+                        # Different vision nodes use different output key names.
+                        # Florence2 -> "text", Moondream -> "string", etc.
                         for out in d[pid].get("outputs", {}).values():
-                            # Florence2 outputs text in "text" key
                             if "text" in out:
                                 return out["text"][0] if isinstance(out["text"], list) else str(out["text"])
-                            # Some nodes output in "string"
                             if "string" in out:
                                 return out["string"][0] if isinstance(out["string"], list) else str(out["string"])
-                        return None
+                        return None  # completed but no text output found
+                    # Check for execution errors (missing model, OOM, etc.)
                     for msg in st.get("messages", []):
                         if msg[0] == "execution_error":
                             return None
@@ -264,12 +280,15 @@ def inspect_generation(image_filename, server, kobold_url=None, original_prompt=
       quality_notes: list of observations
       suggestions: list of improvement suggestions
     """
-    # Step 1: Get image description via vision model
+    # TWO-STEP PIPELINE:
+    # Step 1: Vision model (Florence2/Moondream) generates a text description
+    #         of what it actually sees in the image (no prompt knowledge).
+    # Step 2: Text LLM compares the description against the original prompt
+    #         to evaluate accuracy and suggest improvements.
+    # This separation lets us use specialized models for each task.
     desc = describe_image(image_filename, server)
     if not desc:
         return {"description": None, "error": "No vision model available"}
-
-    # Step 2: Ask LLM to evaluate
     eval_prompt = f"""You are an AI image quality evaluator. Analyze this generated image.
 
 Original prompt: "{original_prompt}"
@@ -294,13 +313,18 @@ Reply in JSON format:
 
     if llm_response:
         try:
-            # Try to parse JSON from LLM response
+            # LLMs often wrap JSON in markdown fences or add preamble text.
+            # Extract the first {...} block via regex rather than parsing the
+            # entire response. [^{}]+ ensures we grab a flat JSON object
+            # (no nested braces), which is all we expect from the eval format.
             import re
             json_match = re.search(r'\{[^{}]+\}', llm_response, re.DOTALL)
             if json_match:
                 parsed = json.loads(json_match.group())
                 result.update(parsed)
         except Exception:
+            # JSON parsing failed — save raw LLM response as a quality note
+            # (truncated to 200 chars to avoid bloating the result dict).
             result["quality_notes"] = [llm_response[:200]]
 
     return result
@@ -323,13 +347,15 @@ def generate_ab_test(prompt, server, num_variants=3, **gen_kwargs):
 
     variants = []
     for i in range(num_variants):
-        # Vary settings slightly
         import random
         p = Pipeline(server, verbose=False)
         kwargs = dict(gen_kwargs)
+        # Each variant gets a unique seed for different noise initialization
         kwargs["seed"] = random.randint(1, 2**32 - 1)
 
-        # Vary CFG slightly for each variant
+        # Vary CFG (classifier-free guidance) by +/-20% across variants.
+        # This produces noticeably different outputs: lower CFG = more creative/loose,
+        # higher CFG = more prompt-adherent/saturated. Three tiers cycle via modulo.
         base_cfg = kwargs.get("cfg") or 7.0
         cfg_variants = [base_cfg * 0.8, base_cfg, base_cfg * 1.2]
         kwargs["cfg"] = cfg_variants[i % len(cfg_variants)]
