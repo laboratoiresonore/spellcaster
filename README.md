@@ -155,7 +155,7 @@ Too intimidated by GIMP? The [Wizard Guild](#under-the-hood) is a chat interface
 
 <p align="center"><em>"Ew, AI slop... and you didn't even code it yourself? lmao how ridiculous can you get"</em> — u/FentonTheIIV, r/GIMP</p>
 
-<p align="center">Correct! 22,000 lines of Python, vibe-coded at 3 AM while arguing with an AI that kept setting Klein's CFG to 3.5. We are not ashamed. We <em>are</em> tired.</p>
+<p align="center">Correct! 22,000 lines of Python, vibe-coded at 3 AM while arguing with an AI that kept setting Klein's CFG to 3.5. The <em>horror</em>.</p>
 
 ## All 69 Tools <!-- nice -->
 
@@ -371,7 +371,7 @@ Drop these characters into any SillyTavern group chat. They work silently in the
 
 <p align="center"><em>"the smugness radiates 'I'm better than everyone' it kills the interest"</em> — u/kanatakkun, r/GIMP</p>
 
-<p align="center">Fair point honestly. We were kind of a dick about it. But the tool still works. And the smugness is load-bearing — remove it and the whole architecture collapses.</p>
+<p align="center">You know I am, baby. Xoxo</p>
 
 ## FAQ
 
@@ -416,7 +416,7 @@ Yes. The Antenna Installer auto-detects ComfyUI servers on your network. Or set 
 
 <p align="center"><em>"Man this is the kind of phrasing you can use in your incel-fueled, ragebaiting and redpilled nutjobed clanckers spaces"</em> — u/MrSumNemo, r/GIMP</p>
 
-<p align="center">We had to look up "clanckers" and we're still not sure what it means. But it's going on a t-shirt.</p>
+<p align="center">No you.</p>
 
 <details>
 <summary><strong>Wall of Love from r/GIMP</strong></summary>
