@@ -2155,129 +2155,6 @@ async function selectCharacter(id) {
 
     // GSAP: burst effect on avatar selection
     _avatarSelectBurst(activeAvatar);
-
-    // Populate quick-action buttons based on wizard capabilities
-    _renderQuickActions(char);
-}
-
-// ── Quick Action Buttons ─────────────────────────────────────────
-// Bypass the LLM entirely — clicking a button sends the user's
-// prompt straight to ComfyUI via /api/direct_cast.
-
-const _quickActionsBar = document.getElementById('quick-actions-bar');
-
-function _renderQuickActions(char) {
-    if (!_quickActionsBar) return;
-    _quickActionsBar.innerHTML = '';
-
-    // All wizards get Generate Image
-    const actions = [
-        { label: '🎨 Generate Image', action: 'generate',
-          placeholder: 'Describe the image you want...' },
-    ];
-
-    // Add context-sensitive actions based on wizard type
-    const sub = (char.subtext || '').toLowerCase();
-    const cid = char.id || '';
-
-    if (sub.includes('face') || sub.includes('identity') || cid.includes('masquerade')) {
-        actions.push({ label: '🎭 Face Swap', action: 'faceswap',
-                       placeholder: 'Upload a face reference...' });
-    }
-    if (sub.includes('video') || cid.includes('video') || cid.includes('wan') || cid.includes('ltx')) {
-        actions.push({ label: '🎬 Animate', action: 'video',
-                       placeholder: 'Describe the motion...' });
-    }
-    if (sub.includes('upscale') || sub.includes('restore') || cid.includes('restorix')) {
-        actions.push({ label: '✨ Upscale', action: 'upscale' });
-        actions.push({ label: '🔧 Restore', action: 'restore' });
-    }
-    if (sub.includes('inpaint') || sub.includes('remove') || cid.includes('erasure')) {
-        actions.push({ label: '🗑️ Remove Object', action: 'remove' });
-        actions.push({ label: '🖌️ Inpaint', action: 'inpaint',
-                       placeholder: 'What should replace the selection?' });
-    }
-    if (sub.includes('style') || cid.includes('transmutex')) {
-        actions.push({ label: '🎨 Restyle', action: 'restyle',
-                       placeholder: 'Target style (e.g. oil painting, cyberpunk)...' });
-    }
-
-    // Always add Chat as last option
-    actions.push({ label: '💬 Chat / Ask', action: 'chat',
-                   placeholder: 'Ask a question...' });
-
-    for (const act of actions) {
-        const btn = document.createElement('button');
-        btn.className = 'qa-btn';
-        btn.textContent = act.label;
-        btn.addEventListener('click', () => _handleQuickAction(act, char));
-        _quickActionsBar.appendChild(btn);
-    }
-}
-
-async function _handleQuickAction(action, char) {
-    if (action.action === 'chat') {
-        // Focus the input — user types a freeform question for the LLM
-        chatInput.placeholder = 'Ask a question...';
-        chatInput.focus();
-        chatInput.dataset.forceChat = 'true';
-        return;
-    }
-
-    // For generation actions: use the current input text as the prompt
-    // If empty, prompt the user
-    let prompt = chatInput.value.trim();
-    if (!prompt && action.placeholder) {
-        chatInput.placeholder = action.placeholder;
-        chatInput.focus();
-        addSystemMessage(`<strong>${action.label}</strong> — Type your prompt below and press Enter, or click ✨`);
-        chatInput.dataset.quickAction = action.action;
-        return;
-    }
-
-    if (!prompt) {
-        prompt = `${char.subtext || char.name}`;
-    }
-
-    // Clear the input
-    chatInput.value = '';
-    chatInput.dataset.quickAction = '';
-    addUserMessage(prompt);
-    addTypingIndicator();
-    sendBtn.disabled = true;
-
-    try {
-        const res = await fetch('/api/direct_cast', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                char_id: char.id,
-                prompt: prompt,
-                comfy_url: comfyUrl,
-                action: action.action,
-            }),
-        });
-
-        if (res.ok) {
-            const data = await res.json();
-            chatHistory.push({ role: 'assistant', content: `[${action.label}]` });
-            if (data.type === 'images' && data.urls && data.urls.length) {
-                addGenerationMessage({ build_fn: 'direct_cast', params: { prompt } }, 'images', data.urls);
-            } else if (data.type === 'videos' && data.urls && data.urls.length) {
-                addGenerationMessage({ build_fn: 'direct_cast', params: { prompt } }, 'videos', data.urls);
-            } else {
-                addSystemMessage('<strong>Spell Complete!</strong>');
-            }
-        } else {
-            const err = await res.json().catch(() => ({}));
-            addAIMessage(`Could not complete ${action.label}: ${err.error || 'Unknown error'}. Try rephrasing your prompt.`);
-        }
-    } catch (e) {
-        addAIMessage(`${action.label} failed: ${e.message}`);
-    } finally {
-        removeTypingIndicator();
-        sendBtn.disabled = false;
-    }
 }
 
 function _parseNumberedOptions(text) {
@@ -2954,27 +2831,9 @@ sendBtn.addEventListener('click', () => {
     _spellCastFlash();
     const text = chatInput.value.trim();
     if (!text) return;
-
-    // If a quick action was primed, dispatch directly — no LLM
-    const qaAction = chatInput.dataset.quickAction;
-    const forceChat = chatInput.dataset.forceChat === 'true';
-    chatInput.dataset.quickAction = '';
-    chatInput.dataset.forceChat = '';
-    chatInput.placeholder = 'Describe what you want, or click an action above...';
-
-    if (qaAction && !forceChat) {
-        chatInput.value = '';
-        chatInput.style.height = 'auto';
-        const char = characters.find(c => c.id === activeCharacterId);
-        // Inject text into chatInput temporarily so _handleQuickAction reads it
-        chatInput.value = text;
-        _handleQuickAction({ action: qaAction, label: qaAction }, char);
-        return;
-    }
-
     addUserMessage(text);
     chatInput.value = '';
-    chatInput.style.height = 'auto';
+    chatInput.style.height = 'auto'; 
     askKobold(text);
 });
 

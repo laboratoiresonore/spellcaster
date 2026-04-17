@@ -1436,6 +1436,13 @@ CONTROLNET_GUIDE_MODES = {
                        "illustrious": "SDXL\\control-lora-depth-rank128.safetensors",
                        "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
     },
+    "Depth V3 (best quality) — SD1.5/SDXL/ZIT": {
+        "preprocessor": "DepthAnythingV2Preprocessor",
+        "cn_models": {"sd15": "control_v11f1p_sd15_depth_fp16.safetensors",
+                       "sdxl": "SDXL\\control-lora-depth-rank128.safetensors",
+                       "illustrious": "SDXL\\control-lora-depth-rank128.safetensors",
+                       "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
+    },
     "Lineart (drawing) — SD1.5/SDXL/ZIT": {
         "preprocessor": "LineArtPreprocessor",
         "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors",
@@ -1932,6 +1939,9 @@ def _ltx_suggest_resolution(src_w, src_h, vram_gb=12):
 
 UPSCALE_PRESETS = {
     "(none — no upscale)": None,
+    "WaveSpeed SeedVR2 → 2K (AI fast)": "__wavespeed_seedvr2_2k__",
+    "WaveSpeed SeedVR2 → 4K (AI fast)": "__wavespeed_seedvr2_4k__",
+    "WaveSpeed Ultimate → 2K (AI best)": "__wavespeed_ultimate_2k__",
     "4x UltraSharp (general)": "4x-UltraSharp.pth",
     "4x RealESRGAN (photo)": "RealESRGAN_x4plus.pth",
     "4x NMKD Superscale (sharp)": "4x_NMKD-Superscale-SP_178000_G.pth",
@@ -10523,6 +10533,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-quick-face-restore": "face_restore",
             "spellcaster-quick-rembg": "rembg",
             "spellcaster-quick-erase": None,
+            "spellcaster-normal-map": None,
             # Re-run Last
             "spellcaster-rerun-last": None,
             # AI Color Match
@@ -10687,6 +10698,8 @@ class Spellcaster(Gimp.PlugIn):
                                           "Instant background removal — no dialog"),
             "spellcaster-quick-erase": ("⚡ AI Eraser", self._run_ai_eraser,
                                           "Select anything and erase it — AI fills in the background seamlessly"),
+            "spellcaster-normal-map": ("3D Normal Map (NormalCrafter)...", self._run_normal_map,
+                                        "Generate a 3D surface normal map for relighting and reconstruction"),
             # Re-run Last
             "spellcaster-rerun-last": ("⚡ Re-run Last...", self._run_rerun_last,
                                         "Repeat your last Spellcaster operation instantly"),
@@ -10779,6 +10792,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-quick-face-restore":f"{_S}/Quick",
             "spellcaster-quick-rembg":       f"{_S}/Quick",
             "spellcaster-quick-erase":       f"{_S}/Quick",
+            "spellcaster-normal-map":        f"{_S}/Enhance",
 
             # Tools — utility and config
             "spellcaster-layer-blend-ratio": f"{_S}/Tools",
@@ -16580,7 +16594,14 @@ class Spellcaster(Gimp.PlugIn):
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_upscale_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
-            wf = build_upscale(uname, model_name, upscale_factor=upscale_factor)
+            # WaveSpeed AI upscale (special handling)
+            if model_name and model_name.startswith("__wavespeed_"):
+                parts = model_name.strip("_").split("_")
+                ws_model = "SeedVR2" if "seedvr2" in parts else "Ultimate"
+                ws_target = "4K" if "4k" in parts else "2K"
+                wf = build_wavespeed_upscale(uname, model=ws_model, target=ws_target)
+            else:
+                wf = build_upscale(uname, model_name, upscale_factor=upscale_factor)
             results = _run_with_spinner("Upscale: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
             for i, (fn, sf, ft) in enumerate(results):
@@ -21655,6 +21676,32 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Quick Remove BG Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ══════════════════════════════════════════════════════════════════════
+    #  NormalCrafter — 3D surface normal map generation
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _run_normal_map(self, procedure, run_mode, image, drawables, config, data):
+        """Generate a 3D surface normal map using NormalCrafter."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        try:
+            srv = COMFYUI_DEFAULT_URL
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_normal_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            wf = build_normal_map(uname, max_res=min(image.get_width(), 1024))
+            results = _run_with_spinner("NormalCrafter: generating normal map...",
+                                        lambda: list(_run_comfyui_workflow(srv, wf, timeout=300)))
+            for i, (fn, sf, ft) in enumerate(results):
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
+                                 f"Normal Map #{i+1}", False)
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"NormalCrafter Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     # ══════════════════════════════════════════════════════════════════════
