@@ -37,6 +37,10 @@ Experimenting with AI image generation locally is a huge pain in the ass, even f
 
 Meanwhile, GIMP is already an ultra-capable image editor with an intuitive interface, a canvas, layers, masks, selections, and transparency. It's the free Photoshop. But it has zero AI capabilities.
 
+> *"No, I use GIMP because I don't want to make AI slop."* — u/Ill_Morning_4282, r/GIMP (130 upvotes)
+
+Cool. This is for everyone else.
+
 ## The Solution
 
 **Spellcaster is dynamic middleware that sits between ComfyUI and any interface you want to use.** It absorbs all the complexity — models, nodes, samplers, schedulers, LoRAs, VAEs, ControlNets — and exposes it as simple menu items and one-click tools. Its entire purpose is to make ComfyUI's power accessible to people who have no interest in learning ComfyUI.
@@ -135,6 +139,10 @@ Too intimidated by GIMP? The [Wizard Guild](#under-the-hood) is a chat interface
 >
 > **Don't have a GPU?** The installer's **Antenna mode** connects to a ComfyUI server on another computer on your network.
 
+> *"No one fucking uses GIMP to make AI slop"* — u/Capable_Basket1661, r/GIMP (50 upvotes)
+
+Tell that to the 69 tools in the menu, bestie.
+
 ### Download & Run
 
 <p align="center">
@@ -159,6 +167,10 @@ Too intimidated by GIMP? The [Wizard Guild](#under-the-hood) is a chat interface
 > **From source:** `git clone https://github.com/laboratoiresonore/spellcaster && cd spellcaster && python installer/install.py`
 
 ---
+
+> *"Ew, AI slop... and you didn't even code it yourself? lmao how ridiculous can you get"* — u/FentonTheIIV, r/GIMP
+
+Correct! 22,000 lines of Python, vibe-coded at 3 AM while arguing with an AI that kept setting Klein's CFG to 3.5. We are not ashamed. We *are* tired.
 
 ## All 69 Tools <!-- nice -->
 
@@ -291,6 +303,12 @@ Too intimidated by GIMP? The [Wizard Guild](#under-the-hood) is a chat interface
 
 ---
 
+> *"No. Go away, sloperator!"* — u/chris020891, r/GIMP
+
+We can't leave. We live here now. We have 69 tools and a chat UI full of wizards. This is our home.
+
+---
+
 ## Under the Hood
 
 <details>
@@ -366,6 +384,10 @@ Drop these characters into any SillyTavern group chat. They work silently in the
 
 ---
 
+> *"the smugness radiates 'I'm better than everyone' it kills the interest"* — u/kanatakkun, r/GIMP
+
+Fair point honestly. We were kind of a dick about it. But the tool still works. And the smugness is load-bearing — remove it and the whole architecture collapses.
+
 ## FAQ
 
 <details>
@@ -406,6 +428,14 @@ Yes. The Antenna Installer auto-detects ComfyUI servers on your network. Or set 
 </details>
 
 ---
+
+> *"Man this is the kind of phrasing you can use in your incel-fueled, ragebaiting and redpilled nutjobed clanckers spaces"* — u/MrSumNemo, r/GIMP
+
+We had to look up "clanckers" and we're still not sure what it means. But it's going on a t-shirt.
+
+> *"Everyone with even a minor self respect would hate on this."* — u/chris020891, r/GIMP
+
+Our self-respect was already in critical condition, but thanks for checking.
 
 <details>
 <summary><strong>Wall of Love from r/GIMP</strong></summary>
