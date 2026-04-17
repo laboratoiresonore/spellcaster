@@ -55,7 +55,8 @@
       ],
       "required_by": [
         "face_swap_mtb"
-      ]
+      ],
+      "note": "Install via ComfyUI Manager (repo melMass/comfy-mtb may be archived). Search: comfy-mtb"
     },
     "ComfyUI_IPAdapter_plus": {
       "repo": "https://github.com/cubiq/ComfyUI_IPAdapter_plus",
@@ -80,7 +81,7 @@
       ]
     },
     "ComfyUI_GetImageSize": {
-      "repo": "https://github.com/IuvenisSapworworiens/ComfyUI_GetImageSize",
+      "repo": "https://github.com/cubiq/ComfyUI_essentials",
       "alt_repo": "https://github.com/kijai/ComfyUI-KJNodes",
       "provides": [
         "GetImageSize+"
@@ -90,7 +91,8 @@
         "inpaint",
         "face_swap_reactor",
         "face_swap_mtb"
-      ]
+      ],
+      "note": "GetImageSize+ is provided by ComfyUI_essentials. Install that instead."
     },
     "ComfyUI-RTX-Remix": {
       "repo": "https://github.com/NVlabs/ComfyUI-RTXVideoSuperResolution",
@@ -101,7 +103,7 @@
       "required_by": [
         "wan_i2v"
       ],
-      "note": "Requires NVIDIA RTX GPU with Tensor cores"
+      "note": "Install via ComfyUI Manager. Search: Nvidia RTX Nodes. Requires RTX GPU with Tensor cores."
     },
     "ComfyUI-REMBG": {
       "repo": "https://github.com/Jcd1230/rembg-comfyui-node",
@@ -195,7 +197,7 @@
       "note": "Spellcaster nodes — auto-arch model loading, LLM prompt enhance, and smart sampling. Auto-updates via git pull."
     },
     "ComfyUI-QwenVL-Mod": {
-      "repo": "https://github.com/Goekdeniz-Guelmez/ComfyUI-QwenVL-Mod",
+      "repo": "https://github.com/1038lab/ComfyUI-QwenVL",
       "provides": [
         "AILab_QwenVL_GGUF_PromptEnhancer",
         "AILab_QwenVL_GGUF",
@@ -204,7 +206,7 @@
       "required_by": [
         "prompt_enhance"
       ],
-      "note": "Local GGUF LLM for prompt enhancement — runs natively in ComfyUI, no separate server needed. Auto-manages VRAM."
+      "note": "Local GGUF LLM for prompt enhancement. Alt: install via ComfyUI Manager, search QwenVL-Mod."
     },
     "ComfyUI-DDColor": {
       "repo": "https://github.com/kijai/ComfyUI-DDColor",
@@ -233,12 +235,12 @@
       "note": "DepthAnythingV3 — 35% better depth estimation than V2. Optional upgrade for ControlNet depth."
     },
     "ComfyUI-NormalCrafter": {
-      "repo": "https://github.com/ComfyUI-NormalCrafter/ComfyUI-NormalCrafter",
+      "repo": "https://github.com/AIWarper/ComfyUI-NormalCrafterWrapper",
       "provides": [
         "NormalCrafterNode"
       ],
       "required_by": [],
-      "note": "NormalCrafter — generate 3D surface normal maps for relighting and reconstruction."
+      "note": "NormalCrafter wrapper. Install via ComfyUI Manager if this repo is unavailable."
     },
     "ComfyUI-Impact-Pack": {
       "repo": "https://github.com/ltdrdata/ComfyUI-Impact-Pack",
@@ -1116,7 +1118,7 @@
           },
           {
             "path": "upscale_models/RealESRGAN_x4plus.pth",
-            "url": "https://huggingface.co/uwg/upscaler/resolve/main/ESRGAN/RealESRGAN_x4plus.pth",
+            "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth",
             "size_mb": 67,
             "optional": true,
             "note": "4x RealESRGAN — good for photos"
@@ -1137,14 +1139,14 @@
           },
           {
             "path": "upscale_models/RealESRGAN_x4plus_anime_6B.pth",
-            "url": "https://huggingface.co/uwg/upscaler/resolve/main/ESRGAN/RealESRGAN_x4plus_anime_6B.pth",
+            "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth",
             "size_mb": 17,
             "optional": true,
             "note": "4x RealESRGAN Anime"
           },
           {
             "path": "upscale_models/8x_NMKD-Faces_160000_G.pth",
-            "url": "https://huggingface.co/uwg/upscaler/resolve/main/ESRGAN/8x_NMKD-Faces_160000_G.pth",
+            "url": "https://huggingface.co/gemasai/8x_NMKD-Faces_160000_G/resolve/main/8x_NMKD-Faces_160000_G.pth",
             "size_mb": 67,
             "optional": true,
             "note": "8x NMKD Faces — portraits"
