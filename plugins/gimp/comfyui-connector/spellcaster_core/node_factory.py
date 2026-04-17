@@ -364,6 +364,29 @@ class NodeFactory:
             "conditioning_2": cond_b,
         }, node_id)
 
+    # ── Acceleration nodes ─────────────────────────────────────────
+    def teacache(self, model_ref, threshold=0.25, node_id=None):
+        """ApplyTeaCachePatch — cache intermediate results for 1.4-2x speedup.
+        Lower threshold = more caching = faster but may lose detail.
+        0.25 = lossless for Flux/SDXL. 0.5 = 2x speed, slight quality loss.
+        Outputs: [0]=MODEL
+        """
+        return self._add("ApplyTeaCachePatch", {
+            "model": model_ref,
+            "rel_l1_thresh": threshold,
+        }, node_id)
+
+    def first_block_cache(self, model_ref, threshold=0.0, node_id=None):
+        """ApplyFirstBlockCachePatch — WaveSpeed FBCache for faster inference.
+        Uses first transformer block output as cache indicator.
+        0.0 = Flux default (lossless). Higher = more caching.
+        Outputs: [0]=MODEL
+        """
+        return self._add("ApplyFirstBlockCachePatch", {
+            "model": model_ref,
+            "residual_diff_threshold": threshold,
+        }, node_id)
+
     def flux_guidance(self, conditioning_ref, guidance, node_id=None):
         """FluxGuidance — apply guidance scale to Flux conditioning.
         Outputs: [0]=CONDITIONING
