@@ -1436,6 +1436,13 @@ CONTROLNET_GUIDE_MODES = {
                        "illustrious": "SDXL\\control-lora-depth-rank128.safetensors",
                        "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
     },
+    "Depth V3 (best quality) — SD1.5/SDXL/ZIT": {
+        "preprocessor": "DepthAnythingV2Preprocessor",
+        "cn_models": {"sd15": "control_v11f1p_sd15_depth_fp16.safetensors",
+                       "sdxl": "SDXL\\control-lora-depth-rank128.safetensors",
+                       "illustrious": "SDXL\\control-lora-depth-rank128.safetensors",
+                       "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
+    },
     "Lineart (drawing) — SD1.5/SDXL/ZIT": {
         "preprocessor": "LineArtPreprocessor",
         "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors",
@@ -1553,6 +1560,7 @@ FACE_RESTORE_MODELS = [
 
 FACE_RESTORE_PRESETS = {
     "CodeFormer (best quality)": {"model": "codeformer-v0.1.0.pth", "weight": 0.7},
+    "GPEN 2048 (best speed+quality)": {"model": "GPEN-BFR-2048.onnx", "weight": 0.8},
     "GFPGAN v1.4 (fast, good)": {"model": "GFPGANv1.4.pth", "weight": 0.8},
     "GFPGAN v1.3 (classic)": {"model": "GFPGANv1.3.pth", "weight": 0.8},
     "GPEN 1024 (high-res faces)": {"model": "GPEN-BFR-1024.onnx", "weight": 0.8},
@@ -1887,8 +1895,53 @@ SEEDVR2_VRAM_PROFILES = {
     24: {"max_resolution": 2560, "batch_size": 6},
 }
 
+# LTX Video 2.3 — VRAM-aware max total pixels (width × height).
+# LTX is extremely memory-hungry for video generation.
+LTX_VRAM_MAX_PIXELS = {
+    8:  (512, 320),     # 163K px — tight, may still OOM with 25+ frames
+    10: (640, 416),     # 266K px
+    12: (768, 512),     # 393K px — default
+    16: (960, 640),     # 614K px
+    24: (1280, 832),    # 1.06M px
+}
+
+
+def _ltx_suggest_resolution(src_w, src_h, vram_gb=12):
+    """Suggest LTX video resolution that preserves aspect ratio and fits VRAM.
+
+    Returns (width, height) rounded to nearest 32 (LTX requirement).
+    """
+    # Find the max dimensions for this VRAM tier
+    max_w, max_h = LTX_VRAM_MAX_PIXELS.get(24, (1280, 832))
+    for tier in sorted(LTX_VRAM_MAX_PIXELS.keys()):
+        if vram_gb <= tier:
+            max_w, max_h = LTX_VRAM_MAX_PIXELS[tier]
+            break
+
+    max_pixels = max_w * max_h
+    aspect = src_w / max(src_h, 1)
+
+    # Scale down to fit max_pixels while preserving aspect ratio
+    # w * h = max_pixels, w/h = aspect → w = sqrt(max_pixels * aspect)
+    import math
+    w = math.sqrt(max_pixels * aspect)
+    h = w / aspect
+
+    # Round to nearest 32 (LTX requirement)
+    w = max(128, int((w + 16) // 32) * 32)
+    h = max(128, int((h + 16) // 32) * 32)
+
+    # Clamp to absolute limits
+    w = min(w, 1920)
+    h = min(h, 1920)
+
+    return w, h
+
 UPSCALE_PRESETS = {
     "(none — no upscale)": None,
+    "WaveSpeed SeedVR2 → 2K (AI fast)": "__wavespeed_seedvr2_2k__",
+    "WaveSpeed SeedVR2 → 4K (AI fast)": "__wavespeed_seedvr2_4k__",
+    "WaveSpeed Ultimate → 2K (AI best)": "__wavespeed_ultimate_2k__",
     "4x UltraSharp (general)": "4x-UltraSharp.pth",
     "4x RealESRGAN (photo)": "RealESRGAN_x4plus.pth",
     "4x NMKD Superscale (sharp)": "4x_NMKD-Superscale-SP_178000_G.pth",
@@ -4583,16 +4636,16 @@ def _build_style_transfer(target_filename, style_ref_filename, preset,
 
 def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text, negative_text,
                               seed, denoise, cfg, steps=None, scale_factor=2.0,
-                              orig_width=512, orig_height=512,
-                              controlnet=None, controlnet_2=None, loras=None):
+                              controlnet=None, controlnet_2=None, loras=None,
+                              orig_width=512, orig_height=512):
     """→ Delegated to v2 builder."""
     preset = _fix_preset_cfg(preset)
     arch = preset.get("arch", "sdxl")
     if arch in _CFG_OVERRIDE and cfg > _CFG_OVERRIDE[arch]:
         cfg = _CFG_OVERRIDE[arch]
     return build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text, negative_text,
-                                    seed, denoise, cfg, steps=steps, scale_factor=scale_factor,
-                                    orig_width=orig_width, orig_height=orig_height,
+                                    seed, denoise, cfg, steps=steps,
+                                    upscale_factor=scale_factor,
                                     controlnet=controlnet, controlnet_2=controlnet_2,
                                     guide_modes=CONTROLNET_GUIDE_MODES,
                                     loras=loras)
@@ -8936,17 +8989,30 @@ class LtxVideoDialog(Gtk.Dialog):
         sw.add(self.prompt_view)
         box.pack_start(sw, False, False, 0)
 
-        # Dimensions & Frames
+        # Dimensions & Frames — defaults are VRAM-aware
+        _def_w, _def_h = 768, 512
+        try:
+            _st = _api_get(server_url, "/system_stats")
+            _dv = _st.get("devices", [{}])
+            if _dv:
+                _vg = _dv[0].get("vram_total", 0) / (1024**3)
+                _def_w, _def_h = _ltx_suggest_resolution(768, 512, _vg)
+        except Exception:
+            pass
         grid = Gtk.Grid(column_spacing=8, row_spacing=4)
         grid.attach(Gtk.Label(label="Width:", xalign=1), 0, 0, 1, 1)
         self.w_spin = Gtk.SpinButton.new_with_range(128, 1920, 32)
-        self.w_spin.set_value(768)
-        self.w_spin.set_tooltip_text("Output width (multiple of 32). Default 768.")
+        self.w_spin.set_value(_def_w)
+        self.w_spin.set_tooltip_text(
+            f"Output width (multiple of 32). Auto-set to {_def_w} based on your GPU VRAM.\n"
+            "Lower = less VRAM, higher = better quality. Max safe for your GPU shown.")
         grid.attach(self.w_spin, 1, 0, 1, 1)
         grid.attach(Gtk.Label(label="Height:", xalign=1), 2, 0, 1, 1)
         self.h_spin = Gtk.SpinButton.new_with_range(128, 1920, 32)
-        self.h_spin.set_value(512)
-        self.h_spin.set_tooltip_text("Output height (multiple of 32). Default 512.")
+        self.h_spin.set_value(_def_h)
+        self.h_spin.set_tooltip_text(
+            f"Output height (multiple of 32). Auto-set to {_def_h} based on your GPU VRAM.\n"
+            "Lower = less VRAM, higher = better quality.")
         grid.attach(self.h_spin, 3, 0, 1, 1)
 
         grid.attach(Gtk.Label(label="Frames:", xalign=1), 0, 1, 1, 1)
@@ -10478,6 +10544,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-quick-face-restore": "face_restore",
             "spellcaster-quick-rembg": "rembg",
             "spellcaster-quick-erase": None,
+            "spellcaster-normal-map": None,
             # Re-run Last
             "spellcaster-rerun-last": None,
             # AI Color Match
@@ -10642,6 +10709,8 @@ class Spellcaster(Gimp.PlugIn):
                                           "Instant background removal — no dialog"),
             "spellcaster-quick-erase": ("⚡ AI Eraser", self._run_ai_eraser,
                                           "Select anything and erase it — AI fills in the background seamlessly"),
+            "spellcaster-normal-map": ("3D Normal Map (NormalCrafter)...", self._run_normal_map,
+                                        "Generate a 3D surface normal map for relighting and reconstruction"),
             # Re-run Last
             "spellcaster-rerun-last": ("⚡ Re-run Last...", self._run_rerun_last,
                                         "Repeat your last Spellcaster operation instantly"),
@@ -10734,6 +10803,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-quick-face-restore":f"{_S}/Quick",
             "spellcaster-quick-rembg":       f"{_S}/Quick",
             "spellcaster-quick-erase":       f"{_S}/Quick",
+            "spellcaster-normal-map":        f"{_S}/Enhance",
 
             # Tools — utility and config
             "spellcaster-layer-blend-ratio": f"{_S}/Tools",
@@ -11108,13 +11178,24 @@ class Spellcaster(Gimp.PlugIn):
         dlg = LtxVideoDialog()
 
         # If launched via LTX I2V menu, pre-enable I2V and size from canvas
+        # Uses VRAM-aware resolution to avoid OOM while preserving aspect ratio
         _i2v_auto = getattr(self, "_ltx_i2v_autostart", False)
         if _i2v_auto:
             self._ltx_i2v_autostart = False
             dlg.i2v_check.set_active(True)
             iw, ih = image.get_width(), image.get_height()
-            dlg.w_spin.set_value(max(128, min(1920, (iw + 16) // 32 * 32)))
-            dlg.h_spin.set_value(max(128, min(1920, (ih + 16) // 32 * 32)))
+            # Query server VRAM for resolution suggestion
+            _vram = 12  # default assumption
+            try:
+                _s = _api_get(COMFYUI_DEFAULT_URL, "/system_stats")
+                _devs = _s.get("devices", [{}])
+                if _devs:
+                    _vram = _devs[0].get("vram_total", 0) / (1024**3)
+            except Exception:
+                pass
+            lw, lh = _ltx_suggest_resolution(iw, ih, _vram)
+            dlg.w_spin.set_value(lw)
+            dlg.h_spin.set_value(lh)
 
         last = _SESSION.get("ltx_t2v")
         if last:
@@ -16710,7 +16791,14 @@ class Spellcaster(Gimp.PlugIn):
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_upscale_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
-            wf = build_upscale(uname, model_name, upscale_factor=upscale_factor)
+            # WaveSpeed AI upscale (special handling)
+            if model_name and model_name.startswith("__wavespeed_"):
+                parts = model_name.strip("_").split("_")
+                ws_model = "SeedVR2" if "seedvr2" in parts else "Ultimate"
+                ws_target = "4K" if "4k" in parts else "2K"
+                wf = build_wavespeed_upscale(uname, model=ws_model, target=ws_target)
+            else:
+                wf = build_upscale(uname, model_name, upscale_factor=upscale_factor)
             results = _run_with_spinner("Upscale: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
             for i, (fn, sf, ft) in enumerate(results):
@@ -18098,7 +18186,9 @@ class Spellcaster(Gimp.PlugIn):
                 wf = _build_detail_hallucinate(uname, upscale_model, preset, prompt, negative,
                                                 seed, h_preset["denoise"], h_preset["cfg"],
                                                 steps=h_preset.get("steps"),
-                                                upscale_factor=upscale_factor,
+                                                scale_factor=upscale_factor,
+                                                orig_width=image.get_width(),
+                                                orig_height=image.get_height(),
                                                 controlnet=cn1, controlnet_2=cn2,
                                                 loras=loras)
                 label = f"Detail Hallucinate run {run_i+1}/{runs}" if runs > 1 else "Detail Hallucinate"
@@ -18469,6 +18559,21 @@ class Spellcaster(Gimp.PlugIn):
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
         se.set_tooltip_text("ComfyUI server address. Default: http://127.0.0.1:8188")
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        # Engine selector: DDColor (fast) vs ControlNet (quality)
+        engine_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        engine_hb.pack_start(Gtk.Label(label="Engine:"), False, False, 0)
+        colorize_engine = Gtk.ComboBoxText()
+        colorize_engine.append("controlnet", "ControlNet + Diffusion (best quality, slower)")
+        colorize_engine.append("ddcolor_artistic", "DDColor Artistic (fast, vivid)")
+        colorize_engine.append("ddcolor_natural", "DDColor Natural (fast, accurate)")
+        colorize_engine.set_active(0)
+        colorize_engine.set_tooltip_text(
+            "Colorization engine:\n\n"
+            "ControlNet: Uses diffusion model + lineart guide. Best quality, slower.\n"
+            "DDColor Artistic: Fast AI colorization, vivid creative colors.\n"
+            "DDColor Natural: Fast AI colorization, most accurate colors.")
+        engine_hb.pack_start(colorize_engine, True, True, 0)
+        bx.pack_start(engine_hb, False, False, 0)
         # Checkpoint model dropdown
         bx.pack_start(Gtk.Label(label="Checkpoint Model:", xalign=0), False, False, 0)
         model_combo = Gtk.ComboBoxText()
@@ -18702,15 +18807,37 @@ class Spellcaster(Gimp.PlugIn):
             "runs": runs,
             "lora_id": _lora_id or "", "lora_str": _lora_str,
         }
+        _colorize_engine = colorize_engine.get_active_id()
         _save_session()
         dlg.destroy()
-        # Block architectures that don't support ControlNet
+
+        # DDColor path: fast, no diffusion model needed
+        if _colorize_engine and _colorize_engine.startswith("ddcolor"):
+            try:
+                _update_spinner_status("DDColor: exporting image...")
+                tmp = _export_image_to_tmp(image)
+                uname = f"gimp_colorize_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, tmp, uname); os.unlink(tmp)
+                ckpt = "ddcolor_artistic.pth" if "artistic" in _colorize_engine else "ddcolor_modelscope.pth"
+                wf = build_ddcolor(uname, checkpoint=ckpt)
+                results = _run_with_spinner("DDColor: colorizing...",
+                                            lambda: list(_run_comfyui_workflow(srv, wf)))
+                for i, (fn, sf, ft) in enumerate(results):
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
+                                     f"DDColor {_colorize_engine.split('_')[-1]} #{i+1}", False)
+                Gimp.displays_flush(); Gimp.progress_end()
+                return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+            except Exception as e:
+                Gimp.message(f"DDColor Error: {e}")
+                return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+        # ControlNet path: high quality, needs diffusion model
         _colorize_arch = preset.get("arch", "sdxl")
         _NO_CN_ARCHS = ("flux2klein", "flux_kontext", "chroma")
         if _colorize_arch in _NO_CN_ARCHS:
             Gimp.message(
-                f"Colorize requires ControlNet, which is not supported by {preset.get('label', _colorize_arch)}.\n\n"
-                f"Use an SDXL, SD1.5, Illustrious, or Flux Dev model instead.")
+                f"ControlNet colorization is not supported by {preset.get('label', _colorize_arch)}.\n\n"
+                f"Use an SDXL/SD1.5 model, or switch to DDColor engine (no model needed).")
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _update_spinner_status("Colorize: exporting image...")
@@ -20962,18 +21089,40 @@ class Spellcaster(Gimp.PlugIn):
         se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
         se.set_tooltip_text("ComfyUI server address. Default: http://127.0.0.1:8188")
         hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
-        bx.pack_start(Gtk.Label(label="Removes background using isnet-general-use model.\nResult is a transparent PNG layer."), False, False, 4)
+        # Model selector
+        model_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        model_hb.pack_start(Gtk.Label(label="Engine:"), False, False, 0)
+        engine_combo = Gtk.ComboBoxText()
+        engine_combo.append("rembg", "rembg (fast, good)")
+        engine_combo.append("birefnet", "BiRefNet (slower, best hair/detail)")
+        engine_combo.append("birefnet-portrait", "BiRefNet Portrait (people)")
+        engine_combo.set_active(0)
+        engine_combo.set_tooltip_text(
+            "Background removal engine:\n\n"
+            "rembg: Fast, good for clean backgrounds (default)\n"
+            "BiRefNet: Better for hair, fur, transparent objects\n"
+            "BiRefNet Portrait: Optimized for people/headshots")
+        model_hb.pack_start(engine_combo, True, True, 0)
+        bx.pack_start(model_hb, False, False, 0)
+        bx.pack_start(Gtk.Label(label="Result is a transparent PNG layer.", xalign=0), False, False, 4)
         bx.show_all()
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
-        srv = se.get_text().strip(); _propagate_server_url(srv); dlg.destroy()
+        srv = se.get_text().strip(); _propagate_server_url(srv)
+        _engine = engine_combo.get_active_id()
+        dlg.destroy()
         try:
             _update_spinner_status("Remove Background: exporting image...")
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_rembg_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
-            wf = build_rembg(uname)
+            if _engine == "birefnet":
+                wf = build_rembg_birefnet(uname, model="BiRefNet-general")
+            elif _engine == "birefnet-portrait":
+                wf = build_rembg_birefnet(uname, model="BiRefNet-portrait")
+            else:
+                wf = build_rembg(uname)
             _update_spinner_status("Remove Background: processing on ComfyUI...")
             results = _run_with_spinner("Remove Background: processing on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
@@ -21732,6 +21881,32 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Quick Remove BG Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ══════════════════════════════════════════════════════════════════════
+    #  NormalCrafter — 3D surface normal map generation
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _run_normal_map(self, procedure, run_mode, image, drawables, config, data):
+        """Generate a 3D surface normal map using NormalCrafter."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        try:
+            srv = COMFYUI_DEFAULT_URL
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_normal_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            wf = build_normal_map(uname, max_res=min(image.get_width(), 1024))
+            results = _run_with_spinner("NormalCrafter: generating normal map...",
+                                        lambda: list(_run_comfyui_workflow(srv, wf, timeout=300)))
+            for i, (fn, sf, ft) in enumerate(results):
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
+                                 f"Normal Map #{i+1}", False)
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"NormalCrafter Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     # ══════════════════════════════════════════════════════════════════════

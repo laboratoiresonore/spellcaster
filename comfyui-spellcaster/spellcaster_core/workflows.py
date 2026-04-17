@@ -691,6 +691,58 @@ def build_rembg(image_filename, alpha_matting=False,
     return nf.build()
 
 
+def build_rembg_birefnet(image_filename, model="BiRefNet-general"):
+    """Background removal using BiRefNet (higher quality than rembg).
+
+    BiRefNet produces significantly better results for hair, fur, and
+    transparent/semi-transparent objects. Uses the ComfyUI-RMBG node pack.
+
+    Models:
+      - BiRefNet-general: best all-around (default)
+      - BiRefNet-portrait: optimized for people
+      - BiRefNet-HR: highest detail but may over-correct
+
+    Returns:
+        dict: ComfyUI workflow (load -> BiRefNetRMBG -> save)
+    """
+    nf = NodeFactory()
+    img_id = nf.load_image(image_filename, node_id="1")
+    biref_id = nf._add("BiRefNetRMBG", {
+        "image": [img_id, 0],
+        "model": model,
+    }, node_id="2")
+    nf.save_image([biref_id, 0], "spellcaster_rembg", node_id="3")
+    return nf.build()
+
+
+def build_ddcolor(image_filename, checkpoint="ddcolor_artistic.pth",
+                  model_input_size=512):
+    """Colorize B&W photo using DDColor (fast, no diffusion).
+
+    DDColor uses dual decoders for state-of-the-art automatic
+    colorization without requiring a text prompt or diffusion model.
+    Much faster than ControlNet-guided colorization.
+
+    Checkpoints:
+      - ddcolor_artistic.pth: best for artistic/creative colors (default)
+      - ddcolor_modelscope.pth: most accurate/natural colors
+      - ddcolor_paper.pth: academic baseline
+      - ddcolor_paper_tiny.pth: fastest, lower quality
+
+    Returns:
+        dict: ComfyUI workflow (load -> DDColor_Colorize -> save)
+    """
+    nf = NodeFactory()
+    img_id = nf.load_image(image_filename, node_id="1")
+    dd_id = nf._add("DDColor_Colorize", {
+        "image": [img_id, 0],
+        "checkpoint": checkpoint,
+        "model_input_size": model_input_size,
+    }, node_id="2")
+    nf.save_image([dd_id, 0], "spellcaster_colorize", node_id="3")
+    return nf.build()
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  upscale — Model-based super-resolution
 # ═══════════════════════════════════════════════════════════════════════════
@@ -729,6 +781,39 @@ def build_upscale(image_filename, model_name, upscale_factor=1.0):
     up_id = nf.image_upscale_with_model_by_factor(
         [up_model_id, 0], [img_id, 0], upscale_factor, node_id="3")
     nf.save_image([up_id, 0], "spellcaster_upscale", node_id="4")
+    return nf.build()
+
+
+def build_wavespeed_upscale(image_filename, model="SeedVR2", target="2K"):
+    """WaveSpeed AI upscale — fast one-node upscale to 2K/4K/8K.
+
+    Uses WaveSpeed's optimized SeedVR2 or Ultimate model for fast,
+    high-quality upscaling without manual model selection.
+
+    Args:
+        image_filename: Input image
+        model: "SeedVR2" (default) or "Ultimate"
+        target: "2K", "4K", or "8K"
+    """
+    nf = NodeFactory()
+    img_id = nf.load_image(image_filename, node_id="1")
+    up_id = nf.wavespeed_upscale([img_id, 0], model=model,
+                                  target=target, node_id="2")
+    nf.save_image([up_id, 0], "spellcaster_upscale", node_id="3")
+    return nf.build()
+
+
+def build_normal_map(image_filename, seed=42, max_res=1024):
+    """Generate 3D surface normal map using NormalCrafter.
+
+    Produces a normal map image useful for relighting, 3D reconstruction,
+    and ControlNet normal guidance.
+    """
+    nf = NodeFactory()
+    img_id = nf.load_image(image_filename, node_id="1")
+    normal_id = nf.normal_crafter([img_id, 0], seed=seed,
+                                   max_res=max_res, node_id="2")
+    nf.save_image([normal_id, 0], "spellcaster_normals", node_id="3")
     return nf.build()
 
 
@@ -4480,9 +4565,7 @@ def build_klein_auto_inpaint(image_filename, mask_prompt, inpaint_prompt, seed,
     # Florence2 auto-segmentation → mask
     fl2_model_id = nf._add("DownloadAndLoadFlorence2Model", {
         "model": florence_model,
-        "precision": "fp32",
-        "attention": "sdpa",
-        "lora": False,
+        "precision": "fp16",
     }, node_id="60")
 
     fl2_run_id = nf._add("Florence2Run", {
@@ -4583,7 +4666,7 @@ def build_klein_color_match(target_filename, reference_filename,
         "image_ref": [ref_id, 0],
         "method": method,
         "strength": strength,
-        "keep_original_colors_on_error": True,
+        "multithread": True,
     }, node_id="10")
 
     nf.save_image([match_id, 0], "klein_color_match", node_id="20")
@@ -5104,6 +5187,16 @@ def build_klein_face_detail(image_filename, prompt_text, seed,
         "force_inpaint": True,
         "wildcard": "",
         "cycle": 1,
+        "drop_size": 10,
+        "bbox_threshold": 0.5,
+        "bbox_dilation": 10,
+        "bbox_crop_factor": 3.0,
+        "sam_detection_hint": "center-1",
+        "sam_dilation": 0,
+        "sam_threshold": 0.93,
+        "sam_bbox_expansion": 0,
+        "sam_mask_hint_threshold": 0.7,
+        "sam_mask_hint_use_negative": "False",
     }, node_id="30")
 
     # FaceDetailer output slot 0 = refined image
@@ -5283,7 +5376,7 @@ def build_klein_generate_object(scene_filename, prompt_text, seed,
 # Detection presets: each maps to either a YOLO model or SAM3 text prompt
 DETAIL_PRESETS = {
     "Face (sharp eyes, skin)": {
-        "detector": "yolo", "model": "face_yolov8m.pt",
+        "detector": "yolo", "model": "bbox/face_yolov8m.pt",
         "prompt": "extremely detailed face, sharp eyes with visible iris texture, "
                   "natural skin with pores, individual eyelashes, studio lighting",
         "denoise": 0.35, "guide_size": 512, "steps": 6,
@@ -5295,7 +5388,7 @@ DETAIL_PRESETS = {
         "denoise": 0.40, "guide_size": 384, "steps": 6,
     },
     "Hands (fingers, nails)": {
-        "detector": "yolo", "model": "hand_yolov8s.pt",
+        "detector": "yolo", "model": "bbox/hand_yolov8s.pt",
         "prompt": "perfectly detailed hands, correct anatomy, five fingers, "
                   "natural fingernails, realistic skin texture, proper proportions",
         "denoise": 0.45, "guide_size": 512, "steps": 8,
@@ -5334,7 +5427,7 @@ DETAIL_PRESETS = {
         "denoise": 0.35, "guide_size": 384, "steps": 6,
     },
     "Full Body (overall)": {
-        "detector": "yolo", "model": "person_yolov8m-seg.pt",
+        "detector": "yolo", "model": "segm/person_yolov8m-seg.pt",
         "prompt": "highly detailed full body, sharp features, "
                   "realistic proportions, natural skin and clothing texture",
         "denoise": 0.35, "guide_size": 768, "steps": 6,
@@ -5448,6 +5541,16 @@ def build_klein_detail(image_filename, preset_key, prompt_text, seed,
             "force_inpaint": True,
             "wildcard": "",
             "cycle": 1,
+            "drop_size": 10,
+            "bbox_threshold": 0.5,
+            "bbox_dilation": 10,
+            "bbox_crop_factor": 3.0,
+            "sam_detection_hint": "center-1",
+            "sam_dilation": 0,
+            "sam_threshold": 0.93,
+            "sam_bbox_expansion": 0,
+            "sam_mask_hint_threshold": 0.7,
+            "sam_mask_hint_use_negative": "False",
         }, node_id="30")
         nf.save_image([detail_id, 0], "klein_detail", node_id="40")
 

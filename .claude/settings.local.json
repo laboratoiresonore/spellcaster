@@ -18,7 +18,22 @@
       "Bash(sed -n 8274,8284p c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/plugins/gimp/comfyui-connector/_spellcaster_main.py)",
       "Bash(sed -n 8879,8889p c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/plugins/gimp/comfyui-connector/_spellcaster_main.py)",
       "Bash(sed -n 10079,10089p c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/plugins/gimp/comfyui-connector/_spellcaster_main.py)",
-      "Bash(sed -n 10162,10178p c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/plugins/gimp/comfyui-connector/_spellcaster_main.py)"
+      "Bash(sed -n 10162,10178p c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/plugins/gimp/comfyui-connector/_spellcaster_main.py)",
+      "WebFetch(domain:stable-diffusion-art.com)",
+      "Bash(PYTHONIOENCODING=utf-8 python3)",
+      "Bash(PYTHONIOENCODING=utf-8 python3 c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/plugins/gimp/comfyui-connector/spellcaster_core/workflows.py)",
+      "Bash(PYTHONIOENCODING=utf-8 python3 /tmp/audit_strict.py)",
+      "Bash(PYTHONIOENCODING=utf-8 python3 \"C:\\\\Users\\\\redacted\\\\AppData\\\\Local\\\\Temp\\\\audit_strict.py\")",
+      "Bash(PYTHONIOENCODING=utf-8 python3 c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/audit_strict.py)",
+      "Bash(ls /tmp/audit*)",
+      "Bash(ls C:/Users/redacted/AppData/Local/Temp/audit*)",
+      "Bash(curl -s http://<INTERNAL_HOST>:8188/object_info/FaceDetailer)",
+      "Bash(curl -s \"http://<INTERNAL_HOST>:8188/object_info/Florence2ModelLoader\")",
+      "Bash(curl -s http://<INTERNAL_HOST>:8188/object_info/ACEPlusLoader)"
+    ],
+    "additionalDirectories": [
+      "\\tmp",
+      "c:\\tmp"
     ]
   }
 }

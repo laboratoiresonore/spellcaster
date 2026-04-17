@@ -342,6 +342,147 @@ class NodeFactory:
         return self._add("ConditioningZeroOut",
                          {"conditioning": conditioning_ref}, node_id)
 
+    def conditioning_set_area(self, conditioning_ref, x, y, width, height,
+                              strength=1.0, node_id=None):
+        """ConditioningSetArea — restrict conditioning to a spatial region.
+        Used for multi-character regional prompting.
+        Outputs: [0]=CONDITIONING
+        """
+        return self._add("ConditioningSetArea", {
+            "conditioning": conditioning_ref,
+            "x": x, "y": y, "width": width, "height": height,
+            "strength": strength,
+        }, node_id)
+
+    def conditioning_combine(self, cond_a, cond_b, node_id=None):
+        """ConditioningCombine — merge two conditioning tensors.
+        Used to combine regional + global conditioning for multi-character.
+        Outputs: [0]=CONDITIONING
+        """
+        return self._add("ConditioningCombine", {
+            "conditioning_1": cond_a,
+            "conditioning_2": cond_b,
+        }, node_id)
+
+    # ── Acceleration nodes ─────────────────────────────────────────
+    def teacache(self, model_ref, threshold=0.25, node_id=None):
+        """ApplyTeaCachePatch — cache intermediate results for 1.4-2x speedup.
+        Lower threshold = more caching = faster but may lose detail.
+        0.25 = lossless for Flux/SDXL. 0.5 = 2x speed, slight quality loss.
+        Outputs: [0]=MODEL
+        """
+        return self._add("ApplyTeaCachePatch", {
+            "model": model_ref,
+            "rel_l1_thresh": threshold,
+        }, node_id)
+
+    def first_block_cache(self, model_ref, threshold=0.0, node_id=None):
+        """ApplyFirstBlockCachePatch — WaveSpeed FBCache for faster inference.
+        Uses first transformer block output as cache indicator.
+        0.0 = Flux default (lossless). Higher = more caching.
+        Outputs: [0]=MODEL
+        """
+        return self._add("ApplyFirstBlockCachePatch", {
+            "model": model_ref,
+            "residual_diff_threshold": threshold,
+        }, node_id)
+
+    # ── Depth estimation ────────────────────────────────────────
+    def depth_anything_v3_loader(self, model="DepthAnythingV3-ViTL",
+                                  node_id=None):
+        """DownloadAndLoadDepthAnythingV3Model — load DA3 model.
+        35% more accurate than V2 (surpasses VGGT).
+        Outputs: [0]=DA3MODEL
+        """
+        return self._add("DownloadAndLoadDepthAnythingV3Model", {
+            "model": model,
+        }, node_id)
+
+    def depth_anything_v3(self, da3_model_ref, image_ref,
+                           normalization="V2-Style", node_id=None):
+        """DepthAnything_V3 — state-of-art monocular depth estimation.
+        Outputs: [0]=depth, [1]=confidence, ... (10 outputs)
+        """
+        return self._add("DepthAnything_V3", {
+            "da3_model": da3_model_ref,
+            "images": image_ref,
+            "normalization_mode": normalization,
+        }, node_id)
+
+    # ── WaveSpeed upscale ─────────────────────────────────────
+    def wavespeed_upscale(self, image_ref, model="SeedVR2",
+                           target="2K", node_id=None):
+        """WavespeedImageUpscaleNode — fast upscale via WaveSpeed.
+        Models: SeedVR2, Ultimate. Targets: 2K, 4K, 8K.
+        Outputs: [0]=IMAGE
+        """
+        return self._add("WavespeedImageUpscaleNode", {
+            "model": model,
+            "image": image_ref,
+            "target_resolution": target,
+        }, node_id)
+
+    # ── NormalCrafter ─────────────────────────────────────────
+    def normal_crafter(self, image_ref, seed=42, max_res=1024,
+                        node_id=None):
+        """NormalCrafterNode — generate 3D surface normal maps.
+        Useful for relighting, 3D reconstruction, ControlNet normal.
+        Outputs: [0]=IMAGE (normal map)
+        """
+        return self._add("NormalCrafterNode", {
+            "images": image_ref,
+            "seed": seed,
+            "max_res_dimension": max_res,
+            "window_size": 14,
+            "time_step_size": 10,
+            "decode_chunk_size": 4,
+            "offload_pipe_to_cpu_on_finish": True,
+            "use_xformers": "auto",
+        }, node_id)
+
+    # ── WAN Video TeaCache ────────────────────────────────────
+    def wan_video_teacache(self, threshold=0.3, start_step=1,
+                            end_step=-1, node_id=None):
+        """WanVideoTeaCache — acceleration for WAN 2.2 video generation.
+        Returns cache_args to pass to WAN sampler.
+        Outputs: [0]=CACHE_ARGS
+        """
+        return self._add("WanVideoTeaCache", {
+            "rel_l1_thresh": threshold,
+            "start_step": start_step,
+            "end_step": end_step,
+            "cache_device": "offload_device",
+            "use_coefficients": True,
+        }, node_id)
+
+    # ── ACE++ face swap ──────────────────────────────────────
+    def ace_plus_loader(self, unet_name, weight_dtype="default",
+                         node_id=None):
+        """ACEPlusLoader — load model for ACE++ face/edit operations.
+        Uses existing UNET models (Klein 9B, 4B, etc.)
+        Outputs: [0]=MODEL
+        """
+        return self._add("ACEPlusLoader", {
+            "unet_name": unet_name,
+            "weight_dtype": weight_dtype,
+        }, node_id)
+
+    def ace_plus_lora_conditioning(self, positive_ref, negative_ref,
+                                     vae_ref, pixels_ref, mask_ref,
+                                     noise_mask=True, node_id=None):
+        """ACEPlusLoraConditioning — prepare ACE++ LoRA-based conditioning.
+        For face swap/portrait: pass face image as pixels, face mask as mask.
+        Outputs: [0]=positive, [1]=negative, [2]=latent
+        """
+        return self._add("ACEPlusLoraConditioning", {
+            "positive": positive_ref,
+            "negative": negative_ref,
+            "vae": vae_ref,
+            "pixels": pixels_ref,
+            "mask": mask_ref,
+            "noise_mask": noise_mask,
+        }, node_id)
+
     def flux_guidance(self, conditioning_ref, guidance, node_id=None):
         """FluxGuidance — apply guidance scale to Flux conditioning.
         Outputs: [0]=CONDITIONING
