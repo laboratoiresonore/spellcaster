@@ -27,7 +27,7 @@
   <a href="https://www.reddit.com/r/Spellcaster_Studio/">Reddit</a>
 </p>
 
-> *"Everyone with even a minor self respect would hate on this."* — u/chris020891, r/GIMP
+<p align="center"><em>"Everyone with even a minor self respect would hate on this."</em> — u/chris020891, r/GIMP</p>
 
 ---
 
@@ -39,9 +39,9 @@ Experimenting with AI image generation locally is a huge pain in the ass, even f
 
 Meanwhile, GIMP is already an ultra-capable image editor with an intuitive interface, a canvas, layers, masks, selections, and transparency. It's the free Photoshop. But it has zero AI capabilities.
 
-> *"No, I use GIMP because I don't want to make AI slop."* — u/Ill_Morning_4282, r/GIMP (130 upvotes)
+<p align="center"><em>"No, I use GIMP because I don't want to make AI slop."</em> — u/Ill_Morning_4282, r/GIMP (130 upvotes)</p>
 
-Cool. This is for everyone else.
+<p align="center">Cool. This is for everyone else.</p>
 
 ## The Solution
 
@@ -124,9 +124,9 @@ Too intimidated by GIMP? The [Wizard Guild](#under-the-hood) is a chat interface
 >
 > **Don't have a GPU?** The installer's **Antenna mode** connects to a ComfyUI server on another computer on your network.
 
-> *"No one fucking uses GIMP to make AI slop"* — u/Capable_Basket1661, r/GIMP (50 upvotes)
+<p align="center"><em>"No one fucking uses GIMP to make AI slop"</em> — u/Capable_Basket1661, r/GIMP (50 upvotes)</p>
 
-Tell that to the 69 tools in the menu, bestie.
+<p align="center">Tell that to the 69 tools in the menu, bestie.</p>
 
 ### Download & Run
 
@@ -153,9 +153,9 @@ Tell that to the 69 tools in the menu, bestie.
 
 ---
 
-> *"Ew, AI slop... and you didn't even code it yourself? lmao how ridiculous can you get"* — u/FentonTheIIV, r/GIMP
+<p align="center"><em>"Ew, AI slop... and you didn't even code it yourself? lmao how ridiculous can you get"</em> — u/FentonTheIIV, r/GIMP</p>
 
-Correct! 22,000 lines of Python, vibe-coded at 3 AM while arguing with an AI that kept setting Klein's CFG to 3.5. We are not ashamed. We *are* tired.
+<p align="center">Correct! 22,000 lines of Python, vibe-coded at 3 AM while arguing with an AI that kept setting Klein's CFG to 3.5. We are not ashamed. We <em>are</em> tired.</p>
 
 ## All 69 Tools <!-- nice -->
 
@@ -288,9 +288,9 @@ Correct! 22,000 lines of Python, vibe-coded at 3 AM while arguing with an AI tha
 
 ---
 
-> *"No. Go away, sloperator!"* — u/chris020891, r/GIMP
+<p align="center"><em>"No. Go away, sloperator!"</em> — u/chris020891, r/GIMP</p>
 
-We can't leave. We live here now. We have 69 tools and a chat UI full of wizards. This is our home.
+<p align="center">We can't leave. We live here now. We have 69 tools and a chat UI full of wizards. This is our home.</p>
 
 ---
 
@@ -369,9 +369,9 @@ Drop these characters into any SillyTavern group chat. They work silently in the
 
 ---
 
-> *"the smugness radiates 'I'm better than everyone' it kills the interest"* — u/kanatakkun, r/GIMP
+<p align="center"><em>"the smugness radiates 'I'm better than everyone' it kills the interest"</em> — u/kanatakkun, r/GIMP</p>
 
-Fair point honestly. We were kind of a dick about it. But the tool still works. And the smugness is load-bearing — remove it and the whole architecture collapses.
+<p align="center">Fair point honestly. We were kind of a dick about it. But the tool still works. And the smugness is load-bearing — remove it and the whole architecture collapses.</p>
 
 ## FAQ
 
@@ -414,9 +414,9 @@ Yes. The Antenna Installer auto-detects ComfyUI servers on your network. Or set 
 
 ---
 
-> *"Man this is the kind of phrasing you can use in your incel-fueled, ragebaiting and redpilled nutjobed clanckers spaces"* — u/MrSumNemo, r/GIMP
+<p align="center"><em>"Man this is the kind of phrasing you can use in your incel-fueled, ragebaiting and redpilled nutjobed clanckers spaces"</em> — u/MrSumNemo, r/GIMP</p>
 
-We had to look up "clanckers" and we're still not sure what it means. But it's going on a t-shirt.
+<p align="center">We had to look up "clanckers" and we're still not sure what it means. But it's going on a t-shirt.</p>
 
 <details>
 <summary><strong>Wall of Love from r/GIMP</strong></summary>
