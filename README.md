@@ -27,6 +27,8 @@
   <a href="https://www.reddit.com/r/Spellcaster_Studio/">Reddit</a>
 </p>
 
+> *"Everyone with even a minor self respect would hate on this."* — u/chris020891, r/GIMP
+
 ---
 
 ## The Problem
@@ -415,10 +417,6 @@ Yes. The Antenna Installer auto-detects ComfyUI servers on your network. Or set 
 > *"Man this is the kind of phrasing you can use in your incel-fueled, ragebaiting and redpilled nutjobed clanckers spaces"* — u/MrSumNemo, r/GIMP
 
 We had to look up "clanckers" and we're still not sure what it means. But it's going on a t-shirt.
-
-> *"Everyone with even a minor self respect would hate on this."* — u/chris020891, r/GIMP
-
-Our self-respect was already in critical condition, but thanks for checking.
 
 <details>
 <summary><strong>Wall of Love from r/GIMP</strong></summary>
