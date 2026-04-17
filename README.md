@@ -87,23 +87,6 @@ Every tool starts with expert-tuned presets that just work. But as you get comfo
 </tr>
 </table>
 
-<details>
-<summary><strong>More screenshots — video, ControlNet, Klein, animations</strong></summary>
-
-<table>
-<tr>
-<td align="center" width="33%"><img src="assets/showcase_cn_depth.png" alt="Depth" width="100%"/><br/><sub>ControlNet Depth</sub></td>
-<td align="center" width="33%"><img src="assets/showcase_cn_pose.png" alt="Pose" width="100%"/><br/><sub>ControlNet OpenPose</sub></td>
-<td align="center" width="33%"><img src="assets/showcase_cn_canny.png" alt="Canny" width="100%"/><br/><sub>ControlNet Canny</sub></td>
-</tr>
-<tr>
-<td align="center" width="33%"><img src="assets/showcase_wan_breathing_still.png" alt="WAN Video" width="100%"/><br/><sub>Wan 2.2 Image-to-Video</sub></td>
-<td align="center" width="33%"><img src="assets/showcase_seedv2r.png" alt="SeedV2R" width="100%"/><br/><sub>SeedV2R Upscale</sub></td>
-<td align="center" width="33%"><img src="assets/showcase_photo_restore.png" alt="Restore" width="100%"/><br/><sub>Photo Restoration Pipeline</sub></td>
-</tr>
-</table>
-
-</details>
 
 ---
 
