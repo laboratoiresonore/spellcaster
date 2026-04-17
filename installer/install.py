@@ -36,6 +36,14 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+# Force UTF-8 output on Windows (cp1252 can't handle box-drawing/emoji chars)
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass  # Python < 3.7 or non-reconfigurable stream
+
 # ─── Constants ────────────────────────────────────────────────────────────────
 
 # When bundled with PyInstaller, _MEIPASS points to the temp extraction dir;
@@ -48,7 +56,7 @@ MANIFEST_PATH = SCRIPT_DIR / "manifest.json"
 VERSION = "2.2"
 DEFAULT_SERVER_URL = "http://127.0.0.1:8188"
 DEFAULT_LLM_URL = "http://127.0.0.1:5001"
-_BOX_LINE = "═" * 50
+_BOX_LINE = "=" * 50
 
 # ANSI colors — enabled on real terminals, but only on Windows when running
 # inside Windows Terminal (WT_SESSION), which supports VT100 escape sequences.
@@ -68,14 +76,18 @@ else:
 
 def banner():
     """Print the decorative installer header with version number."""
-    print(f"""
-{C_BOLD}{C_CYAN}╔══════════════════════════════════════════════════╗
-║       ✦  SPELLCASTER INSTALLER  v{VERSION}  ✦       ║
-║                                                  ║
-║  AI superpowers for GIMP 3 & Darktable           ║
-║  Every preset expertly tuned for instant results ║
-╚══════════════════════════════════════════════════╝{C_RESET}
+    bar = "=" * 52
+    try:
+        print(f"""
+{C_BOLD}{C_CYAN}+{bar}+
+|       SPELLCASTER INSTALLER  v{VERSION}           |
+|                                                    |
+|  AI superpowers for GIMP 3 & Darktable             |
+|  Every preset expertly tuned for instant results   |
++{bar}+{C_RESET}
 """)
+    except UnicodeEncodeError:
+        print(f"\n  SPELLCASTER INSTALLER v{VERSION}\n")
 
 
 def fmt_size(mb: float) -> str:
@@ -150,8 +162,9 @@ def ask_choice(prompt: str, options: list[str], default: int = 0,
 
 def ask_text(prompt: str, default: str = "", auto_yes: bool = False) -> str:
     """Prompt for free-form text input with an optional default value."""
-    if auto_yes and default:
-        print(f"{C_BOLD}{prompt} [{default}]:{C_RESET} {default} (auto)")
+    if auto_yes:
+        if default:
+            print(f"{C_BOLD}{prompt} [{default}]:{C_RESET} {default} (auto)")
         return default
     hint = f" [{default}]" if default else ""
     raw = input(f"{C_BOLD}{prompt}{hint}:{C_RESET} ").strip()
