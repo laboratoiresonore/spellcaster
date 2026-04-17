@@ -55,7 +55,8 @@
       ],
       "required_by": [
         "face_swap_mtb"
-      ]
+      ],
+      "note": "Install via ComfyUI Manager (repo melMass/comfy-mtb may be archived). Search: comfy-mtb"
     },
     "ComfyUI_IPAdapter_plus": {
       "repo": "https://github.com/cubiq/ComfyUI_IPAdapter_plus",
@@ -80,7 +81,7 @@
       ]
     },
     "ComfyUI_GetImageSize": {
-      "repo": "https://github.com/IuvenisSapworworiens/ComfyUI_GetImageSize",
+      "repo": "https://github.com/cubiq/ComfyUI_essentials",
       "alt_repo": "https://github.com/kijai/ComfyUI-KJNodes",
       "provides": [
         "GetImageSize+"
@@ -90,7 +91,8 @@
         "inpaint",
         "face_swap_reactor",
         "face_swap_mtb"
-      ]
+      ],
+      "note": "GetImageSize+ is provided by ComfyUI_essentials. Install that instead."
     },
     "ComfyUI-RTX-Remix": {
       "repo": "https://github.com/NVlabs/ComfyUI-RTXVideoSuperResolution",
@@ -101,7 +103,7 @@
       "required_by": [
         "wan_i2v"
       ],
-      "note": "Requires NVIDIA RTX GPU with Tensor cores"
+      "note": "Install via ComfyUI Manager. Search: Nvidia RTX Nodes. Requires RTX GPU with Tensor cores."
     },
     "ComfyUI-REMBG": {
       "repo": "https://github.com/Jcd1230/rembg-comfyui-node",
@@ -195,7 +197,7 @@
       "note": "Spellcaster nodes — auto-arch model loading, LLM prompt enhance, and smart sampling. Auto-updates via git pull."
     },
     "ComfyUI-QwenVL-Mod": {
-      "repo": "https://github.com/Goekdeniz-Guelmez/ComfyUI-QwenVL-Mod",
+      "repo": "https://github.com/1038lab/ComfyUI-QwenVL",
       "provides": [
         "AILab_QwenVL_GGUF_PromptEnhancer",
         "AILab_QwenVL_GGUF",
@@ -204,7 +206,41 @@
       "required_by": [
         "prompt_enhance"
       ],
-      "note": "Local GGUF LLM for prompt enhancement — runs natively in ComfyUI, no separate server needed. Auto-manages VRAM."
+      "note": "Local GGUF LLM for prompt enhancement. Alt: install via ComfyUI Manager, search QwenVL-Mod."
+    },
+    "ComfyUI-DDColor": {
+      "repo": "https://github.com/kijai/ComfyUI-DDColor",
+      "provides": [
+        "DDColor_Colorize"
+      ],
+      "required_by": [],
+      "note": "DDColor instant B&W colorization — fast, no diffusion model needed. Optional upgrade for Colorize tool."
+    },
+    "ComfyUI-RMBG": {
+      "repo": "https://github.com/1038lab/ComfyUI-RMBG",
+      "provides": [
+        "BiRefNetRMBG",
+        "RMBG"
+      ],
+      "required_by": [],
+      "note": "BiRefNet/RMBG-2.0 background removal — better hair and fine detail than standard rembg."
+    },
+    "ComfyUI-DepthAnythingV3": {
+      "repo": "https://github.com/PozzettiAndrea/ComfyUI-DepthAnythingV3",
+      "provides": [
+        "DownloadAndLoadDepthAnythingV3Model",
+        "DepthAnything_V3"
+      ],
+      "required_by": [],
+      "note": "DepthAnythingV3 — 35% better depth estimation than V2. Optional upgrade for ControlNet depth."
+    },
+    "ComfyUI-NormalCrafter": {
+      "repo": "https://github.com/AIWarper/ComfyUI-NormalCrafterWrapper",
+      "provides": [
+        "NormalCrafterNode"
+      ],
+      "required_by": [],
+      "note": "NormalCrafter wrapper. Install via ComfyUI Manager if this repo is unavailable."
     },
     "ComfyUI-Impact-Pack": {
       "repo": "https://github.com/ltdrdata/ComfyUI-Impact-Pack",
@@ -236,7 +272,7 @@
   "features": {
     "img2img": {
       "vram_min_gb": 4,
-      "label": "Image-to-Image Generation",
+      "label": "Image Generation (SDXL/SD1.5/Flux)",
       "description": "Generate images from source images using SD 1.5, SDXL, Illustrious, and Klein Flux2 models",
       "plugins": [
         "gimp",
@@ -389,7 +425,7 @@
     },
     "txt2img": {
       "vram_min_gb": 4,
-      "label": "Text-to-Image Generation",
+      "label": "Text to Image (uses same models as above)",
       "description": "Generate images from text prompts (GIMP only)",
       "plugins": [
         "gimp"
@@ -401,7 +437,7 @@
     },
     "inpaint": {
       "vram_min_gb": 4,
-      "label": "Inpainting & Refinement",
+      "label": "Inpaint & Fix (44 expert presets)",
       "description": "Mask-based refinement with 38 preset templates (hands, eyes, skin, style effects). GIMP only.",
       "plugins": [
         "gimp"
@@ -979,7 +1015,7 @@
     },
     "face_swap_reactor": {
       "vram_min_gb": 4,
-      "label": "Face Swap (ReActor)",
+      "label": "Face Swap — recommended (ReActor)",
       "description": "Swap faces between images using ReActor",
       "plugins": [
         "gimp",
@@ -1018,7 +1054,7 @@
     },
     "face_swap_mtb": {
       "vram_min_gb": 4,
-      "label": "Face Swap (MTB)",
+      "label": "Face Swap — alternative (MTB, lighter)",
       "description": "Alternative face swap using comfyui-mtb",
       "plugins": [
         "gimp",
@@ -1034,7 +1070,7 @@
     },
     "faceid_img2img": {
       "vram_min_gb": 8,
-      "label": "FaceID Image-to-Image",
+      "label": "Face Identity — alternative (IPAdapter FaceID)",
       "description": "Generate images preserving face identity using IPAdapter FaceID (GIMP only)",
       "plugins": [
         "gimp"
@@ -1048,7 +1084,7 @@
     },
     "pulid_flux": {
       "vram_min_gb": 12,
-      "label": "PuLID Flux (Face Identity)",
+      "label": "Face Identity — premium (PuLID + Flux, 30GB download)",
       "description": "Generate images with face identity preservation using PuLID + Flux (GIMP only)",
       "plugins": [
         "gimp"
@@ -1120,7 +1156,7 @@
     "klein_flux2": {
       "vram_min_gb": 6,
       "vram_recommended_gb": 12,
-      "label": "Klein Flux2 Image-to-Image",
+      "label": "Flux 2 Klein — recommended engine (fastest, best quality)",
       "description": "Fast distilled Flux 2 img2img using Klein 9B/4B models",
       "plugins": [
         "gimp",
@@ -1193,7 +1229,7 @@
     "wan_i2v": {
       "vram_min_gb": 8,
       "vram_recommended_gb": 12,
-      "label": "Wan 2.2 Image-to-Video",
+      "label": "Video Generation (Wan 2.2, 2-5 second clips)",
       "description": "Generate video from images using Wan 2.2 dual-model architecture with optional RTX upscale and RIFE interpolation",
       "plugins": [
         "gimp",
@@ -1496,7 +1532,7 @@
     },
     "rembg": {
       "vram_min_gb": 1,
-      "label": "Remove Background",
+      "label": "Remove Background (3 engines: rembg, BiRefNet, BiRefNet Portrait)",
       "description": "AI background removal producing transparent PNG output using isnet-general-use model — one click, no settings needed",
       "plugins": [
         "gimp",
@@ -1511,7 +1547,7 @@
     },
     "upscale": {
       "vram_min_gb": 2,
-      "label": "AI Upscale (4x/8x)",
+      "label": "AI Upscale (9 models incl. WaveSpeed SeedVR2)",
       "description": "One-click AI upscaling using 6 model presets — UltraSharp, RealESRGAN, Remacri, NMKD, and more",
       "plugins": [
         "gimp",
@@ -1528,7 +1564,7 @@
           },
           {
             "path": "upscale_models/RealESRGAN_x4plus.pth",
-            "url": "https://huggingface.co/uwg/upscaler/resolve/main/ESRGAN/RealESRGAN_x4plus.pth",
+            "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth",
             "size_mb": 67,
             "optional": true,
             "note": "4x RealESRGAN — good for photos"
@@ -1549,14 +1585,14 @@
           },
           {
             "path": "upscale_models/RealESRGAN_x4plus_anime_6B.pth",
-            "url": "https://huggingface.co/uwg/upscaler/resolve/main/ESRGAN/RealESRGAN_x4plus_anime_6B.pth",
+            "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth",
             "size_mb": 17,
             "optional": true,
             "note": "4x RealESRGAN Anime"
           },
           {
             "path": "upscale_models/8x_NMKD-Faces_160000_G.pth",
-            "url": "https://huggingface.co/uwg/upscaler/resolve/main/ESRGAN/8x_NMKD-Faces_160000_G.pth",
+            "url": "https://huggingface.co/gemasai/8x_NMKD-Faces_160000_G/resolve/main/8x_NMKD-Faces_160000_G.pth",
             "size_mb": 67,
             "optional": true,
             "note": "8x NMKD Faces — portraits"
@@ -1567,7 +1603,7 @@
     },
     "lama_remove": {
       "vram_min_gb": 2,
-      "label": "Object Removal (LaMa)",
+      "label": "Object Removal & AI Eraser (LaMa, no model needed)",
       "description": "Paint over any object to remove it — no prompt needed, uses LaMa inpainting",
       "plugins": [
         "gimp",
@@ -1582,7 +1618,7 @@
     },
     "lut_grading": {
       "vram_min_gb": 0,
-      "label": "Color Grading (LUT)",
+      "label": "Color Grading (cinematic LUTs, no download needed)",
       "description": "Apply cinematic film stock LUTs — Kodak, Fujifilm, ACES with adjustable strength",
       "plugins": [
         "gimp",
@@ -1610,7 +1646,7 @@
     },
     "style_transfer": {
       "vram_min_gb": 6,
-      "label": "Style Transfer (IPAdapter)",
+      "label": "Style Transfer (copy any reference image's style)",
       "description": "Apply any reference image's visual style using IPAdapter",
       "plugins": [
         "gimp",
@@ -1625,7 +1661,7 @@
     },
     "face_restore": {
       "vram_min_gb": 2,
-      "label": "Face Restoration",
+      "label": "Face Restoration (7 models: GPEN, CodeFormer, GFPGAN)",
       "description": "Restore damaged/blurry faces using CodeFormer, GFPGAN, GPEN, or RestoreFormer++",
       "plugins": [
         "gimp",
@@ -1656,7 +1692,7 @@
     },
     "photo_restore": {
       "vram_min_gb": 2,
-      "label": "Photo Restoration Pipeline",
+      "label": "Photo Restoration Pipeline (upscale + face fix + sharpen)",
       "description": "Full restoration: Upscale + Face Restore + Sharpen in one click",
       "plugins": [
         "gimp",
@@ -1671,7 +1707,7 @@
     },
     "detail_hallucinate": {
       "vram_min_gb": 4,
-      "label": "Detail Hallucination (Seed2VR)",
+      "label": "Detail Hallucination (add AI texture detail)",
       "description": "Upscale + img2img at low denoise to AI-hallucinate fine detail",
       "plugins": [
         "gimp",
@@ -1684,7 +1720,7 @@
     },
     "colorize": {
       "vram_min_gb": 4,
-      "label": "Colorize B&W Photos",
+      "label": "Colorize B&W (DDColor instant or ControlNet guided)",
       "description": "Add natural color to black & white photos using ControlNet lineart",
       "plugins": [
         "gimp",
@@ -1715,7 +1751,7 @@
     },
     "controlnet": {
       "vram_min_gb": 4,
-      "label": "ControlNet Structure Guide",
+      "label": "ControlNet (6 structure guides — needed for SDXL, not for Klein)",
       "description": "Structure-guided generation: Canny edges, depth maps, pose detection, scribble, lineart, tile",
       "plugins": [
         "gimp",
@@ -1782,7 +1818,7 @@
     },
     "iclight": {
       "vram_min_gb": 4,
-      "label": "IC-Light Relighting",
+      "label": "Relighting (change lighting direction, 10 presets)",
       "description": "Change lighting direction on any photo — 10 presets. SD1.5 only.",
       "plugins": [
         "gimp",
@@ -1807,7 +1843,7 @@
     "supir": {
       "vram_min_gb": 10,
       "vram_recommended_gb": 16,
-      "label": "SUPIR AI Restoration",
+      "label": "SUPIR AI Restoration (heavy, 10GB+ VRAM, 5GB download)",
       "description": "State-of-the-art AI image restoration and upscaling",
       "plugins": [
         "gimp",
@@ -1831,7 +1867,7 @@
     },
     "batch_variations": {
       "vram_min_gb": 4,
-      "label": "Batch Variations",
+      "label": "Batch Variations (2-8 versions with one click)",
       "description": "Generate 2-8 variations from one prompt in a single batch",
       "plugins": [
         "gimp",
@@ -1844,7 +1880,7 @@
     },
     "seedv2r": {
       "vram_min_gb": 4,
-      "label": "SeedV2R Upscale",
+      "label": "SeedV2R Upscale (controllable hallucination)",
       "description": "Upscale + img2img with 5 hallucination levels (Faithful to Extreme) and 1x-4x scale control",
       "plugins": [
         "gimp",
@@ -1856,7 +1892,7 @@
       "custom_nodes": []
     },
     "prompt_enhance": {
-      "label": "AI Prompt Enhancement (LLM)",
+      "label": "AI Prompt Enhancement (local LLM, auto-rewrites prompts)",
       "description": "Automatically rewrite short prompts into architecture-optimised descriptions using a local LLM running natively in ComfyUI. No separate server needed — ComfyUI manages VRAM automatically.",
       "plugins": [
         "gimp",
@@ -1881,7 +1917,7 @@
       "note": "Installs the ComfyUI-QwenVL-Mod node pack and downloads a small Qwen3 4B GGUF model (~2.5 GB). The LLM runs inside ComfyUI and auto-unloads during image generation to free VRAM."
     },
     "wizard_guild": {
-      "label": "Wizard Guild (Standalone Interface)",
+      "label": "Wizard Guild (chat-based AI interface, no GIMP needed)",
       "description": "Deploy the Wizard Guild web-based AI art studio. Chat with AI wizards to control all Spellcaster tools. Uses ComfyUI-native LLM for wizard chat and prompt enhancement — no separate KoboldCPP needed.",
       "plugins": [],
       "vram_min_gb": 0,

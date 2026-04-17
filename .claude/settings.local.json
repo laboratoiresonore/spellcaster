@@ -29,7 +29,22 @@
       "Bash(ls C:/Users/redacted/AppData/Local/Temp/audit*)",
       "Bash(curl -s http://<INTERNAL_HOST>:8188/object_info/FaceDetailer)",
       "Bash(curl -s \"http://<INTERNAL_HOST>:8188/object_info/Florence2ModelLoader\")",
-      "Bash(curl -s http://<INTERNAL_HOST>:8188/object_info/ACEPlusLoader)"
+      "Bash(curl -s http://<INTERNAL_HOST>:8188/object_info/ACEPlusLoader)",
+      "Bash(head -30 echo \"---\" ls c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/assets/*.png c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/assets/*.gif c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/assets/*.jpg)",
+      "Bash(ls c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/assets/showcase*.png c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/assets/demo*.png c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/assets/sam*.png c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/assets/wizard*.png)",
+      "Bash(python3)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(f' {r[\\\\\"full_name\\\\\"]} \\({r[\\\\\"html_url\\\\\"]}\\)'\\) for r in d.get\\('items',[]\\)[:3]]\" echo \"\" echo \"=== Searching for QwenVL-Mod ComfyUI ===\" curl -sL \"https://api.github.com/search/repositories?q=QwenVL+ComfyUI+in:name\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(f' {r[\\\\\"full_name\\\\\"]} \\({r[\\\\\"html_url\\\\\"]}\\)'\\) for r in d.get\\('items',[]\\)[:3]]\" echo \"\" echo \"=== Searching for RTX Video Super Resolution ComfyUI ===\" curl -sL \"https://api.github.com/search/repositories?q=RTXVideoSuperResolution+ComfyUI+in:name\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(f' {r[\\\\\"full_name\\\\\"]} \\({r[\\\\\"html_url\\\\\"]}\\)'\\) for r in d.get\\('items',[]\\)[:3]]\" echo \"\" echo \"=== Searching for NormalCrafter ComfyUI ===\" curl -sL \"https://api.github.com/search/repositories?q=NormalCrafter+ComfyUI+in:name\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(f' {r[\\\\\"full_name\\\\\"]} \\({r[\\\\\"html_url\\\\\"]}\\)'\\) for r in d.get\\('items',[]\\)[:3]]\" echo \"\" echo \"=== Searching for GetImageSize ComfyUI ===\" curl -sL \"https://api.github.com/search/repositories?q=GetImageSize+ComfyUI+in:name\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(f' {r[\\\\\"full_name\\\\\"]} \\({r[\\\\\"html_url\\\\\"]}\\)'\\) for r in d.get\\('items',[]\\)[:3]]\")",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' https://github.com/__TRACKED_VAR__)",
+      "Bash(ls c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/tavern/characters/*.png)",
+      "Bash(python3 installer/install.py --dry-run --yes --server-url http://<INTERNAL_HOST>:8188 --comfyui c:/Users/redacted/Documents/AI/Spellcaster/spellcaster --skip-nodes --skip-models)",
+      "Bash(ls c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/assets/*.ico c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/assets/*.png)",
+      "Bash(PYTHONIOENCODING=utf-8 grep -in \"image\\\\|icon\\\\|png\\\\|photo\\\\|banner\\\\|splash\\\\|logo\\\\|preview\" c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/installer/installer_gui.py)",
+      "Bash(python3 -c \"import py_compile; py_compile.compile\\('c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/installer/installer_gui.py', doraise=True\\); print\\('SYNTAX OK'\\)\")",
+      "Bash(ls c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/assets/*.gif c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/assets/readme/*.gif)"
     ],
     "additionalDirectories": [
       "\\tmp",

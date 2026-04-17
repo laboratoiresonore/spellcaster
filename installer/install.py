@@ -36,6 +36,14 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+# Force UTF-8 output on Windows (cp1252 can't handle box-drawing/emoji chars)
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass  # Python < 3.7 or non-reconfigurable stream
+
 # ─── Constants ────────────────────────────────────────────────────────────────
 
 # When bundled with PyInstaller, _MEIPASS points to the temp extraction dir;
@@ -48,7 +56,7 @@ MANIFEST_PATH = SCRIPT_DIR / "manifest.json"
 VERSION = "2.2-NSFW"
 DEFAULT_SERVER_URL = "http://127.0.0.1:8188"
 DEFAULT_LLM_URL = "http://127.0.0.1:5001"
-_BOX_LINE = "═" * 50
+_BOX_LINE = "=" * 50
 
 # ANSI colors — enabled on real terminals, but only on Windows when running
 # inside Windows Terminal (WT_SESSION), which supports VT100 escape sequences.
@@ -68,14 +76,18 @@ else:
 
 def banner():
     """Print the decorative installer header with version number."""
-    print(f"""
-{C_BOLD}{C_CYAN}╔══════════════════════════════════════════════════╗
-║       ✦  SPELLCASTER INSTALLER  v{VERSION}  ✦       ║
-║                                                  ║
-║  AI superpowers — uncensored for GIMP 3 & Darktable           ║
-║  Every preset expertly tuned for instant results ║
-╚══════════════════════════════════════════════════╝{C_RESET}
+    bar = "=" * 52
+    try:
+        print(f"""
+{C_BOLD}{C_CYAN}+{bar}+
+|       SPELLCASTER INSTALLER  v{VERSION}           |
+|                                                    |
+|  AI superpowers — uncensored for GIMP 3 & Darktable             |
+|  Every preset expertly tuned for instant results   |
++{bar}+{C_RESET}
 """)
+    except UnicodeEncodeError:
+        print(f"\n  SPELLCASTER INSTALLER v{VERSION}\n")
 
 
 def fmt_size(mb: float) -> str:
@@ -150,8 +162,9 @@ def ask_choice(prompt: str, options: list[str], default: int = 0,
 
 def ask_text(prompt: str, default: str = "", auto_yes: bool = False) -> str:
     """Prompt for free-form text input with an optional default value."""
-    if auto_yes and default:
-        print(f"{C_BOLD}{prompt} [{default}]:{C_RESET} {default} (auto)")
+    if auto_yes:
+        if default:
+            print(f"{C_BOLD}{prompt} [{default}]:{C_RESET} {default} (auto)")
         return default
     hint = f" [{default}]" if default else ""
     raw = input(f"{C_BOLD}{prompt}{hint}:{C_RESET} ").strip()
@@ -1452,8 +1465,10 @@ def step_api_keys(args) -> None:
 def step_system_detection(args) -> tuple[str, int]:
     """Detect GPU/VRAM, show hardware profile, and warn if no GPU found."""
     print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
-    print(f"{C_BOLD}  System Detection{C_RESET}")
-    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
+    print(f"{C_BOLD}  STEP 1: Checking Your Hardware{C_RESET}")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}")
+    print(f"  {C_DIM}We're detecting your GPU to figure out which AI models")
+    print(f"  will run smoothly on your system.{C_RESET}\n")
 
     gpu_name, vram_mb = detect_gpu_vram()
     tier = vram_tier(vram_mb)
@@ -1531,14 +1546,15 @@ def step_system_detection(args) -> tuple[str, int]:
 def step_detect_server(args) -> str:
     """Step 0: Determine ComfyUI server URL."""
     print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
-    print(f"{C_BOLD}  STEP 1: ComfyUI Server{C_RESET}")
-    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
+    print(f"{C_BOLD}  STEP 2: Finding ComfyUI{C_RESET}")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}")
+    print(f"  {C_DIM}ComfyUI is the AI engine that does all the heavy lifting.")
+    print(f"  Spellcaster talks to it behind the scenes — you never need to open it.{C_RESET}\n")
 
     if args.server_url:
         print(f"  {C_GREEN}Using specified server URL:{C_RESET} {args.server_url}")
         return args.server_url
 
-    print(f"  The plugins need to connect to a running ComfyUI instance.")
     print(f"  {C_DIM}Default: {DEFAULT_SERVER_URL} (ComfyUI running on this machine){C_RESET}\n")
 
     choice = ask_choice(
@@ -1842,7 +1858,7 @@ def _write_shared_settings(paths: dict, server_url: str, llm_url: str,
 def step_detect_paths(args) -> dict:
     """Step 2: Detect or ask for application paths."""
     print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
-    print(f"{C_BOLD}  STEP 2: Application Paths{C_RESET}")
+    print(f"{C_BOLD}  STEP 3: Where Are Your Apps?{C_RESET}")
     print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
 
     # ── ComfyUI ──
@@ -1982,10 +1998,38 @@ def step_detect_paths(args) -> dict:
 
 def step_select_features(manifest: dict, paths: dict, args,
                          server_info: dict | None = None) -> dict[str, bool]:
-    """Step 3: Feature selection with VRAM-aware pre-selection."""
+    """Step 4: Feature selection with VRAM-aware pre-selection."""
     print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
-    print(f"{C_BOLD}  STEP 3: Select Features{C_RESET}")
-    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
+    print(f"{C_BOLD}  STEP 4: What Do You Want To Do?{C_RESET}")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}")
+    print(f"  {C_DIM}We've pre-selected the best tools for your hardware.")
+    print(f"  Just hit Enter to accept, or customize below.{C_RESET}\n")
+
+    vram_gb = getattr(args, '_vram_mb', 0) / 1024
+
+    # ── Smart auto-profile based on VRAM ──────────────────────────
+    # Shows the user what we recommend BEFORE the detailed grid.
+    if vram_gb >= 12:
+        print(f"  {C_GREEN}Your GPU has {vram_gb:.0f} GB VRAM — you can run Flux 2 Klein.{C_RESET}")
+        print(f"  {C_BOLD}Recommended: Klein-first install (~37 GB){C_RESET}")
+        print(f"  Klein replaces most SDXL/SD1.5 tools with faster, higher-quality")
+        print(f"  equivalents. No ControlNet models needed. Dramatically smaller install.\n")
+        print(f"  {C_DIM}Alternative: Full install with SDXL+Klein+ControlNet (~150 GB)")
+        print(f"  Use this if you need SD1.5/SDXL compatibility or anime models.{C_RESET}\n")
+    elif vram_gb >= 8:
+        print(f"  {C_GREEN}Your GPU has {vram_gb:.0f} GB VRAM — good for SDXL and video.{C_RESET}")
+        print(f"  {C_BOLD}Recommended: SDXL essentials (~45 GB){C_RESET}")
+        print(f"  Includes image generation, upscaling, face tools, and video.\n")
+    elif vram_gb >= 4:
+        print(f"  {C_YELLOW}Your GPU has {vram_gb:.0f} GB VRAM — SD 1.5 is your best bet.{C_RESET}")
+        print(f"  {C_BOLD}Recommended: Lightweight install (~15 GB){C_RESET}")
+        print(f"  Includes SD 1.5 generation, upscaling, and basic face tools.\n")
+    else:
+        print(f"  {C_YELLOW}GPU VRAM not detected or very low.{C_RESET}")
+        print(f"  {C_BOLD}Recommended: Minimal install (~5 GB){C_RESET}\n")
+
+    print(f"  {C_DIM}You can always re-run this installer later to add more models,")
+    print(f"  switch generation engines, or install additional features.{C_RESET}\n")
 
     if server_info is None:
         server_info = {}
@@ -2046,20 +2090,23 @@ def step_select_features(manifest: dict, paths: dict, args,
 
     # \u2500\u2500 Phase 2: Display grouped features with status indicators \u2500\u2500
     categories = {
-        "Generation": ["img2img", "txt2img", "inpaint", "outpaint", "batch_variations", "controlnet"],
-        "Restoration": ["upscale", "seedv2r", "face_restore", "photo_restore", "detail_hallucinate", "supir", "lama_remove", "colorize"],
-        "Style & Color": ["style_transfer", "lut_grading", "iclight"],
-        "Face & Identity": ["face_swap_reactor", "face_swap_mtb", "faceid_img2img", "pulid_flux"],
-        "Video": ["wan_i2v", "klein_flux2"],
-        "Utility": ["rembg"],
+        "Core (recommended)": ["klein_flux2", "img2img", "txt2img", "inpaint", "upscale",
+                                "face_swap_reactor", "rembg", "prompt_enhance"],
+        "Enhancement": ["photo_restore", "detail_hallucinate", "seedv2r", "supir",
+                         "face_restore", "lama_remove", "colorize"],
+        "Style & Lighting": ["style_transfer", "lut_grading", "iclight"],
+        "Face (alternatives)": ["face_swap_mtb", "faceid_img2img", "pulid_flux"],
+        "Video": ["wan_i2v"],
+        "Advanced (power users)": ["outpaint", "batch_variations", "controlnet"],
+        "Chat Interface": ["wizard_guild"],
     }
 
     vram_label = f"{vram_mb/1024:.0f} GB VRAM" if vram_mb > 0 else "no GPU detected"
     print(f"  Features are pre-selected based on your hardware ({vram_label}):\n")
 
     if locked_features:
-        print(f"  {C_CYAN}{len(locked_features)} feature(s) already installed on your"
-              f" ComfyUI server — these are locked.{C_RESET}\n")
+        print(f"  {C_CYAN}{len(locked_features)} feature(s) already on your ComfyUI server")
+        print(f"  — marked with \u2713 and \"Already on your server!\"{C_RESET}\n")
 
     for cat_name, cat_keys in categories.items():
         print(f"  {C_BOLD}\u2500\u2500 {cat_name} \u2500\u2500{C_RESET}")
@@ -2067,32 +2114,26 @@ def step_select_features(manifest: dict, paths: dict, args,
             if key not in cat_keys:
                 continue
 
-            # Status icons
-            if status == "installed":
-                icon = f"{C_CYAN}[\u2713]{C_RESET}"
-            elif status == "ok":
-                icon = f"{C_GREEN}[+]{C_RESET}"
-            elif status == "warn":
-                icon = f"{C_YELLOW}[~]{C_RESET}"
-            elif status == "no":
-                icon = f"{C_RED}[x]{C_RESET}"
-            else:  # nogpu
-                icon = f"{C_RED}[x]{C_RESET}"
-
             label = feat["label"]
             size = estimate_feature_size(feat, required_only=True)
             size_str = f" ({fmt_size(size)})" if size > 0 else ""
 
-            if reason:
-                print(f"    {icon} {label}{size_str}  {C_DIM}\u2014 {reason}{C_RESET}")
+            if status == "installed":
+                print(f"    {C_CYAN}[\u2713]{C_RESET} {label}{size_str}  {C_CYAN}\u2014 Already on your server!{C_RESET}")
+            elif status == "ok":
+                print(f"    {C_GREEN}[+]{C_RESET} {label}{size_str}")
+            elif status == "warn":
+                print(f"    {C_YELLOW}[~]{C_RESET} {label}{size_str}  {C_DIM}\u2014 {reason}{C_RESET}")
+            elif reason:
+                print(f"    {C_RED}[x]{C_RESET} {label}{size_str}  {C_DIM}\u2014 {reason}{C_RESET}")
             else:
-                print(f"    {icon} {label}{size_str}")
+                print(f"    {C_RED}[x]{C_RESET} {label}{size_str}")
         print()
 
-    print(f"  {C_CYAN}[\u2713]{C_RESET} = already installed on server (locked)")
-    print(f"  {C_GREEN}[+]{C_RESET} = compatible & pre-selected")
+    print(f"  {C_CYAN}[\u2713]{C_RESET} = already on your ComfyUI server")
+    print(f"  {C_GREEN}[+]{C_RESET} = compatible with your GPU, pre-selected")
     print(f"  {C_YELLOW}[~]{C_RESET} = works but may be slow on your hardware")
-    print(f"  {C_RED}[x]{C_RESET} = incompatible with your VRAM or no host app detected\n")
+    print(f"  {C_RED}[x]{C_RESET} = needs more VRAM or a host app you don't have\n")
 
     # \u2500\u2500 Phase 3: Let user customize \u2500\u2500
     selected: dict[str, bool] = {}
@@ -2115,19 +2156,32 @@ def step_select_features(manifest: dict, paths: dict, args,
         else:
             # Let user toggle individual features
             print(f"\n  {C_DIM}Answer y/n for each feature.")
-            if locked_features:
-                print(f"  Features marked [\u2713] are already on your server and cannot be toggled.")
-            print(f"  Features marked [x] are not recommended.{C_RESET}\n")
+            print(f"  Features already on your server are pre-checked.")
+            print(f"  Features marked [x] are not recommended for your hardware.{C_RESET}\n")
             handled = set()
 
             for key, feat, status, reason, default_on, locked in feature_list:
                 if key in handled:
                     continue
 
-                # Locked features cannot be toggled — skip the prompt
+                # Already-installed features: show with warning if user unchecks
                 if locked:
                     handled.add(key)
-                    print(f"    {C_CYAN}[\u2713] {feat['label']}{C_RESET}  {C_DIM}\u2014 {reason}{C_RESET}")
+                    keep = ask_yn(
+                        f"    {C_CYAN}[\u2713]{C_RESET} {feat['label']}  "
+                        f"{C_CYAN}(already on your server){C_RESET}  — keep it?",
+                        default=True, auto_yes=args.yes)
+                    if not keep:
+                        print(f"\n    {C_YELLOW}\u26a0 CAUTION: Unchecking this means you want to REMOVE")
+                        print(f"    this feature from your ComfyUI server.{C_RESET}")
+                        really = ask_yn(
+                            f"    Are you sure you want to uninstall {feat['label']}?",
+                            default=False, auto_yes=False)
+                        if really:
+                            selected[key] = False
+                            print(f"    {C_RED}Will be removed.{C_RESET}")
+                        else:
+                            print(f"    {C_GREEN}Keeping it.{C_RESET}")
                     continue
 
                 # \u2500\u2500 Special case: ReActor vs MTB face swap grouped choice \u2500\u2500
@@ -2248,8 +2302,10 @@ def step_install_nodes(manifest: dict, selected: dict[str, bool], paths: dict,
     available_nodes = server_info.get('available_nodes', set())
 
     print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
-    print(f"{C_BOLD}  STEP 4: Install Custom Nodes{C_RESET}")
-    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
+    print(f"{C_BOLD}  STEP 5: Installing AI Extensions{C_RESET}")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}")
+    print(f"  {C_DIM}These are the ComfyUI plugins that power each tool.")
+    print(f"  Already-installed ones are skipped automatically.{C_RESET}\n")
 
     custom_nodes_dir = paths["comfyui"] / "custom_nodes"
     if not dry_run:
@@ -2317,8 +2373,10 @@ def step_install_models(manifest: dict, selected: dict[str, bool], paths: dict,
         return
 
     print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
-    print(f"{C_BOLD}  STEP 5: Download Models{C_RESET}")
-    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
+    print(f"{C_BOLD}  STEP 6: Downloading AI Models{C_RESET}")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}")
+    print(f"  {C_DIM}This is the longest step — AI models are large files.")
+    print(f"  You can skip optional models now and re-run later to add them.{C_RESET}\n")
 
     if args.skip_models:
         print(f"  {C_YELLOW}--skip-models specified — skipping all model downloads.{C_RESET}")
@@ -3190,19 +3248,23 @@ def step_final_summary(manifest: dict, selected: dict[str, bool], paths: dict, s
 
     print(f"\n  {C_BOLD}ComfyUI server:{C_RESET} {server_url}")
 
-    print(f"\n  {C_BOLD}Next steps:{C_RESET}")
-    print(f"    1. Start ComfyUI on {server_url}")
+    print(f"\n  {C_BOLD}What to do now:{C_RESET}")
+    print(f"    1. Make sure ComfyUI is running ({server_url})")
     if paths["gimp"]:
-        print(f"    2. Open GIMP 3 → Filters → Spellcaster to access features")
+        print(f"    2. Open GIMP 3 → go to the {C_BOLD}Spellcaster{C_RESET} menu → pick any tool → click Generate")
+        print(f"       {C_DIM}Every preset is already optimized. Just type what you want.{C_RESET}")
     if paths["darktable"]:
-        print(f"    3. Open Darktable — the Spellcaster panel appears in the lighttable module")
-    print(f"    4. On first launch, verify the server URL in the plugin dialog")
+        print(f"    3. Open Darktable → the Spellcaster panel is in the lighttable module")
     if selected.get("wizard_guild", False):
-        tavern_dir = _get_tavern_install_dir()
-        print(f"    5. Start the Wizard Guild: python {tavern_dir / 'guild_launcher.py'}")
-        print(f"       The launcher will walk you through connecting to your LLM.")
-        print(f"       Don't have an LLM? Download KoboldCPP (single .exe, no install):")
-        print(f"       https://github.com/LostRuins/koboldcpp/releases")
+        print(f"    4. Or launch the Wizard Guild for a chat-based interface:")
+        print(f"       {C_DIM}start_guild.bat (Windows) or python tavern/guild_launcher.py{C_RESET}")
+        print(f"       {C_DIM}No separate LLM needed — runs natively inside ComfyUI.{C_RESET}")
+
+    print(f"\n  {C_GREEN}Want more models or features later?{C_RESET}")
+    print(f"  {C_DIM}Just re-run this installer anytime. It detects what's already installed")
+    print(f"  and only downloads what's new. Your existing setup is never touched.{C_RESET}")
+
+    print(f"\n  {C_DIM}Need help? → https://www.reddit.com/r/Spellcaster_Studio/{C_RESET}")
 
     print(f"\n  {C_BOLD}Troubleshooting:{C_RESET}")
     print(f"    • 'Node not found' — install the missing custom node into ComfyUI")

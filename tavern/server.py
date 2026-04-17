@@ -2281,15 +2281,80 @@ def _save_banished_ids():
         print(f"  [State] Failed to save banished IDs: {e}")
 
 
+def _seed_default_assets():
+    """Copy pre-bundled wizard avatars + background to creations on first run.
+
+    The tavern/default_assets/ directory contains high-quality pre-generated
+    avatars for the 8 core studio wizards + the tavern background. These are
+    bundled with the installer so the app looks polished immediately without
+    waiting 10+ minutes for ComfyUI to generate them on first launch.
+
+    Only per-model wizards (auto-detected from ComfyUI) need runtime generation.
+    """
+    default_dir = os.path.join(_THIS_DIR, "default_assets")
+    manifest_path = os.path.join(default_dir, "manifest.json")
+    if not os.path.exists(manifest_path):
+        return {}
+
+    try:
+        with open(manifest_path, 'r', encoding='utf-8') as f:
+            manifest = json.load(f)
+    except Exception:
+        return {}
+
+    assets = {}
+    seeded = 0
+
+    # Copy background
+    bg = manifest.get("background", {})
+    if bg.get("filename"):
+        src = os.path.join(default_dir, bg["filename"])
+        dst = os.path.join(_CREATIONS_DIR, bg["filename"])
+        if os.path.exists(src) and not os.path.exists(dst):
+            os.makedirs(_CREATIONS_DIR, exist_ok=True)
+            import shutil
+            shutil.copy2(src, dst)
+            seeded += 1
+        if os.path.exists(dst):
+            assets["_global"] = {"bg_url": f"/api/cached_asset/{bg['filename']}"}
+
+    # Copy avatars
+    for char_id, filename in manifest.get("avatars", {}).items():
+        src = os.path.join(default_dir, filename)
+        dst = os.path.join(_CREATIONS_DIR, filename)
+        if os.path.exists(src) and not os.path.exists(dst):
+            os.makedirs(_CREATIONS_DIR, exist_ok=True)
+            import shutil
+            shutil.copy2(src, dst)
+            seeded += 1
+        if os.path.exists(dst):
+            assets[char_id] = {"avatar_url": f"/api/cached_asset/{filename}"}
+
+    if seeded:
+        print(f"  [State] Seeded {seeded} pre-bundled asset(s) (core wizards + background)")
+    return assets
+
+
 def _load_generated_assets():
-    """Load generated asset URLs from disk."""
+    """Load generated asset URLs from disk, seeding defaults on first run."""
+    assets = {}
+
+    # Seed pre-bundled defaults if no assets exist yet
+    if not os.path.exists(_ASSETS_PATH):
+        assets = _seed_default_assets()
+
+    # Merge with any previously saved assets (runtime-generated take priority)
     if os.path.exists(_ASSETS_PATH):
         try:
             with open(_ASSETS_PATH, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                saved = json.load(f)
+            # Saved assets override defaults
+            for k, v in saved.items():
+                assets[k] = v
         except Exception as e:
             print(f"  [State] Failed to load generated assets: {e}")
-    return {}
+
+    return assets
 
 
 def _save_generated_assets():

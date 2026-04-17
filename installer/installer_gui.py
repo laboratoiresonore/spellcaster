@@ -521,10 +521,28 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         # Call the widget-level method explicitly to push canvas behind all widgets.
         tk.Misc.lower(self._sidebar_canvas)
 
-        logo_label = ctk.CTkLabel(self.sidebar_frame, text="\u2728 Spellcaster",
-                                  font=ctk.CTkFont(family="Inter", size=24, weight="bold"),
-                                  text_color=self.accent_hover)
-        logo_label.grid(row=0, column=0, padx=20, pady=(15, 3))
+        # Sidebar logo — use banner image if available, fall back to text
+        _logo_loaded = False
+        try:
+            import os as _os
+            _banner_path = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                                          "assets", "readme_banner.png")
+            if _os.path.exists(_banner_path):
+                _banner_img = Image.open(_banner_path)
+                _banner_img = _banner_img.resize((200, int(200 * _banner_img.height / _banner_img.width)),
+                                                  Image.LANCZOS)
+                _ctk_banner = ctk.CTkImage(light_image=_banner_img, dark_image=_banner_img,
+                                            size=_banner_img.size)
+                logo_label = ctk.CTkLabel(self.sidebar_frame, text="", image=_ctk_banner)
+                logo_label.grid(row=0, column=0, padx=10, pady=(10, 3))
+                _logo_loaded = True
+        except Exception:
+            pass
+        if not _logo_loaded:
+            logo_label = ctk.CTkLabel(self.sidebar_frame, text="Spellcaster",
+                                      font=ctk.CTkFont(family="Inter", size=24, weight="bold"),
+                                      text_color=self.accent_hover)
+            logo_label.grid(row=0, column=0, padx=20, pady=(15, 3))
 
         # Hardware detection banner
         if self._vram_mb > 0:
@@ -605,11 +623,39 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         ctk.CTkLabel(f_welcome, text="\u2728 Welcome to Spellcaster \u2728",
                      font=ctk.CTkFont(family="Inter", size=30, weight="bold"),
                      text_color=self.accent_hover).pack(anchor="w", padx=30, pady=(35, 5))
-        ctk.CTkLabel(f_welcome, text="Spellcaster gives you AI superpowers — uncensored inside GIMP and Darktable.\n"
-                     "You'll be able to create images from text, fix photos, swap faces, remove\n"
-                     "backgrounds, change lighting, and much more — all with one click.",
+        ctk.CTkLabel(f_welcome, text="Dynamic middleware between ComfyUI and GIMP/Darktable.\n"
+                     "69 AI tools — generate images, fix photos, swap faces, remove\n"
+                     "backgrounds, change lighting, create videos — all with one click.\n"
+                     "Everything is automated. No AI experience needed.",
                      font=ctk.CTkFont(family="Inter", size=15), text_color=self.text_muted,
                      justify="left").pack(anchor="w", padx=30, pady=(0, 10))
+
+        # Showcase image grid — show what the app can do
+        _showcase_frame = ctk.CTkFrame(f_welcome, fg_color="transparent")
+        _showcase_frame.pack(fill="x", padx=25, pady=(5, 10))
+
+        _showcase_images = [
+            ("showcase_seedv2r.png", "SeedV2R Upscale"),
+            ("showcase_lama_remove.png", "AI Eraser"),
+            ("showcase_colorize.png", "Colorize B&W"),
+            ("showcase_iclight_golden.png", "Relighting"),
+        ]
+        import os as _os
+        _assets_dir = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "assets")
+        for col, (img_name, caption) in enumerate(_showcase_images):
+            _img_path = _os.path.join(_assets_dir, img_name)
+            try:
+                if _os.path.exists(_img_path):
+                    _img = Image.open(_img_path)
+                    _img = _img.resize((140, int(140 * _img.height / _img.width)), Image.LANCZOS)
+                    _ctk_img = ctk.CTkImage(light_image=_img, dark_image=_img, size=_img.size)
+                    _img_lbl = ctk.CTkLabel(_showcase_frame, text="", image=_ctk_img)
+                    _img_lbl.grid(row=0, column=col, padx=5, pady=2)
+                    ctk.CTkLabel(_showcase_frame, text=caption,
+                                 font=ctk.CTkFont(size=10), text_color=self.text_muted
+                                 ).grid(row=1, column=col, padx=5, pady=(0, 5))
+            except Exception:
+                pass
 
         # Animated magical sigil
         self._build_sigil_canvas(f_welcome)
@@ -668,71 +714,102 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                      font=ctk.CTkFont(family="Inter", size=14), text_color=self.text_muted,
                      justify="left").pack(anchor="w", padx=30, pady=(0, 20))
 
-        # Use-case definitions: (label, description, features_to_enable)
+        # Use-case definitions: (label, description, features_to_enable, showcase_image)
         _use_cases = [
             ("I want to fix and enhance my photographs",
              "Upscale low-res photos, restore old/damaged pictures, fix blurry faces,\n"
              "remove unwanted objects, add color to black & white photos.",
-             ["img2img", "upscale", "face_restore", "photo_restore", "lama_remove", "colorize"]),
+             ["img2img", "upscale", "face_restore", "photo_restore", "lama_remove", "colorize"],
+             "showcase_seedv2r.png"),
 
             ("I want to create images from text descriptions",
              "Type what you imagine and the AI creates it. Great for concept art,\n"
              "illustrations, social media graphics, or just having fun.",
-             ["txt2img", "img2img", "batch_variations"]),
+             ["txt2img", "img2img", "batch_variations"],
+             "showcase_klein_flux2.png"),
 
             ("I want to change the lighting or mood of my photos",
              "Apply cinematic film looks, relight portraits from different angles,\n"
              "or transfer the visual style of a reference image.",
-             ["style_transfer", "lut_grading", "iclight"]),
+             ["style_transfer", "lut_grading", "iclight"],
+             "showcase_iclight_golden.png"),
 
             ("I want to swap faces or preserve someone's identity in AI art",
              "Paste a face from one photo onto another, or generate entirely new images\n"
              "that look like a specific person. Fun for memes, gifts, and creative projects.",
-             ["face_swap_reactor", "faceid_img2img"]),
+             ["face_swap_reactor", "faceid_img2img"],
+             "demo_step4_faceswap.png"),
 
             ("I want to use the latest and best AI model (Flux 2 Klein)",
              "Flux 2 Klein is the newest, fastest, and highest-quality AI model available.\n"
              "It can edit images, extend canvases, re-pose characters, inpaint, and blend layers.\n"
              "Requires 6+ GB VRAM. If your GPU supports it, this replaces many older tools.",
-             ["klein_flux2"]),
+             ["klein_flux2"],
+             "showcase_klein_flux2.png"),
 
             ("I want to generate short videos from still images",
              "Turn any photograph into a 2-4 second animated video clip using Wan 2.2.\n"
              "Great for social media, animated portraits, or bringing art to life.\n"
              "Requires 8+ GB VRAM.",
-             ["wan_i2v"]),
+             ["wan_i2v"],
+             "showcase_wan_breathing_still.png"),
 
             ("I want AI-guided precision (ControlNet)",
              "Guide the AI using structural cues: edges, depth maps, poses, sketches.\n"
              "Essential if you need precise control over composition and want the AI\n"
              "to follow a specific layout or structure.",
-             ["controlnet"]),
+             ["controlnet"],
+             "showcase_cn_depth.png"),
 
             ("I want maximum quality restoration (SUPIR / SeedV2R)",
              "State-of-the-art AI restoration that can reconstruct incredible detail from\n"
              "very low quality or tiny images. Heavy on VRAM (10-12+ GB) but stunning results.",
-             ["supir", "seedv2r", "detail_hallucinate"]),
+             ["supir", "seedv2r", "detail_hallucinate"],
+             "showcase_supir.png"),
 
             ("I just want the basics to try it out",
              "A minimal setup: image editing, upscaling, and background removal.\n"
              "Perfect for getting started without a huge download. You can always\n"
              "re-run the installer later to add more.",
-             ["img2img", "upscale", "rembg"]),
+             ["img2img", "upscale", "rembg"],
+             "showcase_rembg.png"),
         ]
 
         self._usecase_vars = {}
-        for label, desc, features in _use_cases:
+        for label, desc, features, *_img in _use_cases:
+            _showcase_img = _img[0] if _img else None
             card = ctk.CTkFrame(f_use, fg_color="#110A1F", corner_radius=10,
                                 border_width=1, border_color="#633A32")
             card.pack(fill="x", padx=30, pady=5)
             var = ctk.BooleanVar(value=False)
             self._usecase_vars[label] = (var, features)
-            cb = ctk.CTkCheckBox(card, text=label, variable=var,
+
+            # Card layout: image on left, text on right
+            card_inner = ctk.CTkFrame(card, fg_color="transparent")
+            card_inner.pack(fill="x", padx=10, pady=8)
+
+            # Showcase image thumbnail (left side)
+            if _showcase_img:
+                try:
+                    _img_path = _os.path.join(_assets_dir, _showcase_img)
+                    if _os.path.exists(_img_path):
+                        _img = Image.open(_img_path)
+                        _img = _img.resize((80, int(80 * _img.height / _img.width)), Image.LANCZOS)
+                        _ctk_img = ctk.CTkImage(light_image=_img, dark_image=_img, size=_img.size)
+                        ctk.CTkLabel(card_inner, text="", image=_ctk_img).pack(side="left", padx=(5, 10))
+                except Exception:
+                    pass
+
+            # Text content (right side)
+            text_frame = ctk.CTkFrame(card_inner, fg_color="transparent")
+            text_frame.pack(side="left", fill="x", expand=True)
+
+            cb = ctk.CTkCheckBox(text_frame, text=label, variable=var,
                                   font=ctk.CTkFont(family="Inter", size=15, weight="bold"),
                                   fg_color=self.accent_color, hover_color=self.accent_hover)
-            cb.pack(anchor="w", padx=20, pady=(12, 2))
-            ctk.CTkLabel(card, text=desc, font=ctk.CTkFont(family="Inter", size=12),
-                         text_color=self.text_muted, justify="left").pack(anchor="w", padx=45, pady=(0, 12))
+            cb.pack(anchor="w", pady=(2, 2))
+            ctk.CTkLabel(text_frame, text=desc, font=ctk.CTkFont(family="Inter", size=12),
+                         text_color=self.text_muted, justify="left").pack(anchor="w", pady=(0, 2))
 
         # Apply + Next
         btn_row = ctk.CTkFrame(f_use, fg_color="transparent")
