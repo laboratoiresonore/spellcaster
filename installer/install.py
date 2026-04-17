@@ -1452,8 +1452,10 @@ def step_api_keys(args) -> None:
 def step_system_detection(args) -> tuple[str, int]:
     """Detect GPU/VRAM, show hardware profile, and warn if no GPU found."""
     print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
-    print(f"{C_BOLD}  System Detection{C_RESET}")
-    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
+    print(f"{C_BOLD}  STEP 1: Checking Your Hardware{C_RESET}")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}")
+    print(f"  {C_DIM}We're detecting your GPU to figure out which AI models")
+    print(f"  will run smoothly on your system.{C_RESET}\n")
 
     gpu_name, vram_mb = detect_gpu_vram()
     tier = vram_tier(vram_mb)
@@ -1531,14 +1533,15 @@ def step_system_detection(args) -> tuple[str, int]:
 def step_detect_server(args) -> str:
     """Step 0: Determine ComfyUI server URL."""
     print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
-    print(f"{C_BOLD}  STEP 1: ComfyUI Server{C_RESET}")
-    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
+    print(f"{C_BOLD}  STEP 2: Finding ComfyUI{C_RESET}")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}")
+    print(f"  {C_DIM}ComfyUI is the AI engine that does all the heavy lifting.")
+    print(f"  Spellcaster talks to it behind the scenes — you never need to open it.{C_RESET}\n")
 
     if args.server_url:
         print(f"  {C_GREEN}Using specified server URL:{C_RESET} {args.server_url}")
         return args.server_url
 
-    print(f"  The plugins need to connect to a running ComfyUI instance.")
     print(f"  {C_DIM}Default: {DEFAULT_SERVER_URL} (ComfyUI running on this machine){C_RESET}\n")
 
     choice = ask_choice(
@@ -1842,7 +1845,7 @@ def _write_shared_settings(paths: dict, server_url: str, llm_url: str,
 def step_detect_paths(args) -> dict:
     """Step 2: Detect or ask for application paths."""
     print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
-    print(f"{C_BOLD}  STEP 2: Application Paths{C_RESET}")
+    print(f"{C_BOLD}  STEP 3: Where Are Your Apps?{C_RESET}")
     print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
 
     # ── ComfyUI ──
@@ -1982,10 +1985,12 @@ def step_detect_paths(args) -> dict:
 
 def step_select_features(manifest: dict, paths: dict, args,
                          server_info: dict | None = None) -> dict[str, bool]:
-    """Step 3: Feature selection with VRAM-aware pre-selection."""
+    """Step 4: Feature selection with VRAM-aware pre-selection."""
     print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
-    print(f"{C_BOLD}  STEP 3: Select Features{C_RESET}")
-    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
+    print(f"{C_BOLD}  STEP 4: What Do You Want To Do?{C_RESET}")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}")
+    print(f"  {C_DIM}We've pre-selected the best tools for your hardware.")
+    print(f"  Just hit Enter to accept, or customize below.{C_RESET}\n")
 
     vram_gb = getattr(args, '_vram_mb', 0) / 1024
 
@@ -2277,8 +2282,10 @@ def step_install_nodes(manifest: dict, selected: dict[str, bool], paths: dict,
     available_nodes = server_info.get('available_nodes', set())
 
     print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
-    print(f"{C_BOLD}  STEP 4: Install Custom Nodes{C_RESET}")
-    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
+    print(f"{C_BOLD}  STEP 5: Installing AI Extensions{C_RESET}")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}")
+    print(f"  {C_DIM}These are the ComfyUI plugins that power each tool.")
+    print(f"  Already-installed ones are skipped automatically.{C_RESET}\n")
 
     custom_nodes_dir = paths["comfyui"] / "custom_nodes"
     if not dry_run:
@@ -2346,8 +2353,10 @@ def step_install_models(manifest: dict, selected: dict[str, bool], paths: dict,
         return
 
     print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
-    print(f"{C_BOLD}  STEP 5: Download Models{C_RESET}")
-    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
+    print(f"{C_BOLD}  STEP 6: Downloading AI Models{C_RESET}")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}")
+    print(f"  {C_DIM}This is the longest step — AI models are large files.")
+    print(f"  You can skip optional models now and re-run later to add them.{C_RESET}\n")
 
     if args.skip_models:
         print(f"  {C_YELLOW}--skip-models specified — skipping all model downloads.{C_RESET}")
@@ -3219,19 +3228,23 @@ def step_final_summary(manifest: dict, selected: dict[str, bool], paths: dict, s
 
     print(f"\n  {C_BOLD}ComfyUI server:{C_RESET} {server_url}")
 
-    print(f"\n  {C_BOLD}Next steps:{C_RESET}")
-    print(f"    1. Start ComfyUI on {server_url}")
+    print(f"\n  {C_BOLD}What to do now:{C_RESET}")
+    print(f"    1. Make sure ComfyUI is running ({server_url})")
     if paths["gimp"]:
-        print(f"    2. Open GIMP 3 → Filters → Spellcaster to access features")
+        print(f"    2. Open GIMP 3 → go to the {C_BOLD}Spellcaster{C_RESET} menu → pick any tool → click Generate")
+        print(f"       {C_DIM}Every preset is already optimized. Just type what you want.{C_RESET}")
     if paths["darktable"]:
-        print(f"    3. Open Darktable — the Spellcaster panel appears in the lighttable module")
-    print(f"    4. On first launch, verify the server URL in the plugin dialog")
+        print(f"    3. Open Darktable → the Spellcaster panel is in the lighttable module")
     if selected.get("wizard_guild", False):
-        tavern_dir = _get_tavern_install_dir()
-        print(f"    5. Start the Wizard Guild: python {tavern_dir / 'guild_launcher.py'}")
-        print(f"       The launcher will walk you through connecting to your LLM.")
-        print(f"       Don't have an LLM? Download KoboldCPP (single .exe, no install):")
-        print(f"       https://github.com/LostRuins/koboldcpp/releases")
+        print(f"    4. Or launch the Wizard Guild for a chat-based interface:")
+        print(f"       {C_DIM}start_guild.bat (Windows) or python tavern/guild_launcher.py{C_RESET}")
+        print(f"       {C_DIM}No separate LLM needed — runs natively inside ComfyUI.{C_RESET}")
+
+    print(f"\n  {C_GREEN}Want more models or features later?{C_RESET}")
+    print(f"  {C_DIM}Just re-run this installer anytime. It detects what's already installed")
+    print(f"  and only downloads what's new. Your existing setup is never touched.{C_RESET}")
+
+    print(f"\n  {C_DIM}Need help? → https://www.reddit.com/r/Spellcaster_Studio/{C_RESET}")
 
     print(f"\n  {C_BOLD}Troubleshooting:{C_RESET}")
     print(f"    • 'Node not found' — install the missing custom node into ComfyUI")
