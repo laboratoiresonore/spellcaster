@@ -5,7 +5,7 @@
 <h1 align="center">✨ Spellcaster ✨</h1>
 
 <p align="center">
-  <strong>66 AI tools. Zero experience needed. Just talk to it.</strong><br/>
+  <strong>69 AI tools. Zero experience needed. Just talk to it.</strong><br/>
   <em>GIMP &bull; Darktable &bull; SillyTavern &bull; Standalone Web UI &bull; 100% Local &bull; No Cloud</em>
 </p>
 
@@ -22,7 +22,7 @@
 <p align="center">
   <a href="#-what-is-spellcaster">What Is It</a> &bull;
   <a href="#-quick-start-for-your-use-case">Quick Start</a> &bull;
-  <a href="#-complete-tool-reference">All 66 Tools</a> &bull;
+  <a href="#-complete-tool-reference">All 69 Tools</a> &bull;
   <a href="#-how-to-install">Install</a> &bull;
   <a href="#-the-wizard-guild">Wizard Guild</a> &bull;
   <a href="#-sillytavern-characters">SillyTavern</a> &bull;
@@ -38,7 +38,7 @@
 <tr>
 <td width="60%">
 
-**Spellcaster adds 66 AI tools to GIMP and Darktable** — generate images from text, edit with natural language, fix photos, swap faces, generate videos, remove backgrounds, change lighting, extend canvases, re-pose characters, create transparent objects, and more.
+**Spellcaster adds 69 AI tools to GIMP and Darktable** — generate images from text, edit with natural language, fix photos, swap faces, generate videos, remove backgrounds, change lighting, extend canvases, re-pose characters, create transparent objects, and more.
 
 **No AI experience needed.** Every tool has expert-tuned presets. Your first result looks like your hundredth.
 
@@ -245,7 +245,7 @@ Under the hood, Spellcaster is a ComfyUI workflow orchestration engine with a GI
 
 ## 🛠️ Complete Tool Reference
 
-All 66 tools organized by their GIMP menu location under `Filters > Spellcaster`.
+All 69 tools organized by their GIMP menu location under `Filters > Spellcaster`.
 
 <details open>
 <summary><h3>Generate (7 tools)</h3></summary>
@@ -280,17 +280,19 @@ All 66 tools organized by their GIMP menu location under `Filters > Spellcaster`
 </details>
 
 <details>
-<summary><h3>Enhance (7 tools)</h3></summary>
+<summary><h3>Enhance (9 tools)</h3></summary>
 
 | Tool | What It Does |
 |---|---|
-| **Upscale 4x** | Make any image larger and sharper. 6 upscale models (UltraSharp, RealESRGAN, Remacri, NMKD, Anime, Faces). |
+| **Upscale 4x** | Make any image larger and sharper. 9 models including WaveSpeed SeedVR2 AI upscale to 2K/4K, UltraSharp, RealESRGAN, Remacri, NMKD. |
 | **Photo Restoration Pipeline** | One-click multi-stage: upscale + face fix + sharpen in a single combined workflow. |
 | **Detail Hallucination** | Add fine texture detail that wasn't there — upscale + low-denoise img2img pass. |
 | **SUPIR AI Restoration** | State-of-the-art AI photo repair with dedicated SUPIR model and tunable denoise. |
-| **SeedV2R Upscale** | Specialized upscaling with hallucination control: none/light/high modes, 2x-4x scales. |
-| **Colorize B&W Photo** | Add natural color to black-and-white photographs via ControlNet-guided colorization. |
+| **SeedV2R Upscale** | Specialized upscaling with hallucination control: none/light/high modes, 2x-4x scales. Architecture-aware CFG (auto-clamps to 1.0 for Klein/Flux). |
+| **Colorize B&W Photo** | Three engines: DDColor Artistic (instant, vivid), DDColor Natural (instant, accurate), or ControlNet+Diffusion (best quality, slower). |
 | **Object Removal** | Paint over anything to erase it — LaMa inpainting, no prompt needed. |
+| **3D Normal Map** | Generate surface normal maps using NormalCrafter for relighting, 3D reconstruction, and ControlNet guidance. |
+| **AI Eraser** | Select any object and erase it — LaMa fills the background seamlessly. One-click, no prompt, `Ctrl+Alt+X`. |
 
 </details>
 
@@ -304,7 +306,7 @@ All 66 tools organized by their GIMP menu location under `Filters > Spellcaster`
 | **Face Swap (mtb)** | Alternative face swap engine with antelopev2/buffalo_l analysis and multi-face indexing. |
 | **Face Identity Transfer** | Generate images that look like a specific person. FaceID, FaceID Plus V2, FaceID Portrait presets. |
 | **Face Identity (Flux)** | Flux-native identity preservation at the attention level via PuLID. Works with Klein 4B/9B. |
-| **Face Restore** | Enhance and repair faces with CodeFormer and adjustable fidelity weight. |
+| **Face Restore** | 7 models: GPEN-2048 (best speed+quality), CodeFormer (best fidelity), GFPGAN v1.3/1.4, GPEN-512/1024, RestoreFormer++. |
 | **Flux 2 Headswap** | Hybrid pipeline: ReActor swap followed by Flux 2 Klein refinement pass for seamless blending. |
 
 </details>
@@ -328,7 +330,7 @@ All 66 tools organized by their GIMP menu location under `Filters > Spellcaster`
 |---|---|
 | **AI Select by Description (SAM3)** | Select any subject by typing its name — "person", "shirt", "hair". AI-powered selection beats manual tools. |
 | **AI Extract Subject (SAM3)** | One-click subject extraction with transparent background, auto-detect, and auto-crop. |
-| **Remove Background** | One-click transparent PNG via rembg. |
+| **Remove Background** | Three engines: rembg (fast), BiRefNet (best hair/fur detail), BiRefNet Portrait (people-optimized). One-click transparent PNG. |
 
 </details>
 
@@ -370,7 +372,7 @@ Selfie --> Casting Polaroids --> Body Double --> Wardrobe --> Set Design --> Dir
 </details>
 
 <details>
-<summary><h3>Quick (6 tools)</h3></summary>
+<summary><h3>Quick (7 tools)</h3></summary>
 
 Zero-dialog tools accessible from the canvas right-click menu (`<Image> > Spellcaster`). These use your last settings — no dialog, no clicks, instant results.
 
@@ -381,6 +383,7 @@ Zero-dialog tools accessible from the canvas right-click menu (`<Image> > Spellc
 | **Quick Upscale 4x** | `Ctrl+Alt+U` | Upscale with Remacri model |
 | **Quick Face Restore** | `Ctrl+Alt+F` | CodeFormer face restoration |
 | **Quick Remove Background** | `Ctrl+Alt+B` | Instant background removal |
+| **AI Eraser** | `Ctrl+Alt+X` | Select anything and erase it — AI fills the gap |
 | **Re-run Last** | `Ctrl+Alt+R` | Repeat whatever you did last with a new seed |
 
 </details>
@@ -408,7 +411,8 @@ Zero-dialog tools accessible from the canvas right-click menu (`<Image> > Spellc
 | **Crash-safe boot shim** | 3-tier recovery on startup: backup restore, GitHub download, visible error. GIMP never bricks. |
 | **AI Prompt Enhancement** | Local LLM rewrites your prompts automatically. Runs natively inside ComfyUI — no separate server needed. Architecture-aware: SDXL gets tags, Flux gets natural language, Klein gets concise descriptions. Falls back to KoboldCpp/Ollama if no ComfyUI LLM nodes are installed. |
 | **ComfyUI-native LLM** | Text generation runs inside ComfyUI via GGUF models (Qwen3 4B). Auto-discovers available models, auto-unloads during image generation to free VRAM. Zero config — install the node pack and a model, done. |
-| **17 keyboard shortcuts** | Auto-installed on first run. `Ctrl+Shift` for primary tools, `Ctrl+Alt` for quick actions. |
+| **Auto-acceleration (TeaCache)** | Every image generation is automatically 1.4x faster via TeaCache — zero config, zero quality loss. Injected by the optimizer into all workflows. |
+| **18 keyboard shortcuts** | Auto-installed on first run. `Ctrl+Shift` for primary tools, `Ctrl+Alt` for quick actions (including `Ctrl+Alt+X` for AI Eraser). |
 | **Native GIMP menu integration** | Select, Colors, and Image menus get AI-powered entries alongside Spellcaster's own menu. |
 | **Premium dark-purple theme** | Opt-in visual theme for GIMP and Darktable. Set `"apply_theme": true` in config.json. |
 | **ControlNet suite** | 6 preprocessors (Canny, Depth, OpenPose, Scribble, LineArt, Tile) with dual ControlNet support. Models auto-selected per architecture. |
