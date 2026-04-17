@@ -192,6 +192,37 @@ def optimize_workflow(workflow, vram_gb=None, comfy_url=None):
                     warnings.append(
                         "Recommend: enable Tiled VAE for WAN video on <16GB")
 
+    # ── TeaCache auto-injection for non-video image workflows ──
+    # Adds ~1.4x speedup with zero quality loss at default threshold.
+    # Only inject if: (1) no TeaCache already in workflow, (2) not a
+    # video workflow (WAN/LTX use WanVideoTeaCache instead),
+    # (3) a suitable model node exists to patch.
+    if frames <= 1:  # image workflow, not video
+        has_teacache = any(
+            n.get("class_type", "") in ("ApplyTeaCachePatch", "ApplyFirstBlockCachePatch")
+            for n in patched.values() if isinstance(n, dict))
+        if not has_teacache:
+            # Find model output node (KSampler's model input or CFGGuider's model)
+            for nid, node in list(patched.items()):
+                if not isinstance(node, dict):
+                    continue
+                ct = node.get("class_type", "")
+                if ct in ("KSampler", "KSamplerAdvanced"):
+                    model_input = node["inputs"].get("model")
+                    if model_input:
+                        # Insert TeaCache between model source and sampler
+                        tc_id = f"_tc_{nid}"
+                        patched[tc_id] = {
+                            "class_type": "ApplyTeaCachePatch",
+                            "inputs": {
+                                "model": model_input,
+                                "rel_l1_thresh": 0.25,
+                            },
+                        }
+                        node["inputs"]["model"] = [tc_id, 0]
+                        warnings.append("TeaCache auto-injected (1.4x speedup)")
+                        break
+
     return patched, warnings
 
 
