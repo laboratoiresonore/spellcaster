@@ -105,19 +105,19 @@ Every tool starts with expert-tuned presets that just work. But as you get comfo
 
 ## For People Who Can't Computer
 
-Seriously — you don't need to know anything. The entire thing is automated:
+Listen. If you can order food on your phone, you can use this. If you once successfully connected a printer on the first try, you're overqualified. The entire thing is automated to a degree that borders on suspicious:
 
-- **Installation?** Automated. The installer detects your GPU, downloads the right AI models, installs everything, creates shortcuts. You click "Next" a few times.
-- **Settings?** Automated. Every tool has expert-tuned presets. You never configure a sampler, pick a scheduler, set a CFG scale, or write a negative prompt. The AI handles all of that.
-- **Prompts?** Automated. Type "a cat" and the built-in LLM rewrites it into an optimized prompt for whatever AI model you're using. You don't need to know what SDXL tags are or how Flux prompting works.
-- **Model selection?** Automated. The plugin detects what models are installed and picks the best one for each task.
-- **VRAM management?** Automated. Video resolution scales to fit your GPU. The LLM unloads during image generation. TeaCache acceleration is injected into every workflow. You never see an out-of-memory error.
-- **Updates?** Automated. The plugin checks GitHub on launch and silently patches itself.
-- **Recovery?** Automated. If an update corrupts the plugin, a 3-tier recovery system restores from backup, re-downloads from GitHub, or shows a visible error. GIMP never bricks.
+- **Installation?** Automated. The installer sniffs your GPU like a sommelier sniffs wine, figures out what AI models your hardware can swallow, downloads them, installs everything, creates shortcuts, and tucks you into bed. You click "Next" a few times. That's your contribution.
+- **Settings?** Automated. Every tool has expert-tuned presets crafted by someone who spent way too long tweaking denoise values at 3 AM so you don't have to. You never configure a sampler, pick a scheduler, set a CFG scale, or write a negative prompt. You don't even know what those words mean. *Good.* Keep it that way.
+- **Prompts?** Automated. Type "a cat" and a local AI rewrites it into a paragraph of optimized gibberish that the image model actually understands. It knows that SDXL wants tags, Flux wants poetry, and Klein wants bullet points. You just type "a cat."
+- **Model selection?** Automated. The plugin detects what models are installed and picks the best one. You didn't even know you had models. You thought you just had a computer.
+- **VRAM management?** Automated. Video resolution auto-scales to fit your GPU. The LLM politely unloads itself during image generation. TeaCache acceleration is silently injected into every workflow. If you don't know what any of that means — congratulations, that's the point.
+- **Updates?** Automated. The plugin checks GitHub on launch and silently patches itself. You will never be asked to "pull the latest commit." You don't know what a commit is and we respect that.
+- **Recovery?** Automated. If an update corrupts the plugin, a 3-tier recovery system restores from backup, re-downloads from GitHub, or shows a visible error. GIMP never bricks. Your relationship with technology remains intact.
 
-**You open GIMP. You go to the Spellcaster menu. You pick a tool. You click Generate. That's it.**
+**You open GIMP. You go to the Spellcaster menu. You pick a tool. You click Generate. That's it. The AI does the rest. You take the credit.**
 
-If you don't want to use GIMP at all, the [Wizard Guild](#under-the-hood) is a chat interface where you just tell an AI wizard what you want in plain English.
+Too intimidated by GIMP? The [Wizard Guild](#under-the-hood) is a chat interface where you literally just tell an AI wizard what you want. In English. Like ordering at a restaurant, except the waiter is a magical entity running on your GPU and the food is photorealistic art.
 
 ---
 
