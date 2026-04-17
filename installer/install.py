@@ -2092,8 +2092,8 @@ def step_select_features(manifest: dict, paths: dict, args,
     print(f"  Features are pre-selected based on your hardware ({vram_label}):\n")
 
     if locked_features:
-        print(f"  {C_CYAN}{len(locked_features)} feature(s) already installed on your"
-              f" ComfyUI server — these are locked.{C_RESET}\n")
+        print(f"  {C_CYAN}{len(locked_features)} feature(s) already on your ComfyUI server")
+        print(f"  — marked with \u2713 and \"Already on your server!\"{C_RESET}\n")
 
     for cat_name, cat_keys in categories.items():
         print(f"  {C_BOLD}\u2500\u2500 {cat_name} \u2500\u2500{C_RESET}")
@@ -2101,32 +2101,26 @@ def step_select_features(manifest: dict, paths: dict, args,
             if key not in cat_keys:
                 continue
 
-            # Status icons
-            if status == "installed":
-                icon = f"{C_CYAN}[\u2713]{C_RESET}"
-            elif status == "ok":
-                icon = f"{C_GREEN}[+]{C_RESET}"
-            elif status == "warn":
-                icon = f"{C_YELLOW}[~]{C_RESET}"
-            elif status == "no":
-                icon = f"{C_RED}[x]{C_RESET}"
-            else:  # nogpu
-                icon = f"{C_RED}[x]{C_RESET}"
-
             label = feat["label"]
             size = estimate_feature_size(feat, required_only=True)
             size_str = f" ({fmt_size(size)})" if size > 0 else ""
 
-            if reason:
-                print(f"    {icon} {label}{size_str}  {C_DIM}\u2014 {reason}{C_RESET}")
+            if status == "installed":
+                print(f"    {C_CYAN}[\u2713]{C_RESET} {label}{size_str}  {C_CYAN}\u2014 Already on your server!{C_RESET}")
+            elif status == "ok":
+                print(f"    {C_GREEN}[+]{C_RESET} {label}{size_str}")
+            elif status == "warn":
+                print(f"    {C_YELLOW}[~]{C_RESET} {label}{size_str}  {C_DIM}\u2014 {reason}{C_RESET}")
+            elif reason:
+                print(f"    {C_RED}[x]{C_RESET} {label}{size_str}  {C_DIM}\u2014 {reason}{C_RESET}")
             else:
-                print(f"    {icon} {label}{size_str}")
+                print(f"    {C_RED}[x]{C_RESET} {label}{size_str}")
         print()
 
-    print(f"  {C_CYAN}[\u2713]{C_RESET} = already installed on server (locked)")
-    print(f"  {C_GREEN}[+]{C_RESET} = compatible & pre-selected")
+    print(f"  {C_CYAN}[\u2713]{C_RESET} = already on your ComfyUI server")
+    print(f"  {C_GREEN}[+]{C_RESET} = compatible with your GPU, pre-selected")
     print(f"  {C_YELLOW}[~]{C_RESET} = works but may be slow on your hardware")
-    print(f"  {C_RED}[x]{C_RESET} = incompatible with your VRAM or no host app detected\n")
+    print(f"  {C_RED}[x]{C_RESET} = needs more VRAM or a host app you don't have\n")
 
     # \u2500\u2500 Phase 3: Let user customize \u2500\u2500
     selected: dict[str, bool] = {}
@@ -2149,19 +2143,32 @@ def step_select_features(manifest: dict, paths: dict, args,
         else:
             # Let user toggle individual features
             print(f"\n  {C_DIM}Answer y/n for each feature.")
-            if locked_features:
-                print(f"  Features marked [\u2713] are already on your server and cannot be toggled.")
-            print(f"  Features marked [x] are not recommended.{C_RESET}\n")
+            print(f"  Features already on your server are pre-checked.")
+            print(f"  Features marked [x] are not recommended for your hardware.{C_RESET}\n")
             handled = set()
 
             for key, feat, status, reason, default_on, locked in feature_list:
                 if key in handled:
                     continue
 
-                # Locked features cannot be toggled — skip the prompt
+                # Already-installed features: show with warning if user unchecks
                 if locked:
                     handled.add(key)
-                    print(f"    {C_CYAN}[\u2713] {feat['label']}{C_RESET}  {C_DIM}\u2014 {reason}{C_RESET}")
+                    keep = ask_yn(
+                        f"    {C_CYAN}[\u2713]{C_RESET} {feat['label']}  "
+                        f"{C_CYAN}(already on your server){C_RESET}  — keep it?",
+                        default=True, auto_yes=args.yes)
+                    if not keep:
+                        print(f"\n    {C_YELLOW}\u26a0 CAUTION: Unchecking this means you want to REMOVE")
+                        print(f"    this feature from your ComfyUI server.{C_RESET}")
+                        really = ask_yn(
+                            f"    Are you sure you want to uninstall {feat['label']}?",
+                            default=False, auto_yes=False)
+                        if really:
+                            selected[key] = False
+                            print(f"    {C_RED}Will be removed.{C_RESET}")
+                        else:
+                            print(f"    {C_GREEN}Keeping it.{C_RESET}")
                     continue
 
                 # \u2500\u2500 Special case: ReActor vs MTB face swap grouped choice \u2500\u2500
