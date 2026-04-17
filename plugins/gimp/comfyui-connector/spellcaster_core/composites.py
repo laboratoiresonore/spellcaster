@@ -89,16 +89,20 @@ def load_model_stack(nf, preset, node_id="1"):
     arch_key = preset.get("arch", "sdxl")
     arch = get_arch(arch_key)
 
-    # If the model is actually a checkpoint but the arch expects unet_clip_vae,
-    # fall back to CheckpointLoaderSimple (e.g. chroma2 merged checkpoint).
-    # The model_type field in preset overrides the architecture's default loader.
+    # GOTCHA: Some architectures (e.g. Chroma v2) can ship as either separate
+    # UNET+CLIP+VAE files OR as a single merged checkpoint. The architecture
+    # definition defaults to unet_clip_vae, but if the user selected a merged
+    # checkpoint file, we must override to use CheckpointLoaderSimple instead.
+    # The preset's "model_type" field (set by the model detection layer) tells us.
     actual_loader = arch.loader
     model_type = preset.get("model_type")
     if model_type == "checkpoint" and actual_loader == "unet_clip_vae":
         actual_loader = "checkpoint"
 
     if actual_loader == "unet_clip_vae":
-        # Flux / Klein — separate loaders
+        # Flux / Klein / Chroma — three separate loader nodes required.
+        # Each loader outputs exactly one thing (MODEL, CLIP, or VAE),
+        # unlike CheckpointLoaderSimple which outputs all three from slot 0/1/2.
         unet_id = nf.unet_loader(preset["ckpt"], "default", node_id=node_id)
 
         if arch.clip_mode == "single_chroma":
@@ -109,16 +113,16 @@ def load_model_stack(nf, preset, node_id="1"):
                                      device="default",
                                      node_id=f"{node_id}b")
         elif arch.clip_mode == "single_flux2":
-            # Klein: single CLIPLoader, CLIP selection is model-dependent
-            # 9B (dev) needs qwen_3_8b, 4B (schnell/lite) needs qwen_3_4b
+            # Klein CLIP selection: the CLIP model MUST match the UNET size.
+            # Using qwen_3_8b with a 4B UNET silently produces garbage output;
+            # using qwen_3_4b with a 9B UNET throws an explicit shape mismatch error.
+            # We prefer defaulting to 9B because the failure mode is louder (better UX).
             extra = arch.extra
             ckpt_lower = preset["ckpt"].lower()
             is_9b = ("9b" in ckpt_lower or
                      ("dev" in ckpt_lower and "4b" not in ckpt_lower))
             is_4b = ("4b" in ckpt_lower or "schnell" in ckpt_lower
                      or "lite" in ckpt_lower or "kaleidoscope" in ckpt_lower)
-            # Explicit 4B wins, else default to 9B (dev is more common,
-            # and 9B CLIP with 4B model fails loudly vs silently)
             if is_9b:
                 clip_name = extra.get("clip_name_9b", "qwen_3_8b.safetensors")
             else:
@@ -145,10 +149,13 @@ def load_model_stack(nf, preset, node_id="1"):
         vae_name = arch.extra.get("vae_name", "ae.safetensors")
         vae_id = nf.vae_loader(vae_name, node_id=f"{node_id}c")
 
+        # Each separate loader has exactly one output at slot 0
         return [unet_id, 0], [clip_id, 0], [vae_id, 0]
 
     else:
-        # Checkpoint-based (sd15, sdxl, zit, illustrious, or forced-checkpoint)
+        # Checkpoint-based (sd15, sdxl, zit, illustrious, or forced-checkpoint).
+        # CheckpointLoaderSimple outputs: slot 0=MODEL, slot 1=CLIP, slot 2=VAE.
+        # All three refs point to the same node ID, differing only in slot index.
         ckpt_id = nf.checkpoint_loader(preset["ckpt"], node_id=node_id)
         return [ckpt_id, 0], [ckpt_id, 1], [ckpt_id, 2]
 
@@ -225,6 +232,7 @@ def inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100,
                 lora.get("strength_clip", 1.0),
                 node_id=nid_str,
             )
+            # LoraLoaderAdvanced outputs: slot 0=MODEL, slot 1=CLIP, slot 2=STRING (triggers)
             trigger_refs.append([nid, 2])
         else:
             nid = nf.lora_loader(
@@ -234,6 +242,8 @@ def inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100,
                 lora.get("strength_clip", 1.0),
                 node_id=nid_str,
             )
+        # Chain: each LoRA's output feeds into the next LoRA's input.
+        # LoraLoader outputs: slot 0=MODEL (patched), slot 1=CLIP (patched).
         prev_model = [nid, 0]
         prev_clip = [nid, 1]
 
@@ -318,8 +328,14 @@ def encode_prompts(nf, arch_key, clip_ref, positive, negative,
     pos_nid = nf.clip_encode(clip_ref, positive, node_id=pos_id)
 
     if arch.supports_negative and negative:
+        # SD1.5/SDXL/Illustrious: encode the negative prompt normally
         neg_nid = nf.clip_encode(clip_ref, negative, node_id=neg_id)
     else:
+        # Flux/Klein/Chroma: these architectures ignore negative prompts entirely.
+        # ConditioningZeroOut creates a zero-valued conditioning tensor from the
+        # positive encoding's shape. This satisfies KSampler's required neg input
+        # without influencing the output. The input is the positive conditioning
+        # (not the clip_ref) because ZeroOut needs a conditioning tensor to zero.
         neg_nid = nf.conditioning_zero_out([pos_nid, 0], node_id=neg_id)
 
     return pos_nid, neg_nid
@@ -368,6 +384,8 @@ def sample_standard(nf, model_ref, pos_ref, neg_ref, latent_ref,
             }
         )
     """
+    # Refs can be either a bare node_id string (e.g. "5") or an already-formed
+    # [node_id, slot] list. Normalize to [node_id, 0] when a string is passed.
     return nf.ksampler(
         model_ref,
         [pos_ref, 0] if isinstance(pos_ref, str) else pos_ref,
@@ -449,7 +467,10 @@ def sample_klein_img2img(nf, model_ref, pos_ref, neg_ref, latent_ref, seed,
 
     Returns the SamplerCustomAdvanced node ID.
     """
-    # Wrap conditioning with reference latent
+    # Klein img2img: wrap conditioning with the encoded input image latent.
+    # ReferenceLatent tells the CFGGuider to condition on the source image,
+    # not just the text prompt. This is how Klein achieves img2img without
+    # the standard noise-then-denoise approach.
     ref_pos_id = nf.reference_latent(
         [pos_ref, 0] if isinstance(pos_ref, str) else pos_ref,
         latent_ref,
@@ -532,10 +553,15 @@ def inject_controlnet(nf, controlnet_config, guide_modes, arch_key,
     if not guide:
         return pos_ref, neg_ref
 
+    # Look up the ControlNet model for this architecture, falling back to SDXL
+    # variant (most CN models have SDXL versions; SD1.5/Flux may not).
     cn_model = guide["cn_models"].get(arch_key, guide["cn_models"].get("sdxl"))
     if not cn_model:
-        return pos_ref, neg_ref
+        return pos_ref, neg_ref  # no CN model available for this architecture
 
+    # Preprocessor transforms the input image into a guidance signal
+    # (e.g. Canny -> edge map, Depth -> depth map). Some ControlNets
+    # don't need preprocessing (e.g. IP-Adapter, Tile at full resolution).
     preprocessor = guide.get("preprocessor")
     cn_image_ref = image_ref
 
@@ -547,6 +573,10 @@ def inject_controlnet(nf, controlnet_config, guide_modes, arch_key,
     cn_loader_id = nf.controlnet_loader(cn_model,
                                         node_id=str(cn_base_id + 1))
 
+    # ControlNetApplyAdvanced takes BOTH pos and neg conditioning and returns
+    # updated versions of both. This is why we return two refs, not one.
+    # start/end_percent control when during the diffusion process the CN is active
+    # (e.g. 0.0-0.5 = apply only in early steps for composition guidance).
     cn_apply_id = nf.controlnet_apply_advanced(
         pos_ref, neg_ref,
         [cn_loader_id, 0], cn_image_ref,
@@ -556,11 +586,13 @@ def inject_controlnet(nf, controlnet_config, guide_modes, arch_key,
         node_id=str(cn_base_id + 2),
     )
 
-    # Debug save
+    # Debug: save the preprocessed image (edge map, depth map, etc.) to inspect
+    # what the ControlNet actually sees. Only saves if preprocessing was applied.
     if debug_images and cn_image_ref != image_ref:
         nf.save_image(cn_image_ref, "spellcaster_cn_debug",
                       node_id=str(cn_base_id + 5))
 
+    # Output slots: 0=positive conditioning, 1=negative conditioning
     return [cn_apply_id, 0], [cn_apply_id, 1]
 
 
@@ -594,6 +626,9 @@ def inject_controlnet_pair(nf, cn1_config, cn2_config, guide_modes, arch_key,
         )
         # Both ControlNets have been applied in sequence
     """
+    # First CN gets base IDs 20-25, second gets 30-35 to avoid node ID collisions.
+    # The second CN receives the first CN's updated conditioning, creating a chain:
+    # original_cond -> [CN1] -> [CN2] -> final_cond
     pos, neg = inject_controlnet(
         nf, cn1_config, guide_modes, arch_key, image_ref,
         pos_ref, neg_ref, cn_base_id=20, debug_images=debug_images,
