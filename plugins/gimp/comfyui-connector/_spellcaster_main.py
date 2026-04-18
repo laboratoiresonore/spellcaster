@@ -10548,6 +10548,681 @@ def _bridge_import_workflow(parent_dlg, path, cfg):
         err.run(); err.destroy()
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Calibration Wizard — optometrist-style A/B model and settings tuning
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class CalibrationWizardDialog(Gtk.Dialog):
+    """Multi-page wizard for calibrating model preferences and settings.
+
+    Page 0: Welcome — explains what happens, shows model count
+    Page 1: Model Taste Test — one image per model, user rates Love/OK/Dislike
+    Page 2: Settings Calibration — A/B/C comparisons for denoise/CFG/steps/sampler
+    Page 3: Results — summary table, Apply button
+    """
+
+    def __init__(self, server_url):
+        super().__init__(title="Spellcaster — Calibration Wizard")
+        self.set_default_size(820, 640)
+        self.server = server_url
+
+        # Navigation buttons
+        self._btn_back = self.add_button("← _Back", Gtk.ResponseType.REJECT)
+        self._btn_next = self.add_button("_Next →", Gtk.ResponseType.APPLY)
+        self._btn_close = self.add_button("_Close", Gtk.ResponseType.CANCEL)
+        _style_dialog_buttons(self)
+        self._btn_back.set_sensitive(False)
+
+        bx = self.get_content_area()
+        bx.set_spacing(8)
+        bx.set_margin_start(16); bx.set_margin_end(16)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+
+        # Header
+        _hdr = _make_branded_header()
+        if _hdr:
+            bx.pack_start(_hdr, False, False, 0)
+
+        # Page stack (no visible tabs)
+        self._stack = Gtk.Stack()
+        self._stack.set_transition_type(Gtk.StackTransitionType.SLIDE_LEFT_RIGHT)
+        bx.pack_start(self._stack, True, True, 0)
+
+        # State
+        self._page = 0
+        self._models = []
+        self._model_ratings = {}      # model_name -> "love" | "ok" | "dislike"
+        self._model_images = {}       # model_name -> GdkPixbuf or None
+        self._settings_results = {}   # model_name -> {param: chosen_value}
+        self._profile = None
+
+        # Build pages
+        self._build_page_welcome()
+        self._build_page_taste_test()
+        self._build_page_settings()
+        self._build_page_results()
+
+        self._stack.set_visible_child_name("welcome")
+        self.show_all()
+
+        # Override dialog response to handle page navigation
+        self.connect("response", self._on_response)
+
+    # ── Page builders ─────────────────────────────────────────────────
+
+    def _build_page_welcome(self):
+        """Page 0: Welcome and overview."""
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        vbox.set_margin_top(20)
+
+        title = Gtk.Label()
+        title.set_markup(
+            "<span size='x-large' weight='bold'>Calibration Wizard</span>")
+        vbox.pack_start(title, False, False, 0)
+
+        desc = Gtk.Label()
+        desc.set_markup(
+            "This wizard tests your installed AI models and tunes settings\n"
+            "to your taste — like an eye exam, but for art.\n\n"
+            "You'll see real generated images side by side.\n"
+            "Pick the ones you prefer. That's it.\n\n"
+            "<b>Step 1:</b> Rate your models (Love / OK / Dislike)\n"
+            "<b>Step 2:</b> Fine-tune settings for your favorites\n"
+            "<b>Step 3:</b> Review and apply\n")
+        desc.set_line_wrap(True)
+        desc.set_max_width_chars(60)
+        desc.set_justify(Gtk.Justification.CENTER)
+        vbox.pack_start(desc, False, False, 0)
+
+        self._welcome_status = Gtk.Label()
+        self._welcome_status.set_markup("<i>Click Next to discover your models...</i>")
+        vbox.pack_start(self._welcome_status, False, False, 10)
+
+        self._stack.add_named(vbox, "welcome")
+
+    def _build_page_taste_test(self):
+        """Page 1: Model taste test — grid of generated images with ratings."""
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+
+        header = Gtk.Label()
+        header.set_markup("<b>Which models do you prefer?</b>  "
+                          "Rate each one after generation.")
+        vbox.pack_start(header, False, False, 4)
+
+        self._taste_progress = Gtk.Label()
+        self._taste_progress.set_text("")
+        vbox.pack_start(self._taste_progress, False, False, 0)
+
+        self._taste_bar = Gtk.ProgressBar()
+        self._taste_bar.set_show_text(True)
+        vbox.pack_start(self._taste_bar, False, False, 0)
+
+        # Scrollable grid for model images
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_min_content_height(400)
+
+        self._taste_grid = Gtk.FlowBox()
+        self._taste_grid.set_valign(Gtk.Align.START)
+        self._taste_grid.set_max_children_per_line(3)
+        self._taste_grid.set_min_children_per_line(2)
+        self._taste_grid.set_selection_mode(Gtk.SelectionMode.NONE)
+        self._taste_grid.set_homogeneous(True)
+        self._taste_grid.set_row_spacing(8)
+        self._taste_grid.set_column_spacing(8)
+        scroll.add(self._taste_grid)
+        vbox.pack_start(scroll, True, True, 0)
+
+        self._btn_generate = Gtk.Button(label="⚡ Generate Samples")
+        self._btn_generate.connect("clicked", self._on_generate_samples)
+        vbox.pack_start(self._btn_generate, False, False, 4)
+
+        self._stack.add_named(vbox, "taste_test")
+
+    def _build_page_settings(self):
+        """Page 2: Settings calibration — A/B/C parameter comparisons."""
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+
+        self._settings_header = Gtk.Label()
+        self._settings_header.set_markup("<b>Settings Calibration</b>")
+        vbox.pack_start(self._settings_header, False, False, 4)
+
+        self._settings_progress = Gtk.Label()
+        vbox.pack_start(self._settings_progress, False, False, 0)
+
+        self._settings_bar = Gtk.ProgressBar()
+        self._settings_bar.set_show_text(True)
+        vbox.pack_start(self._settings_bar, False, False, 0)
+
+        # Comparison area: images side by side
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_min_content_height(400)
+
+        self._settings_grid = Gtk.FlowBox()
+        self._settings_grid.set_valign(Gtk.Align.START)
+        self._settings_grid.set_max_children_per_line(4)
+        self._settings_grid.set_min_children_per_line(2)
+        self._settings_grid.set_selection_mode(Gtk.SelectionMode.NONE)
+        self._settings_grid.set_homogeneous(True)
+        self._settings_grid.set_row_spacing(8)
+        self._settings_grid.set_column_spacing(8)
+        scroll.add(self._settings_grid)
+        vbox.pack_start(scroll, True, True, 0)
+
+        self._btn_generate_comp = Gtk.Button(label="⚡ Generate Comparison")
+        self._btn_generate_comp.connect("clicked", self._on_generate_comparison)
+        vbox.pack_start(self._btn_generate_comp, False, False, 4)
+
+        self._stack.add_named(vbox, "settings")
+
+    def _build_page_results(self):
+        """Page 3: Results summary."""
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        vbox.set_margin_top(20)
+
+        title = Gtk.Label()
+        title.set_markup(
+            "<span size='large' weight='bold'>Calibration Complete</span>")
+        vbox.pack_start(title, False, False, 0)
+
+        self._results_label = Gtk.Label()
+        self._results_label.set_line_wrap(True)
+        self._results_label.set_max_width_chars(70)
+        vbox.pack_start(self._results_label, False, False, 0)
+
+        # Results table
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_min_content_height(200)
+        self._results_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        scroll.add(self._results_box)
+        vbox.pack_start(scroll, True, True, 0)
+
+        self._btn_apply = Gtk.Button(label="✓ Apply Settings")
+        self._btn_apply.connect("clicked", self._on_apply)
+        vbox.pack_start(self._btn_apply, False, False, 8)
+
+        self._stack.add_named(vbox, "results")
+
+    # ── Navigation ────────────────────────────────────────────────────
+
+    def _on_response(self, dialog, response_id):
+        if response_id == Gtk.ResponseType.APPLY:  # Next
+            self._navigate(1)
+            self.emit_stop_by_name("response")
+        elif response_id == Gtk.ResponseType.REJECT:  # Back
+            self._navigate(-1)
+            self.emit_stop_by_name("response")
+        # CANCEL falls through and closes the dialog
+
+    def _navigate(self, direction):
+        self._page += direction
+        self._page = max(0, min(3, self._page))
+
+        pages = ["welcome", "taste_test", "settings", "results"]
+        self._stack.set_visible_child_name(pages[self._page])
+
+        self._btn_back.set_sensitive(self._page > 0)
+        self._btn_next.set_sensitive(self._page < 3)
+
+        # Trigger page-enter logic
+        if self._page == 1:
+            self._enter_taste_test()
+        elif self._page == 2:
+            self._enter_settings()
+        elif self._page == 3:
+            self._enter_results()
+
+    # ── Page 1: Model Taste Test ──────────────────────────────────────
+
+    def _enter_taste_test(self):
+        """Called when entering the taste test page."""
+        if self._models:
+            return  # Already discovered
+        try:
+            from spellcaster_core.preference_calibration import discover_models
+            self._models = discover_models(self.server)
+            self._taste_progress.set_markup(
+                f"<b>{len(self._models)}</b> models found. "
+                f"Click <b>Generate Samples</b> to start.")
+        except Exception as e:
+            self._taste_progress.set_markup(
+                f"<span foreground='red'>Error discovering models: {e}</span>")
+
+    def _on_generate_samples(self, button):
+        """Generate one sample image per discovered model."""
+        if not self._models:
+            return
+        button.set_sensitive(False)
+
+        import threading
+        thread = threading.Thread(
+            target=self._generate_samples_thread, daemon=True)
+        thread.start()
+
+    def _generate_samples_thread(self):
+        """Background thread: generate one image per model."""
+        from spellcaster_core.preference_calibration import generate_model_sample
+        import random
+
+        seed = random.randint(1, 2**31)
+        total = len(self._models)
+
+        for i, model in enumerate(self._models):
+            # Update progress on main thread
+            frac = (i + 1) / total
+            short = model["short_name"][:30]
+            GLib.idle_add(self._update_taste_progress, i + 1, total, short)
+
+            png_data = generate_model_sample(
+                self.server, model, seed=seed, timeout=180)
+            self._model_images[model["name"]] = png_data
+
+            # Add card to grid on main thread
+            GLib.idle_add(self._add_model_card, model, png_data)
+
+        GLib.idle_add(self._generation_complete)
+
+    def _update_taste_progress(self, current, total, name):
+        self._taste_bar.set_fraction(current / total)
+        self._taste_bar.set_text(f"{current}/{total}")
+        self._taste_progress.set_markup(
+            f"Generating <b>{name}</b>... ({current}/{total})")
+        return False
+
+    def _generation_complete(self):
+        self._btn_generate.set_sensitive(True)
+        self._btn_generate.set_label("↻ Regenerate Samples")
+        self._taste_progress.set_markup(
+            "<b>Done!</b> Rate each model, then click Next.")
+        return False
+
+    def _add_model_card(self, model, png_data):
+        """Add one model image + rating controls to the taste grid."""
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        card.set_margin_start(4); card.set_margin_end(4)
+        card.set_margin_top(4); card.set_margin_bottom(4)
+
+        # Image
+        if png_data:
+            try:
+                loader = GdkPixbuf.PixbufLoader()
+                loader.write(png_data)
+                loader.close()
+                pixbuf = loader.get_pixbuf()
+                # Scale to fit 220px wide, maintain aspect ratio
+                w, h = pixbuf.get_width(), pixbuf.get_height()
+                target_w = 220
+                target_h = int(h * target_w / w) if w > 0 else target_w
+                scaled = pixbuf.scale_simple(
+                    target_w, target_h, GdkPixbuf.InterpType.BILINEAR)
+                img_widget = Gtk.Image.new_from_pixbuf(scaled)
+            except Exception:
+                img_widget = Gtk.Image.new_from_icon_name(
+                    "image-missing", Gtk.IconSize.DIALOG)
+        else:
+            img_widget = Gtk.Label()
+            img_widget.set_markup("<i>Generation failed</i>")
+
+        card.pack_start(img_widget, False, False, 0)
+
+        # Model name
+        name_label = Gtk.Label()
+        short = model["short_name"][:25]
+        name_label.set_markup(f"<small><b>{GLib.markup_escape_text(short)}</b>"
+                              f" ({model['arch']})</small>")
+        name_label.set_line_wrap(True)
+        card.pack_start(name_label, False, False, 0)
+
+        # Rating radio buttons
+        rating_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        rating_box.set_halign(Gtk.Align.CENTER)
+
+        btn_love = Gtk.RadioButton.new_with_label(None, "♥ Love")
+        btn_ok = Gtk.RadioButton.new_with_label_from_widget(btn_love, "OK")
+        btn_dislike = Gtk.RadioButton.new_with_label_from_widget(btn_love, "✗")
+
+        # Default to OK
+        btn_ok.set_active(True)
+        self._model_ratings[model["name"]] = "ok"
+
+        model_name = model["name"]
+        btn_love.connect("toggled", lambda b, n=model_name:
+                         self._on_rating_toggled(b, n, "love"))
+        btn_ok.connect("toggled", lambda b, n=model_name:
+                       self._on_rating_toggled(b, n, "ok"))
+        btn_dislike.connect("toggled", lambda b, n=model_name:
+                            self._on_rating_toggled(b, n, "dislike"))
+
+        rating_box.pack_start(btn_love, False, False, 0)
+        rating_box.pack_start(btn_ok, False, False, 0)
+        rating_box.pack_start(btn_dislike, False, False, 0)
+        card.pack_start(rating_box, False, False, 0)
+
+        self._taste_grid.add(card)
+        card.show_all()
+        return False
+
+    def _on_rating_toggled(self, button, model_name, rating):
+        if button.get_active():
+            self._model_ratings[model_name] = rating
+
+    # ── Page 2: Settings Calibration ──────────────────────────────────
+
+    def _enter_settings(self):
+        """Called when entering the settings page."""
+        from spellcaster_core.preference_calibration import arch_valid_ranges
+
+        # Collect models that need settings calibration
+        self._calibrate_queue = []
+        for model in self._models:
+            name = model["name"]
+            rating = self._model_ratings.get(name, "ok")
+            if rating == "dislike":
+                continue
+            ranges = arch_valid_ranges(model["arch"])
+            if not ranges:
+                continue
+            self._calibrate_queue.append(model)
+
+        if not self._calibrate_queue:
+            self._settings_header.set_markup(
+                "<b>No models need settings calibration.</b>\n"
+                "Your preferred models use fixed settings. Click Next.")
+            self._btn_generate_comp.hide()
+            return
+
+        self._cal_model_idx = 0
+        self._cal_param_idx = 0
+        self._cal_params = ["cfg", "steps", "sampler"]
+        self._settings_radio_group = {}
+        self._show_current_calibration()
+
+    def _show_current_calibration(self):
+        """Display the current calibration comparison."""
+        from spellcaster_core.preference_calibration import arch_valid_ranges
+
+        if self._cal_model_idx >= len(self._calibrate_queue):
+            self._settings_header.set_markup(
+                "<b>Settings calibration complete!</b> Click Next.")
+            self._btn_generate_comp.hide()
+            return
+
+        model = self._calibrate_queue[self._cal_model_idx]
+        param = self._cal_params[self._cal_param_idx]
+        ranges = arch_valid_ranges(model["arch"])
+
+        total_tests = len(self._calibrate_queue) * len(self._cal_params)
+        current_test = self._cal_model_idx * len(self._cal_params) + self._cal_param_idx + 1
+
+        self._settings_header.set_markup(
+            f"<b>{GLib.markup_escape_text(model['short_name'])}</b> — "
+            f"Which <b>{param.upper()}</b> do you prefer?")
+        self._settings_progress.set_markup(
+            f"Test {current_test}/{total_tests}")
+        self._settings_bar.set_fraction(current_test / total_tests)
+        self._btn_generate_comp.show()
+        self._btn_generate_comp.set_label(f"⚡ Generate {param.upper()} Comparison")
+
+        # Store current values for generation
+        self._current_cal_model = model
+        self._current_cal_param = param
+        self._current_cal_values = ranges[param]
+
+    def _on_generate_comparison(self, button):
+        """Generate comparison images for current calibration test."""
+        button.set_sensitive(False)
+
+        import threading
+        thread = threading.Thread(
+            target=self._generate_comparison_thread, daemon=True)
+        thread.start()
+
+    def _generate_comparison_thread(self):
+        """Background thread: generate comparison images."""
+        from spellcaster_core.preference_calibration import (
+            build_comparison_set, generate_and_download, _get_test_prompt)
+        import random
+
+        model = self._current_cal_model
+        param = self._current_cal_param
+        values = self._current_cal_values
+
+        prompt, neg = _get_test_prompt(model["arch"])
+        seed = random.randint(1, 2**31)
+
+        comparisons = build_comparison_set(model, param, values, prompt, neg, seed)
+
+        results = []
+        for i, comp in enumerate(comparisons):
+            GLib.idle_add(
+                self._settings_progress.set_markup,
+                f"Generating {param}={comp['value']} ({i+1}/{len(comparisons)})...")
+            png = generate_and_download(self.server, comp["workflow"], timeout=180)
+            results.append((comp["value"], png))
+
+        GLib.idle_add(self._show_comparison_results, results)
+
+    def _show_comparison_results(self, results):
+        """Display comparison images with selection radio buttons."""
+        # Clear old children
+        for child in self._taste_grid.get_children():
+            child.destroy()
+        for child in self._settings_grid.get_children():
+            child.destroy()
+
+        param = self._current_cal_param
+        model = self._current_cal_model
+        first_btn = None
+
+        for val, png_data in results:
+            card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            card.set_margin_start(4); card.set_margin_end(4)
+
+            # Image
+            if png_data:
+                try:
+                    loader = GdkPixbuf.PixbufLoader()
+                    loader.write(png_data)
+                    loader.close()
+                    pixbuf = loader.get_pixbuf()
+                    w, h = pixbuf.get_width(), pixbuf.get_height()
+                    target_w = 180
+                    target_h = int(h * target_w / w) if w > 0 else target_w
+                    scaled = pixbuf.scale_simple(
+                        target_w, target_h, GdkPixbuf.InterpType.BILINEAR)
+                    img_widget = Gtk.Image.new_from_pixbuf(scaled)
+                except Exception:
+                    img_widget = Gtk.Label(label="(error)")
+            else:
+                img_widget = Gtk.Label(label="(failed)")
+
+            card.pack_start(img_widget, False, False, 0)
+
+            # Value label
+            val_label = Gtk.Label()
+            val_label.set_markup(f"<b>{param}</b> = {val}")
+            card.pack_start(val_label, False, False, 0)
+
+            # Radio button for selection
+            if first_btn is None:
+                radio = Gtk.RadioButton.new_with_label(None, "Prefer this")
+                first_btn = radio
+            else:
+                radio = Gtk.RadioButton.new_with_label_from_widget(
+                    first_btn, "Prefer this")
+
+            radio._cal_value = val
+            card.pack_start(radio, False, False, 0)
+
+            self._settings_grid.add(card)
+
+        # "Accept" button to confirm choice and advance
+        accept_btn = Gtk.Button(label="✓ Accept Choice")
+        accept_btn.connect("clicked",
+                           lambda b, fb=first_btn: self._accept_calibration(fb))
+
+        # Add accept button outside the grid
+        parent = self._settings_grid.get_parent()  # ScrolledWindow
+        if parent:
+            grandparent = parent.get_parent()  # vbox
+            if grandparent:
+                grandparent.pack_start(accept_btn, False, False, 4)
+
+        self._settings_grid.show_all()
+        accept_btn.show()
+        self._btn_generate_comp.set_sensitive(True)
+        return False
+
+    def _accept_calibration(self, first_radio):
+        """Record the user's choice and advance to next test."""
+        # Find which radio is selected
+        chosen_val = None
+        group = first_radio.get_group() if first_radio else []
+        for radio in group:
+            if radio.get_active() and hasattr(radio, '_cal_value'):
+                chosen_val = radio._cal_value
+                break
+
+        if chosen_val is not None:
+            model_name = self._current_cal_model["name"]
+            param = self._current_cal_param
+            if model_name not in self._settings_results:
+                self._settings_results[model_name] = {}
+            self._settings_results[model_name][param] = chosen_val
+
+        # Advance to next test
+        self._cal_param_idx += 1
+        if self._cal_param_idx >= len(self._cal_params):
+            self._cal_param_idx = 0
+            self._cal_model_idx += 1
+
+        # Clear grid and show next
+        for child in self._settings_grid.get_children():
+            child.destroy()
+
+        # Remove the accept button we added
+        parent = self._settings_grid.get_parent()
+        if parent:
+            grandparent = parent.get_parent()
+            if grandparent:
+                for child in grandparent.get_children():
+                    if isinstance(child, Gtk.Button) and child.get_label() == "✓ Accept Choice":
+                        child.destroy()
+
+        self._show_current_calibration()
+
+    # ── Page 3: Results ───────────────────────────────────────────────
+
+    def _enter_results(self):
+        """Called when entering the results page."""
+        from spellcaster_core.preference_calibration import CalibrationProfile
+        import time as _time
+
+        profile = CalibrationProfile()
+        profile.timestamp = _time.strftime("%Y-%m-%d %H:%M:%S")
+
+        # Set model preferences
+        for model in self._models:
+            name = model["name"]
+            rating = self._model_ratings.get(name, "ok")
+            profile.set_model_preference(name, rating)
+
+        # Set calibrated settings
+        for model_name, settings in self._settings_results.items():
+            profile.set_model_settings(model_name, **settings)
+
+        self._profile = profile
+
+        # Build results display
+        for child in self._results_box.get_children():
+            child.destroy()
+
+        loved = [m for m in self._models
+                 if self._model_ratings.get(m["name"]) == "love"]
+        ok_models = [m for m in self._models
+                     if self._model_ratings.get(m["name"]) == "ok"]
+        disliked = [m for m in self._models
+                    if self._model_ratings.get(m["name"]) == "dislike"]
+
+        summary_parts = []
+        if loved:
+            summary_parts.append(f"<b>♥ Loved:</b> {len(loved)}")
+        if ok_models:
+            summary_parts.append(f"<b>OK:</b> {len(ok_models)}")
+        if disliked:
+            summary_parts.append(f"<b>✗ Disliked:</b> {len(disliked)}")
+        self._results_label.set_markup(
+            "  |  ".join(summary_parts) + "\n\n"
+            "These settings will be used as defaults in all dialogs:")
+
+        # Settings table
+        if self._settings_results:
+            grid = Gtk.Grid()
+            grid.set_row_spacing(4)
+            grid.set_column_spacing(12)
+            grid.set_margin_start(20)
+
+            # Header row
+            for col, text in enumerate(["Model", "CFG", "Steps", "Sampler"]):
+                lbl = Gtk.Label()
+                lbl.set_markup(f"<b>{text}</b>")
+                lbl.set_xalign(0)
+                grid.attach(lbl, col, 0, 1, 1)
+
+            row = 1
+            for model_name, settings in self._settings_results.items():
+                short = model_name.rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
+                short = short.rsplit(".", 1)[0][:25]
+                for col, key in enumerate(["", "cfg", "steps", "sampler"]):
+                    if col == 0:
+                        lbl = Gtk.Label(label=short)
+                    else:
+                        val = settings.get(key, "—")
+                        lbl = Gtk.Label(label=str(val))
+                    lbl.set_xalign(0)
+                    grid.attach(lbl, col, row, 1, 1)
+                row += 1
+
+            self._results_box.pack_start(grid, False, False, 0)
+        else:
+            no_cal = Gtk.Label()
+            no_cal.set_markup("<i>No settings were calibrated "
+                              "(your models use fixed parameters).</i>")
+            self._results_box.pack_start(no_cal, False, False, 0)
+
+        self._results_box.show_all()
+
+    def _on_apply(self, button):
+        """Save calibration profile to config.json."""
+        if self._profile:
+            config_data = self._profile.to_config()
+            _save_config(config_data)
+
+            # Also update favourite_model index if we have a preferred model
+            if self._profile.preferred_models:
+                top_model = self._profile.preferred_models[0]
+                for i, p in enumerate(MODEL_PRESETS):
+                    if p.get("ckpt") == top_model:
+                        _save_config({"favourite_model": i})
+                        break
+
+            info = Gtk.MessageDialog(
+                parent=self, flags=Gtk.DialogFlags.MODAL,
+                type=Gtk.MessageType.INFO, buttons=Gtk.ButtonsType.OK)
+            info.set_markup(
+                "<b>Calibration saved!</b>\n\n"
+                "Your preferences will be used as defaults in all dialogs.")
+            info.run(); info.destroy()
+
+        self.response(Gtk.ResponseType.CANCEL)  # Close the wizard
+
+    def get_profile(self):
+        """Return the calibration profile, or None."""
+        return self._profile
+
+
 class Spellcaster(Gimp.PlugIn):
 
     def do_set_i18n(self, name):
@@ -10637,6 +11312,8 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-rerun-last": None,
             # AI Color Match
             "spellcaster-color-match": None,
+            # Calibration Wizard
+            "spellcaster-calibration-wizard": None,
         }
 
         # ── Feature-gate logic: denylist, not allowlist ──
@@ -10805,6 +11482,9 @@ class Spellcaster(Gimp.PlugIn):
             # AI Color Match
             "spellcaster-color-match": ("AI Color Match...", self._run_color_match,
                                           "Match your image's colors to a reference photo — automatic palette transfer"),
+            # Calibration Wizard
+            "spellcaster-calibration-wizard": ("Calibration Wizard...", self._run_calibration_wizard,
+                                                "Tune AI settings to your taste with A/B image comparisons"),
         }
 
         label, callback, doc = menu_map[name]
@@ -10902,6 +11582,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-send-image":        f"{_S}/Tools",
             "spellcaster-settings":          f"{_S}/Tools",
             "spellcaster-bridge":            f"{_S}/Tools",
+            "spellcaster-calibration-wizard": f"{_S}/Tools",
         }
 
         # ── Native GIMP menu integration ─────────────────────────────
@@ -22077,6 +22758,28 @@ class Spellcaster(Gimp.PlugIn):
         except Exception as e:
             Gimp.message(f"Spellcaster Color Match Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    def _run_calibration_wizard(self, procedure, run_mode, image, drawables, config, data):
+        """Calibration Wizard: tune AI settings with A/B image comparisons."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        try:
+            GimpUi.init("spellcaster")
+        except Exception:
+            pass
+        try:
+            _apply_spellcaster_theme()
+        except Exception:
+            pass
+
+        cfg = _load_config()
+        server = cfg.get("server_url", "http://127.0.0.1:8188")
+
+        dlg = CalibrationWizardDialog(server)
+        dlg.run()
+        dlg.destroy()
+
+        return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
     def _run_settings(self, procedure, run_mode, image, drawables, config, data):
         """Spellcaster Settings: configure server URL, defaults, and preferences."""
