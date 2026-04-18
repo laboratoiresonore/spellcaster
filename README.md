@@ -20,7 +20,7 @@
 <p align="center">
   <a href="#the-problem">The Problem</a> &bull;
   <a href="#the-solution">The Solution</a> &bull;
-  <a href="#see-it-in-action">See It</a> &bull;
+  <a href="#see-it-in-action-generate--select--map--enhance">See It</a> &bull;
   <a href="#install">Install</a> &bull;
   <a href="#all-69-tools">All Tools</a> &bull;
   <a href="#faq">FAQ</a> &bull;
@@ -66,6 +66,42 @@ Every tool starts with expert-tuned presets that just work. But as you get comfo
 
 ---
 
+## State of the Art, Fingers Up Your Nose
+
+<table>
+<tr>
+<th align="left" width="40%">🔬 What's Actually Happening</th>
+<th align="left" width="60%">👆👃 What You Actually Do</th>
+</tr>
+<tr><td>Flow-matching diffusion across 9 model architectures with architecture-aware CFG, denoise, sampler, and scheduler selection</td><td>Pick a preset. Click Generate.</td></tr>
+<tr><td>SAM3 zero-shot segmentation with Florence 2 grounding + DepthAnything V3 compositing</td><td>Type "hair." It selects the hair.</td></tr>
+<tr><td>NormalCrafter 3D surface normal estimation for physically-based relighting</td><td>Click "3D Normal Map." Get a 3D map.</td></tr>
+<tr><td>Multi-LoRA injection chains with per-architecture prefix routing and strength calibration</td><td>Pick a style from a dropdown.</td></tr>
+<tr><td>CFGGuider + BasicScheduler pipeline with Flux 2 Klein Enhancer (RefLatentController, TextRefBalance, ColorAnchor)</td><td>Click "AI Editor."</td></tr>
+<tr><td>IC-Light relighting with directional conditioning and HDR multiplier control</td><td>Pick "Golden Hour." Click Generate.</td></tr>
+<tr><td>TeaCache acceleration + FBCache + WaveSpeed inference optimization (auto-injected)</td><td>You don't even know this is happening.</td></tr>
+<tr><td>Local 4B LLM prompt enhancement with architecture-specific rewriting (booru tags vs natural language vs minimal)</td><td>Type "a cat."</td></tr>
+<tr><td>ReActor face embedding + Klein refinement + face segmentation compositing pipeline</td><td>Upload a selfie. Click Swap.</td></tr>
+<tr><td>Optometrist-style A/B preference calibration across 54 models with per-model parameter sweeps</td><td>"Which picture do you like better, A or B?"</td></tr>
+</table>
+
+---
+
+## See It in Action: Generate → Select → Map → Enhance
+
+A real pipeline — 4 clicks, zero configuration, every step is one menu item:
+
+<table>
+<tr>
+<td width="25%"><img src="assets/showcase_3d_step1_generate.png" alt="Step 1: Generate" width="100%"/><br/><sub><strong>1. Generate</strong> — SDXL creates the scene</sub></td>
+<td width="25%"><img src="assets/showcase_3d_step2_sam3.png" alt="Step 2: AI Select" width="100%"/><br/><sub><strong>2. AI Select</strong> — SAM3 isolates the statue</sub></td>
+<td width="25%"><img src="assets/showcase_3d_step3_normalmap.png" alt="Step 3: Normal Map" width="100%"/><br/><sub><strong>3. 3D Normal Map</strong> — surface geometry extracted</sub></td>
+<td width="25%"><img src="assets/showcase_3d_step4_inpaint.png" alt="Step 4: Enhance" width="100%"/><br/><sub><strong>4. Detail Enhance</strong> — surgical texture refinement</sub></td>
+</tr>
+</table>
+
+---
+
 ## 69 Finely Tuned AI Tools, Each One Click Away
 
 <table>
@@ -85,7 +121,7 @@ Every tool starts with expert-tuned presets that just work. But as you get comfo
 <td align="center" width="25%"><img src="assets/showcase_inpaint_chrome.png" alt="Inpaint" width="100%"/><br/><sub><strong>Inpaint</strong> — replace any selected area</sub></td>
 <td align="center" width="25%"><img src="assets/showcase_supir.png" alt="SUPIR" width="100%"/><br/><sub><strong>AI Restoration</strong> — fix old photos</sub></td>
 <td align="center" width="25%"><img src="assets/showcase_detail_hallucinate.png" alt="Detail" width="100%"/><br/><sub><strong>Detail Hallucination</strong> — add texture</sub></td>
-<td align="center" width="25%"><img src="assets/demo_step4_faceswap.png" alt="Face Swap" width="100%"/><br/><sub><strong>Face Swap</strong> — paste any face</sub></td>
+<td align="center" width="25%"><img src="assets/showcase_normal_map.png" alt="3D Normal Map" width="100%"/><br/><sub><strong>3D Normal Map</strong> — surface geometry</sub></td>
 </tr>
 </table>
 
@@ -97,7 +133,7 @@ Every tool starts with expert-tuned presets that just work. But as you get comfo
 Listen. If you can order food on your phone, you can use this. If you once successfully connected a printer on the first try, you're overqualified. The entire thing is automated to a degree that borders on suspicious:
 
 - **Installation?** Automated. The installer sniffs your GPU like a sommelier sniffs wine, figures out what AI models your hardware can swallow, downloads them, installs everything, creates shortcuts, and tucks you into bed. You click "Next" a few times. That's your contribution.
-- **Settings?** Automated. Every tool has expert-tuned presets crafted by someone who spent way too long tweaking denoise values at 3 AM so you don't have to. You never configure a sampler, pick a scheduler, set a CFG scale, or write a negative prompt. You don't even know what those words mean. *Good.* Keep it that way.
+- **Settings?** Automated. Every tool has expert-tuned presets crafted by someone who spent way too long tweaking denoise values at 3 AM so you don't have to. Or run the **Calibration Wizard** — it shows you real images side by side and asks "which do you prefer?" Like an eye exam. Your preferences become the new defaults everywhere. You never configure a sampler, pick a scheduler, set a CFG scale, or write a negative prompt. You don't even know what those words mean. *Good.* Keep it that way.
 - **Prompts?** Automated. Type "a cat" and a local AI rewrites it into a paragraph of optimized gibberish that the image model actually understands. It knows that SDXL wants tags, Flux wants poetry, and Klein wants bullet points. You just type "a cat."
 - **Model selection?** Automated. The plugin detects what models are installed and picks the best one. You didn't even know you had models. You thought you just had a computer.
 - **VRAM management?** Automated. Video resolution auto-scales to fit your GPU. The LLM politely unloads itself during image generation. TeaCache acceleration is silently injected into every workflow. If you don't know what any of that means — congratulations, that's the point.
@@ -300,9 +336,25 @@ Too intimidated by GIMP? The [Wizard Guild](#under-the-hood) is a chat interface
 <summary><strong>What makes it fast</strong></summary>
 
 - **TeaCache auto-acceleration** — every image generation is automatically 1.4x faster. Zero config, zero quality loss. The optimizer injects it into all workflows.
-- **Architecture-aware everything** — CFG, denoise, prompts, and ControlNet models are auto-configured per architecture (SDXL, Flux, Klein, Illustrious, Pony, SD1.5, WAN, LTX).
-- **AI Prompt Enhancement** — a small LLM runs inside ComfyUI, rewrites your simple prompts into architecture-optimized descriptions. SDXL gets tags, Flux gets natural language, Klein gets concise descriptions. Multi-character prompts use BREAK separation with attention weights.
+- **Architecture-aware everything** — CFG, denoise, prompts, and ControlNet models are auto-configured per architecture. 9 supported: SD 1.5, SDXL, Illustrious/Pony, ZIT, Flux Dev, Flux 2 Klein, Flux Kontext, Chroma, and WAN/LTX for video.
+- **AI Prompt Enhancement** — a local 4B LLM runs inside ComfyUI, rewrites your simple prompts into architecture-optimized descriptions. SDXL gets booru tags, Flux gets natural language, Klein gets concise descriptions. Multi-character prompts use BREAK separation with attention weights.
 - **VRAM management** — LLM auto-unloads during image generation. LTX resolution auto-scales to fit your GPU. Video frame counts auto-cap on low VRAM.
+- **Privacy cleanup** — all temporary files on ComfyUI are atomically overwritten with 1x1 pixel PNGs after use. Your images don't linger on the server.
+
+</details>
+
+<details>
+<summary><strong>Calibration Wizard — optometrist for your GPU</strong></summary>
+
+First time using Spellcaster? The Calibration Wizard tests every installed model and tunes all settings to your taste — no technical knowledge required.
+
+1. **Model Taste Test** — generates the same scene with every installed model. You rate each one: Love / OK / Dislike.
+2. **Settings Calibration** — for your favorite models, shows A/B/C comparisons (CFG, steps, sampler). You pick the image you prefer. That's it.
+3. **Apply** — your preferences become the default everywhere. Every dialog reads from your calibrated profile.
+
+It's an eye exam, but for art. "Which is better — A or B?" Repeat until your defaults are perfect.
+
+Access: `Spellcaster > Tools > Calibration Wizard`
 
 </details>
 
@@ -315,7 +367,18 @@ Don't want to learn GIMP? The Wizard Guild is a standalone web UI where AI wizar
 
 Each wizard specializes in different tools. A local LLM runs natively inside ComfyUI — no separate server needed. Click action buttons to generate directly, or chat for guidance.
 
+The **Travelling Wizard** bridges Spellcaster with external LLM apps — SillyTavern, OpenWebUI, LM Studio — through a scaffold system that routes your intent to the right tool. A **Meta Wizard** interprets what you want ("make it cinematic," "fix the hands," "turn this into a video") and dispatches to specialized sub-wizards for enhancement, generation, video, or pipeline orchestration.
+
 Launch: `start_guild.bat` (Windows) or `python tavern/guild_launcher.py`
+
+</details>
+
+<details>
+<summary><strong>Video Shotboard</strong></summary>
+
+The Shotboard is a persistent video production system for multi-shot sequences. Each shot tracks its own motion trajectory, prompt, model, and status (draft → queued → running → ready). Shots link together for continuity — the last frame of shot 1 feeds into shot 2.
+
+Build a full storyboard in the Guild UI, queue all shots, and let them render overnight. The assembly pipeline stitches them together with frame interpolation (RIFE/GIMM-VFI) for smooth transitions.
 
 </details>
 
@@ -358,12 +421,16 @@ Drop these characters into any SillyTavern group chat. They work silently in the
 <details>
 <summary><strong>For developers</strong></summary>
 
-- **8 model architectures**: SD 1.5, SDXL, Pony, ZIT, Flux Dev, Flux Schnell, Flux 2 Klein (4B/9B), LTX, Wan
-- **NodeFactory DSL** — every tool is defined declaratively
-- **Crash-safe boot shim** — 3-tier recovery. GIMP never bricks.
+- **9 model architectures**: SD 1.5, SDXL, Illustrious/Pony, ZIT, Flux Dev, Flux 2 Klein (4B/9B), Flux Kontext, Chroma, LTX, Wan — each with full `ArchConfig` (loader, sampler, CFG, denoise, resolution, prompt style, LoRA prefixes, ControlNet support, turbo config)
+- **NodeFactory DSL** — every ComfyUI node type is a typed method call. No raw dicts.
+- **Crash-safe boot shim** — 228-line immutable loader + 3-tier recovery (backup → GitHub → visible error). GIMP never bricks.
+- **Scaffold system** — LLM state machines (`scaffold/`) that guide users conversationally. Meta Wizard → sub-wizards → build functions. Designed for 7B models.
+- **Calibration engine** — headless A/B comparison generator + compatibility matrix. UI-agnostic (works in GIMP dialogs and Guild chat).
+- **Preflight validation** — every workflow is checked and patched before submission. Missing nodes get substituted, unsupported architectures get fallbacks.
+- **Privacy module** — atomic temp file cleanup on ComfyUI server (1x1 pixel overwrite + delete).
 - **PDB procedures** — every tool callable from Script-Fu or Python-Fu
 - **Workflow Library** — import any ComfyUI workflow JSON and run it from GIMP
-- **`spellcaster_core/`** — single source of truth, shared across all repos
+- **`spellcaster_core/`** — single source of truth, shared across 4 repos. Auto-updater downloads from canonical source.
 
 </details>
 
