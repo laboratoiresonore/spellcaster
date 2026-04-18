@@ -2720,7 +2720,7 @@ function WorkflowBrowser({ comfyuiUrl, onCreateScaffold }) {
 // GUILD SIDEBAR — Collapsible right panel with characters + chat
 // ═══════════════════════════════════════════════════════════════════
 
-function GuildSidebar({ isOpen, onToggle, comfyUrl, koboldUrl: initialKoboldUrl }) {
+function GuildSidebar({ isOpen, onToggle, comfyUrl, koboldUrl: initialKoboldUrl, onWizardSelect }) {
   const [characters, setCharacters] = useState([]);
   const [activeCharId, setActiveCharId] = useState(null);
   const [chatHistory, setChatHistory] = useState([]);
@@ -2801,6 +2801,7 @@ function GuildSidebar({ isOpen, onToggle, comfyUrl, koboldUrl: initialKoboldUrl 
     if (char) {
       const intro = `Greetings. I am ${char.name}, master of ${char.subtext}. Tell me what you wish to conjure.`;
       setChatHistory([{ role: "assistant", content: intro }]);
+      if (onWizardSelect) onWizardSelect(char);
     }
   };
 
@@ -2978,6 +2979,8 @@ function SignalBridgeSettings() {
   const [saved, setSaved] = useState(false);
   const [importError, setImportError] = useState("");
   const [guildOpen, setGuildOpen] = useState(false);
+  // Track the tab before a video-wizard auto-switch so we can restore it
+  const prevTabRef = useRef(null);
   // Server config status: "" (idle) | "loading" | "loaded" | "saving" |
   // "saved" | "error". Surfaced in the header so the user knows their
   // edits are actually persisting.
@@ -3139,6 +3142,33 @@ function SignalBridgeSettings() {
     setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
 
+  // Detect whether a wizard is video-related by checking build_fns or subtext
+  const isVideoWizard = (char) => {
+    if (!char) return false;
+    if (char.subtext && /video/i.test(char.subtext)) return true;
+    if (Array.isArray(char.build_fns)) {
+      return char.build_fns.some(fn => /video/i.test(fn));
+    }
+    return false;
+  };
+
+  // Called by GuildSidebar when a wizard is clicked
+  const handleWizardSelect = useCallback((char) => {
+    if (isVideoWizard(char)) {
+      // Save current tab so we can restore it later
+      if (activeTab !== "video") {
+        prevTabRef.current = activeTab;
+      }
+      setActiveTab("video");
+    } else {
+      // Restore previous tab (or default to scaffolds)
+      if (activeTab === "video" && prevTabRef.current) {
+        setActiveTab(prevTabRef.current);
+        prevTabRef.current = null;
+      }
+    }
+  }, [activeTab]);
+
   return (
     <div className="min-h-screen bg-slate-950 text-amber-50" style={{background: "linear-gradient(135deg, #0f172a 0%, #1a1f35 50%, #0a0e1a 100%)", marginRight: guildOpen ? "384px" : "0", transition: "margin-right 0.3s ease"}}>
       {/* Header */}
@@ -3214,12 +3244,12 @@ function SignalBridgeSettings() {
 
       {/* Content */}
       <div className="max-w-6xl mx-auto px-6 py-6">
-        {/* ── Video Tab ── */}
-        {activeTab === "video" && (
-          typeof VideoPanel !== 'undefined'
+        {/* ── Video Tab — always mounted, hidden when inactive to preserve state ── */}
+        <div style={{ display: activeTab === "video" ? "block" : "none" }}>
+          {typeof VideoPanel !== 'undefined'
             ? React.createElement(VideoPanel)
-            : <div className="text-center py-12 text-slate-400 text-sm">Video panel loading...</div>
-        )}
+            : <div className="text-center py-12 text-slate-400 text-sm">Video panel loading...</div>}
+        </div>
 
 
         {/* ── Workflows Tab ── */}
@@ -3361,6 +3391,7 @@ function SignalBridgeSettings() {
         onToggle={() => setGuildOpen(false)}
         comfyUrl={config.comfyui_url || "http://127.0.0.1:8188"}
         koboldUrl={config.kobold_url || "http://127.0.0.1:5001"}
+        onWizardSelect={handleWizardSelect}
       />
     </div>
   );

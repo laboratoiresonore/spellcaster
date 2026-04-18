@@ -10,7 +10,7 @@ import re
 import shutil
 import urllib.request
 import urllib.error
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
 import sys
 import os
 import random
@@ -52,6 +52,26 @@ except (ImportError, SyntaxError):
     build_txt2img = None
     ARCHITECTURES = {}
     get_arch = None
+
+# Cross-interface backbone: event bus, shared asset gallery, presence registry.
+# All three are optional — if the core import fails, the Guild still runs
+# and every cross-interface endpoint below returns a 501.
+try:
+    from spellcaster_core.event_bus import EventBus, validate_kind, sse_format
+    from spellcaster_core.asset_gallery import AssetGallery
+    from spellcaster_core.interface_registry import registry as _iface_registry
+    from spellcaster_core.model_registry import get_registry as _get_model_registry
+    from spellcaster_core.signal_notifier import start_default as _start_signal_notifier
+    CROSS_INTERFACE_AVAILABLE = True
+except (ImportError, SyntaxError):
+    CROSS_INTERFACE_AVAILABLE = False
+    EventBus = None
+    validate_kind = None
+    sse_format = None
+    AssetGallery = None
+    _iface_registry = None
+    _get_model_registry = None
+    _start_signal_notifier = None
 
 # Scaffold imports — graceful fallback if any module has import errors
 try:
@@ -2279,6 +2299,34 @@ def _generate_background_for_setup(comfy_url, style="tavern",
 _CREATIONS_DIR = os.path.join(_THIS_DIR, "creations")
 os.makedirs(_CREATIONS_DIR, exist_ok=True)
 _ASSET_CACHE_DIR = _CREATIONS_DIR  # alias for existing cache code
+
+# Cross-interface backbone singletons. Lazy-instantiated so import
+# failures above don't crash the Guild — they just disable the feature.
+_EVENT_BUS = None
+_ASSET_GALLERY = None
+_SIGNAL_NOTIFIER = None
+if CROSS_INTERFACE_AVAILABLE:
+    try:
+        _EVENT_BUS = EventBus.default()
+        _ASSET_GALLERY = AssetGallery(
+            os.path.join(_CREATIONS_DIR, "gallery"))
+        # Signal Bridge outbound notifier — subscribes to the bus and
+        # sends the admin a phone ping when long renders finish. No-ops
+        # silently if signal_bridge_config.json has the placeholder
+        # +1XXXXXXXXXX number, so it doesn't spam dev installs.
+        if _start_signal_notifier is not None:
+            try:
+                _signal_cfg_path = os.path.join(
+                    _THIS_DIR, "signal_bridge_config.json")
+                _SIGNAL_NOTIFIER = _start_signal_notifier(
+                    _EVENT_BUS, SIGNAL_BRIDGE_URL, _signal_cfg_path)
+            except Exception as _sn_err:
+                print(f"[Guild] Signal notifier init skipped: {_sn_err}")
+    except Exception as _e:
+        print(f"[Guild] Cross-interface backbone init failed: {_e}")
+        _EVENT_BUS = None
+        _ASSET_GALLERY = None
+        _SIGNAL_NOTIFIER = None
 
 _BANISHED_PATH = os.path.join(_STATE_DIR, "banished_ids.json")
 _ASSETS_PATH = os.path.join(_STATE_DIR, "generated_assets.json")
@@ -5567,6 +5615,213 @@ class GuildHandler(SimpleHTTPRequestHandler):
 
         return self.end_json(200, {"status": "ok", "changed": changed})
 
+    # ── Cross-interface backbone handlers ─────────────────────────────
+    #
+    # Event bus + asset gallery + interface registry. See
+    # spellcaster_core/{event_bus,asset_gallery,interface_registry}.py
+    # for the underlying implementations. These handlers are just thin
+    # HTTP adapters — they return 501 if the backbone failed to import,
+    # so none of them poison the Guild on environments where the core
+    # module isn't on the path.
+
+    def _handle_events_stream(self):
+        """SSE stream of cross-interface events. Filters via query string:
+        ?kinds=gimp.,resolve. &origins=gimp,resolve"""
+        import urllib.parse as _up
+        parsed = _up.urlparse(self.path)
+        qs = _up.parse_qs(parsed.query)
+        kinds = [k.strip() for k in (qs.get("kinds", [""])[0]).split(",") if k.strip()]
+        origins = [o.strip() for o in (qs.get("origins", [""])[0]).split(",") if o.strip()]
+        since = float(qs.get("since", ["0"])[0] or 0)
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+        except Exception:
+            return
+        # Push an immediate keep-alive so EventSource.onopen fires
+        try:
+            self.wfile.write(b": spellcaster event stream\n\n")
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            return
+        # Drive the bus; timeout=5s makes the generator yield keep-alives
+        try:
+            for evt in _EVENT_BUS.subscribe(
+                    since_ts=since, kinds=kinds or None,
+                    origins=origins or None, timeout=5.0):
+                try:
+                    chunk = sse_format(evt) if sse_format else (
+                        f"event: {evt.get('kind','message')}\n"
+                        f"data: {json.dumps(evt)}\n\n".encode())
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    return
+        except Exception:
+            # Subscription generator exhausted (timeout) — send a keep-alive
+            try:
+                self.wfile.write(b": keepalive\n\n")
+                self.wfile.flush()
+            except Exception:
+                return
+
+    def _handle_events_recent(self):
+        """GET /api/events?limit=N&since=TS&kinds=...&origins=..."""
+        import urllib.parse as _up
+        parsed = _up.urlparse(self.path)
+        qs = _up.parse_qs(parsed.query)
+        try:
+            limit = max(1, min(500, int(qs.get("limit", ["50"])[0])))
+        except Exception:
+            limit = 50
+        try:
+            since = float(qs.get("since", ["0"])[0] or 0)
+        except Exception:
+            since = 0.0
+        kinds = [k.strip() for k in (qs.get("kinds", [""])[0]).split(",") if k.strip()]
+        origins = [o.strip() for o in (qs.get("origins", [""])[0]).split(",") if o.strip()]
+        events = _EVENT_BUS.recent(
+            limit=limit, since_ts=since,
+            kinds=kinds or None, origins=origins or None)
+        return self.end_json(200, {
+            "events": events,
+            "subscriber_count": _EVENT_BUS.subscriber_count(),
+            "ring_size": _EVENT_BUS.ring_size(),
+        })
+
+    def _handle_assets_list(self):
+        """GET /api/assets?limit=N&origins=...&kinds=...&active_only=1"""
+        import urllib.parse as _up
+        parsed = _up.urlparse(self.path)
+        qs = _up.parse_qs(parsed.query)
+        try:
+            limit = max(1, min(200, int(qs.get("limit", ["20"])[0])))
+        except Exception:
+            limit = 20
+        origins = [o.strip() for o in (qs.get("origins", [""])[0]).split(",") if o.strip()]
+        kinds = [k.strip() for k in (qs.get("kinds", [""])[0]).split(",") if k.strip()]
+        active_only = qs.get("active_only", ["0"])[0] in ("1", "true", "yes")
+        assets = _ASSET_GALLERY.list_assets(
+            limit=limit,
+            origins=origins or None,
+            kinds=kinds or None,
+            active_only=active_only,
+            registry=_iface_registry if active_only else None,
+        )
+        return self.end_json(200, {
+            "assets": [r.to_dict() for r in assets],
+            "stats": _ASSET_GALLERY.stats(),
+        })
+
+    def _handle_assets_get(self):
+        """GET /api/assets/<hash> — serve the raw bytes."""
+        import re as _re
+        h = self.path.split('/api/assets/')[-1]
+        # Strip query string if present
+        for sep in ('?', '&'):
+            if sep in h:
+                h = h.split(sep)[0]
+        if not _re.match(r'^[a-f0-9]{16,64}$', h):
+            return self.end_json(400, {"error": "invalid hash"})
+        rec = _ASSET_GALLERY.get(h)
+        if not rec:
+            return self.end_json(404, {"error": "not found"})
+        path = _ASSET_GALLERY.path(h)
+        if not path:
+            return self.end_json(404, {"error": "blob missing"})
+        try:
+            with open(path, 'rb') as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header('Content-Type', rec.mime)
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Cache-Control', 'public, max-age=86400, immutable')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(data)
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            pass
+
+    def _handle_assets_upload(self, data):
+        """POST /api/assets — JSON body with body_b64 + metadata."""
+        import base64 as _b64
+        body_b64 = data.get('body_b64', '')
+        if not body_b64:
+            return self.end_json(400, {"error": "missing body_b64"})
+        try:
+            body = _b64.b64decode(body_b64)
+        except Exception as e:
+            return self.end_json(400, {"error": f"invalid base64: {e}"})
+        if not body:
+            return self.end_json(400, {"error": "empty body"})
+        # Reasonable upload cap: 128 MB (accepts video, rejects pathological)
+        if len(body) > 128 * 1024 * 1024:
+            return self.end_json(413, {"error": "asset too large"})
+        try:
+            rec = _ASSET_GALLERY.put(
+                body,
+                origin=str(data.get('origin', 'unknown')),
+                kind=str(data.get('kind', 'generation')),
+                ext=data.get('ext'),
+                title=str(data.get('title', '')),
+                prompt=str(data.get('prompt', '')),
+                model=str(data.get('model', '')),
+                seed=data.get('seed'),
+                tags=data.get('tags') or [],
+                meta=data.get('meta') or {},
+            )
+        except Exception as e:
+            return self.end_json(500, {"error": f"gallery put failed: {e}"})
+        # Fire an event so other interfaces can react
+        if _EVENT_BUS is not None:
+            try:
+                _EVENT_BUS.publish(f"{rec.origin}.asset.uploaded",
+                                   origin=rec.origin,
+                                   data={"hash": rec.hash, "kind": rec.kind,
+                                         "title": rec.title, "model": rec.model})
+            except Exception:
+                pass
+        return self.end_json(200, rec.to_dict())
+
+    def _handle_models_list(self):
+        """GET /api/models[?kind=...][&arch=...][&refresh=1]
+
+        Shared model discovery cache. Every interface queries this
+        instead of probing ComfyUI's /object_info independently.
+        Refresh interval is 5 minutes by default.
+        """
+        import urllib.parse as _up
+        parsed = _up.urlparse(self.path)
+        qs = _up.parse_qs(parsed.query)
+        kind = (qs.get("kind", [""])[0] or "").strip()
+        arch = (qs.get("arch", [""])[0] or "").strip() or None
+        force = qs.get("refresh", ["0"])[0] in ("1", "true", "yes")
+        try:
+            reg = _get_model_registry(COMFYUI_URL)
+        except Exception as e:
+            return self.end_json(500, {"error": f"registry init failed: {e}"})
+        if kind:
+            items = reg.kind(kind, arch=arch)
+            return self.end_json(200, {
+                "kind": kind,
+                "arch": arch,
+                "items": items,
+                "last_refresh": reg.last_refresh_ts,
+            })
+        snap = reg.snapshot(force_refresh=force)
+        if arch:
+            for k in list(snap.keys()):
+                snap[k] = [m for m in snap[k] if m.get("arch") == arch]
+        return self.end_json(200, {
+            "models": snap,
+            "last_refresh": reg.last_refresh_ts,
+            "last_error": reg.last_error,
+        })
+
     def _handle_horde_generate(self, data):
         # Basic proxy to AI Horde
         try:
@@ -6188,6 +6443,42 @@ class GuildHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 print(f"  [ChatHist] read failed for {char_id}: {e}")
                 return self.end_json(500, {"error": str(e)})
+        elif self.path == '/api/interfaces':
+            # Cross-interface registry — what frontends are installed,
+            # enabled, and alive right now. UI reads this before
+            # rendering "Send to X" chips etc.
+            if not CROSS_INTERFACE_AVAILABLE or _iface_registry is None:
+                return self.end_json(501, {"error": "cross-interface backbone disabled"})
+            return self.end_json(200, {"interfaces": _iface_registry.snapshot()})
+        elif self.path == '/api/models' or self.path.startswith('/api/models?'):
+            # Unified model registry — one cache of ComfyUI's /object_info
+            # that every interface queries instead of probing independently.
+            # Query params: kind=checkpoints|loras|...  arch=sdxl|flux1dev|...
+            if not CROSS_INTERFACE_AVAILABLE or _get_model_registry is None:
+                return self.end_json(501, {"error": "model registry disabled"})
+            return self._handle_models_list()
+        elif self.path.startswith('/api/events/stream'):
+            # SSE stream of cross-interface events. Filters via query
+            # string: ?kinds=gimp.,resolve. &origins=gimp,resolve
+            if _EVENT_BUS is None:
+                return self.end_json(501, {"error": "event bus disabled"})
+            return self._handle_events_stream()
+        elif self.path.startswith('/api/events'):
+            # Polling fallback: GET recent events as a JSON list.
+            # ?limit=50&since=<ts>&kinds=...&origins=...
+            if _EVENT_BUS is None:
+                return self.end_json(501, {"error": "event bus disabled"})
+            return self._handle_events_recent()
+        elif self.path == '/api/assets' or self.path.startswith('/api/assets?'):
+            # List recent assets in the shared gallery.
+            if _ASSET_GALLERY is None:
+                return self.end_json(501, {"error": "asset gallery disabled"})
+            return self._handle_assets_list()
+        elif self.path.startswith('/api/assets/'):
+            # Fetch asset bytes by hash: /api/assets/<sha256hex>
+            if _ASSET_GALLERY is None:
+                return self.end_json(501, {"error": "asset gallery disabled"})
+            return self._handle_assets_get()
         elif self.path.startswith('/api/cached_asset/'):
             # Serve locally cached assets (downloaded from ComfyUI before privacy cleanup)
             asset_name = self.path.split('/api/cached_asset/')[-1]
@@ -6265,13 +6556,17 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     "video_path": bool(s.video_path),
                     "trajectories": s.trajectories or [],
                     "duration_s": s.duration_s,
+                    "target_duration_s": getattr(s, "target_duration_s", None),
                     "carry_last_frame": s.carry_last_frame,
                     "transition": getattr(s, 'transition', 'cut'),
                     "transition_ms": getattr(s, 'transition_ms', 500),
+                    "scene_id": getattr(s, 'scene_id', None),
+                    "depends_on": getattr(s, 'depends_on', []),
                     "error": getattr(s, 'error', None),
                     "progress": _VIDEO_BRIDGE.render_progress().get("progress", 0) if s.id == getattr(_VIDEO_BRIDGE, '_active_shot_id', None) else None,
                 })
-            return self.end_json(200, {"shots": shots})
+            scenes = [sc.to_dict() for sc in _VIDEO_BRIDGE.board.scenes()]
+            return self.end_json(200, {"shots": shots, "scenes": scenes})
 
         elif self.path == '/api/video/presets':
             try:
@@ -6439,12 +6734,13 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 return self.end_json(400, {"error": str(e)})
 
         elif self.path == '/api/video/render-all' and self.command == 'POST':
-            """Queue all draft shots."""
+            """Queue all draft shots in dependency-aware order."""
             if not _VIDEO_BRIDGE:
                 return self.end_json(503, {"error": "Video Bridge not initialised"})
             try:
-                _VIDEO_BRIDGE.queue_all_drafts()
-                return self.end_json(200, {"status": "queued"})
+                result = _VIDEO_BRIDGE.queue_all_drafts()
+                result["status"] = "queued"
+                return self.end_json(200, result)
             except Exception as e:
                 return self.end_json(400, {"error": str(e)})
 
@@ -6487,6 +6783,175 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 return self.end_json(200, result)
             return self.end_json(400, {"error": "No settings to update"})
 
+        elif self.path == '/api/video/export-settings' and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            return self.end_json(200, _VIDEO_BRIDGE.get_export_settings())
+
+        elif self.path == '/api/video/export-settings' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            result = _VIDEO_BRIDGE.set_export_settings(data)
+            return self.end_json(200, result)
+
+        # ── Preset Favorites ──────────────────────────────────────────
+        elif self.path == '/api/video/favorites' and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            return self.end_json(200, {"favorites": _VIDEO_BRIDGE.get_favorite_presets()})
+
+        elif self.path == '/api/video/favorites' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            preset = data.get('preset')
+            if preset:
+                result = _VIDEO_BRIDGE.toggle_favorite_preset(preset)
+                return self.end_json(200, result)
+            presets_list = data.get('favorites')
+            if presets_list is not None:
+                result = _VIDEO_BRIDGE.set_favorite_presets(presets_list)
+                return self.end_json(200, {"favorites": result})
+            return self.end_json(400, {"error": "preset or favorites required"})
+
+        # ── Shot Dependencies ─────────────────────────────────────
+        elif self.path == '/api/video/dependencies' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = data.get('shot_id')
+            depends_on_id = data.get('depends_on')
+            if not shot_id or not depends_on_id:
+                return self.end_json(400, {"error": "shot_id and depends_on required"})
+            result = _VIDEO_BRIDGE.board.add_dependency(shot_id, depends_on_id)
+            if result is None:
+                return self.end_json(404, {"error": "Shot not found or invalid dependency"})
+            return self.end_json(200, {"shot_id": shot_id, "depends_on": result.depends_on})
+
+        elif self.path == '/api/video/dependencies' and self.command == 'DELETE':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = data.get('shot_id')
+            depends_on_id = data.get('depends_on')
+            if not shot_id or not depends_on_id:
+                return self.end_json(400, {"error": "shot_id and depends_on required"})
+            result = _VIDEO_BRIDGE.board.remove_dependency(shot_id, depends_on_id)
+            if result is None:
+                return self.end_json(404, {"error": "Shot not found"})
+            return self.end_json(200, {"shot_id": shot_id, "depends_on": result.depends_on})
+
+        elif self.path.startswith('/api/video/dependencies/') and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/')[-1]
+            met = _VIDEO_BRIDGE.board.dependencies_met(shot_id)
+            ready = _VIDEO_BRIDGE.board.ready_to_render(shot_id)
+            shot = _VIDEO_BRIDGE.board.get(shot_id)
+            if not shot:
+                return self.end_json(404, {"error": "Shot not found"})
+            return self.end_json(200, {
+                "shot_id": shot_id,
+                "depends_on": shot.depends_on,
+                "dependencies_met": met,
+                "ready_to_render": ready,
+            })
+
+        elif self.path == '/api/video/render-order' and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            order = _VIDEO_BRIDGE.board.render_order()
+            return self.end_json(200, order)
+
+        elif self.path == '/api/video/total-duration' and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            total = _VIDEO_BRIDGE.board.total_duration()
+            shot_durations = []
+            for s in _VIDEO_BRIDGE.board:
+                eff = _VIDEO_BRIDGE.board.effective_duration(s.id)
+                shot_durations.append({"id": s.id, "effective": eff,
+                    "target": getattr(s, 'target_duration_s', None),
+                    "preset": s.duration_s})
+            return self.end_json(200, {"total_duration": total, "shots": shot_durations})
+
+        elif self.path == '/api/video/lock' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = data.get('shot_id')
+            lock = data.get('lock', True)
+            if not shot_id:
+                return self.end_json(400, {"error": "shot_id required"})
+            if lock:
+                result = _VIDEO_BRIDGE.board.lock_shot(shot_id)
+            else:
+                result = _VIDEO_BRIDGE.board.unlock_shot(shot_id)
+            if result is None:
+                return self.end_json(404, {"error": "Shot not found"})
+            return self.end_json(200, {"shot_id": shot_id, "locked": result.locked})
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/history') and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/')[4]
+            history = _VIDEO_BRIDGE.board.get_render_history(shot_id)
+            return self.end_json(200, {"shot_id": shot_id, "history": history})
+
+        elif self.path == '/api/video/record-render' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = data.get('shot_id')
+            if not shot_id:
+                return self.end_json(400, {"error": "shot_id required"})
+            entry = _VIDEO_BRIDGE.board.record_render(
+                shot_id,
+                preset=data.get('preset'),
+                status=data.get('status', 'ready'),
+                duration_s=data.get('duration_s'),
+                error=data.get('error'),
+            )
+            if entry is None:
+                return self.end_json(404, {"error": "Shot not found"})
+            return self.end_json(200, {"shot_id": shot_id, "entry": entry})
+
+        # ── Scene CRUD ────────────────────────────────────────────────
+        elif self.path == '/api/video/scenes' and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            scenes = [sc.to_dict() for sc in _VIDEO_BRIDGE.board.scenes()]
+            return self.end_json(200, {"scenes": scenes})
+
+        elif self.path == '/api/video/scenes' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            name = data.get('name', '')
+            color = data.get('color', '#4a9eff')
+            sc = _VIDEO_BRIDGE.board.add_scene(name=name, color=color)
+            return self.end_json(201, sc.to_dict())
+
+        elif self.path.startswith('/api/video/scenes/') and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            scene_id = self.path.split('/api/video/scenes/')[1].split('/')[0]
+            if '/assign' in self.path:
+                shot_id = data.get('shot_id')
+                if not shot_id:
+                    return self.end_json(400, {"error": "shot_id required"})
+                result = _VIDEO_BRIDGE.board.assign_shot_to_scene(shot_id, scene_id)
+                if result:
+                    return self.end_json(200, result.to_dict())
+                return self.end_json(404, {"error": "Shot or scene not found"})
+            else:
+                sc = _VIDEO_BRIDGE.board.update_scene(scene_id, **data)
+                if sc:
+                    return self.end_json(200, sc.to_dict())
+                return self.end_json(404, {"error": "Scene not found"})
+
+        elif self.path.startswith('/api/video/scenes/') and self.command == 'DELETE':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            scene_id = self.path.split('/api/video/scenes/')[1].split('/')[0]
+            ok = _VIDEO_BRIDGE.board.remove_scene(scene_id)
+            return self.end_json(200 if ok else 404,
+                                 {"ok": ok} if ok else {"error": "Scene not found"})
+
         elif self.path == '/api/video/estimate' and self.command == 'POST':
             """Estimate render time for a preset."""
             if not _VIDEO_BRIDGE:
@@ -6506,6 +6971,41 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 shot_ids = data.get('shot_ids', [])
                 preset = data.get('preset', '')
                 result = _VIDEO_BRIDGE.batch_update_preset(shot_ids, preset)
+                return self.end_json(200, result)
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/api/video/batch-lock' and self.command == 'POST':
+            """Lock or unlock multiple shots."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                shot_ids = data.get('shot_ids', [])
+                lock = data.get('lock', True)
+                result = _VIDEO_BRIDGE.board.batch_lock(shot_ids, lock)
+                return self.end_json(200, result)
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/api/video/batch-reset' and self.command == 'POST':
+            """Reset multiple shots to draft status."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                shot_ids = data.get('shot_ids', [])
+                result = _VIDEO_BRIDGE.board.batch_reset_status(shot_ids)
+                return self.end_json(200, result)
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/api/video/batch-color' and self.command == 'POST':
+            """Set color label on multiple shots."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                shot_ids = data.get('shot_ids', [])
+                color_label = data.get('color_label', '')
+                result = _VIDEO_BRIDGE.board.batch_color_label(shot_ids, color_label)
                 return self.end_json(200, result)
             except Exception as e:
                 return self.end_json(400, {"error": str(e)})
@@ -6774,6 +7274,53 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(400, {"error": "Invalid JSON"})
 
         comfy = data.get('comfy_url', COMFYUI_URL)
+
+        # -- Cross-interface backbone (events + gallery + presence) --
+        # Dynamic: every endpoint 501s if the backbone failed to init,
+        # so the Guild runs fine without it. UI gates off /api/interfaces
+        # so nothing dead-renders.
+        if self.path == '/api/interfaces/heartbeat':
+            if not CROSS_INTERFACE_AVAILABLE or _iface_registry is None:
+                return self.end_json(501, {"error": "cross-interface disabled"})
+            iface_key = str(data.get('interface', '')).strip()
+            meta = data.get('meta', {}) or {}
+            if not iface_key:
+                return self.end_json(400, {"error": "missing 'interface'"})
+            ok = _iface_registry.heartbeat(iface_key, meta if isinstance(meta, dict) else {})
+            if not ok:
+                return self.end_json(404, {"error": f"unknown interface '{iface_key}'"})
+            if _EVENT_BUS is not None:
+                try:
+                    _EVENT_BUS.publish(f"{iface_key}.presence.heartbeat",
+                                       origin=iface_key, data={"meta": meta})
+                except Exception:
+                    pass
+            return self.end_json(200, {"ok": True, "interface": iface_key})
+
+        if self.path == '/api/events/emit':
+            if _EVENT_BUS is None:
+                return self.end_json(501, {"error": "event bus disabled"})
+            kind = str(data.get('kind', '')).strip()
+            origin = str(data.get('origin', 'unknown')).strip()
+            payload = data.get('data', {}) or {}
+            if not kind or (validate_kind and not validate_kind(kind)):
+                return self.end_json(400, {"error": "missing or invalid 'kind'"})
+            evt = _EVENT_BUS.publish(kind, origin=origin,
+                                     data=payload if isinstance(payload, dict) else {})
+            # Auto-heartbeat on event emit so "chatty" interfaces don't
+            # need a separate ping loop
+            if _iface_registry is not None and origin in (
+                    "gimp", "darktable", "resolve", "sillytavern", "signal"):
+                try:
+                    _iface_registry.heartbeat(origin)
+                except Exception:
+                    pass
+            return self.end_json(200, evt)
+
+        if self.path == '/api/assets':
+            if _ASSET_GALLERY is None:
+                return self.end_json(501, {"error": "asset gallery disabled"})
+            return self._handle_assets_upload(data)
 
         # -- Setup-mode admin endpoints (Guild-driven install) --
         if self.path == '/api/setup/feature/install':
@@ -8105,7 +8652,6 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     result['cached_urls'] = cached
                     result['urls'] = cached
 
-                # Privacy cleanup
                 if PRIVACY_CLEANUP:
                     try:
                         _privacy_cleanup(exec_comfy, workflow, {'urls': _original_urls})
@@ -8149,7 +8695,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
         return os.path.join(root, path)
 
     def log_message(self, format, *args):
-        """Quieter logging \u2014 skip noisy static asset requests."""
+        """Quieter logging — skip noisy static asset requests."""
         msg = format % args
         if '/static/' not in msg and '/api/avatar/' not in msg:
             print(f"  {msg}")

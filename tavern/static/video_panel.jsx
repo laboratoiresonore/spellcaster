@@ -88,6 +88,25 @@ function StatusSummary({ shots }) {
 // Shot Card — one row per shot with full editing
 // ════════════════════════════════════════════════════════════════════
 
+function ToastContainer({ toasts, onDismiss }) {
+  if (!toasts || toasts.length === 0) return null;
+  return (
+    <div className="toast-container fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm">
+      {toasts.map(t => (
+        <div key={t.id} className={"toast-item flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg text-sm transition-all " +
+          (t.type === "success" ? "bg-emerald-800/90 text-emerald-100 border border-emerald-600/50" :
+           t.type === "error" ? "bg-red-800/90 text-red-100 border border-red-600/50" :
+           "bg-slate-800/90 text-slate-100 border border-slate-600/50")}>
+          <span className="toast-icon">{t.type === "success" ? "OK" : t.type === "error" ? "ERR" : "i"}</span>
+          <span className="toast-message flex-1">{t.message}</span>
+          <button onClick={() => onDismiss(t.id)}
+            className="toast-dismiss text-slate-400 hover:text-white ml-2">&times;</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ShotCard({
   shot,
   presets,
@@ -113,8 +132,14 @@ function ShotCard({
   colorLabel,
   onColorLabel,
   estimateAvg,
+  allShots,
+  onAddDependency,
+  onRemoveDependency,
+  onToggleLock,
 }) {
   const [expanded, setExpanded] = _useState(shot.status === "draft");
+  const [showHistory, setShowHistory] = _useState(false);
+  const isLocked = shot.locked || false;
   const [editTitle, setEditTitle] = _useState(shot.title);
   const [editPrompt, setEditPrompt] = _useState(shot.prompt);
   const [editNegative, setEditNegative] = _useState(shot.negative || "");
@@ -127,6 +152,9 @@ function ShotCard({
   const [dragOver, setDragOver] = _useState(false);
   const [showAdvanced, setShowAdvanced] = _useState(false);
   const [editCarryFrame, setEditCarryFrame] = _useState(shot.carry_last_frame || false);
+  const [editTransition, setEditTransition] = _useState(shot.transition || "cut");
+  const [editTransitionMs, setEditTransitionMs] = _useState(shot.transition_ms ?? 500);
+  const [editTargetDuration, setEditTargetDuration] = _useState(shot.target_duration_s ?? "");
 
   // Override state
   const [ovSteps, setOvSteps] = _useState(shot.overrides?.steps ?? "");
@@ -148,12 +176,14 @@ function ShotCard({
     setEditBackend(shot.backend);
     setEditPreset(shot.preset);
     setEditCarryFrame(shot.carry_last_frame || false);
+    setEditTransition(shot.transition || "cut");
+    setEditTransitionMs(shot.transition_ms ?? 500);
     setOvSteps(shot.overrides?.steps ?? "");
     setOvGuidance(shot.overrides?.guidance ?? "");
     setOvFrames(shot.overrides?.frames ?? "");
     setOvFps(shot.overrides?.fps ?? "");
     setOvResolution(shot.overrides?.resolution ?? "");
-  }, [shot.title, shot.prompt, shot.negative, shot.notes, shot.seed, shot.backend, shot.preset, shot.carry_last_frame, JSON.stringify(shot.overrides)]);
+  }, [shot.title, shot.prompt, shot.negative, shot.notes, shot.seed, shot.backend, shot.preset, shot.carry_last_frame, shot.transition, shot.transition_ms, JSON.stringify(shot.overrides)]);
 
   const buildOverrides = () => {
     const ov = {};
@@ -185,6 +215,8 @@ function ShotCard({
       backend: editBackend,
       preset: editPreset,
       carry_last_frame: editCarryFrame,
+      transition: editTransition,
+      transition_ms: parseInt(editTransitionMs, 10) || 500,
       overrides: buildOverrides(),
     });
     lastSavedRef.current = {
@@ -196,6 +228,8 @@ function ShotCard({
       backend: editBackend,
       preset: editPreset,
       carry_last_frame: editCarryFrame,
+      transition: editTransition,
+      transition_ms: editTransitionMs,
       overrides: JSON.stringify(buildOverrides()),
     };
   };
@@ -210,6 +244,8 @@ function ShotCard({
       backend: editBackend,
       preset: editPreset,
       carry_last_frame: editCarryFrame,
+      transition: editTransition,
+      transition_ms: editTransitionMs,
       overrides: JSON.stringify(buildOverrides()),
     };
     const last = lastSavedRef.current || {
@@ -221,6 +257,8 @@ function ShotCard({
       backend: shot.backend,
       preset: shot.preset,
       carry_last_frame: shot.carry_last_frame || false,
+      transition: shot.transition || "cut",
+      transition_ms: shot.transition_ms ?? 500,
       overrides: JSON.stringify(shot.overrides || null),
     };
     return JSON.stringify(current) !== JSON.stringify(last);
@@ -234,7 +272,7 @@ function ShotCard({
       doSave();
     }, 800);
     return () => clearTimeout(debounceRef.current);
-  }, [editTitle, editPrompt, editNegative, editNotes, editSeed, editBackend, editPreset, editCarryFrame, ovSteps, ovGuidance, ovFrames, ovFps, ovResolution]);
+  }, [editTitle, editPrompt, editNegative, editNotes, editSeed, editBackend, editPreset, editCarryFrame, editTransition, editTransitionMs, ovSteps, ovGuidance, ovFrames, ovFps, ovResolution]);
 
   const presetKeys = presets ? Object.keys(presets) : [];
   const currentPreset = presets[editPreset];
@@ -431,6 +469,37 @@ function ShotCard({
             />
           </div>
 
+          {/* Render history */}
+          <div className="render-history-section">
+            <button
+              onClick={() => setShowHistory(!showHistory)}
+              className="render-history-toggle text-xs text-slate-400 hover:text-amber-300 flex items-center gap-1"
+            >
+              <span>{showHistory ? "Hide" : "Show"} render history</span>
+              <span className="render-history-count text-slate-500">({(shot.render_history || []).length})</span>
+            </button>
+            {showHistory && (shot.render_history || []).length > 0 && (
+              <div className="render-history-list mt-2 space-y-1 max-h-32 overflow-y-auto">
+                {(shot.render_history || []).slice().reverse().map((entry, i) => (
+                  <div key={i} className={"render-history-entry text-[10px] px-2 py-1 rounded " +
+                    (entry.status === "ready" ? "bg-emerald-900/30 text-emerald-300" :
+                     entry.status === "failed" ? "bg-red-900/30 text-red-300" :
+                     "bg-slate-800/50 text-slate-400")}>
+                    <span className="render-history-time">{new Date(entry.timestamp * 1000).toLocaleString()}</span>
+                    {" — "}
+                    <span className="render-history-status font-medium">{entry.status}</span>
+                    {entry.preset && <span className="render-history-preset"> ({entry.preset})</span>}
+                    {entry.duration_s != null && <span className="render-history-duration"> {entry.duration_s.toFixed(1)}s</span>}
+                    {entry.error && <span className="render-history-error text-red-400"> {entry.error}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {showHistory && (shot.render_history || []).length === 0 && (
+              <div className="text-[10px] text-slate-500 mt-1">No renders yet</div>
+            )}
+          </div>
+
           {/* Seed + Backend row */}
           <div className="grid grid-cols-3 gap-3">
             <div>
@@ -614,6 +683,122 @@ function ShotCard({
             <span className="text-xs text-amber-200">Carry last frame to next shot</span>
           </label>
 
+          {/* Transition to next shot */}
+          <div className="preset-quick-switch flex items-center gap-2 mb-2">
+          <label className="text-xs text-amber-200/80">Preset:</label>
+          <select value={shot.preset || ""} onChange={e => {
+            if (onSave) onSave(shot.id, { preset: e.target.value });
+          }} className="preset-quick-select bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 flex-1">
+            {(favPresets || []).length > 0 && React.createElement("optgroup", { label: "Favorites" },
+              (favPresets || []).map(p => React.createElement("option", { key: "fav_" + p, value: p }, "\u2605 " + p))
+            )}
+            {Object.keys(window._videoPresets || {}).map(p =>
+              React.createElement("option", { key: p, value: p }, p)
+            )}
+          </select>
+          <button onClick={() => onToggleFavorite && onToggleFavorite(shot.preset)}
+            className="favorite-preset-btn text-sm"
+            title={(favPresets || []).includes(shot.preset) ? "Remove from favorites" : "Add to favorites"}>
+            {(favPresets || []).includes(shot.preset) ? "\u2605" : "\u2606"}
+          </button>
+        </div>
+        <div className="scene-assign-row flex items-center gap-3 mb-2">
+          <label className="text-xs text-amber-200/80">Scene:</label>
+          <select value={shot.scene_id || ""} onChange={e => {
+            const val = e.target.value || null;
+            if (onSceneAssign) onSceneAssign(shot.id, val);
+          }} className="scene-assign-select bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200">
+            <option value="">No scene</option>
+            {(scenesList || []).map(sc =>
+              React.createElement("option", { key: sc.id, value: sc.id }, sc.name || "Unnamed")
+            )}
+          </select>
+        </div>
+        <div className="dependency-row flex items-center gap-3 mb-2">
+          <label className="text-xs text-amber-200/80">Depends on:</label>
+          <select
+            value=""
+            onChange={e => {
+              if (e.target.value && onAddDependency) {
+                onAddDependency(shot.id, e.target.value);
+              }
+              e.target.value = "";
+            }}
+            className="dep-add-select bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200"
+          >
+            <option value="">+ Add dependency</option>
+            {(allShots || []).filter(s => s.id !== shot.id && !(shot.depends_on || []).includes(s.id)).map(s =>
+              React.createElement("option", { key: s.id, value: s.id }, s.title || s.id.slice(0,8))
+            )}
+          </select>
+          {(shot.depends_on || []).length > 0 && (
+            <div className="dep-badges flex flex-wrap gap-1">
+              {(shot.depends_on || []).map(depId => {
+                const depShot = (allShots || []).find(s => s.id === depId);
+                return (
+                  <span key={depId} className="dep-badge inline-flex items-center gap-1 bg-indigo-900/60 text-indigo-200 text-xs px-2 py-0.5 rounded">
+                    {depShot ? (depShot.title || depShot.id.slice(0,8)) : depId.slice(0,8)}
+                    <button onClick={() => onRemoveDependency && onRemoveDependency(shot.id, depId)}
+                      className="dep-remove-btn text-indigo-400 hover:text-red-400 ml-0.5"
+                      title="Remove dependency">&times;</button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        <div className="transition-picker flex items-center gap-3">
+            <label className="text-xs text-amber-200/80">Transition:</label>
+            <select
+              value={editTransition}
+              onChange={e => setEditTransition(e.target.value)}
+              className="transition-type-select bg-slate-800 border border-slate-600 text-slate-300 text-xs rounded px-2 py-1"
+            >
+              <option value="cut">Cut</option>
+              <option value="fade">Fade</option>
+              <option value="crossfade">Crossfade</option>
+              <option value="wipeleft">Wipe Left</option>
+              <option value="wiperight">Wipe Right</option>
+              <option value="wipeup">Wipe Up</option>
+              <option value="wipedown">Wipe Down</option>
+            </select>
+            {editTransition !== "cut" && (
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min="100"
+                  max="3000"
+                  step="100"
+                  value={editTransitionMs}
+                  onChange={e => setEditTransitionMs(parseInt(e.target.value, 10) || 500)}
+                  className="transition-duration-input bg-slate-800 border border-slate-600 text-slate-300 text-xs rounded px-2 py-1 w-20"
+                />
+                <span className="text-xs text-slate-500">ms</span>
+              </div>
+            )}
+          </div>
+        <div className="target-duration-row flex items-center gap-3 mt-2">
+          <label className="text-xs text-amber-200/80">Target duration:</label>
+          <input
+            type="number"
+            min="0.5"
+            max="60"
+            step="0.5"
+            value={editTargetDuration}
+            onChange={e => setEditTargetDuration(e.target.value === "" ? "" : parseFloat(e.target.value))}
+            onBlur={() => {
+              const val = editTargetDuration === "" ? null : parseFloat(editTargetDuration);
+              if (onUpdate) onUpdate(shot.id, { target_duration_s: val });
+            }}
+            placeholder={shot.duration_s ? shot.duration_s + "s (preset)" : "auto"}
+            className="target-duration-input bg-slate-800 border border-slate-600 text-slate-300 text-xs rounded px-2 py-1 w-24"
+          />
+          <span className="text-xs text-slate-500">seconds</span>
+          {editTargetDuration && shot.duration_s && parseFloat(editTargetDuration) > shot.duration_s * 2 && (
+            <span className="duration-warning text-xs text-amber-400">exceeds 2x preset</span>
+          )}
+        </div>
+
           {/* Action buttons */}
           <div className="flex gap-2 flex-wrap pt-1">
             {dirty() && (
@@ -768,7 +953,7 @@ function TrajectoryModal({ shot, onClose, onSaved }) {
 // Health Panel — backend status indicators
 // ════════════════════════════════════════════════════════════════════
 
-function HealthPanel({ health }) {
+function HealthPanel({ health, maxConcurrent, onMaxConcurrentChange }) {
   if (!health) return null;
 
   const dot = (ok) => ok
@@ -776,7 +961,7 @@ function HealthPanel({ health }) {
     : "w-2 h-2 rounded-full bg-red-400";
 
   return (
-    <div className="flex gap-4 text-xs">
+    <div className="flex gap-4 text-xs flex-wrap items-center">
       <span className="flex items-center gap-1.5 text-slate-300">
         <span className={dot(health.wangp?.available)} />
         WanGP {health.wangp?.available ? "online" : "offline"}
@@ -790,6 +975,18 @@ function HealthPanel({ health }) {
           {health.shotboard.total_shots} shot(s) · {health.shotboard.ready_count} ready
         </span>
       )}
+      <span className="concurrency-control flex items-center gap-1.5 text-slate-400 ml-auto">
+        <label className="text-xs">Max parallel:</label>
+        <select
+          value={maxConcurrent || 2}
+          onChange={e => onMaxConcurrentChange && onMaxConcurrentChange(parseInt(e.target.value, 10))}
+          className="max-concurrent-select bg-slate-800 border border-slate-600 text-slate-300 text-xs rounded px-1.5 py-0.5"
+        >
+          {[1,2,3,4,5,6,7,8].map(n => (
+            <option key={n} value={n}>{n}</option>
+          ))}
+        </select>
+      </span>
     </div>
   );
 }
@@ -934,7 +1131,15 @@ function GridCard({ shot, presets, onRender, onRemove, isSelected, onToggleSelec
       </span>
       {/* Info */}
       <div className="p-2 space-y-1">
-        <div className="text-xs font-medium text-amber-50 truncate">{shot.title || `Shot ${shot.index + 1}`}</div>
+        <div className="text-xs font-medium text-amber-50 truncate">
+          {shot.title || `Shot ${shot.index + 1}`}
+          {isLocked && <span className="lock-indicator text-amber-400 ml-1 text-[10px]">[locked]</span>}
+          <button onClick={(e) => { e.stopPropagation(); onToggleLock && onToggleLock(shot.id, !isLocked); }}
+            className="lock-toggle-btn text-slate-500 hover:text-amber-400 ml-1 text-[10px]"
+            title={isLocked ? "Unlock shot" : "Lock shot"}>
+            {isLocked ? "unlock" : "lock"}
+          </button>
+        </div>
         <div className="text-[10px] text-slate-400 truncate">{shot.prompt || "No prompt"}</div>
         <div className="text-[10px] text-slate-500">{presetLabel}</div>
         {shot.status === "draft" && (
@@ -952,12 +1157,247 @@ function GridCard({ shot, presets, onRender, onRemove, isSelected, onToggleSelec
   );
 }
 
+
+
+
+
+// ── Render Queue Dashboard ──────────────────────────────────────────
+function RenderQueuePanel({ shots, queueStatus, onCancel, onRetry }) {
+  const queued = shots.filter(s => s.status === "queued");
+  const running = shots.filter(s => s.status === "running");
+  const failed = shots.filter(s => s.status === "failed");
+  const ready = shots.filter(s => s.status === "ready");
+  const totalRenderTime = ready.reduce((sum, s) => sum + (s.render_duration_s || 0), 0);
+  const avgRenderTime = ready.length > 0 ? totalRenderTime / ready.length : 0;
+  const eta = avgRenderTime * (queued.length + running.length);
+
+  return (
+    React.createElement("div", { className: "render-queue-panel bg-slate-800/80 border border-amber-700/30 rounded-lg p-4 mb-4" },
+      React.createElement("h4", { className: "text-sm font-semibold text-amber-300 mb-3" }, "Render Queue"),
+      React.createElement("div", { className: "queue-summary flex gap-4 mb-3 text-xs" },
+        React.createElement("span", { className: "queue-stat-running text-blue-400" },
+          "Running: ", running.length),
+        React.createElement("span", { className: "queue-stat-queued text-amber-400" },
+          "Queued: ", queued.length),
+        React.createElement("span", { className: "queue-stat-ready text-emerald-400" },
+          "Complete: ", ready.length),
+        React.createElement("span", { className: "queue-stat-failed text-red-400" },
+          "Failed: ", failed.length),
+        eta > 0 && React.createElement("span", { className: "queue-eta text-slate-400" },
+          "ETA: ", eta < 60 ? Math.round(eta) + "s" : Math.round(eta / 60) + "m")
+      ),
+      React.createElement("div", { className: "queue-items flex flex-col gap-2 max-h-64 overflow-y-auto" },
+        running.map(s => React.createElement("div", {
+          key: s.id, className: "queue-item queue-item-running flex items-center gap-2 bg-blue-900/30 rounded px-3 py-2"
+        },
+          React.createElement("div", { className: "w-2 h-2 rounded-full bg-blue-400 animate-pulse" }),
+          React.createElement("span", { className: "text-xs text-slate-200 flex-1 truncate" }, s.title || s.prompt || "Untitled"),
+          React.createElement("div", { className: "queue-progress-bar w-24 h-1.5 bg-slate-700 rounded overflow-hidden" },
+            React.createElement("div", {
+              className: "h-full bg-blue-400 transition-all",
+              style: { width: (s.progress || 0) + "%" }
+            })
+          ),
+          React.createElement("button", {
+            onClick: () => onCancel(s.id),
+            className: "queue-cancel-btn text-red-400 hover:text-red-300 text-xs ml-1",
+            title: "Cancel"
+          }, "Cancel")
+        )),
+        queued.map(s => React.createElement("div", {
+          key: s.id, className: "queue-item queue-item-queued flex items-center gap-2 bg-amber-900/20 rounded px-3 py-2"
+        },
+          React.createElement("div", { className: "w-2 h-2 rounded-full bg-amber-400" }),
+          React.createElement("span", { className: "text-xs text-slate-200 flex-1 truncate" }, s.title || s.prompt || "Untitled"),
+          React.createElement("span", { className: "text-xs text-amber-400/60" }, "Waiting..."),
+          React.createElement("button", {
+            onClick: () => onCancel(s.id),
+            className: "queue-cancel-btn text-red-400 hover:text-red-300 text-xs ml-1",
+            title: "Cancel"
+          }, "Cancel")
+        )),
+        failed.map(s => React.createElement("div", {
+          key: s.id, className: "queue-item queue-item-failed flex items-center gap-2 bg-red-900/20 rounded px-3 py-2"
+        },
+          React.createElement("div", { className: "w-2 h-2 rounded-full bg-red-400" }),
+          React.createElement("span", { className: "text-xs text-slate-200 flex-1 truncate" }, s.title || s.prompt || "Untitled"),
+          React.createElement("span", { className: "text-xs text-red-400/70 truncate max-w-xs" }, s.error || "Failed"),
+          React.createElement("button", {
+            onClick: () => onRetry(s.id),
+            className: "queue-retry-btn text-amber-400 hover:text-amber-300 text-xs ml-1",
+            title: "Retry"
+          }, "Retry")
+        ))
+      ),
+      (queued.length === 0 && running.length === 0 && failed.length === 0) &&
+        React.createElement("div", { className: "text-xs text-slate-500 italic" }, "No active renders")
+    )
+  );
+}
+
+// ── Undo/Redo Manager ──────────────────────────────────────────────
+class UndoManager {
+  constructor(maxHistory = 50) {
+    this._stack = [];
+    this._index = -1;
+    this._max = maxHistory;
+  }
+
+  push(snapshot) {
+    // Discard any redo history beyond current index
+    this._stack = this._stack.slice(0, this._index + 1);
+    this._stack.push(JSON.parse(JSON.stringify(snapshot)));
+    if (this._stack.length > this._max) {
+      this._stack.shift();
+    }
+    this._index = this._stack.length - 1;
+  }
+
+  undo() {
+    if (this._index <= 0) return null;
+    this._index--;
+    return JSON.parse(JSON.stringify(this._stack[this._index]));
+  }
+
+  redo() {
+    if (this._index >= this._stack.length - 1) return null;
+    this._index++;
+    return JSON.parse(JSON.stringify(this._stack[this._index]));
+  }
+
+  canUndo() { return this._index > 0; }
+  canRedo() { return this._index < this._stack.length - 1; }
+  size() { return this._stack.length; }
+}
+
+const _undoManager = new UndoManager();
+
+function SceneManager({ scenes, onAdd, onUpdate, onRemove }) {
+  const [newName, setNewName] = _useState("");
+  return (
+    React.createElement("div", { className: "scene-manager bg-slate-800/80 border border-amber-700/30 rounded-lg p-4 mb-4" },
+      React.createElement("h4", { className: "text-sm font-semibold text-amber-300 mb-3" }, "Scene Manager"),
+      React.createElement("div", { className: "scene-list flex flex-col gap-2 mb-3" },
+        scenes.map(sc => React.createElement("div", {
+          key: sc.id,
+          className: "scene-item flex items-center gap-2 bg-slate-900/50 rounded px-3 py-2"
+        },
+          React.createElement("input", {
+            type: "color", value: sc.color || "#4a9eff",
+            onChange: e => onUpdate(sc.id, { color: e.target.value }),
+            className: "scene-color-picker w-6 h-6 rounded cursor-pointer border-0"
+          }),
+          React.createElement("input", {
+            type: "text", value: sc.name,
+            onChange: e => onUpdate(sc.id, { name: e.target.value }),
+            className: "scene-name-input bg-transparent border-b border-slate-600 text-sm text-slate-200 flex-1 px-1",
+            placeholder: "Scene name"
+          }),
+          React.createElement("button", {
+            onClick: () => onRemove(sc.id),
+            className: "text-red-400 hover:text-red-300 text-xs",
+            title: "Remove scene"
+          }, "\u00d7")
+        ))
+      ),
+      React.createElement("div", { className: "flex gap-2" },
+        React.createElement("input", {
+          type: "text", value: newName,
+          onChange: e => setNewName(e.target.value),
+          className: "scene-new-name bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 flex-1",
+          placeholder: "New scene name..."
+        }),
+        React.createElement("button", {
+          onClick: () => { onAdd(newName); setNewName(""); },
+          className: "add-scene-btn bg-amber-600 hover:bg-amber-500 text-white px-3 py-1 rounded text-xs font-medium"
+        }, "+ Add")
+      )
+    )
+  );
+}
+
+function ExportSettingsPanel({ settings, onChange }) {
+  const resolutions = ["source", "1920x1080", "1280x720", "3840x2160", "1080x1920", "720x1280"];
+  const codecs = ["h264", "h265", "vp9", "prores"];
+  return (
+    React.createElement("div", { className: "export-settings-panel bg-slate-800/80 border border-amber-700/30 rounded-lg p-4 mb-4" },
+      React.createElement("h4", { className: "text-sm font-semibold text-amber-300 mb-3" }, "Export Settings"),
+      React.createElement("div", { className: "grid grid-cols-2 gap-3" },
+        React.createElement("div", { className: "flex flex-col gap-1" },
+          React.createElement("label", { className: "text-xs text-amber-200/70" }, "Resolution"),
+          React.createElement("select", {
+            value: settings.resolution,
+            onChange: e => onChange({ resolution: e.target.value }),
+            className: "export-resolution-select bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200"
+          }, resolutions.map(r => React.createElement("option", { key: r, value: r }, r === "source" ? "Source (no resize)" : r)))
+        ),
+        React.createElement("div", { className: "flex flex-col gap-1" },
+          React.createElement("label", { className: "text-xs text-amber-200/70" }, "Codec"),
+          React.createElement("select", {
+            value: settings.codec,
+            onChange: e => onChange({ codec: e.target.value }),
+            className: "export-codec-select bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200"
+          }, codecs.map(c => React.createElement("option", { key: c, value: c }, c.toUpperCase())))
+        ),
+        React.createElement("div", { className: "flex flex-col gap-1" },
+          React.createElement("label", { className: "text-xs text-amber-200/70" }, "FPS (0 = source)"),
+          React.createElement("input", {
+            type: "number", min: 0, max: 120, step: 1,
+            value: settings.fps,
+            onChange: e => onChange({ fps: parseInt(e.target.value, 10) || 0 }),
+            className: "export-fps-input bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 w-full"
+          })
+        ),
+        React.createElement("div", { className: "flex flex-col gap-1" },
+          React.createElement("label", { className: "text-xs text-amber-200/70" }, "Quality (CRF: 0=best, 51=worst)"),
+          React.createElement("input", {
+            type: "number", min: 0, max: 51, step: 1,
+            value: settings.crf,
+            onChange: e => onChange({ crf: parseInt(e.target.value, 10) || 23 }),
+            className: "export-crf-input bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 w-full"
+          })
+        )
+      ),
+      React.createElement("div", { className: "flex items-center gap-2 mt-3" },
+        React.createElement("input", {
+          type: "checkbox", checked: settings.audio,
+          onChange: e => onChange({ audio: e.target.checked }),
+          className: "export-audio-checkbox"
+        }),
+        React.createElement("label", { className: "text-xs text-amber-200/70" }, "Include audio")
+      )
+    )
+  );
+}
+
 function VideoPanel() {
   const [shots, setShots] = _useState([]);
   const [presets, setPresets] = _useState({});
   const [health, setHealth] = _useState(null);
   const [trajShot, setTrajShot] = _useState(null);
   const [queuePaused, setQueuePaused] = _useState(false);
+  const [cycleWarning, setCycleWarning] = _useState(false);
+  const [toasts, setToasts] = _useState([]);
+  const prevShotsRef = React.useRef([]);
+  const toastIdCounter = React.useRef(0);
+
+  const addToast = (message, type) => {
+    const id = ++toastIdCounter.current;
+    setToasts(prev => [...prev, { id, message, type: type || "info" }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 5000);
+  };
+
+  const dismissToast = (id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+  const [renderOrder, setRenderOrder] = _useState(null);
+  const [showDepGraph, setShowDepGraph] = _useState(false);
+  const totalTimelineDuration = shots.reduce((sum, s) => {
+    const eff = s.target_duration_s != null && s.target_duration_s > 0 ? s.target_duration_s : (s.duration_s || 0);
+    return sum + eff;
+  }, 0);
   const [viewMode, setViewMode] = _useState("list");
   const [loading, setLoading] = _useState(true);
   const [selectedShotId, setSelectedShotId] = useState(null);
@@ -968,6 +1408,17 @@ function VideoPanel() {
   const [statusFilter, setStatusFilter] = _useState("all");
   const [templates, setTemplates] = _useState([]);
   const [selected, setSelected] = _useState(new Set());
+  const [maxConcurrent, setMaxConcurrent] = _useState(2);
+  const [exportSettings, setExportSettings] = _useState({
+    resolution: "source", codec: "h264", fps: 0, crf: 23, audio: true
+  });
+  const [showExportSettings, setShowExportSettings] = _useState(false);
+  const [scenes, setScenes] = _useState([]);
+  const [showSceneManager, setShowSceneManager] = _useState(false);
+  const [favoritePresets, setFavoritePresets] = _useState([]);
+  const [showRenderQueue, setShowRenderQueue] = _useState(false);
+  const [canUndo, setCanUndo] = _useState(false);
+  const [canRedo, setCanRedo] = _useState(false);
   const pollRef = _useRef(null);
   const sseRef = _useRef(null);
   const [sseConnected, setSseConnected] = _useState(false);
@@ -1025,16 +1476,33 @@ function VideoPanel() {
   // ── Initial load ──
   const refresh = _useCallback(async () => {
     try {
-      const [shotsData, presetsData, healthData, templatesData] = await Promise.all([
+      const [shotsData, presetsData, healthData, templatesData, settingsData] = await Promise.all([
         api.get("/api/video/shots"),
         api.get("/api/video/presets"),
         api.get("/api/video/health"),
         api.get("/api/video/templates"),
+        api.get("/api/video/settings").catch(() => null),
       ]);
-      setShots((shotsData.shots || []).map((s, i) => ({ ...s, index: i })));
+      const newShots = (shotsData.shots || []).map((s, i) => ({ ...s, index: i }));
+      const prev = prevShotsRef.current;
+      if (prev.length > 0) {
+        for (const ns of newShots) {
+          const ps = prev.find(p => p.id === ns.id);
+          if (ps && ps.status !== ns.status) {
+            if (ns.status === "ready") {
+              addToast((ns.title || "Shot") + " rendered successfully", "success");
+            } else if (ns.status === "failed") {
+              addToast((ns.title || "Shot") + " render failed", "error");
+            }
+          }
+        }
+      }
+      prevShotsRef.current = newShots;
+      setShots(newShots);
       setPresets(presetsData || {});
       setHealth(healthData || null);
       setTemplates(templatesData.templates || []);
+      if (settingsData) setMaxConcurrent(settingsData.max_concurrent || 2);
       setError("");
     } catch (e) {
       setError("Video Bridge not available. Make sure the server is running with video support enabled.");
@@ -1070,6 +1538,8 @@ function VideoPanel() {
     const handleKey = (e) => {
       if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") return;
       if (e.key === "n" || e.key === "N") addShot();
+      if (e.key === "z" && (e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); doUndo(); }
+      if ((e.key === "y" && (e.ctrlKey || e.metaKey)) || (e.key === "z" && (e.ctrlKey || e.metaKey) && e.shiftKey)) { e.preventDefault(); doRedo(); }
       if (e.ctrlKey && e.shiftKey && e.key === "R") {
         e.preventDefault();
         renderAll();
@@ -1081,6 +1551,7 @@ function VideoPanel() {
 
   // ── CRUD ops ──
   const addShot = async () => {
+    pushUndo();
     try {
       await api.post("/api/video/shots", {
         title: `Shot ${shots.length + 1}`,
@@ -1116,7 +1587,8 @@ function VideoPanel() {
   };
 
   const removeShot = async (id) => {
-    if (!window.confirm("Delete this shot? This cannot be undone.")) return;
+    if (!window.confirm("Delete this shot?")) return;
+    pushUndo();
     try {
       await api.post(`/api/video/shots/${id}`, { _method: "DELETE" });
       await refresh();
@@ -1235,6 +1707,46 @@ function VideoPanel() {
     }
   };
 
+  const batchLock = async (lock) => {
+    try {
+      await api.post("/api/video/batch-lock", {
+        shot_ids: Array.from(selected),
+        lock: lock,
+      });
+      await refresh();
+      addToast(lock ? "Locked " + selected.size + " shot(s)" : "Unlocked " + selected.size + " shot(s)", "success");
+    } catch (e) {
+      setError("Failed to batch lock/unlock");
+    }
+  };
+
+  const batchResetStatus = async () => {
+    if (!confirm("Reset " + selected.size + " shot(s) to draft?")) return;
+    try {
+      await api.post("/api/video/batch-reset", {
+        shot_ids: Array.from(selected),
+      });
+      setSelected(new Set());
+      await refresh();
+      addToast("Reset shots to draft", "success");
+    } catch (e) {
+      setError("Failed to batch reset");
+    }
+  };
+
+  const batchColorLabel = async (colorKey) => {
+    try {
+      await api.post("/api/video/batch-color", {
+        shot_ids: Array.from(selected),
+        color_label: colorKey,
+      });
+      await refresh();
+    } catch (e) {
+      setError("Failed to batch color label");
+    }
+  };
+
+
   const moveShot = async (id, direction) => {
     const idx = shots.findIndex(s => s.id === id);
     if (idx < 0) return;
@@ -1289,12 +1801,19 @@ function VideoPanel() {
   };
 
   const renderAll = async () => {
-    // Note: /api/video/render-all batch endpoint available for future optimization
-    const draftShots = shots.filter(s => s.status === "draft" || s.status === "failed");
-    for (const s of draftShots) {
-      try {
-        await api.post(`/api/video/shots/${s.id}/render`, {});
-      } catch {}
+    try {
+      const result = await api.post("/api/video/render-all", {});
+      if (result && result.has_cycle) {
+        setCycleWarning(true);
+        setTimeout(() => setCycleWarning(false), 6000);
+      }
+    } catch (e) {
+      console.error("renderAll error:", e);
+      // Fallback: render individually
+      const draftShots = shots.filter(s => s.status === "draft" || s.status === "failed");
+      for (const s of draftShots) {
+        try { await api.post(`/api/video/shots/${s.id}/render`, {}); } catch {}
+      }
     }
     await refresh();
   };
@@ -1310,6 +1829,147 @@ function VideoPanel() {
       }
     } catch (e) {
       setError("Failed to toggle queue pause");
+    }
+  };
+
+  const changeMaxConcurrent = async (n) => {
+    try {
+      const result = await api.post("/api/video/settings", { max_concurrent: n });
+      setMaxConcurrent(result.max_concurrent || n);
+    } catch (e) {
+      setError("Failed to update concurrency limit");
+    }
+  };
+
+  const addScene = async (name, color) => {
+    try {
+      const sc = await api.post("/api/video/scenes", { name: name || "New Scene", color: color || "#4a9eff" });
+      setScenes(prev => [...prev, sc]);
+    } catch (e) { setError("Failed to add scene"); }
+  };
+
+  const updateScene = async (sceneId, updates) => {
+    try {
+      await api.post("/api/video/scenes/" + sceneId, updates);
+      setScenes(prev => prev.map(sc => sc.id === sceneId ? { ...sc, ...updates } : sc));
+    } catch (e) { setError("Failed to update scene"); }
+  };
+
+  const removeScene = async (sceneId) => {
+    try {
+      await api.delete("/api/video/scenes/" + sceneId);
+      setScenes(prev => prev.filter(sc => sc.id !== sceneId));
+      setShots(prev => prev.map(s => s.scene_id === sceneId ? { ...s, scene_id: null } : s));
+    } catch (e) { setError("Failed to remove scene"); }
+  };
+
+  const assignShotToScene = async (shotId, sceneId) => {
+    try {
+      await api.post("/api/video/scenes/" + sceneId + "/assign", { shot_id: shotId });
+      setShots(prev => prev.map(s => s.id === shotId ? { ...s, scene_id: sceneId } : s));
+    } catch (e) { setError("Failed to assign shot to scene"); }
+  };
+
+  const addDependency = async (shotId, dependsOnId) => {
+    try {
+      const resp = await fetch("/api/video/dependencies", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ shot_id: shotId, depends_on: dependsOnId }),
+      });
+      if (resp.ok) fetchShots();
+    } catch (e) { console.error("addDependency error:", e); }
+  };
+
+  const removeDependency = async (shotId, dependsOnId) => {
+    try {
+      const resp = await fetch("/api/video/dependencies", {
+        method: "DELETE",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ shot_id: shotId, depends_on: dependsOnId }),
+      });
+      if (resp.ok) fetchShots();
+    } catch (e) { console.error("removeDependency error:", e); }
+  };
+
+  const toggleLock = async (shotId, lock) => {
+    try {
+      await fetch("/api/video/lock", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ shot_id: shotId, lock: lock }),
+      });
+      fetchShots();
+    } catch (e) { console.error("toggleLock error:", e); }
+  };
+
+  const fetchRenderOrder = async () => {
+    try {
+      const resp = await fetch("/api/video/render-order");
+      if (resp.ok) {
+        const data = await resp.json();
+        setRenderOrder(data);
+      }
+    } catch (e) { console.error("fetchRenderOrder error:", e); }
+  };
+
+  const toggleFavoritePreset = async (presetKey) => {
+    try {
+      const result = await api.post("/api/video/favorites", { preset: presetKey });
+      setFavoritePresets(result.favorites || []);
+    } catch (e) { setError("Failed to toggle favorite"); }
+  };
+
+  const cancelRender = async (shotId) => {
+    try {
+      await api.post("/api/video/shots/" + shotId + "/cancel", {});
+      await refresh();
+    } catch (e) { setError("Failed to cancel render"); }
+  };
+
+  const retryRender = async (shotId) => {
+    try {
+      await api.post("/api/video/shots/" + shotId + "/render", {});
+      await refresh();
+    } catch (e) { setError("Failed to retry render"); }
+  };
+
+  const pushUndo = () => {
+    _undoManager.push({ shots, scenes });
+    setCanUndo(_undoManager.canUndo());
+    setCanRedo(_undoManager.canRedo());
+  };
+
+  const doUndo = async () => {
+    const snapshot = _undoManager.undo();
+    if (!snapshot) return;
+    try {
+      await api.post("/api/video/import", snapshot);
+      await refresh();
+    } catch (e) { setError("Undo failed"); }
+    setCanUndo(_undoManager.canUndo());
+    setCanRedo(_undoManager.canRedo());
+  };
+
+  const doRedo = async () => {
+    const snapshot = _undoManager.redo();
+    if (!snapshot) return;
+    try {
+      await api.post("/api/video/import", snapshot);
+      await refresh();
+    } catch (e) { setError("Redo failed"); }
+    setCanUndo(_undoManager.canUndo());
+    setCanRedo(_undoManager.canRedo());
+  };
+
+  const updateExportSettings = async (updates) => {
+    const merged = { ...exportSettings, ...updates };
+    setExportSettings(merged);
+    try {
+      const result = await api.post("/api/video/export-settings", merged);
+      setExportSettings(result);
+    } catch (e) {
+      setError("Failed to update export settings");
     }
   };
 
@@ -1393,7 +2053,7 @@ function VideoPanel() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold text-amber-50">Shotboard</h2>
-          <HealthPanel health={health} />
+          <HealthPanel health={health} maxConcurrent={maxConcurrent} onMaxConcurrentChange={changeMaxConcurrent} />
         </div>
         <div className="flex gap-2">
           <button onClick={refresh}
@@ -1406,6 +2066,32 @@ function VideoPanel() {
               className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-40">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>
               {assembling ? "Assembling..." : "Export Video"}
+            </button>
+            <button onClick={() => setShowExportSettings(!showExportSettings)}
+              className="render-queue-toggle bg-slate-700 hover:bg-slate-600 text-amber-200 px-3 py-1.5 rounded text-xs font-medium transition-colors"
+              onClick={() => setShowRenderQueue(!showRenderQueue)} title="Render queue">
+              {showRenderQueue ? "Hide Queue" : "Queue"}
+            </button>
+            <button
+              className="undo-btn bg-slate-700 hover:bg-slate-600 text-amber-200 px-3 py-1.5 rounded text-xs font-medium transition-colors disabled:opacity-40"
+              disabled={!canUndo} onClick={doUndo} title="Undo (Ctrl+Z)">
+              Undo
+            </button>
+            <button
+              className="redo-btn bg-slate-700 hover:bg-slate-600 text-amber-200 px-3 py-1.5 rounded text-xs font-medium transition-colors disabled:opacity-40"
+              disabled={!canRedo} onClick={doRedo} title="Redo (Ctrl+Y)">
+              Redo
+            </button>
+            <button
+              className="scene-manager-toggle bg-slate-700 hover:bg-slate-600 text-amber-200 px-3 py-1.5 rounded text-xs font-medium transition-colors"
+              title="Manage scenes"
+              onClick={() => setShowSceneManager(!showSceneManager)}>
+              {showSceneManager ? "Hide Scenes" : "Scenes"}
+            </button>
+            <button
+              className="export-settings-toggle bg-slate-700 hover:bg-slate-600 text-amber-200 px-3 py-1.5 rounded text-xs font-medium transition-colors"
+              title="Export settings">
+              {showExportSettings ? "Hide Settings" : "Settings"}
             </button>
           )}
           {shots.some(s => s.status === "failed") && (
@@ -1427,6 +2113,17 @@ function VideoPanel() {
               Render All
             </button>
           )}
+          {cycleWarning && (
+            <span className="cycle-warning text-xs text-red-400 bg-red-900/30 px-2 py-1 rounded">
+              Warning: dependency cycle detected — some shots may render out of order
+            </span>
+          )}
+          <button onClick={() => { setShowDepGraph(!showDepGraph); if (!showDepGraph) fetchRenderOrder(); }}
+            className={"dep-graph-toggle flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors " + (showDepGraph ? "bg-indigo-700/40 text-indigo-200" : "bg-slate-800 hover:bg-slate-700 text-slate-300")}
+            title="Show dependency graph and render order">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="5" cy="6" r="3"/><circle cx="19" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><line x1="7.5" y1="7.5" x2="10.5" y2="16.5"/><line x1="16.5" y1="7.5" x2="13.5" y2="16.5"/></svg>
+            {showDepGraph ? "Hide Graph" : "Dep Graph"}
+          </button>
           <button onClick={exportShotboard}
             className="export-json flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
@@ -1456,6 +2153,15 @@ function VideoPanel() {
         </div>
       </div>
 
+      {showExportSettings && React.createElement(ExportSettingsPanel, {
+        settings: exportSettings, onChange: updateExportSettings
+      })}
+      {showRenderQueue && React.createElement(RenderQueuePanel, {
+        shots: shots, queueStatus: null, onCancel: cancelRender, onRetry: retryRender
+      })}
+      {showSceneManager && React.createElement(SceneManager, {
+        scenes: scenes, onAdd: addScene, onUpdate: updateScene, onRemove: removeScene
+      })}
       {/* Assembled video result */}
       {assembledPath && (
         <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-4 py-3 text-sm text-emerald-300 flex items-center gap-2">
@@ -1518,13 +2224,33 @@ function VideoPanel() {
               <option key={k} value={k}>{v.label || k}</option>
             ))}
           </select>
-          <div className="flex gap-2">
-            <button onClick={selectNone} className="text-xs text-slate-400 hover:text-slate-300">Deselect</button>
-            <button onClick={renderSelected} className="flex items-center gap-1 bg-emerald-700/30 hover:bg-emerald-700/50 text-emerald-300 px-3 py-1 rounded text-xs font-medium">
+          <div className="flex gap-2 flex-wrap items-center">
+            <button onClick={selectNone} className="batch-deselect-btn text-xs text-slate-400 hover:text-slate-300">Deselect</button>
+            <button onClick={() => batchLock(true)} className="batch-lock-btn flex items-center gap-1 bg-amber-700/30 hover:bg-amber-700/50 text-amber-300 px-3 py-1 rounded text-xs font-medium">
+              Lock
+            </button>
+            <button onClick={() => batchLock(false)} className="batch-unlock-btn flex items-center gap-1 bg-slate-700/30 hover:bg-slate-700/50 text-slate-300 px-3 py-1 rounded text-xs font-medium">
+              Unlock
+            </button>
+            <select
+              className="batch-color-select bg-slate-800 border border-slate-600 text-slate-300 text-xs rounded px-2 py-1"
+              defaultValue=""
+              onChange={(e) => { if (e.target.value !== "") { batchColorLabel(e.target.value); e.target.value = ""; } }}
+            >
+              <option value="" disabled>Color label...</option>
+              <option value="">None</option>
+              {COLOR_LABELS.filter(c => c.key).map(c => (
+                <option key={c.key} value={c.key}>{c.label}</option>
+              ))}
+            </select>
+            <button onClick={batchResetStatus} className="batch-reset-btn flex items-center gap-1 bg-sky-700/30 hover:bg-sky-700/50 text-sky-300 px-3 py-1 rounded text-xs font-medium">
+              Reset
+            </button>
+            <button onClick={renderSelected} className="batch-render-btn flex items-center gap-1 bg-emerald-700/30 hover:bg-emerald-700/50 text-emerald-300 px-3 py-1 rounded text-xs font-medium">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 3l14 9-14 9V3z" /></svg>
               Render
             </button>
-            <button onClick={deleteSelected} className="flex items-center gap-1 bg-red-600/20 hover:bg-red-600/40 text-red-400 px-3 py-1 rounded text-xs font-medium">
+            <button onClick={deleteSelected} className="batch-delete-btn flex items-center gap-1 bg-red-600/20 hover:bg-red-600/40 text-red-400 px-3 py-1 rounded text-xs font-medium">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
               Delete
             </button>
@@ -1568,7 +2294,7 @@ function VideoPanel() {
           <div className="flex items-center justify-between px-1 py-2 text-xs text-slate-500">
             <label className="flex items-center gap-1.5">
               <input type="checkbox" checked={selected.size === filteredShots.length && filteredShots.length > 0} onChange={selected.size === filteredShots.length ? selectNone : selectAll} className="w-4 h-4 rounded accent-amber-500" />
-              {filteredShots.length} shot{filteredShots.length !== 1 ? "s" : ""}
+              {filteredShots.length} shot{filteredShots.length !== 1 ? "s" : ""} · {totalTimelineDuration.toFixed(1)}s total
             </label>
           </div>
           <div className="shot-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
@@ -1593,7 +2319,56 @@ function VideoPanel() {
               {filteredShots.length} shot{filteredShots.length !== 1 ? "s" : ""}
             </label>
           </div>
-          {filteredShots.map((shot, idx) => (
+          {showDepGraph && renderOrder && (
+          <div className="dep-graph-panel bg-slate-900/80 border border-indigo-500/30 rounded-xl p-4 mb-4">
+            <h3 className="text-sm font-semibold text-indigo-300 mb-3">
+              Render Order &amp; Dependencies
+              {renderOrder.has_cycle && <span className="ml-2 text-red-400 text-xs">(cycle detected)</span>}
+            </h3>
+            <div className="text-xs text-slate-400 mb-2">
+              {renderOrder.ready_count} of {renderOrder.total} shots ready to render
+            </div>
+            <div className="dep-graph-nodes flex flex-col gap-1">
+              {renderOrder.nodes.map((node, i) => (
+                <div key={node.id} className={"dep-graph-node flex items-center gap-2 px-3 py-1.5 rounded " +
+                  (node.ready_to_render ? "bg-emerald-900/30 border border-emerald-700/30" :
+                   node.status === "ready" ? "bg-blue-900/30 border border-blue-700/30" :
+                   !node.dependencies_met ? "bg-amber-900/30 border border-amber-700/30" :
+                   "bg-slate-800/50 border border-slate-700/30")}>
+                  <span className="dep-graph-order text-xs font-mono text-slate-500 w-6">{i + 1}.</span>
+                  <span className={"dep-graph-status w-2 h-2 rounded-full " +
+                    (node.status === "ready" ? "bg-emerald-400" :
+                     node.status === "rendering" ? "bg-amber-400 animate-pulse" :
+                     node.status === "failed" ? "bg-red-400" :
+                     "bg-slate-500")} />
+                  <span className="text-xs text-slate-200 flex-1">{node.title}</span>
+                  {node.depends_on.length > 0 && (
+                    <span className="dep-graph-arrows text-xs text-indigo-400">
+                      {node.dependencies_met ? "✓" : "⏳"} needs {node.depends_on.length} dep{node.depends_on.length > 1 ? "s" : ""}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+            {renderOrder.edges.length > 0 && (
+              <div className="dep-graph-edges mt-3 pt-2 border-t border-slate-700/50">
+                <div className="text-xs text-slate-500 mb-1">Dependency links:</div>
+                <div className="flex flex-wrap gap-2">
+                  {renderOrder.edges.map((edge, i) => {
+                    const fromNode = renderOrder.nodes.find(n => n.id === edge.from);
+                    const toNode = renderOrder.nodes.find(n => n.id === edge.to);
+                    return (
+                      <span key={i} className={"dep-graph-edge text-xs px-2 py-0.5 rounded " + (edge.met ? "bg-emerald-900/40 text-emerald-300" : "bg-amber-900/40 text-amber-300")}>
+                        {fromNode ? fromNode.title : edge.from.slice(0,6)} {edge.met ? "→" : "⇢"} {toNode ? toNode.title : edge.to.slice(0,6)}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        {filteredShots.map((shot, idx) => (
             <ShotCard
               key={shot.id}
               shot={shot}
@@ -1620,6 +2395,10 @@ function VideoPanel() {
               colorLabel={shot.color_label || ""}
               onCancel={cancelShot}
               estimateAvg={null}
+              allShots={shots}
+              onAddDependency={addDependency}
+              onRemoveDependency={removeDependency}
+              onToggleLock={toggleLock}
             />
           ))}
         </div>
@@ -1634,10 +2413,14 @@ function VideoPanel() {
         />
       )}
 
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       {/* Keyboard shortcuts hint */}
       <div className="shortcut-hints text-xs text-slate-500 text-center pt-4 border-t border-slate-800">
         <span className="text-slate-600">Shortcuts:</span> <kbd className="px-1 rounded bg-slate-800">N</kbd> new shot · <kbd className="px-1 rounded bg-slate-800">Ctrl+Shift+R</kbd> render all
       </div>
     </div>
   );
+
 }
+
+window.VideoPanel = VideoPanel;

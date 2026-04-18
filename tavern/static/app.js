@@ -488,6 +488,75 @@ async function checkSignalBridgeConnection() {
     }
 }
 
+// ── Active interfaces (cross-interface backbone) ──────────────────
+// Polls /api/interfaces and renders a chip row for each interface the
+// Guild registry reports as installed + enabled + online. No dead chips
+// — an uninstalled or offline interface simply doesn't appear here.
+//
+// `window.activeInterfaces` is the source of truth consumed by the
+// starter-chip and image-action-chip renderers, so a "Send to Resolve"
+// chip only appears when Resolve is actually there.
+window.activeInterfaces = {};   // key -> snapshot dict
+window.activeInterfacesKeys = []; // ordered list of active keys
+
+async function refreshActiveInterfaces() {
+    try {
+        const res = await fetch('/api/interfaces');
+        if (!res.ok) {
+            if (res.status === 501) return; // backbone disabled — skip silently
+            throw new Error(`HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        const ifaces = data.interfaces || {};
+        // Filter to active only (installed + enabled + online). The Guild
+        // itself is always active when this page is loaded; skip it here
+        // since it's the thing rendering the UI.
+        const active = {};
+        const keys = [];
+        for (const [k, v] of Object.entries(ifaces)) {
+            if (k === 'guild') continue;
+            if (v.installed && v.enabled && v.online) {
+                active[k] = v;
+                keys.push(k);
+            }
+        }
+        window.activeInterfaces = active;
+        window.activeInterfacesKeys = keys;
+        renderActiveInterfaceChips();
+    } catch (e) {
+        // Silent — the feature is optional. Hide the strip.
+        window.activeInterfaces = {};
+        window.activeInterfacesKeys = [];
+        renderActiveInterfaceChips();
+    }
+}
+
+function renderActiveInterfaceChips() {
+    const container = document.getElementById('active-interfaces-container');
+    const row = document.getElementById('active-interfaces-row');
+    if (!container || !row) return;
+    const keys = window.activeInterfacesKeys || [];
+    if (keys.length === 0) {
+        container.style.display = 'none';
+        row.innerHTML = '';
+        return;
+    }
+    container.style.display = '';
+    const html = keys.map(k => {
+        const v = window.activeInterfaces[k];
+        const label = v.ui_label || k;
+        const icon = v.icon || '🔌';
+        const tooltip = (v.capabilities || []).join(', ') || 'connected';
+        return `<span class="active-iface-chip" title="${tooltip}">${icon} ${label}</span>`;
+    }).join('');
+    row.innerHTML = html;
+}
+
+// Exposed so starter_chips.js and image-action renderers can filter by it
+window.isInterfaceActive = function(key) {
+    return !!(window.activeInterfaces && window.activeInterfaces[key]);
+};
+
 function addTypingIndicator() {
     const div = document.createElement('div');
     div.className = 'message ai-message';
@@ -579,6 +648,11 @@ async function initialize() {
     setInterval(checkComfyConnection, 5000);
     setInterval(checkSillyTavernConnection, 30000);
     setInterval(checkSignalBridgeConnection, 30000);
+    // Active-interfaces widget — polls /api/interfaces and renders chips
+    // for every frontend the registry reports as installed+enabled+online.
+    // Dynamic: if no interface qualifies, the whole strip stays hidden.
+    refreshActiveInterfaces();
+    setInterval(refreshActiveInterfaces, 10000);
 
     // Check if video models available (for Animate All button)
     checkVideoModelAvailable();
@@ -2389,9 +2463,17 @@ function addGenerationMessage(payload, mediaType, urls, opts = {}) {
     // generated image. Clicking either switches to another wizard
     // (with the image attached as context) or stays and fires a
     // canned message. Only rendered for image outputs; videos skip.
+    //
+    // Cross-interface chips (targetInterface set) are filtered here
+    // so a "Send to Resolve" chip never appears when Resolve isn't
+    // installed + online. No dead functions in the UI.
     let imageActionsHtml = '';
     if (mediaType === 'images' && urls.length > 0 && typeof window.getImageActionChips === 'function') {
-        const actions = window.getImageActionChips();
+        const actions = window.getImageActionChips().filter(a => {
+            if (!a.targetInterface) return true;  // guild-internal chips always show
+            return typeof window.isInterfaceActive === 'function'
+                && window.isInterfaceActive(a.targetInterface);
+        });
         const firstUrl = urls[0];
         imageActionsHtml = '<div class="image-action-chips" data-img-url="' + firstUrl + '">' +
             actions.map((a, i) =>
@@ -2439,7 +2521,13 @@ function addGenerationMessage(payload, mediaType, urls, opts = {}) {
                     return;
                 }
                 const idx = parseInt(btn.dataset.idx, 10);
-                const actions = window.getImageActionChips();
+                // Same filter as the renderer so indices line up with
+                // the chips that were actually displayed
+                const actions = window.getImageActionChips().filter(a => {
+                    if (!a.targetInterface) return true;
+                    return typeof window.isInterfaceActive === 'function'
+                        && window.isInterfaceActive(a.targetInterface);
+                });
                 const action = actions[idx];
                 if (!action) return;
                 _dispatchImageAction(action, imgUrl);
@@ -2481,6 +2569,24 @@ function _dispatchImageAction(action, imageUrl) {
         return;
     }
 
+    // Cross-interface chip: persist the image to the shared gallery
+    // (so the URL is stable across privacy cleanup) then fire a bus
+    // event the external plugin subscribes to. Plugin does whatever's
+    // appropriate on its side (import into media pool, open in editor).
+    // We only render a confirmation bubble in chat — no wizard switch.
+    if (action.targetInterface) {
+        const absUrl = (imageUrl && imageUrl.startsWith('http'))
+            ? imageUrl
+            : new URL(imageUrl, window.location.origin).href;
+        const kind = action.actionKind || `${action.targetInterface}.asset.send`;
+        addSystemMessage(`<em>${action.icon} ${action.message}</em>`);
+        // Fire-and-forget async: persist → emit. If the gallery is
+        // disabled or the source URL is unreachable, fall back to
+        // emitting with the raw URL.
+        _persistAndEmitAsset(absUrl, kind, action);
+        return;
+    }
+
     // Fire on current wizard — just send the canned message inline
     if (!action.targetWizard || action.targetWizard === activeCharacterId) {
         addUserMessage(action.label);
@@ -2497,13 +2603,83 @@ function _dispatchImageAction(action, imageUrl) {
     selectCharacter(action.targetWizard);
 }
 
+// Persist an image URL to the shared gallery, then emit a bus event
+// so the target interface receives both a stable hash URL AND the
+// original reference. External plugins can use whichever they prefer.
+async function _persistAndEmitAsset(imageUrl, kind, action) {
+    let assetHash = null;
+    let galleryUrl = null;
+    try {
+        // Pull the bytes (same-origin, should be fast)
+        const resp = await fetch(imageUrl);
+        if (resp.ok) {
+            const blob = await resp.blob();
+            const b64 = await _blobToBase64(blob);
+            const uploadResp = await fetch('/api/assets', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    origin: 'guild',
+                    kind: 'send_to_' + (action.targetInterface || 'other'),
+                    title: action.label || '',
+                    prompt: action.message || '',
+                    body_b64: b64,
+                    meta: {source_url: imageUrl},
+                }),
+            });
+            if (uploadResp.ok) {
+                const rec = await uploadResp.json();
+                assetHash = rec.hash;
+                galleryUrl = window.location.origin + '/api/assets/' + rec.hash;
+            }
+        }
+    } catch (e) { /* fall through — emit without gallery */ }
+
+    // Emit the event whether or not the upload succeeded
+    fetch('/api/events/emit', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            kind: kind,
+            origin: 'guild',
+            data: {
+                image_url: galleryUrl || imageUrl,  // prefer stable URL
+                source_url: imageUrl,
+                asset_hash: assetHash,
+                source: 'image-action-chip',
+                chip_label: action.label || '',
+            },
+        }),
+    }).catch(() => {/* silent */});
+}
+
+function _blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            // result looks like "data:image/png;base64,iVBORw0KGgo..."
+            const s = reader.result || '';
+            const comma = s.indexOf(',');
+            resolve(comma >= 0 ? s.substring(comma + 1) : s);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+}
+
 // Show the overflow menu for extra image actions.
 function _showImageActionOverflow(anchorBtn, imageUrl) {
     if (typeof window.getImageActionOverflow !== 'function') return;
     // Remove any existing overflow popover
     document.querySelectorAll('.image-action-overflow').forEach(el => el.remove());
 
-    const overflow = window.getImageActionOverflow();
+    // Same interface-gating as the primary chips: an overflow entry
+    // that targets an absent interface stays out of the menu
+    const overflow = window.getImageActionOverflow().filter(a => {
+        if (!a.targetInterface) return true;
+        return typeof window.isInterfaceActive === 'function'
+            && window.isInterfaceActive(a.targetInterface);
+    });
     const pop = document.createElement('div');
     pop.className = 'image-action-overflow';
     overflow.forEach((a, i) => {

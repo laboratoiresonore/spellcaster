@@ -709,6 +709,45 @@ textarea::placeholder { color: #555; }
 }
 .option-btn:disabled { cursor: default; }
 
+/* ── Active Interfaces strip (sidebar, below status dots) ── */
+#active-interfaces-container {
+    margin: 8px 0 4px;
+    padding: 8px 2px 0;
+    border-top: 1px dashed rgba(178, 70, 242, 0.18);
+}
+.active-interfaces-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: rgba(252, 211, 77, 0.65);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+}
+.active-interfaces-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+.active-iface-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: rgba(46, 213, 115, 0.12);
+    border: 1px solid rgba(46, 213, 115, 0.35);
+    color: #a8f0c0;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: default;
+}
+.active-iface-chip::before {
+    content: "●";
+    font-size: 8px;
+    color: #2ed573;
+    filter: drop-shadow(0 0 4px rgba(46, 213, 115, 0.7));
+}
+
 /* ── Starter Chips (shown below greeting when chat is empty) ── */
 .starter-chips {
     display: flex; flex-wrap: wrap; gap: 10px;
