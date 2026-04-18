@@ -1487,13 +1487,18 @@ class NodeFactory:
         }, node_id)
 
     def iclight_conditioning(self, positive_ref, negative_ref, vae_ref,
-                              foreground_ref, multiplier=0.18, node_id=None):
-        """ICLightConditioning."""
-        return self._add("ICLightConditioning", {
+                              foreground_ref, multiplier=0.18,
+                              opt_background_ref=None, node_id=None):
+        """ICLightConditioning. opt_background accepts a LATENT (e.g. encoded
+        normal map) for explicit surface geometry guidance during relighting."""
+        inputs = {
             "positive": positive_ref, "negative": negative_ref,
             "vae": vae_ref, "foreground": foreground_ref,
             "multiplier": multiplier,
-        }, node_id)
+        }
+        if opt_background_ref is not None:
+            inputs["opt_background"] = opt_background_ref
+        return self._add("ICLightConditioning", inputs, node_id)
 
     # ═══════════════════════════════════════════════════════════════════
     #  VIDEO (Wan, VHS, RIFE)
