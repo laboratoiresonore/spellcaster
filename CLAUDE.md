@@ -127,9 +127,43 @@ The premium theme is OPT-IN only. Default is UNBRANDED.
 - The installer checkbox defaults to OFF
 - Darktable theme install is gated by `spellcaster_config.json {"apply_theme": true}`
 
-### 11. Personal Data
+### 11. Personal Data & Leak Prevention
 
-NEVER commit real IP addresses, email addresses, or auth tokens. Use `192.168.x.x` in examples and tooltips. The ComfyUI server is on a remote LAN machine — never expose its actual IP in code.
+**NEVER commit any of these to ANY public repo:**
+- Real IP addresses (use `192.168.x.x` in examples/tooltips)
+- Usernames or local paths (`C:\Users\lmlgg\...` → use relative paths or `%APPDATA%`)
+- Email addresses
+- GitHub tokens (`ghp_...`)
+- API keys for any service
+- The user's actual ComfyUI server address
+
+**Before every commit, verify:**
+```bash
+# Check staged files for personal data
+git diff --cached | grep -iE "192\.168\.86\.|lmlgg|leguillaume|@gmail|ghp_"
+```
+
+**Files that must NEVER be tracked (gitignored):**
+- `config.json` — GIMP plugin config (has server URLs)
+- `guild_config.json` / `tavern/guild_config.json` — has local paths
+- `session_state.json` / `user_presets.json` — user session data
+- `.guild_state/` — generated avatar state
+- `.claude/` — Claude Code internal files
+- `nsfw/` — NSFW content (critical — PUBLIC repo)
+- `tavern/creations/` — generated images (could be NSFW)
+
+**If a file is already tracked that shouldn't be:**
+```bash
+git rm --cached path/to/file   # removes from tracking, keeps file locally
+```
+
+### 12. Git Commit Rules
+
+- NEVER use `git add -A` or `git add .` — always add specific files by name
+- NEVER use `git add -f` on gitignored files (especially nsfw/)
+- Before pushing, check for accidentally staged personal data
+- Use descriptive commit messages that explain WHY, not just WHAT
+- Always include `Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>`
 
 ## File Structure Quick Reference
 
