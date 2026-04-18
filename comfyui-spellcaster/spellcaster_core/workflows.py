@@ -1964,8 +1964,12 @@ def build_iclight(image_filename, ckpt_name, prompt, negative, seed,
     latent_id = nf.vae_encode([img_id, 0], vae_ref, node_id="10")
 
     # Load and apply IC-Light UNET
+    # FBC model required when using opt_background (normal map / background latent)
+    # FC model for foreground-only relighting (no background guidance)
+    iclight_model = ("SD-1.5\\iclight_sd15_fbc.safetensors" if normal_map_filename
+                     else "SD-1.5\\iclight_sd15_fc.safetensors")
     iclight_id = nf.load_and_apply_iclight_unet(
-        model_ref, "SD-1.5\\iclight_sd15_fc.safetensors", node_id="3",
+        model_ref, iclight_model, node_id="3",
     )
 
     # Text encoding
