@@ -2771,13 +2771,16 @@ function GuildSidebar({ isOpen, onToggle, comfyUrl, koboldUrl: initialKoboldUrl 
     })();
   }, []);
 
-  // Check LLM on mount
+  // Check LLM on mount — probe both Ollama (/api/tags) and KoboldCpp (/api/v1/model)
   useEffect(() => {
     (async () => {
-      try {
-        const res = await fetch(`${koboldUrl}/api/v1/model`);
-        setLlmConnected(res.ok);
-      } catch { setLlmConnected(false); }
+      for (const path of ['/api/tags', '/api/v1/model']) {
+        try {
+          const res = await fetch(`${koboldUrl}${path}`, { signal: AbortSignal.timeout(5000) });
+          if (res.ok) { setLlmConnected(true); return; }
+        } catch { /* try next */ }
+      }
+      setLlmConnected(false);
     })();
   }, [koboldUrl]);
 
@@ -3085,6 +3088,7 @@ function SignalBridgeSettings() {
   }, []);
 
   const tabs = [
+    { id: "video", label: "Video", icon: <Icons.Play /> },
     { id: "workflows", label: "Workflows", icon: <Icons.Film /> },
     { id: "scaffolds", label: "Scaffolds", icon: <Icons.Wand /> },
     { id: "integrations", label: "Integrations", icon: <Icons.Compass /> },
@@ -3210,6 +3214,14 @@ function SignalBridgeSettings() {
 
       {/* Content */}
       <div className="max-w-6xl mx-auto px-6 py-6">
+        {/* ── Video Tab ── */}
+        {activeTab === "video" && (
+          typeof VideoPanel !== 'undefined'
+            ? React.createElement(VideoPanel)
+            : <div className="text-center py-12 text-slate-400 text-sm">Video panel loading...</div>
+        )}
+
+
         {/* ── Workflows Tab ── */}
         {activeTab === "workflows" && (
           <WorkflowBrowser comfyuiUrl={config.comfyui_url} onCreateScaffold={(wf) => {

@@ -40,6 +40,7 @@ UNET_ARCH_RULES = [
     ("klein",     "flux2klein"),
     ("kontext",   "flux_kontext"),
     ("kaleidoscope", "flux2klein"),  # chroma2_kaleidoscope is a Klein 4B finetune
+    ("chromaxl",  "sdxl"),          # Zavy Chroma XL and similar — SDXL finetunes with "chroma" in name
     ("chroma",    "chroma"),        # Chroma v1/v2 — single CLIPLoader type="chroma"
     ("flux",      "flux1dev"),
     ("wan",       "wan"),
@@ -73,6 +74,7 @@ CKPT_ARCH_RULES = [
     ("hunyuan_dit", "hunyuan_dit"),
     ("hunyuandit",  "hunyuan_dit"),
     ("kaleidoscope", "flux2klein"),     # chroma2_kaleidoscope is a Klein 4B finetune
+    ("chromaxl",    "sdxl"),           # Zavy Chroma XL and similar — SDXL finetunes with "chroma" in name
     ("chroma",      "chroma"),         # Chroma v1/v2 — single CLIPLoader type="chroma"
     ("sdxl",        "sdxl"),
     ("xl",          "sdxl"),
@@ -97,7 +99,8 @@ BEST_MODEL_PRIORITY = [
     ("unet",  lambda ml: "pixart" in ml,                "pixart"),
     ("unet",  lambda ml: "auraflow" in ml or "aura_flow" in ml, "auraflow"),
     ("ckpt",  lambda ml: "kaleidoscope" in ml,           "flux2klein"),
-    ("ckpt",  lambda ml: "chroma" in ml and "kaleidoscope" not in ml, "chroma"),
+    ("ckpt",  lambda ml: "chromaxl" in ml,               "sdxl"),   # SDXL finetunes with "chroma" in name
+    ("ckpt",  lambda ml: "chroma" in ml and "kaleidoscope" not in ml and "xl" not in ml, "chroma"),
     ("ckpt",  lambda ml: "sd3.5" in ml and "turbo" not in ml, "sd3"),
     ("ckpt",  lambda ml: "playground" in ml,            "playground"),
     ("ckpt",  lambda ml: "kolors" in ml,                "kolors"),

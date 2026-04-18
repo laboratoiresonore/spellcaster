@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spellcaster — Setup</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a0b2e 0%, #2d1b4e 50%, #1a0b2e 100%);
+      color: #eee;
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 2.5em;
+      margin-bottom: 10px;
+      background: linear-gradient(90deg, #b18aff, #ffb18a);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .subtitle { color: #a8a0c0; margin-bottom: 30px; font-size: 1.1em; }
+    .card {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(177, 138, 255, 0.2);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+    .card h2 { color: #b18aff; margin-bottom: 12px; }
+    .status { display: flex; align-items: center; gap: 12px; margin: 8px 0; }
+    .dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: #555;
+    }
+    .dot.ok { background: #7cff7c; box-shadow: 0 0 8px #7cff7c; }
+    .dot.warn { background: #ffcc7c; }
+    .dot.err { background: #ff7c7c; }
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .feature {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .feature:hover {
+      border-color: #b18aff;
+      transform: translateY(-2px);
+    }
+    .feature.installed {
+      border-color: #7cff7c;
+      background: rgba(124, 255, 124, 0.08);
+    }
+    .feature.selected {
+      border-color: #ffb18a;
+      background: rgba(255, 177, 138, 0.12);
+    }
+    .feature-label { font-weight: bold; margin-bottom: 4px; }
+    .feature-desc { font-size: 0.85em; color: #aaa; }
+    .feature-vram { font-size: 0.8em; color: #ffb18a; margin-top: 6px; }
+    .btn {
+      background: linear-gradient(90deg, #b18aff, #8a5aff);
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 1em;
+      font-weight: bold;
+      cursor: pointer;
+      margin-right: 12px;
+      transition: all 0.2s;
+    }
+    .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(177, 138, 255, 0.4); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+    .btn.secondary {
+      background: rgba(255, 255, 255, 0.1);
+    }
+    .chat-intro {
+      font-size: 1.1em;
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+    .loading { color: #ffcc7c; font-style: italic; }
+    code {
+      background: rgba(0,0,0,0.4);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.9em;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Welcome to Spellcaster</h1>
+    <p class="subtitle">The Wizard Guild will chat you through the rest of the setup.</p>
+
+    <div class="card">
+      <h2>Bootstrap Status</h2>
+      <div id="status-list">
+        <div class="status"><span class="dot"></span> <span>Checking...</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="chat-intro">
+        You've got the minimum running: <strong>the Wizard Guild</strong> and a
+        <strong>local LLM</strong> sized for your GPU. The LLM is the brain —
+        it enhances prompts for every image tool and makes the wizard characters
+        actually converse. Everything else is optional.
+      </div>
+      <p><strong>Pick what else you want:</strong></p>
+      <div class="feature-grid" id="feature-grid">
+        <p class="loading">Loading features…</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Plugins</h2>
+      <p>Install the host-app integrations. These add 69 AI tools directly into your editor's menu.</p>
+      <div class="feature-grid" id="plugin-grid">
+        <div class="feature" data-plugin="gimp">
+          <div class="feature-label">GIMP 3</div>
+          <div class="feature-desc">The main Spellcaster plugin. All 69 tools under Filters → Spellcaster.</div>
+        </div>
+        <div class="feature" data-plugin="darktable">
+          <div class="feature-label">Darktable</div>
+          <div class="feature-desc">Lua script for AI tools inside Darktable's workflow.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Finish Setup</h2>
+      <p>When you're done, the Guild switches to normal mode (chat UI with all your wizards).</p>
+      <div style="margin-top: 16px;">
+        <button class="btn" id="finish-btn">Finish Setup</button>
+        <button class="btn secondary" id="skip-btn">Skip — I'll configure later</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const FEATURE_KEYS = new Set();
+    const PLUGIN_KEYS = new Set();
+
+    async function loadState() {
+      const res = await fetch('/api/setup/state');
+      const s = await res.json();
+      renderStatus(s);
+      renderFeatures(s.features || [], s.features_installed || []);
+      highlightPlugins(s.plugins_installed || []);
+    }
+
+    function renderStatus(s) {
+      const el = document.getElementById('status-list');
+      const rows = [
+        { ok: s.bootstrap_complete, label: 'Guild bootstrap' },
+        { ok: s.comfyui_reachable, label: `ComfyUI server (${s.comfyui_url})` },
+        { ok: s.llm_available, label: 'Local LLM (prompt enhancement + chat)' },
+      ];
+      el.innerHTML = rows.map(r =>
+        `<div class="status"><span class="dot ${r.ok ? 'ok' : 'warn'}"></span>${r.label}</div>`
+      ).join('');
+    }
+
+    function renderFeatures(features, installed) {
+      const el = document.getElementById('feature-grid');
+      if (!features.length) {
+        el.innerHTML = '<p>No additional features available.</p>';
+        return;
+      }
+      el.innerHTML = features.map(f => {
+        const isInstalled = installed.includes(f.key);
+        const cls = isInstalled ? 'feature installed' : 'feature';
+        const vram = f.vram_min_gb ? `<div class="feature-vram">Min ${f.vram_min_gb} GB VRAM</div>` : '';
+        return `
+          <div class="${cls}" data-feature="${f.key}">
+            <div class="feature-label">${f.label}</div>
+            <div class="feature-desc">${f.description || ''}</div>
+            ${vram}
+          </div>
+        `;
+      }).join('');
+      el.querySelectorAll('.feature').forEach(div => {
+        div.addEventListener('click', () => toggleFeature(div));
+      });
+    }
+
+    function highlightPlugins(installed) {
+      document.querySelectorAll('[data-plugin]').forEach(div => {
+        const key = div.dataset.plugin;
+        if (installed.includes(key)) div.classList.add('installed');
+        div.addEventListener('click', () => togglePlugin(div));
+      });
+    }
+
+    function toggleFeature(div) {
+      if (div.classList.contains('installed')) return;  // already installed
+      const key = div.dataset.feature;
+      if (FEATURE_KEYS.has(key)) {
+        FEATURE_KEYS.delete(key);
+        div.classList.remove('selected');
+      } else {
+        FEATURE_KEYS.add(key);
+        div.classList.add('selected');
+      }
+    }
+
+    function togglePlugin(div) {
+      if (div.classList.contains('installed')) return;
+      const key = div.dataset.plugin;
+      if (PLUGIN_KEYS.has(key)) {
+        PLUGIN_KEYS.delete(key);
+        div.classList.remove('selected');
+      } else {
+        PLUGIN_KEYS.add(key);
+        div.classList.add('selected');
+      }
+    }
+
+    async function installSelected() {
+      for (const feat of FEATURE_KEYS) {
+        await fetch('/api/setup/feature/install', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({feature: feat}),
+        });
+      }
+      for (const plugin of PLUGIN_KEYS) {
+        await fetch('/api/setup/plugin/install', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({plugin: plugin}),
+        });
+      }
+    }
+
+    document.getElementById('finish-btn').addEventListener('click', async () => {
+      await installSelected();
+      const res = await fetch('/api/setup/finish', {method: 'POST'});
+      const data = await res.json();
+      window.location.href = data.redirect || '/';
+    });
+
+    document.getElementById('skip-btn').addEventListener('click', async () => {
+      const res = await fetch('/api/setup/finish', {method: 'POST'});
+      const data = await res.json();
+      window.location.href = data.redirect || '/';
+    });
+
+    loadState();
+  </script>
+</body>
+</html>
