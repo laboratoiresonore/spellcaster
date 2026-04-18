@@ -89,7 +89,7 @@ Every tool starts with expert-tuned presets that just work. But as you get comfo
 
 ## See It in Action: Generate → Select → Map → Enhance
 
-A real pipeline — 4 clicks, zero configuration, every step is one menu item:
+A real pipeline — 4 clicks, zero configuration, every step is one menu item. We timed it. It takes longer to microwave a Hot Pocket. And unlike a Hot Pocket, the result doesn't make you question your life choices:
 
 <table>
 <tr>
@@ -103,6 +103,8 @@ A real pipeline — 4 clicks, zero configuration, every step is one menu item:
 ---
 
 ## 69 Finely Tuned AI Tools, Each One Click Away
+
+Yes, we counted. Yes, we noticed. No, we will not be adding a 70th.
 
 <table>
 <tr>
@@ -211,7 +213,9 @@ Too intimidated by GIMP? The [Wizard Guild](#under-the-hood) is a chat interface
 </details>
 
 <details>
-<summary><h3>Flux 2 Klein (9)</h3></summary>
+<summary><h3>Flux 2 Klein (9) — the fancy one</h3></summary>
+
+Klein is what happens when you tell a diffusion model "no, I said *good*." It's 4-20 steps where every other architecture needs 30. It doesn't use a sampler — it uses a *guider*. It doesn't have a CFG scale — it has a *TextRefBalance*. It is, objectively, better than you. Here are its tools:
 
 | Tool | What It Does |
 |---|---|
@@ -228,7 +232,7 @@ Too intimidated by GIMP? The [Wizard Guild](#under-the-hood) is a chat interface
 </details>
 
 <details>
-<summary><h3>Enhance (9)</h3></summary>
+<summary><h3>Enhance (9) — because your photo deserves better than what your camera gave it</h3></summary>
 
 | Tool | What It Does |
 |---|---|
@@ -245,7 +249,9 @@ Too intimidated by GIMP? The [Wizard Guild](#under-the-hood) is a chat interface
 </details>
 
 <details>
-<summary><h3>Face (7)</h3></summary>
+<summary><h3>Face (7) — the identity crisis suite</h3></summary>
+
+Seven different ways to put your face where it doesn't belong. We built them for "creative portrait work." You will use them to put your boss's face on a medieval knight. We know. It's fine. We've made our peace with it.
 
 | Tool | What It Does |
 |---|---|
@@ -260,7 +266,7 @@ Too intimidated by GIMP? The [Wizard Guild](#under-the-hood) is a chat interface
 </details>
 
 <details>
-<summary><h3>Style (4) &bull; Select (3) &bull; Video (7)</h3></summary>
+<summary><h3>Style (4) &bull; Select (3) &bull; Video (7) — the "wait, it can do THAT?" section</h3></summary>
 
 **Style:**
 
@@ -294,9 +300,9 @@ Too intimidated by GIMP? The [Wizard Guild](#under-the-hood) is a chat interface
 </details>
 
 <details>
-<summary><h3>Studios (7) &bull; Quick (7) &bull; Tools (8)</h3></summary>
+<summary><h3>Studios (7) &bull; Quick (7) &bull; Tools (8) — for when you've gone full method actor</h3></summary>
 
-**Studios** — full character production pipeline:
+**Studios** — full character production pipeline. You're not "using an AI tool" anymore. You're *running a one-person visual effects studio from inside a free image editor.* Your parents still think you're "playing on the computer."
 
 | Tool | Pipeline step |
 |---|---|
@@ -332,6 +338,8 @@ Too intimidated by GIMP? The [Wizard Guild](#under-the-hood) is a chat interface
 
 ## Under the Hood
 
+This section is for people who read ingredients on cereal boxes. If you don't care how the sausage is made — and honestly, you shouldn't, it's horrifying in there — skip to the [FAQ](#faq).
+
 <details>
 <summary><strong>What makes it fast</strong></summary>
 
@@ -346,7 +354,7 @@ Too intimidated by GIMP? The [Wizard Guild](#under-the-hood) is a chat interface
 <details>
 <summary><strong>Calibration Wizard — optometrist for your GPU</strong></summary>
 
-First time using Spellcaster? The Calibration Wizard tests every installed model and tunes all settings to your taste — no technical knowledge required.
+First time using Spellcaster? The Calibration Wizard tests every installed model and tunes all settings to your taste — no technical knowledge required. It is, to our knowledge, the only software that treats your artistic preferences like a medical condition that needs diagnosing.
 
 1. **Model Taste Test** — generates the same scene with every installed model. You rate each one: Love / OK / Dislike.
 2. **Settings Calibration** — for your favorite models, shows A/B/C comparisons (CFG, steps, sampler). You pick the image you prefer. That's it.
@@ -361,7 +369,7 @@ Access: `Spellcaster > Tools > Calibration Wizard`
 <details>
 <summary><strong>The Wizard Guild (chat interface)</strong></summary>
 
-Don't want to learn GIMP? The Wizard Guild is a standalone web UI where AI wizard characters handle everything conversationally.
+Don't want to learn GIMP? Look, we get it. GIMP has 847 menu items and a learning curve that doubles as a cliff face. The Wizard Guild is a standalone web UI where AI wizard characters handle everything conversationally. It's like tech support, except the tech support is a wizard, and instead of telling you to restart your computer, it generates a photorealistic dragon.
 
 <img src="assets/wizardguild.png" alt="The Wizard Guild" width="80%"/>
 
@@ -374,18 +382,18 @@ Launch: `start_guild.bat` (Windows) or `python tavern/guild_launcher.py`
 </details>
 
 <details>
-<summary><strong>Video Shotboard</strong></summary>
+<summary><strong>Video Shotboard — you are now a film director, apparently</strong></summary>
 
-The Shotboard is a persistent video production system for multi-shot sequences. Each shot tracks its own motion trajectory, prompt, model, and status (draft → queued → running → ready). Shots link together for continuity — the last frame of shot 1 feeds into shot 2.
+The Shotboard is a persistent video production system for multi-shot sequences. At some point during development we stopped making a GIMP plugin and accidentally built a pre-production suite. We don't know when it happened. We're not apologizing. Each shot tracks its own motion trajectory, prompt, model, and status (draft → queued → running → ready). Shots link together for continuity — the last frame of shot 1 feeds into shot 2.
 
 Build a full storyboard in the Guild UI, queue all shots, and let them render overnight. The assembly pipeline stitches them together with frame interpolation (RIFE/GIMM-VFI) for smooth transitions.
 
 </details>
 
 <details>
-<summary><strong>SillyTavern integration — 13 AI wizard characters</strong></summary>
+<summary><strong>SillyTavern integration — 13 AI wizard characters who live in your group chat and won't shut up</strong></summary>
 
-Drop these characters into any SillyTavern group chat. They work silently in the background — generating scene backgrounds, character portraits, and dramatic illustrations as your story unfolds.
+Drop these characters into any SillyTavern group chat. They work silently in the background — generating scene backgrounds, character portraits, and dramatic illustrations as your story unfolds. Yes, we gave each one a name, a backstory, and a portrait. Yes, we are aware this is unhinged. Imaginus is our favorite and we will not be taking questions.
 
 <table>
 <tr>
@@ -419,7 +427,9 @@ Drop these characters into any SillyTavern group chat. They work silently in the
 </details>
 
 <details>
-<summary><strong>For developers</strong></summary>
+<summary><strong>For developers — abandon hope, all ye who peek behind the curtain</strong></summary>
+
+If you're reading this section voluntarily, you're either evaluating this for a pull request or you're the kind of person who reads disassembly for fun. Either way: welcome. You will find no clean abstractions here. Only 22,000 lines of Python that somehow work, a node factory that generates ComfyUI workflows like a possessed printer, and a boot shim so paranoid it has three backup plans for its backup plan. Godspeed.
 
 - **9 model architectures**: SD 1.5, SDXL, Illustrious/Pony, ZIT, Flux Dev, Flux 2 Klein (4B/9B), Flux Kontext, Chroma, LTX, Wan — each with full `ArchConfig` (loader, sampler, CFG, denoise, resolution, prompt style, LoRA prefixes, ControlNet support, turbo config)
 - **NodeFactory DSL** — every ComfyUI node type is a typed method call. No raw dicts.
@@ -441,6 +451,8 @@ Drop these characters into any SillyTavern group chat. They work silently in the
 <p align="center">You know I am, baby. Xoxo</p>
 
 ## FAQ
+
+The questions below are "frequently asked" in the sense that we asked them to ourselves in the shower and decided the answers were important enough to write down.
 
 <details>
 <summary><strong>What GPU do I need?</strong></summary>
@@ -475,7 +487,21 @@ Yes. `Filters > Spellcaster Tools > Workflow Library` runs any workflow JSON fro
 <details>
 <summary><strong>ComfyUI on another machine?</strong></summary>
 
-Yes. The Antenna Installer auto-detects ComfyUI servers on your network. Or set the URL in Settings.
+Yes. The Antenna Installer auto-detects ComfyUI servers on your network. Or set the URL in Settings. One of our beta testers runs ComfyUI on a gaming PC in their closet and generates images from a laptop on their couch. We have enabled laziness at an architectural level and we're proud of it.
+
+</details>
+
+<details>
+<summary><strong>Why "Spellcaster"?</strong></summary>
+
+Because every tool is a spell, every workflow is an incantation, your GPU is a familiar, and the entire project radiates the energy of someone who played too much D&D and then learned Python. Also "ComfyUI-GIMP-Middleware-With-69-Tools-And-A-Chat-UI-Full-Of-Wizards" didn't fit in the GitHub repo name.
+
+</details>
+
+<details>
+<summary><strong>Is this legal?</strong></summary>
+
+The software? GPL-2.0, as open as it gets. The models? Trained on data that philosophers and lawyers will argue about for the next fifty years. The face swap feature? Legal but ethically "please don't be weird about it." The fact that we gave 13 wizard characters individual personalities and backstories? Not illegal, but our therapist has opinions.
 
 </details>
 
@@ -555,4 +581,16 @@ Spellcaster doesn't reinvent the wheel — it duct-tapes together the best wheel
 
 **Vibe coding assistant:** [Claude](https://claude.ai/) by Anthropic — wrote most of this while being yelled at
 
+**Moral support:** r/GIMP — for keeping us humble, grounded, and deeply motivated by spite
+
 </details>
+
+---
+
+<p align="center">
+  <sub>
+    Made with unhealthy amounts of coffee, mass delusion, and a GPU that sounds like a jet engine.<br/>
+    If you've read this far, you're either installing it or writing a hate comment. Either way, we appreciate the engagement.<br/><br/>
+    <strong>Star the repo if you like it. Fork it if you hate it. Ignore it if you're u/Ill_Morning_4282.</strong>
+  </sub>
+</p>
