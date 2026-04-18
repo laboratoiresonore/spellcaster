@@ -30,7 +30,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from .. import __version__
+from .. import __version__, heartbeat
 
 
 # Epoch when the agent started, set lazily on first call. Accurate
@@ -130,6 +130,7 @@ def status(ctx: dict[str, Any]) -> tuple[int, dict]:
         "services_declared": services_declared,
         "services_detail": services_detail,
         "rate_limit_rpm": cfg.get("rate_limit_rpm", 30),
+        "heartbeat": heartbeat.current_state(),
         # Paths are returned as basenames only — full paths leak the user's
         # home dir path which attackers could use to guess usernames.
         "token_file": Path(os.path.expanduser(cfg["token_path"])).name,

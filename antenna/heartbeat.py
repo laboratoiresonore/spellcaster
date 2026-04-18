@@ -222,6 +222,24 @@ class _HeartbeatThread(threading.Thread):
 _THREAD: _HeartbeatThread | None = None
 
 
+def current_state() -> dict[str, Any]:
+    """Return a snapshot of heartbeat state for /status.
+
+    Lets operators verify from the antenna's /status whether heartbeats
+    are flowing — useful when debugging "remote service doesn't appear
+    in the Guild sidebar" (is the antenna trying? is the hub reachable?).
+    """
+    if _THREAD is None:
+        return {"enabled": False, "hub_url": None}
+    return {
+        "enabled": True,
+        "hub_url": _THREAD.hub_url,
+        "consecutive_failures": _THREAD._consecutive_failures,
+        "last_cycle_ok": _THREAD._consecutive_failures == 0,
+        "interval_seconds": HEARTBEAT_INTERVAL,
+    }
+
+
 def start(cfg: dict[str, Any]) -> None:
     """Start the heartbeat thread if cfg['hub_url'] is set. Idempotent."""
     global _THREAD
