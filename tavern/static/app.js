@@ -60,7 +60,19 @@ let koboldUrl = localStorage.getItem('kobold_url') || 'http://127.0.0.1:5001';
 let comfyUrl = localStorage.getItem('comfy_url') || 'http://127.0.0.1:8188';
 let stUrl = localStorage.getItem('sillytavern_url') || 'http://127.0.0.1:8000';
 let bridgeUrl = localStorage.getItem('signal_bridge_url') || 'http://127.0.0.1:8765';
-let llmMode = 'local';  // 'local' (KoboldAI) or 'horde' (AI Horde)
+let llmMode = 'local';  // 'local' (Ollama/KoboldAI) or 'horde' (AI Horde)
+
+// Probe a local LLM server for liveness. Works for Ollama (/api/tags)
+// OR KoboldCpp (/api/v1/model). Returns true if either responds.
+async function probeLlm(url) {
+    for (const path of ['/api/tags', '/api/v1/model']) {
+        try {
+            const r = await fetch(`${url}${path}`, { signal: AbortSignal.timeout(5000) });
+            if (r.ok) return true;
+        } catch (e) { /* try next */ }
+    }
+    return false;
+}
 
 let characters = [];
 let activeCharacterId = null;
@@ -1250,8 +1262,7 @@ async function checkLlmAndGenerateNames() {
             llmStatus.title = "\u26a0 ZERO PRIVACY — All text sent to volunteer workers";
             await generateNamesForCharacters();
         } else {
-            const testRes = await fetch(`${koboldUrl}/api/v1/model`);
-            if(testRes.ok) {
+            if (await probeLlm(koboldUrl)) {
                 llmDot.className = "dot green";
                 llmStatus.textContent = "LLM: Connected";
                 await generateNamesForCharacters();
@@ -1266,6 +1277,8 @@ async function checkLlmAndGenerateNames() {
 async function generateNamesForCharacters() {
     // If a character name is Unnamed Wizard, prompt the LLM to rename it
     // Studio characters already have proper names — skip them
+    // Track names already assigned so near-identical models don't collide
+    const takenNames = new Set(characters.filter(c => c.name && c.name !== "Unnamed Wizard").map(c => c.name.toLowerCase()));
     for(let i=0; i<characters.length; i++) {
         let char = characters[i];
         if(char.type === "studio" && !char.personality) {
@@ -1281,11 +1294,21 @@ async function generateNamesForCharacters() {
             saveIdentity(char);
         }
         if(char.name === "Unnamed Wizard") {
-            let context = `Context: We are naming magical avatars.\nCommand: Invent a single, very short, creative fantasy name (e.g. Zephyr) for a wizard specializing in: ${char.subtext}. Do NOT use titles like 'Master of'.\nName:`;
+            // First attempt — free-form generation
+            let avoidList = takenNames.size > 0 ? `\nAvoid these names (already taken): ${Array.from(takenNames).slice(0, 20).join(", ")}.` : "";
+            let context = `Context: We are naming magical avatars.\nCommand: Invent a single, very short, creative fantasy name (e.g. Zephyr) for a wizard specializing in: ${char.subtext}. Do NOT use titles like 'Master of'.${avoidList}\nName:`;
             try {
                 const data = await llmGenerate({ prompt: context, max_length: 15, temperature: 0.8, stop_sequence: ["\n", "."] });
                 let llmName = data.results[0].text.trim().replace(/["']/g, '');
-                if(llmName) char.name = llmName;
+                // Uniquify against taken names — append roman numeral if collision
+                if (llmName && takenNames.has(llmName.toLowerCase())) {
+                    const romans = ["II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
+                    for (const r of romans) {
+                        const candidate = `${llmName} ${r}`;
+                        if (!takenNames.has(candidate.toLowerCase())) { llmName = candidate; break; }
+                    }
+                }
+                if(llmName) { char.name = llmName; takenNames.add(llmName.toLowerCase()); }
                 saveIdentity(char);
                 renderSidebar(searchInput.value);
                 
@@ -2142,6 +2165,10 @@ async function selectCharacter(id) {
             chatHistory.push(rec);
             _replayChatRecord(rec);
         }
+        // If the only record is a greeting (no user interaction yet), show chips
+        if (history.length === 1 && history[0].role === 'assistant') {
+            renderStarterChips();
+        }
     } else {
         let intro;
         if (char.type === "studio") {
@@ -2151,10 +2178,70 @@ async function selectCharacter(id) {
         }
         chatHistory.push({ role: 'assistant', content: intro });
         addAIMessage(intro);
+        renderStarterChips();
+    }
+
+    // If a pending image is coming in from an "image action chip" on
+    // another wizard, drop an attachment bubble + canned message now.
+    if (window._pendingImageContext) {
+        const ctx = window._pendingImageContext;
+        window._pendingImageContext = null;
+        _renderPendingAttachment(ctx);
     }
 
     // GSAP: burst effect on avatar selection
     _avatarSelectBurst(activeAvatar);
+}
+
+// Render the starter chip strip below the current greeting.
+// Chips send a natural-English phrase to the LLM on click.
+function renderStarterChips() {
+    if (typeof window.getStarterChips !== 'function') return;
+    const chips = window.getStarterChips(activeCharacterId);
+    if (!chips || !chips.length) return;
+
+    // Kill any existing strip first (defensive)
+    const old = chatStream.querySelector('.starter-chips');
+    if (old) old.remove();
+
+    const strip = document.createElement('div');
+    strip.className = 'starter-chips';
+    chips.forEach(c => {
+        const btn = document.createElement('button');
+        btn.className = 'option-btn starter-chip';
+        btn.innerHTML = `<span class="chip-icon">${c.icon}</span><span class="chip-label">${c.label}</span>`;
+        btn.addEventListener('click', () => {
+            strip.remove();
+            addUserMessage(c.label);
+            askKobold(c.message);
+        });
+        strip.appendChild(btn);
+    });
+    chatStream.appendChild(strip);
+    chatStream.scrollTop = chatStream.scrollHeight;
+}
+
+// Called when the user clicked an image-action chip on a DIFFERENT wizard.
+// Renders an "attachment" bubble in the new wizard's chat and fires the
+// canned message to the LLM.
+function _renderPendingAttachment(ctx) {
+    const { imageUrl, message } = ctx;
+    // Show the image as an attachment bubble (user side)
+    const msg = document.createElement('div');
+    msg.className = 'message user-message';
+    msg.innerHTML = `
+        <div class="avatar-small">${USER_SPARKLE_SVG}</div>
+        <div class="bubble">
+            <p style="font-size:12px;opacity:.8;margin:0 0 6px;">📎 Working with this image:</p>
+            <img src="${imageUrl}" class="attachment-image" style="max-width:200px;border-radius:6px;display:block;">
+        </div>
+    `;
+    chatStream.appendChild(msg);
+    _persistChatRecord({ role: 'user', content: `[attached image: ${imageUrl}]`, ts: Date.now() / 1000 });
+
+    // Then send the canned LLM message
+    addUserMessage(message);
+    askKobold(`${message}\n\n[The user has attached this image: ${imageUrl}]`);
 }
 
 function _parseNumberedOptions(text) {
@@ -2231,6 +2318,9 @@ function addUserMessage(text, opts = {}) {
         <div class="avatar-small">${USER_SPARKLE_SVG}</div>
         <div class="bubble"><p>${text}</p></div>
     `;
+    // Starter chips are only for the cold-start. Any user message kills them.
+    const starter = chatStream.querySelector('.starter-chips');
+    if (starter) starter.remove();
     chatStream.appendChild(msg);
     chatStream.scrollTop = chatStream.scrollHeight;
     _messageEntrance(msg);
@@ -2295,12 +2385,31 @@ function addGenerationMessage(payload, mediaType, urls, opts = {}) {
         `;
     }
 
+    // Image action chips — universal next-step actions below every
+    // generated image. Clicking either switches to another wizard
+    // (with the image attached as context) or stays and fires a
+    // canned message. Only rendered for image outputs; videos skip.
+    let imageActionsHtml = '';
+    if (mediaType === 'images' && urls.length > 0 && typeof window.getImageActionChips === 'function') {
+        const actions = window.getImageActionChips();
+        const firstUrl = urls[0];
+        imageActionsHtml = '<div class="image-action-chips" data-img-url="' + firstUrl + '">' +
+            actions.map((a, i) =>
+                `<button class="option-btn image-action-chip" data-idx="${i}" title="${a.label}">` +
+                `<span class="chip-icon">${a.icon}</span><span class="chip-label">${a.label}</span></button>`
+            ).join('') +
+            `<button class="option-btn image-action-chip image-action-more" data-more="1" title="More actions">` +
+            `<span class="chip-icon">\u22ef</span><span class="chip-label">More</span></button>` +
+            '</div>';
+    }
+
     msg.innerHTML = `
         <div class="avatar-small comfyui-logo">${COMFYUI_LOGO_SVG}</div>
         <div class="bubble system-bubble">
             <p><strong>Spell Complete!</strong></p>
             ${mediaHtml}
             ${recastBtnHtml}
+            ${imageActionsHtml}
         </div>
     `;
 
@@ -2318,6 +2427,26 @@ function addGenerationMessage(payload, mediaType, urls, opts = {}) {
         });
     }
 
+    // Wire image action chips — switch wizard (if needed) + attach image + send canned message
+    const actionStrip = msg.querySelector('.image-action-chips');
+    if (actionStrip) {
+        const imgUrl = actionStrip.dataset.imgUrl;
+        actionStrip.querySelectorAll('.image-action-chip').forEach(btn => {
+            btn.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                if (btn.dataset.more === '1') {
+                    _showImageActionOverflow(btn, imgUrl);
+                    return;
+                }
+                const idx = parseInt(btn.dataset.idx, 10);
+                const actions = window.getImageActionChips();
+                const action = actions[idx];
+                if (!action) return;
+                _dispatchImageAction(action, imgUrl);
+            });
+        });
+    }
+
     chatStream.appendChild(msg);
     chatStream.scrollTop = chatStream.scrollHeight;
     _messageEntrance(msg);
@@ -2330,6 +2459,75 @@ function addGenerationMessage(payload, mediaType, urls, opts = {}) {
             ts: Date.now() / 1000,
         });
     }
+}
+
+// Dispatch an image-action chip click.
+// If the action targets another wizard, stash the image URL + message
+// in a global, switch to that wizard (which will render an attachment
+// bubble + fire the canned message via _renderPendingAttachment).
+// If targetWizard is null, fire the message on the current wizard.
+// Special case: message === "__DOWNLOAD__" triggers a download.
+function _dispatchImageAction(action, imageUrl) {
+    if (!action) return;
+    if (action.message === "__DOWNLOAD__") {
+        // Save-to-disk: open the image in a new tab with download hint
+        const a = document.createElement('a');
+        a.href = imageUrl;
+        a.download = imageUrl.split('/').pop().split('?')[0] || 'spellcaster_image.png';
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        return;
+    }
+
+    // Fire on current wizard — just send the canned message inline
+    if (!action.targetWizard || action.targetWizard === activeCharacterId) {
+        addUserMessage(action.label);
+        askKobold(`${action.message}\n\n[The user is referring to this image: ${imageUrl}]`);
+        return;
+    }
+
+    // Cross-wizard: stash context, switch, and let selectCharacter render
+    // the attachment bubble + fire the canned message once history loads.
+    window._pendingImageContext = {
+        imageUrl: imageUrl,
+        message: action.message,
+    };
+    selectCharacter(action.targetWizard);
+}
+
+// Show the overflow menu for extra image actions.
+function _showImageActionOverflow(anchorBtn, imageUrl) {
+    if (typeof window.getImageActionOverflow !== 'function') return;
+    // Remove any existing overflow popover
+    document.querySelectorAll('.image-action-overflow').forEach(el => el.remove());
+
+    const overflow = window.getImageActionOverflow();
+    const pop = document.createElement('div');
+    pop.className = 'image-action-overflow';
+    overflow.forEach((a, i) => {
+        const item = document.createElement('button');
+        item.className = 'option-btn image-action-chip image-action-overflow-item';
+        item.innerHTML = `<span class="chip-icon">${a.icon}</span><span class="chip-label">${a.label}</span>`;
+        item.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            pop.remove();
+            _dispatchImageAction(a, imageUrl);
+        });
+        pop.appendChild(item);
+    });
+    // Position below the "More" button
+    anchorBtn.parentElement.appendChild(pop);
+
+    // Dismiss on outside click
+    const dismiss = (ev) => {
+        if (!pop.contains(ev.target) && ev.target !== anchorBtn) {
+            pop.remove();
+            document.removeEventListener('click', dismiss, true);
+        }
+    };
+    setTimeout(() => document.addEventListener('click', dismiss, true), 0);
 }
 
 // Open the Archivist's recast prompt with an inline N-times batch form.
