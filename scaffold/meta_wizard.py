@@ -24,10 +24,6 @@ from typing import Any, Dict, List, Optional
 from .wizard import SpellcasterWizard, WizardSession
 from .workflow_wizard import WorkflowWizard, WorkflowSession
 from .introspector import NodeSpec
-try:
-    from .video_wizard import CinematographerWizard
-except ImportError:
-    CinematographerWizard = None
 
 
 # ── Intent categories ─────────────────────────────────────────────────
@@ -81,7 +77,7 @@ INTENTS = [
         "key": "video",
         "label": "Generate video (LTX2, WAN, animate from image)",
         "description": "Text-to-video, image-to-video, LTX 2.3, WAN 2.2, distilled fast mode",
-        "route": "video",
+        "route": "workflow",
         "workflow_hint": "video",
     },
     {
@@ -149,11 +145,9 @@ class MetaWizard:
         spellcaster_wizard: SpellcasterWizard,
         workflow_wizard: WorkflowWizard,
         nodes: Optional[Dict[str, NodeSpec]] = None,
-        video_wizard: Optional[Any] = None,
     ):
         self.spell = spellcaster_wizard
         self.wf = workflow_wizard
-        self.video = video_wizard  # CinematographerWizard (optional)
         self.nodes = nodes or {}
         self._sessions: Dict[str, MetaSession] = {}
 
@@ -202,9 +196,6 @@ class MetaWizard:
 
         if s.step == "chain_offer":
             return self._handle_chain(s, text)
-
-        if s.step == "video_choice":
-            return self._handle_video_choice(s, text)
 
         # Fallback
         s.reset()
@@ -306,27 +297,6 @@ class MetaWizard:
                 s.step = "sub_active"
                 return self.spell.handle(s.user_id, "menu")
 
-        elif intent["route"] == "video":
-            # Offer choice between single-render workflow and shotboard
-            if self.video is not None:
-                s.step = "video_choice"
-                return (
-                    "What kind of video session?\n\n"
-                    "1. Quick render (single video via ComfyUI workflow)\n"
-                    "2. Shotboard (multi-shot project via WanGP / LTX)\n"
-                )
-            # No video wizard available — fall through to workflow path
-            s.active_sub = "workflow"
-            s.step = "sub_active"
-            hint = intent.get("workflow_hint")
-            if hint:
-                reply = self.wf.handle(s.user_id, "menu")
-                search_reply = self.wf.handle(s.user_id, hint)
-                if "No match" not in search_reply and "No workflows" not in search_reply:
-                    return search_reply
-                return reply
-            return self.wf.handle(s.user_id, "menu")
-
         elif intent["route"] == "workflow":
             s.active_sub = "workflow"
             s.step = "sub_active"
@@ -420,19 +390,6 @@ class MetaWizard:
                 return reply + "\n\n" + self._chain_offer(s)
             return reply
 
-        elif s.active_sub == "video":
-            if self.video is None:
-                s.reset()
-                return self._main_menu(s.user_id)
-            reply = self.video.handle(s.user_id, text)
-            # Check if the video wizard flagged a render
-            pending = self.video.get_pending_render(s.user_id)
-            if pending:
-                # The VideoBridge will pick this up via handle_chat;
-                # here we just relay the wizard's reply.
-                pass
-            return reply
-
         return self._main_menu(s.user_id)
 
     # ------------------------------------------------------------------
@@ -479,34 +436,6 @@ class MetaWizard:
             return self._main_menu(s.user_id)
 
         return "Reply 1 (add node), 2 (execute), or 3 (start over)."
-
-    def _handle_video_choice(self, s: MetaSession, text: str) -> str:
-        """Handle the video sub-menu: quick render vs shotboard."""
-        low = text.lower().strip()
-
-        if low in ("1", "quick", "single", "workflow"):
-            # Fall through to the existing ComfyUI workflow path
-            s.active_sub = "workflow"
-            s.step = "sub_active"
-            hint = (s.selected_intent or {}).get("workflow_hint", "video")
-            reply = self.wf.handle(s.user_id, "menu")
-            search_reply = self.wf.handle(s.user_id, hint)
-            if "No match" not in search_reply and "No workflows" not in search_reply:
-                return search_reply
-            return reply
-
-        if low in ("2", "shotboard", "multi", "project", "shots"):
-            if self.video is None:
-                s.reset()
-                return ("Shotboard not available — video wizard module "
-                        "not loaded.\n\n" + self._main_menu(s.user_id))
-            s.active_sub = "video"
-            s.step = "sub_active"
-            return self.video.handle(s.user_id, "menu")
-
-        return ("Pick a number:\n\n"
-                "1. Quick render (single video via ComfyUI workflow)\n"
-                "2. Shotboard (multi-shot project via WanGP / LTX)\n")
 
     # ------------------------------------------------------------------
     # Help

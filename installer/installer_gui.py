@@ -137,8 +137,7 @@ def load_image_async(url, label, size=(100, 100)):
                 img = Image.open(io.BytesIO(r.content))
                 img.thumbnail(size)
                 ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=img.size)
-                try: label.after(0, lambda: label.configure(image=ctk_img))
-                except RuntimeError: pass  # widget destroyed or not on main thread
+                label.after(0, lambda: label.configure(image=ctk_img))
         except Exception:
             pass
     threading.Thread(target=worker, daemon=True).start()
@@ -1840,9 +1839,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                         def fetch_img(lbl, purl):
                             t_url = fetch_civitai_thumb(purl)
                             if t_url: load_image_async(t_url, lbl, size=(80,80))
-                            else:
-                                try: lbl.after(0, lambda: lbl.configure(text="[No Preview]"))
-                                except RuntimeError: pass  # widget destroyed or not on main thread
+                            else: lbl.after(0, lambda: lbl.configure(text="[No Preview]"))
                         threading.Thread(target=fetch_img, args=(thumb_label, page_url), daemon=True).start()
 
                     cb = ctk.CTkCheckBox(row, text=text, variable=var, width=500,

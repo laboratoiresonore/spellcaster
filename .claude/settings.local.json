@@ -52,7 +52,13 @@
       "Bash(python -c ' *)",
       "Bash(git pull *)",
       "Bash(git stash *)",
-      "Bash(python -c \"import py_compile as p; p.compile\\('plugins/gimp/comfyui-connector/_spellcaster_main.py', doraise=True\\); p.compile\\('plugins/gimp/comfyui-connector/spellcaster_core/workflows.py', doraise=True\\); p.compile\\('plugins/gimp/comfyui-connector/spellcaster_core/node_factory.py', doraise=True\\); print\\('ALL OK'\\)\")"
+      "Bash(python -c \"import py_compile as p; p.compile\\('plugins/gimp/comfyui-connector/_spellcaster_main.py', doraise=True\\); p.compile\\('plugins/gimp/comfyui-connector/spellcaster_core/workflows.py', doraise=True\\); p.compile\\('plugins/gimp/comfyui-connector/spellcaster_core/node_factory.py', doraise=True\\); print\\('ALL OK'\\)\")",
+      "Bash(cp comfyui-spellcaster/spellcaster_core/__TRACKED_VAR__ /c/Users/redacted/Documents/AI/Spellcaster/ComfyUI-Spellcaster/spellcaster_core/__TRACKED_VAR__)",
+      "Bash(cp comfyui-spellcaster/spellcaster_core/__TRACKED_VAR__ /c/Users/redacted/Documents/AI/Spellcaster/ComfyUI-Spellcaster-NSFW/spellcaster_core/__TRACKED_VAR__)",
+      "Read(//c/Users/redacted/Documents/AI/Spellcaster/spellcaster/=== TRACKED EXE/**)",
+      "Bash(xargs -0 grep -l \"192\\\\.168\\\\.86\\\\.\\\\\\(31\\\\|23\\\\|77\\\\|219\\\\\\)\\\\|redacted\\\\|@gmail\\\\|ghp_\")",
+      "Bash(grep -iE \"session_state|user_presets|\\\\.update$|\\\\.tmp$|\\\\.bak$\")",
+      "Bash(git rm *)"
     ],
     "additionalDirectories": [
       "\\tmp",

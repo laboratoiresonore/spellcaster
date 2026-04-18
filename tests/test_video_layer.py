@@ -44,6 +44,7 @@ def main() -> int:
             failures.append(label)
 
     print("Smoke test: Spellcaster video layer")
+
     print("-" * 50)
 
     from scaffold.shotboard import Shotboard, Shot, Trajectory
@@ -960,9 +961,9 @@ def main() -> int:
             assert "getTrajectories" in src
             assert "setTrajectories" in src
             # Verify the output shape matches what Trajectory.from_dict expects
-            assert '"label"' in src or "'label'" in src
-            assert '"points"' in src or "'points'" in src
-            assert '"colour"' in src or "'colour'" in src
+            assert "label:" in src or "label :" in src
+            assert "points:" in src or "points :" in src
+            assert "colour:" in src or "colour :" in src
 
         check("trajectory_canvas.js exists and has expected API",
               test_trajectory_canvas_js_exists)
@@ -1001,6 +1002,100 @@ def main() -> int:
 
         check("test_trajectory.html test page exists",
               test_trajectory_canvas_test_page_exists)
+
+
+        # ── Video Panel frontend tests ──────────────────────────
+        def test_video_panel_exists():
+            """video_panel.jsx exists and has expected structure."""
+            jsx = os.path.join(repo_root, "tavern", "static", "video_panel.jsx")
+            assert os.path.isfile(jsx), f"Missing {jsx}"
+            with open(jsx) as f:
+                src = f.read()
+            assert "window.VideoPanel = VideoPanel" in src, "Missing export"
+            for ep in ["/api/video/shots", "/api/video/presets",
+                       "/api/video/health", "/trajectories", "/render",
+                       "/reference", "/api/video/reorder"]:
+                assert ep in src, f"Missing endpoint ref: {ep}"
+            assert "TrajectoryCanvas" in src, "Missing trajectory integration"
+            assert "onDragStart" in src, "Missing drag-to-reorder"
+            assert "renderAll" in src, "Missing batch render"
+            assert "uploadReference" in src, "Missing reference upload"
+
+        check("video_panel.jsx exists with full API surface",
+              test_video_panel_exists)
+
+        def test_video_panel_balance():
+            """video_panel.jsx has balanced braces and parens."""
+            jsx = os.path.join(repo_root, "tavern", "static", "video_panel.jsx")
+            with open(jsx) as f:
+                src = f.read()
+            assert src.count("{") == src.count("}"), (
+                f"Unbalanced braces: {src.count(chr(123))} open vs {src.count(chr(125))} close")
+            assert src.count("(") == src.count(")"), (
+                f"Unbalanced parens: {src.count(chr(40))} open vs {src.count(chr(41))} close")
+
+        check("video_panel.jsx balanced braces/parens",
+              test_video_panel_balance)
+
+        def test_guild_html_script_order():
+            """guild.html loads scripts in correct dependency order."""
+            html_path = os.path.join(repo_root, "tavern", "static", "guild.html")
+            with open(html_path) as f:
+                html = f.read()
+            tc_pos = html.index("trajectory_canvas.js")
+            vp_pos = html.index("video_panel.jsx")
+            tw_pos = html.index("travelling_wizard.jsx")
+            assert tc_pos < vp_pos < tw_pos
+
+        check("guild.html script load order correct",
+              test_guild_html_script_order)
+
+        def test_travelling_wizard_video_tab():
+            """travelling_wizard.jsx has Video tab wired in."""
+            jsx = os.path.join(repo_root, "tavern", "static", "travelling_wizard.jsx")
+            with open(jsx) as f:
+                src = f.read()
+            assert '"video"' in src, "Missing video tab ID"
+            assert "VideoPanel" in src, "Missing VideoPanel reference"
+
+        check("travelling_wizard.jsx has Video tab",
+              test_travelling_wizard_video_tab)
+
+        def test_server_video_endpoints():
+            """server.py has video file serving + all endpoints."""
+            srv = os.path.join(repo_root, "tavern", "server.py")
+            with open(srv) as f:
+                src = f.read()
+            assert "def _serve_file" in src, "Missing _serve_file"
+            assert "image_data" in src, "Missing base64 upload"
+            for ep in ["/api/video/shots", "/api/video/reorder",
+                       "/api/video/chat"]:
+                assert ep in src, f"Missing endpoint: {ep}"
+
+        check("server.py has video file serving + all endpoints",
+              test_server_video_endpoints)
+
+
+        def test_video_chat_js_exists():
+            """video_chat.js exists with expected structure."""
+            js = os.path.join(repo_root, "tavern", "static", "video_chat.js")
+            assert os.path.isfile(js), f"Missing {js}"
+            with open(js) as f:
+                src = f.read()
+            assert "/api/video/chat" in src, "Missing chat endpoint"
+            assert "videoChatActive" in src, "Missing mode toggle state"
+            assert "video-chat-btn" in src, "Missing toggle button"
+            assert "Cinematographer" in src, "Missing mode label"
+            # Check index.html loads it
+            html = os.path.join(repo_root, "tavern", "static", "index.html")
+            with open(html) as f:
+                h = f.read()
+            assert "video_chat.js" in h, "video_chat.js not loaded in index.html"
+            assert h.index("app.js") < h.index("video_chat.js"), (
+                "video_chat.js must load AFTER app.js")
+
+        check("video_chat.js exists with chat integration",
+              test_video_chat_js_exists)
 
     print("-" * 50)
     if failures:
