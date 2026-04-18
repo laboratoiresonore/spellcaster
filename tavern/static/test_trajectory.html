@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trajectory Canvas — Test</title>
+  <style>
+    body { margin: 0; background: #0f172a; color: #fef3c7; font-family: sans-serif; }
+    #panel { max-width: 800px; margin: 20px auto; padding: 16px; }
+    h2 { margin-bottom: 12px; }
+    #output { margin-top: 12px; padding: 10px; background: #1e293b;
+              border-radius: 6px; font-family: monospace; font-size: 12px;
+              white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
+  </style>
+</head>
+<body>
+  <div id="panel">
+    <h2>Trajectory Drawing Test</h2>
+    <p style="margin-bottom:12px;color:#94a3b8;">
+      Draw motion paths on the image below. Click and drag to draw.
+      The Save button outputs JSON to the box below.
+    </p>
+    <div id="canvas-container"></div>
+    <div id="output">Trajectories will appear here after Save.</div>
+  </div>
+
+  <script src="/static/trajectory_canvas.js"></script>
+  <script>
+    // Create a 400x300 placeholder image (gradient) via canvas
+    const placeholder = document.createElement('canvas');
+    placeholder.width = 400;
+    placeholder.height = 300;
+    const pctx = placeholder.getContext('2d');
+    const grad = pctx.createLinearGradient(0, 0, 400, 300);
+    grad.addColorStop(0, '#1a1a2e');
+    grad.addColorStop(0.5, '#16213e');
+    grad.addColorStop(1, '#0f3460');
+    pctx.fillStyle = grad;
+    pctx.fillRect(0, 0, 400, 300);
+    pctx.fillStyle = '#e2e8f0';
+    pctx.font = '16px sans-serif';
+    pctx.textAlign = 'center';
+    pctx.fillText('Draw motion paths here', 200, 150);
+    pctx.fillText('(placeholder — replace with ref image)', 200, 175);
+
+    const tc = new TrajectoryCanvas({
+      container: document.getElementById('canvas-container'),
+      imageUrl: placeholder.toDataURL(),
+      onSave: (trajs) => {
+        document.getElementById('output').textContent =
+          JSON.stringify(trajs, null, 2);
+      },
+    });
+  </script>
+</body>
+</html>

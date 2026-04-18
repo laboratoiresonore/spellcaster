@@ -1621,7 +1621,7 @@ def step_detect_llm_server(args, server_url: str = "",
       2. External LLM server (KoboldCpp / Ollama / OpenAI-compatible)
     """
     print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
-    print(f"{C_BOLD}  LLM (Prompt Enhancement & Wizard Guild){C_RESET}")
+    print(f"{C_BOLD}  Local LLM — the brain that runs everything{C_RESET}")
     print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
 
     # Check if ComfyUI already has native LLM nodes
@@ -1629,14 +1629,61 @@ def step_detect_llm_server(args, server_url: str = "",
     if "AILab_QwenVL_GGUF_PromptEnhancer" in available:
         print(f"  {C_GREEN}✓ ComfyUI-native LLM detected on server{C_RESET}")
         print(f"  {C_DIM}  Node: AILab_QwenVL_GGUF_PromptEnhancer{C_RESET}")
-        print(f"  {C_DIM}  No separate LLM server needed — ComfyUI manages VRAM automatically.{C_RESET}")
-        print(f"  {C_DIM}  Select the 'AI Prompt Enhancement' feature to install the GGUF model.{C_RESET}\n")
+        print(f"  {C_DIM}  Prompt enhancement will auto-activate across every tool.{C_RESET}\n")
         return ""  # No external LLM needed
 
-    print(f"  Spellcaster can enhance prompts using a local LLM.")
-    print(f"  {C_GREEN}Recommended:{C_RESET} Select the 'AI Prompt Enhancement' feature")
-    print(f"  to install ComfyUI-native LLM nodes (no separate server needed).\n")
-    print(f"  {C_DIM}Alternative: use an external LLM server (KoboldCpp, Ollama, etc.){C_RESET}\n")
+    # ── No LLM detected → make the case for installing one ────────────────
+    server_vram = (server_info or {}).get('server_vram_gb', 0.0)
+    local_vram_gb = getattr(args, '_vram_mb', 0) / 1024
+    picked_tier = pick_llm_tier(server_vram, getattr(args, '_vram_mb', 0))
+
+    # Rough model spec per tier for the pitch
+    tier_spec = {
+        "low":    ("Qwen2.5 3B Q4",  "2 GB",   "~1.5s"),
+        "medium": ("Qwen3 4B Q4",    "2.6 GB", "~2s"),
+        "high":   ("Qwen3 8B Q5",    "5.8 GB", "~3s"),
+        "ultra":  ("Qwen3 14B Q5",   "10 GB",  "~5s"),
+    }
+    model_name, dl_size, latency = tier_spec.get(picked_tier, tier_spec["medium"])
+
+    print(f"  {C_YELLOW}No local LLM detected on your ComfyUI server.{C_RESET}\n")
+    print(f"  {C_BOLD}Why you want one (seriously, install this):{C_RESET}\n")
+    print(f"  {C_GREEN}1. Prompt enhancement on EVERY tool, not just chat.{C_RESET}")
+    print(f"     Type \"a cat.\" The LLM rewrites it for the active model:")
+    print(f"       • SDXL  → booru tags: \"1girl, cat ears, detailed, masterpiece...\"")
+    print(f"       • Flux  → natural language paragraph with scene details")
+    print(f"       • Klein → concise bulleted description")
+    print(f"     Every one of the 69 tools gets better output automatically.\n")
+    print(f"  {C_GREEN}2. The Wizard Guild stops being a toy.{C_RESET}")
+    print(f"     Wizards can only converse, plan, and suggest tools when an LLM is present.")
+    print(f"     Without one: static menu. With one: actual AI assistants.\n")
+    print(f"  {C_GREEN}3. 100% local, private, free.{C_RESET}")
+    print(f"     Runs on your own GPU. No API keys. No subscriptions. No telemetry.\n")
+
+    print(f"  {C_BOLD}\"But won't it slow down image generation?\" — No.{C_RESET}\n")
+    print(f"  ComfyUI has a three-layer VRAM management system:\n")
+    print(f"  {C_CYAN}• AUTOLOAD{C_RESET}   The LLM only loads into VRAM when a prompt is submitted.")
+    print(f"               Idle = zero VRAM used. No \"always-on\" overhead.\n")
+    print(f"  {C_CYAN}• AUTOUNLOAD{C_RESET} Before the diffusion model loads, the LLM is evicted from VRAM.")
+    print(f"               Image generation gets 100% of the GPU. No competition.\n")
+    print(f"  {C_CYAN}• AUTORELOAD{C_RESET} Next prompt enhancement = LLM reloads automatically from disk cache")
+    print(f"               (NVMe SSD reloads a 4B model in ~0.8s). User notices nothing.\n")
+    print(f"  {C_DIM}  Net cost per generation: ~1-2 seconds of prompt enhancement,{C_RESET}")
+    print(f"  {C_DIM}  which is dwarfed by the 15-60s of actual image generation.{C_RESET}")
+    print(f"  {C_DIM}  And you get a dramatically better prompt going into the sampler.{C_RESET}\n")
+
+    print(f"  {C_BOLD}Recommended for your hardware:{C_RESET}")
+    print(f"    Model:    {C_GREEN}{model_name}{C_RESET}  (tier: {picked_tier})")
+    print(f"    Download: {dl_size}")
+    print(f"    Latency:  {latency} per prompt enhancement")
+    if server_vram > 0:
+        print(f"    Detected: {server_vram:.1f} GB VRAM on ComfyUI server")
+    elif local_vram_gb > 0:
+        print(f"    Detected: {local_vram_gb:.1f} GB VRAM locally")
+    print()
+    print(f"  {C_GREEN}→ Select the 'AI Prompt Enhancement' feature on the next screen{C_RESET}")
+    print(f"  {C_GREEN}  to install the node pack and the tier-matched GGUF model automatically.{C_RESET}\n")
+    print(f"  {C_DIM}Alternative: external LLM server (KoboldCpp, Ollama). Less integrated.{C_RESET}\n")
 
     if hasattr(args, 'llm_url') and args.llm_url:
         print(f"  {C_GREEN}Using specified LLM URL:{C_RESET} {args.llm_url}")
@@ -2917,6 +2964,187 @@ def _create_shortcut_unix(target_script: Path, shortcut_name: str,
         return desktop_path
 
 
+def step_install_mode_choice(args) -> str:
+    """Offer the user the guided (Guild-driven) vs expert (CLI) install path.
+
+    Returns: "guided" or "expert"
+    """
+    if getattr(args, 'mode', None) in ("guided", "expert"):
+        return args.mode
+    if args.yes:
+        return "expert"  # headless/CI defaults to the deterministic CLI path
+
+    print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
+    print(f"{C_BOLD}  How do you want to install?{C_RESET}")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
+    print(f"  Spellcaster can install itself two ways:\n")
+    print(f"  {C_GREEN}[1] Guided install with an AI wizard (recommended){C_RESET}")
+    print(f"      • Bootstraps the LLM first, launches the Wizard Guild in your browser")
+    print(f"      • The Guild chats you through feature selection and installs the rest")
+    print(f"      • Best for first-time users. Non-technical. Visual.\n")
+    print(f"  {C_CYAN}[2] Expert install (CLI){C_RESET}")
+    print(f"      • This terminal walks you through every step")
+    print(f"      • Best for experienced users, headless servers, or debugging\n")
+
+    idx = ask_choice(
+        "Pick an install mode:",
+        ["Guided (Wizard Guild)", "Expert (CLI)"],
+        default=0, auto_yes=args.yes,
+    )
+    return "guided" if idx == 0 else "expert"
+
+
+def step_bootstrap_guild(manifest: dict, paths: dict, server_url: str,
+                         server_info: dict, args) -> tuple[Path | None, Path | None]:
+    """Minimum install to launch the Wizard Guild.
+
+    Copies tavern/ and scaffold/, writes guild_config.json with setup_mode=true,
+    installs the QwenVL custom node pack + the VRAM-tier-appropriate LLM model,
+    then returns (guild_dir, launcher_path) so the caller can launch the Guild.
+
+    The Guild's admin endpoints (/api/setup/*) drive the rest of the install
+    conversationally. No other node packs, models, or plugins are installed here.
+    """
+    print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
+    print(f"{C_BOLD}  Bootstrapping Wizard Guild + LLM{C_RESET}")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
+    print(f"  {C_DIM}Installing the minimum needed to launch an AI wizard")
+    print(f"  in your browser. The Guild then chats you through the rest.{C_RESET}\n")
+
+    tavern_src = _find_tavern_src()
+    scaffold_src = _find_scaffold_src()
+    if not tavern_src:
+        print(f"  {C_RED}✗ Tavern source not found — aborting guided install{C_RESET}")
+        return (None, None)
+
+    dest = _get_tavern_install_dir()
+    scaffold_dest = dest.parent / "scaffold"
+
+    if args.dry_run:
+        print(f"  [dry-run] Would bootstrap Guild to: {dest}")
+        return (dest, dest / "guild_launcher.py")
+
+    # ── Copy tavern ───────────────────────────────────────────────────────
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / "static").mkdir(parents=True, exist_ok=True)
+    tavern_copied = 0
+    for item in tavern_src.rglob("*"):
+        if item.is_file() and "__pycache__" not in str(item) and "build" not in item.parts:
+            rel = item.relative_to(tavern_src)
+            target = dest / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, target)
+            tavern_copied += 1
+    print(f"  {C_GREEN}✓ Copied {tavern_copied} tavern files{C_RESET}")
+
+    # ── Copy scaffold ─────────────────────────────────────────────────────
+    if scaffold_src:
+        scaffold_dest.mkdir(parents=True, exist_ok=True)
+        sc_copied = 0
+        for item in scaffold_src.rglob("*"):
+            if item.is_file() and "__pycache__" not in str(item):
+                rel = item.relative_to(scaffold_src)
+                target = scaffold_dest / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(item, target)
+                sc_copied += 1
+        print(f"  {C_GREEN}✓ Copied {sc_copied} scaffold files{C_RESET}")
+
+    # ── Write guild_config.json with setup_mode flag ──────────────────────
+    guild_config = dest / "guild_config.json"
+    config_payload = {
+        "comfyui_url": server_url,
+        "kobold_url": "http://127.0.0.1:5001",
+        "prompt_enhance": True,
+        "auto_update": True,
+        "setup_mode": True,               # Guild shows /setup on boot
+        "setup_state": {
+            "bootstrap_complete": True,
+            "features_installed": ["prompt_enhance"],  # will be true after next step
+            "plugins_installed": [],
+            "install_mode": "guided",
+        },
+    }
+    guild_config.write_text(json.dumps(config_payload, indent=2), encoding="utf-8")
+    print(f"  {C_GREEN}✓ Wrote guild_config.json (setup_mode=true){C_RESET}")
+
+    # ── Install QwenVL custom node pack + LLM model ───────────────────────
+    print(f"\n  {C_CYAN}Installing LLM stack (ComfyUI-QwenVL-Mod + Qwen GGUF)…{C_RESET}")
+    if not args.skip_nodes:
+        step_install_nodes(manifest, {"prompt_enhance": True}, paths,
+                           args.dry_run, server_info)
+    if not args.skip_models:
+        step_install_models(manifest, {"prompt_enhance": True}, paths, args,
+                            server_info, getattr(args, '_vram_mb', 0))
+
+    # ── Set exec perms and create launcher ────────────────────────────────
+    if os.name != "nt":
+        for py in dest.glob("*.py"):
+            py.chmod(0o755)
+
+    launcher_path = dest / "guild_launcher.py"
+    if sys.platform == "win32":
+        bat = dest.parent / "wizard-guild.bat"
+        bat.write_text(f'@echo off\r\npython "{launcher_path}" --comfyui {server_url} %*\r\n',
+                       encoding="utf-8")
+    else:
+        sh = dest.parent / "wizard-guild"
+        sh.write_text(f'#!/bin/sh\npython3 "{launcher_path}" --comfyui {server_url} "$@"\n',
+                      encoding="utf-8")
+        sh.chmod(0o755)
+
+    print(f"\n  {C_GREEN}✓ Guild bootstrap complete.{C_RESET}")
+    return (dest, launcher_path)
+
+
+def step_launch_guild(launcher_path: Path, server_url: str, dry_run: bool = False) -> bool:
+    """Launch the Wizard Guild as a detached process and open the setup URL.
+
+    Returns True if launched successfully. The installer exits after this —
+    the Guild takes over via its /api/setup/* endpoints.
+    """
+    if dry_run:
+        print(f"  [dry-run] Would launch Guild: {launcher_path}")
+        return True
+
+    print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
+    print(f"{C_BOLD}  Launching the Wizard Guild{C_RESET}")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
+
+    try:
+        # Detached: Guild survives installer exit
+        if sys.platform == "win32":
+            DETACHED = 0x00000008  # DETACHED_PROCESS
+            CREATE_NEW_GROUP = 0x00000200
+            subprocess.Popen(
+                [sys.executable, str(launcher_path), "--comfyui", server_url,
+                 "--no-update"],
+                creationflags=DETACHED | CREATE_NEW_GROUP,
+                close_fds=True,
+            )
+        else:
+            subprocess.Popen(
+                [sys.executable, str(launcher_path), "--comfyui", server_url,
+                 "--no-update"],
+                start_new_session=True, close_fds=True,
+            )
+        print(f"  {C_GREEN}✓ Guild launched as background process{C_RESET}")
+        print(f"  {C_GREEN}✓ Open http://localhost:7777/setup in your browser{C_RESET}")
+        print(f"  {C_DIM}  The Guild will finish the install conversationally.{C_RESET}")
+        print(f"  {C_DIM}  This installer exits now. Your work continues there.{C_RESET}\n")
+        # Best-effort browser open
+        try:
+            import webbrowser
+            webbrowser.open("http://localhost:7777/setup")
+        except Exception:
+            pass
+        return True
+    except Exception as e:
+        print(f"  {C_RED}✗ Failed to launch Guild: {e}{C_RESET}")
+        print(f"  {C_YELLOW}  Launch manually: python {launcher_path} --comfyui {server_url}{C_RESET}")
+        return False
+
+
 def step_install_tavern(paths: dict, server_url: str, llm_url: str, selected: dict,
                         dry_run: bool = False, auto_yes: bool = False):
     """Deploy the Wizard Guild standalone interface.
@@ -3390,6 +3618,9 @@ def build_arg_parser():
                         help="Skip custom node installation")
     parser.add_argument("--llm-url", default="",
                         help="Local LLM server URL (KoboldCpp/Ollama). Empty = skip prompt enhancement")
+    parser.add_argument("--mode", choices=("guided", "expert"), default=None,
+                        help="Install mode: 'guided' hands off to the Wizard Guild, "
+                             "'expert' uses the CLI. Default: ask interactively.")
     parser.add_argument("--version", action="version",
                         version=f"Spellcaster Installer v{VERSION}")
     return parser
@@ -3420,6 +3651,18 @@ def main():
     paths = step_detect_paths(args)
     server_info = step_probe_server(server_url, args)
     llm_url = step_detect_llm_server(args, server_url, server_info)
+
+    # \u2500\u2500 Install mode routing: guided (Guild-driven) or expert (CLI) \u2500\u2500
+    mode = step_install_mode_choice(args)
+    if mode == "guided":
+        guild_dir, launcher = step_bootstrap_guild(manifest, paths, server_url,
+                                                    server_info, args)
+        if guild_dir and launcher:
+            _write_shared_settings(paths, server_url, llm_url, server_info, args.dry_run)
+            step_launch_guild(launcher, server_url, args.dry_run)
+            return  # Installer exits \u2014 Guild drives the rest
+        print(f"  {C_YELLOW}Guild bootstrap failed \u2014 falling back to expert CLI install.{C_RESET}")
+
     selected = step_select_features(manifest, paths, args, server_info)
 
     if not args.skip_nodes:

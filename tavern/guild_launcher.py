@@ -1842,6 +1842,19 @@ def main():
     server.PROMPT_ENHANCE = config.get("prompt_enhance", True)
     server.NSFW_MODE = bool(_GUILD_AUTH_TOKEN)
 
+    # ── Setup mode — drives /static/setup.html + /api/setup/* endpoints ──
+    server.SETUP_MODE = bool(config.get("setup_mode", False))
+    server.GUILD_CONFIG_PATH = _CONFIG_FILE
+    # Best-effort: locate installer/install.py so setup endpoints can shell to it
+    _guild_dir = os.path.dirname(os.path.abspath(__file__))
+    for candidate in (
+        os.path.join(_guild_dir, "..", "installer", "install.py"),
+        os.path.join(_guild_dir, "..", "..", "installer", "install.py"),
+    ):
+        if os.path.exists(candidate):
+            server.INSTALLER_PATH = os.path.abspath(candidate)
+            break
+
     # ── Runtime NSFW content injection ──────────────────────────────
     # When running from source with nsfw/.github_token present, the server
     # module's NSFW variables are still empty (not file-patched). Load them

@@ -5810,43 +5810,56 @@ def _cleanup_server_temps(server, results, cleanup_mode):
 def _run_comfyui_workflow(server, workflow, timeout=300):
     """Wait for ComfyUI queue to clear, then submit workflow and wait for results.
 
-    Respects ComfyUI's queue: waits until no other jobs are running or
-    pending before submitting. This prevents cutting in line ahead of
-    jobs from the ComfyUI UI or other clients.
+    Delegates to spellcaster_core.dispatch for unified LLM lifecycle
+    management (VRAM free before generation) and privacy cleanup.
 
-    Uses a global lock to serialize Spellcaster's own requests too.
+    GIMP-specific steps (queue wait, lock, upload flush, precache) run
+    around the dispatch call. If dispatch is unavailable, falls back to
+    the inline implementation.
     """
     global _workflow_queue_depth
     _workflow_queue_depth += 1
     try:
-        # Preflight: check node availability and apply automatic fallbacks
-        try:
-            from spellcaster_core.preflight import preflight_workflow
-            ok, workflow, report = preflight_workflow(workflow, server)
-            if report.get("substituted"):
-                for orig, desc in report["substituted"]:
-                    print(f"[Spellcaster Preflight] {orig} -> {desc}")
-            if not ok:
-                missing = report.get("missing", [])
-                raise RuntimeError(
-                    f"Missing ComfyUI nodes: {', '.join(missing)}. "
-                    f"Install the required custom nodes on your server.")
-        except ImportError:
-            pass
-
-        # Optimizer: VRAM check, resolution capping, auto-tuning
-        try:
-            from spellcaster_core.optimizer import optimize_workflow
-            workflow, opt_warnings = optimize_workflow(workflow, comfy_url=server)
-            for w in opt_warnings:
-                print(f"[Spellcaster Optimizer] {w}")
-        except ImportError:
-            pass
-
-        # Wait for ComfyUI's queue before acquiring the lock
+        # GIMP-specific: wait for ComfyUI queue + flush pending uploads
         _wait_for_comfy_queue_empty(server)
         with _workflow_lock:
             _flush_pending_uploads()
+
+        try:
+            from spellcaster_core.dispatch import dispatch_workflow
+            # GIMP passes privacy=False to dispatch because it needs to
+            # download outputs to local temp files BEFORE they get wiped.
+            # Privacy cleanup runs after _precache_results below.
+            result = dispatch_workflow(
+                server, workflow, timeout=timeout,
+                free_vram=True,
+                privacy=False,  # GIMP handles privacy after precache
+            )
+            images = result.outputs
+            for w in result.warnings:
+                print(f"[Spellcaster] {w}")
+        except ImportError:
+            # Fallback: inline implementation if dispatch not available
+            try:
+                from spellcaster_core.preflight import preflight_workflow
+                ok, workflow, report = preflight_workflow(workflow, server)
+                if report.get("substituted"):
+                    for orig, desc in report["substituted"]:
+                        print(f"[Spellcaster Preflight] {orig} -> {desc}")
+                if not ok:
+                    missing = report.get("missing", [])
+                    raise RuntimeError(
+                        f"Missing ComfyUI nodes: {', '.join(missing)}. "
+                        f"Install the required custom nodes on your server.")
+            except ImportError:
+                pass
+            try:
+                from spellcaster_core.optimizer import optimize_workflow
+                workflow, opt_warnings = optimize_workflow(workflow, comfy_url=server)
+                for w in opt_warnings:
+                    print(f"[Spellcaster Optimizer] {w}")
+            except ImportError:
+                pass
             result = _api_post_json(server, "/prompt", {
                 "prompt": workflow,
                 "extra_pnginfo": {"workflow": workflow},
@@ -5854,15 +5867,12 @@ def _run_comfyui_workflow(server, workflow, timeout=300):
             prompt_id = result.get("prompt_id")
             if not prompt_id:
                 raise RuntimeError(f"ComfyUI did not return a prompt_id: {result}")
-        # Poll for results outside the lock
-        images = _get_output_images(server, prompt_id, timeout)
-        # Pre-download all outputs to local temp files BEFORE cleanup.
-        # _repatriate_outputs overwrites server files with tiny PNGs,
-        # so any later re-download (e.g. _import_video_results) would
-        # get empty data. We cache each output as a temp file and
-        # replace the server reference with the local path.
+            images = _get_output_images(server, prompt_id, timeout)
+
+        # GIMP-specific: pre-download outputs to local temp files BEFORE
+        # privacy cleanup wipes them from the server
         _precache_results(server, images)
-        # Now safe to clean up the server
+        # Now safe to clean up server files
         try:
             _repatriate_outputs(server, images)
         except Exception:

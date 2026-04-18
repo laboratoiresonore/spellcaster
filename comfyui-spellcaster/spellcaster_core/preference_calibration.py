@@ -277,20 +277,43 @@ def build_comparison_set(model, parameter, values, prompt, neg_prompt, seed):
 def generate_and_download(server, workflow, timeout=120):
     """Submit workflow, wait for completion, download first output image.
 
+    Delegates to spellcaster_core.dispatch when available. Calibration
+    workflows skip free_vram and privacy (speed over cleanup).
+
     Returns PNG bytes on success, None on failure.
     """
+    try:
+        from .dispatch import dispatch_workflow
+        result = dispatch_workflow(
+            server, workflow, timeout=timeout,
+            free_vram=False,   # calibration — speed matters
+            privacy=False,     # calibration outputs are disposable
+        )
+        if not result.outputs:
+            return None
+        fn, sf, ft = result.outputs[0]
+        params = urllib.parse.urlencode({
+            "filename": fn, "subfolder": sf, "type": ft
+        })
+        with urllib.request.urlopen(
+                f"{server}/view?{params}", timeout=30) as r:
+            return r.read()
+    except ImportError:
+        pass  # dispatch not available — fall through
+    except Exception:
+        return None
+
+    # Fallback: inline implementation
     try:
         from .preflight import preflight_workflow
     except ImportError:
         from spellcaster_core.preflight import preflight_workflow
 
-    # Preflight (substitute missing nodes etc.)
     try:
         _ok, workflow, _ = preflight_workflow(workflow, server)
     except Exception:
         pass
 
-    # Submit
     body = json.dumps({"prompt": workflow}).encode()
     try:
         resp = json.loads(urllib.request.urlopen(
@@ -304,7 +327,6 @@ def generate_and_download(server, workflow, timeout=120):
     if not pid:
         return None
 
-    # Wait for completion and download first output image
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
@@ -312,11 +334,9 @@ def generate_and_download(server, workflow, timeout=120):
                 f"{server}/history/{pid}", timeout=5).read())
             if pid in h:
                 status = h[pid].get("status", {})
-                # Check for error
                 for msg in status.get("messages", []):
                     if msg[0] == "execution_error":
                         return None
-                # Look for output images
                 for out in h[pid].get("outputs", {}).values():
                     for img in out.get("images", []):
                         fn = img["filename"]

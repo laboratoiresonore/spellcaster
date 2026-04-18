@@ -232,16 +232,19 @@ textarea::placeholder { color: #555; }
     }
 
     async function checkLlm() {
-        try {
-            const res = await fetch(koboldUrl + '/api/v1/model', { signal: AbortSignal.timeout(5000) });
-            if (res.ok) {
-                llmDot.className = 'dot green';
-                llmStatus.textContent = 'LLM: Connected';
-            }
-        } catch(e) {
-            llmDot.className = 'dot red';
-            llmStatus.textContent = 'LLM: Disconnected';
+        // Probe Ollama (/api/tags) then KoboldCpp (/api/v1/model)
+        for (const path of ['/api/tags', '/api/v1/model']) {
+            try {
+                const res = await fetch(koboldUrl + path, { signal: AbortSignal.timeout(5000) });
+                if (res.ok) {
+                    llmDot.className = 'dot green';
+                    llmStatus.textContent = 'LLM: Connected';
+                    return;
+                }
+            } catch(e) { /* try next */ }
         }
+        llmDot.className = 'dot red';
+        llmStatus.textContent = 'LLM: Disconnected';
     }
 
     function saveIdentity(char) {
