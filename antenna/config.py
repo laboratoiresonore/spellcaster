@@ -63,6 +63,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # a module in antenna/services/<name>.py. "self" is always implicit
     # and handles self-update / status / token rotation.
     "services": ["comfyui"],
+    # URL of the Spellcaster hub (workstation running the Wizard Guild)
+    # that this antenna heartbeats to. Empty string → heartbeats disabled;
+    # the agent still serves /status etc. locally.
+    "hub_url": "",
     # Service-specific config lives under namespaced keys so multiple
     # services coexist cleanly in one config file.
     "comfyui_root": "auto",
