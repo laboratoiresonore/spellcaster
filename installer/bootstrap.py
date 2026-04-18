@@ -65,11 +65,13 @@ FETCH_FILES = [
 ]
 FETCH_TIMEOUT = 15  # per file
 
-# Small network banner so users understand the delay
+# Small network banner so users understand the delay.
+# NOTE: use explicit `+` between each piece — implicit adjacent-literal
+# concatenation combined with `* 60` would repeat the middle string 60 times.
 _BANNER = (
     "=" * 60 + "\n"
-    "  Spellcaster Installer — checking for latest version...\n"
-    "=" * 60
+    + "  Spellcaster Installer — checking for latest version...\n"
+    + "=" * 60
 )
 
 
