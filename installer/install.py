@@ -3856,6 +3856,37 @@ def main():
     step_install_tavern(paths, server_url, llm_url, selected, args.dry_run, args.yes)
     step_import_luts(paths, args)
     step_apply_theme(paths, args.dry_run, args.yes)
+
+    # ── Multi-machine: ask per service "local or remote?" then emit
+    # one antenna.bat/.sh per remote machine. Skipped in --yes mode
+    # (scripted installs aren't interactive so we can't ask). The user
+    # can re-run the installer later in interactive mode to add remotes.
+    if not getattr(args, 'yes', False) and not args.dry_run:
+        try:
+            from .antenna_setup import step_ask_remote_services, generate_antenna_files
+        except ImportError:
+            # Running as a top-level script (not a package) — fall back
+            from antenna_setup import step_ask_remote_services, generate_antenna_files  # type: ignore
+        try:
+            remote_plan = step_ask_remote_services(args)
+            if remote_plan.get("remotes"):
+                out_dir = Path(paths.get("comfyui") or SCRIPT_DIR).parent / "antennas"
+                generated = generate_antenna_files(remote_plan["remotes"], out_dir)
+                print()
+                print(f"  {C_GREEN}✓ Generated {len(generated)} antenna launcher(s) "
+                      f"in {out_dir}{C_RESET}")
+                for bat in generated:
+                    print(f"    {C_BOLD}{bat.name}{C_RESET}")
+                print(f"\n  {C_CYAN}Copy each .bat (or .sh on Linux/Mac) to its "
+                      f"matching remote machine and double-click.{C_RESET}")
+                print(f"  {C_DIM}Details in {out_dir / 'README.txt'}{C_RESET}")
+        except (KeyboardInterrupt, EOFError):
+            print(f"\n  {C_DIM}(skipped remote-services setup){C_RESET}")
+        except Exception as e:  # noqa: BLE001 — remote setup must never crash the install
+            print(f"\n  {C_YELLOW}⚠ Remote-services step failed: {e}{C_RESET}")
+            print(f"  {C_DIM}Your local install completed; you can re-run the "
+                  f"installer later to configure remotes.{C_RESET}")
+
     step_final_summary(manifest, selected, paths, server_url)
 
 
