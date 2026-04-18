@@ -1457,18 +1457,42 @@
         "ComfyUI-QwenVL-Mod"
       ],
       "models": {
-        "llm": [
-          {
+        "llm_tiers": {
+          "low": {
+            "path": "LLM/GGUF/Qwen/Qwen2.5-3B-Instruct-GGUF/qwen2.5-3b-instruct-q4_k_m.gguf",
+            "url": "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf",
+            "page_url": "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF",
+            "size_mb": 2000,
+            "optional": false,
+            "note": "Qwen2.5 3B Instruct (Q4) — minimal footprint, fast on 4-8 GB GPUs"
+          },
+          "medium": {
             "path": "LLM/GGUF/Qwen/Qwen3-4B-Instruct-GGUF/Qwen3-4B-Instruct-Q4_K_M.gguf",
             "url": "https://huggingface.co/Qwen/Qwen3-4B-Instruct-GGUF/resolve/main/qwen3-4b-instruct-q4_k_m.gguf",
             "page_url": "https://huggingface.co/Qwen/Qwen3-4B-Instruct-GGUF",
             "size_mb": 2600,
             "optional": false,
-            "note": "Qwen3 4B Instruct (Q4) — fast, small, excellent instruction following"
+            "note": "Qwen3 4B Instruct (Q4) — fast, small, excellent instruction following (default)"
+          },
+          "high": {
+            "path": "LLM/GGUF/Qwen/Qwen3-8B-Instruct-GGUF/Qwen3-8B-Instruct-Q5_K_M.gguf",
+            "url": "https://huggingface.co/Qwen/Qwen3-8B-Instruct-GGUF/resolve/main/qwen3-8b-instruct-q5_k_m.gguf",
+            "page_url": "https://huggingface.co/Qwen/Qwen3-8B-Instruct-GGUF",
+            "size_mb": 5800,
+            "optional": false,
+            "note": "Qwen3 8B Instruct (Q5) — noticeably better prompt rewrites, 12-20 GB GPUs"
+          },
+          "ultra": {
+            "path": "LLM/GGUF/Qwen/Qwen3-14B-Instruct-GGUF/Qwen3-14B-Instruct-Q5_K_M.gguf",
+            "url": "https://huggingface.co/Qwen/Qwen3-14B-Instruct-GGUF/resolve/main/qwen3-14b-instruct-q5_k_m.gguf",
+            "page_url": "https://huggingface.co/Qwen/Qwen3-14B-Instruct-GGUF",
+            "size_mb": 10300,
+            "optional": false,
+            "note": "Qwen3 14B Instruct (Q5) — highest prompt quality, 20+ GB GPUs"
           }
-        ]
+        }
       },
-      "note": "Installs the ComfyUI-QwenVL-Mod node pack and downloads a small Qwen3 4B GGUF model (~2.5 GB). The LLM runs inside ComfyUI and auto-unloads during image generation to free VRAM."
+      "note": "Installs the ComfyUI-QwenVL-Mod node pack and downloads a Qwen GGUF model sized to the ComfyUI server's VRAM tier (3B/4B/8B/14B). The LLM runs inside ComfyUI and auto-unloads during image generation to free VRAM."
     },
     "wizard_guild": {
       "label": "Wizard Guild (chat-based AI interface, no GIMP needed)",
