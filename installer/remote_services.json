@@ -1,0 +1,98 @@
+{
+  "$schema_version": 1,
+  "$description": "Dynamic registry of Spellcaster-compatible services. Fetched at runtime from https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main/installer/remote_services.json by both the installer and the antenna. Adding a new service requires no rebuild — edit this file + push.",
+  "services": [
+    {
+      "key": "comfyui",
+      "label": "ComfyUI",
+      "description": "AI image/video generation engine (the actual GPU workhorse)",
+      "default_port": 8188,
+      "detect_paths": [
+        "ComfyUI/main.py",
+        "ComfyUI_windows_portable/ComfyUI/main.py",
+        "comfy/ComfyUI/main.py"
+      ],
+      "detect_process": "main.py",
+      "probe_path": "/system_stats",
+      "managed_ops": ["install_node", "install_model", "list_models"]
+    },
+    {
+      "key": "kobold",
+      "label": "KoboldCpp",
+      "description": "Local LLM server for prompt enhancement and wizard chat",
+      "default_port": 5001,
+      "detect_paths": [
+        "koboldcpp.exe",
+        "koboldcpp_cuda.exe",
+        "KoboldCpp/koboldcpp.py"
+      ],
+      "detect_process": "koboldcpp",
+      "probe_path": "/api/v1/model",
+      "managed_ops": ["start", "stop", "swap_model"]
+    },
+    {
+      "key": "ollama",
+      "label": "Ollama",
+      "description": "Alternative local LLM server (Llama 3, Mistral, Gemma)",
+      "default_port": 11434,
+      "detect_paths": ["ollama.exe", "ollama/ollama"],
+      "detect_process": "ollama",
+      "probe_path": "/api/tags",
+      "managed_ops": ["pull_model", "list_models"]
+    },
+    {
+      "key": "sillytavern",
+      "label": "SillyTavern",
+      "description": "Character chat front-end that integrates with Spellcaster's wizards",
+      "default_port": 8000,
+      "detect_paths": ["SillyTavern/server.js", "sillytavern/server.js"],
+      "detect_process": "sillytavern",
+      "probe_path": "/",
+      "managed_ops": ["start", "stop", "install_extension"]
+    },
+    {
+      "key": "gimp",
+      "label": "GIMP 3",
+      "description": "Image editor that hosts the main Spellcaster plugin",
+      "default_port": 0,
+      "detect_paths": [
+        "GIMP 3/bin/gimp-3.0.exe",
+        "GIMP 3/bin/gimp-3.2.exe",
+        "Applications/GIMP.app",
+        "usr/bin/gimp",
+        "usr/bin/gimp-3.0"
+      ],
+      "detect_process": "gimp",
+      "probe_path": "",
+      "managed_ops": ["install_plugin", "restart"]
+    },
+    {
+      "key": "darktable",
+      "label": "Darktable",
+      "description": "Photo editor with Spellcaster Lua plugin integration",
+      "default_port": 0,
+      "detect_paths": [
+        "darktable/bin/darktable.exe",
+        "usr/bin/darktable",
+        "Applications/darktable.app"
+      ],
+      "detect_process": "darktable",
+      "probe_path": "",
+      "managed_ops": ["install_plugin"]
+    },
+    {
+      "key": "resolve",
+      "label": "DaVinci Resolve",
+      "description": "Video editor for cutting together Spellcaster-generated shots",
+      "default_port": 0,
+      "detect_paths": [
+        "Blackmagic Design/DaVinci Resolve/Resolve.exe",
+        "Applications/DaVinci Resolve/DaVinci Resolve.app",
+        "opt/resolve/bin/resolve"
+      ],
+      "detect_process": "Resolve",
+      "probe_path": "",
+      "managed_ops": ["import_clip", "apply_lut", "render_timeline"]
+    }
+  ]
+}
