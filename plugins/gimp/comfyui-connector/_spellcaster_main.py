@@ -1473,6 +1473,30 @@ CONTROLNET_GUIDE_MODES = {
                        "illustrious": "SDXL\\ttplanetSDXLControlnet_Tile_v20Fp16.safetensors",
                        "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
     },
+    "Normal Map (surface 3D) — SD1.5/SDXL/Flux/ZIT": {
+        "preprocessor": "BAE-NormalMapPreprocessor",
+        "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors",
+                       "sdxl": "SDXL\\control-lora-depth-rank128.safetensors",
+                       "illustrious": "SDXL\\control-lora-depth-rank128.safetensors",
+                       "flux1dev": "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors",
+                       "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
+    },
+    "Normal Map (use existing layer) — all archs": {
+        "preprocessor": None,
+        "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors",
+                       "sdxl": "SDXL\\control-lora-depth-rank128.safetensors",
+                       "illustrious": "SDXL\\control-lora-depth-rank128.safetensors",
+                       "flux1dev": "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors",
+                       "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
+    },
+    "Normal DSINE (high quality) — SD1.5/SDXL/Flux/ZIT": {
+        "preprocessor": "DSINE-NormalMapPreprocessor",
+        "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors",
+                       "sdxl": "SDXL\\control-lora-depth-rank128.safetensors",
+                       "illustrious": "SDXL\\control-lora-depth-rank128.safetensors",
+                       "flux1dev": "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors",
+                       "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
+    },
     "Flux Union Pro (all-in-one) — Flux only": {
         "preprocessor": None,
         "cn_models": {"flux1dev": "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors",
@@ -6690,9 +6714,13 @@ class PresetDialog(Gtk.Dialog):
                 "Optional second ControlNet to combine with the first.\n"
                 "Both guides are applied simultaneously \u2014 the AI follows both.\n\n"
                 "Best combos:\n"
+                "  CN1: Normal Map + CN2: Canny \u2014 3D surface + edges (best for relighting)\n"
+                "  CN1: Normal Map + CN2: Depth \u2014 3D surface + spatial layout\n"
                 "  CN1: Tile + CN2: Depth \u2014 detail + structure\n"
                 "  CN1: OpenPose + CN2: Canny \u2014 pose + edges\n"
                 "  CN1: Depth + CN2: Lineart \u2014 spatial + line guide\n\n"
+                "TIP: Generate a 3D normal map first (Enhance > 3D Normal Map),\n"
+                "then use 'Normal Map (use existing layer)' as CN1.\n\n"
                 "Keep CN2 strength lower than CN1 (e.g., 0.4 vs 0.7)\n"
                 "to let the primary guide dominate.")
             for key in CONTROLNET_GUIDE_MODES:
