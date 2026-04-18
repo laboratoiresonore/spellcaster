@@ -1385,17 +1385,46 @@ def patch_plugin_server_url(file_path: Path, server_url: str, dry_run: bool = Fa
 
 # ─── Feature size helpers ──────────────────────────────────────────────────────
 
-def collect_models_for_feature(feature: dict[str, Any]) -> list[dict]:
+def pick_llm_tier(server_vram_gb: float, local_vram_mb: int) -> str:
+    """Select the LLM tier for the `prompt_enhance` feature.
+
+    The LLM runs on the ComfyUI server, so server VRAM is authoritative.
+    Falls back to the local GPU only when the server is unreachable (vram=0),
+    which approximates the common "installer box == ComfyUI box" case.
+    """
+    vram_gb = server_vram_gb if server_vram_gb > 0 else (local_vram_mb / 1024.0)
+    if vram_gb <= 0:     return "medium"   # unknown → safe default (4B)
+    if vram_gb < 8:      return "low"      # <8 GB → 3B Q4
+    if vram_gb < 12:     return "medium"   # 8-12 GB → 4B Q4
+    if vram_gb < 20:     return "high"     # 12-20 GB → 8B Q5
+    return "ultra"                         # 20+ GB → 14B Q5
+
+
+def collect_models_for_feature(feature: dict[str, Any],
+                               server_info: dict | None = None,
+                               local_vram_mb: int = 0) -> list[dict]:
     """Extract all model entries from a feature's manifest definition.
 
-    The manifest "models" section has named groups (e.g., "checkpoints",
-    "loras") each containing a list of model dicts, plus an optional "note"
-    string that is skipped here.
+    The manifest "models" section has named groups. Recognised shapes:
+      - list of model dicts (e.g., "checkpoints", "loras")
+      - "note" string — skipped
+      - "*_tiers" dict keyed by tier name ("low"/"medium"/"high"/"ultra")
+        — the tier is picked from server VRAM via pick_llm_tier()
     """
     models_section = feature.get("models", {})
     all_models = []
+    server_vram_gb = (server_info or {}).get('server_vram_gb', 0.0)
+    tier = pick_llm_tier(server_vram_gb, local_vram_mb)
+
     for key, val in models_section.items():
         if key == "note":
+            continue
+        if key.endswith("_tiers") and isinstance(val, dict):
+            picked = val.get(tier) or val.get("medium")
+            if isinstance(picked, dict) and "path" in picked:
+                entry = dict(picked)
+                entry["_tier"] = tier
+                all_models.append(entry)
             continue
         if isinstance(val, list):
             for item in val:
@@ -1663,6 +1692,7 @@ def step_probe_server(server_url: str, args) -> dict:
         'clip_models': [],
         'controlnets': [],
         'reachable': False,
+        'server_vram_gb': 0.0,
     }
 
     print(f"  Connecting to {C_CYAN}{server_url}{C_RESET}...")
@@ -1677,6 +1707,7 @@ def step_probe_server(server_url: str, args) -> dict:
             print(f"  {C_GREEN}✓ Server reachable{C_RESET}")
             if vram_gb > 0:
                 print(f"    Remote GPU VRAM: {vram_gb:.1f} GB")
+                result['server_vram_gb'] = vram_gb
         result['reachable'] = True
     except Exception as e:
         print(f"  {C_YELLOW}⚠ Cannot reach ComfyUI at {server_url}: {e}{C_RESET}")
@@ -2366,7 +2397,8 @@ def step_install_nodes(manifest: dict, selected: dict[str, bool], paths: dict,
 
 
 def step_install_models(manifest: dict, selected: dict[str, bool], paths: dict,
-                        args) -> None:
+                        args, server_info: dict | None = None,
+                        local_vram_mb: int = 0) -> None:
     """Step 5: Download and install models."""
     if not paths["comfyui"]:
         print(f"\n  {C_YELLOW}Skipping model installation (no ComfyUI path).{C_RESET}")
@@ -2399,7 +2431,16 @@ def step_install_models(manifest: dict, selected: dict[str, bool], paths: dict,
             continue
 
         print(f"\n  {C_BOLD}── {feat['label']} ──{C_RESET}")
-        models = collect_models_for_feature(feat)
+        models = collect_models_for_feature(feat, server_info, local_vram_mb)
+
+        # Report tier selection when a tiered model was resolved
+        tier_model = next((m for m in models if "_tier" in m), None)
+        if tier_model:
+            server_vram = (server_info or {}).get('server_vram_gb', 0.0)
+            src = f"server {server_vram:.1f} GB" if server_vram > 0 else \
+                  (f"local {local_vram_mb/1024:.1f} GB" if local_vram_mb else "default")
+            print(f"  {C_CYAN}VRAM tier:{C_RESET} {tier_model['_tier']} "
+                  f"({src}) → {C_BOLD}{tier_model['path'].rsplit('/', 1)[-1]}{C_RESET}")
 
         if not models:
             note = feat.get("models", {}).get("note", "")
@@ -2449,6 +2490,21 @@ def step_install_models(manifest: dict, selected: dict[str, bool], paths: dict,
             if url:
                 success = download_file(url, dest, args.dry_run,
                                         civitai_key=civitai_key, hf_token=hf_token)
+
+                # Tier fallback: if a high/ultra LLM tier fails, retry with medium (4B).
+                # The 4B variant is the original shipped model and is known-good.
+                if not success and model.get("_tier") in ("high", "ultra"):
+                    fallback_map = (feat.get("models", {})
+                                     .get("llm_tiers", {}))
+                    fb = fallback_map.get("medium")
+                    if fb and fb.get("url"):
+                        print(f"  {C_YELLOW}⚠ {model['_tier']} tier download failed — "
+                              f"falling back to medium (4B){C_RESET}")
+                        fb_dest = (models_dir / fb["path"]) if not fb["path"].startswith("custom_nodes/") \
+                                  else paths["comfyui"] / fb["path"]
+                        success = download_file(fb["url"], fb_dest, args.dry_run,
+                                                civitai_key=civitai_key, hf_token=hf_token)
+
                 if success:
                     downloaded += 1
                 else:
@@ -3371,7 +3427,8 @@ def main():
     else:
         print(f"\n  {C_YELLOW}--skip-nodes specified \u2014 skipping custom node installation.{C_RESET}")
 
-    step_install_models(manifest, selected, paths, args)
+    step_install_models(manifest, selected, paths, args, server_info,
+                        getattr(args, '_vram_mb', 0))
     settings = _write_shared_settings(paths, server_url, llm_url, server_info, args.dry_run)
     step_install_plugins(paths, server_url, args.dry_run)
     step_install_tavern(paths, server_url, llm_url, selected, args.dry_run, args.yes)
