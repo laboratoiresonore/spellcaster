@@ -559,25 +559,46 @@ def _auto_update():
       7. Remove local files that no longer exist in the repo
       8. Delete GIMP pluginrc cache (forces menu re-scan on next restart)
       9. Write new SHA to .spellcaster_version
+
+    Shared primitives live in spellcaster_core.auto_updater. This function
+    keeps the GIMP-specific logic: canonical-source priority for sc_core
+    files, .py-always-staged policy, pluginrc purge, theme reapply.
     """
     import sys as _sys
     _hdrs = _github_headers()
 
+    # Import shared auto-updater primitives from spellcaster_core (bundled
+    # next to this plugin). Fall back to legacy inline path if import fails
+    # (shouldn't happen in normal installs, but defensive).
+    try:
+        from spellcaster_core import auto_updater as _au
+    except ImportError:
+        _au = None
+
     try:
         # Step 1: Check latest commit SHA
         local_sha = _VERSION_FILE.read_text().strip() if _VERSION_FILE.exists() else ""
-        req = urllib.request.Request(_GITHUB_API, headers=_hdrs)
-        with urllib.request.urlopen(req, timeout=15) as r:
-            latest_sha = json.loads(r.read())[0]["sha"]
-
-        # Compare: support both 7-char truncated and 40-char full SHA
-        if latest_sha == local_sha or latest_sha[:7] == local_sha[:7]:
-            return
-
-        # Step 2: Fetch full repo tree to discover ALL plugin files
-        req_tree = urllib.request.Request(_GITHUB_TREE, headers=_hdrs)
-        with urllib.request.urlopen(req_tree, timeout=30) as r:
-            tree = json.loads(r.read())
+        if _au is not None:
+            try:
+                latest_sha = _au.fetch_latest_sha(_GITHUB_API, _hdrs, timeout=15)
+            except Exception:
+                return
+            if _au.shas_match(latest_sha, local_sha):
+                return
+            try:
+                tree = {"tree": _au.fetch_tree(_GITHUB_TREE, _hdrs, timeout=30)}
+            except Exception:
+                return
+        else:
+            # Legacy fallback (kept so shim-only installs still self-heal)
+            req = urllib.request.Request(_GITHUB_API, headers=_hdrs)
+            with urllib.request.urlopen(req, timeout=15) as r:
+                latest_sha = json.loads(r.read())[0]["sha"]
+            if latest_sha == local_sha or latest_sha[:7] == local_sha[:7]:
+                return
+            req_tree = urllib.request.Request(_GITHUB_TREE, headers=_hdrs)
+            with urllib.request.urlopen(req_tree, timeout=30) as r:
+                tree = json.loads(r.read())
 
         # Step 3: Filter for files in our plugin directory (including subdirectories)
         # Also grab spellcaster_core/ — the shims need it at runtime.
@@ -828,6 +849,88 @@ def _load_config():
                 return json.load(f)
         except Exception:
             return {}
+
+
+# Feature → sentinel node class names. When ANY sentinel is present in
+# ComfyUI's /object_info the feature is considered installed. Kept compact:
+# we don't list every node, just the distinctive ones per feature.
+#
+# This map is the authoritative mapping for menu-registration purposes.
+# Features not listed here are treated as always-present (fail-open).
+_FEATURE_SENTINELS: dict[str, tuple[str, ...]] = {
+    "klein_flux2":       ("Flux2KleinRefLatentController", "Flux2KleinTextRefBalance"),
+    "flux_kontext":      ("FluxKontextImageScale", "FluxKontextModelLoader"),
+    "face_swap_reactor": ("ReActorFaceSwap",),
+    "face_swap_mtb":     ("Face Swap (mtb)", "MTB_FaceSwap"),
+    "faceid_img2img":    ("IPAdapterFaceID", "IPAdapterUnifiedLoaderFaceID"),
+    "pulid_flux":        ("PulidFluxModelLoader", "ApplyPulidFlux"),
+    "upscale":           ("UltimateSDUpscale", "UpscaleModelLoader"),
+    "face_restore":      ("FaceRestoreCFWithModel", "ReActorRestoreFace"),
+    "photo_restore":     ("FaceRestoreCFWithModel",),   # reuses face_restore
+    "supir":             ("SUPIR_sample", "SUPIR_first_stage"),
+    "seedv2r":           ("SeedVR2VideoUpscaler", "SeedVR2Upscaler"),
+    "colorize":          ("DDColor_Colorize",),
+    "lama_remove":       ("LaMaInpaint", "LaMaInpaintingModelLoader"),
+    "wan_i2v":           ("WanImageToVideo", "LoadWanVideoModel"),
+    "detail_hallucinate": ("UltimateSDUpscale",),
+    "rembg":             ("BiRefNetRMBG", "RMBG"),
+    "lut_grading":       ("ApplyLUT",),
+    "style_transfer":    ("IPAdapterAdvanced", "IPAdapterUnifiedLoader"),
+    "iclight":           ("LoadICLightModel", "ICLightApplyMaskGrey"),
+}
+
+
+def _probe_comfyui_nodes(server_url: str, timeout: float = 3.0) -> set[str]:
+    """One-shot GET /object_info → set of class_type names. Empty on failure."""
+    try:
+        import urllib.request as _ur
+        req = _ur.Request(f"{server_url.rstrip('/')}/object_info")
+        with _ur.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        return set(data.keys()) if isinstance(data, dict) else set()
+    except Exception:
+        return set()
+
+
+def _get_features_present_cached(cfg: dict):
+    """Return the set of features currently installed on the ComfyUI server,
+    or None if the probe can't run (fail-open: caller shows everything).
+
+    Caches the probe per server_url in config.json under "features_probe":
+      {"server_url": "...", "features_present": ["klein_flux2", ...], "ts": <epoch>}
+    so we only hit /object_info once per GIMP launch. The cache is invalidated
+    when the server URL changes or the TTL expires (default 1 hour).
+    """
+    import time as _time
+    TTL_SECONDS = 3600
+    server_url = cfg.get("server_url") or COMFYUI_DEFAULT_URL
+    probe = cfg.get("features_probe") or {}
+    # Use cached value if fresh and still pointing at the same server
+    if (probe.get("server_url") == server_url
+            and probe.get("features_present") is not None
+            and (_time.time() - probe.get("ts", 0)) < TTL_SECONDS):
+        return set(probe["features_present"])
+    # Miss — probe now. Fail-open on error: return None so caller falls back
+    # to showing every non-disabled procedure.
+    nodes = _probe_comfyui_nodes(server_url)
+    if not nodes:
+        return None
+    present = {
+        feat for feat, sentinels in _FEATURE_SENTINELS.items()
+        if any(s in nodes for s in sentinels)
+    }
+    # Write cache back (best-effort; don't crash registration if config is RO)
+    try:
+        cfg_copy = dict(cfg)
+        cfg_copy["features_probe"] = {
+            "server_url": server_url,
+            "features_present": sorted(present),
+            "ts": int(_time.time()),
+        }
+        _save_config(cfg_copy)
+    except Exception:
+        pass
+    return present
 
 # Default ComfyUI server URL — overridable via config.json {"server_url": "..."}
 # Updated at runtime whenever the user successfully runs a workflow with a different URL.
@@ -11326,27 +11429,39 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-calibration-wizard": None,
         }
 
-        # ── Feature-gate logic: denylist, not allowlist ──
-        # Old behaviour was an allowlist: the user's installed_features
-        # list was the source of truth, and any procedure whose feature
-        # wasn't in it got hidden from the menu. That broke every time we
-        # added a NEW feature post-install — older config.json files
-        # didn't know about wan_i2v / ltx_video / etc., so the new menu
-        # items silently never appeared even though the underlying models
-        # were installed and working. Users had no way to recover except
-        # by deleting their config.
+        # ── Feature-gate logic: denylist + probe-cached allowlist ──
+        # History:
+        #   v1 = allowlist from installed_features: broke on post-install
+        #        additions (wan_i2v/ltx_video added later never appeared
+        #        because old config.json didn't list them).
+        #   v2 = pure denylist: "show everything unless disabled". Fixed
+        #        the post-install bug but showed tools with no backing
+        #        models — users clicked Klein Editor with no Klein model
+        #        installed and got empty dropdowns / 400 errors.
+        #   v3 (this code) = denylist + probe-cached presence check:
         #
-        # New behaviour is a denylist: every procedure registers by
-        # default, unless the user has explicitly disabled its feature
-        # via 'disabled_features' in config.json. Missing-model errors
-        # are caught at dialog-open time by runtime probes (per the
-        # "don't show broken" policy), not by a stale install manifest.
+        #   - `disabled_features` from config is still honoured (user
+        #     explicitly hid it).
+        #   - `features_present` is a cached probe result: we hit ComfyUI's
+        #     /object_info on plugin load, derive which features' backing
+        #     nodes are actually available, and cache the set in config.
+        #     If a feature's node isn't installed, hide it. If the probe
+        #     can't run (server down, first launch), fall back to showing
+        #     everything (fail-open — better than hiding working tools).
+        #   - New features added post-install re-probe on next launch so
+        #     they auto-appear once installed. No stale config problem.
         cfg = _load_config()
         disabled = set(cfg.get("disabled_features") or [])
+        present = _get_features_present_cached(cfg)  # None = couldn't probe
         procs = []
         for name, feature in _PROC_FEATURES.items():
-            if feature is not None and feature in disabled:
+            if feature is None:
+                procs.append(name)               # always-on core tool
                 continue
+            if feature in disabled:
+                continue                          # explicitly hidden
+            if present is not None and feature not in present:
+                continue                          # probe says node missing
             procs.append(name)
         return procs
 
