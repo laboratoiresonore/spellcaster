@@ -52,7 +52,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 
-from . import __version__, auth, config
+from . import __version__, auth, config, heartbeat
 
 
 # ─── Routing table ───────────────────────────────────────────────────────
@@ -342,6 +342,11 @@ def serve(cfg: dict[str, Any] | None = None,
         print(f"[antenna]   Install openssl or Git-for-Windows to enable TLS.")
     print(f"[antenna] Token file: {cfg['token_path']}")
     print(f"[antenna] Audit log:  {cfg['log_path']}")
+
+    # Start heartbeat to Mega Bridge so declared services appear in the
+    # Guild sidebar. No-op when hub_url isn't configured (local agent).
+    heartbeat.start(cfg)
+
     print(f"[antenna] Ready. Ctrl-C to stop.", flush=True)
 
     # Graceful shutdown on Ctrl-C — close the listening socket, let
