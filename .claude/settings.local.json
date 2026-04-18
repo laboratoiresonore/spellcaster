@@ -44,11 +44,21 @@
       "Bash(ls c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/assets/*.ico c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/assets/*.png)",
       "Bash(PYTHONIOENCODING=utf-8 grep -in \"image\\\\|icon\\\\|png\\\\|photo\\\\|banner\\\\|splash\\\\|logo\\\\|preview\" c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/installer/installer_gui.py)",
       "Bash(python3 -c \"import py_compile; py_compile.compile\\('c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/installer/installer_gui.py', doraise=True\\); print\\('SYNTAX OK'\\)\")",
-      "Bash(ls c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/assets/*.gif c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/assets/readme/*.gif)"
+      "Bash(ls c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/assets/*.gif c:/Users/redacted/Documents/AI/Spellcaster/spellcaster/assets/readme/*.gif)",
+      "WebFetch(domain:www.reddit.com)",
+      "Bash(curl -s -A \"Spellcaster-README-Bot/1.0 \\(by u/64v\\)\" \"https://www.reddit.com/r/GIMP/comments/1smyucz/get_mad_all_you_want/.json?limit=100\")",
+      "Bash(git push *)",
+      "Bash(git add *)",
+      "Bash(python -c ' *)",
+      "Bash(git pull *)",
+      "Bash(git stash *)",
+      "Bash(python -c \"import py_compile as p; p.compile\\('plugins/gimp/comfyui-connector/_spellcaster_main.py', doraise=True\\); p.compile\\('plugins/gimp/comfyui-connector/spellcaster_core/workflows.py', doraise=True\\); p.compile\\('plugins/gimp/comfyui-connector/spellcaster_core/node_factory.py', doraise=True\\); print\\('ALL OK'\\)\")"
     ],
     "additionalDirectories": [
       "\\tmp",
-      "c:\\tmp"
+      "c:\\tmp",
+      "C:\\Users\\redacted\\AppData\\Roaming\\GIMP\\3.2\\plug-ins\\comfyui-connector",
+      "C:\\Users\\redacted\\Documents\\AI\\Spellcaster\\spellcaster\\.git"
     ]
   }
 }

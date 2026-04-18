@@ -222,20 +222,26 @@ def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
     Returns:
         Enhanced prompt string, or the original if enhancement fails
     """
-    # Skip enhancement for negative prompts — they don't benefit from expansion
+    # Negative prompts list things to AVOID (e.g. "blurry, low quality").
+    # Expanding them with an LLM would add unwanted positive descriptions.
     if is_negative:
         return prompt_text
 
-    # Skip if prompt is empty or already long/well-formed
     if not prompt_text or not prompt_text.strip():
         return prompt_text
 
+    # 60-word threshold: prompts above this length are already well-formed
+    # (probably copy-pasted from CivitAI or manually crafted). Enhancing them
+    # risks over-inflating the prompt and diluting the user's intent.
+    # Below 60 words, the user likely typed a short description ("cat sleeping")
+    # that benefits from expansion.
     word_count = len(prompt_text.split())
     if word_count > 60:
-        # Already detailed enough — don't over-enhance
         return prompt_text
 
-    # Look up architecture profile (with fallback to generic)
+    # Each architecture has a unique prompting style. Using the wrong style
+    # (e.g. booru tags for Flux, or natural language for SD1.5) produces
+    # noticeably worse results. The profile tells the LLM how to format output.
     profile = _ARCH_ENHANCE_PROFILES.get(arch_key, _DEFAULT_ENHANCE_PROFILE)
 
     # Build system prompt that guides the LLM
@@ -257,30 +263,40 @@ def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
     user_msg = f"Enhance this prompt for {profile['name']}:\n{prompt_text}"
 
     # ── Try ComfyUI LLM nodes first (if server URL provided) ──
+    # WHY ComfyUI first: zero external dependencies, VRAM auto-managed,
+    # and the model is already on the generation server. This path uses
+    # comfyui_llm.generate_text() which handles model selection, retry on
+    # missing models, and output cleaning internally.
     if comfy_url:
         try:
             from .comfyui_llm import generate_text
             enhanced = generate_text(
                 comfy_url, prompt=user_msg, system_prompt=system_msg,
                 max_tokens=300, temperature=0.7)
+            # 10-char minimum: filters junk responses like "OK" or empty strings
             if enhanced and len(enhanced) > 10:
                 return enhanced
         except Exception:
             pass  # Fall through to KoboldCpp
 
     # ── Fall back to external LLM (KoboldCpp / OpenAI-compatible) ──
+    # If no ComfyUI LLM is available (or it failed), try the user-configured
+    # external LLM server. If no URL is configured, return the original prompt
+    # unchanged — enhancement is best-effort, never blocks generation.
     if not kobold_url:
         return prompt_text
 
-    # Prepare the API payload (OpenAI-compatible format)
+    # KoboldCpp exposes an OpenAI-compatible /v1/chat/completions endpoint.
+    # The "model" field is ignored by KoboldCpp (it only loads one model at a
+    # time) but is required by the OpenAI API spec, so we pass a placeholder.
     payload = {
         "messages": [
             {"role": "system", "content": system_msg},
             {"role": "user", "content": user_msg},
         ],
-        "model": "koboldcpp",
-        "max_tokens": 300,
-        "temperature": 0.7,
+        "model": "koboldcpp",  # placeholder — KoboldCpp ignores this
+        "max_tokens": 300,     # enough for 60-200 word prompts
+        "temperature": 0.7,    # balanced creativity/coherence
     }
 
     try:
@@ -302,15 +318,16 @@ def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
             .strip()
         )
 
-        # Only use enhancement if it's meaningful (>10 chars)
+        # 10-char minimum: same guard as ComfyUI path above.
+        # Filters responses like "OK", "Sure!", or empty/whitespace.
         if enhanced and len(enhanced) > 10:
             return enhanced
 
-        # LLM returned empty or junk — fall back
-        return prompt_text
+        return prompt_text  # LLM returned empty or junk
 
     except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError,
             TimeoutError, Exception) as e:
-        # Any error (timeout, connection refused, JSON parse error, etc) — just
-        # return the original prompt unchanged. Never block generation.
+        # Catch-all: timeout, connection refused, JSON parse error, SSL error, etc.
+        # Enhancement is strictly best-effort — never delay or block generation.
+        # The user's original prompt is always a valid fallback.
         return prompt_text

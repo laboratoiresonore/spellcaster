@@ -73,6 +73,11 @@ except (ImportError, Exception):
     def discover_workflows(search_dirs=None):
         return []
 
+try:
+    from scaffold.video_bridge import VideoBridge
+except (ImportError, Exception):
+    VideoBridge = None
+
 # ── Shared constants & helpers ────────────────────────────────────────
 from guild_common import (
     DEFAULT_GUILD_PORT, DEFAULT_COMFYUI_URL, DEFAULT_KOBOLD_URL,
@@ -96,6 +101,7 @@ HORDE_API_KEY = ""         # AI Horde API key (empty = anonymous = 0000000000)
 HORDE_MODEL = ""           # Preferred Horde model (empty = any) — delete inputs+outputs from ComfyUI after delivery
 NSFW_MODE = False        # Set by launcher when running the NSFW edition
 PROMPT_ENHANCE = True    # LLM-based prompt enhancement before ComfyUI dispatch
+_VIDEO_BRIDGE = None     # VideoBridge instance, initialised in _server_init
 
 # ── NSFW personality overlay ─────────────────────────────────────────
 # Populated by build_nsfw.py. In SFW builds these stay empty/None.
@@ -1513,6 +1519,23 @@ def _server_init(comfy_url=None):
         _ANIM_POLL_THREAD = threading.Thread(
             target=_anim_poll_background, daemon=True)
         _ANIM_POLL_THREAD.start()
+
+    # Initialise the Video Bridge (WanGP + Shotboard)
+    global _VIDEO_BRIDGE
+    if VideoBridge is not None and _VIDEO_BRIDGE is None:
+        try:
+            sb_path = os.path.join(_STATE_DIR, "shotboard.json")
+            _VIDEO_BRIDGE = VideoBridge(
+                shotboard_path=sb_path,
+                wangp_url="http://localhost:7860",
+                comfyui_url=url,
+                output_dir=os.path.join(_CREATIONS_DIR, "videos"),
+            )
+            print(f"  [Guild] Video Bridge initialised "
+                  f"({len(_VIDEO_BRIDGE.board)} shots on board)")
+        except Exception as exc:
+            print(f"  [Guild] Video Bridge init failed: {exc}")
+            _VIDEO_BRIDGE = None
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -6033,6 +6056,23 @@ class GuildHandler(SimpleHTTPRequestHandler):
             # the UI looks coherent and the pending fade animation works.
             return _serve_placeholder_icon(self)
 
+        # ── Video Bridge GET endpoints ────────────────────────────────
+        elif self.path == '/api/video/health':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            return self.end_json(200, _VIDEO_BRIDGE.health())
+
+        elif self.path == '/api/video/shots':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            return self.end_json(200, _VIDEO_BRIDGE.list_shots())
+
+        elif self.path == '/api/video/presets':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            from scaffold.wangp_runner import WANGP_PRESETS
+            return self.end_json(200, {k: v for k, v in WANGP_PRESETS.items()})
+
         # Static routing — files under /static/ and /characters/ served as-is
         if (not self.path.startswith('/static/')
                 and not self.path.startswith('/characters/')
@@ -7401,8 +7441,57 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 return self.end_json(500, {'error': str(e)})
 
 
+        # ── Video Bridge POST endpoints ───────────────────────────────
+        elif self.path == '/api/video/shots':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            return self.end_json(200, _VIDEO_BRIDGE.add_shot(**data))
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/render'):
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/api/video/shots/')[1].rsplit('/render', 1)[0]
+            return self.end_json(200, _VIDEO_BRIDGE.queue_shot(shot_id))
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/reference'):
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/api/video/shots/')[1].rsplit('/reference', 1)[0]
+            ref_path = data.get("path", "")
+            return self.end_json(200, _VIDEO_BRIDGE.attach_reference(shot_id, ref_path))
+
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/trajectories'):
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/api/video/shots/')[1].rsplit('/trajectories', 1)[0]
+            trajs = data.get("trajectories", [])
+            return self.end_json(200, _VIDEO_BRIDGE.set_trajectories(shot_id, trajs))
+
+        elif self.path.startswith('/api/video/shots/') and '/render' not in self.path and '/reference' not in self.path and '/trajectories' not in self.path:
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/api/video/shots/')[1]
+            if data.get("_method") == "DELETE":
+                return self.end_json(200, _VIDEO_BRIDGE.remove_shot(shot_id))
+            return self.end_json(200, _VIDEO_BRIDGE.update_shot(shot_id, **data))
+
+        elif self.path == '/api/video/reorder':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            ordered_ids = data.get("ordered_ids", [])
+            return self.end_json(200, _VIDEO_BRIDGE.reorder_shots(ordered_ids))
+
+        elif self.path == '/api/video/chat':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            user_id = data.get("user_id", "guild")
+            text = data.get("text", "")
+            return self.end_json(200, _VIDEO_BRIDGE.handle_chat(user_id, text))
+
         else:
             return self.end_json(404, {"error": f"Unknown endpoint: {self.path}"})
+
 
 
     # ════════════════════════════════════════════════════════════════════════════

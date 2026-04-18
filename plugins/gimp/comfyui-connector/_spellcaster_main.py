@@ -1473,6 +1473,30 @@ CONTROLNET_GUIDE_MODES = {
                        "illustrious": "SDXL\\ttplanetSDXLControlnet_Tile_v20Fp16.safetensors",
                        "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
     },
+    "Normal Map (surface 3D) — SD1.5/SDXL/Flux/ZIT": {
+        "preprocessor": "BAE-NormalMapPreprocessor",
+        "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors",
+                       "sdxl": "SDXL\\control-lora-depth-rank128.safetensors",
+                       "illustrious": "SDXL\\control-lora-depth-rank128.safetensors",
+                       "flux1dev": "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors",
+                       "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
+    },
+    "Normal Map (use existing layer) — all archs": {
+        "preprocessor": None,
+        "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors",
+                       "sdxl": "SDXL\\control-lora-depth-rank128.safetensors",
+                       "illustrious": "SDXL\\control-lora-depth-rank128.safetensors",
+                       "flux1dev": "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors",
+                       "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
+    },
+    "Normal DSINE (high quality) — SD1.5/SDXL/Flux/ZIT": {
+        "preprocessor": "DSINE-NormalMapPreprocessor",
+        "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors",
+                       "sdxl": "SDXL\\control-lora-depth-rank128.safetensors",
+                       "illustrious": "SDXL\\control-lora-depth-rank128.safetensors",
+                       "flux1dev": "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors",
+                       "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
+    },
     "Flux Union Pro (all-in-one) — Flux only": {
         "preprocessor": None,
         "cn_models": {"flux1dev": "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors",
@@ -6701,9 +6725,13 @@ class PresetDialog(Gtk.Dialog):
                 "Optional second ControlNet to combine with the first.\n"
                 "Both guides are applied simultaneously \u2014 the AI follows both.\n\n"
                 "Best combos:\n"
+                "  CN1: Normal Map + CN2: Canny \u2014 3D surface + edges (best for relighting)\n"
+                "  CN1: Normal Map + CN2: Depth \u2014 3D surface + spatial layout\n"
                 "  CN1: Tile + CN2: Depth \u2014 detail + structure\n"
                 "  CN1: OpenPose + CN2: Canny \u2014 pose + edges\n"
                 "  CN1: Depth + CN2: Lineart \u2014 spatial + line guide\n\n"
+                "TIP: Generate a 3D normal map first (Enhance > 3D Normal Map),\n"
+                "then use 'Normal Map (use existing layer)' as CN1.\n\n"
                 "Keep CN2 strength lower than CN1 (e.g., 0.4 vs 0.7)\n"
                 "to let the primary guide dominate.")
             for key in CONTROLNET_GUIDE_MODES:
@@ -19055,6 +19083,22 @@ class Spellcaster(Gimp.PlugIn):
         lora_box.pack_start(lora_str_hb, False, False, 0)
         lora_exp.add(lora_box)
         bx.pack_start(lora_exp, False, False, 0)
+        # ── Normal Map (3D surface guidance) ──────────────────────────
+        normal_cb = Gtk.CheckButton(label="Use 3D Normal Map for surface-aware relighting")
+        # Auto-detect: check if there's a layer named "Normal Map" or "NormalCrafter"
+        _has_normal = any("normal" in (l.get_name() or "").lower()
+                          for l in image.get_layers())
+        normal_cb.set_active(_has_normal)
+        normal_cb.set_tooltip_text(
+            "When enabled, generates a 3D normal map of your image and\n"
+            "passes it to IC-Light as surface geometry guidance.\n\n"
+            "This MASSIVELY improves relighting accuracy — the AI knows\n"
+            "the exact surface angle at every pixel, so light wraps\n"
+            "around objects correctly instead of being painted on flat.\n\n"
+            "If you already generated a normal map (Enhance > 3D Normal Map),\n"
+            "it will be auto-detected and reused."
+        )
+        bx.pack_start(normal_cb, False, False, 0)
         bx.show_all()
         last = _SESSION.get("iclight")
         if last:
@@ -19106,15 +19150,56 @@ class Spellcaster(Gimp.PlugIn):
         }
         _save_session()
         dlg.destroy()
+        use_normal = normal_cb.get_active()
         try:
             _update_spinner_status("IC-Light: exporting image...")
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_iclight_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
+            # Generate or reuse normal map if enabled
+            normal_uname = None
+            if use_normal:
+                # Check if a normal map layer already exists
+                normal_layer = None
+                for l in image.get_layers():
+                    if "normal" in (l.get_name() or "").lower():
+                        normal_layer = l
+                        break
+                if normal_layer:
+                    # Export the existing normal map layer
+                    _update_spinner_status("IC-Light: exporting normal map layer...")
+                    # Temporarily make only the normal layer visible
+                    orig_vis = [(l, l.get_visible()) for l in image.get_layers()]
+                    for l, _ in orig_vis:
+                        l.set_visible(False)
+                    normal_layer.set_visible(True)
+                    ntmp = _export_image_to_tmp(image)
+                    for l, v in orig_vis:
+                        l.set_visible(v)
+                    normal_uname = f"gimp_iclight_normal_{uuid.uuid4().hex[:8]}.png"
+                    _upload_image(srv, ntmp, normal_uname); os.unlink(ntmp)
+                else:
+                    # Generate normal map on-the-fly via NormalCrafter
+                    _update_spinner_status("IC-Light: generating 3D normal map...")
+                    from spellcaster_core.workflows import build_normal_map
+                    nwf = build_normal_map(uname)
+                    nresults = _run_with_spinner("Generating normal map...",
+                                                 lambda: list(_run_comfyui_workflow(srv, nwf)))
+                    if nresults:
+                        nfn, nsf, nft = nresults[0]
+                        ndata = _download_image(srv, nfn, nsf, nft)
+                        ntmp2 = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                        ntmp2.write(ndata); ntmp2.close()
+                        normal_uname = f"gimp_iclight_normal_{uuid.uuid4().hex[:8]}.png"
+                        _upload_image(srv, ntmp2.name, normal_uname)
+                        os.unlink(ntmp2.name)
+                        # Also add the normal map as a layer for future use
+                        _import_result_as_layer(image, ndata, "Normal Map (auto)", keep_size=True)
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = build_iclight(uname, ckpt_name, prompt, "", seed,
-                                     multiplier, steps, loras=loras)
+                                     multiplier, steps, loras=loras,
+                                     normal_map_filename=normal_uname)
                 label = f"IC-Light run {run_i+1}/{runs}" if runs > 1 else "IC-Light"
                 _wf = wf
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",

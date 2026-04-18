@@ -86,6 +86,15 @@ from .workflow_parser import (
 )
 from .workflow_wizard import WorkflowWizard, WorkflowSession
 from .meta_wizard import MetaWizard, MetaSession, build_meta_system_prompt
+# Video layer (WanGP bridge + Shotboard).  These are optional imports
+# in the sense that they don't need to work for the image pipeline to
+# function, but we re-export them here for callers that want the
+# whole surface from one place.
+from .wangp_runner import WanGPRunner, WANGP_PRESETS, describe_preset
+from .shotboard import Shotboard, Shot, Trajectory
+from .video_wizard import CinematographerWizard, VideoSession
+from .video_bridge import VideoBridge
+from .frame_extract import extract_last_frame
 
 __all__ = [
     "SpellcasterScaffold",
@@ -114,6 +123,17 @@ __all__ = [
     "fetch_object_info",
     "WorkflowWizard",
     "WorkflowSession",
+    # Video layer
+    "WanGPRunner",
+    "WANGP_PRESETS",
+    "describe_preset",
+    "Shotboard",
+    "Shot",
+    "Trajectory",
+    "CinematographerWizard",
+    "VideoSession",
+    "VideoBridge",
+    "extract_last_frame",
 ]
 
 
