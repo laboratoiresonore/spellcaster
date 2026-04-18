@@ -43,17 +43,30 @@ Wizard_Guild.exe
 spellcaster-installer.exe
 spellcaster-manual-update.exe
 
-# Machine-specific runtime files
+# Machine-specific runtime files (contain local paths, server IPs)
 guild_config.json
+tavern/guild_config.json
 signal_bridge_config.json
 .guild_version
 rebuild.bat
 push_*.bat
 
+# User-generated state (avatars, session data, timestamps)
+.guild_state/
+generated_assets.json
+session_state.json
+user_presets.json
+config.json
+
+# Claude Code internal files
+.claude/
+
 # Dev tools & scratch files
 tools/generate_readme_gifs.py
 test_live.py
 test_guild.py
+tests/
+audit_*.py
 
 # Spell icons (user-generated during install, not source)
 assets/spells/
@@ -63,3 +76,9 @@ assets/spells/
 .idea/
 *.swp
 *~
+
+# Temp files
+*.tmp
+*.bak
+*.update
+*.orig
