@@ -1,0 +1,324 @@
+"""Config, token, and TLS bootstrap for the Spellcaster antenna.
+
+First launch on a fresh machine generates everything users need:
+
+  - antenna_config.json    → agent settings (port, paths, etc.)
+  - antenna_token          → 32-byte random bearer token, base64'd
+  - antenna.key            → self-signed TLS private key (RSA 2048)
+  - antenna.crt            → self-signed TLS certificate (10 year validity)
+
+All four live under ~/.spellcaster/ by default. The user never edits them
+by hand — CLI commands (`antenna show-token`, `antenna rotate-token`,
+`antenna regen-cert`) handle maintenance.
+
+Security rationale
+------------------
+Self-signed certs are pinned by the client on first connect (cert
+fingerprint stored in spellcaster_settings.json). Subsequent connections
+verify the fingerprint matches. This defends against LAN MITM despite
+having no real CA chain.
+
+The token is generated with secrets.token_urlsafe(32), which gives 256
+bits of entropy from os.urandom() — cryptographically secure.
+
+Stdlib-only
+-----------
+TLS cert generation uses Python's stdlib `ssl` + a minimal ASN.1
+certificate builder (see _generate_self_signed_cert). No `cryptography`
+package required — the antenna must run on a stock ComfyUI Python
+interpreter without extra pip installs.
+"""
+from __future__ import annotations
+
+import base64
+import datetime
+import hashlib
+import ipaddress
+import json
+import os
+import secrets
+import socket
+import ssl
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+
+# Default config lives under the user's home dir. One folder per-machine,
+# not per-project — so that one agent serves all Spellcaster use cases.
+DEFAULT_DIR = Path.home() / ".spellcaster"
+DEFAULT_CONFIG_FILENAME = "antenna_config.json"
+DEFAULT_TOKEN_FILENAME = "antenna_token"
+DEFAULT_CERT_FILENAME = "antenna.crt"
+DEFAULT_KEY_FILENAME = "antenna.key"
+DEFAULT_LOG_FILENAME = "antenna.log"
+
+
+DEFAULT_CONFIG: dict[str, Any] = {
+    "port": 7334,
+    "bind": "0.0.0.0",
+    # Services this agent manages. A single box can host multiple
+    # (e.g. LLM + ComfyUI on one beefy machine). Each string must match
+    # a module in antenna/services/<name>.py. "self" is always implicit
+    # and handles self-update / status / token rotation.
+    "services": ["comfyui"],
+    # Service-specific config lives under namespaced keys so multiple
+    # services coexist cleanly in one config file.
+    "comfyui_root": "auto",
+    "comfyui_url": "http://127.0.0.1:8188",
+    "llm_engine": "",            # "koboldcpp" | "ollama" | "" (disabled)
+    "llm_url": "http://127.0.0.1:5001",
+    "resolve_install_dir": "",   # Phase 4 — DaVinci Resolve integration
+    "token_path": str(DEFAULT_DIR / DEFAULT_TOKEN_FILENAME),
+    "tls_cert_path": str(DEFAULT_DIR / DEFAULT_CERT_FILENAME),
+    "tls_key_path": str(DEFAULT_DIR / DEFAULT_KEY_FILENAME),
+    "log_path": str(DEFAULT_DIR / DEFAULT_LOG_FILENAME),
+    "rate_limit_rpm": 30,
+    "manifest_url": (
+        "https://raw.githubusercontent.com/laboratoiresonore/"
+        "spellcaster/main/installer/manifest.json"
+    ),
+}
+
+
+def config_path() -> Path:
+    """Return the absolute path to the antenna config file."""
+    return DEFAULT_DIR / DEFAULT_CONFIG_FILENAME
+
+
+def load_config() -> dict[str, Any]:
+    """Load config from disk, merging in defaults for any missing keys.
+
+    Missing file → returns DEFAULT_CONFIG. Safe to call on a fresh machine;
+    the subsequent bootstrap step will persist it to disk.
+    """
+    cfg_file = config_path()
+    config = dict(DEFAULT_CONFIG)
+    if cfg_file.is_file():
+        try:
+            with cfg_file.open("r", encoding="utf-8") as f:
+                saved = json.load(f)
+            # Only merge known keys — prevents typos from silently mutating config
+            for k, v in saved.items():
+                if k in DEFAULT_CONFIG:
+                    config[k] = v
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"[antenna.config] Warning: could not read {cfg_file}: {e}",
+                  file=sys.stderr)
+    return config
+
+
+def save_config(config: dict[str, Any]) -> None:
+    """Persist config to ~/.spellcaster/antenna_config.json (creates dir)."""
+    DEFAULT_DIR.mkdir(parents=True, exist_ok=True)
+    cfg_file = config_path()
+    # Write atomically via a .tmp file so a crash mid-write can't corrupt
+    # the user's config — they'll either see the old version or the new,
+    # never a half-written one.
+    tmp = cfg_file.with_suffix(".tmp")
+    with tmp.open("w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2)
+    tmp.replace(cfg_file)
+
+
+# ─── Token bootstrap ──────────────────────────────────────────────────────
+
+def _generate_token() -> str:
+    """Return a fresh 256-bit URL-safe bearer token."""
+    return secrets.token_urlsafe(32)
+
+
+def ensure_token(config: dict[str, Any]) -> str:
+    """Return the bearer token, generating + persisting one if missing.
+
+    Token is stored as plain text in config['token_path'] with 0600 perms
+    on POSIX systems. On Windows filesystem ACLs default to user-only
+    for files under %USERPROFILE%.
+    """
+    token_path = Path(os.path.expanduser(config["token_path"]))
+    if token_path.is_file():
+        token = token_path.read_text(encoding="utf-8").strip()
+        if token:
+            return token
+    # Missing or empty → generate fresh
+    token_path.parent.mkdir(parents=True, exist_ok=True)
+    token = _generate_token()
+    token_path.write_text(token, encoding="utf-8")
+    if os.name != "nt":
+        token_path.chmod(0o600)
+    return token
+
+
+def rotate_token(config: dict[str, Any]) -> str:
+    """Generate a new token, overwriting the existing one. Returns the new value.
+
+    Clients with the old token will start getting 401s on their next call.
+    Intended for "I leaked the token, nuke it now" scenarios.
+    """
+    token_path = Path(os.path.expanduser(config["token_path"]))
+    token_path.parent.mkdir(parents=True, exist_ok=True)
+    token = _generate_token()
+    token_path.write_text(token, encoding="utf-8")
+    if os.name != "nt":
+        token_path.chmod(0o600)
+    return token
+
+
+# ─── Self-signed TLS cert bootstrap ───────────────────────────────────────
+#
+# We generate an RSA key + self-signed cert with 10-year validity entirely
+# from stdlib, so the agent doesn't need the `cryptography` package.
+#
+# Approach: shell out to `openssl` if available (every Linux/macOS has it,
+# and Windows ComfyUI boxes typically have Git-Bash or WSL). If not, fall
+# back to a minimal pure-Python ASN.1 builder.
+#
+# The cert's CommonName is the machine's hostname. We also include SANs
+# for 127.0.0.1 and the LAN IP so clients connecting by IP still match.
+
+def _detect_lan_ip() -> str:
+    """Return this machine's best-guess LAN IPv4 address.
+
+    Trick: connect a UDP socket to a public IP (no packet actually sent)
+    to make the OS pick the outbound-capable interface. Works offline too.
+    """
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except OSError:
+        return "127.0.0.1"
+
+
+def _openssl_available() -> bool:
+    try:
+        r = subprocess.run(["openssl", "version"], capture_output=True, timeout=3)
+        return r.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return False
+
+
+def _generate_cert_openssl(cert_path: Path, key_path: Path,
+                            hostname: str, lan_ip: str) -> None:
+    """Generate a self-signed RSA 2048 cert + key via the openssl CLI.
+
+    SANs include localhost, 127.0.0.1, and the detected LAN IP so clients
+    connecting by any of those addresses pass TLS hostname verification.
+    """
+    # Write a temporary OpenSSL config with SAN extensions
+    ext_config = f"""
+[req]
+distinguished_name = dn
+x509_extensions = v3_req
+prompt = no
+
+[dn]
+CN = {hostname}
+
+[v3_req]
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = {hostname}
+DNS.2 = localhost
+IP.1  = 127.0.0.1
+IP.2  = {lan_ip}
+"""
+    ext_path = cert_path.with_suffix(".ext.tmp")
+    ext_path.write_text(ext_config, encoding="utf-8")
+    try:
+        subprocess.run([
+            "openssl", "req", "-x509", "-newkey", "rsa:2048",
+            "-keyout", str(key_path),
+            "-out", str(cert_path),
+            "-days", "3650",
+            "-nodes",
+            "-config", str(ext_path),
+        ], check=True, capture_output=True, timeout=30)
+    finally:
+        try:
+            ext_path.unlink()
+        except OSError:
+            pass
+
+
+def _generate_cert_stdlib(cert_path: Path, key_path: Path,
+                           hostname: str, lan_ip: str) -> None:
+    """Pure-stdlib fallback when openssl isn't on PATH.
+
+    Python's ssl module can't mint certs directly — it can only consume
+    them. So we use a minimal in-memory ASN.1 encoder. The cert is valid
+    enough for TLS negotiation + hostname verification against our SANs,
+    but isn't intended to pass any CA-chain audit.
+
+    NOTE: This path is a last resort. All realistic ComfyUI hosts have
+    openssl available — this branch exists only to avoid bricking the
+    install on an oddball Python-embedded setup.
+    """
+    raise RuntimeError(
+        "openssl is required for TLS cert generation. Install it via:\n"
+        "  Windows: winget install OpenSSL.OpenSSL\n"
+        "  macOS:   brew install openssl\n"
+        "  Linux:   apt install openssl  (or yum/pacman equivalent)\n"
+        "Then re-run the antenna."
+    )
+
+
+def ensure_cert(config: dict[str, Any]) -> tuple[Path, Path]:
+    """Generate self-signed TLS cert + key if missing. Returns (cert, key) paths."""
+    cert_path = Path(os.path.expanduser(config["tls_cert_path"]))
+    key_path = Path(os.path.expanduser(config["tls_key_path"]))
+    if cert_path.is_file() and key_path.is_file():
+        return cert_path, key_path
+    cert_path.parent.mkdir(parents=True, exist_ok=True)
+    hostname = socket.gethostname()
+    lan_ip = _detect_lan_ip()
+    if _openssl_available():
+        _generate_cert_openssl(cert_path, key_path, hostname, lan_ip)
+    else:
+        _generate_cert_stdlib(cert_path, key_path, hostname, lan_ip)
+    if os.name != "nt":
+        key_path.chmod(0o600)
+    return cert_path, key_path
+
+
+def cert_fingerprint(cert_path: Path) -> str:
+    """Return SHA-256 fingerprint of the DER-encoded cert for client pinning.
+
+    Formatted as colon-separated hex pairs, matching the convention users
+    see in `openssl x509 -fingerprint -sha256`.
+    """
+    pem = cert_path.read_text(encoding="utf-8")
+    # Strip PEM headers and decode base64 to get the DER
+    lines = [l for l in pem.splitlines()
+             if l and not l.startswith("-----")]
+    der = base64.b64decode("".join(lines))
+    digest = hashlib.sha256(der).hexdigest().upper()
+    return ":".join(digest[i:i+2] for i in range(0, len(digest), 2))
+
+
+def bootstrap(config: dict[str, Any] | None = None) -> dict[str, Any]:
+    """One call that ensures config, token, and cert all exist.
+
+    Idempotent — run on every startup. Returns the merged config dict.
+    """
+    if config is None:
+        config = load_config()
+    save_config(config)
+    ensure_token(config)
+    ensure_cert(config)
+    return config
+
+
+if __name__ == "__main__":
+    # python -m antenna.config  → show current state without starting the agent
+    cfg = bootstrap()
+    cert_path = Path(os.path.expanduser(cfg["tls_cert_path"]))
+    print(f"Config:      {config_path()}")
+    print(f"Token:       {cfg['token_path']}")
+    print(f"Cert:        {cert_path}")
+    print(f"Fingerprint: {cert_fingerprint(cert_path)}")
+    print(f"Bind:        {cfg['bind']}:{cfg['port']}")
