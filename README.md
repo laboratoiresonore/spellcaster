@@ -104,7 +104,7 @@ A real pipeline — 4 clicks, zero configuration, every step is one menu item. W
 
 ## 69 Finely Tuned AI Tools, Each One Click Away
 
-Yes, we counted. Yes, we noticed. No, we will not be adding a 70th.
+Yes, we counted. Yes, we noticed. No, we will not be adding a 70th (officially).
 
 <table>
 <tr>
