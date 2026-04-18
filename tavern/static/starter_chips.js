@@ -86,7 +86,14 @@ const STARTER_CHIPS = {
 // target wizard (with the image attached as context) or fires a canned
 // message on the current wizard.
 //
-// Target wizard = switch. If null, stay on current wizard.
+// Chip keys:
+//   targetWizard  — switch to that wizard inside the Guild
+//   targetInterface — switch to an EXTERNAL interface (gimp, resolve,
+//                     darktable, etc). Chip is HIDDEN by the renderer
+//                     if that interface isn't in window.activeInterfaces.
+//   message — natural-English text sent to the LLM on click
+//   actionKind — event kind emitted to /api/events/emit on click (the
+//                external interface subscribes to these and acts)
 const IMAGE_ACTION_CHIPS = [
     {
         icon: "🎨",
@@ -111,6 +118,30 @@ const IMAGE_ACTION_CHIPS = [
         label: "Animate it",
         targetWizard: "studio_videomancer",
         message: "I want to bring this image to life as a short video.",
+    },
+    // Cross-interface chips. Each one ONLY renders if the target
+    // interface's key appears in window.activeInterfaces (enforced by
+    // the filter in app.js).
+    {
+        icon: "🎬",
+        label: "Send to Resolve",
+        targetInterface: "resolve",
+        actionKind: "resolve.asset.send",
+        message: "Sending this image to your DaVinci Resolve Media Pool.",
+    },
+    {
+        icon: "🖼️",
+        label: "Open in GIMP",
+        targetInterface: "gimp",
+        actionKind: "gimp.asset.open",
+        message: "Opening this image in GIMP for pixel-level editing.",
+    },
+    {
+        icon: "📷",
+        label: "Edit in Darktable",
+        targetInterface: "darktable",
+        actionKind: "darktable.asset.open",
+        message: "Opening this image in Darktable for raw-style editing.",
     },
 ];
 

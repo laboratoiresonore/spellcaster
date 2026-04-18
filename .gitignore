@@ -50,6 +50,7 @@ signal_bridge_config.json
 .guild_version
 rebuild.bat
 push_*.bat
+DEVNOUPDATE*.bat
 
 # User-generated state (avatars, session data, timestamps)
 .guild_state/

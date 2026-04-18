@@ -65,6 +65,13 @@
                 <div id="bridge-indicator-container">
                     <span id="bridge-dot" class="dot red"></span> <span id="bridge-status">Signal Bridge: Disconnected</span>
                 </div>
+                <!-- Active interfaces: dynamically populated from /api/interfaces.
+                     Only interfaces that are installed + enabled + online appear.
+                     Empty = hidden entirely (no dead chips). -->
+                <div id="active-interfaces-container" style="display:none;">
+                    <div id="active-interfaces-label" class="active-interfaces-label">Connected apps</div>
+                    <div id="active-interfaces-row" class="active-interfaces-row"></div>
+                </div>
                 <div class="search-wrapper">
                     <input type="text" id="character-search" placeholder="Search guild members...">
                 </div>
@@ -385,7 +392,6 @@
             </div>
         </div>
     </div>
-
     <!-- Spinner Overlay -->
     <div id="loading-overlay" class="hidden">
         <img class="loading-banner" src="/static/icons/wizard_banner.gif" alt="Wizard conjuring...">
