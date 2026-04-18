@@ -305,22 +305,31 @@ def serve(cfg: dict[str, Any] | None = None,
     _AntennaHandler._rate_limiter = auth.RateLimiter(
         limit_per_minute=cfg.get("rate_limit_rpm", 30))
 
-    cert_path = Path(os.path.expanduser(cfg["tls_cert_path"]))
-    key_path = Path(os.path.expanduser(cfg["tls_key_path"]))
-    ssl_ctx = _make_ssl_context(cert_path, key_path)
-
+    use_tls = config.tls_enabled(cfg)
     server = ThreadingHTTPServer((cfg["bind"], int(cfg["port"])), _AntennaHandler)
-    server.socket = ssl_ctx.wrap_socket(server.socket, server_side=True)
 
-    # Header line users actually want to see
-    fingerprint = config.cert_fingerprint(cert_path)
+    if use_tls:
+        cert_path = Path(os.path.expanduser(cfg["tls_cert_path"]))
+        key_path = Path(os.path.expanduser(cfg["tls_key_path"]))
+        ssl_ctx = _make_ssl_context(cert_path, key_path)
+        server.socket = ssl_ctx.wrap_socket(server.socket, server_side=True)
+        scheme = "https"
+        fingerprint = config.cert_fingerprint(cert_path)
+    else:
+        scheme = "http"
+        fingerprint = ""
+
     print(f"[antenna] Spellcaster antenna v{__version__} listening on "
-          f"https://{cfg['bind']}:{cfg['port']}")
+          f"{scheme}://{cfg['bind']}:{cfg['port']}")
     print(f"[antenna] Services: {', '.join(cfg.get('services', []))}")
-    print(f"[antenna] Cert fingerprint (SHA-256): {fingerprint}")
+    if use_tls:
+        print(f"[antenna] Cert fingerprint (SHA-256): {fingerprint}")
+    else:
+        print(f"[antenna] TLS disabled (ANTENNA_NO_TLS=1) — plain HTTP + bearer token")
+        print(f"[antenna]   Install openssl or Git-for-Windows to enable TLS.")
     print(f"[antenna] Token file: {cfg['token_path']}")
     print(f"[antenna] Audit log:  {cfg['log_path']}")
-    print(f"[antenna] Ready. Ctrl-C to stop.")
+    print(f"[antenna] Ready. Ctrl-C to stop.", flush=True)
 
     # Graceful shutdown on Ctrl-C — close the listening socket, let
     # in-flight requests finish on their own threads, then exit.
