@@ -1253,6 +1253,97 @@ def _add_runs_spinner(dialog, box):
     box.pack_start(hb, False, False, 0)
 
 
+def _add_normal_map_selector(dialog, box, image):
+    """Add a normal map layer dropdown to any dialog.
+
+    Scans the image's layers for any with 'normal' in the name and
+    populates a dropdown. If no normal map layers exist, shows a
+    'Generate one first' hint. The selected layer can be exported
+    and used as ControlNet input or IC-Light background guidance.
+
+    Sets dialog._normal_combo (ComboBoxText) and dialog._normal_enabled
+    (CheckButton). Use dialog._normal_combo.get_active_id() to get the
+    layer index, or None/"none" if disabled.
+    """
+    frame = Gtk.Frame(label="  3D Normal Map (optional)  ")
+    fbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+    fbox.set_margin_start(8); fbox.set_margin_end(8)
+    fbox.set_margin_top(4); fbox.set_margin_bottom(6)
+
+    dialog._normal_enabled = Gtk.CheckButton(label="Use normal map for 3D-aware generation")
+    dialog._normal_enabled.set_tooltip_text(
+        "When enabled, the selected normal map layer provides 3D surface\n"
+        "information to the AI. This dramatically improves:\n"
+        "  • Relighting accuracy (light wraps around surfaces correctly)\n"
+        "  • Inpainting consistency (fills respect 3D geometry)\n"
+        "  • Style transfer (preserves 3D structure)\n\n"
+        "Generate a normal map first: Enhance > 3D Normal Map")
+    fbox.pack_start(dialog._normal_enabled, False, False, 0)
+
+    dialog._normal_combo = Gtk.ComboBoxText()
+    dialog._normal_combo.append("none", "(no normal map)")
+    dialog._normal_combo.set_tooltip_text(
+        "Select which layer contains the 3D normal map.\n"
+        "Normal maps are RGB images where R=X, G=Y, B=Z surface direction.\n"
+        "Generate one via Enhance > 3D Normal Map (NormalCrafter).")
+
+    # Populate with layers that look like normal maps
+    found_normal = False
+    for i, layer in enumerate(image.get_layers()):
+        name = layer.get_name() or f"Layer {i}"
+        if "normal" in name.lower():
+            dialog._normal_combo.append(str(i), f"● {name}")
+            if not found_normal:
+                dialog._normal_combo.set_active_id(str(i))
+                dialog._normal_enabled.set_active(True)
+                found_normal = True
+        else:
+            dialog._normal_combo.append(str(i), name)
+
+    if not found_normal:
+        dialog._normal_combo.set_active_id("none")
+        dialog._normal_enabled.set_active(False)
+
+    fbox.pack_start(dialog._normal_combo, False, False, 0)
+
+    # Grey out combo when checkbox unchecked
+    dialog._normal_combo.set_sensitive(found_normal)
+    def _on_toggle(cb):
+        dialog._normal_combo.set_sensitive(cb.get_active())
+    dialog._normal_enabled.connect("toggled", _on_toggle)
+
+    frame.add(fbox)
+    box.pack_start(frame, False, False, 0)
+
+
+def _export_normal_map_layer(image, layer_index):
+    """Export a specific layer as a temp PNG file for upload to ComfyUI.
+
+    Temporarily makes only the target layer visible, exports the
+    flattened image, then restores original visibility.
+
+    Returns the temp file path (caller must unlink after upload).
+    """
+    layers = image.get_layers()
+    if layer_index < 0 or layer_index >= len(layers):
+        return None
+
+    # Save and hide all layers
+    orig_vis = [(l, l.get_visible()) for l in layers]
+    for l, _ in orig_vis:
+        l.set_visible(False)
+    layers[layer_index].set_visible(True)
+
+    # Export
+    path = _export_image_to_tmp(image)
+
+    # Restore
+    for l, v in orig_vis:
+        l.set_visible(v)
+
+    return path
+
+
 def _add_mask_mode_checkbox(dialog, box):
     """Add a 'Generate as Mask (transparent)' checkbox to any image dialog.
 
