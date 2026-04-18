@@ -31,6 +31,7 @@ import threading
 import time
 import json
 import queue
+from dataclasses import dataclass, field, asdict
 from typing import Any, Callable, Dict, List, Optional
 
 from .comfyui_runner import ComfyUIRunner
@@ -105,6 +106,15 @@ class VideoBridge:
         self._active_started: float = 0.0
         # Queue pause control
         self._paused: bool = False
+        # Render concurrency limit — semaphore gates worker threads
+        self._max_concurrent: int = 2
+        self._render_sem = threading.Semaphore(self._max_concurrent)
+
+        # Export settings for final video assembly
+        self._export_settings = ExportSettings()
+
+        # Favorite presets
+        self._favorite_presets: List[str] = []
 
     # ------------------------------------------------------------------
     # Health
@@ -353,6 +363,7 @@ class VideoBridge:
         self.board.mark_queued(shot.id, job_id)
 
         def worker() -> None:
+            self._render_sem.acquire()
             try:
                 self.board.mark_running(shot.id)
                 render_start = time.time()
@@ -400,6 +411,7 @@ class VideoBridge:
                     except Exception:  # noqa: BLE001
                         log.exception("on_complete raised")
             finally:
+                self._render_sem.release()
                 self._active_progress = 0.0
                 self._active_stage = "idle"
                 self._active_started = 0.0
@@ -515,6 +527,7 @@ class VideoBridge:
         self.board.mark_running(shot.id)
 
         def worker() -> None:
+            self._render_sem.acquire()
             try:
                 comfy_render_start = time.time()
                 result = self.comfy.run_raw(workflow)
@@ -555,6 +568,7 @@ class VideoBridge:
                     except Exception:  # noqa: BLE001
                         log.exception("on_complete raised")
             finally:
+                self._render_sem.release()
                 self._active_progress = 0.0
                 self._active_stage = "idle"
                 self._active_started = 0.0
@@ -698,16 +712,22 @@ class VideoBridge:
     # ------------------------------------------------------------------
 
     def queue_all_drafts(self) -> Dict[str, Any]:
-        """Queue all draft shots in order, chaining each to start after
-        the previous one finishes.  This prevents VRAM exhaustion from
-        running multiple renders in parallel.
+        """Queue all draft shots in dependency-respecting order.
 
-        Returns ``{"queued": N, "skipped": M, "shot_ids": [...]}``
-        where N is the count of shots successfully queued.
+        Uses topological sort so dependencies render before the shots
+        that need them.  Shots with unmet dependencies are deferred
+        until their deps complete.
+
+        Returns ``{"queued": N, "skipped": M, "deferred": D,
+        "has_cycle": bool, "shot_ids": [...]}``
         """
-        drafts = [s for s in self.board if s.status == "draft"]
+        # Use topological order so deps render first
+        sorted_shots = self.board.topological_sort()
+        drafts = [s for s in sorted_shots if s.status == "draft"]
+        has_cycle = self.board.has_cycle()
         if not drafts:
-            return {"queued": 0, "skipped": 0, "shot_ids": []}
+            return {"queued": 0, "skipped": 0, "deferred": 0,
+                    "has_cycle": has_cycle, "shot_ids": []}
 
         queued_ids: List[str] = []
         skipped = 0
@@ -750,6 +770,8 @@ class VideoBridge:
         return {
             "queued": len(queued_ids),
             "skipped": skipped,
+            "deferred": 0,
+            "has_cycle": has_cycle,
             "shot_ids": queued_ids,
         }
 
@@ -789,7 +811,65 @@ class VideoBridge:
             "in_flight": in_flight,
             "drafts_pending": len(drafts),
             "queued": len(queued),
+            "max_concurrent": self._max_concurrent,
         }
+
+    # ------------------------------------------------------------------
+    # Render concurrency settings
+    # ------------------------------------------------------------------
+
+    def get_settings(self) -> Dict[str, Any]:
+        """Return current bridge settings."""
+        return {
+            "max_concurrent": self._max_concurrent,
+            "paused": self._paused,
+            "export": self._export_settings.to_dict(),
+            "favorite_presets": list(self._favorite_presets),
+        }
+
+    def set_max_concurrent(self, n: int) -> Dict[str, Any]:
+        """Update the maximum number of concurrent renders.
+
+        Rebuilds the semaphore.  Active renders are not interrupted;
+        the new limit takes effect for future queue_shot() calls.
+        """
+        n = max(1, min(n, 8))  # clamp 1–8
+        old = self._max_concurrent
+        self._max_concurrent = n
+        self._render_sem = threading.Semaphore(n)
+        self._emit("settings_changed", {"max_concurrent": n})
+        return {"max_concurrent": n, "previous": old}
+
+    def get_export_settings(self) -> Dict[str, Any]:
+        """Return current export settings as a dict."""
+        return self._export_settings.to_dict()
+
+    def set_export_settings(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Update export settings from a dict.  Returns the new settings."""
+        self._export_settings = ExportSettings.from_dict(data)
+        self._emit("settings_changed", {"export": self._export_settings.to_dict()})
+        return self._export_settings.to_dict()
+
+    def get_favorite_presets(self) -> List[str]:
+        """Return the list of favorited preset keys."""
+        return list(self._favorite_presets)
+
+    def set_favorite_presets(self, presets: List[str]) -> List[str]:
+        """Replace the favorites list.  Returns the new list."""
+        self._favorite_presets = list(presets)
+        self._emit("settings_changed", {"favorite_presets": self._favorite_presets})
+        return self._favorite_presets
+
+    def toggle_favorite_preset(self, preset: str) -> Dict[str, Any]:
+        """Toggle a preset's favorite status.  Returns updated list + status."""
+        if preset in self._favorite_presets:
+            self._favorite_presets.remove(preset)
+            added = False
+        else:
+            self._favorite_presets.append(preset)
+            added = True
+        self._emit("settings_changed", {"favorite_presets": self._favorite_presets})
+        return {"preset": preset, "favorited": added, "favorites": list(self._favorite_presets)}
 
     # ------------------------------------------------------------------
     # Render time estimation
@@ -958,12 +1038,186 @@ def _pick_video_output(outputs: List[Any]) -> Optional[Dict[str, Any]]:
 # Assembly — concatenate all ready shots into one final video
 # ═══════════════════════════════════════════════════════════════════════
 
-def assemble_shots(board, output_dir: str = None) -> Optional[str]:
+# ══════════════════════════════════════════════════════════════════════
+# Export settings
+# ══════════════════════════════════════════════════════════════════════
+
+# Supported codecs for final assembly
+EXPORT_CODECS = ("h264", "h265", "vp9", "prores")
+EXPORT_RESOLUTIONS = ("source", "1920x1080", "1280x720", "3840x2160", "1080x1920", "720x1280")
+
+
+@dataclass
+class ExportSettings:
+    """User-configurable settings for final video assembly.
+
+    resolution: "source" keeps original, or "WxH" string
+    codec: one of EXPORT_CODECS
+    fps: frames per second (0 = keep source)
+    crf: constant rate factor (quality; lower = better; 0-51 for h264/h265)
+    audio: whether to include audio tracks
+    """
+    resolution: str = "source"
+    codec: str = "h264"
+    fps: int = 0
+    crf: int = 23
+    audio: bool = True
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ExportSettings":
+        known = {f.name for f in cls.__dataclass_fields__.values()}
+        clean = {k: v for k, v in data.items() if k in known}
+        return cls(**clean)
+
+    def ffmpeg_output_args(self) -> List[str]:
+        """Build the ffmpeg output arguments for these settings."""
+        args = []
+        # Codec
+        codec_map = {
+            "h264": ["-c:v", "libx264"],
+            "h265": ["-c:v", "libx265"],
+            "vp9": ["-c:v", "libvpx-vp9"],
+            "prores": ["-c:v", "prores_ks", "-profile:v", "3"],
+        }
+        args.extend(codec_map.get(self.codec, ["-c:v", "libx264"]))
+        # CRF (not for prores)
+        if self.codec != "prores":
+            crf = max(0, min(51, self.crf))
+            args.extend(["-crf", str(crf)])
+        # FPS
+        if self.fps > 0:
+            args.extend(["-r", str(self.fps)])
+        # Resolution
+        if self.resolution and self.resolution != "source":
+            try:
+                w, h = self.resolution.split("x")
+                # Use scale filter with padding to handle odd dimensions
+                args.extend(["-vf", f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2"])
+            except ValueError:
+                pass  # malformed, skip
+        # Audio
+        if not self.audio:
+            args.append("-an")
+        else:
+            args.extend(["-c:a", "aac", "-b:a", "192k"])
+        return args
+
+
+def _xfade_name(transition: str) -> str:
+    """Map our transition names to ffmpeg xfade transition names."""
+    mapping = {
+        "fade": "fade",
+        "crossfade": "fade",
+        "wipeleft": "wipeleft",
+        "wiperight": "wiperight",
+        "wipeup": "wipeup",
+        "wipedown": "wipedown",
+    }
+    return mapping.get(transition, "fade")
+
+
+
+def _build_xfade_filter(ready_shots, videos):
+    """Build an ffmpeg filter_complex string with xfade transitions.
+
+    ready_shots: list of Shot objects (only those with status=ready, ordered)
+    videos: list of video paths (same order/length as ready_shots)
+
+    Returns (filter_str, output_label) or (None, None) if all cuts.
+    """
+    n = len(videos)
+    if n < 2:
+        return None, None
+
+    # Collect transitions: shot[i].transition defines how shot[i] blends
+    # into shot[i+1].  We need n-1 transitions.
+    transitions = []
+    for i in range(n - 1):
+        t_type = getattr(ready_shots[i], "transition", "cut")
+        t_ms = getattr(ready_shots[i], "transition_ms", 500)
+        transitions.append((t_type, t_ms))
+
+    # If every transition is a hard cut, skip xfade entirely
+    if all(t == "cut" for t, _ in transitions):
+        return None, None
+
+    # Build chained xfade filters.
+    # Each xfade takes two inputs and produces one output.
+    # First pair: [0:v][1:v] xfade=... [v01]
+    # Then:       [v01][2:v] xfade=... [v012]  etc.
+    parts = []
+    prev_label = "[0:v]"
+    for i, (t_type, t_ms) in enumerate(transitions):
+        next_input = f"[{i+1}:v]"
+        out_label = f"[v{i}]"
+        if t_type == "cut":
+            # For a cut in the middle of xfade chain, use 0-duration fade
+            duration_s = 0.001
+            xfade = "fade"
+        else:
+            duration_s = max(0.1, t_ms / 1000.0)
+            xfade = _xfade_name(t_type)
+        # offset = time at which the transition starts (seconds from stream start)
+        # For simplicity, we use the shot's duration minus the transition duration.
+        # Since we don't know exact durations here, we use a fixed offset of 0
+        # and let ffmpeg figure it out — actually, xfade needs an explicit offset.
+        # We'll compute cumulative offsets from shot durations.
+        parts.append((prev_label, next_input, xfade, duration_s, out_label))
+        prev_label = out_label
+
+    # To compute offsets, we need shot durations.  Probe each video.
+    durations = []
+    for v in videos:
+        dur = _probe_duration(v)
+        durations.append(dur if dur else 3.0)  # fallback 3s
+
+    filter_parts = []
+    cumulative = 0.0
+    for i, (inp_a, inp_b, xfade, dur_s, out_lbl) in enumerate(parts):
+        # offset = cumulative duration of all previous segments minus
+        # the sum of all previous transition durations, minus this transition
+        offset = cumulative - dur_s
+        if offset < 0:
+            offset = 0
+        filter_parts.append(
+            f"{inp_a}{inp_b}xfade=transition={xfade}:duration={dur_s:.3f}"
+            f":offset={offset:.3f}{out_lbl}"
+        )
+        cumulative += durations[i] - dur_s
+
+    final_label = parts[-1][4]  # last output label
+    filter_str = ";".join(filter_parts)
+    return filter_str, final_label
+
+
+def _probe_duration(video_path: str) -> Optional[float]:
+    """Use ffprobe to get the duration of a video file in seconds."""
+    import shutil
+    import subprocess
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return None
+    try:
+        result = subprocess.run(
+            [ffprobe, "-v", "quiet", "-show_entries", "format=duration",
+             "-of", "csv=p=0", video_path],
+            capture_output=True, text=True, timeout=10,
+        )
+        return float(result.stdout.strip())
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired,
+            ValueError, AttributeError):
+        return None
+
+
+def assemble_shots(board, output_dir: str = None, export_settings: ExportSettings = None) -> Optional[str]:
     """Concatenate all ready shots into a single mp4.
 
-    Uses ffmpeg's concat demuxer which is fast (no re-encode) when all
-    clips share the same codec / resolution.  Falls back to re-encode
-    via the concat filter if the demuxer fails.
+    If shots have xfade transitions defined, uses ffmpeg's xfade filter
+    for blending.  Otherwise uses the concat demuxer (fast, no re-encode)
+    with a fallback to the concat filter (re-encodes).
 
     Returns the path to the assembled file, or None if < 2 ready clips.
     """
@@ -979,15 +1233,41 @@ def assemble_shots(board, output_dir: str = None) -> Optional[str]:
         output_dir = _tmpmod.gettempdir()
     os.makedirs(output_dir, exist_ok=True)
 
-    out_path = os.path.join(output_dir,
-                            f"assembled_{int(time.time())}.mp4")
-
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         log.warning("ffmpeg not found — cannot assemble shots")
         return None
 
-    # --- Try concat demuxer first (fast, no re-encode) ----------------
+    if export_settings is None:
+        export_settings = ExportSettings()
+    output_args = export_settings.ffmpeg_output_args()
+
+    # Choose file extension based on codec
+    ext = ".webm" if export_settings.codec == "vp9" else ".mov" if export_settings.codec == "prores" else ".mp4"
+    out_path = os.path.join(output_dir,
+                            f"assembled_{int(time.time())}{ext}")
+
+    # Gather the ready shots in order (matching board.ready_videos() order)
+    ready_shots = [s for s in board if s.status == "ready" and s.video_path]
+
+    # --- Try xfade transitions first ----------------------------------
+    xfade_filter, out_label = _build_xfade_filter(ready_shots, videos)
+    if xfade_filter:
+        inputs = []
+        for v in videos:
+            inputs += ["-i", v]
+        try:
+            subprocess.run(
+                [ffmpeg, "-y"] + inputs +
+                ["-filter_complex", xfade_filter,
+                 "-map", out_label] + output_args + [out_path],
+                check=True, capture_output=True, timeout=600,
+            )
+            return out_path
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            log.warning("xfade assembly failed (%s), falling back to concat", exc)
+
+    # --- Try concat demuxer (fast, no re-encode) ----------------------
     list_file = os.path.join(output_dir, ".concat_list.txt")
     with open(list_file, "w") as fh:
         for v in videos:
@@ -1013,7 +1293,7 @@ def assemble_shots(board, output_dir: str = None) -> Optional[str]:
         subprocess.run(
             [ffmpeg, "-y"] + inputs +
             ["-filter_complex", filter_str,
-             "-map", "[outv]", "-map", "[outa]", out_path],
+             "-map", "[outv]", "-map", "[outa]"] + output_args + [out_path],
             check=True, capture_output=True, timeout=600,
         )
         return out_path

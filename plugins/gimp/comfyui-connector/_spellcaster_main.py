@@ -951,6 +951,68 @@ WORKFLOW_TIMEOUT = _load_config().get("workflow_timeout", 0)
 _PROMPT_ENHANCE = _load_config().get("prompt_enhance", False)
 _LLM_URL = _load_config().get("llm_url", "http://127.0.0.1:5001")
 
+# ── Cross-interface backbone client ───────────────────────────────────
+# Announces GIMP's presence to the Wizard Guild and lets _run_* methods
+# publish events like `gimp.generation.finished` so the Guild and other
+# interfaces can react. When the client is healthy, GIMP appears as an
+# active interface in the Guild UI (Settings panel + "Send to GIMP" chip).
+#
+# Known limitation: GIMP 3 plug-ins run as short-lived per-invocation
+# processes, so a long-lived SSE subscription to receive events from the
+# Guild (e.g., "Open in GIMP" clicks) isn't reliable here. The heartbeat
+# + emit half — the GIMP→Guild direction — works cleanly. Guild→GIMP
+# receive is handled by a separate optional background helper (future).
+_CROSS_IFACE_CLIENT = None
+
+
+def _get_cross_interface_client():
+    """Lazily start the cross-interface client on first use.
+
+    Memoized. Only retained if the Guild actually answers — we never
+    leave a zombie heartbeat thread pinging a dead port.
+    """
+    global _CROSS_IFACE_CLIENT
+    if _CROSS_IFACE_CLIENT is not None:
+        return _CROSS_IFACE_CLIENT
+    try:
+        from spellcaster_core.cross_interface import CrossInterfaceClient
+        cfg = _load_config()
+        guild_url = cfg.get("guild_url") or "http://127.0.0.1:7777"
+        client = CrossInterfaceClient(
+            interface_key="gimp",
+            guild_url=guild_url,
+            auto_heartbeat=True,
+        )
+        if client.is_reachable():
+            _CROSS_IFACE_CLIENT = client
+            print(f"[Spellcaster] Cross-interface client online (guild={guild_url})")
+        else:
+            client.stop_auto_heartbeat()
+    except Exception as e:
+        print(f"[Spellcaster] Cross-interface client disabled: {e}")
+    return _CROSS_IFACE_CLIENT
+
+
+def _publish_event(kind, **data):
+    """Publish an event to the Guild's cross-interface bus.
+
+    Fire-and-forget — callers should not depend on success. Typical use:
+
+        _publish_event("gimp.generation.finished",
+                       prompt=prompt, model=model, arch=arch,
+                       image_path=out_path)
+
+    If the Guild is unreachable or the client isn't available, this
+    silently no-ops.
+    """
+    try:
+        client = _get_cross_interface_client()
+        if client is None:
+            return
+        client.publish(kind, data=dict(data))
+    except Exception:
+        pass
+
 
 def _auto_enhance(prompt, arch_key, negative=""):
     """Enhance a prompt via local LLM if the global toggle is ON.
@@ -11341,6 +11403,17 @@ class Spellcaster(Gimp.PlugIn):
     def do_set_i18n(self, name):
         """Disable internationalization (i18n) — plugin uses English only."""
         return False
+
+    def __init__(self):
+        super().__init__()
+        # Fire the cross-interface client bootstrap once per plugin
+        # invocation. Memoized, so repeated menu clicks don't re-spawn
+        # heartbeat threads. If the Guild isn't running, this silently
+        # no-ops — no errors bubble up to GIMP.
+        try:
+            _get_cross_interface_client()
+        except Exception:
+            pass
 
     def do_query_procedures(self):
         """Return procedure names filtered by installed features.

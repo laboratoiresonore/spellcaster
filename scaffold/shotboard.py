@@ -38,6 +38,7 @@ log = logging.getLogger("spellcaster.shotboard")
 
 
 SHOT_STATUSES = ("draft", "queued", "running", "ready", "failed")
+TRANSITION_TYPES = ("cut", "fade", "crossfade", "wipeleft", "wiperight", "wipeup", "wipedown")
 
 
 # -----------------------------------------------------------------------------
@@ -77,6 +78,30 @@ class Trajectory:
         )
 
 
+
+@dataclass
+class Scene:
+    """A named group of shots (e.g. "Act 1", "EXT. Forest — Day").
+
+    Scenes are purely organisational — they don't affect rendering or
+    assembly.  Each shot may optionally belong to one scene via its
+    ``scene_id`` field.  Scenes have a display order but that order is
+    derived from the first shot in the scene, not stored separately.
+    """
+    id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    name: str = ""
+    color: str = "#4a9eff"   # UI accent colour
+    collapsed: bool = False  # whether the scene group is collapsed in UI
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Scene":
+        known = {f.name for f in cls.__dataclass_fields__.values()}
+        clean = {k: v for k, v in data.items() if k in known}
+        return cls(**clean)
+
 @dataclass
 class Shot:
     """A single video shot on the storyboard.
@@ -106,6 +131,11 @@ class Shot:
       - last_updated: unix epoch seconds
       - duration_s:   playback length hint (from the preset's fps/frames)
 
+    Transition:
+      - transition:    how this shot blends INTO the next ("cut", "fade",
+        "crossfade", "wipeleft", "wiperight", "wipeup", "wipedown")
+      - transition_ms: duration of the transition in milliseconds (0 = hard cut)
+
     Continuity:
       - carry_last_frame: if True, the ShotBoard will wire this shot's
         final frame as the *next* shot's ref_image when
@@ -129,9 +159,16 @@ class Shot:
     last_updated: float = field(default_factory=time.time)
     duration_s: Optional[float] = None
     render_duration_s: Optional[float] = None
+    target_duration_s: Optional[float] = None
     carry_last_frame: bool = True
     notes: str = ""
     color_label: str = ""
+    scene_id: Optional[str] = None
+    depends_on: List[str] = field(default_factory=list)
+    transition: str = "cut"
+    transition_ms: int = 500
+    locked: bool = False
+    render_history: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -170,6 +207,7 @@ class Shotboard:
     def __init__(self, path: str):
         self.path = os.path.abspath(path)
         self._shots: List[Shot] = []
+        self._scenes: List[Scene] = []
         self._load()
 
     # ------------------------------------------------------------------
@@ -196,6 +234,8 @@ class Shotboard:
             return
         shots = raw.get("shots") or []
         self._shots = [Shot.from_dict(s) for s in shots if isinstance(s, dict)]
+        scenes_raw = raw.get("scenes") or []
+        self._scenes = [Scene.from_dict(sc) for sc in scenes_raw if isinstance(sc, dict)]
         self._reindex()
 
     def _persist(self) -> None:
@@ -209,6 +249,7 @@ class Shotboard:
             "version": 1,
             "saved_at": time.time(),
             "shots": [s.to_dict() for s in self._shots],
+            "scenes": [sc.to_dict() for sc in self._scenes],
         }
         # Write to a temp file in the same directory, then rename — so
         # if we crash mid-write, the original file is still intact.
@@ -276,14 +317,29 @@ class Shotboard:
         return shot
 
     def update(self, shot_id: str, **fields: Any) -> Optional[Shot]:
-        """Mutate an existing shot by id; ignores unknown fields."""
+        """Mutate an existing shot by id; ignores unknown fields.
+        
+        Locked shots reject edits except for status, locked, error,
+        video_path, job_id, render_duration_s (system fields).
+        """
         shot = self.get(shot_id)
         if not shot:
             return None
+        SYSTEM_FIELDS = {"status", "locked", "error", "video_path",
+                         "job_id", "render_duration_s", "last_updated"}
         known = {f.name for f in Shot.__dataclass_fields__.values()}
         for key, val in fields.items():
-            if key in known:
-                setattr(shot, key, val)
+            if key not in known:
+                continue
+            if shot.locked and key not in SYSTEM_FIELDS:
+                continue  # silently skip locked field edits
+            setattr(shot, key, val)
+        # Auto-lock on render start or completion
+        if "status" in fields:
+            if fields["status"] in ("rendering", "ready"):
+                shot.locked = True
+            elif fields["status"] == "draft":
+                shot.locked = False
         shot.touch()
         self.save()
         return shot
@@ -389,6 +445,344 @@ class Shotboard:
             self.save()
         return nxt
 
+
+    # ------------------------------------------------------------------
+    # Scene management
+    # ------------------------------------------------------------------
+
+    def scenes(self) -> List[Scene]:
+        """Return the list of scenes."""
+        return list(self._scenes)
+
+    def get_scene(self, scene_id: str) -> Optional[Scene]:
+        """Look up a scene by id."""
+        for sc in self._scenes:
+            if sc.id == scene_id:
+                return sc
+        return None
+
+    def add_scene(self, name: str = "", color: str = "#4a9eff") -> Scene:
+        """Create a new scene and persist."""
+        sc = Scene(name=name, color=color)
+        self._scenes.append(sc)
+        self.save()
+        return sc
+
+    def update_scene(self, scene_id: str, **fields: Any) -> Optional[Scene]:
+        """Update a scene's fields by id."""
+        sc = self.get_scene(scene_id)
+        if not sc:
+            return None
+        known = {f.name for f in Scene.__dataclass_fields__.values()}
+        for key, val in fields.items():
+            if key in known:
+                setattr(sc, key, val)
+        self.save()
+        return sc
+
+    def remove_scene(self, scene_id: str) -> bool:
+        """Remove a scene. Shots in it get scene_id cleared."""
+        before = len(self._scenes)
+        self._scenes = [sc for sc in self._scenes if sc.id != scene_id]
+        if len(self._scenes) == before:
+            return False
+        # Clear scene_id from orphaned shots
+        for s in self._shots:
+            if s.scene_id == scene_id:
+                s.scene_id = None
+        self.save()
+        return True
+
+    def assign_shot_to_scene(self, shot_id: str, scene_id: Optional[str]) -> Optional[Shot]:
+        """Set a shot's scene_id. Pass None to unassign."""
+        shot = self.get(shot_id)
+        if not shot:
+            return None
+        if scene_id is not None and not self.get_scene(scene_id):
+            return None  # scene doesn't exist
+        shot.scene_id = scene_id
+        shot.touch()
+        self.save()
+        return shot
+
+    def shots_in_scene(self, scene_id: str) -> List[Shot]:
+        """Return all shots belonging to a scene, in board order."""
+        return [s for s in self._shots if s.scene_id == scene_id]
+
+    # ------------------------------------------------------------------
+    # Dependencies
+    # ------------------------------------------------------------------
+
+    def add_dependency(self, shot_id: str, depends_on_id: str) -> Optional[Shot]:
+        """Make shot_id depend on depends_on_id finishing first."""
+        shot = self.get(shot_id)
+        dep = self.get(depends_on_id)
+        if not shot or not dep:
+            return None
+        if shot_id == depends_on_id:
+            return None  # no self-dependency
+        if depends_on_id not in shot.depends_on:
+            shot.depends_on.append(depends_on_id)
+            shot.touch()
+            self.save()
+        return shot
+
+    def remove_dependency(self, shot_id: str, depends_on_id: str) -> Optional[Shot]:
+        """Remove a dependency from a shot."""
+        shot = self.get(shot_id)
+        if not shot:
+            return None
+        if depends_on_id in shot.depends_on:
+            shot.depends_on.remove(depends_on_id)
+            shot.touch()
+            self.save()
+        return shot
+
+    def dependencies_met(self, shot_id: str) -> bool:
+        """Check if all dependencies of a shot are in 'ready' status."""
+        shot = self.get(shot_id)
+        if not shot or not shot.depends_on:
+            return True
+        for dep_id in shot.depends_on:
+            dep = self.get(dep_id)
+            if not dep or dep.status != "ready":
+                return False
+        return True
+
+    def ready_to_render(self, shot_id: str) -> bool:
+        """Check if a shot can be rendered (draft + dependencies met)."""
+        shot = self.get(shot_id)
+        if not shot:
+            return False
+        if shot.status != "draft":
+            return False
+        return self.dependencies_met(shot_id)
+
+    # ------------------------------------------------------------------
+    # Topological sort (dependency-aware ordering)
+    # ------------------------------------------------------------------
+
+    def has_cycle(self) -> bool:
+        visited = set()
+        rec_stack = set()
+        ids = {s.id for s in self._shots}
+
+        def _dfs(sid):
+            visited.add(sid)
+            rec_stack.add(sid)
+            shot = self.get(sid)
+            if shot:
+                for dep_id in shot.depends_on:
+                    if dep_id not in ids:
+                        continue
+                    if dep_id not in visited:
+                        if _dfs(dep_id):
+                            return True
+                    elif dep_id in rec_stack:
+                        return True
+            rec_stack.discard(sid)
+            return False
+
+        for s in self._shots:
+            if s.id not in visited:
+                if _dfs(s.id):
+                    return True
+        return False
+
+    def topological_sort(self):
+        id_to_shot = {s.id: s for s in self._shots}
+        in_degree = {s.id: 0 for s in self._shots}
+
+        for s in self._shots:
+            for dep_id in s.depends_on:
+                if dep_id in id_to_shot:
+                    in_degree[s.id] += 1
+
+        queue_list = []
+        for sid, deg in in_degree.items():
+            if deg == 0:
+                queue_list.append(sid)
+
+        order_map = {s.id: i for i, s in enumerate(self._shots)}
+        queue_list.sort(key=lambda sid: order_map.get(sid, 0))
+
+        result = []
+        visited_set = set()
+
+        while queue_list:
+            sid = queue_list.pop(0)
+            visited_set.add(sid)
+            result.append(id_to_shot[sid])
+            for s in self._shots:
+                if sid in s.depends_on and s.id not in visited_set:
+                    in_degree[s.id] -= 1
+                    if in_degree[s.id] == 0:
+                        queue_list.append(s.id)
+                        queue_list.sort(key=lambda x: order_map.get(x, 0))
+
+        for s in self._shots:
+            if s.id not in visited_set:
+                result.append(s)
+
+        return result
+
+    def lock_shot(self, shot_id):
+        """Lock a shot to prevent edits."""
+        shot = self.get(shot_id)
+        if not shot:
+            return None
+        shot.locked = True
+        shot.touch()
+        self.save()
+        return shot
+
+    def unlock_shot(self, shot_id):
+        """Unlock a shot to allow edits."""
+        shot = self.get(shot_id)
+        if not shot:
+            return None
+        shot.locked = False
+        shot.touch()
+        self.save()
+        return shot
+
+    def is_locked(self, shot_id):
+        """Check if a shot is locked."""
+        shot = self.get(shot_id)
+        return shot is not None and shot.locked
+
+    def batch_lock(self, shot_ids, lock=True):
+        """Lock or unlock multiple shots at once. Returns count of changed shots."""
+        changed = 0
+        for sid in shot_ids:
+            shot = self.get(sid)
+            if shot and shot.locked != lock:
+                shot.locked = lock
+                shot.touch()
+                changed += 1
+        if changed:
+            self.save()
+        return {"changed": changed, "lock": lock}
+
+    def batch_reset_status(self, shot_ids):
+        """Reset multiple shots to draft status. Skips locked shots. Returns count."""
+        changed = 0
+        for sid in shot_ids:
+            shot = self.get(sid)
+            if shot and shot.status != "draft" and not shot.locked:
+                shot.status = "draft"
+                shot.locked = False
+                shot.touch()
+                changed += 1
+        if changed:
+            self.save()
+        return {"reset": changed}
+
+    def batch_color_label(self, shot_ids, color_label):
+        """Set color label on multiple shots. Returns count."""
+        changed = 0
+        for sid in shot_ids:
+            shot = self.get(sid)
+            if shot:
+                shot.color_label = color_label
+                shot.touch()
+                changed += 1
+        if changed:
+            self.save()
+        return {"changed": changed, "color_label": color_label}
+
+    def effective_duration(self, shot_id):
+        """Return the effective duration for a shot: target override or preset default."""
+        shot = self.get(shot_id)
+        if not shot:
+            return 0.0
+        if shot.target_duration_s is not None and shot.target_duration_s > 0:
+            return shot.target_duration_s
+        if shot.duration_s is not None and shot.duration_s > 0:
+            return shot.duration_s
+        return 0.0
+
+    def total_duration(self):
+        """Return sum of effective durations for all shots."""
+        total = 0.0
+        for s in self._shots:
+            total += self.effective_duration(s.id)
+        return round(total, 2)
+
+    def record_render(self, shot_id, preset=None, status="ready",
+                      duration_s=None, error=None):
+        """Append a render attempt to the shot's history log."""
+        shot = self.get(shot_id)
+        if not shot:
+            return None
+        entry = {
+            "timestamp": time.time(),
+            "preset": preset or shot.preset,
+            "status": status,
+            "duration_s": duration_s,
+            "error": error,
+        }
+        shot.render_history.append(entry)
+        # Keep last 20 entries to bound storage
+        if len(shot.render_history) > 20:
+            shot.render_history = shot.render_history[-20:]
+        shot.touch()
+        self.save()
+        return entry
+
+    def get_render_history(self, shot_id):
+        """Return the render history for a shot."""
+        shot = self.get(shot_id)
+        if not shot:
+            return []
+        return list(shot.render_history)
+
+    def render_order(self):
+        """Return render order preview with dependency graph data."""
+        sorted_shots = self.topological_sort()
+        has_cycle = self.has_cycle()
+        nodes = []
+        for i, s in enumerate(sorted_shots):
+            deps_met = self.dependencies_met(s.id)
+            ready = self.ready_to_render(s.id)
+            nodes.append({
+                "id": s.id,
+                "title": s.title or s.id[:8],
+                "status": s.status,
+                "order": i,
+                "depends_on": list(s.depends_on),
+                "dependencies_met": deps_met,
+                "ready_to_render": ready,
+            })
+        edges = []
+        for s in sorted_shots:
+            for dep_id in s.depends_on:
+                dep_shot = self.get(dep_id)
+                met = dep_shot is not None and dep_shot.status == "ready"
+                edges.append({"from": dep_id, "to": s.id, "met": met})
+        ready_count = sum(1 for n in nodes if n["ready_to_render"])
+        return {
+            "nodes": nodes,
+            "edges": edges,
+            "has_cycle": has_cycle,
+            "total": len(nodes),
+            "ready_count": ready_count,
+        }
+
+    def carry_frame_to_next(self, shot_id, last_frame_path=None):
+        """Set the reference image for the next shot in sequence."""
+        shot = self.get(shot_id)
+        if not shot:
+            return None
+        nxt = self.next_of(shot_id)
+        if not nxt:
+            return None
+        if last_frame_path and (nxt.ref_image is None or nxt.carry_last_frame):
+            nxt.ref_image = last_frame_path
+            nxt.touch()
+            self.save()
+        return nxt
+
     # ------------------------------------------------------------------
     # Export
     # ------------------------------------------------------------------
@@ -405,4 +799,3 @@ class Shotboard:
         """Return the ordered list of completed mp4 paths, skipping gaps."""
         return [s.video_path for s in self._shots
                 if s.status == "ready" and s.video_path]
-
