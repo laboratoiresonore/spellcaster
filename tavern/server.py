@@ -1306,6 +1306,7 @@ def fetch_all_characters(comfy_url=None):
 
 
 CHARS_CACHE, NODES_CACHE = [], []   # populated by _server_init()
+_VIDEO_BRIDGE = None                 # populated by _server_init()
 
 
 def _llm_enhance_scaffolds():
@@ -1469,7 +1470,7 @@ def _server_init(comfy_url=None):
     Args:
         comfy_url: Explicit ComfyUI URL. Falls back to global COMFYUI_URL.
     """
-    global CHARS_CACHE, NODES_CACHE, _ANIM_POLL_THREAD
+    global CHARS_CACHE, NODES_CACHE, _ANIM_POLL_THREAD, _VIDEO_BRIDGE
     url = comfy_url or COMFYUI_URL
     CHARS_CACHE, NODES_CACHE = fetch_all_characters(comfy_url=url)
     _apply_scaffold_overrides()
@@ -1513,6 +1514,21 @@ def _server_init(comfy_url=None):
         _ANIM_POLL_THREAD = threading.Thread(
             target=_anim_poll_background, daemon=True)
         _ANIM_POLL_THREAD.start()
+
+    # ── Video Bridge init ──
+    try:
+        from scaffold.video_bridge import VideoBridge
+        shotboard_path = os.path.join(_THIS_DIR, "shotboard.json")
+        _VIDEO_BRIDGE = VideoBridge(
+            shotboard_path=shotboard_path,
+            wangp_url="http://localhost:7860",
+            comfyui_url=url or COMFYUI_URL,
+            output_dir=os.path.join(_THIS_DIR, "creations"),
+        )
+        print(f"  [Guild] Video Bridge: ON ({len(_VIDEO_BRIDGE.board)} shots)")
+    except Exception as e:
+        print(f"  [Guild] Video Bridge: OFF ({e})")
+        _VIDEO_BRIDGE = None
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -3956,80 +3972,27 @@ _TINY_PNG = (
 def _privacy_cleanup(comfy_url, workflow, result):
     """Delete uploaded inputs and generated outputs from ComfyUI after delivery.
 
-    This is the Guild equivalent of the GIMP plugin's _cleanup_server_temps().
-    Called after _dispatch_workflow() when PRIVACY_CLEANUP is enabled.
-
-    Cleans:
-      1. Input images: any LoadImage node's "image" value that looks like a
-         guild-uploaded temp file (guild_*, gimp_*, spellcaster_*)
-      2. Output images/videos: the files returned in result["urls"]
+    Delegates to spellcaster_core.privacy (single source of truth).
     """
-    import uuid as _uuid
-
-    # 1. Overwrite uploaded input images with a 1x1 transparent pixel
-    for nid, node in workflow.items():
-        if not isinstance(node, dict):
-            continue
-        ct = node.get("class_type", "")
-        if ct not in ("LoadImage", "VHS_LoadVideo"):
-            continue
-        fname = node.get("inputs", {}).get("image", "") or node.get("inputs", {}).get("video", "")
-        if not fname or not isinstance(fname, str):
-            continue
-        # Only clean guild/gimp temp uploads, not user's permanent files
-        fl = fname.lower()
-        import re as _re_clean
-        is_cached_asset = bool(_re_clean.match(r'^[a-f0-9]{16}\.', fl))
-        if not is_cached_asset and not any(fl.startswith(p) for p in ("guild_", "gimp_", "spellcaster_")):
-            continue
-        try:
-            url = f"{comfy_url}/upload/image"
-            boundary = _uuid.uuid4().hex
-            body = (
-                f"--{boundary}\r\n"
-                f'Content-Disposition: form-data; name="image"; filename="{fname}"\r\n'
-                f"Content-Type: image/png\r\n\r\n"
-            ).encode() + _TINY_PNG + f"\r\n--{boundary}--\r\n".encode()
-            req = urllib.request.Request(url, data=body,
-                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
-                method="POST")
-            urllib.request.urlopen(req, timeout=10)
-        except Exception:
-            pass
-
-    # 2. Delete output files from ComfyUI (output or temp folder)
-    from urllib.parse import urlparse, parse_qs
-    for url in result.get("urls", []):
-        try:
-            parsed = urlparse(url)
-            params = parse_qs(parsed.query)
-            fname = params.get("filename", [""])[0]
-            subfolder = params.get("subfolder", [""])[0]
-            ftype = params.get("type", ["output"])[0]  # respect actual type
-            if not fname:
-                continue
-            # ComfyUI lacks a delete API — overwrite with tiny PNG
-            upload_url = f"{comfy_url}/upload/image"
-            boundary = _uuid.uuid4().hex
-            body = (
-                f"--{boundary}\r\n"
-                f'Content-Disposition: form-data; name="image"; filename="{fname}"\r\n'
-                f"Content-Type: image/png\r\n\r\n"
-            ).encode() + _TINY_PNG + (
-                f"\r\n--{boundary}\r\n"
-                f'Content-Disposition: form-data; name="subfolder"\r\n\r\n'
-                f"{subfolder}\r\n"
-                f"--{boundary}\r\n"
-                f'Content-Disposition: form-data; name="type"\r\n\r\n'
-                f"{ftype}\r\n"
-                f"--{boundary}--\r\n"
-            ).encode()
-            req = urllib.request.Request(upload_url, data=body,
-                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
-                method="POST")
-            urllib.request.urlopen(req, timeout=10)
-        except Exception:
-            pass
+    try:
+        from spellcaster_core.privacy import cleanup_server_files
+        # Convert result URLs to (filename, subfolder, type) tuples
+        results_tuples = []
+        if result and result.get("urls"):
+            from urllib.parse import urlparse, parse_qs
+            for url in result["urls"]:
+                try:
+                    params = parse_qs(urlparse(url).query)
+                    fn = params.get("filename", [""])[0]
+                    sf = params.get("subfolder", [""])[0]
+                    ft = params.get("type", ["output"])[0]
+                    if fn:
+                        results_tuples.append((fn, sf, ft))
+                except Exception:
+                    pass
+        cleanup_server_files(comfy_url, workflow=workflow, results=results_tuples)
+    except ImportError:
+        pass  # privacy module not available
 
 
 def _detect_best_model(comfy_url):
@@ -5303,6 +5266,26 @@ class GuildHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(payload).encode('utf-8'))
 
+    def _serve_file(self, filepath):
+        """Serve a local file by path with appropriate MIME type."""
+        import mimetypes
+        if not os.path.isfile(filepath):
+            return self.end_json(404, {"error": "File not found"})
+        mime, _ = mimetypes.guess_type(filepath)
+        if not mime:
+            mime = 'application/octet-stream'
+        try:
+            with open(filepath, 'rb') as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header('Content-Type', mime)
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(data)
+        except Exception:
+            return self.end_json(500, {"error": "Failed to read file"})
+
     def _handle_config_update(self, data):
         global COMFYUI_URL, KOBOLD_URL, SILLYTAVERN_URL, SIGNAL_BRIDGE_URL, LLM_MODE, HORDE_API_KEY, HORDE_MODEL, PROMPT_ENHANCE
         changed = []
@@ -6032,6 +6015,138 @@ class GuildHandler(SimpleHTTPRequestHandler):
             # ungenerated wizard now uses the same Spellcaster icon so
             # the UI looks coherent and the pending fade animation works.
             return _serve_placeholder_icon(self)
+
+        # ── Video API GET endpoints ──
+        elif self.path == '/api/video/shots':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shots = []
+            for s in _VIDEO_BRIDGE.board._shots:
+                shots.append({
+                    "id": s.id, "index": s.index,
+                    "title": s.title, "prompt": s.prompt,
+                    "negative": s.negative, "preset": s.preset,
+                    "seed": s.seed, "backend": s.backend,
+                    "status": s.status.value if hasattr(s.status, 'value') else s.status,
+                    "ref_image": bool(s.ref_image),
+                    "video_path": bool(s.video_path),
+                    "trajectories": s.trajectories or [],
+                    "duration_s": s.duration_s,
+                    "carry_last_frame": s.carry_last_frame,
+                    "error": getattr(s, 'error', None),
+                    "progress": _VIDEO_BRIDGE.render_progress().get("progress", 0) if s.id == getattr(_VIDEO_BRIDGE, '_active_shot_id', None) else None,
+                })
+            return self.end_json(200, {"shots": shots})
+
+        elif self.path == '/api/video/presets':
+            try:
+                from scaffold.wangp_runner import WANGP_PRESETS
+                return self.end_json(200, {"presets": WANGP_PRESETS})
+            except ImportError:
+                return self.end_json(200, {"presets": {}})
+
+        elif self.path == '/api/video/health':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(200, {"status": "no_bridge", "queue": 0, "active": None})
+            health = _VIDEO_BRIDGE.health()
+            health["status"] = "ok"
+            return self.end_json(200, health)
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/reference'):
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/api/video/shots/')[1].rsplit('/reference', 1)[0]
+            shots = _VIDEO_BRIDGE.board._shots
+            shot = next((s for s in shots if s.id == shot_id), None)
+            if not shot or not shot.ref_image:
+                return self.end_json(404, {"error": "No reference image"})
+            return self._serve_file(shot.ref_image)
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/video'):
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/api/video/shots/')[1].rsplit('/video', 1)[0]
+            shots = _VIDEO_BRIDGE.board._shots
+            shot = next((s for s in shots if s.id == shot_id), None)
+            if not shot or not shot.video_path:
+                return self.end_json(404, {"error": "No video"})
+            return self._serve_file(shot.video_path)
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/thumbnail'):
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/api/video/shots/')[1].rsplit('/thumbnail', 1)[0]
+            shots = _VIDEO_BRIDGE.board._shots
+            shot = next((s for s in shots if s.id == shot_id), None)
+            if not shot:
+                return self.end_json(404, {"error": "Shot not found"})
+            thumb = None
+            if shot.ref_image and os.path.isfile(shot.ref_image):
+                thumb = shot.ref_image
+            elif shot.video_path and os.path.isfile(shot.video_path):
+                thumb_path = shot.video_path + ".thumb.jpg"
+                if not os.path.isfile(thumb_path):
+                    import subprocess
+                    try:
+                        subprocess.run(
+                            ["ffmpeg", "-y", "-i", shot.video_path,
+                             "-vframes", "1", "-vf", "scale=128:-1",
+                             "-q:v", "5", thumb_path],
+                            capture_output=True, timeout=10,
+                        )
+                    except Exception:
+                        pass
+                if os.path.isfile(thumb_path):
+                    thumb = thumb_path
+            if not thumb:
+                return self.end_json(404, {"error": "No thumbnail available"})
+            return self._serve_file(thumb)
+
+        elif self.path == '/api/video/assembled':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            assembled = getattr(_VIDEO_BRIDGE, '_last_assembled', None)
+            if not assembled or not os.path.isfile(assembled):
+                return self.end_json(404, {"error": "No assembled video"})
+            return self._serve_file(assembled)
+
+        elif self.path == '/api/video/events':
+            # SSE endpoint — hold connection open and stream events.
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream')
+            self.send_header('Cache-Control', 'no-cache')
+            self.send_header('Connection', 'keep-alive')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            q = _VIDEO_BRIDGE.subscribe()
+            try:
+                # Send initial heartbeat so client knows connection is live
+                self.wfile.write(b": heartbeat\n\n")
+                self.wfile.flush()
+                while True:
+                    try:
+                        evt = q.get(timeout=5.0)
+                        event_name = evt.get("event", "message")
+                        data_str = json.dumps(evt.get("data", {}))
+                        self.wfile.write(
+                            f"event: {event_name}\ndata: {data_str}\n\n".encode()
+                        )
+                        self.wfile.flush()
+                    except Exception:
+                        # queue.Empty — send a keep-alive comment
+                        try:
+                            self.wfile.write(b": keepalive\n\n")
+                            self.wfile.flush()
+                        except (BrokenPipeError, ConnectionResetError,
+                                OSError):
+                            break
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
+            finally:
+                _VIDEO_BRIDGE.unsubscribe(q)
+            return
 
         # Static routing — files under /static/ and /characters/ served as-is
         if (not self.path.startswith('/static/')
@@ -7401,8 +7516,166 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 return self.end_json(500, {'error': str(e)})
 
 
+        # ── Video API POST endpoints ──
+        elif self.path == '/api/video/shots' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            result = _VIDEO_BRIDGE.add_shot(
+                title=data.get("title", ""),
+                prompt=data.get("prompt", ""),
+                backend=data.get("backend", "wangp"),
+                preset=data.get("preset", ""),
+            )
+            return self.end_json(200, result)
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/render'):
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/api/video/shots/')[1].rsplit('/render', 1)[0]
+            result = _VIDEO_BRIDGE.queue_shot(shot_id)
+            return self.end_json(200, result)
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/reference'):
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/api/video/shots/')[1].rsplit('/reference', 1)[0]
+            ref_path = data.get("path", "")
+            image_data = data.get("image_data")
+            if image_data and not ref_path:
+                # Base64 upload — decode and save to temp file
+                import base64
+                import tempfile
+                raw = base64.b64decode(image_data)
+                ext = data.get("ext", ".png")
+                fd, tmp = tempfile.mkstemp(suffix=ext, prefix="ref_")
+                os.close(fd)
+                with open(tmp, "wb") as fh:
+                    fh.write(raw)
+                ref_path = tmp
+            result = _VIDEO_BRIDGE.attach_reference(shot_id, ref_path)
+            return self.end_json(200, result)
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/trajectories'):
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/api/video/shots/')[1].rsplit('/trajectories', 1)[0]
+            result = _VIDEO_BRIDGE.set_trajectories(shot_id, data.get("trajectories", []))
+            return self.end_json(200, result)
+
+        elif self.path.startswith('/api/video/shots/') and not self.path.endswith(('/render', '/reference', '/trajectories', '/continuity', '/duplicate')):
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/api/video/shots/')[-1]
+            if data.get("_method") == "DELETE":
+                result = _VIDEO_BRIDGE.remove_shot(shot_id)
+            else:
+                result = _VIDEO_BRIDGE.update_shot(
+                    shot_id,
+                    title=data.get('title'),
+                    prompt=data.get('prompt'),
+                    negative=data.get('negative'),
+                    seed=data.get('seed'),
+                    backend=data.get('backend'),
+                    preset=data.get('preset'),
+                )
+            return self.end_json(200, result)
+
+        elif self.path == '/api/video/reorder':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            ordered_ids = data.get("ordered_ids", [])
+            result = _VIDEO_BRIDGE.reorder_shots(ordered_ids)
+            return self.end_json(200, result)
+
+        elif self.path == '/api/video/chat':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            text = data.get("message", "")
+            user_id = data.get("user_id", "guild_default")
+            result = _VIDEO_BRIDGE.handle_chat(user_id, text)
+            return self.end_json(200, result)
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/continuity'):
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/api/video/shots/')[1].rsplit('/continuity', 1)[0]
+            try:
+                from scaffold.frame_extract import extract_last_frame
+                shot = _VIDEO_BRIDGE.board.get(shot_id)
+                if not shot or not shot.video_path:
+                    return self.end_json(404, {"error": "Shot has no video"})
+                last_frame = extract_last_frame(shot.video_path)
+                _VIDEO_BRIDGE.board.export_for_next(shot_id, last_frame)
+                return self.end_json(200, {"status": "ok", "frame": last_frame})
+            except Exception as e:
+                return self.end_json(500, {"error": str(e)})
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/duplicate'):
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/api/video/shots/')[1].rsplit('/duplicate', 1)[0]
+            new_shot = _VIDEO_BRIDGE.board.duplicate(shot_id)
+            if not new_shot:
+                return self.end_json(404, {"error": "Shot not found"})
+            return self.end_json(200, new_shot.to_dict())
+
+        elif self.path == '/api/video/assemble':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            from scaffold.video_bridge import assemble_shots
+            creations_dir = os.path.join(os.path.dirname(__file__), 'creations')
+            result = assemble_shots(_VIDEO_BRIDGE.board, output_dir=creations_dir)
+            if result:
+                _VIDEO_BRIDGE._last_assembled = result
+                return self.end_json(200, {"status": "assembled", "path": result})
+            return self.end_json(400, {"error": "Assembly failed \u2014 need at least 2 rendered shots"})
+
+        elif self.path == '/api/video/render-all':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                result = _VIDEO_BRIDGE.queue_all_drafts()
+                return self.end_json(200, result)
+            except Exception as e:
+                return self.end_json(500, {"error": str(e)})
+
         else:
             return self.end_json(404, {"error": f"Unknown endpoint: {self.path}"})
+
+
+    # ════════════════════════════════════════════════════════════════════════════
+
+    def do_OPTIONS(self):
+        """Handle CORS preflight requests."""
+        self.send_response(204)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
+
+    def translate_path(self, path):
+        root = os.path.dirname(os.path.abspath(__file__))
+        path = path.split('?', 1)[0]
+        path = path.split('#', 1)[0]
+        if path.startswith('/'):
+            path = path[1:]
+        return os.path.join(root, path)
+
+    def log_message(self, format, *args):
+        """Quieter logging \u2014 skip noisy static asset requests."""
+        msg = format % args
+        if '/static/' not in msg and '/api/avatar/' not in msg:
+            print(f"  {msg}")
+
+
+if __name__ == "__main__":
+    print(f"Starting The Wizard Guild on port {PORT}...")
+    httpd = HTTPServer(('0.0.0.0', PORT), GuildHandler)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    httpd.server_close()
 
 
     # ════════════════════════════════════════════════════════════════════════════
@@ -7437,15 +7710,4 @@ if __name__ == "__main__":
         httpd.serve_forever()
     except KeyboardInterrupt:
         pass
-    httpd.server_close()
-
-
-if __name__ == "__main__":
-    print(f"Starting The Wizard Guild on port {PORT}...")
-    httpd = HTTPServer(('0.0.0.0', PORT), GuildHandler)
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    httpd.server_close()
     httpd.server_close()
