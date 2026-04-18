@@ -11229,6 +11229,7 @@ class Spellcaster(Gimp.PlugIn):
                                   f"FaceSwap #{i+1}", v.get("mask_mode", False))
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-faceswap"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Face Swap Error: {e}")
@@ -11274,6 +11275,7 @@ class Spellcaster(Gimp.PlugIn):
                                   f"FaceSwap Model #{i+1}", v.get("mask_mode", False))
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-faceswap-model"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Face Swap (Model) Error: {e}")
@@ -11397,6 +11399,8 @@ class Spellcaster(Gimp.PlugIn):
             if saved:
                 msg += f"\nFiles saved: {', '.join(saved)}"
             Gimp.message(msg)
+            _LAST_PROCEDURE["name"] = "spellcaster-ltx-t2v"
+            Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster LTX T2V Error: {e}")
@@ -11537,6 +11541,8 @@ class Spellcaster(Gimp.PlugIn):
             if saved:
                 msg += f"\nFiles saved: {', '.join(saved)}"
             Gimp.message(msg)
+            _LAST_PROCEDURE["name"] = "spellcaster-wan-i2v"
+            Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Wan I2V Error: {e}")
@@ -11705,6 +11711,8 @@ class Spellcaster(Gimp.PlugIn):
             if saved:
                 msg += f"\nFiles saved: {', '.join(saved)}"
             Gimp.message(msg)
+            _LAST_PROCEDURE["name"] = "spellcaster-wan-flf"
+            Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Wan FLF Error: {e}")
@@ -12472,6 +12480,8 @@ class Spellcaster(Gimp.PlugIn):
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), "Video Upscale frame", False)
             Gimp.displays_flush()
             Gimp.message("Video upscale complete! Check ComfyUI output folder.")
+            _LAST_PROCEDURE["name"] = "spellcaster-video-upscale"
+            Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Video Upscale Error: {e}")
@@ -12626,6 +12636,8 @@ class Spellcaster(Gimp.PlugIn):
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), "Video ReActor frame", False)
             Gimp.displays_flush()
             Gimp.message("Video face swap + upscale complete!\nCheck ComfyUI output folder.")
+            _LAST_PROCEDURE["name"] = "spellcaster-video-reactor"
+            Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Video ReActor Error: {e}")
@@ -12871,6 +12883,7 @@ class Spellcaster(Gimp.PlugIn):
                 _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"FaceSwap mtb #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-faceswap-mtb"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Face Swap (mtb) Error: {e}")
@@ -12926,6 +12939,7 @@ class Spellcaster(Gimp.PlugIn):
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-faceid-img2img"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster FaceID Error: {e}")
@@ -12982,6 +12996,7 @@ class Spellcaster(Gimp.PlugIn):
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-pulid-flux"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster PuLID Flux Error: {e}")
@@ -13314,6 +13329,7 @@ class Spellcaster(Gimp.PlugIn):
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-klein-img2img-ref"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Klein+Ref Error: {e}")
@@ -15289,6 +15305,7 @@ class Spellcaster(Gimp.PlugIn):
                 _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"Blend {100 - ratio*100:.0f}A/{ratio*100:.0f}B #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-layer-blend-ratio"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Layer Blend Error: {e}")
@@ -15418,6 +15435,7 @@ class Spellcaster(Gimp.PlugIn):
                                         f" + {ratio*100:.0f}%{mb_key.split('(')[0].strip()} #{i+1}")
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-upscale-blend"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Upscaler Blend Error: {e}")
@@ -16580,6 +16598,8 @@ class Spellcaster(Gimp.PlugIn):
                          f"Bits per pixel: {bpp_used:.5f} (safe limit: 0.05)\n"
                          f"Author: {author or '(none)'}\n\n"
                          f"Save as PNG to preserve the watermark.")
+            _LAST_PROCEDURE["name"] = "spellcaster-embed-watermark"
+            Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Watermark embedding failed: {e}")
@@ -16647,6 +16667,8 @@ class Spellcaster(Gimp.PlugIn):
                     lines.append(f"  {k}: {v}")
                 Gimp.message("\n".join(lines))
 
+            _LAST_PROCEDURE["name"] = "spellcaster-read-watermark"
+            Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Watermark reading failed: {e}")
@@ -16928,6 +16950,7 @@ class Spellcaster(Gimp.PlugIn):
                 _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"{label_text}: {obj_desc or 'removed'} #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-lama-remove"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Object Removal Error: {e}")
@@ -16998,6 +17021,7 @@ class Spellcaster(Gimp.PlugIn):
                 _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"LUT {preset_key} #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-lut"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster LUT Error: {e}")
@@ -17181,6 +17205,7 @@ class Spellcaster(Gimp.PlugIn):
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-outpaint"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Outpaint Error: {e}")
@@ -17672,6 +17697,7 @@ class Spellcaster(Gimp.PlugIn):
                 _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"Face Restore {preset_key} #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-face-restore"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Face Restore Error: {e}")
@@ -17809,6 +17835,7 @@ class Spellcaster(Gimp.PlugIn):
                 _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"Photo Restore #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-photo-restore"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Photo Restore Error: {e}")
@@ -18845,6 +18872,7 @@ class Spellcaster(Gimp.PlugIn):
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-batch-variations"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Batch Variations Error: {e}")
@@ -21103,6 +21131,7 @@ class Spellcaster(Gimp.PlugIn):
                 _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"Background Removed #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-rembg"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Remove Background Error: {e}")
@@ -21191,6 +21220,7 @@ class Spellcaster(Gimp.PlugIn):
                                         f"SAM3: {prompt}", keep_size=True)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-sam3-select"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster SAM3 Selection Error: {e}")
@@ -21255,6 +21285,7 @@ class Spellcaster(Gimp.PlugIn):
                                         keep_size=True)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-sam3-extract"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster SAM3 Extract Error: {e}")
@@ -21293,6 +21324,7 @@ class Spellcaster(Gimp.PlugIn):
             r = _upload_image_sync(srv, tmp, fn); os.unlink(tmp)
             Gimp.message(f"Uploaded as: {r.get('name', fn)}")
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-send-image"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Upload Error: {e}")
@@ -21417,6 +21449,8 @@ class Spellcaster(Gimp.PlugIn):
         bx.show_all()
         dlg.run()
         dlg.destroy()
+        _LAST_PROCEDURE["name"] = "spellcaster-my-presets"
+        Gimp.progress_end()
         return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
     # ── Travelling Wizard (Signal Bridge + Scaffold) ───────────────────
@@ -21582,6 +21616,8 @@ class Spellcaster(Gimp.PlugIn):
         bx.show_all()
         dlg.run()
         dlg.destroy()
+        _LAST_PROCEDURE["name"] = "spellcaster-bridge"
+        Gimp.progress_end()
         return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
     # ══════════════════════════════════════════════════════════════════════
@@ -21877,6 +21913,7 @@ class Spellcaster(Gimp.PlugIn):
                                  f"Normal Map #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-normal-map"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"NormalCrafter Error: {e}")
