@@ -5096,7 +5096,7 @@ def build_klein_face_detail(image_filename, prompt_text, seed,
                              klein_model_key="Klein 9B",
                              steps=4, denoise=0.4, guidance=1.0,
                              guide_size=512, max_size=1024,
-                             detector_model="face_yolov8m.pt",
+                             detector_model="bbox/face_yolov8m.pt",
                              loras=None, lora_name=None, lora_strength=1.0,
                              klein_models=None, enhance=False):
     """Klein Face Detailer — detect faces and re-generate them at high detail.
@@ -5527,7 +5527,7 @@ def build_klein_detail(image_filename, preset_key, prompt_text, seed,
 
     if _det_type == "yolo":
         # ── YOLO path: use FaceDetailer (works for any bbox detector) ──
-        yolo_model = preset.get("model", "face_yolov8m.pt")
+        yolo_model = preset.get("model", "bbox/face_yolov8m.pt")
         detector_id = nf._add("UltralyticsDetectorProvider", {
             "model_name": yolo_model,
         }, node_id="20")
