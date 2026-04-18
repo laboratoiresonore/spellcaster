@@ -46,12 +46,31 @@ if sys.platform == "win32":
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 
-# When bundled with PyInstaller, _MEIPASS points to the temp extraction dir;
-# otherwise use the script's own directory as the base for finding assets.
-if getattr(sys, 'frozen', False):
+# SCRIPT_DIR resolution (priority order):
+#   1. SPELLCASTER_INSTALLER_ROOT env var — set by bootstrap.py when this
+#      install.py was fetched fresh from GitHub into a temp dir. Lets the
+#      self-updating installer run the latest code against the latest
+#      manifest without touching the compiled .exe.
+#   2. sys._MEIPASS — PyInstaller's temp extraction dir (frozen mode).
+#   3. __file__ parent — source-tree execution.
+# When bootstrapped (case 1), asset lookups (plugins/, tavern/, scaffold/)
+# fall back to sys._MEIPASS via BUNDLE_DIR so baked assets remain findable.
+_OVERRIDE_ROOT = os.environ.get("SPELLCASTER_INSTALLER_ROOT", "")
+if _OVERRIDE_ROOT and Path(_OVERRIDE_ROOT).is_dir():
+    SCRIPT_DIR = Path(_OVERRIDE_ROOT)
+elif getattr(sys, 'frozen', False):
     SCRIPT_DIR = Path(sys._MEIPASS)
 else:
     SCRIPT_DIR = Path(__file__).resolve().parent
+
+# BUNDLE_DIR always points at _MEIPASS when frozen (or SCRIPT_DIR otherwise).
+# Asset finders (plugins/, tavern/, scaffold/) consult both so a fetched
+# install.py can still locate baked-in non-Python assets.
+if getattr(sys, 'frozen', False):
+    BUNDLE_DIR = Path(sys._MEIPASS)
+else:
+    BUNDLE_DIR = SCRIPT_DIR
+
 MANIFEST_PATH = SCRIPT_DIR / "manifest.json"
 VERSION = "2.2"
 DEFAULT_SERVER_URL = "http://127.0.0.1:8188"
@@ -2739,6 +2758,8 @@ def _find_gimp_plugin_src() -> Path | None:
 
     Checks multiple possible layouts to handle both development trees and
     packaged distributions where the directory structure may differ.
+    When bootstrapped (SCRIPT_DIR != BUNDLE_DIR), also consults BUNDLE_DIR
+    so baked-in plugin assets are findable after a self-update.
     """
     search_dirs = [
         SCRIPT_DIR,
@@ -2748,6 +2769,13 @@ def _find_gimp_plugin_src() -> Path | None:
         SCRIPT_DIR.parent,
         SCRIPT_DIR.parent / "plugins" / "gimp",
     ]
+    # When running from a bootstrapped temp dir, also check the baked bundle
+    if BUNDLE_DIR != SCRIPT_DIR:
+        search_dirs += [
+            BUNDLE_DIR,
+            BUNDLE_DIR / "plugins",
+            BUNDLE_DIR / "plugins" / "gimp",
+        ]
     for d in search_dirs:
         candidate = d / "comfyui-connector" / "comfyui-connector.py"
         if candidate.exists():
@@ -3022,6 +3050,8 @@ def _find_tavern_src() -> Path | None:
         SCRIPT_DIR.parent / "tavern",
         SCRIPT_DIR / ".." / "tavern",
     ]
+    if BUNDLE_DIR != SCRIPT_DIR:
+        candidates += [BUNDLE_DIR / "tavern", BUNDLE_DIR.parent / "tavern"]
     for c in candidates:
         if c.is_dir() and (c / "server.py").exists():
             return c.resolve()
@@ -3035,6 +3065,8 @@ def _find_scaffold_src() -> Path | None:
         SCRIPT_DIR.parent / "scaffold",
         SCRIPT_DIR / ".." / "scaffold",
     ]
+    if BUNDLE_DIR != SCRIPT_DIR:
+        candidates += [BUNDLE_DIR / "scaffold", BUNDLE_DIR.parent / "scaffold"]
     for c in candidates:
         if c.is_dir() and (c / "__init__.py").exists():
             return c.resolve()
@@ -3765,11 +3797,6 @@ def build_arg_parser():
     parser.add_argument("--mode", choices=("guided", "expert"), default=None,
                         help="Install mode: 'guided' hands off to the Wizard Guild, "
                              "'expert' uses the CLI. Default: ask interactively.")
-    parser.add_argument("--features", default="",
-                        help="Comma-separated feature keys to install (e.g. "
-                             "'core_sdxl,face_swap'). When set, skips the interactive "
-                             "feature picker and installs exactly these. Used by the "
-                             "Guild-driven setup flow via /api/setup/feature/install.")
     parser.add_argument("--plugins", default="",
                         help="Comma-separated plugin keys to install (gimp, darktable). "
                              "When set, skips plugin prompts.")

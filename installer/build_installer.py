@@ -70,14 +70,19 @@ def build(target_platform: str, onedir: bool = False):
         "--hidden-import", "tkinter.scrolledtext",  # used by installer_gui log pane
         "--hidden-import", "tkinter.ttk",           # themed widgets
         "--hidden-import", "installer_gui",         # our GUI module, loaded at runtime
+        "--hidden-import", "install",               # install.py imported by bootstrap at runtime
         "--collect-all", "customtkinter",             # third-party modern tkinter theme (needs data files + submodules)
         "--hidden-import", "darkdetect",             # customtkinter dependency
         "--hidden-import", "PIL",                   # Pillow — image handling for icons/splash
         "--hidden-import", "requests",              # HTTP downloads during installation
         # --add-data bundles non-Python files into the frozen app.
         # Format: "source<sep>dest_folder_inside_bundle"
-        "--add-data", f"manifest.json{sep}.",       # install manifest (copied to bundle root)
-        "--add-data", f"installer_gui.py{sep}.",    # GUI source (loaded dynamically by install.py)
+        # bootstrap.py is the entry point — it fetches fresh install.py
+        # + installer_gui.py + manifest.json from GitHub on launch, so
+        # the bundled copies below serve as offline fallbacks only.
+        "--add-data", f"install.py{sep}.",          # baked install.py (offline fallback)
+        "--add-data", f"manifest.json{sep}.",       # install manifest (offline fallback)
+        "--add-data", f"installer_gui.py{sep}.",    # GUI source (offline fallback)
         "--add-data", f"{REPO_ROOT / 'plugins'}{sep}plugins",  # plugin directory tree (repo root)
         "--distpath", str(REPO_ROOT / "dist"),      # output to repo-root dist/
         "--workpath", str(REPO_ROOT / "build"),     # build artefacts in repo-root build/
@@ -100,7 +105,7 @@ def build(target_platform: str, onedir: bool = False):
             "--onefile" if not onedir else "--onedir",
             "--windowed",                           # suppress console window (use -w / --noconsole equivalent)
             "--name", "spellcaster-installer",      # output filename (PyInstaller appends .exe)
-            "install.py",                           # entry-point script
+            "bootstrap.py",                         # entry-point: self-updates install.py from GitHub on launch
         ]
         output = "dist/spellcaster-installer.exe"
 
@@ -121,7 +126,7 @@ def build(target_platform: str, onedir: bool = False):
                 "--windowed",
                 "--name", "Spellcaster Installer",  # spaces allowed — becomes the .app name
                 "--osx-bundle-identifier", "com.laboratoiresonore.spellcaster",
-                "install.py",
+                "bootstrap.py",
             ]
             output = "dist/Spellcaster Installer.app"
         else:
@@ -133,7 +138,7 @@ def build(target_platform: str, onedir: bool = False):
                 "--windowed",
                 "--name", "spellcaster-installer",
                 "--osx-bundle-identifier", "com.laboratoiresonore.spellcaster",
-                "install.py",
+                "bootstrap.py",
             ]
             output = "dist/spellcaster-installer"
 
@@ -145,7 +150,7 @@ def build(target_platform: str, onedir: bool = False):
             "--onefile" if not onedir else "--onedir",
             "--console",
             "--name", "spellcaster-installer",
-            "install.py",
+            "bootstrap.py",
         ]
         output = "dist/spellcaster-installer"
 
