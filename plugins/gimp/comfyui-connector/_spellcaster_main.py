@@ -5796,35 +5796,15 @@ _TINY_PNG = (
 def _cleanup_server_temps(server, results, cleanup_mode):
     """Clean up temp files from the ComfyUI server after generation.
 
-    - Overwrites gimp_* input files with a 1x1 pixel to reclaim space
-    - Deletes output files from server if cleanup_mode is "move" or "delete"
+    Delegates to spellcaster_core.privacy (single source of truth).
     """
     if cleanup_mode not in ("move", "delete"):
         return
-
-    # Overwrite our temp input uploads with tiny PNGs
     try:
-        info = _api_get(server, "/object_info/LoadImage")
-        input_files = info["LoadImage"]["input"]["required"]["image"][0]
-        for fname in input_files:
-            if fname.startswith("gimp_") and (fname.endswith(".png") or fname.endswith(".jpg")):
-                try:
-                    # Upload a 1x1 pixel over the temp file to reclaim space
-                    url = f"{server.rstrip('/')}/upload/image"
-                    boundary = uuid.uuid4().hex
-                    body = (
-                        f"--{boundary}\r\n"
-                        f'Content-Disposition: form-data; name="image"; filename="{fname}"\r\n'
-                        f"Content-Type: image/png\r\n\r\n"
-                    ).encode() + _TINY_PNG + f"\r\n--{boundary}--\r\n".encode()
-                    req = urllib.request.Request(url, data=body,
-                        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
-                        method="POST")
-                    urllib.request.urlopen(req, timeout=10)
-                except Exception:
-                    pass
-    except Exception:
-        pass
+        from spellcaster_core.privacy import cleanup_server_files
+        cleanup_server_files(server, results=results)
+    except ImportError:
+        pass  # privacy module not available — skip cleanup
 
 
 def _run_comfyui_workflow(server, workflow, timeout=300):

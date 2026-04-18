@@ -2,7 +2,25 @@
 
 ## What This Is
 
-Spellcaster is middleware between ComfyUI and user-facing apps (GIMP, Darktable, Wizard Guild chat UI, SillyTavern). It has 69 AI tools. The codebase spans 4 GitHub repos, SFW and NSFW variants, and a crash-safe plugin architecture.
+Spellcaster is **middleware** between ComfyUI and user-facing apps (GIMP, Darktable, Wizard Guild chat UI, SillyTavern). It has 69 AI tools. The codebase spans 4 GitHub repos, SFW and NSFW variants, and a crash-safe plugin architecture.
+
+## Zero Duplication Rule
+
+**NEVER duplicate logic.** Spellcaster enforces a single source of truth for ALL shared functionality. If the GIMP plugin and the Guild server both need a function, that function lives in `spellcaster_core/` and both import it. No exceptions.
+
+**Existing shared modules in `spellcaster_core/`:**
+- `workflows.py` — ALL workflow builders (build_img2img, build_klein_*, etc.)
+- `node_factory.py` — ALL ComfyUI node constructors
+- `composites.py` — multi-node building blocks (load_model_stack, inject_lora_chain, etc.)
+- `architectures.py` — architecture registry and ArchConfig
+- `prompt_enhance.py` — LLM prompt enhancement (all backends)
+- `comfyui_llm.py` — ComfyUI-based LLM text generation
+- `guild_llm.py` — LLM chat abstraction (ComfyUI → KoboldCpp → Ollama)
+- `privacy.py` — server file cleanup (privacy mode)
+- `preflight.py` — workflow validation and node substitution
+- `model_detect.py` — architecture detection from model filename
+
+**If you find yourself writing the same logic in two places:** STOP. Extract it into `spellcaster_core/` and have both consumers import it. The GIMP plugin at `_spellcaster_main.py` and the Guild server at `tavern/server.py` must NEVER have parallel implementations of the same feature.
 
 ## Critical Rules
 
