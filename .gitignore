@@ -60,6 +60,10 @@ config.json
 
 # Claude Code internal files
 .claude/
+.mcp.json
+
+# Gemini MCP output
+gemini-output/
 
 # Dev tools & scratch files
 tools/generate_readme_gifs.py
