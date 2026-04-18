@@ -215,12 +215,24 @@ def self_update(ctx: dict[str, Any]) -> tuple[int, dict]:
                      "can't self-update. Re-bootstrap via the original "
                      "antenna_for_<ip>.bat."}
 
+    force = bool(body.get("force", False))
     ok, old_sha_pulled, new_sha = _git_pull(root)
     if not ok:
         return 500, {"error": f"git pull failed: {new_sha}"}
 
-    if old_sha_pulled == new_sha:
-        return 200, {"status": "already up to date", "sha": new_sha}
+    if old_sha_pulled == new_sha and not force:
+        return 200, {"status": "already up to date",
+                     "sha": new_sha,
+                     "hint": "POST {\"force\": true} to restart anyway "
+                             "(e.g. after editing config files manually)"}
+
+    # Force restart path: skip validation since we didn't change any code
+    if old_sha_pulled == new_sha and force:
+        _schedule_restart()
+        return 202, {"status": "restarting (forced, no code change)",
+                     "sha": new_sha,
+                     "restart": "imminent",
+                     "expected_online_in_seconds": 2}
 
     # Compile-check BEFORE restarting — a bad push must not brick us
     ok, err = _validate_antenna(root)
