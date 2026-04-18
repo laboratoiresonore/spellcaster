@@ -2202,7 +2202,25 @@ def step_detect_paths(args) -> dict:
 
 def step_select_features(manifest: dict, paths: dict, args,
                          server_info: dict | None = None) -> dict[str, bool]:
-    """Step 4: Feature selection with VRAM-aware pre-selection."""
+    """Step 4: Feature selection with VRAM-aware pre-selection.
+
+    When --features=KEY1,KEY2 is passed, skips the interactive picker and
+    installs exactly those features. Used by the Guild-driven setup flow
+    where the chat UI has already picked features via /api/setup/*.
+    """
+    # Non-interactive short-circuit for Guild-driven installs
+    features_arg = getattr(args, 'features', '') or ''
+    if features_arg:
+        requested = {k.strip() for k in features_arg.split(',') if k.strip()}
+        selected = {key: (key in requested) for key in manifest["features"].keys()}
+        print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
+        print(f"{C_BOLD}  Feature selection (from --features){C_RESET}")
+        print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
+        for key, on in selected.items():
+            if on:
+                print(f"  {C_GREEN}✓{C_RESET} {key}")
+        return selected
+
     print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
     print(f"{C_BOLD}  STEP 4: What Do You Want To Do?{C_RESET}")
     print(f"{C_BOLD}{_BOX_LINE}{C_RESET}")
@@ -3747,6 +3765,14 @@ def build_arg_parser():
     parser.add_argument("--mode", choices=("guided", "expert"), default=None,
                         help="Install mode: 'guided' hands off to the Wizard Guild, "
                              "'expert' uses the CLI. Default: ask interactively.")
+    parser.add_argument("--features", default="",
+                        help="Comma-separated feature keys to install (e.g. "
+                             "'core_sdxl,face_swap'). When set, skips the interactive "
+                             "feature picker and installs exactly these. Used by the "
+                             "Guild-driven setup flow via /api/setup/feature/install.")
+    parser.add_argument("--plugins", default="",
+                        help="Comma-separated plugin keys to install (gimp, darktable). "
+                             "When set, skips plugin prompts.")
     parser.add_argument("--version", action="version",
                         version=f"Spellcaster Installer v{VERSION}")
     return parser

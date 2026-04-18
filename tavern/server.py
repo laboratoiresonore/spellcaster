@@ -1578,7 +1578,7 @@ os.makedirs(_STATE_DIR, exist_ok=True)
 # ═══════════════════════════════════════════════════════════════════════
 
 _WIZARD_SPEECH_SECTION_ORDER = [
-    "welcome", "architecture", "scaffolding", "spells",
+    "welcome", "architecture", "vram_dance", "scaffolding", "spells",
     "sillytavern", "gimp", "ready",
 ]
 _WIZARD_SPEECH_GITHUB_URL = (
@@ -1602,6 +1602,14 @@ _WIZARD_SPEECH_FALLBACK = {
     "architecture": (
         "Under the hood: **You → Wizard Guild → local LLM → Spellcaster "
         "scaffold → ComfyUI → your GPU.** Everything runs on your machine."
+    ),
+    "vram_dance": (
+        "**The VRAM dance.** We never run the language model and the image "
+        "model at the same time. When you chat, the LLM loads. When you "
+        "generate, Spellcaster calls ComfyUI's `/free` endpoint, the LLM "
+        "atomically unloads, and the diffusion model takes the whole GPU. "
+        "Next time you type, the LLM reloads. You don't see it, you don't "
+        "configure it — it just works on 8 GB, 12 GB, and 16 GB cards."
     ),
     "scaffolding": (
         "We **scaffold** the local language model with structured menus "
@@ -2736,9 +2744,9 @@ def _guided_install_run_installer(cmd_args: list[str]) -> tuple[int, dict]:
 def _guided_install_feature(feature_key: str) -> tuple[int, dict]:
     """POST /api/setup/feature/install — install one manifest feature.
 
-    For now the CLI installer doesn't accept single-feature args, so we
-    shell out to it and let its interactive defaults select the feature
-    by name. A future improvement: add --features=KEY to install.py.
+    Shells out to install.py --features=KEY so only this feature's
+    custom nodes and models get installed. --skip-plugins suppresses
+    the GIMP/Darktable copy step (handled separately via /plugin/install).
     """
     if not feature_key:
         return (400, {"error": "feature key required"})
@@ -2751,32 +2759,48 @@ def _guided_install_feature(feature_key: str) -> tuple[int, dict]:
         pending.append(feature_key)
     _guided_install_save_config(config)
 
-    # TODO: extend install.py with --features=KEY for single-feature installs.
-    # For now this is a stub that marks the feature installed in state; the
-    # Guild UI can still present the user with the full manifest to review.
+    # Shell out to the real CLI installer
+    status, result = _guided_install_run_installer(
+        ["--features", feature_key])
+
+    # Update state based on outcome
+    config = _guided_install_load_config()
+    state = config.setdefault("setup_state", {})
+    pending = state.setdefault("features_pending", [])
     installed = state.setdefault("features_installed", [])
-    if feature_key not in installed:
-        installed.append(feature_key)
     if feature_key in pending:
         pending.remove(feature_key)
+    if status == 200 and feature_key not in installed:
+        installed.append(feature_key)
     _guided_install_save_config(config)
 
-    return (200, {"feature": feature_key, "status": "marked_installed",
-                  "note": "Installer shell-out pending — state recorded"})
+    result["feature"] = feature_key
+    result["status"] = "installed" if status == 200 else "failed"
+    return (status, result)
 
 
 def _guided_install_plugin(plugin_key: str) -> tuple[int, dict]:
-    """POST /api/setup/plugin/install — install GIMP or Darktable plugin."""
+    """POST /api/setup/plugin/install — install GIMP or Darktable plugin.
+
+    Shells out to install.py --plugins=KEY --skip-nodes --skip-models so
+    only the plugin copy step runs.
+    """
     if plugin_key not in ("gimp", "darktable"):
         return (400, {"error": "plugin must be gimp or darktable"})
+
+    status, result = _guided_install_run_installer(
+        ["--plugins", plugin_key, "--skip-nodes", "--skip-models"])
 
     config = _guided_install_load_config()
     state = config.setdefault("setup_state", {})
     installed = state.setdefault("plugins_installed", [])
-    if plugin_key not in installed:
+    if status == 200 and plugin_key not in installed:
         installed.append(plugin_key)
     _guided_install_save_config(config)
-    return (200, {"plugin": plugin_key, "status": "marked_installed"})
+
+    result["plugin"] = plugin_key
+    result["status"] = "installed" if status == 200 else "failed"
+    return (status, result)
 
 
 def _guided_install_finish() -> tuple[int, dict]:
@@ -6242,6 +6266,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     "trajectories": s.trajectories or [],
                     "duration_s": s.duration_s,
                     "carry_last_frame": s.carry_last_frame,
+                    "transition": getattr(s, 'transition', 'cut'),
+                    "transition_ms": getattr(s, 'transition_ms', 500),
                     "error": getattr(s, 'error', None),
                     "progress": _VIDEO_BRIDGE.render_progress().get("progress", 0) if s.id == getattr(_VIDEO_BRIDGE, '_active_shot_id', None) else None,
                 })
@@ -6302,6 +6328,30 @@ class GuildHandler(SimpleHTTPRequestHandler):
             try:
                 _VIDEO_BRIDGE.remove_shot(shot_id)
                 return self.end_json(200, {"status": "deleted"})
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/reference') and self.command == 'POST':
+            """Upload reference image (base64 image_data)."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/api/video/shots/')[1].rsplit('/reference', 1)[0]
+            image_data = data.get('image_data', '')
+            if not image_data:
+                return self.end_json(400, {"error": "No image_data provided"})
+            import base64 as _b64
+            import tempfile as _tf
+            try:
+                raw = _b64.b64decode(image_data.split(',', 1)[-1])
+                ext = '.png'
+                if image_data.startswith('data:image/jpeg'):
+                    ext = '.jpg'
+                tmp = _tf.NamedTemporaryFile(delete=False, suffix=ext,
+                    dir=os.path.join(os.path.dirname(__file__), 'creations'))
+                tmp.write(raw)
+                tmp.close()
+                result = _VIDEO_BRIDGE.update_shot(shot_id, ref_image=tmp.name)
+                return self.end_json(200, result)
             except Exception as e:
                 return self.end_json(400, {"error": str(e)})
 
@@ -6422,6 +6472,20 @@ class GuildHandler(SimpleHTTPRequestHandler):
             if not _VIDEO_BRIDGE:
                 return self.end_json(503, {"error": "Video Bridge not initialised"})
             return self.end_json(200, _VIDEO_BRIDGE.queue_status())
+
+        elif self.path == '/api/video/settings' and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            return self.end_json(200, _VIDEO_BRIDGE.get_settings())
+
+        elif self.path == '/api/video/settings' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            max_c = data.get('max_concurrent')
+            if max_c is not None:
+                result = _VIDEO_BRIDGE.set_max_concurrent(int(max_c))
+                return self.end_json(200, result)
+            return self.end_json(400, {"error": "No settings to update"})
 
         elif self.path == '/api/video/estimate' and self.command == 'POST':
             """Estimate render time for a preset."""
