@@ -1869,7 +1869,8 @@ def build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
 
 def build_iclight(image_filename, ckpt_name, prompt, negative, seed,
                    multiplier=0.18, steps=20, cfg=2.0,
-                   sampler="euler", scheduler="normal", loras=None):
+                   sampler="euler", scheduler="normal", loras=None,
+                   normal_map_filename=None):
     """IC-Light relighting: adjust light sources and illumination.
 
     IC-Light is a specialized model for controlling and adjusting light in images.
@@ -1971,10 +1972,18 @@ def build_iclight(image_filename, ckpt_name, prompt, negative, seed,
     pos_id = nf.clip_encode(clip_ref, prompt, node_id="4")
     neg_id = nf.clip_encode(clip_ref, negative, node_id="5")
 
-    # ICLightConditioning
+    # Optional normal map → encode as background latent for surface guidance
+    normal_bg_ref = None
+    if normal_map_filename:
+        normal_img_id = nf.load_image(normal_map_filename, node_id="50")
+        normal_latent_id = nf.vae_encode([normal_img_id, 0], vae_ref, node_id="51")
+        normal_bg_ref = [normal_latent_id, 0]
+
+    # ICLightConditioning (with optional normal map as background geometry)
     cond_id = nf.iclight_conditioning(
         [pos_id, 0], [neg_id, 0], vae_ref, [latent_id, 0],
-        multiplier=multiplier, node_id="6",
+        multiplier=multiplier, opt_background_ref=normal_bg_ref,
+        node_id="6",
     )
 
     # Sample
