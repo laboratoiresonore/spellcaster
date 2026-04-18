@@ -1038,7 +1038,7 @@ class NodeFactory:
         }, node_id)
 
     def image_apply_lut(self, image_ref, lut_file, strength=1.0,
-                        log=False, clip_values=True, gamma_correction=False,
+                        clip_values=True, gamma_correction=True,
                         node_id=None):
         """ImageApplyLUT+ — apply a 3D color LUT.
         Outputs: [0]=IMAGE
@@ -1047,7 +1047,6 @@ class NodeFactory:
             "image": image_ref,
             "lut_file": lut_file,
             "strength": strength,
-            "log": log,
             "clip_values": clip_values,
             "gamma_correction": gamma_correction,
         }, node_id)
