@@ -10946,6 +10946,22 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-klein-outpaint":    "<Image>/Image",
         }
 
+        # ── 3D submenu — groups all normal-map-enabled tools ──────
+        # These tools appear in BOTH their original submenu AND in
+        # ◆ Spellcaster > 3D for easy discovery.
+        _3d_tools = {
+            "spellcaster-normal-map",        # Generate 3D Normal Map
+            "spellcaster-iclight",           # Relighting (uses normal map as FBC background)
+            "spellcaster-img2img",           # CN: Normal Map mode
+            "spellcaster-txt2img",           # CN: Normal Map mode
+            "spellcaster-inpaint",           # CN: Normal Map mode
+            "spellcaster-outpaint",          # CN: Normal Map mode
+            "spellcaster-style-transfer",    # CN: Normal Map mode
+            "spellcaster-colorize",          # CN: Normal Map mode
+            "spellcaster-detail-hallucinate",# CN: Normal Map mode
+            "spellcaster-seedv2r",           # CN: Normal Map mode
+        }
+
         proc = Gimp.ImageProcedure.new(self, name, Gimp.PDBProcType.PLUGIN, callback, None)
         proc.set_menu_label(label)
         # Primary Spellcaster top-level menu path
@@ -10956,7 +10972,13 @@ class Spellcaster(Gimp.PlugIn):
             try:
                 proc.add_menu_path(native)
             except Exception:
-                pass  # GIMP version may not support this path
+                pass
+        # 3D submenu (secondary registration)
+        if name in _3d_tools:
+            try:
+                proc.add_menu_path(f"{_S}/3D")
+            except Exception:
+                pass
         proc.set_documentation(doc, doc, name)
         proc.set_attribution("Spellcaster", "Spellcaster", "2026")
         proc.set_image_types("*")
