@@ -3085,7 +3085,6 @@ function SignalBridgeSettings() {
   }, []);
 
   const tabs = [
-    { id: "video", label: "Video", icon: <Icons.Play /> },
     { id: "workflows", label: "Workflows", icon: <Icons.Film /> },
     { id: "scaffolds", label: "Scaffolds", icon: <Icons.Wand /> },
     { id: "integrations", label: "Integrations", icon: <Icons.Compass /> },
@@ -3211,14 +3210,6 @@ function SignalBridgeSettings() {
 
       {/* Content */}
       <div className="max-w-6xl mx-auto px-6 py-6">
-        {/* ── Video Tab ── */}
-        {activeTab === "video" && (
-          typeof VideoPanel !== 'undefined'
-            ? React.createElement(VideoPanel)
-            : <div className="text-center py-12 text-slate-400 text-sm">Video panel loading...</div>
-        )}
-
-
         {/* ── Workflows Tab ── */}
         {activeTab === "workflows" && (
           <WorkflowBrowser comfyuiUrl={config.comfyui_url} onCreateScaffold={(wf) => {
@@ -3314,4 +3305,53 @@ function SignalBridgeSettings() {
         {/* ── Paths Tab ── */}
         {activeTab === "paths" && <SectionCard title="File Paths" icon={<Icons.Folder />} collapsible={false}><PathEditor config={config} setConfig={setConfig} /></SectionCard>}
 
-        {/* ─�
+        {/* ── Advanced Tab ── */}
+        {activeTab === "advanced" && (
+          <div className="space-y-4">
+            <SectionCard title="Rate Limiting" icon={<Icons.Zap />}>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Max Requests" tip="Maximum number of messages a user can send within the rate window. Prevents abuse and runaway API costs">
+                  <input type="number" value={config.rate_limit} onChange={e => update("rate_limit", parseInt(e.target.value) || 20)} className={inputCls} />
+                </Field>
+                <Field label="Window (seconds)" tip="Time window for rate limiting. A user can send 'Max Requests' messages within this many seconds before being throttled">
+                  <input type="number" value={config.rate_window} onChange={e => update("rate_window", parseInt(e.target.value) || 60)} className={inputCls} />
+                </Field>
+              </div>
+              <Field label="Max History" tip="Number of previous messages kept in the conversation context. Higher = better memory but more tokens per request">
+                <input type="number" value={config.max_history} onChange={e => update("max_history", parseInt(e.target.value) || 30)} className={inputCls + " w-32"} />
+              </Field>
+            </SectionCard>
+            <SectionCard title="System Prompt" icon={<Icons.Server />}>
+              <Field label="Default System Prompt" tip="Base system prompt injected into every LLM conversation. Persona-specific instructions are appended after this">
+                <textarea value={config.system_prompt} onChange={e => update("system_prompt", e.target.value)} rows={6} className={inputCls + " resize-y"} />
+              </Field>
+            </SectionCard>
+            <SectionCard title="Raw JSON" icon={<Icons.Copy />}>
+              <pre className="bg-slate-950 border border-amber-600/20 rounded-lg p-4 text-xs text-slate-300 overflow-auto max-h-96 font-mono">
+                {JSON.stringify({ config, scaffolds }, null, 2)}
+              </pre>
+            </SectionCard>
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-900 border-t border-amber-600/30 mt-8">
+        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+          <p className="text-xs text-amber-200/60">The Travelling Wizard · Spellcaster Suite · {scaffolds.length} scaffold(s) configured</p>
+          <button onClick={exportAll} className={btnPrimary}><Icons.Save /> Export All</button>
+        </div>
+      </div>
+
+      {/* Guild Sidebar Panel */}
+      <GuildSidebar
+        isOpen={guildOpen}
+        onToggle={() => setGuildOpen(false)}
+        comfyUrl={config.comfyui_url || "http://127.0.0.1:8188"}
+        koboldUrl={config.kobold_url || "http://127.0.0.1:5001"}
+      />
+    </div>
+  );
+}
+
+window.SignalBridgeSettings = SignalBridgeSettings;
