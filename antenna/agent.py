@@ -93,12 +93,25 @@ def _build_routes(cfg: dict[str, Any]) -> dict[tuple[str, str], Callable]:
             print(f"[antenna] comfyui service declared but endpoints not yet built: {e}",
                   file=sys.stderr)
 
-    # self-update is always available — it's how the agent updates itself
+    # self-update is always available — it's how the agent updates itself.
+    # Any import failure here is critical to surface so operators can
+    # debug it — otherwise they see mysterious "no such endpoint" 404s.
     try:
         from .endpoints import self_update as su_ep
         routes[("POST", "/self-update")] = su_ep.self_update
-    except ImportError:
-        pass  # Phase 1: endpoint may not exist yet, skip without breaking
+        print("[antenna] registered: POST /self-update")
+    except ImportError as e:
+        print(f"[antenna] WARN: self_update endpoint failed to import: {e}",
+              file=sys.stderr)
+    except Exception as e:  # noqa: BLE001 — catch ALL, including SyntaxError
+        print(f"[antenna] WARN: self_update endpoint error: "
+              f"{type(e).__name__}: {e}", file=sys.stderr)
+
+    # Log every registered route at startup so the operator can confirm
+    # visually what's live
+    print(f"[antenna] Registered routes: {len(routes)}")
+    for (method, path) in sorted(routes.keys()):
+        print(f"[antenna]   {method} {path}")
 
     return routes
 
