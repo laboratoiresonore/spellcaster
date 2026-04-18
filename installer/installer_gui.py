@@ -1283,9 +1283,32 @@ class InstallerApp(MagicalEffects, ctk.CTk):
             dl_frame = ctk.CTkFrame(parent, fg_color="#1a0f2e", corner_radius=10,
                                      border_width=1, border_color=self.accent_amber)
             dl_frame.pack(fill="x", padx=30, pady=(0, 15))
+
+            # Prominent manual-override button — fixes the #1 user complaint
+            # that there's no way to proceed when auto-detect fails even
+            # though the app is installed.
+            manual_row = ctk.CTkFrame(dl_frame, fg_color="transparent")
+            manual_row.pack(fill="x", padx=20, pady=(15, 8))
+            ctk.CTkLabel(manual_row,
+                         text="Already installed but not detected?",
+                         font=ctk.CTkFont(family="Inter", size=14, weight="bold"),
+                         text_color=self.text_main).pack(side="left", padx=(0, 12))
+            manual_btn = ctk.CTkButton(manual_row,
+                                       text="→ Set paths manually (Step 5)",
+                                       width=260, height=34,
+                                       font=ctk.CTkFont(family="Inter", size=13, weight="bold"),
+                                       fg_color=self.accent_color,
+                                       hover_color="#8a5aff",
+                                       command=lambda: self._base_select_frame("paths"))
+            manual_btn.pack(side="left")
+            _ToolTip(manual_btn,
+                     "Jump to Step 5 where you can browse to your ComfyUI, GIMP, or "
+                     "Darktable installation directories manually.\n\n"
+                     "Use this when the installer failed to auto-detect but you know "
+                     "the software is installed somewhere on your computer.")
+
             ctk.CTkLabel(dl_frame,
-                         text="Install the apps below, then click Re-detect.\n"
-                              "If the app is installed but not detected, you can set the path manually in Step 5.",
+                         text="Or install the apps below, then click Re-detect:",
                          font=ctk.CTkFont(family="Inter", size=14, weight="bold"),
                          text_color=self.accent_amber, justify="left").pack(anchor="w", padx=20, pady=(12, 8))
             _dl_links = []

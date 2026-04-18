@@ -448,6 +448,42 @@ def find_default_comfyui() -> str:
                 return str(c)
         except (PermissionError, OSError):
             continue
+
+    # ── Last-resort: deep glob for main.py under any candidate root ──
+    # Handles odd nested layouts like:
+    #   C:\ComfyUI\ComfyUI_windows_portable\ComfyUI\main.py
+    #   C:\AI\ComfyUI\main.py
+    #   C:\Tools\stable-diffusion\ComfyUI\main.py
+    # Without this, users with non-standard install paths see "Not Detected"
+    # even though ComfyUI is clearly on their drive.
+    if platform.system() == "Windows":
+        probe_roots = []
+        drives = _win_all_drives()
+        for drive in drives:
+            root = Path(f"{drive}/")
+            # Common parent dirs where people unzip ComfyUI
+            for name in ("ComfyUI", "ComfyUI_windows_portable",
+                         "AI", "Tools", "StableDiffusion", "stable-diffusion",
+                         "Programs"):
+                probe_roots.append(root / name)
+        probe_roots.extend([home / d for d in
+                            ("Desktop", "Downloads", "Documents", "AI", "Tools")])
+
+        for root in probe_roots:
+            if not root.is_dir():
+                continue
+            try:
+                # Glob up to 3 levels deep for main.py — bounded to avoid
+                # scanning the entire filesystem.
+                for main_py in list(root.glob("main.py")) \
+                             + list(root.glob("*/main.py")) \
+                             + list(root.glob("*/*/main.py")) \
+                             + list(root.glob("*/*/*/main.py")):
+                    parent = main_py.parent
+                    if _is_comfyui_dir(parent):
+                        return str(parent)
+            except (PermissionError, OSError):
+                continue
     return ""
 
 
@@ -620,6 +656,18 @@ def find_default_gimp() -> str:
         # Accept if the version dir exists even though plug-ins/ doesn't yet
         if c.name == "plug-ins" and c.parent.is_dir():
             return cs
+
+    # ── Last-resort fallback: if Strategy 2 confirmed GIMP is installed
+    # (registry, uninstall keys, or Program Files executable) but no config
+    # directory exists yet — user installed GIMP but never launched it —
+    # return the expected default path. The deploy step will mkdir it.
+    # Without this, a fresh GIMP install shows "Not Detected" in the GUI.
+    if platform.system() == "Windows" and _gimp_confirmed:
+        appdata = os.environ.get("APPDATA", "")
+        if appdata:
+            # Prefer 3.2 (current stable), fall back to 3.0
+            for ver in ["3.2", "3.0", "3.4"]:
+                return str(Path(appdata) / "GIMP" / ver / "plug-ins")
     return ""
 
 
@@ -796,8 +844,75 @@ def detect_gpu_vram() -> tuple[str, int]:
                     return "AMD GPU", mb
     except Exception:
         pass
-    # ── Strategy 3: Windows WMIC fallback (works for any GPU on Windows) ──
+    # ── Strategy 3: Windows PowerShell Get-CimInstance (64-bit safe) ──
+    # WMIC's AdapterRAM field is 32-bit signed and CAPS AT ~4 GB — it reports
+    # any card >4 GB as 4 GB. PowerShell's CIM layer returns a proper 64-bit
+    # UInt32 converted to a 64-bit number in PowerShell 5+, bypassing the cap.
     if platform.system() == "Windows":
+        try:
+            # Prefer the registry (most accurate) then fall back to CIM.
+            ps_script = (
+                "$best = 0; $bestName = 'Unknown GPU'; "
+                "Get-CimInstance Win32_VideoController | ForEach-Object { "
+                "  $n = $_.Name; "
+                "  $ram = 0; "
+                # Try the registry HardwareInformation.qwMemorySize (64-bit),
+                # fall back to MemorySize, then AdapterRAM (32-bit, capped).
+                "  $key = Get-ItemProperty -Path ('HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\' + $_.PNPDeviceID.Replace('PCI\\', '')) -ErrorAction SilentlyContinue; "
+                "  if ($key -and $key.'HardwareInformation.qwMemorySize') { $ram = [int64]$key.'HardwareInformation.qwMemorySize' } "
+                "  elseif ($_.AdapterRAM) { $ram = [int64]$_.AdapterRAM } "
+                "  if ($ram -gt $best) { $best = $ram; $bestName = $n } "
+                "}; "
+                "Write-Output ($bestName + '|' + $best)"
+            )
+            r = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
+                capture_output=True, text=True, timeout=10
+            )
+            if r.returncode == 0 and "|" in r.stdout:
+                name_part, bytes_part = r.stdout.strip().rsplit("\n", 1)[-1].split("|", 1)
+                ram_mb = int(bytes_part) // (1024 * 1024)
+                if ram_mb > 1024:  # ignore integrated GPUs
+                    return name_part, ram_mb
+        except Exception:
+            pass
+        # ── Strategy 4: NVIDIA registry direct read (works without nvidia-smi) ──
+        try:
+            import winreg
+            best, best_name = 0, ""
+            reg_path = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, reg_path) as root:
+                i = 0
+                while True:
+                    try:
+                        sub = winreg.EnumKey(root, i); i += 1
+                        if not sub.isdigit():
+                            continue
+                        with winreg.OpenKey(root, sub) as sk:
+                            try:
+                                # Newer drivers store qwMemorySize (64-bit)
+                                ram_bytes = winreg.QueryValueEx(sk, "HardwareInformation.qwMemorySize")[0]
+                            except FileNotFoundError:
+                                try:
+                                    ram_bytes = winreg.QueryValueEx(sk, "HardwareInformation.MemorySize")[0]
+                                    if isinstance(ram_bytes, bytes):
+                                        ram_bytes = int.from_bytes(ram_bytes, 'little')
+                                except FileNotFoundError:
+                                    continue
+                            try:
+                                name = winreg.QueryValueEx(sk, "DriverDesc")[0]
+                            except FileNotFoundError:
+                                name = "GPU"
+                            ram_mb = int(ram_bytes) // (1024 * 1024)
+                            if ram_mb > best:
+                                best, best_name = ram_mb, name
+                    except OSError:
+                        break
+            if best > 1024:
+                return best_name, best
+        except Exception:
+            pass
+        # ── Strategy 5: legacy WMIC (LAST RESORT — known to cap at 4 GB) ──
         try:
             r = subprocess.run(
                 ["wmic", "path", "win32_VideoController", "get", "AdapterRAM,Name", "/format:csv"],
@@ -806,18 +921,20 @@ def detect_gpu_vram() -> tuple[str, int]:
             best = 0
             best_name = ""
             for line in r.stdout.strip().splitlines():
-                if not line or "Node" in line:  # skip CSV header row
+                if not line or "Node" in line:
                     continue
                 parts = line.split(",")
                 if len(parts) >= 3:
                     try:
-                        ram = int(parts[1]) // (1024 * 1024)  # AdapterRAM is in bytes
+                        ram = int(parts[1]) // (1024 * 1024)
                         if ram > best:
                             best, best_name = ram, parts[2].strip()
                     except ValueError:
                         pass
-            # Ignore tiny values (<1 GB) — likely integrated GPUs or reporting errors
             if best > 1024:
+                # Flag the 4 GB cap in the name so downstream can warn
+                if best == 4095 or best == 4096:
+                    best_name = best_name + " (WMIC-capped: may be larger)"
                 return best_name, best
         except Exception:
             pass
@@ -1506,6 +1623,15 @@ def step_system_detection(args) -> tuple[str, int]:
         vram_gb = vram_mb / 1024
         print(f"  {C_GREEN}GPU:{C_RESET}   {gpu_name}")
         print(f"  {C_GREEN}VRAM:{C_RESET}  {vram_gb:.1f} GB")
+
+        # Warn if WMIC's 32-bit cap probably truncated the real VRAM.
+        # detect_gpu_vram() annotates the name with "(WMIC-capped: may be larger)"
+        # when it falls through to that path and the value lands exactly at 4 GB.
+        if "WMIC-capped" in gpu_name:
+            print(f"  {C_YELLOW}⚠ VRAM reading hit Windows' 4 GB WMIC cap.{C_RESET}")
+            print(f"  {C_YELLOW}  Your card may actually have more. If you have a card >4 GB{C_RESET}")
+            print(f"  {C_YELLOW}  and see this warning, ignore the tier below and manually pick{C_RESET}")
+            print(f"  {C_YELLOW}  a higher tier on Step 5 of the installer.{C_RESET}")
         tier_labels = {
             "low":    f"{C_YELLOW}Low (<8 GB) \u2014 SD1.5 + lightweight features{C_RESET}",
             "medium": f"{C_CYAN}Medium (8\u201312 GB) \u2014 core features + fp8/GGUF models{C_RESET}",
