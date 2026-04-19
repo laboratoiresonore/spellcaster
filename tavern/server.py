@@ -10319,6 +10319,23 @@ class GuildHandler(SimpleHTTPRequestHandler):
             status = 200 if 'error' not in result else 400
             return self.end_json(status, result)
 
+        elif self.path == '/api/video/batch-rename' and self.command == 'POST':
+            # R81b: rename selected shots via a title pattern
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_ids = data.get('shot_ids', [])
+            pattern = (data.get('pattern') or '').strip()
+            if not shot_ids or not pattern:
+                return self.end_json(400, {"error": "shot_ids and pattern required"})
+            try:
+                start = int(data.get('start', 1))
+                zero_pad = int(data.get('zero_pad', 2))
+            except (TypeError, ValueError):
+                start, zero_pad = 1, 2
+            result = _VIDEO_BRIDGE.board.batch_rename(
+                shot_ids, pattern, start=start, zero_pad=zero_pad)
+            return self.end_json(200, result)
+
         elif self.path == '/api/video/batch-randomize-seeds' and self.command == 'POST':
             """R64a: fresh random seed per selected shot."""
             if not _VIDEO_BRIDGE:
