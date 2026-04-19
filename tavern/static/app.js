@@ -428,6 +428,16 @@ async function checkComfyConnection() {
                 ? "ComfyUI: Connected (busy)"
                 : "ComfyUI: Connected";
             _renderComfyStats(data.stats);
+            // Body-level class: CSS cranks the title shimmer, lights up
+            // the VRAM/RAM/cache meters with a steam sweep, and amps
+            // chip glows while ComfyUI is actively rendering. `stale`
+            // means the cached-success branch fired (ComfyUI is busy
+            // enough to not answer /system_stats within 10s) — the
+            // strongest live-generation signal we have without polling
+            // /queue separately. Also, if the ComfyUI chip has an
+            // advancing heartbeat, we pulse it too via markIfaceEngaged.
+            document.body.classList.toggle('is-generating', !!data.stale);
+            if (data.stale) { markIfaceEngaged('comfyui'); }
             // Mirror the result to _managedLive so the synthetic
             // ComfyUI chip in the Connected apps row goes green.
             (window._managedLive = window._managedLive || {}).comfyui = true;
@@ -440,6 +450,7 @@ async function checkComfyConnection() {
                 comfyDot.className = "dot red";
                 comfyStatus.textContent = "ComfyUI: Disconnected";
                 _renderComfyStats(null);
+                document.body.classList.remove('is-generating');
                 (window._managedLive = window._managedLive || {}).comfyui = false;
             } else {
                 comfyDot.className = "dot yellow";
@@ -452,11 +463,42 @@ async function checkComfyConnection() {
             comfyDot.className = "dot red";
             comfyStatus.textContent = "ComfyUI: Disconnected";
             _renderComfyStats(null);
+            document.body.classList.remove('is-generating');
         } else {
             comfyDot.className = "dot yellow";
             comfyStatus.textContent = "ComfyUI: Checking…";
         }
     }
+}
+
+// ── Chip engagement pulse ────────────────────────────────────────────
+// Flags a Connected-apps chip as "actively engaging with the Guild"
+// for ~2.5s — CSS picks up .iface-engaged and applies a gold aura +
+// rapid dot pulse on top of whatever online/stale/idle state it already
+// has. Called from two places:
+//   1. refreshActiveInterfaces() below — when an interface's last_meta
+//      heartbeat timestamp advances since the previous poll (i.e. the
+//      app just ping'd us), the chip pulses.
+//   2. checkComfyConnection() — when ComfyUI is stale/busy, the
+//      synthetic comfyui chip pulses while the job is in flight.
+window._ifaceLastHeartbeat = window._ifaceLastHeartbeat || {};
+window._ifaceEngageTimers = window._ifaceEngageTimers || {};
+function markIfaceEngaged(key) {
+    const chips = document.querySelectorAll(
+        `.active-iface-chip[data-iface-key="${key}"]`);
+    if (!chips.length) return;
+    chips.forEach(c => c.classList.add('iface-engaged'));
+    // Reset/extend the 2.5s window so back-to-back pulses stay lit
+    // continuously rather than flickering.
+    if (window._ifaceEngageTimers[key]) {
+        clearTimeout(window._ifaceEngageTimers[key]);
+    }
+    window._ifaceEngageTimers[key] = setTimeout(() => {
+        document.querySelectorAll(
+            `.active-iface-chip[data-iface-key="${key}"]`
+        ).forEach(c => c.classList.remove('iface-engaged'));
+        delete window._ifaceEngageTimers[key];
+    }, 2500);
 }
 
 // Kicks the server-side probes for SillyTavern + Signal Bridge. The
@@ -3243,26 +3285,23 @@ function _avatarStateForChar(char) {
 function _avatarHtmlForCard(char, gradient) {
     // Returns the inner HTML for a sidebar card's avatar div.
     //
-    // POLICY: sidebar thumbnails use the STILL image only. The animated
-    // video plays in the header when a wizard is active (see
-    // selectCharacter). Rendering 9+ autoplaying videos in the sidebar
-    // was too busy and burned GPU/battery on every page load; the
-    // user wants a calm grid of stills + one moving portrait at the top.
-    //
-    // `avatar_url` is the still (either a generated_assets entry, or the
-    // studio-default still_<wizard>.png shipped via manifest). If a
-    // wizard only has `animated_url` (first frame isn't extracted yet),
-    // we render the video silenced into the sidebar as a fallback so the
-    // slot doesn't stay empty — but the happy path is always a PNG.
+    // POLICY: when an animated avatar exists, it plays in the sidebar
+    // card AND in the header. The still image (avatar_url) is only a
+    // first-paint fallback + a <video> poster so the slot shows content
+    // before the MP4 buffers. Browsers automatically pause videos that
+    // are off-screen for a lot of layouts, keeping the cost reasonable
+    // even with 30+ wizards in the list.
+    if (char.animated_url) {
+        const poster = char.avatar_url
+            ? ` poster="${char.avatar_url}"` : '';
+        return `
+            <div class="avatar avatar-animated" style="background: ${gradient};">
+                <video src="${char.animated_url}"${poster} autoplay loop muted playsinline></video>
+            </div>`;
+    }
     if (char.avatar_url) {
         return `
             <div class="avatar" style="background: ${gradient}; background-image: url('${char.avatar_url}');"></div>`;
-    }
-    if (char.animated_url) {
-        return `
-            <div class="avatar avatar-animated" style="background: ${gradient};">
-                <video src="${char.animated_url}" autoplay loop muted playsinline></video>
-            </div>`;
     }
     // Placeholder branch
     const state = _avatarStateForChar(char) || 'queued';
