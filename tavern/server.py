@@ -5767,6 +5767,93 @@ class GuildHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(payload).encode('utf-8'))
 
+    def _fetch_antenna_json(self, base_url, path, token, timeout=15):
+        """Helper: authenticated GET against an antenna, returns parsed JSON
+        or a dict with an 'error' key. Shared by _capabilities_snapshot and
+        other multi-antenna scans."""
+        import urllib.request as _ur, urllib.error as _ue, ssl as _ssl
+        headers = {"Authorization": f"Bearer {token}",
+                   "User-Agent": "spellcaster-guild-cap-scan"}
+        ctx_ssl = _ssl.create_default_context()
+        ctx_ssl.check_hostname = False
+        ctx_ssl.verify_mode = _ssl.CERT_NONE
+        req = _ur.Request(base_url.rstrip('/') + path, headers=headers, method='GET')
+        try:
+            with _ur.urlopen(req, timeout=timeout, context=ctx_ssl) as resp:
+                return json.loads(resp.read().decode('utf-8', 'replace'))
+        except _ue.HTTPError as e:
+            try:
+                body = e.read().decode('utf-8', 'replace')
+                return json.loads(body)
+            except Exception:
+                return {"error": f"HTTP {e.code}"}
+        except (_ue.URLError, OSError, json.JSONDecodeError) as e:
+            return {"error": f"{type(e).__name__}: {e}"}
+
+    def _capabilities_snapshot(self, *, force_refresh=False):
+        """R53b: Build a per-antenna capability report.
+
+        Caches for 5 minutes to avoid hammering the antenna during UI
+        polling. ?refresh=1 bypasses the cache.
+
+        Report shape:
+            {"antennas": {
+                "<hostname>": {
+                    "agent_url": "...", "online": true,
+                    "comfyui": {"reachable": true, "total_nodes": 6065,
+                                "custom_node_packs": {...}, "error": null},
+                    "resolve": {"reachable": true, "total_luts": 1234,
+                                "luts_by_category": {...}, "error": null}
+                }, ...
+            }, "cached_at": <ts>, "ttl_s": 300}
+        """
+        now = time.time()
+        cache = getattr(GuildHandler, "_CAPABILITIES_CACHE", None)
+        if cache and not force_refresh and (now - cache.get("cached_at", 0)) < 300:
+            return cache
+        cfg = _guided_install_load_config()
+        token = (cfg.get('antenna_token') or '').strip()
+        out: dict[str, Any] = {}
+        if ANTENNA_REGISTRY_AVAILABLE and _antenna_registry is not None:
+            entries = _antenna_registry.list_entries(only_online=True)
+        else:
+            entries = []
+        for a in entries:
+            row: dict[str, Any] = {
+                "agent_url": a.agent_url, "online": True,
+                "services": list(a.services),
+            }
+            if not token or not a.agent_url:
+                row["error"] = "missing token or agent_url"
+                out[a.hostname] = row
+                continue
+            if "comfyui" in a.services:
+                nc = self._fetch_antenna_json(a.agent_url, "/comfyui/node-catalog", token, timeout=10)
+                if isinstance(nc, dict) and "error" not in nc:
+                    row["comfyui"] = {
+                        "reachable": nc.get("reachable", False),
+                        "total_nodes": nc.get("total_nodes", 0),
+                        "custom_node_packs": nc.get("custom_node_packs", {}),
+                    }
+                else:
+                    row["comfyui"] = {"reachable": False,
+                                       "error": nc.get("error") if isinstance(nc, dict) else "unknown"}
+            if "resolve" in a.services:
+                ru = self._fetch_antenna_json(a.agent_url, "/resolve/luts", token, timeout=10)
+                if isinstance(ru, dict) and "error" not in ru:
+                    row["resolve"] = {
+                        "reachable": True,
+                        "total_luts": ru.get("total", 0),
+                        "luts_by_category": ru.get("luts_by_category", {}),
+                    }
+                else:
+                    row["resolve"] = {"reachable": False,
+                                       "error": ru.get("error") if isinstance(ru, dict) else "unknown"}
+            out[a.hostname] = row
+        result = {"antennas": out, "cached_at": now, "ttl_s": 300}
+        GuildHandler._CAPABILITIES_CACHE = result
+        return result
+
     def _proxy_to_antenna(self, path, method, body, *, service=None):
         """R50b: forward a request to the paired antenna, returning its
         response verbatim. Used by the Resolve render-queue endpoints.
@@ -6931,6 +7018,23 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 return self.end_json(501, {"error": "antenna registry disabled"})
             snap = _antenna_registry.snapshot()
             return self.end_json(200, snap)
+        elif self.path == '/api/capabilities' or self.path.startswith('/api/capabilities?'):
+            # R53b: Aggregate per-antenna capability report — what ComfyUI
+            # nodes + Resolve LUTs are reachable, keyed by antenna hostname.
+            # Lets the Guild decide which features to show (R54).
+            if not ANTENNA_REGISTRY_AVAILABLE or _antenna_registry is None:
+                return self.end_json(501, {"error": "antenna registry disabled"})
+            refresh = False
+            if '?' in self.path:
+                try:
+                    from urllib.parse import urlparse, parse_qs
+                    qs = parse_qs(urlparse(self.path).query)
+                    refresh = (qs.get('refresh') or ['0'])[0] in ('1', 'true', 'yes')
+                except Exception:
+                    refresh = False
+            snap = self._capabilities_snapshot(force_refresh=refresh)
+            return self.end_json(200, snap)
+
         elif self.path.startswith('/api/antennas/choose'):
             # R52: returns the best antenna for a given service. Query:
             # ?service=resolve / comfyui / ollama / etc. 404 if nothing matches.

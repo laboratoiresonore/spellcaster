@@ -755,6 +755,22 @@ def main() -> int:
     check("video_panel renders one entry per antenna",
           test_video_panel_renders_one_entry_per_antenna)
 
+    # Round 53 — Capability discovery (nodes + LUTs)
+    check("resolve has list_luts",
+          test_resolve_has_list_luts)
+    check("comfyui has node_catalog",
+          test_comfyui_has_node_catalog)
+    check("list_luts returns structured response without Resolve",
+          test_list_luts_returns_structured_response_without_resolve)
+    check("list_luts honors custom dirs",
+          test_list_luts_honors_custom_dirs)
+    check("agent registers /resolve/luts + /comfyui/node-catalog",
+          test_agent_registers_luts_and_node_catalog)
+    check("guild has /api/capabilities endpoint",
+          test_guild_has_capabilities_endpoint)
+    check("capabilities snapshot caches",
+          test_capabilities_snapshot_caches)
+
     print("-" * 50)
 
     from scaffold.shotboard import Shotboard, Shot, Trajectory
@@ -7354,6 +7370,77 @@ def test_video_panel_renders_one_entry_per_antenna():
     assert "antennaList" in src
     assert "antenna-entry" in src
     assert "setAntennaList" in src
+
+
+# ════════════════════════════════════════════════════════════════════
+# R53 — Capability discovery: node catalog + LUT enumeration
+# ════════════════════════════════════════════════════════════════════
+
+def test_resolve_has_list_luts():
+    from antenna.endpoints import resolve as rv
+    assert callable(getattr(rv, "list_luts", None))
+
+
+def test_comfyui_has_node_catalog():
+    from antenna.endpoints import comfyui as cu
+    assert callable(getattr(cu, "node_catalog", None))
+
+
+def test_list_luts_returns_structured_response_without_resolve():
+    # Should not require Resolve running — it just walks the filesystem.
+    # On a machine with no LUT dirs, returns total=0 + scanned_dirs=[].
+    from antenna.endpoints import resolve as rv
+    # Force-clear cache
+    rv._LUT_CACHE = None
+    rv._LUT_CACHE_TS = 0.0
+    status, body = rv.list_luts({"config": {}})
+    assert status == 200
+    assert "luts_by_category" in body
+    assert "total" in body
+    assert "scanned_dirs" in body
+    assert isinstance(body["luts_by_category"], dict)
+
+
+def test_list_luts_honors_custom_dirs():
+    import tempfile
+    from pathlib import Path
+    from antenna.endpoints import resolve as rv
+    # Build a fake LUT dir
+    d = tempfile.mkdtemp()
+    cat_dir = Path(d) / "MyCategory"
+    cat_dir.mkdir()
+    lut = cat_dir / "fake_lut.cube"
+    lut.write_text("# fake", encoding="utf-8")
+    rv._LUT_CACHE = None
+    rv._LUT_CACHE_TS = 0.0
+    status, body = rv.list_luts({"config": {"resolve_lut_dirs": [d]}})
+    assert status == 200
+    assert body["total"] >= 1
+    assert "MyCategory" in body["luts_by_category"]
+    names = [x["name"] for x in body["luts_by_category"]["MyCategory"]]
+    assert "fake_lut" in names
+
+
+def test_agent_registers_luts_and_node_catalog():
+    src = open("antenna/agent.py", encoding="utf-8").read()
+    assert '"/resolve/luts"' in src
+    assert '"/comfyui/node-catalog"' in src
+    assert "resolve_ep.list_luts" in src
+    assert "comfyui_ep.node_catalog" in src
+
+
+def test_guild_has_capabilities_endpoint():
+    src = open("tavern/server.py", encoding="utf-8").read()
+    assert "/api/capabilities" in src
+    assert "_capabilities_snapshot" in src
+    assert "_fetch_antenna_json" in src
+
+
+def test_capabilities_snapshot_caches():
+    src = open("tavern/server.py", encoding="utf-8").read()
+    # 5-minute TTL to avoid hammering antennas during UI polling
+    assert "300" in src  # ttl_s
+    assert "_CAPABILITIES_CACHE" in src
 
 
 if __name__ == "__main__":
