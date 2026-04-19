@@ -508,11 +508,6 @@ Because every tool is a spell, every workflow is an incantation, your GPU is a f
 </details>
 
 <details>
-<summary><strong>Is this legal?</strong></summary>
-
-The software? GPL-2.0, as open as it gets. The models? Trained on data that philosophers and lawyers will argue about for the next fifty years. The face swap feature? Legal but ethically "please don't be weird about it." The fact that we gave 13 wizard characters individual personalities and backstories? Not illegal, but our therapist has opinions.
-
-</details>
 
 ---
 
