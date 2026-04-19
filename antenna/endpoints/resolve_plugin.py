@@ -62,6 +62,12 @@ from typing import Any
 # Deliver). We also surface under ``Comp`` (the Fusion page folder).
 _FUSION_SUBFOLDERS = ("Utility", "Edit", "Comp", "Color", "Deliver")
 
+# R104: the Spellcaster submenu header carries a diamond so it stands
+# out in Resolve's menu maze. The leaf folder name becomes the
+# submenu label; per-script names are also diamond-prefixed in
+# install_plugin_from_src.
+_SPELLCASTER_FOLDER_NAME = "\U0001F48E Spellcaster"
+
 _WIN_WFI_DIR = (
     r"{APPDATA}\Blackmagic Design\DaVinci Resolve"
     r"\Support\Workflow Integration Plugins"
@@ -70,7 +76,8 @@ _WIN_SCRIPTS_BASE = (
     r"{APPDATA}\Blackmagic Design\DaVinci Resolve"
     r"\Support\Fusion\Scripts"
 )
-_WIN_SCRIPTS_DIR = _WIN_SCRIPTS_BASE + r"\Utility\Spellcaster"
+_WIN_SCRIPTS_DIR = (_WIN_SCRIPTS_BASE
+                     + r"\Utility\\" + _SPELLCASTER_FOLDER_NAME)
 _MAC_WFI_DIR = (
     "{HOME}/Library/Application Support/Blackmagic Design/DaVinci Resolve"
     "/Workflow Integration Plugins"
@@ -79,10 +86,11 @@ _MAC_SCRIPTS_BASE = (
     "{HOME}/Library/Application Support/Blackmagic Design/DaVinci Resolve"
     "/Fusion/Scripts"
 )
-_MAC_SCRIPTS_DIR = _MAC_SCRIPTS_BASE + "/Utility/Spellcaster"
+_MAC_SCRIPTS_DIR = _MAC_SCRIPTS_BASE + "/Utility/" + _SPELLCASTER_FOLDER_NAME
 _LINUX_WFI_DIR = "{HOME}/.local/share/DaVinciResolve/Workflow Integration Plugins"
 _LINUX_SCRIPTS_BASE = "{HOME}/.local/share/DaVinciResolve/Fusion/Scripts"
-_LINUX_SCRIPTS_DIR = _LINUX_SCRIPTS_BASE + "/Utility/Spellcaster"
+_LINUX_SCRIPTS_DIR = (_LINUX_SCRIPTS_BASE + "/Utility/"
+                       + _SPELLCASTER_FOLDER_NAME)
 
 
 def _expand(p: str) -> Path:
@@ -291,9 +299,22 @@ def install_plugin_from_src(cfg: dict[str, Any] | None = None,
         page_targets: list[Path] = []
         if scripts_base:
             for sub in _FUSION_SUBFOLDERS:
-                page_targets.append(scripts_base / sub / "Spellcaster")
+                page_targets.append(
+                    scripts_base / sub / _SPELLCASTER_FOLDER_NAME)
         else:
             page_targets.append(dirs["scripts"])
+
+        # R104: remove any legacy "Spellcaster" folder (no diamond
+        # prefix) left over from pre-R104 installs so the menu
+        # doesn't show BOTH "Spellcaster" and "💎 Spellcaster".
+        if scripts_base:
+            for sub in _FUSION_SUBFOLDERS:
+                legacy = scripts_base / sub / "Spellcaster"
+                if legacy.is_dir() and legacy.name != _SPELLCASTER_FOLDER_NAME:
+                    try:
+                        shutil.rmtree(legacy, ignore_errors=True)
+                    except Exception:  # noqa: BLE001
+                        pass
 
         # Ensure the primary ("scripts" dir, Utility) is always the
         # first target and gets the version stamp.
@@ -305,9 +326,37 @@ def install_plugin_from_src(cfg: dict[str, Any] | None = None,
         installed_pages: list[str] = []
         for target_root in page_targets:
             target_root.mkdir(parents=True, exist_ok=True)
+            # R104: wipe any stale non-helper .py files left over from a
+            # prior install under the old naming (pre-diamond or with a
+            # different prefix). Helpers (underscore-prefixed, dotfiles,
+            # __pycache__) are preserved.
+            try:
+                for existing in target_root.iterdir():
+                    if not existing.is_file():
+                        continue
+                    nm = existing.name
+                    if nm.startswith("_") or nm.startswith("."):
+                        continue
+                    if existing.suffix == ".py":
+                        try:
+                            existing.unlink()
+                        except OSError:
+                            pass
+            except OSError:
+                pass
             for f in scripts_src.iterdir():
                 if f.is_file() and f.suffix in (".py",):
-                    target = target_root / f.name
+                    # R104: prefix menu-facing scripts with 💎 so they
+                    # stand out in Resolve's Workspace > Scripts menu.
+                    # Helpers (_spellcaster_common, __init__) keep their
+                    # raw names because they're imported by other
+                    # scripts via their import name — renaming them
+                    # would break `import _spellcaster_common`.
+                    display_name = f.name
+                    if (not f.name.startswith("_")
+                            and not f.name.startswith(".")):
+                        display_name = "\U0001F48E " + f.name
+                    target = target_root / display_name
                     tmp = target.with_suffix(target.suffix + ".new")
                     shutil.copy2(f, tmp)
                     if target.exists():
