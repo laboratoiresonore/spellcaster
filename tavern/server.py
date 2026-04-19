@@ -6931,13 +6931,18 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(500, {"error": str(e)})
 
     def do_GET(self):
-        # Route: / → setup UI in setup_mode, else Guild chat UI
+        # Route: / → Guild chat UI. In setup_mode the Spellcaster wizard is
+        # pinned at the top of the sidebar and acts as the onboarding flow,
+        # so first-run users land in the same chat UI as everyone else —
+        # no separate setup page. ?wizard=studio_spellcaster is a hint the
+        # frontend can honor to pre-select the wizard.
         if self.path == '/':
             if _guided_install_active():
-                self.path = '/static/setup.html'
+                self.path = '/static/index.html?wizard=studio_spellcaster'
             else:
                 self.path = '/static/index.html'
         elif self.path == '/setup':
+            # Legacy route — kept for bookmarks that hit the old wizard page.
             self.path = '/static/setup.html'
 
         # ── Setup-mode API endpoints ──
