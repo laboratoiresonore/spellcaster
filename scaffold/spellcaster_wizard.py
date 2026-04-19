@@ -889,6 +889,26 @@ def action_to_endpoint(action: dict[str, Any]) -> tuple[str, str, dict[str, Any]
         # Rescan registries + enqueue any new unresolved items; auto-resolve
         # anything the user handled outside the cue flow.
         return ("POST", "/api/spellcaster/cue/reseed", {})
+    # ── Remote LLM bootstrap via antenna ────────────────────────────
+    if atype == "remote_llm_status":
+        # Relayed probe — ask the antenna at <host>:<antenna_port> if a
+        # local LLM already runs there (Kobold / Ollama / ComfyUI Qwen).
+        host = action.get("host", "")
+        port = int(action.get("antenna_port", 7334) or 7334)
+        return ("GET",
+                f"/api/spellcaster/llm/remote_status?host={host}&antenna_port={port}",
+                {})
+    if atype == "remote_llm_install":
+        # Blocks for minutes on model download. mode=kobold installs
+        # standalone KoboldCpp + a GGUF; comfyui_native drops a Qwen3
+        # GGUF + the QwenVL node pack into that host's ComfyUI. Either
+        # way the antenna does the fetch + spawn; the Guild just waits.
+        return ("POST", "/api/spellcaster/llm/install_remote",
+                {"host":         action.get("host", ""),
+                 "antenna_port": int(action.get("antenna_port", 7334) or 7334),
+                 "mode":         action.get("mode", "kobold"),
+                 "model":        action.get("model", ""),
+                 "timeout":      int(action.get("timeout", 1800))})
     # ── LoRA shootout — dedup multiple LoRAs that do the same thing ──
     if atype == "lora_groups":
         # Enumerate (arch, purpose_group) buckets with multiple candidates.

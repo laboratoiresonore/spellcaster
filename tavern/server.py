@@ -3643,6 +3643,69 @@ def _spellcaster_loras_approve(approvals: list) -> tuple[int, dict]:
 # calibration flow. Activating one model of an arch writes an arch profile
 # that every other unactivated same-arch model inherits as presettings.
 
+# ── Remote LLM bootstrap via antenna ───────────────────────────────────
+
+def _spellcaster_remote_llm_status(host: str, antenna_port: int = 7334
+                                    ) -> tuple[int, dict]:
+    """GET /api/spellcaster/llm/remote_status — probe an antenna for LLM
+    reachability on its host.
+
+    Relays `GET /llm/status` against the remote antenna so the wizard
+    can decide whether `/llm/install` is needed before asking the user
+    to wait for a multi-GB download.
+    """
+    if not host:
+        return (400, {"error": "host required"})
+    url = f"http://{host}:{int(antenna_port)}/llm/status"
+    try:
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            body = json.loads(resp.read().decode("utf-8", errors="replace"))
+        return (200, body)
+    except Exception as e:
+        return (502, {"error": f"{type(e).__name__}: {e}"})
+
+
+def _spellcaster_remote_llm_install(host: str, antenna_port: int,
+                                     mode: str, model: str,
+                                     auth_token: str = "",
+                                     timeout: int = 1800,
+                                     ) -> tuple[int, dict]:
+    """POST /api/spellcaster/llm/install_remote — orchestrate KoboldCpp
+    (or ComfyUI-native Qwen) install on a remote host via its antenna.
+
+    Blocks while the antenna downloads KoboldCpp + a GGUF — expect
+    minutes. Default timeout 30 min; caller can extend.
+
+    Body: {host, antenna_port, mode, model?, auth_token?, timeout?}
+    """
+    if not host:
+        return (400, {"error": "host required"})
+    if mode not in ("kobold", "comfyui_native"):
+        return (400, {"error": "mode must be kobold|comfyui_native"})
+    url = f"http://{host}:{int(antenna_port)}/llm/install"
+    body = {"mode": mode}
+    if model:
+        body["model"] = model
+    req = urllib.request.Request(
+        url, method="POST",
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json"}
+            | ({"Authorization": f"Bearer {auth_token}"} if auth_token else {}),
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=int(timeout)) as resp:
+            payload = json.loads(resp.read().decode("utf-8", errors="replace"))
+        return (200 if payload.get("ok") else 502, payload)
+    except urllib.error.HTTPError as e:
+        try:
+            body_err = json.loads(e.read().decode("utf-8", errors="replace"))
+        except Exception:
+            body_err = {"error": str(e)}
+        return (e.code, body_err)
+    except Exception as e:
+        return (502, {"error": f"{type(e).__name__}: {e}"})
+
+
 # ── Thumbs-up / thumbs-down feedback on any generated output ───────────
 # Every rendered output (chat image, shootout tile, scaffold sample, demo
 # gen, model activation test) gets a ±1 button. A +1 feeds the paired
@@ -7799,6 +7862,12 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 params.get('subject_type', [''])[0]))
         if self.path == '/api/spellcaster/cue':
             return self.end_json(*_spellcaster_cue_state())
+        if self.path.startswith('/api/spellcaster/llm/remote_status'):
+            qs = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(qs)
+            return self.end_json(*_spellcaster_remote_llm_status(
+                params.get('host', [''])[0],
+                int(params.get('antenna_port', ['7334'])[0])))
         if self.path.startswith('/api/spellcaster/cue/list'):
             qs = urllib.parse.urlparse(self.path).query
             params = urllib.parse.parse_qs(qs)
@@ -10121,6 +10190,14 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 data.get('id', ''), data.get('note', '')))
         if self.path == '/api/spellcaster/cue/reseed':
             return self.end_json(*_spellcaster_cue_reseed())
+        if self.path == '/api/spellcaster/llm/install_remote':
+            return self.end_json(*_spellcaster_remote_llm_install(
+                data.get('host', ''),
+                int(data.get('antenna_port', 7334) or 7334),
+                str(data.get('mode', 'kobold')).lower(),
+                str(data.get('model', '')),
+                auth_token=str(data.get('auth_token', '')),
+                timeout=int(data.get('timeout', 1800) or 1800)))
         # Network survey — user declares placements + refresh probes
         if self.path == '/api/spellcaster/network/declare':
             return self.end_json(*_spellcaster_network_declare(
