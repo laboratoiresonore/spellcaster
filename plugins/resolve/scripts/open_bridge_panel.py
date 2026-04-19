@@ -37,9 +37,14 @@ def _locate_bridge_module():
     candidates.append(os.path.expanduser(
         "~/.local/share/DaVinciResolve/Workflow Integration Plugins"))
 
-    # Repo-local fallback (when running from source during dev)
-    here = os.path.dirname(os.path.abspath(__file__))
-    candidates.append(os.path.normpath(os.path.join(here, "..")))
+    # Repo-local fallback (when running from source during dev).
+    # __file__ is undefined when Resolve exec()'s the script from its
+    # Workspace > Scripts menu, so guard the lookup.
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+        candidates.append(os.path.normpath(os.path.join(here, "..")))
+    except NameError:
+        pass
 
     for root in candidates:
         if os.path.isdir(os.path.join(root, "spellcaster_bridge")):
