@@ -2508,12 +2508,23 @@ function WorkflowBrowser({ comfyuiUrl, onCreateScaffold }) {
   const loadWorkflows = useCallback(async () => {
     setLoading(true);
     setError("");
+    // R142: probe ComfyUI via the Guild's /api/comfy_status endpoint
+    // instead of hitting ComfyUI directly from the browser. The
+    // browser-side fetch would always fail when ComfyUI is on another
+    // machine (CORS blocks the response + typical LAN ComfyUI servers
+    // never set Access-Control-Allow-Origin), which is why the library
+    // chip stayed red ("ComfyUI Offline") even when every other Guild
+    // chip correctly showed it online — they all go through the Guild.
     try {
-      // Try the ComfyUI MCP server's workflow catalog endpoint first
-      const url = (comfyuiUrl || "http://localhost:8188").replace(/\/$/, "");
-      const resp = await fetch(`${url}/object_info`, { signal: AbortSignal.timeout(5000) });
+      const resp = await fetch("/api/comfy_status",
+        { signal: AbortSignal.timeout(6000) });
       if (resp.ok) {
-        setServerOnline(true);
+        const d = await resp.json();
+        // comfy_status returns {"connected": bool, ...} or similar;
+        // treat missing field as "looks up, got 200" = online.
+        setServerOnline(d.connected !== false);
+      } else {
+        setServerOnline(false);
       }
     } catch {
       setServerOnline(false);
