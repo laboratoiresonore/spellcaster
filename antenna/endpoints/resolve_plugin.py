@@ -397,6 +397,69 @@ def _write_bridge_config(guild_url: str) -> dict[str, Any]:
     return {"ok": True, "path": str(path), "guild_url": url}
 
 
+def debug(ctx: dict[str, Any]) -> tuple[int, dict]:
+    """GET /resolve/plugin/debug — dump bridge config + reachability test.
+
+    Used to diagnose "my capture_timeline.py script ran but no shots
+    appeared on the Guild". Reports:
+      * contents of ~/.spellcaster/resolve_bridge.json verbatim
+      * whether guild_url is reachable from this host (antenna-side
+        network view, which is what the scripts see)
+      * env vars that override discover_guild_url
+    """
+    import urllib.request as _ur
+    import urllib.error as _ue
+
+    path = _bridge_config_path()
+    bridge_cfg: dict[str, Any] = {}
+    bridge_cfg_error: str | None = None
+    if path.is_file():
+        try:
+            bridge_cfg = json.loads(path.read_text(encoding="utf-8")) or {}
+        except (OSError, json.JSONDecodeError) as e:
+            bridge_cfg_error = str(e)
+    else:
+        bridge_cfg_error = "file does not exist"
+
+    env_override = os.environ.get("SPELLCASTER_GUILD_URL", "")
+
+    # Resolve the URL the scripts will actually use (mirrors
+    # discover_guild_url's precedence).
+    effective_url = (env_override
+                      or bridge_cfg.get("guild_url")
+                      or "(none — will probe 127.0.0.1)")
+
+    reach_target = effective_url
+    reach_result: dict[str, Any] = {"target": reach_target}
+    if reach_target.startswith("http"):
+        try:
+            req = _ur.Request(reach_target.rstrip("/") + "/api/config",
+                               method="GET")
+            with _ur.urlopen(req, timeout=5) as resp:
+                reach_result["status_code"] = resp.status
+                body = resp.read(512).decode("utf-8", "replace")
+                reach_result["body_sample"] = body[:200]
+                reach_result["ok"] = True
+        except _ue.HTTPError as e:
+            reach_result["status_code"] = e.code
+            reach_result["ok"] = False
+        except Exception as e:  # noqa: BLE001
+            reach_result["ok"] = False
+            reach_result["error"] = f"{type(e).__name__}: {e}"
+    else:
+        reach_result["ok"] = False
+        reach_result["error"] = "no http(s) url to probe"
+
+    return 200, {
+        "bridge_config_path": str(path),
+        "bridge_config_error": bridge_cfg_error,
+        "bridge_config": bridge_cfg,
+        "env_SPELLCASTER_GUILD_URL": env_override,
+        "effective_guild_url": effective_url,
+        "reach_test": reach_result,
+    }
+
+
 def configure(ctx: dict[str, Any]) -> tuple[int, dict]:
     """POST /resolve/plugin/configure — write the bridge's resolve_bridge.json.
 

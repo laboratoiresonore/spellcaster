@@ -209,6 +209,7 @@ def _build_routes(cfg: dict[str, Any]) -> dict[tuple[str, str], Callable]:
         try:
             from .endpoints import resolve_plugin as resolve_plugin_ep
             routes[("GET",  "/resolve/plugin/status")]    = resolve_plugin_ep.status
+            routes[("GET",  "/resolve/plugin/debug")]     = resolve_plugin_ep.debug
             routes[("POST", "/resolve/plugin/install")]   = resolve_plugin_ep.install
             routes[("POST", "/resolve/plugin/configure")] = resolve_plugin_ep.configure
         except ImportError as e:
