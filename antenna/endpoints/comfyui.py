@@ -271,6 +271,91 @@ def _find_manifest_model(manifest: dict[str, Any], model_path: str) -> dict | No
     return None
 
 
+def node_catalog(ctx: dict[str, Any]) -> tuple[int, dict]:
+    """GET /comfyui/node-catalog
+
+    Return the full list of ComfyUI node class_types this server knows
+    about, keyed by custom-node pack where possible. Source of truth:
+    ComfyUI's own /object_info endpoint (the same one Spellcaster uses
+    to verify node names — no hallucinating).
+
+    Response:
+        {
+          "total_nodes": 6065,
+          "custom_node_packs": {
+            "ComfyUI-Spellcaster": ["SpellcasterKleinEnhancer", ...],
+            "(core)": ["KSampler", "LoadImage", ...]
+          },
+          "comfyui_url": "http://...",
+          "reachable": True
+        }
+
+    The catalog is what makes capability-gating work: the Guild can ask
+    "does this Klein workflow's required nodes exist on this antenna's
+    ComfyUI?" without shipping a node list per-release.
+    """
+    global _NODE_CATALOG_CACHE, _NODE_CATALOG_TS
+    now = time.time()
+    if _NODE_CATALOG_CACHE is not None and (now - _NODE_CATALOG_TS) < 30.0:
+        return 200, _NODE_CATALOG_CACHE
+
+    cfg = ctx.get("config") or {}
+    comfyui_url = (cfg.get("comfyui_url") or "http://127.0.0.1:8188").strip().rstrip("/")
+    object_info_url = f"{comfyui_url}/object_info"
+    try:
+        req = urllib.request.Request(object_info_url, headers={
+            "User-Agent": "spellcaster-antenna-catalog",
+        })
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            raw = resp.read().decode("utf-8", "replace")
+            obj_info = json.loads(raw)
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError) as e:
+        return 503, {
+            "error": f"ComfyUI not reachable at {object_info_url}: {e}",
+            "reachable": False,
+            "comfyui_url": comfyui_url,
+        }
+    except json.JSONDecodeError as e:
+        return 500, {"error": f"ComfyUI returned invalid JSON: {e}"}
+
+    # Group nodes by their python_module (which reveals the source pack).
+    # Core nodes live in "nodes" / "comfy_extras.*"; custom packs live in
+    # "custom_nodes.<pack-name>.*". We derive the pack name from the module.
+    packs: dict[str, list[str]] = {}
+    for class_type, meta in obj_info.items():
+        if not isinstance(meta, dict):
+            continue
+        module = str(meta.get("python_module") or "").strip()
+        if module.startswith("custom_nodes."):
+            # e.g. "custom_nodes.ComfyUI-Spellcaster.nodes.klein" → "ComfyUI-Spellcaster"
+            parts = module.split(".", 2)
+            pack = parts[1] if len(parts) > 1 else "(unknown custom)"
+        elif module.startswith(("nodes", "comfy_extras")):
+            pack = "(core)"
+        else:
+            pack = "(unknown)"
+        packs.setdefault(pack, []).append(class_type)
+
+    for p in packs:
+        packs[p].sort()
+
+    result = {
+        "reachable": True,
+        "comfyui_url": comfyui_url,
+        "total_nodes": len(obj_info),
+        "custom_node_packs": packs,
+    }
+    _NODE_CATALOG_CACHE = result
+    _NODE_CATALOG_TS = now
+    return 200, result
+
+
+# Module-level node-catalog cache (30s TTL — fast enough for boot checks,
+# long enough to avoid hammering ComfyUI during UI polling).
+_NODE_CATALOG_CACHE: dict[str, Any] | None = None
+_NODE_CATALOG_TS: float = 0.0
+
+
 def install_model(ctx: dict[str, Any]) -> tuple[int, dict]:
     """POST /install-model
 

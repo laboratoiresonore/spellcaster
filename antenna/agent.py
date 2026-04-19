@@ -165,8 +165,9 @@ def _build_routes(cfg: dict[str, Any]) -> dict[tuple[str, str], Callable]:
         # Lazy import so an llm-only antenna doesn't need comfyui deps
         try:
             from .endpoints import comfyui as comfyui_ep
-            routes[("POST", "/install-node")]  = comfyui_ep.install_node
-            routes[("POST", "/install-model")] = comfyui_ep.install_model
+            routes[("POST", "/install-node")]      = comfyui_ep.install_node
+            routes[("POST", "/install-model")]     = comfyui_ep.install_model
+            routes[("GET",  "/comfyui/node-catalog")] = comfyui_ep.node_catalog
         except ImportError as e:
             print(f"[antenna] comfyui service declared but endpoints not yet built: {e}",
                   file=sys.stderr)
@@ -184,6 +185,7 @@ def _build_routes(cfg: dict[str, Any]) -> dict[tuple[str, str], Callable]:
             routes[("POST", "/resolve/render-timeline")] = resolve_ep.render_timeline
             routes[("GET",  "/resolve/render-status")]   = resolve_ep.render_status
             routes[("GET",  "/resolve/render-presets")]  = resolve_ep.render_presets
+            routes[("GET",  "/resolve/luts")]            = resolve_ep.list_luts
         except ImportError as e:
             print(f"[antenna] resolve service declared but endpoints missing: {e}",
                   file=sys.stderr)
