@@ -143,6 +143,130 @@ def seed_from_unverified_antennas() -> int:
     return added
 
 
+def seed_from_service_conflicts() -> int:
+    """Detect the same service present on multiple hosts and enqueue one
+    `service_conflict` issue per clash.
+
+    Example: GIMP installed locally AND reported by the antenna on
+    192.168.x.y — we don't know which one the user wants as the
+    canonical target. The Spellcaster asks and re-declares the
+    network_survey accordingly.
+
+    Signals:
+      - Local: antenna/detect.detect_installed_services() against the
+        remote_services catalog, run on THIS host (the Guild's host).
+      - Remote: for each survey entry placed "remote" with a verified
+        antenna, fetch its /status and read services_detected.
+
+    A conflict issue is created only when a service is `installed=True`
+    on 2+ hosts AND the user hasn't already declared it clearly (skipped
+    services, and services placed "not_installed" on the other host, are
+    not conflicts).
+    """
+    try:
+        from scaffold.issue_cue import enqueue
+        from scaffold.network_survey import (
+            load_survey, load_service_catalog, probe_antenna,
+        )
+    except Exception as e:
+        print(f"  [cue seeder] conflicts: imports failed: {e}")
+        return 0
+
+    catalog = load_service_catalog()
+    survey = load_survey()
+
+    # ── Gather per-host inventories (host label -> {svc_key: installed}) ──
+    inventories: dict[str, dict[str, bool]] = {}
+
+    # Local host — detect directly here.
+    try:
+        import sys as _sys, os as _os
+        _repo_root = _os.path.abspath(_os.path.join(
+            _os.path.dirname(__file__), ".."))
+        if _repo_root not in _sys.path:
+            _sys.path.insert(0, _repo_root)
+        from antenna import detect as _detect  # type: ignore
+        local_probe = _detect.detect_installed_services(catalog) or {}
+        inventories["Local"] = {
+            k: bool((v or {}).get("installed"))
+            for k, v in local_probe.items()
+        }
+    except Exception as e:
+        print(f"  [cue seeder] conflicts: local detect failed: {e}")
+
+    # Remote antennas declared by the user. We only probe one per unique
+    # host even if multiple services share that host — /status returns
+    # the full services_detected map so one call covers everything.
+    remote_hosts_seen: set[str] = set()
+    for key, loc in survey.items():
+        if loc.placement != "remote" or not loc.host:
+            continue
+        if loc.host in remote_hosts_seen:
+            continue
+        remote_hosts_seen.add(loc.host)
+        try:
+            ok, _msg, status = probe_antenna(loc.host, loc.antenna_port)
+            if not ok:
+                continue
+            services_detected = (status or {}).get("services_detected") or {}
+            inventories[loc.host] = {
+                k: bool((v or {}).get("installed"))
+                for k, v in services_detected.items()
+                if isinstance(v, dict)
+            }
+        except Exception as e:
+            print(f"  [cue seeder] conflicts: antenna {loc.host} probe failed: {e}")
+
+    if len(inventories) < 2:
+        return 0          # can't have a conflict with only one host
+
+    # ── Find conflicts: same service installed on 2+ hosts ─────────────
+    # Build per-service host list.
+    by_service: dict[str, list[str]] = {}
+    for host_label, inv in inventories.items():
+        for svc, installed in inv.items():
+            if installed:
+                by_service.setdefault(svc, []).append(host_label)
+
+    added = 0
+    for svc, hosts in by_service.items():
+        if len(hosts) < 2:
+            continue
+        # Skip if the user already explicitly declared this service as
+        # SKIP or NOT_INSTALLED on one side — they've resolved it implicitly.
+        loc = survey.get(svc)
+        if loc and loc.placement in ("skip", "not_installed"):
+            continue
+        svc_meta = next((s for s in catalog if s.get("key") == svc), {})
+        label = svc_meta.get("label") or svc
+        try:
+            enqueue({
+                "id":       f"conflict:{svc}",
+                "kind":     "service_conflict",
+                "title":    f"{label} detected on {len(hosts)} hosts — "
+                            f"pick which is canonical",
+                "detail":   f"Found on: {', '.join(hosts)}. Only one can be "
+                            f"the default target — the others get skipped "
+                            f"(still available via manual override later).",
+                "priority": 1,
+                "context":  {
+                    "service": svc,
+                    "label":   label,
+                    "hosts":   hosts,
+                },
+                # The resolver re-declares the network_survey entry to
+                # the user's pick; Spellcaster walks them through it
+                # conversationally.
+                "action":   {"type":    "network_declare",
+                             "key":     svc,
+                             "placement": "PICK_ONE"},   # placeholder
+            })
+            added += 1
+        except Exception as e:
+            print(f"  [cue seeder] conflicts: enqueue {svc} failed: {e}")
+    return added
+
+
 def auto_resolve_stale() -> int:
     """Mark issues resolved that no longer match reality.
 
@@ -211,6 +335,30 @@ def auto_resolve_stale() -> int:
     except Exception as e:
         print(f"  [cue seeder] auto-resolve antenna failed: {e}")
 
+    # Service conflicts — resolve once the user has declared a winning
+    # host via network_declare (survey.placement=local OR remote with a
+    # specific host). A conflict is STILL open only when we'd otherwise
+    # detect the same service on 2+ hosts.
+    try:
+        from scaffold.network_survey import load_survey
+        survey = load_survey()
+        for it in open_issues:
+            if it.get("kind") != "service_conflict":
+                continue
+            svc = (it.get("context") or {}).get("service", "")
+            loc = survey.get(svc)
+            # If the user declared a concrete placement (local / remote
+            # with a chosen host / skip / not_installed), the conflict
+            # is resolved — they picked.
+            if loc and loc.placement in ("local", "remote", "skip",
+                                           "not_installed"):
+                if loc.placement != "remote" or loc.host:
+                    resolve(it["id"],
+                            note=f"auto-resolved: placement={loc.placement}")
+                    resolved_n += 1
+    except Exception as e:
+        print(f"  [cue seeder] auto-resolve conflict failed: {e}")
+
     return resolved_n
 
 
@@ -252,6 +400,7 @@ def seed_all(lora_registry: Optional[dict] = None,
     out["models"] = seed_from_unactivated_models(detected_models)
 
     out["antennas"] = seed_from_unverified_antennas()
+    out["conflicts"] = seed_from_service_conflicts()
     out["resolved"] = auto_resolve_stale()
     return out
 
@@ -260,6 +409,7 @@ __all__ = [
     "seed_from_lora_groups",
     "seed_from_unactivated_models",
     "seed_from_unverified_antennas",
+    "seed_from_service_conflicts",
     "auto_resolve_stale",
     "seed_all",
 ]
