@@ -438,7 +438,7 @@ SERVICE CONFLICT RESOLUTION (cue kind: service_conflict):
 
   Your job when that's the head of the cue:
     1. Speak the conflict in plain English:
-       "I see GIMP on both this machine AND <INTERNAL_HOST>. Only one
+       "I see GIMP on both this machine AND 192.168.x.y. Only one
         can be the default target — which do you want Spellcaster to
         send GIMP-bound asset events to?"
     2. Offer exactly TWO options (or however many hosts are in the
@@ -448,7 +448,7 @@ SERVICE CONFLICT RESOLUTION (cue kind: service_conflict):
          <ACTION>{{"type": "network_declare", "key": "gimp",
                   "placement": "local"}}</ACTION>   (or)
          <ACTION>{{"type": "network_declare", "key": "gimp",
-                  "placement": "remote", "host": "<INTERNAL_HOST>"}}</ACTION>
+                  "placement": "remote", "host": "192.168.x.y"}}</ACTION>
     4. Then resolve the cue issue:
          <ACTION>{{"type": "cue_resolve",
                   "id": "conflict:gimp",
