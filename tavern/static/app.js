@@ -3241,19 +3241,28 @@ function _avatarStateForChar(char) {
 }
 
 function _avatarHtmlForCard(char, gradient) {
-    // Returns the inner HTML for a sidebar card's avatar div, including
-    // the placeholder + pending classes when the wizard's portrait is
-    // missing. Centralized so the legacy renderCard, the search modal,
-    // and any future renderer all stay in sync.
+    // Returns the inner HTML for a sidebar card's avatar div.
+    //
+    // POLICY: sidebar thumbnails use the STILL image only. The animated
+    // video plays in the header when a wizard is active (see
+    // selectCharacter). Rendering 9+ autoplaying videos in the sidebar
+    // was too busy and burned GPU/battery on every page load; the
+    // user wants a calm grid of stills + one moving portrait at the top.
+    //
+    // `avatar_url` is the still (either a generated_assets entry, or the
+    // studio-default still_<wizard>.png shipped via manifest). If a
+    // wizard only has `animated_url` (first frame isn't extracted yet),
+    // we render the video silenced into the sidebar as a fallback so the
+    // slot doesn't stay empty — but the happy path is always a PNG.
+    if (char.avatar_url) {
+        return `
+            <div class="avatar" style="background: ${gradient}; background-image: url('${char.avatar_url}');"></div>`;
+    }
     if (char.animated_url) {
         return `
             <div class="avatar avatar-animated" style="background: ${gradient};">
                 <video src="${char.animated_url}" autoplay loop muted playsinline></video>
             </div>`;
-    }
-    if (char.avatar_url) {
-        return `
-            <div class="avatar" style="background: ${gradient}; background-image: url('${char.avatar_url}');"></div>`;
     }
     // Placeholder branch
     const state = _avatarStateForChar(char) || 'queued';
