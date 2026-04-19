@@ -292,15 +292,19 @@ def build_native_workflow(preset_key: str, *, prompt: str,
     except ImportError as e:
         return None, f"spellcaster_core.workflows not importable: {e}"
 
-    # For t2v presets build_wan_video still needs a start image node
-    # because WanImageToVideo is the i2v path. For pure t2v we'd need
-    # the "Wan T2V" path — not yet wired. Surface this honestly.
+    # t2v uses a custom workflow (no WanImageToVideo, no CLIPVision —
+    # just text conditioning + EmptyHunyuanLatentVideo). Build inline
+    # since spellcaster_core's build_wan_video is i2v-only.
     if task == "t2v":
-        return None, ("wan22_t2v native ComfyUI routing requires the "
-                      "pure t2v workflow (WanImageToVideo needs a "
-                      "start image). Either supply a reference still "
-                      "or use wan22_i2v_lightning with a solid-colour "
-                      "placeholder — proper t2v wiring is TODO.")
+        try:
+            workflow = _build_wan_t2v_workflow(
+                preset=preset_dict, prompt=prompt, negative=negative,
+                seed=seed, width=width, height=height, length=length,
+                fps=fps, turbo=turbo,
+            )
+        except Exception as e:  # noqa: BLE001
+            return None, f"_build_wan_t2v_workflow raised: {e}"
+        return workflow, None
 
     try:
         workflow = build_wan_video(
@@ -320,6 +324,143 @@ def build_native_workflow(preset_key: str, *, prompt: str,
     if not isinstance(workflow, dict) or not workflow:
         return None, "build_wan_video returned empty workflow"
     return workflow, None
+
+
+# ── Native t2v workflow (no WanImageToVideo) ────────────────────────
+
+def _build_wan_t2v_workflow(*, preset: dict, prompt: str, negative: str,
+                              seed: int, width: int, height: int,
+                              length: int, fps: int, turbo: bool) -> dict:
+    """Wan 2.2 text-to-video workflow.
+
+    Differs from build_wan_video in that it:
+      - Drops LoadImage / ImageScale / CLIPVision — no ref frame.
+      - Uses EmptyHunyuanLatentVideo as the starting latent (Wan 2.2
+        shares Hunyuan's 16-channel video latent shape, so that node's
+        output slots into the Wan KSamplerAdvanced chain unchanged).
+      - Skips the WanImageToVideo conditioning wrap — positive /
+        negative CONDITIONING feed the samplers directly.
+
+    Returned workflow is the same two-pass high/low KSampler structure
+    as the i2v path, so the render-downloader in video_bridge doesn't
+    need to know which kind it got back.
+    """
+    high_model = preset["high_model"]
+    low_model = preset["low_model"]
+    clip_name = preset["clip"]
+    vae_name = preset["vae"]
+    steps = preset.get("steps", 20)
+    cfg = preset.get("cfg", 5.0)
+    shift = preset.get("shift", 5.0)
+    second_step = preset.get("second_step", 10)
+
+    if turbo:
+        if not (2 <= steps <= 10):
+            steps = 6
+        if not (1 <= second_step < steps):
+            second_step = min(3, steps - 1)
+
+    is_gguf_clip = preset.get("clip_is_gguf", clip_name.lower().endswith(".gguf"))
+    is_gguf_high = high_model.lower().endswith(".gguf")
+    is_gguf_low = low_model.lower().endswith(".gguf")
+
+    wf: Dict[str, Any] = {}
+
+    # 1. CLIP loader
+    if is_gguf_clip:
+        wf["1"] = {"class_type": "CLIPLoaderGGUF",
+                   "inputs": {"clip_name": clip_name, "type": "wan"}}
+    else:
+        wf["1"] = {"class_type": "CLIPLoader",
+                   "inputs": {"clip_name": clip_name, "type": "wan"}}
+
+    # 2-3. Unet loaders (high + low)
+    wf["2"] = {"class_type": "UnetLoaderGGUF" if is_gguf_high else "UNETLoader",
+               "inputs": ({"unet_name": high_model}
+                            if is_gguf_high else
+                            {"unet_name": high_model, "weight_dtype": "default"})}
+    wf["3"] = {"class_type": "UnetLoaderGGUF" if is_gguf_low else "UNETLoader",
+               "inputs": ({"unet_name": low_model}
+                            if is_gguf_low else
+                            {"unet_name": low_model, "weight_dtype": "default"})}
+
+    # 4. VAE loader
+    wf["4"] = {"class_type": "VAELoader",
+               "inputs": {"vae_name": vae_name}}
+
+    # 5-6. Prompt encoding
+    wf["5"] = {"class_type": "CLIPTextEncode",
+               "inputs": {"clip": ["1", 0], "text": prompt}}
+    wf["6"] = {"class_type": "CLIPTextEncode",
+               "inputs": {"clip": ["1", 0], "text": negative or ""}}
+
+    # 7. Empty latent video. Hunyuan's empty-latent node works for
+    # Wan 2.2 because both families share the 16-channel (B,16,T,H,W)
+    # latent layout. Frame count must be (length-1)/4*4+1 aligned.
+    wf["7"] = {"class_type": "EmptyHunyuanLatentVideo",
+               "inputs": {"width": width, "height": height,
+                            "length": length, "batch_size": 1}}
+
+    # 8-9. ModelSamplingSD3 (timestep shift)
+    wf["8"] = {"class_type": "ModelSamplingSD3",
+               "inputs": {"model": ["2", 0], "shift": shift}}
+    wf["9"] = {"class_type": "ModelSamplingSD3",
+               "inputs": {"model": ["3", 0], "shift": shift}}
+
+    # 10. KSamplerAdvanced pass 1 (high)
+    wf["10"] = {"class_type": "KSamplerAdvanced",
+                "inputs": {
+                    "model": ["8", 0],
+                    "positive": ["5", 0],
+                    "negative": ["6", 0],
+                    "latent_image": ["7", 0],
+                    "add_noise": "enable",
+                    "noise_seed": seed,
+                    "steps": steps,
+                    "cfg": cfg,
+                    "sampler_name": "euler_ancestral",
+                    "scheduler": "simple",
+                    "start_at_step": 0,
+                    "end_at_step": second_step,
+                    "return_with_leftover_noise": "enable",
+                }}
+
+    # 11. KSamplerAdvanced pass 2 (low)
+    wf["11"] = {"class_type": "KSamplerAdvanced",
+                "inputs": {
+                    "model": ["9", 0],
+                    "positive": ["5", 0],
+                    "negative": ["6", 0],
+                    "latent_image": ["10", 0],
+                    "add_noise": "disable",
+                    "noise_seed": 0,
+                    "steps": steps,
+                    "cfg": 1.0,
+                    "sampler_name": "euler_ancestral",
+                    "scheduler": "simple",
+                    "start_at_step": second_step,
+                    "end_at_step": 10000,
+                    "return_with_leftover_noise": "disable",
+                }}
+
+    # 12. VAE decode
+    wf["12"] = {"class_type": "VAEDecode",
+                "inputs": {"samples": ["11", 0], "vae": ["4", 0]}}
+
+    # 13. Video combine (mp4 out). Filename prefix keeps the Guild's
+    # downloader happy — it greps outputs for *.mp4.
+    wf["13"] = {"class_type": "VHS_VideoCombine",
+                "inputs": {
+                    "images": ["12", 0],
+                    "frame_rate": fps,
+                    "loop_count": 0,
+                    "filename_prefix": "spellcaster_t2v",
+                    "format": "video/h264-mp4",
+                    "pingpong": False,
+                    "save_output": True,
+                }}
+
+    return wf
 
 
 def _ensure_spellcaster_core_on_path():
