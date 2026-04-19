@@ -305,6 +305,18 @@ def _build_routes(cfg: dict[str, Any]) -> dict[tuple[str, str], Callable]:
             print(f"[antenna] resolve_plugin endpoint failed to import: {e}",
                   file=sys.stderr)
 
+    # R115: Darktable plugin deployment — same antenna-installer pattern
+    # as Resolve. Gated on the darktable service so hosts without
+    # Darktable installed don't show the routes.
+    if "darktable" in services:
+        try:
+            from .endpoints import darktable_plugin as darktable_plugin_ep
+            routes[("GET",  "/darktable/plugin/status")]  = darktable_plugin_ep.status
+            routes[("POST", "/darktable/plugin/install")] = darktable_plugin_ep.install
+        except ImportError as e:
+            print(f"[antenna] darktable_plugin endpoint failed to import: {e}",
+                  file=sys.stderr)
+
     # R56: generic service start/logs — covers ComfyUI, Kobold, Ollama.
     # Always registered (not gated by a specific service) because
     # start_service chooses based on the request body, not route key.
