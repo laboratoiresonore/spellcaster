@@ -150,6 +150,42 @@ function ShotCard({
   const [snapCompare, setSnapCompare] = _useState([]);  // R46b: 0-2 snap ids selected for diff
 
   const isLocked = shot.locked || false;
+
+  // R63a: client-side port of shotboard.shot_warnings() — avoids an
+  // N+1 API call when rendering a big shot grid. Backend helper stays
+  // authoritative (GIMP/other consumers use it); UI mirrors the logic
+  // it can compute locally without a filesystem check (ref_image
+  // existence is skipped client-side — browser can't stat paths).
+  const shotWarnings = _useMemo(() => {
+    const warnings = [];
+    if (!(shot.prompt || "").trim()) {
+      warnings.push({code: "empty_prompt", severity: "error",
+                     message: "Prompt is empty"});
+    }
+    for (const depId of (shot.depends_on || [])) {
+      const dep = (allShots || []).find(s => s.id === depId);
+      if (!dep) {
+        warnings.push({code: "broken_dependency", severity: "error",
+                       message: `Depends on deleted shot ${String(depId).slice(0,8)}…`});
+        continue;
+      }
+      const hasReadyHistory = (dep.render_history || []).some(
+        e => e.status === "ready");
+      if (dep.status === "failed" && !hasReadyHistory) {
+        warnings.push({code: "failed_dependency", severity: "warn",
+                       message: `Depends on "${dep.title || depId.slice(0,8)}" which has never rendered successfully.`});
+      }
+    }
+    if (shot.carry_last_frame) {
+      const idx = (allShots || []).findIndex(s => s.id === shot.id);
+      if (idx === 0) {
+        warnings.push({code: "carry_frame_without_deps", severity: "warn",
+                       message: "carry_last_frame=True but this is the first shot"});
+      }
+    }
+    return warnings;
+  }, [shot.prompt, shot.depends_on, shot.carry_last_frame,
+       shot.id, allShots]);
   const [editTitle, setEditTitle] = _useState(shot.title);
   const [editPrompt, setEditPrompt] = _useState(shot.prompt);
   const [editNegative, setEditNegative] = _useState(shot.negative || "");
@@ -340,6 +376,21 @@ function ShotCard({
           {editTitle || <span className="text-slate-500 italic">Untitled shot</span>}
         </span>
         <StatusBadge status={shot.status} />
+        {/* R63a: warning icons — click to expand (uses setExpanded via parent) */}
+        {shotWarnings.length > 0 && (() => {
+          const errorCount = shotWarnings.filter(w => w.severity === "error").length;
+          const warnCount = shotWarnings.filter(w => w.severity === "warn").length;
+          const dominant = errorCount > 0 ? "error" : "warn";
+          const color = dominant === "error" ? "text-rose-400" : "text-amber-400";
+          const total = shotWarnings.length;
+          const tooltip = shotWarnings.map(w => `• ${w.message}`).join("\n");
+          return (
+            <span className={`shot-warnings ${color} text-xs font-medium`}
+                  title={tooltip}>
+              ⚠ {total > 1 ? total : ""}
+            </span>
+          );
+        })()}
         {shot.ref_image && (
           <span className="text-xs text-purple-400 font-medium" title="Has reference image">REF</span>
         )}
