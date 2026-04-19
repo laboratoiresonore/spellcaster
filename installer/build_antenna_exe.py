@@ -85,12 +85,16 @@ def main() -> int:
         # the _tkinter C extension + the tcl/tk runtime DLLs land in
         # the onefile bundle.
         "--collect-all", "tkinter",
-        # Native tray backends per OS — plus PIL's tk finder which pystray's
-        # notification path imports on demand.
+        # Pystray + PIL — the tray icon. --hidden-import of the
+        # per-platform backend wasn't enough because pystray's top-
+        # level __init__ pulls Win32 COM stubs at import time that
+        # PyInstaller's static analysis misses. --collect-all gathers
+        # every submodule + any .pyd binaries they pull.
+        "--collect-all", "pystray",
+        "--collect-all", "PIL",
         "--hidden-import", "pystray._win32",
         "--hidden-import", "pystray._darwin",
         "--hidden-import", "pystray._appindicator",
-        "--hidden-import", "PIL._tkinter_finder",
         # remote_services.json is read by installer/remote_services.py
         # at boot; it's a pure data file so --add-data is still the
         # right tool here.

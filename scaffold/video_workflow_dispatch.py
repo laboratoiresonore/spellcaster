@@ -311,7 +311,24 @@ def build_native_workflow(preset_key: str, *, prompt: str,
                            height: Optional[int] = None,
                            length: Optional[int] = None,
                            fps: Optional[int] = None,
-                           turbo: bool = True) -> Tuple[Optional[dict], Optional[str]]:
+                           turbo: bool = True,
+                           # R131: quality-feature passthroughs for the
+                           # Wan 2.1-era build_wan_video path. These mirror
+                           # the GIMP plugin's UI knobs so the Guild /
+                           # Resolve / Cinematographer can request the same
+                           # post-processing chain.
+                           loras_high: Optional[List[Tuple[str, float]]] = None,
+                           loras_low: Optional[List[Tuple[str, float]]] = None,
+                           face_swap: bool = False,
+                           interpolate: bool = False,
+                           rtx_scale: float = 1.0,
+                           teacache: bool = False,
+                           tiled_vae: bool = False,
+                           ip_adapter_image: Optional[str] = None,
+                           ip_adapter_weight: float = 0.5,
+                           motion_mask: Optional[str] = None,
+                           pingpong: bool = False,
+                           ) -> Tuple[Optional[dict], Optional[str]]:
     """Build a ComfyUI workflow dict for `preset_key`.
 
     Returns (workflow, error). On success workflow is a dict suitable
@@ -410,10 +427,20 @@ def build_native_workflow(preset_key: str, *, prompt: str,
                 prompt_text=prompt, negative_text=negative, seed=seed,
                 width=width, height=height, length=length,
                 fps=fps, turbo=turbo,
-                # Keep the first cut minimal — editor-requested quality
-                # features (face swap, RIFE interpolation, RTX upscale)
-                # can be opted in later via preset overrides.
-                face_swap=False, interpolate=False, rtx_scale=1.0,
+                # Pass through user-chosen / caller-chosen quality
+                # knobs. The canonical build_wan_video knows how to
+                # wire each one (face swap via ReActor, RIFE 4× for
+                # interpolate, Wan video upscale for rtx_scale,
+                # IP-Adapter-WAN for ip_adapter_image, etc). Turning
+                # them on/off is the caller's decision, not the
+                # dispatcher's.
+                loras_high=loras_high, loras_low=loras_low,
+                face_swap=face_swap, interpolate=interpolate,
+                rtx_scale=rtx_scale,
+                teacache=teacache, tiled_vae=tiled_vae,
+                ip_adapter_image=ip_adapter_image,
+                ip_adapter_weight=ip_adapter_weight,
+                motion_mask=motion_mask, pingpong=pingpong,
             )
     except Exception as e:  # noqa: BLE001
         return None, f"wan22 builder raised: {e}"

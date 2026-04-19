@@ -53,16 +53,37 @@ def _install_crash_trap() -> None:
 _install_crash_trap()
 
 
+def _log_startup_note(msg: str) -> None:
+    """Append a single diagnostic line to antenna-crash.log. Used by
+    _prefer_tray so "tray didn't start" is debuggable on a --noconsole
+    exe where stderr goes nowhere."""
+    try:
+        home = os.path.expanduser("~")
+        log_path = os.path.join(home, ".spellcaster", "antenna-crash.log")
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        import datetime as _dt
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"[{_dt.datetime.now().isoformat()}] {msg}\n")
+    except Exception:
+        pass
+
+
 def _prefer_tray() -> bool:
     if os.name != "nt":
+        _log_startup_note(f"tray skipped: os.name={os.name} (Windows only)")
         return False
     if os.environ.get("SPELLCASTER_ANTENNA_NO_TRAY", "").strip() in ("1", "true", "yes"):
+        _log_startup_note("tray skipped: SPELLCASTER_ANTENNA_NO_TRAY set")
         return False
     try:
         import pystray  # noqa: F401
         from PIL import Image  # noqa: F401
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        _log_startup_note(
+            f"tray disabled: pystray/PIL import failed "
+            f"({type(e).__name__}: {e})")
         return False
+    _log_startup_note("tray path selected")
     return True
 
 

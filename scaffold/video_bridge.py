@@ -417,16 +417,22 @@ class VideoBridge:
 
         defaults = (describe_preset(shot.preset) or {}).get("defaults") or {}
         width_h = defaults.get("resolution", "832x480").split("x")
+        ov = shot.overrides or {}
         try:
-            w = int((shot.overrides or {}).get("width") or width_h[0])
-            h = int((shot.overrides or {}).get("height") or width_h[1])
+            w = int(ov.get("width") or width_h[0])
+            h = int(ov.get("height") or width_h[1])
         except Exception:
             w, h = 832, 480
-        length = int((shot.overrides or {}).get("frames")
-                      or defaults.get("frames", 81))
-        fps = int((shot.overrides or {}).get("fps")
-                   or defaults.get("fps", 16))
+        length = int(ov.get("frames") or defaults.get("frames", 81))
+        fps = int(ov.get("fps") or defaults.get("fps", 16))
         seed = shot.seed if shot.seed is not None else int(time.time()) & 0xFFFFFFFF
+
+        # R131: plumb through the full post-processing chain from
+        # shot.overrides. Defaults are conservative (off) so the
+        # first render is fast; editors opt in per shot via the
+        # Cinematographer / Resolve Bridge / Guild UI.
+        loras_high = ov.get("loras_high")  # list of (name, strength)
+        loras_low = ov.get("loras_low")
 
         workflow, err = _build_native_workflow(
             shot.preset,
@@ -436,7 +442,19 @@ class VideoBridge:
             image_filename=ref_basename,  # None for t2v
             comfyui_base_url=self.comfy.base_url,
             width=w, height=h, length=length, fps=fps,
-            turbo=(shot.preset == "wan22_i2v_lightning"),
+            turbo=bool(ov.get("turbo",
+                                shot.preset == "wan22_i2v_lightning")),
+            loras_high=loras_high,
+            loras_low=loras_low,
+            face_swap=bool(ov.get("face_swap", False)),
+            interpolate=bool(ov.get("interpolate", False)),
+            rtx_scale=float(ov.get("rtx_scale", 1.0)),
+            teacache=bool(ov.get("teacache", False)),
+            tiled_vae=bool(ov.get("tiled_vae", False)),
+            ip_adapter_image=ov.get("ip_adapter_image"),
+            ip_adapter_weight=float(ov.get("ip_adapter_weight", 0.5)),
+            motion_mask=ov.get("motion_mask"),
+            pingpong=bool(ov.get("pingpong", False)),
         )
         if not workflow:
             return {"status": "error", "message": err or "build failed"}
