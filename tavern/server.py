@@ -9154,6 +9154,20 @@ class GuildHandler(SimpleHTTPRequestHandler):
             diff = _VIDEO_BRIDGE.board.shot_diff(shot_id)
             return self.end_json(200, {"shot_id": shot_id, **diff})
 
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/warnings') and self.command == 'GET':
+            # R63a: per-shot continuity + quality warnings
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/')[4]
+            warnings = _VIDEO_BRIDGE.board.shot_warnings(shot_id)
+            return self.end_json(200, {"shot_id": shot_id, "warnings": warnings})
+
+        elif self.path == '/api/video/warnings' and self.command == 'GET':
+            # R63a: board-wide warning summary
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            return self.end_json(200, _VIDEO_BRIDGE.board.board_warnings_summary())
+
         elif self.path.startswith('/api/video/shots/') and self.path.endswith('/revert') and self.command == 'POST':
             if not _VIDEO_BRIDGE:
                 return self.end_json(503, {"error": "Video Bridge not initialised"})

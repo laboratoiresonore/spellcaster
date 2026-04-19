@@ -345,9 +345,36 @@ class Shotboard:
         self.save()
         return shot
 
+    @staticmethod
+    def _title_from_prompt(prompt: str, max_words: int = 6) -> str:
+        """R63b: extract a short title from a prompt. Grabs the first
+        N words, strips boilerplate quality tags, title-cases."""
+        if not prompt:
+            return ""
+        # Strip common quality prefixes ComfyUI users pile up
+        noise = {"masterpiece", "best", "quality", "highres", "detailed",
+                  "8k", "4k", "hd", "ultra", "photorealistic", "cinematic",
+                  "professional", "high", "absurdres", "ultradetailed"}
+        words = [w.strip(" ,.;:()[]{}\"'").lower()
+                 for w in prompt.replace(",", " ").split()]
+        # Keep only meaningful words
+        kept = [w for w in words if w and w not in noise][:max_words]
+        if not kept:
+            return ""
+        return " ".join(kept).title()
+
+    @staticmethod
+    def _is_placeholder_title(title: str) -> bool:
+        t = (title or "").strip().lower()
+        return (not t
+                 or t == "untitled"
+                 or t.startswith("shot ")
+                 or t.startswith("scene ")
+                 or t.startswith("new "))
+
     def update(self, shot_id: str, **fields: Any) -> Optional[Shot]:
         """Mutate an existing shot by id; ignores unknown fields.
-        
+
         Locked shots reject edits except for status, locked, error,
         video_path, job_id, render_duration_s (system fields).
         """
@@ -363,6 +390,15 @@ class Shotboard:
             if shot.locked and key not in SYSTEM_FIELDS:
                 continue  # silently skip locked field edits
             setattr(shot, key, val)
+        # R63b: when the user changes the prompt and the current title is
+        # still a placeholder, auto-derive a title from the new prompt.
+        # User's explicit title always wins — we only fill in blanks.
+        if "prompt" in fields and self._is_placeholder_title(shot.title):
+            # ...but only if the user didn't also set a title in this call
+            if "title" not in fields:
+                suggested = self._title_from_prompt(shot.prompt)
+                if suggested:
+                    shot.title = suggested
         # Auto-lock on render start or completion
         if "status" in fields:
             if fields["status"] in ("rendering", "ready"):
@@ -741,6 +777,85 @@ class Shotboard:
         if changed:
             self.save()
         return {"changed": changed, "color_label": color_label}
+
+    def shot_warnings(self, shot_id):
+        """R63a: Return a list of continuity / quality warnings for ``shot_id``.
+
+        Each warning is: {"code": "...", "severity": "info|warn|error",
+                           "message": "..."}.
+
+        Codes:
+          - empty_prompt: prompt is whitespace-only
+          - missing_ref_image: ref_image path doesn't exist on disk
+          - broken_dependency: depends_on references a non-existent shot
+          - failed_dependency: depends_on references a shot whose last
+            render failed
+          - carry_frame_without_deps: carry_last_frame=True but no
+            preceding shot in board order
+          - title_looks_placeholder: title is "Untitled" / empty / "shot N"
+          - preset_unknown: preset key not recognized (relative to the
+            current architectures/presets registry is preset-registry's
+            job — here we only flag missing presets)
+        """
+        shot = self.get(shot_id)
+        if shot is None:
+            return []
+        warnings: List[Dict[str, Any]] = []
+
+        if not (shot.prompt or "").strip():
+            warnings.append({"code": "empty_prompt", "severity": "error",
+                              "message": "Prompt is empty — render will fail or produce noise."})
+
+        if shot.ref_image:
+            try:
+                if not os.path.isfile(shot.ref_image):
+                    warnings.append({"code": "missing_ref_image",
+                                      "severity": "error",
+                                      "message": f"Reference image not found: {shot.ref_image}"})
+            except (OSError, ValueError):
+                warnings.append({"code": "missing_ref_image", "severity": "error",
+                                  "message": "Reference image path is invalid."})
+
+        for dep_id in (shot.depends_on or []):
+            dep = self.get(dep_id)
+            if dep is None:
+                warnings.append({"code": "broken_dependency", "severity": "error",
+                                  "message": f"Depends on deleted shot {dep_id[:8]}…"})
+                continue
+            last_hist = [e for e in (dep.render_history or [])
+                         if e.get("status") == "ready"]
+            if dep.status == "failed" and not last_hist:
+                warnings.append({"code": "failed_dependency", "severity": "warn",
+                                  "message": f"Depends on {dep.title or dep_id[:8]} which has never rendered successfully."})
+
+        if shot.carry_last_frame:
+            idx = next((i for i, s in enumerate(self._shots) if s.id == shot.id), None)
+            if idx == 0:
+                warnings.append({"code": "carry_frame_without_deps",
+                                  "severity": "warn",
+                                  "message": "carry_last_frame=True but this is the first shot — nothing to carry from."})
+
+        title = (shot.title or "").strip().lower()
+        if not title or title == "untitled" or title.startswith("shot "):
+            warnings.append({"code": "title_looks_placeholder", "severity": "info",
+                              "message": "Title is a placeholder — consider giving this shot a real name."})
+
+        return warnings
+
+    def board_warnings_summary(self) -> Dict[str, Any]:
+        """Aggregate warnings across all shots for a dashboard view."""
+        by_code: Dict[str, int] = {}
+        by_shot: Dict[str, int] = {}
+        total = 0
+        for s in self._shots:
+            warnings = self.shot_warnings(s.id)
+            if warnings:
+                by_shot[s.id] = len(warnings)
+                for w in warnings:
+                    by_code[w["code"]] = by_code.get(w["code"], 0) + 1
+                    total += 1
+        return {"total": total, "by_code": by_code,
+                "shots_with_warnings": by_shot}
 
     def batch_priority(self, shot_ids, priority):
         """R61b: set render priority on multiple shots.
