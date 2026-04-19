@@ -27,7 +27,27 @@ def start_service(ctx: dict[str, Any]) -> tuple[int, dict]:
     except (TypeError, ValueError):
         wait_s = 30.0
     wait_s = max(1.0, min(120.0, wait_s))  # sane bounds
-    cfg = ctx.get("config") or {}
+    cfg = dict(ctx.get("config") or {})
+    # R56: accept one-shot path overrides from the request so the user
+    # can tell the antenna where their install lives when auto-detection
+    # misses. Accepted keys per service: root, launcher, port.
+    if name == "comfyui":
+        if body.get("root"):
+            cfg["comfyui_root"] = body["root"]
+        if body.get("launcher"):
+            cfg["comfyui_launcher"] = body["launcher"]
+        if body.get("port"):
+            cfg["comfyui_port"] = body["port"]
+    elif name == "kobold":
+        if body.get("launcher"):
+            cfg["kobold_launcher"] = body["launcher"]
+        if body.get("model"):
+            cfg["kobold_model"] = body["model"]
+        if body.get("port"):
+            cfg["kobold_port"] = body["port"]
+    elif name == "ollama":
+        if body.get("launcher"):
+            cfg["ollama_launcher"] = body["launcher"]
     result = _sl.ensure_service_running(name, cfg, wait_s=wait_s)
     # Map state → HTTP status: success/idempotent 200; not installed 503;
     # timeouts/failures return 500 with full detail for the UI to show.
