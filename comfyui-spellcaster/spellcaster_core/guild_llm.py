@@ -72,7 +72,7 @@ def mark_state(state, **extra):
 
 
 def _host_label(url):
-    """Turn a URL like http://<INTERNAL_HOST>:8188 into 'Theo' / 'Local'.
+    """Turn a URL like http://192.168.x.x:8188 into 'LAN' / 'Local'.
     Short, user-friendly, no IP leak in the UI. Falls back to host[:port]."""
     if not url:
         return "?"
