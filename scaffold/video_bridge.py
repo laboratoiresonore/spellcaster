@@ -378,19 +378,20 @@ class VideoBridge:
     # ---- R126: native ComfyUI routing for Wan presets --------------
 
     def _should_try_native_wan(self, shot: Shot) -> bool:
-        """Only try native ComfyUI for wan22_* presets we've mapped.
-        i2v-family only in this phase (t2v needs a dedicated workflow
-        builder that isn't wired yet)."""
+        """Native ComfyUI routing for wan22_* presets we've mapped.
+        i2v presets need a ref image; t2v doesn't."""
         if not _NATIVE_DISPATCH_AVAILABLE:
             return False
-        if shot.preset not in ("wan22_i2v_lightning", "wan22_i2v_hq"):
+        if shot.preset not in ("wan22_i2v_lightning", "wan22_i2v_hq",
+                                "wan22_t2v"):
             return False
         # Need ComfyUI reachable — fail fast before building anything
         if not self.comfy.is_available():
             return False
-        # i2v requires a reference image
-        if not shot.ref_image or not os.path.isfile(shot.ref_image):
-            return False
+        # i2v variants require a reference image; t2v doesn't.
+        if shot.preset in ("wan22_i2v_lightning", "wan22_i2v_hq"):
+            if not shot.ref_image or not os.path.isfile(shot.ref_image):
+                return False
         return True
 
     def _queue_comfy_native_wan(self, shot: Shot,
@@ -398,15 +399,21 @@ class VideoBridge:
                                  ) -> Dict[str, Any]:
         """Submit a Wan render via ComfyUI directly, bypassing WanGP.
         Relies on scaffold.video_workflow_dispatch to build the
-        workflow from spellcaster_core.workflows.build_wan_video."""
-        ref_basename = os.path.basename(shot.ref_image)
-        try:
-            with open(shot.ref_image, "rb") as _rf:
-                ref_bytes = _rf.read()
-            self.comfy.upload_image(ref_bytes, ref_basename)
-        except Exception as e:  # noqa: BLE001
-            return {"status": "error",
-                    "message": f"couldn't upload ref image: {e}"}
+        workflow (build_wan_video for i2v, _build_wan_t2v_workflow
+        for t2v)."""
+        ref_basename: Optional[str] = None
+        input_filenames: List[str] = []
+        is_t2v = shot.preset == "wan22_t2v"
+        if not is_t2v:
+            ref_basename = os.path.basename(shot.ref_image)
+            try:
+                with open(shot.ref_image, "rb") as _rf:
+                    ref_bytes = _rf.read()
+                self.comfy.upload_image(ref_bytes, ref_basename)
+                input_filenames.append(ref_basename)
+            except Exception as e:  # noqa: BLE001
+                return {"status": "error",
+                        "message": f"couldn't upload ref image: {e}"}
 
         defaults = (describe_preset(shot.preset) or {}).get("defaults") or {}
         width_h = defaults.get("resolution", "832x480").split("x")
@@ -426,7 +433,7 @@ class VideoBridge:
             prompt=shot.prompt or "subtle gentle motion",
             negative=shot.negative or "",
             seed=seed,
-            image_filename=ref_basename,
+            image_filename=ref_basename,  # None for t2v
             comfyui_base_url=self.comfy.base_url,
             width=w, height=h, length=length, fps=fps,
             turbo=(shot.preset == "wan22_i2v_lightning"),
@@ -442,7 +449,7 @@ class VideoBridge:
             try:
                 start = time.time()
                 result = self.comfy.run_raw(
-                    workflow, input_filenames=[ref_basename])
+                    workflow, input_filenames=input_filenames or None)
                 if result.get("status") != "ok":
                     self.board.mark_failed(
                         shot.id,
