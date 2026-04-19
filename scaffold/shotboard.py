@@ -1265,6 +1265,60 @@ class Shotboard:
             "clusters": cluster_results,
         }
 
+    def find_near_duplicate_prompts(self, *,
+                                       threshold: float = 0.80
+                                       ) -> List[Dict[str, Any]]:
+        """R74b: find shot pairs whose prompts are NEAR duplicates
+        (not necessarily byte-identical like find_prompt_clusters).
+
+        Uses Jaccard similarity on the set of prompt tokens:
+            sim(A, B) = |tokens(A) ∩ tokens(B)| / |tokens(A) ∪ tokens(B)|
+        Tokens are lowercase alphanumeric runs; whitespace + punctuation
+        split. 1- and 2-char tokens are dropped (noise).
+
+        Returns pairs sorted by similarity desc:
+            [{"shot_a": id, "shot_b": id, "similarity": 0.92,
+              "prompt_a_sample": "...", "prompt_b_sample": "..."}]
+
+        Skips archived shots. O(n²) over the board — fine up to a few
+        hundred shots.
+        """
+        import re
+        tok_re = re.compile(r"[a-z0-9]{3,}")
+
+        def _tokens(prompt: str) -> set[str]:
+            return set(tok_re.findall((prompt or "").lower()))
+
+        shots = [s for s in self._shots if not s.archived and s.prompt]
+        token_sets = [(s, _tokens(s.prompt)) for s in shots]
+        # Drop entries whose token set is tiny (< 3 tokens — not enough
+        # signal to reliably call them duplicates)
+        token_sets = [(s, ts) for s, ts in token_sets if len(ts) >= 3]
+        pairs: List[Dict[str, Any]] = []
+        seen_exact: set[frozenset] = set()
+        for i in range(len(token_sets)):
+            s_i, t_i = token_sets[i]
+            for j in range(i + 1, len(token_sets)):
+                s_j, t_j = token_sets[j]
+                # Skip exact-match pairs — those are already flagged by
+                # find_prompt_clusters
+                if s_i.prompt.strip().lower() == s_j.prompt.strip().lower():
+                    continue
+                union = t_i | t_j
+                if not union:
+                    continue
+                sim = len(t_i & t_j) / len(union)
+                if sim >= threshold:
+                    pairs.append({
+                        "shot_a": s_i.id,
+                        "shot_b": s_j.id,
+                        "similarity": round(sim, 3),
+                        "prompt_a_sample": s_i.prompt[:120],
+                        "prompt_b_sample": s_j.prompt[:120],
+                    })
+        pairs.sort(key=lambda p: -p["similarity"])
+        return pairs
+
     def find_prompt_clusters(self, *, min_cluster: int = 2) -> List[Dict[str, Any]]:
         """R65b: Group shots by exact prompt match. Returns one entry
         per cluster with 2+ shots sharing the same (normalized) prompt.
