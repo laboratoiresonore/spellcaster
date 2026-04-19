@@ -494,21 +494,186 @@ def find_binary_robust(cfg: dict[str, Any], service: str,
     return None, "none"
 
 
+# ─── DaVinci Resolve detection ───────────────────────────────────────
+
+# Resolve isn't launchable from the antenna (it's a GUI app the user
+# starts manually), but we DO want to detect its install + verify the
+# scripting module path. The scripting API path is what resolve.py's
+# import relies on.
+_RESOLVE_SEARCH_PATTERNS = {
+    "win":   ["Blackmagic Design/DaVinci Resolve/Resolve.exe"],
+    "mac":   ["Applications/DaVinci Resolve/DaVinci Resolve.app"],
+    "linux": ["opt/resolve/bin/resolve"],
+}
+
+
+def find_resolve_install(cfg: dict[str, Any]) -> tuple[Path | None, str]:
+    """Locate the DaVinci Resolve install root (the dir containing
+    Resolve.exe on Windows, the .app bundle on macOS, or the bin dir
+    on Linux). Returns (path, strategy)."""
+    explicit = (cfg.get("resolve_root") or "").strip()
+    if explicit:
+        p = Path(os.path.expanduser(explicit))
+        if p.exists():
+            return p, "config-override"
+
+    cached = _cached("resolve")
+    if cached is not None:
+        return cached, "cache-hit"
+
+    # Process introspection — if Resolve is running, wmic tells us where
+    for line in _running_cmdlines_containing("Resolve"):
+        # Look for a path-like token ending in Resolve.exe / Resolve
+        for token in line.replace('"', ' ').split():
+            lc = token.lower()
+            if lc.endswith("resolve.exe") or lc.endswith("resolve"):
+                p = Path(token).parent
+                if p.is_dir():
+                    _remember("resolve", p, "running-process")
+                    return p, "running-process"
+
+    # Windows: check the canonical Program Files location
+    if os.name == "nt":
+        for env in ("ProgramFiles", "ProgramFiles(x86)"):
+            base = os.environ.get(env, "").strip()
+            if not base:
+                continue
+            candidate = (Path(base) / "Blackmagic Design"
+                         / "DaVinci Resolve" / "Resolve.exe")
+            if candidate.is_file():
+                _remember("resolve", candidate.parent, "program-files")
+                return candidate.parent, "program-files"
+        # Also check winreg for Blackmagic Design keys
+        try:
+            import winreg  # type: ignore
+            for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+                for subkey_path in (
+                    r"SOFTWARE\Blackmagic Design\DaVinci Resolve",
+                    r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                    r"SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+                ):
+                    try:
+                        with winreg.OpenKey(hive, subkey_path) as key:
+                            i = 0
+                            while True:
+                                try:
+                                    subname = winreg.EnumKey(key, i)
+                                except OSError:
+                                    break
+                                i += 1
+                                if "resolve" not in subname.lower():
+                                    continue
+                                try:
+                                    with winreg.OpenKey(key, subname) as sub:
+                                        loc, _ = winreg.QueryValueEx(
+                                            sub, "InstallLocation")
+                                        p = Path(str(loc))
+                                        if p.is_dir():
+                                            _remember("resolve", p, "registry")
+                                            return p, "registry"
+                                except (OSError, FileNotFoundError):
+                                    continue
+                    except OSError:
+                        continue
+        except ImportError:
+            pass
+    elif sys.platform == "darwin":
+        candidate = Path("/Applications/DaVinci Resolve/DaVinci Resolve.app")
+        if candidate.exists():
+            _remember("resolve", candidate, "applications")
+            return candidate, "applications"
+    else:
+        for prefix in ("/opt/resolve", "/usr/local/resolve"):
+            p = Path(prefix)
+            if p.is_dir():
+                _remember("resolve", p, "posix-prefix")
+                return p, "posix-prefix"
+
+    return None, "none"
+
+
+# ─── GIMP / Darktable / SillyTavern ──────────────────────────────────
+
+def find_gimp_install(cfg: dict[str, Any]) -> tuple[Path | None, str]:
+    explicit = (cfg.get("gimp_root") or "").strip()
+    if explicit:
+        p = Path(os.path.expanduser(explicit))
+        if p.is_dir():
+            return p, "config-override"
+    cached = _cached("gimp")
+    if cached is not None:
+        return cached, "cache-hit"
+    # Windows Program Files + cross-drive scan
+    names = ["gimp-3.0.exe", "gimp-3.2.exe", "gimp-2.10.exe",
+              "gimp"]  # POSIX executable
+    p, strat = find_binary_robust(cfg, "gimp", names)
+    if p is not None:
+        return p.parent, strat
+    return None, "none"
+
+
+def find_darktable_install(cfg: dict[str, Any]) -> tuple[Path | None, str]:
+    explicit = (cfg.get("darktable_root") or "").strip()
+    if explicit:
+        p = Path(os.path.expanduser(explicit))
+        if p.is_dir():
+            return p, "config-override"
+    cached = _cached("darktable")
+    if cached is not None:
+        return cached, "cache-hit"
+    names = ["darktable.exe", "darktable"]
+    p, strat = find_binary_robust(cfg, "darktable", names)
+    if p is not None:
+        return p.parent, strat
+    return None, "none"
+
+
+def find_sillytavern_install(cfg: dict[str, Any]) -> tuple[Path | None, str]:
+    explicit = (cfg.get("sillytavern_root") or "").strip()
+    if explicit:
+        p = Path(os.path.expanduser(explicit))
+        if p.is_dir():
+            return p, "config-override"
+    cached = _cached("sillytavern")
+    if cached is not None:
+        return cached, "cache-hit"
+    # SillyTavern ships as Node — look for server.js under SillyTavern/
+    roots = _candidate_roots()
+    hits = _walk_for_needle(roots, "sillytavern", max_depth=3,
+                              max_visits=4000)
+    for h in hits:
+        if (h / "server.js").is_file() or (h / "start.bat").is_file():
+            _remember("sillytavern", h, "deep-glob")
+            return h, "deep-glob"
+    return None, "none"
+
+
 # ─── Public: /diagnostic endpoint backing ────────────────────────────
 
 def detect_all(cfg: dict[str, Any]) -> dict[str, Any]:
     """One-shot report of what we detected, what strategies fired, and
-    the cache state. Backs the /diag/detector endpoint."""
+    the cache state. Backs the /diag/detector endpoint.
+    Covers ComfyUI, Kobold, Ollama, Resolve, GIMP, Darktable, SillyTavern —
+    so the user sees a comprehensive picture of what's installed on
+    this antenna's host."""
     out: dict[str, Any] = {"cache_path": str(_STATE_PATH),
                              "cache": _load_state(),
                              "results": {}}
-    # ComfyUI
+
+    # ComfyUI (launch target — includes launcher strategy)
     root, strat = find_comfyui_root_robust(cfg)
     out["results"]["comfyui"] = {
         "root": root.as_posix() if root else None,
         "strategy": strat,
     }
-    # Kobold
+    if root is not None:
+        launcher = find_comfyui_launcher_robust(cfg)
+        if launcher:
+            argv, cwd, lstrat = launcher
+            out["results"]["comfyui"]["launcher"] = argv[0]
+            out["results"]["comfyui"]["launcher_strategy"] = lstrat
+
+    # Kobold (launch target)
     p, strat = find_binary_robust(
         cfg, "kobold",
         ["koboldcpp.exe", "koboldcpp_cuda.exe", "koboldcpp"],
@@ -517,10 +682,40 @@ def detect_all(cfg: dict[str, Any]) -> dict[str, Any]:
         "path": p.as_posix() if p else None,
         "strategy": strat,
     }
-    # Ollama
+
+    # Ollama (launch target)
     p, strat = find_binary_robust(cfg, "ollama", ["ollama.exe", "ollama"])
     out["results"]["ollama"] = {
         "path": p.as_posix() if p else None,
         "strategy": strat,
     }
+
+    # DaVinci Resolve (detection-only — user launches manually)
+    root, strat = find_resolve_install(cfg)
+    out["results"]["resolve"] = {
+        "root": root.as_posix() if root else None,
+        "strategy": strat,
+    }
+
+    # GIMP (detection-only)
+    root, strat = find_gimp_install(cfg)
+    out["results"]["gimp"] = {
+        "root": root.as_posix() if root else None,
+        "strategy": strat,
+    }
+
+    # Darktable (detection-only)
+    root, strat = find_darktable_install(cfg)
+    out["results"]["darktable"] = {
+        "root": root.as_posix() if root else None,
+        "strategy": strat,
+    }
+
+    # SillyTavern (detection-only)
+    root, strat = find_sillytavern_install(cfg)
+    out["results"]["sillytavern"] = {
+        "root": root.as_posix() if root else None,
+        "strategy": strat,
+    }
+
     return out
