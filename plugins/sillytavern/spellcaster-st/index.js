@@ -956,6 +956,102 @@ function registerSlashCommands() {
         },
         helpString: 'Toggle Spellcaster features. Usage: /spellcaster [on|off|auto-bg on|auto-bg off]',
     }));
+
+    // ══════════════════════════════════════════════════════════════════
+    // R111: Cross-plugin commands. Slash commands send the current or
+    // argument-supplied image to another Spellcaster surface
+    // (💎 Resolve / GIMP / Darktable) via the Guild's asset gallery +
+    // event bus. /sc-inbox pulls anything pending for this
+    // SillyTavern instance.
+    // ══════════════════════════════════════════════════════════════════
+
+    // Find the most recent image URL in the chat — fallback when the
+    // caller didn't pass one explicitly. Walks backward through
+    // messages looking for an <img src=...> tag.
+    function _findLastChatImage() {
+        const ctx = getContext();
+        const msgs = ctx.chat || [];
+        for (let i = msgs.length - 1; i >= 0; i--) {
+            const m = msgs[i];
+            // SillyTavern stores images either as message.extra.image
+            // (base64 or URL) or inline in mes HTML.
+            const inl = m?.extra?.image;
+            if (inl) return inl;
+            const html = (m?.mes || '');
+            const m1 = html.match(/!\[[^\]]*\]\(([^)]+)\)/);
+            if (m1) return m1[1];
+            const m2 = html.match(/<img[^>]+src=["']([^"']+)["']/);
+            if (m2) return m2[1];
+        }
+        return null;
+    }
+
+    async function _sendToTarget(target, friendly, imgArg) {
+        const img = (imgArg && imgArg.trim()) || _findLastChatImage();
+        if (!img) {
+            return `No image to send. Usage: /sc-send-to-${target} <url or data-url>, or post an image in chat first.`;
+        }
+        const body = img.startsWith('data:')
+            ? { target, image_data_url: img, title: `From SillyTavern → ${friendly}` }
+            : { target, image_url: img,      title: `From SillyTavern → ${friendly}` };
+        toastr.info(`Sending to ${friendly}…`, 'Spellcaster');
+        try {
+            const result = await spellcasterAPI('/cross/send', body);
+            if (result && result.ok) {
+                const hint = ({
+                    resolve:   "Bridge imports into Resolve's Media Pool automatically.",
+                    gimp:      "In GIMP: Spellcaster > Cross-App > 💎 Check Inbox.",
+                    darktable: "In Darktable: Check the Spellcaster lib for imported stills.",
+                })[target] || '';
+                return `💎 Sent to ${friendly} (hash ${String(result.hash).slice(0, 10)}…). ${hint}`;
+            }
+            return `Send to ${friendly} returned unexpected response: ${JSON.stringify(result).slice(0, 200)}`;
+        } catch (e) {
+            return `Send to ${friendly} failed: ${e.message}`;
+        }
+    }
+
+    for (const [target, friendly] of [
+        ['resolve',   'DaVinci Resolve'],
+        ['gimp',      'GIMP'],
+        ['darktable', 'Darktable'],
+    ]) {
+        SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+            name: `sc-send-to-${target}`,
+            callback: async (args, value) => _sendToTarget(target, friendly, value),
+            helpString: `Send an image to ${friendly}. Takes a URL or data-url; falls back to the most recent chat image.`,
+        }));
+    }
+
+    // /sc-inbox — pull + display pending inbox items for this SillyTavern
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'sc-inbox',
+        callback: async () => {
+            try {
+                const res = await fetch(`${API_BASE}/cross/inbox`, {
+                    headers: getContext().getRequestHeaders(),
+                });
+                if (!res.ok) return `Inbox fetch failed: HTTP ${res.status}`;
+                const data = await res.json();
+                const msgs = (data && data.messages) || [];
+                if (!msgs.length) return '💎 Spellcaster inbox empty.';
+                // Render each as markdown image + metadata
+                const parts = msgs.map((m, i) => {
+                    const d = m.data || {};
+                    const src = d.source || '?';
+                    const title = d.title || m.kind;
+                    const url = d.image_url || '';
+                    return `**${i + 1}. From ${src}:** ${title}\n\n` +
+                           (url ? `![${title}](${url})` : '(no image url)');
+                });
+                return `💎 ${msgs.length} item(s) in Spellcaster inbox:\n\n` +
+                       parts.join('\n\n---\n\n');
+            } catch (e) {
+                return `Inbox error: ${e.message}`;
+            }
+        },
+        helpString: 'Pull pending cross-plugin assets sent to SillyTavern and render them in chat.',
+    }));
 }
 
 // ═══════════════════════════════════════════════════════════════════
