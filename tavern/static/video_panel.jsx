@@ -1095,6 +1095,26 @@ function ShotCard({
                 ))}
               </div>
             </div>
+            {/* R61b: priority badge — click cycles high → normal → low */}
+            <button
+              onClick={() => {
+                const next = {high: "normal", normal: "low", low: "high"}[shot.priority || "normal"];
+                onUpdate(shot.id, {priority: next});
+              }}
+              className={
+                "shot-priority-badge px-1.5 py-0.5 rounded text-[10px] font-semibold transition-colors " +
+                (shot.priority === "high"
+                   ? "bg-rose-600/30 text-rose-300 hover:bg-rose-600/50"
+                   : (shot.priority === "low"
+                       ? "bg-slate-700/40 text-slate-400 hover:bg-slate-700/60"
+                       : "bg-slate-600/30 text-slate-300 hover:bg-slate-600/50"))
+              }
+              title={`Priority: ${shot.priority || "normal"} — click to cycle. Higher-priority shots queue first.`}
+            >
+              {shot.priority === "high" ? "⬆ HIGH"
+                : shot.priority === "low" ? "⬇ low"
+                : "normal"}
+            </button>
             <button
               onClick={() => onDuplicate(shot.id)}
               className="flex items-center gap-1.5 bg-slate-700/30 hover:bg-slate-700/50 text-slate-300 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
@@ -1692,6 +1712,9 @@ function VideoPanel() {
   // R60b: render-cost estimate + live antenna telemetry (GPU util, VRAM,
   // ComfyUI queue depth). Polled every 20s; null when backend is old.
   const [queueCost, setQueueCost] = _useState(null);
+  // R61a: Fleet telemetry — one row per online antenna with GPU/RAM/
+  // queue-depth, refreshed every 10s when the modal is open.
+  const [fleetTelemetry, setFleetTelemetry] = _useState(null);
   // R56: per-service launch state so the "Start" buttons show progress
   const [serviceStartBusy, setServiceStartBusy] = _useState({});
   const pollRef = _useRef(null);
@@ -2183,10 +2206,25 @@ function VideoPanel() {
     } catch (e) { /* registry may not be available on older Guild */ }
   };
 
+  const refreshFleetTelemetry = async () => {
+    try {
+      const res = await api.get("/api/antennas/telemetry");
+      setFleetTelemetry(res);
+    } catch (_) { /* older Guild or antenna offline */ }
+  };
+
   const openAntennaAdmin = async () => {
     setShowAntennaAdmin(true);
     await refreshAntennaStatus();
+    await refreshFleetTelemetry();
   };
+
+  // R61a: while the modal is open, poll telemetry every 10s
+  _useEffect(() => {
+    if (!showAntennaAdmin) return;
+    const id = setInterval(refreshFleetTelemetry, 10000);
+    return () => clearInterval(id);
+  }, [showAntennaAdmin]);
 
   const pairAntenna = async () => {
     if (!antennaPairUrl.trim() || !antennaPairToken.trim()) {
@@ -2599,6 +2637,24 @@ function VideoPanel() {
       await refresh();
     } catch (e) {
       setError("Failed to batch color label");
+    }
+  };
+
+  // R61b: set priority on all selected shots
+  const batchPriority = async (priority) => {
+    if (selected.size === 0) return;
+    try {
+      const res = await api.post("/api/video/batch-priority", {
+        shot_ids: Array.from(selected),
+        priority,
+      });
+      if (res && res.changed != null) {
+        addToast(`Set priority="${priority}" on ${res.changed} shot(s)`,
+                 res.changed > 0 ? "success" : "info");
+      }
+      await refresh();
+    } catch (e) {
+      addToast("Batch priority failed: " + (e.message || "unknown"), "error");
     }
   };
 
@@ -3261,6 +3317,17 @@ function VideoPanel() {
                 <option key={c.key} value={c.key}>{c.label}</option>
               ))}
             </select>
+            <select
+              className="batch-priority-select bg-slate-800 border border-slate-600 text-slate-300 text-xs rounded px-2 py-1"
+              defaultValue=""
+              onChange={(e) => { if (e.target.value !== "") { batchPriority(e.target.value); e.target.value = ""; } }}
+              title="Set render priority for selected shots"
+            >
+              <option value="" disabled>Priority...</option>
+              <option value="high">⬆ High</option>
+              <option value="normal">Normal</option>
+              <option value="low">⬇ Low</option>
+            </select>
             <button onClick={batchRevert} className="batch-revert-btn px-3 py-1 rounded bg-amber-700/40 hover:bg-amber-600/50 text-amber-100 text-xs">Batch Revert</button>
             <button onClick={() => setShowPromptEdit(v => !v)} className="batch-prompt-edit-btn px-3 py-1 rounded bg-violet-700/40 hover:bg-violet-600/50 text-violet-100 text-xs">
               {showPromptEdit ? "Close Prompt Edit" : "Prompt ±"}
@@ -3697,6 +3764,91 @@ function VideoPanel() {
                 </div>
               ) : <span className="text-slate-500 text-xs">Loading antenna registry…</span>}
             </div>
+
+            {/* R61a: Fleet telemetry — per-antenna GPU/RAM/VRAM/queue grid */}
+            {fleetTelemetry && Object.keys(fleetTelemetry.antennas || {}).length > 0 && (
+              <div className="antenna-fleet-telemetry border-t border-slate-700/40 pt-3 space-y-2">
+                <div className="text-xs font-semibold text-slate-300 flex items-center gap-2">
+                  Live telemetry
+                  <span className="text-slate-500 font-normal">
+                    ({Object.keys(fleetTelemetry.antennas).length} online, refreshes every 10s)
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  {Object.entries(fleetTelemetry.antennas).map(([host, t]) => {
+                    if (!t || t.error) {
+                      return (
+                        <div key={host} className="fleet-row rounded bg-slate-800/40 border border-slate-700/30 p-2 text-[10px]">
+                          <span className="font-medium text-slate-200">{host}</span>
+                          <span className="text-rose-300 ml-2">{t?.error || "no response"}</span>
+                        </div>
+                      );
+                    }
+                    const gpuPct = t.gpu_util_percent || 0;
+                    const gpuColor = gpuPct > 80 ? "bg-rose-500" : gpuPct > 50 ? "bg-amber-500" : "bg-emerald-500";
+                    const vramUsed = t.vram_used_mb || 0;
+                    const vramTotal = t.vram_total_mb || 1;
+                    const vramPct = (vramUsed / vramTotal) * 100;
+                    const ramPct = t.ram_percent || 0;
+                    const cpuPct = t.cpu_percent || 0;
+                    const comfy = t.services?.comfyui?.extra;
+                    const kobold = t.services?.kobold?.extra;
+                    return (
+                      <div key={host} className="fleet-row rounded bg-slate-800/60 border border-indigo-600/20 p-2 text-[10px] space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                          <span className="font-medium text-slate-200">{host}</span>
+                          <span className="text-slate-500">{t.gpu_name || ""}</span>
+                          <span className="text-slate-500 ml-auto">{Math.round(t.disk_free_gb || 0)}GB free</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <div className="flex items-center justify-between text-[9px] text-slate-400">
+                              <span>GPU</span><span>{gpuPct.toFixed(0)}%</span>
+                            </div>
+                            <div className="h-1.5 bg-slate-900 rounded overflow-hidden">
+                              <div className={`h-full ${gpuColor}`} style={{width: `${gpuPct}%`}} />
+                            </div>
+                            <div className="text-[9px] text-slate-500">{t.gpu_temp_c || 0}°C</div>
+                          </div>
+                          <div>
+                            <div className="flex items-center justify-between text-[9px] text-slate-400">
+                              <span>VRAM</span>
+                              <span>{(vramUsed/1024).toFixed(1)}/{(vramTotal/1024).toFixed(1)}G</span>
+                            </div>
+                            <div className="h-1.5 bg-slate-900 rounded overflow-hidden">
+                              <div className="h-full bg-cyan-500" style={{width: `${vramPct}%`}} />
+                            </div>
+                          </div>
+                          <div>
+                            <div className="flex items-center justify-between text-[9px] text-slate-400">
+                              <span>CPU/RAM</span>
+                              <span>{cpuPct.toFixed(0)}% / {ramPct.toFixed(0)}%</span>
+                            </div>
+                            <div className="flex gap-0.5 h-1.5">
+                              <div className="flex-1 bg-slate-900 rounded overflow-hidden">
+                                <div className="h-full bg-slate-400" style={{width: `${cpuPct}%`}} />
+                              </div>
+                              <div className="flex-1 bg-slate-900 rounded overflow-hidden">
+                                <div className="h-full bg-slate-400" style={{width: `${ramPct}%`}} />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex gap-3 text-[9px] text-slate-500 pt-0.5 border-t border-slate-700/30">
+                          {comfy && (
+                            <span>Comfy: <span className="text-cyan-300">{comfy.queue_running || 0}R/{comfy.queue_pending || 0}P</span></span>
+                          )}
+                          {kobold && (
+                            <span>Kobold: <span className="text-fuchsia-300">{(kobold.tok_per_sec||0).toFixed(1)} t/s</span></span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div className="antenna-admin-pair space-y-2">
               <div className="text-xs font-semibold text-slate-300">Pair antenna (one-time, stores URL + token)</div>
               <input
