@@ -118,6 +118,10 @@ def _guess_motion(prose: str) -> list:
 
 def main() -> int:
     guild = _sc.guild_or_die()
+    # R114: pre-flight — wan_move_i2v has a custom trajectory pipeline
+    if not _sc.require_presets(guild, ["wan_move_i2v"],
+                                friendly="Wan-Move trajectory i2v"):
+        return 1
     from spellcaster_api import GuildError
     from resolve_helpers import (
         get_current_timeline, capture_frame_at_playhead,
@@ -126,21 +130,6 @@ def main() -> int:
 
     if not get_current_timeline():
         show_message("Spellcaster", "No timeline is active. Open one first.")
-        return 1
-
-    # Confirm wan_move_i2v preset is available
-    try:
-        presets = guild.list_presets()
-    except Exception:
-        presets = []
-    available = {p.get("key"): p for p in presets if p.get("key")}
-    if "wan_move_i2v" not in available:
-        show_message(
-            "Spellcaster",
-            "wan_move_i2v preset isn't available on the Guild.\n"
-            "Install Wan-Move via the Guild's model manager, or use "
-            "Send Clip to Spellcaster for plain i2v without motion "
-            "guidance.")
         return 1
 
     item = _find_clip_under_playhead()

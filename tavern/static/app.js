@@ -428,6 +428,9 @@ async function checkComfyConnection() {
                 ? "ComfyUI: Connected (busy)"
                 : "ComfyUI: Connected";
             _renderComfyStats(data.stats);
+            // Mirror the result to _managedLive so the synthetic
+            // ComfyUI chip in the Connected apps row goes green.
+            (window._managedLive = window._managedLive || {}).comfyui = true;
         } else {
             // Server reports disconnected. Wait for THRESHOLD consecutive
             // misses before going red — single transient failures are
@@ -437,6 +440,7 @@ async function checkComfyConnection() {
                 comfyDot.className = "dot red";
                 comfyStatus.textContent = "ComfyUI: Disconnected";
                 _renderComfyStats(null);
+                (window._managedLive = window._managedLive || {}).comfyui = false;
             } else {
                 comfyDot.className = "dot yellow";
                 comfyStatus.textContent = "ComfyUI: Checking…";
@@ -521,6 +525,36 @@ async function refreshActiveInterfaces() {
                 active[k] = v;
                 keys.push(k);
             }
+        }
+        // Synthesize chips for managed services (ComfyUI / Ollama /
+        // Kobold). These are backend engines, not frontends, so they
+        // don't heartbeat to /api/interfaces — but the user still
+        // needs to hit their ⚡ Start / 🔁 Auto-start toggles on them.
+        // Inject synthetic rows so the chip renders regardless of
+        // reachability; the sidebar's other pollers already drive the
+        // green/idle state via window._managedLive below.
+        const managedDefs = [
+            { key: 'comfyui', label: 'ComfyUI', icon: '🎨' },
+            { key: 'ollama',  label: 'Ollama',  icon: '🦙' },
+            { key: 'kobold',  label: 'Kobold',  icon: '📜' },
+        ];
+        const managedLive = window._managedLive || {};
+        for (const m of managedDefs) {
+            if (active[m.key]) continue;  // already in interfaces
+            const live = !!managedLive[m.key];
+            active[m.key] = {
+                enabled: true,
+                online: live,
+                online_local: live,
+                origin: 'local',
+                last_heartbeat: live ? (Date.now() / 1000) : 0,
+                capabilities: [],
+                ui_label: m.label,
+                icon: m.icon,
+                last_meta: {},
+                managed: true,
+            };
+            keys.push(m.key);
         }
         window.activeInterfaces = active;
         window.activeInterfacesKeys = keys;
@@ -2081,6 +2115,15 @@ async function _pollLlmStatusOnce() {
         }
         // state == 'idle' with no backend means "never used yet" — leave
         // whatever checkLlmAndGenerateNames put there.
+
+        // Mirror the last-used backend into _managedLive so the
+        // synthetic Ollama / Kobold / ComfyUI chips in the Connected
+        // apps row turn green whenever that backend actually served a
+        // request. busy/reloading/idle all count as "alive".
+        if (backend && state !== 'error') {
+            const ml = (window._managedLive = window._managedLive || {});
+            ml[backend] = true;
+        }
     } catch (e) { /* silent — indicator stays on last known state */ }
 }
 function _prettyBackend(b) {

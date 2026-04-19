@@ -76,6 +76,13 @@ def _find_clip_under_playhead():
 
 def main() -> int:
     guild = _sc.guild_or_die()
+    # R114: pre-flight — the SeedVR2 workflow is opt-in and VRAM-heavy;
+    # abort up front if the preset isn't installed so editors get a
+    # clear "install this first" modal rather than a silent render
+    # failure deep in the Guild.
+    if not _sc.require_presets(guild, ["seedvr2_video_upscale"],
+                                friendly="SeedVR2 video upscaler"):
+        return 1
     from spellcaster_api import GuildError
     from resolve_helpers import (
         get_current_timeline, show_message,

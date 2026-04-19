@@ -81,6 +81,10 @@ def _find_clip_under_playhead():
 
 def main() -> int:
     guild = _sc.guild_or_die()
+    # R114: pre-flight — LTX FlowEdit v2v preset must be on the Guild
+    if not _sc.require_presets(guild, ["ltx2_v2v_flowedit"],
+                                friendly="LTX-2.3 FlowEdit v2v"):
+        return 1
     from spellcaster_api import GuildError
     from resolve_helpers import (
         get_current_timeline, show_message, prompt_text,

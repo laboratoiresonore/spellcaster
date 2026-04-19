@@ -847,15 +847,19 @@ textarea::placeholder { color: #555; }
 }
 
 /* ── Antennas strip (remote-machine agents) ─────────────────────── */
+/* Colours mirror the Connected-apps chip row — online = green — so the
+   user reads "this antenna is reachable" from the same visual grammar
+   as "this app is reachable". Stale / idle states keep the amber /
+   grey treatment so degradation is still visible at a glance. */
 .antenna-chip {
     display: inline-flex;
     align-items: center;
     gap: 5px;
     padding: 3px 9px;
     border-radius: 999px;
-    background: rgba(178, 70, 242, 0.12);
-    border: 1px solid rgba(178, 70, 242, 0.38);
-    color: #e0c3ff;
+    background: rgba(46, 213, 115, 0.12);
+    border: 1px solid rgba(46, 213, 115, 0.35);
+    color: #a8f0c0;
     font-size: 11px;
     font-weight: 600;
     cursor: help;
@@ -864,8 +868,8 @@ textarea::placeholder { color: #555; }
 .antenna-chip::before {
     content: "●";
     font-size: 8px;
-    color: #b246f2;
-    filter: drop-shadow(0 0 4px rgba(178, 70, 242, 0.7));
+    color: #2ed573;
+    filter: drop-shadow(0 0 4px rgba(46, 213, 115, 0.7));
 }
 .antenna-chip.antenna-stale {
     background: rgba(252, 211, 77, 0.10);
@@ -1052,9 +1056,9 @@ textarea::placeholder { color: #555; }
     gap: 8px;
 }
 .pair-antenna-btn {
-    background: rgba(178, 70, 242, 0.18);
-    border: 1px solid rgba(178, 70, 242, 0.45);
-    color: #e0c3ff;
+    background: rgba(46, 213, 115, 0.14);
+    border: 1px solid rgba(46, 213, 115, 0.45);
+    color: #a8f0c0;
     border-radius: 999px;
     padding: 2px 10px;
     font-size: 10px;
@@ -1065,8 +1069,8 @@ textarea::placeholder { color: #555; }
     transition: background 0.12s, border-color 0.12s;
 }
 .pair-antenna-btn:hover {
-    background: rgba(178, 70, 242, 0.32);
-    border-color: rgba(178, 70, 242, 0.75);
+    background: rgba(46, 213, 115, 0.28);
+    border-color: rgba(46, 213, 115, 0.75);
     color: #ffffff;
 }
 .antenna-empty-hint {
@@ -1207,6 +1211,18 @@ textarea::placeholder { color: #555; }
     gap: 4px;
     max-height: 220px;
     overflow-y: auto;
+    overflow-x: hidden;
+    /* Match the core spellcasters (#character-list) scrollbar exactly:
+       thin 4px, purple thumb, transparent track. Keeps the sidebar
+       visually coherent — every vertical list scrolls the same way. */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(178, 70, 242, 0.3) transparent;
+}
+.recent-assets-row::-webkit-scrollbar { width: 4px; }
+.recent-assets-row::-webkit-scrollbar-track { background: transparent; }
+.recent-assets-row::-webkit-scrollbar-thumb {
+    background: rgba(178, 70, 242, 0.3);
+    border-radius: 4px;
 }
 .recent-asset-thumb {
     position: relative;

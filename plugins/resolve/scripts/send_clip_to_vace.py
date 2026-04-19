@@ -83,6 +83,10 @@ def _find_clip_under_playhead():
 
 def main() -> int:
     guild = _sc.guild_or_die()
+    # R114: pre-flight — Wan VACE v2v+mask preset required
+    if not _sc.require_presets(guild, ["wan22_v2v_vace_mask"],
+                                friendly="Wan 2.2 VACE v2v + mask"):
+        return 1
     from spellcaster_api import GuildError
     from resolve_helpers import (
         get_current_timeline, show_message, prompt_text,
