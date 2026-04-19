@@ -134,27 +134,29 @@ def main():
 
 
 def _pick_preset_for_i2v(guild):
-    """Best guess at an image-to-video preset available on the Guild."""
+    """Pick the best image-to-video preset on the Guild.
+
+    Current catalog (audited April 2026):
+      wan22_i2v_lightning (fast draft), wan22_i2v_hq (quality),
+      wan22_t2v, ltx2_distilled, ltx2_dev, wan_move_i2v,
+      scail_preview, ovi_720p_audio
+
+    Priority: lightning > hq > ltx2_distilled (all pure i2v from a
+    single ref frame). Then any task='i2v'. Fall back to lightning.
+    """
     try:
         presets = guild.list_presets()
     except Exception:
         return "wan22_i2v_lightning"
-    preferred = [
-        "wan22_i2v_lightning",
-        "wan22_i2v_hq",
-        "ltx2_image_to_video",
-        "ltx2_distilled",
-    ]
-    names = {p.get("key") or p.get("id") or p.get("name"): p for p in presets}
-    for key in preferred:
-        if key in names:
-            return key
-    # Any i2v preset
+    available = {p.get("key"): p for p in presets if p.get("key")}
+    for preferred in ("wan22_i2v_lightning", "wan22_i2v_hq",
+                      "ltx2_distilled", "ltx2_dev"):
+        if preferred in available:
+            return preferred
     for p in presets:
-        task = (p.get("task") or "").lower()
-        if "i2v" in task or "image" in task:
-            return p.get("key") or p.get("id") or p.get("name")
-    return preferred[0]
+        if (p.get("task") or "").lower() == "i2v":
+            return p.get("key")
+    return "wan22_i2v_lightning"
 
 
 def _title_from_prompt(prompt: str) -> str:

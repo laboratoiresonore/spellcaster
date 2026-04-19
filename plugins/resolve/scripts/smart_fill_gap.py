@@ -230,21 +230,54 @@ def _fmt_timecode(frame: int, project) -> str:
 
 
 def _pick_flf_preset(guild):
-    """Find a first-last-frame preset on the Guild, fall back to i2v."""
+    """Pick the best available preset for filling a gap.
+
+    True first-last-frame (FLF) models aren't in the current Guild
+    catalog. We fall through a priority chain:
+
+      1. A preset whose key or task contains `flf` / `first_last`
+         (future-proof — if such a preset ships, we use it)
+      2. `move_i2v` (Wan-Move) — can accept a trajectory that
+         interpolates between start/end poses; still not ideal for
+         gap filling but closer than pure i2v
+      3. `wan22_i2v_hq` — best i2v quality; drives from the LEFT
+         clip's last frame only. Loses continuity with the RIGHT clip
+         but produces usable footage.
+      4. `wan22_i2v_lightning` — fast draft as last resort
+    """
     try:
         presets = guild.list_presets()
     except Exception:
-        return "wan22_i2v_flf"
-    preferred = ["wan22_i2v_flf", "wan22_flf", "wan_flf", "wan22_i2v_lightning"]
-    names = {p.get("key") or p.get("id") or p.get("name"): p for p in presets}
-    for key in preferred:
-        if key in names:
-            return key
+        return "wan22_i2v_lightning"
+    available_keys = {p.get("key") or p.get("id") or p.get("name"): p
+                      for p in presets}
+
+    # 1. Any preset whose key or task hints at FLF
     for p in presets:
-        key = (p.get("key") or p.get("id") or p.get("name") or "").lower()
-        if "flf" in key or "first_last" in key:
-            return p.get("key") or p.get("id") or p.get("name")
-    return preferred[-1]
+        key = (p.get("key") or "").lower()
+        task = (p.get("task") or "").lower()
+        if "flf" in key or "first_last" in key or "flf" in task:
+            return p.get("key")
+
+    # 2. Trajectory-aware models (close enough for start→end interpolation)
+    for p in presets:
+        task = (p.get("task") or "").lower()
+        if "move" in task:
+            return p.get("key")
+
+    # 3. Best quality i2v
+    for preferred in ("wan22_i2v_hq", "wan22_i2v_lightning", "ltx2_dev",
+                      "ltx2_distilled"):
+        if preferred in available_keys:
+            return preferred
+
+    # 4. Whatever i2v preset is on offer
+    for p in presets:
+        task = (p.get("task") or "").lower()
+        if task == "i2v":
+            return p.get("key")
+
+    return "wan22_i2v_lightning"
 
 
 if __name__ == "__main__":
