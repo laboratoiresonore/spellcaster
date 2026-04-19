@@ -42,6 +42,31 @@
 
 ---
 
+## 📣 Status — April 2026
+
+<table>
+<tr><td>
+
+### 🆕 News
+- **First version of the DaVinci Resolve plugin is out and needs testing!**
+- **Wizard Guild interface and the Antenna system both work quite well.**
+
+### ✅ What works
+- **The GIMP plugin is dope.** It's now all I use for image generation and retouching.
+
+### 🔧 Current focus
+- Debugging the **SillyTavern** plugin
+- Improving the **Wizard Guild** and the **Antenna** system
+
+### ⏭ Next
+- **Signal bridge**
+- Moar plugins / frontends
+
+</td></tr>
+</table>
+
+---
+
 ## The Problem
 
 Experimenting with AI image generation locally is a huge pain in the ass, even for people who are good with computers.
