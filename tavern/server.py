@@ -8921,6 +8921,28 @@ class GuildHandler(SimpleHTTPRequestHandler):
             # R51a: proxy to antenna for the preset dropdown
             return self._proxy_to_antenna('/resolve/render-presets', 'GET', None,
                                            service='resolve')
+        elif (self.path == '/api/antenna/service/start'
+              and self.command == 'POST'):
+            # R56: Guild proxy to antenna's POST /service/start.
+            # Routes to the antenna that declares/detects the service.
+            svc = (data.get('service') or '').strip().lower()
+            return self._proxy_to_antenna('/service/start', 'POST', data,
+                                           service=svc if svc else None)
+        elif (self.path.startswith('/api/antenna/service/logs')
+              and self.command == 'GET'):
+            # R56: tail the launch log
+            qs = ''
+            svc = None
+            if '?' in self.path:
+                qs = '?' + self.path.split('?', 1)[1]
+                try:
+                    from urllib.parse import urlparse, parse_qs
+                    parsed = parse_qs(urlparse(self.path).query)
+                    svc = (parsed.get('service') or [''])[0].strip().lower() or None
+                except Exception:
+                    svc = None
+            return self._proxy_to_antenna('/service/logs' + qs, 'GET', None,
+                                           service=svc)
 
         # R48b: Send timeline directly to a running DaVinci Resolve via the
         # antenna. POST only — mutates Resolve state. Body: {"format": "edl"|"fcpxml", "fps": 30, "bin": "Spellcaster"}
