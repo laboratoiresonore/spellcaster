@@ -334,10 +334,11 @@ def _build_routes(cfg: dict[str, Any]) -> dict[tuple[str, str], Callable]:
     # start_service chooses based on the request body, not route key.
     try:
         from .endpoints import services as services_ep
-        routes[("POST", "/service/start")] = services_ep.start_service
-        routes[("POST", "/service/stop")]  = services_ep.stop_service
-        routes[("GET",  "/service/logs")]  = services_ep.service_logs
-        routes[("GET",  "/diag/detector")] = services_ep.detector_diag
+        routes[("POST", "/service/start")]    = services_ep.start_service
+        routes[("POST", "/service/stop")]     = services_ep.stop_service
+        routes[("POST", "/service/register")] = services_ep.register_service
+        routes[("GET",  "/service/logs")]     = services_ep.service_logs
+        routes[("GET",  "/diag/detector")]    = services_ep.detector_diag
     except ImportError as e:
         print(f"[antenna] WARN: services endpoint failed to import: {e}",
               file=sys.stderr)
