@@ -2074,7 +2074,9 @@ function CrossPluginManifest() {
   const [totals, setTotals] = useState({ total: 0, canonical: 0, duplicate: 0, unknown: 0 });
   const [status, setStatus] = useState("loading"); // loading | loaded | error
   const [err, setErr] = useState("");
-  const [openIds, setOpenIds] = useState(() => new Set(["wizard_guild"]));
+  // Collapsed by default — the user wants to scan the plugin counts
+  // first and expand on demand, not wade through 150+ rows on load.
+  const [openIds, setOpenIds] = useState(() => new Set());
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all"); // all | canonical | duplicate | thin_client | utility | unknown
   const [groupBy, setGroupBy] = useState("category"); // category | status | none
