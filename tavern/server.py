@@ -1709,6 +1709,70 @@ def _server_init(comfy_url=None):
         _ANIM_POLL_THREAD.start()
 
     # ── Video Bridge init ──
+    # R121: inject Resolve-awareness so the Cinematographer's replies
+    # tailor to a live DaVinci Resolve Bridge. Both callables fail
+    # closed (return None / {"error": ...}) when the Bridge is
+    # offline or the Guild isn't paired.
+    def _resolve_status_snapshot():
+        if not CROSS_INTERFACE_AVAILABLE or _iface_registry is None:
+            return None
+        try:
+            snap = _iface_registry.snapshot()
+        except Exception:
+            return None
+        entry = (snap or {}).get("resolve") or {}
+        if not entry.get("online"):
+            return None
+        meta = entry.get("last_meta") or {}
+        from datetime import datetime as _dt
+        last_hb = entry.get("last_heartbeat")
+        last_str = ""
+        if last_hb:
+            try:
+                last_str = _dt.fromtimestamp(last_hb).strftime("%H:%M:%S")
+            except Exception:
+                last_str = ""
+        return {
+            "online": True,
+            "hostname": meta.get("hostname") or meta.get("machine") or "",
+            "agent_url": meta.get("agent_url", ""),
+            "bin": meta.get("target_bin") or "Spellcaster",
+            "timeline_name": meta.get("timeline_name") or "",
+            "last_heartbeat": last_str,
+        }
+
+    def _resolve_bridge_action(action_key, payload):
+        """Publish a resolve.* event that the Resolve Bridge's SSE
+        subscriber picks up. Thin-client — the Bridge does the heavy
+        lifting. Returns a dict the wizard surfaces to chat."""
+        if not CROSS_INTERFACE_AVAILABLE or _EVENT_BUS is None:
+            return {"error": "cross-interface bus disabled on this Guild"}
+        try:
+            if action_key == "pull_playhead":
+                # Bridge subscribes to resolve.playhead.grab; on
+                # receipt it captures the playhead still, uploads it
+                # to /api/assets, and publishes resolve.playhead.ready
+                # which the wizard can poll for. For R121 v1 we fire
+                # the event and return success — the caller will see
+                # the ref image attached via a follow-up mailbox pull.
+                _EVENT_BUS.publish("resolve.playhead.grab",
+                                    origin="guild",
+                                    data={"want": "reference_still"})
+                return {"ok": True,
+                         "shot_id": "(pending — Bridge will publish ready)",
+                         "note": ("Event dispatched. Drop into Resolve "
+                                  "Scripts > 💎 Spellcaster and the still "
+                                  "lands shortly.")}
+            if action_key == "import_edl":
+                _EVENT_BUS.publish("resolve.timeline.import",
+                                    origin="guild",
+                                    data={"source": "cinematographer"})
+                return {"ok": True,
+                         "timeline_name": "Spellcaster (from Cinematographer)"}
+        except Exception as e:
+            return {"error": f"event publish failed: {e}"}
+        return {"error": f"unknown Resolve action: {action_key}"}
+
     try:
         from scaffold.video_bridge import VideoBridge
         shotboard_path = os.path.join(_THIS_DIR, "shotboard.json")
@@ -1717,6 +1781,8 @@ def _server_init(comfy_url=None):
             wangp_url="http://localhost:7860",
             comfyui_url=url or COMFYUI_URL,
             output_dir=os.path.join(_THIS_DIR, "creations"),
+            resolve_status_fn=_resolve_status_snapshot,
+            resolve_action_fn=_resolve_bridge_action,
         )
         print(f"  [Guild] Video Bridge: ON ({len(_VIDEO_BRIDGE.board)} shots)")
     except Exception as e:
@@ -10807,6 +10873,66 @@ class GuildHandler(SimpleHTTPRequestHandler):
             resp = self._post_antenna_json(antenna_url, "/service/stop",
                                             token, {"service": app})
             return self.end_json(200, {"target": target, **(resp or {})})
+
+        elif self.path == '/api/guild/restart' and self.command == 'POST':
+            # Cleanly restart the Wizard Guild process. Spawn a detached
+            # relauncher that waits ~1s then re-execs the current argv
+            # so the browser tab reconnects to a fresh process once the
+            # old one exits. Everything else mirrors /api/guild/exit —
+            # we stop auto_start apps first so nothing is orphaned.
+            cfg = _guided_install_load_config()
+            matrix = (cfg.get("app_control") or {})
+            stopped = []
+            for app, entry in matrix.items():
+                if not (isinstance(entry, dict) and entry.get("auto_start")):
+                    continue
+                if app not in ("comfyui", "ollama", "kobold",
+                                "kobold_rp", "kobold_tts"):
+                    continue
+                target = str(entry.get("target") or "local").strip()
+                try:
+                    if target == "local":
+                        from antenna import service_launcher as _sl
+                        r = _sl.stop_service(app, cfg)
+                    else:
+                        url, tok = self._resolve_antenna_agent(target)
+                        if not url: continue
+                        r = self._post_antenna_json(
+                            url, "/service/stop", tok,
+                            {"service": app}, timeout=6)
+                    stopped.append({"app": app, "result": r})
+                except Exception:
+                    pass
+            import subprocess as _sp, threading as _th, time as _ti
+            import os as _os, sys as _sys
+            argv = list(_sys.argv)
+            exe = _sys.executable
+            # Python path must be preserved across the relaunch so our
+            # repo-root sys.path tweak still finds antenna/.
+            env = dict(_os.environ)
+            def _relaunch():
+                _ti.sleep(1.2)
+                try:
+                    if _os.name == "nt":
+                        _sp.Popen([exe] + argv,
+                                   env=env,
+                                   creationflags=0x00000008 | 0x00000200,  # DETACHED + NEW_GROUP
+                                   close_fds=True)
+                    else:
+                        _sp.Popen([exe] + argv, env=env,
+                                   start_new_session=True, close_fds=True)
+                except Exception as e:
+                    print(f"  [restart] relauncher spawn failed: {e}")
+            _th.Thread(target=_relaunch, daemon=True).start()
+            def _bye():
+                _ti.sleep(0.6)
+                _os._exit(0)
+            _th.Thread(target=_bye, daemon=True).start()
+            return self.end_json(200, {
+                "ok": True,
+                "stopped": stopped,
+                "note": "restart in ~1.5s — reload the page to reconnect.",
+            })
 
         elif self.path == '/api/guild/exit' and self.command == 'POST':
             # Graceful shutdown: iterate auto-start apps and ask their
