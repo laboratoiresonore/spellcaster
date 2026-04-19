@@ -1,0 +1,67 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - img [ref=e4]
+    - heading "The Wizard Guild" [level=1] [ref=e10]
+    - paragraph [ref=e11]: The Guild awaits...
+  - generic [ref=e14]:
+    - complementary [ref=e15]:
+      - generic [ref=e16]:
+        - heading "The Wizard Guild" [level=2] [ref=e17]
+        - generic [ref=e20]: "LLM: Disconnected"
+        - generic [ref=e21]:
+          - generic [ref=e23]: "ComfyUI: Connected"
+          - generic [ref=e24]:
+            - generic [ref=e25]: VRAM 8.3/15.9
+            - generic [ref=e28]: RAM 15.5/63.8
+            - generic [ref=e31]: Cache 0.0/0.1
+        - generic [ref=e36]: "SillyTavern: Disconnected"
+        - generic [ref=e39]: "Signal Bridge: Disconnected"
+        - generic [ref=e40]:
+          - generic [ref=e41]: Recent across apps
+          - generic [ref=e42]:
+            - generic "Wizard Guild · lavish wizard guild after-hours lounge, low warm lighting, enchanted hookah pipes trailing luminous smoke, plush cushions and fur throws, spell-scrolls and love letters scattered on tables, magical mood lighting shifting between amber and rose, wide angle, intimate fantasy den, photorealistic, highly detailed, sharp focus, professional photograph, 8K UHD, natural lighting, depth of field" [ref=e43] [cursor=pointer]:
+              - generic: 💬
+            - generic "Wizard Guild · intimate profile portrait in candlelight, post-coital glow of a tall Yoruba oracle with ritual scarification and bead-wrapped wrists, wearing only a ceremonial loincloth, powerful thighs and glistening dark skin, a wizard named Zippy the Pixel Wizard, A whirlwind of creativity, always eager to bring colors and magic to every image., specialist in gonzalomoZpop_v30AIO — SD 1.5 — Classic Explicit Generation, single warm candle flame, rim lighting on bare shoulder, glistening skin, visible breath in cool air, intricate body art and enchanted piercings catching the light, old masters nude study style, rich shadows, intimate boudoir atmosphere, magical sigils floating lazily in afterglow, masterpiece, best quality, highly detailed, photorealistic, sharp focus, professional photograph, DSLR, 8K UHD, soft natural lighting, film grain" [ref=e44] [cursor=pointer]:
+              - generic: 💬
+            - generic [ref=e45] [cursor=pointer]:
+              - generic: 💬
+            - generic "Wizard Guild · intimate profile portrait in candlelight, post-coital glow of a sun-kissed Brazilian feiticeira with wild curly hair alive with sparks, string bikini woven from pure magical energy, bronze skin gleaming, a wizard named JuggernautXL, A master of hyper-realistic, lifelike scenes with a keen eye for detail and depth., specialist in juggernautXL_v9Rundiffusionphoto2 — SDXL — Detailed Explicit Generation, single warm candle flame, rim lighting on bare shoulder, glistening skin, visible breath in cool air, intricate body art and enchanted piercings catching the light, old masters nude study style, rich shadows, intimate boudoir atmosphere, magical sigils floating lazily in afterglow, masterpiece, best quality, highly detailed, photorealistic, 8K UHD, DSLR, Fujifilm XT3, sharp focus, professional photograph, natural lighting, film grain" [ref=e46] [cursor=pointer]:
+              - generic: 💬
+            - generic "Wizard Guild · intimate profile portrait in candlelight, post-coital glow of a magnificent Sikh tantric with an immaculate turban glowing with runes, bare torso rippling with muscle, sacred thread the only adornment on his chest, a wizard named Juggernaut XL, A bit rough around the edges but always ready to go full force., specialist in juggernautXL_ragnarok — SDXL — Detailed Explicit Generation, single warm candle flame, rim lighting on bare shoulder, glistening skin, visible breath in cool air, intricate body art and enchanted piercings catching the light, old masters nude study style, rich shadows, intimate boudoir atmosphere, magical sigils floating lazily in afterglow, masterpiece, best quality, highly detailed, photorealistic, 8K UHD, DSLR, Fujifilm XT3, sharp focus, professional photograph, natural lighting, film grain" [ref=e47] [cursor=pointer]:
+              - generic: 💬
+            - generic "Wizard Guild · provocative cinematic portrait, medium close-up of a living suit of ornate armour with no occupant, visor glowing blue, chest plate cracked open to reveal swirling naked energy within, intimate and alien, a wizard named JibMix Realistic XL, A blend of natural elegance and cutting-edge precision, always delivering lifelike details with a touch of realism., specialist in jibMixRealisticXL_v180SkinSupreme — SDXL — Detailed Explicit Generation, volumetric warm light, magical particles dancing across exposed skin, shallow depth of field, revealing costume with intricate details visible, warm golden skin tones, renaissance nude painting meets fantasy concept art, dramatic chiaroscuro, sensual atmosphere, bedroom eyes, masterpiece, best quality, highly detailed, photorealistic, 8K UHD, DSLR, Fujifilm XT3, sharp focus, professional photograph, natural lighting, film grain" [ref=e48] [cursor=pointer]:
+              - generic: 💬
+            - generic "Wizard Guild · intimate extreme close-up portrait of a powerful Maori war-mage with full-face moko, bare muscular torso glistening with enchanted oils, traditional piupiu barely covering his thighs, a wizard named CybeReal Pony, A bit of a tech geek, always up for a good chat about digital art and futuristic vibes., specialist in cyberrealisticPony_v160 — SDXL — Detailed Explicit Generation, sultry bedroom lighting, magical aura caressing bare skin, highly detailed face and décolletage filling the frame, half-lidded seductive eyes, sensual parted lips, painterly digital art, headshot composition, dark moody background with arcane sigils, face takes up 80 percent of image, masterpiece, best quality, highly detailed, photorealistic, 8K UHD, DSLR, Fujifilm XT3, sharp focus, professional photograph, natural lighting, film grain" [ref=e49] [cursor=pointer]:
+              - generic: 💬
+            - generic "Wizard Guild · provocative cinematic portrait, medium close-up of a powerful Slavic witch-queen with ruddy cheeks, fur-lined collar framing deep cleavage, enchanted corset straining against her generous figure, a wizard named NovaCartoonXL, A vibrant blend of whimsy and precision, always ready to bring 3D charm to your art with a touch of magic., specialist in novaCartoonXL_v60 — SDXL — Detailed Explicit Generation, volumetric warm light, magical particles dancing across exposed skin, shallow depth of field, revealing costume with intricate details visible, warm golden skin tones, renaissance nude painting meets fantasy concept art, dramatic chiaroscuro, sensual atmosphere, bedroom eyes, masterpiece, best quality, highly detailed, photorealistic, 8K UHD, DSLR, Fujifilm XT3, sharp focus, professional photograph, natural lighting, film grain" [ref=e50] [cursor=pointer]:
+              - generic: 💬
+            - generic "Wizard Guild · intimate extreme close-up portrait of a moth-winged seductress with powdery iridescent wings and enormous compound eyes, nude humanoid torso dusted with shimmering scales, otherworldly allure, a wizard named Pixel Whiz, A master of transforming flat designs into lively, animated scenes with a touch of classic Disney magic., specialist in modernDisneyXL_v3 — SDXL — Detailed Explicit Generation, sultry bedroom lighting, magical aura caressing bare skin, highly detailed face and décolletage filling the frame, half-lidded seductive eyes, sensual parted lips, painterly digital art, headshot composition, dark moody background with arcane sigils, face takes up 80 percent of image, masterpiece, best quality, highly detailed, photorealistic, 8K UHD, DSLR, Fujifilm XT3, sharp focus, professional photograph, natural lighting, film grain" [ref=e51] [cursor=pointer]:
+              - generic: 💬
+        - textbox "Search guild members..." [ref=e53]
+      - generic [ref=e55]:
+        - button "✨ Animate All Avatars" [disabled] [ref=e56]
+        - link "🧙 Travelling Wizard" [ref=e57] [cursor=pointer]:
+          - /url: /static/guild.html
+        - button "⚙️ Settings" [ref=e58] [cursor=pointer]
+    - main [ref=e59]:
+      - generic [ref=e60]:
+        - generic [ref=e63]:
+          - heading "Loading..." [level=2] [ref=e64]
+          - paragraph [ref=e65]: Connecting to guild...
+        - generic [ref=e66]:
+          - button "Rename Wizard" [ref=e67] [cursor=pointer]
+          - button "Generate Background" [ref=e68] [cursor=pointer]
+          - button "Generate Avatar" [ref=e69] [cursor=pointer]
+          - button "Enchantments" [ref=e70] [cursor=pointer]
+          - button "Reset Memory" [ref=e71] [cursor=pointer]
+          - button "⚡ Generate All" [ref=e72] [cursor=pointer]
+      - generic [ref=e75]:
+        - button "📎" [ref=e76] [cursor=pointer]
+        - textbox "Just talk to it..." [ref=e77]
+        - button "Summon Wizard" [ref=e78] [cursor=pointer]:
+          - img "Summon Wizard" [ref=e79]
+        - button "🎬" [ref=e80] [cursor=pointer]
+        - button "✨" [ref=e81] [cursor=pointer]
+  - button "⚔ Shootouts 38" [ref=e82] [cursor=pointer]:
+    - text: ⚔ Shootouts
+    - generic [ref=e83]: "38"
