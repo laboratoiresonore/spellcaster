@@ -1023,6 +1023,43 @@ function registerSlashCommands() {
         }));
     }
 
+    // R119: /sc-capabilities — probe the configured ComfyUI's
+    // /object_info and report which architectures are installed.
+    // Mirrors the Darktable R118 check + the GIMP sentinel probe
+    // so editors see a consistent "what's available" answer across
+    // every Spellcaster surface.
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'sc-capabilities',
+        callback: async () => {
+            try {
+                const res = await fetch(`${API_BASE}/capabilities`, {
+                    headers: getContext().getRequestHeaders(),
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    return `Capabilities probe failed: ${err.error || res.status}`;
+                }
+                const d = await res.json();
+                const lines = [`💎 Spellcaster capabilities on ${d.comfyui}:`];
+                lines.push(`(${d.node_count} total nodes in /object_info)`);
+                lines.push('');
+                if (d.available && d.available.length) {
+                    lines.push('✓ **Installed:**');
+                    for (const a of d.available) lines.push(`  • ${a}`);
+                }
+                if (d.missing && d.missing.length) {
+                    lines.push('');
+                    lines.push('✗ **Missing** (features using these will silently fail):');
+                    for (const a of d.missing) lines.push(`  • ${a}`);
+                }
+                return lines.join('\n');
+            } catch (e) {
+                return `Capabilities error: ${e.message}`;
+            }
+        },
+        helpString: 'Probe the configured ComfyUI and report which Spellcaster architectures are installed (Klein, Flux Kontext, Wan, LTX, SUPIR, etc.).',
+    }));
+
     // /sc-inbox — pull + display pending inbox items for this SillyTavern
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'sc-inbox',
