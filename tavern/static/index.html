@@ -52,11 +52,20 @@
             <button id="mobile-sidebar-close" type="button" onclick="closeMobileSidebar()" title="Close" aria-label="Close sidebar">&times;</button>
             <div class="sidebar-header">
                 <h2>The Wizard Guild</h2>
-                <div id="llm-indicator-container">
-                    <span id="llm-dot" class="dot red"></span> <span id="llm-status" title="">LLM: Disconnected</span>
+                <!-- ComfyUI + LLM status used to have dedicated indicator
+                     rows at the top of the sidebar. They've been folded
+                     into the synthetic chips in the Connected apps row
+                     below (see refreshActiveInterfaces +
+                     window._managedLive). Offscreen mirrors stay wired
+                     so the existing pollers can keep updating without
+                     dangling references. -->
+                <div id="llm-indicator-container" style="display:none">
+                    <span id="llm-dot" class="dot red"></span>
+                    <span id="llm-status" title="">LLM: Disconnected</span>
                 </div>
-                <div id="comfy-indicator-container">
-                    <span id="comfy-dot" class="dot red"></span> <span id="comfy-status">ComfyUI: Disconnected</span>
+                <div id="comfy-indicator-container" style="display:none">
+                    <span id="comfy-dot" class="dot red"></span>
+                    <span id="comfy-status">ComfyUI: Disconnected</span>
                     <div id="comfy-health-stats" class="health-stats"></div>
                 </div>
                 <!-- SillyTavern + Signal Bridge used to have standalone
@@ -160,6 +169,14 @@
                 <div class="input-wrapper">
                     <button id="upload-btn" title="Attach Image (Coming Soon)">📎</button>
                     <textarea id="chat-input" placeholder="Just talk to it..."></textarea>
+                    <!-- Walkie-talkie STT: press-and-hold starts mic
+                         capture, release uploads the clip to /api/stt
+                         which forwards to a registered kobold_tts
+                         backend (Whisper GGUF on KoboldCpp). The
+                         transcript populates the textarea so the user
+                         can edit before sending. -->
+                    <button id="walkie-btn" type="button"
+                            title="Hold to record — release to transcribe (requires KoboldCpp in TTS/STT mode).">🎙️</button>
                     <button id="summon-wizard-btn" title="Summon a new Wizard from your models"><img src="/static/icons/summon-wand.svg" alt="Summon Wizard" style="width:24px;height:24px;"></button>
                     <button id="send-btn" title="Cast Spell">✨</button>
                 </div>
