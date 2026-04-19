@@ -3902,61 +3902,13 @@ def build_wan22_t2v(preset, prompt_text, negative_text, seed, *,
     return nf.build()
 
 
-def build_wan22_i2v(image_filename, preset, prompt_text, negative_text, seed, *,
-                     width=832, height=480, length=81, fps=16,
-                     turbo=True, filename_prefix="spellcaster_wan22_i2v"):
-    """Wan 2.2 image-to-video. Uses WanImageToVideo_F2 (the 2.2 i2v
-    node) which takes a raw IMAGE input — no CLIPVision dance needed.
-
-    image_filename: basename already present in ComfyUI's input/ dir.
-    preset: see build_wan22_t2v.
-    """
-    nf = NodeFactory()
-    high_ref, low_ref, clip_ref, vae_ref = _wan22_loaders(nf, preset)
-
-    nf.update({"5": {"class_type": "CLIPTextEncode",
-                      "inputs": {"clip": clip_ref, "text": prompt_text}}})
-    nf.update({"6": {"class_type": "CLIPTextEncode",
-                      "inputs": {"clip": clip_ref, "text": negative_text or ""}}})
-
-    # Load + pre-scale the ref frame to the exact target size so
-    # WanImageToVideo_F2's internal encoder doesn't silently crop.
-    nf.update({"7a": {"class_type": "LoadImage",
-                       "inputs": {"image": image_filename}}})
-    nf.update({"7": {"class_type": "ImageScale",
-                      "inputs": {"image": ["7a", 0],
-                                  "width": width, "height": height,
-                                  "upscale_method": "lanczos",
-                                  "crop": "center"}}})
-
-    # WanImageToVideo_F2 takes positive/negative CONDITIONING + VAE +
-    # dims + start_image IMAGE; outputs remapped conditioning + latent.
-    nf.update({"40": {"class_type": "WanImageToVideo_F2",
-                       "inputs": {
-                           "positive": ["5", 0], "negative": ["6", 0],
-                           "vae": vae_ref,
-                           "width": width, "height": height,
-                           "length": length,
-                           "start_image": ["7", 0],
-                       }}})
-
-    final_latent = _wan22_samplers(
-        nf, preset, ["40", 0], ["40", 1], ["40", 2],
-        high_ref, low_ref, seed, turbo)
-
-    nf.update({"12": {"class_type": "VAEDecode",
-                       "inputs": {"samples": final_latent, "vae": vae_ref}}})
-    nf.update({"13": {"class_type": "VHS_VideoCombine",
-                       "inputs": {
-                           "images": ["12", 0],
-                           "frame_rate": float(fps),
-                           "loop_count": 0,
-                           "filename_prefix": filename_prefix,
-                           "format": "video/h264-mp4",
-                           "pingpong": False,
-                           "save_output": True,
-                       }}})
-    return nf.build()
+# build_wan22_i2v was removed in R135. It relied on WanImageToVideo_F2
+# which has a reshape bug on the tested ComfyUI install (adds 3 phantom
+# channels and crashes the subsequent reshape). The R128/R129 dispatcher
+# never actually used it — wan22_i2v_{lightning,hq} always routed through
+# the battle-tested build_wan_video (Wan 2.1 base node + CLIPVisionEncode)
+# which handles Wan 2.2 A14B i2v models correctly. Keeping the dead path
+# just added another config that would drift out of sync.
 
 
 # ═══════════════════════════════════════════════════════════════════════════

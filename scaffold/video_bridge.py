@@ -389,25 +389,39 @@ class VideoBridge:
         "ltx2_t2v_with_rtx_upscale",
         "ltx2_image_to_video",
     )
+    _NATIVE_UPSCALE_PRESETS = (
+        # R134 — video-in presets. The dispatcher takes
+        # shot.overrides.input_video (not shot.ref_image) and uploads
+        # the source mp4 to ComfyUI's input/ before submitting.
+        "seedvr2_video_upscale",
+    )
     _NATIVE_I2V_PRESETS = (
         "wan22_i2v_lightning", "wan22_i2v_hq",
         "ltx2_image_to_video",
     )
 
     def _should_try_native_wan(self, shot: Shot) -> bool:
-        """Native ComfyUI routing for wan22_* and ltx2_* presets.
-        i2v variants need a ref image; t2v doesn't."""
+        """Native ComfyUI routing for wan22_* / ltx2_* / seedvr2_*
+        presets. Different presets have different input requirements:
+        - i2v presets need a ref image in shot.ref_image
+        - Upscale presets need a video in shot.overrides.input_video
+        - t2v presets need nothing
+        """
         if not _NATIVE_DISPATCH_AVAILABLE:
             return False
-        if shot.preset not in (self._NATIVE_WAN_PRESETS
-                                 + self._NATIVE_LTX2_PRESETS):
+        native = (self._NATIVE_WAN_PRESETS
+                   + self._NATIVE_LTX2_PRESETS
+                   + self._NATIVE_UPSCALE_PRESETS)
+        if shot.preset not in native:
             return False
-        # Need ComfyUI reachable — fail fast before building anything
         if not self.comfy.is_available():
             return False
-        # i2v variants require a reference image; t2v doesn't.
         if shot.preset in self._NATIVE_I2V_PRESETS:
             if not shot.ref_image or not os.path.isfile(shot.ref_image):
+                return False
+        if shot.preset in self._NATIVE_UPSCALE_PRESETS:
+            iv = (shot.overrides or {}).get("input_video")
+            if not iv or not os.path.isfile(iv):
                 return False
         return True
 
@@ -421,6 +435,7 @@ class VideoBridge:
         ref_basename: Optional[str] = None
         input_filenames: List[str] = []
         needs_ref = shot.preset in self._NATIVE_I2V_PRESETS
+        needs_video = shot.preset in self._NATIVE_UPSCALE_PRESETS
         if needs_ref:
             ref_basename = os.path.basename(shot.ref_image)
             try:
@@ -431,6 +446,16 @@ class VideoBridge:
             except Exception as e:  # noqa: BLE001
                 return {"status": "error",
                         "message": f"couldn't upload ref image: {e}"}
+        elif needs_video:
+            iv = (shot.overrides or {}).get("input_video", "")
+            ref_basename = os.path.basename(iv)
+            try:
+                with open(iv, "rb") as _vf:
+                    self.comfy.upload_image(_vf.read(), ref_basename)
+                input_filenames.append(ref_basename)
+            except Exception as e:  # noqa: BLE001
+                return {"status": "error",
+                        "message": f"couldn't upload input video: {e}"}
 
         defaults = (describe_preset(shot.preset) or {}).get("defaults") or {}
         width_h = defaults.get("resolution", "832x480").split("x")
@@ -957,41 +982,41 @@ class VideoBridge:
         file.  On failure, the shot keeps the WanGP output and an
         informational log is emitted — the user still gets usable video.
         """
-        import json as _json
-
         if not self.comfy.is_available():
             log.warning("Hybrid upscale skipped: ComfyUI not reachable "
                         "at %s", self.comfy.base_url)
             return
 
-        wf_path = os.path.join(
-            os.path.dirname(__file__), "workflows",
-            "seedvr2_video_upscale.json",
-        )
-        if not os.path.isfile(wf_path):
-            log.warning("Hybrid upscale skipped: workflow not found at %s",
-                        wf_path)
+        # R135: build the upscale workflow from canonical
+        # spellcaster_core.workflows.build_seedvr2_video_upscale
+        # instead of loading the stale seedvr2_video_upscale.json.
+        # The JSON was a 5-node stub with hardcoded (missing) model
+        # names and was never a complete workflow.
+        try:
+            from spellcaster_core.workflows import (  # type: ignore
+                build_seedvr2_video_upscale,
+            )
+        except ImportError as exc:
+            log.warning("Hybrid upscale skipped: canonical builder "
+                        "unavailable: %s", exc)
+            return
+
+        # Upload the render first so ComfyUI can read it by basename
+        video_basename = os.path.basename(video_path)
+        try:
+            with open(video_path, "rb") as _vf:
+                self.comfy.upload_image(_vf.read(), video_basename)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Hybrid upscale: couldn't upload source video: %s",
+                        exc)
             return
 
         try:
-            with open(wf_path, "r", encoding="utf-8") as fh:
-                workflow = _json.load(fh)
+            workflow = build_seedvr2_video_upscale(
+                video_name=video_basename,
+            )
         except Exception as exc:  # noqa: BLE001
-            log.warning("Hybrid upscale skipped: bad workflow JSON: %s", exc)
-            return
-
-        # Patch the VHS_LoadVideo node's input to our render.
-        patched = False
-        for node in workflow.values():
-            if not isinstance(node, dict):
-                continue
-            if node.get("class_type") == "VHS_LoadVideo":
-                node.setdefault("inputs", {})["video"] = video_path
-                patched = True
-                break
-        if not patched:
-            log.warning("Hybrid upscale skipped: no VHS_LoadVideo node "
-                        "found in workflow")
+            log.warning("Hybrid upscale builder raised: %s", exc)
             return
 
         log.info("Chaining ComfyUI upscale for shot %s (%s)",
