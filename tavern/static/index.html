@@ -61,6 +61,29 @@
                     <span id="llm-dot" class="dot red"></span>
                     <span id="llm-status" title="">LLM: Disconnected</span>
                 </div>
+                <!-- LLM primary picker — three pills. Clicking one
+                     pins that backend as the first hop in guild_llm's
+                     chat chain and starts its service if it isn't
+                     already running. The other backends stay alive —
+                     it's fine to have ComfyUI + Ollama + a dedicated
+                     RP Kobold for SillyTavern all online at once; the
+                     picker just decides who answers chat() first.
+                     ComfyUI is a reroute (no service start needed). -->
+                <div id="llm-picker" class="llm-picker" role="radiogroup"
+                     aria-label="Primary LLM backend">
+                    <button type="button" class="llm-pill" data-llm="comfyui"
+                            title="Route chat through ComfyUI's embedded LLM. Reroute mode — no other LLM is stopped.">
+                        🎨 ComfyUI
+                    </button>
+                    <button type="button" class="llm-pill" data-llm="ollama"
+                            title="Route chat through Ollama. Starts the Ollama service on this machine if it isn't already running.">
+                        🦙 Ollama
+                    </button>
+                    <button type="button" class="llm-pill" data-llm="kobold_rp"
+                            title="Route chat through KoboldCpp in RP mode. Starts the kobold_rp service if it isn't already running.">
+                        📜 Kobold
+                    </button>
+                </div>
                 <!-- Only the VRAM / RAM / cache health strip is shown
                      here. The "ComfyUI: Disconnected/Connected" label
                      moved into the Connected-apps synthetic chip. Dot

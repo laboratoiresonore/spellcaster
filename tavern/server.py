@@ -2547,6 +2547,23 @@ if CROSS_INTERFACE_AVAILABLE:
         _ASSET_GALLERY = None
         _SIGNAL_NOTIFIER = None
 
+def _apply_user_settings(settings):
+    """Push every user_settings key into the live subsystem it controls.
+
+    Called after each POST /api/user_settings and once on server boot
+    so a fresh process honours the persisted preferences without a
+    restart. Silent on failure — user_settings is best-effort.
+    """
+    if not isinstance(settings, dict):
+        return
+    pref = (settings.get("preferred_llm") or "").strip().lower() or None
+    try:
+        from spellcaster_core import guild_llm as _gllm
+        _gllm.set_preferred_backend(pref)
+    except Exception:
+        pass
+
+
 def _resolve_stt_backend_url():
     """Return the HTTP URL of a registered kobold_tts service, checking
     in order: local app_control entry → paired antenna that declares
@@ -4689,6 +4706,15 @@ if _migrate_stale_urls(_WIZARD_IDENTITIES, 'wizard_identities'):
     _save_wizard_identities()
 _ANIM_QUEUE = _load_anim_queue()
 _load_custom_wizards()
+
+# Apply persisted user_settings (e.g. preferred_llm → guild_llm backend
+# rotation) so a fresh server process honours the sidebar pill picker
+# without waiting for the first POST.
+try:
+    _apply_user_settings((_guided_install_load_config()
+                            .get("user_settings") or {}))
+except Exception:
+    pass
 
 if _BANISHED_IDS:
     print(f"  [State] Restored {len(_BANISHED_IDS)} banished wizard(s)")
@@ -8725,8 +8751,10 @@ class GuildHandler(SimpleHTTPRequestHandler):
             try:
                 from spellcaster_core import guild_llm as _gllm
                 snap = _gllm.get_status()
+                snap["preferred"] = _gllm.get_preferred_backend()
             except Exception:
-                snap = {"backend": None, "host": None, "state": "idle"}
+                snap = {"backend": None, "host": None, "state": "idle",
+                         "preferred": None}
             # Never leak the raw host URL to the browser — the friendly
             # label from _host_label() is enough. The UI only renders
             # `host` and `backend`; host_url is used internally for
@@ -10659,6 +10687,10 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 })
             cfg["user_settings"] = settings
             ok = _guided_install_save_config(cfg)
+            # Sync live subsystems whose behaviour depends on user_settings.
+            # The LLM preference must take effect on the very next
+            # chat() call without a restart.
+            _apply_user_settings(settings)
             return self.end_json(200 if ok else 500,
                                   {"ok": ok, "user_settings": settings})
 
