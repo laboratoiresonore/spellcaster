@@ -3256,15 +3256,29 @@ async function askKobold(text) {
             window._hordeWarnShown = true;
         }
 
-        // Nudge the LLM to output JSON if the user prompt looks like a gen request
+        // Nudge the LLM to output JSON if the user prompt looks like a gen request.
+        //
+        // Two hard gates stop the nudge from firing on conversations:
+        //   1. The active wizard must actually be able to dispatch a build_fn —
+        //      onboarding / install-manager wizards have an empty build_fns list
+        //      and should NEVER receive a JSON-only instruction. Without this
+        //      gate, every chat turn with the Spellcaster wizard got redirected
+        //      into image generation.
+        //   2. The message must not look like a question. "How do I make a
+        //      picture?" contains "make" and "picture" (both direct keywords)
+        //      but it's a help request, not a gen request. Question markers
+        //      unambiguously signal conversation.
         let activePrompt = context;
+        const canDispatch = Array.isArray(char.build_fns) && char.build_fns.length > 0;
+        const low = text.toLowerCase();
+        const questionMarkers = ['?', 'how do', 'how can', 'how to', 'what is', 'what are',
+            'why ', 'when ', 'where ', 'who ', 'help', 'explain', 'guide me', 'walk me'];
+        const isQuestion = questionMarkers.some(m => low.includes(m));
         const directKeywords = ['generate', 'make', 'create', 'render', 'cast', 'show me', 'conjure',
             'draw', 'paint', 'picture', 'image', 'photo', 'portrait', 'scene'];
-        const low = text.toLowerCase();
-        const isDirect = text.length < 200 && directKeywords.some(k => low.includes(k));
-        const isDescriptive = text.length < 200 && !low.includes('?') && text.split(/\s+/).length >= 3
-            && !low.startsWith('how') && !low.startsWith('what') && !low.startsWith('why');
-        if ((isDirect || isDescriptive) && !context.includes('```json')) {
+        const isDirect = text.length < 200 && !isQuestion && directKeywords.some(k => low.includes(k));
+        const isDescriptive = text.length < 200 && !isQuestion && text.split(/\s+/).length >= 3;
+        if (canDispatch && (isDirect || isDescriptive) && !context.includes('```json')) {
             activePrompt += `(IMPORTANT: The user wants you to generate an image. Do NOT describe what you would create. Do NOT rephrase their request. Output ONLY the JSON block now. Example format:
 \`\`\`json
 {"build_fn": "build_txt2img", "params": {"prompt": "the actual SDXL/Flux prompt here"}}

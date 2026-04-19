@@ -531,8 +531,9 @@ def discover_nodes() -> Dict[str, NodeSpec]:
         Dict[class_key, NodeSpec] with all discovered Spellcaster nodes.
         If both methods fail, returns an empty dict (no crash).
 
-    This is called once at SpellcasterScaffold initialization to populate
-    the main menu and system prompt.
+    This is called by the Guild server to populate the meta system prompt
+    (and by any other consumer that wants a snapshot of the enhancer-node
+    surface exposed by the ComfyUI-Spellcaster custom node pack).
     """
     try:
         # Try to import the package and introspect live classes
