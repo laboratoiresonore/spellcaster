@@ -90,7 +90,8 @@ _PURPOSE_RULES: list[tuple[str, tuple[str, ...]]] = [
 
     # Clothing / outfit
     ("clothing",      ("dress", "outfit", "costume", "armor", "uniform",
-                       "lingerie", "kimono", "corset", "suit")),
+                       "lingerie", "kimono", "corset", "suit", "underwear",
+                       "bikini", "swimsuit", "nude", "clothed")),
 
     # Lighting / environment
     ("lighting",      ("light", "lighting", "shadow", "ambient",
@@ -106,9 +107,19 @@ _PURPOSE_RULES: list[tuple[str, tuple[str, ...]]] = [
     ("motion",        ("motion", "movement", "camera", "zoom", "pan",
                        "dolly", "i2v", "t2v", "animate")),
 
-    # Character identity (personal likeness LoRAs)
+    # Character identity (personal likeness LoRAs). Big bucket; includes
+    # named characters (2B, Jasmine), OC handles, and generic "pretty
+    # person" descriptors.
     ("character",     ("character", "person", "identity", "ocs", "oc_",
-                       "waifu", "kawaii", "pretty")),
+                       "kawaii", "pretty", "princess", "queen", "girl",
+                       "nier", "2b", "tifa", "jasmine", "jessica",
+                       "disney", "goddess", "seraphim", "witch", "lady")),
+
+    # NSFW action / pose LoRAs — these all describe a specific depiction
+    # rather than a body part or style, so a dedicated bucket keeps them
+    # separate from e.g. anatomy_body.
+    ("action_pose",   ("cum", "cumshot", "kiss", "kissing", "blowjob",
+                       "tentacled", "bondage", "spank", "grab")),
 ]
 
 
