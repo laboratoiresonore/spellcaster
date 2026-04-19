@@ -674,25 +674,27 @@ body {
 }
 
 .global-preset-btn {
-    /* Sits in #chat-shootout-slot, anchored on the right half so the
-       centred Shootouts button doesn't collide with it. right:12.5%
-       puts the button roughly halfway between the centre and the
-       right edge (the visual target the user asked for). */
+    /* Match #sc-shootout-btn (Shootouts) exactly: padding 8px 14px,
+       font-size 13px, border-radius 22px. Sits in #chat-shootout-slot
+       on the right half so it doesn't collide with the centred
+       Shootouts button — right:12.5% puts it roughly halfway between
+       centre and the right edge. */
     position: absolute;
     right: 12.5%;
     top: 50%;
     transform: translateY(-50%);
-    padding: 3px 10px;
-    font-size: 10px;
-    font-weight: 700;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
     letter-spacing: 0.3px;
-    border-radius: 999px;
+    border-radius: 22px;
     border: 1px solid rgba(255, 215, 0, 0.4);
     background: rgba(255, 215, 0, 0.08);
     color: #ffe28a;
     cursor: pointer;
     transition: all 0.15s ease;
     user-select: none;
+    line-height: 1;
 }
 .global-preset-btn:hover {
     background: rgba(255, 215, 0, 0.22);
