@@ -45,10 +45,17 @@ RECOMMENDED_LLM = {
 
 
 def chat(message, system_prompt="", server=None, kobold_url=None,
-         model=None, max_tokens=512, temperature=0.7, purpose="chat"):
+         model=None, max_tokens=512, temperature=0.7, purpose="chat",
+         arch_key=None):
     """THE single LLM entry point for every surface (Guild, GIMP, Darktable,
     ComfyUI nodes, scaffolding). Do not implement parallel LLM paths
     elsewhere — everything goes through this function.
+
+    arch_key (optional): diffusion family (sdxl, sd15, flux1dev,
+    flux2klein, chroma, illustrious, pony, wan, ltx, flux_kontext).
+    Reaches comfyui_llm.generate_text for per-family VRAM management:
+    model size/quant caps, keep_model_loaded override, poll timeout.
+    Ignored by Ollama / Kobold backends — they manage their own memory.
 
     Tries every available backend in an order determined by `purpose`:
 
@@ -83,7 +90,7 @@ def chat(message, system_prompt="", server=None, kobold_url=None,
         if not server:
             return None
         return _chat_comfyui(message, system_prompt, server, model,
-                             max_tokens, temperature)
+                             max_tokens, temperature, arch_key=arch_key)
 
     def try_kobold():
         if not kobold_url:
@@ -106,13 +113,19 @@ def chat(message, system_prompt="", server=None, kobold_url=None,
     return None  # every backend exhausted
 
 
-def _chat_comfyui(message, system_prompt, server, model, max_tokens, temperature):
-    """Chat via ComfyUI's native LLM nodes (GGUF models loaded on server)."""
+def _chat_comfyui(message, system_prompt, server, model, max_tokens,
+                   temperature, arch_key=None):
+    """Chat via ComfyUI's native LLM nodes (GGUF models loaded on server).
+
+    Forwards arch_key so generate_text can apply per-family VRAM caps
+    and keep_model_loaded overrides (see comfyui_llm._PER_FAMILY_LLM_CONFIG).
+    """
     try:
         from .comfyui_llm import generate_text
         return generate_text(
             server, prompt=message, system_prompt=system_prompt,
-            model=model, max_tokens=max_tokens, temperature=temperature)
+            model=model, max_tokens=max_tokens, temperature=temperature,
+            arch_key=arch_key)
     except Exception:
         return None
 
