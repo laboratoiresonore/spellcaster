@@ -514,7 +514,7 @@ async function refreshActiveInterfaces() {
         const active = {};
         const keys = [];
         for (const [k, v] of Object.entries(ifaces)) {
-            if (k === 'guild') continue;
+            if (k === 'guild' || k === 'antenna') continue;
             if (!v.enabled) continue;
             const recent = (v.last_heartbeat || 0) > NOW_S - RECENT_S;
             if (v.installed || v.online || recent) {
@@ -531,6 +531,21 @@ async function refreshActiveInterfaces() {
         window.activeInterfacesKeys = [];
         renderActiveInterfaceChips();
     }
+}
+
+// Per-app control matrix, refreshed alongside interfaces. Shape:
+//   { comfyui: {auto_start:true, target:"theo"}, ollama: {...} }
+// Used by renderActiveInterfaceChips to colour the 🔁 auto-start toggle
+// that sits on the left of each chip. The ⚡ Start button calls
+// /api/app_control/start regardless of this matrix.
+window.appControlMatrix = window.appControlMatrix || {};
+async function refreshAppControlMatrix() {
+    try {
+        const r = await fetch('/api/app_control/config');
+        if (!r.ok) return;
+        const d = await r.json();
+        window.appControlMatrix = d.app_control || {};
+    } catch (e) { /* silent — chips fall back to blank toggles */ }
 }
 
 function renderActiveInterfaceChips() {
@@ -605,14 +620,95 @@ function renderActiveInterfaceChips() {
         chip.title = tooltip;
         chip.dataset.ifaceKey = k;
         chip.dataset.ifaceLabel = label;
+        // Tiny toggle cluster on the LEFT:
+        //   ⚡ Start — calls /api/app_control/start (local or antenna)
+        //   🔁 Auto — persists "launch on Guild boot / close on exit"
+        // Only meaningful for managed services; for GIMP / Darktable /
+        // SillyTavern etc. we still render the cluster so the UI is
+        // uniform but the Start button is disabled with a tooltip.
+        const managed = (k === 'comfyui' || k === 'ollama' || k === 'kobold');
+        const ctrl = (window.appControlMatrix || {})[k] || {};
+        const autoOn = !!ctrl.auto_start;
+        const startTip = managed
+            ? 'Start this app on its target machine now'
+            : 'This app has no managed launcher yet';
+        const autoTip = managed
+            ? (autoOn
+                ? 'Auto-start on Guild launch (and auto-close on exit). Click to disable.'
+                : 'Click to auto-start on Guild launch (and auto-close on exit).')
+            : 'Not managed — auto-start unavailable';
         chip.innerHTML =
+            `<span class="iface-toggles">` +
+                `<button type="button" class="iface-toggle-btn iface-start-btn"` +
+                    ` data-app="${k}"` +
+                    ` title="${startTip}"` +
+                    (managed ? '' : ' disabled') + '>⚡</button>' +
+                `<button type="button" class="iface-toggle-btn iface-auto-btn` +
+                    (autoOn ? ' is-on' : '') + '"' +
+                    ` data-app="${k}"` +
+                    ` title="${autoTip}"` +
+                    (managed ? '' : ' disabled') + '>🔁</button>' +
+            `</span>` +
             `<span class="iface-icon">${icon}</span>` +
             `<span class="iface-label">${label}</span>` +
             (host ? `<span class="iface-host">${host}</span>` : '');
         chip.addEventListener('click', (ev) => {
+            // Let toggle buttons handle their own clicks without opening
+            // the placement popover underneath.
+            const btn = ev.target.closest && ev.target.closest('.iface-toggle-btn');
+            if (btn) { ev.stopPropagation(); return; }
             ev.stopPropagation();
             openIfacePlacementMenu(chip, k, label, v);
         });
+        // Wire the two toggle buttons.
+        const startBtn = chip.querySelector('.iface-start-btn');
+        const autoBtn  = chip.querySelector('.iface-auto-btn');
+        if (startBtn && managed) {
+            startBtn.addEventListener('click', async (ev) => {
+                ev.stopPropagation();
+                startBtn.disabled = true;
+                startBtn.textContent = '⏳';
+                try {
+                    const r = await fetch('/api/app_control/start', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({app: k}),
+                    });
+                    const d = await r.json();
+                    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+                    startBtn.textContent = (d.state === 'already_running') ? '✓' : '⚡';
+                } catch (e) {
+                    startBtn.textContent = '⚠';
+                    startBtn.title = `Start failed: ${e.message || e}`;
+                }
+                setTimeout(() => { startBtn.textContent = '⚡'; startBtn.disabled = false; }, 2500);
+            });
+        }
+        if (autoBtn && managed) {
+            autoBtn.addEventListener('click', async (ev) => {
+                ev.stopPropagation();
+                const next = !autoOn;
+                autoBtn.classList.toggle('is-on', next);
+                const matrix = Object.assign({}, window.appControlMatrix || {});
+                matrix[k] = {
+                    auto_start: next,
+                    target: (matrix[k] && matrix[k].target) || 'local',
+                };
+                try {
+                    const r = await fetch('/api/app_control/config', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({app_control: matrix}),
+                    });
+                    const d = await r.json();
+                    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+                    window.appControlMatrix = d.app_control || matrix;
+                } catch (e) {
+                    autoBtn.classList.toggle('is-on', autoOn); // revert
+                    autoBtn.title = `Save failed: ${e.message || e}`;
+                }
+            });
+        }
         row.appendChild(chip);
     }
 }
@@ -1200,8 +1296,31 @@ async function initialize() {
     // Active-interfaces widget — polls /api/interfaces and renders chips
     // for every frontend the registry reports as installed+enabled+online.
     // Dynamic: if no interface qualifies, the whole strip stays hidden.
-    refreshActiveInterfaces();
-    setInterval(refreshActiveInterfaces, 10000);
+    // Seed the per-app control matrix before the first chip render so
+    // the ⚡ / 🔁 toggles reflect persisted state rather than flashing
+    // "off" for a second on first paint.
+    refreshAppControlMatrix().then(refreshActiveInterfaces);
+    setInterval(() => {
+        refreshAppControlMatrix().then(refreshActiveInterfaces);
+    }, 10000);
+    // Exit button — POSTs /api/guild/exit so the server can stop every
+    // auto_start app on its target machine before killing its own
+    // process. After the response lands the backend waits ~0.6s and
+    // calls os._exit(0); the page will hang the moment the socket is
+    // gone, which is the signal to the user that the Guild is down.
+    const _exitBtn = document.getElementById('guild-exit-btn');
+    if (_exitBtn) {
+        _exitBtn.addEventListener('click', async () => {
+            if (!confirm('Stop auto-started apps and close the Wizard Guild?')) return;
+            _exitBtn.disabled = true;
+            _exitBtn.textContent = '⏻ Exiting…';
+            try {
+                await fetch('/api/guild/exit', {method: 'POST'});
+            } catch (e) { /* expected: socket dies mid-reply */ }
+            document.body.style.filter = 'grayscale(1) brightness(0.7)';
+            document.body.style.pointerEvents = 'none';
+        });
+    }
     // Antennas strip — polls /api/antennas and renders one chip per
     // remote machine with declared / detected services. Gives the user
     // a live signal that a remote GPU pairing is alive (and how many
@@ -1912,6 +2031,62 @@ async function checkLlmAndGenerateNames() {
         llmDot.className = "dot red";
         llmStatus.textContent = "LLM: Disconnected";
     }
+    // Kick off the recurring status poll once chat/probe landed.
+    // The poll surfaces live backend transitions (Local:Ollama →
+    // Theo:ComfyUI → "Reloading…") that the one-shot probe can't see.
+    _startLlmStatusPoll();
+}
+
+// ─────────────────────────────────────────────────────────────────────
+//  Live LLM status poll — drives the sidebar indicator in real time.
+//  Server updates spellcaster_core.guild_llm._STATUS on every chat()
+//  call. We poll every 3s; the indicator flips green/blue/red based on
+//  the reported state. "busy" and "reloading" both pulse blue so the
+//  user gets immediate feedback when a prompt-enhance cycle fires.
+// ─────────────────────────────────────────────────────────────────────
+let _llmStatusTimer = null;
+let _llmStatusLastBusyAt = 0;
+function _startLlmStatusPoll() {
+    if (_llmStatusTimer) return;
+    _llmStatusTimer = setInterval(_pollLlmStatusOnce, 3000);
+    _pollLlmStatusOnce();
+}
+async function _pollLlmStatusOnce() {
+    try {
+        const r = await fetch('/api/llm_status', { cache: 'no-store' });
+        if (!r.ok) return;
+        const s = await r.json();
+        if (llmMode === 'horde') return; // Horde label wins
+        const backend = s.backend;
+        const host = s.host;
+        const state = s.state || 'idle';
+        // Map state → dot color + label. Blue pulse for busy so the
+        // user sees "something is happening" without needing a spinner.
+        if (state === 'busy') {
+            llmDot.className = 'dot blue pulse';
+            llmStatus.textContent = `LLM: ${host || '?'}:${_prettyBackend(backend)} · working`;
+            _llmStatusLastBusyAt = Date.now();
+        } else if (state === 'reloading' || state === 'unloaded') {
+            llmDot.className = 'dot blue pulse';
+            llmStatus.textContent = `LLM: ${host || '?'}:${_prettyBackend(backend)} · ${state}`;
+        } else if (state === 'error') {
+            llmDot.className = 'dot red';
+            llmStatus.textContent = `LLM: ${host || '?'}:${_prettyBackend(backend)} · error`;
+            llmStatus.title = s.last_error || '';
+        } else if (backend) {
+            // idle with a known last-used backend → connected
+            llmDot.className = 'dot green';
+            llmStatus.textContent = `LLM: ${host || '?'}:${_prettyBackend(backend)}`;
+            llmStatus.title = s.model ? `model: ${s.model}` : '';
+        }
+        // state == 'idle' with no backend means "never used yet" — leave
+        // whatever checkLlmAndGenerateNames put there.
+    } catch (e) { /* silent — indicator stays on last known state */ }
+}
+function _prettyBackend(b) {
+    if (!b) return '?';
+    const map = { ollama: 'Ollama', comfyui: 'ComfyUI', kobold: 'Kobold' };
+    return map[b] || b;
 }
 
 async function generateNamesForCharacters() {

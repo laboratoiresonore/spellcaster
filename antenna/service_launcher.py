@@ -441,3 +441,52 @@ def tail_log(service: str, lines: int = 200) -> str:
 def last_spawn_info() -> dict[str, Any]:
     """Return a copy of the last-spawn table for /status visibility."""
     return {k: dict(v) for k, v in _LAST_SPAWN.items()}
+
+
+def stop_service(service: str, cfg: dict[str, Any]) -> dict[str, Any]:
+    """Kill the child we spawned for `service`, falling back to port reap.
+
+    Used by both the tray menu (locally) and the HTTP /service/stop
+    endpoint (Guild-initiated remote shutdown). Idempotent — if nothing
+    is running we just report state="not_running".
+    """
+    import os as _os
+    import signal as _sig
+    import subprocess as _sp
+    info = _LAST_SPAWN.get(service) or {}
+    pid = info.get("pid")
+    killed_by = None
+    err = None
+    if pid:
+        try:
+            if _os.name == "nt":
+                res = _sp.run(["taskkill", "/T", "/F", "/PID", str(pid)],
+                              capture_output=True, timeout=10)
+                if res.returncode == 0:
+                    killed_by = "pid"
+                else:
+                    err = res.stderr.decode("utf-8", "replace")[:200]
+            else:
+                _os.kill(pid, _sig.SIGTERM)
+                killed_by = "pid"
+        except Exception as e:  # noqa: BLE001
+            err = f"{type(e).__name__}: {e}"
+    if not killed_by:
+        svc_cfg = (cfg.get("services") or {}).get(service, {})
+        port = 0
+        try:
+            port = int(svc_cfg.get("port") or 0)
+        except (TypeError, ValueError):
+            port = 0
+        if port:
+            try:
+                from . import port_cleanup
+                port_cleanup.reap_port_holders(port, only_python=False)
+                killed_by = "port"
+            except Exception as e:  # noqa: BLE001
+                err = f"{type(e).__name__}: {e}"
+    if killed_by:
+        return {"service": service, "state": "stopped",
+                "method": killed_by}
+    return {"service": service, "state": "not_running",
+            "error": err}

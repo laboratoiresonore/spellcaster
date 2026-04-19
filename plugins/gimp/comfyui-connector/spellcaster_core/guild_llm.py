@@ -27,8 +27,81 @@ Model requirements (auto-downloaded during install):
 
 import json
 import time
+import threading
+import urllib.parse
 import urllib.request
 import urllib.error
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Live status — surfaced by the Guild UI as "LLM: <Host>:<Backend>"
+# ═══════════════════════════════════════════════════════════════════════
+# Any call that crosses chat() updates this snapshot. It is the single
+# source of truth for the sidebar LLM indicator — the Guild polls it via
+# /api/llm_status, which calls get_status() below.
+
+_STATUS_LOCK = threading.Lock()
+_STATUS = {
+    "backend": None,    # "ollama" | "comfyui" | "kobold" | None
+    "host": None,       # human label — "Local", "Theo", hostname, etc.
+    "host_url": None,   # raw url (no personal data leaked to UI layer)
+    "state": "idle",    # "idle" | "busy" | "reloading" | "unloaded" | "error"
+    "model": None,
+    "purpose": None,
+    "last_used_at": 0.0,
+    "last_error": None,
+}
+
+
+def _set_status(**kwargs):
+    """Merge into the module-level status dict under the lock."""
+    with _STATUS_LOCK:
+        _STATUS.update(kwargs)
+
+
+def get_status():
+    """Return a snapshot of the current LLM state. UI polls this."""
+    with _STATUS_LOCK:
+        return dict(_STATUS)
+
+
+def mark_state(state, **extra):
+    """Public hook for backends to announce fine-grained transitions
+    (e.g. comfyui_llm can flip to 'reloading' when swapping models)."""
+    _set_status(state=state, **extra)
+
+
+def _host_label(url):
+    """Turn a URL like http://192.168.x.x:8188 into 'LAN' / 'Local'.
+    Short, user-friendly, no IP leak in the UI. Falls back to host[:port]."""
+    if not url:
+        return "?"
+    try:
+        parsed = urllib.parse.urlparse(url)
+        host = (parsed.hostname or "").lower()
+    except Exception:
+        return "?"
+    if not host or host in ("127.0.0.1", "localhost", "::1"):
+        return "Local"
+    # Strip first label if it's numeric (IP) — expose bare hostname or
+    # first octet pair ('192.168.x.x' → 'LAN'). Prefer a user-friendly
+    # alias if the caller wired one via set_host_alias below.
+    alias = _HOST_ALIASES.get(host)
+    if alias:
+        return alias
+    if host.replace(".", "").isdigit():
+        return "LAN"
+    # Just the first dotted part — "theo.local" → "theo"
+    return host.split(".")[0].capitalize()
+
+
+_HOST_ALIASES = {}
+
+
+def set_host_alias(host, alias):
+    """Map an IP or hostname to a friendly label (used by the UI)."""
+    if host and alias:
+        _HOST_ALIASES[host.lower()] = alias
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -100,17 +173,33 @@ def chat(message, system_prompt="", server=None, kobold_url=None,
                             max_tokens, temperature)
 
     if purpose == "chat":
-        chain = (try_ollama, try_comfyui, try_kobold)
+        chain = (
+            ("ollama", "http://127.0.0.1:11434", try_ollama),
+            ("comfyui", server, try_comfyui),
+            ("kobold", kobold_url, try_kobold),
+        )
     else:  # 'enhance'
-        chain = (try_comfyui, try_ollama, try_kobold)
+        chain = (
+            ("comfyui", server, try_comfyui),
+            ("ollama", "http://127.0.0.1:11434", try_ollama),
+            ("kobold", kobold_url, try_kobold),
+        )
 
-    for backend in chain:
+    for backend_name, backend_url, backend in chain:
+        _set_status(state="busy", backend=backend_name,
+                    host=_host_label(backend_url), host_url=backend_url,
+                    purpose=purpose, model=model, last_error=None)
         try:
             resp = backend()
-        except Exception:
+        except Exception as e:
+            _set_status(state="error", last_error=str(e)[:120])
             resp = None
         if resp is not None:
+            _set_status(state="idle", last_used_at=time.time(),
+                        last_error=None)
             return resp
+    _set_status(state="error",
+                last_error="All LLM backends exhausted")
     return None  # every backend exhausted
 
 
