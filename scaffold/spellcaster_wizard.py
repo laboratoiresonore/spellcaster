@@ -885,6 +885,10 @@ def action_to_endpoint(action: dict[str, Any]) -> tuple[str, str, dict[str, Any]
         return ("POST", "/api/spellcaster/cue/defer",
                 {"id":   action.get("id", ""),
                  "note": action.get("note", "")})
+    if atype == "cue_reseed":
+        # Rescan registries + enqueue any new unresolved items; auto-resolve
+        # anything the user handled outside the cue flow.
+        return ("POST", "/api/spellcaster/cue/reseed", {})
     # ── LoRA shootout — dedup multiple LoRAs that do the same thing ──
     if atype == "lora_groups":
         # Enumerate (arch, purpose_group) buckets with multiple candidates.
