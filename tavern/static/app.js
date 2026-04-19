@@ -1162,9 +1162,12 @@ const _CONNECT_APP_TYPES = [
     { key: 'ollama',     icon: '🦙', label: 'Ollama',
       hint: 'path to ollama.exe (leave blank for PATH lookup)',
       example: 'ollama' },
-    { key: 'kobold',     icon: '📜', label: 'KoboldCpp',
+    { key: 'kobold',     icon: '📜', label: 'KoboldCpp (chat/RP)',
       hint: 'path to koboldcpp.exe + optional model gguf',
       example: 'C:/tools/koboldcpp/koboldcpp.exe' },
+    { key: 'kobold_tts', icon: '🎙️', label: 'Kobold · TTS / STT',
+      hint: 'hostname:port (e.g. 192.168.x.x:5002) — OR full http:// URL',
+      example: '192.168.x.x:5002' },
     { key: 'gimp',       icon: '🎨', label: 'GIMP',
       hint: 'path to gimp-3.0.exe / gimp.exe',
       example: 'C:/Program Files/GIMP 3/bin/gimp-3.0.exe' },
@@ -1270,21 +1273,48 @@ function _openConnectAppDialog(spec, target, targetLabel) {
     const status = overlay.querySelector('.connect-app-dialog-status');
     const close = () => overlay.remove();
     const submit = async () => {
-        const launcher = input.value.trim();
-        if (!launcher) {
-            status.textContent = 'Enter a path first.';
+        const raw = input.value.trim();
+        if (!raw) {
+            status.textContent = 'Enter a value first.';
             return;
         }
         status.textContent = 'Saving…';
+        // R139: kobold_tts takes a network location (URL or host:port),
+        // not a filesystem path. Parse the user's input so we send a
+        // well-shaped body to /api/app_control/register — the server
+        // resolver then builds the full URL from host+port.
+        const payload = {
+            app: spec.key,
+            target: target || 'local',
+        };
+        if (spec.key === 'kobold_tts') {
+            let txt = raw;
+            if (/^https?:\/\//i.test(txt)) {
+                // Full URL — pass through as `url`; resolver's first
+                // precedence tier uses it verbatim.
+                payload.url = txt.replace(/\/+$/, '');
+            } else {
+                // Strip any leading scheme the user might've typed
+                // without the colon (e.g. "https//" typos)
+                txt = txt.replace(/^https?[:/]+/i, '');
+                const [hostPart, portPart] = txt.split(':');
+                payload.host = hostPart;
+                if (portPart) {
+                    const p = parseInt(portPart, 10);
+                    if (!Number.isNaN(p)) payload.port = p;
+                }
+            }
+            // Marker launcher so the entry is visible in app_control
+            // (register endpoint requires a non-empty launcher).
+            payload.launcher = payload.url || `${payload.host}:${payload.port || 5002}`;
+        } else {
+            payload.launcher = raw;
+        }
         try {
             const r = await fetch('/api/app_control/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    app: spec.key,
-                    target: target || 'local',
-                    launcher,
-                }),
+                body: JSON.stringify(payload),
             });
             const d = await r.json();
             if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);

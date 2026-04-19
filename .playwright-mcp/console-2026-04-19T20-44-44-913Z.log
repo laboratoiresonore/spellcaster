@@ -28,3 +28,10 @@
 [  189084ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:8002/api/plugins/spellcaster/studio/cast:0
 [  189085ms] [WARNING] [Spellcaster] Auto-cast failed for Cinematic: Timeout waiting for ComfyUI @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:1425
 [  205205ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:8002/api/plugins/spellcaster/scene:0
+[  249313ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:8002/api/plugins/spellcaster/studio/cast:0
+[  249314ms] [WARNING] [Spellcaster] Auto-cast failed for Assistant: Timeout waiting for ComfyUI @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:1425
+[  310034ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:8002/api/plugins/spellcaster/studio/cast:0
+[  310034ms] [WARNING] [Spellcaster] Auto-cast failed for Seraphina: Timeout waiting for ComfyUI @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:1425
+[  370578ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:8002/api/plugins/spellcaster/studio/cast:0
+[  370579ms] [WARNING] [Spellcaster] Auto-cast failed for Erasure: Timeout waiting for ComfyUI @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:1425
+[  429653ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:8002/api/plugins/spellcaster/portrait:0
