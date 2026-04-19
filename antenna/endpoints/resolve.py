@@ -289,3 +289,176 @@ def import_fcpxml(ctx: dict[str, Any]) -> tuple[int, dict]:
     body = ctx.get("body") or {}
     xml = body.get("fcpxml") or ""
     return _import_timeline(ctx, xml, suffix=".fcpxml")
+
+
+# ─── R50b: render-queue driver ────────────────────────────────────────────
+
+def render_timeline(ctx: dict[str, Any]) -> tuple[int, dict]:
+    """POST /resolve/render-timeline
+
+    Add the CURRENT timeline of the CURRENT project to Resolve's render
+    queue, start rendering, and return a job handle. Progress can be
+    polled via GET /resolve/render-status?job_id=<handle>.
+
+    Body:
+        {
+          "preset":     "H.264 Master",   # render preset name (must exist in Resolve)
+          "target_dir": "<absolute path>", # where Resolve writes the output
+          "file_name":  "spellcaster_cut"  # base name (Resolve appends ext)
+        }
+
+    The preset MUST exist in Resolve's configured render presets. The
+    antenna does not create presets; the user is expected to pick one
+    that's already saved. Defaults to "H.264 Master" which ships with
+    most Resolve installs.
+    """
+    cfg = ctx.get("config") or {}
+    app, err = _get_resolve(cfg)
+    if app is None:
+        return 503, {"error": err}
+
+    body = ctx.get("body") or {}
+    preset = (body.get("preset") or "H.264 Master").strip()
+    target_dir = (body.get("target_dir") or "").strip()
+    file_name = (body.get("file_name") or "spellcaster_cut").strip()
+    if not target_dir:
+        return 400, {"error": "target_dir required (absolute path)"}
+    if not os.path.isdir(target_dir):
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+        except OSError as e:
+            return 400, {"error": f"target_dir not usable: {e}"}
+
+    try:
+        pm = app.GetProjectManager()
+        project = pm.GetCurrentProject() if pm else None
+    except Exception as e:  # noqa: BLE001
+        return 500, {"error": f"could not query ProjectManager: {e}"}
+    if project is None:
+        return 503, {"error": "No active Resolve project"}
+
+    try:
+        timeline = project.GetCurrentTimeline()
+    except Exception as e:  # noqa: BLE001
+        return 500, {"error": f"could not query current timeline: {e}"}
+    if timeline is None:
+        return 400, {"error": "No current timeline in Resolve — "
+                              "open the timeline you want to render first"}
+
+    # Resolve API: LoadRenderPreset, SetRenderSettings, AddRenderJob, StartRendering
+    try:
+        preset_loaded = project.LoadRenderPreset(preset)
+    except Exception as e:  # noqa: BLE001
+        return 500, {"error": f"LoadRenderPreset crashed: {e}"}
+    if not preset_loaded:
+        # Enumerate presets so the user sees what's actually available
+        try:
+            available = list(project.GetRenderPresetList() or [])
+        except Exception:
+            available = []
+        return 400, {
+            "error": f"Render preset {preset!r} not found in this project",
+            "available_presets": available[:40],
+        }
+
+    try:
+        project.SetRenderSettings({
+            "TargetDir": target_dir,
+            "CustomName": file_name,
+        })
+    except Exception as e:  # noqa: BLE001
+        return 500, {"error": f"SetRenderSettings failed: {e}"}
+
+    try:
+        job_id = project.AddRenderJob()
+    except Exception as e:  # noqa: BLE001
+        return 500, {"error": f"AddRenderJob failed: {e}"}
+    if not job_id:
+        return 500, {"error": "AddRenderJob returned empty job id"}
+
+    # StartRendering([job_id]) — isRenderingInAllViewerMode off; just this job
+    try:
+        started = project.StartRendering([job_id])
+    except Exception as e:  # noqa: BLE001
+        return 500, {"error": f"StartRendering failed: {e}"}
+    if not started:
+        return 500, {"error": "StartRendering returned false — "
+                              "is another render already in progress?"}
+
+    try:
+        timeline_name = timeline.GetName()
+    except Exception:
+        timeline_name = None
+
+    result = {
+        "ok": True,
+        "job_id": job_id,
+        "project": project.GetName(),
+        "timeline": timeline_name,
+        "preset": preset,
+        "target_dir": target_dir,
+        "file_name": file_name,
+    }
+    try:
+        from .. import bus_client
+        bus_client.emit(ctx, "antenna.resolve.render_started", result)
+    except Exception:
+        pass
+    return 200, result
+
+
+def render_status(ctx: dict[str, Any]) -> tuple[int, dict]:
+    """GET /resolve/render-status?job_id=<id>
+
+    Polls Resolve for the status of a render job. Returns:
+        {"job_id": "...", "status": "Rendering|Complete|Cancelled|Failed",
+         "completion_percent": 73, "time_elapsed": 42.1}
+    """
+    cfg = ctx.get("config") or {}
+    app, err = _get_resolve(cfg)
+    if app is None:
+        return 503, {"error": err}
+
+    # job_id comes from query string
+    raw_path = ctx.get("raw_path", "") or ctx.get("path", "")
+    job_id = ""
+    if "?" in raw_path:
+        try:
+            from urllib.parse import urlparse, parse_qs
+            qs = parse_qs(urlparse(raw_path).query)
+            job_id = (qs.get("job_id") or [""])[0].strip()
+        except Exception:
+            job_id = ""
+    if not job_id:
+        return 400, {"error": "job_id query parameter required"}
+
+    try:
+        pm = app.GetProjectManager()
+        project = pm.GetCurrentProject() if pm else None
+    except Exception as e:  # noqa: BLE001
+        return 500, {"error": f"could not query ProjectManager: {e}"}
+    if project is None:
+        return 503, {"error": "No active Resolve project"}
+
+    # GetRenderJobStatus returns a dict
+    try:
+        status = project.GetRenderJobStatus(job_id)
+    except Exception as e:  # noqa: BLE001
+        return 500, {"error": f"GetRenderJobStatus failed: {e}"}
+    if status is None:
+        return 404, {"error": f"job_id {job_id!r} not found in render queue"}
+
+    # Normalize keys — Resolve returns things like JobStatus, CompletionPercentage, etc.
+    out: dict[str, Any] = {
+        "job_id": job_id,
+        "status": status.get("JobStatus"),
+        "completion_percent": status.get("CompletionPercentage"),
+        "time_elapsed_s": status.get("TimeTakenToRenderInMs", 0) / 1000.0
+            if isinstance(status.get("TimeTakenToRenderInMs"), (int, float)) else None,
+        "estimated_time_remaining_s": status.get("EstimatedTimeRemainingInMs", 0) / 1000.0
+            if isinstance(status.get("EstimatedTimeRemainingInMs"), (int, float)) else None,
+    }
+    # Pass through raw for debugging
+    out["raw"] = {k: v for k, v in status.items()
+                  if isinstance(v, (str, int, float, bool))}
+    return 200, out

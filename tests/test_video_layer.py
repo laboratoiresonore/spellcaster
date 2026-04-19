@@ -681,6 +681,32 @@ def main() -> int:
     check("send-to-resolve opens admin when unpaired",
           test_send_to_resolve_opens_admin_when_unpaired)
 
+    # Round 50 — Guild self-update + Resolve render-queue driver
+    check("guild has /api/guild/self-update + /version",
+          test_guild_has_self_update_endpoint)
+    check("guild self-update returns 202 on a daemon thread",
+          test_guild_self_update_is_async_non_blocking)
+    check("guild self-update publishes bus events",
+          test_guild_self_update_publishes_bus_events)
+    check("resolve endpoint has render_timeline + render_status",
+          test_resolve_endpoint_has_render_functions)
+    check("resolve render_timeline rejects missing target_dir",
+          test_resolve_render_timeline_rejects_missing_target_dir)
+    check("resolve render_status requires job_id",
+          test_resolve_render_status_requires_job_id)
+    check("antenna agent registers render routes",
+          test_antenna_agent_registers_render_routes)
+    check("guild has render proxy endpoints",
+          test_guild_has_render_proxy_endpoints)
+    check("guild _proxy_to_antenna is on GuildHandler",
+          test_guild_proxy_helper_exists_on_handler)
+    check("video_panel has Guild update button",
+          test_video_panel_has_guild_update_button)
+    check("video_panel has Render in Resolve button",
+          test_video_panel_has_render_in_resolve_button)
+    check("resolve render polls antenna status",
+          test_resolve_render_polls_antenna_status)
+
     print("-" * 50)
 
     from scaffold.shotboard import Shotboard, Shot, Trajectory
@@ -6972,6 +6998,100 @@ def test_send_to_resolve_opens_admin_when_unpaired():
     src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
     assert "No antenna paired" in src
     assert "setShowAntennaAdmin(true)" in src
+
+
+# ════════════════════════════════════════════════════════════════════
+# R50 — Guild self-update + Resolve render-queue driver
+# ════════════════════════════════════════════════════════════════════
+
+def test_guild_has_self_update_endpoint():
+    src = open("tavern/server.py", encoding="utf-8").read()
+    assert "/api/guild/self-update" in src
+    assert "/api/guild/version" in src
+    assert "check_for_updates" in src
+    # Self-restart via os.execv, not an external supervisor
+    assert "os.execv" in src or "_os.execv" in src
+
+
+def test_guild_self_update_is_async_non_blocking():
+    # The endpoint returns 202 immediately; actual update runs on a daemon thread
+    src = open("tavern/server.py", encoding="utf-8").read()
+    assert 'return self.end_json(202' in src
+    assert "daemon=True" in src
+
+
+def test_guild_self_update_publishes_bus_events():
+    src = open("tavern/server.py", encoding="utf-8").read()
+    assert "guild.self_update.result" in src
+    assert "guild.self_update.error" in src
+
+
+def test_resolve_endpoint_has_render_functions():
+    from antenna.endpoints import resolve as rv
+    assert callable(getattr(rv, "render_timeline", None))
+    assert callable(getattr(rv, "render_status", None))
+
+
+def test_resolve_render_timeline_rejects_missing_target_dir():
+    from antenna.endpoints import resolve as rv
+    status, body = rv.render_timeline({"config": {}, "body": {}})
+    # Either the Resolve-not-running 503 or the missing-target-dir 400
+    assert status in (400, 503)
+    if status == 400:
+        assert "target_dir" in body.get("error", "")
+
+
+def test_resolve_render_status_requires_job_id():
+    from antenna.endpoints import resolve as rv
+    status, body = rv.render_status({
+        "config": {}, "raw_path": "/resolve/render-status",
+    })
+    # If Resolve isn't running we get 503; if it is, 400 for missing job_id.
+    assert status in (400, 503)
+
+
+def test_antenna_agent_registers_render_routes():
+    src = open("antenna/agent.py", encoding="utf-8").read()
+    assert "resolve_ep.render_timeline" in src
+    assert "resolve_ep.render_status" in src
+    assert '"/resolve/render-timeline"' in src
+    assert '"/resolve/render-status"' in src
+
+
+def test_guild_has_render_proxy_endpoints():
+    src = open("tavern/server.py", encoding="utf-8").read()
+    assert "/api/antenna/resolve/render-timeline" in src
+    assert "/api/antenna/resolve/render-status" in src
+    assert "_proxy_to_antenna" in src
+
+
+def test_guild_proxy_helper_exists_on_handler():
+    src = open("tavern/server.py", encoding="utf-8").read()
+    # The helper is a method on GuildHandler
+    idx_class = src.find("class GuildHandler")
+    idx_proxy = src.find("def _proxy_to_antenna")
+    assert idx_proxy > idx_class, "_proxy_to_antenna must be defined on GuildHandler"
+
+
+def test_video_panel_has_guild_update_button():
+    src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
+    assert "guild-update-btn" in src
+    assert "selfUpdateGuild" in src
+    assert "Self-update Guild" in src
+
+
+def test_video_panel_has_render_in_resolve_button():
+    src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
+    assert "render-in-resolve" in src
+    assert "renderInResolve" in src
+    assert "resolveRenderBusy" in src
+    assert "resolveRenderStatus" in src
+
+
+def test_resolve_render_polls_antenna_status():
+    src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
+    assert "render-status?job_id=" in src
+    assert '"Complete"' in src or "'Complete'" in src
 
 
 if __name__ == "__main__":
