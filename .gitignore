@@ -96,3 +96,8 @@ assets/spells/
 *.bak
 *.update
 *.orig
+
+# Canon animated-avatar bake tooling — outputs get committed into
+# tavern/default_assets/, but the script itself is dev-only and would
+# only clutter the public repo.
+tools/bake_canon_animated_avatars.py
