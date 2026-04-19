@@ -2526,6 +2526,9 @@ function addAIMessage(text, opts = {}) {
     if (!opts.skipPersist) {
         _persistChatRecord({ role: 'assistant', content: text, ts: Date.now() / 1000 });
     }
+    // Return the .bubble element so callers (e.g. SpellcasterActions)
+    // can append action buttons scoped to this message.
+    return msg.querySelector('.bubble') || msg;
 }
 
 function addUserMessage(text, opts = {}) {
@@ -3301,6 +3304,22 @@ Assistant: \`\`\`json
 
         chatHistory.push({ role: 'assistant', content: aiReply });
 
+        // ── <ACTION> block extraction (Spellcaster scaffold) ──
+        //
+        // The onboarding scaffold instructs the LLM to emit action
+        // requests as <ACTION>{...}</ACTION>. We peel those off first
+        // and render them as clickable buttons under the message so the
+        // user doesn't have to type "yes" to every suggestion. The raw
+        // tag is stripped from the displayed text.
+        let scaffoldActions = [];
+        if (typeof window.SpellcasterActions !== 'undefined') {
+            const parsed = window.SpellcasterActions.parseActions(aiReply);
+            if (parsed.actions.length) {
+                aiReply = parsed.cleanText;
+                scaffoldActions = parsed.actions;
+            }
+        }
+
         // ── Robust JSON extraction + leak-proof rendering ──
         //
         // The dumb local LLM emits JSON in many shapes: fenced, unfenced,
@@ -3315,16 +3334,27 @@ Assistant: \`\`\`json
         //   payload     — parsed object (or null if no spell could be dispatched)
         //   displayText — sanitized chat body with all JSON-looking blocks removed
         const result = _extractSpellPayload(aiReply);
+        let displayedEl = null;
         if (result.payload) {
-            if (result.displayText) addAIMessage(result.displayText);
+            if (result.displayText) displayedEl = addAIMessage(result.displayText);
             addSystemMessage(`<strong>Spell Succeeded!</strong><br>Executing JSON Workflow payload...`);
             dispatchToComfy(result.payload);
         } else if (result.displayText) {
-            addAIMessage(result.displayText);
+            displayedEl = addAIMessage(result.displayText);
+        } else if (scaffoldActions.length) {
+            // All content was ACTION blocks — render just the buttons with
+            // a minimal placeholder message so the user sees something.
+            displayedEl = addAIMessage('<em>Ready when you are.</em>');
         } else {
             // Empty reply OR JSON-shaped reply that we stripped but couldn't
             // parse. Don't leak the raw output — tell the user to try again.
             addSystemMessage("<em>The wizard's reply was unclear or malformed. Try rephrasing your request.</em>");
+        }
+
+        // Append action buttons under whichever message element we just rendered
+        if (scaffoldActions.length && displayedEl
+            && typeof window.SpellcasterActions !== 'undefined') {
+            window.SpellcasterActions.renderActionButtons(displayedEl, scaffoldActions);
         }
 
     } catch (err) {
