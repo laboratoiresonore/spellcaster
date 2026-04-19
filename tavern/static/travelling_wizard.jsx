@@ -2519,19 +2519,24 @@ function WorkflowBrowser({ comfyuiUrl, onCreateScaffold }) {
       setServerOnline(false);
     }
 
-    // For now, use static demo data (the parser runs server-side in Python)
-    // In production, this calls the scaffold's discover_workflows() via MCP
+    // R141: the Guild wraps scaffold.discover_workflows() behind
+    // /api/workflows/list. That keeps a single source of truth
+    // (scaffold/workflow_parser.py) and means the ComfyUI side needs
+    // no custom endpoint. The older code pointed directly at
+    // `${comfyuiUrl}/spellcaster/workflows` which never existed, so
+    // every user hit "workflow_api_unavailable" on first open.
     try {
-      const url = (comfyuiUrl || "http://localhost:8188").replace(/\/$/, "");
-      const resp = await fetch(`${url}/spellcaster/workflows`, { signal: AbortSignal.timeout(5000) });
+      const resp = await fetch(`/api/workflows/list`,
+        { signal: AbortSignal.timeout(6000) });
       if (resp.ok) {
         const data = await resp.json();
-        setWorkflows(data);
+        // Endpoint returns {workflows: [...], categories, total}.
+        // Accept a bare array too in case the shape ever simplifies.
+        setWorkflows(Array.isArray(data) ? data : (data.workflows || []));
       } else {
-        throw new Error("Endpoint not available");
+        throw new Error(`HTTP ${resp.status}`);
       }
     } catch {
-      // Fallback: show instruction to set up the endpoint
       setWorkflows([]);
       setError("workflow_api_unavailable");
     }
