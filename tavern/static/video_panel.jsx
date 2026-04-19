@@ -1783,6 +1783,8 @@ function VideoPanel() {
   const [compareModal, setCompareModal] = _useState(null);  // {a: shotId, b: shotId}
   // R68b: board-stats mini-dashboard toggle
   const [showBoardStats, setShowBoardStats] = _useState(false);
+  // R70a: outline/jump-list panel toggle (sticky sidebar-like nav)
+  const [showOutline, setShowOutline] = _useState(false);
   // R66b: bulk search-replace panel toggle
   const [showSearchReplace, setShowSearchReplace] = _useState(false);
   const [searchReplaceFind, setSearchReplaceFind] = _useState("");
@@ -2829,6 +2831,37 @@ function VideoPanel() {
     }
   };
 
+  // R70a: jump to a shot by id (scroll its card into view + focus it)
+  const jumpToShot = _useCallback((shotId) => {
+    const idx = filteredShots.findIndex(s => s.id === shotId);
+    if (idx >= 0) {
+      setFocusedShotIndex(idx);
+      setTimeout(() => {
+        const card = document.querySelector(`[data-shot-id="${shotId}"]`);
+        if (card) card.scrollIntoView({block: "center", behavior: "smooth"});
+      }, 50);
+    }
+  }, [filteredShots]);
+
+  // R70b: lock every shot whose status is in statusSet (e.g. all ready)
+  // so accidental edits don't happen after approval.
+  const batchLockByStatus = async (statusSet) => {
+    const ids = shots.filter(s => statusSet.includes(s.status) && !s.locked)
+                     .map(s => s.id);
+    if (ids.length === 0) {
+      addToast(`No unlocked shots matching ${statusSet.join(", ")}`, "info");
+      return;
+    }
+    try {
+      await api.post("/api/video/batch-lock", {shot_ids: ids, lock: true});
+      addToast(`Locked ${ids.length} shot(s) with status in ${statusSet.join(", ")}`,
+               "success");
+      await refresh();
+    } catch (e) {
+      addToast("Batch-lock failed: " + (e.message || "unknown"), "error");
+    }
+  };
+
   // R67a: bulk-import shots from a CSV file. Triggered by a hidden file
   // input; the button click opens the picker.
   const importCsvRef = _useRef(null);
@@ -3450,6 +3483,12 @@ function VideoPanel() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
             States
           </button>
+          <button onClick={() => setShowOutline(v => !v)}
+            className="outline-toggle-btn flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+            title="Outline nav — jump to any shot/scene">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            Outline
+          </button>
           <a href="/api/video/render-history.csv" download
             className="export-csv flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
             title="Download flat CSV of every render attempt across all shots (for analysis / sharing)">
@@ -3623,6 +3662,70 @@ function VideoPanel() {
           })}
         </div>
       </div>
+
+      {/* R70a: outline panel — jump-list with all scenes and shots */}
+      {showOutline && (
+        <div className="outline-panel bg-slate-900 border border-indigo-600/20 rounded-xl p-3 max-h-96 overflow-y-auto">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold text-indigo-200">Outline</h3>
+            <div className="flex gap-2">
+              {/* R70b: quick lock-by-status actions */}
+              <button onClick={() => batchLockByStatus(["ready"])}
+                className="outline-lock-ready-btn px-2 py-0.5 rounded bg-emerald-700/40 hover:bg-emerald-600/50 text-emerald-100 text-[10px] font-medium"
+                title="Lock every ready-status shot so accidental edits can't sneak in"
+              >🔒 Lock all ready</button>
+              <button onClick={() => setShowOutline(false)}
+                className="text-slate-400 hover:text-slate-200 text-xs">Close</button>
+            </div>
+          </div>
+          <div className="outline-groups space-y-2">
+            {/* One section per scene, plus an "ungrouped" section */}
+            {(() => {
+              const sceneMap = new Map(scenes.map(sc => [sc.id, sc]));
+              const groups = new Map();  // sceneId → shots
+              const ungrouped = [];
+              for (const s of shots) {
+                if (s.scene_id && sceneMap.has(s.scene_id)) {
+                  if (!groups.has(s.scene_id)) groups.set(s.scene_id, []);
+                  groups.get(s.scene_id).push(s);
+                } else {
+                  ungrouped.push(s);
+                }
+              }
+              const sections = [];
+              for (const [sid, shotList] of groups) {
+                const sc = sceneMap.get(sid);
+                sections.push([sc?.name || sid, sc?.color, shotList]);
+              }
+              if (ungrouped.length) sections.push(["(ungrouped)", null, ungrouped]);
+              return sections.map(([name, color, shotList], i) => (
+                <div key={i} className="outline-section">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider mb-1"
+                       style={{color: color || "#94a3b8"}}>
+                    {name} <span className="opacity-60">({shotList.length})</span>
+                  </div>
+                  <div className="space-y-0.5">
+                    {shotList.map(s => (
+                      <button key={s.id}
+                        onClick={() => jumpToShot(s.id)}
+                        className="outline-item w-full text-left flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-800/80 text-[11px]"
+                        title={`${s.status} · ${s.preset || "?"}`}>
+                        <span className="text-slate-500 font-mono w-5 text-right">{s.index + 1}</span>
+                        <StatusBadge status={s.status} />
+                        {s.bookmarked && <span className="text-yellow-400">★</span>}
+                        <span className="flex-1 truncate text-slate-300">
+                          {s.title || <span className="italic text-slate-500">untitled</span>}
+                        </span>
+                        {s.locked && <span className="text-slate-500">🔒</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ));
+            })()}
+          </div>
+        </div>
+      )}
 
       {/* R69a: named-states panel — save/load/delete whole-board snapshots */}
       {showStatesPanel && (
