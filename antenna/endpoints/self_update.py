@@ -268,13 +268,35 @@ def self_update(ctx: dict[str, Any]) -> tuple[int, dict]:
     # Save the pre-update SHA for future rollback
     _save_last_sha(cfg, old_sha_pulled)
 
+    # R83b: auto-refresh the Resolve plugin in-place on hosts that
+    # declare the `resolve` service. This keeps the
+    # "single-/self-update-call = everything fresh" contract the user
+    # relies on. Failure is non-fatal — the antenna still restarts
+    # with the new code; the operator sees the install report inline
+    # and can retry /resolve/plugin/install manually if needed.
+    resolve_plugin_result: dict[str, Any] | None = None
+    services = cfg.get("services", []) or []
+    if "resolve" in services and not bool(body.get("skip_resolve_plugin", False)):
+        try:
+            from . import resolve_plugin as resolve_plugin_ep  # type: ignore
+            resolve_plugin_result = resolve_plugin_ep.install_plugin_from_src(
+                cfg, force=bool(body.get("force_resolve_plugin", False)))
+        except Exception as e:  # noqa: BLE001
+            resolve_plugin_result = {
+                "ok": False,
+                "error": f"{type(e).__name__}: {e}",
+            }
+
     # Schedule restart AFTER we've replied
     _schedule_restart()
 
-    return 202, {
+    out: dict[str, Any] = {
         "updated_from": old_sha_pulled,
         "updated_to": new_sha,
         "restart": "imminent",
         "expected_online_in_seconds": 2,
         "rollback_available": True,
     }
+    if resolve_plugin_result is not None:
+        out["resolve_plugin"] = resolve_plugin_result
+    return 202, out
