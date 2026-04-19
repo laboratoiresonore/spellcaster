@@ -27,13 +27,39 @@ import tempfile
 import traceback
 
 
+def _script_dir():
+    """Best-effort lookup of this script's directory. Tolerates
+    Resolve's Workspace > Scripts exec() context where __file__ is
+    undefined."""
+    try:
+        return os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        pass
+    if os.name == "nt":
+        appdata = os.environ.get("APPDATA", "")
+        if appdata:
+            return os.path.join(
+                appdata, "Blackmagic Design", "DaVinci Resolve",
+                "Support", "Fusion", "Scripts", "Utility", "Spellcaster")
+    elif sys.platform == "darwin":
+        return os.path.expanduser(
+            "~/Library/Application Support/Blackmagic Design/DaVinci Resolve"
+            "/Fusion/Scripts/Utility/Spellcaster")
+    else:
+        return os.path.expanduser(
+            "~/.local/share/DaVinciResolve/Fusion/Scripts/Utility/Spellcaster")
+    return ""
+
+
 def _locate_shared():
     """Add shared/ to sys.path.
 
     Checks, in order: installed layout (./shared next to this script),
     dev layout (../shared), legacy fallback (../../shared).
     """
-    here = os.path.dirname(os.path.abspath(__file__))
+    here = _script_dir()
+    if not here:
+        return False
     for cand in (
         os.path.join(here, "shared"),
         os.path.normpath(os.path.join(here, "..", "shared")),
