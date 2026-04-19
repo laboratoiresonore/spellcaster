@@ -11643,6 +11643,10 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-send-to-resolve": None,
             "spellcaster-send-to-darktable": None,
             "spellcaster-send-to-sillytavern": None,
+            # R106: reverse direction — pull anything other apps have
+            # published toward GIMP (frames from Resolve, references
+            # from SillyTavern, etc.) and open each as a new image.
+            "spellcaster-check-inbox": None,
         }
 
         # ── Feature-gate logic: denylist + probe-cached allowlist ──
@@ -11852,6 +11856,10 @@ class Spellcaster(Gimp.PlugIn):
                                                "Publish this image to Darktable for grading"),
             "spellcaster-send-to-sillytavern": ("💎 Send to SillyTavern", self._run_send_to_sillytavern,
                                                  "Publish this image to SillyTavern as a character / scene asset"),
+            # R106: receive side — pull pending assets other apps have
+            # sent toward GIMP and open each as a new image.
+            "spellcaster-check-inbox": ("💎 Check Spellcaster Inbox", self._run_check_inbox,
+                                         "Open every pending asset other Spellcaster apps have sent to GIMP (frames from Resolve, refs from SillyTavern, etc.)"),
         }
 
         label, callback, doc = menu_map[name]
@@ -11960,9 +11968,10 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-calibration-wizard": f"{_S}/Tools",
             # R105: cross-plugin transfer submenu — visible diamond
             # markers make it easy to spot the inter-app channels.
-            "spellcaster-send-to-resolve":      f"{_S}/Send Elsewhere",
-            "spellcaster-send-to-darktable":    f"{_S}/Send Elsewhere",
-            "spellcaster-send-to-sillytavern":  f"{_S}/Send Elsewhere",
+            "spellcaster-send-to-resolve":      f"{_S}/Cross-App",
+            "spellcaster-send-to-darktable":    f"{_S}/Cross-App",
+            "spellcaster-send-to-sillytavern":  f"{_S}/Cross-App",
+            "spellcaster-check-inbox":          f"{_S}/Cross-App",
         }
 
         # ── Native GIMP menu integration ─────────────────────────────
@@ -24401,6 +24410,122 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.PDBStatusType.SUCCESS if ok
             else Gimp.PDBStatusType.EXECUTION_ERROR,
             GLib.Error())
+
+    def _run_check_inbox(self, procedure, run_mode, image,
+                           drawables, config, data):
+        """R106: pull pending assets from gimp's cross-interface inbox
+        and open each as a new GIMP image.
+
+        Pulls via GET /api/gimp/inbox?consume=1&max=20. For each
+        message whose kind matches ``gimp.asset.send``, downloads the
+        referenced asset from the Guild (absolute URL, or relative
+        path prepended with the Guild's base URL) and opens it as a
+        new image. Messages are consumed on read, so pressing Check
+        Inbox a second time gives an empty pull.
+        """
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        try:
+            from spellcaster_core.cross_interface import (
+                CrossInterfaceClient, resolve_guild_url,
+            )
+        except ImportError as e:
+            Gimp.message(f"Check Inbox: cross_interface helper missing — {e}")
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+        guild_base = resolve_guild_url()
+        import urllib.request as _ur
+        import urllib.error as _ue
+        import json as _json
+
+        url = f"{guild_base}/api/gimp/inbox?consume=1&max=20"
+        try:
+            req = _ur.Request(url, headers={"Accept": "application/json"})
+            with _ur.urlopen(req, timeout=10) as resp:
+                body = _json.loads(resp.read())
+        except _ue.HTTPError as e:
+            if e.code == 501:
+                Gimp.message(
+                    "Check Inbox: the Guild's mailbox primitives are "
+                    "disabled (cross-interface backbone off). Start the "
+                    "Wizard Guild with cross_interface enabled.")
+            else:
+                Gimp.message(f"Check Inbox: Guild returned HTTP {e.code}.")
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Check Inbox: Guild unreachable — {e}")
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+        messages = (body or {}).get("messages") or []
+        # Keep only gimp.asset.send events — ignore other bus noise
+        # that might have been routed to the gimp mailbox.
+        keepers = [m for m in messages
+                    if (m.get("kind") or "").startswith("gimp.asset.")]
+        if not keepers:
+            Gimp.message("Check Inbox: nothing waiting.")
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.SUCCESS, GLib.Error())
+
+        opened = 0
+        failures: list[str] = []
+        for m in keepers:
+            md = m.get("data") or {}
+            image_url = (md.get("image_url") or md.get("url")
+                          or "").strip()
+            if not image_url:
+                failures.append("(message with no image_url)")
+                continue
+            if image_url.startswith("/"):
+                image_url = guild_base.rstrip("/") + image_url
+            # Download bytes
+            try:
+                req = _ur.Request(image_url)
+                with _ur.urlopen(req, timeout=30) as resp:
+                    asset_bytes = resp.read()
+            except Exception as e:
+                failures.append(f"download: {e}")
+                continue
+            # Write to temp + load into GIMP
+            suffix = ".png"
+            if image_url.lower().endswith((".jpg", ".jpeg")):
+                suffix = ".jpg"
+            elif image_url.lower().endswith(".mp4"):
+                suffix = ".mp4"  # GIMP won't open mp4 — skip
+                failures.append(
+                    f"mp4 can't open in GIMP: {image_url.rsplit('/', 1)[-1]}")
+                continue
+            tmp = tempfile.NamedTemporaryFile(
+                delete=False, suffix=suffix,
+                prefix="spellcaster_inbox_")
+            try:
+                tmp.write(asset_bytes)
+                tmp.close()
+                gfile = Gio.File.new_for_path(tmp.name)
+                new_image = Gimp.file_load(
+                    Gimp.RunMode.NONINTERACTIVE, gfile)
+                if new_image is None:
+                    failures.append(f"GIMP couldn't load {tmp.name}")
+                    continue
+                Gimp.Display.new(new_image)
+                opened += 1
+            except Exception as e:
+                failures.append(f"load: {e}")
+
+        lines = [f"Opened {opened} image(s) from the inbox."]
+        if failures:
+            lines.append("")
+            lines.append("Failures:")
+            for f in failures[:5]:
+                lines.append(f"  • {f}")
+            if len(failures) > 5:
+                lines.append(f"  • …and {len(failures) - 5} more")
+        Gimp.message("\n".join(lines))
+        return procedure.new_return_values(
+            Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
     def _run_calibration_wizard(self, procedure, run_mode, image, drawables, config, data):
         """Calibration Wizard: tune AI settings with A/B image comparisons."""
