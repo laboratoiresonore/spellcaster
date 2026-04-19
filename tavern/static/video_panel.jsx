@@ -3253,6 +3253,48 @@ function VideoPanel() {
     }
   };
 
+  // R79b: paste-to-shots — paste multi-line text to create many shots
+  const [showPasteShots, setShowPasteShots] = _useState(false);
+  const [pasteShotsText, setPasteShotsText] = _useState("");
+  const pasteShots = async () => {
+    if (!pasteShotsText.trim()) return;
+    try {
+      const res = await api.post("/api/video/import-lines",
+                                  {text: pasteShotsText});
+      if (res?.created != null) {
+        addToast(
+          `Created ${res.created} shot(s)`
+          + (res.scenes_created ? ` + ${res.scenes_created} scene(s)` : "")
+          + (res.skipped ? ` (${res.skipped} skipped)` : ""),
+          res.created > 0 ? "success" : "info");
+        setShowPasteShots(false);
+        setPasteShotsText("");
+        await refresh();
+      } else {
+        addToast(`Paste failed: ${res?.error || "unknown"}`, "error");
+      }
+    } catch (e) {
+      addToast("Paste failed: " + (e.message || "unknown"), "error");
+    }
+  };
+
+  // R79a: diff two named states
+  const [diffModal, setDiffModal] = _useState(null);  // {a, b, result}
+  const [diffSelection, setDiffSelection] = _useState({a: "", b: "current"});
+  const runStateDiff = async () => {
+    const {a, b} = diffSelection;
+    if (!a || !b) {
+      addToast("Pick two states to diff", "error");
+      return;
+    }
+    try {
+      const res = await api.post("/api/video/named-states/diff", {a, b});
+      setDiffModal({a, b, result: res});
+    } catch (e) {
+      addToast("Diff failed: " + (e.message || "unknown"), "error");
+    }
+  };
+
   // R67a: bulk-import shots from a CSV file. Triggered by a hidden file
   // input; the button click opens the picker.
   const importCsvRef = _useRef(null);
@@ -3874,6 +3916,12 @@ function VideoPanel() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
             Import CSV
           </button>
+          <button onClick={() => setShowPasteShots(true)}
+            className="paste-shots-btn flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+            title="Paste multi-line text — one shot per line (##  lines become scene headers)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+            Paste Shots
+          </button>
           <a href="/api/video/shotboard.csv" download
             className="export-shotboard-csv flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
             title="Export current board as CSV (round-trips with Import CSV for spreadsheet edits)">
@@ -4293,7 +4341,31 @@ function VideoPanel() {
             <div className="text-xs text-slate-500 italic">
               No saved states yet. Click "+ Save current" to snapshot the board.
             </div>
-          ) : (
+          ) : namedStates.length >= 1 ? (
+            <div className="states-diff-row flex items-center gap-2 text-[11px] bg-slate-950 rounded p-2 border border-slate-700/40">
+              <span className="text-slate-400">Diff:</span>
+              <select value={diffSelection.a}
+                onChange={(e) => setDiffSelection(d => ({...d, a: e.target.value}))}
+                className="bg-slate-800 border border-slate-600 rounded px-1.5 py-0.5 text-[11px] text-slate-200 focus:outline-none">
+                <option value="">— from —</option>
+                {namedStates.map(st => <option key={st.name} value={st.name}>{st.name}</option>)}
+                <option value="current">current</option>
+              </select>
+              <span className="text-slate-500">→</span>
+              <select value={diffSelection.b}
+                onChange={(e) => setDiffSelection(d => ({...d, b: e.target.value}))}
+                className="bg-slate-800 border border-slate-600 rounded px-1.5 py-0.5 text-[11px] text-slate-200 focus:outline-none">
+                <option value="">— to —</option>
+                {namedStates.map(st => <option key={st.name} value={st.name}>{st.name}</option>)}
+                <option value="current">current</option>
+              </select>
+              <button onClick={runStateDiff}
+                disabled={!diffSelection.a || !diffSelection.b}
+                className="state-diff-run-btn ml-auto px-2 py-0.5 rounded bg-amber-700/40 hover:bg-amber-600/50 text-amber-100 text-[11px] font-medium disabled:bg-slate-700 disabled:text-slate-500"
+              >Compare</button>
+            </div>
+          ) : null}
+          {namedStates.length > 0 && (
             <div className="space-y-1">
               {namedStates.map(st => (
                 <div key={st.file_name} className="states-row flex items-center gap-2 text-[11px] px-2 py-1 rounded bg-slate-800/60">
@@ -4938,6 +5010,99 @@ function VideoPanel() {
                 Pressing play / scrubbing either side keeps the other in sync.
                 Click outside or press × to close.
               </p>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* R79b: paste-to-shots modal */}
+      {showPasteShots && (
+        <div className="paste-shots-modal fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+             onClick={() => setShowPasteShots(false)}>
+          <div className="bg-slate-900 border border-cyan-600/40 rounded-xl p-5 max-w-xl w-full space-y-3"
+               onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-cyan-200">Paste shots</h2>
+              <button onClick={() => setShowPasteShots(false)}
+                className="text-slate-400 hover:text-slate-200 text-xl leading-none">×</button>
+            </div>
+            <p className="text-xs text-slate-400">
+              One shot per non-empty line. Lines starting with <span className="font-mono text-cyan-300">##</span> become
+              scene headers grouping subsequent shots. Lines starting with <span className="font-mono">#</span> are
+              comments (skipped). Title auto-derives from the prompt.
+            </p>
+            <textarea
+              value={pasteShotsText}
+              onChange={(e) => setPasteShotsText(e.target.value)}
+              placeholder={`## Opening scene\nwide shot of a ruined cathedral at sunset\nclose-up of dusty stained glass\n\n## Interior\nprotagonist enters through splintered door`}
+              rows={12}
+              className="paste-shots-input w-full bg-slate-950 border border-slate-600 rounded px-2 py-1 text-xs font-mono text-slate-200 placeholder-slate-500 focus:border-cyan-500 focus:outline-none resize-y" />
+            <div className="flex gap-2">
+              <button onClick={() => setShowPasteShots(false)}
+                className="flex-1 px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium">Cancel</button>
+              <button onClick={pasteShots}
+                disabled={!pasteShotsText.trim()}
+                className="paste-shots-apply flex-1 px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium disabled:bg-slate-700 disabled:text-slate-500"
+              >Create shots</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* R79a: state-diff modal */}
+      {diffModal && (() => {
+        const d = diffModal.result;
+        const shots = d?.shots || {};
+        return (
+          <div className="state-diff-modal fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+               onClick={() => setDiffModal(null)}>
+            <div className="bg-slate-900 border border-amber-600/40 rounded-xl p-4 max-w-3xl w-full max-h-[80vh] overflow-y-auto space-y-3"
+                 onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-amber-200">
+                  State diff — <span className="text-slate-300">{d.a.name}</span> →{" "}
+                  <span className="text-slate-300">{d.b.name}</span>
+                </h2>
+                <button onClick={() => setDiffModal(null)}
+                  className="text-slate-400 hover:text-slate-200 text-xl leading-none">×</button>
+              </div>
+              <div className="grid grid-cols-3 gap-3 text-xs">
+                <div className="rounded bg-emerald-950/40 border border-emerald-700/30 p-2">
+                  <div className="text-emerald-300 font-semibold mb-1">
+                    + Added ({(shots.added || []).length})
+                  </div>
+                  {(shots.added || []).map(s => (
+                    <div key={s.id} className="text-emerald-200 truncate">{s.title || "(untitled)"}</div>
+                  ))}
+                </div>
+                <div className="rounded bg-rose-950/40 border border-rose-700/30 p-2">
+                  <div className="text-rose-300 font-semibold mb-1">
+                    − Removed ({(shots.removed || []).length})
+                  </div>
+                  {(shots.removed || []).map(s => (
+                    <div key={s.id} className="text-rose-200 truncate">{s.title || "(untitled)"}</div>
+                  ))}
+                </div>
+                <div className="rounded bg-amber-950/40 border border-amber-700/30 p-2">
+                  <div className="text-amber-300 font-semibold mb-1">
+                    ~ Changed ({(shots.changed || []).length})
+                  </div>
+                  {(shots.changed || []).map(c => (
+                    <div key={c.id} className="text-amber-200">
+                      <div className="truncate">{c.title || "(untitled)"}</div>
+                      <div className="text-[10px] text-slate-400 ml-2">
+                        {c.fields.map(f => f.field).join(", ")}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="text-[10px] text-slate-500">
+                {d.a.shot_count} shot(s) in {d.a.name} → {d.b.shot_count} in {d.b.name}.
+                {d.scenes && (d.scenes.added?.length || d.scenes.removed?.length) ? (
+                  <span> Scenes changed: +{d.scenes.added?.length || 0} / −{d.scenes.removed?.length || 0}.</span>
+                ) : null}
+              </div>
             </div>
           </div>
         );
