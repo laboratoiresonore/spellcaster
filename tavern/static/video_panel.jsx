@@ -1866,6 +1866,10 @@ function VideoPanel() {
   // R73b: tag filter — when set, filters to shots that carry this tag.
   // Distinct axis from statusFilter so a user can combine "stale" + "tag:hero".
   const [tagFilter, setTagFilter] = _useState("");
+  // R77a: sort mode — "board" (default), "rating", "duration", "last_rendered"
+  const [sortMode, setSortMode] = _useState("board");
+  // R77b: focus mode — hides all the chrome for distraction-free review
+  const [focusMode, setFocusMode] = _useState(false);
   const [templates, setTemplates] = _useState([]);
   const [autoScroll, setAutoScroll] = _useState(true);
   const [selected, setSelected] = _useState(new Set());
@@ -1993,8 +1997,30 @@ function VideoPanel() {
         (s.notes || "").toLowerCase().includes(q)
       );
     }
+    // R77a: apply sort if not board-order
+    if (sortMode !== "board") {
+      const sorted = [...result];
+      if (sortMode === "rating") {
+        sorted.sort((a, b) => (b.rating || 0) - (a.rating || 0) || a.index - b.index);
+      } else if (sortMode === "duration") {
+        sorted.sort((a, b) => (b.render_duration_s || 0) - (a.render_duration_s || 0) || a.index - b.index);
+      } else if (sortMode === "last_rendered") {
+        const lastRender = (s) => {
+          const hist = s.render_history || [];
+          let ts = 0;
+          for (const e of hist) {
+            if (e.status === "ready" && e.timestamp > ts) ts = e.timestamp;
+          }
+          return ts;
+        };
+        sorted.sort((a, b) => lastRender(b) - lastRender(a) || a.index - b.index);
+      } else if (sortMode === "recent_edit") {
+        sorted.sort((a, b) => (b.last_updated || 0) - (a.last_updated || 0) || a.index - b.index);
+      }
+      return sorted;
+    }
     return result;
-  }, [shots, statusFilter, tagFilter, searchQuery, isShotStale]);
+  }, [shots, statusFilter, tagFilter, searchQuery, sortMode, isShotStale]);
 
   // R73b: distinct tags in use (derived from shots)
   const allTags = _useMemo(() => {
@@ -2089,6 +2115,10 @@ function VideoPanel() {
         // R76a: Ctrl+K / Cmd+K opens the command palette
         e.preventDefault();
         setCommandPaletteOpen();
+      } else if (e.key === "f" && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        // R77b: F toggles focus mode (when no other modifier)
+        e.preventDefault();
+        setFocusMode(v => !v);
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -3125,6 +3155,8 @@ function VideoPanel() {
       run: openAntennaAdmin},
     {label: "Show keyboard shortcuts", group: "View",
       run: () => setShowShortcuts(true)},
+    {label: "Toggle focus mode", group: "View",
+      run: () => setFocusMode(v => !v)},
     // Queue
     {label: "Pause render queue", group: "Queue",
       when: () => !queuePaused, run: togglePause},
@@ -3721,7 +3753,14 @@ function VideoPanel() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className={"space-y-4 " + (focusMode ? "focus-mode" : "")}>
+      {/* R77b: focus-mode toggle (floats top-right, always visible) */}
+      <button
+        onClick={() => setFocusMode(v => !v)}
+        className={"focus-mode-toggle fixed top-3 right-3 z-40 px-2 py-1 rounded text-[10px] font-medium "
+          + (focusMode ? "bg-amber-600 text-white" : "bg-slate-800/80 hover:bg-slate-700 text-slate-400")}
+        title={focusMode ? "Exit focus mode" : "Enter focus mode (hide toolbars for distraction-free review)"}
+      >{focusMode ? "◯ Exit focus" : "◐ Focus"}</button>
       {/* Error banner */}
       {error && (
         <div className="error-banner bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-sm text-red-400 flex items-center gap-2">
@@ -3731,8 +3770,8 @@ function VideoPanel() {
         </div>
       )}
 
-      {/* Header with health + buttons */}
-      <div className="flex items-center justify-between">
+      {/* Header with health + buttons — hidden in focus mode */}
+      <div className={"flex items-center justify-between " + (focusMode ? "hidden" : "")}>
         <div>
           <h2 className="text-lg font-semibold text-amber-50">Shotboard</h2>
           <HealthPanel health={health} maxConcurrent={maxConcurrent} onMaxConcurrentChange={changeMaxConcurrent} />
@@ -4003,8 +4042,8 @@ function VideoPanel() {
         />
       )}
 
-      {/* Status summary + filter */}
-      <div className="flex items-center justify-between">
+      {/* Status summary + filter — hidden in focus mode */}
+      <div className={"flex items-center justify-between " + (focusMode ? "hidden" : "")}>
         <div className="flex items-center gap-4">
           <StatusSummary shots={shots} />
           <span className="total-duration text-xs text-slate-500 font-mono">
@@ -4026,6 +4065,19 @@ function VideoPanel() {
               ))}
             </select>
           )}
+          {/* R77a: sort-order selector */}
+          <select
+            className="sort-mode-select bg-slate-800 border border-slate-600 text-slate-300 text-xs rounded px-2 py-1 self-center"
+            value={sortMode}
+            onChange={(e) => setSortMode(e.target.value)}
+            title="Change sort order (doesn't change render order — only display)"
+          >
+            <option value="board">Sort: board order</option>
+            <option value="rating">Sort: rating ↓</option>
+            <option value="duration">Sort: render time ↓</option>
+            <option value="last_rendered">Sort: last rendered ↓</option>
+            <option value="recent_edit">Sort: recently edited ↓</option>
+          </select>
           {["all", "draft", "queued", "running", "ready", "failed", "stale", "starred", "rated", "archived"].map(status => {
             const count = status === "stale" ? shots.filter(s => !s.archived && isShotStale(s)).length
                         : status === "starred" ? shots.filter(s => !s.archived && s.bookmarked).length
@@ -4949,6 +5001,7 @@ function VideoPanel() {
               {[
                 ["?", "Show/hide this panel"],
                 ["Ctrl+K", "Open command palette (any action by name)"],
+                ["F", "Toggle focus mode (hide toolbars)"],
                 ["N", "Create a new shot"],
                 ["↑ / ↓", "Focus previous / next shot"],
                 ["Esc", "Clear shot focus / close modal"],
