@@ -9053,12 +9053,12 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "user_settings": cfg.get("user_settings") or {},
             })
         elif self.path == '/api/app_control/config':
-            # GET the per-app control matrix: auto_start flag + target
-            # machine (local or antenna hostname) for every known app.
-            # The UI renders a tiny toggle cluster on the left of each
-            # chip; settings are persisted in guild_config.json so
-            # "auto-launch on boot / auto-close on exit" survives
-            # restarts. Writes go through POST /api/app_control/config.
+            # GET the per-app control matrix: target machine (local or
+            # antenna hostname) for every known app. The UI renders a
+            # tiny ⚡ Start button on each chip that posts to
+            # /api/app_control/start; that endpoint reads `target` to
+            # pick the host. `auto_start` was removed — old configs may
+            # still have the field but it's ignored end-to-end.
             cfg = _guided_install_load_config()
             apps = cfg.get("app_control") or {}
             if not isinstance(apps, dict):
@@ -11004,17 +11004,18 @@ class GuildHandler(SimpleHTTPRequestHandler):
 
         elif self.path == '/api/app_control/config' and self.command == 'POST':
             # Persist per-app control settings. Shape:
-            #   {"app_control": {"comfyui": {"auto_start": true,
-            #                                "target": "theo"}, ...}}
+            #   {"app_control": {"comfyui": {"target": "theo"}, ...}}
             # Target is either "local" (Guild spawns via subprocess) or
             # the hostname of a paired antenna (Guild forwards to it).
-            # The Guild launcher reads this on boot to auto-start apps;
-            # /api/guild/exit reads it to auto-close on shutdown.
+            # The legacy `auto_start` flag is silently dropped — the
+            # auto-start-on-boot + auto-close-on-exit behaviour was
+            # removed and connected apps now only launch via the ⚡
+            # chip button.
             new_matrix = data.get("app_control")
             if not isinstance(new_matrix, dict):
                 return self.end_json(400, {
                     "error": "app_control must be an object",
-                    "hint": '{"app_control": {"comfyui": {"auto_start": true, "target": "theo"}}}',
+                    "hint": '{"app_control": {"comfyui": {"target": "theo"}}}',
                 })
             # R139: allow kobold_rp and kobold_tts here. Without them
             # the bulk-save silently dropped TTS/STT routing — the
@@ -11037,7 +11038,6 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     continue
                 prior = existing_matrix.get(k) or {}
                 entry = {
-                    "auto_start": bool(v.get("auto_start", False)),
                     "target": str(v.get("target") or "local").strip() or "local",
                 }
                 # Keep launcher/host/url/port/root when the caller

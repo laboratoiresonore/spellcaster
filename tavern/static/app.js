@@ -529,7 +529,7 @@ async function refreshActiveInterfaces() {
         // Synthesize chips for managed services (ComfyUI / Ollama /
         // Kobold). These are backend engines, not frontends, so they
         // don't heartbeat to /api/interfaces — but the user still
-        // needs to hit their ⚡ Start / 🔁 Auto-start toggles on them.
+        // needs to hit their ⚡ Start button on them.
         // Inject synthetic rows so the chip renders regardless of
         // reachability; the sidebar's other pollers already drive the
         // green/idle state via window._managedLive below.
@@ -578,10 +578,9 @@ async function refreshActiveInterfaces() {
 }
 
 // Per-app control matrix, refreshed alongside interfaces. Shape:
-//   { comfyui: {auto_start:true, target:"theo"}, ollama: {...} }
-// Used by renderActiveInterfaceChips to colour the 🔁 auto-start toggle
-// that sits on the left of each chip. The ⚡ Start button calls
-// /api/app_control/start regardless of this matrix.
+//   { comfyui: {target:"theo"}, ollama: {target:"local"}, ... }
+// The ⚡ Start button calls /api/app_control/start, which reads this
+// matrix's `target` to pick the host (local subprocess or antenna).
 window.appControlMatrix = window.appControlMatrix || {};
 async function refreshAppControlMatrix() {
     try {
@@ -664,36 +663,21 @@ function renderActiveInterfaceChips() {
         chip.title = tooltip;
         chip.dataset.ifaceKey = k;
         chip.dataset.ifaceLabel = label;
-        // Tiny toggle cluster on the LEFT:
-        //   ⚡ Start — calls /api/app_control/start (local or antenna)
-        //   🔁 Auto — persists "launch on Guild boot / close on exit"
-        // Only meaningful for managed services; for GIMP / Darktable /
-        // SillyTavern etc. we still render the cluster so the UI is
-        // uniform but the Start button is disabled with a tooltip.
+        // Manual launch button (⚡) — no auto-start. The user asked for
+        // explicit-only launch; the old 🔁 auto toggle and its boot-time
+        // plumbing were removed so nothing runs behind the user's back.
         const managed = (k === 'comfyui' || k === 'ollama' ||
                           k === 'kobold' || k === 'kobold_rp' ||
                           k === 'kobold_tts');
-        const ctrl = (window.appControlMatrix || {})[k] || {};
-        const autoOn = !!ctrl.auto_start;
         const startTip = managed
             ? 'Start this app on its target machine now'
             : 'This app has no managed launcher yet';
-        const autoTip = managed
-            ? (autoOn
-                ? 'Auto-start on Guild launch (and auto-close on exit). Click to disable.'
-                : 'Click to auto-start on Guild launch (and auto-close on exit).')
-            : 'Not managed — auto-start unavailable';
         chip.innerHTML =
             `<span class="iface-toggles">` +
                 `<button type="button" class="iface-toggle-btn iface-start-btn"` +
                     ` data-app="${k}"` +
                     ` title="${startTip}"` +
                     (managed ? '' : ' disabled') + '>⚡</button>' +
-                `<button type="button" class="iface-toggle-btn iface-auto-btn` +
-                    (autoOn ? ' is-on' : '') + '"' +
-                    ` data-app="${k}"` +
-                    ` title="${autoTip}"` +
-                    (managed ? '' : ' disabled') + '>🔁</button>' +
             `</span>` +
             `<span class="iface-icon">${icon}</span>` +
             `<span class="iface-label">${label}</span>` +
@@ -706,9 +690,8 @@ function renderActiveInterfaceChips() {
             ev.stopPropagation();
             openIfacePlacementMenu(chip, k, label, v);
         });
-        // Wire the two toggle buttons.
+        // Wire the manual Start button.
         const startBtn = chip.querySelector('.iface-start-btn');
-        const autoBtn  = chip.querySelector('.iface-auto-btn');
         if (startBtn && managed) {
             startBtn.addEventListener('click', async (ev) => {
                 ev.stopPropagation();
@@ -728,31 +711,6 @@ function renderActiveInterfaceChips() {
                     startBtn.title = `Start failed: ${e.message || e}`;
                 }
                 setTimeout(() => { startBtn.textContent = '⚡'; startBtn.disabled = false; }, 2500);
-            });
-        }
-        if (autoBtn && managed) {
-            autoBtn.addEventListener('click', async (ev) => {
-                ev.stopPropagation();
-                const next = !autoOn;
-                autoBtn.classList.toggle('is-on', next);
-                const matrix = Object.assign({}, window.appControlMatrix || {});
-                matrix[k] = {
-                    auto_start: next,
-                    target: (matrix[k] && matrix[k].target) || 'local',
-                };
-                try {
-                    const r = await fetch('/api/app_control/config', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({app_control: matrix}),
-                    });
-                    const d = await r.json();
-                    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
-                    window.appControlMatrix = d.app_control || matrix;
-                } catch (e) {
-                    autoBtn.classList.toggle('is-on', autoOn); // revert
-                    autoBtn.title = `Save failed: ${e.message || e}`;
-                }
             });
         }
         row.appendChild(chip);
@@ -1599,22 +1557,20 @@ async function initialize() {
     // Active-interfaces widget — polls /api/interfaces and renders chips
     // for every frontend the registry reports as installed+enabled+online.
     // Dynamic: if no interface qualifies, the whole strip stays hidden.
-    // Seed the per-app control matrix before the first chip render so
-    // the ⚡ / 🔁 toggles reflect persisted state rather than flashing
-    // "off" for a second on first paint.
+    // Seed the per-app control matrix (the `target` host per app still
+    // feeds the ⚡ Start button) before the first chip render so chip
+    // state doesn't flash on first paint.
     refreshAppControlMatrix().then(refreshActiveInterfaces);
     setInterval(() => {
         refreshAppControlMatrix().then(refreshActiveInterfaces);
     }, 10000);
-    // Exit button — POSTs /api/guild/exit so the server can stop every
-    // auto_start app on its target machine before killing its own
-    // process. After the response lands the backend waits ~0.6s and
-    // calls os._exit(0); the page will hang the moment the socket is
-    // gone, which is the signal to the user that the Guild is down.
+    // Exit button — POSTs /api/guild/exit. Connected apps keep running:
+    // the user starts them explicitly via the ⚡ chip button, so a Guild
+    // quit no longer tears down ComfyUI/Ollama/Kobold behind their back.
     const _exitBtn = document.getElementById('guild-exit-btn');
     if (_exitBtn) {
         _exitBtn.addEventListener('click', async () => {
-            if (!confirm('Stop auto-started apps and close the Wizard Guild?')) return;
+            if (!confirm('Close the Wizard Guild? Connected apps keep running.')) return;
             _exitBtn.disabled = true;
             _exitBtn.textContent = '⏻ Exiting…';
             try {
