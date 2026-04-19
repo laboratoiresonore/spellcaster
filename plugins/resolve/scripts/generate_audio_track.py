@@ -46,7 +46,9 @@ def main() -> int:
     from spellcaster_api import GuildError
     from resolve_helpers import show_message, prompt_text
 
-    # Confirm Ovi preset is actually available
+    # R114: pre-flight — either Ovi OR ltx2_distilled must be available.
+    # Let require_presets handle the modal when BOTH are missing;
+    # otherwise pick the first that IS present.
     try:
         presets = guild.list_presets()
     except Exception:
@@ -58,11 +60,10 @@ def main() -> int:
             preset_key = pref
             break
     if not preset_key:
-        show_message("Spellcaster",
-                     "No text-to-audio-video preset available on the "
-                     "Guild. Looked for ovi_720p_audio and "
-                     "ltx2_distilled. Install Ovi via the Guild's "
-                     "model manager and retry.")
+        # None installed — use require_presets for the uniform error
+        # modal (it already lists install hints).
+        _sc.require_presets(guild, ["ovi_720p_audio", "ltx2_distilled"],
+                             friendly="Ovi / LTX-2 audio-video generator")
         return 1
 
     has_audio = "audio" in (available[preset_key].get("task") or "")
