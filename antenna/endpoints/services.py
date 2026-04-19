@@ -63,6 +63,22 @@ def start_service(ctx: dict[str, Any]) -> tuple[int, dict]:
     return status, result
 
 
+def detector_diag(ctx: dict[str, Any]) -> tuple[int, dict]:
+    """GET /diag/detector — R57 diagnostic: what did the service detector
+    find on this machine, with which strategy, and what's in its cache?
+
+    Surfaces the result of service_detector.detect_all(cfg) so users can
+    troubleshoot "why doesn't auto-detect find my install?" without
+    hunting through log files.
+    """
+    from .. import service_detector as _sd
+    cfg = ctx.get("config") or {}
+    try:
+        return 200, _sd.detect_all(cfg)
+    except Exception as e:  # noqa: BLE001
+        return 500, {"error": f"detect_all failed: {type(e).__name__}: {e}"}
+
+
 def service_logs(ctx: dict[str, Any]) -> tuple[int, dict]:
     """GET /service/logs?service=X&tail=N — returns the last N lines
     of the service's launch log. Useful when `start_service` returned

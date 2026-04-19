@@ -181,46 +181,19 @@ def _find_comfyui_root(cfg: dict[str, Any]) -> Path | None:
 
 
 def find_comfyui_launcher(cfg: dict[str, Any]) -> tuple[list[str], Path, str] | None:
-    """Return (argv, cwd, strategy_name) for launching ComfyUI, or None
-    if we can't find a way. strategy_name is a short identifier the
-    caller surfaces to the user ('launch_optimized.bat', 'main.py', ...).
+    """Delegate to the R57 robust detector — handles all the edge cases
+    (deep installs, registry lookups, running-process introspection,
+    cache hits). The legacy shallow finder is gone: users with
+    non-standard layouts were falling through to `python main.py` which
+    often fails due to wrong CUDA/torch env.
     """
-    # 1. Explicit override in config
-    override = (cfg.get("comfyui_launcher") or "").strip()
-    if override:
-        p = Path(os.path.expanduser(override))
-        if p.is_file():
-            return ([str(p)], p.parent, f"config:{p.name}")
-
-    # 2. Walk the ComfyUI install for a .bat launcher (matches user's setup)
-    root = _find_comfyui_root(cfg)
-    if root is None:
+    try:
+        from . import service_detector as _sd
+        return _sd.find_comfyui_launcher_robust(cfg)
+    except ImportError as e:
+        print(f"[service_launcher] service_detector missing: {e}",
+              file=sys.stderr)
         return None
-    # Preferred order — user-tuned scripts first, stock launcher last.
-    preferred_bats = [
-        "launch_optimized.bat",
-        "launch.bat",
-        "start.bat",
-        "run_nvidia_gpu.bat",
-        "run_cpu.bat",
-    ]
-    for bat in preferred_bats:
-        candidate = root / bat
-        # `_find_default_comfyui` returns the dir containing main.py; .bat
-        # launchers often live one dir up (portable distributions).
-        for search_dir in (root, root.parent):
-            p = search_dir / bat
-            if p.is_file():
-                return ([str(p)], p.parent, bat)
-
-    # 3. Stock fallback — python main.py with sensible defaults
-    main_py = root / "main.py"
-    if not main_py.is_file():
-        return None
-    port = int(cfg.get("comfyui_port", 8188))
-    argv = [sys.executable, str(main_py),
-            "--listen", "127.0.0.1", "--port", str(port)]
-    return (argv, root, "python main.py")
 
 
 # ─── Kobold ───────────────────────────────────────────────────────────────
@@ -262,40 +235,36 @@ def _find_executable_on_fs(names: list[str],
 
 
 def find_kobold_launcher(cfg: dict[str, Any]) -> tuple[list[str], Path, str] | None:
-    override = (cfg.get("kobold_launcher") or "").strip()
-    if override:
-        p = Path(os.path.expanduser(override))
-        if p.is_file():
-            return ([str(p)], p.parent, f"config:{p.name}")
-    names = ["koboldcpp.exe", "koboldcpp_cuda.exe", "koboldcpp"]
-    found = _find_executable_on_fs(names)
+    # R57: robust binary finder with cache + registry + PATH fallbacks
+    try:
+        from . import service_detector as _sd
+        found, strategy = _sd.find_binary_robust(
+            cfg, "kobold",
+            ["koboldcpp.exe", "koboldcpp_cuda.exe", "koboldcpp"])
+    except ImportError:
+        found, strategy = None, "none"
     if found is None:
         return None
-    # Kobold can auto-load a model via a command-line arg. Users with a
-    # specific model file can set kobold_model in antenna_config; otherwise
-    # Kobold launches its launcher GUI which is fine for first-run users.
     argv: list[str] = [str(found)]
     model = (cfg.get("kobold_model") or "").strip()
     if model and Path(os.path.expanduser(model)).is_file():
         argv += ["--model", os.path.expanduser(model)]
-    # Explicitly pin port matches heartbeat probe
     argv += ["--port", str(cfg.get("kobold_port", 5001))]
-    return (argv, found.parent, found.name)
+    return (argv, found.parent, f"{strategy}:{found.name}")
 
 
 # ─── Ollama ───────────────────────────────────────────────────────────────
 
 def find_ollama_launcher(cfg: dict[str, Any]) -> tuple[list[str], Path, str] | None:
-    override = (cfg.get("ollama_launcher") or "").strip()
-    if override:
-        p = Path(os.path.expanduser(override))
-        if p.is_file():
-            return ([str(p), "serve"], p.parent, f"config:{p.name}")
-    names = ["ollama.exe", "ollama"]
-    found = _find_executable_on_fs(names)
+    try:
+        from . import service_detector as _sd
+        found, strategy = _sd.find_binary_robust(
+            cfg, "ollama", ["ollama.exe", "ollama"])
+    except ImportError:
+        found, strategy = None, "none"
     if found is None:
         return None
-    return ([str(found), "serve"], found.parent, found.name)
+    return ([str(found), "serve"], found.parent, f"{strategy}:{found.name}")
 
 
 # ─── Generic ensure-running ───────────────────────────────────────────────

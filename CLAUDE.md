@@ -220,7 +220,26 @@ OVERWRITE local files and DELETE anything not in remote:
 
 5. **When Claude makes changes that need a running server to test**: commit first, then restart. Do not ask the user to restart to see your changes while your edits are uncommitted — the restart will erase them.
 
-### 14. Installer Is Self-Updating — Bootstrap Pattern
+### 14. Path Separators — Central Policy
+
+**Paths are platform-specific but we standardize HOW we handle them.**
+
+| Context | Separator | Rationale |
+|---------|-----------|-----------|
+| Internal Python code (always) | `pathlib.Path` objects | OS-native, no manual concat |
+| Config file values (JSON) | Forward slash `/` | Escaping-free, Windows accepts them |
+| API response bodies (JSON) | Forward slash via `.as_posix()` | Clients don't have to escape |
+| Subprocess argv on Windows | Platform-native via `str(path)` | Some `.bat` launchers are picky |
+| Error messages / logs | Whatever repr gives | Human-readable, OS-appropriate |
+| ComfyUI workflow JSON (builders) | **Filenames only — no full paths** | ComfyUI resolves against input/output dirs; DON'T change this |
+
+**Rules of thumb:**
+- Inside Python, always use `pathlib.Path`. Never build paths with `+` or f-strings.
+- When accepting paths from JSON, `Path(os.path.expanduser(s))` handles both separators transparently.
+- When emitting paths TO JSON, prefer `.as_posix()`.
+- The **workflow builders in `spellcaster_core/workflows.py`** DELIBERATELY use only filenames (not full paths) because ComfyUI resolves them server-side. Touching this is a minefield — don't.
+
+### 15. Installer Is Self-Updating — Bootstrap Pattern
 
 `spellcaster-installer.exe` is now a two-stage runner ([`installer/bootstrap.py`](installer/bootstrap.py)):
 
