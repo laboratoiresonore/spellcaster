@@ -73,11 +73,14 @@ _ARCH_ENHANCE_PROFILES = {
         "name": "Flux 1 Dev",
         "style": "natural language, flowing description",
         "length": "80-150 words",
+        "max_tokens": 512,
         "notes": (
             "Flux excels with natural-language prompts. Write a vivid, "
             "flowing paragraph. Do NOT use comma-separated tag lists. "
             "Avoid quality tags like 'masterpiece' or '8k' — Flux ignores them. "
-            "Focus on subject, scene, lighting, mood, and composition."
+            "Focus on subject, scene, lighting, mood, and composition.\n\n"
+            "LENGTH IS IMPORTANT: aim squarely for the middle of the 80-150 "
+            "word range. Short prompts underfire this model."
         ),
     },
     # Flux 2 Klein 4B/9B — concise natural language
@@ -85,6 +88,7 @@ _ARCH_ENHANCE_PROFILES = {
         "name": "Flux 2 Klein",
         "style": "concise natural language",
         "length": "60-100 words",
+        "max_tokens": 384,
         "notes": (
             "Klein responds best to short, focused natural-language prompts. "
             "Keep it tight — one clear paragraph. No quality tags. "
@@ -96,6 +100,7 @@ _ARCH_ENHANCE_PROFILES = {
         "name": "Chroma",
         "style": "concise natural language",
         "length": "60-100 words",
+        "max_tokens": 384,
         "notes": (
             "Chroma uses the same Flux 2 engine. Short, focused natural-language prompts. "
             "Describe the subject and scene directly. No quality tags."
@@ -106,6 +111,7 @@ _ARCH_ENHANCE_PROFILES = {
         "name": "SDXL",
         "style": "tag-based with natural language phrases",
         "length": "40-100 words",
+        "max_tokens": 384,
         "notes": (
             "SDXL responds to both tags and short phrases. Start with the subject, "
             "then add style, lighting, and quality. Quality tags like 'masterpiece, "
@@ -130,6 +136,7 @@ _ARCH_ENHANCE_PROFILES = {
         "name": "Stable Diffusion 1.5",
         "style": "comma-separated tags",
         "length": "30-80 words",
+        "max_tokens": 256,
         "notes": (
             "SD 1.5 works best with comma-separated tags/keywords.\n\n"
             "HARD FORMAT RULES — violating these destroys quality:\n"
@@ -162,11 +169,20 @@ _ARCH_ENHANCE_PROFILES = {
         "name": "Illustrious",
         "style": "booru-style tags",
         "length": "30-80 words",
+        "max_tokens": 256,
         "notes": (
             "Illustrious is trained on booru/danbooru-style tags. Use short comma-separated "
             "tags. Include character tags, pose, expression, outfit details. "
             "Quality: 'masterpiece, best quality, absurdres'. "
             "Use underscores in multi-word tags (e.g. long_hair, blue_eyes).\n\n"
+            "SUBJECT PRESERVATION (CRITICAL):\n"
+            "- The user's subject count is LAW. If the user asks for '1girl', output "
+            "ONLY '1girl' — never append '1boy' or 'japanese_boy' or any other "
+            "character you weren't asked for.\n"
+            "- Never introduce a second gender or a second character unless the user "
+            "explicitly mentioned them.\n"
+            "- Preserve the exact species / type (girl, boy, woman, man, samurai, "
+            "elf, etc.) the user wrote.\n\n"
             "MULTI-CHARACTER: Start with count tag (2girls, 1boy_1girl). Use BREAK "
             "between character blocks. Each block: one character with all tags "
             "(hair_color, eye_color, outfit, pose, position). "
@@ -179,6 +195,7 @@ _ARCH_ENHANCE_PROFILES = {
         "name": "Pony Diffusion",
         "style": "score-prefixed booru tags",
         "length": "30-80 words",
+        "max_tokens": 256,
         "notes": (
             "Pony Diffusion uses booru tags with score prefixes.\n\n"
             "HARD FORMAT RULES — violating these destroys quality:\n"
@@ -214,11 +231,14 @@ _ARCH_ENHANCE_PROFILES = {
         "name": "WAN 2.1",
         "style": "cinematic natural language",
         "length": "80-150 words",
+        "max_tokens": 512,
         "notes": (
             "WAN excels with cinematic, descriptive natural-language prompts. "
             "Describe the scene as if writing a film shot — subject, action, "
             "camera angle, lighting, atmosphere, motion. For video: include "
-            "movement descriptions. Keep it vivid and specific."
+            "movement descriptions. Keep it vivid and specific.\n\n"
+            "LENGTH: hit the middle of 80-150 words — WAN's motion prior "
+            "starves on short prompts."
         ),
     },
     # LTX Video
@@ -226,12 +246,15 @@ _ARCH_ENHANCE_PROFILES = {
         "name": "LTX Video 2.3",
         "style": "cinematic/filmic natural language",
         "length": "100-200 words",
+        "max_tokens": 768,
         "notes": (
             "LTX Video responds to extended cinematic descriptions. "
             "Write as if describing a film scene: establish the setting, "
             "describe the subject in detail, specify camera movement "
             "(pan, dolly, tracking shot), lighting (golden hour, rim light), "
-            "mood, and temporal progression. Be specific about motion and timing."
+            "mood, and temporal progression. Be specific about motion and timing.\n\n"
+            "LENGTH: LTX explicitly REWARDS long prompts. Aim for 150-200 "
+            "words — short prompts produce static shots."
         ),
     },
     # SD3 / SD3 Turbo
@@ -239,6 +262,7 @@ _ARCH_ENHANCE_PROFILES = {
         "name": "Stable Diffusion 3",
         "style": "natural language with light tagging",
         "length": "50-100 words",
+        "max_tokens": 384,
         "notes": (
             "SD3 understands natural language well but also responds to tags. "
             "Write a clear description with some quality markers. "
@@ -249,6 +273,7 @@ _ARCH_ENHANCE_PROFILES = {
         "name": "SD3 Turbo",
         "style": "natural language with light tagging",
         "length": "50-100 words",
+        "max_tokens": 384,
         "notes": (
             "SD3 Turbo — same prompting as SD3 but keep it concise. "
             "Clear subject, style, and lighting. Moderate detail."
@@ -261,6 +286,7 @@ _DEFAULT_ENHANCE_PROFILE = {
     "name": "Generic",
     "style": "descriptive natural language",
     "length": "60-120 words",
+    "max_tokens": 384,
     "notes": (
         "Write a clear, vivid description of the scene. "
         "Include subject, setting, lighting, mood, and composition. "
@@ -329,6 +355,7 @@ _METHOD_PROFILES = {
     # Inpaint — describe ONLY the masked content, not the whole scene.
     "inpaint": {
         "length_override": "20-60 words",
+        "max_tokens": 256,
         "extra_notes": (
             "\n\nINPAINT SCOPE (this is the most important rule for this call):\n"
             "The user's prompt describes ONLY what appears INSIDE the masked region. "
@@ -345,6 +372,7 @@ _METHOD_PROFILES = {
     # Outpaint — extend the canvas beyond what the user already has.
     "outpaint": {
         "length_override": "40-80 words",
+        "max_tokens": 320,
         "extra_notes": (
             "\n\nOUTPAINT SCOPE:\n"
             "Describe ONLY what extends BEYOND the existing canvas. The user already "
@@ -359,6 +387,7 @@ _METHOD_PROFILES = {
     # Refinement — quality / detail only. Don't invent new subjects.
     "refine": {
         "length_override": "15-40 words",
+        "max_tokens": 192,
         "extra_notes": (
             "\n\nREFINE SCOPE:\n"
             "The image already exists; you are adding QUALITY and DETAIL keywords "
@@ -376,6 +405,7 @@ _METHOD_PROFILES = {
     # Face-only detail — ignore body, clothing, background.
     "face_detail": {
         "length_override": "15-35 words",
+        "max_tokens": 160,
         "extra_notes": (
             "\n\nFACE DETAIL SCOPE:\n"
             "Focus exclusively on facial features — eyes (catch-lights, iris detail), "
@@ -389,6 +419,7 @@ _METHOD_PROFILES = {
     # Virtual try-on — outfit / garment focus only.
     "tryon": {
         "length_override": "25-50 words",
+        "max_tokens": 256,
         "extra_notes": (
             "\n\nVIRTUAL TRYON SCOPE:\n"
             "Describe ONLY the outfit or garment — its cut, silhouette, fabric, "
@@ -401,29 +432,51 @@ _METHOD_PROFILES = {
     "klein_virtual_tryon": {"inherit": "tryon"},
 
     # Relight — lighting direction / color / mood only.
+    # Phrasing lists the VOCABULARY families (not specific keywords) to
+    # reduce cargo-culting: live testing showed the LLM was echoing
+    # "warm amber" and "moody noir" verbatim every call because the old
+    # wording listed them as explicit examples.
     "iclight": {
         "length_override": "15-35 words",
+        "max_tokens": 160,
         "extra_notes": (
             "\n\nRELIGHT SCOPE:\n"
-            "Describe ONLY the new lighting — direction (from left / right / above "
-            "/ behind / below), colour temperature (warm amber / cool blue / neutral "
-            "daylight), intensity (soft diffused / dramatic hard / rim-edge only), "
-            "and mood (moody noir / golden hour / studio key+fill). Do NOT describe "
-            "the subject — it stays unchanged from the source image."
+            "Describe ONLY the new lighting. Cover four vocabulary dimensions:\n"
+            "  1. Direction — where the key light comes from "
+            "(left / right / above / behind / below / front / three-quarter).\n"
+            "  2. Colour temperature — in Kelvin terms or descriptive "
+            "(cool tungsten / neutral daylight / warm candlelight / mixed).\n"
+            "  3. Hardness — soft diffused / hard specular / bounced fill / "
+            "rim-edge only.\n"
+            "  4. Mood / quality — e.g. overcast, noir, studio, golden hour, "
+            "stage, underwater, firelight, etc.\n"
+            "Use whatever vocabulary MATCHES the user's request. Do NOT default "
+            "to any one mood or colour temperature if the user didn't ask for "
+            "it. Do NOT describe the subject — it stays unchanged from the "
+            "source image."
         ),
     },
     "relight":   {"inherit": "iclight"},
 
     # Colorize — color / tone keywords, no subject re-description.
+    # Same anti-cargo-cult rewrite as iclight: describe the DIMENSIONS,
+    # don't hand the LLM ready-made phrases it will echo back.
     "colorize": {
         "length_override": "15-30 words",
+        "max_tokens": 128,
         "extra_notes": (
             "\n\nCOLORIZE SCOPE:\n"
-            "Output ONLY colour and tone keywords — NO subject description. The "
-            "source image already contains the subject; your output tells the model "
-            "what colour palette to apply. Valid: 'warm sepia tones, vintage film "
-            "grain, soft pastel highlights, golden hour palette'. Invalid (do not "
-            "do this): 'a wizard in a forest at sunset with warm sepia tones'."
+            "Output ONLY colour-and-tone keywords — NO subject description. The "
+            "source image already contains the subject; your output tells the "
+            "model what palette to apply. Cover these dimensions as appropriate "
+            "to the user's request:\n"
+            "  - dominant hue family (blue-green / warm ochre / magenta-pink / "
+            "neutral / high-contrast B&W with colour accent / etc.)\n"
+            "  - saturation (desaturated / muted / punchy / vivid)\n"
+            "  - tonal emphasis (shadows lifted / crushed blacks / bright highlights)\n"
+            "  - film-stock / process reference if the user implied one.\n"
+            "Invalid (never do this): 'a wizard in a forest at sunset with warm "
+            "tones' — that re-describes the subject."
         ),
     },
 
@@ -526,8 +579,10 @@ def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
             pass  # DB unavailable — fall back to arch baseline
 
     # Method overlay: append the method-specific scope instructions to
-    # the profile notes, and optionally override length / style for
-    # narrow-scope methods (face_detail, colorize, inpaint, etc.).
+    # the profile notes, and optionally override length / style / token
+    # budget for narrow-scope methods (face_detail, colorize, inpaint,
+    # etc.). Narrow scopes get smaller max_tokens so the LLM doesn't
+    # run past the scope; wider scopes keep the arch's larger budget.
     if method_prof:
         profile = dict(profile)  # don't mutate the shared table
         if method_prof.get("extra_notes"):
@@ -536,6 +591,8 @@ def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
             profile["length"] = method_prof["length_override"]
         if method_prof.get("style_override"):
             profile["style"] = method_prof["style_override"]
+        if method_prof.get("max_tokens"):
+            profile["max_tokens"] = method_prof["max_tokens"]
 
     # Build system prompt that guides the LLM.
     # The `Target style` line is load-bearing: if it says "tags" then the
@@ -582,9 +639,15 @@ def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
     # stays conservative because high temperature makes the LLM drift
     # into prose when the profile demands tags, or skip BREAK blocks
     # in multi-character scenes.
+    #
+    # max_tokens priority (highest wins):
+    #   1. llm_prompt_db per-model override (user-curated, rare)
+    #   2. profile["max_tokens"] from the arch × method overlay — this
+    #      is the canonical budget (e.g. LTX 768, colorize 128)
+    #   3. 300 fallback (safe for unknown arches / methods)
     sampling_defaults = {
         "temperature": 0.3,
-        "max_tokens":  300,
+        "max_tokens":  int(profile.get("max_tokens") or 300),
         "top_p":       0.9,
     }
     if model_name:
@@ -604,6 +667,7 @@ def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
             temperature=float(sampling.get("temperature", 0.3)),
             purpose="enhance",
             arch_key=arch_key,  # per-family VRAM + timeout config
+            method=method,      # per-method AILab preset selection
         )
     except Exception:
         enhanced = None
