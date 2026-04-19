@@ -191,5 +191,101 @@ def main() -> int:
             pass
 
 
+# ── Crash reporter (R136) ───────────────────────────────────────────────────
+# The Windows build uses `--windowed`, which swallows stderr. When the exe
+# crashes during import or very early in main(), the user sees absolutely
+# nothing — that's the literal "doesn't even start" report in issue #7.
+# Wrap main() so any unhandled exception lands both in a log file AND in a
+# dialog the user can actually screenshot.
+
+def _crashlog_dir() -> Path:
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or os.path.expanduser("~")
+        return Path(base) / "Spellcaster"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Logs" / "Spellcaster"
+    return Path(os.environ.get("XDG_STATE_HOME",
+                                os.path.expanduser("~/.local/state"))) / "spellcaster"
+
+
+def _write_crashlog(exc: BaseException) -> Path | None:
+    import traceback as _tb
+    from datetime import datetime as _dt
+    try:
+        d = _crashlog_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        stamp = _dt.now().strftime("%Y%m%d_%H%M%S")
+        path = d / f"installer_crash_{stamp}.log"
+        body = [
+            "Spellcaster installer crash report",
+            "=" * 60,
+            f"Time:       {_dt.now().isoformat(timespec='seconds')}",
+            f"Python:     {sys.version.splitlines()[0]}",
+            f"Platform:   {sys.platform}  {os.name}",
+            f"Frozen:     {getattr(sys, 'frozen', False)}",
+            f"MEIPASS:    {getattr(sys, '_MEIPASS', '(not frozen)')}",
+            f"Executable: {sys.executable}",
+            f"Argv:       {sys.argv}",
+            "",
+            "Traceback",
+            "-" * 60,
+            "".join(_tb.format_exception(type(exc), exc, exc.__traceback__)),
+        ]
+        path.write_text("\n".join(body), encoding="utf-8")
+        return path
+    except Exception:
+        return None
+
+
+def _show_crash_dialog(exc: BaseException, logpath: Path | None) -> None:
+    """Best-effort Tk dialog explaining the crash. Silent on failure —
+    if Tk itself is the thing that failed to import, showing a Tk
+    dialog isn't an option. The log file is the fallback."""
+    try:
+        import tkinter as _tk
+        from tkinter import messagebox, scrolledtext
+        import traceback as _tb
+    except Exception:
+        return
+    try:
+        root = _tk.Tk()
+        root.title("Spellcaster Installer — startup error")
+        root.geometry("720x440")
+        header = _tk.Label(
+            root, anchor="w", justify="left",
+            font=("Segoe UI", 10, "bold"),
+            text=("The installer crashed during startup.\n"
+                   "Please paste this log into "
+                   "github.com/laboratoiresonore/spellcaster/issues/7"))
+        header.pack(fill="x", padx=12, pady=(12, 4))
+        if logpath:
+            pathlbl = _tk.Label(
+                root, anchor="w", justify="left",
+                font=("Consolas", 9),
+                text=f"Log file: {logpath}")
+            pathlbl.pack(fill="x", padx=12)
+        body = scrolledtext.ScrolledText(
+            root, font=("Consolas", 9), wrap="word")
+        body.pack(fill="both", expand=True, padx=12, pady=8)
+        tb_text = "".join(_tb.format_exception(
+            type(exc), exc, exc.__traceback__))
+        body.insert("1.0", tb_text)
+        body.configure(state="disabled")
+        btn = _tk.Button(root, text="Close", command=root.destroy,
+                          font=("Segoe UI", 10), width=10)
+        btn.pack(pady=(0, 12))
+        root.mainloop()
+    except Exception:
+        # If Tk is broken too, at least we have the log file.
+        pass
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except BaseException as _exc:
+        logpath = _write_crashlog(_exc)
+        _show_crash_dialog(_exc, logpath)
+        sys.exit(3)
