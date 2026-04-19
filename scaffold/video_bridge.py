@@ -301,17 +301,40 @@ class VideoBridge:
                 return {"status": "already_running",
                         "shot_id": shot_id}
 
-        if shot.backend == "wangp":
+        # R89: auto-route based on preset.engine if the caller didn't
+        # pin a backend explicitly. Shots created with
+        # preset=ltx2_v2v_flowedit (engine="comfyui") shouldn't fail
+        # just because the UI left backend at the default "wangp".
+        # Only applies when the preset exists in WANGP_PRESETS with a
+        # declared engine field — otherwise keep the caller's choice.
+        try:
+            from scaffold.wangp_runner import WANGP_PRESETS as _PR
+        except Exception:
+            _PR = {}
+        preset_spec = _PR.get(shot.preset) or {}
+        preset_engine = (preset_spec.get("engine") or "").strip().lower()
+        effective_backend = shot.backend
+        if preset_engine and preset_engine != shot.backend:
+            log.info(f"R89 auto-route: shot {shot.id[:8]} preset "
+                     f"{shot.preset!r} declares engine={preset_engine!r}; "
+                     f"overriding backend={shot.backend!r}")
+            effective_backend = preset_engine
+            try:
+                self.board.update(shot.id, backend=preset_engine)
+            except Exception:
+                pass
+
+        if effective_backend == "wangp":
             return self._queue_wangp(shot, on_complete)
-        if shot.backend == "comfyui":
+        if effective_backend == "comfyui":
             return self._queue_comfy(shot, on_complete)
-        if shot.backend == "hybrid":
+        if effective_backend == "hybrid":
             # Hybrid = WanGP generate, then optional ComfyUI upscale.
             # For the first cut we treat this like plain WanGP — the
             # upscale step can chain in ``_on_wangp_done``.
             return self._queue_wangp(shot, on_complete, chain_upscale=True)
         return {"status": "error",
-                "message": f"unknown backend {shot.backend!r}"}
+                "message": f"unknown backend {effective_backend!r}"}
 
     # ---- WanGP path ------------------------------------------------
 
