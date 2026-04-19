@@ -1,24 +1,65 @@
-"""Bridge status panel — built with Fusion UI Manager.
+"""Bridge Command Center — Fusion UI panel.
 
-A small floating window that shows the Guild connection state, queue
-status, and the last N events. Buttons for pause/resume, refresh,
-and opening the Guild in a browser.
+R124: upgraded from a pure status dashboard into an action surface.
+The panel now exposes ~14 of the most-used Spellcaster ops as buttons
+grouped by category (Capture / Generate / Selected clip / Send to),
+alongside the original queue/status section. Buttons dispatch to the
+existing Fusion Scripts in plugins/resolve/scripts/ via importlib —
+no logic duplication.
+
+Resolve's public scripting API has no hook for injecting items into
+File/Edit/Timeline menus or clip right-click context menus, so this
+dockable panel is the closest equivalent to a "toolbar" the platform
+allows. The companion `keyboard_shortcuts_helper` script (R125)
+surfaces a recommended hotkey map for the same ops.
 
 Fusion UI is XML-ish — declarative trees of Label/Button/HGroup/VGroup.
-It's the only UI surface Resolve exposes to plugins.
+No Tabs widget exists, so sections are modeled as VGroups with header
+labels + horizontal separators.
 
-The panel is opened via the Workspace → Workflow Integrations menu or
-via a top-level script in Scripts → Utility → Spellcaster.
+Opened via Workspace > Workflow Integrations > Spellcaster, or via
+Scripts > Utility > 💎 Spellcaster > open_bridge_panel.
 """
 
 from __future__ import annotations
 
+import importlib.util
+import os
+import sys
 import threading
 import time
+import traceback
 import webbrowser
 
 from resolve_helpers import get_fusion  # type: ignore
 from spellcaster_api import GuildClient  # type: ignore
+
+
+# ── Action catalog ──────────────────────────────────────────────────
+# Each tuple: (button_id, label, script_basename)
+# script_basename must match plugins/resolve/scripts/<name>.py and the
+# script must expose a main() function.
+_ACTIONS_CAPTURE = [
+    ("act_playhead",   "📸 Playhead → Shot",    "generate_from_playhead"),
+    ("act_timeline",   "📋 Timeline → Board",   "capture_timeline"),
+    ("act_markers",    "🏷 Markers → Shots",    "markers_to_shots"),
+]
+_ACTIONS_GENERATE = [
+    ("act_t2v",        "✨ From prompt",         "generate_from_prompt"),
+    ("act_variations", "🎲 3 variations",        "generate_3_variations"),
+    ("act_shootout",   "🎯 Preset shootout",     "preset_shootout"),
+]
+_ACTIONS_CLIP = [
+    ("act_reprompt",   "♻ Reprompt",             "reprompt_selected_shot"),
+    ("act_upscale",    "🔺 Upscale",             "upscale_selected_clip"),
+    ("act_v2v",        "▶ V2V",                  "send_clip_to_v2v"),
+    ("act_vace",       "🎭 VACE",                "send_clip_to_vace"),
+]
+_ACTIONS_SEND = [
+    ("act_to_gimp",    "🎨 → GIMP",              "send_frame_to_gimp"),
+    ("act_to_dt",      "🎞 → Darktable",         "send_frame_to_darktable"),
+    ("act_to_st",      "💬 → SillyTavern",       "send_frame_to_sillytavern"),
+]
 
 
 class BridgePanel:
@@ -47,9 +88,6 @@ class BridgePanel:
             print("[Spellcaster Bridge] Fusion UI not available — panel disabled.")
             return
         ui = fu.UIManager
-        # R85/R88: UIDispatcher can be None on the non-Fusion pages even
-        # though ui.UIManager is present — skip gracefully instead of
-        # crashing when the editor is e.g. on the Edit page.
         disp_factory = getattr(fu, "UIDispatcher", None)
         if ui is None or disp_factory is None:
             print("[Spellcaster Bridge] UIDispatcher unavailable "
@@ -59,10 +97,11 @@ class BridgePanel:
         self._disp = disp_factory(ui)
 
         layout = ui.VGroup({"Spacing": 6}, [
-            # Header
+            # ── Header ───────────────────────────────────────────
             ui.HGroup({"Spacing": 8, "Weight": 0}, [
-                ui.Label({"ID": "title", "Text": "Spellcaster Bridge",
-                          "Font": ui.Font({"Family": "Helvetica", "PointSize": 15, "Bold": True})}),
+                ui.Label({"ID": "title", "Text": "💎 Spellcaster Command Center",
+                          "Font": ui.Font({"Family": "Helvetica",
+                                             "PointSize": 15, "Bold": True})}),
                 ui.HGap(0, 1.0),
                 ui.Label({"ID": "status_dot", "Text": "●",
                           "Font": ui.Font({"PointSize": 14}),
@@ -72,40 +111,59 @@ class BridgePanel:
             ui.Label({"ID": "guild_url", "Text": self.guild.base_url,
                       "Font": ui.Font({"Family": "Courier", "PointSize": 10})}),
 
-            # Queue counters
+            # ── Queue counters ───────────────────────────────────
             ui.HGroup({"Spacing": 12, "Weight": 0}, [
                 self._counter("running", "Running"),
-                self._counter("draft", "Draft"),
-                self._counter("ready", "Ready"),
-                self._counter("failed", "Failed"),
+                self._counter("draft",   "Draft"),
+                self._counter("ready",   "Ready"),
+                self._counter("failed",  "Failed"),
             ]),
 
-            # Controls — primary row
+            # ── Actions: Capture ────────────────────────────────
+            self._section_label("📸 Capture"),
+            self._action_row(_ACTIONS_CAPTURE, ui),
+
+            # ── Actions: Generate ───────────────────────────────
+            self._section_label("✨ Generate"),
+            self._action_row(_ACTIONS_GENERATE, ui),
+
+            # ── Actions: Selected clip ──────────────────────────
+            self._section_label("🎬 Selected clip"),
+            self._action_row(_ACTIONS_CLIP, ui),
+
+            # ── Actions: Send frame to ──────────────────────────
+            self._section_label("📤 Send frame to"),
+            self._action_row(_ACTIONS_SEND, ui),
+
+            # ── Queue / timeline controls ───────────────────────
+            self._section_label("⚙ Queue / timeline"),
             ui.HGroup({"Spacing": 6, "Weight": 0}, [
-                ui.Button({"ID": "btn_refresh", "Text": "↻ Refresh"}),
-                ui.Button({"ID": "btn_render_all", "Text": "▶ Render all drafts"}),
-                ui.Button({"ID": "btn_queue_toggle", "Text": "⏸ Pause queue"}),
-                ui.Button({"ID": "btn_open_guild", "Text": "Open Guild ↗"}),
+                ui.Button({"ID": "btn_refresh",        "Text": "↻ Refresh"}),
+                ui.Button({"ID": "btn_render_all",     "Text": "▶ Render drafts"}),
+                ui.Button({"ID": "btn_queue_toggle",   "Text": "⏸ Pause queue"}),
+                ui.Button({"ID": "btn_open_guild",     "Text": "Open Guild ↗"}),
                 ui.HGap(0, 1.0),
             ]),
-            # R88: secondary controls — batch recovery + bulk actions
             ui.HGroup({"Spacing": 6, "Weight": 0}, [
-                ui.Button({"ID": "btn_retry_failed", "Text": "⟳ Retry failed"}),
-                ui.Button({"ID": "btn_cancel_all", "Text": "◼ Cancel all"}),
+                ui.Button({"ID": "btn_retry_failed",   "Text": "⟳ Retry failed"}),
+                ui.Button({"ID": "btn_cancel_all",     "Text": "◼ Cancel all"}),
                 ui.Button({"ID": "btn_refresh_timeline",
-                            "Text": "↓ Refresh ready → timeline"}),
+                            "Text": "↓ Ready → timeline"}),
+                ui.Button({"ID": "btn_shortcuts",
+                            "Text": "🎹 Shortcuts…"}),
                 ui.HGap(0, 1.0),
             ]),
 
+            # ── Activity log ────────────────────────────────────
             ui.Label({"Text": "Recent activity:",
                       "Font": ui.Font({"PointSize": 10, "Italic": True})}),
             ui.TextEdit({"ID": "log", "ReadOnly": True,
                          "Font": ui.Font({"Family": "Courier", "PointSize": 10}),
                          "Weight": 1}),
 
-            # Footer: toggles
+            # ── Footer toggles ──────────────────────────────────
             ui.HGroup({"Spacing": 12, "Weight": 0}, [
-                ui.CheckBox({"ID": "cb_auto_import", "Text": "Auto-import shots",
+                ui.CheckBox({"ID": "cb_auto_import",   "Text": "Auto-import shots",
                              "Checked": bool(self.config.get("auto_import", True))}),
                 ui.CheckBox({"ID": "cb_live_timeline", "Text": "Mirror to Live timeline",
                              "Checked": bool(self.config.get("live_timeline", False))}),
@@ -113,23 +171,31 @@ class BridgePanel:
         ])
 
         self._win = self._disp.AddWindow({
-            "WindowTitle": "Spellcaster Bridge",
+            "WindowTitle": "Spellcaster Command Center",
             "ID": "spellcaster_bridge_main",
-            "Geometry": [400, 200, 460, 520],
+            "Geometry": [200, 120, 560, 800],
         }, layout)
 
         # Event wiring
         w = self._win
-        w.On.btn_refresh.Clicked = lambda ev: self._refresh_now()
-        w.On.btn_render_all.Clicked = lambda ev: self._render_all()
-        w.On.btn_queue_toggle.Clicked = lambda ev: self._queue_toggle()
-        w.On.btn_open_guild.Clicked = lambda ev: webbrowser.open(self.guild.base_url)
-        w.On.btn_retry_failed.Clicked = lambda ev: self._retry_failed()
-        w.On.btn_cancel_all.Clicked = lambda ev: self._cancel_all()
+        w.On.btn_refresh.Clicked          = lambda ev: self._refresh_now()
+        w.On.btn_render_all.Clicked       = lambda ev: self._render_all()
+        w.On.btn_queue_toggle.Clicked     = lambda ev: self._queue_toggle()
+        w.On.btn_open_guild.Clicked       = lambda ev: webbrowser.open(self.guild.base_url)
+        w.On.btn_retry_failed.Clicked     = lambda ev: self._retry_failed()
+        w.On.btn_cancel_all.Clicked       = lambda ev: self._cancel_all()
         w.On.btn_refresh_timeline.Clicked = lambda ev: self._refresh_to_timeline()
-        w.On.cb_auto_import.Clicked = lambda ev: self._toggle("auto_import", "cb_auto_import")
-        w.On.cb_live_timeline.Clicked = lambda ev: self._toggle("live_timeline", "cb_live_timeline")
+        w.On.btn_shortcuts.Clicked        = lambda ev: self._run_script("keyboard_shortcuts_helper")
+        w.On.cb_auto_import.Clicked       = lambda ev: self._toggle("auto_import", "cb_auto_import")
+        w.On.cb_live_timeline.Clicked     = lambda ev: self._toggle("live_timeline", "cb_live_timeline")
         w.On.spellcaster_bridge_main.Close = lambda ev: self._on_close()
+
+        # Wire every action-catalog button to a dispatch thread that
+        # loads and runs the named script.
+        for group in (_ACTIONS_CAPTURE, _ACTIONS_GENERATE,
+                      _ACTIONS_CLIP, _ACTIONS_SEND):
+            for btn_id, label, script in group:
+                self._wire_action(w, btn_id, script, label)
 
         self._start_refresh_thread()
         self._win.Show()
@@ -137,6 +203,44 @@ class BridgePanel:
         self._win.Hide()
 
     # ── UI helpers ──────────────────────────────────────────────────
+
+    def _section_label(self, text: str):
+        fu = get_fusion()
+        ui = fu.UIManager
+        return ui.Label({
+            "Text": text,
+            "Font": ui.Font({"PointSize": 11, "Bold": True}),
+            "Weight": 0,
+        })
+
+    def _action_row(self, actions, ui):
+        """Lay out an action group as an HGroup of buttons."""
+        items = []
+        for btn_id, label, _script in actions:
+            items.append(ui.Button({"ID": btn_id, "Text": label,
+                                      "MinimumSize": [120, 28]}))
+        items.append(ui.HGap(0, 1.0))
+        return ui.HGroup({"Spacing": 6, "Weight": 0}, items)
+
+    def _wire_action(self, w, btn_id: str, script: str, label: str):
+        def _on_click(_ev, s=script, l=label):
+            self._append_log(f"▶ {l}")
+            threading.Thread(
+                target=self._run_script, args=(s, l),
+                daemon=True, name=f"spellcaster-{s}",
+            ).start()
+        # Fusion UI exposes a dynamic On.<id>.<event> attribute chain;
+        # retrieve the per-button slot with getattr so we can assign
+        # .Clicked from data rather than hard-coded names.
+        try:
+            getattr(w.On, btn_id).Clicked = _on_click
+        except Exception:
+            # Fallback for older Fusion UI builds where On is a subscript
+            try:
+                w.On[btn_id].Clicked = _on_click
+            except Exception as e:  # noqa: BLE001
+                self._append_log(
+                    f"✗ couldn't wire {btn_id}: {e}")
 
     def _counter(self, field_id: str, label: str):
         fu = get_fusion()
@@ -160,8 +264,76 @@ class BridgePanel:
         self.config[key] = val
         self.config.save()
 
+    # ── Script dispatch ─────────────────────────────────────────────
+
+    def _run_script(self, script_basename: str, label: str = ""):
+        """Locate `<script_basename>.py` in the user's Fusion/Scripts
+        tree, import it, and call its `main()`. The panel itself
+        lives in Workflow Integration Plugins, a different dir from
+        the Fusion Scripts, so we resolve the path explicitly.
+        """
+        paths = self._find_script_tree()
+        src = None
+        for base in paths:
+            cand = os.path.join(base, f"{script_basename}.py")
+            if os.path.isfile(cand):
+                src = cand
+                break
+        if src is None:
+            self._append_log(
+                f"✗ couldn't locate {script_basename}.py in Fusion Scripts")
+            return
+        try:
+            mod_name = f"spellcaster_action_{script_basename}"
+            spec = importlib.util.spec_from_file_location(mod_name, src)
+            if spec is None or spec.loader is None:
+                self._append_log(f"✗ import spec failed for {script_basename}")
+                return
+            mod = importlib.util.module_from_spec(spec)
+            # Give the loaded module the shared/ path so its
+            # _locate_shared() still works from the panel context.
+            spec.loader.exec_module(mod)
+            main = getattr(mod, "main", None)
+            if main is None:
+                self._append_log(f"✗ {script_basename}: no main()")
+                return
+            rc = main()
+            self._append_log(f"✓ {label or script_basename} → rc={rc}")
+        except Exception as e:  # noqa: BLE001
+            self._append_log(f"✗ {label or script_basename}: {e}")
+            traceback.print_exc()
+
+    def _find_script_tree(self) -> list[str]:
+        """Return the candidate installed script directories, one per
+        Resolve page subfolder. The scripts are deployed identically
+        to every page folder (R104 diamond-prefix convention); first
+        hit wins."""
+        cands: list[str] = []
+        subs = ("Utility", "Edit", "Color", "Deliver", "Comp")
+        if os.name == "nt":
+            appdata = os.environ.get("APPDATA", "")
+            if appdata:
+                root = os.path.join(
+                    appdata, "Blackmagic Design", "DaVinci Resolve",
+                    "Support", "Fusion", "Scripts")
+                for s in subs:
+                    cands.append(os.path.join(root, s, "💎 Spellcaster"))
+        elif sys.platform == "darwin":
+            root = os.path.expanduser(
+                "~/Library/Application Support/Blackmagic Design/"
+                "DaVinci Resolve/Fusion/Scripts")
+            for s in subs:
+                cands.append(os.path.join(root, s, "💎 Spellcaster"))
+        else:
+            root = os.path.expanduser(
+                "~/.local/share/DaVinciResolve/Fusion/Scripts")
+            for s in subs:
+                cands.append(os.path.join(root, s, "💎 Spellcaster"))
+        return cands
+
+    # ── Existing queue / status handlers ────────────────────────────
+
     def _refresh_now(self):
-        """Called from the UI thread — schedule a one-shot refresh."""
         threading.Thread(target=self._do_refresh, daemon=True).start()
 
     def _do_refresh(self):
@@ -181,11 +353,6 @@ class BridgePanel:
             self._append_log(f"render-all queued: {r.get('queued', '?')}")
         except Exception as e:
             self._append_log(f"render-all failed: {e}")
-
-    # R88: queue toggle, retry-failed, cancel-all, refresh-to-timeline.
-    # All run off-thread so the UI stays responsive. Log tail surfaces
-    # outcomes. Errors are caught and logged — never raised to the
-    # event callback (which would kill the dispatcher loop).
 
     def _queue_toggle(self):
         threading.Thread(target=self._do_queue_toggle, daemon=True).start()
@@ -241,7 +408,6 @@ class BridgePanel:
                     cancelled += 1
                 except Exception:
                     continue
-            # Pause the queue so nothing picks up mid-cancel
             try:
                 self.guild._post_json("/api/video/queue/pause", {})
             except Exception:
@@ -252,9 +418,6 @@ class BridgePanel:
             self._append_log(f"cancel-all: {e}")
 
     def _refresh_to_timeline(self):
-        """R88: append every ready Guild clip to the current Resolve
-        timeline in shotboard order. Mirrors the standalone script
-        refresh_ready_shots.py but runs inline inside the panel."""
         threading.Thread(target=self._do_refresh_to_timeline,
                           daemon=True).start()
 
@@ -330,7 +493,6 @@ class BridgePanel:
 
     def _refresh_loop(self):
         poll = float(self.config.get("poll_interval_s", 2.0))
-        # Throttle queue-status reads (every 4 polls — no need per tick)
         q_tick = 0
         while not self._stop.is_set():
             try:
@@ -346,7 +508,6 @@ class BridgePanel:
                     self._apply_queue_button(bool(qs.get("paused", False)))
                 except Exception:
                     pass
-            # Also refresh the log tail from the sync module
             self._apply_log(self.sync.events_tail)
             if self._stop.wait(poll):
                 return
@@ -372,7 +533,6 @@ class BridgePanel:
             return
         mode = self.sse.mode
         dot_color = "green" if mode == "sse" else "yellow" if mode == "polling" else "red"
-        # Fusion UI doesn't have easy color per-label; stick to emoji text
         dot_char = {"green": "●", "yellow": "◐", "red": "○"}[dot_color]
         label_text = {
             "sse": "live (SSE)",
@@ -387,7 +547,6 @@ class BridgePanel:
             pass
 
     def _apply_queue_button(self, paused: bool):
-        """R88: keep the pause/resume button's label honest."""
         if self._win is None:
             return
         try:
@@ -405,7 +564,7 @@ class BridgePanel:
             pass
 
     def _append_log(self, msg: str):
-        self.sync._log(msg)  # piggyback on the shared log tail
+        self.sync._log(msg)
 
     # ── Close ───────────────────────────────────────────────────────
 
