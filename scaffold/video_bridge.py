@@ -1,7 +1,7 @@
 """
 Video Bridge — top-level glue for the shot-centric video pipeline.
 
-This is the video analogue of ``SpellcasterScaffold``.  It wires:
+This is the video-pipeline glue for the Guild server. It wires:
 
   - a Shotboard (persistent ordered list of shots)
   - a CinematographerWizard (LLM-driven conversational editor)

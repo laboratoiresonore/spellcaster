@@ -967,42 +967,6 @@ def action_to_endpoint(action: dict[str, Any]) -> tuple[str, str, dict[str, Any]
     return None
 
 
-# ── Public wizard class ──────────────────────────────────────────────────
-
-class SpellcasterWizardScaffold:
-    """Stateless Spellcaster-wizard scaffold. Call respond() per user turn.
-
-    All persistent state (what's installed, setup_mode, antennas, calibration
-    results) lives in the Guild server — this module only produces prompts
-    and parses actions.
-    """
-
-    def __init__(self, llm_client=None):
-        """llm_client: callable(system_prompt, user_msg) -> str.
-        If None, callers must invoke their own LLM and pass the response to
-        parse_action() directly.
-        """
-        self.llm_client = llm_client
-
-    def system_prompt(self, state: dict[str, Any]) -> str:
-        return build_system_prompt(state)
-
-    def respond(self, user_message: str, state: dict[str, Any]) -> dict[str, Any]:
-        """One conversational turn.
-
-        Returns:
-            {"text": str, "action": dict | None,
-             "endpoint": (method, path, body) | None}
-        """
-        if not self.llm_client:
-            raise RuntimeError("SpellcasterWizardScaffold requires an llm_client")
-        system = self.system_prompt(state)
-        reply = self.llm_client(system, user_message)
-        text, action = parse_action(reply)
-        endpoint = action_to_endpoint(action) if action else None
-        return {"text": text, "action": action, "endpoint": endpoint}
-
-
 __all__ = [
     "FEATURE_METHODS",
     "USAGE_BUNDLES",
@@ -1012,5 +976,4 @@ __all__ = [
     "build_system_prompt",
     "parse_action",
     "action_to_endpoint",
-    "SpellcasterWizardScaffold",
 ]

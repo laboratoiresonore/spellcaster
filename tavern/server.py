@@ -138,7 +138,7 @@ except (ImportError, Exception):
         return {}
 
 try:
-    from scaffold.workflow_wizard import discover_workflows
+    from scaffold.workflow_parser import discover_workflows
 except (ImportError, Exception):
     def discover_workflows(search_dirs=None):
         return []
@@ -9267,6 +9267,63 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     limit = 200
             limit = max(10, min(2000, limit))
             return self.end_json(200, {"entries": _VIDEO_BRIDGE.board.read_activity_log(limit=limit)})
+
+        elif self.path == '/api/video/tags' and self.command == 'GET':
+            # R73b: list every tag in use + counts
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            return self.end_json(200, {"tags": _VIDEO_BRIDGE.board.all_tags()})
+
+        elif (self.path.startswith('/api/video/shots/')
+              and self.path.endswith('/tags')
+              and self.command == 'POST'):
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/')[4]
+            tag = (data.get('tag') or '').strip() if isinstance(data, dict) else ''
+            if not tag:
+                return self.end_json(400, {"error": "tag required"})
+            shot = _VIDEO_BRIDGE.board.add_shot_tag(shot_id, tag)
+            if shot is None:
+                return self.end_json(404, {"error": "shot not found"})
+            return self.end_json(200, {"shot_id": shot_id, "tags": list(shot.tags)})
+
+        elif (self.path.startswith('/api/video/shots/')
+              and '/tags' in self.path
+              and self.command == 'DELETE'):
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            # Path: /api/video/shots/<id>/tags?tag=xxx
+            path_only = self.path.split('?')[0]
+            shot_id = path_only.split('/')[4]
+            tag = ''
+            if '?' in self.path:
+                try:
+                    from urllib.parse import urlparse, parse_qs
+                    qs = parse_qs(urlparse(self.path).query)
+                    tag = (qs.get('tag') or [''])[0].strip()
+                except Exception:
+                    tag = ''
+            if not tag:
+                return self.end_json(400, {"error": "tag query param required"})
+            shot = _VIDEO_BRIDGE.board.remove_shot_tag(shot_id, tag)
+            if shot is None:
+                return self.end_json(404, {"error": "shot not found"})
+            return self.end_json(200, {"shot_id": shot_id, "tags": list(shot.tags)})
+
+        elif self.path == '/api/video/batch-tag' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            ids = data.get('shot_ids', [])
+            tag = (data.get('tag') or '').strip() if isinstance(data, dict) else ''
+            remove = bool(data.get('remove', False))
+            if not ids or not tag:
+                return self.end_json(400, {"error": "shot_ids + tag required"})
+            if remove:
+                result = _VIDEO_BRIDGE.board.batch_remove_tag(ids, tag)
+            else:
+                result = _VIDEO_BRIDGE.board.batch_add_tag(ids, tag)
+            return self.end_json(200, result)
 
         elif self.path == '/api/video/project-meta' and self.command == 'GET':
             # R71b: project-level metadata
