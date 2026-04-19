@@ -396,6 +396,23 @@ function ShotCard({
         <span className="flex-1 text-amber-50 text-sm font-medium truncate">
           {editTitle || <span className="text-slate-500 italic">Untitled shot</span>}
         </span>
+        {/* R76b: rating stars — compact display, click-to-edit */}
+        {(() => {
+          const r = shot.rating || 0;
+          return (
+            <span className="shot-rating-inline inline-flex gap-0.5 text-[11px] leading-none"
+                  onClick={(e) => e.stopPropagation()}>
+              {[1, 2, 3, 4, 5].map(n => (
+                <button key={n}
+                  onClick={() => onUpdate(shot.id, {rating: (r === n ? 0 : n)})}
+                  className={n <= r ? "text-amber-400 hover:text-amber-300"
+                                     : "text-slate-700 hover:text-amber-500"}
+                  title={`Rate ${n}★ ${n === r ? "(click again to clear)" : ""}`}
+                >{n <= r ? "★" : "☆"}</button>
+              ))}
+            </span>
+          );
+        })()}
         {/* R73b: tag chips (compact, up to 3 shown in collapsed header) */}
         {(shot.tags || []).slice(0, 3).map(t => (
           <span key={t} className="shot-tag-chip px-1.5 py-0.5 rounded bg-teal-900/40 text-teal-200 text-[10px] font-medium">
@@ -1894,6 +1911,10 @@ function VideoPanel() {
   const [restorePreview, setRestorePreview] = _useState(null);
   // R66a: keyboard shortcuts cheatsheet modal (toggled with '?')
   const [showShortcuts, setShowShortcuts] = _useState(false);
+  // R76a: command palette (Ctrl+K) — fuzzy-searchable action launcher
+  const [showCommandPalette, setShowCommandPalette] = _useState(false);
+  const [commandQuery, setCommandQuery] = _useState("");
+  const [commandSelectedIdx, setCommandSelectedIdx] = _useState(0);
   // R68a: side-by-side compare modal + its selected shot ids
   const [compareModal, setCompareModal] = _useState(null);  // {a: shotId, b: shotId}
   // R68b: board-stats mini-dashboard toggle
@@ -1959,6 +1980,7 @@ function VideoPanel() {
       : statusFilter === "archived" ? base
       : statusFilter === "stale" ? base.filter(isShotStale)
       : statusFilter === "starred" ? base.filter(s => s.bookmarked)
+      : statusFilter === "rated" ? base.filter(s => (s.rating || 0) > 0)
       : base.filter(s => s.status === statusFilter);
     if (tagFilter) {
       result = result.filter(s => (s.tags || []).includes(tagFilter));
@@ -2014,10 +2036,12 @@ function VideoPanel() {
   // Arrow through text.
   _useEffect(() => {
     const onKeyDown = (e) => {
-      // Skip when the user is typing in any editable control
+      // Skip when the user is typing in any editable control,
+      // UNLESS this is the Ctrl+K command palette (available everywhere).
       const tag = (e.target?.tagName || "").toUpperCase();
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT"
-          || e.target?.isContentEditable) {
+      const isPaletteKey = (e.key === "k" && (e.ctrlKey || e.metaKey));
+      if ((tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT"
+          || e.target?.isContentEditable) && !isPaletteKey) {
         return;
       }
       if (filteredShots.length === 0) return;
@@ -2061,6 +2085,10 @@ function VideoPanel() {
         // R66a: '?' toggles the keyboard-shortcuts cheatsheet
         e.preventDefault();
         setShowShortcuts(v => !v);
+      } else if (e.key === "k" && (e.ctrlKey || e.metaKey)) {
+        // R76a: Ctrl+K / Cmd+K opens the command palette
+        e.preventDefault();
+        setCommandPaletteOpen();
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -3055,6 +3083,108 @@ function VideoPanel() {
   _useEffect(() => { if (showActivityLog) refreshActivityLog(); },
               [showActivityLog, refreshActivityLog]);
 
+  // R76a: command palette — opens with Ctrl+K, fuzzy-filters actions
+  const setCommandPaletteOpen = () => {
+    setCommandQuery("");
+    setCommandSelectedIdx(0);
+    setShowCommandPalette(true);
+  };
+
+  // The list of commands available to the palette. Each entry:
+  //   {label, group, run, when?}  — when=() => bool gates visibility.
+  const commandPaletteActions = _useMemo(() => [
+    // Board-level
+    {label: "Import CSV…", group: "Import/Export",
+      run: () => importCsvRef.current?.click()},
+    {label: "Export CSV (shotboard)", group: "Import/Export",
+      run: () => { window.location.href = "/api/video/shotboard.csv"; }},
+    {label: "Export CSV (render history)", group: "Import/Export",
+      run: () => { window.location.href = "/api/video/render-history.csv"; }},
+    {label: "Export Outline.txt", group: "Import/Export",
+      run: () => { window.location.href = "/api/video/outline.txt"; }},
+    {label: "Export EDL", group: "Import/Export",
+      run: () => { window.location.href = "/api/video/export/edl?fps=30"; }},
+    {label: "Export FCPXML", group: "Import/Export",
+      run: () => { window.location.href = "/api/video/export/fcpxml?fps=30"; }},
+    {label: "Auto-group scenes", group: "Scenes",
+      run: autoGroupScenes},
+    // Panels
+    {label: "Toggle outline panel", group: "View",
+      run: () => setShowOutline(v => !v)},
+    {label: "Toggle board-stats panel", group: "View",
+      run: () => setShowBoardStats(v => !v)},
+    {label: "Toggle near-duplicates panel", group: "View",
+      run: () => setShowNearDupes(v => !v)},
+    {label: "Toggle activity log", group: "View",
+      run: () => setShowActivityLog(v => !v)},
+    {label: "Toggle named-states panel", group: "View",
+      run: () => setShowStatesPanel(v => !v)},
+    {label: "Open Project metadata…", group: "View",
+      run: () => { loadProjectMeta(); setShowProjectMeta(true); }},
+    {label: "Open Antenna admin…", group: "View",
+      run: openAntennaAdmin},
+    {label: "Show keyboard shortcuts", group: "View",
+      run: () => setShowShortcuts(true)},
+    // Queue
+    {label: "Pause render queue", group: "Queue",
+      when: () => !queuePaused, run: togglePause},
+    {label: "Resume render queue", group: "Queue",
+      when: () => queuePaused, run: togglePause},
+    {label: "Render next (step queue)", group: "Queue",
+      run: renderNext},
+    {label: "Render all drafts", group: "Queue",
+      run: renderAll},
+    {label: "Reset failed shots", group: "Queue",
+      run: resetFailed},
+    // Selection-aware
+    {label: "Batch: Randomize seeds of selected", group: "Bulk",
+      when: () => selected.size > 0, run: batchRandomizeSeeds},
+    {label: "Batch: Lock selected", group: "Bulk",
+      when: () => selected.size > 0, run: () => batchLock(true)},
+    {label: "Batch: Unlock selected", group: "Bulk",
+      when: () => selected.size > 0, run: () => batchLock(false)},
+    {label: "Batch: Archive selected", group: "Bulk",
+      when: () => selected.size > 0,
+      run: async () => {
+        try {
+          await api.post("/api/video/batch-archive",
+                         {shot_ids: Array.from(selected), archive: true});
+          addToast(`Archived ${selected.size} shot(s)`, "success");
+          await refresh();
+        } catch (e) { addToast("Batch archive failed", "error"); }
+      }},
+    {label: "Lock all ready shots", group: "Bulk",
+      run: () => batchLockByStatus(["ready"])},
+    // Filter shortcuts
+    {label: "Filter: All", group: "Filter", run: () => setStatusFilter("all")},
+    {label: "Filter: Draft", group: "Filter", run: () => setStatusFilter("draft")},
+    {label: "Filter: Ready", group: "Filter", run: () => setStatusFilter("ready")},
+    {label: "Filter: Failed", group: "Filter", run: () => setStatusFilter("failed")},
+    {label: "Filter: Stale", group: "Filter", run: () => setStatusFilter("stale")},
+    {label: "Filter: Starred", group: "Filter", run: () => setStatusFilter("starred")},
+    {label: "Filter: Archived", group: "Filter", run: () => setStatusFilter("archived")},
+    // New shot
+    {label: "New shot", group: "Create", run: addShot},
+    {label: "Save named state…", group: "Create", run: saveNamedState},
+  ].filter(a => !a.when || a.when()), [
+    selected, queuePaused, importCsvRef,
+  ]);
+
+  const filteredCommands = _useMemo(() => {
+    const q = commandQuery.toLowerCase().trim();
+    if (!q) return commandPaletteActions;
+    // Simple substring-on-label + group match for fuzziness.
+    return commandPaletteActions.filter(a =>
+      a.label.toLowerCase().includes(q) ||
+      a.group.toLowerCase().includes(q));
+  }, [commandQuery, commandPaletteActions]);
+
+  const runCommand = (cmd) => {
+    setShowCommandPalette(false);
+    setCommandQuery("");
+    setTimeout(() => { try { cmd.run(); } catch (e) { console.error(e); } }, 0);
+  };
+
   // R70a: jump to a shot by id (scroll its card into view + focus it)
   const jumpToShot = _useCallback((shotId) => {
     const idx = filteredShots.findIndex(s => s.id === shotId);
@@ -3896,19 +4026,22 @@ function VideoPanel() {
               ))}
             </select>
           )}
-          {["all", "draft", "queued", "running", "ready", "failed", "stale", "starred", "archived"].map(status => {
+          {["all", "draft", "queued", "running", "ready", "failed", "stale", "starred", "rated", "archived"].map(status => {
             const count = status === "stale" ? shots.filter(s => !s.archived && isShotStale(s)).length
                         : status === "starred" ? shots.filter(s => !s.archived && s.bookmarked).length
+                        : status === "rated" ? shots.filter(s => !s.archived && (s.rating || 0) > 0).length
                         : status === "archived" ? shots.filter(s => s.archived).length
                         : null;
             const extraClass =
               status === "stale"    ? "bg-amber-900/30 hover:bg-amber-800/40 text-amber-300"
               : status === "starred" ? "bg-yellow-900/30 hover:bg-yellow-800/40 text-yellow-300"
+              : status === "rated"   ? "bg-amber-900/30 hover:bg-amber-800/40 text-amber-200"
               : status === "archived" ? "bg-slate-800/40 hover:bg-slate-700/60 text-slate-500"
               : "bg-slate-800 hover:bg-slate-700 text-slate-300";
             const tipByStatus = {
               stale:    "Shots whose prompt/preset/overrides changed since last render",
               starred:  "Bookmarked shots (click the star on any card)",
+              rated:    "Shots with a non-zero rating (★)",
               archived: "Soft-deleted shots — click any card's ×/restore to manage",
             };
             return (
@@ -3922,6 +4055,7 @@ function VideoPanel() {
               >
                 {status === "stale" ? "⚠ stale"
                   : status === "starred" ? "⭐ starred"
+                  : status === "rated" ? "★ rated"
                   : status === "archived" ? "🗑 archived"
                   : status}
                 {count !== null && count > 0 && (
@@ -4744,6 +4878,62 @@ function VideoPanel() {
         </div>
       )}
 
+      {/* R76a: command palette — Ctrl+K opens, ↑/↓ navigate, Enter runs */}
+      {showCommandPalette && (
+        <div className="command-palette-modal fixed inset-0 bg-black/70 z-50 flex items-start justify-center pt-24 p-4"
+             onClick={() => setShowCommandPalette(false)}>
+          <div className="bg-slate-900 border border-amber-600/40 rounded-xl shadow-2xl max-w-xl w-full overflow-hidden"
+               onClick={(e) => e.stopPropagation()}>
+            <input type="text"
+              autoFocus
+              value={commandQuery}
+              onChange={(e) => { setCommandQuery(e.target.value); setCommandSelectedIdx(0); }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setShowCommandPalette(false);
+                else if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setCommandSelectedIdx(i => Math.min(i + 1, filteredCommands.length - 1));
+                } else if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setCommandSelectedIdx(i => Math.max(i - 1, 0));
+                } else if (e.key === "Enter") {
+                  e.preventDefault();
+                  const cmd = filteredCommands[commandSelectedIdx];
+                  if (cmd) runCommand(cmd);
+                }
+              }}
+              placeholder="Type a command or action…"
+              className="command-palette-input w-full bg-slate-950 border-b border-slate-700 px-4 py-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none" />
+            <div className="command-palette-list max-h-96 overflow-y-auto">
+              {filteredCommands.length === 0 ? (
+                <div className="px-4 py-3 text-xs text-slate-500 italic">
+                  No actions match "{commandQuery}".
+                </div>
+              ) : filteredCommands.map((cmd, i) => (
+                <button key={cmd.label}
+                  onMouseEnter={() => setCommandSelectedIdx(i)}
+                  onClick={() => runCommand(cmd)}
+                  className={"command-palette-item w-full text-left flex items-center gap-3 px-4 py-2 text-xs "
+                    + (i === commandSelectedIdx
+                       ? "bg-amber-900/40 text-amber-100"
+                       : "text-slate-300 hover:bg-slate-800/60")}>
+                  <span className="text-slate-500 w-20 flex-shrink-0 font-semibold uppercase tracking-wider text-[9px]">
+                    {cmd.group}
+                  </span>
+                  <span className="flex-1 truncate">{cmd.label}</span>
+                </button>
+              ))}
+            </div>
+            <div className="border-t border-slate-700/60 px-3 py-1.5 text-[10px] text-slate-500 flex gap-3">
+              <span><kbd className="px-1 rounded bg-slate-800">↑↓</kbd> navigate</span>
+              <span><kbd className="px-1 rounded bg-slate-800">Enter</kbd> run</span>
+              <span><kbd className="px-1 rounded bg-slate-800">Esc</kbd> close</span>
+              <span className="ml-auto">{filteredCommands.length} actions</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* R66a: keyboard shortcuts cheatsheet — toggle with '?' */}
       {showShortcuts && (
         <div className="shortcuts-modal fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
@@ -4758,9 +4948,10 @@ function VideoPanel() {
             <div className="grid grid-cols-2 gap-2 text-xs">
               {[
                 ["?", "Show/hide this panel"],
+                ["Ctrl+K", "Open command palette (any action by name)"],
                 ["N", "Create a new shot"],
                 ["↑ / ↓", "Focus previous / next shot"],
-                ["Esc", "Clear shot focus"],
+                ["Esc", "Clear shot focus / close modal"],
                 ["Space", "Toggle selection on focused shot"],
                 ["Ctrl+Z", "Restore last auto-snapshot (focused shot)"],
                 ["Ctrl+Shift+R", "Render all drafts"],
