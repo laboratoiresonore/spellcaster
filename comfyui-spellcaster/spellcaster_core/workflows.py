@@ -373,7 +373,7 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
     model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "1")
 
     # 2. LoRA chain
-    model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [], model_ref, clip_ref)
+    model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [], model_ref, clip_ref, arch_key=preset.get('arch'))
 
     # 3. Load image
     img_id = nf.load_image(image_filename, node_id="4")
@@ -506,7 +506,7 @@ def build_txt2img(preset, prompt_text, negative_text, seed, loras=None):
     nf = NodeFactory()
 
     model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "1")
-    model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [], model_ref, clip_ref)
+    model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [], model_ref, clip_ref, arch_key=preset.get('arch'))
 
     pos_id, neg_id = encode_prompts(nf, preset.get("arch", "sdxl"), clip_ref,
                                      prompt_text, negative_text,
@@ -582,7 +582,7 @@ def build_generate_anything(prompt_text, negative_text, seed, preset,
     # ── Model stack ──────────────────────────────────────────────────
     model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "1")
     model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [],
-                                                     model_ref, clip_ref)
+                                                     model_ref, clip_ref, arch_key=preset.get('arch'))
 
     # ── Prompt: append isolation instructions ────────────────────────
     _bg_instruction = (
@@ -1165,7 +1165,7 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
 
     # Apply LoRA chain
     if loras:
-        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100, arch_key="flux2klein")
         # After LoRA chain, refs are [node_id, slot] lists.
         # Leave them as-is. Use _ref() for all downstream references.
     # Text conditioning
@@ -1706,7 +1706,7 @@ def build_detail_hallucinate(image_filename, upscale_model, preset,
 
     # LoRA chain
     if loras:
-        model_ref, clip_ref, _trig = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100)
+        model_ref, clip_ref, _trig = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100, arch_key=preset.get('arch'))
 
     # Encode prompts
     arch_key = preset.get("arch", "sdxl")
@@ -1810,7 +1810,7 @@ def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
 
     # LoRA chain
     if loras:
-        model_ref, clip_ref, _trig = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100)
+        model_ref, clip_ref, _trig = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100, arch_key=preset.get('arch'))
 
     # Lineart ControlNet — architecture-specific model selection
     _LINEART_CN_MODELS = {
@@ -1964,7 +1964,7 @@ def build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
     pre_id = nf.preprocessor(preprocessor_type, [img_id, 0], node_id="2")
 
     model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "3")
-    model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [], model_ref, clip_ref)
+    model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [], model_ref, clip_ref, arch_key=preset.get('arch'))
 
     cn_loader_id = nf.controlnet_loader(controlnet_model, node_id="4")
 
@@ -2103,7 +2103,7 @@ def build_iclight(image_filename, ckpt_name, prompt, negative, seed,
 
     # LoRA chain
     if loras:
-        model_ref, clip_ref, _trig = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100)
+        model_ref, clip_ref, _trig = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100, arch_key="sd15")
 
     # VAEEncode foreground to latent (ICLightConditioning expects LATENT)
     latent_id = nf.vae_encode([img_id, 0], vae_ref, node_id="10")
@@ -2427,7 +2427,7 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
 
     # Model loading
     model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "1")
-    model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [], model_ref, clip_ref)
+    model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [], model_ref, clip_ref, arch_key=preset.get('arch'))
 
     # Load image and determine mask source.
     # Precedence: mask_filename (user override) → sam3_prompt → error.
@@ -2618,7 +2618,7 @@ def build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
 
     # Model loading
     model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "1")
-    model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [], model_ref, clip_ref)
+    model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [], model_ref, clip_ref, arch_key=preset.get('arch'))
 
     # Load and pad image
     img_id = nf.load_image(image_filename, node_id="4")
@@ -2710,7 +2710,7 @@ def build_faceid_img2img(target_filename, face_ref_filename, preset,
     scheduler = preset.get("scheduler", "normal")
 
     model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "1")
-    model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [], model_ref, clip_ref)
+    model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [], model_ref, clip_ref, arch_key=preset.get('arch'))
 
     # FaceID unified loader
     faceid_loader_id = nf.ipadapter_unified_loader_faceid(
@@ -2800,7 +2800,7 @@ def build_pulid_flux(target_filename, face_ref_filename,
     clip_ref = _ref(clip_id)
 
     # LoRA chain
-    model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [], model_ref, clip_ref)
+    model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [], model_ref, clip_ref, arch_key=("flux2klein" if is_flux2 else "flux1dev"))
 
     # PuLID loaders (different node families per architecture)
     if is_flux2:
@@ -2883,7 +2883,7 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
 
     # Apply LoRA chain
     if loras:
-        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100, arch_key="flux2klein")
         # After LoRA chain, refs are [node_id, slot] lists.
         # Leave them as-is. Use _ref() for all downstream references.
     # Text conditioning
@@ -3083,7 +3083,7 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
 
     # Apply LoRA chain
     if loras:
-        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100, arch_key="flux2klein")
         # After LoRA chain, refs are [node_id, slot] lists.
         # Leave them as-is. Use _ref() for all downstream references.
     pos_id = nf.clip_encode(_ref(clip_id), prompt, node_id="23")
@@ -4000,7 +4000,7 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
 
     # LoRA chain
     if loras:
-        model_ref, clip_ref, _trig = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100)
+        model_ref, clip_ref, _trig = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100, arch_key=preset.get('arch'))
 
     # 2. IPAdapter
     ipa_loader_id = nf.ipadapter_unified_loader(model_ref, ipadapter_preset,
@@ -4129,7 +4129,7 @@ def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_t
 
     # LoRA chain
     if loras:
-        model_ref, clip_ref, _trig = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100)
+        model_ref, clip_ref, _trig = inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100, arch_key=preset.get('arch'))
 
     # 5. Encode (architecture-aware: no-negative archs get zero_out)
     pos_id, neg_id = encode_prompts(nf, arch_key, clip_ref,
@@ -4349,7 +4349,7 @@ def build_klein_repose(image_filename, klein_model_key, prompt_text, seed,
 
     # Apply LoRA chain
     if loras:
-        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100, arch_key="flux2klein")
         # After LoRA chain, refs are [node_id, slot] lists.
         # Leave them as-is. Use _ref() for all downstream references.
     # Text conditioning
@@ -4441,7 +4441,7 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
 
     # Apply LoRA chain
     if loras:
-        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100, arch_key="flux2klein")
         # After LoRA chain, refs are [node_id, slot] lists.
         # Leave them as-is. Use _ref() for all downstream references.
     # Text conditioning
@@ -4554,7 +4554,7 @@ def build_klein_batch_variations(image_filename, klein_model_key, prompt_text,
     # LoRA chain
     if loras:
         unet_id, clip_id, _trig = inject_lora_chain(
-            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100, arch_key="flux2klein")
 
     # Reference image
     img_id = nf.load_image(image_filename, node_id="1")
@@ -4657,7 +4657,7 @@ def build_klein_inpaint(image_filename, mask_filename=None, prompt_text="", seed
 
     # Apply LoRA chain
     if loras:
-        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100, arch_key="flux2klein")
         # After LoRA chain, refs are [node_id, slot] lists.
         # Leave them as-is. Use _ref() for all downstream references.
     # Source image
@@ -4806,7 +4806,7 @@ def build_klein_virtual_tryon(face_filename, outfit_filename, prompt_text, seed,
     # LoRA chain
     if loras:
         unet_id, clip_id, _trig = inject_lora_chain(
-            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100, arch_key="flux2klein")
         # After LoRA chain, refs are [node_id, slot] lists.
         # Leave them as-is. Use _ref() for all downstream references.
 
@@ -4908,7 +4908,7 @@ def build_klein_scene_img2img(image_filename, prompt_text, seed,
 
     # Apply LoRA chain
     if loras:
-        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100, arch_key="flux2klein")
         # After LoRA chain, refs are [node_id, slot] lists.
         # Leave them as-is. Use _ref() for all downstream references.
     # Source images (scene + actor — actor not used in workflow but loaded for context)
@@ -5028,7 +5028,7 @@ def build_klein_refine(image_filename, klein_model_key, prompt_text, seed,
     # LoRA chain
     if loras:
         unet_id, clip_id, _trig = inject_lora_chain(
-            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100, arch_key="flux2klein")
         # After LoRA chain, refs are [node_id, slot] lists.
         # Leave them as-is. Use _ref() for all downstream references.
 
@@ -5164,7 +5164,7 @@ def build_klein_auto_inpaint(image_filename, mask_prompt, inpaint_prompt, seed,
     # LoRA chain
     if loras:
         unet_id, clip_id, _trig = inject_lora_chain(
-            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100, arch_key="flux2klein")
         # After LoRA chain, refs are [node_id, slot] lists.
         # Leave them as-is. Use _ref() for all downstream references.
 
@@ -5606,7 +5606,7 @@ def build_klein_sam3_inpaint(image_filename, segment_prompt, inpaint_prompt, see
     # LoRA chain
     if loras:
         unet_id, clip_id, _trig = inject_lora_chain(
-            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100, arch_key="flux2klein")
         # After LoRA chain, refs are [node_id, slot] lists.
         # Leave them as-is. Use _ref() for all downstream references.
 
@@ -5847,7 +5847,7 @@ def build_klein_face_detail(image_filename, prompt_text, seed,
     # LoRA chain
     if loras:
         unet_id, clip_id, _trig = inject_lora_chain(
-            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100, arch_key="flux2klein")
         # After LoRA chain, refs are [node_id, slot] lists.
         # Leave them as-is. Use _ref() for all downstream references.
 
@@ -5976,7 +5976,7 @@ def build_klein_generate_object(scene_filename, prompt_text, seed,
     # LoRA chain
     if loras:
         unet_id, clip_id, _trig = inject_lora_chain(
-            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100, arch_key="flux2klein")
         # After LoRA chain, refs are [node_id, slot] lists.
         # Leave them as-is. Use _ref() for all downstream references.
 
@@ -5997,7 +5997,7 @@ def build_klein_generate_object(scene_filename, prompt_text, seed,
                                  "strength_clip": _str})
         if _nsfw_chain:
             _u, _c, _ = inject_lora_chain(nf, _nsfw_chain,
-                                           _ref(unet_id), _ref(clip_id), base_id=150)
+                                           _ref(unet_id), _ref(clip_id), base_id=150, arch_key="flux2klein")
             unet_id = _u if isinstance(_u, str) else _u[0]
             clip_id = _c if isinstance(_c, str) else _c[0]
 
@@ -6200,7 +6200,7 @@ def build_klein_detail(image_filename, preset_key, prompt_text, seed,
     # LoRA chain
     if loras:
         unet_id, clip_id, _trig = inject_lora_chain(
-            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100, arch_key="flux2klein")
         # After LoRA chain, refs are [node_id, slot] lists.
         # Leave them as-is. Use _ref() for all downstream references.
 
