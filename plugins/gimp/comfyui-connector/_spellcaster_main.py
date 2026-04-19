@@ -11636,6 +11636,13 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-color-match": None,
             # Calibration Wizard
             "spellcaster-calibration-wizard": None,
+            # R105: cross-plugin — send the current canvas to other
+            # Spellcaster surfaces via the shared asset gallery + event
+            # bus. Gated-free because it's just a publish; fails open
+            # when the receiving interface isn't online.
+            "spellcaster-send-to-resolve": None,
+            "spellcaster-send-to-darktable": None,
+            "spellcaster-send-to-sillytavern": None,
         }
 
         # ── Feature-gate logic: denylist + probe-cached allowlist ──
@@ -11835,6 +11842,16 @@ class Spellcaster(Gimp.PlugIn):
             # Calibration Wizard
             "spellcaster-calibration-wizard": ("Calibration Wizard...", self._run_calibration_wizard,
                                                 "Tune AI settings to your taste with A/B image comparisons"),
+            # R105: cross-plugin transfer actions — active canvas goes
+            # into the shared asset gallery with an origin.asset.send
+            # event, which the receiving interface's subscriber picks
+            # up and ingests (Resolve Bridge → Media Pool, etc).
+            "spellcaster-send-to-resolve": ("💎 Send to DaVinci Resolve", self._run_send_to_resolve,
+                                             "Publish this image to DaVinci Resolve's Media Pool via the Spellcaster Bridge"),
+            "spellcaster-send-to-darktable": ("💎 Send to Darktable", self._run_send_to_darktable,
+                                               "Publish this image to Darktable for grading"),
+            "spellcaster-send-to-sillytavern": ("💎 Send to SillyTavern", self._run_send_to_sillytavern,
+                                                 "Publish this image to SillyTavern as a character / scene asset"),
         }
 
         label, callback, doc = menu_map[name]
@@ -11941,6 +11958,11 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-settings":          f"{_S}/Tools",
             "spellcaster-bridge":            f"{_S}/Tools",
             "spellcaster-calibration-wizard": f"{_S}/Tools",
+            # R105: cross-plugin transfer submenu — visible diamond
+            # markers make it easy to spot the inter-app channels.
+            "spellcaster-send-to-resolve":      f"{_S}/Send Elsewhere",
+            "spellcaster-send-to-darktable":    f"{_S}/Send Elsewhere",
+            "spellcaster-send-to-sillytavern":  f"{_S}/Send Elsewhere",
         }
 
         # ── Native GIMP menu integration ─────────────────────────────
@@ -24279,6 +24301,106 @@ class Spellcaster(Gimp.PlugIn):
         except Exception as e:
             Gimp.message(f"Spellcaster Color Match Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # R105: cross-plugin transfer helpers ─────────────────────────────
+    # The three _run_send_to_<target> callbacks all route through the
+    # Guild's shared asset gallery + event bus. The active canvas is
+    # exported to PNG, uploaded via CrossInterfaceClient.upload_asset
+    # (so it gets a stable /api/assets/<hash> URL), then an
+    # <origin>.asset.send event is published with the URL. Each target
+    # plugin (Resolve Bridge, Darktable, SillyTavern) has a
+    # subscriber that ingests assets matching its kind. See
+    # spellcaster_core/cross_interface.py for the client API.
+
+    def _cross_interface_send(self, image, target: str, kind: str,
+                                friendly: str) -> bool:
+        """Common path for Send-to-<X> procedures. Returns True on
+        successful publish. target = one of 'resolve', 'darktable',
+        'sillytavern' — used as the event prefix and subscriber
+        matcher."""
+        try:
+            tmp = _export_image_to_tmp(image)
+            with open(tmp, "rb") as fh:
+                png_bytes = fh.read()
+            os.unlink(tmp)
+        except Exception as e:
+            Gimp.message(f"Send to {friendly}: couldn't export canvas:\n{e}")
+            return False
+        try:
+            from spellcaster_core.cross_interface import CrossInterfaceClient
+        except ImportError:
+            Gimp.message(
+                "Send to {}: cross_interface helper missing — "
+                "Spellcaster install is incomplete.".format(friendly))
+            return False
+        client = CrossInterfaceClient(interface_key="gimp")
+        rec = client.upload_asset(
+            png_bytes, kind=kind,
+            title=f"From GIMP → {friendly}",
+            tags=[f"to_{target}", "gimp_export"],
+        )
+        if not rec or not rec.get("hash"):
+            Gimp.message(
+                f"Send to {friendly} failed — Guild unreachable or rejected "
+                f"the upload. Start the Wizard Guild and try again.")
+            return False
+        asset_url = f"/api/assets/{rec['hash']}"
+        # Publish the directed-send event. The receiving subscriber
+        # pulls the bytes via asset_url.
+        client.publish(f"{target}.asset.send", data={
+            "image_url": asset_url,
+            "hash": rec["hash"],
+            "source": "gimp",
+            "kind": kind,
+        })
+        Gimp.message(
+            f"Sent to {friendly}. Asset hash: {rec['hash'][:10]}… "
+            f"The {friendly} plugin picks it up automatically.")
+        return True
+
+    def _run_send_to_resolve(self, procedure, run_mode, image,
+                               drawables, config, data):
+        """R105: publish the active canvas for DaVinci Resolve's
+        MediaPoolSync subscriber to auto-import."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        ok = self._cross_interface_send(
+            image, target="resolve", kind="asset",
+            friendly="DaVinci Resolve")
+        return procedure.new_return_values(
+            Gimp.PDBStatusType.SUCCESS if ok
+            else Gimp.PDBStatusType.EXECUTION_ERROR,
+            GLib.Error())
+
+    def _run_send_to_darktable(self, procedure, run_mode, image,
+                                 drawables, config, data):
+        """R105: publish the active canvas for Darktable."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        ok = self._cross_interface_send(
+            image, target="darktable", kind="asset",
+            friendly="Darktable")
+        return procedure.new_return_values(
+            Gimp.PDBStatusType.SUCCESS if ok
+            else Gimp.PDBStatusType.EXECUTION_ERROR,
+            GLib.Error())
+
+    def _run_send_to_sillytavern(self, procedure, run_mode, image,
+                                   drawables, config, data):
+        """R105: publish the active canvas for SillyTavern (character
+        avatar / scene reference)."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        ok = self._cross_interface_send(
+            image, target="sillytavern", kind="asset",
+            friendly="SillyTavern")
+        return procedure.new_return_values(
+            Gimp.PDBStatusType.SUCCESS if ok
+            else Gimp.PDBStatusType.EXECUTION_ERROR,
+            GLib.Error())
 
     def _run_calibration_wizard(self, procedure, run_mode, image, drawables, config, data):
         """Calibration Wizard: tune AI settings with A/B image comparisons."""
