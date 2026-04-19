@@ -508,14 +508,22 @@ async function refreshActiveInterfaces() {
         }
         const data = await res.json();
         const ifaces = data.interfaces || {};
-        // Filter to active only (installed + enabled + online). The Guild
-        // itself is always active when this page is loaded; skip it here
-        // since it's the thing rendering the UI.
+        // We want to SEE every interface the Guild has ever heard from,
+        // not just the perfect-installed-and-online triplet. Keep any
+        // interface the user enabled and that either:
+        //   - is installed somewhere (local plugin or on a remote antenna),
+        //   - or is heartbeating right now (online=true via remote),
+        //   - or has heartbeated recently (last_heartbeat within 5 min).
+        // Skip the Guild's self-entry — it's the thing rendering the UI.
+        const NOW_S = Date.now() / 1000;
+        const RECENT_S = 300;
         const active = {};
         const keys = [];
         for (const [k, v] of Object.entries(ifaces)) {
             if (k === 'guild') continue;
-            if (v.installed && v.enabled && v.online) {
+            if (!v.enabled) continue;
+            const recent = (v.last_heartbeat || 0) > NOW_S - RECENT_S;
+            if (v.installed || v.online || recent) {
                 active[k] = v;
                 keys.push(k);
             }
@@ -542,12 +550,97 @@ function renderActiveInterfaceChips() {
         return;
     }
     container.style.display = '';
+    const NOW_S = Date.now() / 1000;
     const html = keys.map(k => {
         const v = window.activeInterfaces[k];
         const label = v.ui_label || k;
         const icon = v.icon || '🔌';
-        const tooltip = (v.capabilities || []).join(', ') || 'connected';
-        return `<span class="active-iface-chip" title="${tooltip}">${icon} ${label}</span>`;
+        // State class: online-now / stale (recent heartbeat but not online) / idle
+        const age = NOW_S - (v.last_heartbeat || 0);
+        const cls = v.online
+            ? 'online'
+            : (age < 300 ? 'stale' : 'idle');
+        // Origin badge: where is the app living?
+        const meta = v.last_meta || {};
+        const origin = v.origin || (v.online_remote ? 'remote'
+                                   : v.online_local ? 'local' : 'none');
+        const host = meta.machine || meta.ip
+                   || (origin === 'local' ? 'this machine' : '');
+        const caps = (v.capabilities || []).join(', ');
+        // Tooltip: one line of status + machine + capabilities
+        const statusTxt = v.online ? 'online' : (age < 300 ? 'recently seen' : 'idle');
+        const tipParts = [`${label}: ${statusTxt}`];
+        if (host) tipParts.push(`on ${host}` + (origin === 'remote' ? ' (remote)' : ''));
+        if (caps) tipParts.push(caps);
+        const tooltip = tipParts.join(' · ').replace(/"/g, '&quot;');
+        const hostBadge = host ? `<span class="iface-host">${host}</span>` : '';
+        return `<span class="active-iface-chip iface-${cls} iface-${origin}" title="${tooltip}">
+                  <span class="iface-icon">${icon}</span>
+                  <span class="iface-label">${label}</span>
+                  ${hostBadge}
+                </span>`;
+    }).join('');
+    row.innerHTML = html;
+}
+
+// ── Antennas (remote-machine agents) ──────────────────────────────────
+// Polls /api/antennas and renders one chip per remote machine running an
+// antenna. Each chip shows hostname + IP + declared/detected services.
+// Clicking a chip could open the antenna's diagnostic in the future;
+// today it's a visible signal that a remote GPU is paired.
+async function refreshAntennas() {
+    try {
+        const res = await fetch('/api/antennas');
+        if (!res.ok) return;
+        const data = await res.json();
+        renderAntennaChips(data.antennas || []);
+    } catch (e) {
+        renderAntennaChips([]);
+    }
+}
+
+function renderAntennaChips(antennas) {
+    const container = document.getElementById('connected-antennas-container');
+    const row = document.getElementById('connected-antennas-row');
+    if (!container || !row) return;
+    if (!Array.isArray(antennas) || antennas.length === 0) {
+        container.style.display = 'none';
+        row.innerHTML = '';
+        return;
+    }
+    container.style.display = '';
+    const NOW_S = Date.now() / 1000;
+    const html = antennas.map(a => {
+        const host = a.hostname || a.ip || '?';
+        const ip = a.ip || '';
+        const services = a.services || [];
+        const detail = a.services_detail || {};
+        const age = NOW_S - (a.last_heartbeat || 0);
+        const cls = a.online ? 'online' : (age < 300 ? 'stale' : 'idle');
+        // Build per-service list with reachability where known.
+        const svcLines = services.map(s => {
+            const d = detail[s] || {};
+            let note = '';
+            if (d.reachable === true)  note = '✓';
+            if (d.reachable === false) note = '✗';
+            if (d.declared === true && !('reachable' in d)) note = '·';
+            if (s === 'comfyui' && d.vram_free_gb != null && d.vram_total_gb != null) {
+                note += ` (${d.vram_free_gb.toFixed(1)}/${d.vram_total_gb.toFixed(1)} GB free)`;
+            }
+            return `${s}${note ? ' ' + note : ''}`;
+        });
+        const tooltip = (
+            `Antenna: ${host}\n` +
+            (ip ? `IP: ${ip}\n` : '') +
+            `Status: ${a.online ? 'online' : (age < 300 ? 'recently seen' : 'idle')}\n` +
+            (svcLines.length ? `Services:\n  ${svcLines.join('\n  ')}` : '')
+        ).replace(/"/g, '&quot;');
+        const count = services.length;
+        return `<span class="antenna-chip antenna-${cls}" title="${tooltip}">
+                  <span class="antenna-icon">📡</span>
+                  <span class="antenna-host">${host}</span>
+                  <span class="antenna-count">${count}</span>
+                </span>`;
     }).join('');
     row.innerHTML = html;
 }
@@ -790,6 +883,12 @@ async function initialize() {
     // Dynamic: if no interface qualifies, the whole strip stays hidden.
     refreshActiveInterfaces();
     setInterval(refreshActiveInterfaces, 10000);
+    // Antennas strip — polls /api/antennas and renders one chip per
+    // remote machine with declared / detected services. Gives the user
+    // a live signal that a remote GPU pairing is alive (and how many
+    // services it's reporting).
+    refreshAntennas();
+    setInterval(refreshAntennas, 10000);
     // Recent-assets strip — polls /api/assets and subscribes to
     // *.asset.uploaded on the event bus for live updates. Shows the
     // most recent N images from every connected interface.
