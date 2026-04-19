@@ -1111,7 +1111,29 @@ def fetch_all_characters(comfy_url=None):
         )
 
     # -- Merge into unified model wizards --
+    # `misc` is the catch-all bucket for build_fns that didn't match any
+    # known family prefix. Previously this spawned a "MISC Workflows"
+    # wizard ("The Enigma of Unknown") which was useless — no backing
+    # model, no coherent persona. We drop it here and instead fold any
+    # misc build_fns into the studio_imaginus tool list so they stay
+    # reachable via direct_cast without needing a dedicated wizard.
+    _misc_fns = fn_grouped.pop("misc", [])
+    if _misc_fns:
+        for _fn in _misc_fns:
+            _fname = _fn.get("fn_name")
+            if not _fname:
+                continue
+            for _w in chars:
+                if _w.get("id") == "studio_imaginus":
+                    _bfs = list(_w.get("build_fns") or [])
+                    if _fname not in _bfs:
+                        _bfs.append(_fname)
+                        _w["build_fns"] = _bfs
+                    break
     all_model_keys = set(list(wf_grouped.keys()) + list(fn_grouped.keys()))
+    # Belt-and-suspenders: any stale "misc" leftover should never spawn
+    # a wizard, even if the state file still references one.
+    all_model_keys.discard("misc")
 
     for model_key in sorted(all_model_keys):
         model_wfs = wf_grouped.get(model_key, [])
@@ -2459,6 +2481,37 @@ if CROSS_INTERFACE_AVAILABLE:
         _ASSET_GALLERY = None
         _SIGNAL_NOTIFIER = None
 
+def _resolve_stt_backend_url():
+    """Return the HTTP URL of a registered kobold_tts service, checking
+    in order: local app_control entry → paired antenna that declares
+    kobold_tts in its services list. Returns None when nothing is set
+    so the caller can surface a "register one first" hint.
+    """
+    cfg = _guided_install_load_config()
+    local = (cfg.get("app_control") or {}).get("kobold_tts") or {}
+    lh = (local.get("launcher") or "").strip()
+    lp = local.get("port")
+    if lp:
+        try:
+            return f"http://127.0.0.1:{int(lp)}"
+        except (TypeError, ValueError):
+            pass
+    # Antenna fallback
+    try:
+        if ANTENNA_REGISTRY_AVAILABLE and _antenna_registry is not None:
+            for a in _antenna_registry.list_entries(only_online=True):
+                svcs = set(a.services or [])
+                if 'kobold_tts' in svcs or 'kobold' in svcs:
+                    host = a.hostname or a.ip
+                    if host:
+                        # Convention: kobold_tts defaults to 5002 unless
+                        # overridden; RP kobold stays on 5001.
+                        return f"http://{host}:5002"
+    except Exception:
+        pass
+    return None
+
+
 _BANISHED_PATH = os.path.join(_STATE_DIR, "banished_ids.json")
 _ASSETS_PATH = os.path.join(_STATE_DIR, "generated_assets.json")
 _CUSTOM_WIZARDS_PATH = os.path.join(_STATE_DIR, "custom_wizards.json")
@@ -2651,6 +2704,10 @@ def _load_custom_wizards():
         loaded = 0
         for entry in data.get("characters", []):
             char_id = entry.get("id", "")
+            # Drop the legacy model_misc wizard on load — we no longer
+            # surface it (unclaimed build_fns now fold into Imaginus).
+            if char_id == "model_misc":
+                continue
             if char_id in existing_ids:
                 continue  # already populated by auto-detection
             CHARS_CACHE.append(entry)
@@ -7444,6 +7501,13 @@ class GuildHandler(SimpleHTTPRequestHandler):
         except (_ue.URLError, OSError, json.JSONDecodeError) as e:
             return {"error": f"{type(e).__name__}: {e}"}
 
+    def _resolve_stt_backend_helper(self):
+        """Instance-level wrapper retained for symmetry with other
+        _resolve_* helpers. The actual lookup lives in the module-level
+        _resolve_stt_backend_url() because it's also called from
+        non-handler contexts."""
+        return _resolve_stt_backend_url()
+
     def _resolve_antenna_agent(self, hostname):
         """Look up the agent_url + bearer token for a paired antenna by
         hostname. Falls back to the single-slot guild_config entries if
@@ -10539,7 +10603,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
             #   {"app": "comfyui"}   (uses stored target)
             #   {"app": "comfyui", "target": "theo"}  (override)
             app = (data.get("app") or "").strip().lower()
-            if app not in ("comfyui", "ollama", "kobold"):
+            if app not in ("comfyui", "ollama", "kobold",
+                            "kobold_rp", "kobold_tts"):
                 # Others (SillyTavern, Signal, GIMP, DT, Resolve) have
                 # no generic launcher yet — they're user-managed. The
                 # toggle still persists but start is a no-op for them.
@@ -10575,6 +10640,88 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 return self.end_json(502, {"target": target, **resp})
             return self.end_json(200, {"target": target, **(resp or {})})
 
+        elif self.path == '/api/stt' and self.command == 'POST':
+            # Walkie-talkie STT. Body: {audio_b64: "...", mime: "audio/webm"}.
+            # Forwards to whichever kobold_tts service is registered —
+            # checks the local app_control first, then every paired
+            # antenna that declares kobold_tts. KoboldCpp's Whisper
+            # endpoint is /api/extra/transcribe (GGUF Whisper model
+            # loaded in whisper mode). If no STT backend is configured
+            # we return 503 so the client can show a helpful message.
+            audio_b64 = (data.get("audio_b64") or "").strip()
+            mime = (data.get("mime") or "audio/webm").strip()
+            if not audio_b64:
+                return self.end_json(400, {"error": "audio_b64 required"})
+            try:
+                audio_bytes = base64.b64decode(audio_b64)
+            except Exception:
+                return self.end_json(400, {"error": "audio_b64 must be base64"})
+            stt_url = _resolve_stt_backend_url()
+            if not stt_url:
+                return self.end_json(503, {
+                    "error": "no kobold_tts service registered",
+                    "hint": "right-click an antenna chip (or Guild tray → "
+                             "Connect an app) to register a KoboldCpp "
+                             "instance in TTS/STT mode.",
+                })
+            try:
+                import urllib.request as _ur
+                # KoboldCpp's /api/extra/transcribe accepts a multipart
+                # form. Build it manually — stdlib has no dedicated
+                # multipart writer but the format is small.
+                boundary = f"spellcastertaudio{int(time.time())}"
+                body_parts = [
+                    f"--{boundary}".encode(),
+                    b'Content-Disposition: form-data; name="file"; filename="a.webm"',
+                    f"Content-Type: {mime}".encode(),
+                    b"", audio_bytes,
+                    f"--{boundary}--".encode(), b"",
+                ]
+                body_bytes = b"\r\n".join(body_parts)
+                req = _ur.Request(
+                    stt_url.rstrip('/') + '/api/extra/transcribe',
+                    data=body_bytes,
+                    headers={
+                        "Content-Type": f"multipart/form-data; boundary={boundary}",
+                    }, method='POST')
+                with _ur.urlopen(req, timeout=30) as resp:
+                    raw = resp.read()
+                    out = json.loads(raw.decode('utf-8', 'replace'))
+                text = (out.get("text") if isinstance(out, dict)
+                         else str(out)).strip()
+                return self.end_json(200, {"text": text, "backend": stt_url})
+            except Exception as e:
+                return self.end_json(502, {
+                    "error": f"STT failed: {type(e).__name__}: {e}",
+                })
+
+        elif self.path == '/api/tts' and self.command == 'POST':
+            # Forward text → audio to the same kobold_tts backend via
+            # /api/extra/generate_audio. The client plays the returned
+            # base64 WAV directly. When no backend is registered, we
+            # return 503 and the client falls back to Web Speech API.
+            text = (data.get("text") or "").strip()
+            if not text:
+                return self.end_json(400, {"error": "text required"})
+            tts_url = _resolve_stt_backend_url()  # same service handles both
+            if not tts_url:
+                return self.end_json(503, {"error": "no kobold_tts registered"})
+            try:
+                import urllib.request as _ur
+                body_bytes = json.dumps({"prompt": text}).encode('utf-8')
+                req = _ur.Request(
+                    tts_url.rstrip('/') + '/api/extra/generate_audio',
+                    data=body_bytes,
+                    headers={"Content-Type": "application/json"},
+                    method='POST')
+                with _ur.urlopen(req, timeout=30) as resp:
+                    out = json.loads(resp.read().decode('utf-8', 'replace'))
+                return self.end_json(200, out)
+            except Exception as e:
+                return self.end_json(502, {
+                    "error": f"TTS failed: {type(e).__name__}: {e}",
+                })
+
         elif self.path == '/api/app_control/register' and self.command == 'POST':
             # "Connect an app" — persist a launcher path for a specific
             # app on either the local Guild machine OR a paired antenna.
@@ -10586,6 +10733,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
             app = (data.get("app") or "").strip().lower()
             launcher = (data.get("launcher") or "").strip()
             allowed_apps = {"comfyui", "ollama", "kobold",
+                             "kobold_rp", "kobold_tts",
                              "gimp", "darktable", "resolve",
                              "sillytavern", "signal"}
             if app not in allowed_apps:
@@ -10634,7 +10782,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
 
         elif self.path == '/api/app_control/stop' and self.command == 'POST':
             app = (data.get("app") or "").strip().lower()
-            if app not in ("comfyui", "ollama", "kobold"):
+            if app not in ("comfyui", "ollama", "kobold",
+                            "kobold_rp", "kobold_tts"):
                 return self.end_json(400, {
                     "error": f"{app!r} has no managed launcher",
                 })
@@ -10670,7 +10819,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
             for app, entry in matrix.items():
                 if not (isinstance(entry, dict) and entry.get("auto_start")):
                     continue
-                if app not in ("comfyui", "ollama", "kobold"):
+                if app not in ("comfyui", "ollama", "kobold",
+                            "kobold_rp", "kobold_tts"):
                     continue
                 target = str(entry.get("target") or "local").strip()
                 try:

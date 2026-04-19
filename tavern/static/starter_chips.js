@@ -67,11 +67,8 @@ const STARTER_CHIPS = {
         { icon: "📝", label: "Video from a description",  message: "Make a short video from a text description." },
         { icon: "🔁", label: "Make it loop smoothly",     message: "Create a smooth looping video." },
     ],
-    // Enigma — misc
-    "model_misc": [
-        { icon: "🎲", label: "Surprise me",               message: "Show me what you can do." },
-        { icon: "🔧", label: "Run a custom workflow",     message: "I want to run a custom workflow." },
-    ],
+    // Legacy "Enigma — misc" chips were removed with model_misc; its
+    // build_fns now fold into studio_imaginus at wizard-build time.
 
     // ── Fallback for per-model wizards (comfyui_*) ──
     "_per_model_default": [

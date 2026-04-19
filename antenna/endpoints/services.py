@@ -87,7 +87,13 @@ def register_service(ctx: dict[str, Any]) -> tuple[int, dict]:
     # Darktable, Resolve, SillyTavern, Signal) so the Guild at least
     # knows where they live. Launcher paths for those still persist; the
     # Guild side decides what to do with them.
-    allowed = {"comfyui", "kobold", "ollama",
+    #
+    # Kobold supports multiple modes on one machine (RP chat, TTS/STT
+    # voice). We treat each mode as its own service key (kobold_rp,
+    # kobold_tts) so two KoboldCpp processes can coexist with their own
+    # launcher + port, and the Guild's chip row renders one chip per
+    # mode. See Item 4 of the sidebar rework.
+    allowed = {"comfyui", "kobold", "kobold_rp", "kobold_tts", "ollama",
                 "gimp", "darktable", "resolve",
                 "sillytavern", "signal"}
     if name not in allowed:

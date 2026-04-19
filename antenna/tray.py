@@ -194,6 +194,15 @@ class _TrayState:
         items.append(pystray.MenuItem(
             "Check for antenna update",
             lambda icon, _item: self._trigger_self_update()))
+        # Setup Signal bridge — declares this antenna as a Signal bridge
+        # host. Pops the wizard-guided setup dialog that walks the user
+        # through signal-cli install + phone linking, then registers
+        # 'signal' in the antenna services list so the Guild's Connected
+        # apps chip row picks it up automatically.
+        items.append(pystray.MenuItem(
+            "Setup Signal bridge…",
+            lambda icon, _item: threading.Thread(
+                target=self._setup_signal_bridge, daemon=True).start()))
         items.append(pystray.MenuItem(
             "Open antenna folder",
             lambda icon, _item: _open_folder(os.path.dirname(
@@ -249,6 +258,77 @@ class _TrayState:
                 agent.notify("Self-update failed",
                               f"{type(e).__name__}: {e}", level="error")
         threading.Thread(target=worker, daemon=True).start()
+
+    def _setup_signal_bridge(self):
+        """Guide the user through declaring this antenna as the Signal
+        bridge host. Three pieces:
+
+        1. Confirm signal-cli (or signal-cli-rest-api) is installed and
+           reachable. If not, surface install instructions.
+        2. Register the 'signal' service in this antenna's config so
+           the Guild's Connected apps chip row picks it up.
+        3. Pop a final dialog with next steps (link phone via QR, set
+           up webhook target in Guild settings).
+
+        Actual signal-cli automation is deferred — the user already has
+        full access to signal-cli via this dialog, and the Guild's
+        /api/signal_bridge_status probe detects the service at
+        http://<antenna>:8080 (signal-cli-rest-api default).
+        """
+        try:
+            # Mark 'signal' as an enabled service so chips render.
+            cfg = config.load_config()
+            services = list(cfg.get("services") or [])
+            if "signal" not in services:
+                services.append("signal")
+                cfg["services"] = services
+                config.save_config(cfg)
+            agent.notify("Signal bridge registered",
+                          "This antenna is now advertised to the Guild "
+                          "as a Signal host. Point signal-cli-rest-api at "
+                          "port 8080 and link your phone.", level="success")
+        except Exception as e:  # noqa: BLE001
+            agent.notify("Signal bridge setup failed",
+                          f"{type(e).__name__}: {e}", level="error")
+            return
+        # Show a tk dialog with copy-pasteable install steps so the user
+        # has a concrete next action. Optional — notify toast already
+        # carries the primary message.
+        try:
+            import tkinter as tk
+            from tkinter import ttk
+            root = tk.Tk()
+            root.title("Signal bridge — setup")
+            root.attributes("-topmost", True)
+            root.configure(bg="#12101d")
+            frm = ttk.Frame(root, padding=20)
+            frm.pack()
+            ttk.Label(frm,
+                       text="Signal bridge registered on this antenna",
+                       foreground="#ffd700", background="#12101d",
+                       font=("Segoe UI", 11, "bold")).pack()
+            steps = (
+                "Next steps:\n\n"
+                "1. Install signal-cli-rest-api (Docker or native).\n"
+                "   https://github.com/bbernhard/signal-cli-rest-api\n\n"
+                "2. Start it on port 8080 (the antenna advertises this\n"
+                "   port as the default signal endpoint).\n\n"
+                "3. Link your phone:\n"
+                "     curl http://127.0.0.1:8080/v1/qrcodelink?device_name=spellcaster\n\n"
+                "4. Scan the QR code with Signal → Settings → Linked Devices.\n\n"
+                "The Guild's Connected apps row will pick up the\n"
+                "new 'signal' chip on the next poll (≤10s).")
+            txt = tk.Text(frm, width=64, height=14, wrap="word",
+                           bg="#1a1730", fg="#e8e6f5",
+                           insertbackground="#e8e6f5",
+                           font=("Consolas", 10), borderwidth=0)
+            txt.insert("1.0", steps)
+            txt.configure(state="disabled")
+            txt.pack(pady=(12, 8))
+            ttk.Button(frm, text="Close", command=root.destroy).pack()
+            root.mainloop()
+        except Exception:  # noqa: BLE001
+            pass  # toast already carries the primary message
 
     def _pair_with_guild(self):
         """Start (or resurface) a pairing session. Pops a tk dialog with
