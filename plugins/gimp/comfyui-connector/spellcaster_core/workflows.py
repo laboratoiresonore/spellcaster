@@ -3611,14 +3611,14 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
     pass1_id = nf.ksampler_advanced(
         high_ref, ["40", 0], ["40", 1], latent_ref,
         add_noise="enable", noise_seed=seed,
-        steps=steps, cfg=cfg, sampler_name="euler_ancestral", scheduler="simple",
+        steps=steps, cfg=cfg, sampler_name="euler", scheduler="simple",
         start_at_step=0, end_at_step=second_step,
         return_with_leftover_noise="enable", node_id="50",
     )
     pass2_id = nf.ksampler_advanced(
         low_ref, ["40", 0], ["40", 1], [pass1_id, 0],
         add_noise="disable", noise_seed=0,
-        steps=steps, cfg=1, sampler_name="euler_ancestral", scheduler="simple",
+        steps=steps, cfg=1, sampler_name="euler", scheduler="simple",
         start_at_step=second_step, end_at_step=10000,
         return_with_leftover_noise="disable", node_id="51",
     )

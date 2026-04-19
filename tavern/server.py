@@ -10691,6 +10691,32 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     "error": "host and code are required",
                     "hint": "pass {host:'192.168.x.y', code:'123456'}",
                 })
+            # Tolerate common user input shapes so the pair flow doesn't
+            # die with a cryptic getaddrinfo error:
+            #   "http://192.168.x.y"        → 192.168.x.y
+            #   "https://antenna.lan:7334"   → antenna.lan (port carried to port field)
+            #   "192.168.x.y:7334"           → 192.168.x.y + port
+            #   "192.168.x.y/"               → 192.168.x.y
+            try:
+                from urllib.parse import urlsplit as _urlsplit
+                if "://" in host:
+                    _u = _urlsplit(host)
+                    if _u.hostname:
+                        host = _u.hostname
+                        if _u.port:
+                            port = _u.port
+                else:
+                    # bare "ip:port" without scheme
+                    if host.count(":") == 1:
+                        _h, _p = host.rsplit(":", 1)
+                        if _p.isdigit():
+                            host = _h
+                            port = int(_p)
+                host = host.strip("/")
+            except Exception:
+                # Fall through with whatever host the user typed — urllib
+                # will surface a clearer error than our stripping code.
+                pass
             import urllib.request as _ur, urllib.error as _ue, ssl as _ssl, json as _json
             body = _json.dumps({"code": code}).encode()
             ctx_ssl = _ssl.create_default_context()
