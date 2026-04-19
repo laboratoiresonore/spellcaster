@@ -1778,6 +1778,10 @@ function VideoPanel() {
   const [restorePreview, setRestorePreview] = _useState(null);
   // R66a: keyboard shortcuts cheatsheet modal (toggled with '?')
   const [showShortcuts, setShowShortcuts] = _useState(false);
+  // R68a: side-by-side compare modal + its selected shot ids
+  const [compareModal, setCompareModal] = _useState(null);  // {a: shotId, b: shotId}
+  // R68b: board-stats mini-dashboard toggle
+  const [showBoardStats, setShowBoardStats] = _useState(false);
   // R66b: bulk search-replace panel toggle
   const [showSearchReplace, setShowSearchReplace] = _useState(false);
   const [searchReplaceFind, setSearchReplaceFind] = _useState("");
@@ -3544,6 +3548,68 @@ function VideoPanel() {
         </div>
       </div>
 
+      {/* R68b: board-stats fold-out — lazy-compute on click */}
+      {shots.length > 0 && (
+        <div className="board-stats-wrapper">
+          <button onClick={() => setShowBoardStats(v => !v)}
+            className="board-stats-toggle text-xs text-slate-400 hover:text-amber-300 flex items-center gap-1"
+          >{showBoardStats ? "▼" : "▶"} Board stats</button>
+          {showBoardStats && (() => {
+            const stats = {
+              total: shots.length,
+              by_status: {},
+              by_preset: {},
+              by_backend: {},
+              by_priority: {},
+              total_render_s: 0,
+              rendered_count: 0,
+              bookmarked: 0,
+              with_refs: 0,
+              with_trajectories: 0,
+              with_scene: 0,
+            };
+            for (const s of shots) {
+              stats.by_status[s.status] = (stats.by_status[s.status] || 0) + 1;
+              if (s.preset) stats.by_preset[s.preset] = (stats.by_preset[s.preset] || 0) + 1;
+              if (s.backend) stats.by_backend[s.backend] = (stats.by_backend[s.backend] || 0) + 1;
+              const prio = s.priority || "normal";
+              stats.by_priority[prio] = (stats.by_priority[prio] || 0) + 1;
+              if (s.render_duration_s) { stats.total_render_s += s.render_duration_s; stats.rendered_count++; }
+              if (s.bookmarked) stats.bookmarked++;
+              if (s.ref_image) stats.with_refs++;
+              if ((s.trajectories || []).length) stats.with_trajectories++;
+              if (s.scene_id) stats.with_scene++;
+            }
+            const avgRender = stats.rendered_count > 0
+              ? (stats.total_render_s / stats.rendered_count).toFixed(1) : "—";
+            const totalMin = Math.round(stats.total_render_s / 60);
+            const fmtPairs = (obj) => Object.entries(obj)
+              .sort(([,a],[,b]) => b - a)
+              .map(([k, v]) => `${k}: ${v}`).join(" · ");
+            return (
+              <div className="board-stats-panel bg-slate-900 border border-amber-600/20 rounded-xl p-3 text-[11px] space-y-1.5 mt-2">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  <div><span className="text-slate-500">Total:</span> <span className="text-amber-200 font-semibold">{stats.total}</span></div>
+                  <div><span className="text-slate-500">Rendered:</span> <span className="text-emerald-300">{stats.rendered_count}</span></div>
+                  <div><span className="text-slate-500">Avg render:</span> <span className="text-slate-200">{avgRender}s</span></div>
+                  <div><span className="text-slate-500">Total GPU time:</span> <span className="text-slate-200">{totalMin}m</span></div>
+                  <div><span className="text-slate-500">Bookmarked:</span> <span className="text-yellow-300">{stats.bookmarked}</span></div>
+                  <div><span className="text-slate-500">With refs:</span> <span className="text-purple-300">{stats.with_refs}</span></div>
+                  <div><span className="text-slate-500">With trajectories:</span> <span className="text-teal-300">{stats.with_trajectories}</span></div>
+                  <div><span className="text-slate-500">In scenes:</span> <span className="text-indigo-300">{stats.with_scene}</span></div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1.5 border-t border-slate-700/40 text-slate-400">
+                  <div><span className="text-slate-500">By status: </span>{fmtPairs(stats.by_status)}</div>
+                  <div><span className="text-slate-500">By preset: </span>{fmtPairs(stats.by_preset) || "—"}</div>
+                  <div><span className="text-slate-500">By backend: </span>{fmtPairs(stats.by_backend) || "—"}</div>
+                  <div><span className="text-slate-500">By priority: </span>{fmtPairs(stats.by_priority) || "—"}</div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
       {/* R67b: auto-group scenes button — always shown (useful even
           when no scenes exist yet, since it CAN create them). Placed
           just above the scene quick-select bar. */}
@@ -3635,6 +3701,24 @@ function VideoPanel() {
               className="batch-search-replace-btn px-3 py-1 rounded bg-violet-700/40 hover:bg-violet-600/50 text-violet-100 text-xs"
               title="Find & replace text across selected shots' prompts"
             >{showSearchReplace ? "Close S/R" : "Find/Replace"}</button>
+            {/* R68a: compare — needs exactly 2 shots, both with videos */}
+            {(() => {
+              const selectedList = Array.from(selected);
+              const pair = selectedList.length === 2
+                ? selectedList.map(id => shots.find(s => s.id === id)).filter(Boolean)
+                : null;
+              const playable = pair && pair.every(s => s?.video_path);
+              const tip = !pair ? "Select exactly 2 shots to compare"
+                : !playable ? "Both shots must have a rendered video"
+                : `Play ${pair[0].title || "Shot 1"} and ${pair[1].title || "Shot 2"} side-by-side`;
+              return (
+                <button onClick={() => playable && setCompareModal({a: pair[0].id, b: pair[1].id})}
+                  disabled={!playable}
+                  className="batch-compare-btn px-3 py-1 rounded bg-teal-700/40 hover:bg-teal-600/50 text-teal-100 text-xs disabled:bg-slate-700 disabled:text-slate-500"
+                  title={tip}
+                >↔ Compare</button>
+              );
+            })()}
             <button onClick={batchRevert} className="batch-revert-btn px-3 py-1 rounded bg-amber-700/40 hover:bg-amber-600/50 text-amber-100 text-xs">Batch Revert</button>
             <button onClick={() => setShowPromptEdit(v => !v)} className="batch-prompt-edit-btn px-3 py-1 rounded bg-violet-700/40 hover:bg-violet-600/50 text-violet-100 text-xs">
               {showPromptEdit ? "Close Prompt Edit" : "Prompt ±"}
@@ -3938,6 +4022,61 @@ function VideoPanel() {
           onSaved={saveTrajectories}
         />
       )}
+
+      {/* R68a: side-by-side compare modal — two video tags locked to
+          the same playback controls. Scrubbing/pausing one affects both. */}
+      {compareModal && (() => {
+        const shotA = shots.find(s => s.id === compareModal.a);
+        const shotB = shots.find(s => s.id === compareModal.b);
+        if (!shotA || !shotB) return null;
+        return (
+          <div className="compare-modal fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
+               onClick={() => setCompareModal(null)}>
+            <div className="bg-slate-900 border border-teal-600/40 rounded-xl p-4 max-w-6xl w-full space-y-3"
+                 onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-teal-200">Side-by-side compare</h2>
+                <button onClick={() => setCompareModal(null)}
+                  className="text-slate-400 hover:text-slate-200 text-xl leading-none">×</button>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {[shotA, shotB].map((s, i) => (
+                  <div key={s.id} className="compare-pane space-y-2">
+                    <div className="text-xs text-slate-300">
+                      <span className="font-medium">{s.title || `Shot ${s.index + 1}`}</span>
+                      <span className="text-slate-500 ml-2">({s.preset})</span>
+                      {s.seed != null && <span className="text-slate-500 ml-2">seed {s.seed}</span>}
+                    </div>
+                    <video src={`/api/video/shots/${s.id}/video`}
+                      className="compare-video w-full rounded bg-black"
+                      controls
+                      onPlay={(e) => {
+                        // Sync: playing one plays the other
+                        const siblings = e.currentTarget.parentNode.parentNode.querySelectorAll("video");
+                        siblings.forEach(v => { if (v !== e.currentTarget && v.paused) v.play().catch(() => {}); });
+                      }}
+                      onPause={(e) => {
+                        const siblings = e.currentTarget.parentNode.parentNode.querySelectorAll("video");
+                        siblings.forEach(v => { if (v !== e.currentTarget && !v.paused) v.pause(); });
+                      }}
+                      onSeeked={(e) => {
+                        const t = e.currentTarget.currentTime;
+                        const siblings = e.currentTarget.parentNode.parentNode.querySelectorAll("video");
+                        siblings.forEach(v => { if (v !== e.currentTarget && Math.abs(v.currentTime - t) > 0.3) v.currentTime = t; });
+                      }}
+                    />
+                    <div className="text-[10px] text-slate-500 line-clamp-3 font-mono">{s.prompt}</div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px] text-slate-500">
+                Pressing play / scrubbing either side keeps the other in sync.
+                Click outside or press × to close.
+              </p>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* R66a: keyboard shortcuts cheatsheet — toggle with '?' */}
       {showShortcuts && (
