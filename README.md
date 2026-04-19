@@ -153,7 +153,7 @@ Yes, we counted. Yes, we noticed. No, we will not be adding a 70th (officially).
 <td align="center" width="25%"><img src="assets/showcase_wan_breathing.gif" alt="Video Gen" width="100%"/><br/><sub><strong>Video Generation</strong> — Wan 2.2 I2V</sub></td>
 </tr>
 <tr>
-<td align="center" width="25%"><img src="assets/showcase_inpaint_chrome.png" alt="Inpaint" width="100%"/><br/><sub><strong>Txt 2 Img</strong> — generate new images</sub></td>
+<td align="center" width="25%"><img src="assets/showcase_inpaint_chrome.png" alt="Inpaint" width="100%"/><br/><sub><strong>Txt 2 Img</strong> — generate anything</sub></td>
 <td align="center" width="25%"><img src="assets/showcase_supir.png" alt="SUPIR" width="100%"/><br/><sub><strong>AI Restoration</strong> — fix old photos</sub></td>
 <td align="center" width="25%"><img src="assets/showcase_detail_hallucinate.png" alt="Detail" width="100%"/><br/><sub><strong>Detail Hallucination</strong> — add texture</sub></td>
 <td align="center" width="25%"><img src="assets/showcase_normal_map.png" alt="3D Normal Map" width="100%"/><br/><sub><strong>3D Normal Map</strong> — surface geometry</sub></td>
