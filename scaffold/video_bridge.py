@@ -398,9 +398,9 @@ class VideoBridge:
                                  on_complete: Optional[Callable[[Shot], None]]
                                  ) -> Dict[str, Any]:
         """Submit a Wan render via ComfyUI directly, bypassing WanGP.
-        Relies on scaffold.video_workflow_dispatch to build the
-        workflow (build_wan_video for i2v, _build_wan_t2v_workflow
-        for t2v)."""
+        Routes through scaffold.video_workflow_dispatch, which calls
+        the canonical spellcaster_core.workflows builders
+        (build_wan22_t2v and build_wan22_i2v — R128)."""
         ref_basename: Optional[str] = None
         input_filenames: List[str] = []
         is_t2v = shot.preset == "wan22_t2v"
