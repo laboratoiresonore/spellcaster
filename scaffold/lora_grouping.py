@@ -44,12 +44,29 @@ _PURPOSE_RULES: list[tuple[str, tuple[str, ...]]] = [
     # bloat. Tag as "<part>_fix" so we group a "feet LoRA" with every
     # other "feet LoRA" regardless of trainer name.
     ("hand_fix",      ("hand", "hands", "fingers", "finger")),
-    ("feet_fix",      ("feet", "foot", "toes", "toe", "soles")),
-    ("face_detail",   ("face_detail", "facedetail", "facial", "face_fix")),
-    ("skin_detail",   ("skin", "pore", "realskin", "skinmix", "epidermis")),
-    ("eye_detail",    ("eye", "eyes", "iris", "pupil")),
+    ("feet_fix",      ("feet", "foot", "toes", "toe", "soles", "footjob",
+                       "foot_worship")),
+    ("face_detail",   ("face_detail", "facedetail", "facial", "face_fix",
+                       "head", "headshot")),
+    ("skin_detail",   ("skin", "pore", "realskin", "skinmix", "epidermis",
+                       "oiled", "chrome skin")),
+    ("eye_detail",    ("eye", "eyes", "iris", "pupil", "sclera")),
     ("teeth_fix",     ("teeth", "mouth", "smile", "lips")),
     ("hair_detail",   ("hair", "hairstyle", "bangs", "ponytail", "braid")),
+
+    # Body / anatomy — catches a massive bucket of NSFW and non-NSFW
+    # LoRAs that all describe body parts or body-shape modifiers.
+    # These were previously all landing under "other".
+    ("anatomy_body",  ("body", "anatomy", "torso", "back", "shoulder",
+                       "waist", "hip", "hips", "thigh", "thighs",
+                       "leg", "legs", "arm", "arms", "butt", "ass",
+                       "booty", "curves", "curvy")),
+    ("anatomy_chest", ("breast", "breasts", "tits", "boob", "boobs",
+                       "sideboob", "underboob", "nipple", "nipples",
+                       "cleavage", "chest", "bust", "perky", "c tits",
+                       "perkyctits")),
+    ("anatomy_genital", ("pussy", "vagina", "vulva", "penis", "cock",
+                         "dick", "genital", "genitals", "pubic")),
 
     # Global quality / detail tweakers
     ("detail_boost",  ("detail", "details", "tweaker", "sharp", "crisp",
@@ -61,11 +78,15 @@ _PURPOSE_RULES: list[tuple[str, tuple[str, ...]]] = [
                        "accel", "distill", "4step", "8step", "speed")),
 
     # Style / aesthetic
-    ("style_anime",   ("anime", "manga", "toon", "2d")),
+    ("style_anime",   ("anime", "manga", "toon", "2d", "waifu")),
     ("style_photoreal", ("photoreal", "realistic", "photo", "realism",
-                         "cinematic", "analog", "film")),
-    ("style_paint",   ("paint", "oil", "watercolor", "impasto", "brush")),
+                         "cinematic", "analog", "film", "photograph")),
+    ("style_paint",   ("paint", "oil", "watercolor", "impasto", "brush",
+                       "illustration", "digital art")),
     ("style_cyber",   ("cyber", "neon", "synthwave", "retrowave")),
+    ("style_gothic",  ("gothic", "dark fantasy", "noir", "dark")),
+    ("style_ethereal", ("ethereal", "elegance", "elegant", "fantasy",
+                        "dreamy", "surreal", "magical")),
 
     # Clothing / outfit
     ("clothing",      ("dress", "outfit", "costume", "armor", "uniform",

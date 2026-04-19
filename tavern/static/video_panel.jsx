@@ -1749,6 +1749,14 @@ function VideoPanel() {
         e.preventDefault();
         const focusedShot = filteredShots[focusedShotIndex];
         if (focusedShot) toggleSelect(focusedShot.id);
+      } else if (e.key === "z" && (e.ctrlKey || e.metaKey)
+                 && !e.shiftKey && focusedShotIndex !== null) {
+        // R59b: Ctrl+Z on a focused card → restore its most recent
+        // "Auto:" snapshot (the one auto-captured before the last
+        // destructive batch op from R46a).
+        e.preventDefault();
+        const focusedShot = filteredShots[focusedShotIndex];
+        if (focusedShot) undoLastAutoSnapshot(focusedShot);
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -2008,6 +2016,35 @@ function VideoPanel() {
       await refresh();
     } catch (e) {
       addToast("Restore failed: " + (e.message || "unknown"), "error");
+    }
+  };
+
+  // R59b: Ctrl+Z shortcut — restore the most recent auto-snapshot for
+  // `shot` (the one captured before the last destructive batch op).
+  // Does nothing if there's no Auto: snapshot on this shot. The
+  // snapshot is NOT deleted after restore — the user can still undo
+  // the undo by hitting Restore on it manually.
+  const undoLastAutoSnapshot = async (shot) => {
+    const autos = (shot.snapshots || []).filter(s =>
+      (s.label || "").startsWith("Auto:"));
+    if (autos.length === 0) {
+      addToast("No auto-snapshot to undo — nothing destructive has run on this shot",
+               "info");
+      return;
+    }
+    // Newest Auto: snapshot (they're appended in order, newest last)
+    const latest = autos[autos.length - 1];
+    try {
+      const res = await api.post(
+        `/api/video/shots/${shot.id}/snapshot/${latest.id}/restore`, {});
+      if (res && res.restored) {
+        addToast(`Undid "${latest.label}"`, "success");
+      } else {
+        addToast(res?.error || "Undo failed (shot may be locked)", "error");
+      }
+      await refresh();
+    } catch (e) {
+      addToast("Undo failed: " + (e.message || "unknown"), "error");
     }
   };
 
@@ -2654,6 +2691,25 @@ function VideoPanel() {
     }
   };
 
+  // R59a: release exactly one queued shot then auto-pause again.
+  // Useful for iterative review: render, inspect, render, inspect...
+  const renderNext = async () => {
+    try {
+      const res = await api.post("/api/video/queue/next", {});
+      if (res && res.status === "stepping") {
+        addToast("Stepping queue — will pause after next render", "info");
+        // Queue is now running; reflect that until the auto-pause fires
+        setQueuePaused(false);
+      } else if (res && res.status === "nothing_to_step") {
+        addToast("Nothing to render — queue is empty", "info");
+      } else {
+        addToast("Render-next: unexpected response", "error");
+      }
+    } catch (e) {
+      addToast("Render-next failed: " + (e.message || "unknown"), "error");
+    }
+  };
+
   const changeMaxConcurrent = async (n) => {
     try {
       const result = await api.post("/api/video/settings", { max_concurrent: n });
@@ -2939,6 +2995,11 @@ function VideoPanel() {
               className={`queue-pause-btn flex items-center gap-1 ${queuePaused ? 'bg-emerald-700/30 hover:bg-emerald-700/50 text-emerald-300' : 'bg-amber-700/30 hover:bg-amber-700/50 text-amber-300'} px-3 py-1.5 rounded-lg text-xs font-medium transition-colors`}
             >
               {queuePaused ? "▶ Resume" : "⏸ Pause"}
+            </button>
+            <button onClick={renderNext}
+              className="queue-next-btn flex items-center gap-1 bg-sky-700/30 hover:bg-sky-700/50 text-sky-300 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+              title="Render one shot then pause (step-through mode for iterative review)"
+            >⏭ Next
             </button>
             <button onClick={renderAll}
               className="flex items-center gap-1.5 bg-emerald-700/30 hover:bg-emerald-700/50 text-emerald-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors">

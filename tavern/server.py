@@ -2996,13 +2996,32 @@ def _guided_install_finish() -> tuple[int, dict]:
 # Endpoints here are thin HTTP adapters over the existing setup helpers
 # plus a few new calculators (install quote, feature→method mapping).
 
+_SPELLCASTER_STATE_CACHE = {"ts": 0.0, "data": None}
+_SPELLCASTER_STATE_TTL = 5.0    # seconds — tight enough to feel live, loose
+                                 # enough that a page poll-burst doesn't
+                                 # trigger N ComfyUI /system_stats round-trips
+
+
 def _spellcaster_state() -> dict:
     """Full state snapshot the LLM needs to reason about install / calibration.
 
     Richer superset of /api/setup/state: adds per-feature size_mb, model_count,
     method_count + methods, total_methods and installed_methods, detected
     antennas, remote-ComfyUI flag, GPU/VRAM if we can probe it.
+
+    Result is cached for `_SPELLCASTER_STATE_TTL` seconds. Without the cache,
+    the frontend's poll-driven UI and the Spellcaster scaffold each issue
+    separate requests that serially re-probe ComfyUI /system_stats + the
+    antenna inventory — takes 3-5s each time. With it, a poll burst costs
+    one probe.
     """
+    # Cache fast-path
+    now = time.time()
+    if (_SPELLCASTER_STATE_CACHE.get("data") is not None
+            and now - _SPELLCASTER_STATE_CACHE.get("ts", 0)
+                < _SPELLCASTER_STATE_TTL):
+        return _SPELLCASTER_STATE_CACHE["data"]
+
     try:
         from scaffold.spellcaster_wizard import FEATURE_METHODS
     except Exception:
@@ -3114,7 +3133,7 @@ def _spellcaster_state() -> dict:
                   "blender", "krita", "photoshop")
     }
 
-    return {
+    out = {
         "phase": "GREETING",  # caller overrides if it knows better
         "system": {
             "gpu": gpu_name,
@@ -3136,6 +3155,9 @@ def _spellcaster_state() -> dict:
             "total_methods": len(all_methods),
         },
     }
+    _SPELLCASTER_STATE_CACHE["data"] = out
+    _SPELLCASTER_STATE_CACHE["ts"] = time.time()
+    return out
 
 
 def _spellcaster_quote(feature_keys) -> tuple[int, dict]:
@@ -7175,11 +7197,18 @@ class GuildHandler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=_THIS_DIR, **kwargs)
 
     def end_json(self, status, payload):
-        self.send_response(status)
-        self.send_header('Content-Type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.end_headers()
-        self.wfile.write(json.dumps(payload).encode('utf-8'))
+        try:
+            self.send_response(status)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(payload).encode('utf-8'))
+        except (ConnectionAbortedError, ConnectionResetError,
+                BrokenPipeError):
+            # Client disconnected (common: browser polling with a short
+            # timeout hitting a slow endpoint). No point logging a full
+            # traceback for that — the response is useless anyway.
+            pass
 
     def _fetch_antenna_json(self, base_url, path, token, timeout=15):
         """Helper: authenticated GET against an antenna, returns parsed JSON
@@ -8913,6 +8942,12 @@ class GuildHandler(SimpleHTTPRequestHandler):
             if not _VIDEO_BRIDGE:
                 return self.end_json(503, {"error": "Video Bridge not initialised"})
             return self.end_json(200, _VIDEO_BRIDGE.resume_queue())
+
+        elif self.path == '/api/video/queue/next' and self.command == 'POST':
+            # R59a: release ONE queued shot then auto-pause. Idempotent.
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            return self.end_json(200, _VIDEO_BRIDGE.render_next())
 
         elif self.path == '/api/video/queue/status' and self.command == 'GET':
             if not _VIDEO_BRIDGE:
