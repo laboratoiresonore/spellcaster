@@ -182,11 +182,20 @@ def resolve_wan_preset(preset_key: str, models: dict) -> Optional[dict]:
                  preset_key, high, low, len(unet_pool))
         return None
 
-    # CLIP — Wan uses UMT5 family. Prefer GGUF Q8 for quality,
-    # safetensors fp8 for speed. Guild defaults to quality.
-    clip_pool = models.get("clip_gguf", []) + models.get("clip", [])
-    clip = (_pick(clip_pool, {"umt5"}, {"q8", "xxl", "encoder"})
-            or _pick(clip_pool, {"umt5"}, {"fp8", "xxl", "scaled"})
+    # CLIP — Wan uses UMT5-XXL. Prefer the fp8 safetensors (canonical
+    # ComfyUI reference workflows ship `umt5_xxl_fp8_e4m3fn_scaled`),
+    # then full-precision safetensors, and only fall back to the GGUF
+    # quantization when no safetensors are available. GGUF UMT5 has
+    # known implementation quirks on some ComfyUI releases that
+    # manifest as unconditioned output (blue-with-text artifacts —
+    # the prompt embedding leaks through the VAE as visible pixels
+    # instead of steering the diffusion).
+    clip_pool = models.get("clip", []) + models.get("clip_gguf", [])
+    clip = (_pick(clip_pool, {"umt5"}, {"fp8", "xxl", "scaled", "safetensors"},
+                  {"gguf", "nsfw"})
+            or _pick(clip_pool, {"umt5"}, {"xxl", "fp16", "safetensors"},
+                     {"gguf", "nsfw"})
+            or _pick(clip_pool, {"umt5"}, {"q8", "xxl"})
             or _pick(clip_pool, {"umt5"}))
     if not clip:
         log.info("resolve_wan_preset(%s): no UMT5 clip found", preset_key)
@@ -302,7 +311,24 @@ def build_native_workflow(preset_key: str, *, prompt: str,
                            height: Optional[int] = None,
                            length: Optional[int] = None,
                            fps: Optional[int] = None,
-                           turbo: bool = True) -> Tuple[Optional[dict], Optional[str]]:
+                           turbo: bool = True,
+                           # R131: quality-feature passthroughs for the
+                           # Wan 2.1-era build_wan_video path. These mirror
+                           # the GIMP plugin's UI knobs so the Guild /
+                           # Resolve / Cinematographer can request the same
+                           # post-processing chain.
+                           loras_high: Optional[List[Tuple[str, float]]] = None,
+                           loras_low: Optional[List[Tuple[str, float]]] = None,
+                           face_swap: bool = False,
+                           interpolate: bool = False,
+                           rtx_scale: float = 1.0,
+                           teacache: bool = False,
+                           tiled_vae: bool = False,
+                           ip_adapter_image: Optional[str] = None,
+                           ip_adapter_weight: float = 0.5,
+                           motion_mask: Optional[str] = None,
+                           pingpong: bool = False,
+                           ) -> Tuple[Optional[dict], Optional[str]]:
     """Build a ComfyUI workflow dict for `preset_key`.
 
     Returns (workflow, error). On success workflow is a dict suitable
@@ -401,10 +427,20 @@ def build_native_workflow(preset_key: str, *, prompt: str,
                 prompt_text=prompt, negative_text=negative, seed=seed,
                 width=width, height=height, length=length,
                 fps=fps, turbo=turbo,
-                # Keep the first cut minimal — editor-requested quality
-                # features (face swap, RIFE interpolation, RTX upscale)
-                # can be opted in later via preset overrides.
-                face_swap=False, interpolate=False, rtx_scale=1.0,
+                # Pass through user-chosen / caller-chosen quality
+                # knobs. The canonical build_wan_video knows how to
+                # wire each one (face swap via ReActor, RIFE 4× for
+                # interpolate, Wan video upscale for rtx_scale,
+                # IP-Adapter-WAN for ip_adapter_image, etc). Turning
+                # them on/off is the caller's decision, not the
+                # dispatcher's.
+                loras_high=loras_high, loras_low=loras_low,
+                face_swap=face_swap, interpolate=interpolate,
+                rtx_scale=rtx_scale,
+                teacache=teacache, tiled_vae=tiled_vae,
+                ip_adapter_image=ip_adapter_image,
+                ip_adapter_weight=ip_adapter_weight,
+                motion_mask=motion_mask, pingpong=pingpong,
             )
     except Exception as e:  # noqa: BLE001
         return None, f"wan22 builder raised: {e}"
