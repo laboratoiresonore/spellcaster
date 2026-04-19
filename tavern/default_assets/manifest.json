@@ -14,5 +14,16 @@
     "studio_videomancer": "d8a80508b37d5077.png",
     "studio_cinematic": "ec4e4e0929f28523.png",
     "studio_studiocraft": "ec41708386a43c25.png"
+  },
+  "animated_avatars": {
+    "studio_spellcaster": "anim_spellcaster.webp",
+    "studio_imaginus": "anim_imaginus.webp",
+    "studio_transmutex": "anim_transmutex.webp",
+    "studio_masquerade": "anim_masquerade.webp",
+    "studio_restorix": "anim_restorix.webp",
+    "studio_erasure": "anim_erasure.webp",
+    "studio_videomancer": "anim_videomancer.webp",
+    "studio_cinematic": "anim_cinematic.webp",
+    "studio_studiocraft": "anim_studiocraft.webp"
   }
 }
