@@ -48,16 +48,40 @@ class MediaPoolSync:
     # ── Public API ──────────────────────────────────────────────────
 
     def handle_event(self, event: dict):
-        """Called by SSEClient for every event. We filter for `ready` shots."""
+        """Called by SSEClient for every event. We filter for ready shots.
+
+        Two event shapes are accepted:
+
+        1. Video-bridge SSE stream (`/api/video/events`) — emits a single
+           `shot-update` event whenever a Shot mutates. The `data` dict
+           carries the full shot record; we only act when status=='ready'.
+
+        2. Cross-interface bus (`/api/events/stream`) — older shot.*
+           style events that some integrations might still emit. Kept as
+           a fallback so a mixed-old/new server doesn't skip imports.
+        """
         data = event.get("data") or {}
-        event_name = event.get("event", "")
-        status = data.get("status") or ""
-        shot_id = data.get("id")
+        # SSE responses use `event:` field from the stream; internally
+        # iterators store it under both "event" and "kind". Accept both.
+        event_name = event.get("event") or event.get("kind") or ""
+        status = (data.get("status") or "").lower()
+        shot_id = data.get("id") or data.get("shot_id")
         if not shot_id:
             return
 
-        # Only act on shots that just became ready
-        if event_name in ("shot.ready", "shot.status", "shot.updated", "shot.added"):
+        # Canonical: the video bridge emits `shot-update`. When status
+        # flips to ready AND we have a video_path, import it.
+        if event_name == "shot-update":
+            if status == "ready" and data.get("video_path"):
+                self._import_shot(data)
+            elif status == "failed":
+                self._log(f"Shot failed: {data.get('title','?')} — "
+                          f"{data.get('error','?')[:80]}")
+            return
+
+        # Fallback kinds (legacy / cross-interface bus shape)
+        if event_name in ("shot.ready", "shot.status", "shot.updated",
+                          "shot.added"):
             if status == "ready":
                 self._import_shot(data)
         elif event_name == "shot.removed":
@@ -73,13 +97,33 @@ class MediaPoolSync:
     # ── Internals ────────────────────────────────────────────────────
 
     def _import_shot(self, shot: dict):
-        shot_id = shot["id"]
+        shot_id = shot.get("id") or shot.get("shot_id")
+        if not shot_id:
+            return
         with self._lock:
             if shot_id in self._imported:
                 return
         if not self.config.get("auto_import", True):
             self._log(f"Shot ready but auto_import=false: {shot.get('title','?')}")
             return
+
+        # The SSE `shot-update` event ships only the mutated fields, so
+        # when the handoff is sparse we pull the canonical record. That
+        # gives us the full title/prompt/preset/scene_id/etc. to stamp
+        # into the Resolve clip metadata.
+        needs_full_record = not all(
+            k in shot for k in ("title", "prompt", "preset"))
+        if needs_full_record:
+            try:
+                canonical = self.guild.get_shot(shot_id)
+                if canonical:
+                    # Merge: canonical data fills gaps; SSE fields win
+                    # (they're the freshest status/video_path)
+                    merged = dict(canonical)
+                    merged.update(shot)
+                    shot = merged
+            except Exception:
+                pass  # fall through with whatever the SSE gave us
 
         dest = os.path.join(self._cache_dir, f"{shot_id}.mp4")
         if not os.path.exists(dest):
@@ -113,24 +157,40 @@ class MediaPoolSync:
         self._log(f"Imported {shot.get('title','?')}")
 
     def _attach_metadata_marker(self, media_item, shot: dict):
-        """Try to attach metadata via the best available API surface."""
-        # MediaPoolItem has a metadata dict — stuff the shot dict in there
-        try:
-            payload = {
-                "Spellcaster ShotID": shot.get("id", ""),
-                "Spellcaster Prompt": (shot.get("prompt", "") or "")[:500],
-                "Spellcaster Preset": shot.get("preset", ""),
-                "Spellcaster Seed": str(shot.get("seed", "") or ""),
-                "Spellcaster Backend": shot.get("backend", ""),
-            }
-            for k, v in payload.items():
-                try:
-                    media_item.SetMetadata(k, v)
-                except Exception:
-                    # Some Resolve builds reject unknown keys — ignore silently
-                    pass
-        except Exception:
-            pass
+        """Attach shot metadata to the MediaPoolItem.
+
+        Writes every non-empty Shot field from the canonical model:
+        id, title, prompt, negative, preset, backend, seed, scene_id,
+        transition, duration_s, render_duration_s, notes, color_label.
+        Resolve's SetMetadata silently refuses unknown keys so it's
+        safe to attempt them all.
+        """
+        def _str_or_empty(v):
+            return "" if v is None else str(v)
+
+        payload = {
+            "Spellcaster ShotID":      _str_or_empty(shot.get("id")),
+            "Spellcaster Title":       _str_or_empty(shot.get("title"))[:120],
+            "Spellcaster Prompt":      _str_or_empty(shot.get("prompt"))[:500],
+            "Spellcaster Negative":    _str_or_empty(shot.get("negative"))[:300],
+            "Spellcaster Preset":      _str_or_empty(shot.get("preset")),
+            "Spellcaster Backend":     _str_or_empty(shot.get("backend")),
+            "Spellcaster Seed":        _str_or_empty(shot.get("seed")),
+            "Spellcaster SceneID":     _str_or_empty(shot.get("scene_id")),
+            "Spellcaster Transition":  _str_or_empty(shot.get("transition", "cut")),
+            "Spellcaster Duration":    _str_or_empty(shot.get("duration_s")),
+            "Spellcaster RenderTime":  _str_or_empty(shot.get("render_duration_s")),
+            "Spellcaster Notes":       _str_or_empty(shot.get("notes"))[:200],
+            "Spellcaster Label":       _str_or_empty(shot.get("color_label")),
+        }
+        for k, v in payload.items():
+            if not v:
+                continue
+            try:
+                media_item.SetMetadata(k, v)
+            except Exception:
+                # Resolve builds vary on accepted key set — silent skip
+                pass
 
     def _append_to_live_timeline(self, media_item, shot: dict):
         """Append the imported clip to the 'Spellcaster Live' timeline,
