@@ -190,10 +190,17 @@ def resolve_wan_preset(preset_key: str, models: dict) -> Optional[dict]:
         log.info("resolve_wan_preset(%s): no UMT5 clip found", preset_key)
         return None
 
-    # VAE — wan2.2 or wan2.1 VAE both work for Wan 2.2 models.
+    # VAE — Wan 2.2 A14B models share the Wan 2.1 VAE (16-channel
+    # latents). A file literally named `wan2.2_vae.safetensors` on
+    # some ComfyUI installations is actually a 48-channel variant
+    # meant for a different Wan 2.2 branch (S2V / audio) and crashes
+    # VAEDecode with a channel mismatch when fed A14B latents. Prefer
+    # `wan_2.1_vae` or anything explicitly tagged 2.1 first; only fall
+    # back to `wan2.2_vae` if no 2.1 VAE is installed.
     vae_pool = models.get("vae", [])
-    vae = (_pick(vae_pool, {"wan2", "2"}, {"vae"})
-           or _pick(vae_pool, {"wan"}, {"vae", "2", "1"})
+    vae = (_pick(vae_pool, {"wan", "2", "1"}, {"vae"})
+           or _pick(vae_pool, {"wan2", "1"}, {"vae", "fp32", "fp16"})
+           or _pick(vae_pool, {"wan2", "2"}, {"vae"})
            or _pick(vae_pool, {"wan"}))
     if not vae:
         log.info("resolve_wan_preset(%s): no Wan VAE found", preset_key)

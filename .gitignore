@@ -101,3 +101,10 @@ assets/spells/
 # tavern/default_assets/, but the script itself is dev-only and would
 # only clutter the public repo.
 tools/bake_canon_animated_avatars.py
+
+# PyInstaller build artefacts — the .exe is uploaded to the GitHub
+# Release, not committed into the tree.
+dist/
+installer/antenna_build/
+installer/antenna_spec/
+installer/antenna_entry.py
