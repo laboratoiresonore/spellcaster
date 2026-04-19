@@ -3706,6 +3706,260 @@ def build_wan_flf(start_filename, end_filename, preset, prompt_text, negative_te
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  WAN 2.2 builders (R128)
+#
+#  build_wan_video (above) was written for Wan 2.1's architecture:
+#  WanImageToVideo (the 2.1 node) produces 16-channel latents and relies on
+#  CLIPVision H to encode the start frame for conditioning. Wan 2.2 changes
+#  BOTH pieces:
+#    - The Wan 2.2 VAE is 48-channel (wan2.2_vae.safetensors). Feeding
+#      Hunyuan's 16-channel empty latent into a Wan 2.2 sampler blows up at
+#      VAEDecode with a shape mismatch.
+#    - Wan 2.2 i2v drops CLIPVision in favour of a native IMAGE→conditioning
+#      path exposed as WanImageToVideo_F2. The new node is simpler and
+#      matches what Wan 2.2's reference workflows ship.
+#
+#  Two thin builders below, one per task, keep the canonical spellcaster_core
+#  as the single source of truth for every consumer (Guild video bridge,
+#  GIMP plugin if it ever wants native video, the ComfyUI-Spellcaster node
+#  repo, and the NSFW variant). Both reuse the standard two-pass high/low
+#  KSamplerAdvanced pattern — the quality/speed tuning is in the preset
+#  dict (steps, cfg, shift, second_step) so callers get the same levers as
+#  build_wan_video.
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _wan22_loaders(nf, preset):
+    """Emit the loader nodes common to both t2v and i2v Wan 2.2 builders.
+
+    Returns (high_ref, low_ref, clip_ref, vae_ref). node_ids are 1..4
+    so the sampler chain can reference them consistently.
+    """
+    high_model = preset["high_model"]
+    low_model = preset["low_model"]
+    clip_name = preset["clip"]
+    vae_name = preset["vae"]
+    is_gguf_clip = preset.get(
+        "clip_is_gguf", clip_name.lower().endswith(".gguf"))
+    is_gguf_high = high_model.lower().endswith(".gguf")
+    is_gguf_low = low_model.lower().endswith(".gguf")
+
+    if is_gguf_clip:
+        nf.update({"1": {"class_type": "CLIPLoaderGGUF",
+                          "inputs": {"clip_name": clip_name, "type": "wan"}}})
+    else:
+        nf.update({"1": {"class_type": "CLIPLoader",
+                          "inputs": {"clip_name": clip_name, "type": "wan"}}})
+    nf.update({"2": ({"class_type": "UnetLoaderGGUF",
+                       "inputs": {"unet_name": high_model}}
+                      if is_gguf_high else
+                      {"class_type": "UNETLoader",
+                       "inputs": {"unet_name": high_model,
+                                   "weight_dtype": "default"}})})
+    nf.update({"3": ({"class_type": "UnetLoaderGGUF",
+                       "inputs": {"unet_name": low_model}}
+                      if is_gguf_low else
+                      {"class_type": "UNETLoader",
+                       "inputs": {"unet_name": low_model,
+                                   "weight_dtype": "default"}})})
+    nf.update({"4": {"class_type": "VAELoader",
+                      "inputs": {"vae_name": vae_name}}})
+    return ["2", 0], ["3", 0], ["1", 0], ["4", 0]
+
+
+def _wan22_samplers(nf, preset, pos_ref, neg_ref, latent_ref,
+                     high_ref, low_ref, seed, turbo):
+    """Two-pass high→low KSamplerAdvanced chain with ModelSamplingSD3
+    timestep shift + optional accelerator LoRAs on each branch. Returns
+    the pass-2 latent node id.
+
+    Wan 2.2 quality depends on matched defaults:
+      - sampler_name = "euler" (NOT euler_ancestral — the ancestral
+        variant re-injects noise each step, which turns Wan 2.2 into
+        a still-frames-with-sparkle generator).
+      - scheduler = "simple"
+      - shift ≈ 8.0 without accelerator, ≈ 5.0 with.
+      - CFG only on the high-noise pass; the low-noise pass runs at
+        cfg=1 (denoise-only, no guidance).
+      - When `high_accel_lora` / `low_accel_lora` are supplied (R128
+        resolver detects the lightx2v 4-step LoRAs), the step count
+        can drop to 4-6 and cfg goes to 1.0 on both passes.
+
+    The chain is identical for t2v and i2v — what changes is only how
+    `latent_ref` was produced (Wan22ImageToVideoLatent for t2v,
+    WanImageToVideo_F2 for i2v).
+    """
+    steps = preset.get("steps", 20)
+    cfg = preset.get("cfg", 5.0)
+    shift = preset.get("shift", 8.0)
+    second_step = preset.get("second_step", steps // 2)
+    accel_strength = float(preset.get("accel_strength", 1.0))
+    high_accel = preset.get("high_accel_lora")
+    low_accel = preset.get("low_accel_lora")
+    # A LoRA-accelerated run reduces CFG to 1.0 on both passes (CFG>1
+    # fights the distillation). Keep the raw `cfg` for the non-accel
+    # path; override when the high LoRA is declared.
+    high_cfg = 1.0 if high_accel else cfg
+    low_cfg = 1.0  # always denoise-only
+
+    if turbo:
+        if not (2 <= steps <= 10):
+            steps = 6 if high_accel else 20
+        if not (1 <= second_step < steps):
+            second_step = min(3, steps - 1) if high_accel else steps // 2
+
+    # Apply ModelSamplingSD3 shift.
+    nf.update({"8": {"class_type": "ModelSamplingSD3",
+                      "inputs": {"model": high_ref, "shift": shift}}})
+    nf.update({"9": {"class_type": "ModelSamplingSD3",
+                      "inputs": {"model": low_ref, "shift": shift}}})
+    high_model_ref = ["8", 0]
+    low_model_ref = ["9", 0]
+
+    # Chain accelerator LoRAs AFTER the sampling shift so the shift
+    # applies to the base unet, not the LoRA-wrapped one.
+    if high_accel:
+        nf.update({"8a": {"class_type": "LoraLoaderModelOnly",
+                            "inputs": {"model": high_model_ref,
+                                       "lora_name": high_accel,
+                                       "strength_model": accel_strength}}})
+        high_model_ref = ["8a", 0]
+    if low_accel:
+        nf.update({"9a": {"class_type": "LoraLoaderModelOnly",
+                            "inputs": {"model": low_model_ref,
+                                       "lora_name": low_accel,
+                                       "strength_model": accel_strength}}})
+        low_model_ref = ["9a", 0]
+
+    nf.update({"10": {"class_type": "KSamplerAdvanced",
+                       "inputs": {
+                           "model": high_model_ref,
+                           "positive": pos_ref, "negative": neg_ref,
+                           "latent_image": latent_ref,
+                           "add_noise": "enable", "noise_seed": seed,
+                           "steps": steps, "cfg": high_cfg,
+                           "sampler_name": "euler",
+                           "scheduler": "simple",
+                           "start_at_step": 0,
+                           "end_at_step": second_step,
+                           "return_with_leftover_noise": "enable",
+                       }}})
+    nf.update({"11": {"class_type": "KSamplerAdvanced",
+                       "inputs": {
+                           "model": low_model_ref,
+                           "positive": pos_ref, "negative": neg_ref,
+                           "latent_image": ["10", 0],
+                           "add_noise": "disable", "noise_seed": 0,
+                           "steps": steps, "cfg": low_cfg,
+                           "sampler_name": "euler",
+                           "scheduler": "simple",
+                           "start_at_step": second_step,
+                           "end_at_step": 10000,
+                           "return_with_leftover_noise": "disable",
+                       }}})
+    return ["11", 0]
+
+
+def build_wan22_t2v(preset, prompt_text, negative_text, seed, *,
+                     width=832, height=480, length=81, fps=16,
+                     turbo=False, filename_prefix="spellcaster_wan22_t2v"):
+    """Wan 2.2 text-to-video. No start image — Wan22ImageToVideoLatent
+    synthesises a properly-shaped 48-channel noise latent from the
+    Wan 2.2 VAE.
+
+    preset: dict with high_model, low_model, clip, vae, plus sampler
+    tuning (steps, cfg, shift, second_step). Matches the shape used by
+    the resolver in scaffold/video_workflow_dispatch.py.
+    """
+    nf = NodeFactory()
+    high_ref, low_ref, clip_ref, vae_ref = _wan22_loaders(nf, preset)
+
+    nf.update({"5": {"class_type": "CLIPTextEncode",
+                      "inputs": {"clip": clip_ref, "text": prompt_text}}})
+    nf.update({"6": {"class_type": "CLIPTextEncode",
+                      "inputs": {"clip": clip_ref, "text": negative_text or ""}}})
+
+    nf.update({"7": {"class_type": "Wan22ImageToVideoLatent",
+                      "inputs": {"vae": vae_ref, "width": width,
+                                  "height": height, "length": length,
+                                  "batch_size": 1}}})
+
+    final_latent = _wan22_samplers(
+        nf, preset, ["5", 0], ["6", 0], ["7", 0],
+        high_ref, low_ref, seed, turbo)
+
+    nf.update({"12": {"class_type": "VAEDecode",
+                       "inputs": {"samples": final_latent, "vae": vae_ref}}})
+    nf.update({"13": {"class_type": "VHS_VideoCombine",
+                       "inputs": {
+                           "images": ["12", 0],
+                           "frame_rate": float(fps),
+                           "loop_count": 0,
+                           "filename_prefix": filename_prefix,
+                           "format": "video/h264-mp4",
+                           "pingpong": False,
+                           "save_output": True,
+                       }}})
+    return nf.build()
+
+
+def build_wan22_i2v(image_filename, preset, prompt_text, negative_text, seed, *,
+                     width=832, height=480, length=81, fps=16,
+                     turbo=True, filename_prefix="spellcaster_wan22_i2v"):
+    """Wan 2.2 image-to-video. Uses WanImageToVideo_F2 (the 2.2 i2v
+    node) which takes a raw IMAGE input — no CLIPVision dance needed.
+
+    image_filename: basename already present in ComfyUI's input/ dir.
+    preset: see build_wan22_t2v.
+    """
+    nf = NodeFactory()
+    high_ref, low_ref, clip_ref, vae_ref = _wan22_loaders(nf, preset)
+
+    nf.update({"5": {"class_type": "CLIPTextEncode",
+                      "inputs": {"clip": clip_ref, "text": prompt_text}}})
+    nf.update({"6": {"class_type": "CLIPTextEncode",
+                      "inputs": {"clip": clip_ref, "text": negative_text or ""}}})
+
+    # Load + pre-scale the ref frame to the exact target size so
+    # WanImageToVideo_F2's internal encoder doesn't silently crop.
+    nf.update({"7a": {"class_type": "LoadImage",
+                       "inputs": {"image": image_filename}}})
+    nf.update({"7": {"class_type": "ImageScale",
+                      "inputs": {"image": ["7a", 0],
+                                  "width": width, "height": height,
+                                  "upscale_method": "lanczos",
+                                  "crop": "center"}}})
+
+    # WanImageToVideo_F2 takes positive/negative CONDITIONING + VAE +
+    # dims + start_image IMAGE; outputs remapped conditioning + latent.
+    nf.update({"40": {"class_type": "WanImageToVideo_F2",
+                       "inputs": {
+                           "positive": ["5", 0], "negative": ["6", 0],
+                           "vae": vae_ref,
+                           "width": width, "height": height,
+                           "length": length,
+                           "start_image": ["7", 0],
+                       }}})
+
+    final_latent = _wan22_samplers(
+        nf, preset, ["40", 0], ["40", 1], ["40", 2],
+        high_ref, low_ref, seed, turbo)
+
+    nf.update({"12": {"class_type": "VAEDecode",
+                       "inputs": {"samples": final_latent, "vae": vae_ref}}})
+    nf.update({"13": {"class_type": "VHS_VideoCombine",
+                       "inputs": {
+                           "images": ["12", 0],
+                           "frame_rate": float(fps),
+                           "loop_count": 0,
+                           "filename_prefix": filename_prefix,
+                           "format": "video/h264-mp4",
+                           "pingpong": False,
+                           "save_output": True,
+                       }}})
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  SeedVR2 Video Upscaler
 # ═══════════════════════════════════════════════════════════════════════════
 

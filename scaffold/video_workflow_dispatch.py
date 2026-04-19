@@ -41,7 +41,8 @@ _CACHE_TTL_S = 300.0
 
 def probe_comfyui_models(base_url: str, *, force: bool = False) -> dict:
     """Return {'unet_gguf': [...], 'unet': [...], 'clip': [...],
-    'clip_gguf': [...], 'vae': [...]} for the given ComfyUI server.
+    'clip_gguf': [...], 'vae': [...], 'lora': [...]} for the given
+    ComfyUI server.
 
     Cached 5 min. Empty lists on probe failure — caller handles the
     emptiness, not this function.
@@ -53,7 +54,7 @@ def probe_comfyui_models(base_url: str, *, force: bool = False) -> dict:
     out: Dict[str, List[str]] = {
         "unet_gguf": [], "unet": [],
         "clip_gguf": [], "clip": [],
-        "vae": [],
+        "vae": [], "lora": [],
     }
     queries = [
         ("UnetLoaderGGUF",      "unet_name",  "unet_gguf"),
@@ -61,6 +62,7 @@ def probe_comfyui_models(base_url: str, *, force: bool = False) -> dict:
         ("CLIPLoaderGGUF",      "clip_name",  "clip_gguf"),
         ("CLIPLoader",          "clip_name",  "clip"),
         ("VAELoader",           "vae_name",   "vae"),
+        ("LoraLoader",          "lora_name",  "lora"),
     ]
     for node_class, input_key, out_key in queries:
         try:
@@ -190,27 +192,88 @@ def resolve_wan_preset(preset_key: str, models: dict) -> Optional[dict]:
         log.info("resolve_wan_preset(%s): no UMT5 clip found", preset_key)
         return None
 
-    # VAE — wan2.2 or wan2.1 VAE both work for Wan 2.2 models.
+    # VAE — Wan 2.2 A14B models share the Wan 2.1 VAE (16-channel
+    # latents). A file literally named `wan2.2_vae.safetensors` on
+    # some ComfyUI installations is actually a 48-channel variant
+    # meant for a different Wan 2.2 branch (S2V / audio) and crashes
+    # VAEDecode with a channel mismatch when fed A14B latents. Prefer
+    # `wan_2.1_vae` or anything explicitly tagged 2.1 first; only fall
+    # back to `wan2.2_vae` if no 2.1 VAE is installed.
     vae_pool = models.get("vae", [])
-    vae = (_pick(vae_pool, {"wan2", "2"}, {"vae"})
-           or _pick(vae_pool, {"wan"}, {"vae", "2", "1"})
+    vae = (_pick(vae_pool, {"wan", "2", "1"}, {"vae"})
+           or _pick(vae_pool, {"wan2", "1"}, {"vae", "fp32", "fp16"})
+           or _pick(vae_pool, {"wan2", "2"}, {"vae"})
            or _pick(vae_pool, {"wan"}))
     if not vae:
         log.info("resolve_wan_preset(%s): no Wan VAE found", preset_key)
         return None
 
-    # Default sampler tuning per preset. `shift` is the Wan timestep
-    # remap; lightning keeps it short (fewer steps), HQ goes longer.
-    if preset_key == "wan22_i2v_lightning":
-        tuning = {"steps": 6, "cfg": 1.0, "shift": 5.0, "second_step": 2}
-    elif preset_key == "wan22_i2v_hq":
-        tuning = {"steps": 25, "cfg": 5.0, "shift": 5.0, "second_step": 12}
-    elif preset_key == "wan22_t2v":
-        tuning = {"steps": 20, "cfg": 5.0, "shift": 5.0, "second_step": 10}
-    else:
-        tuning = {"steps": 20, "cfg": 5.0, "shift": 5.0, "second_step": 10}
+    # Auto-detect the lightx2v 4-step distillation LoRAs. When both
+    # high + low are present, lightning mode runs at 4 steps cfg=1.0
+    # with excellent quality. Without them, lightning falls back to
+    # HQ-like step counts (the fp8 base models can't hit 4 steps
+    # without distillation).
+    lora_pool = models.get("lora", [])
+    high_accel = None
+    low_accel = None
+    task = (_WAN_PRESET_HINTS.get(preset_key) or {}).get("task", "i2v")
+    if task == "t2v":
+        high_accel = _pick(lora_pool,
+                            {"wan2", "2", "t2v", "lightx2v", "high"},
+                            {"4steps", "lora"})
+        low_accel = _pick(lora_pool,
+                           {"wan2", "2", "t2v", "lightx2v", "low"},
+                           {"4steps", "lora"})
+    elif task == "i2v":
+        # Prefer the official Wan2.2-Lightning I2V LoRAs; lightx2v
+        # variants work too.
+        high_accel = (_pick(lora_pool,
+                              {"wan2", "2", "lightning", "i2v", "high"},
+                              {"4steps", "a14b", "fp16"})
+                      or _pick(lora_pool,
+                                 {"wan2", "2", "i2v", "lightx2v", "high"},
+                                 {"4steps", "lora"}))
+        low_accel = (_pick(lora_pool,
+                             {"wan2", "2", "lightning", "i2v", "low"},
+                             {"4steps", "a14b", "fp16"})
+                     or _pick(lora_pool,
+                                {"wan2", "2", "i2v", "lightx2v", "low"},
+                                {"4steps", "lora"}))
 
-    return {
+    have_accel = bool(high_accel and low_accel)
+
+    # Per-preset sampler tuning. Wan 2.2's canonical defaults (per the
+    # ComfyUI examples repo and xb1n0ry's reference pack):
+    #   - shift: 8.0 (HQ), 5.0 with accelerator LoRAs
+    #   - steps: 20 split into 10 high / 10 low at HQ, 4 total with
+    #     accelerator LoRAs
+    #   - cfg: 5.0 on the HQ high pass, 1.0 on low; 1.0 on both with
+    #     accelerator
+    if preset_key == "wan22_i2v_lightning":
+        if have_accel:
+            tuning = {"steps": 4, "cfg": 1.0, "shift": 5.0,
+                       "second_step": 2, "accel_strength": 1.0}
+        else:
+            # Graceful fallback — no distillation LoRA available, do a
+            # 20-step render instead of a noisy 6-step one. "Lightning"
+            # in name only; quality beats garbage every time.
+            tuning = {"steps": 20, "cfg": 5.0, "shift": 8.0,
+                       "second_step": 10}
+    elif preset_key == "wan22_i2v_hq":
+        tuning = {"steps": 20, "cfg": 5.0, "shift": 8.0,
+                   "second_step": 10}
+    elif preset_key == "wan22_t2v":
+        if have_accel:
+            tuning = {"steps": 4, "cfg": 1.0, "shift": 5.0,
+                       "second_step": 2, "accel_strength": 1.0}
+        else:
+            tuning = {"steps": 20, "cfg": 5.0, "shift": 8.0,
+                       "second_step": 10}
+    else:
+        tuning = {"steps": 20, "cfg": 5.0, "shift": 8.0,
+                   "second_step": 10}
+
+    out = {
         "high_model": high,
         "low_model":  low,
         "clip":       clip,
@@ -218,6 +281,15 @@ def resolve_wan_preset(preset_key: str, models: dict) -> Optional[dict]:
         "clip_is_gguf": clip.lower().endswith(".gguf"),
         **tuning,
     }
+    # Only attach accelerator LoRAs for the lightning presets. HQ
+    # deliberately uses the full 20-step + cfg=5 path (no LoRAs) for
+    # maximum quality.
+    use_accel = have_accel and preset_key in (
+        "wan22_i2v_lightning", "wan22_t2v")
+    if use_accel:
+        out["high_accel_lora"] = high_accel
+        out["low_accel_lora"] = low_accel
+    return out
 
 
 # ── Workflow builder ─────────────────────────────────────────────────
@@ -292,175 +364,41 @@ def build_native_workflow(preset_key: str, *, prompt: str,
     except ImportError as e:
         return None, f"spellcaster_core.workflows not importable: {e}"
 
-    # t2v uses a custom workflow (no WanImageToVideo, no CLIPVision —
-    # just text conditioning + EmptyHunyuanLatentVideo). Build inline
-    # since spellcaster_core's build_wan_video is i2v-only.
-    if task == "t2v":
-        try:
-            workflow = _build_wan_t2v_workflow(
-                preset=preset_dict, prompt=prompt, negative=negative,
-                seed=seed, width=width, height=height, length=length,
-                fps=fps, turbo=turbo,
-            )
-        except Exception as e:  # noqa: BLE001
-            return None, f"_build_wan_t2v_workflow raised: {e}"
-        return workflow, None
+    # R128: route through the Wan-2.2-correct canonical builders in
+    # spellcaster_core/workflows.py. build_wan_video (used in the
+    # R126/R127 first cut) is Wan-2.1 shaped — its 16-channel latent
+    # path mismatches the Wan 2.2 VAE (48 channels) and fails at
+    # VAEDecode. The new builders use Wan22ImageToVideoLatent /
+    # WanImageToVideo_F2 which match the Wan 2.2 architecture.
+    try:
+        from spellcaster_core.workflows import (  # type: ignore
+            build_wan22_t2v, build_wan22_i2v,
+        )
+    except ImportError as e:
+        return None, f"spellcaster_core.workflows (R128 builders) missing: {e}"
 
     try:
-        workflow = build_wan_video(
-            image_filename=image_filename,
-            preset=preset_dict,
-            prompt_text=prompt,
-            negative_text=negative,
-            seed=seed,
-            width=width, height=height, length=length,
-            turbo=turbo, fps=fps,
-            face_swap=False,          # editor-controlled, default off
-            interpolate=False,        # skip RIFE for the first cut
-            rtx_scale=1.0,            # no upscale by default
-        )
+        if task == "t2v":
+            workflow = build_wan22_t2v(
+                preset=preset_dict,
+                prompt_text=prompt, negative_text=negative, seed=seed,
+                width=width, height=height, length=length, fps=fps,
+                turbo=turbo,
+            )
+        else:
+            # i2v / move_i2v / any task that needs a ref image
+            workflow = build_wan22_i2v(
+                image_filename=image_filename,
+                preset=preset_dict,
+                prompt_text=prompt, negative_text=negative, seed=seed,
+                width=width, height=height, length=length, fps=fps,
+                turbo=turbo,
+            )
     except Exception as e:  # noqa: BLE001
-        return None, f"build_wan_video raised: {e}"
+        return None, f"wan22 builder raised: {e}"
     if not isinstance(workflow, dict) or not workflow:
-        return None, "build_wan_video returned empty workflow"
+        return None, "wan22 builder returned empty workflow"
     return workflow, None
-
-
-# ── Native t2v workflow (no WanImageToVideo) ────────────────────────
-
-def _build_wan_t2v_workflow(*, preset: dict, prompt: str, negative: str,
-                              seed: int, width: int, height: int,
-                              length: int, fps: int, turbo: bool) -> dict:
-    """Wan 2.2 text-to-video workflow.
-
-    Differs from build_wan_video in that it:
-      - Drops LoadImage / ImageScale / CLIPVision — no ref frame.
-      - Uses EmptyHunyuanLatentVideo as the starting latent (Wan 2.2
-        shares Hunyuan's 16-channel video latent shape, so that node's
-        output slots into the Wan KSamplerAdvanced chain unchanged).
-      - Skips the WanImageToVideo conditioning wrap — positive /
-        negative CONDITIONING feed the samplers directly.
-
-    Returned workflow is the same two-pass high/low KSampler structure
-    as the i2v path, so the render-downloader in video_bridge doesn't
-    need to know which kind it got back.
-    """
-    high_model = preset["high_model"]
-    low_model = preset["low_model"]
-    clip_name = preset["clip"]
-    vae_name = preset["vae"]
-    steps = preset.get("steps", 20)
-    cfg = preset.get("cfg", 5.0)
-    shift = preset.get("shift", 5.0)
-    second_step = preset.get("second_step", 10)
-
-    if turbo:
-        if not (2 <= steps <= 10):
-            steps = 6
-        if not (1 <= second_step < steps):
-            second_step = min(3, steps - 1)
-
-    is_gguf_clip = preset.get("clip_is_gguf", clip_name.lower().endswith(".gguf"))
-    is_gguf_high = high_model.lower().endswith(".gguf")
-    is_gguf_low = low_model.lower().endswith(".gguf")
-
-    wf: Dict[str, Any] = {}
-
-    # 1. CLIP loader
-    if is_gguf_clip:
-        wf["1"] = {"class_type": "CLIPLoaderGGUF",
-                   "inputs": {"clip_name": clip_name, "type": "wan"}}
-    else:
-        wf["1"] = {"class_type": "CLIPLoader",
-                   "inputs": {"clip_name": clip_name, "type": "wan"}}
-
-    # 2-3. Unet loaders (high + low)
-    wf["2"] = {"class_type": "UnetLoaderGGUF" if is_gguf_high else "UNETLoader",
-               "inputs": ({"unet_name": high_model}
-                            if is_gguf_high else
-                            {"unet_name": high_model, "weight_dtype": "default"})}
-    wf["3"] = {"class_type": "UnetLoaderGGUF" if is_gguf_low else "UNETLoader",
-               "inputs": ({"unet_name": low_model}
-                            if is_gguf_low else
-                            {"unet_name": low_model, "weight_dtype": "default"})}
-
-    # 4. VAE loader
-    wf["4"] = {"class_type": "VAELoader",
-               "inputs": {"vae_name": vae_name}}
-
-    # 5-6. Prompt encoding
-    wf["5"] = {"class_type": "CLIPTextEncode",
-               "inputs": {"clip": ["1", 0], "text": prompt}}
-    wf["6"] = {"class_type": "CLIPTextEncode",
-               "inputs": {"clip": ["1", 0], "text": negative or ""}}
-
-    # 7. Empty latent video. Hunyuan's empty-latent node works for
-    # Wan 2.2 because both families share the 16-channel (B,16,T,H,W)
-    # latent layout. Frame count must be (length-1)/4*4+1 aligned.
-    wf["7"] = {"class_type": "EmptyHunyuanLatentVideo",
-               "inputs": {"width": width, "height": height,
-                            "length": length, "batch_size": 1}}
-
-    # 8-9. ModelSamplingSD3 (timestep shift)
-    wf["8"] = {"class_type": "ModelSamplingSD3",
-               "inputs": {"model": ["2", 0], "shift": shift}}
-    wf["9"] = {"class_type": "ModelSamplingSD3",
-               "inputs": {"model": ["3", 0], "shift": shift}}
-
-    # 10. KSamplerAdvanced pass 1 (high)
-    wf["10"] = {"class_type": "KSamplerAdvanced",
-                "inputs": {
-                    "model": ["8", 0],
-                    "positive": ["5", 0],
-                    "negative": ["6", 0],
-                    "latent_image": ["7", 0],
-                    "add_noise": "enable",
-                    "noise_seed": seed,
-                    "steps": steps,
-                    "cfg": cfg,
-                    "sampler_name": "euler_ancestral",
-                    "scheduler": "simple",
-                    "start_at_step": 0,
-                    "end_at_step": second_step,
-                    "return_with_leftover_noise": "enable",
-                }}
-
-    # 11. KSamplerAdvanced pass 2 (low)
-    wf["11"] = {"class_type": "KSamplerAdvanced",
-                "inputs": {
-                    "model": ["9", 0],
-                    "positive": ["5", 0],
-                    "negative": ["6", 0],
-                    "latent_image": ["10", 0],
-                    "add_noise": "disable",
-                    "noise_seed": 0,
-                    "steps": steps,
-                    "cfg": 1.0,
-                    "sampler_name": "euler_ancestral",
-                    "scheduler": "simple",
-                    "start_at_step": second_step,
-                    "end_at_step": 10000,
-                    "return_with_leftover_noise": "disable",
-                }}
-
-    # 12. VAE decode
-    wf["12"] = {"class_type": "VAEDecode",
-                "inputs": {"samples": ["11", 0], "vae": ["4", 0]}}
-
-    # 13. Video combine (mp4 out). Filename prefix keeps the Guild's
-    # downloader happy — it greps outputs for *.mp4.
-    wf["13"] = {"class_type": "VHS_VideoCombine",
-                "inputs": {
-                    "images": ["12", 0],
-                    "frame_rate": fps,
-                    "loop_count": 0,
-                    "filename_prefix": "spellcaster_t2v",
-                    "format": "video/h264-mp4",
-                    "pingpong": False,
-                    "save_output": True,
-                }}
-
-    return wf
 
 
 def _ensure_spellcaster_core_on_path():
