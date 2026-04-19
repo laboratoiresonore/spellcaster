@@ -3769,7 +3769,20 @@ def _wan22_loaders(nf, preset):
 def _wan22_samplers(nf, preset, pos_ref, neg_ref, latent_ref,
                      high_ref, low_ref, seed, turbo):
     """Two-pass high→low KSamplerAdvanced chain with ModelSamplingSD3
-    timestep shift on both branches. Returns the pass-2 latent node id.
+    timestep shift + optional accelerator LoRAs on each branch. Returns
+    the pass-2 latent node id.
+
+    Wan 2.2 quality depends on matched defaults:
+      - sampler_name = "euler" (NOT euler_ancestral — the ancestral
+        variant re-injects noise each step, which turns Wan 2.2 into
+        a still-frames-with-sparkle generator).
+      - scheduler = "simple"
+      - shift ≈ 8.0 without accelerator, ≈ 5.0 with.
+      - CFG only on the high-noise pass; the low-noise pass runs at
+        cfg=1 (denoise-only, no guidance).
+      - When `high_accel_lora` / `low_accel_lora` are supplied (R128
+        resolver detects the lightx2v 4-step LoRAs), the step count
+        can drop to 4-6 and cfg goes to 1.0 on both passes.
 
     The chain is identical for t2v and i2v — what changes is only how
     `latent_ref` was produced (Wan22ImageToVideoLatent for t2v,
@@ -3777,26 +3790,54 @@ def _wan22_samplers(nf, preset, pos_ref, neg_ref, latent_ref,
     """
     steps = preset.get("steps", 20)
     cfg = preset.get("cfg", 5.0)
-    shift = preset.get("shift", 5.0)
-    second_step = preset.get("second_step", 10)
+    shift = preset.get("shift", 8.0)
+    second_step = preset.get("second_step", steps // 2)
+    accel_strength = float(preset.get("accel_strength", 1.0))
+    high_accel = preset.get("high_accel_lora")
+    low_accel = preset.get("low_accel_lora")
+    # A LoRA-accelerated run reduces CFG to 1.0 on both passes (CFG>1
+    # fights the distillation). Keep the raw `cfg` for the non-accel
+    # path; override when the high LoRA is declared.
+    high_cfg = 1.0 if high_accel else cfg
+    low_cfg = 1.0  # always denoise-only
+
     if turbo:
         if not (2 <= steps <= 10):
-            steps = 6
+            steps = 6 if high_accel else 20
         if not (1 <= second_step < steps):
-            second_step = min(3, steps - 1)
+            second_step = min(3, steps - 1) if high_accel else steps // 2
 
+    # Apply ModelSamplingSD3 shift.
     nf.update({"8": {"class_type": "ModelSamplingSD3",
                       "inputs": {"model": high_ref, "shift": shift}}})
     nf.update({"9": {"class_type": "ModelSamplingSD3",
                       "inputs": {"model": low_ref, "shift": shift}}})
+    high_model_ref = ["8", 0]
+    low_model_ref = ["9", 0]
+
+    # Chain accelerator LoRAs AFTER the sampling shift so the shift
+    # applies to the base unet, not the LoRA-wrapped one.
+    if high_accel:
+        nf.update({"8a": {"class_type": "LoraLoaderModelOnly",
+                            "inputs": {"model": high_model_ref,
+                                       "lora_name": high_accel,
+                                       "strength_model": accel_strength}}})
+        high_model_ref = ["8a", 0]
+    if low_accel:
+        nf.update({"9a": {"class_type": "LoraLoaderModelOnly",
+                            "inputs": {"model": low_model_ref,
+                                       "lora_name": low_accel,
+                                       "strength_model": accel_strength}}})
+        low_model_ref = ["9a", 0]
+
     nf.update({"10": {"class_type": "KSamplerAdvanced",
                        "inputs": {
-                           "model": ["8", 0],
+                           "model": high_model_ref,
                            "positive": pos_ref, "negative": neg_ref,
                            "latent_image": latent_ref,
                            "add_noise": "enable", "noise_seed": seed,
-                           "steps": steps, "cfg": cfg,
-                           "sampler_name": "euler_ancestral",
+                           "steps": steps, "cfg": high_cfg,
+                           "sampler_name": "euler",
                            "scheduler": "simple",
                            "start_at_step": 0,
                            "end_at_step": second_step,
@@ -3804,12 +3845,12 @@ def _wan22_samplers(nf, preset, pos_ref, neg_ref, latent_ref,
                        }}})
     nf.update({"11": {"class_type": "KSamplerAdvanced",
                        "inputs": {
-                           "model": ["9", 0],
+                           "model": low_model_ref,
                            "positive": pos_ref, "negative": neg_ref,
                            "latent_image": ["10", 0],
                            "add_noise": "disable", "noise_seed": 0,
-                           "steps": steps, "cfg": 1.0,
-                           "sampler_name": "euler_ancestral",
+                           "steps": steps, "cfg": low_cfg,
+                           "sampler_name": "euler",
                            "scheduler": "simple",
                            "start_at_step": second_step,
                            "end_at_step": 10000,

@@ -41,7 +41,8 @@ _CACHE_TTL_S = 300.0
 
 def probe_comfyui_models(base_url: str, *, force: bool = False) -> dict:
     """Return {'unet_gguf': [...], 'unet': [...], 'clip': [...],
-    'clip_gguf': [...], 'vae': [...]} for the given ComfyUI server.
+    'clip_gguf': [...], 'vae': [...], 'lora': [...]} for the given
+    ComfyUI server.
 
     Cached 5 min. Empty lists on probe failure — caller handles the
     emptiness, not this function.
@@ -53,7 +54,7 @@ def probe_comfyui_models(base_url: str, *, force: bool = False) -> dict:
     out: Dict[str, List[str]] = {
         "unet_gguf": [], "unet": [],
         "clip_gguf": [], "clip": [],
-        "vae": [],
+        "vae": [], "lora": [],
     }
     queries = [
         ("UnetLoaderGGUF",      "unet_name",  "unet_gguf"),
@@ -61,6 +62,7 @@ def probe_comfyui_models(base_url: str, *, force: bool = False) -> dict:
         ("CLIPLoaderGGUF",      "clip_name",  "clip_gguf"),
         ("CLIPLoader",          "clip_name",  "clip"),
         ("VAELoader",           "vae_name",   "vae"),
+        ("LoraLoader",          "lora_name",  "lora"),
     ]
     for node_class, input_key, out_key in queries:
         try:
@@ -206,18 +208,72 @@ def resolve_wan_preset(preset_key: str, models: dict) -> Optional[dict]:
         log.info("resolve_wan_preset(%s): no Wan VAE found", preset_key)
         return None
 
-    # Default sampler tuning per preset. `shift` is the Wan timestep
-    # remap; lightning keeps it short (fewer steps), HQ goes longer.
-    if preset_key == "wan22_i2v_lightning":
-        tuning = {"steps": 6, "cfg": 1.0, "shift": 5.0, "second_step": 2}
-    elif preset_key == "wan22_i2v_hq":
-        tuning = {"steps": 25, "cfg": 5.0, "shift": 5.0, "second_step": 12}
-    elif preset_key == "wan22_t2v":
-        tuning = {"steps": 20, "cfg": 5.0, "shift": 5.0, "second_step": 10}
-    else:
-        tuning = {"steps": 20, "cfg": 5.0, "shift": 5.0, "second_step": 10}
+    # Auto-detect the lightx2v 4-step distillation LoRAs. When both
+    # high + low are present, lightning mode runs at 4 steps cfg=1.0
+    # with excellent quality. Without them, lightning falls back to
+    # HQ-like step counts (the fp8 base models can't hit 4 steps
+    # without distillation).
+    lora_pool = models.get("lora", [])
+    high_accel = None
+    low_accel = None
+    task = (_WAN_PRESET_HINTS.get(preset_key) or {}).get("task", "i2v")
+    if task == "t2v":
+        high_accel = _pick(lora_pool,
+                            {"wan2", "2", "t2v", "lightx2v", "high"},
+                            {"4steps", "lora"})
+        low_accel = _pick(lora_pool,
+                           {"wan2", "2", "t2v", "lightx2v", "low"},
+                           {"4steps", "lora"})
+    elif task == "i2v":
+        # Prefer the official Wan2.2-Lightning I2V LoRAs; lightx2v
+        # variants work too.
+        high_accel = (_pick(lora_pool,
+                              {"wan2", "2", "lightning", "i2v", "high"},
+                              {"4steps", "a14b", "fp16"})
+                      or _pick(lora_pool,
+                                 {"wan2", "2", "i2v", "lightx2v", "high"},
+                                 {"4steps", "lora"}))
+        low_accel = (_pick(lora_pool,
+                             {"wan2", "2", "lightning", "i2v", "low"},
+                             {"4steps", "a14b", "fp16"})
+                     or _pick(lora_pool,
+                                {"wan2", "2", "i2v", "lightx2v", "low"},
+                                {"4steps", "lora"}))
 
-    return {
+    have_accel = bool(high_accel and low_accel)
+
+    # Per-preset sampler tuning. Wan 2.2's canonical defaults (per the
+    # ComfyUI examples repo and xb1n0ry's reference pack):
+    #   - shift: 8.0 (HQ), 5.0 with accelerator LoRAs
+    #   - steps: 20 split into 10 high / 10 low at HQ, 4 total with
+    #     accelerator LoRAs
+    #   - cfg: 5.0 on the HQ high pass, 1.0 on low; 1.0 on both with
+    #     accelerator
+    if preset_key == "wan22_i2v_lightning":
+        if have_accel:
+            tuning = {"steps": 4, "cfg": 1.0, "shift": 5.0,
+                       "second_step": 2, "accel_strength": 1.0}
+        else:
+            # Graceful fallback — no distillation LoRA available, do a
+            # 20-step render instead of a noisy 6-step one. "Lightning"
+            # in name only; quality beats garbage every time.
+            tuning = {"steps": 20, "cfg": 5.0, "shift": 8.0,
+                       "second_step": 10}
+    elif preset_key == "wan22_i2v_hq":
+        tuning = {"steps": 20, "cfg": 5.0, "shift": 8.0,
+                   "second_step": 10}
+    elif preset_key == "wan22_t2v":
+        if have_accel:
+            tuning = {"steps": 4, "cfg": 1.0, "shift": 5.0,
+                       "second_step": 2, "accel_strength": 1.0}
+        else:
+            tuning = {"steps": 20, "cfg": 5.0, "shift": 8.0,
+                       "second_step": 10}
+    else:
+        tuning = {"steps": 20, "cfg": 5.0, "shift": 8.0,
+                   "second_step": 10}
+
+    out = {
         "high_model": high,
         "low_model":  low,
         "clip":       clip,
@@ -225,6 +281,15 @@ def resolve_wan_preset(preset_key: str, models: dict) -> Optional[dict]:
         "clip_is_gguf": clip.lower().endswith(".gguf"),
         **tuning,
     }
+    # Only attach accelerator LoRAs for the lightning presets. HQ
+    # deliberately uses the full 20-step + cfg=5 path (no LoRAs) for
+    # maximum quality.
+    use_accel = have_accel and preset_key in (
+        "wan22_i2v_lightning", "wan22_t2v")
+    if use_accel:
+        out["high_accel_lora"] = high_accel
+        out["low_accel_lora"] = low_accel
+    return out
 
 
 # ── Workflow builder ─────────────────────────────────────────────────
