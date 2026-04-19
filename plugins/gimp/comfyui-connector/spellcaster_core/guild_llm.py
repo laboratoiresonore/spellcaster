@@ -104,6 +104,37 @@ def set_host_alias(host, alias):
         _HOST_ALIASES[host.lower()] = alias
 
 
+# ── Preferred backend ─────────────────────────────────────────────────
+# The user can pin one of the three chat backends (comfyui / ollama /
+# kobold) as their primary via the sidebar LLM picker. chat() rotates
+# the backend chain so the pinned one is tried first; the rest stay in
+# the chain as live fallbacks. Nothing is ever disabled — it's OK to
+# have ComfyUI + Ollama + Kobold all running at once, the preference
+# just decides who answers first.
+
+_PREFERRED_BACKEND = None   # None = use the purpose-default chain order
+
+
+def set_preferred_backend(name):
+    """Store the user's chosen primary backend. Pass None to revert to
+    the purpose-driven default chain."""
+    global _PREFERRED_BACKEND
+    if name is None:
+        _PREFERRED_BACKEND = None
+        return
+    name = str(name).strip().lower()
+    # kobold_rp is the chat variant; kobold_tts is STT-only and should
+    # not participate in chat rotation.
+    if name == "kobold_rp":
+        name = "kobold"
+    if name in ("comfyui", "ollama", "kobold"):
+        _PREFERRED_BACKEND = name
+
+
+def get_preferred_backend():
+    return _PREFERRED_BACKEND
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  LLM Chat — text generation via ComfyUI or external backend
 # ═══════════════════════════════════════════════════════════════════════
@@ -173,17 +204,27 @@ def chat(message, system_prompt="", server=None, kobold_url=None,
                             max_tokens, temperature)
 
     if purpose == "chat":
-        chain = (
+        chain = [
             ("ollama", "http://127.0.0.1:11434", try_ollama),
             ("comfyui", server, try_comfyui),
             ("kobold", kobold_url, try_kobold),
-        )
+        ]
     else:  # 'enhance'
-        chain = (
+        chain = [
             ("comfyui", server, try_comfyui),
             ("ollama", "http://127.0.0.1:11434", try_ollama),
             ("kobold", kobold_url, try_kobold),
-        )
+        ]
+    # Honour the user's pinned primary backend (if any). Move the
+    # matching tuple to the front of the chain; leave the rest in
+    # place as live fallbacks. ComfyUI stays a valid "reroute" choice
+    # — it won't be skipped even when another backend is preferred.
+    pref = _PREFERRED_BACKEND
+    if pref:
+        for i, entry in enumerate(chain):
+            if entry[0] == pref and i != 0:
+                chain.insert(0, chain.pop(i))
+                break
 
     for backend_name, backend_url, backend in chain:
         _set_status(state="busy", backend=backend_name,
