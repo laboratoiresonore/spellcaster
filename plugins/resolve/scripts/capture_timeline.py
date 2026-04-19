@@ -24,10 +24,17 @@ import traceback
 
 
 def _locate_shared():
+    """Add the shared/ dir to sys.path.
+
+    Tries, in order, the installed layout (shared/ next to the script
+    file), then the dev layout (shared/ at plugins/resolve/shared/
+    relative to plugins/resolve/scripts/), then the legacy fallback.
+    """
     here = os.path.dirname(os.path.abspath(__file__))
     for cand in (
-        os.path.normpath(os.path.join(here, "..", "shared")),
-        os.path.normpath(os.path.join(here, "..", "..", "shared")),
+        os.path.join(here, "shared"),                    # installed layout
+        os.path.normpath(os.path.join(here, "..", "shared")),        # dev layout
+        os.path.normpath(os.path.join(here, "..", "..", "shared")),  # legacy
     ):
         if os.path.isdir(cand) and cand not in sys.path:
             sys.path.insert(0, cand)

@@ -4,8 +4,32 @@ Instead of requiring a separate KoboldCpp/Ollama server, this module
 discovers LLM-capable nodes already installed on the ComfyUI server and
 submits text-generation workflows through the standard /prompt API.
 
-The ComfyUI server handles VRAM management natively — the LLM auto-unloads
-when image generation needs VRAM, and reloads when queried again.
+VRAM MANAGEMENT — the load / enhance / unload / generate / reload cycle
+──────────────────────────────────────────────────────────────────────────
+This cycle ONLY matters when the LLM is running inside ComfyUI — the
+LLM and the diffusion model share one GPU, so they have to take turns.
+If the user's LLM backend is Ollama on a separate process (or a
+separate machine), Ollama manages its own memory and the cycle doesn't
+apply; guild_llm.chat() routes to Ollama directly without invoking
+any of this.
+
+When ComfyUI IS hosting the LLM, the server handles the cycle natively
+for us, but ONLY if the LLM node is configured to surrender VRAM. Our
+canonical config sets `keep_model_loaded: False` on the enhancer node
+(see _LLM_NODE_CANDIDATES below). That makes the full cycle work:
+
+  1. LOAD       ComfyUI auto-loads the GGUF model when the LLM node runs.
+  2. ENHANCE    Node rewrites the user's prompt per arch-specific profile.
+  3. UNLOAD     keep_model_loaded=False → ComfyUI frees the LLM's VRAM
+                slot as soon as the node completes. No lingering tenant.
+  4. GENERATE   Image / video workflow runs with the FULL GPU available.
+  5. RELOAD     Next enhancement call — ComfyUI reloads the GGUF from
+                the OS page cache (warm NVMe ~0.8s for a 4B Q4 model).
+
+If you set keep_model_loaded=True you gain ~1s per call but lose VRAM
+headroom for every subsequent image gen. On 8GB consumer GPUs this
+means OOMs on larger flux/klein models. Don't flip it unless you have
+unified memory (Mac) or a 24GB+ card and know what you're doing.
 
 Supported nodes (tried in priority order):
   1. AILab_QwenVL_GGUF_PromptEnhancer — local GGUF, custom system prompt
