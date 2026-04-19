@@ -68,6 +68,10 @@ _UNAUTHENTICATED_PATHS: set[str] = {"/"}
 # Populated by _autopopulate_services on every boot.
 _LAST_AUTODETECT: dict[str, Any] = {"ran": False}
 
+# R53+ diagnostic: what the pre-bind port reaper killed (if anything).
+# Populated by serve() before the ThreadingHTTPServer() call.
+_LAST_PORT_CLEANUP: list[dict[str, Any]] = []
+
 
 def _autopopulate_services(cfg: dict[str, Any]) -> None:
     """R49a: Merge auto-detected services into cfg['services'].
@@ -418,6 +422,35 @@ def serve(cfg: dict[str, Any] | None = None,
     _AntennaHandler._routes = _build_routes(cfg)
     _AntennaHandler._rate_limiter = auth.RateLimiter(
         limit_per_minute=cfg.get("rate_limit_rpm", 30))
+
+    # Reap any prior process still holding our port — protects us from
+    # orphaned `python.exe` processes left over by a botched self-update
+    # restart. Only kills python-named processes by default, so an
+    # unrelated service on the same port fails-open (bind raises, operator
+    # sees it).
+    try:
+        global _LAST_PORT_CLEANUP
+        from . import port_cleanup as _pc
+        _LAST_PORT_CLEANUP = _pc.reap_port_holders(int(cfg["port"]),
+                                                    only_python=True)
+        if _LAST_PORT_CLEANUP:
+            killed = [r for r in _LAST_PORT_CLEANUP if r.get("killed")]
+            skipped = [r for r in _LAST_PORT_CLEANUP if not r.get("killed")]
+            if killed:
+                print(f"[antenna] reaped {len(killed)} stale process(es) "
+                      f"on port {cfg['port']}: "
+                      f"{[(r['pid'], r['image']) for r in killed]}")
+                # Give the OS a moment to release the socket
+                import time as _t
+                _t.sleep(1.0)
+            if skipped:
+                print(f"[antenna] left {len(skipped)} process(es) "
+                      f"untouched on port {cfg['port']}: "
+                      f"{[(r['pid'], r['image'], r['skipped_reason']) for r in skipped]}",
+                      file=sys.stderr)
+    except Exception as e:  # noqa: BLE001
+        print(f"[antenna] port-cleanup failed: {type(e).__name__}: {e} — "
+              f"proceeding anyway", file=sys.stderr)
 
     use_tls = config.tls_enabled(cfg)
     server = ThreadingHTTPServer((cfg["bind"], int(cfg["port"])), _AntennaHandler)

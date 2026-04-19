@@ -154,6 +154,7 @@ def status(ctx: dict[str, Any]) -> tuple[int, dict]:
     # declared-services list isn't matching what's on disk.
     autodetect_trace = None
     registered_routes: list[str] = []
+    last_port_cleanup: list[dict[str, Any]] = []
     try:
         # Read state from sys.modules["__main__"] first — when the agent is
         # started as `python antenna/agent.py` the mutated state lives on
@@ -164,6 +165,7 @@ def status(ctx: dict[str, Any]) -> tuple[int, dict]:
         if agent_mod is None or not hasattr(agent_mod, "_LAST_AUTODETECT"):
             from .. import agent as agent_mod  # type: ignore
         autodetect_trace = dict(getattr(agent_mod, "_LAST_AUTODETECT", {}) or {})
+        last_port_cleanup = list(getattr(agent_mod, "_LAST_PORT_CLEANUP", []) or [])
         # R53 diagnostic: list the actually-registered route keys so we can
         # confirm /comfyui/node-catalog etc. landed on the active handler.
         handler_cls = None
@@ -180,6 +182,7 @@ def status(ctx: dict[str, Any]) -> tuple[int, dict]:
     except Exception:
         autodetect_trace = None
         registered_routes = []
+        last_port_cleanup = []
 
     return 200, {
         "service": "spellcaster-antenna",
@@ -192,6 +195,7 @@ def status(ctx: dict[str, Any]) -> tuple[int, dict]:
         "services_detected": services_detected,
         "autodetect_trace": autodetect_trace,
         "registered_routes": registered_routes,
+        "last_port_cleanup": last_port_cleanup,
         "rate_limit_rpm": cfg.get("rate_limit_rpm", 30),
         "heartbeat": heartbeat.current_state(),
         # Paths are returned as basenames only — full paths leak the user's

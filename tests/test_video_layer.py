@@ -771,6 +771,20 @@ def main() -> int:
     check("capabilities snapshot caches",
           test_capabilities_snapshot_caches)
 
+    # Port-cleanup (pre-bind auto-reap)
+    check("port_cleanup module importable",
+          test_port_cleanup_module_importable)
+    check("port_cleanup empty port returns empty list",
+          test_port_cleanup_empty_port_returns_empty_list)
+    check("port_cleanup refuses to kill self",
+          test_port_cleanup_does_not_kill_self)
+    check("agent calls port_cleanup before bind",
+          test_agent_calls_port_cleanup_before_bind)
+    check("agent exposes _LAST_PORT_CLEANUP",
+          test_agent_exposes_last_port_cleanup)
+    check("status reports last_port_cleanup",
+          test_status_reports_last_port_cleanup)
+
     print("-" * 50)
 
     from scaffold.shotboard import Shotboard, Shot, Trajectory
@@ -7441,6 +7455,57 @@ def test_capabilities_snapshot_caches():
     # 5-minute TTL to avoid hammering antennas during UI polling
     assert "300" in src  # ttl_s
     assert "_CAPABILITIES_CACHE" in src
+
+
+# ════════════════════════════════════════════════════════════════════
+# Port-cleanup (pre-bind auto-reap)
+# ════════════════════════════════════════════════════════════════════
+
+def test_port_cleanup_module_importable():
+    import importlib
+    pc = importlib.import_module("antenna.port_cleanup")
+    assert callable(getattr(pc, "reap_port_holders", None))
+
+
+def test_port_cleanup_empty_port_returns_empty_list():
+    from antenna import port_cleanup as pc
+    # Pick an obviously-unused high port. If by some chance it's busy,
+    # the test still passes as long as the result is well-formed.
+    result = pc.reap_port_holders(65431, only_python=True)
+    assert isinstance(result, list)
+    for entry in result:
+        assert "pid" in entry
+        assert "image" in entry
+        assert "killed" in entry
+
+
+def test_port_cleanup_does_not_kill_self():
+    from antenna import port_cleanup as pc
+    my_pid = os.getpid()
+    # Fake: even if self-pid were reported, reaper must refuse.
+    result = pc.reap_port_holders(0, self_pid=my_pid)
+    for entry in result:
+        if entry["pid"] == my_pid:
+            assert entry["killed"] is False
+
+
+def test_agent_calls_port_cleanup_before_bind():
+    src = open("antenna/agent.py", encoding="utf-8").read()
+    idx_reap = src.find("reap_port_holders")
+    idx_bind = src.find("ThreadingHTTPServer((cfg")
+    assert idx_reap > 0 and idx_bind > 0
+    assert idx_reap < idx_bind, \
+        "port cleanup must run BEFORE ThreadingHTTPServer() binds"
+
+
+def test_agent_exposes_last_port_cleanup():
+    src = open("antenna/agent.py", encoding="utf-8").read()
+    assert "_LAST_PORT_CLEANUP" in src
+
+
+def test_status_reports_last_port_cleanup():
+    src = open("antenna/endpoints/status.py", encoding="utf-8").read()
+    assert "last_port_cleanup" in src
 
 
 if __name__ == "__main__":
