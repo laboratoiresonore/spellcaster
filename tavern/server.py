@@ -7277,6 +7277,54 @@ class GuildHandler(SimpleHTTPRequestHandler):
         except (_ue.URLError, OSError, json.JSONDecodeError) as e:
             return {"error": f"{type(e).__name__}: {e}"}
 
+    def _resolve_antenna_agent(self, hostname):
+        """Look up the agent_url + bearer token for a paired antenna by
+        hostname. Falls back to the single-slot guild_config entries if
+        the registry has nothing matching — lets legacy one-antenna
+        setups keep working while multi-antenna is wired up."""
+        cfg = _guided_install_load_config()
+        token = (cfg.get('antenna_token') or '').strip()
+        if not hostname:
+            return (cfg.get('antenna_url') or '').strip() or None, token
+        if ANTENNA_REGISTRY_AVAILABLE and _antenna_registry is not None:
+            try:
+                for a in _antenna_registry.list_entries(only_online=False):
+                    if (a.hostname or '').lower() == hostname.lower():
+                        return a.agent_url, token
+            except Exception:
+                pass
+        # Fallback: single-slot config matches the requested host
+        fallback_host = (cfg.get('antenna_host') or '').strip().lower()
+        if fallback_host == hostname.lower():
+            return (cfg.get('antenna_url') or '').strip() or None, token
+        return None, token
+
+    def _post_antenna_json(self, base_url, path, token, body,
+                            timeout=35):
+        """Helper: authenticated POST against an antenna. Same error shape
+        as _fetch_antenna_json — returns parsed JSON or {"error": ...}."""
+        import urllib.request as _ur, urllib.error as _ue, ssl as _ssl
+        headers = {"Authorization": f"Bearer {token}",
+                   "Content-Type": "application/json",
+                   "User-Agent": "spellcaster-guild-app-control"}
+        ctx_ssl = _ssl.create_default_context()
+        ctx_ssl.check_hostname = False
+        ctx_ssl.verify_mode = _ssl.CERT_NONE
+        data = json.dumps(body or {}).encode("utf-8")
+        req = _ur.Request(base_url.rstrip('/') + path,
+                           data=data, headers=headers, method='POST')
+        try:
+            with _ur.urlopen(req, timeout=timeout, context=ctx_ssl) as resp:
+                return json.loads(resp.read().decode('utf-8', 'replace'))
+        except _ue.HTTPError as e:
+            try:
+                body_bytes = e.read().decode('utf-8', 'replace')
+                return json.loads(body_bytes)
+            except Exception:
+                return {"error": f"HTTP {e.code}"}
+        except (_ue.URLError, OSError, json.JSONDecodeError) as e:
+            return {"error": f"{type(e).__name__}: {e}"}
+
     def _capabilities_snapshot(self, *, force_refresh=False):
         """R53b: Build a per-antenna capability report.
 
@@ -8380,6 +8428,30 @@ class GuildHandler(SimpleHTTPRequestHandler):
             # alias lookups and is stripped here.
             snap.pop("host_url", None)
             return self.end_json(200, snap)
+        elif self.path == '/api/app_control/config':
+            # GET the per-app control matrix: auto_start flag + target
+            # machine (local or antenna hostname) for every known app.
+            # The UI renders a tiny toggle cluster on the left of each
+            # chip; settings are persisted in guild_config.json so
+            # "auto-launch on boot / auto-close on exit" survives
+            # restarts. Writes go through POST /api/app_control/config.
+            cfg = _guided_install_load_config()
+            apps = cfg.get("app_control") or {}
+            if not isinstance(apps, dict):
+                apps = {}
+            # List of known targets: "local" + each paired antenna.
+            targets = ["local"]
+            try:
+                if ANTENNA_REGISTRY_AVAILABLE and _antenna_registry is not None:
+                    for a in _antenna_registry.list_entries(only_online=False):
+                        if a.hostname and a.hostname not in targets:
+                            targets.append(a.hostname)
+            except Exception:
+                pass
+            return self.end_json(200, {
+                "app_control": apps,
+                "targets": targets,
+            })
         elif self.path == '/api/signal_bridge_status':
             try:
                 req = urllib.request.Request(
@@ -10252,6 +10324,150 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "host": host,
                 "port": port,
                 "note": "token stored. Antenna + chip row will refresh next poll.",
+            })
+
+        elif self.path == '/api/app_control/config' and self.command == 'POST':
+            # Persist per-app control settings. Shape:
+            #   {"app_control": {"comfyui": {"auto_start": true,
+            #                                "target": "theo"}, ...}}
+            # Target is either "local" (Guild spawns via subprocess) or
+            # the hostname of a paired antenna (Guild forwards to it).
+            # The Guild launcher reads this on boot to auto-start apps;
+            # /api/guild/exit reads it to auto-close on shutdown.
+            new_matrix = data.get("app_control")
+            if not isinstance(new_matrix, dict):
+                return self.end_json(400, {
+                    "error": "app_control must be an object",
+                    "hint": '{"app_control": {"comfyui": {"auto_start": true, "target": "theo"}}}',
+                })
+            cleaned = {}
+            allowed_apps = {"comfyui", "ollama", "kobold",
+                             "sillytavern", "signal", "gimp",
+                             "darktable", "resolve"}
+            for k, v in new_matrix.items():
+                if k not in allowed_apps:
+                    continue
+                if not isinstance(v, dict):
+                    continue
+                cleaned[k] = {
+                    "auto_start": bool(v.get("auto_start", False)),
+                    "target": str(v.get("target") or "local").strip() or "local",
+                }
+            cfg = _guided_install_load_config()
+            cfg["app_control"] = cleaned
+            ok = _guided_install_save_config(cfg)
+            return self.end_json(200 if ok else 500,
+                                  {"ok": ok, "app_control": cleaned})
+
+        elif self.path == '/api/app_control/start' and self.command == 'POST':
+            # Launch an app on its configured target machine. Body:
+            #   {"app": "comfyui"}   (uses stored target)
+            #   {"app": "comfyui", "target": "theo"}  (override)
+            app = (data.get("app") or "").strip().lower()
+            if app not in ("comfyui", "ollama", "kobold"):
+                # Others (SillyTavern, Signal, GIMP, DT, Resolve) have
+                # no generic launcher yet — they're user-managed. The
+                # toggle still persists but start is a no-op for them.
+                return self.end_json(400, {
+                    "error": f"{app!r} has no managed launcher",
+                    "hint": "managed: comfyui, ollama, kobold",
+                })
+            cfg = _guided_install_load_config()
+            app_cfg = (cfg.get("app_control") or {}).get(app) or {}
+            target = (data.get("target") or app_cfg.get("target") or "local").strip()
+            if target == "local":
+                # Use the antenna's own launcher module — it's the
+                # canonical service-start path, no parallel impl.
+                try:
+                    from antenna import service_launcher as _sl
+                except Exception as e:
+                    return self.end_json(500, {
+                        "error": f"local launcher import failed: {e}",
+                    })
+                result = _sl.ensure_service_running(app, cfg, wait_s=45.0)
+                state = result.get("state")
+                status = 200 if state in ("already_running", "started") else 500
+                return self.end_json(status, {"target": "local", **result})
+            # Remote target: resolve hostname → antenna agent_url + token
+            antenna_url, token = self._resolve_antenna_agent(target)
+            if not antenna_url:
+                return self.end_json(404, {
+                    "error": f"no paired antenna for target {target!r}",
+                })
+            resp = self._post_antenna_json(antenna_url, "/service/start",
+                                            token, {"service": app})
+            if isinstance(resp, dict) and "error" in resp and "state" not in resp:
+                return self.end_json(502, {"target": target, **resp})
+            return self.end_json(200, {"target": target, **(resp or {})})
+
+        elif self.path == '/api/app_control/stop' and self.command == 'POST':
+            app = (data.get("app") or "").strip().lower()
+            if app not in ("comfyui", "ollama", "kobold"):
+                return self.end_json(400, {
+                    "error": f"{app!r} has no managed launcher",
+                })
+            cfg = _guided_install_load_config()
+            app_cfg = (cfg.get("app_control") or {}).get(app) or {}
+            target = (data.get("target") or app_cfg.get("target") or "local").strip()
+            if target == "local":
+                try:
+                    from antenna import service_launcher as _sl
+                except Exception as e:
+                    return self.end_json(500, {
+                        "error": f"local launcher import failed: {e}",
+                    })
+                result = _sl.stop_service(app, cfg)
+                return self.end_json(200, {"target": "local", **result})
+            antenna_url, token = self._resolve_antenna_agent(target)
+            if not antenna_url:
+                return self.end_json(404, {
+                    "error": f"no paired antenna for target {target!r}",
+                })
+            resp = self._post_antenna_json(antenna_url, "/service/stop",
+                                            token, {"service": app})
+            return self.end_json(200, {"target": target, **(resp or {})})
+
+        elif self.path == '/api/guild/exit' and self.command == 'POST':
+            # Graceful shutdown: iterate auto-start apps and ask their
+            # targets to stop, then os._exit on a short delay so the
+            # HTTP response flushes to the browser before we die.
+            cfg = _guided_install_load_config()
+            matrix = (cfg.get("app_control") or {})
+            stopped = []
+            errors = []
+            for app, entry in matrix.items():
+                if not (isinstance(entry, dict) and entry.get("auto_start")):
+                    continue
+                if app not in ("comfyui", "ollama", "kobold"):
+                    continue
+                target = str(entry.get("target") or "local").strip()
+                try:
+                    if target == "local":
+                        from antenna import service_launcher as _sl
+                        r = _sl.stop_service(app, cfg)
+                    else:
+                        url, tok = self._resolve_antenna_agent(target)
+                        if not url:
+                            errors.append({"app": app, "error": "no antenna"})
+                            continue
+                        r = self._post_antenna_json(
+                            url, "/service/stop", tok, {"service": app},
+                            timeout=8)
+                    stopped.append({"app": app, "target": target,
+                                     "result": r})
+                except Exception as e:
+                    errors.append({"app": app, "error": str(e)[:200]})
+            # Schedule process exit after response flush.
+            import threading as _th, time as _ti, os as _os
+            def _bye():
+                _ti.sleep(0.6)
+                _os._exit(0)
+            _th.Thread(target=_bye, daemon=True).start()
+            return self.end_json(200, {
+                "ok": True,
+                "stopped": stopped,
+                "errors": errors,
+                "note": "Guild exiting in ~0.6s",
             })
 
         elif self.path == '/api/antenna/self-update' and self.command == 'POST':

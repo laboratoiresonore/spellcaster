@@ -533,6 +533,21 @@ async function refreshActiveInterfaces() {
     }
 }
 
+// Per-app control matrix, refreshed alongside interfaces. Shape:
+//   { comfyui: {auto_start:true, target:"theo"}, ollama: {...} }
+// Used by renderActiveInterfaceChips to colour the 🔁 auto-start toggle
+// that sits on the left of each chip. The ⚡ Start button calls
+// /api/app_control/start regardless of this matrix.
+window.appControlMatrix = window.appControlMatrix || {};
+async function refreshAppControlMatrix() {
+    try {
+        const r = await fetch('/api/app_control/config');
+        if (!r.ok) return;
+        const d = await r.json();
+        window.appControlMatrix = d.app_control || {};
+    } catch (e) { /* silent — chips fall back to blank toggles */ }
+}
+
 function renderActiveInterfaceChips() {
     const container = document.getElementById('active-interfaces-container');
     const row = document.getElementById('active-interfaces-row');
@@ -605,14 +620,95 @@ function renderActiveInterfaceChips() {
         chip.title = tooltip;
         chip.dataset.ifaceKey = k;
         chip.dataset.ifaceLabel = label;
+        // Tiny toggle cluster on the LEFT:
+        //   ⚡ Start — calls /api/app_control/start (local or antenna)
+        //   🔁 Auto — persists "launch on Guild boot / close on exit"
+        // Only meaningful for managed services; for GIMP / Darktable /
+        // SillyTavern etc. we still render the cluster so the UI is
+        // uniform but the Start button is disabled with a tooltip.
+        const managed = (k === 'comfyui' || k === 'ollama' || k === 'kobold');
+        const ctrl = (window.appControlMatrix || {})[k] || {};
+        const autoOn = !!ctrl.auto_start;
+        const startTip = managed
+            ? 'Start this app on its target machine now'
+            : 'This app has no managed launcher yet';
+        const autoTip = managed
+            ? (autoOn
+                ? 'Auto-start on Guild launch (and auto-close on exit). Click to disable.'
+                : 'Click to auto-start on Guild launch (and auto-close on exit).')
+            : 'Not managed — auto-start unavailable';
         chip.innerHTML =
+            `<span class="iface-toggles">` +
+                `<button type="button" class="iface-toggle-btn iface-start-btn"` +
+                    ` data-app="${k}"` +
+                    ` title="${startTip}"` +
+                    (managed ? '' : ' disabled') + '>⚡</button>' +
+                `<button type="button" class="iface-toggle-btn iface-auto-btn` +
+                    (autoOn ? ' is-on' : '') + '"' +
+                    ` data-app="${k}"` +
+                    ` title="${autoTip}"` +
+                    (managed ? '' : ' disabled') + '>🔁</button>' +
+            `</span>` +
             `<span class="iface-icon">${icon}</span>` +
             `<span class="iface-label">${label}</span>` +
             (host ? `<span class="iface-host">${host}</span>` : '');
         chip.addEventListener('click', (ev) => {
+            // Let toggle buttons handle their own clicks without opening
+            // the placement popover underneath.
+            const btn = ev.target.closest && ev.target.closest('.iface-toggle-btn');
+            if (btn) { ev.stopPropagation(); return; }
             ev.stopPropagation();
             openIfacePlacementMenu(chip, k, label, v);
         });
+        // Wire the two toggle buttons.
+        const startBtn = chip.querySelector('.iface-start-btn');
+        const autoBtn  = chip.querySelector('.iface-auto-btn');
+        if (startBtn && managed) {
+            startBtn.addEventListener('click', async (ev) => {
+                ev.stopPropagation();
+                startBtn.disabled = true;
+                startBtn.textContent = '⏳';
+                try {
+                    const r = await fetch('/api/app_control/start', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({app: k}),
+                    });
+                    const d = await r.json();
+                    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+                    startBtn.textContent = (d.state === 'already_running') ? '✓' : '⚡';
+                } catch (e) {
+                    startBtn.textContent = '⚠';
+                    startBtn.title = `Start failed: ${e.message || e}`;
+                }
+                setTimeout(() => { startBtn.textContent = '⚡'; startBtn.disabled = false; }, 2500);
+            });
+        }
+        if (autoBtn && managed) {
+            autoBtn.addEventListener('click', async (ev) => {
+                ev.stopPropagation();
+                const next = !autoOn;
+                autoBtn.classList.toggle('is-on', next);
+                const matrix = Object.assign({}, window.appControlMatrix || {});
+                matrix[k] = {
+                    auto_start: next,
+                    target: (matrix[k] && matrix[k].target) || 'local',
+                };
+                try {
+                    const r = await fetch('/api/app_control/config', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({app_control: matrix}),
+                    });
+                    const d = await r.json();
+                    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+                    window.appControlMatrix = d.app_control || matrix;
+                } catch (e) {
+                    autoBtn.classList.toggle('is-on', autoOn); // revert
+                    autoBtn.title = `Save failed: ${e.message || e}`;
+                }
+            });
+        }
         row.appendChild(chip);
     }
 }
