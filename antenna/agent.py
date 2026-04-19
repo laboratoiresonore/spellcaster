@@ -194,6 +194,17 @@ def _build_routes(cfg: dict[str, Any]) -> dict[tuple[str, str], Callable]:
             print(f"[antenna] resolve service declared but endpoints missing: {e}",
                   file=sys.stderr)
 
+    # R56: generic service start/logs — covers ComfyUI, Kobold, Ollama.
+    # Always registered (not gated by a specific service) because
+    # start_service chooses based on the request body, not route key.
+    try:
+        from .endpoints import services as services_ep
+        routes[("POST", "/service/start")] = services_ep.start_service
+        routes[("GET",  "/service/logs")]  = services_ep.service_logs
+    except ImportError as e:
+        print(f"[antenna] WARN: services endpoint failed to import: {e}",
+              file=sys.stderr)
+
     # self-update is always available — it's how the agent updates itself.
     # Any import failure here is critical to surface so operators can
     # debug it — otherwise they see mysterious "no such endpoint" 404s.
