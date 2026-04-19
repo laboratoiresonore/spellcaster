@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Dynamic middleware between ComfyUI and everything else,<br/>hellbent on removing every bit of difficulty out of AI generation.</strong><br/>
-  <em>69 AI tools (nice) &bull; GIMP &bull; Darktable &bull; Chat UI &bull; 100% Local &bull; Zero Config</em>
+  <em>69 AI tools (nice) &bull; GIMP &bull; DaVinci Resolve &bull; Darktable &bull; Chat UI &bull; 100% Local &bull; Zero Config</em>
 </p>
 
 <p align="center">
@@ -486,6 +486,87 @@ If you're reading this section voluntarily, you're either evaluating this for a 
 - **7 plugin surfaces** in `plugins/`: `gimp` (mature, 61 files), `resolve`, `darktable`, `sillytavern` (real integrations), `blender`, `krita`, `photoshop` (minimal / experimental).
 
 </details>
+
+---
+
+## Cross-App Functions
+
+Spellcaster is the connective tissue. Every generated asset lives in one canonical store, every surface sees every other surface, and every action in one app can finish in another. Drop an image in GIMP, drop it into the Guild chat, drop it onto the Resolve timeline — same bytes, one hash, zero copies.
+
+<p align="center">
+  <a href="https://www.gimp.org/" title="GIMP — image editor"><img src="https://cdn.simpleicons.org/gimp/5C5543" height="64" alt="GIMP"/></a>
+  &nbsp;&nbsp;
+  <a href="#the-wizard-guild-chat-interface" title="The Wizard Guild — chat UI"><img src="tavern/characters/Spellcaster.png" height="64" alt="Wizard Guild"/></a>
+  &nbsp;&nbsp;
+  <a href="https://www.blackmagicdesign.com/products/davinciresolve" title="DaVinci Resolve — video editor"><img src="https://cdn.simpleicons.org/davinciresolve/FFFFFF" height="64" alt="Resolve"/></a>
+  &nbsp;&nbsp;
+  <a href="https://github.com/LostRuins/koboldcpp" title="KoboldCpp — local LLM server"><img src="https://avatars.githubusercontent.com/u/23170807?s=128" height="64" alt="KoboldCpp"/></a>
+  &nbsp;&nbsp;
+  <a href="https://github.com/SillyTavern/SillyTavern" title="SillyTavern — roleplay chat"><img src="https://avatars.githubusercontent.com/u/138934974?s=128" height="64" alt="SillyTavern"/></a>
+  &nbsp;&nbsp;
+  <a href="https://www.darktable.org/" title="Darktable — RAW editor"><img src="https://cdn.simpleicons.org/darktable/FF7A21" height="64" alt="Darktable"/></a>
+</p>
+
+<p align="center"><sub>All six talk through one event bus + one blob store + one registry. Add a plugin, get every capability for free.</sub></p>
+
+<table>
+<tr>
+<th width="18%" align="center">From</th>
+<th width="18%" align="center">To</th>
+<th>What it does</th>
+</tr>
+
+<tr>
+<td align="center"><img src="https://cdn.simpleicons.org/gimp/5C5543" height="36" alt="GIMP"/><br/><strong>GIMP</strong></td>
+<td align="center"><img src="tavern/characters/Spellcaster.png" height="36" alt="Guild"/><br/><strong>Wizard Guild</strong></td>
+<td>Save any layer to the Guild gallery. It appears instantly under "Recent across apps" in the sidebar and drops into the active wizard's chat as a reference image on click. No upload step.</td>
+</tr>
+
+<tr>
+<td align="center"><img src="https://cdn.simpleicons.org/gimp/5C5543" height="36" alt="GIMP"/><br/><strong>GIMP</strong></td>
+<td align="center"><img src="https://cdn.simpleicons.org/davinciresolve/FFFFFF" height="36" alt="Resolve"/><br/><strong>Resolve</strong></td>
+<td>Right-click a layer → <em>Send to Resolve Media Pool</em>. The Resolve Bridge picks up the <code>gimp.asset.created</code> event and imports the file at its canonical path. Works even when Resolve runs on a different machine (via the Antenna).</td>
+</tr>
+
+<tr>
+<td align="center"><img src="tavern/characters/Spellcaster.png" height="36" alt="Guild"/><br/><strong>Wizard Guild</strong></td>
+<td align="center"><img src="https://cdn.simpleicons.org/davinciresolve/FFFFFF" height="36" alt="Resolve"/><br/><strong>Resolve</strong></td>
+<td>Build a Shotboard in the Guild, click <em>Send to Resolve</em>. Every queued shot renders + auto-imports into the timeline in the correct order. Gap-fill between two clips with LTX first-last-frame.</td>
+</tr>
+
+<tr>
+<td align="center"><img src="https://cdn.simpleicons.org/davinciresolve/FFFFFF" height="36" alt="Resolve"/><br/><strong>Resolve</strong></td>
+<td align="center"><img src="tavern/characters/Spellcaster.png" height="36" alt="Guild"/><br/><strong>Wizard Guild</strong></td>
+<td>Drop the playhead on the timeline, type a prompt, get an 81-frame LTX-2 clip back in the Media Pool snapped to the playhead. Markers map to render profiles (red = high-effort, blue = turbo).</td>
+</tr>
+
+<tr>
+<td align="center"><img src="tavern/characters/Spellcaster.png" height="36" alt="Guild"/><br/><strong>Wizard Guild</strong></td>
+<td align="center"><img src="https://avatars.githubusercontent.com/u/138934974?s=128" height="36" alt="SillyTavern"/><br/><strong>SillyTavern</strong></td>
+<td>13 built-in Spellcaster wizard cards install themselves into SillyTavern on first launch. Sceneshifter generates backgrounds as your RP unfolds. Autonoma decides when a scene deserves an illustration. Portraitist paints mood-matched character art. All silent, all background.</td>
+</tr>
+
+<tr>
+<td align="center"><img src="https://avatars.githubusercontent.com/u/23170807?s=128" height="36" alt="Kobold"/><br/><strong>KoboldCpp</strong></td>
+<td align="center"><img src="tavern/characters/Spellcaster.png" height="36" alt="Guild"/><br/><strong>Wizard Guild</strong></td>
+<td>Pair one Kobold in RP mode (<code>kobold_rp</code> on :5001) and another in Whisper/TTS mode (<code>kobold_tts</code> on :5002). The Guild's 🎙️ walkie-talkie uses the TTS/STT one; SillyTavern keeps chatting through the RP one. No conflict.</td>
+</tr>
+
+<tr>
+<td align="center"><img src="https://cdn.simpleicons.org/darktable/FF7A21" height="36" alt="Darktable"/><br/><strong>Darktable</strong></td>
+<td align="center"><img src="tavern/characters/Spellcaster.png" height="36" alt="Guild"/><br/><strong>Wizard Guild</strong></td>
+<td>Darktable's export filter pushes the developed RAW into the Guild gallery with its full develop history preserved. Send it to the next wizard for upscaling, face restoration, or a cinematic colour pass — no manual export-import dance.</td>
+</tr>
+
+<tr>
+<td align="center"><img src="https://cdn.simpleicons.org/davinciresolve/FFFFFF" height="36" alt="Resolve"/><br/><strong>Resolve</strong></td>
+<td align="center"><img src="https://cdn.simpleicons.org/gimp/5C5543" height="36" alt="GIMP"/><br/><strong>GIMP</strong></td>
+<td>Grab a frame out of Resolve, drop it into GIMP. The Cinematographer wizard reads the timeline context (surrounding clips, markers, grade) so the returned edit matches the cut it came from.</td>
+</tr>
+
+</table>
+
+Everything above rides the same three primitives under [`comfyui-spellcaster/spellcaster_core/`](comfyui-spellcaster/spellcaster_core/) — the **event bus** (`event_bus.py`), the **asset gallery** (`asset_gallery.py`), and the **interface registry** (`interface_registry.py`). Adding a new plugin means declaring its capabilities once; every cross-app flow listed above works for it immediately without per-plugin glue code. See [🔀 Cross-interface backbone](#-cross-interface-backbone--every-surface-is-the-same-surface) for the mechanics.
 
 ---
 
