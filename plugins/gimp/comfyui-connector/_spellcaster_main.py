@@ -877,6 +877,13 @@ _FEATURE_SENTINELS: dict[str, tuple[str, ...]] = {
     "lut_grading":       ("ApplyLUT",),
     "style_transfer":    ("IPAdapterAdvanced", "IPAdapterUnifiedLoader"),
     "iclight":           ("LoadICLightModel", "ICLightApplyMaskGrey"),
+    # R117: LTX sentinels — previously the ltx-t2v / ltx-i2v procedures
+    # had their feature key set to None (always-register) which bypassed
+    # this gate. Any of these LTX nodes being present confirms the LTX
+    # runtime is installed; use the distilled sampler as the primary
+    # sentinel (present in every LTX install from 2.0 onward).
+    "ltx_video":         ("LTXVImgToVideo", "LTXVScheduler",
+                           "LTXAVTextEncoderLoader"),
 }
 
 
@@ -11580,8 +11587,13 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-klein-headswap": "klein_flux2",
             "spellcaster-klein-headswap-face": "klein_flux2",
             "spellcaster-klein-inpaint": "klein_flux2",
-            "spellcaster-ltx-t2v": None,   # always register — LTX added post-installer, no feature gate
-            "spellcaster-ltx-i2v": None,   # always register — LTX added post-installer, no feature gate
+            # R117: LTX procedures now go through the sentinel probe
+            # (see _FEATURE_SENTINELS["ltx_video"]). Gate key remains
+            # fail-open: if the probe can't run the procedure still
+            # registers, so the pre-R117 behaviour holds when the
+            # probe errors out.
+            "spellcaster-ltx-t2v": "ltx_video",
+            "spellcaster-ltx-i2v": "ltx_video",
             "spellcaster-wan-i2v": "wan_i2v",
             "spellcaster-wan-flf": "wan_i2v",
             "spellcaster-wan-director": "wan_i2v",

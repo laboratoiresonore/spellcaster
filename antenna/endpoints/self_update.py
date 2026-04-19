@@ -319,6 +319,24 @@ def self_update(ctx: dict[str, Any]) -> tuple[int, dict]:
                 "error": f"{type(e).__name__}: {e}",
             }
 
+    # R116: SillyTavern. Same pattern. Detection is best-effort —
+    # ST has no OS-canonical location — so failure is common on hosts
+    # where ST lives in a non-standard path; gets surfaced as
+    # ``ok: false`` with a hint to set cfg['sillytavern_dir'].
+    st_plugin_result: dict[str, Any] | None = None
+    if "sillytavern" in services and not bool(body.get("skip_sillytavern_plugin", False)):
+        try:
+            import importlib
+            from . import sillytavern_plugin as st_plugin_ep  # type: ignore
+            importlib.reload(st_plugin_ep)
+            st_plugin_result = st_plugin_ep.install_plugin_from_src(
+                cfg, force=bool(body.get("force_sillytavern_plugin", False)))
+        except Exception as e:  # noqa: BLE001
+            st_plugin_result = {
+                "ok": False,
+                "error": f"{type(e).__name__}: {e}",
+            }
+
     # Schedule restart AFTER we've replied
     _schedule_restart()
 
@@ -333,4 +351,6 @@ def self_update(ctx: dict[str, Any]) -> tuple[int, dict]:
         out["resolve_plugin"] = resolve_plugin_result
     if darktable_plugin_result is not None:
         out["darktable_plugin"] = darktable_plugin_result
+    if st_plugin_result is not None:
+        out["sillytavern_plugin"] = st_plugin_result
     return 202, out
