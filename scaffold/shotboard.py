@@ -1465,6 +1465,72 @@ class Shotboard:
             "new_ids": created_ids,
         }
 
+    def shotboard_to_outline(self) -> str:
+        """R75b: plaintext outline of the board — shareable with
+        non-technical reviewers. Grouped by scene when scenes exist.
+        Format:
+            # Project Title
+            Synopsis text
+            ----------------------------------------
+            ## Scene A
+              1. Shot title
+                 | prompt: first 100 chars of prompt
+                 | notes:  director's notes (if any)
+              2. Shot title
+                 ...
+            ## (ungrouped)
+              ...
+        """
+        lines: List[str] = []
+        title = self._project_meta.get("title") or "Untitled Project"
+        author = self._project_meta.get("author", "")
+        synopsis = self._project_meta.get("synopsis", "")
+        lines.append(f"# {title}")
+        if author:
+            lines.append(f"by {author}")
+        if synopsis:
+            lines.append("")
+            lines.append(synopsis)
+        lines.append("-" * 60)
+
+        # Group shots by scene
+        scene_map = {sc.id: sc for sc in self._scenes}
+        groups: Dict[Optional[str], List[Shot]] = {}
+        for shot in self._shots:
+            if shot.archived or not shot.is_primary:
+                continue
+            key = shot.scene_id if shot.scene_id in scene_map else None
+            groups.setdefault(key, []).append(shot)
+
+        # Scenes in their natural order, then ungrouped
+        scene_order: List[Optional[str]] = [sc.id for sc in self._scenes
+                                              if sc.id in groups]
+        if None in groups:
+            scene_order.append(None)
+
+        n = 0
+        for key in scene_order:
+            name = scene_map[key].name if key else "(ungrouped)"
+            lines.append("")
+            lines.append(f"## {name}")
+            for shot in groups[key]:
+                n += 1
+                title = shot.title or "(untitled)"
+                lines.append(f"  {n}. {title}")
+                if shot.prompt:
+                    excerpt = shot.prompt.replace("\n", " ").strip()
+                    if len(excerpt) > 100:
+                        excerpt = excerpt[:97] + "..."
+                    lines.append(f"     | prompt: {excerpt}")
+                if shot.notes:
+                    excerpt = shot.notes.replace("\n", " ").strip()
+                    if len(excerpt) > 100:
+                        excerpt = excerpt[:97] + "..."
+                    lines.append(f"     | notes:  {excerpt}")
+                if shot.tags:
+                    lines.append(f"     | tags:   {', '.join('#' + t for t in shot.tags)}")
+        return "\n".join(lines) + "\n"
+
     def render_history_csv(self) -> str:
         """R64b: emit render history for every shot as a flat CSV.
         Columns: shot_id, shot_title, render_ts, preset, prompt, negative,
@@ -2410,7 +2476,8 @@ class Shotboard:
     # ─── R45b: batch duplicate with counter ──────────────────────────
 
     def batch_duplicate(self, shot_ids: List[str], count: int = 1,
-                        title_suffix_mode: str = "counter") -> Dict[str, Any]:
+                        title_suffix_mode: str = "counter",
+                        fresh_seeds: bool = False) -> Dict[str, Any]:
         """Create `count` copies of each shot in shot_ids.
 
         For each source shot, copies share the source's creative state
@@ -2422,6 +2489,10 @@ class Shotboard:
                        (v1 assumed = original; new copies start at v2)
           - "plain":   source "Scene A" → "Scene A (2)", "Scene A (3)", ...
 
+        R75a: fresh_seeds=True assigns each copy a brand-new random seed
+        so the duplicates explore different outputs from the same prompt.
+        The source's seed is preserved.
+
         Locked shots are copied but their copies are NOT locked — the
         user just wanted a starting point.
 
@@ -2429,6 +2500,8 @@ class Shotboard:
         """
         if count < 1:
             return {"created": 0, "skipped": 0, "new_ids": []}
+        import random
+        rng = random.Random()
         created: List[str] = []
         skipped = 0
         for sid in shot_ids:
@@ -2448,6 +2521,8 @@ class Shotboard:
                 new_shot.locked = False
                 new_shot.render_duration_s = None
                 new_shot.last_updated = time.time()
+                if fresh_seeds:
+                    new_shot.seed = rng.randint(0, 2147483647)
                 # Compose the new title
                 base = (source.title or "Untitled").rstrip()
                 if title_suffix_mode == "plain":
@@ -2459,4 +2534,5 @@ class Shotboard:
                 created.append(new_shot.id)
         if created:
             self.save()
-        return {"created": len(created), "skipped": skipped, "new_ids": created}
+        return {"created": len(created), "skipped": skipped,
+                "new_ids": created, "fresh_seeds": fresh_seeds}
