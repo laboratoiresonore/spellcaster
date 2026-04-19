@@ -1085,14 +1085,219 @@ function renderAntennaChips(antennas) {
             (svcLines.length ? `Services:\n  ${svcLines.join('\n  ')}` : '')
         ).replace(/"/g, '&quot;');
         const count = services.length;
-        return `<span class="antenna-chip antenna-${cls}" title="${tooltip}">
+        return `<span class="antenna-chip antenna-${cls}"
+                       data-host="${host}" title="${tooltip}">
                   <span class="antenna-icon">📡</span>
                   <span class="antenna-host">${host}</span>
                   <span class="antenna-count">${count}</span>
                 </span>`;
     }).join('');
     row.innerHTML = html;
+    // Right-click on any antenna chip → "Connect an app" popover so
+    // the user can tell that antenna where a specific plugin (GIMP,
+    // ComfyUI, SillyTavern, …) lives on that machine. The popover
+    // submits to /api/app_control/register which proxies to the
+    // antenna's /service/register endpoint.
+    row.querySelectorAll('.antenna-chip').forEach(chip => {
+        chip.addEventListener('contextmenu', (ev) => {
+            ev.preventDefault();
+            openConnectAppMenu({
+                anchor: chip,
+                target: chip.dataset.host,
+                targetLabel: chip.dataset.host || 'antenna',
+            });
+        });
+    });
 }
+
+// ── Connect-an-app popover (right-click on antenna chip) ─────────────
+// Lists every plugin type Spellcaster knows about, with an icon + one-
+// line hint. Clicking a type opens a tiny modal asking for the local
+// launcher path / exe path on the target machine. The chosen path
+// POSTs to /api/app_control/register which persists it either to
+// guild_config.app_control (when target === 'local') or to the
+// paired antenna's antenna_config.json (remote).
+
+// Per-app metadata — icon, human label, placeholder hint for the
+// launcher field. Keep the list short + ordered so the popover reads
+// top-to-bottom as "image engine first, frontend tools next".
+const _CONNECT_APP_TYPES = [
+    { key: 'comfyui',    icon: '🎨', label: 'ComfyUI',
+      hint: 'path to launch.bat / launch_optimized.bat / python main.py',
+      example: 'C:/tools/ComfyUI/launch_optimized.bat' },
+    { key: 'ollama',     icon: '🦙', label: 'Ollama',
+      hint: 'path to ollama.exe (leave blank for PATH lookup)',
+      example: 'ollama' },
+    { key: 'kobold',     icon: '📜', label: 'KoboldCpp',
+      hint: 'path to koboldcpp.exe + optional model gguf',
+      example: 'C:/tools/koboldcpp/koboldcpp.exe' },
+    { key: 'gimp',       icon: '🎨', label: 'GIMP',
+      hint: 'path to gimp-3.0.exe / gimp.exe',
+      example: 'C:/Program Files/GIMP 3/bin/gimp-3.0.exe' },
+    { key: 'darktable',  icon: '📸', label: 'Darktable',
+      hint: 'path to darktable.exe',
+      example: 'C:/Program Files/darktable/bin/darktable.exe' },
+    { key: 'resolve',    icon: '🎬', label: 'Resolve',
+      hint: 'path to Resolve.exe',
+      example: 'C:/Program Files/Blackmagic Design/DaVinci Resolve/Resolve.exe' },
+    { key: 'sillytavern',icon: '🍺', label: 'SillyTavern',
+      hint: 'path to Start.bat',
+      example: 'C:/tools/SillyTavern/Start.bat' },
+    { key: 'signal',     icon: '💬', label: 'Signal Bridge',
+      hint: 'path to signal-bridge launcher',
+      example: 'C:/tools/signal-bridge/run.bat' },
+];
+
+let _connectMenuEl = null;
+function _closeConnectAppMenu() {
+    if (_connectMenuEl && _connectMenuEl.parentNode) {
+        _connectMenuEl.parentNode.removeChild(_connectMenuEl);
+    }
+    _connectMenuEl = null;
+    document.removeEventListener('click', _closeConnectAppMenu);
+}
+
+function openConnectAppMenu(opts) {
+    _closeConnectAppMenu();
+    const { anchor, target, targetLabel } = opts || {};
+    const menu = document.createElement('div');
+    menu.className = 'connect-app-menu';
+    menu.innerHTML = `
+        <div class="connect-app-menu-title">
+            Connect an app on <b>${targetLabel}</b>
+        </div>
+        <div class="connect-app-menu-list">
+            ${_CONNECT_APP_TYPES.map(t => `
+                <button type="button" class="connect-app-item"
+                        data-app="${t.key}">
+                    <span class="connect-app-icon">${t.icon}</span>
+                    <span class="connect-app-meta">
+                        <span class="connect-app-label">${t.label}</span>
+                        <span class="connect-app-hint">${t.hint}</span>
+                    </span>
+                </button>`).join('')}
+        </div>`;
+    // Anchor near the chip that triggered the menu; clamp to viewport.
+    const rect = anchor
+        ? anchor.getBoundingClientRect()
+        : { left: 200, top: 200, bottom: 200, height: 0 };
+    menu.style.left = `${rect.left}px`;
+    menu.style.top  = `${rect.bottom + 6}px`;
+    document.body.appendChild(menu);
+    // Clamp overflow AFTER measuring
+    const mr = menu.getBoundingClientRect();
+    if (mr.right > window.innerWidth - 8) {
+        menu.style.left = `${Math.max(8, window.innerWidth - mr.width - 8)}px`;
+    }
+    if (mr.bottom > window.innerHeight - 8) {
+        menu.style.top = `${Math.max(8, rect.top - mr.height - 6)}px`;
+    }
+    _connectMenuEl = menu;
+    // Click outside closes. Defer one tick so the current contextmenu
+    // tap doesn't immediately dismiss it.
+    setTimeout(() => document.addEventListener('click', _closeConnectAppMenu), 0);
+    menu.addEventListener('click', ev => ev.stopPropagation());
+    menu.querySelectorAll('.connect-app-item').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const appKey = btn.dataset.app;
+            const spec = _CONNECT_APP_TYPES.find(t => t.key === appKey);
+            _closeConnectAppMenu();
+            _openConnectAppDialog(spec, target, targetLabel);
+        });
+    });
+}
+
+function _openConnectAppDialog(spec, target, targetLabel) {
+    // Simple prompt for the launcher path. Avoids a heavier modal;
+    // the input is single-field, submits on Enter, cancels on Esc.
+    const overlay = document.createElement('div');
+    overlay.className = 'connect-app-overlay';
+    overlay.innerHTML = `
+        <div class="connect-app-dialog">
+            <div class="connect-app-dialog-head">
+                ${spec.icon} Connect <b>${spec.label}</b>
+                <small>on ${targetLabel}</small>
+            </div>
+            <label class="connect-app-field">
+                <span>Launcher path</span>
+                <input type="text" class="connect-app-launcher"
+                       placeholder="${spec.example}"
+                       autofocus>
+            </label>
+            <div class="connect-app-dialog-hint">${spec.hint}</div>
+            <div class="connect-app-dialog-actions">
+                <button type="button" class="connect-app-cancel">Cancel</button>
+                <button type="button" class="connect-app-save">Save</button>
+            </div>
+            <div class="connect-app-dialog-status"></div>
+        </div>`;
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('.connect-app-launcher');
+    const status = overlay.querySelector('.connect-app-dialog-status');
+    const close = () => overlay.remove();
+    const submit = async () => {
+        const launcher = input.value.trim();
+        if (!launcher) {
+            status.textContent = 'Enter a path first.';
+            return;
+        }
+        status.textContent = 'Saving…';
+        try {
+            const r = await fetch('/api/app_control/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    app: spec.key,
+                    target: target || 'local',
+                    launcher,
+                }),
+            });
+            const d = await r.json();
+            if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+            status.textContent = '✓ saved';
+            setTimeout(close, 700);
+        } catch (e) {
+            status.textContent = `✗ ${e.message || e}`;
+        }
+    };
+    overlay.querySelector('.connect-app-cancel').addEventListener('click', close);
+    overlay.querySelector('.connect-app-save').addEventListener('click', submit);
+    overlay.addEventListener('click', ev => {
+        if (ev.target === overlay) close();
+    });
+    input.addEventListener('keydown', ev => {
+        if (ev.key === 'Enter') { ev.preventDefault(); submit(); }
+        if (ev.key === 'Escape') close();
+    });
+}
+
+// Expose so other modules (the Guild tray redirect, for example)
+// can trigger the same flow with target='local'.
+window.openConnectAppMenu = openConnectAppMenu;
+
+// Auto-open the local Connect-an-app flow when the URL carries
+// `?connect_app=1` — used by the Guild tray's "Connect an app…" menu
+// item so the user lands straight in the picker without hunting.
+(function _maybeAutoOpenConnectApp() {
+    try {
+        const qs = new URLSearchParams(window.location.search);
+        if (qs.get('connect_app') !== '1') return;
+        // Defer to next tick so the rest of the bootstrap runs first.
+        setTimeout(() => {
+            openConnectAppMenu({
+                anchor: null,
+                target: 'local',
+                targetLabel: 'this machine',
+            });
+            // Clean the query-string so a refresh doesn't reopen the menu.
+            try {
+                const url = new URL(window.location.href);
+                url.searchParams.delete('connect_app');
+                window.history.replaceState({}, '', url.toString());
+            } catch (e) {}
+        }, 600);
+    } catch (e) {}
+})();
 
 // Exposed so starter_chips.js and image-action renderers can filter by it
 window.isInterfaceActive = function(key) {
@@ -1355,6 +1560,116 @@ async function initialize() {
             document.body.style.pointerEvents = 'none';
         });
     }
+
+    // ── Preset cycle + character-hover preview helpers ────────────────
+    // Declared as inner helpers because they close over nothing except
+    // DOM; top-level so the init block above can call them on boot.
+    function _wireGlobalPresetBtn() {
+        const btn = document.getElementById('global-preset-btn');
+        if (!btn) return;
+        const PRESETS = [
+            { key: 'turbo',    label: '⚡ Turbo',    cls: '' },
+            { key: 'standard', label: '⚖️ Standard', cls: 'preset-standard' },
+            { key: 'quality',  label: '💎 Quality',  cls: 'preset-quality' },
+        ];
+        const saved = localStorage.getItem('guild_preset') || 'turbo';
+        let idx = Math.max(0, PRESETS.findIndex(p => p.key === saved));
+        if (idx < 0) idx = 0;
+        const apply = () => {
+            const p = PRESETS[idx];
+            btn.textContent = p.label;
+            btn.classList.remove('preset-standard', 'preset-quality');
+            if (p.cls) btn.classList.add(p.cls);
+            window.generationPreset = p.key;
+            try { localStorage.setItem('guild_preset', p.key); } catch (e) {}
+            // Fire a window event so other modules can react without
+            // polling window.generationPreset on every render.
+            window.dispatchEvent(new CustomEvent('guildpresetchange',
+                { detail: { preset: p.key } }));
+        };
+        apply();
+        btn.addEventListener('click', () => {
+            idx = (idx + 1) % PRESETS.length;
+            apply();
+        });
+    }
+
+    function _installCharacterHoverPreview() {
+        // Single reusable overlay element — swapping src is cheaper than
+        // creating/destroying per hover. Positioned via mouse coords on
+        // mouseenter + mousemove; removed from view on mouseleave.
+        const preview = document.createElement('div');
+        preview.className = 'character-hover-preview';
+        preview.innerHTML = '<img alt="">';
+        document.body.appendChild(preview);
+        const img = preview.querySelector('img');
+
+        const show = (avatarEl) => {
+            const src = avatarEl.currentSrc || avatarEl.src
+                       || avatarEl.style.backgroundImage
+                              .replace(/^url\(["']?/, '')
+                              .replace(/["']?\)$/, '');
+            if (!src) return;
+            img.src = src;
+            preview.classList.add('visible');
+        };
+        const hide = () => preview.classList.remove('visible');
+        const position = (x, y) => {
+            // Pin the circle just to the right of the cursor. Clamp to
+            // viewport so it never scrolls the page or hides off-screen.
+            const w = preview.offsetWidth || 220;
+            const h = preview.offsetHeight || 220;
+            let left = x + 16;
+            let top  = y - h / 2;
+            if (left + w > window.innerWidth - 8)
+                left = x - w - 16;
+            if (top < 8) top = 8;
+            if (top + h > window.innerHeight - 8)
+                top = window.innerHeight - h - 8;
+            preview.style.left = `${left}px`;
+            preview.style.top  = `${top}px`;
+        };
+
+        // Delegate listener on #chat-stream so dynamically-added
+        // character avatars pick up the behavior without re-wiring.
+        const stream = document.getElementById('chat-stream');
+        if (!stream) return;
+        stream.addEventListener('mouseenter', (ev) => {
+            const t = ev.target;
+            if (!t || !t.classList) return;
+            // Chat avatars are <img class="message-avatar"> or similar;
+            // also match any .character-avatar the renderer may use.
+            if (t.matches && (t.matches('img.message-avatar') ||
+                               t.matches('.character-avatar') ||
+                               t.matches('.avatar'))) {
+                position(ev.clientX, ev.clientY);
+                show(t);
+            }
+        }, true);
+        stream.addEventListener('mousemove', (ev) => {
+            if (!preview.classList.contains('visible')) return;
+            position(ev.clientX, ev.clientY);
+        });
+        stream.addEventListener('mouseleave', (ev) => {
+            const related = ev.relatedTarget;
+            if (!related || !related.closest
+                    || !related.closest('.character-hover-preview')) {
+                hide();
+            }
+        }, true);
+    }
+    // Global generation preset cycling button. Persists to
+    // localStorage (guild_preset) + publishes to window.generationPreset
+    // so every generation action (wizards, spellcaster_actions, direct
+    // cast) can read the current preset without threading it through
+    // props. Order cycles: turbo → standard → quality → turbo.
+    _wireGlobalPresetBtn();
+
+    // Character-hover circle preview — large circular portrait that
+    // fades in near the cursor when the user mouses over an avatar in
+    // the chat stream. See _installCharacterHoverPreview for details.
+    _installCharacterHoverPreview();
+
     // Antennas strip — polls /api/antennas and renders one chip per
     // remote machine with declared / detected services. Gives the user
     // a live signal that a remote GPU pairing is alive (and how many

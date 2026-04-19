@@ -583,11 +583,232 @@ body {
     box-shadow: 0 0 15px rgba(178, 70, 242, 0.1);
 }
 
+/* ── Chat-area Shootouts slot (sits above the input, centred) ── */
+.chat-shootout-slot {
+    display: flex;
+    justify-content: center;
+    padding: 6px 12px 0 12px;
+    background: rgba(11, 10, 16, 0.6);
+}
+.chat-shootout-slot:empty { padding: 0; }
+
 /* ── Input Area ── */
 #chat-input-area {
     padding: 16px 20px; background: rgba(11, 10, 16, 0.85);
     backdrop-filter: blur(16px);
     border-top: 1px solid var(--border-color);
+    position: relative;  /* anchor for the global-preset-btn */
+}
+/* Global generation preset — compact pill anchored bottom-right of the
+   chat input area. Clicks cycle Turbo → Standard → Quality; the label
+   updates in place + the colour shifts so the user sees the swap
+   without a menu. Value lives in localStorage.guild_preset and on
+   window.generationPreset for consumers downstream. */
+.global-preset-btn {
+    position: absolute;
+    right: 12px;
+    bottom: 4px;
+    padding: 3px 10px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 215, 0, 0.4);
+    background: rgba(255, 215, 0, 0.08);
+    color: #ffe28a;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+}
+.global-preset-btn:hover {
+    background: rgba(255, 215, 0, 0.22);
+    border-color: rgba(255, 215, 0, 0.75);
+    color: #fff4b8;
+    transform: translateY(-1px);
+}
+.global-preset-btn.preset-standard {
+    border-color: rgba(106, 160, 255, 0.4);
+    background: rgba(106, 160, 255, 0.10);
+    color: #bcd3ff;
+}
+.global-preset-btn.preset-standard:hover {
+    border-color: rgba(106, 160, 255, 0.75);
+    background: rgba(106, 160, 255, 0.25);
+}
+.global-preset-btn.preset-quality {
+    border-color: rgba(178, 70, 242, 0.42);
+    background: rgba(178, 70, 242, 0.14);
+    color: #e6c7ff;
+}
+.global-preset-btn.preset-quality:hover {
+    border-color: rgba(178, 70, 242, 0.78);
+    background: rgba(178, 70, 242, 0.28);
+}
+
+/* Character-hover circle preview — when the user mouses over a
+   character avatar in the chat stream, this circle appears near the
+   cursor with the full portrait. Absolute positioning + pointer-events
+   none so it never blocks a click on the avatar itself. */
+.character-hover-preview {
+    position: fixed;
+    z-index: 1500;
+    width: 220px;
+    height: 220px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 3px solid var(--accent);
+    box-shadow:
+        0 10px 40px rgba(0, 0, 0, 0.55),
+        0 0 40px rgba(178, 70, 242, 0.35);
+    pointer-events: none;
+    background: #0e0b18;
+    opacity: 0;
+    transform: scale(0.6);
+    transition: opacity 0.14s ease, transform 0.14s ease;
+}
+.character-hover-preview.visible {
+    opacity: 1;
+    transform: scale(1);
+}
+.character-hover-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center top;
+}
+
+/* ── Connect-an-app popover (right-click on antenna chip) ──────── */
+.connect-app-menu {
+    position: fixed;
+    z-index: 1600;
+    min-width: 300px;
+    max-width: 380px;
+    background: #12101d;
+    border: 1px solid rgba(178, 70, 242, 0.45);
+    border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+    padding: 10px;
+    animation: connect-app-in 0.14s ease-out;
+}
+@keyframes connect-app-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.connect-app-menu-title {
+    font-size: 12px;
+    color: #a89bcc;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    padding: 4px 6px 8px 6px;
+    border-bottom: 1px solid #2a2440;
+}
+.connect-app-menu-title b { color: #ffd700; text-transform: none; letter-spacing: 0; }
+.connect-app-menu-list {
+    display: flex; flex-direction: column; gap: 2px; margin-top: 6px;
+    max-height: 50vh; overflow-y: auto;
+}
+.connect-app-item {
+    all: unset;
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+.connect-app-item:hover {
+    background: rgba(178, 70, 242, 0.18);
+}
+.connect-app-icon { font-size: 18px; width: 22px; text-align: center; }
+.connect-app-meta {
+    display: flex; flex-direction: column; gap: 2px;
+    min-width: 0;
+}
+.connect-app-label { font-size: 13px; color: #e8e6f5; font-weight: 600; }
+.connect-app-hint  { font-size: 10px; color: #8a7eaf;
+                      white-space: nowrap; overflow: hidden;
+                      text-overflow: ellipsis; max-width: 320px; }
+
+/* Dialog for the launcher-path input (shown after picking an app). */
+.connect-app-overlay {
+    position: fixed; inset: 0; z-index: 1700;
+    background: rgba(5, 3, 15, 0.7);
+    backdrop-filter: blur(6px);
+    display: flex; align-items: center; justify-content: center;
+}
+.connect-app-dialog {
+    background: #12101d;
+    border: 1px solid rgba(178, 70, 242, 0.5);
+    border-radius: 14px;
+    padding: 20px;
+    min-width: 440px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+}
+.connect-app-dialog-head {
+    color: #ffd700;
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 14px;
+}
+.connect-app-dialog-head small {
+    color: #a89bcc;
+    font-weight: 500;
+    font-size: 12px;
+    margin-left: 8px;
+}
+.connect-app-field {
+    display: flex; flex-direction: column; gap: 4px;
+    font-size: 11px;
+    color: #a89bcc;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+.connect-app-launcher {
+    background: #1a1730;
+    color: #e8e6f5;
+    border: 1px solid #3a3360;
+    border-radius: 8px;
+    padding: 9px 12px;
+    font-family: 'Consolas', monospace;
+    font-size: 12px;
+}
+.connect-app-launcher:focus {
+    outline: none;
+    border-color: #6a1b9a;
+}
+.connect-app-dialog-hint {
+    margin-top: 6px;
+    font-size: 11px;
+    color: #8a7eaf;
+    font-style: italic;
+}
+.connect-app-dialog-actions {
+    margin-top: 16px;
+    display: flex; justify-content: flex-end; gap: 8px;
+}
+.connect-app-cancel, .connect-app-save {
+    background: #1a1730;
+    color: #e8e6f5;
+    border: 1px solid #3a3360;
+    border-radius: 18px;
+    padding: 6px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.connect-app-save {
+    background: linear-gradient(135deg, #6a1b9a, #ffd700);
+    border-color: transparent;
+    color: #12101d;
+}
+.connect-app-save:hover { filter: brightness(1.1); }
+.connect-app-cancel:hover { background: #2a2440; }
+.connect-app-dialog-status {
+    margin-top: 8px;
+    font-size: 11px;
+    color: #c4b8e3;
+    text-align: right;
+    min-height: 14px;
 }
 .input-wrapper {
     display: flex; align-items: flex-end;

@@ -63,6 +63,89 @@ def start_service(ctx: dict[str, Any]) -> tuple[int, dict]:
     return status, result
 
 
+def register_service(ctx: dict[str, Any]) -> tuple[int, dict]:
+    """POST /service/register — persist a service launcher path into the
+    antenna's config so future /service/start calls pick it up without
+    needing one-shot overrides.
+
+    Body:
+      {"service": "comfyui",
+       "launcher": "C:/tools/ComfyUI/launch_optimized.bat",
+       "root": "C:/tools/ComfyUI",     # optional
+       "port": 8188}                    # optional
+
+    The Guild's "Connect an app" popover hits this via the paired
+    antenna so the user can tell the antenna exactly where each app
+    lives on that machine. Everything writes through config.save_config
+    (atomic tempfile + replace) so a crash mid-write can't corrupt
+    antenna_config.json.
+    """
+    body = ctx.get("body") or {}
+    name = (body.get("service") or "").strip().lower()
+    # Broader allowlist than /service/start — the user may register paths
+    # for apps whose launch isn't orchestrated by the antenna yet (GIMP,
+    # Darktable, Resolve, SillyTavern, Signal) so the Guild at least
+    # knows where they live. Launcher paths for those still persist; the
+    # Guild side decides what to do with them.
+    allowed = {"comfyui", "kobold", "ollama",
+                "gimp", "darktable", "resolve",
+                "sillytavern", "signal"}
+    if name not in allowed:
+        return 400, {"error": f"service must be one of {sorted(allowed)}, "
+                               f"got {name!r}"}
+    launcher = (body.get("launcher") or "").strip()
+    if not launcher:
+        return 400, {"error": "launcher path required"}
+    try:
+        from .. import config as _config
+        cfg = _config.load_config()
+    except Exception as e:  # noqa: BLE001
+        return 500, {"error": f"config load failed: {e}"}
+    services = dict(cfg.get("services") or {})
+    if not isinstance(services, dict):
+        # Legacy schema: services was a list of keys. Convert to dict
+        # so we can store per-service overrides without breaking older
+        # consumers (they still read the keys via services.keys()).
+        services = {k: {} for k in services}
+    svc_entry = dict(services.get(name) or {})
+    svc_entry["launcher"] = launcher
+    if body.get("root"):
+        svc_entry["root"] = str(body["root"]).strip()
+    if body.get("port"):
+        try:
+            svc_entry["port"] = int(body["port"])
+        except (TypeError, ValueError):
+            pass
+    services[name] = svc_entry
+    cfg["services"] = services
+    # Also mirror into the flat top-level keys service_launcher reads
+    # (comfyui_launcher / kobold_launcher / ollama_launcher / etc.) so
+    # start_service's override chain doesn't need to grow another
+    # lookup path.
+    flat_key = f"{name}_launcher"
+    cfg[flat_key] = launcher
+    if body.get("root"):
+        cfg[f"{name}_root"] = str(body["root"]).strip()
+    if body.get("port"):
+        try:
+            cfg[f"{name}_port"] = int(body["port"])
+        except (TypeError, ValueError):
+            pass
+    try:
+        _config.save_config(cfg)
+    except Exception as e:  # noqa: BLE001
+        return 500, {"error": f"config save failed: {e}"}
+    try:
+        from .. import agent as _agent
+        _agent.notify(f"{name} registered",
+                       f"launcher: {launcher[:80]}", level="success")
+    except Exception:  # noqa: BLE001
+        pass
+    return 200, {"ok": True, "service": name, "launcher": launcher,
+                  "root": svc_entry.get("root"),
+                  "port": svc_entry.get("port")}
+
+
 def stop_service(ctx: dict[str, Any]) -> tuple[int, dict]:
     """POST /service/stop — kill the child we launched (or port-reap)."""
     body = ctx.get("body") or {}
