@@ -9181,6 +9181,13 @@ class GuildHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.end_json(500, {"error": f"CSV export failed: {e}"})
 
+        elif self.path == '/api/video/prompt-clusters' and self.command == 'GET':
+            # R65b: find shots sharing the same prompt (possible dupes)
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            return self.end_json(200,
+                                 {"clusters": _VIDEO_BRIDGE.board.find_prompt_clusters()})
+
         elif self.path == '/api/video/warnings' and self.command == 'GET':
             # R63a: board-wide warning summary
             if not _VIDEO_BRIDGE:

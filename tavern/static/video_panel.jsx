@@ -140,6 +140,7 @@ function ShotCard({
   onRestoreSnapshot,
   onDeleteSnapshot,
   onTogglePinSnapshot,
+  promptDupeCount = 0,
   focused = false,
 }) {
   const [expanded, setExpanded] = _useState(shot.status === "draft");
@@ -375,6 +376,21 @@ function ShotCard({
         <span className="flex-1 text-amber-50 text-sm font-medium truncate">
           {editTitle || <span className="text-slate-500 italic">Untitled shot</span>}
         </span>
+        {/* R65a: bookmark toggle */}
+        <button
+          onClick={(e) => { e.stopPropagation(); onUpdate(shot.id, {bookmarked: !shot.bookmarked}); }}
+          className={"shot-bookmark text-sm leading-none transition-colors " +
+            (shot.bookmarked ? "text-yellow-400 hover:text-yellow-300"
+                              : "text-slate-600 hover:text-yellow-400")}
+          title={shot.bookmarked ? "Remove bookmark" : "Bookmark this shot"}
+        >{shot.bookmarked ? "★" : "☆"}</button>
+        {/* R65b: duplicate-prompt badge — N shots share this exact prompt */}
+        {promptDupeCount > 1 && (
+          <span className="shot-dupe-badge px-1 rounded bg-purple-900/40 text-purple-200 text-[10px] font-semibold"
+                title={`${promptDupeCount} shots share this exact prompt — possible duplicate`}>
+            ×{promptDupeCount}
+          </span>
+        )}
         <StatusBadge status={shot.status} />
         {/* R63a: warning icons — click to expand (uses setExpanded via parent) */}
         {shotWarnings.length > 0 && (() => {
@@ -1796,6 +1812,7 @@ function VideoPanel() {
   const filteredShots = _useMemo(() => {
     let result = statusFilter === "all" ? shots
       : statusFilter === "stale" ? shots.filter(isShotStale)
+      : statusFilter === "starred" ? shots.filter(s => s.bookmarked)
       : shots.filter(s => s.status === statusFilter);
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -1807,6 +1824,26 @@ function VideoPanel() {
     }
     return result;
   }, [shots, statusFilter, searchQuery, isShotStale]);
+
+  // R65b: shot-id → cluster size when prompt is shared with 2+ other shots.
+  // Recomputed from shot list only (no API call) — duplicate detection
+  // is a pure derived view.
+  const promptClusters = _useMemo(() => {
+    const byPrompt = new Map();
+    for (const s of shots) {
+      const p = (s.prompt || "").trim().replace(/\s+/g, " ").toLowerCase();
+      if (!p) continue;
+      if (!byPrompt.has(p)) byPrompt.set(p, []);
+      byPrompt.get(p).push(s.id);
+    }
+    const out = new Map();
+    for (const [, ids] of byPrompt) {
+      if (ids.length >= 2) {
+        for (const id of ids) out.set(id, ids.length);
+      }
+    }
+    return out;
+  }, [shots]);
 
   // R44: keyboard navigation — Arrow up/down moves focus between cards,
   // Escape clears it, Space toggles the focused card's selection.
@@ -3384,28 +3421,32 @@ function VideoPanel() {
         </div>
         <ShotSummary shots={shots} />
         <div className="flex gap-1.5 flex-wrap">
-          {["all", "draft", "queued", "running", "ready", "failed", "stale"].map(status => {
-            const staleCount = status === "stale"
-              ? shots.filter(isShotStale).length
-              : null;
+          {["all", "draft", "queued", "running", "ready", "failed", "stale", "starred"].map(status => {
+            const count = status === "stale" ? shots.filter(isShotStale).length
+                        : status === "starred" ? shots.filter(s => s.bookmarked).length
+                        : null;
+            const extraClass =
+              status === "stale"   ? "bg-amber-900/30 hover:bg-amber-800/40 text-amber-300"
+              : status === "starred" ? "bg-yellow-900/30 hover:bg-yellow-800/40 text-yellow-300"
+              : "bg-slate-800 hover:bg-slate-700 text-slate-300";
+            const tipByStatus = {
+              stale:   "Shots whose prompt/preset/overrides changed since last render",
+              starred: "Bookmarked shots (click the star on any card)",
+            };
             return (
               <button
                 key={status}
                 onClick={() => setStatusFilter(status)}
                 className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
-                  statusFilter === status
-                    ? "bg-amber-600 text-white"
-                    : (status === "stale"
-                        ? "bg-amber-900/30 hover:bg-amber-800/40 text-amber-300"
-                        : "bg-slate-800 hover:bg-slate-700 text-slate-300")
+                  statusFilter === status ? "bg-amber-600 text-white" : extraClass
                 }`}
-                title={status === "stale"
-                  ? "Shots whose prompt/preset/overrides changed since their last successful render"
-                  : ""}
+                title={tipByStatus[status] || ""}
               >
-                {status === "stale" ? "⚠ stale" : status}
-                {staleCount !== null && staleCount > 0 && (
-                  <span className="ml-1 text-[10px] opacity-70">({staleCount})</span>
+                {status === "stale" ? "⚠ stale"
+                  : status === "starred" ? "⭐ starred"
+                  : status}
+                {count !== null && count > 0 && (
+                  <span className="ml-1 text-[10px] opacity-70">({count})</span>
                 )}
               </button>
             );
@@ -3732,6 +3773,7 @@ function VideoPanel() {
               onRestoreSnapshot={restoreSnapshot}
               onDeleteSnapshot={deleteSnapshot}
               onTogglePinSnapshot={togglePinSnapshot}
+              promptDupeCount={promptClusters.get(shot.id) || 0}
               focused={focusedShotIndex === idx}
             />
           ))}
