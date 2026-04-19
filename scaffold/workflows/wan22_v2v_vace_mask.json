@@ -1,0 +1,113 @@
+{
+  "_meta": {
+    "title": "Wan 2.2 Video-to-Video with Mask (VACE)",
+    "notes": "R90. Restyle / replace content in a masked region of real footage. Input video goes to VHS_LoadVideo (node 10) via overrides.input_video. Optional static mask via overrides.mask_image (a PNG whose alpha channel or luminance defines the edit region) → LoadImage (node 11). Mask absent = full-frame transform. Positive prompt describes what you want in the masked region; strength (default 0.7) controls how strongly the control video constrains the output."
+  },
+  "1": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": {
+      "unet_name": "Wan\\Wan2.2-T2V-A14B-LowNoise-Q6_K.gguf"
+    }
+  },
+  "2": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "type": "wan"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "wan_2.1_vae.safetensors"
+    }
+  },
+  "10": {
+    "class_type": "VHS_LoadVideo",
+    "_meta": {"title": "Input Video"},
+    "inputs": {
+      "video": "PLACEHOLDER_INPUT.mp4",
+      "force_rate": 16,
+      "custom_width": 0,
+      "custom_height": 0,
+      "frame_load_cap": 81,
+      "skip_first_frames": 0,
+      "select_every_nth": 1,
+      "format": "Wan"
+    }
+  },
+  "11": {
+    "class_type": "LoadImage",
+    "_meta": {"title": "Optional Mask"},
+    "inputs": {
+      "image": "PLACEHOLDER_MASK.png"
+    }
+  },
+  "20": {
+    "class_type": "CLIPTextEncode",
+    "_meta": {"title": "Target Positive"},
+    "inputs": {
+      "clip": ["2", 0],
+      "text": "cinematic, detailed, high quality"
+    }
+  },
+  "21": {
+    "class_type": "CLIPTextEncode",
+    "_meta": {"title": "Target Negative"},
+    "inputs": {
+      "clip": ["2", 0],
+      "text": "blurry, low quality, distorted, watermark, artifacts"
+    }
+  },
+  "30": {
+    "class_type": "WanVaceToVideo",
+    "_meta": {"title": "VACE v2v"},
+    "inputs": {
+      "positive": ["20", 0],
+      "negative": ["21", 0],
+      "vae": ["3", 0],
+      "width": 832,
+      "height": 480,
+      "length": 81,
+      "batch_size": 1,
+      "strength": 0.7,
+      "control_video": ["10", 0],
+      "control_masks": ["11", 1],
+      "reference_image": ["10", 0]
+    }
+  },
+  "40": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["1", 0],
+      "seed": 42,
+      "steps": 20,
+      "cfg": 5.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "positive": ["30", 0],
+      "negative": ["30", 1],
+      "latent_image": ["30", 2],
+      "denoise": 1.0
+    }
+  },
+  "50": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["40", 0],
+      "vae": ["3", 0]
+    }
+  },
+  "60": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": ["50", 0],
+      "frame_rate": 16,
+      "loop_count": 0,
+      "filename_prefix": "Wan22-v2v-vace",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": true
+    }
+  }
+}

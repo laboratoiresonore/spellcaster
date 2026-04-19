@@ -535,9 +535,15 @@ class VideoBridge:
                         inp["height"] = int(h)
                     except (ValueError, AttributeError):
                         pass
-            # LoadImage ref injection
+            # LoadImage ref / mask injection. A meta title containing
+            # "mask" routes to shot.overrides.mask_image (R90). Others
+            # take shot.ref_image as before.
             if ct == "LoadImage" and "image" in inp:
-                if shot.ref_image:
+                mask_image = (ov.get("mask_image") or "").strip()
+                if "mask" in meta_title:
+                    if mask_image:
+                        inp["image"] = os.path.basename(mask_image)
+                elif shot.ref_image:
                     inp["image"] = os.path.basename(shot.ref_image)
             # R87: VHS_LoadVideo ingest — input video patched from
             # shot.overrides["input_video"] (a filename already present in
@@ -550,6 +556,40 @@ class VideoBridge:
                     inp["frame_load_cap"] = int(ov["frames"])
                 if "fps" in ov and "force_rate" in inp:
                     inp["force_rate"] = float(ov["fps"])
+            # R90: WanVaceToVideo strength override
+            if ct == "WanVaceToVideo":
+                if "strength" in ov and "strength" in inp:
+                    inp["strength"] = float(ov["strength"])
+
+        # R90: if the shot has no mask_image, strip any control_masks
+        # wire + drop the orphaned mask LoadImage node. WanVaceToVideo
+        # treats control_masks as optional; missing mask = full-frame
+        # transform. Doing this at the patch layer (rather than
+        # branching in the workflow JSON itself) keeps the template
+        # readable while matching the "mask is optional" contract.
+        if not (shot.overrides or {}).get("mask_image"):
+            mask_node_ids = set()
+            for nid, node in patched.items():
+                if not isinstance(node, dict):
+                    continue
+                ct = node.get("class_type", "")
+                meta_title = (node.get("_meta") or {}).get(
+                    "title", "").lower()
+                if ct == "LoadImage" and "mask" in meta_title:
+                    mask_node_ids.add(nid)
+            # Disconnect control_masks edges referencing a mask node
+            for nid, node in patched.items():
+                if not isinstance(node, dict):
+                    continue
+                inp = node.get("inputs") or {}
+                if (node.get("class_type") == "WanVaceToVideo"
+                        and "control_masks" in inp):
+                    ref = inp["control_masks"]
+                    if (isinstance(ref, list) and len(ref) == 2
+                            and ref[0] in mask_node_ids):
+                        del inp["control_masks"]
+            for mid in mask_node_ids:
+                patched.pop(mid, None)
         return patched
 
     def _queue_comfy(self, shot: Shot,
@@ -599,6 +639,17 @@ class VideoBridge:
                                              os.path.basename(shot.ref_image))
             except Exception as _ue:
                 log.warning(f"ref_image upload failed: {_ue}")
+        # R90: upload mask_image for mask-based workflows. Small PNG,
+        # no antenna staging dance — direct upload from Guild is fine.
+        mask_image = (shot.overrides or {}).get("mask_image", "")
+        if mask_image and os.path.isfile(mask_image):
+            try:
+                with open(mask_image, "rb") as _mf:
+                    self.comfy.upload_image(
+                        _mf.read(), os.path.basename(mask_image))
+            except Exception as _ue:
+                log.warning(f"mask_image upload failed: {_ue}")
+
         # R87: resolve the input video for v2v workflows.
         #   - A FULL PATH reachable from the Guild host → upload bytes
         #     to ComfyUI's /upload/image endpoint (cross-host transfer).
