@@ -391,6 +391,10 @@ you installed something — wait for the confirmation to come back.
   Calibration — CFG sweep:
     <ACTION>{{"type": "calibrate_cfg", "model": "...", "values": [3.0, 5.0, 7.0, 9.0]}}</ACTION>
 
+  Save user's calibration pick (writes into the shared CalibrationProfile
+  used by every surface, so the GIMP plugin picks up the new default too):
+    <ACTION>{{"type": "calibration_save", "model": "...", "prefs": {{"cfg": 5.0, "steps": 25, "rating": "love"}}}}</ACTION>
+
   Done for now (flip setup_mode off; user returns to normal Guild):
     <ACTION>{{"type": "finish"}}</ACTION>
 
@@ -520,6 +524,10 @@ def action_to_endpoint(action: dict[str, Any]) -> tuple[str, str, dict[str, Any]
         return ("POST", "/api/spellcaster/calibrate/cfg",
                 {"model":  action.get("model", ""),
                  "values": action.get("values") or [3.0, 5.0, 7.0, 9.0]})
+    if atype == "calibration_save":
+        return ("POST", "/api/spellcaster/calibration/save",
+                {"model": action.get("model", ""),
+                 "prefs": action.get("prefs") or {}})
     if atype == "finish":
         return ("POST", "/api/setup/finish", {})
     return None
