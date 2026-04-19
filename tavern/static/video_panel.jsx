@@ -202,6 +202,8 @@ function ShotCard({
   const [uploading, setUploading] = _useState(false);
   const fileRef = _useRef(null);
   const [dragOver, setDragOver] = _useState(false);
+  // R74a: hover preview state — show an overlaid <video> on thumbnail hover
+  const [showHoverPreview, setShowHoverPreview] = _useState(false);
   const [showAdvanced, setShowAdvanced] = _useState(false);
   // R73b: tag input field
   const [newTag, setNewTag] = _useState("");
@@ -371,12 +373,23 @@ function ShotCard({
         </div>
 
         <span className="text-amber-600/60 text-xs font-mono w-6 text-center">{shot.index + 1}</span>
-        <div className="w-12 h-8 rounded bg-slate-950 border border-amber-600/20 overflow-hidden flex-shrink-0">
+        {/* R74a: thumb area — hover triggers a small muted preview when
+            a video exists. No preview for drafts/failed. */}
+        <div className="relative w-12 h-8 rounded bg-slate-950 border border-amber-600/20 overflow-hidden flex-shrink-0"
+             onMouseEnter={(e) => { e.stopPropagation(); if (shot.video_path) setShowHoverPreview(true); }}
+             onMouseLeave={() => setShowHoverPreview(false)}>
           {shot.thumb ? (
             <img src={shot.thumb || `/api/video/shots/${shot.id}/thumbnail`} alt="thumb" className="w-full h-full object-cover" />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-slate-600">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></svg>
+            </div>
+          )}
+          {showHoverPreview && shot.video_path && (
+            <div className="shot-hover-preview absolute -top-1 -left-1 z-20 w-64 h-40 bg-black border-2 border-amber-500 rounded shadow-2xl pointer-events-none">
+              <video src={`/api/video/shots/${shot.id}/video`}
+                     autoPlay muted loop playsInline
+                     className="w-full h-full object-contain rounded" />
             </div>
           )}
         </div>
@@ -1887,6 +1900,17 @@ function VideoPanel() {
   const [showBoardStats, setShowBoardStats] = _useState(false);
   // R70a: outline/jump-list panel toggle (sticky sidebar-like nav)
   const [showOutline, setShowOutline] = _useState(false);
+  // R74b: near-duplicates panel
+  const [showNearDupes, setShowNearDupes] = _useState(false);
+  const [nearDupes, setNearDupes] = _useState([]);
+  const refreshNearDupes = _useCallback(async () => {
+    try {
+      const res = await api.get("/api/video/near-duplicates?threshold=0.80");
+      setNearDupes(res?.pairs || []);
+    } catch (_) {}
+  }, []);
+  _useEffect(() => { if (showNearDupes) refreshNearDupes(); },
+             [showNearDupes, refreshNearDupes]);
   // R66b: bulk search-replace panel toggle
   const [showSearchReplace, setShowSearchReplace] = _useState(false);
   const [searchReplaceFind, setSearchReplaceFind] = _useState("");
@@ -3701,6 +3725,12 @@ function VideoPanel() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             Activity
           </button>
+          <button onClick={() => setShowNearDupes(v => !v)}
+            className="near-dupes-btn flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+            title="Find shots with similar (but not identical) prompts">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/></svg>
+            Dupes
+          </button>
           <a href="/api/video/render-history.csv" download
             className="export-csv flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
             title="Download flat CSV of every render attempt across all shots (for analysis / sharing)">
@@ -3891,6 +3921,59 @@ function VideoPanel() {
           })}
         </div>
       </div>
+
+      {/* R74b: near-duplicates detector — find shots with similar prompts */}
+      {showNearDupes && (
+        <div className="near-dupes-panel bg-slate-900 border border-purple-600/20 rounded-xl p-3 max-h-96 overflow-y-auto">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold text-purple-200">Near-duplicate prompts</h3>
+            <div className="flex gap-2">
+              <button onClick={refreshNearDupes}
+                className="near-dupes-refresh-btn text-xs text-slate-400 hover:text-purple-300">↻ Refresh</button>
+              <button onClick={() => setShowNearDupes(false)}
+                className="text-slate-400 hover:text-slate-200 text-xs">Close</button>
+            </div>
+          </div>
+          {nearDupes.length === 0 ? (
+            <div className="text-xs text-slate-500 italic">
+              No near-duplicate prompts (≥ 0.80 Jaccard similarity).
+              {promptClusters.size > 0 && " Exact-match clusters are still flagged on each card with ×N."}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {nearDupes.map((p, i) => {
+                const a = shots.find(s => s.id === p.shot_a);
+                const b = shots.find(s => s.id === p.shot_b);
+                if (!a || !b) return null;
+                const simPct = (p.similarity * 100).toFixed(0);
+                const color = p.similarity >= 0.95 ? "text-rose-300"
+                            : p.similarity >= 0.90 ? "text-amber-300"
+                            : "text-purple-300";
+                return (
+                  <div key={i} className="dupe-pair rounded bg-slate-800/60 border border-slate-700/40 p-2 text-[11px] space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className={"font-semibold " + color}>{simPct}%</span>
+                      <span className="text-slate-500">similar</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button onClick={() => jumpToShot(a.id)}
+                              className="dupe-jump-a text-left rounded bg-slate-900/60 p-1.5 hover:bg-slate-900">
+                        <div className="text-slate-300 font-medium">{a.title || "Untitled"}</div>
+                        <div className="text-slate-500 line-clamp-2 font-mono">{p.prompt_a_sample}</div>
+                      </button>
+                      <button onClick={() => jumpToShot(b.id)}
+                              className="dupe-jump-b text-left rounded bg-slate-900/60 p-1.5 hover:bg-slate-900">
+                        <div className="text-slate-300 font-medium">{b.title || "Untitled"}</div>
+                        <div className="text-slate-500 line-clamp-2 font-mono">{p.prompt_b_sample}</div>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* R72b: activity log — read-only event stream */}
       {showActivityLog && (
