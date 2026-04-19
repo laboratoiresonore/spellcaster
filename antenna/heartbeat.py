@@ -18,13 +18,24 @@ home sees:
 
 Namespacing
 -----------
-Interface keys use `antenna.<service>` to stay distinct from local
-services of the same name. Meta includes `machine`, `ip`, `service`,
-and any service-specific vitals (VRAM, model count, etc.). The bridge
-can then route cross-app events to the right machine:
+We heartbeat with BARE interface keys (`comfyui`, `ollama`, `resolve`)
+that match the Guild's KNOWN_INTERFACES registry. The namespaced form
+(`antenna.<svc>`) was considered, but:
 
-  {kind: "comfyui.install-node.requested",
-   data: {node_name: "...", target: "antenna.comfyui@192.168.86.77"}}
+1. The registry is a fixed allowlist — adding `antenna.<svc>` would
+   require coordinated edits in spellcaster_core/interface_registry.py,
+   owned by the Mega Bridge lane.
+2. Using bare keys keeps the sidebar chip rendering uniform regardless
+   of local vs remote.
+3. Origin-machine info is preserved in `meta.source_antenna` and
+   `meta.machine`, so a consumer that cares about routing ("send this
+   to the remote ComfyUI, not a hypothetical local one") can still
+   filter by meta.
+
+The tradeoff: if two machines on the same LAN both run the same
+service, the registry shows one chip whose last_meta reflects
+whichever heartbeated most recently. Fine for single-remote setups.
+Sharding by machine is roadmap item "per-remote separation" (deferred).
 
 Lifecycle
 ---------
@@ -130,6 +141,8 @@ def _build_payloads(cfg: dict[str, Any]) -> list[dict[str, Any]]:
             "ip": ip,
             "service": svc,
             "agent_url": agent_url,   # how the bridge can reach us
+            "source_antenna": agent_url,  # explicit remote-origin flag
+            "remote": True,               # UI can style remote chips distinctly
         }
 
         # Service-specific vitals
@@ -140,8 +153,10 @@ def _build_payloads(cfg: dict[str, Any]) -> list[dict[str, Any]]:
             # probe every 10s. Can add later if the bridge needs it.
             base_meta["reachable"] = True  # optimistic; /status is authoritative
 
+        # Bare interface key — matches the Guild's KNOWN_INTERFACES allowlist.
+        # Remote-origin info lives in meta.source_antenna + meta.machine.
         payloads.append({
-            "interface": f"antenna.{svc}",
+            "interface": svc,
             "meta": base_meta,
         })
 
