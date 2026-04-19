@@ -293,6 +293,49 @@ body {
 }
 
 #llm-indicator-container, #comfy-indicator-container, #st-indicator-container, #bridge-indicator-container { font-family: 'Outfit', sans-serif; font-size: 11px; color: var(--text-muted); margin-top: 6px; display: flex; align-items: center; flex-wrap: wrap; }
+
+/* LLM primary picker — pill-row below the Guild title. Tiny enough
+   to stay out of the way but always visible so the user knows which
+   backend is answering chat(). Active pill picks up the accent glow;
+   hover brightens the lot. Pending state (💤 → ⏳) fires while the
+   service-start request is in flight. */
+.llm-picker {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+    margin-top: 8px;
+}
+.llm-pill {
+    all: unset;
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(178, 70, 242, 0.28);
+    background: rgba(178, 70, 242, 0.06);
+    color: #c4b8e3;
+    transition: all 0.15s ease;
+    user-select: none;
+    white-space: nowrap;
+}
+.llm-pill:hover {
+    background: rgba(178, 70, 242, 0.18);
+    border-color: rgba(178, 70, 242, 0.55);
+    color: #fff;
+}
+.llm-pill.is-active {
+    background: linear-gradient(135deg, rgba(178, 70, 242, 0.35),
+                                         rgba(255, 215, 0, 0.22));
+    border-color: #ffd700;
+    color: #fff;
+    box-shadow: 0 0 12px rgba(255, 215, 0, 0.35);
+}
+.llm-pill.is-pending {
+    opacity: 0.6;
+    cursor: wait;
+}
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; transition: all 0.3s; }
 .dot.red { background: #ff4757; box-shadow: 0 0 8px rgba(255, 71, 87, 0.6); }
 .dot.green { background: #2ed573; box-shadow: 0 0 8px rgba(46, 213, 115, 0.6); }
