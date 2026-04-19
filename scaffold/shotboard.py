@@ -224,6 +224,10 @@ class Shot:
     # primary of each group.
     variation_group: Optional[str] = None
     is_primary: bool = True
+    # R73b: free-form tags. Multiple per shot, user-defined. Distinct
+    # from color_label (single categorical) and bookmarked (single bool).
+    # Useful for: "hero", "needs-vfx", "wide-shot", "dreamlike", etc.
+    tags: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -479,6 +483,82 @@ class Shotboard:
                 self._project_meta[k] = str(v)
         self.save()
         return dict(self._project_meta)
+
+    # ─── R73b: tags ────────────────────────────────────────────────
+
+    @staticmethod
+    def _normalize_tag(tag: str) -> str:
+        """Normalize a tag: lowercase, strip, collapse whitespace, max 40 chars."""
+        import re
+        t = re.sub(r"\s+", " ", (tag or "").strip().lower())
+        return t[:40]
+
+    def add_shot_tag(self, shot_id: str, tag: str) -> Optional[Shot]:
+        shot = self.get(shot_id)
+        if shot is None:
+            return None
+        t = self._normalize_tag(tag)
+        if not t or t in (shot.tags or []):
+            return shot
+        shot.tags = list(shot.tags or []) + [t]
+        shot.touch()
+        self.save()
+        return shot
+
+    def remove_shot_tag(self, shot_id: str, tag: str) -> Optional[Shot]:
+        shot = self.get(shot_id)
+        if shot is None:
+            return None
+        t = self._normalize_tag(tag)
+        if t in (shot.tags or []):
+            shot.tags = [x for x in shot.tags if x != t]
+            shot.touch()
+            self.save()
+        return shot
+
+    def batch_add_tag(self, shot_ids: List[str], tag: str) -> Dict[str, Any]:
+        t = self._normalize_tag(tag)
+        if not t:
+            return {"changed": 0, "tag": t, "error": "empty tag"}
+        changed = 0
+        for sid in shot_ids:
+            shot = self.get(sid)
+            if shot is None:
+                continue
+            if t not in (shot.tags or []):
+                shot.tags = list(shot.tags or []) + [t]
+                shot.touch()
+                changed += 1
+        if changed:
+            self.save()
+        return {"changed": changed, "tag": t}
+
+    def batch_remove_tag(self, shot_ids: List[str], tag: str) -> Dict[str, Any]:
+        t = self._normalize_tag(tag)
+        changed = 0
+        for sid in shot_ids:
+            shot = self.get(sid)
+            if shot is None:
+                continue
+            if t in (shot.tags or []):
+                shot.tags = [x for x in shot.tags if x != t]
+                shot.touch()
+                changed += 1
+        if changed:
+            self.save()
+        return {"changed": changed, "tag": t}
+
+    def all_tags(self) -> List[Dict[str, Any]]:
+        """List every tag in use across the board with shot counts."""
+        counts: Dict[str, int] = {}
+        for s in self._shots:
+            if s.archived:
+                continue
+            for t in (s.tags or []):
+                counts[t] = counts.get(t, 0) + 1
+        return sorted(
+            [{"tag": t, "count": c} for t, c in counts.items()],
+            key=lambda x: (-x["count"], x["tag"]))
 
     # ─── R72a: variation groups ────────────────────────────────────
 
@@ -1770,7 +1850,18 @@ class Shotboard:
         mm, ss = divmod(rem, 60)
         return f"{hh:02d}:{mm:02d}:{ss:02d}:{ff:02d}"
 
-    def export_edl(self, fps: int = 30, title: str = "") -> str:
+    def _filter_shots_for_export(self, scene_id: Optional[str]) -> List[Shot]:
+        """R73a: scope the export to a specific scene when scene_id is
+        given, otherwise return all shots (current behaviour). Archived
+        shots are always skipped; non-primary variations too."""
+        pool = [s for s in self._shots
+                if not s.archived and s.is_primary]
+        if scene_id:
+            pool = [s for s in pool if s.scene_id == scene_id]
+        return pool
+
+    def export_edl(self, fps: int = 30, title: str = "",
+                     scene_id: Optional[str] = None) -> str:
         """Emit a CMX 3600 EDL referencing each ready shot as one event.
 
         R71b: `title` defaults to project_meta['title'] when empty;
@@ -1791,7 +1882,8 @@ class Shotboard:
         event = 1
         src_cursor = 0  # each clip starts at 0 in its own source
         rec_cursor = 0
-        for shot in self._shots:
+        export_pool = self._filter_shots_for_export(scene_id)
+        for shot in export_pool:
             if shot.status != "ready" or not shot.video_path:
                 continue
             dur = self._shot_duration_frames(shot, fps)
@@ -1813,7 +1905,8 @@ class Shotboard:
             event += 1
         return "\n".join(lines) + "\n"
 
-    def export_fcpxml(self, fps: int = 30, title: str = "") -> str:
+    def export_fcpxml(self, fps: int = 30, title: str = "",
+                         scene_id: Optional[str] = None) -> str:
         """Emit an FCPXML v1.10 document representing the ready shots
         as a single timeline. Preferred over EDL for Resolve because it
         preserves clip names, reference paths, and gaps.
@@ -1834,7 +1927,8 @@ class Shotboard:
         asset_id = 1
         assets = []
         clips = []
-        for shot in self._shots:
+        export_pool = self._filter_shots_for_export(scene_id)
+        for shot in export_pool:
             if shot.status != "ready" or not shot.video_path:
                 continue
             dur = self._shot_duration_frames(shot, fps)
