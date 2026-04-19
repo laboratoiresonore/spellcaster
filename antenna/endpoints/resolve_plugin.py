@@ -344,9 +344,73 @@ def status(ctx: dict[str, Any]) -> tuple[int, dict]:
 
 
 def install(ctx: dict[str, Any]) -> tuple[int, dict]:
-    """POST /resolve/plugin/install — deploy the plugin from src."""
+    """POST /resolve/plugin/install — deploy the plugin from src.
+
+    Optional body: {"guild_url": "http://<host>:<port>", "force": bool}.
+    If ``guild_url`` is provided, the bridge's resolve_bridge.json config
+    file is also (re-)written so scripts and the Bridge daemon find the
+    Guild on first run. Otherwise only the tree is deployed.
+    """
     body = ctx.get("body") or {}
     cfg = ctx["config"]
     force = bool(body.get("force", False))
     result = install_plugin_from_src(cfg, force=force)
+    guild_url = (body.get("guild_url") or "").strip()
+    if guild_url:
+        cfg_result = _write_bridge_config(guild_url)
+        result["bridge_config"] = cfg_result
     return (200 if result.get("ok") else 500), result
+
+
+# ─── Bridge config (resolve_bridge.json) ─────────────────────────────────
+
+
+def _bridge_config_path() -> Path:
+    """Mirror spellcaster_api.py's _config_path — the place the scripts
+    and the Bridge read from. ``~/.spellcaster/resolve_bridge.json``."""
+    return Path(os.path.expanduser("~")) / ".spellcaster" / "resolve_bridge.json"
+
+
+def _write_bridge_config(guild_url: str) -> dict[str, Any]:
+    """Atomically merge-update the bridge config with a guild_url.
+
+    Preserves every other key the operator may have already set
+    (auto_import, target_bin, live_timeline, poll_interval_s, …). Only
+    guild_url is guaranteed to be overwritten.
+    """
+    url = guild_url.rstrip("/")
+    path = _bridge_config_path()
+    existing: dict[str, Any] = {}
+    if path.is_file():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8")) or {}
+        except (OSError, json.JSONDecodeError):
+            existing = {}
+    existing["guild_url"] = url
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError as e:
+        return {"ok": False, "error": f"could not write {path}: {e}"}
+    return {"ok": True, "path": str(path), "guild_url": url}
+
+
+def configure(ctx: dict[str, Any]) -> tuple[int, dict]:
+    """POST /resolve/plugin/configure — write the bridge's resolve_bridge.json.
+
+    Body: {"guild_url": "http://<host>:<port>"}
+
+    The Resolve Bridge daemon and every Resolve-side script read this
+    file via spellcaster_api.discover_guild_url() to find the Guild. On
+    a fresh install, without a file here, those calls fall back to
+    probing 127.0.0.1 — which doesn't find the Guild when it lives on a
+    different box on the LAN. Pairing from the Guild side calls this
+    endpoint so the config is populated automatically.
+    """
+    body = ctx.get("body") or {}
+    guild_url = (body.get("guild_url") or "").strip()
+    if not guild_url:
+        return 400, {"error": "guild_url is required"}
+    return 200, _write_bridge_config(guild_url)
