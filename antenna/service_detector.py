@@ -453,27 +453,38 @@ def find_binary_robust(cfg: dict[str, Any], service: str,
                 _remember(service, p.parent, "PATH")
                 return p, "PATH"
 
-    # Filesystem walk
+    # Filesystem walk — checks root, 1 level deep, AND common
+    # binary-subdir layouts (bin/, Bin/, Binaries/). Many Windows apps
+    # (GIMP, Darktable, Blender) install as <root>/<AppDir>/bin/<exe>.
+    BIN_SUBDIRS = ("", "bin", "Bin", "binaries", "Binaries")
     roots = _candidate_roots()
     for r in roots:
         candidates: list[Path] = []
         try:
-            # Check root itself
-            for name in names:
-                p = r / name
-                if p.is_file():
-                    candidates.append(p)
+            # Check root itself and root/bin/*
+            for binsub in BIN_SUBDIRS:
+                search = r / binsub if binsub else r
+                if not search.is_dir():
+                    continue
+                for name in names:
+                    p = search / name
+                    if p.is_file():
+                        candidates.append(p)
         except (OSError, PermissionError):
             pass
-        # One level deep
+        # One level deep (+ bin/ inside each level-1 dir)
         try:
             for sub in list(r.iterdir())[:500]:
                 if not sub.is_dir() or _should_skip(sub):
                     continue
-                for name in names:
-                    p = sub / name
-                    if p.is_file():
-                        candidates.append(p)
+                for binsub in BIN_SUBDIRS:
+                    search = sub / binsub if binsub else sub
+                    if not search.is_dir():
+                        continue
+                    for name in names:
+                        p = search / name
+                        if p.is_file():
+                            candidates.append(p)
         except (OSError, PermissionError):
             continue
         if candidates:
