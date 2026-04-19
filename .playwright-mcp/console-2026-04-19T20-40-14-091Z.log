@@ -22,3 +22,9 @@
 [   24271ms] [LOG] [Spellcaster] Auto-casting 15 characters in background... @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:1256
 [   85683ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:8002/api/plugins/spellcaster/studio/cast:0
 [   85687ms] [WARNING] [Spellcaster] Auto-cast failed for Animancer: Timeout waiting for ComfyUI @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:1292
+[  146524ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:8002/api/plugins/spellcaster/studio/cast:0
+[  146527ms] [WARNING] [Spellcaster] Auto-cast failed for Autonoma: Timeout waiting for ComfyUI @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:1292
+[  207385ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:8002/api/plugins/spellcaster/studio/cast:0
+[  207386ms] [WARNING] [Spellcaster] Auto-cast failed for Cinematic: Timeout waiting for ComfyUI @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:1292
+[  268780ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:8002/api/plugins/spellcaster/studio/cast:0
+[  268782ms] [WARNING] [Spellcaster] Auto-cast failed for Assistant: Timeout waiting for ComfyUI @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:1292
