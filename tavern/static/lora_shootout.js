@@ -229,6 +229,108 @@
         from { opacity: 0; transform: translate(-50%, 20px); }
         to   { opacity: 1; transform: translate(-50%, 0); }
       }
+      /* ── Per-card controls (Phase 2b + 3b) ────────────────────────── */
+      .sc-shootout-intro {
+        padding: 10px 14px; margin-bottom: 12px; border-radius: 10px;
+        background: rgba(106, 27, 154, 0.15); color: #d8c6ff;
+        border: 1px solid rgba(106, 27, 154, 0.35); font-size: 13px;
+        line-height: 1.45;
+      }
+      .sc-shootout-intro strong { color: #ffd700; }
+      .sc-shootout-globals {
+        background: #1a1730; border: 1px solid #2a2440; border-radius: 10px;
+        padding: 10px 14px; margin-bottom: 14px; font-size: 12px;
+      }
+      .sc-shootout-globals summary {
+        cursor: pointer; color: #c4b8e3; font-weight: 600; padding: 4px 0;
+      }
+      .sc-globals-row {
+        display: grid; grid-template-columns: 1fr 1fr auto;
+        gap: 10px; margin-top: 8px; align-items: end;
+      }
+      .sc-globals-row label {
+        display: flex; flex-direction: column; gap: 4px;
+        font-size: 11px; color: #a89bcc; text-transform: uppercase;
+        letter-spacing: 0.4px;
+      }
+      .sc-globals-row textarea, .sc-globals-row select {
+        background: #12101d; color: #e8e6f5;
+        border: 1px solid #3a3360; border-radius: 6px;
+        padding: 6px 8px; font-family: inherit; font-size: 12px; resize: vertical;
+      }
+      .sc-globals-row textarea:focus, .sc-globals-row select:focus {
+        outline: none; border-color: #6a1b9a;
+      }
+      .sc-tile-img-wrap {
+        width: 100%; aspect-ratio: 1; background: #0a0815;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .sc-tile-img-wrap img { width: 100%; height: 100%; object-fit: cover; }
+      .sc-tile-controls {
+        display: flex; flex-direction: column; gap: 6px; margin-top: 6px;
+      }
+      .sc-tile-strength {
+        display: flex; align-items: center; gap: 6px;
+      }
+      .sc-tile-strength input[type="range"] { flex: 1; accent-color: #ffd700; }
+      .sc-tile-slider-val {
+        min-width: 34px; text-align: center; font-variant-numeric: tabular-nums;
+        color: #ffd700; font-weight: 600; font-size: 11px;
+      }
+      .sc-tile-retries {
+        display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px;
+      }
+      .sc-tile-btn {
+        background: #2a2440; color: #e8e6f5; border: 1px solid #4a3f6e;
+        border-radius: 10px; padding: 4px 6px; font-size: 11px; font-weight: 600;
+        cursor: pointer;
+      }
+      .sc-tile-btn:hover:not(:disabled) {
+        background: #3a3360; border-color: #6a1b9a;
+      }
+      .sc-tile-btn:disabled { opacity: 0.4; cursor: default; }
+      .sc-tile-subject, .sc-tile-model {
+        display: flex; flex-direction: column; gap: 2px; font-size: 10px;
+        color: #a89bcc; text-transform: uppercase; letter-spacing: 0.4px;
+      }
+      .sc-tile-subject select, .sc-tile-model select {
+        background: #12101d; color: #e8e6f5;
+        border: 1px solid #3a3360; border-radius: 6px;
+        padding: 4px 6px; font-family: inherit; font-size: 11px;
+        text-transform: none; letter-spacing: 0;
+      }
+      .sc-tile-approve {
+        margin-top: 10px; padding-top: 10px;
+        border-top: 1px dashed #2a2440;
+        display: flex; flex-direction: column; gap: 6px;
+      }
+      .sc-tile-approve-label {
+        display: flex; align-items: center; gap: 6px;
+        font-size: 12px; color: #ffd700; cursor: pointer; user-select: none;
+      }
+      .sc-tile-approve-label input[type="checkbox"] {
+        accent-color: #ffd700; width: 16px; height: 16px;
+      }
+      .sc-tile-approve input[type="text"] {
+        background: #12101d; color: #e8e6f5;
+        border: 1px solid #3a3360; border-radius: 6px;
+        padding: 5px 8px; font-size: 11px; font-family: inherit;
+      }
+      .sc-tile-approve input[type="text"]:focus {
+        outline: none; border-color: #6a1b9a;
+      }
+      .sc-shootout-approve-bar {
+        position: sticky; bottom: 0; margin-top: 14px;
+        padding: 12px 14px; background: rgba(26, 23, 48, 0.95);
+        border: 1px solid #2a2440; border-radius: 10px;
+        display: flex; align-items: center; justify-content: space-between;
+        backdrop-filter: blur(4px);
+      }
+      .sc-approve-count { color: #c4b8e3; font-size: 13px; }
+      .sc-approve-count b { color: #ffd700; }
+      .sc-shootout-approve-bar .sc-shootout-run-btn:disabled {
+        opacity: 0.45; cursor: default; filter: grayscale(0.5);
+      }
     `;
     document.head.appendChild(style);
   }
@@ -289,11 +391,21 @@
   async function fetchGroups() {
     return apiFetch('/api/spellcaster/lora/groups');
   }
-  async function startShootout(arch, purpose_group, strength) {
+  async function startShootout(arch, purpose_group, optsOrStrength) {
     const payload = { arch, purpose_group };
-    if (typeof strength === 'number' && isFinite(strength)) {
-      payload.strength = strength;
+    // Back-compat: the mega-panel still passes a raw strength number
+    // when the user hits Softer / Retry-at / Harder inside a slot.
+    // Accept both shapes transparently.
+    const o = (typeof optsOrStrength === 'number')
+      ? { strength: optsOrStrength }
+      : (optsOrStrength || {});
+    if (typeof o.strength === 'number' && isFinite(o.strength)) {
+      payload.strength = o.strength;
     }
+    if (o.subject)  payload.subject  = o.subject;
+    if (o.prompt)   payload.prompt   = o.prompt;
+    if (o.negative) payload.negative = o.negative;
+    if (o.model)    payload.model    = o.model;
     return apiFetch('/api/spellcaster/lora/shootout/start', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -307,6 +419,48 @@
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ arch, purpose_group, winner, demote_losers: true }),
     });
+  }
+  // Phase 2a — single-LoRA resample (Retry / Softer / Harder / subject swap).
+  async function resampleLora(arch, purpose_group, lora_name, opts) {
+    const payload = { arch, purpose_group, lora_name };
+    const o = opts || {};
+    if (typeof o.strength === 'number' && isFinite(o.strength)) {
+      payload.strength = o.strength;
+    }
+    if (o.subject)  payload.subject  = o.subject;
+    if (o.prompt)   payload.prompt   = o.prompt;
+    if (o.negative) payload.negative = o.negative;
+    if (o.model)    payload.model    = o.model;
+    if (typeof o.seed === 'number') payload.seed = o.seed;
+    return apiFetch('/api/spellcaster/lora/shootout/sample', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  }
+  // Phase 3a — approve many LoRAs at once, each with its own keywords.
+  async function approveLoras(approvals) {
+    return apiFetch('/api/spellcaster/lora/approve', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approvals }),
+    });
+  }
+  async function fetchSubjects() {
+    try { return (await apiFetch('/api/spellcaster/lora/subjects')).subjects || []; }
+    catch { return []; }
+  }
+  async function fetchModelsForArch(arch) {
+    // /api/available_models returns {models: [{name, arch, ...}]}.
+    try {
+      const res = await apiFetch('/api/available_models');
+      return (res.models || []).filter(m => m.arch === arch);
+    } catch { return []; }
+  }
+  // Cache subjects once — they're static for the session.
+  let _subjectsCache = null;
+  async function getSubjects() {
+    if (_subjectsCache) return _subjectsCache;
+    _subjectsCache = await fetchSubjects();
+    return _subjectsCache;
   }
 
   // ── Views ─────────────────────────────────────────────────────────────
@@ -365,10 +519,12 @@
     }
   }
 
-  async function runShootout(arch, purpose_group, strength) {
+  async function runShootout(arch, purpose_group, opts) {
+    opts = opts || {};
     const body = mountModal('', `${arch} / ${purpose_group.replace(/_/g, ' ')}`);
-    const strengthNote = (typeof strength === 'number' && isFinite(strength))
-      ? ` — weight ${strength.toFixed(2)}` : '';
+    const strengthNote =
+      (typeof opts.strength === 'number' && isFinite(opts.strength))
+        ? ` — weight ${opts.strength.toFixed(2)}` : '';
     body.innerHTML = `
       <div class="sc-shootout-progress">
         <div>Spawning shootout job${strengthNote}…</div>
@@ -376,7 +532,7 @@
       </div>`;
     let jobId;
     try {
-      const res = await startShootout(arch, purpose_group, strength);
+      const res = await startShootout(arch, purpose_group, opts);
       jobId = res.job_id;
     } catch (e) {
       body.innerHTML = `<div class="sc-shootout-empty" style="color:#ff6b6b">
@@ -411,7 +567,125 @@
     poll();
   }
 
-  function renderGallery(state, arch, purpose_group) {
+  // Build a per-card tile element. Holds its own slider, retry/softer/harder
+  // buttons, subject dropdown, approve checkbox, keyword input, description
+  // input. The slider + subject + model picker in the tile drive the
+  // per-LoRA resample endpoint; the top "Global controls" box drives the
+  // batch shootout restart button (which re-renders every card at once).
+  async function _buildTile(sample, arch, purpose_group, subjects, archModels) {
+    const currentStrength = (typeof sample.strength === 'number') ? sample.strength : 0.7;
+    const effSubject = sample.subject || '';
+    const tile = document.createElement('div');
+    tile.className = 'sc-shootout-tile';
+    tile.dataset.lora = sample.lora_name;
+    const displayName = sample.lora_name.split(/[/\\\\]/).pop();
+    const subjectOpts = subjects.map(s =>
+      `<option value="${s.key}"${effSubject === s.key ? ' selected' : ''}>${s.label}</option>`
+    ).join('');
+    const modelOpts = ['<option value="">(auto — best match)</option>']
+      .concat(archModels.map(m =>
+        `<option value="${m.name}">${m.name}</option>`
+      )).join('');
+    tile.innerHTML = `
+      <div class="sc-tile-img-wrap">
+        ${sample.ok && sample.image_b64
+          ? `<img src="data:image/png;base64,${sample.image_b64}" alt="${displayName}">`
+          : `<div class="sc-tile-error">${sample.error || 'no image'}</div>`}
+      </div>
+      <div class="sc-tile-meta">
+        <div class="sc-tile-name" title="${sample.lora_name}">${displayName}</div>
+        <div class="sc-tile-controls">
+          <div class="sc-tile-strength">
+            <input type="range" min="0" max="1.5" step="0.05"
+                   value="${currentStrength.toFixed(2)}" class="sc-tile-slider">
+            <span class="sc-tile-slider-val">${currentStrength.toFixed(2)}</span>
+          </div>
+          <div class="sc-tile-retries">
+            <button class="sc-tile-btn sc-tile-softer" title="Retry at weight × 0.6 (stacks)">Softer</button>
+            <button class="sc-tile-btn sc-tile-retry"  title="Retry at the slider's weight">Retry</button>
+            <button class="sc-tile-btn sc-tile-harder" title="Retry at weight × 1.3 (stacks)">Harder</button>
+          </div>
+          <div class="sc-tile-subject">
+            <label>Subject</label>
+            <select class="sc-tile-subject-sel">${subjectOpts}</select>
+          </div>
+          <div class="sc-tile-model">
+            <label>Model</label>
+            <select class="sc-tile-model-sel">${modelOpts}</select>
+          </div>
+        </div>
+        <div class="sc-tile-approve">
+          <label class="sc-tile-approve-label">
+            <input type="checkbox" class="sc-tile-approve-cb">
+            <span>Approve this LoRA</span>
+          </label>
+          <input type="text" class="sc-tile-keywords"
+                 placeholder="Keywords that should auto-trigger this LoRA (comma-separated)"
+                 title="When one of these keywords appears in a wizard prompt, the Guild will auto-suggest this LoRA.">
+          <input type="text" class="sc-tile-description"
+                 placeholder="Short description (optional)">
+        </div>
+      </div>`;
+
+    // Wire live slider → label
+    const slider = tile.querySelector('.sc-tile-slider');
+    const sliderVal = tile.querySelector('.sc-tile-slider-val');
+    slider.addEventListener('input', () => {
+      sliderVal.textContent = parseFloat(slider.value).toFixed(2);
+    });
+
+    // Per-card resample flow — swap in a pending image + call the sample
+    // endpoint. On success replace the image; on failure show the error
+    // but keep the card's controls so the user can tweak + try again.
+    const resampleAt = async (strength) => {
+      const subject = tile.querySelector('.sc-tile-subject-sel').value;
+      const model = tile.querySelector('.sc-tile-model-sel').value;
+      const wrap = tile.querySelector('.sc-tile-img-wrap');
+      wrap.innerHTML = `<div class="sc-tile-error" style="color:#8a7eaf">Rendering…</div>`;
+      tile.querySelectorAll('.sc-tile-btn').forEach(b => b.disabled = true);
+      try {
+        const body = overlay.querySelector('#sc-shootout-body');
+        const globalPrompt = body.querySelector('#sc-global-prompt')?.value || '';
+        const globalNeg = body.querySelector('#sc-global-negative')?.value || '';
+        const res = await resampleLora(arch, purpose_group, sample.lora_name, {
+          strength: typeof strength === 'number' ? strength : parseFloat(slider.value),
+          subject: subject || undefined,
+          model: model || undefined,
+          prompt: globalPrompt || undefined,
+          negative: globalNeg || undefined,
+        });
+        // Update tile state from server response
+        sample.strength = res.strength; sample.image_b64 = res.image_b64;
+        sample.ok = res.ok; sample.error = res.error || '';
+        sample.subject = res.subject || subject;
+        if (res.ok && res.image_b64) {
+          wrap.innerHTML = `<img src="data:image/png;base64,${res.image_b64}" alt="${displayName}">`;
+        } else {
+          wrap.innerHTML = `<div class="sc-tile-error">${res.error || 'no image'}</div>`;
+        }
+        slider.value = res.strength.toFixed(2);
+        sliderVal.textContent = res.strength.toFixed(2);
+      } catch (e) {
+        wrap.innerHTML = `<div class="sc-tile-error">resample failed: ${e.message}</div>`;
+      } finally {
+        tile.querySelectorAll('.sc-tile-btn').forEach(b => b.disabled = false);
+      }
+    };
+    tile.querySelector('.sc-tile-retry').addEventListener('click',
+      () => resampleAt(parseFloat(slider.value)));
+    tile.querySelector('.sc-tile-softer').addEventListener('click',
+      () => resampleAt(Math.max(0, parseFloat(slider.value) * 0.6)));
+    tile.querySelector('.sc-tile-harder').addEventListener('click',
+      () => resampleAt(Math.min(1.5, parseFloat(slider.value) * 1.3)));
+    // Subject swap or model swap → resample immediately at current weight.
+    tile.querySelector('.sc-tile-subject-sel').addEventListener('change',
+      () => resampleAt(parseFloat(slider.value)));
+    tile.querySelector('.sc-tile-model-sel').addEventListener('change',
+      () => resampleAt(parseFloat(slider.value)));
+    return tile;
+  }
+
+  async function renderGallery(state, arch, purpose_group) {
     const body = overlay.querySelector('#sc-shootout-body');
     const samples = (state.result && state.result.samples) || [];
     if (!samples.length) {
@@ -420,83 +694,111 @@
       return;
     }
     const prompt = (state.result && state.result.prompt) || '';
+    const negative = (state.result && state.result.negative) || '';
     const model = (state.result && state.result.model) || '';
-    const currentStrength = (samples[0] && typeof samples[0].strength === 'number')
-      ? samples[0].strength : 0.8;
-    const stepDown = Math.max(0, Math.round((currentStrength - 0.2) * 100) / 100);
-    const stepUp   = Math.min(1, Math.round((currentStrength + 0.2) * 100) / 100);
+    // Fetch subjects + model list in parallel — small queries, cached.
+    const [subjects, archModels] = await Promise.all([
+      getSubjects(), fetchModelsForArch(arch),
+    ]);
+    const subjectGlobalOpts = subjects.map(s =>
+      `<option value="${s.key}">${s.label}</option>`
+    ).join('');
+    const modelGlobalOpts = ['<option value="">(auto)</option>']
+      .concat(archModels.map(m =>
+        `<option value="${m.name}"${m.name === model ? ' selected' : ''}>${m.name}</option>`
+      )).join('');
     body.innerHTML = `
-      <div style="margin-bottom:14px; color:#c4b8e3; font-size:13px;">
-        Pick the result that best represents how this LoRA should behave. The
-        loser files stay on disk but stop being suggested.<br/>
-        <small style="color:#8a7eaf">Prompt: “${prompt}” &nbsp;•&nbsp; Model: ${model}
-          &nbsp;•&nbsp; weight ${currentStrength.toFixed(2)}</small>
+      <div class="sc-shootout-intro">
+        <strong>Approve every LoRA you want the Guild to use.</strong>
+        Each card has its own slider, retry buttons, subject, and model
+        picker. Approved LoRAs stay usable — the Wizard Guild auto-
+        suggests them when one of your keywords appears in a prompt.
       </div>
-      <div class="sc-shootout-retry">
-        <button class="sc-shootout-retry-btn" id="sc-retry-down"
-                title="Re-run the shootout with LoRA weight ${stepDown.toFixed(2)} (currently ${currentStrength.toFixed(2)}). Useful when every candidate looks too strong / too stylised."
-                ${stepDown >= currentStrength ? 'disabled' : ''}>↩ Retry softer</button>
-        <div class="sc-shootout-slider-wrap">
-          <input type="range" min="0" max="1" step="0.01"
-                 value="${currentStrength.toFixed(2)}" id="sc-retry-slider"
-                 title="Pick an exact LoRA weight and retry.">
-          <span id="sc-retry-slider-val">${currentStrength.toFixed(2)}</span>
-          <button class="sc-shootout-retry-btn" id="sc-retry-apply"
-                  title="Re-run the shootout at the selected LoRA weight.">Retry at this weight</button>
+      <details class="sc-shootout-globals" open>
+        <summary>Global controls (apply to every new card + batch re-run)</summary>
+        <div class="sc-globals-row">
+          <label>Prompt<textarea id="sc-global-prompt" rows="2"
+                                  placeholder="Leave blank to use the subject template">${escapeHTML(prompt)}</textarea></label>
+          <label>Negative<textarea id="sc-global-negative" rows="2"
+                                    placeholder="Leave blank to use the subject template">${escapeHTML(negative)}</textarea></label>
         </div>
-        <button class="sc-shootout-retry-btn" id="sc-retry-up"
-                title="Re-run the shootout with LoRA weight ${stepUp.toFixed(2)} (currently ${currentStrength.toFixed(2)}). Useful when every candidate looks too weak / barely applied."
-                ${stepUp <= currentStrength ? 'disabled' : ''}>Retry stronger ↪</button>
-      </div>
-      <div class="sc-shootout-gallery">
-        ${samples.map((s, i) => `
-          <div class="sc-shootout-tile" data-lora="${s.lora_name}">
-            ${s.ok && s.image_b64
-              ? `<img src="data:image/png;base64,${s.image_b64}" alt="${s.lora_name}">`
-              : `<div class="sc-tile-error">${s.error || 'no image'}</div>`}
-            <div class="sc-tile-meta">
-              <div class="sc-tile-name">${s.lora_name.split(/[/\\\\]/).pop()}</div>
-              <button class="sc-tile-pick" ${!s.ok ? 'disabled' : ''}
-                      data-index="${i}">👑 Pick this one</button>
-            </div>
-          </div>`).join('')}
+        <div class="sc-globals-row">
+          <label>Batch subject
+            <select id="sc-global-subject"><option value="">(keep per-card)</option>${subjectGlobalOpts}</select>
+          </label>
+          <label>Model
+            <select id="sc-global-model">${modelGlobalOpts}</select>
+          </label>
+          <button id="sc-global-rerun" class="sc-shootout-retry-btn"
+                  title="Re-run every card with the global controls above (slow — one render per LoRA).">Re-run all</button>
+        </div>
+      </details>
+      <div class="sc-shootout-gallery" id="sc-gallery"></div>
+      <div class="sc-shootout-approve-bar">
+        <div class="sc-approve-count"><b id="sc-approve-count">0</b> selected</div>
+        <button class="sc-shootout-run-btn" id="sc-approve-submit" disabled>
+          Approve selected LoRAs
+        </button>
       </div>`;
 
-    const slider = body.querySelector('#sc-retry-slider');
-    const sliderVal = body.querySelector('#sc-retry-slider-val');
-    if (slider && sliderVal) {
-      slider.addEventListener('input', () => {
-        sliderVal.textContent = parseFloat(slider.value).toFixed(2);
-      });
+    const gallery = body.querySelector('#sc-gallery');
+    for (const s of samples) {
+      gallery.appendChild(await _buildTile(s, arch, purpose_group,
+                                            subjects, archModels));
     }
-    const retryAt = (weight) => {
-      if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
-      runShootout(arch, purpose_group, weight);
+    // Approve-count wiring
+    const countEl = body.querySelector('#sc-approve-count');
+    const submitBtn = body.querySelector('#sc-approve-submit');
+    const updateApproveCount = () => {
+      const n = body.querySelectorAll('.sc-tile-approve-cb:checked').length;
+      countEl.textContent = String(n);
+      submitBtn.disabled = n === 0;
     };
-    body.querySelector('#sc-retry-down')
-        ?.addEventListener('click', () => retryAt(stepDown));
-    body.querySelector('#sc-retry-up')
-        ?.addEventListener('click', () => retryAt(stepUp));
-    body.querySelector('#sc-retry-apply')
-        ?.addEventListener('click', () => retryAt(parseFloat(slider.value)));
-    body.querySelectorAll('.sc-tile-pick').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const tile = btn.closest('.sc-shootout-tile');
-        const winner = tile.dataset.lora;
-        tile.classList.add('winner');
-        body.querySelectorAll('.sc-tile-pick').forEach(b => b.disabled = true);
-        btn.textContent = 'Committing…';
-        try {
-          const res = await pickWinner(arch, purpose_group, winner);
-          toast(`✓ Winner: ${winner.split(/[/\\\\]/).pop()}  —  demoted ${res.demoted}`);
-          setTimeout(renderGroups, 900);  // cycle to next pending bucket
-        } catch (e) {
-          toast(`✗ Pick failed: ${e.message}`, 5000);
-          body.querySelectorAll('.sc-tile-pick').forEach(b => b.disabled = false);
-          btn.textContent = '👑 Pick this one';
-        }
-      });
+    body.querySelectorAll('.sc-tile-approve-cb').forEach(cb =>
+      cb.addEventListener('change', updateApproveCount));
+    // Global re-run — fires the batch endpoint with current global overrides.
+    body.querySelector('#sc-global-rerun').addEventListener('click', () => {
+      const opts = {
+        prompt:   body.querySelector('#sc-global-prompt').value || undefined,
+        negative: body.querySelector('#sc-global-negative').value || undefined,
+        subject:  body.querySelector('#sc-global-subject').value || undefined,
+        model:    body.querySelector('#sc-global-model').value || undefined,
+      };
+      runShootout(arch, purpose_group, opts);
     });
+    // Approve submit — send all checked tiles with their per-card keywords.
+    submitBtn.addEventListener('click', async () => {
+      const approvals = [];
+      body.querySelectorAll('.sc-shootout-tile').forEach(tile => {
+        if (!tile.querySelector('.sc-tile-approve-cb').checked) return;
+        const kws = tile.querySelector('.sc-tile-keywords').value.trim();
+        const desc = tile.querySelector('.sc-tile-description').value.trim();
+        approvals.push({
+          name: tile.dataset.lora,
+          keywords: kws ? kws.split(',').map(s => s.trim()).filter(Boolean) : [],
+          description: desc,
+          strength: parseFloat(tile.querySelector('.sc-tile-slider').value),
+          subject: tile.querySelector('.sc-tile-subject-sel').value || undefined,
+        });
+      });
+      if (!approvals.length) return;
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Saving…';
+      try {
+        const res = await approveLoras(approvals);
+        toast(`✓ Approved ${res.accepted.length} LoRAs`);
+        setTimeout(renderGroups, 900);
+      } catch (e) {
+        toast(`✗ Approve failed: ${e.message}`, 5000);
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Approve selected LoRAs';
+      }
+    });
+  }
+
+  function escapeHTML(s) {
+    return String(s || '').replace(/[&<>"']/g, c =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
   // ── Run-all mega panel ────────────────────────────────────────────────

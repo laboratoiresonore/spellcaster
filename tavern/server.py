@@ -4116,10 +4116,16 @@ def _spellcaster_lora_shootout_start(
     arch: str, purpose_group: str,
     candidate_loras: list = None, seed: int = 12345,
     strength: float = None,
+    subject: str = None,
+    override_prompt: str = None,
+    override_negative: str = None,
+    override_model: str = None,
 ) -> tuple[int, dict]:
     """POST /api/spellcaster/lora/shootout/start — render each candidate
     LoRA with the same prompt/seed so the user can compare visually and
-    pick one.
+    approve the ones to keep. Optional overrides let the UI pin a
+    specific subject template, prompt, negative, strength, or
+    checkpoint. The LoRA grouping module validates + applies them.
     """
     try:
         from scaffold.lora_grouping import (
@@ -4139,9 +4145,9 @@ def _spellcaster_lora_shootout_start(
                            groups.get((arch, purpose_group), [])]
     if not candidate_loras:
         return (409, {"error": f"no candidates for {arch}:{purpose_group}"})
-    if len(candidate_loras) < 2:
-        return (409, {"error": f"only {len(candidate_loras)} candidate — "
-                               "no shootout needed, directly mark preferred"})
+    # Single-candidate shootouts used to be rejected; keep them now so
+    # the user can visually preview a lone LoRA on different subjects
+    # without needing a second candidate to compare against.
 
     try:
         models = discover_models(COMFYUI_URL)
@@ -4152,9 +4158,161 @@ def _spellcaster_lora_shootout_start(
         COMFYUI_URL, arch, purpose_group,
         [str(l) for l in candidate_loras],
         models, seed=seed, strength=strength,
+        subject=subject,
+        override_prompt=override_prompt,
+        override_negative=override_negative,
+        override_model=override_model,
     )
     return (200, {"ok": True, "job_id": state.job_id,
                   "total": state.total, "status": state.status})
+
+
+def _spellcaster_lora_shootout_sample(
+    arch: str, purpose_group: str, lora_name: str,
+    strength: float = None,
+    subject: str = None,
+    override_prompt: str = None,
+    override_negative: str = None,
+    override_model: str = None,
+    seed: int = 12345,
+) -> tuple[int, dict]:
+    """POST /api/spellcaster/lora/shootout/sample — synchronously resample
+    a SINGLE LoRA with the caller's strength/subject/model/prompt overrides.
+
+    Drives the UI's Retry, Softer (×0.6), Harder (×1.3) buttons and the
+    subject dropdown. Runs on the request thread (Guild uses
+    ThreadingHTTPServer so concurrent resamples don't block each other),
+    auto-falls-back through every installed model of the arch on
+    failure — so a single broken checkpoint still produces a usable card.
+    """
+    try:
+        from scaffold.lora_grouping import resample_single_lora
+        from spellcaster_core.preference_calibration import discover_models
+    except Exception as e:
+        return (500, {"error": f"module unavailable: {e}"})
+
+    if not arch or not purpose_group or not lora_name:
+        return (400, {"error": "arch + purpose_group + lora_name required"})
+
+    try:
+        models = discover_models(COMFYUI_URL)
+    except Exception as e:
+        return (502, {"error": f"ComfyUI not reachable: {e}"})
+
+    sample = resample_single_lora(
+        COMFYUI_URL, arch, purpose_group, lora_name, models,
+        strength=strength, subject=subject,
+        override_prompt=override_prompt,
+        override_negative=override_negative,
+        override_model=override_model,
+        seed=seed,
+    )
+    return (200, sample)
+
+
+def _spellcaster_lora_subjects() -> tuple[int, dict]:
+    """GET /api/spellcaster/lora/subjects — subject templates for the UI
+    dropdown (man/woman portrait, full body, feet close-up, etc.)."""
+    try:
+        from scaffold.lora_grouping import list_subject_templates
+    except Exception as e:
+        return (500, {"error": f"module unavailable: {e}"})
+    return (200, {"subjects": list_subject_templates()})
+
+
+def _spellcaster_lora_suggest(
+    char_id: str, prompt: str,
+) -> tuple[int, dict]:
+    """GET /api/spellcaster/lora/suggest?char=X&prompt=Y — return the
+    approved LoRAs whose user_keywords appear in the supplied prompt.
+
+    Used by the Wizard Guild chat to auto-propose (or auto-apply) LoRAs
+    whose keywords the user has typed. Only LoRAs compatible with the
+    wizard's arch are considered (delegates to _get_loras_for_wizard).
+    Matching is case-insensitive substring — simple, fast, local.
+    """
+    if not char_id:
+        return (400, {"error": "char param required"})
+    prompt_lc = (prompt or "").lower()
+    compatible = _get_loras_for_wizard(char_id)
+    hits = []
+    for lora in compatible:
+        if not lora.get("approved"):
+            continue
+        kws = lora.get("user_keywords") or []
+        matched = [kw for kw in kws
+                    if kw and kw.lower() in prompt_lc]
+        if not matched:
+            continue
+        hits.append({
+            "name":         lora["name"],
+            "display_name": lora["display_name"],
+            "matched":      matched,
+            "description":  lora.get("user_description", ""),
+            "strength":     lora.get("user_default_strength")
+                             or lora.get("default_strength") or 0.7,
+            "subject":      lora.get("user_default_subject", ""),
+        })
+    # Most specific match first (most keywords hit).
+    hits.sort(key=lambda h: -len(h["matched"]))
+    return (200, {"matches": hits})
+
+
+def _spellcaster_lora_approve(approvals: list = None) -> tuple[int, dict]:
+    """POST /api/spellcaster/lora/approve — multi-approve many LoRAs at
+    once, each with its own user-supplied keywords + description. The
+    Wizard Guild's LoRA suggester scans typed prompts against
+    `user_keywords` to auto-propose the matching LoRA.
+
+    Payload shape:
+      {"approvals": [
+          {"name": "<lora filename>",
+           "keywords": ["foot detail", "toes close-up"],
+           "description": "use when the scene focuses on feet",
+           "strength": 0.7,            # optional default strength
+           "subject": "feet"           # optional preferred subject
+          }, ...
+      ]}
+    """
+    if not isinstance(approvals, list) or not approvals:
+        return (400, {"error": "approvals must be a non-empty list"})
+    accepted = []
+    skipped = []
+    for entry in approvals:
+        if not isinstance(entry, dict):
+            skipped.append({"entry": entry, "reason": "not a dict"})
+            continue
+        name = str(entry.get("name") or "").strip()
+        if not name or name not in _LORA_REGISTRY:
+            skipped.append({"name": name, "reason": "unknown LoRA"})
+            continue
+        kws_raw = entry.get("keywords") or []
+        if isinstance(kws_raw, str):
+            kws_raw = [k.strip() for k in kws_raw.split(",")]
+        kws = [str(k).strip() for k in kws_raw if str(k).strip()]
+        desc = str(entry.get("description") or "").strip()
+        rec = _LORA_REGISTRY.setdefault(name, {})
+        rec["approved"] = True
+        rec["user_keywords"] = kws
+        rec["user_description"] = desc
+        if entry.get("strength") is not None:
+            try:
+                rec["user_default_strength"] = float(entry["strength"])
+            except (TypeError, ValueError):
+                pass
+        if entry.get("subject"):
+            rec["user_default_subject"] = str(entry["subject"])
+        # Don't demote siblings — multi-approve explicitly allows every
+        # useful LoRA to stay active and be auto-suggested by keyword.
+        rec.pop("deprioritized", None)
+        rec.pop("replaced_by", None)
+        accepted.append({"name": name, "keywords": kws, "description": desc})
+    try:
+        _save_lora_registry()
+    except Exception as e:
+        return (500, {"error": f"save failed: {e}",
+                      "accepted": accepted, "skipped": skipped})
+    return (200, {"ok": True, "accepted": accepted, "skipped": skipped})
 
 
 def _spellcaster_lora_shootout_status(job_id: str) -> tuple[int, dict]:
@@ -5109,6 +5267,15 @@ def _get_loras_for_wizard(char_id):
             # via the F10 LoRA interrogation flow.
             "trigger_words": info.get("trigger_words", ""),
             "default_strength": info.get("default_strength", 0.7),
+            # Multi-approve (Phase 3) fields — surface the user's
+            # keyword scaffolding so the Wizard Guild client can auto-
+            # suggest an approved LoRA whose keyword matches the prompt
+            # being typed.
+            "approved": bool(info.get("approved")),
+            "user_keywords": info.get("user_keywords", []),
+            "user_description": info.get("user_description", ""),
+            "user_default_strength": info.get("user_default_strength"),
+            "user_default_subject": info.get("user_default_subject", ""),
             # Auto-blacklist surface for the F10 panel.
             "blocked": blocked,
             "failure_count": failure_count,
@@ -8015,6 +8182,14 @@ class GuildHandler(SimpleHTTPRequestHandler):
             params = urllib.parse.parse_qs(qs)
             return self.end_json(*_spellcaster_lora_shootout_status(
                 params.get('job', [''])[0]))
+        if self.path == '/api/spellcaster/lora/subjects':
+            return self.end_json(*_spellcaster_lora_subjects())
+        if self.path.startswith('/api/spellcaster/lora/suggest'):
+            qs = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(qs)
+            return self.end_json(*_spellcaster_lora_suggest(
+                params.get('char', [''])[0],
+                params.get('prompt', [''])[0]))
         # LoRA bulk calibration status + results (polled by the review UI).
         if self.path.startswith('/api/spellcaster/calibrate/loras/status'):
             qs = urllib.parse.urlparse(self.path).query
@@ -11479,13 +11654,37 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 candidate_loras=data.get('candidates') or [],
                 seed=int(data.get('seed', 12345)),
                 strength=(float(data['strength'])
-                           if 'strength' in data else None)))
+                           if 'strength' in data else None),
+                subject=data.get('subject') or None,
+                override_prompt=data.get('prompt') or None,
+                override_negative=data.get('negative') or None,
+                override_model=data.get('model') or None))
+        if self.path == '/api/spellcaster/lora/shootout/sample':
+            # Per-LoRA resample — Retry / Softer / Harder / subject swap.
+            return self.end_json(*_spellcaster_lora_shootout_sample(
+                data.get('arch', ''),
+                data.get('purpose_group', ''),
+                data.get('lora_name', ''),
+                strength=(float(data['strength'])
+                           if 'strength' in data else None),
+                subject=data.get('subject') or None,
+                override_prompt=data.get('prompt') or None,
+                override_negative=data.get('negative') or None,
+                override_model=data.get('model') or None,
+                seed=int(data.get('seed', 12345))))
         if self.path == '/api/spellcaster/lora/preferred':
             return self.end_json(*_spellcaster_lora_pick_preferred(
                 data.get('arch', ''),
                 data.get('purpose_group', ''),
                 data.get('winner', ''),
                 demote_losers=bool(data.get('demote_losers', True))))
+        if self.path == '/api/spellcaster/lora/approve':
+            # Multi-approve: keep every LoRA the user wants, each tagged
+            # with their own keywords so the Wizard Guild can auto-
+            # suggest by prompt content. See _spellcaster_lora_approve
+            # for payload shape.
+            return self.end_json(*_spellcaster_lora_approve(
+                approvals=data.get('approvals') or []))
 
         # -- /api/horde_generate -- server-side proxy to AI Horde
         #    Browser can't call Horde directly (CORS), so we relay.
