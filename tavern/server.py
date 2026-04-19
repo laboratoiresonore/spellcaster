@@ -10575,6 +10575,63 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 return self.end_json(502, {"target": target, **resp})
             return self.end_json(200, {"target": target, **(resp or {})})
 
+        elif self.path == '/api/app_control/register' and self.command == 'POST':
+            # "Connect an app" — persist a launcher path for a specific
+            # app on either the local Guild machine OR a paired antenna.
+            # Body: {app, launcher, target?, root?, port?}
+            # target == "local" writes to guild_config (app_control entry
+            # gets a launcher field); any other value proxies to that
+            # antenna's /service/register endpoint so the antenna stores
+            # the path in ~/.spellcaster/antenna_config.json.
+            app = (data.get("app") or "").strip().lower()
+            launcher = (data.get("launcher") or "").strip()
+            allowed_apps = {"comfyui", "ollama", "kobold",
+                             "gimp", "darktable", "resolve",
+                             "sillytavern", "signal"}
+            if app not in allowed_apps:
+                return self.end_json(400, {
+                    "error": f"app must be one of {sorted(allowed_apps)}",
+                })
+            if not launcher:
+                return self.end_json(400, {
+                    "error": "launcher path required",
+                })
+            target = (data.get("target") or "local").strip()
+            cfg = _guided_install_load_config()
+            if target == "local":
+                matrix = dict(cfg.get("app_control") or {})
+                entry = dict(matrix.get(app) or {})
+                entry["target"] = entry.get("target") or "local"
+                entry["launcher"] = launcher
+                if data.get("root"):
+                    entry["root"] = str(data["root"]).strip()
+                if data.get("port"):
+                    try:
+                        entry["port"] = int(data["port"])
+                    except (TypeError, ValueError):
+                        pass
+                matrix[app] = entry
+                cfg["app_control"] = matrix
+                ok = _guided_install_save_config(cfg)
+                return self.end_json(200 if ok else 500,
+                                      {"ok": ok, "target": "local",
+                                       "app": app, "launcher": launcher,
+                                       "entry": entry})
+            # Remote — proxy to the antenna's /service/register.
+            antenna_url, token = self._resolve_antenna_agent(target)
+            if not antenna_url:
+                return self.end_json(404, {
+                    "error": f"no paired antenna for target {target!r}",
+                })
+            body = {"service": app, "launcher": launcher}
+            if data.get("root"): body["root"] = data["root"]
+            if data.get("port"): body["port"] = data["port"]
+            resp = self._post_antenna_json(
+                antenna_url, "/service/register", token, body)
+            if isinstance(resp, dict) and "error" in resp and "ok" not in resp:
+                return self.end_json(502, {"target": target, **resp})
+            return self.end_json(200, {"target": target, **(resp or {})})
+
         elif self.path == '/api/app_control/stop' and self.command == 'POST':
             app = (data.get("app") or "").strip().lower()
             if app not in ("comfyui", "ollama", "kobold"):

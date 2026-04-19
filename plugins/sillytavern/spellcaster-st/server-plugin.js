@@ -338,6 +338,61 @@ function init(router) {
         });
     });
 
+    // GET /capabilities — probe the configured ComfyUI's /object_info
+    // and return { available: [arch,...], missing: [arch,...], nodes: N }.
+    // Used by /sc-capabilities slash command + any future UI gating.
+    // Mirrors the Darktable R118 / GIMP _FEATURE_SENTINELS approach.
+    router.get('/capabilities', async (req, res) => {
+        const sentinels = {
+            'Flux 2 Klein':     ['Flux2KleinRefLatentController', 'Flux2KleinTextRefBalance'],
+            'Flux Kontext':     ['FluxKontextImageScale', 'FluxKontextModelLoader'],
+            'Flux 1 Dev':       ['FluxGuidance', 'DualCLIPLoader'],
+            'SDXL':             ['KSamplerAdvanced'],
+            'SD 1.5':           ['KSampler'],
+            'Wan 2.2 Video':    ['WanImageToVideo', 'LoadWanVideoModel', 'WanVaceToVideo'],
+            'LTX-2 Video':      ['LTXVImgToVideo', 'LTXVScheduler'],
+            'SUPIR Upscale':    ['SUPIR_sample'],
+            'SeedVR2 Video':    ['SeedVR2VideoUpscaler'],
+            'IPAdapter':        ['IPAdapterAdvanced', 'IPAdapterUnifiedLoader'],
+            'Face: ReActor':    ['ReActorFaceSwap'],
+            'Face: PuLID Flux': ['PulidFluxModelLoader', 'ApplyPulidFlux'],
+            'BG Remove':        ['BiRefNetRMBG', 'RMBG'],
+            'Inpaint (LaMa)':   ['LaMaInpaint'],
+            'Chroma':           ['ChromaSampler'],
+        };
+        let catalog = null;
+        try {
+            const r = await fetchJSON(`${COMFYUI_URL}/object_info`);
+            catalog = r.data;
+        } catch (e) {
+            return res.status(502).json({
+                error: 'ComfyUI unreachable: ' + e.message,
+                comfyui: COMFYUI_URL,
+            });
+        }
+        if (typeof catalog !== 'object' || catalog === null) {
+            return res.status(502).json({
+                error: 'ComfyUI returned unexpected /object_info shape',
+            });
+        }
+        const nodes = new Set(Object.keys(catalog));
+        const available = [];
+        const missing = [];
+        for (const [arch, list] of Object.entries(sentinels)) {
+            let ok = false;
+            for (const n of list) { if (nodes.has(n)) { ok = true; break; } }
+            (ok ? available : missing).push(arch);
+        }
+        available.sort();
+        missing.sort();
+        res.json({
+            comfyui: COMFYUI_URL,
+            node_count: nodes.size,
+            available,
+            missing,
+        });
+    });
+
     // GET /cross/inbox — pull pending sillytavern.asset.* messages.
     // Returns: { messages: [{kind, data:{image_url,hash,source,...}}] }
     router.get('/cross/inbox', async (req, res) => {
