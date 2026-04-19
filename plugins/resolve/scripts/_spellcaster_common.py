@@ -73,3 +73,57 @@ def guild_or_die():
                      "Start the Guild (Wizard Guild.bat / .sh) and try again.")
         raise SystemExit(1)
     return guild
+
+
+def enhance_prompt(guild, raw: str, *, max_tokens: int = 180,
+                    temperature: float = 0.7) -> str:
+    """R96: send a terse prompt to the Guild's LLM and get back a
+    verbose, visually-rich expansion suitable for video generation.
+
+    Uses /api/llm_generate (the Guild's unified LLM proxy — ComfyUI
+    LLM nodes first, KoboldCpp fallback, Ollama last, per
+    spellcaster_core.guild_llm). The system prompt is tuned for the
+    "short-to-rich visual description" task: preserves the core
+    subject, adds lighting / camera / material / mood details, stays
+    under ~60 tokens of prose.
+
+    Returns the enhanced prompt (or the raw input on failure, so
+    callers never get an empty string).
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return raw
+    try:
+        from spellcaster_api import GuildError  # noqa: F401
+    except ImportError:
+        return raw
+
+    system = (
+        "You are a cinematographer writing prompts for a video "
+        "diffusion model. Rewrite the user's brief prompt as a vivid, "
+        "2-4 sentence shot description. Include: camera movement, "
+        "lighting quality, key materials/textures, and mood. Keep the "
+        "SUBJECT unchanged. Do not add narrative, dialogue, or "
+        "characters that weren't in the original. Output ONLY the "
+        "rewritten prompt — no preamble, no quotes."
+    )
+    full = f"{system}\n\nUSER PROMPT: {raw}\n\nREWRITTEN:"
+    try:
+        result = guild._post_json("/api/llm_generate", {
+            "prompt": full,
+            "max_length": max_tokens,
+            "temperature": temperature,
+            "stop_sequence": ["\n\n", "USER PROMPT:"],
+        }, timeout=60.0)
+    except Exception:
+        return raw
+    # Kobold-style envelope
+    texts = result.get("results") or []
+    if not texts:
+        return raw
+    enhanced = (texts[0].get("text") or "").strip()
+    # Strip any lingering system-leaked prefix
+    for prefix in ("REWRITTEN:", "Rewritten:", "PROMPT:"):
+        if enhanced.startswith(prefix):
+            enhanced = enhanced[len(prefix):].strip()
+    return enhanced or raw
