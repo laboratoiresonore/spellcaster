@@ -3269,6 +3269,38 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
                      slg_start=0.01, slg_end=0.15,
                      enable_nag=False,
                      nag_scale=11.0, nag_alpha=0.25, nag_tau=2.5):
+    # ═══════════════════════════════════════════════════════════════════
+    #  CANONICAL WAN 2.2 BUILDER — DO NOT DIVERGE
+    # ═══════════════════════════════════════════════════════════════════
+    #
+    # This is THE WAN I2V workflow for the entire Spellcaster app. Every
+    # plugin (GIMP / Resolve / Darktable / Guild / scaffold dispatcher)
+    # goes through here. See CLAUDE.md §16 "Canonical Video Pipelines"
+    # for the full recipe (turbo formula, VAE pairing, model-family
+    # selection, LoRA split high/low).
+    #
+    # Recipe summary — keep in sync with CLAUDE.md §16.2:
+    #
+    #   preset    — from `spellcaster_core.video_presets.detect_wan_preset`
+    #               (I2V-only, VAE paired to UNET family, accel LoRAs matched)
+    #   turbo     — TRUE:  use preset defaults (steps=6, cfg=1.0, second_step=3)
+    #               FALSE: caller passes `**wan_turbo_kwargs(False)` which
+    #                      overrides to steps=30, cfg=3.5, second_step=15.
+    #               The non-turbo path is the SAFE default because on the
+    #               user's RTX 5060 Ti, turbo + shipped LightX2V LoRAs
+    #               produces pure-black output (mean luminance 0.0).
+    #   loras_high/loras_low — split by which noise model gets the LoRA.
+    #               HIGH = frames 0..second_step-1 (structural passes).
+    #               LOW  = frames second_step..end (refinement passes).
+    #               inject_lora_chain is NOT used — we call
+    #               lora_loader_model_only directly so WAN-specific LoRAs
+    #               aren't dropped by the arch-family filter.
+    #   width/height must be MOD-16. Callers pre-round.
+    #
+    # If you're adding a WAN caller: use `video_presets.detect_wan_preset`
+    # + `video_presets.wan_turbo_kwargs(turbo)` + this function. Never
+    # hand-roll a WAN workflow JSON outside this file.
+    # ═══════════════════════════════════════════════════════════════════
     """WAN 2.2 frame-by-frame video generation with dual-model architecture.
 
     Generates video frame-by-frame using WAN (a lightweight video diffusion model).
@@ -6884,6 +6916,33 @@ def build_ltx_video(preset, prompt_text, seed,
                      fps=25, pingpong=False,
                      image_filename=None, i2v_strength=0.9,
                      negative_text=None):
+    # ═══════════════════════════════════════════════════════════════════
+    #  CANONICAL LTX 2.3 BUILDER — DO NOT DIVERGE
+    # ═══════════════════════════════════════════════════════════════════
+    #
+    # See CLAUDE.md §16.3 "LTX 2.3 — full formula" for the canon. Every
+    # plugin + scaffold + Guild caller goes through this function.
+    #
+    # Recipe summary (keep in sync with CLAUDE.md §16.3):
+    #
+    #   preset  — from `spellcaster_core.video_presets.detect_ltx_preset`
+    #             (Gemma-3 TE, LTX-video-vae, GGUF auto-dispatched).
+    #   mode    — use `video_presets.ltx_mode_kwargs("distilled" | "full"
+    #             | "two_stage" | "i2v")` and spread the result as **kwargs
+    #             into this call. Returns the correct (distilled, two_stage)
+    #             pair for the named mode.
+    #   distilled — triggers 8-step / cfg=1.0 / stg=0.0 / rescale=0.0
+    #               override PLUS injects the distilled LoRA from the preset.
+    #   two_stage — generates at half-res, latent-upscales 2×, refines.
+    #   image_filename — when set, enables I2V conditioning (caller also
+    #                    tunes `i2v_strength`; 0.85-0.90 is the sweet spot).
+    #   negative_text — when None, auto-injects a subtitle-burn-in blocker
+    #                   (LTX's training corpus includes subtitled video).
+    #
+    # DO NOT reorder the chunk_feed_forward / apply_stg / text encode /
+    # VAE / sampler pipeline — the order is what ComfyUI's LTX nodes
+    # expect.
+    # ═══════════════════════════════════════════════════════════════════
     """LTX Video 2.3 generation — text-to-video or image-to-video.
 
     Supports three modes:

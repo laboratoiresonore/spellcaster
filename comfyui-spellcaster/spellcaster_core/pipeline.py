@@ -509,74 +509,40 @@ class Pipeline:
         return self._run_simple(wf)
 
     def _detect_wan_preset(self):
-        """Build a WAN preset from server model inventory."""
-        def _opts(node, field):
-            try:
-                r = urllib.request.urlopen(f"{self._server}/object_info/{node}", timeout=5)
-                d = json.loads(r.read())
-                s = d[node]["input"]["required"][field]
-                return s[0] if isinstance(s[0], list) else s[1].get("options", [])
-            except:
-                return []
+        """Build a WAN preset from server model inventory.
 
-        unets = _opts("UnetLoaderGGUF", "unet_name")
-        loras = _opts("LoraLoaderModelOnly", "lora_name")
-        clips = _opts("CLIPLoaderGGUF", "clip_name")
-        vaes = _opts("VAELoader", "vae_name")
-
-        wan_h = next((u for u in unets if "wan" in u.lower() and "i2v" in u.lower() and "high" in u.lower()), "")
-        wan_l = next((u for u in unets if "wan" in u.lower() and "i2v" in u.lower() and "low" in u.lower()), "")
-        wan_clip = next((c for c in clips if "umt5" in c.lower()), "")
-        wan_vae = next((v for v in vaes if "wan" in v.lower()), "")
-        accel_h = next((l for l in loras if "lightx2v" in l.lower() and "high" in l.lower()), "")
-        accel_l = next((l for l in loras if "lightx2v" in l.lower() and "low" in l.lower()), "")
-
-        if not wan_h:
+        Canonical detection via `video_presets.detect_wan_preset` — see
+        CLAUDE.md §16 "Canonical Video Pipelines". This method is a thin
+        per-instance wrapper; the heavy lifting (VAE pairing by UNET
+        family, accel-LoRA matching, I2V-only filtering) lives in the
+        core module so every consumer agrees.
+        """
+        from . import video_presets
+        preset = video_presets.detect_wan_preset(self._server)
+        if not preset:
             raise RuntimeError("No WAN I2V models found on server")
-
-        return {
-            "high_model": wan_h, "low_model": wan_l or wan_h,
-            "clip": wan_clip, "clip_is_gguf": wan_clip.endswith(".gguf"),
-            "vae": wan_vae, "steps": 6, "cfg": 1.0, "shift": 8.0, "second_step": 3,
-            "high_accel_lora": accel_h, "low_accel_lora": accel_l,
-            "accel_strength": 1.5, "ip_adapter_model": "ip-adapter-wan2.1-14b.bin",
-        }
+        # pipeline.py's legacy callers expect an "ip_adapter_model"
+        # hint even when it's not used; keep it stable.
+        preset.setdefault("ip_adapter_model", "ip-adapter-wan2.1-14b.bin")
+        return preset
 
     def _detect_ltx_preset(self):
-        """Build an LTX preset from server model inventory."""
-        def _opts(node, field):
-            try:
-                r = urllib.request.urlopen(f"{self._server}/object_info/{node}", timeout=5)
-                d = json.loads(r.read())
-                s = d[node]["input"]["required"][field]
-                return s[0] if isinstance(s[0], list) else s[1].get("options", [])
-            except:
-                return []
+        """Build an LTX preset from server model inventory.
 
-        unets = _opts("UnetLoaderGGUF", "unet_name")
-        clips = _opts("CLIPLoaderGGUF", "clip_name")
-        vaes = _opts("VAELoader", "vae_name")
-        loras = _opts("LoraLoaderModelOnly", "lora_name")
-
-        ltx_unet = next((u for u in unets if "ltx" in u.lower()), "")
-        ltx_te = next((c for c in clips if "gemma" in c.lower()), "")
-        ltx_vae = next((v for v in vaes if "ltx" in v.lower() and "video" in v.lower()), "")
-        ltx_conn = ""
-        for c in clips:
-            if "embeddings_connector" in c.lower():
-                ltx_conn = c
-                break
-        ltx_dist = next((l for l in loras if "ltx" in l.lower() and "distill" in l.lower()), "")
-
-        if not ltx_unet:
+        Canonical detection via `video_presets.detect_ltx_preset` — see
+        CLAUDE.md §16.3 for the recipe.
+        """
+        from . import video_presets
+        preset = video_presets.detect_ltx_preset(self._server)
+        if not preset:
             raise RuntimeError("No LTX models found on server")
-
-        return {
-            "unet": ltx_unet, "text_encoder": ltx_te,
-            "embeddings_connector": ltx_conn, "vae": ltx_vae,
-            "steps": 10, "cfg": 4.0, "stg": 1.0, "rescale": 0.7,
-            "distilled_lora": ltx_dist, "latent_upscaler": "", "lora_prefix": "ltxv",
-        }
+        # Legacy callers read these extras; preserve for backwards compat.
+        preset.setdefault("latent_upscaler", "")
+        preset.setdefault("lora_prefix", "ltxv")
+        # pipeline.py historically used steps=10 for LTX. detect_ltx_preset
+        # returns the canonical 30 (full-step). Leave the canonical value —
+        # pipeline's callers that want 10 can override via kwargs.
+        return preset
 
     def _download_results(self):
         """Download all accumulated results to save_dir."""

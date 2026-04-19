@@ -357,49 +357,66 @@ def resolve_wan_preset(preset_key: str, models: dict) -> Optional[dict]:
     # latents). A file literally named `wan2.2_vae.safetensors` on
     # some ComfyUI installations is actually a 48-channel variant
     # meant for a different Wan 2.2 branch (S2V / audio) and crashes
-    # VAEDecode with a channel mismatch when fed A14B latents. Prefer
-    # `wan_2.1_vae` or anything explicitly tagged 2.1 first; only fall
-    # back to `wan2.2_vae` if no 2.1 VAE is installed.
+    # VAE — delegate to canonical pairing helper (pairs by UNET family:
+    # 14B I2V-A14B ↔ wan_2.1_vae, 5B TI2V ↔ wan2.2_vae). The local
+    # fallback below runs only when the canon import is unavailable or
+    # pairing returns None; it's kept because token-hint resolution
+    # still needs SOMETHING when running against an exotic VAE layout.
+    # See CLAUDE.md §16.2 "WAN 2.2 — full formula" for the pairing table.
     vae_pool = models.get("vae", [])
-    vae = (_pick(vae_pool, {"wan", "2", "1"}, {"vae"})
-           or _pick(vae_pool, {"wan2", "1"}, {"vae", "fp32", "fp16"})
-           or _pick(vae_pool, {"wan2", "2"}, {"vae"})
-           or _pick(vae_pool, {"wan"}))
+    vae = None
+    try:
+        from spellcaster_core import video_presets as _vp
+        vae = _vp.pick_wan_vae(high, vae_pool)
+    except ImportError:
+        pass
+    if not vae:
+        vae = (_pick(vae_pool, {"wan", "2", "1"}, {"vae"})
+               or _pick(vae_pool, {"wan2", "1"}, {"vae", "fp32", "fp16"})
+               or _pick(vae_pool, {"wan2", "2"}, {"vae"})
+               or _pick(vae_pool, {"wan"}))
     if not vae:
         log.info("resolve_wan_preset(%s): no Wan VAE found", preset_key)
         return None
 
-    # Auto-detect the lightx2v 4-step distillation LoRAs. When both
-    # high + low are present, lightning mode runs at 4 steps cfg=1.0
-    # with excellent quality. Without them, lightning falls back to
-    # HQ-like step counts (the fp8 base models can't hit 4 steps
-    # without distillation).
+    # Accel LoRAs — delegate to canonical picker when the task is I2V.
+    # T2V still uses the explicit token search here because the canon
+    # rejects T2V accel LoRAs (Spellcaster's canon is I2V-only). See
+    # `video_presets.pick_wan_accel_loras` + CLAUDE.md §16.2.
     lora_pool = models.get("lora", [])
     high_accel = None
     low_accel = None
     task = (_WAN_PRESET_HINTS.get(preset_key) or {}).get("task", "i2v")
-    if task == "t2v":
+    if task == "i2v":
+        try:
+            from spellcaster_core import video_presets as _vp
+            high_accel, low_accel = _vp.pick_wan_accel_loras(lora_pool)
+        except ImportError:
+            pass
+        # Fall back to the local token search if the canon returned nothing
+        # (e.g. LoRAs with non-standard filenames).
+        if not (high_accel and low_accel):
+            high_accel = (high_accel or _pick(lora_pool,
+                              {"wan2", "2", "lightning", "i2v", "high"},
+                              {"4steps", "a14b", "fp16"})
+                          or _pick(lora_pool,
+                                 {"wan2", "2", "i2v", "lightx2v", "high"},
+                                 {"4steps", "lora"}))
+            low_accel = (low_accel or _pick(lora_pool,
+                             {"wan2", "2", "lightning", "i2v", "low"},
+                             {"4steps", "a14b", "fp16"})
+                         or _pick(lora_pool,
+                                {"wan2", "2", "i2v", "lightx2v", "low"},
+                                {"4steps", "lora"}))
+    elif task == "t2v":
+        # T2V is out-of-canon for Spellcaster but the preset key exists;
+        # we still wire accel LoRAs so that workflow runs at all.
         high_accel = _pick(lora_pool,
                             {"wan2", "2", "t2v", "lightx2v", "high"},
                             {"4steps", "lora"})
         low_accel = _pick(lora_pool,
                            {"wan2", "2", "t2v", "lightx2v", "low"},
                            {"4steps", "lora"})
-    elif task == "i2v":
-        # Prefer the official Wan2.2-Lightning I2V LoRAs; lightx2v
-        # variants work too.
-        high_accel = (_pick(lora_pool,
-                              {"wan2", "2", "lightning", "i2v", "high"},
-                              {"4steps", "a14b", "fp16"})
-                      or _pick(lora_pool,
-                                 {"wan2", "2", "i2v", "lightx2v", "high"},
-                                 {"4steps", "lora"}))
-        low_accel = (_pick(lora_pool,
-                             {"wan2", "2", "lightning", "i2v", "low"},
-                             {"4steps", "a14b", "fp16"})
-                     or _pick(lora_pool,
-                                {"wan2", "2", "i2v", "lightx2v", "low"},
-                                {"4steps", "lora"}))
 
     have_accel = bool(high_accel and low_accel)
 

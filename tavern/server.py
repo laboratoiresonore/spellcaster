@@ -6492,265 +6492,18 @@ def _preflight_unet_arch(comfy_url, ckpt, arch, arch_key):
 def _detect_wan_preset(comfy_url):
     """Auto-detect WAN video models on ComfyUI and build a preset.
 
-    Returns a WAN preset dict or None if WAN models aren't available.
+    Thin wrapper around `spellcaster_core.video_presets.detect_wan_preset`.
+    **The detection logic is canonical** — see CLAUDE.md §16 "Canonical
+    Video Pipelines". DO NOT re-implement here; add knobs in the core
+    module so the GIMP plugin / Resolve bridge / scaffold dispatcher all
+    benefit simultaneously.
     """
-    unet_models = []
     try:
-        url = f"{comfy_url}/object_info/UNETLoader"
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            choices = (data.get("UNETLoader", {})
-                           .get("input", {}).get("required", {})
-                           .get("unet_name", []))
-            if choices and isinstance(choices, list) and choices[0]:
-                unet_models = choices[0]
-    except Exception:
+        from spellcaster_core import video_presets as _vp
+    except ImportError as e:
+        print(f"  [Guild] video_presets import failed: {e}")
         return None
-
-    # Also check GGUF loaders
-    gguf_models = []
-    try:
-        url = f"{comfy_url}/object_info/UnetLoaderGGUF"
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            choices = (data.get("UnetLoaderGGUF", {})
-                           .get("input", {}).get("required", {})
-                           .get("unet_name", []))
-            if choices and isinstance(choices, list) and choices[0]:
-                gguf_models = choices[0]
-    except Exception:
-        pass
-
-    all_models = unet_models + gguf_models
-
-    # Find WAN high/low model pair
-    wan_high = None
-    wan_low = None
-    wan_clip = None
-    wan_vae = None
-    wan_accel_high = None
-    wan_accel_low = None
-
-    # Separate I2V and T2V candidates.
-    # IMPORTANT: Only EXPLICITLY tagged I2V models are safe for I2V workflows.
-    # T2V models have 36ch patch_embedding, I2V have 64ch — mixing them crashes
-    # with "expected input to have 36 channels, but got 64 channels".
-    # Generic/ambiguous WAN models (no i2v/t2v tag) are UNSAFE — they could be
-    # either architecture internally, so we must NOT use them for I2V.
-    i2v_high = None
-    i2v_low = None
-    t2v_high = None
-    t2v_low = None
-    generic_high = None
-    generic_low = None
-
-    for m in all_models:
-        ml = m.lower()
-        if "wan" not in ml:
-            continue
-        is_i2v = "i2v" in ml
-        is_t2v = "t2v" in ml and not is_i2v  # "RemixT2VI2V" has both — treat as I2V
-        is_low = "low" in ml
-        is_high = "high" in ml or (not is_low)  # Default to high if neither specified
-
-        if is_i2v:
-            if is_high and not is_low and not i2v_high:
-                i2v_high = m
-            elif is_low and not i2v_low:
-                i2v_low = m
-        elif is_t2v:
-            if is_high and not is_low and not t2v_high:
-                t2v_high = m
-            elif is_low and not t2v_low:
-                t2v_low = m
-        else:
-            # Generic WAN model (no i2v/t2v in name) — track but do NOT use for I2V
-            if is_high and not is_low and not generic_high:
-                generic_high = m
-            elif is_low and not generic_low:
-                generic_low = m
-
-    # STRICTLY I2V only — generic models are unsafe (could be T2V internally)
-    # T2V models have 36ch patch_embedding vs I2V's 64ch — causes runtime crash
-    wan_high = i2v_high  # NO generic fallback
-    wan_low = i2v_low    # NO generic fallback
-    if wan_high:
-        print(f"  [Guild] WAN model selection: high={wan_high} (i2v)")
-    if generic_high and not wan_high:
-        print(f"  [Guild] WARNING: Found generic WAN models ({generic_high}) but no "
-              f"explicitly-tagged I2V models. Generic models are unsafe for I2V "
-              f"(may be T2V internally → 36ch/64ch crash). "
-              f"Install wan2.2_i2v_720p_high/low_noise models for video features.")
-    if t2v_high and not wan_high:
-        print(f"  [Guild] WARNING: Found T2V models ({t2v_high}) but no I2V models. "
-              f"T2V models are incompatible with Spellcaster's I2V pipeline. "
-              f"Install wan2.2_i2v_720p_high/low_noise models for video features.")
-
-    if not wan_high:
-        print(f"  [Guild] No WAN models found among {len(all_models)} UNET models")
-        return None
-
-    # Auto-detect WAN CLIP (umt5xxl) — prefer GGUF, fall back to regular CLIPLoader
-    wan_clip_is_gguf = False
-    try:
-        url = f"{comfy_url}/object_info/CLIPLoaderGGUF"
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            choices = (data.get("CLIPLoaderGGUF", {})
-                           .get("input", {}).get("required", {})
-                           .get("clip_name", []))
-            if choices and isinstance(choices, list) and choices[0]:
-                for c in choices[0]:
-                    cl = c.lower()
-                    if ("umt5" in cl or "t5xxl" in cl) and c.endswith(".gguf"):
-                        wan_clip = c
-                        wan_clip_is_gguf = True
-                        break
-    except Exception:
-        pass
-    # Fall back to regular CLIPLoader for non-GGUF (fp8/safetensors) text encoders
-    if not wan_clip:
-        try:
-            url = f"{comfy_url}/object_info/CLIPLoader"
-            req = urllib.request.Request(url)
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                choices = (data.get("CLIPLoader", {})
-                               .get("input", {}).get("required", {})
-                               .get("clip_name", []))
-                if choices and isinstance(choices, list) and choices[0]:
-                    for c in choices[0]:
-                        cl = c.lower()
-                        if "umt5" in cl or "t5xxl" in cl:
-                            wan_clip = c
-                            wan_clip_is_gguf = False
-                            break
-        except Exception:
-            pass
-
-    # Auto-detect WAN VAE — MUST pair with the UNET family or the
-    # first conv layer explodes on channel mismatch. Observed in the
-    # wild:
-    #   wan2.2 14B I2V-A14B         patch_embedding = 36 ch input
-    #   wan2.2 5B TI2V              patch_embedding = 64 ch input
-    # The 14B I2V-A14B needs a 16-ch latent VAE (after WanImageToVideo
-    # adds the 20-ch conditioning concat → 36ch total). The 5B TI2V
-    # needs the 48-ch wan2.2_vae.safetensors (→ 64ch after concat).
-    # Picking the first "wan" VAE we find (prior behavior) gave
-    # wan2.2_vae.safetensors to every UNET — fine for the 5B, fatal
-    # for the 14B.
-    try:
-        url = f"{comfy_url}/object_info/VAELoader"
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            choices = (data.get("VAELoader", {})
-                           .get("input", {}).get("required", {})
-                           .get("vae_name", []))
-        vae_list = choices[0] if (choices and isinstance(choices, list)
-                                    and choices[0]) else []
-
-        unet_l = (wan_high or "").lower()
-        is_14b_i2v = ("14b" in unet_l and "i2v" in unet_l)
-        is_5b_ti2v = ("5b" in unet_l and "ti2v" in unet_l)
-
-        # Preference lists per UNET family. First match wins.
-        if is_14b_i2v:
-            prefer = ("wan_2.1_vae", "wan2_1_vae", "wan2.1_vae",
-                      "wan2_2_vae_14b", "wan2.2_vae_14b")
-            avoid  = ("wan2.2_vae",)  # the TI2V-5B VAE — crashes on 14B
-        elif is_5b_ti2v:
-            prefer = ("wan2.2_vae", "wan_2.2_vae", "wan2_2_vae")
-            avoid  = ()
-        else:
-            prefer = ("wan",)
-            avoid  = ()
-
-        # First pass: try preferred names
-        for pref in prefer:
-            for v in vae_list:
-                vl = v.lower()
-                if pref in vl and not any(a in vl for a in avoid):
-                    wan_vae = v; break
-            if wan_vae: break
-
-        # Fallback: first "wan" that doesn't match the avoid list
-        if not wan_vae:
-            for v in vae_list:
-                vl = v.lower()
-                if "wan" in vl and not any(a in vl for a in avoid):
-                    wan_vae = v; break
-
-        if wan_vae:
-            fam = ("14B I2V" if is_14b_i2v
-                   else "5B TI2V" if is_5b_ti2v else "generic")
-            print(f"  [Guild] WAN VAE pairing: family={fam} "
-                  f"unet={wan_high} vae={wan_vae}")
-    except Exception:
-        pass
-
-    # Auto-detect WAN acceleration LoRAs (LightX2V / Lightning / accel)
-    try:
-        url = f"{comfy_url}/object_info/LoraLoaderModelOnly"
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            choices = (data.get("LoraLoaderModelOnly", {})
-                           .get("input", {}).get("required", {})
-                           .get("lora_name", []))
-            if choices and isinstance(choices, list) and choices[0]:
-                for l in choices[0]:
-                    ll = l.lower()
-                    # Match: lightx2v I2V step-distill, Lightning I2V, or "accel"
-                    is_wan_accel = ("wan" in ll and (
-                        ("lightx2v" in ll and "i2v" in ll) or
-                        ("lightning" in ll and "i2v" in ll) or
-                        ("accel" in ll)
-                    ))
-                    if not is_wan_accel:
-                        continue
-                    # Must be I2V-specific (skip T2V accel LoRAs)
-                    if "t2v" in ll:
-                        continue
-                    if "high" in ll and not wan_accel_high:
-                        wan_accel_high = l
-                    elif "low" in ll and not wan_accel_low:
-                        wan_accel_low = l
-    except Exception:
-        pass
-
-    if not wan_clip or not wan_vae:
-        print(f"  [Guild] WAN models found but missing CLIP ({wan_clip}) or VAE ({wan_vae})")
-        return None
-
-    # Track whether we have actual I2V models (needed for image-to-video)
-    # Only explicitly-tagged I2V models count — generic models are unsafe
-    has_i2v = bool(i2v_high)
-
-    preset = {
-        "arch": "wan",
-        "high_model": wan_high,
-        "low_model": wan_low or wan_high,
-        "clip": wan_clip,
-        "clip_is_gguf": wan_clip_is_gguf,
-        "vae": wan_vae,
-        "steps": 6,
-        "cfg": 1.0,
-        "shift": 8.0,
-        "second_step": 3,
-        "is_i2v": has_i2v,
-    }
-    if wan_accel_high:
-        preset["high_accel_lora"] = wan_accel_high
-        preset["accel_strength"] = 1.5
-    if wan_accel_low:
-        preset["low_accel_lora"] = wan_accel_low
-
-    print(f"  [Guild] WAN preset built: high={wan_high}, low={wan_low or wan_high}")
-    return preset
+    return _vp.detect_wan_preset(comfy_url)
 
 
 # ── Animated avatar queue — non-blocking, uses ComfyUI's prompt queue ────
@@ -6772,165 +6525,18 @@ def _get_wan_preset(comfy_url):
 
 
 def _detect_ltx_preset(comfy_url):
-    """Auto-detect LTX video models on ComfyUI and build a preset.
+    """Auto-detect LTX 2.3 video models on ComfyUI.
 
-    Returns an LTX preset dict or None if LTX models aren't available.
-    Searches both GGUF and standard UNET loaders.
+    Thin wrapper around `spellcaster_core.video_presets.detect_ltx_preset`.
+    **The detection logic is canonical** — see CLAUDE.md §16.3 for the
+    recipe. DO NOT re-implement here.
     """
-    # Search GGUF models
-    gguf_models = []
     try:
-        url = f"{comfy_url}/object_info/UnetLoaderGGUF"
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            choices = (data.get("UnetLoaderGGUF", {})
-                           .get("input", {}).get("required", {})
-                           .get("unet_name", []))
-            if choices and isinstance(choices, list) and choices[0]:
-                gguf_models = choices[0]
-    except Exception:
-        pass
-
-    # Search standard UNET models too
-    unet_models = []
-    try:
-        url = f"{comfy_url}/object_info/UNETLoader"
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            choices = (data.get("UNETLoader", {})
-                           .get("input", {}).get("required", {})
-                           .get("unet_name", []))
-            if choices and isinstance(choices, list) and choices[0]:
-                unet_models = choices[0]
-    except Exception:
-        pass
-
-    all_models = gguf_models + unet_models
-
-    # Find LTX UNET — prefer versioned (2.3, 22b, 13b), fall back to any "ltx"
-    ltx_unet = None
-    ltx_unet_fallback = None
-    ltx_is_gguf = False
-    for m in all_models:
-        ml = m.lower()
-        if "ltx" not in ml:
-            continue
-        is_gguf = m.endswith(".gguf")
-        if "2.3" in ml or "22b" in ml or "13b" in ml:
-            ltx_unet = m
-            ltx_is_gguf = is_gguf
-            break
-        if ltx_unet_fallback is None:
-            ltx_unet_fallback = m
-            ltx_is_gguf = is_gguf
-
-    if not ltx_unet:
-        ltx_unet = ltx_unet_fallback
-        if ltx_unet:
-            print(f"  [Guild] LTX: no versioned model found, using fallback: {ltx_unet}")
-
-    if not ltx_unet:
-        ltx_candidates = [m for m in all_models if "ltx" in m.lower()]
-        print(f"  [Guild] LTX: no model found. Candidates with 'ltx': {ltx_candidates}")
+        from spellcaster_core import video_presets as _vp
+    except ImportError as e:
+        print(f"  [Guild] video_presets import failed: {e}")
         return None
-
-    # Auto-detect text encoder (Gemma)
-    text_encoder = None
-    try:
-        url = f"{comfy_url}/object_info/LTXAVTextEncoderLoader"
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            choices = (data.get("LTXAVTextEncoderLoader", {})
-                           .get("input", {}).get("required", {})
-                           .get("text_encoder_name", []))
-            if choices and isinstance(choices, list) and choices[0]:
-                for c in choices[0]:
-                    if "gemma" in c.lower():
-                        text_encoder = c
-                        break
-    except Exception:
-        pass
-
-    # Auto-detect embeddings connector
-    embeddings_connector = None
-    try:
-        # Same node, different input
-        url = f"{comfy_url}/object_info/LTXAVTextEncoderLoader"
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            choices = (data.get("LTXAVTextEncoderLoader", {})
-                           .get("input", {}).get("required", {})
-                           .get("embeddings_connector_name", []))
-            if choices and isinstance(choices, list) and choices[0]:
-                for c in choices[0]:
-                    if "ltx" in c.lower() and "connector" in c.lower():
-                        embeddings_connector = c
-                        break
-    except Exception:
-        pass
-
-    # Auto-detect LTX VAE
-    ltx_vae = None
-    try:
-        url = f"{comfy_url}/object_info/VAELoader"
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            choices = (data.get("VAELoader", {})
-                           .get("input", {}).get("required", {})
-                           .get("vae_name", []))
-            if choices and isinstance(choices, list) and choices[0]:
-                for v in choices[0]:
-                    if "ltx" in v.lower() and "video" in v.lower() and "vae" in v.lower():
-                        ltx_vae = v
-                        break
-    except Exception:
-        pass
-
-    if not text_encoder or not ltx_vae:
-        print(f"  [Guild] LTX model found ({ltx_unet}) but missing "
-              f"text_encoder ({text_encoder}) or VAE ({ltx_vae})")
-        return None
-
-    # Auto-detect distilled LoRA
-    distilled_lora = None
-    try:
-        url = f"{comfy_url}/object_info/LoraLoaderModelOnly"
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            choices = (data.get("LoraLoaderModelOnly", {})
-                           .get("input", {}).get("required", {})
-                           .get("lora_name", []))
-            if choices and isinstance(choices, list) and choices[0]:
-                for l in choices[0]:
-                    ll = l.lower()
-                    if "ltx" in ll and "distill" in ll:
-                        distilled_lora = l
-                        break
-    except Exception:
-        pass
-
-    preset = {
-        "unet": ltx_unet,
-        "unet_is_gguf": ltx_is_gguf,
-        "text_encoder": text_encoder,
-        "embeddings_connector": embeddings_connector or "",
-        "vae": ltx_vae,
-        "steps": 30,
-        "cfg": 4.0,
-        "stg": 1.0,
-        "rescale": 0.7,
-    }
-    if distilled_lora:
-        preset["distilled_lora"] = distilled_lora
-
-    print(f"  [Guild] LTX preset built: unet={ltx_unet}")
-    return preset
+    return _vp.detect_ltx_preset(comfy_url)
 
 
 def _get_ltx_preset(comfy_url):
@@ -7103,34 +6709,26 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
             build_wan = getattr(_workflows_v2, 'build_wan_video', None)
             if build_wan:
                 try:
-                    # turbo=True uses Lightning/LightX2V 4-step accel
-                    # LoRAs with CFG=1.0 and a bi-sampler 3+3 split.
-                    # Empirically on WAN 2.2 I2V-A14B HIGH/LOW fp8 with
-                    # wan_2.1_vae + the shipped lightx2v_4steps LoRAs
-                    # at strength 1.5, this produces pure black output
-                    # (mean luminance 0.0/255 verified on the user's
-                    # setup). The 4-step LoRA schedule mis-fits the
-                    # 6-step bi-sampler and the undercooked latent
-                    # decodes to zeros.
-                    #
-                    # Default turbo=False here so the Animate All /
-                    # canon-avatar bake path produces real video.
-                    # Users whose checkpoint + LoRA combo DOES like
-                    # the turbo schedule can opt back in with the env
-                    # var. Full-step is ~4x slower but actually works.
+                    # Canonical turbo-vs-full-step dispatch — see
+                    # CLAUDE.md §16.2 "WAN 2.2 — full formula" and
+                    # `spellcaster_core.video_presets.wan_turbo_kwargs`.
+                    # Default is full-step (turbo=False) because on the
+                    # user's RTX 5060 Ti the shipped LightX2V 4-step
+                    # LoRAs produced pure-black output with the preset's
+                    # turbo-tuned schedule. SPELLCASTER_WAN_TURBO=1 opts
+                    # into turbo for servers whose model/LoRA combo
+                    # tolerates it.
                     import os as _os
                     force_turbo = _os.environ.get(
                         "SPELLCASTER_WAN_TURBO", "").strip().lower() in (
                             "1", "true", "yes")
-                    # Full-step rendering when turbo is off: the
-                    # preset's "steps" field is 6 (tuned for turbo),
-                    # which becomes 6 steps WITH no accel LoRA under
-                    # turbo=False — undercooked, black output. Pass
-                    # 30 steps + cfg=3.5 + second_step=15 explicitly
-                    # so non-turbo actually produces visible video.
-                    kwargs_extra = {} if force_turbo else {
-                        "steps": 30, "cfg": 3.5, "second_step": 15,
-                    }
+                    try:
+                        from spellcaster_core import video_presets as _vp
+                        kwargs_extra = _vp.wan_turbo_kwargs(force_turbo)
+                    except ImportError:
+                        kwargs_extra = ({} if force_turbo
+                                         else {"steps": 30, "cfg": 3.5,
+                                               "second_step": 15})
                     workflow = build_wan(
                         image_filename=image_filename,
                         preset=wan_preset,
