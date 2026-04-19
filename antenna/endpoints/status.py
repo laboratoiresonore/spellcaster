@@ -149,6 +149,16 @@ def status(ctx: dict[str, Any]) -> tuple[int, dict]:
             services_detected = {"_error": {"installed": False,
                                              "evidence": f"detect failed: {e}"}}
 
+    # Include the last auto-detect pass result (populated by
+    # agent.py:_autopopulate_services at boot) so operators can see why a
+    # declared-services list isn't matching what's on disk.
+    autodetect_trace = None
+    try:
+        from .. import agent as _agent  # type: ignore
+        autodetect_trace = dict(getattr(_agent, "_LAST_AUTODETECT", {}) or {})
+    except Exception:
+        autodetect_trace = None
+
     return 200, {
         "service": "spellcaster-antenna",
         "version": __version__,
@@ -158,6 +168,7 @@ def status(ctx: dict[str, Any]) -> tuple[int, dict]:
         "services_declared": services_declared,
         "services_detail": services_detail,
         "services_detected": services_detected,
+        "autodetect_trace": autodetect_trace,
         "rate_limit_rpm": cfg.get("rate_limit_rpm", 30),
         "heartbeat": heartbeat.current_state(),
         # Paths are returned as basenames only — full paths leak the user's
