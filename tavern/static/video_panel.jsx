@@ -142,6 +142,7 @@ function ShotCard({
   onDeleteSnapshot,
   onTogglePinSnapshot,
   promptDupeCount = 0,
+  onToggleArchive,
   focused = false,
 }) {
   const [expanded, setExpanded] = _useState(shot.status === "draft");
@@ -385,6 +386,16 @@ function ShotCard({
                               : "text-slate-600 hover:text-yellow-400")}
           title={shot.bookmarked ? "Remove bookmark" : "Bookmark this shot"}
         >{shot.bookmarked ? "★" : "☆"}</button>
+        {/* R71a: archive toggle — appears only for archived view or on hover */}
+        {onToggleArchive && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleArchive(shot); }}
+            className={"shot-archive-toggle text-[11px] leading-none transition-colors px-1 " +
+              (shot.archived ? "text-emerald-400 hover:text-emerald-300"
+                              : "text-slate-600 hover:text-amber-400")}
+            title={shot.archived ? "Restore from archive" : "Archive (soft-delete)"}
+          >{shot.archived ? "↩" : "🗑"}</button>
+        )}
         {/* R65b: duplicate-prompt badge — N shots share this exact prompt */}
         {promptDupeCount > 1 && (
           <span className="shot-dupe-badge px-1 rounded bg-purple-900/40 text-purple-200 text-[10px] font-semibold"
@@ -1824,10 +1835,16 @@ function VideoPanel() {
   }, []);
 
   const filteredShots = _useMemo(() => {
-    let result = statusFilter === "all" ? shots
-      : statusFilter === "stale" ? shots.filter(isShotStale)
-      : statusFilter === "starred" ? shots.filter(s => s.bookmarked)
-      : shots.filter(s => s.status === statusFilter);
+    // R71a: archived shots never appear in the main list unless the
+    // user explicitly picks the "archived" filter.
+    const base = statusFilter === "archived"
+      ? shots.filter(s => s.archived)
+      : shots.filter(s => !s.archived);
+    let result = statusFilter === "all" ? base
+      : statusFilter === "archived" ? base
+      : statusFilter === "stale" ? base.filter(isShotStale)
+      : statusFilter === "starred" ? base.filter(s => s.bookmarked)
+      : base.filter(s => s.status === statusFilter);
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter(s =>
@@ -2831,6 +2848,46 @@ function VideoPanel() {
     }
   };
 
+  // R71a: archive/unarchive one shot
+  const toggleArchiveShot = async (shot) => {
+    const endpoint = shot.archived
+      ? `/api/video/shots/${shot.id}/unarchive`
+      : `/api/video/shots/${shot.id}/archive`;
+    try {
+      const res = await api.post(endpoint, {});
+      if (res && (res.archived !== undefined || res.shot_id)) {
+        addToast(shot.archived ? "Restored from archive" : "Archived",
+                 "success");
+        await refresh();
+      } else {
+        addToast(`Archive failed: ${res?.error || "unknown"}`, "error");
+      }
+    } catch (e) {
+      addToast("Archive failed: " + (e.message || "unknown"), "error");
+    }
+  };
+
+  // R71b: project metadata — edit in a small modal
+  const [showProjectMeta, setShowProjectMeta] = _useState(false);
+  const [projectMeta, setProjectMeta] = _useState({});
+  const loadProjectMeta = _useCallback(async () => {
+    try {
+      const pm = await api.get("/api/video/project-meta");
+      setProjectMeta(pm || {});
+    } catch (_) {}
+  }, []);
+  _useEffect(() => { loadProjectMeta(); }, [loadProjectMeta]);
+  const saveProjectMeta = async () => {
+    try {
+      const pm = await api.post("/api/video/project-meta", projectMeta);
+      setProjectMeta(pm || {});
+      addToast("Project metadata saved", "success");
+      setShowProjectMeta(false);
+    } catch (e) {
+      addToast("Save failed: " + (e.message || "unknown"), "error");
+    }
+  };
+
   // R70a: jump to a shot by id (scroll its card into view + focus it)
   const jumpToShot = _useCallback((shotId) => {
     const idx = filteredShots.findIndex(s => s.id === shotId);
@@ -3489,6 +3546,12 @@ function VideoPanel() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
             Outline
           </button>
+          <button onClick={() => { loadProjectMeta(); setShowProjectMeta(true); }}
+            className="project-meta-btn flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+            title="Project metadata (title, author, synopsis…) — appears in EDL/FCPXML exports">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2l10 6v8l-10 6-10-6V8z"/><path d="M12 12l10-6M12 12l-10-6M12 12v10"/></svg>
+            {projectMeta.title ? projectMeta.title.slice(0, 18) : "Project"}
+          </button>
           <a href="/api/video/render-history.csv" download
             className="export-csv flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
             title="Download flat CSV of every render attempt across all shots (for analysis / sharing)">
@@ -3630,17 +3693,20 @@ function VideoPanel() {
         </div>
         <ShotSummary shots={shots} />
         <div className="flex gap-1.5 flex-wrap">
-          {["all", "draft", "queued", "running", "ready", "failed", "stale", "starred"].map(status => {
-            const count = status === "stale" ? shots.filter(isShotStale).length
-                        : status === "starred" ? shots.filter(s => s.bookmarked).length
+          {["all", "draft", "queued", "running", "ready", "failed", "stale", "starred", "archived"].map(status => {
+            const count = status === "stale" ? shots.filter(s => !s.archived && isShotStale(s)).length
+                        : status === "starred" ? shots.filter(s => !s.archived && s.bookmarked).length
+                        : status === "archived" ? shots.filter(s => s.archived).length
                         : null;
             const extraClass =
-              status === "stale"   ? "bg-amber-900/30 hover:bg-amber-800/40 text-amber-300"
+              status === "stale"    ? "bg-amber-900/30 hover:bg-amber-800/40 text-amber-300"
               : status === "starred" ? "bg-yellow-900/30 hover:bg-yellow-800/40 text-yellow-300"
+              : status === "archived" ? "bg-slate-800/40 hover:bg-slate-700/60 text-slate-500"
               : "bg-slate-800 hover:bg-slate-700 text-slate-300";
             const tipByStatus = {
-              stale:   "Shots whose prompt/preset/overrides changed since last render",
-              starred: "Bookmarked shots (click the star on any card)",
+              stale:    "Shots whose prompt/preset/overrides changed since last render",
+              starred:  "Bookmarked shots (click the star on any card)",
+              archived: "Soft-deleted shots — click any card's ×/restore to manage",
             };
             return (
               <button
@@ -3653,6 +3719,7 @@ function VideoPanel() {
               >
                 {status === "stale" ? "⚠ stale"
                   : status === "starred" ? "⭐ starred"
+                  : status === "archived" ? "🗑 archived"
                   : status}
                 {count !== null && count > 0 && (
                   <span className="ml-1 text-[10px] opacity-70">({count})</span>
@@ -4234,6 +4301,7 @@ function VideoPanel() {
               onDeleteSnapshot={deleteSnapshot}
               onTogglePinSnapshot={togglePinSnapshot}
               promptDupeCount={promptClusters.get(shot.id) || 0}
+              onToggleArchive={toggleArchiveShot}
               focused={focusedShotIndex === idx}
             />
           ))}
@@ -4303,6 +4371,55 @@ function VideoPanel() {
           </div>
         );
       })()}
+
+      {/* R71b: project metadata editor — title/author/synopsis at board level */}
+      {showProjectMeta && (
+        <div className="project-meta-modal fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+             onClick={() => setShowProjectMeta(false)}>
+          <div className="bg-slate-900 border border-indigo-600/40 rounded-xl p-5 max-w-lg w-full space-y-3"
+               onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-indigo-200">Project metadata</h2>
+              <button onClick={() => setShowProjectMeta(false)}
+                className="text-slate-400 hover:text-slate-200 text-xl leading-none">×</button>
+            </div>
+            <p className="text-[10px] text-slate-500">
+              Title populates EDL/FCPXML export headers when set. All fields
+              are optional; leave blank to clear.
+            </p>
+            {[
+              {key: "title", label: "Title", placeholder: "e.g. Project Red Duke"},
+              {key: "author", label: "Author", placeholder: "Your name"},
+              {key: "production", label: "Production", placeholder: "Studio / client"},
+              {key: "copyright", label: "Copyright", placeholder: "© 2026 Your Name"},
+            ].map(f => (
+              <div key={f.key}>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">{f.label}</label>
+                <input type="text"
+                  value={projectMeta[f.key] || ""}
+                  onChange={(e) => setProjectMeta(p => ({...p, [f.key]: e.target.value}))}
+                  placeholder={f.placeholder}
+                  className="w-full bg-slate-950 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 placeholder-slate-500 focus:border-indigo-500 focus:outline-none" />
+              </div>
+            ))}
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Synopsis</label>
+              <textarea
+                value={projectMeta.synopsis || ""}
+                onChange={(e) => setProjectMeta(p => ({...p, synopsis: e.target.value}))}
+                placeholder="Short description of the project…"
+                rows={3}
+                className="w-full bg-slate-950 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 placeholder-slate-500 focus:border-indigo-500 focus:outline-none resize-y" />
+            </div>
+            <div className="flex gap-2 pt-2 border-t border-slate-700/40">
+              <button onClick={() => setShowProjectMeta(false)}
+                className="flex-1 px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium">Cancel</button>
+              <button onClick={saveProjectMeta}
+                className="flex-1 px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium">Save</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* R66a: keyboard shortcuts cheatsheet — toggle with '?' */}
       {showShortcuts && (
