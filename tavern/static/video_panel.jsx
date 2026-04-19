@@ -2087,6 +2087,37 @@ function VideoPanel() {
     }
   };
 
+  // R50a: Guild self-update (hits the same updater the launcher uses,
+  // then re-execs the server process)
+  const selfUpdateGuild = async () => {
+    setAntennaBusy(true);
+    addToast("Checking Guild for updates...", "info");
+    try {
+      const res = await api.post("/api/guild/self-update", {});
+      if (res && res.started) {
+        addToast("Guild update started — page may briefly disconnect", "info");
+        // After ~5s, re-check version to detect a successful restart
+        setTimeout(async () => {
+          try {
+            await api.get("/api/guild/version");
+            addToast("Guild restart complete — reload to see new code", "success");
+          } catch (e) {
+            // Expected 502 while exec is in flight
+            addToast("Guild restart in progress — wait a few seconds and reload", "info");
+          } finally {
+            setAntennaBusy(false);
+          }
+        }, 5000);
+      } else {
+        addToast("Guild update not started", "error");
+        setAntennaBusy(false);
+      }
+    } catch (e) {
+      addToast(`Guild update failed: ${e.message || "unknown"}`, "error");
+      setAntennaBusy(false);
+    }
+  };
+
   const selfUpdateAntenna = async () => {
     setAntennaBusy(true);
     addToast("Triggering antenna self-update...", "info");
@@ -2110,6 +2141,72 @@ function VideoPanel() {
   };
 
   // R47b: pin/unpin a snapshot so it survives the 20-slot cap
+  // R50b: trigger a Resolve render of the currently-loaded timeline.
+  // Prompts the user for a target directory + preset; Guild proxies to
+  // the antenna which drives the Resolve scripting API.
+  const [resolveRenderBusy, setResolveRenderBusy] = _useState(false);
+  const [resolveRenderJob, setResolveRenderJob] = _useState(null);
+  const [resolveRenderStatus, setResolveRenderStatus] = _useState(null);
+
+  const renderInResolve = async () => {
+    const targetDir = window.prompt(
+      "Resolve render target directory (absolute path on the Resolve machine):",
+      "C:\\Spellcaster\\renders");
+    if (!targetDir) return;
+    const preset = window.prompt(
+      "Resolve render preset (must already exist in Resolve):",
+      "H.264 Master") || "H.264 Master";
+    setResolveRenderBusy(true);
+    addToast("Starting Resolve render...", "info");
+    try {
+      const res = await api.post("/api/antenna/resolve/render-timeline", {
+        preset, target_dir: targetDir,
+        file_name: "spellcaster_cut_" + Date.now(),
+      });
+      const ar = res && res.antenna_response;
+      if (ar && ar.ok && ar.job_id) {
+        setResolveRenderJob(ar.job_id);
+        addToast(`Resolve render started (job ${ar.job_id.slice(0,8)}...)`, "success");
+        // Start polling
+        const tick = async () => {
+          try {
+            const s = await api.get(
+              "/api/antenna/resolve/render-status?job_id=" + encodeURIComponent(ar.job_id));
+            const sr = s && s.antenna_response;
+            if (sr) {
+              setResolveRenderStatus(sr);
+              if (sr.status === "Complete") {
+                addToast("Resolve render complete!", "success");
+                setResolveRenderBusy(false);
+                return;
+              }
+              if (sr.status === "Cancelled" || sr.status === "Failed") {
+                addToast(`Resolve render ${sr.status}`, "error");
+                setResolveRenderBusy(false);
+                return;
+              }
+            }
+            setTimeout(tick, 2000);
+          } catch (_) {
+            setTimeout(tick, 4000);  // transient blip; keep trying
+          }
+        };
+        setTimeout(tick, 2000);
+      } else {
+        const err = (ar && ar.error) || (res && res.error) || "unknown";
+        addToast(`Resolve render failed: ${err}`, "error");
+        if (ar && Array.isArray(ar.available_presets)) {
+          console.warn("Available Resolve presets:", ar.available_presets);
+          addToast("See console for available presets", "info");
+        }
+        setResolveRenderBusy(false);
+      }
+    } catch (e) {
+      addToast(`Resolve render failed: ${e.message || "unknown"}`, "error");
+      setResolveRenderBusy(false);
+    }
+  };
+
   const togglePinSnapshot = async (id, snapId, isPinned) => {
     try {
       const res = await api.post(`/api/video/shots/${id}/snapshot/${snapId}/pin`,
@@ -2721,6 +2818,15 @@ function VideoPanel() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
             → Resolve
           </button>
+          <button onClick={renderInResolve}
+            disabled={resolveRenderBusy}
+            className="render-in-resolve flex items-center gap-1.5 bg-rose-900/40 hover:bg-rose-700/50 text-rose-200 hover:text-rose-100 px-3 py-2 rounded-lg text-xs font-medium transition-colors disabled:bg-slate-700 disabled:text-slate-500"
+            title="Render the current Resolve timeline via antenna — uses a preset already saved in Resolve">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+            {resolveRenderBusy && resolveRenderStatus && resolveRenderStatus.completion_percent != null
+              ? `Rendering ${resolveRenderStatus.completion_percent}%`
+              : (resolveRenderBusy ? "Rendering…" : "Render")}
+          </button>
           <button onClick={openAntennaAdmin}
             className="antenna-admin-btn flex items-center gap-1.5 bg-slate-800 hover:bg-indigo-700/50 text-slate-300 hover:text-indigo-100 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
             title="Antenna pairing + self-update">
@@ -3150,6 +3256,12 @@ function VideoPanel() {
             </div>
             <div className="antenna-admin-update space-y-2 border-t border-slate-700/40 pt-3">
               <div className="text-xs font-semibold text-slate-300">Actions</div>
+              <button
+                onClick={selfUpdateGuild}
+                disabled={antennaBusy}
+                className="guild-update-btn w-full px-3 py-1.5 rounded bg-amber-700/40 hover:bg-amber-600/50 text-amber-100 text-xs font-medium disabled:bg-slate-700 disabled:text-slate-500"
+                title="Triggers the Guild's GitHub auto-updater, then restarts the server process in place"
+              >{antennaBusy ? "Working…" : "Self-update Guild (this server)"}</button>
               <button
                 onClick={selfUpdateAntenna}
                 disabled={antennaBusy || !antennaStatus?.has_token}
