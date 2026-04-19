@@ -52,7 +52,7 @@ def _read(path: str) -> str:
         return ""
 
 
-# ── Canonical-builder detection helpers ──────────────────────────────
+# ── Classification helpers ──────────────────────────────────────────
 
 # spellcaster_core/workflows.py ships a catalog of build_* functions
 # every plugin SHOULD reach through; a method whose handler body
@@ -77,21 +77,145 @@ _CANONICAL_BUILDER_NAMES = (
     "build_generate_anything",
 )
 
+# Substring patterns for the CATEGORY axis (what the method DOES) —
+# separate from the SSoT-status axis (how it dispatches). Each entry
+# maps a set of id / name substrings to a canonical category tag.
+# First match wins; more-specific buckets come first.
+_CATEGORY_RULES: list[tuple[str, tuple[str, ...]]] = [
+    ("send_to_gimp",       ("send-to-gimp", "to_gimp", "send_frame_to_gimp",
+                             "sc-send-to-gimp")),
+    ("send_to_resolve",    ("send-to-resolve", "to_resolve",
+                             "send_frame_to_resolve", "send_clip_to_guild",
+                             "sc-send-to-resolve")),
+    ("send_to_darktable",  ("send-to-darktable", "send_frame_to_darktable",
+                             "sc-send-to-darktable")),
+    ("send_to_sillytavern",("send-to-sillytavern", "send_frame_to_sillytavern",
+                             "sc-send-to-sillytavern")),
+    ("video_generation",   ("wan", "ltx", "i2v", "t2v", "v2v", "video",
+                             "animate", "vace")),
+    ("image_generation",   ("txt2img", "img2img", "generate", "klein",
+                             "faceid", "pulid", "generate_from")),
+    ("inpaint_outpaint",   ("inpaint", "outpaint", "erasure", "erase")),
+    ("faceswap",           ("faceswap", "face_swap", "face-swap", "reactor",
+                             "mtb")),
+    ("restore_enhance",    ("detail", "enhance", "restore", "upscale",
+                             "supir", "photo_restore", "face_restore")),
+    ("color_relight",      ("iclight", "colorize", "ddcolor", "lut",
+                             "color-match", "color_match", "relight")),
+    ("rembg_mask",         ("rembg", "birefnet", "remove_bg", "mask",
+                             "sam3", "lama")),
+    ("trajectory",         ("trajectory",)),
+    ("pipeline",           ("pipeline", "pipe", "multi-step", "photobooth",
+                             "body_factory", "clothing_store", "studio_set")),
+    ("queue_render",       ("render_all", "render-all", "render_queue",
+                             "cancel", "retry", "pause", "resume",
+                             "refresh_ready", "timeline", "edl",
+                             "preset_shootout")),
+    ("chat_flow",          ("studio_", "model_", "comfyui_", "custom_",
+                             "generated")),
+    ("capture",            ("capture", "playhead", "markers_to",
+                             "import", "grab")),
+    ("prompt_enhance",     ("enhance", "prompt_", "variation", "reprompt")),
+    ("settings",           ("config", "settings", "theme", "check_inbox",
+                             "capabilities", "help", "status", "open_bridge",
+                             "open_guild")),
+    ("upload_send",        ("send-image", "upload", "attach", "load_", "save_",
+                             "delete_")),
+]
 
-def _classify_method(handler_body: str) -> tuple[str, str]:
-    """Return (ssot_status, notes) for one method's handler body."""
+
+def _category_for(*probes: str) -> str:
+    """Return a category tag based on method id / name / handler / file."""
+    haystack = " ".join(str(p or "") for p in probes).lower()
+    for tag, needles in _CATEGORY_RULES:
+        if any(n in haystack for n in needles):
+            return tag
+    return "other"
+
+
+# Labels for the UI, matching _CATEGORY_RULES' tags.
+_CATEGORY_LABELS = {
+    "send_to_gimp":       "Send → GIMP",
+    "send_to_resolve":    "Send → Resolve",
+    "send_to_darktable":  "Send → Darktable",
+    "send_to_sillytavern":"Send → SillyTavern",
+    "video_generation":   "Video generation",
+    "image_generation":   "Image generation",
+    "inpaint_outpaint":   "Inpaint / outpaint",
+    "faceswap":           "Face swap / identity",
+    "restore_enhance":    "Restore / enhance",
+    "color_relight":      "Color / relight",
+    "rembg_mask":         "Background removal / mask",
+    "trajectory":         "Trajectory / motion",
+    "pipeline":           "Multi-step pipeline",
+    "queue_render":       "Queue / render control",
+    "chat_flow":          "Chat scaffold",
+    "capture":            "Capture / import",
+    "prompt_enhance":     "Prompt enhance / variations",
+    "settings":           "Settings / diagnostics",
+    "upload_send":        "Upload / file ops",
+    "other":              "Other",
+}
+
+
+def _pretty_from_var(var_name: str) -> str:
+    """Turn a Lua-style button variable like `load_btn` or
+    `send_face_model_btn` into a human label ('Load', 'Send Face
+    Model'). Used when we can't find an explicit `.label` / `.tooltip`
+    assignment in the source."""
+    name = str(var_name or "").strip()
+    for suf in ("_btn", "_button", "-btn"):
+        if name.endswith(suf):
+            name = name[: -len(suf)]
+            break
+    # Split on underscores/dashes, title-case each chunk.
+    parts = [p for p in name.replace("-", "_").split("_") if p]
+    if not parts:
+        return var_name
+    return " ".join(p[:1].upper() + p[1:] for p in parts)
+
+
+def _classify_method(handler_body: str, *, is_thin_client: bool = False) -> tuple[str, str]:
+    """Return (ssot_status, notes) for one method's handler body.
+
+    Statuses:
+      canonical   — handler body calls a spellcaster_core.workflows
+                    build_* helper (single source of truth respected).
+      duplicate   — handler body literally constructs a workflow JSON
+                    (contains "class_type": dicts). SSoT violation.
+      thin_client — handler body POSTs/GETs a Guild HTTP endpoint
+                    (Resolve scripts, SillyTavern commands). Correct
+                    design for out-of-process clients — no workflow
+                    code to duplicate.
+      utility     — handler body does local work with no workflow
+                    construction (file ops, settings dialogs).
+      unknown     — nothing classifiable.
+    """
     if not handler_body:
         return ("unknown", "")
     for name in _CANONICAL_BUILDER_NAMES:
         if name in handler_body:
             return ("canonical", f"routes through {name}()")
-    # Heuristic: a handler that constructs a raw `"class_type":` dict
-    # is likely building its own workflow instead of delegating.
     if '"class_type"' in handler_body or "'class_type'" in handler_body:
         return ("duplicate", "constructs its own workflow JSON (SSoT "
                                "violation — should route through a "
                                "spellcaster_core.workflows build_* "
                                "helper)")
+    if is_thin_client:
+        return ("thin_client", "thin client — calls Guild API over HTTP")
+    # Heuristics for common Guild-API thin-client idioms.
+    if any(k in handler_body for k in (
+            "/api/video/shots", "/api/events/emit", "/api/assets",
+            "/api/app_control", "/api/stt", "/api/tts",
+            "guild._post_json", "guild.create_shot", "guild.queue_shot",
+            "guild.render_", "CrossInterfaceClient")):
+        return ("thin_client", "thin client — calls Guild API over HTTP")
+    # Heuristics for utility / dialog / settings handlers.
+    if any(k in handler_body for k in (
+            "show_message(", "prompt_text(", "dt.new_widget",
+            "Gtk.FileChooser", "set_active(", "get_text(",
+            "config.get(", "get_config(", "open_url(", "webbrowser")):
+        return ("utility", "local UI / config handler (no workflow)")
     return ("unknown", "")
 
 
@@ -168,6 +292,7 @@ def _gimp_scaffolds(repo_root: str) -> list[dict]:
             lines = src[h_match.start():].splitlines()[:200]
             body = "\n".join(lines)
         ssot, notes = _classify_method(body)
+        cat = _category_for(proc_id, label, handler)
         out.append({
             "id": proc_id,
             "name": label,
@@ -176,56 +301,149 @@ def _gimp_scaffolds(repo_root: str) -> list[dict]:
             "feature_gate": pf_map.get(proc_id, "None"),
             "ssot_status": ssot,
             "ssot_notes": notes,
+            "category": cat,
+            "category_label": _CATEGORY_LABELS.get(cat, cat),
         })
     return out
 
 
 def _darktable_scaffolds(repo_root: str) -> list[dict]:
-    """Extract Darktable button registrations."""
+    """Extract Darktable button registrations.
+
+    Labels and tooltips are set across three Darktable conventions:
+      1. Inline in the widget block: ``dt.new_widget("button") {
+         label = "Go", tooltip = "..." }``
+      2. Assigned after the block: ``my_btn.label = "Go"`` /
+         ``my_btn.tooltip = "..."``
+      3. Pre-compiled strings assigned via intermediate variables.
+    We try all three and fall back to a titlecased variable name so
+    the UI never shows the raw ``load_btn`` identifier.
+
+    SSoT detection also follows the clicked_callback into the NAMED
+    function it dispatches to (e.g. ``clicked_callback = function()
+    process_wan_i2v(images) end``) — looking at just the callback
+    body misses the heavy lifting that lives in ``process_wan_i2v``.
+    """
     path = os.path.join(repo_root, "plugins", "darktable",
                          "comfyui_connector.lua")
     src = _read(path)
     if not src:
         return []
     out: list[dict] = []
-    # Match `local <name>_btn = dt.new_widget("button") { ... }` blocks.
     pat = re.compile(
-        r'local\s+(?P<name>[a-z_]+)\s*=\s*dt\.new_widget\("button"\)\s*'
+        r'local\s+(?P<name>[a-z_][a-z0-9_]*)\s*=\s*dt\.new_widget\("button"\)\s*'
         r'\{(?P<body>[^}]*?)\}',
         re.DOTALL)
+    seen: set[str] = set()
     for m in pat.finditer(src):
         name = m.group("name")
+        if name in seen:
+            continue
+        seen.add(name)
         body = m.group("body")
-        label_m = re.search(r'label\s*=\s*["\']([^"\']+)["\']', body)
-        tooltip_m = re.search(r'tooltip\s*=\s*["\']([^"\']+)["\']', body)
-        # Darktable label often set right AFTER the widget block via
-        # `btn.label = "..."` — fall back to the surrounding text.
-        if not label_m:
-            lbl_assign = re.search(
-                rf'{re.escape(name)}\.label\s*=\s*["\']([^"\']+)["\']', src)
-            if lbl_assign:
-                label_m = lbl_assign
-        # For SSoT we look at the `clicked_callback` body — the button
-        # body contains it inline.
+
+        # 1. Inline attributes
+        label = None
+        tooltip = None
+        for key in ("label", "title"):
+            lm = re.search(rf'{key}\s*=\s*["\']([^"\']+)["\']', body)
+            if lm:
+                label = lm.group(1)
+                break
+        tm = re.search(r'tooltip\s*=\s*["\']([^"\']+)["\']', body)
+        if tm:
+            tooltip = tm.group(1)
+
+        # 2. Follow-on `.label = "..."` / `.tooltip = "..."` assignments
+        # after the widget declaration. Use a *close-by* window so
+        # unrelated later assignments don't bleed in.
+        tail_start = m.end()
+        tail = src[tail_start: tail_start + 600]
+        if label is None:
+            lm = re.search(rf'{re.escape(name)}\.(?:label|title)\s*=\s*'
+                            r'["\']([^"\']+)["\']', tail)
+            if lm:
+                label = lm.group(1)
+        if tooltip is None:
+            tm = re.search(rf'{re.escape(name)}\.tooltip\s*=\s*["\']([^"\']+)["\']', tail)
+            if tm:
+                tooltip = tm.group(1)
+
+        # 3. Pretty-print variable name as last-resort label.
+        if not label:
+            label = _pretty_from_var(name)
+
+        # Extract the clicked_callback body so we can chase named
+        # helper functions from it (Darktable's Lua code dispatches
+        # to process_wan_i2v / process_image / send_clip / etc).
         cb_m = re.search(r'clicked_callback\s*=\s*function\s*\([^)]*\)\s*'
                           r'(.*?)end\s*,?', body, re.DOTALL)
         cb_body = cb_m.group(1) if cb_m else ""
-        # Lua plugin constructs workflow JSON inline (R132's known
-        # SSoT violation); flag when we see '"class_type"' in the
-        # callback or in a function it immediately calls.
-        ssot, notes = _classify_method(cb_body)
-        if ssot == "unknown" and "build_wan_i2v_json" in cb_body:
+        # Chase named helper calls referenced inside the callback.
+        # Lua's non-greedy `.*?end` matches the FIRST `end` (usually
+        # an inner if/for block's end, not the function's), so the
+        # only reliable bound is a fixed-size window after the
+        # function's opening signature.
+        helper_refs = set(re.findall(r'\b([a-z][a-z0-9_]*)\s*\(', cb_body))
+        chased_body = cb_body
+        for fn in list(helper_refs)[:8]:  # cap to keep regex cost bounded
+            fm = re.search(
+                rf'(?:^|\n)\s*(?:local\s+)?function\s+{re.escape(fn)}\s*\(',
+                src, re.MULTILINE)
+            if fm:
+                # Grab a generous 8000-char slice — Darktable's
+                # longest workflow builders top out around 5k chars.
+                chased_body += "\n" + src[fm.end(): fm.end() + 8000]
+        # Darktable-specific: its Lua handlers build workflows via
+        # string.format + process_* helpers. Flag them BEFORE the
+        # generic classifier so a `dt.gui.selection` call in the
+        # callback body doesn't demote a real workflow builder to
+        # "utility". Lua can't import spellcaster_core.workflows, so
+        # these are SSoT violations by design — the honest fix is to
+        # refactor the plugin to POST at the Guild API (thin client).
+        DUPLICATE_HINTS = (
+            "build_wan_i2v_json", "build_img2img_json",
+            "build_faceswap_model_json", "build_faceswap_direct_json",
+            "build_save_face_model_json", "build_rembg_json",
+            "build_upscale_json", "build_lama_json", "build_lut_json",
+            "build_outpaint_json", "build_style_transfer_json",
+            "build_face_restore_json", "build_photo_restore_json",
+            "build_detail_hallucinate_json", "build_colorize_json",
+            '"KSamplerAdvanced"', '"CheckpointLoaderSimple"',
+            '"VAELoader"', '"WanImageToVideo"',
+            '"UNETLoader"', '"UnetLoaderGGUF"',
+        )
+        if any(h in chased_body for h in DUPLICATE_HINTS):
             ssot = "duplicate"
-            notes = ("Lua-side workflow builder — parallel to "
-                      "spellcaster_core.workflows.build_wan_video. "
-                      "Scheduled refactor: route through Guild API.")
+            notes = ("Lua-side workflow builder (process_* / "
+                     "build_*_json) — parallels the canonical "
+                     "spellcaster_core.workflows helpers. Lua can't "
+                     "import Python; the honest SSoT fix is to "
+                     "route through the Guild API (like Resolve + "
+                     "SillyTavern plugins do).")
+        else:
+            ssot, notes = _classify_method(chased_body)
+            # Utility-ish Lua handlers — fetchers, savers, settings
+            # dialogs, toggles. Catches the buttons that obviously
+            # aren't workflow generators.
+            if ssot == "unknown" and any(k in chased_body for k in (
+                    "dt.preferences", "fetch_all_loras", "dt.print",
+                    "dt.gui.selection", "load_face_model",
+                    "save_face_model", "delete_face_model",
+                    "set_text", "set_selected_index", "dt.new_widget")):
+                ssot = "utility"
+                notes = "local Darktable UI / preferences handler"
+
+        cat = _category_for(name, label or "", tooltip or "", chased_body[:800])
         out.append({
             "id": f"darktable-{name}",
-            "name": (label_m.group(1) if label_m else name),
-            "description": (tooltip_m.group(1) if tooltip_m else ""),
+            "name": label,
+            "description": tooltip or "",
             "handler": name,
             "ssot_status": ssot,
             "ssot_notes": notes,
+            "category": cat,
+            "category_label": _CATEGORY_LABELS.get(cat, cat),
         })
     return out
 
@@ -249,7 +467,12 @@ def _resolve_scaffolds(repo_root: str) -> list[dict]:
         if doc_m:
             lines = doc_m.group(1).strip().splitlines()
             doc = lines[0].strip() if lines else ""
-        ssot, notes = _classify_method(src)
+        # Resolve scripts are thin clients by design — they POST to
+        # the Guild's /api/video/* endpoints. Mark them as such
+        # (default thin_client=True inside the classifier) so they
+        # don't land under the generic "unknown" bucket.
+        ssot, notes = _classify_method(src, is_thin_client=True)
+        cat = _category_for(fn, src[:1500])
         out.append({
             "id": f"resolve-{fn[:-3]}",
             "name": fn[:-3].replace("_", " ").title(),
@@ -257,6 +480,8 @@ def _resolve_scaffolds(repo_root: str) -> list[dict]:
             "handler": fn,
             "ssot_status": ssot,
             "ssot_notes": notes,
+            "category": cat,
+            "category_label": _CATEGORY_LABELS.get(cat, cat),
         })
     return out
 
@@ -280,14 +505,21 @@ def _sillytavern_scaffolds(repo_root: str) -> list[dict]:
         help_m = re.search(r'helpString\s*:\s*["\']([^"\']+)["\']', body)
         if not name_m:
             continue
-        ssot, notes = _classify_method(body)
+        # SillyTavern plugin: all slash commands hit either the local
+        # ST server-plugin endpoints (which themselves forward to the
+        # Guild) or /api/events/emit directly. Thin-client by design.
+        ssot, notes = _classify_method(body, is_thin_client=True)
+        cmd_name = name_m.group(1)
+        cat = _category_for(cmd_name, body[:500])
         out.append({
-            "id": f"sillytavern-{name_m.group(1)}",
-            "name": f"/{name_m.group(1)}",
+            "id": f"sillytavern-{cmd_name}",
+            "name": f"/{cmd_name}",
             "description": (help_m.group(1) if help_m else ""),
-            "handler": name_m.group(1),
+            "handler": cmd_name,
             "ssot_status": ssot,
             "ssot_notes": notes,
+            "category": cat,
+            "category_label": _CATEGORY_LABELS.get(cat, cat),
         })
     return out
 
@@ -344,22 +576,34 @@ def build_manifest(repo_root: str,
             # a wizard.
             if plugin_id != "wizard_guild":
                 _CACHE[plugin_id] = (now, scaffolds)
+        # Sort by category label then name so each group reads in a
+        # logical order when expanded: every "Send → X" row together,
+        # every "Image generation" row together, etc.
+        scaffolds = sorted(scaffolds,
+                            key=lambda s: (s.get("category_label", "zzz"),
+                                             s.get("name", "").lower()))
         summary = {
-            "total": len(scaffolds),
-            "canonical": sum(1 for s in scaffolds
-                             if s.get("ssot_status") == "canonical"),
-            "duplicate": sum(1 for s in scaffolds
-                             if s.get("ssot_status") == "duplicate"),
-            "unknown":   sum(1 for s in scaffolds
-                             if s.get("ssot_status") == "unknown"),
+            "total":       len(scaffolds),
+            "canonical":   sum(1 for s in scaffolds if s.get("ssot_status") == "canonical"),
+            "duplicate":   sum(1 for s in scaffolds if s.get("ssot_status") == "duplicate"),
+            "thin_client": sum(1 for s in scaffolds if s.get("ssot_status") == "thin_client"),
+            "utility":     sum(1 for s in scaffolds if s.get("ssot_status") == "utility"),
+            "unknown":     sum(1 for s in scaffolds if s.get("ssot_status") == "unknown"),
         }
+        # Count by category too so the UI can render a per-group
+        # breakdown ("27 Image generation · 14 Face swap · …").
+        cat_counts: dict[str, int] = {}
+        for s in scaffolds:
+            k = s.get("category_label", "Other")
+            cat_counts[k] = cat_counts.get(k, 0) + 1
         groups.append({
-            "id":          plugin_id,
-            "label":       label,
-            "icon":        icon,
-            "description": blurb,
-            "scaffolds":   scaffolds,
-            "summary":     summary,
+            "id":            plugin_id,
+            "label":         label,
+            "icon":          icon,
+            "description":   blurb,
+            "scaffolds":     scaffolds,
+            "summary":       summary,
+            "category_counts": cat_counts,
         })
     return groups
 

@@ -45,12 +45,19 @@ from typing import Any, Optional
 def probe_object_info_choices(comfy_url: str, node_class: str,
                               input_name: str,
                               *, timeout: float = 10.0) -> list[str]:
-    """Return the first choice-list for node_class.inputs[input_name].
+    """Return the enum/choice-list for node_class.inputs[input_name].
 
-    ComfyUI's /object_info returns input schemas as nested dicts where the
-    primary enum for e.g. "unet_name" lives at
-      object_info[node_class]["input"]["required"][input_name][0]
-    — a list of filenames. We return that list, or [] on any error.
+    ComfyUI's /object_info has used TWO schema shapes over the years:
+
+      Legacy: ["input"]["required"][input_name] = [["a.safetensors", ...], {config}]
+              — the enum lives at choices[0], a plain list of strings.
+
+      Modern (2024+): ["input"]["required"][input_name] =
+              ["COMBO", {"options": ["a.safetensors", ...], ...}]
+              — the enum lives at choices[1]["options"].
+
+    Different nodes return different shapes on the SAME server (ComfyUI's
+    node-schema migration is incremental), so we check both.
     """
     try:
         url = f"{comfy_url}/object_info/{node_class}"
@@ -61,9 +68,16 @@ def probe_object_info_choices(comfy_url: str, node_class: str,
     choices = (data.get(node_class, {})
                    .get("input", {}).get("required", {})
                    .get(input_name, []))
-    if (choices and isinstance(choices, list) and choices
-            and isinstance(choices[0], list)):
+    if not choices or not isinstance(choices, list):
+        return []
+    # Legacy shape — first element is the enum list itself.
+    if isinstance(choices[0], list):
         return list(choices[0])
+    # Modern COMBO shape — second element is a dict with "options".
+    if len(choices) >= 2 and isinstance(choices[1], dict):
+        opts = choices[1].get("options", [])
+        if isinstance(opts, list):
+            return list(opts)
     return []
 
 
@@ -392,36 +406,38 @@ def detect_ltx_preset(comfy_url: str) -> Optional[dict]:
         return None
 
     # ── Text encoder (Gemma) + embeddings connector ──────────────────
-    # LTX 2.3 ships two variants that differ in how they expose Gemma:
-    #   (a) Kijai's LTX-Advanced-Video pack uses LTXAVTextEncoderLoader
-    #       which takes `text_encoder_name` + `embeddings_connector_name`
-    #       inputs.
-    #   (b) Other LTX packs load Gemma as a normal CLIP via CLIPLoader /
-    #       CLIPLoaderGGUF, alongside the embeddings connector exposed
-    #       through the same clip list.
-    # We probe (a) first because the builder in `workflows.py` uses the
-    # LTXAV node; if absent, we fall back to hunting Gemma + connector
-    # in the standard CLIP loaders so auto-detection still succeeds
-    # (the workflow builder substitutes transparently).
+    # LTXAVTextEncoderLoader's real input names are `text_encoder`
+    # (which lists Gemma/T5/etc. text-encoder safetensors) and
+    # `ckpt_name` (which lists the LTX-specific embeddings connector
+    # file from the checkpoints folder). Not `text_encoder_name` /
+    # `embeddings_connector_name` — those don't exist on the node and
+    # would cause ComfyUI to reject the workflow with "Value not in list"
+    # at validation time.
     text_encoder = None
     embeddings_connector = None
     te_choices = probe_object_info_choices(comfy_url,
                                            "LTXAVTextEncoderLoader",
-                                           "text_encoder_name")
+                                           "text_encoder")
     for c in te_choices:
         if "gemma" in c.lower():
             text_encoder = c
             break
+    # Connector lives under `ckpt_name` (Checkpoints folder). Pick the
+    # LTX-tagged *connector*.safetensors file; avoid picking the LTX
+    # video VAE or the audio VAE by matching on "connector" explicitly.
     ec_choices = probe_object_info_choices(comfy_url,
                                            "LTXAVTextEncoderLoader",
-                                           "embeddings_connector_name")
+                                           "ckpt_name")
     for c in ec_choices:
-        if "ltx" in c.lower() and "connector" in c.lower():
+        cl = c.lower()
+        if "ltx" in cl and "connector" in cl:
             embeddings_connector = c
             break
-    # Fallback: probe standard CLIP loaders for Gemma + the embeddings
-    # connector. Matches the scaffold dispatcher's resolve_ltx2_preset
-    # behaviour so both entry points see the same models.
+
+    # Fallback: probe standard CLIP loaders for Gemma when the Kijai
+    # LTXAV node isn't installed. The connector path still needs the
+    # checkpoints-folder file — without LTXAV we can't build a workflow
+    # at all, so returning None is the right failure mode.
     if not text_encoder:
         clip_pool = (probe_object_info_choices(comfy_url, "CLIPLoader", "clip_name")
                      + probe_object_info_choices(comfy_url, "CLIPLoaderGGUF", "clip_name"))
@@ -429,14 +445,6 @@ def detect_ltx_preset(comfy_url: str) -> Optional[dict]:
             if "gemma" in c.lower():
                 text_encoder = c
                 break
-        if text_encoder and not embeddings_connector:
-            for c in clip_pool:
-                if "ltx" in c.lower() and "connector" in c.lower():
-                    embeddings_connector = c
-                    break
-    # Last-resort connector filename (ships in every LTX 2.3 install).
-    if text_encoder and not embeddings_connector:
-        embeddings_connector = "LTX\\ltx-2.3-22b-dev_embeddings_connectors.safetensors"
 
     # ── LTX VAE (must be the ltx-video family, NOT a WAN VAE) ────────
     ltx_vae = None
