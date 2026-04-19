@@ -821,17 +821,40 @@ def build_wavespeed_upscale(image_filename, model="SeedVR2", target="2K"):
     return nf.build()
 
 
-def build_normal_map(image_filename, seed=42, max_res=1024):
+def build_normal_map(image_filename, seed=42, max_res=1024,
+                      sam3_prompt=None, sam3_invert=False, sam3_confidence=0.6,
+                      sam3_expand=4, sam3_blur=4):
     """Generate 3D surface normal map using NormalCrafter.
 
     Produces a normal map image useful for relighting, 3D reconstruction,
     and ControlNet normal guidance.
+
+    When sam3_prompt is set, the transform is composited back onto the original
+    using a SAM3 mask so only the described region changes.
     """
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
-    normal_id = nf.normal_crafter([img_id, 0], seed=seed,
+    img_ref = [img_id, 0]
+    normal_id = nf.normal_crafter(img_ref, seed=seed,
                                    max_res=max_res, node_id="2")
-    nf.save_image([normal_id, 0], "spellcaster_normals", node_id="3")
+    # NormalCrafter may rescale to max_res; resize the original to match the
+    # output so ImageCompositeMasked accepts them. We use GetImageSize on the
+    # normal output and ImageScale the original to match.
+    final_ref = [normal_id, 0]
+    if sam3_prompt:
+        _mask = build_sam3_mask(nf, img_ref, sam3_prompt,
+                                 invert=sam3_invert,
+                                 confidence=sam3_confidence,
+                                 mask_expand=sam3_expand,
+                                 mask_blur=sam3_blur)
+        # Resize original to match the (possibly rescaled) normal-map output.
+        size_id = nf.get_image_size([normal_id, 0], node_id="910")
+        orig_resized_id = nf.image_scale(
+            img_ref, [size_id, 0], [size_id, 1],
+            upscale_method="lanczos", crop="disabled", node_id="911",
+        )
+        final_ref = apply_sam3_scope(nf, final_ref, [orig_resized_id, 0], _mask)
+    nf.save_image(final_ref, "spellcaster_normals", node_id="3")
     return nf.build()
 
 
@@ -839,7 +862,9 @@ def build_normal_map(image_filename, seed=42, max_res=1024):
 #  lama_remove — Object removal without diffusion
 # ═══════════════════════════════════════════════════════════════════════════
 
-def build_lama_remove(image_filename, mask_filename):
+def build_lama_remove(image_filename, mask_filename=None,
+                       sam3_prompt=None, sam3_invert=False,
+                       sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
     """Object removal via LaMa inpainting (no diffusion).
 
     LaMa (Large Mask Inpainting) removes unwanted objects by inpainting masked
@@ -853,8 +878,12 @@ def build_lama_remove(image_filename, mask_filename):
 
     Args:
         image_filename (str): Path to input image
-        mask_filename (str): Path to mask image (white = remove, black = keep).
-                            Will be converted from red channel.
+        mask_filename (str, optional): Path to mask image (white = remove,
+                            black = keep). Converted from red channel.
+                            Required unless sam3_prompt is provided.
+        sam3_prompt (str, optional): If set (and mask_filename is None), build
+                            the removal mask server-side from SAM3 instead of
+                            loading it from a file.
 
     Returns:
         dict: ComfyUI workflow
@@ -867,9 +896,24 @@ def build_lama_remove(image_filename, mask_filename):
     """
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
-    mask_img_id = nf.load_image(mask_filename, node_id="2")
-    mask_id = nf.image_to_mask([mask_img_id, 0], "red", node_id="5")
-    lama_id = nf.lama_remover([img_id, 0], [mask_id, 0], node_id="3")
+
+    # Mask source: file-loaded overrides SAM3 when both supplied.
+    if mask_filename:
+        mask_img_id = nf.load_image(mask_filename, node_id="2")
+        mask_id = nf.image_to_mask([mask_img_id, 0], "red", node_id="5")
+        mask_ref = [mask_id, 0]
+    elif sam3_prompt:
+        # build_sam3_mask returns a MASK-typed ref directly — no image_to_mask
+        # conversion needed.
+        mask_ref = build_sam3_mask(nf, [img_id, 0], sam3_prompt,
+                                    invert=sam3_invert,
+                                    confidence=sam3_confidence,
+                                    mask_expand=sam3_expand,
+                                    mask_blur=sam3_blur)
+    else:
+        raise ValueError("build_lama_remove requires either mask_filename or sam3_prompt")
+
+    lama_id = nf.lama_remover([img_id, 0], mask_ref, node_id="3")
     nf.save_image([lama_id, 0], "spellcaster_lama", node_id="4")
     return nf.build()
 
@@ -878,8 +922,13 @@ def build_lama_remove(image_filename, mask_filename):
 #  lut — Color grading
 # ═══════════════════════════════════════════════════════════════════════════
 
-def build_lut(image_filename, lut_name, strength):
+def build_lut(image_filename, lut_name, strength,
+               sam3_prompt=None, sam3_invert=False, sam3_confidence=0.6,
+               sam3_expand=4, sam3_blur=4):
     """Color grading via LUT (Look-Up Table) application.
+
+    When sam3_prompt is set, the transform is composited back onto the original
+    using a SAM3 mask so only the described region changes.
 
     LUTs are pre-baked color transformations (like Photoshop grading presets).
     Applied with variable strength for blended effect.
@@ -905,8 +954,18 @@ def build_lut(image_filename, lut_name, strength):
     """
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
-    lut_id = nf.image_apply_lut([img_id, 0], lut_name, strength, node_id="2")
-    nf.save_image([lut_id, 0], "spellcaster_lut", node_id="3")
+    img_ref = [img_id, 0]
+    lut_id = nf.image_apply_lut(img_ref, lut_name, strength, node_id="2")
+    # LUT preserves dimensions — no resize needed.
+    final_ref = [lut_id, 0]
+    if sam3_prompt:
+        _mask = build_sam3_mask(nf, img_ref, sam3_prompt,
+                                 invert=sam3_invert,
+                                 confidence=sam3_confidence,
+                                 mask_expand=sam3_expand,
+                                 mask_blur=sam3_blur)
+        final_ref = apply_sam3_scope(nf, final_ref, img_ref, _mask)
+    nf.save_image(final_ref, "spellcaster_lut", node_id="3")
     return nf.build()
 
 
@@ -1014,8 +1073,13 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
                          steps=4, denoise=0.65, guidance=1.0,
                          enhancer_mag=1.0, enhancer_contrast=0.0, loras=None,
                          lora_name=None, lora_strength=1.0,
-                         klein_models=None, enhance=True):
+                         klein_models=None, enhance=True,
+                         sam3_prompt=None, sam3_invert=False,
+                         sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
     """Image-to-image with Flux 2 Klein (distilled fast model).
+
+    When sam3_prompt is set, the transform is composited back onto the original
+    using a SAM3 mask so only the described region changes.
 
     Klein is a 4B/9B parameter distilled variant of Flux that runs 6-8x faster
     while maintaining quality. Uses custom sampler pipeline and ReferenceLatent
@@ -1143,7 +1207,18 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
 
     # Decode and save
     dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="50")
-    nf.save_image([dec_id, 0], "gimp_klein", node_id="51")
+    # Klein rescales input to 1 MP via image_scale_to_total_pixels (node "11"),
+    # so the PRE-SCALED input (scaled_id) matches the output dimensions.
+    # Use that as the compositing "original".
+    final_ref = [dec_id, 0]
+    if sam3_prompt:
+        _mask = build_sam3_mask(nf, [scaled_id, 0], sam3_prompt,
+                                 invert=sam3_invert,
+                                 confidence=sam3_confidence,
+                                 mask_expand=sam3_expand,
+                                 mask_blur=sam3_blur)
+        final_ref = apply_sam3_scope(nf, final_ref, [scaled_id, 0], _mask)
+    nf.save_image(final_ref, "gimp_klein", node_id="51")
 
     return nf.build()
 
@@ -1409,16 +1484,32 @@ def build_faceswap_mtb(target_filename, source_filename,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_face_restore(image_filename, model_name, facedetection,
-                        visibility, codeformer_weight):
-    """Restore faces. Drop-in for _build_face_restore()."""
+                        visibility, codeformer_weight,
+                        sam3_prompt=None, sam3_invert=False,
+                        sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
+    """Restore faces. Drop-in for _build_face_restore().
+
+    When sam3_prompt is set, the transform is composited back onto the original
+    using a SAM3 mask so only the described region changes.
+    """
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
+    img_ref = [img_id, 0]
     restore_id = nf.reactor_restore_face(
-        [img_id, 0], facedetection=facedetection,
+        img_ref, facedetection=facedetection,
         model=model_name, visibility=visibility,
         codeformer_weight=codeformer_weight, node_id="2",
     )
-    nf.save_image([restore_id, 0], "spellcaster_facerestore", node_id="3")
+    # ReActorRestoreFace preserves dimensions — no resize needed.
+    final_ref = [restore_id, 0]
+    if sam3_prompt:
+        _mask = build_sam3_mask(nf, img_ref, sam3_prompt,
+                                 invert=sam3_invert,
+                                 confidence=sam3_confidence,
+                                 mask_expand=sam3_expand,
+                                 mask_blur=sam3_blur)
+        final_ref = apply_sam3_scope(nf, final_ref, img_ref, _mask)
+    nf.save_image(final_ref, "spellcaster_facerestore", node_id="3")
     return nf.build()
 
 
@@ -1517,8 +1608,13 @@ def build_detail_hallucinate(image_filename, upscale_model, preset,
                               denoise, cfg, steps=None, upscale_factor=1.0,
                               loras=None,
                               controlnet=None, controlnet_2=None,
-                              guide_modes=None):
+                              guide_modes=None,
+                              sam3_prompt=None, sam3_invert=False,
+                              sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
     """Super-resolution with detail hallucination via img2img diffusion.
+
+    When sam3_prompt is set, the transform is composited back onto the original
+    using a SAM3 mask so only the described region changes.
 
     Combines traditional super-resolution with diffusion-based detail enhancement.
     First upscales the image using a trained model, then runs img2img at low denoise
@@ -1643,7 +1739,19 @@ def build_detail_hallucinate(image_filename, upscale_model, preset,
             denoise, node_id="8",
         )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="9")
-    nf.save_image([dec_id, 0], "spellcaster_hallucinate", node_id="10")
+    # img_ref is the POST-UPSCALE image, which matches the sampler output
+    # dimensions exactly. Using img_ref (not the raw LoadImage) as the
+    # compositing "original" avoids any ImageScale and preserves the enhanced
+    # structure outside the SAM3 region.
+    final_ref = [dec_id, 0]
+    if sam3_prompt:
+        _mask = build_sam3_mask(nf, img_ref, sam3_prompt,
+                                 invert=sam3_invert,
+                                 confidence=sam3_confidence,
+                                 mask_expand=sam3_expand,
+                                 mask_blur=sam3_blur)
+        final_ref = apply_sam3_scope(nf, final_ref, img_ref, _mask)
+    nf.save_image(final_ref, "spellcaster_hallucinate", node_id="10")
 
     # ControlNet injection (optional)
     if guide_modes and controlnet and controlnet.get("mode", "Off") != "Off":
@@ -1674,10 +1782,15 @@ def build_detail_hallucinate(image_filename, upscale_model, preset,
 def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
                     controlnet_strength, denoise, steps=None, cfg=None,
                     controlnet_2=None, guide_modes=None, loras=None,
-                    lineart_models=None):
+                    lineart_models=None,
+                    sam3_prompt=None, sam3_invert=False,
+                    sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
     """Colorize B&W photo. Drop-in for _build_colorize().
 
     lineart_models: CONTROLNET_LINEART_MODELS dict from main plugin.
+
+    When sam3_prompt is set, the transform is composited back onto the original
+    using a SAM3 mask so only the described region changes.
     """
     nf = NodeFactory()
     arch_key = preset.get("arch", "sdxl")
@@ -1748,7 +1861,16 @@ def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
             denoise, node_id="9",
         )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="10")
-    nf.save_image([dec_id, 0], "spellcaster_colorize", node_id="11")
+    # Colorize keeps dimensions — no resize needed.
+    final_ref = [dec_id, 0]
+    if sam3_prompt:
+        _mask = build_sam3_mask(nf, img_ref, sam3_prompt,
+                                 invert=sam3_invert,
+                                 confidence=sam3_confidence,
+                                 mask_expand=sam3_expand,
+                                 mask_blur=sam3_blur)
+        final_ref = apply_sam3_scope(nf, final_ref, img_ref, _mask)
+    nf.save_image(final_ref, "spellcaster_colorize", node_id="11")
 
     # Optional second ControlNet (Depth)
     if guide_modes and controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
@@ -1888,8 +2010,13 @@ def build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
 def build_iclight(image_filename, ckpt_name, prompt, negative, seed,
                    multiplier=0.18, steps=20, cfg=2.0,
                    sampler="euler", scheduler="normal", loras=None,
-                   normal_map_filename=None):
+                   normal_map_filename=None,
+                   sam3_prompt=None, sam3_invert=False,
+                   sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
     """IC-Light relighting: adjust light sources and illumination.
+
+    When sam3_prompt is set, the transform is composited back onto the original
+    using a SAM3 mask so only the described region changes.
 
     IC-Light is a specialized model for controlling and adjusting light in images.
     It enables repositioning light sources, changing lighting direction, and adjusting
@@ -2015,7 +2142,16 @@ def build_iclight(image_filename, ckpt_name, prompt, negative, seed,
         seed, steps, cfg, sampler, scheduler, 1.0, node_id="7",
     )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="8")
-    nf.save_image([dec_id, 0], "spellcaster_iclight", node_id="9")
+    # IC-Light preserves dimensions — no resize needed.
+    final_ref = [dec_id, 0]
+    if sam3_prompt:
+        _mask = build_sam3_mask(nf, [img_id, 0], sam3_prompt,
+                                 invert=sam3_invert,
+                                 confidence=sam3_confidence,
+                                 mask_expand=sam3_expand,
+                                 mask_blur=sam3_blur)
+        final_ref = apply_sam3_scope(nf, final_ref, [img_id, 0], _mask)
+    nf.save_image(final_ref, "spellcaster_iclight", node_id="9")
 
     return nf.build()
 
@@ -2231,7 +2367,9 @@ def build_supir(image_filename, supir_model, sdxl_model, prompt, seed,
 
 def build_inpaint(image_filename, mask_filename, preset, prompt_text,
                    negative_text, seed, loras=None,
-                   controlnet=None, controlnet_2=None, guide_modes=None):
+                   controlnet=None, controlnet_2=None, guide_modes=None,
+                   sam3_prompt=None, sam3_invert=False,
+                   sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
     """Inpainting: regenerate masked region using diffusion.
 
     Selectively regenerates only the masked area of an image while preserving
@@ -2291,10 +2429,10 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
     model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "1")
     model_ref, clip_ref, _trig = inject_lora_chain(nf, loras or [], model_ref, clip_ref)
 
-    # Load image and mask
+    # Load image and determine mask source.
+    # Precedence: mask_filename (user override) → sam3_prompt → error.
     img_id = nf.load_image(image_filename, node_id="4")
     img_ref = [img_id, 0]
-    mask_img_id = nf.load_image(mask_filename, node_id="5")
 
     # Encode prompts
     arch_key = preset.get("arch", "sdxl")
@@ -2302,26 +2440,42 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
                                      prompt_text, negative_text,
                                      pos_id="2", neg_id="3")
 
-    # Convert mask IMAGE to MASK (red channel)
-    mask_id = nf.image_to_mask([mask_img_id, 0], "red", node_id="51")
-
     # Get original size for restoring after sampling
     size_id = nf.get_image_size_plus(img_ref, node_id="90")
 
-    # Scale image and mask to working resolution
+    # Scale image to working resolution (always needed for sampler).
     scaled_img_id = nf.image_scale(
         img_ref, preset["width"], preset["height"],
         upscale_method="lanczos", crop="disabled", node_id="91",
     )
-    scaled_mask_img_id = nf.image_scale(
-        [mask_img_id, 0], preset["width"], preset["height"],
-        upscale_method="nearest-exact", crop="disabled", node_id="92",
-    )
-    scaled_mask_id = nf.image_to_mask([scaled_mask_img_id, 0], "red", node_id="52")
+
+    if mask_filename:
+        # File-loaded mask (user-painted selection).
+        mask_img_id = nf.load_image(mask_filename, node_id="5")
+        # Full-resolution MASK (kept for symmetry; currently unused by sampler).
+        mask_id = nf.image_to_mask([mask_img_id, 0], "red", node_id="51")
+        # Scale the mask IMAGE to working resolution then convert to MASK.
+        scaled_mask_img_id = nf.image_scale(
+            [mask_img_id, 0], preset["width"], preset["height"],
+            upscale_method="nearest-exact", crop="disabled", node_id="92",
+        )
+        scaled_mask_id = nf.image_to_mask([scaled_mask_img_id, 0], "red", node_id="52")
+        scaled_mask_ref = [scaled_mask_id, 0]
+    elif sam3_prompt:
+        # SAM3 mask generated server-side against the WORKING-RESOLUTION
+        # image — so dimensions match the latent exactly. Helper returns
+        # MASK-typed ref directly; no image_to_mask conversion needed.
+        scaled_mask_ref = build_sam3_mask(nf, [scaled_img_id, 0], sam3_prompt,
+                                           invert=sam3_invert,
+                                           confidence=sam3_confidence,
+                                           mask_expand=sam3_expand,
+                                           mask_blur=sam3_blur)
+    else:
+        raise ValueError("build_inpaint requires either mask_filename or sam3_prompt")
 
     # VAE encode → SetLatentNoiseMask → sample
     enc_id = nf.vae_encode([scaled_img_id, 0], vae_ref, node_id="6")
-    masked_id = nf.set_latent_noise_mask([enc_id, 0], [scaled_mask_id, 0], node_id="7")
+    masked_id = nf.set_latent_noise_mask([enc_id, 0], scaled_mask_ref, node_id="7")
 
     is_klein = arch_key == "flux2klein"
     if is_klein:
@@ -3621,11 +3775,16 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
                           ipadapter_preset="PLUS (high strength)", loras=None,
                           weight=0.8, denoise=0.6,
                           controlnet=None, controlnet_2=None,
-                          guide_modes=None):
+                          guide_modes=None,
+                          sam3_prompt=None, sam3_invert=False,
+                          sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
     """Style transfer via IPAdapter. Drop-in for _build_style_transfer().
 
     Pipeline: model stack → IPAdapterUnifiedLoader → IPAdapterAdvanced(style transfer)
               → LoadImage(target) → encode → KSampler → decode → save
+
+    When sam3_prompt is set, the transform is composited back onto the TARGET
+    image using a SAM3 mask so only the described region changes.
     """
     nf = NodeFactory()
     arch_key = preset.get("arch", "sdxl")
@@ -3690,7 +3849,18 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
             denoise, node_id="9",
         )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="10")
-    nf.save_image([dec_id, 0], "spellcaster_style", node_id="11")
+    # Use TARGET image (post-scale if Flux) as compositing "original" — that's
+    # what the user wants to preserve outside the SAM3 region. target_ref
+    # matches the sampler output dimensions after any Flux rescale.
+    final_ref = [dec_id, 0]
+    if sam3_prompt:
+        _mask = build_sam3_mask(nf, target_ref, sam3_prompt,
+                                 invert=sam3_invert,
+                                 confidence=sam3_confidence,
+                                 mask_expand=sam3_expand,
+                                 mask_blur=sam3_blur)
+        final_ref = apply_sam3_scope(nf, final_ref, target_ref, _mask)
+    nf.save_image(final_ref, "spellcaster_style", node_id="11")
 
     # 6. ControlNet injection (optional)
     if guide_modes and controlnet and controlnet.get("mode", "Off") != "Off":
@@ -4110,17 +4280,20 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
 #                  + optional GrowMask + optional DifferentialDiffusion
 # ═══════════════════════════════════════════════════════════════════════════
 
-def build_klein_inpaint(image_filename, mask_filename, prompt_text, seed,
+def build_klein_inpaint(image_filename, mask_filename=None, prompt_text="", seed=0,
                         klein_model_key="Klein 9B", steps=25, denoise=0.92,
                         guidance=1.0, grow_px=0, use_differential_diffusion=False,
                         use_solid_mask=False, solid_mask_width=1024,
                         solid_mask_height=1024, loras=None,
-                        klein_models=None, enhance=True):
+                        klein_models=None, enhance=True,
+                        sam3_prompt=None, sam3_invert=False,
+                        sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
     """Klein Inpaint: regenerate masked area using FluxGuidance + SetLatentNoiseMask.
 
-    Supports two mask sources:
-    - Image mask (mask_filename → ImageToMask) — for selection-based inpainting
-    - Solid mask (use_solid_mask=True) — for full-image inpainting (clothing store)
+    Supports three mask sources (precedence top → bottom):
+    - Solid mask (use_solid_mask=True) — full-image inpainting
+    - Image mask (mask_filename → ImageToMask) — selection-based inpainting
+    - SAM3 mask (sam3_prompt) — mask built server-side from text description
 
     Optional GrowMask expands the mask boundary.
     Optional DifferentialDiffusion enables smooth mask-edge blending.
@@ -4148,15 +4321,25 @@ def build_klein_inpaint(image_filename, mask_filename, prompt_text, seed,
     # Source image
     img_id = nf.load_image(image_filename, node_id="10")
 
-    # Mask — either from image file or solid
+    # Mask — solid > image file > SAM3 prompt. mask_filename wins over
+    # sam3_prompt when both supplied (user override).
     if use_solid_mask:
         mask_id = nf.solid_mask(value=1.0, width=solid_mask_width,
                                 height=solid_mask_height, node_id="12")
         mask_ref = [mask_id, 0]
-    else:
+    elif mask_filename:
         mask_img_id = nf.load_image(mask_filename, node_id="11")
         mask_conv_id = nf.image_to_mask([mask_img_id, 0], "red", node_id="12")
         mask_ref = [mask_conv_id, 0]
+    elif sam3_prompt:
+        # Helper returns MASK-typed ref directly; no ImageToMask needed.
+        mask_ref = build_sam3_mask(nf, [img_id, 0], sam3_prompt,
+                                    invert=sam3_invert,
+                                    confidence=sam3_confidence,
+                                    mask_expand=sam3_expand,
+                                    mask_blur=sam3_blur)
+    else:
+        raise ValueError("build_klein_inpaint requires mask_filename, sam3_prompt, or use_solid_mask")
 
     # Optional mask expansion
     if grow_px != 0:
