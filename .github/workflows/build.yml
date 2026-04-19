@@ -113,7 +113,7 @@ jobs:
       contents: write
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
       - name: List downloaded artifacts
         run: find . -type f -name '*' | head -50
       - name: Create GitHub Release (draft)
