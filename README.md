@@ -18,11 +18,20 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/laboratoiresonore/spellcaster/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/laboratoiresonore/spellcaster?style=flat&color=7c3aed"/></a>
+  <a href="https://github.com/laboratoiresonore/spellcaster/issues"><img alt="Issues" src="https://img.shields.io/github/issues/laboratoiresonore/spellcaster?color=7c3aed"/></a>
+  <a href="https://github.com/laboratoiresonore/spellcaster/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/laboratoiresonore/spellcaster?color=7c3aed"/></a>
+  <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest"><img alt="Downloads" src="https://img.shields.io/github/downloads/laboratoiresonore/spellcaster/total?color=7c3aed"/></a>
+  <a href="DEPENDENCIES.md"><img alt="ComfyUI deps" src="https://img.shields.io/badge/ComfyUI%20node%20packs-24-5b8def"/></a>
+</p>
+
+<p align="center">
   <a href="#the-problem">The Problem</a> &bull;
   <a href="#the-solution">The Solution</a> &bull;
   <a href="#see-it-in-action-generate--select--map--enhance">See It</a> &bull;
   <a href="#install">Install</a> &bull;
   <a href="#all-69-tools">All Tools</a> &bull;
+  <a href="DEPENDENCIES.md">Dependencies</a> &bull;
   <a href="#faq">FAQ</a> &bull;
   <a href="https://www.reddit.com/r/Spellcaster_Studio/">Reddit</a>
 </p>
