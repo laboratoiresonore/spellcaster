@@ -2033,6 +2033,171 @@ function ToolDetectionCard({ tool, config, appControl, onConfigure }) {
   );
 }
 
+// ─── Cross-Plugin Scaffold Manifest (R144) ───────────────────────
+// Read-only inventory of every callable method across every plugin
+// (Wizard Guild + GIMP + Darktable + Resolve + SillyTavern), served
+// by /api/scaffolds/all. Single-source-of-truth status is annotated
+// per method based on whether the handler routes through
+// spellcaster_core.workflows (canonical), builds its own workflow
+// JSON (duplicate), or is non-classifiable (unknown / cross-plugin
+// send etc). Groups are collapsible so users with 80+ GIMP procs
+// don't get wall-of-text.
+
+function SsotBadge({ status }) {
+  const spec = {
+    canonical: { color: "emerald", label: "✓ canonical", tip: "Routes through spellcaster_core.workflows — single source of truth." },
+    duplicate: { color: "rose", label: "⚠ duplicate", tip: "Builds its own workflow JSON. SSoT violation — flagged for refactor." },
+    unknown:   { color: "slate", label: "· unknown", tip: "Non-workflow method (cross-plugin send, utility action, chat scaffold, etc)." },
+  }[status] || { color: "slate", label: status, tip: "" };
+  const cls = {
+    emerald: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
+    rose:    "bg-rose-500/20 text-rose-300 border-rose-500/40",
+    slate:   "bg-slate-500/20 text-slate-300 border-slate-500/40",
+  }[spec.color];
+  return (
+    <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${cls} whitespace-nowrap`}
+          title={spec.tip}>{spec.label}</span>
+  );
+}
+
+function CrossPluginManifest() {
+  const [groups, setGroups] = useState([]);
+  const [totals, setTotals] = useState({ total: 0, canonical: 0, duplicate: 0, unknown: 0 });
+  const [status, setStatus] = useState("loading"); // loading | loaded | error
+  const [err, setErr] = useState("");
+  const [openIds, setOpenIds] = useState(() => new Set(["wizard_guild"]));
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("all"); // all | canonical | duplicate | unknown
+
+  const load = useCallback((force = false) => {
+    setStatus("loading");
+    const qs = force ? "?force=1" : "";
+    fetch(`/api/scaffolds/all${qs}`)
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then(d => {
+        setGroups(Array.isArray(d) ? d : (d.groups || []));
+        setTotals(d.totals || { total: 0, canonical: 0, duplicate: 0, unknown: 0 });
+        setStatus("loaded");
+      })
+      .catch(e => { setStatus("error"); setErr(String(e.message || e)); });
+  }, []);
+  useEffect(() => { load(false); }, [load]);
+
+  const toggle = (id) => {
+    setOpenIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const filtered = (scaffolds) => {
+    let r = scaffolds;
+    if (filter !== "all") r = r.filter(s => (s.ssot_status || "unknown") === filter);
+    if (search) {
+      const q = search.toLowerCase();
+      r = r.filter(s => (s.name || "").toLowerCase().includes(q)
+                     || (s.id || "").toLowerCase().includes(q)
+                     || (s.description || "").toLowerCase().includes(q));
+    }
+    return r;
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="bg-slate-900 border border-amber-600/30 rounded-xl p-4">
+        <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
+          <div>
+            <h3 className="text-lg font-semibold text-amber-50">Cross-plugin scaffold manifest</h3>
+            <p className="text-xs text-slate-400 mt-1">
+              Every callable method across the Wizard Guild, GIMP, Darktable, DaVinci Resolve, and SillyTavern plugins. Read-only here; Guild wizards are editable in the panel below.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className="text-xs text-slate-400">
+              <b className="text-amber-200">{totals.total}</b> methods
+              &nbsp;•&nbsp; <b className="text-emerald-400">{totals.canonical}</b> canonical
+              &nbsp;•&nbsp; <b className="text-rose-400">{totals.duplicate}</b> duplicate
+              &nbsp;•&nbsp; <b className="text-slate-400">{totals.unknown}</b> unknown
+            </span>
+            <button onClick={() => load(true)} disabled={status === "loading"}
+                    className="text-xs px-3 py-1 rounded-full border border-amber-600/40 hover:bg-amber-500/10 text-amber-200 disabled:opacity-50">
+              {status === "loading" ? "refreshing…" : "↻ re-scan"}
+            </button>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <input value={search} onChange={e => setSearch(e.target.value)}
+                 placeholder="Filter by name / id / description"
+                 className="bg-slate-950 border border-amber-600/20 rounded px-2 py-1 text-sm text-amber-100 flex-1 min-w-[200px]" />
+          <select value={filter} onChange={e => setFilter(e.target.value)}
+                  className="bg-slate-950 border border-amber-600/20 rounded px-2 py-1 text-sm text-amber-100">
+            <option value="all">All SSoT statuses</option>
+            <option value="canonical">canonical only</option>
+            <option value="duplicate">duplicate only (SSoT violations)</option>
+            <option value="unknown">unknown only</option>
+          </select>
+        </div>
+        {status === "error" && (
+          <p className="text-xs text-rose-400 mt-2">Failed to load: {err}</p>
+        )}
+      </div>
+
+      {groups.map(g => {
+        const list = filtered(g.scaffolds || []);
+        const open = openIds.has(g.id);
+        return (
+          <div key={g.id} className="bg-slate-900 border border-amber-600/30 rounded-xl overflow-hidden">
+            <button onClick={() => toggle(g.id)}
+                    className="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-purple-800/20 transition-colors">
+              <span className="text-xl">{g.icon}</span>
+              <span className="flex-1">
+                <span className="block text-base font-semibold text-amber-50">{g.label}</span>
+                <span className="block text-xs text-slate-400">{g.description}</span>
+              </span>
+              <span className="text-xs text-slate-400 flex items-center gap-2">
+                <b className="text-amber-200">{list.length}</b> / {g.summary.total}
+                <span className="text-emerald-400">{g.summary.canonical}✓</span>
+                {g.summary.duplicate > 0 && <span className="text-rose-400">{g.summary.duplicate}⚠</span>}
+                <span className={`text-amber-500 transition-transform ${open ? "rotate-180" : ""}`}>▾</span>
+              </span>
+            </button>
+            {open && (
+              <div className="border-t border-amber-600/20 divide-y divide-slate-800">
+                {list.length === 0 ? (
+                  <div className="px-5 py-4 text-sm text-slate-500 italic">
+                    {g.scaffolds.length === 0
+                      ? "No methods detected in the repo tree. If this plugin has been recently added / updated, click ↻ re-scan above."
+                      : "No methods match the current filter."}
+                  </div>
+                ) : list.map(s => (
+                  <div key={s.id} className="px-5 py-2 hover:bg-slate-800/30">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-amber-100 truncate">{s.name || s.id}</span>
+                      <SsotBadge status={s.ssot_status || "unknown"} />
+                      {s.feature_gate && s.feature_gate !== "None" && (
+                        <span className="text-[10px] font-mono text-slate-400">gate:{s.feature_gate}</span>
+                      )}
+                    </div>
+                    {(s.description || s.ssot_notes) && (
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {s.description}
+                        {s.description && s.ssot_notes ? " · " : ""}
+                        {s.ssot_notes && <span className="italic">{s.ssot_notes}</span>}
+                      </p>
+                    )}
+                    <p className="text-[10px] font-mono text-slate-600 mt-0.5">{s.id}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Integrations Panel ───────────────────────────────────────────
 
 function IntegrationsPanel({ config, appControl, onConfigure }) {
@@ -3420,7 +3585,10 @@ function SignalBridgeSettings() {
 
         {/* ── Scaffolds Tab ── */}
         {activeTab === "scaffolds" && (
-          <ScaffoldEditor scaffolds={scaffolds} setScaffolds={setScaffolds} />
+          <div className="space-y-4">
+            <CrossPluginManifest />
+            <ScaffoldEditor scaffolds={scaffolds} setScaffolds={setScaffolds} />
+          </div>
         )}
 
         {/* ── Integrations Tab ── */}
