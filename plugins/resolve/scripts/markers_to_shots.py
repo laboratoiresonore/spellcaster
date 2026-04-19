@@ -34,14 +34,14 @@ def _boot():
             d = os.path.join(os.environ.get("APPDATA", ""),
                               "Blackmagic Design", "DaVinci Resolve",
                               "Support", "Fusion", "Scripts",
-                              "Utility", "Spellcaster")
+                              "Utility", "💎 Spellcaster")
         elif sys.platform == "darwin":
             d = os.path.expanduser(
                 "~/Library/Application Support/Blackmagic Design/DaVinci Resolve"
-                "/Fusion/Scripts/Utility/Spellcaster")
+                "/Fusion/Scripts/Utility/💎 Spellcaster")
         else:
             d = os.path.expanduser(
-                "~/.local/share/DaVinciResolve/Fusion/Scripts/Utility/Spellcaster")
+                "~/.local/share/DaVinciResolve/Fusion/Scripts/Utility/💎 Spellcaster")
     if d and d not in sys.path:
         sys.path.insert(0, d)
 _boot()
