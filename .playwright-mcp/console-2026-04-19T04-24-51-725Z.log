@@ -18,3 +18,4 @@
 [  823818ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/spellcaster/lora/shootout/status?job=lshoot_ab09a976e28a:0
 [  944114ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/comfy_status:0
 [  998842ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/comfy_status:0
+[ 1118786ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/comfy_status:0
