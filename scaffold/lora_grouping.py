@@ -675,6 +675,13 @@ def _render_single_sample(
     t0 = time.time()
     attempts: list[str] = []
     MAX_ATTEMPTS = 3
+    # `extra` carries the per-arch CLIP / VAE filenames that Flux 1 Dev,
+    # Flux Kontext, Flux 2 Klein, and Chroma ALL need — load_model_stack
+    # reads clip_name1 / clip_name2 / clip_type / vae_name from the
+    # preset. Before this change the shootout passed empty strings,
+    # which is exactly why every Flux-family shootout returned "no
+    # image" and NoobAI was the only SDXL that fired at all.
+    arch_extra = dict(getattr(arch_obj, "extra", {}) or {})
     for model in order[:MAX_ATTEMPTS]:
         preset = {
             "arch": arch, "ckpt": model["name"],
@@ -685,7 +692,13 @@ def _render_single_sample(
             "sampler":   getattr(arch_obj, "default_sampler", "euler"),
             "scheduler": getattr(arch_obj, "default_scheduler", "normal"),
             "loader":    getattr(arch_obj, "loader", "checkpoint"),
-            "clip_name1": "", "clip_name2": "", "vae_name": "",
+            # Default filenames — arch_extra overrides below when the
+            # arch (flux1dev / flux_kontext / flux2klein / chroma) needs
+            # separate CLIP + VAE loaders.
+            "clip_name1": arch_extra.get("clip_name1", ""),
+            "clip_name2": arch_extra.get("clip_name2", ""),
+            "clip_type":  arch_extra.get("clip_type",  ""),
+            "vae_name":   arch_extra.get("vae_name",   ""),
         }
         loras = [{"name": lora_name,
                    "strength_model": strength,
