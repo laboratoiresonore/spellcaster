@@ -106,6 +106,10 @@ class VideoBridge:
         self._active_started: float = 0.0
         # Queue pause control
         self._paused: bool = False
+        # R59a: single-step flag — set by render_next, consumed by the
+        # worker loop after it releases ONE shot. Lets the user preview
+        # each render before the queue picks up the next.
+        self._auto_pause_after_next: bool = False
         # Render concurrency limit — semaphore gates worker threads
         self._max_concurrent: int = 2
         self._render_sem = threading.Semaphore(self._max_concurrent)
@@ -758,6 +762,13 @@ class VideoBridge:
                     if fresh and fresh.status == "draft":
                         self.queue_shot(nxt.id)
                         queued_ids.append(nxt.id)
+                        # R59a: if single-step is armed, pause again
+                        # AFTER this pickup so the watcher stalls until
+                        # the user clicks "Render next" again.
+                        if self._auto_pause_after_next:
+                            self._auto_pause_after_next = False
+                            self._paused = True
+                            self._emit("queue_paused", {"reason": "step"})
 
             watcher = threading.Thread(
                 target=_batch_watcher,
@@ -797,8 +808,32 @@ class VideoBridge:
     def resume_queue(self) -> Dict[str, Any]:
         """Resume the render queue."""
         self._paused = False
+        self._auto_pause_after_next = False
         self._emit("queue_resumed", {})
         return {"status": "resumed"}
+
+    def render_next(self) -> Dict[str, Any]:
+        """R59a: release ONE queued shot then auto-pause again.
+
+        Lets the user review each render before committing to the next —
+        classic "step through the queue one at a time" flow. Idempotent:
+        calling it repeatedly while a shot is still rendering just keeps
+        the auto-pause flag set; the next dequeue after the current shot
+        finishes will fire once and re-pause.
+
+        Returns {"status": "stepping" | "nothing_to_step",
+                 "auto_pause_after_next": bool}.
+        """
+        # Nothing to step through if the queue is empty of dequeueable shots
+        has_pending = any(s.status in ("draft", "queued") for s in self.board)
+        if not has_pending:
+            return {"status": "nothing_to_step",
+                    "auto_pause_after_next": self._auto_pause_after_next}
+        self._auto_pause_after_next = True
+        self._paused = False
+        self._emit("queue_step", {})
+        return {"status": "stepping",
+                "auto_pause_after_next": True}
 
     def queue_status(self) -> Dict[str, Any]:
         """Return current queue status."""
@@ -812,6 +847,9 @@ class VideoBridge:
             "drafts_pending": len(drafts),
             "queued": len(queued),
             "max_concurrent": self._max_concurrent,
+            # R59a: true when a user clicked "Render next" — the queue
+            # will auto-pause after the NEXT shot lands.
+            "auto_pause_after_next": self._auto_pause_after_next,
         }
 
     # ------------------------------------------------------------------
