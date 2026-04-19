@@ -436,23 +436,37 @@ class VideoBridge:
 
     @staticmethod
     def _patch_comfy_workflow(workflow: Dict[str, Any], shot) -> Dict[str, Any]:
-        """Inject shot fields into a ComfyUI API-format workflow."""
+        """Inject shot fields into a ComfyUI API-format workflow.
+
+        Meta-title rules for CLIPTextEncode nodes:
+          - A title containing ``source`` is treated as a fixed
+            description of the ORIGINAL material (v2v source side) —
+            not touched by shot.prompt / shot.negative.
+          - Otherwise, a title containing ``positive`` takes shot.prompt
+            and a title containing ``negative`` takes shot.negative.
+          - R87-specific: for FlowEdit workflows the ``Target Positive``
+            node is the editor's VFX description; ``Source Positive`` is
+            a fixed caption of the real footage.
+        """
         import copy as _copy
         patched = _copy.deepcopy(workflow)
         ov = dict(shot.overrides or {})
+        input_video = (ov.get("input_video") or "").strip()
         for nid, node in patched.items():
             if not isinstance(node, dict):
                 continue
             ct = node.get("class_type", "")
             inp = node.get("inputs", {})
             meta_title = (node.get("_meta") or {}).get("title", "").lower()
-            # Prompt injection
+            # Prompt injection — skip Source-prefixed titles for v2v flows
             if ct == "CLIPTextEncode" and "text" in inp:
-                if "positive" in meta_title and shot.prompt:
+                if "source" in meta_title:
+                    pass  # fixed source description — don't touch
+                elif "positive" in meta_title and shot.prompt:
                     inp["text"] = shot.prompt
                 elif "negative" in meta_title and shot.negative:
                     inp["text"] = shot.negative
-            # Seed injection
+            # Seed injection — handle KSampler + FlowEdit variants
             if ct == "KSampler" and "seed" in inp:
                 if shot.seed is not None:
                     inp["seed"] = shot.seed
@@ -460,10 +474,29 @@ class VideoBridge:
                     inp["steps"] = ov["steps"]
                 if "guidance" in ov or "cfg" in ov:
                     inp["cfg"] = ov.get("guidance", ov.get("cfg", inp.get("cfg")))
+            if ct == "RandomNoise" and "noise_seed" in inp:
+                if shot.seed is not None:
+                    inp["noise_seed"] = shot.seed
+            if ct == "LTXFlowEditSampler":
+                if shot.seed is not None and "seed" in inp:
+                    inp["seed"] = shot.seed
+                if "skip_steps" in ov and "skip_steps" in inp:
+                    inp["skip_steps"] = int(ov["skip_steps"])
+                if "refine_steps" in ov and "refine_steps" in inp:
+                    inp["refine_steps"] = int(ov["refine_steps"])
+            if ct == "LTXFlowEditCFGGuider":
+                if "target_cfg" in ov and "target_cfg" in inp:
+                    inp["target_cfg"] = float(ov["target_cfg"])
+                if "source_cfg" in ov and "source_cfg" in inp:
+                    inp["source_cfg"] = float(ov["source_cfg"])
             # BasicScheduler
             if ct == "BasicScheduler" and "steps" in inp:
                 if "steps" in ov:
                     inp["steps"] = ov["steps"]
+            # LTXVScheduler
+            if ct == "LTXVScheduler" and "steps" in inp:
+                if "steps" in ov:
+                    inp["steps"] = int(ov["steps"])
             # CFGGuider
             if ct == "CFGGuider" and "cfg" in inp:
                 if "guidance" in ov or "cfg" in ov:
@@ -483,6 +516,17 @@ class VideoBridge:
             if ct == "LoadImage" and "image" in inp:
                 if shot.ref_image:
                     inp["image"] = os.path.basename(shot.ref_image)
+            # R87: VHS_LoadVideo ingest — input video patched from
+            # shot.overrides["input_video"] (a filename already present in
+            # ComfyUI's input/ dir). The caller uploads the file before
+            # calling run_raw (_queue_comfy handles this).
+            if ct == "VHS_LoadVideo" and "video" in inp:
+                if input_video:
+                    inp["video"] = os.path.basename(input_video)
+                if "frames" in ov and "frame_load_cap" in inp:
+                    inp["frame_load_cap"] = int(ov["frames"])
+                if "fps" in ov and "force_rate" in inp:
+                    inp["force_rate"] = float(ov["fps"])
         return patched
 
     def _queue_comfy(self, shot: Shot,
@@ -526,7 +570,28 @@ class VideoBridge:
         workflow = VideoBridge._patch_comfy_workflow(workflow, shot)
         # Upload ref image if present
         if shot.ref_image and os.path.isfile(shot.ref_image):
-            self.comfy.upload_image(shot.ref_image, os.path.basename(shot.ref_image))
+            try:
+                with open(shot.ref_image, "rb") as _rf:
+                    self.comfy.upload_image(_rf.read(),
+                                             os.path.basename(shot.ref_image))
+            except Exception as _ue:
+                log.warning(f"ref_image upload failed: {_ue}")
+        # R87: upload input video for v2v workflows. overrides.input_video
+        # must be a local path reachable from the Guild host; we ship the
+        # bytes to ComfyUI's /upload/image endpoint (which accepts arbitrary
+        # binary under the "image" field name — filename determines the
+        # on-disk destination).
+        input_video = (shot.overrides or {}).get("input_video", "")
+        if input_video and os.path.isfile(input_video):
+            try:
+                with open(input_video, "rb") as _vf:
+                    self.comfy.upload_image(_vf.read(),
+                                             os.path.basename(input_video))
+            except Exception as _ue:
+                self.board.mark_failed(shot.id,
+                    f"input_video upload failed: {_ue}")
+                return {"status": "error",
+                        "message": f"input_video upload failed: {_ue}"}
 
         self.board.mark_running(shot.id)
 

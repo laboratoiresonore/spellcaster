@@ -1,0 +1,186 @@
+{
+  "_meta": {
+    "title": "LTX-2.3 Video-to-Video (FlowEdit)",
+    "notes": "R87. Edit the style / content of a real video using LTXVFlowEdit. Source prompts describe what IS; target prompts describe what you WANT. skip_steps controls intensity — higher = more drastic. Input video gets patched into node [6] VHS_LoadVideo.video by _patch_comfy_workflow from shot.overrides.input_video. Target positive gets patched from shot.prompt."
+  },
+  "1": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": {
+      "unet_name": "LTX\\ltx-2.3-22b-dev-Q4_K_M.gguf"
+    }
+  },
+  "2": {
+    "class_type": "LTXVChunkFeedForward",
+    "inputs": {
+      "model": ["1", 0],
+      "chunks": 4,
+      "dim_threshold": 4096
+    }
+  },
+  "3": {
+    "class_type": "LTXVApplySTG",
+    "inputs": {
+      "model": ["2", 0],
+      "block_indices": "14, 19"
+    }
+  },
+  "4": {
+    "class_type": "LTXAVTextEncoderLoader",
+    "inputs": {
+      "text_encoder": "gemma_3_12B_it_fp4_mixed.safetensors",
+      "ckpt_name": "LTX\\ltx-2.3-22b-dev_embeddings_connectors.safetensors",
+      "device": "default"
+    }
+  },
+  "5": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "ltx-2.3-vae.safetensors"
+    }
+  },
+  "6": {
+    "class_type": "VHS_LoadVideo",
+    "_meta": {"title": "Input Video"},
+    "inputs": {
+      "video": "PLACEHOLDER_INPUT.mp4",
+      "force_rate": 24,
+      "custom_width": 0,
+      "custom_height": 0,
+      "frame_load_cap": 121,
+      "skip_first_frames": 0,
+      "select_every_nth": 1,
+      "format": "LTXV"
+    }
+  },
+  "7": {
+    "class_type": "VAEEncode",
+    "_meta": {"title": "Encode Source Video"},
+    "inputs": {
+      "pixels": ["6", 0],
+      "vae": ["5", 0]
+    }
+  },
+  "10": {
+    "class_type": "CLIPTextEncode",
+    "_meta": {"title": "Source Description"},
+    "inputs": {
+      "clip": ["4", 0],
+      "text": "footage, cinematic, natural lighting"
+    }
+  },
+  "11": {
+    "class_type": "CLIPTextEncode",
+    "_meta": {"title": "Source Negative"},
+    "inputs": {
+      "clip": ["4", 0],
+      "text": "blurry, low quality, static"
+    }
+  },
+  "12": {
+    "class_type": "CLIPTextEncode",
+    "_meta": {"title": "Target Positive"},
+    "inputs": {
+      "clip": ["4", 0],
+      "text": "cinematic, detailed, high quality"
+    }
+  },
+  "13": {
+    "class_type": "CLIPTextEncode",
+    "_meta": {"title": "Target Negative"},
+    "inputs": {
+      "clip": ["4", 0],
+      "text": "blurry, low quality, distorted, watermark"
+    }
+  },
+  "14": {
+    "class_type": "LTXVConditioning",
+    "_meta": {"title": "Source Conditioning"},
+    "inputs": {
+      "positive": ["10", 0],
+      "negative": ["11", 0],
+      "frame_rate": 24.0
+    }
+  },
+  "15": {
+    "class_type": "LTXVConditioning",
+    "_meta": {"title": "Target Conditioning"},
+    "inputs": {
+      "positive": ["12", 0],
+      "negative": ["13", 0],
+      "frame_rate": 24.0
+    }
+  },
+  "16": {
+    "class_type": "LTXFlowEditCFGGuider",
+    "inputs": {
+      "model": ["3", 0],
+      "source_pos": ["14", 0],
+      "source_neg": ["14", 1],
+      "target_pos": ["15", 0],
+      "target_neg": ["15", 1],
+      "source_cfg": 2.0,
+      "target_cfg": 4.5
+    }
+  },
+  "17": {
+    "class_type": "LTXFlowEditSampler",
+    "inputs": {
+      "skip_steps": 4,
+      "refine_steps": 0,
+      "seed": 42
+    }
+  },
+  "18": {
+    "class_type": "LTXVScheduler",
+    "inputs": {
+      "steps": 30,
+      "max_shift": 2.05,
+      "base_shift": 0.95,
+      "stretch": true,
+      "terminal": 0.1,
+      "latent": ["7", 0]
+    }
+  },
+  "20": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": ["21", 0],
+      "guider": ["16", 0],
+      "sampler": ["17", 0],
+      "sigmas": ["18", 0],
+      "latent_image": ["7", 0]
+    }
+  },
+  "21": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": 42
+    }
+  },
+  "40": {
+    "class_type": "LTXVSpatioTemporalTiledVAEDecode",
+    "inputs": {
+      "vae": ["5", 0],
+      "latents": ["20", 0],
+      "spatial_tiles": 4,
+      "spatial_overlap": 1,
+      "temporal_tile_length": 16,
+      "temporal_overlap": 1,
+      "last_frame_fix": false,
+      "working_device": "auto",
+      "working_dtype": "auto"
+    }
+  },
+  "50": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": ["40", 0],
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "LTX23-v2v",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": true
+    }
+  }
+}
