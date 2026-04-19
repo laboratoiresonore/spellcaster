@@ -729,6 +729,32 @@ def main() -> int:
     check("video_panel preset dropdown prefers h264",
           test_video_panel_preset_dropdown_prefers_h264)
 
+    # Round 52 — Multi-antenna registry
+    check("antenna_registry ingest stores per machine",
+          test_antenna_registry_ingest_stores_per_machine)
+    check("antenna_registry ignores missing hostname",
+          test_antenna_registry_ignores_missing_hostname)
+    check("antenna_registry updates existing entry",
+          test_antenna_registry_updates_existing_entry)
+    check("choose_antenna_for requires online",
+          test_choose_antenna_for_requires_online)
+    check("choose_antenna_for prefers higher vram",
+          test_choose_antenna_for_prefers_higher_vram)
+    check("choose_antenna_for falls back to services_detected",
+          test_choose_antenna_for_fallback_to_detected_when_undeclared)
+    check("choose_antenna_for missing service returns None",
+          test_choose_antenna_for_missing_service_returns_none)
+    check("antenna_registry synced to all copies",
+          test_antenna_registry_synced_to_all_copies)
+    check("guild has /api/antennas endpoint",
+          test_guild_has_antennas_endpoint)
+    check("guild _proxy_to_antenna accepts service kwarg",
+          test_guild_proxy_accepts_service_kwarg)
+    check("video_panel button shows hostname instead of 'Antenna'",
+          test_video_panel_button_shows_hostname)
+    check("video_panel renders one entry per antenna",
+          test_video_panel_renders_one_entry_per_antenna)
+
     print("-" * 50)
 
     from scaffold.shotboard import Shotboard, Shot, Trajectory
@@ -7192,6 +7218,142 @@ def test_video_panel_has_sse_listener_for_render_complete():
 def test_video_panel_preset_dropdown_prefers_h264():
     src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
     assert "/h\\.?264/i" in src or "h\\.?264" in src
+
+
+# ════════════════════════════════════════════════════════════════════
+# R52 — Multi-antenna registry
+# ════════════════════════════════════════════════════════════════════
+
+def _ar_module():
+    import importlib, sys as _sys
+    _sys.path.insert(0, os.path.join(BASE, "comfyui-spellcaster"))
+    return importlib.import_module("spellcaster_core.antenna_registry")
+
+
+def test_antenna_registry_ingest_stores_per_machine():
+    ar = _ar_module()
+    ar.clear()
+    ar.ingest_heartbeat({
+        "machine": "box-a", "ip": "10.0.0.1",
+        "agent_url": "https://10.0.0.1:7334",
+        "services": ["comfyui"],
+        "services_detail": {"comfyui": {"reachable": True}},
+    })
+    ar.ingest_heartbeat({
+        "machine": "box-b", "ip": "10.0.0.2",
+        "agent_url": "https://10.0.0.2:7334",
+        "services": ["resolve"],
+    })
+    snap = ar.snapshot()
+    assert snap["total"] == 2
+    hosts = [a["hostname"] for a in snap["antennas"]]
+    assert "box-a" in hosts and "box-b" in hosts
+
+
+def test_antenna_registry_ignores_missing_hostname():
+    ar = _ar_module()
+    ar.clear()
+    # No machine key → refuses to insert (cannot key uniquely)
+    result = ar.ingest_heartbeat({"agent_url": "https://x:7334"})
+    assert result is None
+    assert ar.snapshot()["total"] == 0
+
+
+def test_antenna_registry_updates_existing_entry():
+    ar = _ar_module()
+    ar.clear()
+    ar.ingest_heartbeat({"machine": "b", "services": ["comfyui"]})
+    ar.ingest_heartbeat({"machine": "b", "services": ["comfyui", "resolve"]})
+    assert ar.snapshot()["total"] == 1
+    entry = ar.get("b")
+    assert set(entry.services) == {"comfyui", "resolve"}
+
+
+def test_choose_antenna_for_requires_online():
+    ar = _ar_module()
+    ar.clear()
+    ar.ingest_heartbeat({"machine": "b", "services": ["comfyui"]})
+    entry = ar.get("b")
+    # Force offline
+    entry.last_heartbeat = 0.0
+    assert ar.choose_antenna_for("comfyui") is None
+
+
+def test_choose_antenna_for_prefers_higher_vram():
+    ar = _ar_module()
+    ar.clear()
+    ar.ingest_heartbeat({
+        "machine": "weak", "agent_url": "u1", "services": ["comfyui"],
+        "services_detail": {"comfyui": {"reachable": True, "vram_free_gb": 2.0}},
+    })
+    ar.ingest_heartbeat({
+        "machine": "strong", "agent_url": "u2", "services": ["comfyui"],
+        "services_detail": {"comfyui": {"reachable": True, "vram_free_gb": 14.0}},
+    })
+    chosen = ar.choose_antenna_for("comfyui")
+    assert chosen is not None
+    assert chosen.hostname == "strong"
+
+
+def test_choose_antenna_for_fallback_to_detected_when_undeclared():
+    ar = _ar_module()
+    ar.clear()
+    # Antenna has resolve INSTALLED on disk but hasn't declared it yet
+    # (e.g., older antenna build without auto-populate).
+    ar.ingest_heartbeat({
+        "machine": "box", "services": [],
+        "services_detected": {"resolve": {"installed": True}},
+    })
+    chosen = ar.choose_antenna_for("resolve")
+    assert chosen is not None
+    assert chosen.hostname == "box"
+
+
+def test_choose_antenna_for_missing_service_returns_none():
+    ar = _ar_module()
+    ar.clear()
+    ar.ingest_heartbeat({"machine": "b", "services": ["comfyui"]})
+    assert ar.choose_antenna_for("kobold") is None
+
+
+def test_antenna_registry_synced_to_all_copies():
+    import filecmp
+    canonical = os.path.join(BASE, "comfyui-spellcaster",
+                             "spellcaster_core", "antenna_registry.py")
+    plugin = os.path.join(BASE, "plugins", "gimp", "comfyui-connector",
+                           "spellcaster_core", "antenna_registry.py")
+    assert os.path.isfile(canonical), "canonical copy missing"
+    assert os.path.isfile(plugin), "plugin copy missing"
+    assert filecmp.cmp(canonical, plugin, shallow=False), \
+        "plugin antenna_registry.py out of sync with canonical"
+
+
+def test_guild_has_antennas_endpoint():
+    src = open("tavern/server.py", encoding="utf-8").read()
+    assert "/api/antennas" in src
+    assert "/api/antennas/choose" in src
+    assert "ANTENNA_REGISTRY_AVAILABLE" in src
+
+
+def test_guild_proxy_accepts_service_kwarg():
+    src = open("tavern/server.py", encoding="utf-8").read()
+    # _proxy_to_antenna now takes service= for election
+    assert "def _proxy_to_antenna(self, path, method, body, *, service=None)" in src
+    assert "service='resolve'" in src
+
+
+def test_video_panel_button_shows_hostname():
+    src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
+    # Dynamic label uses `online[0].hostname` rather than a static "Antenna"
+    assert "online[0].hostname" in src
+    assert "antenna-btn-label" in src
+
+
+def test_video_panel_renders_one_entry_per_antenna():
+    src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
+    assert "antennaList" in src
+    assert "antenna-entry" in src
+    assert "setAntennaList" in src
 
 
 if __name__ == "__main__":

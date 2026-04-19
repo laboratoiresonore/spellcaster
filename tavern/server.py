@@ -73,6 +73,16 @@ except (ImportError, SyntaxError):
     _get_model_registry = None
     _start_signal_notifier = None
 
+# R52: per-machine antenna registry (one entry per physical box).
+# Separate from interface_registry because multiple antennas can exist
+# and each needs its own hostname-keyed slot.
+try:
+    from spellcaster_core import antenna_registry as _antenna_registry
+    ANTENNA_REGISTRY_AVAILABLE = True
+except ImportError:
+    _antenna_registry = None
+    ANTENNA_REGISTRY_AVAILABLE = False
+
 # Mailbox primitives — per-interface pull queues for short-lived clients.
 # Imported separately from the main backbone so existing installs without
 # mailbox.py (before the 2026-04-18 sync) still start; mailbox endpoints
@@ -5757,14 +5767,30 @@ class GuildHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(payload).encode('utf-8'))
 
-    def _proxy_to_antenna(self, path, method, body):
+    def _proxy_to_antenna(self, path, method, body, *, service=None):
         """R50b: forward a request to the paired antenna, returning its
         response verbatim. Used by the Resolve render-queue endpoints.
-        Reads antenna URL + token from guild_config or the live registry.
+
+        R52: when `service` is supplied, the antenna registry picks the
+        best antenna for that service (multi-antenna scenarios). Falls
+        back to guild_config or the legacy interface_registry slot.
         """
         cfg = _guided_install_load_config()
-        url = (cfg.get('antenna_url') or '').strip()
         token = (cfg.get('antenna_token') or '').strip()
+        url = ''
+
+        # 1. Prefer service-aware election from the multi-antenna registry
+        if service and ANTENNA_REGISTRY_AVAILABLE and _antenna_registry is not None:
+            try:
+                chosen = _antenna_registry.choose_antenna_for(service)
+                if chosen is not None:
+                    url = chosen.agent_url
+            except Exception:
+                pass
+        # 2. Fall back to the explicit guild_config URL
+        if not url:
+            url = (cfg.get('antenna_url') or '').strip()
+        # 3. Fall back to the legacy single-slot interface_registry
         if not url and CROSS_INTERFACE_AVAILABLE and _iface_registry is not None:
             try:
                 snap = _iface_registry.snapshot()
@@ -6897,6 +6923,39 @@ class GuildHandler(SimpleHTTPRequestHandler):
             if not CROSS_INTERFACE_AVAILABLE or _iface_registry is None:
                 return self.end_json(501, {"error": "cross-interface backbone disabled"})
             return self.end_json(200, {"interfaces": _iface_registry.snapshot()})
+        elif self.path == '/api/antennas' or self.path.startswith('/api/antennas?'):
+            # R52: per-machine antenna list. Distinct from /api/interfaces
+            # because multiple antennas can coexist on the LAN and each
+            # needs its own chip with its own hostname.
+            if not ANTENNA_REGISTRY_AVAILABLE or _antenna_registry is None:
+                return self.end_json(501, {"error": "antenna registry disabled"})
+            snap = _antenna_registry.snapshot()
+            return self.end_json(200, snap)
+        elif self.path.startswith('/api/antennas/choose'):
+            # R52: returns the best antenna for a given service. Query:
+            # ?service=resolve / comfyui / ollama / etc. 404 if nothing matches.
+            if not ANTENNA_REGISTRY_AVAILABLE or _antenna_registry is None:
+                return self.end_json(501, {"error": "antenna registry disabled"})
+            service = ''
+            if '?' in self.path:
+                try:
+                    from urllib.parse import urlparse, parse_qs
+                    qs = parse_qs(urlparse(self.path).query)
+                    service = (qs.get('service') or [''])[0].strip()
+                except Exception:
+                    service = ''
+            if not service:
+                return self.end_json(400, {"error": "service query parameter required"})
+            chosen = _antenna_registry.choose_antenna_for(service)
+            if chosen is None:
+                return self.end_json(404, {
+                    "error": f"no online antenna declares or detects service {service!r}",
+                    "service": service,
+                })
+            return self.end_json(200, {
+                "service": service,
+                "antenna": chosen.to_dict(),
+            })
         elif self.path == '/api/mailboxes':
             # Aggregate mailbox stats for debugging — one entry per
             # interface that has ever received at least one event.
@@ -7660,18 +7719,21 @@ class GuildHandler(SimpleHTTPRequestHandler):
         # antenna. POST starts a render, GET polls status with a job_id.
         elif (self.path == '/api/antenna/resolve/render-timeline'
               and self.command == 'POST'):
-            return self._proxy_to_antenna('/resolve/render-timeline', 'POST', data)
+            return self._proxy_to_antenna('/resolve/render-timeline', 'POST', data,
+                                           service='resolve')
         elif (self.path.startswith('/api/antenna/resolve/render-status')
               and self.command == 'GET'):
             # Pass through the query string as-is
             qs = ''
             if '?' in self.path:
                 qs = '?' + self.path.split('?', 1)[1]
-            return self._proxy_to_antenna('/resolve/render-status' + qs, 'GET', None)
+            return self._proxy_to_antenna('/resolve/render-status' + qs, 'GET', None,
+                                           service='resolve')
         elif (self.path == '/api/antenna/resolve/render-presets'
               and self.command == 'GET'):
             # R51a: proxy to antenna for the preset dropdown
-            return self._proxy_to_antenna('/resolve/render-presets', 'GET', None)
+            return self._proxy_to_antenna('/resolve/render-presets', 'GET', None,
+                                           service='resolve')
 
         # R48b: Send timeline directly to a running DaVinci Resolve via the
         # antenna. POST only — mutates Resolve state. Body: {"format": "edl"|"fcpxml", "fps": 30, "bin": "Spellcaster"}
@@ -7697,17 +7759,26 @@ class GuildHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.end_json(500, {"error": f"timeline build failed: {e}"})
 
-            # Locate antenna via the interface registry (heartbeat meta)
+            # R52: prefer the per-service antenna election, then legacy
+            # single-slot registry, then explicit guild_config override.
             antenna_url = None
-            try:
-                if CROSS_INTERFACE_AVAILABLE and _iface_registry is not None:
-                    snap = _iface_registry.snapshot()
-                    antenna_entry = snap.get('antenna') or {}
-                    if antenna_entry.get('online'):
-                        antenna_url = ((antenna_entry.get('last_meta') or {})
-                                       .get('agent_url') or '').strip()
-            except Exception:
-                antenna_url = None
+            if ANTENNA_REGISTRY_AVAILABLE and _antenna_registry is not None:
+                try:
+                    chosen = _antenna_registry.choose_antenna_for('resolve')
+                    if chosen is not None:
+                        antenna_url = chosen.agent_url
+                except Exception:
+                    antenna_url = None
+            if not antenna_url:
+                try:
+                    if CROSS_INTERFACE_AVAILABLE and _iface_registry is not None:
+                        snap = _iface_registry.snapshot()
+                        antenna_entry = snap.get('antenna') or {}
+                        if antenna_entry.get('online'):
+                            antenna_url = ((antenna_entry.get('last_meta') or {})
+                                           .get('agent_url') or '').strip()
+                except Exception:
+                    antenna_url = None
 
             if not antenna_url:
                 # Fall back to explicit guild_config antenna_url
@@ -8235,6 +8306,15 @@ class GuildHandler(SimpleHTTPRequestHandler):
             ok = _iface_registry.heartbeat(iface_key, meta if isinstance(meta, dict) else {})
             if not ok:
                 return self.end_json(404, {"error": f"unknown interface '{iface_key}'"})
+            # R52: if this is an antenna heartbeat, also update the per-machine
+            # antenna registry so multiple antennas on one LAN stay distinct.
+            if (iface_key == "antenna" and ANTENNA_REGISTRY_AVAILABLE
+                    and _antenna_registry is not None
+                    and isinstance(meta, dict)):
+                try:
+                    _antenna_registry.ingest_heartbeat(meta)
+                except Exception as e:
+                    print(f"  [antenna_registry] ingest failed: {e}")
             if _EVENT_BUS is not None:
                 try:
                     _EVENT_BUS.publish(f"{iface_key}.presence.heartbeat",

@@ -1670,9 +1670,12 @@ function VideoPanel() {
   // R45b: batch duplicate controls
   const [showBatchDupe, setShowBatchDupe] = _useState(false);
   const [batchDupeCount, setBatchDupeCount] = _useState(1);
-  // R49b: Antenna admin dialog + pair/self-update state
+  // R49b + R52: Antenna admin dialog. antennaStatus is the legacy
+  // single-antenna snapshot; antennaList is the R52 multi-antenna list
+  // (one entry per physical machine).
   const [showAntennaAdmin, setShowAntennaAdmin] = _useState(false);
   const [antennaStatus, setAntennaStatus] = _useState(null);
+  const [antennaList, setAntennaList] = _useState([]);
   const [antennaPairUrl, setAntennaPairUrl] = _useState("");
   const [antennaPairToken, setAntennaPairToken] = _useState("");
   const [antennaBusy, setAntennaBusy] = _useState(false);
@@ -2050,13 +2053,17 @@ function VideoPanel() {
     }
   };
 
-  // R49b: Antenna admin helpers
+  // R49b: Antenna admin helpers. R52: also refreshes the multi-antenna list.
   const refreshAntennaStatus = async () => {
     try {
       const st = await api.get("/api/antenna/status");
       setAntennaStatus(st);
       if (!antennaPairUrl && st.heartbeat_url) setAntennaPairUrl(st.heartbeat_url);
     } catch (e) { /* ignore */ }
+    try {
+      const list = await api.get("/api/antennas");
+      setAntennaList(Array.isArray(list?.antennas) ? list.antennas : []);
+    } catch (e) { /* registry may not be available on older Guild */ }
   };
 
   const openAntennaAdmin = async () => {
@@ -2271,6 +2278,21 @@ function VideoPanel() {
     };
     src.onerror = () => { /* transient — browser retries automatically */ };
     return () => { try { src.close(); } catch (_) {} };
+  }, []);
+
+  // R52: poll /api/antennas every 15s so the header chip reflects the live
+  // state without opening the modal. Cheap endpoint (in-memory snapshot).
+  _useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const list = await api.get("/api/antennas");
+        if (!cancelled) setAntennaList(Array.isArray(list?.antennas) ? list.antennas : []);
+      } catch (_) { /* older Guild: no endpoint */ }
+    };
+    poll();
+    const id = setInterval(poll, 15000);
+    return () => { cancelled = true; clearInterval(id); };
   }, []);
 
   // Ask for notification permission on first load so render_complete can surface
@@ -2906,12 +2928,47 @@ function VideoPanel() {
               ? `Rendering ${resolveRenderStatus.completion_percent}%`
               : (resolveRenderBusy ? "Rendering…" : "Render")}
           </button>
-          <button onClick={openAntennaAdmin}
-            className="antenna-admin-btn flex items-center gap-1.5 bg-slate-800 hover:bg-indigo-700/50 text-slate-300 hover:text-indigo-100 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
-            title="Antenna pairing + self-update">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12a7 7 0 0 1 14 0"/><path d="M8.5 12a3.5 3.5 0 0 1 7 0"/><circle cx="12" cy="12" r="1"/><path d="M12 18v4"/></svg>
-            Antenna
-          </button>
+          {(() => {
+            // R52: Antenna button shows hostnames instead of the generic "Antenna".
+            // - 0 online : "No antenna" (greyed, tooltip hints to pair)
+            // - 1 online : "📡 <hostname>"  (parabola + actual machine name)
+            // - >1 online: "📡 <host-a> +N" (host-a is lex-first, +N says more)
+            const online = antennaList.filter(a => a.online);
+            const onlineCount = online.length;
+            let label, tooltipLines;
+            if (onlineCount === 0) {
+              label = "No antenna";
+              tooltipLines = ["No antennas online — click to pair one."];
+            } else if (onlineCount === 1) {
+              label = online[0].hostname || "antenna";
+              tooltipLines = [
+                `${label}: ${online[0].services.join(", ") || "(no services declared)"}`,
+                `Click for pair + self-update.`,
+              ];
+            } else {
+              label = `${online[0].hostname} +${onlineCount - 1}`;
+              tooltipLines = [
+                `${onlineCount} antennas online:`,
+                ...online.map(a =>
+                  `  • ${a.hostname} — ${a.services.join(", ") || "(none)"}`),
+              ];
+            }
+            const dim = onlineCount === 0;
+            return (
+              <button
+                onClick={openAntennaAdmin}
+                className={`antenna-admin-btn flex items-center gap-1.5 ${dim ? "bg-slate-800 text-slate-500" : "bg-slate-800 hover:bg-indigo-700/50 text-slate-300 hover:text-indigo-100"} px-3 py-2 rounded-lg text-xs font-medium transition-colors`}
+                title={tooltipLines.join("\n")}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M5 12a7 7 0 0 1 14 0"/><path d="M8.5 12a3.5 3.5 0 0 1 7 0"/>
+                  <circle cx="12" cy="12" r="1"/><path d="M12 18v4"/>
+                </svg>
+                <span className="antenna-btn-label">{label}</span>
+                {onlineCount > 0 && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>}
+              </button>
+            );
+          })()}
           <button onClick={() => setViewMode(viewMode === "list" ? "grid" : "list")}
             className="view-toggle flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
             title={viewMode === "list" ? "Switch to grid view" : "Switch to list view"}
@@ -3352,9 +3409,37 @@ function VideoPanel() {
               <button onClick={() => setShowAntennaAdmin(false)}
                 className="text-slate-400 hover:text-slate-200 text-xl leading-none">×</button>
             </div>
-            <div className="antenna-admin-status rounded bg-slate-800/60 border border-slate-700/40 p-2 text-xs space-y-1">
-              {antennaStatus ? (
-                <>
+            {/* R52: list ALL known antennas (one chip per hostname). Falls
+                back to single-row legacy view when the registry is empty. */}
+            <div className="antenna-admin-list space-y-1">
+              {antennaList.length > 0 ? (
+                antennaList.map(a => (
+                  <div key={a.hostname}
+                    className={`antenna-entry rounded border p-2 text-xs space-y-0.5
+                      ${a.online ? "bg-slate-800/60 border-indigo-600/30" : "bg-slate-900/40 border-slate-700/40"}`}>
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${a.online ? "bg-emerald-400" : "bg-slate-600"}`}></span>
+                      <span className="antenna-entry-hostname font-semibold text-slate-200">{a.hostname}</span>
+                      <span className="text-slate-500">{a.ip}</span>
+                      <span className="text-slate-500 ml-auto">{a.agent_url}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Services:</span>{' '}
+                      {a.services && a.services.length > 0 ? (
+                        a.services.map(s => (
+                          <span key={s} className="inline-block mx-0.5 px-1.5 py-0.5 rounded bg-indigo-900/30 text-indigo-200 text-[10px]">{s}</span>
+                        ))
+                      ) : <span className="text-slate-500 italic">(none declared)</span>}
+                    </div>
+                    {a.last_heartbeat > 0 && (
+                      <div className="text-[10px] text-slate-500">
+                        last heartbeat: {new Date(a.last_heartbeat * 1000).toLocaleTimeString()}
+                      </div>
+                    )}
+                  </div>
+                ))
+              ) : antennaStatus ? (
+                <div className="rounded bg-slate-800/60 border border-slate-700/40 p-2 text-xs space-y-1">
                   <div><span className="text-slate-500">Paired URL:</span>{' '}
                     <span className="text-slate-200">{antennaStatus.paired_url || <span className="text-slate-500 italic">(not set)</span>}</span></div>
                   <div><span className="text-slate-500">Heartbeat URL:</span>{' '}
@@ -3363,16 +3448,8 @@ function VideoPanel() {
                     <span className={antennaStatus.has_token ? "text-emerald-400" : "text-amber-400"}>
                       {antennaStatus.has_token ? "yes" : "no"}
                     </span></div>
-                  <div><span className="text-slate-500">Online:</span>{' '}
-                    <span className={antennaStatus.online ? "text-emerald-400" : "text-slate-500"}>
-                      {antennaStatus.online ? "yes" : "no"}
-                    </span></div>
-                  {antennaStatus.services && antennaStatus.services.length > 0 && (
-                    <div><span className="text-slate-500">Services:</span>{' '}
-                      <span className="text-slate-200">{antennaStatus.services.join(", ")}</span></div>
-                  )}
-                </>
-              ) : <span className="text-slate-500">Loading status…</span>}
+                </div>
+              ) : <span className="text-slate-500 text-xs">Loading antenna registry…</span>}
             </div>
             <div className="antenna-admin-pair space-y-2">
               <div className="text-xs font-semibold text-slate-300">Pair antenna (one-time, stores URL + token)</div>

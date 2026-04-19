@@ -6505,6 +6505,159 @@ def build_wan_video_blockswap(image_filename, wan_model, t5_model, vae_model,
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  Qwen Image Edit 2509 — instruction-driven image editing
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_qwen_edit(image_filename, unet_name, clip_name, vae_name,
+                    prompt_text, seed,
+                    negative_text="",
+                    steps=20, cfg=4.0,
+                    sampler="euler", scheduler="simple",
+                    denoise=1.0, shift=1.73, cfg_norm=0.5,
+                    image2_filename=None, image3_filename=None,
+                    sam3_prompt=None, sam3_invert=False,
+                    sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
+    """Qwen Image Edit 2509 — instruction-driven edits via TextEncodeQwenImageEditPlus.
+
+    Sibling to Flux Kontext. The user supplies an instruction prompt
+    ("make the sky orange", "remove the sign", "add sunglasses") and an image;
+    Qwen edits the image per the instruction. Optional up to 2 extra reference
+    images to bias style / identity.
+
+    Adapted from xb1n0ry/Comfy-Workflows (nunchaku-qwen-image-edit-2509-...).
+    The Nunchaku quantized loader is optional — this builder uses the standard
+    UNETLoader (works with `qwen-image-edit_2509.safetensors` and siblings).
+
+    Pipeline:
+      1. UNETLoader(unet_name) -> MODEL
+      2. CLIPLoader(clip_name, type="qwen_image") -> CLIP
+      3. VAELoader(vae_name) -> VAE
+      4. LoadImage(image_filename) + optional image2 / image3
+      5. TextEncodeQwenImageEditPlus(prompt, clip, vae, image1, image2, image3)
+         -> positive CONDITIONING
+      6. TextEncodeQwenImageEditPlus(negative or "", clip, vae, image1) -> neg
+      7. ModelSamplingAuraFlow(model, shift=1.73) -> patched MODEL
+      8. CFGNorm(model, cfg_norm) -> stabilized MODEL
+      9. VAEEncode(image1) -> latent
+      10. KSampler(model, pos, neg, latent, seed, steps, cfg, sampler, scheduler,
+          denoise) -> samples
+      11. VAEDecode(samples, vae) -> IMAGE
+      12. Optional SAM3 scoping (apply_sam3_scope)
+      13. SaveImage
+
+    Args:
+        image_filename: the image to edit.
+        unet_name: Qwen Image Edit UNET filename (e.g.
+            "qwen-image-edit_2509.safetensors").
+        clip_name: Qwen CLIP filename (e.g.
+            "qwen_2.5_vl_7b_fp8_scaled.safetensors"). Loaded with type=qwen_image.
+        vae_name: Qwen VAE filename (e.g. "qwen_image_vae.safetensors").
+        prompt_text: edit instruction in plain English.
+        seed: sampler seed.
+        negative_text: rarely useful for Qwen Edit; default "".
+        steps, cfg, sampler, scheduler, denoise: standard sampler knobs.
+        shift: ModelSamplingAuraFlow shift (default 1.73 — Qwen's baseline).
+        cfg_norm: CFGNorm strength (default 0.5). Set to 0 to skip the patch.
+        image2_filename, image3_filename: optional extra references for style
+            / identity grounding.
+        sam3_prompt, sam3_invert, sam3_confidence, sam3_expand, sam3_blur:
+            when sam3_prompt is set, the edit is composited back onto the
+            original image using a SAM3 mask — so "change just the jacket"
+            works without painting a mask.
+
+    Returns:
+        ComfyUI workflow dict.
+
+    Requires: `TextEncodeQwenImageEditPlus` + `ModelSamplingAuraFlow` + `CFGNorm`
+    (all ComfyUI core in recent versions). A Qwen Image Edit UNET must be
+    present on the server. Nunchaku / fp8 quantization support is optional —
+    the standard UNETLoader handles fp16, fp8, and GGUF variants alike.
+    """
+    nf = NodeFactory()
+
+    # Model / CLIP / VAE loaders
+    if unet_name.endswith(".gguf"):
+        nf.update({"1": {"class_type": "UnetLoaderGGUF",
+                         "inputs": {"unet_name": unet_name}}})
+        model_ref = ["1", 0]
+    else:
+        model_id = nf.unet_loader(unet_name, "default", node_id="1")
+        model_ref = [model_id, 0]
+
+    clip_id = nf.clip_loader(clip_name, clip_type="qwen_image",
+                             device="default", node_id="2")
+    vae_id = nf.vae_loader(vae_name, node_id="3")
+
+    # Source image + optional extra refs
+    img_id = nf.load_image(image_filename, node_id="4")
+    img1_ref = [img_id, 0]
+    img2_ref = None
+    if image2_filename:
+        img2_id = nf.load_image(image2_filename, node_id="4b")
+        img2_ref = [img2_id, 0]
+    img3_ref = None
+    if image3_filename:
+        img3_id = nf.load_image(image3_filename, node_id="4c")
+        img3_ref = [img3_id, 0]
+
+    # Qwen Edit Plus text encode — positive
+    pos_inputs = {
+        "clip": [clip_id, 0],
+        "prompt": prompt_text,
+        "vae": [vae_id, 0],
+        "image1": img1_ref,
+    }
+    if img2_ref is not None:
+        pos_inputs["image2"] = img2_ref
+    if img3_ref is not None:
+        pos_inputs["image3"] = img3_ref
+    pos_id = nf._add("TextEncodeQwenImageEditPlus", pos_inputs, node_id="5")
+
+    # Negative — Qwen Edit uses the same encoder with an empty / negative prompt
+    neg_inputs = {
+        "clip": [clip_id, 0],
+        "prompt": negative_text or "",
+        "vae": [vae_id, 0],
+        "image1": img1_ref,
+    }
+    neg_id = nf._add("TextEncodeQwenImageEditPlus", neg_inputs, node_id="6")
+
+    # Model patches: AuraFlow shift + optional CFGNorm
+    sampling_id = nf._add("ModelSamplingAuraFlow", {
+        "model": model_ref, "shift": float(shift),
+    }, node_id="7")
+    patched_model = [sampling_id, 0]
+    if cfg_norm > 0:
+        norm_id = nf._add("CFGNorm", {
+            "model": patched_model, "strength": float(cfg_norm),
+        }, node_id="8")
+        patched_model = [norm_id, 0]
+
+    # Sample
+    enc_id = nf.vae_encode(img1_ref, [vae_id, 0], node_id="9")
+    samp_id = nf.ksampler(
+        patched_model,
+        [pos_id, 0], [neg_id, 0], [enc_id, 0],
+        seed, steps, cfg, sampler, scheduler, denoise,
+        node_id="10",
+    )
+    dec_id = nf.vae_decode([samp_id, 0], [vae_id, 0], node_id="11")
+
+    # Optional SAM3 scoping — only change what the user described.
+    final_ref = [dec_id, 0]
+    if sam3_prompt:
+        _mask = build_sam3_mask(nf, img1_ref, sam3_prompt,
+                                 invert=sam3_invert,
+                                 confidence=sam3_confidence,
+                                 mask_expand=sam3_expand,
+                                 mask_blur=sam3_blur)
+        final_ref = apply_sam3_scope(nf, final_ref, img1_ref, _mask)
+
+    nf.save_image(final_ref, "spellcaster_qwen_edit", node_id="12")
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  LTX 2.3 VIDEO GENERATION
 # ═══════════════════════════════════════════════════════════════════════════
 # LTX Video 2.3 pipeline:
