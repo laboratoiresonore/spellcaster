@@ -3631,6 +3631,136 @@ def _spellcaster_loras_approve(approvals: list) -> tuple[int, dict]:
 # calibration flow. Activating one model of an arch writes an arch profile
 # that every other unactivated same-arch model inherits as presettings.
 
+# ── LoRA grouping + shootout (pick ONE winner per purpose-group per arch) ─
+
+def _spellcaster_lora_groups() -> tuple[int, dict]:
+    """GET /api/spellcaster/lora/groups — which (arch, purpose) groups have
+    multiple candidates the user should pick between?
+    """
+    try:
+        from scaffold.lora_grouping import groups_needing_pick, enumerate_groups
+    except Exception as e:
+        return (500, {"error": f"scaffold module unavailable: {e}"})
+    pending = groups_needing_pick(_LORA_REGISTRY)
+    # Full enumeration for UI display (includes resolved groups too).
+    full = enumerate_groups(_LORA_REGISTRY)
+    full_public = {}
+    for (arch, purpose), members in full.items():
+        full_public[f"{arch}::{purpose}"] = {
+            "arch":    arch,
+            "purpose": purpose,
+            "members": [{"name":      m["name"],
+                         "preferred": bool(m.get("preferred_for_purpose")),
+                         "deprioritized": bool(m.get("deprioritized"))}
+                        for m in members],
+        }
+    return (200, {"pending": pending, "all": full_public})
+
+
+def _spellcaster_lora_shootout_start(
+    arch: str, purpose_group: str,
+    candidate_loras: list = None, seed: int = 12345,
+    strength: float = None,
+) -> tuple[int, dict]:
+    """POST /api/spellcaster/lora/shootout/start — render each candidate
+    LoRA with the same prompt/seed so the user can compare visually and
+    pick one.
+    """
+    try:
+        from scaffold.lora_grouping import (
+            start_shootout_job, enumerate_groups,
+        )
+        from spellcaster_core.preference_calibration import discover_models
+    except Exception as e:
+        return (500, {"error": f"module unavailable: {e}"})
+
+    if not arch or not purpose_group:
+        return (400, {"error": "arch + purpose_group required"})
+
+    # Default: take every candidate from the (arch, group) bucket.
+    if not candidate_loras:
+        groups = enumerate_groups(_LORA_REGISTRY)
+        candidate_loras = [m["name"] for m in
+                           groups.get((arch, purpose_group), [])]
+    if not candidate_loras:
+        return (409, {"error": f"no candidates for {arch}:{purpose_group}"})
+    if len(candidate_loras) < 2:
+        return (409, {"error": f"only {len(candidate_loras)} candidate — "
+                               "no shootout needed, directly mark preferred"})
+
+    try:
+        models = discover_models(COMFYUI_URL)
+    except Exception as e:
+        return (502, {"error": f"ComfyUI not reachable: {e}"})
+
+    state = start_shootout_job(
+        COMFYUI_URL, arch, purpose_group,
+        [str(l) for l in candidate_loras],
+        models, seed=seed, strength=strength,
+    )
+    return (200, {"ok": True, "job_id": state.job_id,
+                  "total": state.total, "status": state.status})
+
+
+def _spellcaster_lora_shootout_status(job_id: str) -> tuple[int, dict]:
+    try:
+        from scaffold.lora_grouping import get_shootout_job
+    except Exception as e:
+        return (500, {"error": f"module unavailable: {e}"})
+    state = get_shootout_job(job_id)
+    if not state:
+        return (404, {"error": f"job {job_id!r} not found"})
+    return (200, state.to_public_dict())
+
+
+def _spellcaster_lora_pick_preferred(
+    arch: str, purpose_group: str, winner: str,
+    demote_losers: bool = True,
+) -> tuple[int, dict]:
+    """POST /api/spellcaster/lora/preferred — mark the winner, demote losers.
+
+    Writes `preferred_for_purpose=True` onto the winner and
+    `deprioritized=True` + `replaced_by=<winner>` onto every other
+    (arch, purpose_group) member. `_get_loras_for_wizard` filters on these
+    flags so the Guild sidebar only suggests the preferred one.
+    """
+    try:
+        from scaffold.lora_grouping import enumerate_groups
+    except Exception as e:
+        return (500, {"error": f"module unavailable: {e}"})
+    if not arch or not purpose_group or not winner:
+        return (400, {"error": "arch + purpose_group + winner required"})
+
+    groups = enumerate_groups(_LORA_REGISTRY)
+    members = groups.get((arch, purpose_group), [])
+    member_names = {m["name"] for m in members}
+    if winner not in member_names:
+        return (404, {"error": f"winner {winner!r} not in "
+                               f"{arch}:{purpose_group} group"})
+
+    accepted = demoted = 0
+    for name in member_names:
+        entry = _LORA_REGISTRY.setdefault(name, {})
+        entry["purpose_group"] = purpose_group
+        if name == winner:
+            entry["preferred_for_purpose"] = True
+            entry.pop("deprioritized", None)
+            entry.pop("replaced_by", None)
+            accepted += 1
+        elif demote_losers:
+            entry["preferred_for_purpose"] = False
+            entry["deprioritized"] = True
+            entry["replaced_by"] = winner
+            demoted += 1
+    try:
+        _save_lora_registry()
+    except Exception as e:
+        return (500, {"error": f"save failed: {e}",
+                      "accepted": accepted, "demoted": demoted})
+    return (200, {"ok": True, "winner": winner,
+                  "accepted": accepted, "demoted": demoted})
+
+
 def _spellcaster_activation_bulk(detected_models: list = None) -> tuple[int, dict]:
     """GET /api/spellcaster/activation — current per-model activation status.
 
@@ -4515,6 +4645,12 @@ def _get_loras_for_wizard(char_id):
             continue
         if wizard_is_video and lora_video_tags and arch not in lora_video_tags:
             continue
+        # Dedup: if this (arch, purpose_group) has a preferred winner from
+        # the LoRA shootout, skip every other member unless it IS the winner.
+        # Prevents the per-model sidebar from stacking 5 feet LoRAs when
+        # the user already picked one as the canonical choice.
+        if info.get("deprioritized"):
+            continue
         # Auto-blacklist: if this LoRA has racked up failures against
         # this wizard's exact checkpoint, mark blocked so the F10 panel
         # can grey it out (and the user can manually unblock).
@@ -4524,6 +4660,8 @@ def _get_loras_for_wizard(char_id):
             "name": lora_name,
             "display_name": lora_name.replace("\\", "/").rsplit("/", 1)[-1].rsplit(".", 1)[0],
             "purpose": info.get("purpose", ""),
+            "purpose_group": info.get("purpose_group", ""),
+            "preferred_for_purpose": bool(info.get("preferred_for_purpose")),
             "tags": info.get("tags", []),
             "user_desc": info.get("user_desc", ""),
             "description": info.get("description", ""),
@@ -7300,6 +7438,14 @@ class GuildHandler(SimpleHTTPRequestHandler):
             params = urllib.parse.parse_qs(qs)
             return self.end_json(*_spellcaster_scaffold_calibrate_status(
                 params.get('job', [''])[0]))
+        # LoRA grouping + shootout
+        if self.path == '/api/spellcaster/lora/groups':
+            return self.end_json(*_spellcaster_lora_groups())
+        if self.path.startswith('/api/spellcaster/lora/shootout/status'):
+            qs = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(qs)
+            return self.end_json(*_spellcaster_lora_shootout_status(
+                params.get('job', [''])[0]))
         # LoRA bulk calibration status + results (polled by the review UI).
         if self.path.startswith('/api/spellcaster/calibrate/loras/status'):
             qs = urllib.parse.urlparse(self.path).query
@@ -9570,6 +9716,21 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 data.get('scaffold', ''),
                 overrides=data.get('overrides') or {},
                 seed=int(data.get('seed', 42))))
+        # LoRA shootout — render candidates + commit the winner
+        if self.path == '/api/spellcaster/lora/shootout/start':
+            return self.end_json(*_spellcaster_lora_shootout_start(
+                data.get('arch', ''),
+                data.get('purpose_group', ''),
+                candidate_loras=data.get('candidates') or [],
+                seed=int(data.get('seed', 12345)),
+                strength=(float(data['strength'])
+                           if 'strength' in data else None)))
+        if self.path == '/api/spellcaster/lora/preferred':
+            return self.end_json(*_spellcaster_lora_pick_preferred(
+                data.get('arch', ''),
+                data.get('purpose_group', ''),
+                data.get('winner', ''),
+                demote_losers=bool(data.get('demote_losers', True))))
 
         # -- /api/horde_generate -- server-side proxy to AI Horde
         #    Browser can't call Horde directly (CORS), so we relay.
