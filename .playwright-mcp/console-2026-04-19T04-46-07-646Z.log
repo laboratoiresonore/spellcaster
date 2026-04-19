@@ -2,3 +2,15 @@
     at http://127.0.0.1:7777/app.js:3606:45 @ http://127.0.0.1:7777/app.js:3641
 [   22619ms] [LOG] [Guild] Synced 35 pre-generated assets from server @ http://127.0.0.1:7777/app.js:304
 [   22628ms] [LOG] [Guild] Synced 104 identity field(s) from server @ http://127.0.0.1:7777/app.js:332
+[  145463ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/interfaces:0
+[  155481ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/sillytavern_status:0
+[  155482ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/signal_bridge_status:0
+[  157524ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/interfaces:0
+[  165430ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/comfy_status:0
+[  165430ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/interfaces:0
+[  170476ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/assets/2903ee73917e66fa48040df4592fd01a9ca5e434e27f353a3ce893edaf8521bf:0
+[  215467ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/sillytavern_status:0
+[  217512ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/signal_bridge_status:0
+[  223449ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/wizard_info/studio_restorix:0
+[  225495ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/comfy_status:0
+[  230461ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/comfy_status:0
