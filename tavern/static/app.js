@@ -2008,22 +2008,27 @@ async function initialize() {
         const missing = (typeof characters !== 'undefined')
             ? characters.filter(c => !c.avatar_url) : [];
         if (missing.length > 0) {
-            // Partial restart-recovery setup. The server's bg worker
-            // honours skip_existing=True by default, so the call only
-            // generates the ones we need.
-            try {
-                await fetch('/api/setup/start', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ comfy_url: comfyUrl }),
-                });
-                // Give the server a beat to flip the phase, then retry
-                // the Archivist mode entry so we get the chat-lock UI
-                // for the partial run.
-                await new Promise(r => setTimeout(r, 300));
-                setupActive = await _maybeEnterArchivistMode();
-            } catch (e) {
-                console.warn('[Guild] could not start recovery setup:', e);
+            // Before triggering the avatar-gen background worker, confirm
+            // ComfyUI is actually up. If it's down and a paired antenna
+            // offers the comfyui service, prompt the user to start it
+            // remotely instead of dropping into a stuck Archivist mode
+            // that silently fails against an unreachable server.
+            const readyForGen = await _ensureComfyUiOrOfferRemoteStart();
+            if (readyForGen) {
+                // Partial restart-recovery setup. The server's bg worker
+                // honours skip_existing=True by default, so the call
+                // only generates the ones we need.
+                try {
+                    await fetch('/api/setup/start', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ comfy_url: comfyUrl }),
+                    });
+                    await new Promise(r => setTimeout(r, 300));
+                    setupActive = await _maybeEnterArchivistMode();
+                } catch (e) {
+                    console.warn('[Guild] could not start recovery setup:', e);
+                }
             }
         }
     }
@@ -2580,6 +2585,149 @@ async function _archivistPollOnce() {
             localStorage.setItem('guild_setup_complete', 'true');
         } catch (e) {}
     }
+}
+
+// Probe ComfyUI. If it's down, check whether a paired antenna can
+// start it remotely and offer the user a one-click Start. Returns true
+// when the caller should proceed with avatar generation, false when it
+// should abort (ComfyUI still unreachable and the user declined).
+async function _ensureComfyUiOrOfferRemoteStart() {
+    let status;
+    try {
+        const res = await fetch('/api/setup/comfyui-status');
+        status = await res.json();
+    } catch (e) {
+        // Probe itself failed — let the legacy fallback run so behavior
+        // doesn't regress for users on older server builds without this
+        // endpoint.
+        return true;
+    }
+    if (status.reachable) return true;
+    const antenna = status.antenna;
+    if (!antenna || !antenna.can_start) {
+        // No remote option available. Show a non-blocking banner so the
+        // user knows why the sidebar wizards stay empty, but don't kick
+        // off the avatar worker against a server that won't respond.
+        _showComfyDownBanner(status);
+        return false;
+    }
+    // Remote start is possible — ask the user.
+    const userWantsStart = await _askStartRemoteComfy(antenna);
+    if (!userWantsStart) {
+        _showComfyDownBanner(status);
+        return false;
+    }
+    // Fire the antenna service start + poll for reachability.
+    const started = await _startRemoteComfyAndWait(antenna);
+    if (!started) {
+        _showComfyDownBanner(status, { startFailed: true });
+        return false;
+    }
+    return true;
+}
+
+function _askStartRemoteComfy(antenna) {
+    // Lightweight inline modal — no new dependency, no new CSS class:
+    // re-use the settings modal shell so the styling stays consistent.
+    return new Promise((resolve) => {
+        const wrap = document.createElement('div');
+        wrap.className = 'modal-overlay';
+        wrap.style.cssText =
+            'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10000;' +
+            'display:flex;align-items:center;justify-content:center;';
+        const host = antenna.hostname || antenna.agent_url || 'remote antenna';
+        const body = document.createElement('div');
+        body.style.cssText =
+            'background:#1b1b1e;color:#eee;border:1px solid #444;border-radius:8px;' +
+            'max-width:480px;padding:22px 26px;box-shadow:0 8px 40px rgba(0,0,0,0.5);' +
+            'font-family:inherit;';
+        body.innerHTML =
+            '<h3 style="margin:0 0 10px 0;font-size:1.1em;">ComfyUI is not running</h3>' +
+            '<p style="margin:0 0 14px 0;opacity:0.85;line-height:1.45;">' +
+            'Your antenna <b>' + host + '</b> has ComfyUI installed but the ' +
+            'service is down. Start it remotely to continue?' +
+            '</p>' +
+            '<div style="display:flex;gap:10px;justify-content:flex-end;">' +
+            '<button data-act="no" style="padding:7px 14px;background:#333;color:#ccc;' +
+            'border:1px solid #555;border-radius:4px;cursor:pointer;">Not now</button>' +
+            '<button data-act="yes" style="padding:7px 14px;background:#5d4fa7;color:#fff;' +
+            'border:1px solid #7a6ad0;border-radius:4px;cursor:pointer;">' +
+            'Start ComfyUI on ' + host + '</button>' +
+            '</div>';
+        wrap.appendChild(body);
+        document.body.appendChild(wrap);
+        body.querySelector('[data-act="yes"]').onclick = () => {
+            wrap.remove();
+            resolve(true);
+        };
+        body.querySelector('[data-act="no"]').onclick = () => {
+            wrap.remove();
+            resolve(false);
+        };
+    });
+}
+
+async function _startRemoteComfyAndWait(antenna) {
+    // Fire the antenna-side POST /service/start, then poll comfyui-status
+    // until reachable or we hit the budget. 60s is enough for the WAN
+    // box to cold-start ComfyUI on a reasonable machine; beyond that the
+    // user is better off investigating the antenna logs directly.
+    try {
+        const res = await fetch('/api/antenna/service/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ service: 'comfyui' }),
+        });
+        if (!res.ok) {
+            console.warn('[Guild] antenna start refused:', res.status);
+        }
+    } catch (e) {
+        console.warn('[Guild] antenna start request failed:', e);
+        return false;
+    }
+    const deadline = Date.now() + 60000;
+    while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 3000));
+        try {
+            const r = await fetch('/api/setup/comfyui-status');
+            const s = await r.json();
+            if (s.reachable) return true;
+        } catch (e) {
+            /* keep polling */
+        }
+    }
+    return false;
+}
+
+function _showComfyDownBanner(status, opts) {
+    opts = opts || {};
+    // Idempotent — only one banner at a time.
+    if (document.getElementById('comfy-down-banner')) return;
+    const bar = document.createElement('div');
+    bar.id = 'comfy-down-banner';
+    bar.style.cssText =
+        'position:fixed;top:0;left:0;right:0;z-index:9500;padding:10px 18px;' +
+        'background:#3a2020;color:#ffd7d7;font-size:0.92em;text-align:center;' +
+        'border-bottom:1px solid #5a3030;';
+    const url = (status && status.comfyui_url) || '';
+    let msg = 'ComfyUI is unreachable at ' + url + '.';
+    if (opts.startFailed) {
+        msg += ' Remote start did not complete within 60s — check the ' +
+               'antenna logs.';
+    } else if (status && status.antenna && status.antenna.can_start) {
+        msg += ' Paired antenna can start it remotely — reopen to retry.';
+    } else {
+        msg += ' Start ComfyUI or pair an antenna that provides it.';
+    }
+    bar.textContent = msg + '  ';
+    const close = document.createElement('button');
+    close.textContent = 'dismiss';
+    close.style.cssText =
+        'margin-left:10px;background:transparent;color:#ffd7d7;border:1px solid #7a4040;' +
+        'border-radius:3px;padding:2px 8px;cursor:pointer;font-size:0.85em;';
+    close.onclick = () => bar.remove();
+    bar.appendChild(close);
+    document.body.appendChild(bar);
 }
 
 async function _maybeEnterArchivistMode() {

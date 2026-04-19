@@ -3195,6 +3195,82 @@ def _guided_install_finish() -> tuple[int, dict]:
     return (200, {"setup_mode": False, "redirect": "/"})
 
 
+def _comfyui_status_for_client() -> dict:
+    """GET /api/setup/comfyui-status — explain why ComfyUI is or isn't up.
+
+    The frontend probes this before entering Archivist mode so it can
+    offer "start remote ComfyUI via antenna" instead of dropping the user
+    into a stuck avatar-generation UI when the remote ComfyUI host is
+    powered off. Response keys:
+
+        reachable        bool — /object_info responded
+        comfyui_url      str  — the URL we probed
+        antenna          dict or None — best antenna candidate with the
+                                comfyui service, if one is registered.
+                                {hostname, agent_url, online, services,
+                                 comfyui_declared, can_start}
+                         `can_start` is True when the antenna is online
+                         and its service dict lists comfyui as a
+                         launcher target (i.e. POST /service/start is
+                         expected to succeed).
+        suggestion       str — "none" | "start_remote" | "install_local"
+                         The frontend maps this to its dialog copy.
+    """
+    # 1. Probe ComfyUI locally/remotely (whatever URL is configured).
+    reachable = False
+    try:
+        req = urllib.request.Request(f"{COMFYUI_URL}/object_info")
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            payload = resp.read()
+        reachable = len(payload) > 2  # any JSON body counts
+    except Exception:
+        reachable = False
+
+    out: dict[str, Any] = {
+        "reachable": reachable,
+        "comfyui_url": COMFYUI_URL,
+        "antenna": None,
+        "suggestion": "none" if reachable else "install_local",
+    }
+    if reachable:
+        return out
+
+    # 2. ComfyUI is down — is there an antenna that can start it?
+    if not (ANTENNA_REGISTRY_AVAILABLE and _antenna_registry is not None):
+        return out
+    try:
+        chosen = _antenna_registry.choose_antenna_for("comfyui")
+    except Exception:
+        chosen = None
+    if chosen is None:
+        # Fallback: any online antenna that at least declares comfyui,
+        # even if choose_antenna_for's detection rules rejected it (e.g.
+        # vram data missing). Better to offer the start button and let
+        # the antenna 404 than silently show the install wizard.
+        try:
+            online = _antenna_registry.list_entries(only_online=True)
+        except Exception:
+            online = []
+        for a in online:
+            if "comfyui" in (a.services or []):
+                chosen = a
+                break
+    if chosen is None:
+        return out
+
+    services_declared = list(getattr(chosen, "services", []) or [])
+    out["antenna"] = {
+        "hostname": chosen.hostname,
+        "agent_url": chosen.agent_url,
+        "online": True,
+        "services": services_declared,
+        "comfyui_declared": "comfyui" in services_declared,
+        "can_start": "comfyui" in services_declared,
+    }
+    out["suggestion"] = "start_remote"
+    return out
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  Spellcaster Wizard — scaffold-backed onboarding, install mgmt, calibration
 # ═══════════════════════════════════════════════════════════════════════════
@@ -8459,6 +8535,13 @@ class GuildHandler(SimpleHTTPRequestHandler):
         if self.path == '/api/setup/state':
             return self.end_json(200, _guided_install_get_state())
 
+        # Is ComfyUI reachable? If not, can an antenna start it remotely?
+        # Lets the Archivist-mode bootstrap offer "start remote" instead
+        # of dropping the user into a stuck avatar-generation UI when the
+        # ComfyUI host is powered off.
+        if self.path == '/api/setup/comfyui-status':
+            return self.end_json(200, _comfyui_status_for_client())
+
         # ── Spellcaster Wizard state (richer superset of setup/state) ──
         if self.path == '/api/spellcaster/state':
             return self.end_json(200, _spellcaster_state())
@@ -11349,6 +11432,18 @@ class GuildHandler(SimpleHTTPRequestHandler):
               and self.command == 'GET'):
             # R51a: proxy to antenna for the preset dropdown
             return self._proxy_to_antenna('/resolve/render-presets', 'GET', None,
+                                           service='resolve')
+        elif (self.path == '/api/antenna/resolve/projects'
+              and self.command == 'GET'):
+            # R55: project picker list (current folder, sibling folders,
+            # projects, currently-loaded name)
+            return self._proxy_to_antenna('/resolve/projects', 'GET', None,
+                                           service='resolve')
+        elif (self.path == '/api/antenna/resolve/load-project'
+              and self.command == 'POST'):
+            # R55: switch Resolve to a named project before running any
+            # send-to-Resolve action
+            return self._proxy_to_antenna('/resolve/load-project', 'POST', data,
                                            service='resolve')
         elif (self.path == '/api/antenna/service/start'
               and self.command == 'POST'):
