@@ -1355,6 +1355,49 @@ class Shotboard:
         clusters.sort(key=lambda c: (-c["count"], c["prompt"]))
         return clusters
 
+    def batch_rename(self, shot_ids: List[str],
+                       pattern: str,
+                       start: int = 1,
+                       zero_pad: int = 2) -> Dict[str, Any]:
+        """R81b: apply a title pattern across selected shots.
+
+        Supports these placeholders:
+          {n}        → running index starting from `start` (NO padding)
+          {nn}       → zero-padded index (width = zero_pad, default 2)
+          {original} → the shot's current title
+          {scene}    → the scene name (or empty if unassigned)
+
+        Examples:
+          pattern="Shot_{nn}"         → "Shot_01", "Shot_02", "Shot_03"
+          pattern="Act1_{nn}: {original}" → "Act1_01: wide shot", ...
+          pattern="{scene} — Shot {n}"   → "Opening — Shot 1"
+
+        Order follows shot_ids as given. Locked shots are skipped.
+        """
+        changed = 0
+        for i, sid in enumerate(shot_ids):
+            shot = self.get(sid)
+            if shot is None or shot.locked:
+                continue
+            idx = start + i
+            scene = ""
+            if shot.scene_id:
+                sc = next((s for s in self._scenes if s.id == shot.scene_id), None)
+                scene = sc.name if sc else ""
+            new_title = (pattern
+                          .replace("{original}", shot.title or "")
+                          .replace("{scene}", scene)
+                          .replace("{nn}", str(idx).zfill(max(1, zero_pad)))
+                          .replace("{n}", str(idx)))
+            if new_title != shot.title:
+                shot.title = new_title
+                shot.touch()
+                changed += 1
+        if changed:
+            self.save()
+        return {"changed": changed, "pattern": pattern,
+                "start": start, "total": len(shot_ids)}
+
     def batch_randomize_seeds(self, shot_ids,
                                seed_min: int = 0,
                                seed_max: int = 2147483647):
