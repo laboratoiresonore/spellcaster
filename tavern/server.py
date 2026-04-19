@@ -1743,32 +1743,66 @@ def _server_init(comfy_url=None):
 
     def _resolve_bridge_action(action_key, payload):
         """Publish a resolve.* event that the Resolve Bridge's SSE
-        subscriber picks up. Thin-client — the Bridge does the heavy
-        lifting. Returns a dict the wizard surfaces to chat."""
+        subscriber picks up, then block briefly for the ack event the
+        Bridge emits back. Returns a dict the wizard surfaces to chat.
+
+        R123: instead of returning a stub and relying on the user to
+        refresh, we poll the event ring for `resolve.playhead.ready`
+        or `resolve.timeline.imported` with a bounded timeout, so the
+        menu reply carries the real shot_id / timeline_name.
+        """
         if not CROSS_INTERFACE_AVAILABLE or _EVENT_BUS is None:
             return {"error": "cross-interface bus disabled on this Guild"}
+
+        def _await_ack(ack_kind, timeout_s, poll_s=0.2):
+            deadline = time.time() + timeout_s
+            while time.time() < deadline:
+                acks = _EVENT_BUS.recent(
+                    limit=10, since_ts=t0, kinds=[ack_kind])
+                if acks:
+                    return acks[-1]
+                time.sleep(poll_s)
+            return None
+
         try:
             if action_key == "pull_playhead":
-                # Bridge subscribes to resolve.playhead.grab; on
-                # receipt it captures the playhead still, uploads it
-                # to /api/assets, and publishes resolve.playhead.ready
-                # which the wizard can poll for. For R121 v1 we fire
-                # the event and return success — the caller will see
-                # the ref image attached via a follow-up mailbox pull.
+                t0 = time.time()
                 _EVENT_BUS.publish("resolve.playhead.grab",
                                     origin="guild",
                                     data={"want": "reference_still"})
+                ack = _await_ack("resolve.playhead.ready", timeout_s=12.0)
+                if ack is None:
+                    return {"error": ("Bridge didn't ack within 12s — "
+                                       "is the Workflow Integration "
+                                       "Plugin running?")}
+                data = ack.get("data") or {}
+                if data.get("error"):
+                    return {"error": data["error"]}
+                shot_id = data.get("shot_id") or ""
                 return {"ok": True,
-                         "shot_id": "(pending — Bridge will publish ready)",
-                         "note": ("Event dispatched. Drop into Resolve "
-                                  "Scripts > 💎 Spellcaster and the still "
-                                  "lands shortly.")}
+                         "shot_id": shot_id,
+                         "size_bytes": data.get("size_bytes"),
+                         "note": (f"New shot {shot_id[:8] if shot_id else '?'} "
+                                  "created from Resolve playhead. Open "
+                                  "the Shot Wizard to queue it.")}
             if action_key == "import_edl":
+                t0 = time.time()
                 _EVENT_BUS.publish("resolve.timeline.import",
                                     origin="guild",
                                     data={"source": "cinematographer"})
+                ack = _await_ack("resolve.timeline.imported", timeout_s=20.0)
+                if ack is None:
+                    return {"error": ("Bridge didn't ack within 20s — "
+                                       "check Resolve console for errors.")}
+                data = ack.get("data") or {}
+                if data.get("error"):
+                    out = {"error": data["error"]}
+                    if data.get("edl_path"):
+                        out["edl_path"] = data["edl_path"]
+                    return out
                 return {"ok": True,
-                         "timeline_name": "Spellcaster (from Cinematographer)"}
+                         "timeline_name": data.get("timeline_name")
+                                          or "Spellcaster"}
         except Exception as e:
             return {"error": f"event publish failed: {e}"}
         return {"error": f"unknown Resolve action: {action_key}"}
