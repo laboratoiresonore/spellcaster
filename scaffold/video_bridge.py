@@ -75,9 +75,21 @@ class VideoBridge:
                  wangp_url: str = "http://localhost:7860",
                  comfyui_url: str = "http://localhost:8188",
                  output_dir: Optional[str] = None,
-                 cleanup_outputs: bool = True):
+                 cleanup_outputs: bool = True,
+                 resolve_status_fn=None,
+                 resolve_action_fn=None):
+        """R121: resolve_status_fn / resolve_action_fn are passed
+        through to the Cinematographer so its replies and menu tailor
+        to a live Resolve Bridge. Both are optional — the bridge
+        falls back to the plain flow when they're not provided.
+        Injection (rather than import) keeps scaffold/ decoupled from
+        tavern/ and spellcaster_core/."""
         self.board = Shotboard(os.path.expanduser(shotboard_path))
-        self.wizard = CinematographerWizard(self.board)
+        self.wizard = CinematographerWizard(
+            self.board,
+            resolve_status_fn=resolve_status_fn,
+            resolve_action_fn=resolve_action_fn,
+        )
         self.wangp = WanGPRunner(wangp_url)
         self.comfy = ComfyUIRunner(
             comfyui_url,
