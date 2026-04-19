@@ -61,7 +61,13 @@ from . import __version__, auth, config, heartbeat
 # declare them. Keeps import-time clean and failure modes per-service.
 
 # Endpoints that skip token auth (but still rate-limited).
-_UNAUTHENTICATED_PATHS: set[str] = {"/"}
+#
+# /pair/claim is unauthenticated BY DESIGN — it's how a Guild that
+# doesn't yet have this antenna's bearer token gets one. Rate-limited
+# at the normal RateLimiter cap, so brute-forcing the 6-digit code
+# requires the attacker to also beat the limiter. Wrong codes count
+# against the limit. See antenna/pairing.py for the lifecycle.
+_UNAUTHENTICATED_PATHS: set[str] = {"/", "/pair/claim", "/pair/state"}
 
 
 # R49a diagnostic: last run's result, readable via /status for debugging.
@@ -204,6 +210,42 @@ def _build_routes(cfg: dict[str, Any]) -> dict[tuple[str, str], Callable]:
         ("GET", "/"):         status_ep.liveness,
         ("GET", "/status"):   status_ep.status,
     }
+
+    # Pair-code handshake: unauthenticated claim + public state probe.
+    # See _UNAUTHENTICATED_PATHS above and antenna/pairing.py for the
+    # full flow. The claim handler returns the bearer token on the one
+    # correct code, invalidates the code afterward, and 403s everything
+    # else (which counts against the rate limit).
+    try:
+        from . import pairing as _pairing
+
+        def _pair_claim(ctx: dict) -> tuple[int, dict]:
+            body = ctx.get("body") or {}
+            code = body.get("code", "") if isinstance(body, dict) else ""
+            status_code, resp = _pairing.claim(code, ctx.get("config"))
+            if status_code == 200:
+                notify("Antenna paired",
+                       "A Guild just completed the handshake — token shared.",
+                       level="success")
+            return status_code, resp
+
+        def _pair_state(_ctx: dict) -> tuple[int, dict]:
+            return 200, _pairing.get_pairing_state()
+
+        def _pair_start(_ctx: dict) -> tuple[int, dict]:
+            return 200, _pairing.start_pairing()
+
+        def _pair_cancel(_ctx: dict) -> tuple[int, dict]:
+            cancelled = _pairing.cancel_pairing()
+            return 200, {"cancelled": cancelled}
+
+        routes[("POST", "/pair/claim")]  = _pair_claim
+        routes[("GET",  "/pair/state")]  = _pair_state
+        routes[("POST", "/pair/start")]  = _pair_start   # auth required
+        routes[("POST", "/pair/cancel")] = _pair_cancel  # auth required
+    except ImportError as _e:
+        print(f"[antenna] pairing endpoints unavailable: {_e}",
+              file=sys.stderr)
 
     # R60b: telemetry snapshot (GPU/RAM/queue-depth) for fleet dashboards.
     # Schema is compatible with Spellcaster's FleetTelemetry consumer.
