@@ -74,43 +74,61 @@ def _locate_shared():
 
 
 def _confirm(title: str, message: str) -> bool:
-    """Tiny confirm dialog using the Fusion UI. Returns True on OK, False on cancel."""
+    """Tiny confirm dialog using the Fusion UI.
+
+    Returns True on OK, False on cancel. When the UI API isn't
+    available (common when the script runs from the Utility menu
+    outside the Fusion page — fu.UIDispatcher comes back as None
+    rather than raising), the summary is printed to the Console and
+    the script proceeds as if the editor confirmed. Rationale: they
+    already clicked the menu entry; a silent abort would be worse
+    than a silent proceed.
+    """
     from resolve_helpers import get_fusion
-    fu = get_fusion()
-    if not fu:
-        # No Fusion UI available — default to go-ahead so the script still
-        # functions headless (e.g. CLI invocation).
-        return True
-    ui = fu.UIManager
-    disp = fu.UIDispatcher(ui)
-    result = {"ok": False}
-    win = disp.AddWindow({"WindowTitle": title,
-                          "Geometry": [800, 500, 500, 200]}, [
-        ui.VGroup([
-            ui.Label({"Text": message, "WordWrap": True,
-                       "Alignment": {"AlignHCenter": True}}),
-            ui.HGap(0, 1.0),
-            ui.HGroup([
-                ui.Button({"ID": "cancel", "Text": "Cancel"}),
-                ui.Button({"ID": "ok", "Text": "Capture"}),
+    try:
+        fu = get_fusion()
+        if not fu:
+            print(f"[{title}] {message}\n  (proceeding — no Fusion UI)")
+            return True
+        ui = fu.UIManager
+        disp_factory = getattr(fu, "UIDispatcher", None)
+        if ui is None or disp_factory is None:
+            print(f"[{title}] {message}\n"
+                   f"  (proceeding — UIManager/UIDispatcher unavailable "
+                   f"outside the Fusion page)")
+            return True
+        disp = disp_factory(ui)
+        result = {"ok": False}
+        win = disp.AddWindow({"WindowTitle": title,
+                              "Geometry": [800, 500, 500, 200]}, [
+            ui.VGroup([
+                ui.Label({"Text": message, "WordWrap": True,
+                           "Alignment": {"AlignHCenter": True}}),
+                ui.HGap(0, 1.0),
+                ui.HGroup([
+                    ui.Button({"ID": "cancel", "Text": "Cancel"}),
+                    ui.Button({"ID": "ok", "Text": "Capture"}),
+                ]),
             ]),
-        ]),
-    ])
+        ])
 
-    def _ok(ev):
-        result["ok"] = True
-        disp.ExitLoop()
+        def _ok(ev):
+            result["ok"] = True
+            disp.ExitLoop()
 
-    def _cancel(ev):
-        disp.ExitLoop()
+        def _cancel(ev):
+            disp.ExitLoop()
 
-    win.On.ok.Clicked = _ok
-    win.On.cancel.Clicked = _cancel
-    win.On.Window.Close = _cancel
-    win.Show()
-    disp.RunLoop()
-    win.Hide()
-    return result["ok"]
+        win.On.ok.Clicked = _ok
+        win.On.cancel.Clicked = _cancel
+        win.On.Window.Close = _cancel
+        win.Show()
+        disp.RunLoop()
+        win.Hide()
+        return result["ok"]
+    except Exception as e:  # noqa: BLE001
+        print(f"[{title}] {message}\n  (confirm dialog failed: {e}; proceeding)")
+        return True
 
 
 def main() -> int:

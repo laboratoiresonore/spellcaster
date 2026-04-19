@@ -1014,30 +1014,49 @@ def _publish_event(kind, **data):
         pass
 
 
-def _auto_enhance(prompt, arch_key, negative="", model_name=None):
+def _auto_enhance(prompt, arch_key, negative="", model_name=None,
+                   method="scene"):
     """Enhance a prompt via local LLM if the global toggle is ON.
 
-    When model_name is passed, spellcaster_core.llm_prompt_db overlays
-    any per-model hints and sampling overrides the user has curated
-    for that specific checkpoint on top of the arch baseline.
+    Args:
+        prompt:     raw user prompt
+        arch_key:   diffusion family (sdxl, flux2klein, ...)
+        negative:   negative prompt (returned unchanged — architectures
+                    already ship optimal quality_negative lists)
+        model_name: optional concrete checkpoint name; used by
+                    spellcaster_core.llm_prompt_db to overlay per-model
+                    hints / sampling overrides on top of the arch baseline.
+        method:     generation method this prompt feeds (default "scene"
+                    for full-image txt2img/img2img). Methods with narrow
+                    scope — inpaint, outpaint, refine, face_detail, tryon,
+                    iclight, colorize — scope the enhancement so the LLM
+                    doesn't over-describe outside the method's region of
+                    interest. Methods like "kontext", "faceswap",
+                    "upscale", "rembg" skip enhancement entirely.
 
     Returns (enhanced_prompt, enhanced_negative). If enhancement is
     disabled, the LLM is unreachable, or the prompt is already detailed,
-    returns the originals unchanged. Never blocks generation — 15s timeout.
+    returns the originals unchanged. Never blocks generation.
     """
     if not _PROMPT_ENHANCE or not prompt or not prompt.strip():
         return prompt, negative
-    # Never enhance edit instructions (Kontext) or turbo models (ZIT)
-    if arch_key in ("flux_kontext", "zit"):
+    # Never enhance turbo models (ZIT) — fast-step samplers don't need it.
+    if arch_key == "zit":
         return prompt, negative
+    # flux_kontext uses edit-instruction prompts; handled via method="edit"
+    # by callers but we keep the legacy arch-level guard for safety.
+    if arch_key == "flux_kontext" and method == "scene":
+        method = "edit"
     try:
         from spellcaster_core.prompt_enhance import enhance_prompt
         enhanced = enhance_prompt(prompt, arch_key, _LLM_URL, is_negative=False,
                                   comfy_url=COMFYUI_DEFAULT_URL,
-                                  model_name=model_name)
+                                  model_name=model_name,
+                                  method=method)
         if enhanced and enhanced != prompt:
             tail = f", {model_name.split('/')[-1]}" if model_name else ""
-            print(f"[Spellcaster] Prompt enhanced ({arch_key}{tail}): "
+            mtag = f"/{method}" if method and method != "scene" else ""
+            print(f"[Spellcaster] Prompt enhanced ({arch_key}{mtag}{tail}): "
                   f"{len(prompt.split())}→{len(enhanced.split())} words")
         else:
             enhanced = prompt
@@ -4937,7 +4956,8 @@ def _build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_
     """→ Delegated to v2 builder, with automatic prompt enhancement."""
     preset = _fix_preset_cfg(preset)
     arch_key = preset.get("arch", "sdxl")
-    prompt_text, negative_text = _auto_enhance(prompt_text, arch_key, negative_text)
+    prompt_text, negative_text = _auto_enhance(prompt_text, arch_key, negative_text,
+                                                method="inpaint")
     return build_inpaint(image_filename, mask_filename, preset, prompt_text, negative_text, seed,
                          loras=loras, controlnet=controlnet, controlnet_2=controlnet_2,
                          guide_modes=CONTROLNET_GUIDE_MODES)
@@ -16345,7 +16365,8 @@ class Spellcaster(Gimp.PlugIn):
             _upload_image(srv, tmp, uname); os.unlink(tmp)
             _prompt = inpaint_prompt
             if enhance:
-                _prompt, _ = _auto_enhance(inpaint_prompt, "flux2klein")
+                _prompt, _ = _auto_enhance(inpaint_prompt, "flux2klein",
+                                            method="klein_auto_inpaint")
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = build_klein_auto_inpaint(
@@ -16529,7 +16550,8 @@ class Spellcaster(Gimp.PlugIn):
                 _upload_image(srv, ref_file, ref_name)
             _prompt = inpaint_prompt
             if enhance:
-                _prompt, _ = _auto_enhance(inpaint_prompt, "flux2klein")
+                _prompt, _ = _auto_enhance(inpaint_prompt, "flux2klein",
+                                            method="klein_sam3_inpaint")
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = build_klein_sam3_inpaint(
@@ -16671,7 +16693,8 @@ class Spellcaster(Gimp.PlugIn):
             _upload_image(srv, tmp, uname); os.unlink(tmp)
             _prompt = prompt
             if enhance:
-                _prompt, _ = _auto_enhance(prompt, "flux2klein")
+                _prompt, _ = _auto_enhance(prompt, "flux2klein",
+                                            method="klein_refine")
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = build_klein_refine(
@@ -16825,7 +16848,8 @@ class Spellcaster(Gimp.PlugIn):
             _upload_image(srv, tmp, uname); os.unlink(tmp)
             _prompt = prompt
             if enhance:
-                _prompt, _ = _auto_enhance(prompt, "flux2klein")
+                _prompt, _ = _auto_enhance(prompt, "flux2klein",
+                                            method="klein_face_detail")
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = build_klein_face_detail(
@@ -17131,7 +17155,8 @@ class Spellcaster(Gimp.PlugIn):
                 _upload_image(srv, pose_file, pose_name)
             _prompt = prompt
             if enhance:
-                _prompt, _ = _auto_enhance(prompt, "flux2klein")
+                _prompt, _ = _auto_enhance(prompt, "flux2klein",
+                                            method="klein_virtual_tryon")
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = build_klein_virtual_tryon(

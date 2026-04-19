@@ -270,11 +270,202 @@ _DEFAULT_ENHANCE_PROFILE = {
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  PER-METHOD ENHANCEMENT OVERLAYS
+# ═══════════════════════════════════════════════════════════════════════════
+# The arch profiles above describe how to format a prompt for a given
+# DIFFUSION FAMILY (SDXL = booru tags, Flux = natural language, etc.).
+# But different GENERATION METHODS on the same family want completely
+# different prompt CONTENT. An inpaint prompt describes only what fills
+# the masked region; an outpaint describes what extends beyond the
+# canvas; a face-detail refinement describes only facial features; a
+# relight describes only the lighting. Without a method overlay, the
+# enhancer happily rewrites "a red hat" into a full-scene description
+# and inpaint injects a whole sky into the tiny hat area.
+#
+# Each method profile can:
+#   - `skip: True`        — bypass enhancement entirely (edit-instructions,
+#                           pure-utility ops, preset-driven tools).
+#   - `extra_notes: str`  — appended to the arch profile's notes so the
+#                           LLM sees BOTH the arch grammar rules AND the
+#                           method-specific scope.
+#   - `length_override:`  — replaces the arch profile's length band
+#                           (shorter for narrow scopes like "face_detail").
+#   - `style_override:`   — replaces the arch profile's style hint.
+#
+# `method` is a free-form string; unknown values fall through to scene
+# behaviour (no overlay). Canonical method keys below; add more as new
+# generation pipelines land.
+_METHOD_PROFILES = {
+    # Pass-through — no LLM call. Used for methods where the prompt is
+    # either a literal edit instruction, a preset selector, or absent.
+    "edit":            {"skip": True},   # Kontext / Qwen-Edit instructions
+    "kontext":         {"skip": True},
+    "qwen_edit":       {"skip": True},
+    "faceswap":        {"skip": True},
+    "face_restore":    {"skip": True},
+    "photo_restore":   {"skip": True},
+    "rembg":           {"skip": True},
+    "lama_remove":     {"skip": True},
+    "upscale":         {"skip": True},
+    "wavespeed_upscale": {"skip": True},
+    "seedvr2":         {"skip": True},
+    "sam3_extract":    {"skip": True},
+    "sam3_segment":    {"skip": True},
+    "magic_eraser":    {"skip": True},
+    "lut":             {"skip": True},   # LUT is a preset name, no LLM
+    "none":            {"skip": True},
+
+    # Scene description — default behaviour. Empty overlay.
+    "scene":           {},
+    "txt2img":         {},
+    "img2img":         {},
+    "controlnet":      {},
+    "style_transfer":  {},
+    "video":           {},
+    "wan_video":       {},
+    "ltx_video":       {},
+    "scene_img2img":   {},
+
+    # Inpaint — describe ONLY the masked content, not the whole scene.
+    "inpaint": {
+        "length_override": "20-60 words",
+        "extra_notes": (
+            "\n\nINPAINT SCOPE (this is the most important rule for this call):\n"
+            "The user's prompt describes ONLY what appears INSIDE the masked region. "
+            "Enhance for that region ONLY. Do NOT add a global setting, do NOT "
+            "describe the backdrop, do NOT invent lighting for the wider scene — "
+            "those stay unchanged from the surrounding unmasked pixels. Your output "
+            "must read as 'what goes IN the mask', nothing more. Stay tight."
+        ),
+    },
+    "klein_inpaint":       {"inherit": "inpaint"},
+    "klein_auto_inpaint":  {"inherit": "inpaint"},
+    "klein_sam3_inpaint":  {"inherit": "inpaint"},
+
+    # Outpaint — extend the canvas beyond what the user already has.
+    "outpaint": {
+        "length_override": "40-80 words",
+        "extra_notes": (
+            "\n\nOUTPAINT SCOPE:\n"
+            "Describe ONLY what extends BEYOND the existing canvas. The user already "
+            "has the original image — do NOT repeat its subject or re-describe what's "
+            "inside it. Output should cover the new empty area: continuing landscape, "
+            "sky, extended floor, adjacent architecture, peripheral props. Match the "
+            "original's lighting direction, colour palette, and time-of-day so the "
+            "seam is invisible."
+        ),
+    },
+
+    # Refinement — quality / detail only. Don't invent new subjects.
+    "refine": {
+        "length_override": "15-40 words",
+        "extra_notes": (
+            "\n\nREFINE SCOPE:\n"
+            "The image already exists; you are adding QUALITY and DETAIL keywords "
+            "on top of it. Do NOT introduce new subjects, objects, or scene "
+            "elements. Output only descriptors like 'sharper texture', "
+            "'photorealistic skin pores', 'crisp fabric weave', 'ambient occlusion', "
+            "'fine hair strands'. Preserve the user's content exactly as written; "
+            "append enhancement terms."
+        ),
+    },
+    "klein_refine":   {"inherit": "refine"},
+    "detail_boost":   {"inherit": "refine"},
+    "hallucinate":    {"inherit": "refine"},
+
+    # Face-only detail — ignore body, clothing, background.
+    "face_detail": {
+        "length_override": "15-35 words",
+        "extra_notes": (
+            "\n\nFACE DETAIL SCOPE:\n"
+            "Focus exclusively on facial features — eyes (catch-lights, iris detail), "
+            "skin (pores, subsurface scattering), expression micro-details, individual "
+            "hair strands, lip texture. Do NOT describe clothing, body, pose, or "
+            "background. The face IS the subject; everything else stays unchanged."
+        ),
+    },
+    "klein_face_detail": {"inherit": "face_detail"},
+
+    # Virtual try-on — outfit / garment focus only.
+    "tryon": {
+        "length_override": "25-50 words",
+        "extra_notes": (
+            "\n\nVIRTUAL TRYON SCOPE:\n"
+            "Describe ONLY the outfit or garment — its cut, silhouette, fabric, "
+            "texture, drape, fit, material (cotton / silk / leather / wool), "
+            "construction details (seams, buttons, zippers), and how it sits on "
+            "the body. Do NOT describe the model's face, pose, environment, or "
+            "lighting. The garment is the subject; everything else is fixed."
+        ),
+    },
+    "klein_virtual_tryon": {"inherit": "tryon"},
+
+    # Relight — lighting direction / color / mood only.
+    "iclight": {
+        "length_override": "15-35 words",
+        "extra_notes": (
+            "\n\nRELIGHT SCOPE:\n"
+            "Describe ONLY the new lighting — direction (from left / right / above "
+            "/ behind / below), colour temperature (warm amber / cool blue / neutral "
+            "daylight), intensity (soft diffused / dramatic hard / rim-edge only), "
+            "and mood (moody noir / golden hour / studio key+fill). Do NOT describe "
+            "the subject — it stays unchanged from the source image."
+        ),
+    },
+    "relight":   {"inherit": "iclight"},
+
+    # Colorize — color / tone keywords, no subject re-description.
+    "colorize": {
+        "length_override": "15-30 words",
+        "extra_notes": (
+            "\n\nCOLORIZE SCOPE:\n"
+            "Output ONLY colour and tone keywords — NO subject description. The "
+            "source image already contains the subject; your output tells the model "
+            "what colour palette to apply. Valid: 'warm sepia tones, vintage film "
+            "grain, soft pastel highlights, golden hour palette'. Invalid (do not "
+            "do this): 'a wizard in a forest at sunset with warm sepia tones'."
+        ),
+    },
+
+    # ControlNet + style-transfer still default to scene (the user
+    # describes the output image they want); they're listed above as
+    # empty overlays for clarity.
+}
+
+
+def _resolve_method_profile(method):
+    """Return the method profile, following `inherit` references.
+
+    Unknown or empty `method` returns {} (= no overlay, scene default).
+    """
+    if not method:
+        return {}
+    prof = _METHOD_PROFILES.get(method)
+    if prof is None:
+        return {}
+    # Walk inherit chain (depth-limited to prevent cycles).
+    for _ in range(5):
+        parent = prof.get("inherit")
+        if not parent:
+            break
+        parent_prof = _METHOD_PROFILES.get(parent)
+        if parent_prof is None:
+            break
+        # Child overlays win over parent. Shallow merge.
+        merged = dict(parent_prof)
+        for k, v in prof.items():
+            if k != "inherit":
+                merged[k] = v
+        prof = merged
+    return prof
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  ENHANCEMENT FUNCTION
 # ═══════════════════════════════════════════════════════════════════════════
 
 def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
-                   comfy_url=None, model_name=None):
+                   comfy_url=None, model_name=None, method="scene"):
     """Expand a terse user prompt into an architecture-optimised description.
 
     Tries ComfyUI LLM nodes first (if comfy_url provided), then falls back
@@ -297,6 +488,15 @@ def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
         return prompt_text
 
     if not prompt_text or not prompt_text.strip():
+        return prompt_text
+
+    # Method overlay: some generation methods (edit instructions, pure
+    # utility ops, preset-driven tools) skip enhancement entirely; others
+    # (inpaint, outpaint, refine, face_detail, tryon, iclight, colorize)
+    # narrow the scope so the LLM doesn't over-describe outside the
+    # method's region of interest.
+    method_prof = _resolve_method_profile(method)
+    if method_prof.get("skip"):
         return prompt_text
 
     # 60-word threshold: prompts above this length are already well-formed
@@ -324,6 +524,18 @@ def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
             profile = llm_prompt_db.merge_with_profile(model_name, profile)
         except Exception:
             pass  # DB unavailable — fall back to arch baseline
+
+    # Method overlay: append the method-specific scope instructions to
+    # the profile notes, and optionally override length / style for
+    # narrow-scope methods (face_detail, colorize, inpaint, etc.).
+    if method_prof:
+        profile = dict(profile)  # don't mutate the shared table
+        if method_prof.get("extra_notes"):
+            profile["notes"] = profile.get("notes", "") + method_prof["extra_notes"]
+        if method_prof.get("length_override"):
+            profile["length"] = method_prof["length_override"]
+        if method_prof.get("style_override"):
+            profile["style"] = method_prof["style_override"]
 
     # Build system prompt that guides the LLM.
     # The `Target style` line is load-bearing: if it says "tags" then the

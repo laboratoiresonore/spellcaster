@@ -459,12 +459,20 @@ def grab_first_frame_of_clip(timeline_item) -> str | None:
 
 
 def show_message(title: str, message: str):
-    """Best-effort modal message box inside Resolve. Falls back to print."""
+    """Best-effort modal message box inside Resolve. Falls back to print.
+
+    Under Resolve's Utility menu context fu.UIDispatcher returns None
+    (the full Fusion UI factory is only wired on the Fusion page).
+    Check explicitly so we take the print path cleanly instead of
+    letting a None call raise halfway through the try."""
     fu = get_fusion()
     if fu:
         try:
             ui = fu.UIManager
-            disp = fu.UIDispatcher(ui)
+            disp_factory = getattr(fu, "UIDispatcher", None)
+            if ui is None or disp_factory is None:
+                raise RuntimeError("UI API unavailable")
+            disp = disp_factory(ui)
             win = disp.AddWindow({"WindowTitle": title, "Geometry": [800, 500, 420, 160]}, [
                 ui.VGroup([
                     ui.Label({"Text": message, "WordWrap": True, "Alignment": {"AlignHCenter": True}}),
@@ -488,13 +496,21 @@ def show_message(title: str, message: str):
 
 
 def prompt_text(title: str, label: str, default: str = "") -> str | None:
-    """Single-line text-input dialog. Returns the text or None if cancelled."""
+    """Single-line text-input dialog. Returns the text or None if cancelled.
+
+    Returns the default string when the UI API isn't reachable so the
+    caller still gets a usable value (rather than silently cancelling
+    the whole operation under the Utility menu context).
+    """
     fu = get_fusion()
     if not fu:
-        return None
+        return default or None
     try:
         ui = fu.UIManager
-        disp = fu.UIDispatcher(ui)
+        disp_factory = getattr(fu, "UIDispatcher", None)
+        if ui is None or disp_factory is None:
+            return default or None
+        disp = disp_factory(ui)
         result = {"value": None}
         win = disp.AddWindow({"WindowTitle": title, "Geometry": [800, 500, 460, 180]}, [
             ui.VGroup([
