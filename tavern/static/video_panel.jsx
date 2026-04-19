@@ -1670,6 +1670,12 @@ function VideoPanel() {
   // R45b: batch duplicate controls
   const [showBatchDupe, setShowBatchDupe] = _useState(false);
   const [batchDupeCount, setBatchDupeCount] = _useState(1);
+  // R49b: Antenna admin dialog + pair/self-update state
+  const [showAntennaAdmin, setShowAntennaAdmin] = _useState(false);
+  const [antennaStatus, setAntennaStatus] = _useState(null);
+  const [antennaPairUrl, setAntennaPairUrl] = _useState("");
+  const [antennaPairToken, setAntennaPairToken] = _useState("");
+  const [antennaBusy, setAntennaBusy] = _useState(false);
   const pollRef = _useRef(null);
   const sseRef = _useRef(null);
   const [sseConnected, setSseConnected] = _useState(false);
@@ -2004,13 +2010,25 @@ function VideoPanel() {
   };
 
   // R48b: Send the current timeline directly to DaVinci Resolve via antenna.
-  // Needs Resolve running on the antenna host and antenna_token in guild_config.
+  // R49b: auto-opens the Antenna admin modal if no antenna is paired.
   const sendToResolve = async () => {
     const readyCount = shots.filter(s => s.status === "ready" && s.video_path).length;
     if (readyCount === 0) {
       addToast("No ready shots to send — render something first", "error");
       return;
     }
+    // Check pairing first
+    try {
+      const st = await api.get("/api/antenna/status");
+      setAntennaStatus(st);
+      if (!st.has_token || !(st.paired_url || st.heartbeat_url)) {
+        setShowAntennaAdmin(true);
+        if (st.heartbeat_url) setAntennaPairUrl(st.heartbeat_url);
+        addToast("No antenna paired — enter credentials once, then retry", "info");
+        return;
+      }
+    } catch (_) { /* fall through to attempt */ }
+
     addToast("Sending timeline to Resolve...", "info");
     try {
       const res = await api.post("/api/video/send-to-resolve",
@@ -2029,6 +2047,65 @@ function VideoPanel() {
       }
     } catch (e) {
       addToast(`Resolve send failed: ${e.message || "unknown"}`, "error");
+    }
+  };
+
+  // R49b: Antenna admin helpers
+  const refreshAntennaStatus = async () => {
+    try {
+      const st = await api.get("/api/antenna/status");
+      setAntennaStatus(st);
+      if (!antennaPairUrl && st.heartbeat_url) setAntennaPairUrl(st.heartbeat_url);
+    } catch (e) { /* ignore */ }
+  };
+
+  const openAntennaAdmin = async () => {
+    setShowAntennaAdmin(true);
+    await refreshAntennaStatus();
+  };
+
+  const pairAntenna = async () => {
+    if (!antennaPairUrl.trim() || !antennaPairToken.trim()) {
+      addToast("Enter both URL and token", "error");
+      return;
+    }
+    setAntennaBusy(true);
+    try {
+      const res = await api.post("/api/antenna/pair",
+                                 { url: antennaPairUrl.trim(), token: antennaPairToken.trim() });
+      if (res && res.ok) {
+        addToast("Antenna paired — token saved", "success");
+        setAntennaPairToken("");
+        await refreshAntennaStatus();
+      } else {
+        addToast(`Pair failed: ${res && res.error ? res.error : "unknown"}`, "error");
+      }
+    } catch (e) {
+      addToast(`Pair failed: ${e.message || "unknown"}`, "error");
+    } finally {
+      setAntennaBusy(false);
+    }
+  };
+
+  const selfUpdateAntenna = async () => {
+    setAntennaBusy(true);
+    addToast("Triggering antenna self-update...", "info");
+    try {
+      const res = await api.post("/api/antenna/self-update", {});
+      if (res && (res.ok || res.note)) {
+        addToast(`Antenna: ${res.note || "updated"}`, "success");
+      } else if (res && res.error) {
+        addToast(`Update failed: ${res.error}`, "error");
+      } else {
+        addToast("Update status: check console", "info");
+        console.log("[antenna self-update]", res);
+      }
+      // Give the antenna a moment to restart, then refresh status
+      setTimeout(() => refreshAntennaStatus(), 5000);
+    } catch (e) {
+      addToast(`Update failed: ${e.message || "unknown"}`, "error");
+    } finally {
+      setAntennaBusy(false);
     }
   };
 
@@ -2644,6 +2721,12 @@ function VideoPanel() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
             → Resolve
           </button>
+          <button onClick={openAntennaAdmin}
+            className="antenna-admin-btn flex items-center gap-1.5 bg-slate-800 hover:bg-indigo-700/50 text-slate-300 hover:text-indigo-100 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+            title="Antenna pairing + self-update">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12a7 7 0 0 1 14 0"/><path d="M8.5 12a3.5 3.5 0 0 1 7 0"/><circle cx="12" cy="12" r="1"/><path d="M12 18v4"/></svg>
+            Antenna
+          </button>
           <button onClick={() => setViewMode(viewMode === "list" ? "grid" : "list")}
             className="view-toggle flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
             title={viewMode === "list" ? "Switch to grid view" : "Switch to list view"}
@@ -3010,6 +3093,81 @@ function VideoPanel() {
           onClose={() => setTrajShot(null)}
           onSaved={saveTrajectories}
         />
+      )}
+
+      {/* R49b: Antenna admin modal — pair + self-update, no JSON editing */}
+      {showAntennaAdmin && (
+        <div className="antenna-admin-modal fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-indigo-600/40 rounded-xl p-5 max-w-lg w-full space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-indigo-200">Antenna</h2>
+              <button onClick={() => setShowAntennaAdmin(false)}
+                className="text-slate-400 hover:text-slate-200 text-xl leading-none">×</button>
+            </div>
+            <div className="antenna-admin-status rounded bg-slate-800/60 border border-slate-700/40 p-2 text-xs space-y-1">
+              {antennaStatus ? (
+                <>
+                  <div><span className="text-slate-500">Paired URL:</span>{' '}
+                    <span className="text-slate-200">{antennaStatus.paired_url || <span className="text-slate-500 italic">(not set)</span>}</span></div>
+                  <div><span className="text-slate-500">Heartbeat URL:</span>{' '}
+                    <span className="text-slate-200">{antennaStatus.heartbeat_url || <span className="text-slate-500 italic">(no antenna seen)</span>}</span></div>
+                  <div><span className="text-slate-500">Token stored:</span>{' '}
+                    <span className={antennaStatus.has_token ? "text-emerald-400" : "text-amber-400"}>
+                      {antennaStatus.has_token ? "yes" : "no"}
+                    </span></div>
+                  <div><span className="text-slate-500">Online:</span>{' '}
+                    <span className={antennaStatus.online ? "text-emerald-400" : "text-slate-500"}>
+                      {antennaStatus.online ? "yes" : "no"}
+                    </span></div>
+                  {antennaStatus.services && antennaStatus.services.length > 0 && (
+                    <div><span className="text-slate-500">Services:</span>{' '}
+                      <span className="text-slate-200">{antennaStatus.services.join(", ")}</span></div>
+                  )}
+                </>
+              ) : <span className="text-slate-500">Loading status…</span>}
+            </div>
+            <div className="antenna-admin-pair space-y-2">
+              <div className="text-xs font-semibold text-slate-300">Pair antenna (one-time, stores URL + token)</div>
+              <input
+                type="text"
+                value={antennaPairUrl}
+                onChange={(e) => setAntennaPairUrl(e.target.value)}
+                placeholder="https://192.168.x.x:7334"
+                className="antenna-pair-url w-full bg-slate-950 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+              />
+              <input
+                type="password"
+                value={antennaPairToken}
+                onChange={(e) => setAntennaPairToken(e.target.value)}
+                placeholder="bearer token (see antenna_config.json on the remote host)"
+                className="antenna-pair-token w-full bg-slate-950 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+              />
+              <button
+                onClick={pairAntenna}
+                disabled={antennaBusy || !antennaPairUrl.trim() || !antennaPairToken.trim()}
+                className="antenna-pair-btn w-full px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium disabled:bg-slate-700 disabled:text-slate-500"
+              >{antennaBusy ? "Pairing…" : "Pair"}</button>
+            </div>
+            <div className="antenna-admin-update space-y-2 border-t border-slate-700/40 pt-3">
+              <div className="text-xs font-semibold text-slate-300">Actions</div>
+              <button
+                onClick={selfUpdateAntenna}
+                disabled={antennaBusy || !antennaStatus?.has_token}
+                className="antenna-update-btn w-full px-3 py-1.5 rounded bg-emerald-700/40 hover:bg-emerald-600/50 text-emerald-100 text-xs font-medium disabled:bg-slate-700 disabled:text-slate-500"
+                title="Triggers /self-update on the paired antenna (git pull + restart)"
+              >{antennaBusy ? "Working…" : "Self-update antenna"}</button>
+              <button
+                onClick={refreshAntennaStatus}
+                className="antenna-refresh-btn w-full px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium"
+              >Refresh status</button>
+            </div>
+            <p className="text-[10px] text-slate-500">
+              The antenna now auto-detects Resolve on startup — you no longer need to add
+              services to <span className="font-mono">antenna_config.json</span>. Just pair once
+              and use "→ Resolve".
+            </p>
+          </div>
+        </div>
       )}
 
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
