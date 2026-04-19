@@ -579,8 +579,10 @@ def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
             pass  # DB unavailable — fall back to arch baseline
 
     # Method overlay: append the method-specific scope instructions to
-    # the profile notes, and optionally override length / style for
-    # narrow-scope methods (face_detail, colorize, inpaint, etc.).
+    # the profile notes, and optionally override length / style / token
+    # budget for narrow-scope methods (face_detail, colorize, inpaint,
+    # etc.). Narrow scopes get smaller max_tokens so the LLM doesn't
+    # run past the scope; wider scopes keep the arch's larger budget.
     if method_prof:
         profile = dict(profile)  # don't mutate the shared table
         if method_prof.get("extra_notes"):
@@ -589,6 +591,8 @@ def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
             profile["length"] = method_prof["length_override"]
         if method_prof.get("style_override"):
             profile["style"] = method_prof["style_override"]
+        if method_prof.get("max_tokens"):
+            profile["max_tokens"] = method_prof["max_tokens"]
 
     # Build system prompt that guides the LLM.
     # The `Target style` line is load-bearing: if it says "tags" then the
@@ -635,9 +639,15 @@ def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
     # stays conservative because high temperature makes the LLM drift
     # into prose when the profile demands tags, or skip BREAK blocks
     # in multi-character scenes.
+    #
+    # max_tokens priority (highest wins):
+    #   1. llm_prompt_db per-model override (user-curated, rare)
+    #   2. profile["max_tokens"] from the arch × method overlay — this
+    #      is the canonical budget (e.g. LTX 768, colorize 128)
+    #   3. 300 fallback (safe for unknown arches / methods)
     sampling_defaults = {
         "temperature": 0.3,
-        "max_tokens":  300,
+        "max_tokens":  int(profile.get("max_tokens") or 300),
         "top_p":       0.9,
     }
     if model_name:
@@ -657,6 +667,7 @@ def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
             temperature=float(sampling.get("temperature", 0.3)),
             purpose="enhance",
             arch_key=arch_key,  # per-family VRAM + timeout config
+            method=method,      # per-method AILab preset selection
         )
     except Exception:
         enhanced = None
