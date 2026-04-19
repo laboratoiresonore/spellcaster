@@ -282,21 +282,45 @@ def install_plugin_from_src(cfg: dict[str, Any] | None = None,
         total_files += _copy_tree_atomic(shared_src, wfi_shared)
         _version_stamp(dirs["workflow_integration"], sha)
 
-        # scripts/ contains .py files directly (not a subfolder named
-        # "scripts"), so we copy its CONTENTS into dirs["scripts"].
-        # Using a staged temp + rglob copy so we keep the atomic-swap
-        # safety at the leaf-dir level.
-        dirs["scripts"].mkdir(parents=True, exist_ok=True)
-        for f in scripts_src.iterdir():
-            if f.is_file() and f.suffix in (".py",):
-                target = dirs["scripts"] / f.name
-                tmp = target.with_suffix(target.suffix + ".new")
-                shutil.copy2(f, tmp)
-                if target.exists():
-                    target.unlink()
-                tmp.rename(target)
-                total_files += 1
-        total_files += _copy_tree_atomic(shared_src, scripts_shared)
+        # R84a: deploy into EVERY page-specific Scripts folder
+        # (Utility/Edit/Comp/Color/Deliver) so Spellcaster appears in
+        # the Workspace > Scripts menu on every page. ``Utility`` is
+        # primary (pointed to by dirs["scripts"]) and stamped with
+        # .spellcaster_version; the others are copies kept in sync.
+        scripts_base = dirs.get("scripts_base")
+        page_targets: list[Path] = []
+        if scripts_base:
+            for sub in _FUSION_SUBFOLDERS:
+                page_targets.append(scripts_base / sub / "Spellcaster")
+        else:
+            page_targets.append(dirs["scripts"])
+
+        # Ensure the primary ("scripts" dir, Utility) is always the
+        # first target and gets the version stamp.
+        primary = dirs["scripts"]
+        if primary in page_targets:
+            page_targets.remove(primary)
+        page_targets.insert(0, primary)
+
+        installed_pages: list[str] = []
+        for target_root in page_targets:
+            target_root.mkdir(parents=True, exist_ok=True)
+            for f in scripts_src.iterdir():
+                if f.is_file() and f.suffix in (".py",):
+                    target = target_root / f.name
+                    tmp = target.with_suffix(target.suffix + ".new")
+                    shutil.copy2(f, tmp)
+                    if target.exists():
+                        target.unlink()
+                    tmp.rename(target)
+                    total_files += 1
+            # shared/ sibling of the scripts, same dir layout in each
+            # page copy — matches what _script_dir() expects.
+            page_shared = target_root / "shared"
+            total_files += _copy_tree_atomic(shared_src, page_shared)
+            installed_pages.append(target_root.parent.name
+                                    if target_root.name == "Spellcaster"
+                                    else target_root.name)
         _version_stamp(dirs["scripts"], sha)
     except Exception as e:  # noqa: BLE001
         return {
@@ -313,11 +337,13 @@ def install_plugin_from_src(cfg: dict[str, Any] | None = None,
         "sha": sha,
         "workflow_integration_dir": str(dirs["workflow_integration"]),
         "scripts_dir": str(scripts),
+        "pages_installed": installed_pages,
         "files_copied": total_files,
         "previous_wfi_sha": installed_wfi,
         "previous_scripts_sha": installed_scripts,
         "note": ("Workflow Integration Plugins require a Resolve restart; "
-                  "scripts are picked up on next menu open."),
+                  "scripts are picked up on next menu open. Scripts are "
+                  "deployed under every page's Workspace > Scripts menu."),
     }
 
 
