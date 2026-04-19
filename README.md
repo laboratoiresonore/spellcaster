@@ -567,7 +567,7 @@ Spellcaster doesn't reinvent the wheel — it duct-tapes together the best wheel
 
 **AI models & architectures:** [Stability AI](https://stability.ai/) (SD 1.5, SDXL, SD3), [Black Forest Labs](https://blackforestlabs.ai/) (Flux), [Flux 2 Klein](https://civitai.com/), [Wan 2.2](https://github.com/Wan-Video/Wan2.2), [LTX Video](https://ltx.io/), [SeedVR2](https://seedvr2.net/)
 
-**Workflow pipelines:** [Elusarca's Klein 6-in-1](https://civitai.com/models/2543188) (Klein refiner, auto-inpaint, color match — used with permission), [xb1n0ry's Wan 2.2 I2V](https://github.com/xb1n0ry/Comfy-Workflows) (NAG + Skip-Layer-Guidance patches auto-injected into Wan video renders when the nodes are present on the server)
+**Workflow pipelines:** [Elusarca's Klein 6-in-1](https://civitai.com/models/2543188) (Klein refiner, auto-inpaint, color match — used with permission), [xb1n0ry's Comfy-Workflows](https://github.com/xb1n0ry/Comfy-Workflows) (Wan 2.2 NAG + Skip-Layer-Guidance, Klein 4-image-grid batch variations, Wan 2.2 block-swap low-VRAM pipeline, Qwen Image Edit 2509 — all adapted into Spellcaster builders)
 
 **Face & identity:** [ReActor](https://github.com/Gourieff/comfyui-reactor-node), [IPAdapter](https://github.com/cubiq/ComfyUI_IPAdapter_plus), [PuLID](https://github.com/cubiq/PuLID_ComfyUI), [ACE++](https://github.com/ali-vilab/ACE_plus), [InsightFace](https://github.com/deepinsight/insightface), [CodeFormer](https://github.com/sczhou/CodeFormer), [GFPGAN](https://github.com/TencentARC/GFPGAN), [GPEN](https://github.com/yangxy/GPEN)
 
