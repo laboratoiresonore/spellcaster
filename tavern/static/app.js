@@ -557,6 +557,15 @@ async function refreshActiveInterfaces() {
             };
             keys.push(m.key);
         }
+        // Pin ComfyUI at the top of the Connected apps row. It's the
+        // service the user interacts with most (every generation goes
+        // through it), so the chip should always be the first thing
+        // the eye lands on. Other chips keep their natural order.
+        keys.sort((a, b) => {
+            if (a === 'comfyui') return -1;
+            if (b === 'comfyui') return 1;
+            return 0;
+        });
         window.activeInterfaces = active;
         window.activeInterfacesKeys = keys;
         renderActiveInterfaceChips();
@@ -1575,27 +1584,63 @@ async function initialize() {
             { key: 'standard', label: '⚖️ Standard', cls: 'preset-standard' },
             { key: 'quality',  label: '💎 Quality',  cls: 'preset-quality' },
         ];
-        const saved = localStorage.getItem('guild_preset') || 'turbo';
-        let idx = Math.max(0, PRESETS.findIndex(p => p.key === saved));
+        // Prefer the server-side mirror of user_settings over
+        // localStorage so the preset survives browser clears + syncs
+        // across devices. Fall back to localStorage while the fetch is
+        // in flight so the UI doesn't flicker back to the default.
+        const savedLocal = localStorage.getItem('guild_preset') || 'turbo';
+        let idx = Math.max(0,
+            PRESETS.findIndex(p => p.key === savedLocal));
         if (idx < 0) idx = 0;
-        const apply = () => {
+        const apply = (persist = true) => {
             const p = PRESETS[idx];
             btn.textContent = p.label;
             btn.classList.remove('preset-standard', 'preset-quality');
             if (p.cls) btn.classList.add(p.cls);
             window.generationPreset = p.key;
             try { localStorage.setItem('guild_preset', p.key); } catch (e) {}
-            // Fire a window event so other modules can react without
-            // polling window.generationPreset on every render.
+            if (persist) _persistUserSetting('guild_preset', p.key);
             window.dispatchEvent(new CustomEvent('guildpresetchange',
                 { detail: { preset: p.key } }));
         };
-        apply();
+        apply(false);  // first render should not re-persist the same
+                       // value we just loaded from localStorage.
         btn.addEventListener('click', () => {
             idx = (idx + 1) % PRESETS.length;
             apply();
         });
+        // Pull the server's saved value once. If it's newer / different
+        // from localStorage, adopt it — guild_config.json is the source
+        // of truth across browsers and devices.
+        fetch('/api/user_settings').then(r => r.ok ? r.json() : null)
+            .then(d => {
+                if (!d || !d.user_settings) return;
+                const srv = d.user_settings.guild_preset;
+                if (!srv) return;
+                const srvIdx = PRESETS.findIndex(p => p.key === srv);
+                if (srvIdx >= 0 && srvIdx !== idx) {
+                    idx = srvIdx;
+                    apply(false);
+                }
+            })
+            .catch(() => {});
     }
+
+    // Persist any user setting to guild_config.user_settings. Silent on
+    // failure — the localStorage fallback still carries the value for
+    // the current browser. Used by _wireGlobalPresetBtn but exposed
+    // broadly so other modules (LLM mode toggle, future pickers) can
+    // mirror their choices the same way.
+    function _persistUserSetting(key, value) {
+        try {
+            fetch('/api/user_settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key, value }),
+            }).catch(() => {});
+        } catch (e) {}
+    }
+    window._persistUserSetting = _persistUserSetting;
 
     function _wireWalkieTalkieBtn() {
         const btn = document.getElementById('walkie-btn');
