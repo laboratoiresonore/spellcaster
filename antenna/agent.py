@@ -155,9 +155,11 @@ def _build_routes(cfg: dict[str, Any]) -> dict[tuple[str, str], Callable]:
         # isn't running.
         try:
             from .endpoints import resolve as resolve_ep
-            routes[("GET",  "/resolve/ping")]          = resolve_ep.ping
-            routes[("POST", "/resolve/import-edl")]    = resolve_ep.import_edl
-            routes[("POST", "/resolve/import-fcpxml")] = resolve_ep.import_fcpxml
+            routes[("GET",  "/resolve/ping")]            = resolve_ep.ping
+            routes[("POST", "/resolve/import-edl")]      = resolve_ep.import_edl
+            routes[("POST", "/resolve/import-fcpxml")]   = resolve_ep.import_fcpxml
+            routes[("POST", "/resolve/render-timeline")] = resolve_ep.render_timeline
+            routes[("GET",  "/resolve/render-status")]   = resolve_ep.render_status
         except ImportError as e:
             print(f"[antenna] resolve service declared but endpoints missing: {e}",
                   file=sys.stderr)
