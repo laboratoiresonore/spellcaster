@@ -7456,6 +7456,119 @@ local server_save_btn = dt.new_widget("button") {
   end,
 }
 
+-- R118: Check Capabilities — probe the connected ComfyUI's node
+-- catalog and report which architectures are installed. Mirrors the
+-- GIMP plugin's _FEATURE_SENTINELS approach: an architecture counts
+-- as "available" when ANY of its sentinel nodes is registered.
+--
+-- Diagnostic-only for now — doesn't filter the MODEL_PRESETS
+-- combobox. Editors can see which presets will fail and avoid them,
+-- without us doing a heavy dynamic-widget-rebuild pass.
+local _ARCH_SENTINELS = {
+  ["Flux 2 Klein"]     = {"Flux2KleinRefLatentController",
+                           "Flux2KleinTextRefBalance"},
+  ["Flux Kontext"]     = {"FluxKontextImageScale",
+                           "FluxKontextModelLoader"},
+  ["Flux 1 Dev"]       = {"FluxGuidance",
+                           "DualCLIPLoader"},
+  ["SDXL"]             = {"KSamplerAdvanced"},   -- universal, sanity
+  ["SD 1.5"]           = {"KSampler"},           -- universal, sanity
+  ["Wan 2.2 Video"]    = {"WanImageToVideo",
+                           "LoadWanVideoModel",
+                           "WanVaceToVideo"},
+  ["LTX-2 Video"]      = {"LTXVImgToVideo",
+                           "LTXVScheduler",
+                           "LTXAVTextEncoderLoader"},
+  ["SUPIR Upscale"]    = {"SUPIR_sample",
+                           "SUPIR_first_stage"},
+  ["SeedVR2 Video"]    = {"SeedVR2VideoUpscaler"},
+  ["IPAdapter / Style"] = {"IPAdapterAdvanced",
+                            "IPAdapterUnifiedLoader"},
+  ["Face: ReActor"]    = {"ReActorFaceSwap"},
+  ["Face: PuLID Flux"] = {"PulidFluxModelLoader",
+                           "ApplyPulidFlux"},
+  ["Inpaint (LaMa)"]   = {"LaMaInpaint",
+                           "LaMaInpaintingModelLoader"},
+  ["BG Remove"]        = {"BiRefNetRMBG", "RMBG"},
+  ["Chroma"]           = {"ChromaSampler"},
+}
+
+-- Module-level cache: fills after first probe or on Refresh click.
+local _capabilities_cache = nil   -- { arch_label -> true/false }
+
+local function _probe_comfyui_capabilities()
+  local server = get_server()
+  if not server or server == "" then
+    dt.print(_("💎 Capabilities: no server URL configured."))
+    return nil
+  end
+  dt.print(_("💎 Probing ComfyUI capabilities… (24MB download, ~2s)"))
+  local resp = curl_get(server .. "/object_info")
+  if not resp or resp == "" then
+    dt.print(_("💎 Capabilities: ComfyUI unreachable."))
+    return nil
+  end
+  -- Extract top-level class_type names. Top-level keys in /object_info
+  -- are the node names (CamelCase identifiers followed by :).
+  -- Use a pattern that tolerates the trailing {"input":{… structure.
+  local nodes = {}
+  for name in resp:gmatch('"([A-Z][%w_%./ +]*)"%s*:%s*{%s*"input"') do
+    nodes[name] = true
+  end
+  -- Compute which archs have at least one sentinel present.
+  local caps = {}
+  for arch, sentinels in pairs(_ARCH_SENTINELS) do
+    caps[arch] = false
+    for _, n in ipairs(sentinels) do
+      if nodes[n] then
+        caps[arch] = true
+        break
+      end
+    end
+  end
+  _capabilities_cache = caps
+  return caps
+end
+
+local function _check_capabilities()
+  local caps = _probe_comfyui_capabilities()
+  if not caps then return end
+  -- Build a sorted report: available first, missing second.
+  local avail, missing = {}, {}
+  for arch, ok in pairs(caps) do
+    if ok then
+      table.insert(avail, arch)
+    else
+      table.insert(missing, arch)
+    end
+  end
+  table.sort(avail)
+  table.sort(missing)
+  local lines = {}
+  table.insert(lines, _("💎 Spellcaster Capabilities on this ComfyUI:"))
+  table.insert(lines, "")
+  if #avail > 0 then
+    table.insert(lines, _("✓ Installed:"))
+    for _, a in ipairs(avail) do
+      table.insert(lines, "  • " .. a)
+    end
+  end
+  if #missing > 0 then
+    if #avail > 0 then table.insert(lines, "") end
+    table.insert(lines, _("✗ Missing (presets using these will fail):"))
+    for _, a in ipairs(missing) do
+      table.insert(lines, "  • " .. a)
+    end
+  end
+  dt.print(table.concat(lines, "\n"))
+end
+
+local capabilities_btn = dt.new_widget("button") {
+  label = _("💎 Check Capabilities"),
+  tooltip = _("Probe the connected ComfyUI's node catalog and report which Spellcaster architectures are installed. Use before picking a preset to avoid silent render failures."),
+  clicked_callback = _check_capabilities,
+}
+
 -- R113: Check Inbox — pull pending assets other apps have sent to
 -- Darktable and drop them into an inbox folder the user can then
 -- import via Darktable's native Import panel. Uses GET /api/darktable
@@ -7626,12 +7739,13 @@ local module_widget = dt.new_widget("box") {
   test_btn,
   dt.new_widget("separator") {},
 
-  -- R110 + R113: cross-plugin transfer — send outbound + check inbox.
+  -- R110 + R113 + R118: cross-plugin transfer + capability probe.
   dt.new_widget("label") { label = _("💎 CROSS-APP TRANSFER") },
   send_to_resolve_btn,
   send_to_gimp_btn,
   send_to_sillytavern_btn,
   inbox_btn,
+  capabilities_btn,
   dt.new_widget("separator") {},
 
   -- Global scaling control
