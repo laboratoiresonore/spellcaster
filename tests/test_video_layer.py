@@ -635,6 +635,28 @@ def main() -> int:
     check("video_panel.jsx has pin button",
           test_video_panel_has_pin_button)
 
+    # Round 48 — Live Resolve bridge via antenna
+    check("resolve endpoint module importable",
+          test_resolve_endpoint_module_importable)
+    check("resolve _find_script_dir respects override",
+          test_resolve_find_script_dir_respects_override)
+    check("resolve _find_script_dir ignores missing override",
+          test_resolve_find_script_dir_ignores_missing_override)
+    check("resolve ping returns structured error when module missing",
+          test_resolve_ping_returns_structured_error_when_module_missing)
+    check("resolve import_edl rejects empty body",
+          test_resolve_import_edl_rejects_empty_body)
+    check("resolve import_fcpxml rejects empty body",
+          test_resolve_import_fcpxml_rejects_empty_body)
+    check("antenna agent.py registers resolve routes",
+          test_antenna_agent_registers_resolve_routes)
+    check("guild has send-to-resolve endpoint",
+          test_guild_has_send_to_resolve_endpoint)
+    check("frontend guards send-to-resolve against empty shot list",
+          test_guild_send_to_resolve_requires_shots_not_empty_via_frontend)
+    check("video_panel has send-to-resolve button",
+          test_video_panel_has_send_to_resolve_button)
+
     print("-" * 50)
 
     from scaffold.shotboard import Shotboard, Shot, Trajectory
@@ -6749,6 +6771,89 @@ def test_video_panel_has_pin_button():
     assert "snapshot-pin-btn" in src
     assert "togglePinSnapshot" in src
     assert "pinned_snapshots" in src
+
+
+# ════════════════════════════════════════════════════════════════════
+# R48 — Live Resolve bridge via antenna
+# ════════════════════════════════════════════════════════════════════
+
+def test_resolve_endpoint_module_importable():
+    import importlib
+    mod = importlib.import_module("antenna.endpoints.resolve")
+    assert hasattr(mod, "ping")
+    assert hasattr(mod, "import_edl")
+    assert hasattr(mod, "import_fcpxml")
+
+
+def test_resolve_find_script_dir_respects_override():
+    from antenna.endpoints import resolve as rv
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    # Config-provided override wins when directory exists
+    found = rv._find_resolve_script_dir({"resolve_script_dir": d})
+    assert str(found) == os.path.realpath(d)
+
+
+def test_resolve_find_script_dir_ignores_missing_override():
+    from antenna.endpoints import resolve as rv
+    # Nonexistent override should fall through to platform defaults / None
+    found = rv._find_resolve_script_dir({"resolve_script_dir": "/nonexistent/xyz"})
+    # Result can be None OR a real default Resolve dir on this host — both fine
+    assert found is None or found.is_dir()
+
+
+def test_resolve_ping_returns_structured_error_when_module_missing():
+    from antenna.endpoints import resolve as rv
+    # Point script dir at an empty directory so DaVinciResolveScript won't import
+    import tempfile
+    empty = tempfile.mkdtemp()
+    status, body = rv.ping({"config": {"resolve_script_dir": empty}})
+    assert status == 200
+    # Either Resolve genuinely isn't running OR the module wasn't importable
+    assert body.get("running") is False
+    assert "reason" in body
+
+
+def test_resolve_import_edl_rejects_empty_body():
+    from antenna.endpoints import resolve as rv
+    status, body = rv.import_edl({"config": {}, "body": {"edl": ""}})
+    assert status == 400
+    assert "error" in body
+
+
+def test_resolve_import_fcpxml_rejects_empty_body():
+    from antenna.endpoints import resolve as rv
+    status, body = rv.import_fcpxml({"config": {}, "body": {"fcpxml": "  "}})
+    assert status == 400
+
+
+def test_antenna_agent_registers_resolve_routes():
+    src = open("antenna/agent.py", encoding="utf-8").read()
+    assert "resolve_ep.ping" in src
+    assert "resolve_ep.import_edl" in src
+    assert "resolve_ep.import_fcpxml" in src
+    assert '"/resolve/ping"' in src
+    assert '"/resolve/import-edl"' in src
+
+
+def test_guild_has_send_to_resolve_endpoint():
+    src = open("tavern/server.py", encoding="utf-8").read()
+    assert "/api/video/send-to-resolve" in src
+    assert "antenna_token" in src
+    assert "agent_url" in src
+
+
+def test_guild_send_to_resolve_requires_shots_not_empty_via_frontend():
+    # Frontend guards against "no ready shots" before making the request
+    src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
+    assert "sendToResolve" in src
+    assert "No ready shots to send" in src
+
+
+def test_video_panel_has_send_to_resolve_button():
+    src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
+    assert "send-to-resolve" in src
+    assert "→ Resolve" in src
 
 
 if __name__ == "__main__":

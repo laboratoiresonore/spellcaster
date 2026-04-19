@@ -2003,6 +2003,35 @@ function VideoPanel() {
     }
   };
 
+  // R48b: Send the current timeline directly to DaVinci Resolve via antenna.
+  // Needs Resolve running on the antenna host and antenna_token in guild_config.
+  const sendToResolve = async () => {
+    const readyCount = shots.filter(s => s.status === "ready" && s.video_path).length;
+    if (readyCount === 0) {
+      addToast("No ready shots to send — render something first", "error");
+      return;
+    }
+    addToast("Sending timeline to Resolve...", "info");
+    try {
+      const res = await api.post("/api/video/send-to-resolve",
+                                 { format: "fcpxml", fps: 30, bin: "Spellcaster" });
+      if (res && res.antenna_response && res.antenna_response.ok) {
+        const name = res.antenna_response.timeline_name || "timeline";
+        addToast(`Resolve: created "${name}" in project "${res.antenna_response.project}"`,
+                 "success");
+      } else if (res && res.error) {
+        addToast(`Resolve: ${res.error}`, "error");
+      } else if (res && res.antenna_response && res.antenna_response.error) {
+        addToast(`Resolve: ${res.antenna_response.error}`, "error");
+      } else {
+        addToast("Resolve: unexpected response (check console)", "error");
+        console.warn("[Resolve]", res);
+      }
+    } catch (e) {
+      addToast(`Resolve send failed: ${e.message || "unknown"}`, "error");
+    }
+  };
+
   // R47b: pin/unpin a snapshot so it survives the 20-slot cap
   const togglePinSnapshot = async (id, snapId, isPinned) => {
     try {
@@ -2609,6 +2638,12 @@ function VideoPanel() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
             FCPXML
           </a>
+          <button onClick={sendToResolve}
+            className="send-to-resolve flex items-center gap-1.5 bg-pink-900/40 hover:bg-pink-700/50 text-pink-200 hover:text-pink-100 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+            title="Build timeline directly in DaVinci Resolve via antenna (needs Resolve running + antenna online)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            → Resolve
+          </button>
           <button onClick={() => setViewMode(viewMode === "list" ? "grid" : "list")}
             className="view-toggle flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
             title={viewMode === "list" ? "Switch to grid view" : "Switch to list view"}

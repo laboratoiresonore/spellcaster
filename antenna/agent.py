@@ -93,6 +93,20 @@ def _build_routes(cfg: dict[str, Any]) -> dict[tuple[str, str], Callable]:
             print(f"[antenna] comfyui service declared but endpoints not yet built: {e}",
                   file=sys.stderr)
 
+    if "resolve" in services:
+        # DaVinci Resolve scripting bridge — only import if the host
+        # actually has Resolve. Discovery + scriptapp() are safe to
+        # attempt; the endpoints return a descriptive 503 when Resolve
+        # isn't running.
+        try:
+            from .endpoints import resolve as resolve_ep
+            routes[("GET",  "/resolve/ping")]          = resolve_ep.ping
+            routes[("POST", "/resolve/import-edl")]    = resolve_ep.import_edl
+            routes[("POST", "/resolve/import-fcpxml")] = resolve_ep.import_fcpxml
+        except ImportError as e:
+            print(f"[antenna] resolve service declared but endpoints missing: {e}",
+                  file=sys.stderr)
+
     # self-update is always available — it's how the agent updates itself.
     # Any import failure here is critical to surface so operators can
     # debug it — otherwise they see mysterious "no such endpoint" 404s.

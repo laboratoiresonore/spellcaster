@@ -5548,7 +5548,16 @@ def _dispatch_txt2img(prompt, negative, width, height, comfy_url,
     if result.get("type") == "images" and result.get("urls"):
         cached_urls = []
         for u in result["urls"]:
-            cached_urls.append(_cache_comfyui_asset(u, "image"))
+            cached_urls.append(_cache_comfyui_asset(
+                u, "image",
+                kind="generation",
+                prompt=prompt,
+                model=ckpt or "",
+                seed=seed,
+                tags=[arch_key] if arch_key else None,
+                meta={"arch": arch_key, "width": width, "height": height,
+                      "negative": negative},
+            ))
         result["cached_urls"] = cached_urls
 
     # Privacy cleanup: scrub inputs + outputs from ComfyUI server
@@ -5691,9 +5700,25 @@ def _build_and_dispatch(build_fn_name, params, comfy_url):
     _original_urls = list(result.get("urls", []))  # save for cleanup
     if result.get("type") in ("images", "videos") and result.get("urls"):
         asset_type = "video" if result["type"] == "videos" else "image"
+        # Derive metadata from the translated params so the gallery knows
+        # what this was. Any of these may be missing — AssetGallery tolerates.
+        _tr_prompt = translated.get("prompt_text", "") or translated.get("prompt", "")
+        _tr_seed = translated.get("seed")
+        _tr_model = ""
+        _tr_preset = translated.get("preset") if isinstance(translated.get("preset"), dict) else None
+        if _tr_preset:
+            _tr_model = _tr_preset.get("ckpt") or _tr_preset.get("unet") or ""
         cached = []
         for u in result["urls"]:
-            cached.append(_cache_comfyui_asset(u, asset_type))
+            cached.append(_cache_comfyui_asset(
+                u, asset_type,
+                kind=build_fn_name.replace("build_", "") or "generation",
+                prompt=str(_tr_prompt) if _tr_prompt else "",
+                model=str(_tr_model) if _tr_model else "",
+                seed=_tr_seed if isinstance(_tr_seed, int) else None,
+                tags=[build_fn_name],
+                meta={"build_fn": build_fn_name},
+            ))
         result["cached_urls"] = cached
         result["urls"] = cached  # replace so callers get local URLs
 
@@ -7381,6 +7406,99 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 shot_ids, count=count, title_suffix_mode=mode)
             return self.end_json(200, result)
 
+        # R48b: Send timeline directly to a running DaVinci Resolve via the
+        # antenna. POST only — mutates Resolve state. Body: {"format": "edl"|"fcpxml", "fps": 30, "bin": "Spellcaster"}
+        elif self.path == '/api/video/send-to-resolve' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            fmt = (data.get('format') or 'fcpxml').lower()
+            if fmt not in ('edl', 'fcpxml'):
+                return self.end_json(400, {"error": "format must be 'edl' or 'fcpxml'"})
+            fps = data.get('fps', 30)
+            try:
+                fps = max(1, min(120, int(fps)))
+            except (TypeError, ValueError):
+                fps = 30
+            bin_name = (data.get('bin') or 'Spellcaster').strip() or 'Spellcaster'
+
+            # Build the timeline body from current shotboard state
+            try:
+                if fmt == 'edl':
+                    body_text = _VIDEO_BRIDGE.board.export_edl(fps=fps)
+                else:
+                    body_text = _VIDEO_BRIDGE.board.export_fcpxml(fps=fps)
+            except Exception as e:
+                return self.end_json(500, {"error": f"timeline build failed: {e}"})
+
+            # Locate antenna via the interface registry (heartbeat meta)
+            antenna_url = None
+            try:
+                if CROSS_INTERFACE_AVAILABLE and _iface_registry is not None:
+                    snap = _iface_registry.snapshot()
+                    antenna_entry = snap.get('antenna') or {}
+                    if antenna_entry.get('online'):
+                        antenna_url = ((antenna_entry.get('last_meta') or {})
+                                       .get('agent_url') or '').strip()
+            except Exception:
+                antenna_url = None
+
+            if not antenna_url:
+                # Fall back to explicit guild_config antenna_url
+                cfg = _guided_install_load_config()
+                antenna_url = (cfg.get('antenna_url') or '').strip()
+
+            if not antenna_url:
+                return self.end_json(503, {
+                    "error": "No antenna registered or configured",
+                    "hint": "Start the antenna on the Resolve machine, or set "
+                            "'antenna_url' in guild_config.json"
+                })
+
+            # Bearer token from guild config
+            cfg = _guided_install_load_config()
+            token = (cfg.get('antenna_token') or '').strip()
+
+            # POST to antenna
+            import urllib.request as _ur, urllib.error as _ue, ssl as _ssl
+            path = '/resolve/import-edl' if fmt == 'edl' else '/resolve/import-fcpxml'
+            url = antenna_url.rstrip('/') + path
+            payload_body = (body_text if fmt == 'edl' else body_text)
+            payload_key = 'edl' if fmt == 'edl' else 'fcpxml'
+            payload = json.dumps({payload_key: payload_body, "bin": bin_name}).encode('utf-8')
+            headers = {"Content-Type": "application/json",
+                       "User-Agent": "spellcaster-guild-resolve-bridge"}
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            req = _ur.Request(url, data=payload, headers=headers, method='POST')
+            # Antennas often use self-signed TLS — accept it (LAN-only)
+            ctx_ssl = _ssl.create_default_context()
+            ctx_ssl.check_hostname = False
+            ctx_ssl.verify_mode = _ssl.CERT_NONE
+            try:
+                with _ur.urlopen(req, timeout=30, context=ctx_ssl) as resp:
+                    raw = resp.read().decode('utf-8', 'replace')
+                    try:
+                        parsed = json.loads(raw)
+                    except json.JSONDecodeError:
+                        parsed = {"raw": raw[:500]}
+                    return self.end_json(resp.status, {
+                        "antenna_url": antenna_url,
+                        "antenna_response": parsed,
+                    })
+            except _ue.HTTPError as e:
+                try:
+                    err_body = e.read().decode('utf-8', 'replace')
+                except Exception:
+                    err_body = ""
+                return self.end_json(e.code, {
+                    "error": f"antenna returned {e.code}",
+                    "antenna_response": err_body[:500],
+                })
+            except (_ue.URLError, OSError) as e:
+                return self.end_json(502, {
+                    "error": f"could not reach antenna at {antenna_url}: {e}"
+                })
+
         # R47a: timeline export (EDL / FCPXML) — GET so users can click a download link
         elif self.path.startswith('/api/video/export/edl') and self.command == 'GET':
             if not _VIDEO_BRIDGE:
@@ -8225,7 +8343,17 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     if result.get("type") == "images" and result.get("urls"):
                         cached = []
                         for u in result["urls"]:
-                            cached.append(_cache_comfyui_asset(u, "image"))
+                            cached.append(_cache_comfyui_asset(
+                                u, "image",
+                                kind="background",
+                                prompt=prompt_text,
+                                model=ckpt,
+                                seed=seed,
+                                title=f"background:{style}",
+                                tags=["background", style, arch_key],
+                                meta={"style": style, "arch": arch_key,
+                                      "width": bg_width, "height": bg_height},
+                            ))
                         result["cached_urls"] = cached
                         result["urls"] = cached
                     # Privacy cleanup: scrub outputs from ComfyUI server
@@ -9095,12 +9223,28 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 result = _dispatch_workflow(workflow, exec_comfy)
 
                 _original_urls = list(result.get('urls', []))
+                _dc_meta = {"char_id": char_id, "arch": arch_key,
+                             "width": width, "height": height,
+                             "wizard_name": (wizard or studio or {}).get("name", "")}
+                _dc_tags = ["direct_cast", arch_key] if arch_key else ["direct_cast"]
                 if result.get('type') == 'images' and result.get('urls'):
-                    cached = [_cache_comfyui_asset(u, 'image') for u in result['urls']]
+                    cached = [_cache_comfyui_asset(
+                        u, 'image',
+                        kind='direct_cast',
+                        prompt=prompt_text, model=ckpt, seed=seed,
+                        title=f"direct cast: {char_id}",
+                        tags=_dc_tags, meta=_dc_meta,
+                    ) for u in result['urls']]
                     result['cached_urls'] = cached
                     result['urls'] = cached
                 elif result.get('type') == 'videos' and result.get('urls'):
-                    cached = [_cache_comfyui_asset(u, 'video') for u in result['urls']]
+                    cached = [_cache_comfyui_asset(
+                        u, 'video',
+                        kind='direct_cast',
+                        prompt=prompt_text, model=ckpt, seed=seed,
+                        title=f"direct cast: {char_id}",
+                        tags=_dc_tags + ['video'], meta=_dc_meta,
+                    ) for u in result['urls']]
                     result['cached_urls'] = cached
                     result['urls'] = cached
 
@@ -9266,18 +9410,41 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 # Dispatch workflow to ComfyUI
                 result = _dispatch_workflow(workflow, exec_comfy)
 
-                # Cache assets locally
+                # Cache assets locally (canonical AssetGallery via the helper).
                 _original_urls = list(result.get('urls', []))
+                _ex_prompt = params.get('prompt_text') or params.get('prompt') or ""
+                _ex_seed = params.get('seed') if isinstance(params.get('seed'), int) else None
+                _ex_preset = params.get('preset') if isinstance(params.get('preset'), dict) else None
+                _ex_model = ""
+                if _ex_preset:
+                    _ex_model = _ex_preset.get('ckpt') or _ex_preset.get('unet') or ""
+                if not _ex_model and _wizard_model:
+                    _ex_model = _wizard_model
+                _ex_kind = build_fn_name.replace('build_', '') or 'generation'
+                _ex_tags = [build_fn_name]
+                if _wizard_arch:
+                    _ex_tags.append(_wizard_arch)
+                _ex_meta = {"build_fn": build_fn_name,
+                            "char_id": _req_char_id or "",
+                            "arch": _wizard_arch or ""}
                 if result.get('type') == 'images' and result.get('urls'):
                     cached = []
                     for u in result['urls']:
-                        cached.append(_cache_comfyui_asset(u, 'image'))
+                        cached.append(_cache_comfyui_asset(
+                            u, 'image',
+                            kind=_ex_kind, prompt=str(_ex_prompt), model=str(_ex_model),
+                            seed=_ex_seed, tags=_ex_tags, meta=_ex_meta,
+                        ))
                     result['cached_urls'] = cached
                     result['urls'] = cached
                 elif result.get('type') == 'videos' and result.get('urls'):
                     cached = []
                     for u in result['urls']:
-                        cached.append(_cache_comfyui_asset(u, 'video'))
+                        cached.append(_cache_comfyui_asset(
+                            u, 'video',
+                            kind=_ex_kind, prompt=str(_ex_prompt), model=str(_ex_model),
+                            seed=_ex_seed, tags=_ex_tags + ['video'], meta=_ex_meta,
+                        ))
                     result['cached_urls'] = cached
                     result['urls'] = cached
 
