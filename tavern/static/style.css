@@ -284,18 +284,108 @@ body {
     background: linear-gradient(180deg, rgba(178, 70, 242, 0.06) 0%, transparent 100%);
 }
 .sidebar-header h2 {
-    font-size: 18px; font-weight: 700; color: #fff; letter-spacing: 1.5px;
-    text-shadow: 0 0 20px var(--accent-glow);
-    animation: titleShimmer 3s ease-in-out infinite;
-    /* Centred within the sidebar so the glowing title reads as a
-       chapter-header for the whole left column. Default h2 is left-
-       aligned which left the title pinned against the edge. */
+    font-size: 18px; font-weight: 700; letter-spacing: 2px;
     text-align: center;
     margin: 0;
+    position: relative;
+    background: linear-gradient(92deg,
+        #e9d5ff 0%, #ffd700 18%, #fff2c6 32%,
+        #b470ff 50%, #ffb84a 68%, #fff2c6 82%, #e9d5ff 100%);
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 0 10px rgba(178,70,242,0.55))
+            drop-shadow(0 0 20px rgba(255,215,0,0.25));
+    animation: titleSweep 5.5s linear infinite,
+               titlePulse 3s ease-in-out infinite;
 }
-@keyframes titleShimmer {
-    0%, 100% { text-shadow: 0 0 20px var(--accent-glow); }
-    50% { text-shadow: 0 0 30px var(--glow-strong), 0 0 60px var(--glow-soft); }
+/* Rune particles drifting above the title. Rotating conic-gradient
+   sits behind the text (z-index -1 on a pseudo-element) so the
+   letters float in a swirl of purple/gold sparkle without touching
+   DOM. Intensifies in is-generating state. */
+.sidebar-header h2::before {
+    content: '';
+    position: absolute; inset: -8px -20px;
+    background:
+        radial-gradient(circle at 15% 50%, rgba(178,70,242,0.35) 0%, transparent 24%),
+        radial-gradient(circle at 85% 50%, rgba(255,215,0,0.28) 0%, transparent 24%),
+        radial-gradient(circle at 50% 10%, rgba(220,180,255,0.22) 0%, transparent 28%);
+    filter: blur(6px);
+    opacity: 0.55;
+    animation: titleAura 6s ease-in-out infinite;
+    pointer-events: none;
+    z-index: -1;
+    border-radius: 16px;
+}
+/* Tiny travelling sparks across the title — conic gradient rotating
+   gives a "spell-word being spoken" feel. */
+.sidebar-header h2::after {
+    content: '';
+    position: absolute; left: 50%; top: 50%;
+    width: 140%; height: 140%;
+    transform: translate(-50%, -50%);
+    background: conic-gradient(from 0deg,
+        transparent 0deg, transparent 340deg,
+        rgba(255,215,0,0.55) 350deg, rgba(178,70,242,0.55) 360deg);
+    filter: blur(3px);
+    opacity: 0.35;
+    animation: titleSpark 4s linear infinite;
+    pointer-events: none;
+    z-index: -1;
+    border-radius: 50%;
+    mix-blend-mode: screen;
+}
+@keyframes titleSweep {
+    0%   { background-position: 0% 50%; }
+    100% { background-position: 300% 50%; }
+}
+@keyframes titlePulse {
+    0%, 100% {
+        filter: drop-shadow(0 0 10px rgba(178,70,242,0.55))
+                drop-shadow(0 0 20px rgba(255,215,0,0.25));
+    }
+    50% {
+        filter: drop-shadow(0 0 18px rgba(178,70,242,0.85))
+                drop-shadow(0 0 36px rgba(255,215,0,0.55));
+    }
+}
+@keyframes titleAura {
+    0%, 100% { opacity: 0.35; transform: scale(1); }
+    50%      { opacity: 0.75; transform: scale(1.08); }
+}
+@keyframes titleSpark {
+    0%   { transform: translate(-50%, -50%) rotate(0deg); }
+    100% { transform: translate(-50%, -50%) rotate(360deg); }
+}
+/* ── Generation-active amplification ──────────────────────────────────
+   When ComfyUI is busy the body carries .is-generating. Every magic
+   animation cranks: title sweep 2x faster, aura brighter, sparks
+   accelerate, health meters get a "steam" highlight passing over them,
+   meter-fills pulse their brightness. */
+body.is-generating .sidebar-header h2 {
+    animation: titleSweep 2.2s linear infinite,
+               titlePulseHot 1.2s ease-in-out infinite;
+    letter-spacing: 2.3px;
+}
+body.is-generating .sidebar-header h2::before {
+    opacity: 0.9;
+    animation: titleAura 2.4s ease-in-out infinite;
+}
+body.is-generating .sidebar-header h2::after {
+    opacity: 0.6;
+    animation: titleSpark 1.6s linear infinite;
+}
+@keyframes titlePulseHot {
+    0%, 100% {
+        filter: drop-shadow(0 0 14px rgba(178,70,242,0.75))
+                drop-shadow(0 0 28px rgba(255,215,0,0.45));
+    }
+    50% {
+        filter: drop-shadow(0 0 28px rgba(178,70,242,1))
+                drop-shadow(0 0 56px rgba(255,215,0,0.9))
+                drop-shadow(0 0 84px rgba(220,180,255,0.5));
+    }
 }
 
 #llm-indicator-container, #comfy-indicator-container, #st-indicator-container, #bridge-indicator-container { font-family: 'Outfit', sans-serif; font-size: 11px; color: var(--text-muted); margin-top: 6px; display: flex; align-items: center; flex-wrap: wrap; }
@@ -386,6 +476,52 @@ body {
 }
 .health-stats .meter-fill.warn { background: #ffa502; }
 .health-stats .meter-fill.crit { background: #ff4757; }
+/* Generation-active meter amplification: fills pulse brightness, the
+   bar itself grows a travelling "steam" highlight that sweeps across
+   the empty portion, and the whole stats block lifts in luminance.
+   These kick in via body.is-generating set by checkComfyConnection
+   when ComfyUI reports a busy/stale state. */
+body.is-generating .health-stats {
+    opacity: 1;
+    filter: brightness(1.25);
+    animation: healthSteam 3.2s ease-in-out infinite;
+}
+@keyframes healthSteam {
+    0%, 100% { filter: brightness(1.15) drop-shadow(0 0 2px rgba(178,70,242,0.3)); }
+    50%      { filter: brightness(1.45) drop-shadow(0 0 6px rgba(178,70,242,0.6)); }
+}
+body.is-generating .health-stats .meter-bar {
+    position: relative;
+    overflow: hidden;
+    background: rgba(255,255,255,0.14);
+    box-shadow: 0 0 6px rgba(178,70,242,0.3);
+}
+body.is-generating .health-stats .meter-bar::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(90deg,
+        transparent 0%,
+        rgba(255,215,0,0.0) 30%,
+        rgba(255,215,0,0.55) 50%,
+        rgba(255,255,255,0.7) 55%,
+        rgba(178,70,242,0.55) 60%,
+        transparent 80%);
+    animation: meterSteam 1.8s linear infinite;
+    pointer-events: none;
+    mix-blend-mode: screen;
+}
+@keyframes meterSteam {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+body.is-generating .health-stats .meter-fill {
+    animation: meterFillPulse 1.4s ease-in-out infinite;
+    box-shadow: 0 0 6px currentColor;
+}
+@keyframes meterFillPulse {
+    0%, 100% { filter: brightness(1); }
+    50%      { filter: brightness(1.7); }
+}
 #animate-all-btn {
     background: linear-gradient(135deg, #6c5ce7, #a29bfe);
     color: #fff; border: none; border-radius: 8px; padding: 6px 14px;
@@ -568,7 +704,10 @@ body {
 }
 .chat-header-info { display: flex; align-items: center; gap: 12px; min-width: 0; flex-shrink: 0; }
 .chat-header-info .avatar {
-    width: 44px; height: 44px; margin-right: 0;
+    /* Active-wizard portrait at the top of the chat. 50% larger than the
+       sidebar thumbnails so the selected wizard's LTX animation has room
+       to breathe and the viewer's eye anchors on them. */
+    width: 66px; height: 66px; margin-right: 0;
 }
 .chat-header-actions {
     display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end;
@@ -1078,6 +1217,39 @@ textarea::placeholder { color: #555; }
 /* State-coloured chips: online = green (default above), stale = amber
    (recent heartbeat but no longer online), idle = grey (never seen
    or heartbeat older than 5 min but interface enabled). */
+/* A chip flips to .iface-engaged for ~2.5s whenever that interface's
+   heartbeat timestamp advances (i.e. it just pinged the Guild) or it
+   publishes an asset. The gold aura reads as "this app is talking to
+   the Guild RIGHT NOW". Applied on top of whatever state class the
+   chip already has (online/stale/idle) so it works everywhere. */
+.active-iface-chip.iface-engaged {
+    animation: chipEngage 1.4s ease-in-out infinite;
+    border-color: #ffd700 !important;
+    box-shadow: 0 0 12px rgba(255,215,0,0.55),
+                0 0 24px rgba(178,70,242,0.35);
+    color: #fff8d6 !important;
+}
+.active-iface-chip.iface-engaged::before {
+    color: #ffd700 !important;
+    filter: drop-shadow(0 0 6px rgba(255,215,0,0.9))
+            drop-shadow(0 0 12px rgba(178,70,242,0.6)) !important;
+    animation: chipEngageDot 0.9s ease-in-out infinite;
+}
+@keyframes chipEngage {
+    0%, 100% {
+        box-shadow: 0 0 10px rgba(255,215,0,0.45),
+                    0 0 20px rgba(178,70,242,0.3);
+    }
+    50% {
+        box-shadow: 0 0 18px rgba(255,215,0,0.85),
+                    0 0 36px rgba(178,70,242,0.55),
+                    0 0 54px rgba(220,180,255,0.35);
+    }
+}
+@keyframes chipEngageDot {
+    0%, 100% { transform: scale(1);   opacity: 1; }
+    50%      { transform: scale(1.4); opacity: 0.7; }
+}
 .active-iface-chip.iface-stale {
     background: rgba(252, 211, 77, 0.10);
     border-color: rgba(252, 211, 77, 0.35);
@@ -1853,7 +2025,7 @@ textarea::placeholder { color: #555; }
     /* ── Chat header: compact for mobile ── */
     #chat-header { height: auto; min-height: 52px; padding: 8px 12px; flex-wrap: wrap; gap: 6px; }
     .chat-header-info { gap: 8px; }
-    .chat-header-info .avatar { width: 36px; height: 36px; }
+    .chat-header-info .avatar { width: 54px; height: 54px; }
     .header-titles h2 { font-size: 13px; }
     .header-titles p { font-size: 10px; }
 
