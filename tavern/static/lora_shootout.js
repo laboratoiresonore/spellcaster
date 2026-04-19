@@ -134,6 +134,89 @@
       .sc-shootout-tile .sc-tile-error {
         color: #ff6b6b; font-size: 12px; padding: 8px; word-break: break-word;
       }
+      .sc-shootout-retry {
+        display: flex; align-items: center; justify-content: center; gap: 10px;
+        flex-wrap: wrap; padding: 10px 12px; margin-bottom: 14px;
+        background: #1a1730; border: 1px solid #2a2440; border-radius: 10px;
+      }
+      .sc-shootout-retry-btn {
+        background: #2a2440; color: #e8e6f5; border: 1px solid #4a3f6e;
+        border-radius: 14px; padding: 6px 14px; font-size: 12px; font-weight: 600;
+        cursor: pointer; white-space: nowrap;
+      }
+      .sc-shootout-retry-btn:hover:not(:disabled) {
+        background: #3a3360; border-color: #6a1b9a;
+      }
+      .sc-shootout-retry-btn:disabled {
+        opacity: 0.35; cursor: default;
+      }
+      .sc-shootout-slider-wrap {
+        display: flex; align-items: center; gap: 8px; flex: 1;
+        min-width: 260px; max-width: 420px;
+      }
+      .sc-shootout-slider-wrap input[type="range"] {
+        flex: 1; accent-color: #ffd700;
+      }
+      #sc-retry-slider-val {
+        min-width: 34px; text-align: center; font-variant-numeric: tabular-nums;
+        color: #ffd700; font-weight: 600; font-size: 12px;
+      }
+      .sc-shootout-mega-head {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 10px 14px; margin-bottom: 14px; border-radius: 10px;
+        background: #1a1730; border: 1px solid #2a2440;
+      }
+      .sc-shootout-mega-head .sc-mega-stats {
+        font-size: 13px; color: #c4b8e3;
+      }
+      .sc-shootout-mega-head .sc-mega-stats b { color: #ffd700; }
+      .sc-shootout-runall-btn {
+        background: linear-gradient(135deg, #ffd700, #ff9800);
+        color: #12101d; border: 0; border-radius: 18px;
+        padding: 8px 16px; font-size: 13px; font-weight: 700;
+        cursor: pointer;
+      }
+      .sc-shootout-runall-btn:hover { filter: brightness(1.1); }
+      .sc-shootout-slot {
+        padding: 14px 16px; margin: 10px 0; border-radius: 10px;
+        background: #1a1730; border: 1px solid #2a2440;
+      }
+      .sc-shootout-slot.queued { opacity: 0.55; }
+      .sc-shootout-slot.running { border-color: #6a1b9a; }
+      .sc-shootout-slot.ready { border-color: #8a6ad1; }
+      .sc-shootout-slot.picked { border-color: #ffd700; background: #1a1820; }
+      .sc-shootout-slot.skipped { opacity: 0.4; }
+      .sc-shootout-slot.error { border-color: #ff6b6b; }
+      .sc-slot-head {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 10px; flex-wrap: wrap;
+      }
+      .sc-slot-title {
+        font-size: 14px; font-weight: 600; color: #e8e6f5;
+      }
+      .sc-slot-arch {
+        font-size: 11px; color: #a89bcc; text-transform: uppercase;
+        letter-spacing: 0.5px; margin-left: 6px;
+      }
+      .sc-slot-badge {
+        font-size: 11px; padding: 2px 8px; border-radius: 10px;
+        background: #2a2440; color: #c4b8e3; white-space: nowrap;
+      }
+      .sc-slot-badge.running { background: #6a1b9a; color: white; }
+      .sc-slot-badge.ready { background: #8a6ad1; color: white; }
+      .sc-slot-badge.picked { background: #ffd700; color: #12101d; }
+      .sc-slot-badge.skipped { background: #444; color: #888; }
+      .sc-slot-badge.error { background: #ff6b6b; color: white; }
+      .sc-slot-skip-btn {
+        background: transparent; color: #8a7eaf; border: 1px solid #3a3360;
+        border-radius: 12px; padding: 4px 10px; font-size: 11px;
+        cursor: pointer;
+      }
+      .sc-slot-skip-btn:hover { color: #ffd700; border-color: #6a1b9a; }
+      .sc-slot-body { margin-top: 10px; }
+      .sc-slot-winner-line {
+        margin-top: 8px; font-size: 13px; color: #ffd700;
+      }
       .sc-shootout-toast {
         position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
         background: #12101d; color: #ffd700;
@@ -165,6 +248,11 @@
 
   function close() {
     if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+    _megaSlots.forEach(s => {
+      if (s.pollTimer) { clearTimeout(s.pollTimer); s.pollTimer = null; }
+    });
+    _megaSlots = [];
+    _megaBusy = false;
     if (overlay) { overlay.remove(); overlay = null; }
   }
 
@@ -201,10 +289,14 @@
   async function fetchGroups() {
     return apiFetch('/api/spellcaster/lora/groups');
   }
-  async function startShootout(arch, purpose_group) {
+  async function startShootout(arch, purpose_group, strength) {
+    const payload = { arch, purpose_group };
+    if (typeof strength === 'number' && isFinite(strength)) {
+      payload.strength = strength;
+    }
     return apiFetch('/api/spellcaster/lora/shootout/start', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ arch, purpose_group }),
+      body: JSON.stringify(payload),
     });
   }
   async function pollStatus(jobId) {
@@ -232,6 +324,18 @@
            </div>`;
         return;
       }
+      const totalCandidates = pending.reduce((n, g) => n + (g.count || 0), 0);
+      const header = `
+        <div class="sc-shootout-mega-head">
+          <div class="sc-mega-stats">
+            <b>${pending.length}</b> shootout${pending.length === 1 ? '' : 's'} pending
+            &nbsp;•&nbsp; <b>${totalCandidates}</b> candidate LoRAs
+          </div>
+          <button class="sc-shootout-runall-btn" id="sc-runall-btn"
+                  title="Process every pending shootout back-to-back. You pick a winner (or skip) for each, and the next one starts automatically. ComfyUI renders one at a time.">
+            ⚡ Run all shootouts
+          </button>
+        </div>`;
       const rows = pending.map((g) => `
         <div class="sc-shootout-group-row" data-arch="${g.arch}"
              data-group="${g.purpose_group}">
@@ -246,7 +350,9 @@
           <button class="sc-shootout-run-btn">Run shootout</button>
         </div>
       `).join('');
-      body.innerHTML = rows;
+      body.innerHTML = header + rows;
+      body.querySelector('#sc-runall-btn')?.addEventListener('click',
+        () => renderMegaPanel(pending));
       body.querySelectorAll('.sc-shootout-group-row').forEach(row => {
         row.querySelector('.sc-shootout-run-btn').addEventListener('click',
           () => runShootout(row.dataset.arch, row.dataset.group));
@@ -259,16 +365,18 @@
     }
   }
 
-  async function runShootout(arch, purpose_group) {
+  async function runShootout(arch, purpose_group, strength) {
     const body = mountModal('', `${arch} / ${purpose_group.replace(/_/g, ' ')}`);
+    const strengthNote = (typeof strength === 'number' && isFinite(strength))
+      ? ` — weight ${strength.toFixed(2)}` : '';
     body.innerHTML = `
       <div class="sc-shootout-progress">
-        <div>Spawning shootout job…</div>
+        <div>Spawning shootout job${strengthNote}…</div>
         <div class="sc-bar"><div class="sc-bar-fill" style="width:5%"></div></div>
       </div>`;
     let jobId;
     try {
-      const res = await startShootout(arch, purpose_group);
+      const res = await startShootout(arch, purpose_group, strength);
       jobId = res.job_id;
     } catch (e) {
       body.innerHTML = `<div class="sc-shootout-empty" style="color:#ff6b6b">
@@ -313,11 +421,32 @@
     }
     const prompt = (state.result && state.result.prompt) || '';
     const model = (state.result && state.result.model) || '';
+    const currentStrength = (samples[0] && typeof samples[0].strength === 'number')
+      ? samples[0].strength : 0.8;
+    const stepDown = Math.max(0, Math.round((currentStrength - 0.2) * 100) / 100);
+    const stepUp   = Math.min(1, Math.round((currentStrength + 0.2) * 100) / 100);
     body.innerHTML = `
       <div style="margin-bottom:14px; color:#c4b8e3; font-size:13px;">
         Pick the result that best represents how this LoRA should behave. The
         loser files stay on disk but stop being suggested.<br/>
-        <small style="color:#8a7eaf">Prompt: “${prompt}” &nbsp;•&nbsp; Model: ${model}</small>
+        <small style="color:#8a7eaf">Prompt: “${prompt}” &nbsp;•&nbsp; Model: ${model}
+          &nbsp;•&nbsp; weight ${currentStrength.toFixed(2)}</small>
+      </div>
+      <div class="sc-shootout-retry">
+        <button class="sc-shootout-retry-btn" id="sc-retry-down"
+                title="Re-run the shootout with LoRA weight ${stepDown.toFixed(2)} (currently ${currentStrength.toFixed(2)}). Useful when every candidate looks too strong / too stylised."
+                ${stepDown >= currentStrength ? 'disabled' : ''}>↩ Retry softer</button>
+        <div class="sc-shootout-slider-wrap">
+          <input type="range" min="0" max="1" step="0.01"
+                 value="${currentStrength.toFixed(2)}" id="sc-retry-slider"
+                 title="Pick an exact LoRA weight and retry.">
+          <span id="sc-retry-slider-val">${currentStrength.toFixed(2)}</span>
+          <button class="sc-shootout-retry-btn" id="sc-retry-apply"
+                  title="Re-run the shootout at the selected LoRA weight.">Retry at this weight</button>
+        </div>
+        <button class="sc-shootout-retry-btn" id="sc-retry-up"
+                title="Re-run the shootout with LoRA weight ${stepUp.toFixed(2)} (currently ${currentStrength.toFixed(2)}). Useful when every candidate looks too weak / barely applied."
+                ${stepUp <= currentStrength ? 'disabled' : ''}>Retry stronger ↪</button>
       </div>
       <div class="sc-shootout-gallery">
         ${samples.map((s, i) => `
@@ -332,6 +461,24 @@
             </div>
           </div>`).join('')}
       </div>`;
+
+    const slider = body.querySelector('#sc-retry-slider');
+    const sliderVal = body.querySelector('#sc-retry-slider-val');
+    if (slider && sliderVal) {
+      slider.addEventListener('input', () => {
+        sliderVal.textContent = parseFloat(slider.value).toFixed(2);
+      });
+    }
+    const retryAt = (weight) => {
+      if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+      runShootout(arch, purpose_group, weight);
+    };
+    body.querySelector('#sc-retry-down')
+        ?.addEventListener('click', () => retryAt(stepDown));
+    body.querySelector('#sc-retry-up')
+        ?.addEventListener('click', () => retryAt(stepUp));
+    body.querySelector('#sc-retry-apply')
+        ?.addEventListener('click', () => retryAt(parseFloat(slider.value)));
     body.querySelectorAll('.sc-tile-pick').forEach(btn => {
       btn.addEventListener('click', async () => {
         const tile = btn.closest('.sc-shootout-tile');
@@ -350,28 +497,267 @@
         }
       });
     });
+  }
 
-    // Secondary thumbs-up / thumbs-down on each tile — the "Pick this one"
-    // is the primary commit; 👍/👎 lets the user mark ambient preference
-    // without forcing a winner yet. Feeds the same feedback registry as
-    // chat generations, so patterns compound across surfaces.
-    if (typeof window.SpellcasterFeedback !== 'undefined') {
-      body.querySelectorAll('.sc-shootout-tile').forEach((tile) => {
-        const img = tile.querySelector('img');
-        if (!img) return;
-        const loraName = tile.dataset.lora;
-        const subjectId = `lshoot:${arch}:${purpose_group}:${loraName}`;
-        const meta = {
-          arch,
-          purpose_group,
-          lora:   loraName,
-          model:  state.result.model,
-          prompt: state.result.prompt,
-          seed:   state.result.seed,
-        };
-        window.SpellcasterFeedback.attach(img, 'shootout', subjectId, meta);
-      });
+  // ── Run-all mega panel ────────────────────────────────────────────────
+  //
+  // Sequential processor: one slot per pending group. ComfyUI only renders
+  // one shootout at a time so we respect that — the first QUEUED slot
+  // becomes RUNNING; once it's READY the user picks or skips, then the
+  // next one advances. User can pick/skip out of order via per-slot
+  // controls; the controller just always advances the first remaining
+  // QUEUED slot whenever ComfyUI is free.
+  let _megaSlots = [];          // [{arch, purpose_group, count, status, el, jobId, result, pollTimer}]
+  let _megaBusy = false;
+
+  function _slotStatus(slot, status, badgeText) {
+    slot.status = status;
+    slot.el.className = `sc-shootout-slot ${status}`;
+    const badge = slot.el.querySelector('.sc-slot-badge');
+    if (badge) {
+      badge.className = `sc-slot-badge ${status}`;
+      badge.textContent = badgeText || status;
     }
+  }
+
+  function _updateMegaStats() {
+    const head = overlay && overlay.querySelector('#sc-mega-stats');
+    if (!head) return;
+    const counts = { queued: 0, running: 0, ready: 0, picked: 0, skipped: 0, error: 0 };
+    _megaSlots.forEach(s => counts[s.status] = (counts[s.status] || 0) + 1);
+    head.innerHTML = `<b>${counts.picked}</b> done
+      &nbsp;•&nbsp; <b>${counts.running}</b> running
+      &nbsp;•&nbsp; <b>${counts.queued}</b> queued
+      &nbsp;•&nbsp; <b>${counts.ready}</b> awaiting pick
+      ${counts.skipped ? `&nbsp;•&nbsp; ${counts.skipped} skipped` : ''}
+      ${counts.error ? `&nbsp;•&nbsp; <span style="color:#ff6b6b">${counts.error} failed</span>` : ''}`;
+  }
+
+  function _renderSlotGallery(slot) {
+    const state = slot.jobState;
+    const samples = (state.result && state.result.samples) || [];
+    const body = slot.el.querySelector('.sc-slot-body');
+    if (!samples.length) {
+      body.innerHTML = `<div class="sc-tile-error">No samples produced.</div>`;
+      _slotStatus(slot, 'error', 'no samples');
+      _updateMegaStats();
+      _advanceMegaQueue();
+      return;
+    }
+    const prompt = (state.result && state.result.prompt) || '';
+    const model  = (state.result && state.result.model) || '';
+    const currentStrength = (samples[0] && typeof samples[0].strength === 'number')
+      ? samples[0].strength : 0.8;
+    const stepDown = Math.max(0, Math.round((currentStrength - 0.2) * 100) / 100);
+    const stepUp   = Math.min(1, Math.round((currentStrength + 0.2) * 100) / 100);
+    body.innerHTML = `
+      <div style="color:#8a7eaf; font-size:11px; margin-bottom:8px;">
+        Prompt: “${prompt}” &nbsp;•&nbsp; Model: ${model.split(/[/\\\\]/).pop()}
+        &nbsp;•&nbsp; weight ${currentStrength.toFixed(2)}
+      </div>
+      <div class="sc-shootout-retry">
+        <button class="sc-shootout-retry-btn sc-slot-retry-down"
+                title="Re-run with LoRA weight ${stepDown.toFixed(2)} (currently ${currentStrength.toFixed(2)}). Useful when every candidate looks too strong."
+                ${stepDown >= currentStrength ? 'disabled' : ''}>↩ Retry softer</button>
+        <div class="sc-shootout-slider-wrap">
+          <input type="range" min="0" max="1" step="0.01"
+                 value="${currentStrength.toFixed(2)}" class="sc-slot-slider"
+                 title="Pick an exact LoRA weight and retry.">
+          <span class="sc-slot-slider-val">${currentStrength.toFixed(2)}</span>
+          <button class="sc-shootout-retry-btn sc-slot-retry-apply"
+                  title="Re-run the shootout at the selected LoRA weight.">Retry at this weight</button>
+        </div>
+        <button class="sc-shootout-retry-btn sc-slot-retry-up"
+                title="Re-run with LoRA weight ${stepUp.toFixed(2)} (currently ${currentStrength.toFixed(2)}). Useful when every candidate looks too weak."
+                ${stepUp <= currentStrength ? 'disabled' : ''}>Retry stronger ↪</button>
+      </div>
+      <div class="sc-shootout-gallery">
+        ${samples.map((s) => `
+          <div class="sc-shootout-tile" data-lora="${s.lora_name}">
+            ${s.ok && s.image_b64
+              ? `<img src="data:image/png;base64,${s.image_b64}" alt="${s.lora_name}">`
+              : `<div class="sc-tile-error">${s.error || 'no image'}</div>`}
+            <div class="sc-tile-meta">
+              <div class="sc-tile-name">${s.lora_name.split(/[/\\\\]/).pop()}</div>
+              <button class="sc-tile-pick" ${!s.ok ? 'disabled' : ''}>👑 Pick this one</button>
+            </div>
+          </div>`).join('')}
+      </div>`;
+
+    const slider = body.querySelector('.sc-slot-slider');
+    const sliderVal = body.querySelector('.sc-slot-slider-val');
+    if (slider && sliderVal) {
+      slider.addEventListener('input',
+        () => sliderVal.textContent = parseFloat(slider.value).toFixed(2));
+    }
+    const retryAt = (weight) => {
+      if (slot.pollTimer) { clearTimeout(slot.pollTimer); slot.pollTimer = null; }
+      _runMegaSlot(slot, weight);
+    };
+    body.querySelector('.sc-slot-retry-down')
+        ?.addEventListener('click', () => retryAt(stepDown));
+    body.querySelector('.sc-slot-retry-up')
+        ?.addEventListener('click', () => retryAt(stepUp));
+    body.querySelector('.sc-slot-retry-apply')
+        ?.addEventListener('click', () => retryAt(parseFloat(slider.value)));
+    body.querySelectorAll('.sc-tile-pick').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const tile = btn.closest('.sc-shootout-tile');
+        const winner = tile.dataset.lora;
+        tile.classList.add('winner');
+        body.querySelectorAll('.sc-tile-pick').forEach(b => b.disabled = true);
+        btn.textContent = 'Committing…';
+        try {
+          const res = await pickWinner(slot.arch, slot.purpose_group, winner);
+          _slotStatus(slot, 'picked', '✓ picked');
+          body.innerHTML = `
+            <div class="sc-slot-winner-line">
+              👑 Winner: ${winner.split(/[/\\\\]/).pop()}
+              &nbsp;•&nbsp; demoted ${res.demoted} other${res.demoted === 1 ? '' : 's'}
+            </div>`;
+          _updateMegaStats();
+          refreshBadge();
+        } catch (e) {
+          toast(`✗ Pick failed: ${e.message}`, 4000);
+          body.querySelectorAll('.sc-tile-pick').forEach(b => b.disabled = false);
+          btn.textContent = '👑 Pick this one';
+        }
+      });
+    });
+    _slotStatus(slot, 'ready', 'awaiting pick');
+    _updateMegaStats();
+    // Free ComfyUI so the next queued slot can start in parallel with the
+    // user's review.
+    _advanceMegaQueue();
+  }
+
+  async function _runMegaSlot(slot, strength) {
+    if (slot.pollTimer) { clearTimeout(slot.pollTimer); slot.pollTimer = null; }
+    _slotStatus(slot, 'running', 'starting…');
+    _updateMegaStats();
+    const body = slot.el.querySelector('.sc-slot-body');
+    body.innerHTML = `
+      <div class="sc-shootout-progress">
+        <div>Spawning…</div>
+        <div class="sc-bar"><div class="sc-bar-fill" style="width:5%"></div></div>
+      </div>`;
+    try {
+      const res = await startShootout(slot.arch, slot.purpose_group, strength);
+      slot.jobId = res.job_id;
+    } catch (e) {
+      body.innerHTML = `<div class="sc-tile-error">${e.message}</div>`;
+      _slotStatus(slot, 'error', 'failed');
+      _updateMegaStats();
+      _megaBusy = false;
+      _advanceMegaQueue();
+      return;
+    }
+    const poll = async () => {
+      let state;
+      try { state = await pollStatus(slot.jobId); }
+      catch (e) {
+        body.innerHTML = `<div class="sc-tile-error">poll failed: ${e.message}</div>`;
+        _slotStatus(slot, 'error', 'poll err');
+        _updateMegaStats();
+        _megaBusy = false;
+        _advanceMegaQueue();
+        return;
+      }
+      if (state.status === 'running') {
+        const pct = state.total > 0 ? Math.round(100 * state.done / state.total) : 5;
+        const tail = state.current ? ` — ${state.current.split(/[/\\\\]/).pop()}` : '';
+        body.innerHTML = `
+          <div class="sc-shootout-progress">
+            <div>${state.done} of ${state.total}${tail}</div>
+            <div class="sc-bar"><div class="sc-bar-fill" style="width:${pct}%"></div></div>
+          </div>`;
+        _slotStatus(slot, 'running', `${state.done}/${state.total}`);
+        slot.pollTimer = setTimeout(poll, 1500);
+        return;
+      }
+      if (state.status === 'error') {
+        body.innerHTML = `<div class="sc-tile-error">${state.error || 'unknown'}</div>`;
+        _slotStatus(slot, 'error', 'error');
+        _updateMegaStats();
+        _megaBusy = false;
+        _advanceMegaQueue();
+        return;
+      }
+      slot.jobState = state;
+      _megaBusy = false;
+      _renderSlotGallery(slot);
+    };
+    poll();
+  }
+
+  function _advanceMegaQueue() {
+    if (_megaBusy) return;
+    const next = _megaSlots.find(s => s.status === 'queued');
+    if (!next) return;
+    _megaBusy = true;
+    _runMegaSlot(next);
+  }
+
+  async function renderMegaPanel(preloadedPending) {
+    const body = mountModal(
+      `<div class="sc-shootout-empty">Loading…</div>`,
+      'Run all shootouts');
+    let pending = preloadedPending;
+    if (!pending) {
+      try { pending = (await fetchGroups()).pending || []; }
+      catch (e) {
+        body.innerHTML = `<div class="sc-shootout-empty" style="color:#ff6b6b">
+          ${e.message}</div>`;
+        return;
+      }
+    }
+    if (!pending.length) {
+      body.innerHTML = `<div class="sc-shootout-empty">
+        🎉 All LoRAs already calibrated.</div>`;
+      return;
+    }
+    _megaSlots = pending.map((g) => ({
+      arch: g.arch, purpose_group: g.purpose_group,
+      count: g.count, candidates: g.candidates || [],
+      status: 'queued', el: null, jobId: null, jobState: null,
+      pollTimer: null,
+    }));
+    _megaBusy = false;
+    body.innerHTML = `
+      <div class="sc-shootout-mega-head">
+        <div class="sc-mega-stats" id="sc-mega-stats"></div>
+      </div>
+      <div id="sc-mega-slots"></div>`;
+    const slotsEl = body.querySelector('#sc-mega-slots');
+    _megaSlots.forEach((slot) => {
+      const el = document.createElement('div');
+      el.className = 'sc-shootout-slot queued';
+      el.innerHTML = `
+        <div class="sc-slot-head">
+          <div>
+            <span class="sc-slot-title">${slot.purpose_group.replace(/_/g, ' ')}</span>
+            <span class="sc-slot-arch">${slot.arch} &nbsp;•&nbsp; ${slot.count} candidates</span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span class="sc-slot-badge queued">queued</span>
+            <button class="sc-slot-skip-btn" title="Skip this group — leave its LoRAs untouched.">Skip</button>
+          </div>
+        </div>
+        <div class="sc-slot-body"></div>`;
+      slotsEl.appendChild(el);
+      slot.el = el;
+      el.querySelector('.sc-slot-skip-btn').addEventListener('click', () => {
+        const wasRunning = slot.status === 'running';
+        if (slot.pollTimer) { clearTimeout(slot.pollTimer); slot.pollTimer = null; }
+        _slotStatus(slot, 'skipped', 'skipped');
+        el.querySelector('.sc-slot-body').innerHTML = '';
+        _updateMegaStats();
+        if (wasRunning) _megaBusy = false;
+        _advanceMegaQueue();
+      });
+    });
+    _updateMegaStats();
+    _advanceMegaQueue();
   }
 
   // ── Entry button ──────────────────────────────────────────────────────
