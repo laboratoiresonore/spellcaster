@@ -9,8 +9,9 @@ MVP plugin suite connecting Spellcaster's Wizard Guild video stack to DaVinci Re
 | **Spellcaster Bridge** (always-on) | Subscribes to the Guild's event stream. Every shot rendered on the Guild side auto-imports into Resolve's Media Pool under a `Spellcaster/<date>/` bin with full shot metadata attached as clip metadata. Optional mirror timeline. Dockable status panel. |
 | **Generate from Playhead** | Place your playhead on any frame → run the script → type a prompt → a new shot queues on the Guild using that frame as reference. The generated clip auto-appears in your Media Pool when ready. |
 | **Smart Fill Gap** | Put the playhead inside a gap between two clips → run the script → type what should happen → the Guild renders a clip of the exact gap duration using the left clip's last frame + the right clip's first frame as references. |
+| **Capture Timeline** (R83) | Walks V1 of the active timeline and ingests every clip into the Shotboard as one cohort. Clips with Spellcaster `[SC]` markers are matched to their existing shots; bare clips get drafted fresh with the Resolve clip name as title and a first-frame still as reference. Use this when an edit is locked and you want to re-render individual beats, or when you're round-tripping an assembly from Premiere/FCP through Resolve into Spellcaster. |
 
-Everything else from the plan (Shotboard Sync, in-Resolve shotboard panel, Marker Round-Trip, Color-Graded Reference, etc.) ships in later tiers.
+Everything else from the plan (in-Resolve shotboard panel, Marker Round-Trip, Color-Graded Reference, etc.) ships in later tiers.
 
 ## Install
 
@@ -80,6 +81,15 @@ The panel shows: Guild connection state (green=live SSE, yellow=polling fallback
 3. **Workspace → Scripts → Utility → Spellcaster → Smart Fill Gap**.
 4. Type what should happen (optional). Click OK.
 5. Wait for the render. When the clip lands in your Media Pool, drag it onto the gap — it's exactly the right duration.
+
+### Capture Timeline
+1. Open the timeline you want to push into Spellcaster.
+2. **Workspace → Scripts → Utility → Spellcaster → Capture Timeline**.
+3. A confirmation dialog summarises what's about to be ingested — N clips, X already tied to Spellcaster vs. Y new. Click **Capture**.
+4. For each new clip (up to 30 per run), a first-frame PNG is grabbed and attached as reference so the shot is immediately usable as an i2v seed.
+5. A scene named `Resolve: <timeline name>` appears in the Guild holding every imported shot; edit prompts, change presets, and queue renders from there.
+
+When you re-run the script on a timeline you've already captured, clips carrying a Spellcaster `[SC]` marker are recognised and re-grouped under a fresh scene — no duplicate shots. This makes it cheap to resync after manual trims or reordering on the Resolve side.
 
 ## Configuration
 
