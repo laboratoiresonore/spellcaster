@@ -905,15 +905,31 @@ class VideoBridge:
         return {"estimates": estimates}
 
     def batch_update_preset(self, shot_ids: List[str],
-                            preset: str) -> Dict[str, Any]:
-        """Change the preset for multiple shots at once."""
+                            preset: str,
+                            snapshot_before: bool = True) -> Dict[str, Any]:
+        """Change the preset for multiple shots at once.
+
+        R46a: auto-snapshots each shot first so the user can restore if
+        the new preset underperforms. Skipped for shots already on the
+        target preset (no-op changes don't need a safety net).
+        """
+        # Only snapshot shots that will actually change
+        changing = [sid for sid in shot_ids
+                    if (s := self.board.get(sid)) is not None
+                    and s.status == "draft"
+                    and s.preset != preset]
+        auto_snapped = 0
+        if snapshot_before and changing:
+            auto_snapped = self.board._auto_snapshot_batch(
+                changing, f"before preset -> {preset}")
         updated = 0
         for sid in shot_ids:
             shot = self.board.get(sid)
             if shot and shot.status == "draft":
                 self.board.update(sid, preset=preset)
                 updated += 1
-        return {"updated": updated, "preset": preset}
+        return {"updated": updated, "preset": preset,
+                "auto_snapshots": auto_snapped}
 
     # ------------------------------------------------------------------
     # Prompt Templates

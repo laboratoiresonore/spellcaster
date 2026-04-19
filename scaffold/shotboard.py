@@ -932,12 +932,44 @@ class Shotboard:
 
         return reverted
 
-    def batch_revert(self, shot_ids: List[str]) -> Dict[str, Any]:
+    # ─── R46a: auto-snapshot before destructive batch operations ─────
+
+    def _auto_snapshot_batch(self, shot_ids: List[str], op_label: str) -> int:
+        """Save a "Auto: <op>" snapshot on every unlocked shot in ``shot_ids``
+        before a destructive batch operation runs.
+
+        Returns the count of snapshots taken. Skips locked shots (they
+        can't be restored anyway) and shots that don't exist.
+
+        The snapshot uses the same machinery as user-driven save_snapshot
+        — max 20 per shot, oldest pruned. Auto-snapshots compete with
+        user snapshots for the 20-slot window, but that's acceptable:
+        either way a user can only restore what's currently kept.
+        """
+        taken = 0
+        for sid in shot_ids:
+            shot = self.get(sid)
+            if shot is None or shot.locked:
+                continue
+            snap = self.save_snapshot(sid, label=f"Auto: {op_label}")
+            if snap is not None:
+                taken += 1
+        return taken
+
+    def batch_revert(self, shot_ids: List[str],
+                     snapshot_before: bool = True) -> Dict[str, Any]:
         """Revert multiple shots to their last rendered settings.
+
+        When ``snapshot_before`` is True (default), each affected shot
+        gets an "Auto: before batch-revert" snapshot first so the user
+        can undo the revert with a restore.
 
         Returns a summary dict with 'reverted' count and 'skipped' count.
         Skipped shots are locked, have no history, or don't exist.
         """
+        auto_snapped = 0
+        if snapshot_before:
+            auto_snapped = self._auto_snapshot_batch(shot_ids, "before batch-revert")
         reverted = 0
         skipped = 0
         for sid in shot_ids:
@@ -949,10 +981,11 @@ class Shotboard:
                     reverted += 1
                 else:
                     skipped += 1  # no changes to revert
-        return {"reverted": reverted, "skipped": skipped}
+        return {"reverted": reverted, "skipped": skipped, "auto_snapshots": auto_snapped}
 
     def batch_prompt_edit(self, shot_ids: List[str], prefix: str = "",
-                          suffix: str = "", mode: str = "add") -> Dict[str, Any]:
+                          suffix: str = "", mode: str = "add",
+                          snapshot_before: bool = True) -> Dict[str, Any]:
         """Add or remove a prefix/suffix to/from prompts of multiple shots.
 
         mode='add': prepend prefix and/or append suffix to each shot's prompt.
@@ -961,6 +994,9 @@ class Shotboard:
 
         Returns {'modified': int, 'skipped': int}.
         """
+        auto_snapped = 0
+        if snapshot_before:
+            auto_snapped = self._auto_snapshot_batch(shot_ids, "before prompt edit")
         modified = 0
         skipped = 0
         for sid in shot_ids:
@@ -991,7 +1027,8 @@ class Shotboard:
                 skipped += 1
         if modified > 0:
             self.save()
-        return {"modified": modified, "skipped": skipped}
+        return {"modified": modified, "skipped": skipped,
+                "auto_snapshots": auto_snapped}
 
     # ─── R45a: shot version snapshots ────────────────────────────────
 
