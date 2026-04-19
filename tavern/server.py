@@ -5753,6 +5753,67 @@ class GuildHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(payload).encode('utf-8'))
 
+    def _proxy_to_antenna(self, path, method, body):
+        """R50b: forward a request to the paired antenna, returning its
+        response verbatim. Used by the Resolve render-queue endpoints.
+        Reads antenna URL + token from guild_config or the live registry.
+        """
+        cfg = _guided_install_load_config()
+        url = (cfg.get('antenna_url') or '').strip()
+        token = (cfg.get('antenna_token') or '').strip()
+        if not url and CROSS_INTERFACE_AVAILABLE and _iface_registry is not None:
+            try:
+                snap = _iface_registry.snapshot()
+                entry = snap.get('antenna') or {}
+                url = ((entry.get('last_meta') or {}).get('agent_url') or '').strip()
+            except Exception:
+                url = ''
+        if not url:
+            return self.end_json(503, {"error": "no antenna paired",
+                                       "hint": "open Antenna modal and pair"})
+        if not token:
+            return self.end_json(400, {"error": "antenna_token missing — re-pair"})
+
+        import urllib.request as _ur, urllib.error as _ue, ssl as _ssl
+        headers = {"Authorization": f"Bearer {token}",
+                   "User-Agent": "spellcaster-guild-antenna-proxy"}
+        data_bytes = None
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+            data_bytes = json.dumps(body).encode('utf-8')
+        req = _ur.Request(url.rstrip('/') + path,
+                          data=data_bytes, headers=headers, method=method)
+        ctx_ssl = _ssl.create_default_context()
+        ctx_ssl.check_hostname = False
+        ctx_ssl.verify_mode = _ssl.CERT_NONE
+        try:
+            with _ur.urlopen(req, timeout=30, context=ctx_ssl) as resp:
+                raw = resp.read().decode('utf-8', 'replace')
+                try:
+                    parsed = json.loads(raw)
+                except json.JSONDecodeError:
+                    parsed = {"raw": raw[:500]}
+                return self.end_json(resp.status, {
+                    "antenna_url": url,
+                    "antenna_response": parsed,
+                })
+        except _ue.HTTPError as e:
+            err_body = ""
+            try:
+                err_body = e.read().decode('utf-8', 'replace')
+            except Exception:
+                pass
+            try:
+                parsed = json.loads(err_body) if err_body else {}
+            except json.JSONDecodeError:
+                parsed = {"raw": err_body[:500]}
+            return self.end_json(e.code, {
+                "error": f"antenna returned {e.code}",
+                "antenna_response": parsed,
+            })
+        except (_ue.URLError, OSError) as e:
+            return self.end_json(502, {"error": f"could not reach antenna: {e}"})
+
     def _serve_file(self, filepath):
         """Serve a local file by path with appropriate MIME type."""
         import mimetypes
@@ -7406,6 +7467,72 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 shot_ids, count=count, title_suffix_mode=mode)
             return self.end_json(200, result)
 
+        # R50a: Guild self-update + self-restart. Hits the same updater the
+        # launcher uses at startup, then re-execs itself.
+        elif self.path == '/api/guild/self-update' and self.command == 'POST':
+            def _run_update():
+                import threading, os as _os, sys as _sys
+                try:
+                    # Import lazily — launcher module lives next to server.py
+                    _here = _os.path.dirname(_os.path.abspath(__file__))
+                    if _here not in _sys.path:
+                        _sys.path.insert(0, _here)
+                    import guild_launcher as _gl
+                    applied = _gl.check_for_updates(verbose=True)
+                    if _EVENT_BUS is not None:
+                        try:
+                            _EVENT_BUS.publish("guild.self_update.result",
+                                                origin="guild",
+                                                data={"applied": bool(applied)})
+                        except Exception:
+                            pass
+                    if applied:
+                        # Give the client a beat to see the toast, then re-exec.
+                        # os.execv replaces this process image with a fresh
+                        # python running the same argv — no supervising
+                        # launcher required.
+                        def _exec_restart():
+                            import time as _t
+                            _t.sleep(2.0)
+                            try:
+                                _os.execv(_sys.executable,
+                                          [_sys.executable] + _sys.argv)
+                            except OSError as e:
+                                print(f"  [self-update] execv failed: {e}")
+                        threading.Thread(target=_exec_restart, daemon=True,
+                                         name="guild-self-restart").start()
+                except Exception as e:
+                    print(f"  [self-update] failed: {e}")
+                    if _EVENT_BUS is not None:
+                        try:
+                            _EVENT_BUS.publish("guild.self_update.error",
+                                                origin="guild",
+                                                data={"error": str(e)})
+                        except Exception:
+                            pass
+
+            import threading
+            threading.Thread(target=_run_update, daemon=True,
+                             name="guild-self-update").start()
+            return self.end_json(202, {
+                "started": True,
+                "note": "Guild is checking for updates; watch toasts. "
+                        "If an update is applied, the server will re-exec "
+                        "itself in ~2 seconds and the page will briefly 502."
+            })
+
+        elif self.path == '/api/guild/version' and self.command == 'GET':
+            # Used by the UI to detect a successful restart after self-update.
+            try:
+                _here = os.path.dirname(os.path.abspath(__file__))
+                if _here not in sys.path:
+                    sys.path.insert(0, _here)
+                import guild_launcher as _gl
+                sha = _gl._read_local_sha() if hasattr(_gl, "_read_local_sha") else None
+            except Exception:
+                sha = None
+            return self.end_json(200, {"sha": sha or None})
+
         # R49b: Antenna pairing + self-update from Guild. One-button ops.
         elif self.path == '/api/antenna/pair' and self.command == 'POST':
             # Body: {url: "https://...", token: "..."} — Guild verifies and persists.
@@ -7524,6 +7651,19 @@ class GuildHandler(SimpleHTTPRequestHandler):
                         "note": "antenna disconnected mid-response (expected — it restarts itself)"
                     })
                 return self.end_json(502, {"error": f"could not reach antenna: {e}"})
+
+        # R50b: Resolve render-queue driver — Guild forwards these to the
+        # antenna. POST starts a render, GET polls status with a job_id.
+        elif (self.path == '/api/antenna/resolve/render-timeline'
+              and self.command == 'POST'):
+            return self._proxy_to_antenna('/resolve/render-timeline', 'POST', data)
+        elif (self.path.startswith('/api/antenna/resolve/render-status')
+              and self.command == 'GET'):
+            # Pass through the query string as-is
+            qs = ''
+            if '?' in self.path:
+                qs = '?' + self.path.split('?', 1)[1]
+            return self._proxy_to_antenna('/resolve/render-status' + qs, 'GET', None)
 
         # R48b: Send timeline directly to a running DaVinci Resolve via the
         # antenna. POST only — mutates Resolve state. Body: {"format": "edl"|"fcpxml", "fps": 30, "bin": "Spellcaster"}
