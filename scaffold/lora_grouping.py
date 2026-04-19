@@ -208,13 +208,31 @@ def enumerate_groups(lora_registry: dict) -> dict[tuple[str, str], list[dict]]:
 def groups_needing_pick(lora_registry: dict) -> list[dict]:
     """Return one record per (arch, purpose_group) that has ≥2 candidates
     AND no existing preferred winner. UI's "pending shootouts" list.
+
+    Video archs (wan, ltx) are skipped — their LoRAs stay usable at
+    strength 1.0 through the video inference path; a txt2img shootout
+    would fail to dispatch and confuse the user. Acceleration LoRAs
+    are skipped for the same reason: they're always used at 1.0 with
+    a single correct option per arch.
     """
     out = []
     for (arch, purpose), members in enumerate_groups(lora_registry).items():
+        if (arch or "").lower() in _SKIP_SHOOTOUT_ARCHS:
+            continue
+        if purpose in _SKIP_SHOOTOUT_GROUPS:
+            continue
         if len(members) < 2:
             continue
-        if any(m.get("preferred_for_purpose") for m in members):
-            continue  # already resolved
+        # NOTE: With multi-approve (Phase 3) we allow re-running a
+        # shootout even when a winner already exists — the user may
+        # want to approve more LoRAs from the same group. Only skip
+        # groups that already have EVERY member explicitly approved.
+        all_approved = all(
+            m.get("approved") or m.get("preferred_for_purpose")
+            for m in members
+        )
+        if all_approved and all(m.get("preferred_for_purpose") for m in members):
+            continue
         out.append({
             "arch":          arch,
             "purpose_group": purpose,
@@ -228,9 +246,174 @@ def groups_needing_pick(lora_registry: dict) -> list[dict]:
 
 # ── Shootout engine ──────────────────────────────────────────────────────
 
-# Neutral prompts per purpose_group — designed so the user can see the
-# LoRA's effect cleanly without fighting subject choice. Each entry is
-# (prompt, negative, suggested_strength).
+# Archs that never benefit from a diffusion-style shootout (video archs
+# route through WanGP, not build_txt2img) — skip their LoRAs from
+# groups_needing_pick. The LoRAs stay usable at strength 1.0 through the
+# normal wan/ltx inference path.
+_SKIP_SHOOTOUT_ARCHS = {"wan", "ltx"}
+
+# Groups the user never wants to shoot out. Acceleration LoRAs are
+# always used at strength 1.0 with a single correct option per arch;
+# a visual pick doesn't help.
+_SKIP_SHOOTOUT_GROUPS = {"acceleration"}
+
+# Subject templates — one human-readable prompt per subject the user
+# can test LoRAs against. The UI lets the user pick any of these on a
+# per-LoRA basis via the subject dropdown; Phase 2 resample endpoint
+# accepts the subject key and rebuilds the prompt from this table.
+# Each entry is (positive, negative).
+_SUBJECT_TEMPLATES: dict[str, tuple[str, str]] = {
+    "portrait_f":  ("portrait of a woman, soft natural light, detailed "
+                     "skin, neutral background, photograph",
+                     "blurry, low quality, deformed, cartoon, 3d render"),
+    "portrait_m":  ("portrait of a man, soft natural light, detailed "
+                     "skin, neutral background, photograph",
+                     "blurry, low quality, deformed, cartoon, 3d render"),
+    "fullbody_f":  ("full body photo of a woman standing in a studio, "
+                     "neutral pose, natural light, realistic",
+                     "blurry, low quality, deformed, cropped"),
+    "fullbody_m":  ("full body photo of a man standing in a studio, "
+                     "neutral pose, natural light, realistic",
+                     "blurry, low quality, deformed, cropped"),
+    "animal":      ("a detailed photograph of an animal in a natural "
+                     "setting, soft natural light",
+                     "blurry, low quality, deformed, human"),
+    "feet":        ("close-up of two bare feet on a wooden floor, detailed "
+                     "toes, natural lighting, photograph",
+                     "blurry, extra toes, missing toes, deformed, sketch, "
+                     "drawing, painting, low quality"),
+    "hands":       ("close-up of two hands folded in lap, detailed fingers, "
+                     "natural skin tone, photograph",
+                     "blurry, extra fingers, fused fingers, deformed, "
+                     "sketch, drawing, low quality"),
+    "face_macro":  ("extreme close-up portrait of a face, detailed skin "
+                     "texture, natural light, photograph",
+                     "blurry, low quality, deformed, airbrushed, cartoon"),
+    "eye_macro":   ("extreme close-up of a human eye, detailed iris, "
+                     "natural light, eyelashes, photograph",
+                     "blurry, low quality, cartoon, distorted"),
+    "scene":       ("a detailed outdoor scene with a person walking, "
+                     "cinematic composition, natural light, photograph",
+                     "blurry, low quality, flat, sketch"),
+}
+
+# Default subject per purpose_group. Tuned so each LoRA's effect is
+# visible without fighting the subject choice — feet LoRAs get a feet
+# close-up, skin LoRAs get a portrait, pose LoRAs get a full body, etc.
+# "skin_detail" explicitly uses a photo portrait to avoid the sketchy
+# output users got from the old generic "person" prompt against realism
+# LoRAs (the SDXL sketch-bug).
+_DEFAULT_SUBJECT_FOR_GROUP: dict[str, str] = {
+    "hand_fix":          "hands",
+    "feet_fix":          "feet",
+    "face_detail":       "face_macro",
+    "skin_detail":       "portrait_f",
+    "eye_detail":        "eye_macro",
+    "teeth_fix":         "face_macro",
+    "hair_detail":       "portrait_f",
+    "anatomy_body":      "fullbody_f",
+    "anatomy_chest":     "fullbody_f",
+    "anatomy_genital":   "fullbody_f",
+    "clothing":          "fullbody_f",
+    "pose":              "fullbody_f",
+    "action_pose":       "fullbody_f",
+    "detail_boost":      "scene",
+    "contrast_fix":      "scene",
+    "character":         "portrait_f",
+    "style_anime":       "portrait_f",
+    "style_photoreal":   "portrait_f",
+    "style_paint":       "portrait_f",
+    "style_cyber":       "fullbody_f",
+    "style_gothic":      "portrait_f",
+    "style_ethereal":    "portrait_f",
+    "lighting":          "scene",
+    "environment":       "scene",
+    "motion":            "scene",
+    "acceleration":      "portrait_f",  # never shot but kept for safety
+    "other":             "portrait_f",
+}
+
+# Per-arch overrides. Flux 2 Klein uniformly looks best on a male
+# full-body subject at full strength — applying blanket defaults here
+# avoids hand-tuning every group separately.
+_ARCH_DEFAULT_OVERRIDES: dict[str, dict] = {
+    "flux2klein":   {"subject": "fullbody_m", "strength": 1.0},
+    # Flux 1 Dev + Kontext have no blanket subject change but the strength
+    # cap stays at 1.0 (their LoRAs normally train at 1.0).
+    "flux1dev":     {"strength": 1.0},
+    "flux_kontext": {"strength": 1.0},
+}
+
+# Suggested strength per group (when no arch override applies). Values
+# tuned so the default first-render is in the usable range — the user
+# can retry Softer (x0.6) or Harder (x1.3) from there.
+_DEFAULT_STRENGTH_FOR_GROUP: dict[str, float] = {
+    "hand_fix": 0.7, "feet_fix": 0.7,
+    "face_detail": 0.5, "skin_detail": 0.5, "eye_detail": 0.6,
+    "teeth_fix": 0.5, "hair_detail": 0.5,
+    "detail_boost": 0.5, "contrast_fix": 0.5,
+    "style_anime": 0.7, "style_photoreal": 0.6, "style_paint": 0.7,
+    "style_cyber": 0.7, "style_gothic": 0.7, "style_ethereal": 0.7,
+    "clothing": 0.6, "lighting": 0.6, "environment": 0.6,
+    "pose": 0.6, "action_pose": 0.7, "motion": 0.8,
+    "character": 0.7,
+    "anatomy_body": 0.6, "anatomy_chest": 0.6, "anatomy_genital": 0.6,
+    "acceleration": 1.0,
+    "other": 0.5,
+}
+
+
+def resolve_shootout_recipe(
+    purpose_group: str,
+    arch: str,
+    subject: Optional[str] = None,
+    strength: Optional[float] = None,
+) -> tuple[str, str, str, float]:
+    """Turn (group, arch, optional overrides) into a concrete recipe.
+
+    Returns (subject_key, positive_prompt, negative_prompt, strength).
+    The subject key is echoed back so the UI can show which template
+    the server actually used. Arch overrides (e.g. Klein → fullbody_m)
+    beat the group default UNLESS the caller passed an explicit subject.
+    """
+    arch_over = _ARCH_DEFAULT_OVERRIDES.get((arch or "").lower(), {})
+    chosen_subject = (
+        subject
+        or arch_over.get("subject")
+        or _DEFAULT_SUBJECT_FOR_GROUP.get(purpose_group, "portrait_f")
+    )
+    if chosen_subject not in _SUBJECT_TEMPLATES:
+        chosen_subject = "portrait_f"
+    pos, neg = _SUBJECT_TEMPLATES[chosen_subject]
+    if strength is None:
+        strength = arch_over.get("strength",
+                                  _DEFAULT_STRENGTH_FOR_GROUP.get(
+                                      purpose_group, 0.5))
+    return chosen_subject, pos, neg, float(strength)
+
+
+def list_subject_templates() -> list[dict]:
+    """Public list for the UI's subject dropdown."""
+    labels = {
+        "portrait_f":  "Woman portrait",
+        "portrait_m":  "Man portrait",
+        "fullbody_f":  "Woman full body",
+        "fullbody_m":  "Man full body",
+        "animal":      "Animal",
+        "feet":        "Feet close-up",
+        "hands":       "Hands close-up",
+        "face_macro":  "Face close-up",
+        "eye_macro":   "Eye close-up",
+        "scene":       "Scene with person",
+    }
+    return [{"key": k, "label": labels.get(k, k), "prompt": v[0]}
+            for k, v in _SUBJECT_TEMPLATES.items()]
+
+
+# Legacy per-group prompts — kept for backward compatibility with any
+# older caller that still asks `shootout_prompt_for(group)`. New code
+# should call `resolve_shootout_recipe()` which honours arch overrides
+# and the subject dropdown.
 _SHOOTOUT_PROMPTS: dict[str, tuple[str, str, float]] = {
     "hand_fix":     ("close-up of two hands folded in lap, detailed fingers, "
                      "natural skin tone, soft light",
@@ -405,23 +588,52 @@ def _pick_representative_model(discover_models_out: list, arch: str) -> Optional
     candidates = [m for m in discover_models_out if m.get("arch") == arch]
     if not candidates:
         return None
-    return sorted(candidates, key=lambda m: str(m.get("name", "")))[0]
+    # Prefer models whose names suggest realism / photo (avoids NoobAI
+    # and similar anime-trained checkpoints for the SDXL feet shootout
+    # the user flagged as sketchy). Realism hints are purely heuristic
+    # — if nothing matches, we fall back to alphabetical.
+    realism_hints = ("realism", "realistic", "photo", "dreamshaper",
+                     "juggernaut", "epicrealism", "realvis", "cyberreal")
+    realistic = [m for m in candidates
+                  if any(h in str(m.get("name", "")).lower()
+                          for h in realism_hints)]
+    pool = realistic or candidates
+    return sorted(pool, key=lambda m: str(m.get("name", "")))[0]
 
 
-def run_shootout(
+def _models_for_arch(discover_models_out: list, arch: str,
+                      exclude: Optional[set] = None) -> list[dict]:
+    """Return every installed model matching `arch`, excluding a set of
+    names (used for the auto-fallback path — if model A failed, try B).
+    """
+    exclude = exclude or set()
+    return [
+        m for m in discover_models_out
+        if m.get("arch") == arch and m.get("name") not in exclude
+    ]
+
+
+def _render_single_sample(
     server: str,
     arch: str,
-    purpose_group: str,
-    candidate_loras: list[str],
-    models: list[dict],
-    seed: int = 12345,
-    strength: Optional[float] = None,
+    lora_name: str,
+    strength: float,
+    prompt: str,
+    negative: str,
+    seed: int,
+    models_pool: list[dict],
+    preferred_model: Optional[str] = None,
     timeout: int = 90,
-) -> ShootoutResult:
-    """Render the same prompt with each candidate LoRA; return all samples.
+) -> ShootoutSample:
+    """Render one LoRA sample with automatic model fallback.
 
-    Reuses spellcaster_core.workflows.build_txt2img and
-    preference_calibration.generate_and_download — no duplicated dispatch.
+    On generation failure (dispatch error, empty output, workflow build
+    error) we try the next installed model of the same arch — up to
+    three attempts. This turns a single broken checkpoint into a
+    successful sample instead of a red "dispatch failed" card.
+
+    preferred_model lets the caller pin a specific checkpoint (UI model
+    picker); if it fails the fallback still kicks in.
     """
     try:
         from spellcaster_core.workflows import build_txt2img
@@ -432,29 +644,45 @@ def run_shootout(
         from architectures import get_arch  # type: ignore
         from preference_calibration import generate_and_download  # type: ignore
 
-    prompt, negative, default_strength = shootout_prompt_for(purpose_group)
-    strength = float(strength if strength is not None else default_strength)
-
-    model = _pick_representative_model(models, arch)
-    if not model:
-        return ShootoutResult(
-            arch=arch, purpose_group=purpose_group,
-            prompt=prompt, negative=negative, seed=seed, model="",
-            samples=[],
-        )
-
     arch_obj = get_arch(arch)
     w, h = arch_obj.default_resolution if arch_obj else (768, 768)
     if w >= 1024:
         w, h = 768, 768
 
-    result = ShootoutResult(
-        arch=arch, purpose_group=purpose_group,
-        prompt=prompt, negative=negative, seed=seed, model=model["name"],
-    )
+    # Build the model-try order: pinned first (if any), then
+    # _pick_representative_model's choice, then every other arch model.
+    tried: set[str] = set()
+    order: list[dict] = []
+    if preferred_model:
+        pinned = next((m for m in models_pool
+                        if m.get("name") == preferred_model), None)
+        if pinned:
+            order.append(pinned); tried.add(pinned["name"])
+    rep = _pick_representative_model(models_pool, arch)
+    if rep and rep["name"] not in tried:
+        order.append(rep); tried.add(rep["name"])
+    for m in _models_for_arch(models_pool, arch, exclude=tried):
+        order.append(m); tried.add(m["name"])
 
-    for lora_name in candidate_loras:
-        t0 = time.time()
+    if not order:
+        return ShootoutSample(
+            lora_name=lora_name, strength=strength,
+            image_b64=None, ok=False,
+            error=f"no installed model for arch {arch!r}",
+            elapsed_ms=0,
+        )
+
+    t0 = time.time()
+    attempts: list[str] = []
+    MAX_ATTEMPTS = 3
+    # `extra` carries the per-arch CLIP / VAE filenames that Flux 1 Dev,
+    # Flux Kontext, Flux 2 Klein, and Chroma ALL need — load_model_stack
+    # reads clip_name1 / clip_name2 / clip_type / vae_name from the
+    # preset. Before this change the shootout passed empty strings,
+    # which is exactly why every Flux-family shootout returned "no
+    # image" and NoobAI was the only SDXL that fired at all.
+    arch_extra = dict(getattr(arch_obj, "extra", {}) or {})
+    for model in order[:MAX_ATTEMPTS]:
         preset = {
             "arch": arch, "ckpt": model["name"],
             "width": w, "height": h,
@@ -464,36 +692,87 @@ def run_shootout(
             "sampler":   getattr(arch_obj, "default_sampler", "euler"),
             "scheduler": getattr(arch_obj, "default_scheduler", "normal"),
             "loader":    getattr(arch_obj, "loader", "checkpoint"),
-            "clip_name1": "", "clip_name2": "", "vae_name": "",
+            # Default filenames — arch_extra overrides below when the
+            # arch (flux1dev / flux_kontext / flux2klein / chroma) needs
+            # separate CLIP + VAE loaders.
+            "clip_name1": arch_extra.get("clip_name1", ""),
+            "clip_name2": arch_extra.get("clip_name2", ""),
+            "clip_type":  arch_extra.get("clip_type",  ""),
+            "vae_name":   arch_extra.get("vae_name",   ""),
         }
-        loras = [{"name": lora_name, "strength_model": strength,
-                  "strength_clip": strength}]
+        loras = [{"name": lora_name,
+                   "strength_model": strength,
+                   "strength_clip": strength}]
         try:
             wf = build_txt2img(preset, prompt, negative, seed, loras=loras)
         except Exception as e:
-            result.samples.append(ShootoutSample(
-                lora_name=lora_name, strength=strength,
-                image_b64=None, ok=False,
-                error=f"build failed: {e}"[:200],
-                elapsed_ms=int((time.time() - t0) * 1000),
-            ))
+            attempts.append(f"{model['name']}: build failed: {e}"[:140])
             continue
         try:
             png = generate_and_download(server, wf, timeout=timeout)
         except Exception as e:
-            result.samples.append(ShootoutSample(
-                lora_name=lora_name, strength=strength,
-                image_b64=None, ok=False,
-                error=f"dispatch failed: {e}"[:200],
-                elapsed_ms=int((time.time() - t0) * 1000),
-            ))
+            attempts.append(f"{model['name']}: dispatch failed: {e}"[:140])
             continue
-        result.samples.append(ShootoutSample(
-            lora_name=lora_name, strength=strength,
-            image_b64=base64.b64encode(png).decode("ascii") if png else None,
-            ok=png is not None,
-            elapsed_ms=int((time.time() - t0) * 1000),
-        ))
+        if png:
+            return ShootoutSample(
+                lora_name=lora_name, strength=strength,
+                image_b64=base64.b64encode(png).decode("ascii"),
+                ok=True,
+                elapsed_ms=int((time.time() - t0) * 1000),
+                error=(f"used fallback model {model['name']}"
+                        if model is not order[0] else ""),
+            )
+        attempts.append(f"{model['name']}: empty output")
+    return ShootoutSample(
+        lora_name=lora_name, strength=strength,
+        image_b64=None, ok=False,
+        error=" | ".join(attempts)[:400],
+        elapsed_ms=int((time.time() - t0) * 1000),
+    )
+
+
+def run_shootout(
+    server: str,
+    arch: str,
+    purpose_group: str,
+    candidate_loras: list[str],
+    models: list[dict],
+    seed: int = 12345,
+    strength: Optional[float] = None,
+    subject: Optional[str] = None,
+    override_prompt: Optional[str] = None,
+    override_negative: Optional[str] = None,
+    override_model: Optional[str] = None,
+    timeout: int = 90,
+) -> ShootoutResult:
+    """Render the same prompt with each candidate LoRA; return all samples.
+
+    Reuses spellcaster_core.workflows.build_txt2img and
+    preference_calibration.generate_and_download — no duplicated dispatch.
+    Honours subject/prompt/model overrides from the UI.
+    """
+    subject_key, default_pos, default_neg, default_str = resolve_shootout_recipe(
+        purpose_group, arch, subject=subject, strength=strength,
+    )
+    prompt = override_prompt if override_prompt else default_pos
+    negative = override_negative if override_negative else default_neg
+    eff_strength = float(strength if strength is not None else default_str)
+
+    result = ShootoutResult(
+        arch=arch, purpose_group=purpose_group,
+        prompt=prompt, negative=negative, seed=seed, model=override_model or "",
+    )
+    for lora_name in candidate_loras:
+        sample = _render_single_sample(
+            server, arch, lora_name, eff_strength,
+            prompt, negative, seed, models,
+            preferred_model=override_model, timeout=timeout,
+        )
+        result.samples.append(sample)
+    # Fill in representative model for the UI even when no override
+    if not result.model:
+        rep = _pick_representative_model(models, arch)
+        if rep: result.model = rep["name"]
     return result
 
 
@@ -505,7 +784,35 @@ def start_shootout_job(
     models: list[dict],
     seed: int = 12345,
     strength: Optional[float] = None,
+    subject: Optional[str] = None,
+    override_prompt: Optional[str] = None,
+    override_negative: Optional[str] = None,
+    override_model: Optional[str] = None,
 ) -> ShootoutJobState:
+    """Kick off an async shootout job. All overrides are optional —
+    with none passed, we fall back to the subject + strength + model
+    chosen by resolve_shootout_recipe + _pick_representative_model.
+
+    The worker delegates per-LoRA rendering to _render_single_sample,
+    which handles model auto-fallback so a single broken checkpoint
+    doesn't kill the whole row of cards.
+    """
+    if (arch or "").lower() in _SKIP_SHOOTOUT_ARCHS:
+        # Caller shouldn't dispatch shootouts for wan/ltx — return a
+        # terminated job so the UI can show a clean "not applicable"
+        # message instead of spinning forever.
+        state = ShootoutJobState(
+            job_id=f"lshoot_{uuid.uuid4().hex[:12]}",
+            arch=arch, purpose_group=purpose_group, total=0,
+            status="error",
+            error=f"shootout not supported for arch {arch!r} "
+                   f"(video archs use strength 1.0 directly)",
+            finished_at=time.time(),
+        )
+        with _JOBS_LOCK:
+            _JOBS[state.job_id] = state
+        return state
+
     job_id = f"lshoot_{uuid.uuid4().hex[:12]}"
     state = ShootoutJobState(
         job_id=job_id, arch=arch, purpose_group=purpose_group,
@@ -516,77 +823,34 @@ def start_shootout_job(
 
     def _worker():
         try:
-            result = ShootoutResult(
-                arch=arch, purpose_group=purpose_group,
-                prompt="", negative="", seed=seed, model="",
+            subject_key, pos, neg, default_str = resolve_shootout_recipe(
+                purpose_group, arch, subject=subject, strength=strength,
             )
-            try:
-                from spellcaster_core.workflows import build_txt2img
-                from spellcaster_core.architectures import get_arch
-                from spellcaster_core.preference_calibration import generate_and_download
-            except ImportError:
-                from workflows import build_txt2img  # type: ignore
-                from architectures import get_arch  # type: ignore
-                from preference_calibration import generate_and_download  # type: ignore
+            final_prompt = override_prompt if override_prompt else pos
+            final_neg = override_negative if override_negative else neg
+            eff_strength = float(strength if strength is not None else default_str)
 
-            prompt, negative, default_strength = shootout_prompt_for(purpose_group)
-            eff_strength = float(strength if strength is not None else default_strength)
-            result.prompt = prompt
-            result.negative = negative
-
-            model = _pick_representative_model(models, arch)
-            if not model:
+            rep = (next((m for m in models
+                          if m.get("name") == override_model), None)
+                   if override_model
+                   else _pick_representative_model(models, arch))
+            if not rep and not any(m.get("arch") == arch for m in models):
                 state.status = "error"
                 state.error = f"no installed model for arch {arch!r}"
                 return
-            result.model = model["name"]
-            arch_obj = get_arch(arch)
-            w, h = arch_obj.default_resolution if arch_obj else (768, 768)
-            if w >= 1024:
-                w, h = 768, 768
+
+            result = ShootoutResult(
+                arch=arch, purpose_group=purpose_group,
+                prompt=final_prompt, negative=final_neg,
+                seed=seed, model=rep["name"] if rep else "",
+            )
             for lora_name in candidate_loras:
                 state.current = lora_name
-                t0 = time.time()
-                preset = {
-                    "arch": arch, "ckpt": model["name"],
-                    "width": w, "height": h,
-                    "steps": getattr(arch_obj, "default_steps", 20),
-                    "cfg":   getattr(arch_obj, "default_cfg", 6.0),
-                    "denoise": 1.0,
-                    "sampler":   getattr(arch_obj, "default_sampler", "euler"),
-                    "scheduler": getattr(arch_obj, "default_scheduler", "normal"),
-                    "loader":    getattr(arch_obj, "loader", "checkpoint"),
-                    "clip_name1": "", "clip_name2": "", "vae_name": "",
-                }
-                loras = [{"name": lora_name,
-                          "strength_model": eff_strength,
-                          "strength_clip":  eff_strength}]
-                sample: ShootoutSample
-                try:
-                    wf = build_txt2img(preset, prompt, negative, seed, loras=loras)
-                except Exception as e:
-                    sample = ShootoutSample(
-                        lora_name=lora_name, strength=eff_strength,
-                        image_b64=None, ok=False,
-                        error=f"build failed: {e}"[:200],
-                        elapsed_ms=int((time.time() - t0) * 1000),
-                    )
-                else:
-                    try:
-                        png = generate_and_download(server, wf, timeout=90)
-                        sample = ShootoutSample(
-                            lora_name=lora_name, strength=eff_strength,
-                            image_b64=base64.b64encode(png).decode("ascii") if png else None,
-                            ok=png is not None,
-                            elapsed_ms=int((time.time() - t0) * 1000),
-                        )
-                    except Exception as e:
-                        sample = ShootoutSample(
-                            lora_name=lora_name, strength=eff_strength,
-                            image_b64=None, ok=False,
-                            error=f"dispatch failed: {e}"[:200],
-                            elapsed_ms=int((time.time() - t0) * 1000),
-                        )
+                sample = _render_single_sample(
+                    server, arch, lora_name, eff_strength,
+                    final_prompt, final_neg, seed, models,
+                    preferred_model=override_model, timeout=90,
+                )
                 result.samples.append(sample)
                 state.done += 1
             state.result = result
@@ -601,6 +865,49 @@ def start_shootout_job(
                          name=f"lora-shootout-{job_id}")
     t.start()
     return state
+
+
+def resample_single_lora(
+    server: str,
+    arch: str,
+    purpose_group: str,
+    lora_name: str,
+    models: list[dict],
+    *,
+    strength: Optional[float] = None,
+    subject: Optional[str] = None,
+    override_prompt: Optional[str] = None,
+    override_negative: Optional[str] = None,
+    override_model: Optional[str] = None,
+    seed: int = 12345,
+    timeout: int = 90,
+) -> dict:
+    """Synchronous per-LoRA resample — used by the UI's Retry /
+    Softer / Harder buttons + manual-edit workflow. Returns a dict
+    compatible with the sample shape the UI already renders. Blocks
+    up to `timeout` seconds, so the HTTP handler should run this on a
+    worker thread (GuildHandler already uses ThreadingHTTPServer)."""
+    subject_key, pos, neg, default_str = resolve_shootout_recipe(
+        purpose_group, arch, subject=subject, strength=strength,
+    )
+    final_prompt = override_prompt if override_prompt else pos
+    final_neg = override_negative if override_negative else neg
+    eff_strength = float(strength if strength is not None else default_str)
+    sample = _render_single_sample(
+        server, arch, lora_name, eff_strength,
+        final_prompt, final_neg, seed, models,
+        preferred_model=override_model, timeout=timeout,
+    )
+    out = sample.to_dict()
+    out.update({
+        "arch": arch,
+        "purpose_group": purpose_group,
+        "prompt": final_prompt,
+        "negative": final_neg,
+        "subject": subject_key,
+        "model": override_model or (_pick_representative_model(models, arch) or {}).get("name", ""),
+    })
+    return out
 
 
 def get_shootout_job(job_id: str) -> Optional[ShootoutJobState]:
