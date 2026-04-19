@@ -33,10 +33,11 @@ const llmDot = document.getElementById('llm-dot');
 const llmStatus = document.getElementById('llm-status');
 const comfyDot = document.getElementById('comfy-dot');
 const comfyStatus = document.getElementById('comfy-status');
-const stDot = document.getElementById('st-dot');
-const stStatus = document.getElementById('st-status');
-const bridgeDot = document.getElementById('bridge-dot');
-const bridgeStatus = document.getElementById('bridge-status');
+// SillyTavern + Signal Bridge no longer have standalone dot indicators
+// — their liveness surfaces through the shared chip row. checkSillyTavern
+// and checkSignalBridge still exist (they trigger the Guild's probe,
+// which in turn posts a heartbeat into the interface registry) but they
+// don't touch any DOM here.
 
 // Settings
 const settingsBtn = document.getElementById('settings-btn');
@@ -454,38 +455,18 @@ async function checkComfyConnection() {
     }
 }
 
+// Kicks the server-side probes for SillyTavern + Signal Bridge. The
+// server's endpoints call interface_registry.heartbeat(...) on success,
+// so whichever of those two apps is actually up appears as a chip in
+// the "Connected apps" row. No DOM touched here.
 async function checkSillyTavernConnection() {
-    try {
-        const testRes = await fetch('/api/sillytavern_status');
-        const data = await testRes.json();
-        if(data.connected) {
-            stDot.className = "dot green";
-            stStatus.textContent = "SillyTavern: Connected";
-        } else {
-            stDot.className = "dot red";
-            stStatus.textContent = "SillyTavern: Disconnected";
-        }
-    } catch(e) {
-        stDot.className = "dot red";
-        stStatus.textContent = "SillyTavern: Disconnected";
-    }
+    try { await fetch('/api/sillytavern_status'); }
+    catch (_e) { /* ignored — chip stays absent */ }
 }
 
 async function checkSignalBridgeConnection() {
-    try {
-        const testRes = await fetch('/api/signal_bridge_status');
-        const data = await testRes.json();
-        if(data.connected) {
-            bridgeDot.className = "dot green";
-            bridgeStatus.textContent = "Signal Bridge: Connected";
-        } else {
-            bridgeDot.className = "dot red";
-            bridgeStatus.textContent = "Signal Bridge: Disconnected";
-        }
-    } catch(e) {
-        bridgeDot.className = "dot red";
-        bridgeStatus.textContent = "Signal Bridge: Disconnected";
-    }
+    try { await fetch('/api/signal_bridge_status'); }
+    catch (_e) { /* ignored — chip stays absent */ }
 }
 
 // ── Active interfaces (cross-interface backbone) ──────────────────
@@ -680,22 +661,36 @@ async function openIfacePlacementMenu(anchorEl, ifaceKey, ifaceLabel, iface) {
     const menu = document.createElement('div');
     menu.className = 'iface-placement-menu';
     menu.innerHTML =
-        `<div class="iface-menu-header">Where should <b>${ifaceLabel}</b> run?</div>`;
+        `<div class="iface-menu-header">Run <b>${ifaceLabel}</b> on…</div>`;
 
-    const addOption = (label, sub, placement, host, port, antenna_port, current) => {
+    // Escape HTML so hostnames / errors can't inject markup
+    const esc = s => String(s || '')
+        .replaceAll('&', '&amp;').replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+
+    const addOption = (iconChar, label, sub, pill, pillClass,
+                        placement, host, port, antenna_port, current) => {
         const opt = document.createElement('button');
         opt.type = 'button';
         opt.className = 'iface-menu-option' + (current ? ' current' : '');
         opt.innerHTML =
-            `<span class="opt-mark">${current ? '✓' : ''}</span>` +
-            `<span class="opt-label">${label}</span>` +
-            (sub ? `<span class="opt-sub">${sub}</span>` : '');
+            `<span class="opt-mark">${current ? '✓' : esc(iconChar)}</span>` +
+            `<span class="opt-body">` +
+                `<span class="opt-label">${esc(label)}</span>` +
+                (sub ? `<span class="opt-sub">${esc(sub)}</span>` : '') +
+            `</span>` +
+            (pill
+                ? `<span class="opt-pill ${pillClass || ''}">${esc(pill)}</span>`
+                : '');
         opt.addEventListener('click', async (ev) => {
             ev.stopPropagation();
             opt.classList.add('pending');
             opt.innerHTML =
                 `<span class="opt-mark">…</span>` +
-                `<span class="opt-label">switching ${ifaceLabel} to ${label}</span>`;
+                `<span class="opt-body">` +
+                    `<span class="opt-label">Switching to ${esc(label)}</span>` +
+                    `<span class="opt-sub">contacting ${esc(placement)}…</span>` +
+                `</span>`;
             const body = { key: ifaceKey, placement };
             if (host) body.host = host;
             if (port) body.port = port;
@@ -710,49 +705,61 @@ async function openIfacePlacementMenu(anchorEl, ifaceKey, ifaceLabel, iface) {
                 if (!r.ok || data.error) {
                     opt.innerHTML =
                         `<span class="opt-mark">✗</span>` +
-                        `<span class="opt-label">failed</span>` +
-                        `<span class="opt-sub">${data.error || ('HTTP ' + r.status)}</span>`;
+                        `<span class="opt-body">` +
+                            `<span class="opt-label">Failed</span>` +
+                            `<span class="opt-sub">${esc(data.error || ('HTTP ' + r.status))}</span>` +
+                        `</span>` +
+                        `<span class="opt-pill danger">error</span>`;
                     return;
                 }
-                // Success — close the menu and force an immediate refresh so
-                // the chip colour + host badge reflect the new placement.
                 _closeIfacePlacementMenu();
                 refreshActiveInterfaces();
                 refreshAntennas();
             } catch (e) {
                 opt.innerHTML =
                     `<span class="opt-mark">✗</span>` +
-                    `<span class="opt-label">failed</span>` +
-                    `<span class="opt-sub">${e.message || e}</span>`;
+                    `<span class="opt-body">` +
+                        `<span class="opt-label">Failed</span>` +
+                        `<span class="opt-sub">${esc(e.message || String(e))}</span>` +
+                    `</span>` +
+                    `<span class="opt-pill danger">error</span>`;
             }
         });
         menu.appendChild(opt);
     };
 
     // Option 1: this machine (localhost)
-    addOption('This machine', 'localhost', 'local', '', 0, 0,
+    addOption('🖥', 'This machine', 'localhost',
+              null, null,
+              'local', '', 0, 0,
               currentPlacement === 'local');
 
-    // Options 2..N: each registered antenna. Antennas that report this
-    // service already get highlighted at the top of their sub-label.
+    // Options 2..N: each registered antenna.
     for (const a of antennas) {
         const supports = (a.services || []).includes(ifaceKey);
         const detail = (a.services_detail || {})[ifaceKey] || {};
         const reachable = detail.reachable === true;
         const host = a.ip || a.hostname || '';
-        const subParts = [host];
-        if (supports) subParts.push(reachable ? 'reachable' : 'declared');
-        else subParts.push('paired antenna');
-        addOption(a.hostname || host || 'remote',
-                  subParts.join(' · '),
+        const pill = supports
+            ? (reachable ? 'reachable' : 'declared')
+            : 'paired';
+        const pillClass = supports
+            ? (reachable ? 'reachable' : 'declared')
+            : '';
+        addOption('📡',
+                  a.hostname || host || 'remote',
+                  host,
+                  pill, pillClass,
                   'remote',
                   a.ip || '', 0, 7334,
                   currentPlacement === 'remote' && currentHost === a.ip);
     }
 
     // Option N+1: skip this service entirely
-    addOption('Skip (not installed)', "don't route", 'not_installed',
-              '', 0, 0, currentPlacement === 'not_installed');
+    addOption('⊘', 'Skip (not installed)', 'don\u2019t route here',
+              null, null,
+              'not_installed', '', 0, 0,
+              currentPlacement === 'not_installed');
 
     // Position below the chip
     const rect = anchorEl.getBoundingClientRect();
@@ -766,6 +773,130 @@ async function openIfacePlacementMenu(anchorEl, ifaceKey, ifaceLabel, iface) {
     setTimeout(() => {
         document.addEventListener('click', _closeIfacePlacementMenu);
     }, 0);
+}
+
+// ── Pair-code dialog ──────────────────────────────────────────────────
+// Opens a modal overlay with two inputs: the antenna's IP and the
+// 6-digit pair code its tray is currently showing. POSTs to
+// /api/antennas/pair which forwards to the antenna's /pair/claim,
+// receives the real bearer token, and persists it into guild config.
+function openAntennaPairDialog() {
+    if (document.getElementById('pair-antenna-overlay')) return;
+    const overlay = document.createElement('div');
+    overlay.id = 'pair-antenna-overlay';
+    overlay.className = 'pair-overlay';
+    overlay.innerHTML = `
+        <div class="pair-modal" role="dialog" aria-modal="true">
+            <div class="pair-header">
+                <span class="pair-title">Pair a new antenna</span>
+                <button type="button" class="pair-close" title="Close">&times;</button>
+            </div>
+            <div class="pair-body">
+                <p class="pair-hint">
+                    On the other machine, open the antenna's tray icon
+                    and click <b>Pair with Guild</b>. A 6-digit code will
+                    appear. Type the machine's IP and that code below.
+                </p>
+                <label class="pair-field">
+                    <span>Machine IP or hostname</span>
+                    <input type="text" id="pair-host-input" placeholder="192.168.1.42" autocomplete="off">
+                </label>
+                <label class="pair-field">
+                    <span>6-digit pair code</span>
+                    <input type="text" id="pair-code-input"
+                           placeholder="123456" inputmode="numeric"
+                           maxlength="9" autocomplete="one-time-code">
+                </label>
+                <div class="pair-row">
+                    <label class="pair-port-field">
+                        <span>Port</span>
+                        <input type="number" id="pair-port-input" value="7334" min="1" max="65535">
+                    </label>
+                    <div class="pair-row-spacer"></div>
+                </div>
+                <div id="pair-status" class="pair-status"></div>
+                <div class="pair-actions">
+                    <button type="button" class="pair-cancel">Cancel</button>
+                    <button type="button" class="pair-submit">Pair antenna</button>
+                </div>
+            </div>
+        </div>`;
+    document.body.appendChild(overlay);
+
+    const hostEl   = overlay.querySelector('#pair-host-input');
+    const codeEl   = overlay.querySelector('#pair-code-input');
+    const portEl   = overlay.querySelector('#pair-port-input');
+    const statusEl = overlay.querySelector('#pair-status');
+    const submitBtn= overlay.querySelector('.pair-submit');
+    const cancelBtn= overlay.querySelector('.pair-cancel');
+    const closeBtn = overlay.querySelector('.pair-close');
+
+    const close = () => overlay.remove();
+    cancelBtn.addEventListener('click', close);
+    closeBtn .addEventListener('click', close);
+    overlay.addEventListener('click', (ev) => { if (ev.target === overlay) close(); });
+    // Pre-fill host if there's already an antenna registered
+    try {
+        const existing = Object.values(window.activeInterfaces || {})
+            .find(v => (v.last_meta || {}).ip);
+        if (existing) hostEl.value = existing.last_meta.ip || '';
+    } catch (_e) { /* best-effort */ }
+
+    // Numeric-only code input. Allow common separators, strip on submit.
+    codeEl.addEventListener('input', () => {
+        codeEl.value = codeEl.value.replace(/[^0-9 \-]/g, '').slice(0, 9);
+    });
+    hostEl.focus();
+
+    const submit = async () => {
+        const host = (hostEl.value || '').trim();
+        const code = (codeEl.value || '').replace(/[ \-]/g, '').trim();
+        const port = parseInt(portEl.value, 10) || 7334;
+        if (!host) { statusEl.className = 'pair-status error'; statusEl.textContent = 'Machine IP or hostname required.'; return; }
+        if (!/^\d{6}$/.test(code)) {
+            statusEl.className = 'pair-status error';
+            statusEl.textContent = 'Pair code must be exactly 6 digits.';
+            return;
+        }
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Pairing…';
+        statusEl.className = 'pair-status';
+        statusEl.textContent = `Contacting ${host}:${port}…`;
+        try {
+            const r = await fetch('/api/antennas/pair', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ host, code, port }),
+            });
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) {
+                statusEl.className = 'pair-status error';
+                statusEl.textContent = data.error || `HTTP ${r.status}`;
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Pair antenna';
+                return;
+            }
+            statusEl.className = 'pair-status success';
+            statusEl.textContent = `Paired with ${data.host}. Refreshing…`;
+            // Kick both strips so the new antenna appears quickly.
+            refreshActiveInterfaces();
+            refreshAntennas();
+            setTimeout(close, 700);
+        } catch (e) {
+            statusEl.className = 'pair-status error';
+            statusEl.textContent = e.message || String(e);
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Pair antenna';
+        }
+    };
+    submitBtn.addEventListener('click', submit);
+    // Enter in either input submits
+    [hostEl, codeEl, portEl].forEach(el => {
+        el.addEventListener('keydown', (ev) => {
+            if (ev.key === 'Enter') { ev.preventDefault(); submit(); }
+            if (ev.key === 'Escape') { ev.preventDefault(); close(); }
+        });
+    });
 }
 
 // ── Antennas (remote-machine agents) ──────────────────────────────────
@@ -788,12 +919,15 @@ function renderAntennaChips(antennas) {
     const container = document.getElementById('connected-antennas-container');
     const row = document.getElementById('connected-antennas-row');
     if (!container || !row) return;
+    // Container stays visible (never display:none) so the "+ Pair new"
+    // button is always reachable — the old "hide if empty" hid the
+    // handshake UI too. When there are no antennas we show a subtle
+    // placeholder row instead.
+    container.style.display = '';
     if (!Array.isArray(antennas) || antennas.length === 0) {
-        container.style.display = 'none';
-        row.innerHTML = '';
+        row.innerHTML = `<span class="antenna-empty-hint">no antennas paired yet</span>`;
         return;
     }
-    container.style.display = '';
     const NOW_S = Date.now() / 1000;
     const html = antennas.map(a => {
         const host = a.hostname || a.ip || '?';
@@ -1074,6 +1208,11 @@ async function initialize() {
     // services it's reporting).
     refreshAntennas();
     setInterval(refreshAntennas, 10000);
+    // Pair-new-antenna button — always visible in the Antennas header.
+    // Opens a modal that exchanges a 6-digit tray code for the antenna's
+    // bearer token (see openAntennaPairDialog above).
+    const pairBtn = document.getElementById('pair-antenna-btn');
+    if (pairBtn) pairBtn.addEventListener('click', openAntennaPairDialog);
     // Recent-assets strip — polls /api/assets and subscribes to
     // *.asset.uploaded on the event bus for live updates. Shows the
     // most recent N images from every connected interface.
