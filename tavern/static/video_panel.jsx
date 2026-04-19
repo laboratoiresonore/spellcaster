@@ -3958,6 +3958,12 @@ function VideoPanel() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/></svg>
             Dupes
           </button>
+          <a href="/api/video/gallery.html" download
+            className="export-gallery flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+            title="Standalone HTML gallery: every shot as a card with hover-play preview. Share this one file for review.">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            Gallery.html
+          </a>
           <a href="/api/video/outline.txt" download
             className="export-outline flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
             title="Export board as a human-readable outline (for sharing with non-technical team members)">
@@ -4514,8 +4520,15 @@ function VideoPanel() {
         <div className="scene-quick-select flex items-center gap-2 text-xs text-slate-400 flex-wrap">
           <span>Scenes:</span>
           {scenes.map(sc => {
-            const count = shots.filter(s => s.scene_id === sc.id).length;
+            const sceneShots = shots.filter(s => s.scene_id === sc.id && !s.archived && s.is_primary);
+            const count = sceneShots.length;
             if (count === 0) return null;
+            // R80b: aggregate effective duration across this scene's shots
+            const durSec = sceneShots.reduce((total, s) =>
+              total + (s.render_duration_s || s.target_duration_s || s.duration_s || 2.0), 0);
+            const durStr = durSec >= 60
+              ? `${Math.floor(durSec/60)}m${Math.round(durSec%60)}s`
+              : `${durSec.toFixed(1)}s`;
             return (
               <div key={sc.id} className="scene-quick-group inline-flex items-center gap-0.5">
                 <button
@@ -4525,9 +4538,10 @@ function VideoPanel() {
                     borderColor: sc.color || "#4a9eff",
                     color: sc.color || "#4a9eff",
                   }}
-                  title={`${count} shot(s). Shift-click to add to current selection.`}
+                  title={`${count} shot(s) · ~${durStr} total. Shift-click to add to current selection.`}
                 >
-                  {sc.name || sc.id.slice(0,6)} <span className="opacity-70">({count})</span>
+                  {sc.name || sc.id.slice(0,6)}{" "}
+                  <span className="opacity-70">({count} · {durStr})</span>
                 </button>
                 {/* R73a: per-scene export dropdown */}
                 <div className="relative group">
