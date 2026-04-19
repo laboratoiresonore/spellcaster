@@ -73,6 +73,36 @@ except (ImportError, SyntaxError):
     _get_model_registry = None
     _start_signal_notifier = None
 
+# Mailbox primitives — per-interface pull queues for short-lived clients.
+# Imported separately from the main backbone so existing installs without
+# mailbox.py (before the 2026-04-18 sync) still start; mailbox endpoints
+# just 501 in that case.
+try:
+    from spellcaster_core.mailbox import (
+        get_mailbox as _get_mailbox,
+        all_mailboxes as _all_mailboxes,
+        fanout_from_event as _fanout_from_event,
+    )
+    MAILBOX_AVAILABLE = True
+except (ImportError, SyntaxError):
+    MAILBOX_AVAILABLE = False
+    _get_mailbox = None
+    _all_mailboxes = None
+    _fanout_from_event = None
+
+
+def _mailbox_fanout(evt):
+    """Route an event into the matching per-interface mailbox. No-op if the
+    mailbox module is unavailable — never raises, never blocks the caller.
+    Caller is expected to have already published the event on _EVENT_BUS.
+    """
+    if _fanout_from_event is None or not isinstance(evt, dict):
+        return
+    try:
+        _fanout_from_event(evt)
+    except Exception:
+        pass  # Never let a mailbox hiccup break an event-emit flow
+
 # Scaffold imports — graceful fallback if any module has import errors
 try:
     from scaffold.meta_wizard import build_meta_system_prompt, INTENTS
@@ -5746,6 +5776,173 @@ class GuildHandler(SimpleHTTPRequestHandler):
         except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
             pass
 
+    # ─── Per-interface ingress handlers ───────────────────────────────
+    #
+    # Each _handle_iface_* method:
+    #   1. Validates kind prefix (prevents forged origins — a GIMP client
+    #      can't submit `resolve.*` events via /api/gimp/*).
+    #   2. Optionally stores attached body_b64 in the asset gallery.
+    #   3. Publishes the typed event on the bus.
+    #   4. Fans the event into the matching mailbox (pickup by pollers).
+    #   5. Heartbeats the interface registry so the chip stays lit even
+    #      during quiet-but-chatty streams (many events, no gaps).
+
+    def _handle_iface_event(self, iface, kind, data):
+        """Event-only ingress — no asset bytes. Validates, publishes, fans out.
+
+        Used by endpoints like /api/gimp/selection, /api/resolve/gap,
+        /api/sillytavern/dialogue — anything that just conveys state
+        changes without a payload image.
+        """
+        if _EVENT_BUS is None:
+            return self.end_json(501, {"error": "event bus disabled"})
+        # Kind-prefix validation — must match the declared interface
+        if not kind.startswith(f"{iface}."):
+            return self.end_json(400, {
+                "error": f"kind {kind!r} does not match interface {iface!r}"})
+        payload = data.get('data', {}) if isinstance(data.get('data'), dict) else data
+        meta = data.get('meta', {}) if isinstance(data.get('meta'), dict) else {}
+        event_data = dict(payload) if isinstance(payload, dict) else {}
+        if meta:
+            event_data["meta"] = meta
+        try:
+            evt = _EVENT_BUS.publish(kind, origin=iface, data=event_data)
+        except Exception as e:
+            return self.end_json(500, {"error": f"publish failed: {e}"})
+        _mailbox_fanout(evt)
+        if _iface_registry is not None:
+            try:
+                _iface_registry.heartbeat(iface, meta)
+            except Exception:
+                pass
+        return self.end_json(200, evt)
+
+    def _handle_iface_ingress(self, iface, kind, data, *,
+                              asset_kind="generation", asset_optional=True):
+        """Asset-bearing ingress — optional or required body_b64, plus event.
+
+        When body_b64 is present, the bytes go into the asset gallery and
+        the resulting hash is embedded in the event's data payload so
+        subscribers can fetch via GET /api/assets/<hash>.
+        """
+        import base64 as _b64
+        if _EVENT_BUS is None:
+            return self.end_json(501, {"error": "event bus disabled"})
+        if not kind.startswith(f"{iface}."):
+            return self.end_json(400, {
+                "error": f"kind {kind!r} does not match interface {iface!r}"})
+
+        body_b64 = data.get('body_b64') or ''
+        asset_hash = None
+        asset_record = None
+        if body_b64:
+            if _ASSET_GALLERY is None:
+                # Bytes submitted but gallery is off — preserve the event
+                # but drop the asset. Client gets a warning in the reply.
+                pass
+            else:
+                try:
+                    body = _b64.b64decode(body_b64)
+                except Exception as e:
+                    return self.end_json(400, {"error": f"invalid base64: {e}"})
+                if not body:
+                    return self.end_json(400, {"error": "empty body"})
+                if len(body) > 128 * 1024 * 1024:  # 128 MB cap matches /api/assets
+                    return self.end_json(413, {"error": "asset too large"})
+                try:
+                    rec = _ASSET_GALLERY.put(
+                        body,
+                        origin=iface,
+                        kind=asset_kind,
+                        ext=data.get('ext'),
+                        title=str(data.get('title', '')),
+                        prompt=str(data.get('prompt', '')),
+                        model=str(data.get('model', '')),
+                        seed=data.get('seed'),
+                        tags=data.get('tags') or [],
+                        meta=data.get('meta') or {},
+                    )
+                    asset_hash = rec.hash
+                    asset_record = rec.to_dict()
+                except Exception as e:
+                    return self.end_json(500, {"error": f"gallery put failed: {e}"})
+        elif not asset_optional:
+            return self.end_json(400, {
+                "error": f"{iface} endpoint requires body_b64"})
+
+        # Build event payload — include asset_hash so subscribers can
+        # lazy-fetch the bytes via GET /api/assets/<hash>
+        event_data = {
+            "title": str(data.get('title', '')),
+            "prompt": str(data.get('prompt', '')),
+            "meta": data.get('meta') or {},
+            "notes": str(data.get('notes', '')),
+        }
+        if asset_hash:
+            event_data["asset_hash"] = asset_hash
+        # Pass through any extra caller-provided keys that aren't
+        # auth-sensitive (no body_b64, obviously)
+        for k, v in (data.items() if isinstance(data, dict) else []):
+            if k in event_data or k in ('body_b64', 'ext', 'tags'):
+                continue
+            event_data[k] = v
+
+        try:
+            evt = _EVENT_BUS.publish(kind, origin=iface, data=event_data)
+        except Exception as e:
+            return self.end_json(500, {"error": f"publish failed: {e}"})
+        _mailbox_fanout(evt)
+        if _iface_registry is not None:
+            try:
+                _iface_registry.heartbeat(iface, data.get('meta') or {})
+            except Exception:
+                pass
+        return self.end_json(200, {
+            "event": evt,
+            "asset": asset_record,
+        })
+
+    def _handle_inbox_get(self, iface):
+        """GET /api/<iface>/inbox — pull queued messages.
+
+        Query params:
+          consume=1        pop returned messages
+          max=50           cap result length
+          since=<msg_id>   only messages after this id
+        """
+        if not MAILBOX_AVAILABLE or _get_mailbox is None:
+            return self.end_json(501, {"error": "mailbox primitives disabled"})
+        import urllib.parse as _up
+        parsed = _up.urlparse(self.path)
+        qs = _up.parse_qs(parsed.query)
+        consume = (qs.get('consume', ['0'])[0]).lower() in ('1', 'true', 'yes')
+        try:
+            max_messages = max(1, min(500, int(qs.get('max', ['50'])[0])))
+        except ValueError:
+            max_messages = 50
+        since_id = qs.get('since', [None])[0]
+        mb = _get_mailbox(iface)
+        msgs = mb.peek(consume=consume, max_messages=max_messages, since_id=since_id)
+        return self.end_json(200, {
+            "interface": iface,
+            "messages": msgs,
+            "consumed": consume,
+        })
+
+    def _handle_inbox_ack(self, iface, data):
+        """POST /api/<iface>/inbox/ack — remove messages by id.
+
+        Body: { "ids": ["msg_abc123", "msg_def456", ...] }
+        """
+        if not MAILBOX_AVAILABLE or _get_mailbox is None:
+            return self.end_json(501, {"error": "mailbox primitives disabled"})
+        ids = data.get('ids') if isinstance(data.get('ids'), list) else []
+        if not ids:
+            return self.end_json(400, {"error": "ids array required"})
+        mb = _get_mailbox(iface)
+        removed = mb.ack_ids(ids)
+        return self.end_json(200, {"interface": iface, "removed": removed})
+
     def _handle_assets_upload(self, data):
         """POST /api/assets — JSON body with body_b64 + metadata."""
         import base64 as _b64
@@ -6450,6 +6647,24 @@ class GuildHandler(SimpleHTTPRequestHandler):
             if not CROSS_INTERFACE_AVAILABLE or _iface_registry is None:
                 return self.end_json(501, {"error": "cross-interface backbone disabled"})
             return self.end_json(200, {"interfaces": _iface_registry.snapshot()})
+        elif self.path == '/api/mailboxes':
+            # Aggregate mailbox stats for debugging — one entry per
+            # interface that has ever received at least one event.
+            if not MAILBOX_AVAILABLE or _all_mailboxes is None:
+                return self.end_json(501, {"error": "mailbox primitives disabled"})
+            return self.end_json(200, {"mailboxes": _all_mailboxes()})
+        elif (self.path.startswith('/api/gimp/inbox')
+              or self.path.startswith('/api/sillytavern/inbox')
+              or self.path.startswith('/api/resolve/inbox')
+              or self.path.startswith('/api/darktable/inbox')):
+            # Pull-queue inbox for short-lived clients (GIMP plugin,
+            # antenna-mediated Resolve, etc.). Query params:
+            #   consume=1        pop returned messages from the queue
+            #   max=50           cap returned list length
+            #   since=<msg_id>   only messages that arrived after <msg_id>
+            # See spellcaster_core/mailbox.py for semantics.
+            iface = self.path.split('/')[2]  # /api/<iface>/inbox → <iface>
+            return self._handle_inbox_get(iface)
         elif self.path == '/api/models' or self.path.startswith('/api/models?'):
             # Unified model registry — one cache of ComfyUI's /object_info
             # that every interface queries instead of probing independently.
@@ -7354,6 +7569,10 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 return self.end_json(400, {"error": "missing or invalid 'kind'"})
             evt = _EVENT_BUS.publish(kind, origin=origin,
                                      data=payload if isinstance(payload, dict) else {})
+            # Fan the event into the matching per-interface mailbox so
+            # short-lived clients (poll-based) catch up without needing
+            # to hold an SSE subscription open
+            _mailbox_fanout(evt)
             # Auto-heartbeat on event emit so "chatty" interfaces don't
             # need a separate ping loop
             if _iface_registry is not None and origin in (
@@ -7368,6 +7587,70 @@ class GuildHandler(SimpleHTTPRequestHandler):
             if _ASSET_GALLERY is None:
                 return self.end_json(501, {"error": "asset gallery disabled"})
             return self._handle_assets_upload(data)
+
+        # -- Per-interface ingress endpoints --
+        # Short clients (GIMP plugin menu action, DaVinci bridge script, etc.)
+        # POST one of these to publish a typed event on the bus + gallery
+        # asset (optional) WITHOUT needing an SSE subscription. Every
+        # handler validates the kind-prefix against the declared iface so
+        # a compromised client can't forge events for other interfaces.
+
+        # GIMP
+        if self.path == '/api/gimp/layer':
+            return self._handle_iface_ingress("gimp", "gimp.layer.publish", data,
+                                              asset_kind="layer", asset_optional=True)
+        if self.path == '/api/gimp/canvas':
+            return self._handle_iface_ingress("gimp", "gimp.canvas.snapshot", data,
+                                              asset_kind="canvas", asset_optional=True)
+        if self.path == '/api/gimp/selection':
+            return self._handle_iface_event("gimp", "gimp.selection.change", data)
+        if self.path == '/api/gimp/tool':
+            return self._handle_iface_event("gimp", "gimp.tool.change", data)
+        if self.path == '/api/gimp/inbox/ack':
+            return self._handle_inbox_ack("gimp", data)
+
+        # SillyTavern
+        if self.path == '/api/sillytavern/scene':
+            return self._handle_iface_ingress("sillytavern", "sillytavern.scene.describe",
+                                              data, asset_kind="scene_ref",
+                                              asset_optional=True)
+        if self.path == '/api/sillytavern/character':
+            return self._handle_iface_ingress("sillytavern", "sillytavern.character.card",
+                                              data, asset_kind="portrait",
+                                              asset_optional=True)
+        if self.path == '/api/sillytavern/dialogue':
+            return self._handle_iface_event("sillytavern", "sillytavern.dialogue.line", data)
+        if self.path == '/api/sillytavern/worldinfo':
+            return self._handle_iface_event("sillytavern", "sillytavern.worldinfo.entry", data)
+        if self.path == '/api/sillytavern/mood':
+            return self._handle_iface_event("sillytavern", "sillytavern.mood.signal", data)
+        if self.path == '/api/sillytavern/inbox/ack':
+            return self._handle_inbox_ack("sillytavern", data)
+
+        # DaVinci Resolve
+        if self.path == '/api/resolve/clip':
+            return self._handle_iface_ingress("resolve", "resolve.clip.register", data,
+                                              asset_kind="still", asset_optional=True)
+        if self.path == '/api/resolve/gap':
+            return self._handle_iface_event("resolve", "resolve.gap.detect", data)
+        if self.path == '/api/resolve/color_ref':
+            return self._handle_iface_ingress("resolve", "resolve.color_ref.upload",
+                                              data, asset_kind="color_ref",
+                                              asset_optional=False)  # REQUIRES body_b64
+        if self.path == '/api/resolve/marker':
+            return self._handle_iface_event("resolve", "resolve.marker.edit", data)
+        if self.path == '/api/resolve/inbox/ack':
+            return self._handle_inbox_ack("resolve", data)
+
+        # Darktable
+        if self.path == '/api/darktable/export':
+            return self._handle_iface_ingress("darktable", "darktable.export.ready",
+                                              data, asset_kind="export",
+                                              asset_optional=False)  # REQUIRES body_b64
+        if self.path == '/api/darktable/style':
+            return self._handle_iface_event("darktable", "darktable.style.apply", data)
+        if self.path == '/api/darktable/inbox/ack':
+            return self._handle_inbox_ack("darktable", data)
 
         # -- Setup-mode admin endpoints (Guild-driven install) --
         if self.path == '/api/setup/feature/install':
