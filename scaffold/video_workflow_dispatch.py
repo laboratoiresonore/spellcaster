@@ -125,6 +125,158 @@ def _pick(candidates: List[str], must: set[str],
     return scored[0][0]
 
 
+# ── LTX-2 resolver (R133) ────────────────────────────────────────────
+#
+# LTX-2.3 uses a completely different stack from Wan 2.2:
+#   - Gemma-based text encoder + LTX "embeddings connector" checkpoint
+#     loaded through LTXAVTextEncoderLoader (two files → one CLIP).
+#   - LTX-specific VAE (LTX23_video_vae / LTX2_video_vae).
+#   - Own sampling path: LTXVScheduler + STGGuiderAdvanced +
+#     LTXVBaseSampler instead of the Wan KSamplerAdvanced chain.
+#   - Optional distilled LoRA for 8-step fast mode.
+#
+# The canonical spellcaster_core.workflows.build_ltx_video already
+# wires all of that. The resolver just has to pick concrete filenames
+# from the user's ComfyUI install and hand the builder a preset dict.
+
+_LTX2_PRESET_HINTS: Dict[str, Dict[str, Any]] = {
+    "ltx2_distilled": {
+        "task": "t2v_audio", "distilled": True,
+        "two_stage": False, "num_frames": 121, "fps": 24,
+        "resolution": "768x512",
+    },
+    "ltx2_dev": {
+        "task": "t2v", "distilled": False,
+        "two_stage": False, "num_frames": 121, "fps": 24,
+        "resolution": "1280x720",
+    },
+    "ltx2_text_to_video": {
+        "task": "t2v", "distilled": False,
+        "two_stage": False, "num_frames": 121, "fps": 24,
+        "resolution": "1024x576",
+    },
+    "ltx2_text_to_video_distilled": {
+        "task": "t2v", "distilled": True,
+        "two_stage": False, "num_frames": 121, "fps": 24,
+        "resolution": "768x512",
+    },
+    "ltx2_text_to_video_2stage": {
+        "task": "t2v", "distilled": False,
+        "two_stage": True, "num_frames": 121, "fps": 24,
+        "resolution": "1280x720",
+    },
+    "ltx2_t2v_with_rife_interpolation": {
+        "task": "t2v", "distilled": False, "interpolate": True,
+        "two_stage": False, "num_frames": 121, "fps": 60,
+        "resolution": "1024x576",
+    },
+    "ltx2_t2v_with_rtx_upscale": {
+        "task": "t2v", "distilled": False, "rtx_scale": 2,
+        "two_stage": False, "num_frames": 121, "fps": 24,
+        "resolution": "1920x1080",
+    },
+    "ltx2_image_to_video": {
+        "task": "i2v", "distilled": False,
+        "two_stage": False, "num_frames": 121, "fps": 24,
+        "resolution": "768x512",
+    },
+}
+
+
+def resolve_ltx2_preset(preset_key: str, models: dict) -> Optional[dict]:
+    """Build a build_ltx_video-compatible preset dict.
+
+    models: as returned by probe_comfyui_models().
+    """
+    hint = _LTX2_PRESET_HINTS.get(preset_key)
+    if not hint:
+        return None
+
+    # UNET — ltx-2.3-22b GGUF or fp8 safetensors.
+    unet_pool = models.get("unet_gguf", []) + models.get("unet", [])
+    unet = (_pick(unet_pool, {"ltx", "2", "3", "22b", "dev"},
+                   {"q4", "gguf", "k"})
+            or _pick(unet_pool, {"ltx", "22b"}, {"q4", "q8", "gguf"})
+            or _pick(unet_pool, {"ltx", "2", "3"})
+            or _pick(unet_pool, {"ltx"}))
+    if not unet:
+        log.info("resolve_ltx2_preset(%s): no LTX-2 UNET found", preset_key)
+        return None
+
+    # Text encoder — LTX-2 uses Gemma 3 12B (fp4 or fp8 scaled).
+    te_pool = models.get("clip", []) + models.get("clip_gguf", [])
+    text_encoder = (_pick(te_pool, {"gemma", "3", "12b"},
+                           {"fp4", "fp8", "mixed", "scaled"})
+                    or _pick(te_pool, {"gemma"}, {"it", "12b"})
+                    or _pick(te_pool, {"gemma"}))
+    if not text_encoder:
+        log.info("resolve_ltx2_preset(%s): no Gemma text encoder found",
+                  preset_key)
+        return None
+
+    # Embeddings connector — LTXAVTextEncoderLoader's ckpt_name field
+    # expects the LTX connector safetensors. CheckpointLoaderSimple's
+    # ckpt list is the same namespace so we reuse the unet_gguf +
+    # vae pools + anything else; the connector is in the Wan/LTX dir.
+    # We also probe CheckpointLoaderSimple separately since the
+    # connector lives there rather than in unet_name.
+    connector = None
+    # Use the raw object_info response if available; for now look in
+    # the unet pool (the connector is sometimes listed as a UNET
+    # because it's a .safetensors file in the models dir).
+    for pool_key in ("unet", "unet_gguf", "vae"):
+        cand = _pick(models.get(pool_key, []),
+                      {"ltx", "dev", "embeddings"},
+                      {"connector"})
+        if cand:
+            connector = cand
+            break
+    if not connector:
+        # Known LTX-2.3 embedding connector filename — fall back to the
+        # literal name if the probe didn't surface it. LTX-2 users
+        # universally have this file at `LTX\ltx-2.3-22b-dev_embeddings_connectors.safetensors`.
+        connector = "LTX\\ltx-2.3-22b-dev_embeddings_connectors.safetensors"
+
+    # VAE — LTX-2.3 video VAE.
+    vae_pool = models.get("vae", [])
+    vae = (_pick(vae_pool, {"ltx23", "video"}, {"bf16", "fp16"})
+           or _pick(vae_pool, {"ltx", "2", "3"}, {"video", "vae"})
+           or _pick(vae_pool, {"ltx", "video"})
+           or _pick(vae_pool, {"ltx"}, {"video", "vae"}))
+    if not vae:
+        log.info("resolve_ltx2_preset(%s): no LTX VAE found", preset_key)
+        return None
+
+    # Distilled LoRA — accelerator for fast mode (8 steps).
+    lora_pool = models.get("lora", [])
+    distilled_lora = None
+    if hint.get("distilled"):
+        distilled_lora = (_pick(lora_pool,
+                                  {"ltx", "distilled", "lora"},
+                                  {"22b", "2", "3", "384"})
+                          or _pick(lora_pool, {"ltxv", "distilled"}, {})
+                          or _pick(lora_pool, {"ltx", "distilled"}))
+
+    # Per-preset sampler tuning. Canonical LTX-2 defaults:
+    #   - Standard: steps=30, cfg=4.0, stg=1.0, rescale=0.7
+    #   - Distilled: steps=8, cfg=1.0, stg=0.0, rescale=0.0
+    if hint.get("distilled"):
+        tuning = {"steps": 8, "cfg": 1.0, "stg": 0.0, "rescale": 0.0}
+    else:
+        tuning = {"steps": 30, "cfg": 4.0, "stg": 1.0, "rescale": 0.7}
+
+    out = {
+        "unet": unet,
+        "text_encoder": text_encoder,
+        "embeddings_connector": connector,
+        "vae": vae,
+        **tuning,
+    }
+    if distilled_lora:
+        out["distilled_lora"] = distilled_lora
+    return out
+
+
 # ── Preset resolver ─────────────────────────────────────────────────
 
 # Map WANGP_PRESETS keys to a (must, nice, bad) token spec for the
@@ -361,8 +513,54 @@ def build_native_workflow(preset_key: str, *, prompt: str,
     length = length or defaults.get("frames", 81)
     fps = fps or defaults.get("fps", 16)
 
-    # Only the wan22_* family routes through build_wan_video today.
     family = (spec.get("family") or "").lower()
+
+    # ── LTX-2 family ────────────────────────────────────────────────
+    # Uses a completely different stack (Gemma encoder, LTX VAE,
+    # STGGuider, LTXVBaseSampler). Canonical builder is
+    # spellcaster_core.workflows.build_ltx_video.
+    if family == "ltx":
+        _ensure_spellcaster_core_on_path()
+        try:
+            from spellcaster_core.workflows import build_ltx_video  # type: ignore
+        except ImportError as e:
+            return None, f"spellcaster_core.workflows.build_ltx_video missing: {e}"
+        models = probe_comfyui_models(comfyui_base_url)
+        preset_dict = resolve_ltx2_preset(preset_key, models)
+        if not preset_dict:
+            return None, (f"couldn't locate LTX-2 models on ComfyUI for "
+                          f"{preset_key!r}. Install ltx-2.3-22b-dev GGUF "
+                          "+ Gemma 3 12B + the LTX connector + LTX "
+                          "video VAE under ComfyUI/models/.")
+        hint = _LTX2_PRESET_HINTS.get(preset_key) or {}
+        task = (spec.get("task") or "").lower()
+        if task in ("i2v",) and not image_filename:
+            return None, "this preset needs a reference image (i2v)"
+        try:
+            # Pass the caller's negative verbatim so shot.negative
+            # reaches the sampler. Defaulting to None lets
+            # build_ltx_video inject its subtitle-burn-in blocker.
+            workflow = build_ltx_video(
+                preset=preset_dict,
+                prompt_text=prompt,
+                seed=seed,
+                width=width, height=height,
+                num_frames=length,
+                two_stage=bool(hint.get("two_stage", False)),
+                distilled=bool(hint.get("distilled", False)),
+                interpolate=bool(hint.get("interpolate", False)),
+                rtx_scale=int(hint.get("rtx_scale", 0)),
+                fps=fps,
+                image_filename=image_filename,
+                negative_text=(negative or None),
+            )
+        except Exception as e:  # noqa: BLE001
+            return None, f"build_ltx_video raised: {e}"
+        if not isinstance(workflow, dict) or not workflow:
+            return None, "build_ltx_video returned empty workflow"
+        return workflow, None
+
+    # ── Wan 2.2 family — existing path ─────────────────────────────
     if family != "wan":
         return None, (f"native routing for family={family!r} not yet "
                       "implemented — ComfyUI support for this preset "
