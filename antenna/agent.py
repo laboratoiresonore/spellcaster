@@ -73,6 +73,48 @@ _LAST_AUTODETECT: dict[str, Any] = {"ran": False}
 _LAST_PORT_CLEANUP: list[dict[str, Any]] = []
 
 
+# ── Notify hook — let a shell (tray.py on Windows) listen to events ──
+# Anything in the antenna that wants the user to SEE something calls
+# `notify(title, message, level='info')`. By default it's a no-op that
+# prints to stdout; tray.py installs a real handler that surfaces a
+# Windows toast. Keep it trivial — the hook is the only cross-module
+# handshake between the agent and its optional shell.
+_NOTIFY_SINKS: list = []
+
+
+def register_notify_sink(fn) -> None:
+    """Register a callable `fn(title: str, message: str, level: str)` that
+    receives every antenna.notify() call. Tray.py registers itself here
+    during startup; tests and console mode leave the list empty.
+    """
+    if callable(fn) and fn not in _NOTIFY_SINKS:
+        _NOTIFY_SINKS.append(fn)
+
+
+def notify(title: str, message: str = "", level: str = "info") -> None:
+    """Push a user-visible event to every registered sink.
+
+    level: 'info' | 'success' | 'warn' | 'error' — sinks may style on it.
+    Swallows every exception: notification failures must never propagate.
+    """
+    # Always print so console mode still sees something useful.
+    prefix = {"success": "+", "warn": "!", "error": "x"}.get(level, "i")
+    try:
+        print(f"[antenna/{level}] {prefix} {title}"
+              + (f" — {message}" if message else ""))
+    except Exception:  # noqa: BLE001
+        pass
+    for sink in list(_NOTIFY_SINKS):
+        try:
+            sink(title, message, level)
+        except Exception as e:  # noqa: BLE001
+            try:
+                print(f"[antenna] notify sink {sink!r} raised: {e}",
+                      file=sys.stderr)
+            except Exception:  # noqa: BLE001
+                pass
+
+
 def _autopopulate_services(cfg: dict[str, Any]) -> None:
     """R49a: Merge auto-detected services into cfg['services'].
 
@@ -533,6 +575,9 @@ def serve(cfg: dict[str, Any] | None = None,
     heartbeat.start(cfg)
 
     print(f"[antenna] Ready. Ctrl-C to stop.", flush=True)
+    notify("Antenna ready",
+           f"Listening on {scheme}://{cfg['bind']}:{cfg['port']}",
+           level="success")
 
     # Graceful shutdown on Ctrl-C — close the listening socket, let
     # in-flight requests finish on their own threads, then exit.

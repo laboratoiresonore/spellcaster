@@ -348,8 +348,23 @@ def ensure_service_running(service: str, cfg: dict[str, Any],
         "stdout": log_f, "stderr": log_f, "stdin": subprocess.DEVNULL,
     }
     if os.name == "nt":
+        # CREATE_NO_WINDOW (0x08000000) + DETACHED_PROCESS (0x08) +
+        # CREATE_NEW_PROCESS_GROUP (0x200): spawn a fully detached child
+        # with NO console window. Users launch ComfyUI through the tray
+        # menu; the Antenna is the shell. A flashing cmd.exe would ruin
+        # that. NO_WINDOW takes precedence over DETACHED when both are
+        # set, but we keep DETACHED for process-tree cleanliness.
         kwargs["creationflags"] = (
-            subprocess.CREATE_NEW_PROCESS_GROUP | 0x00000008)  # DETACHED_PROCESS
+            subprocess.CREATE_NEW_PROCESS_GROUP
+            | 0x00000008                # DETACHED_PROCESS
+            | 0x08000000                # CREATE_NO_WINDOW
+        )
+        # Belt-and-suspenders: startupinfo with SW_HIDE tells any child
+        # that does allocate a window to keep it hidden.
+        si = subprocess.STARTUPINFO()
+        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        si.wShowWindow = 0  # SW_HIDE
+        kwargs["startupinfo"] = si
         # shell=True when the target is a .bat so Windows picks cmd.exe
         if argv[0].lower().endswith(".bat"):
             kwargs["shell"] = True
@@ -387,6 +402,25 @@ def ensure_service_running(service: str, cfg: dict[str, Any],
 
     result["waited_seconds"] = round(time.time() - t_start, 1)
     result["state"] = "started" if ok else "timeout"
+    # Push a user-visible toast if the antenna has a tray listener
+    # attached. Swallow errors — notifications must never change the
+    # return value of a service launch.
+    try:
+        from . import agent as _agent
+        if result["state"] == "started":
+            _agent.notify(f"{service} started",
+                           f"pid {result['pid']} · {result['waited_seconds']}s",
+                           level="success")
+        elif result["state"] == "timeout":
+            _agent.notify(f"{service} timed out",
+                           "process spawned but didn't become reachable",
+                           level="warn")
+        elif result["state"] == "failed":
+            _agent.notify(f"{service} failed to start",
+                           str(result.get("error", ""))[:200],
+                           level="error")
+    except Exception:  # noqa: BLE001
+        pass
     return result
 
 

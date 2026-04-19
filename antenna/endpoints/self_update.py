@@ -149,6 +149,14 @@ def _schedule_restart(delay_seconds: float = 0.5) -> None:
     successor is going to rebind the port, so we want the old process
     to die fast.
     """
+    # User-visible signal via the tray / console notify hook.
+    try:
+        from .. import agent as _agent
+        _agent.notify("Antenna updating",
+                       "Self-update downloaded — restarting in 0.5s",
+                       level="info")
+    except Exception:  # noqa: BLE001
+        pass
     def _respawn():
         time.sleep(delay_seconds)
         root = _src_root()
