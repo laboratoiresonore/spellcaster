@@ -1,29 +1,30 @@
 {
-  "_comment": "Pre-generated wizard avatars + tavern background. Loaded on first run to skip the 10-minute generation step. Only per-model wizards (detected from ComfyUI) need to be generated at runtime.",
+  "_comment": "Pre-generated wizard avatars + tavern background. Loaded on first run to skip the 10-minute generation step. Only per-model wizards (detected from ComfyUI) need to be generated at runtime. Each studio wizard has a still_*.png (frame 0 of the animation, used as the menu thumbnail) and an anim_*.mp4 (canonical LTX 2.3 i2v loopable output, used in the header when the wizard is active). See docs/VIDEO_PIPELINES_CANON.md §16.3 for the bake recipe.",
   "background": {
     "filename": "f0df8a07f9cb2687.png",
     "asset_key": "_global",
     "asset_field": "bg_url"
   },
   "avatars": {
-    "studio_imaginus": "8ff0d5c1d9c81e4b.png",
-    "studio_transmutex": "661d55cefde98c9f.png",
-    "studio_masquerade": "be14827f125906f5.png",
-    "studio_restorix": "1a3a7ce13ebbbeed.png",
-    "studio_erasure": "fb02a9d3c6b8eb12.png",
-    "studio_videomancer": "d8a80508b37d5077.png",
-    "studio_cinematic": "ec4e4e0929f28523.png",
-    "studio_studiocraft": "ec41708386a43c25.png"
+    "studio_spellcaster": "still_spellcaster.png",
+    "studio_imaginus": "still_imaginus.png",
+    "studio_transmutex": "still_transmutex.png",
+    "studio_masquerade": "still_masquerade.png",
+    "studio_restorix": "still_restorix.png",
+    "studio_erasure": "still_erasure.png",
+    "studio_videomancer": "still_videomancer.png",
+    "studio_cinematic": "still_cinematic.png",
+    "studio_studiocraft": "still_studiocraft.png"
   },
   "animated_avatars": {
-    "studio_spellcaster": "anim_spellcaster.webp",
-    "studio_imaginus": "anim_imaginus.webp",
-    "studio_transmutex": "anim_transmutex.webp",
-    "studio_masquerade": "anim_masquerade.webp",
-    "studio_restorix": "anim_restorix.webp",
-    "studio_erasure": "anim_erasure.webp",
-    "studio_videomancer": "anim_videomancer.webp",
-    "studio_cinematic": "anim_cinematic.webp",
-    "studio_studiocraft": "anim_studiocraft.webp"
+    "studio_spellcaster": "anim_spellcaster.mp4",
+    "studio_imaginus": "anim_imaginus.mp4",
+    "studio_transmutex": "anim_transmutex.mp4",
+    "studio_masquerade": "anim_masquerade.mp4",
+    "studio_restorix": "anim_restorix.mp4",
+    "studio_erasure": "anim_erasure.mp4",
+    "studio_videomancer": "anim_videomancer.mp4",
+    "studio_cinematic": "anim_cinematic.mp4",
+    "studio_studiocraft": "anim_studiocraft.mp4"
   }
 }
