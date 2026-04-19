@@ -748,6 +748,59 @@ textarea::placeholder { color: #555; }
     filter: drop-shadow(0 0 4px rgba(46, 213, 115, 0.7));
 }
 
+/* ── Recent assets across apps (sidebar) ── */
+#recent-assets-container {
+    margin: 6px 0 4px;
+    padding: 6px 2px 0;
+    border-top: 1px dashed rgba(178, 70, 242, 0.18);
+}
+.recent-assets-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    max-height: 220px;
+    overflow-y: auto;
+}
+.recent-asset-thumb {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    background-size: cover;
+    background-position: center;
+    background-color: rgba(178, 70, 242, 0.08);
+    border: 1px solid rgba(178, 70, 242, 0.25);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+    overflow: hidden;
+}
+.recent-asset-thumb:hover {
+    transform: scale(1.04);
+    border-color: rgba(252, 211, 77, 0.6);
+    box-shadow: 0 4px 14px rgba(252, 211, 77, 0.25);
+    z-index: 2;
+}
+.recent-asset-origin-badge {
+    position: absolute;
+    bottom: 2px;
+    left: 2px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: rgba(12, 10, 24, 0.82);
+    color: #fde68a;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    pointer-events: none;
+}
+.recent-asset-flash {
+    animation: recentAssetFlash 1.2s ease-out;
+}
+@keyframes recentAssetFlash {
+    0% { box-shadow: 0 0 0 0 rgba(252, 211, 77, 0.9); }
+    40% { box-shadow: 0 0 0 10px rgba(252, 211, 77, 0.0); }
+    100% { box-shadow: 0 0 0 0 rgba(252, 211, 77, 0.0); }
+}
+
 /* ── Starter Chips (shown below greeting when chat is empty) ── */
 .starter-chips {
     display: flex; flex-wrap: wrap; gap: 10px;
