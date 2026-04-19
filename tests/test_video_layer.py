@@ -599,6 +599,42 @@ def main() -> int:
     check("video_panel.jsx has snapshot diff panel",
           test_video_panel_snapshot_diff_panel)
 
+    # Round 47 — EDL/FCPXML export + Snapshot pinning
+    check("_slugify_reel CMX 3600 compliance",
+          test_slugify_reel)
+    check("_xml_escape handles entities",
+          test_xml_escape)
+    check("_frames_to_tc timecode conversion",
+          test_frames_to_tc)
+    check("export_edl basic shape",
+          test_export_edl_basic)
+    check("export_edl prefers render_duration_s",
+          test_export_edl_uses_render_duration_if_available)
+    check("export_fcpxml is valid XML",
+          test_export_fcpxml_basic)
+    check("export_fcpxml escapes title chars",
+          test_export_fcpxml_escapes_title)
+    check("pin/unpin snapshot",
+          test_snapshot_pin_and_unpin)
+    check("pin rejects missing snapshot/shot",
+          test_pin_missing_snapshot_returns_false)
+    check("pinned snapshot survives auto-prune",
+          test_pinned_snapshot_survives_auto_prune)
+    check("deleting pinned snapshot cleans pin list",
+          test_deleting_a_pinned_snapshot_removes_pin_entry)
+    check("pinned_snapshots survive roundtrip",
+          test_shot_pinned_snapshots_survive_roundtrip)
+    check("server.py has EDL endpoint",
+          test_server_has_edl_endpoint)
+    check("server.py has FCPXML endpoint",
+          test_server_has_fcpxml_endpoint)
+    check("server.py has snapshot pin endpoint",
+          test_server_has_pin_endpoint)
+    check("video_panel.jsx has EDL/FCPXML buttons",
+          test_video_panel_has_edl_button)
+    check("video_panel.jsx has pin button",
+          test_video_panel_has_pin_button)
+
     print("-" * 50)
 
     from scaffold.shotboard import Shotboard, Shot, Trajectory
@@ -6487,6 +6523,232 @@ def test_video_panel_snapshot_diff_panel():
     assert "snapshot-diff-panel" in src
     assert "snapshot-diff-close" in src
     assert "No differences in creative state" in src
+
+
+# ════════════════════════════════════════════════════════════════════
+# R47 — EDL/FCPXML export (R47a) + Snapshot pinning (R47b)
+# ════════════════════════════════════════════════════════════════════
+
+def test_slugify_reel():
+    from scaffold.shotboard import _slugify_reel
+    assert _slugify_reel("Scene A") == "SCENEA"
+    assert _slugify_reel("EXT. Forest — Day") == "EXTFORES"  # capped at 8
+    assert _slugify_reel("") == "CLIP"
+    assert _slugify_reel(None) == "CLIP"
+    assert _slugify_reel("!!!") == "CLIP"
+
+
+def test_xml_escape():
+    from scaffold.shotboard import _xml_escape
+    assert _xml_escape("a & b") == "a &amp; b"
+    assert _xml_escape('<tag attr="x">') == "&lt;tag attr=&quot;x&quot;&gt;"
+    assert _xml_escape("it's") == "it&apos;s"
+
+
+def test_frames_to_tc():
+    from scaffold.shotboard import Shotboard
+    assert Shotboard._frames_to_tc(0, 30) == "00:00:00:00"
+    assert Shotboard._frames_to_tc(30, 30) == "00:00:01:00"
+    assert Shotboard._frames_to_tc(90, 30) == "00:00:03:00"
+    assert Shotboard._frames_to_tc(3600 * 30, 30) == "01:00:00:00"
+
+
+def test_export_edl_basic():
+    from scaffold.shotboard import Shotboard, Shot
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    board = Shotboard(os.path.join(d, "sb.json"))
+    board.add(Shot(id="e1", title="Scene A", prompt="p",
+                   video_path="/tmp/out1.mp4", status="ready", duration_s=3.0))
+    board.add(Shot(id="e2", title="Scene B", prompt="q",
+                   video_path="/tmp/out2.mp4", status="ready", duration_s=2.0))
+    board.add(Shot(id="e3", title="Draft Only", prompt="z", status="draft"))
+    edl = board.export_edl(fps=30)
+    # Header
+    assert edl.startswith("TITLE: Spellcaster Timeline")
+    assert "FCM: NON-DROP FRAME" in edl
+    # Only ready shots are present
+    assert "SCENEA" in edl
+    assert "SCENEB" in edl
+    assert "DRAFTONL" not in edl  # skipped
+    # Two events
+    assert "001  SCENEA" in edl
+    assert "002  SCENEB" in edl
+    # Record-time continuity: event 2 starts where event 1 ends
+    assert "00:00:00:00 00:00:03:00 00:00:00:00 00:00:03:00" in edl
+    assert "00:00:00:00 00:00:02:00 00:00:03:00 00:00:05:00" in edl
+    # FROM CLIP NAME
+    assert "FROM CLIP NAME: out1.mp4" in edl
+    assert "FROM CLIP NAME: out2.mp4" in edl
+
+
+def test_export_edl_uses_render_duration_if_available():
+    from scaffold.shotboard import Shotboard, Shot
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    board = Shotboard(os.path.join(d, "sb.json"))
+    board.add(Shot(id="e1", title="S", prompt="p",
+                   video_path="/tmp/o.mp4", status="ready",
+                   duration_s=1.0, render_duration_s=5.0))
+    edl = board.export_edl(fps=30)
+    # 5.0s at 30fps = 150 frames = 00:00:05:00
+    assert "00:00:05:00" in edl
+
+
+def test_export_fcpxml_basic():
+    from scaffold.shotboard import Shotboard, Shot
+    import xml.etree.ElementTree as ET
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    board = Shotboard(os.path.join(d, "sb.json"))
+    board.add(Shot(id="f1", title="Scene A", prompt="p",
+                   video_path="/tmp/out1.mp4", status="ready", duration_s=3.0))
+    board.add(Shot(id="f2", title="Scene B", prompt="q",
+                   video_path="/tmp/out2.mp4", status="ready", duration_s=2.0))
+    xml = board.export_fcpxml(fps=30)
+    # Header
+    assert xml.startswith("<?xml")
+    assert '<fcpxml version="1.10">' in xml
+    # Parses as valid XML
+    root = ET.fromstring(xml)
+    assert root.tag == "fcpxml"
+    # Has format, two assets, two asset-clips
+    assets = root.findall(".//asset")
+    assert len(assets) == 2
+    clips = root.findall(".//asset-clip")
+    assert len(clips) == 2
+    # Durations
+    assert clips[0].get("duration") == "90/30s"
+    assert clips[1].get("duration") == "60/30s"
+    assert clips[1].get("offset") == "90/30s"
+
+
+def test_export_fcpxml_escapes_title():
+    from scaffold.shotboard import Shotboard, Shot
+    import xml.etree.ElementTree as ET
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    board = Shotboard(os.path.join(d, "sb.json"))
+    board.add(Shot(id="f1", title='A & <script>', prompt="p",
+                   video_path="/tmp/o.mp4", status="ready", duration_s=1.0))
+    xml = board.export_fcpxml(fps=30)
+    # Parses without exception — proves escaping worked
+    ET.fromstring(xml)
+    assert "&amp;" in xml
+    assert "&lt;script&gt;" in xml
+
+
+def test_snapshot_pin_and_unpin():
+    from scaffold.shotboard import Shotboard, Shot
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    board = Shotboard(os.path.join(d, "sb.json"))
+    board.add(Shot(id="pn1", prompt="p", preset="fast"))
+    snap = board.save_snapshot("pn1", label="keep me")
+    assert board.pin_snapshot("pn1", snap["id"]) is True
+    assert snap["id"] in board.get("pn1").pinned_snapshots
+    # Idempotent re-pin
+    assert board.pin_snapshot("pn1", snap["id"]) is True
+    assert board.get("pn1").pinned_snapshots.count(snap["id"]) == 1
+    # Unpin
+    assert board.unpin_snapshot("pn1", snap["id"]) is True
+    assert snap["id"] not in board.get("pn1").pinned_snapshots
+    # Unpinning again is a no-op-returning-False
+    assert board.unpin_snapshot("pn1", snap["id"]) is False
+
+
+def test_pin_missing_snapshot_returns_false():
+    from scaffold.shotboard import Shotboard, Shot
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    board = Shotboard(os.path.join(d, "sb.json"))
+    board.add(Shot(id="pn2", prompt="p", preset="fast"))
+    assert board.pin_snapshot("pn2", "nonexistent") is False
+    assert board.pin_snapshot("nonexistent_shot", "x") is False
+
+
+def test_pinned_snapshot_survives_auto_prune():
+    from scaffold.shotboard import Shotboard, Shot
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    board = Shotboard(os.path.join(d, "sb.json"))
+    board.add(Shot(id="pn3", prompt="p", preset="fast"))
+    # Save one, pin it
+    first = board.save_snapshot("pn3", label="PINNED FIRST")
+    board.pin_snapshot("pn3", first["id"])
+    # Save 25 more — unpinned should prune, pinned survives
+    for i in range(25):
+        board.save_snapshot("pn3", label=f"auto{i}")
+    snaps = board.list_snapshots("pn3")
+    assert len(snaps) == 20
+    ids = {s["id"] for s in snaps}
+    assert first["id"] in ids, "Pinned snapshot was evicted"
+    # The oldest unpinned should be gone; newest unpinned must remain
+    labels = [s["label"] for s in snaps]
+    assert "PINNED FIRST" in labels
+    assert "auto24" in labels  # most recent must survive
+    assert "auto0" not in labels  # oldest unpinned must be pruned
+
+
+def test_deleting_a_pinned_snapshot_removes_pin_entry():
+    from scaffold.shotboard import Shotboard, Shot
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    board = Shotboard(os.path.join(d, "sb.json"))
+    board.add(Shot(id="pn4", prompt="p", preset="fast"))
+    snap = board.save_snapshot("pn4", label="to delete")
+    board.pin_snapshot("pn4", snap["id"])
+    assert board.delete_snapshot("pn4", snap["id"]) is True
+    # pinned_snapshots must not contain a stale id
+    assert snap["id"] not in board.get("pn4").pinned_snapshots
+
+
+def test_shot_pinned_snapshots_survive_roundtrip():
+    from scaffold.shotboard import Shotboard, Shot
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    p = os.path.join(d, "sb.json")
+    board = Shotboard(p)
+    board.add(Shot(id="rt", prompt="p", preset="fast"))
+    snap = board.save_snapshot("rt", label="l")
+    board.pin_snapshot("rt", snap["id"])
+    board2 = Shotboard(p)
+    assert board2.get("rt").pinned_snapshots == [snap["id"]]
+
+
+def test_server_has_edl_endpoint():
+    src = open("tavern/server.py", encoding="utf-8").read()
+    assert "/api/video/export/edl" in src
+    assert "export_edl" in src
+    assert "spellcaster_timeline.edl" in src
+
+
+def test_server_has_fcpxml_endpoint():
+    src = open("tavern/server.py", encoding="utf-8").read()
+    assert "/api/video/export/fcpxml" in src
+    assert "export_fcpxml" in src
+
+
+def test_server_has_pin_endpoint():
+    src = open("tavern/server.py", encoding="utf-8").read()
+    assert "/pin" in src
+    assert "pin_snapshot" in src
+    assert "unpin_snapshot" in src
+
+
+def test_video_panel_has_edl_button():
+    src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
+    assert "export-edl" in src
+    assert "export-fcpxml" in src
+    assert "/api/video/export/edl" in src
+    assert "/api/video/export/fcpxml" in src
+
+
+def test_video_panel_has_pin_button():
+    src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
+    assert "snapshot-pin-btn" in src
+    assert "togglePinSnapshot" in src
+    assert "pinned_snapshots" in src
 
 
 if __name__ == "__main__":
