@@ -45,39 +45,65 @@ RECOMMENDED_LLM = {
 
 
 def chat(message, system_prompt="", server=None, kobold_url=None,
-         model=None, max_tokens=512, temperature=0.7):
-    """Send a message to the best available LLM backend.
+         model=None, max_tokens=512, temperature=0.7, purpose="chat"):
+    """THE single LLM entry point for every surface (Guild, GIMP, Darktable,
+    ComfyUI nodes, scaffolding). Do not implement parallel LLM paths
+    elsewhere — everything goes through this function.
 
-    Tries in order: ComfyUI LLM nodes -> KoboldCpp -> Ollama
-    Returns the response text, or None if no backend available.
+    Tries every available backend in an order determined by `purpose`:
 
-    The LLM auto-unloads from VRAM during ComfyUI generation and
-    reloads after the queue clears — no manual management needed.
+      purpose='chat' (default): conversation / scaffolding / wizard replies.
+          Backend priority: Ollama local -> ComfyUI nodes -> KoboldCpp.
+          WHY: the ComfyUI AILab_QwenVL_GGUF_PromptEnhancer node is
+          hard-wired to rewrite any input as an image-generation prompt,
+          which ruins conversation. Ollama runs a general-purpose chat
+          model that honours system prompts and can hold a dialog. For
+          wizard Guild chat, scaffolded install flows, and anything
+          conversational, ALWAYS prefer Ollama when available.
+
+      purpose='enhance': single-shot prompt enhancement for image gen.
+          Backend priority: ComfyUI nodes -> Ollama local -> KoboldCpp.
+          WHY: the AILab_QwenVL node is purpose-built for this, it's
+          already on the ComfyUI box, and its VRAM is auto-managed
+          against the diffusion model (the load-LLM / unload-LLM /
+          generate / reload-LLM cycle). For the prompt-enhancement
+          use case that's the right tool.
+
+    Returns the response text, or None if every backend fails.
     """
-    # Fallback chain: try each backend in order until one returns a response.
-    # WHY this order:
-    #   1. ComfyUI LLM = zero external deps, VRAM-managed natively, preferred
-    #   2. KoboldCpp   = user-configured external server, reliable if running
-    #   3. Ollama      = common local LLM runner, auto-detected on default ports
-    # Each backend returns None on failure, allowing the chain to continue.
-    # The chain stops at the first non-None response.
-    if server:
-        resp = _chat_comfyui(message, system_prompt, server, model,
+    if purpose not in ("chat", "enhance"):
+        purpose = "chat"
+
+    # Build the backend sequence based on purpose.
+    def try_ollama():
+        return _chat_ollama(message, system_prompt, max_tokens,
+                            temperature, model=model)
+
+    def try_comfyui():
+        if not server:
+            return None
+        return _chat_comfyui(message, system_prompt, server, model,
                              max_tokens, temperature)
+
+    def try_kobold():
+        if not kobold_url:
+            return None
+        return _chat_kobold(message, system_prompt, kobold_url,
+                            max_tokens, temperature)
+
+    if purpose == "chat":
+        chain = (try_ollama, try_comfyui, try_kobold)
+    else:  # 'enhance'
+        chain = (try_comfyui, try_ollama, try_kobold)
+
+    for backend in chain:
+        try:
+            resp = backend()
+        except Exception:
+            resp = None
         if resp is not None:
             return resp
-
-    if kobold_url:
-        resp = _chat_kobold(message, system_prompt, kobold_url, max_tokens, temperature)
-        if resp is not None:
-            return resp
-
-    # Ollama doesn't need a URL — we probe localhost on known ports
-    resp = _chat_ollama(message, system_prompt, max_tokens, temperature)
-    if resp is not None:
-        return resp
-
-    return None  # All backends exhausted
+    return None  # every backend exhausted
 
 
 def _chat_comfyui(message, system_prompt, server, model, max_tokens, temperature):
@@ -114,37 +140,90 @@ def _chat_kobold(message, system_prompt, url, max_tokens, temperature):
         return None
 
 
-def _chat_ollama(message, system_prompt, max_tokens, temperature):
-    """Chat via Ollama's API (if running locally).
+# Ollama model preference — first substring match on installed models wins.
+# Instruction-tuned chat models beat base completion models; smaller
+# quantisations beat huge ones so the LLM doesn't fight the diffusion
+# model for VRAM. Anything not matching stays eligible as a last resort
+# so single-model installs still work.
+_OLLAMA_MODEL_PREFERENCE = (
+    "qwen3:4b", "qwen2.5:7b", "qwen2.5:3b",
+    "gemma3:4b", "gemma2:9b", "gemma2:2b",
+    "llama3.2:3b", "llama3.1:8b",
+    "phi3:3.8b", "phi3:mini",
+    "mistral:7b",
+)
+# Host → best-installed model, TTL'd so /api/tags isn't hammered.
+_OLLAMA_CACHE = {}
+_OLLAMA_CACHE_TTL = 300.0
 
-    Ollama's default port is 11434; 11435 is checked as a secondary because
-    some users run multiple instances or have port conflicts.
+
+def _ollama_pick_model(host):
+    """Probe Ollama /api/tags and return the best installed model.
+
+    Cached per-host for 5 min. Returns None if Ollama isn't reachable or
+    has no models installed.
     """
-    for port in [11434, 11435]:
-        try:
-            # Build payload with conditional system message. We serialize,
-            # re-parse, and filter Nones because json.dumps can't handle
-            # conditional list elements inline without this round-trip.
-            # TODO: build the messages list directly to avoid the double-encode.
-            body = json.dumps({
-                "model": "qwen3:4b",  # matches RECOMMENDED_LLM family
-                "messages": [
-                    {"role": "system", "content": system_prompt} if system_prompt else None,
-                    {"role": "user", "content": message},
-                ],
-                "stream": False,  # we need the full response, not SSE chunks
-                "options": {"num_predict": max_tokens, "temperature": temperature},
-            }).encode()
-            payload = json.loads(body)
-            payload["messages"] = [m for m in payload["messages"] if m]
-            body = json.dumps(payload).encode()
+    now = time.time()
+    cached = _OLLAMA_CACHE.get(host)
+    if cached and now - cached[0] < _OLLAMA_CACHE_TTL:
+        return cached[1]
+    try:
+        req = urllib.request.Request(f"{host}/api/tags")
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        _OLLAMA_CACHE[host] = (now, None)
+        return None
+    names = [m.get("name", "") for m in data.get("models", [])]
+    if not names:
+        _OLLAMA_CACHE[host] = (now, None)
+        return None
+    chosen = None
+    for pref in _OLLAMA_MODEL_PREFERENCE:
+        for n in names:
+            if n.startswith(pref) or pref in n:
+                chosen = n
+                break
+        if chosen:
+            break
+    if not chosen:
+        chosen = names[0]
+    _OLLAMA_CACHE[host] = (now, chosen)
+    return chosen
 
+
+def _chat_ollama(message, system_prompt, max_tokens, temperature, model=None):
+    """Chat via Ollama's native /api/chat.
+
+    Probes localhost on Ollama's default ports (11434, 11435) and uses
+    whichever responds first. Model is auto-detected from /api/tags
+    unless the caller passes one explicitly, so installs with gemma3,
+    qwen2.5, llama3, or anything else work out of the box.
+    """
+    for port in (11434, 11435):
+        host = f"http://127.0.0.1:{port}"
+        mdl = model or _ollama_pick_model(host)
+        if not mdl:
+            continue
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": message})
+        body = json.dumps({
+            "model": mdl,
+            "messages": messages,
+            "stream": False,
+            "options": {"num_predict": max_tokens, "temperature": temperature},
+        }).encode()
+        try:
             req = urllib.request.Request(
-                f"http://127.0.0.1:{port}/api/chat",
+                f"{host}/api/chat",
                 data=body, headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=60) as resp:
                 data = json.loads(resp.read())
-                return data.get("message", {}).get("content", "")
+                content = data.get("message", {}).get("content", "")
+                if content:
+                    return content
         except Exception:
             continue
     return None
