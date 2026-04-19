@@ -6993,14 +6993,34 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
             build_wan = getattr(_workflows_v2, 'build_wan_video', None)
             if build_wan:
                 try:
-                    # turbo=True compresses 20-30 steps down to 4-6,
-                    # which only works when a Lightning/LightX2V I2V
-                    # acceleration LoRA is loaded. Without those LoRAs
-                    # the 6-step path produces black frames (undercooked
-                    # diffusion). Check the preset — only enable turbo
-                    # if the accel LoRAs were actually detected.
-                    has_accel = bool(wan_preset.get("high_accel_lora")
-                                      or wan_preset.get("low_accel_lora"))
+                    # turbo=True uses Lightning/LightX2V 4-step accel
+                    # LoRAs with CFG=1.0 and a bi-sampler 3+3 split.
+                    # Empirically on WAN 2.2 I2V-A14B HIGH/LOW fp8 with
+                    # wan_2.1_vae + the shipped lightx2v_4steps LoRAs
+                    # at strength 1.5, this produces pure black output
+                    # (mean luminance 0.0/255 verified on the user's
+                    # setup). The 4-step LoRA schedule mis-fits the
+                    # 6-step bi-sampler and the undercooked latent
+                    # decodes to zeros.
+                    #
+                    # Default turbo=False here so the Animate All /
+                    # canon-avatar bake path produces real video.
+                    # Users whose checkpoint + LoRA combo DOES like
+                    # the turbo schedule can opt back in with the env
+                    # var. Full-step is ~4x slower but actually works.
+                    import os as _os
+                    force_turbo = _os.environ.get(
+                        "SPELLCASTER_WAN_TURBO", "").strip().lower() in (
+                            "1", "true", "yes")
+                    # Full-step rendering when turbo is off: the
+                    # preset's "steps" field is 6 (tuned for turbo),
+                    # which becomes 6 steps WITH no accel LoRA under
+                    # turbo=False — undercooked, black output. Pass
+                    # 30 steps + cfg=3.5 + second_step=15 explicitly
+                    # so non-turbo actually produces visible video.
+                    kwargs_extra = {} if force_turbo else {
+                        "steps": 30, "cfg": 3.5, "second_step": 15,
+                    }
                     workflow = build_wan(
                         image_filename=image_filename,
                         preset=wan_preset,
@@ -7010,7 +7030,7 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
                         seed=seed,
                         width=512, height=512,
                         length=33,         # ~2 sec at 16fps
-                        turbo=has_accel,
+                        turbo=force_turbo,
                         loop=False,
                         rtx_scale=0,
                         interpolate=False,
@@ -7018,11 +7038,12 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
                         save_raw=False,
                         fps=16,
                         pingpong=True,
+                        **kwargs_extra,
                     )
                     engine = "wan"
-                    if not has_accel:
-                        print(f"  [Guild] WAN: no accel LoRA detected — "
-                              f"rendering full-step quality (slower, no black frames)")
+                    print(f"  [Guild] WAN: turbo={force_turbo} "
+                          f"steps={30 if not force_turbo else 6} "
+                          f"(set SPELLCASTER_WAN_TURBO=1 to re-enable turbo)")
                 except Exception as e:
                     print(f"  [Guild] WAN workflow build failed: {e}")
 
