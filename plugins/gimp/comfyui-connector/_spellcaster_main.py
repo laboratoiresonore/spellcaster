@@ -5124,28 +5124,47 @@ def _wan_video_dims(src_w, src_h, target_long=720, align=16):
 
 
 WAN_I2V_PRESETS = {
+    # R129 tuning: CLIP switched to the fp8 safetensors UMT5 (GGUF UMT5
+    # has known conditioning-bleed issues on some ComfyUI installs —
+    # the prompt leaks through the VAE as visible text pixels instead
+    # of steering the diffusion). Lightning LoRAs are 4-step distilled
+    # — running them at 20 steps is pointless overhead. Sampler already
+    # forced to `euler` inside build_wan_video (euler_ancestral
+    # re-injects noise every step and trashes Lightning output).
     "Wan I2V 14B (GGUF Q4)": {
         "high_model": "Wan\\wan2.2_i2v_high_noise_14B_Q4_K_S.gguf",
         "low_model": "Wan\\wan2.2_i2v_low_noise_14B_Q4_K_S.gguf",
-        "clip": "umt5-xxl-encoder-Q8_0.gguf",
+        "clip": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
         "vae": "wan_2.1_vae.safetensors",
-        "steps": 20, "second_step": 10, "cfg": 1, "shift": 8.0,
+        "steps": 4, "second_step": 2, "cfg": 1, "shift": 5.0,
         "lora_prefix": "Wan",
         "high_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
         "low_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
-        "accel_strength": 1.5,
+        "accel_strength": 1.0,
         "ip_adapter_model": "ip-adapter-wan2.1-14b.bin",
     },
     "Wan I2V 14B (fp8)": {
         "high_model": "Wan\\wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
         "low_model": "Wan\\wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
-        "clip": "umt5-xxl-encoder-Q8_0.gguf",
+        "clip": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
         "vae": "wan_2.1_vae.safetensors",
-        "steps": 20, "second_step": 10, "cfg": 1, "shift": 8.0,
+        "steps": 4, "second_step": 2, "cfg": 1, "shift": 5.0,
         "lora_prefix": "Wan",
         "high_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
         "low_accel_lora": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
-        "accel_strength": 1.5,
+        "accel_strength": 1.0,
+        "ip_adapter_model": "ip-adapter-wan2.1-14b.bin",
+    },
+    "Wan I2V 14B HQ (no LoRA)": {
+        # HQ path — deliberately skip the Lightning LoRAs for a full
+        # 20-step cfg=5 render. Slower but higher-fidelity; matches
+        # the Guild's `wan22_i2v_hq` preset.
+        "high_model": "Wan\\wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
+        "low_model": "Wan\\wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
+        "clip": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+        "vae": "wan_2.1_vae.safetensors",
+        "steps": 20, "second_step": 10, "cfg": 5.0, "shift": 8.0,
+        "lora_prefix": "Wan",
         "ip_adapter_model": "ip-adapter-wan2.1-14b.bin",
     },
 }
