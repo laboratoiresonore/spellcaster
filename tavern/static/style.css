@@ -292,6 +292,12 @@ body {
 .dot.red { background: #ff4757; box-shadow: 0 0 8px rgba(255, 71, 87, 0.6); }
 .dot.green { background: #2ed573; box-shadow: 0 0 8px rgba(46, 213, 115, 0.6); }
 .dot.yellow { background: #ffa502; box-shadow: 0 0 8px rgba(255, 165, 2, 0.6); }
+.dot.blue { background: #4aa8ff; box-shadow: 0 0 10px rgba(74, 168, 255, 0.75); }
+.dot.pulse { animation: llm-dot-pulse 1.2s ease-in-out infinite; }
+@keyframes llm-dot-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.35); opacity: 0.55; }
+}
 /* Health stats — VRAM / RAM / cache line under the ComfyUI indicator.
    flex-basis:100% breaks the line so stats appear on their own row. */
 .health-stats {
@@ -424,7 +430,8 @@ body {
 }
 .sidebar-footer #animate-all-btn,
 .sidebar-footer #scaffold-link,
-.sidebar-footer #settings-btn {
+.sidebar-footer #settings-btn,
+.sidebar-footer #guild-exit-btn {
     width: 100%;
     box-sizing: border-box;
     border: 1px solid var(--border-color);
@@ -448,6 +455,21 @@ body {
     background: var(--accent); color: #fff; border-color: var(--accent);
     box-shadow: 0 0 20px var(--accent-glow);
     transform: translateY(-1px);
+}
+.sidebar-footer #guild-exit-btn {
+    border-color: rgba(255, 71, 87, 0.45);
+    color: #ffc2c8;
+}
+.sidebar-footer #guild-exit-btn:hover {
+    background: rgba(255, 71, 87, 0.18);
+    color: #fff;
+    border-color: #ff4757;
+    box-shadow: 0 0 14px rgba(255, 71, 87, 0.55);
+    transform: translateY(-1px);
+}
+.sidebar-footer #guild-exit-btn:disabled {
+    opacity: 0.6;
+    cursor: wait;
 }
 .sidebar-footer #animate-all-btn {
     /* Override the chat-header gradient style — in the sidebar it should
@@ -782,6 +804,46 @@ textarea::placeholder { color: #555; }
 .active-iface-chip.iface-local .iface-host {
     background: rgba(78, 156, 242, 0.15);
     color: #a9cff0;
+}
+/* Per-chip toggle cluster — two tiny icon buttons on the LEFT of the
+   chip: ⚡ Start (one-shot launch on the chosen target) and 🔁 Auto
+   (persist "auto-start on Guild boot / auto-close on exit"). The
+   cluster sits before the status dot via flex order so the eye still
+   lands on the service icon first. */
+.active-iface-chip .iface-toggles {
+    display: inline-flex;
+    gap: 2px;
+    margin-right: 4px;
+    order: -1;
+}
+.iface-toggle-btn {
+    all: unset;
+    cursor: pointer;
+    font-size: 10px;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #cfd2d6;
+    opacity: 0.55;
+    transition: all 0.15s ease;
+    user-select: none;
+}
+.iface-toggle-btn:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.12);
+    transform: scale(1.1);
+}
+.iface-toggle-btn[disabled] {
+    opacity: 0.2;
+    cursor: not-allowed;
+}
+.iface-toggle-btn[disabled]:hover { transform: none; background: rgba(255,255,255,0.05); }
+.iface-auto-btn.is-on {
+    background: rgba(178, 70, 242, 0.35);
+    color: #f4e3ff;
+    opacity: 1;
+    box-shadow: 0 0 6px rgba(178, 70, 242, 0.55);
 }
 
 /* ── Antennas strip (remote-machine agents) ─────────────────────── */
