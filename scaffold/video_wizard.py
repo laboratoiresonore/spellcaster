@@ -35,12 +35,27 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from .shotboard import Shotboard, Shot, Trajectory
 from .wangp_runner import WANGP_PRESETS, describe_preset, preset_names
 
 log = logging.getLogger("spellcaster.video_wizard")
+
+
+# R121: when the DaVinci Resolve Bridge is online, the wizard reports
+# it in every reply + adds Resolve-specific menu actions. The status
+# callable is injected by VideoBridge; signature:
+#
+#   resolve_status_fn() -> Optional[dict]
+#
+# Returns a dict with at least {online: bool, bin: str,
+# timeline_name: str|None} when the Bridge is heartbeating, or None
+# when it's offline / not installed / the caller doesn't have
+# access to the interface registry. The wizard keeps working either
+# way — the Resolve-aware path is pure bonus on top of the normal
+# flow.
+ResolveStatusFn = Callable[[], Optional[Dict[str, Any]]]
 
 
 # -----------------------------------------------------------------------------
@@ -68,6 +83,13 @@ ACTIONS = [
     ("render", "Queue a shot for rendering"),
     ("status", "Show board status"),
     ("done", "Exit the video wizard"),
+]
+
+# R121: extra Resolve-native actions injected when the Bridge is live.
+RESOLVE_ACTIONS = [
+    ("resolve_pull",      "Pull reference from Resolve playhead"),
+    ("resolve_import",    "Push shotboard to Resolve timeline (EDL)"),
+    ("resolve_status",    "Show Resolve Bridge status"),
 ]
 
 
@@ -105,9 +127,74 @@ class CinematographerWizard:
         ``commit_trajectories()`` when the user is done drawing.
     """
 
-    def __init__(self, shotboard: Shotboard):
+    def __init__(self, shotboard: Shotboard,
+                 resolve_status_fn: Optional[ResolveStatusFn] = None,
+                 resolve_action_fn: Optional[Callable[[str, Dict[str, Any]],
+                                                       Dict[str, Any]]] = None):
+        """shotboard: the shared Shotboard instance.
+
+        resolve_status_fn: optional callable returning a dict with
+          {online, bin, timeline_name} when the Resolve Bridge is
+          heartbeating. Injected by VideoBridge from the Guild's
+          interface_registry. Lets the wizard tailor every reply to
+          mention Resolve when appropriate.
+
+        resolve_action_fn: optional callable(action_key, payload) ->
+          result dict. Invoked when the user picks a Resolve-native
+          menu item. VideoBridge wires this to HTTP calls against
+          the paired antenna (e.g. /resolve/playhead-grab for
+          pulling a ref frame, /resolve/import-edl for pushing a
+          timeline).
+        """
         self.board = shotboard
         self._sessions: Dict[str, VideoSession] = {}
+        self._resolve_status_fn = resolve_status_fn
+        self._resolve_action_fn = resolve_action_fn
+
+    # ------------------------------------------------------------------
+    # Resolve-awareness helpers
+    # ------------------------------------------------------------------
+
+    def _resolve_info(self) -> Optional[Dict[str, Any]]:
+        """Fresh snapshot of the Resolve Bridge status. None when the
+        Bridge is offline or the status fn wasn't injected. Safe to
+        call every handler tick — the fn is expected to be cheap."""
+        if not self._resolve_status_fn:
+            return None
+        try:
+            info = self._resolve_status_fn()
+        except Exception:  # noqa: BLE001
+            return None
+        if not isinstance(info, dict) or not info.get("online"):
+            return None
+        return info
+
+    def _resolve_banner(self) -> str:
+        """One-line banner prepended to every wizard reply when the
+        Bridge is live. Empty string when offline — no visual weight."""
+        info = self._resolve_info()
+        if not info:
+            return ""
+        bin_path = info.get("bin") or "Spellcaster"
+        host = info.get("hostname") or ""
+        tl = info.get("timeline_name") or ""
+        parts = [f"🎬 **Resolve Bridge live**"]
+        if host:
+            parts.append(f"@ {host}")
+        parts.append(f"— renders auto-import to `{bin_path}/`")
+        if tl:
+            parts.append(f"(active timeline: {tl})")
+        return " ".join(parts) + "\n\n"
+
+    def _actions(self) -> List[tuple]:
+        """ACTIONS + RESOLVE_ACTIONS when Bridge is live. Otherwise
+        plain ACTIONS. Indices in user replies stay stable within one
+        conversation turn (they see the same menu they're replying
+        to)."""
+        if self._resolve_info():
+            # Insert Resolve actions before "done" so "Exit" stays last
+            return (ACTIONS[:-1] + RESOLVE_ACTIONS + [ACTIONS[-1]])
+        return list(ACTIONS)
 
     # ------------------------------------------------------------------
     # Session plumbing
@@ -172,11 +259,12 @@ class CinematographerWizard:
         return self._render_menu()
 
     def _handle_pick_action(self, sess: VideoSession, text: str) -> str:
-        idx = _parse_index(text, len(ACTIONS))
+        actions = self._actions()
+        idx = _parse_index(text, len(actions))
         if idx is None:
             return ("Please pick a number from the list:\n\n"
                     + self._render_menu())
-        key, _ = ACTIONS[idx]
+        key, _ = actions[idx]
         if key == "done":
             sess.reset()
             return "Leaving the video wizard. Your shotboard is saved."
@@ -196,7 +284,92 @@ class CinematographerWizard:
             return self._start_reorder(sess)
         if key == "render":
             return self._start_render(sess)
+        # R121: Resolve-native actions. Each delegates to
+        # self._resolve_action_fn for the actual HTTP call — the
+        # wizard just frames the conversation.
+        if key == "resolve_pull":
+            return self._handle_resolve_pull(sess)
+        if key == "resolve_import":
+            return self._handle_resolve_import(sess)
+        if key == "resolve_status":
+            return self._render_resolve_status()
         return self._render_menu()
+
+    # ------------------------------------------------------------------
+    # R121: Resolve-native handlers
+    # ------------------------------------------------------------------
+
+    def _render_resolve_status(self) -> str:
+        info = self._resolve_info()
+        if not info:
+            return ("🎬 Resolve Bridge is **offline**. Start Resolve on a "
+                     "paired antenna and run the bridge plugin, then try "
+                     "again.\n\n" + self._render_menu())
+        lines = [self._resolve_banner().rstrip() or "🎬 Resolve Bridge live."]
+        lines.append("")
+        for k in ("hostname", "bin", "timeline_name", "agent_url",
+                    "last_heartbeat"):
+            if info.get(k):
+                lines.append(f"  • {k}: {info[k]}")
+        lines.append("")
+        lines.append(self._render_menu())
+        return "\n".join(lines)
+
+    def _handle_resolve_pull(self, sess: VideoSession) -> str:
+        """Create a new shot seeded from the frame currently under
+        Resolve's playhead. Uses the paired antenna's grab-and-publish
+        flow; the wizard returns immediately and the frame is attached
+        as soon as the antenna call resolves. Without a paired antenna
+        we fall back to an explanation."""
+        if not self._resolve_action_fn:
+            return ("🎬 Resolve Bridge is online but this Guild isn't "
+                     "paired to the antenna hosting it. Pair via "
+                     "Settings > Antenna, then retry.\n\n"
+                     + self._render_menu())
+        try:
+            result = self._resolve_action_fn("pull_playhead", {})
+        except Exception as e:  # noqa: BLE001
+            return f"🎬 Pull failed: {e}\n\n" + self._render_menu()
+        if not result or result.get("error"):
+            err = (result or {}).get("error", "no response")
+            return f"🎬 Pull failed: {err}\n\n" + self._render_menu()
+        shot_id = result.get("shot_id") or ""
+        return (
+            f"🎬 Pulled playhead frame → shot {shot_id[:8]}.\n"
+            f"The reference image is attached. Run **1. Add a new shot**'s "
+            f"prompt step next, or **5. Queue a shot for rendering** to "
+            f"send it through Wan i2v immediately.\n\n"
+            + self._render_menu())
+
+    def _handle_resolve_import(self, sess: VideoSession) -> str:
+        """Ask the Bridge to import the current shotboard as an EDL
+        timeline in Resolve. Wraps the same /api/video/export/edl
+        endpoint R97's 'Import Guild Timeline' Resolve script uses,
+        triggered from this side via an event."""
+        if not self._resolve_action_fn:
+            return ("🎬 Resolve Bridge is online but this Guild isn't "
+                     "paired. Pair first.\n\n" + self._render_menu())
+        shots = self.board.all()
+        ready = [s for s in shots
+                   if (s.status or "").lower() == "ready"]
+        if not ready:
+            return ("🎬 No ready shots yet — render some first. "
+                     "Once an EDL is populated we can push it to "
+                     "Resolve.\n\n" + self._render_menu())
+        try:
+            result = self._resolve_action_fn("import_edl", {
+                "shot_count": len(ready),
+            })
+        except Exception as e:  # noqa: BLE001
+            return f"🎬 Import failed: {e}\n\n" + self._render_menu()
+        if not result or result.get("error"):
+            err = (result or {}).get("error", "no response")
+            return f"🎬 Import failed: {err}\n\n" + self._render_menu()
+        tl = result.get("timeline_name") or "Spellcaster"
+        return (
+            f"🎬 Sent {len(ready)} shot(s) to Resolve as timeline "
+            f"'{tl}'. Check Resolve's timeline list — the new one "
+            f"should be active.\n\n" + self._render_menu())
 
     # ---- title / prompt capture ------------------------------------
 
@@ -501,8 +674,10 @@ class CinematographerWizard:
     # ------------------------------------------------------------------
 
     def _render_menu(self) -> str:
-        lines = ["**Cinematographer** — what would you like to do?"]
-        for i, (_, label) in enumerate(ACTIONS, 1):
+        actions = self._actions()
+        lines = [self._resolve_banner() +
+                  "**Cinematographer** — what would you like to do?"]
+        for i, (_, label) in enumerate(actions, 1):
             lines.append(f"{i}. {label}")
         return "\n".join(lines)
 
@@ -551,9 +726,10 @@ class CinematographerWizard:
 
     def _render_status(self) -> str:
         shots = self.board.all()
+        banner = self._resolve_banner()
         if not shots:
-            return "Shotboard is empty."
-        lines = [f"**Shotboard** ({len(shots)} shot"
+            return banner + "Shotboard is empty."
+        lines = [banner + f"**Shotboard** ({len(shots)} shot"
                  f"{'s' if len(shots) != 1 else ''})"]
         for s in shots:
             marker = {
