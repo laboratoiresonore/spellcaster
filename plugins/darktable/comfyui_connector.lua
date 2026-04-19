@@ -2070,22 +2070,26 @@ local function wan_video_dims(src_w, src_h, target_long, align)
   return w, h
 end
 
--- R132 — Wan 2.2 tuning synced with the canonical spellcaster_core +
--- GIMP plugin preset dicts (see plugins/gimp WAN_I2V_PRESETS and
--- scaffold/video_workflow_dispatch.py resolve_wan_preset):
---   * clip = umt5_xxl_fp8_e4m3fn_scaled.safetensors — the GGUF UMT5
---     has conditioning-bleed issues on some ComfyUI installs that
---     surface as the prompt text decoding into visible pixels.
---   * With Lightning LoRAs: steps=4, second_step=2, cfg=1, shift=5.0
---     (Lightning is 4-step distilled — running it for 30 steps is
---     pointless overhead and produces the exact same render).
---   * accel_strength=1.0 (canonical Lightning strength).
--- TODO (zero-duplication-rule violation): the build_wan_i2v_json
--- function below is a full duplicate of the canonical
--- spellcaster_core.workflows.build_wan_video. Refactor Darktable to
--- POST shots at the Guild's /api/video/shots endpoint like the
--- Resolve + SillyTavern plugins do, so this dict + function can be
--- deleted outright.
+-- ══════════════════════════════════════════════════════════════════
+--  ⚠ DIVERGENCE FROM CANON — see CLAUDE.md §16 "Canonical Video
+--     Pipelines". The hand-rolled WAN workflow JSON in this file is
+--     THE ONE KNOWN VIOLATION of the zero-duplication rule. When you
+--     touch it:
+--       1. Cross-check every value against CLAUDE.md §16.2 (WAN
+--          formula) — high/low model filenames, VAE pairing by UNET
+--          family, clip = umt5_xxl_fp8_e4m3fn_scaled.safetensors,
+--          lightning steps=4 second_step=2 cfg=1 shift=5.0, accel
+--          strength=1.0.
+--       2. Prefer deleting this table outright. Darktable should
+--          POST shots at the Guild's /api/video/shots endpoint like
+--          the Resolve + SillyTavern plugins — that routes through
+--          `spellcaster_core.video_presets.detect_wan_preset` +
+--          `spellcaster_core.workflows.build_wan_video` so the canon
+--          lands everywhere at once.
+--       3. DO NOT change these values in isolation — if the canon
+--          moves, the Darktable copy bricks on the user's box while
+--          the rest of the app keeps working.
+-- ══════════════════════════════════════════════════════════════════
 local WAN_I2V_MODELS = {
   {
     label = "Wan I2V 14B (GGUF Q4)",
