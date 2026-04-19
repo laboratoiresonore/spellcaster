@@ -3214,6 +3214,9 @@ function VideoPanel() {
   // R45b: clone each selected shot N times. Each copy gets a fresh id,
   // status='draft', empty render_history + snapshots, and a versioned
   // title ("Hero" → "Hero v2", "Hero v3", ...).
+  // R75a: track the fresh-seeds checkbox for the batch duplicate panel
+  const [batchDupeFreshSeeds, setBatchDupeFreshSeeds] = _useState(false);
+
   const batchDuplicate = async () => {
     if (selected.size === 0) return;
     const count = Math.max(1, Math.min(50, parseInt(batchDupeCount) || 1));
@@ -3222,9 +3225,11 @@ function VideoPanel() {
         shot_ids: Array.from(selected),
         count: count,
         title_suffix_mode: "counter",
+        fresh_seeds: batchDupeFreshSeeds,
       });
       addToast(
-        `Duplicated ${selected.size} shot(s) × ${count} = ${res.created} new`,
+        `Duplicated ${selected.size} shot(s) × ${count} = ${res.created} new`
+          + (batchDupeFreshSeeds ? " (with fresh seeds)" : ""),
         res.created > 0 ? "success" : "error"
       );
       setShowBatchDupe(false);
@@ -3731,6 +3736,12 @@ function VideoPanel() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/></svg>
             Dupes
           </button>
+          <a href="/api/video/outline.txt" download
+            className="export-outline flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+            title="Export board as a human-readable outline (for sharing with non-technical team members)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            Outline.txt
+          </a>
           <a href="/api/video/render-history.csv" download
             className="export-csv flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
             title="Download flat CSV of every render attempt across all shots (for analysis / sharing)">
@@ -4399,6 +4410,13 @@ function VideoPanel() {
                 onChange={(e) => setBatchDupeCount(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
                 className="batch-dupe-count bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none w-20"
               />
+            </label>
+            <label className="text-xs text-slate-300 flex items-center gap-1 cursor-pointer"
+                   title="Assign a random seed to each clone — great for exploring prompt variations">
+              <input type="checkbox" checked={batchDupeFreshSeeds}
+                onChange={(e) => setBatchDupeFreshSeeds(e.target.checked)}
+                className="w-3 h-3 accent-cyan-500" />
+              🎲 Fresh seeds per clone
             </label>
             <span className="text-xs text-slate-500">
               Will create {selected.size * batchDupeCount} new shot(s)

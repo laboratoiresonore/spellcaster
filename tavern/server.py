@@ -9193,6 +9193,25 @@ class GuildHandler(SimpleHTTPRequestHandler):
             warnings = _VIDEO_BRIDGE.board.shot_warnings(shot_id)
             return self.end_json(200, {"shot_id": shot_id, "warnings": warnings})
 
+        elif self.path.startswith('/api/video/outline.txt') and self.command == 'GET':
+            # R75b: plaintext outline (shareable with non-technical reviewers)
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                body = _VIDEO_BRIDGE.board.shotboard_to_outline()
+                payload = body.encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/plain; charset=utf-8')
+                self.send_header('Content-Disposition',
+                                 'attachment; filename="shotboard_outline.txt"')
+                self.send_header('Content-Length', str(len(payload)))
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+            except Exception as e:
+                return self.end_json(500, {"error": f"outline export failed: {e}"})
+
         elif self.path.startswith('/api/video/render-history.csv') and self.command == 'GET':
             # R64b: download every render attempt as a flat CSV.
             if not _VIDEO_BRIDGE:
@@ -9585,8 +9604,11 @@ class GuildHandler(SimpleHTTPRequestHandler):
             mode = data.get('title_suffix_mode', 'counter')
             if mode not in ('counter', 'plain'):
                 return self.end_json(400, {"error": "title_suffix_mode must be 'counter' or 'plain'"})
+            # R75a: fresh_seeds opt-in for seed-variation clones
+            fresh_seeds = bool(data.get('fresh_seeds', False))
             result = _VIDEO_BRIDGE.board.batch_duplicate(
-                shot_ids, count=count, title_suffix_mode=mode)
+                shot_ids, count=count, title_suffix_mode=mode,
+                fresh_seeds=fresh_seeds)
             return self.end_json(200, result)
 
         # R50a: Guild self-update + self-restart. Hits the same updater the
