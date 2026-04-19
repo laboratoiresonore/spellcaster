@@ -223,6 +223,23 @@ WANGP_PRESETS: Dict[str, Dict[str, Any]] = {
         "notes": "LTX t2v followed by NVIDIA RTX Video Super-Resolution "
                   "to 1080p. Single-pass 'good-looking' preset.",
     },
+    "ltx2_v2v_flowedit": {
+        "label": "LTX-2.3 Video-to-Video (FlowEdit / VFX)",
+        "family": "ltx",
+        "task": "v2v",
+        "engine": "comfyui",
+        "inputs": ["video", "prompt"],
+        "defaults": {"skip_steps": 4, "refine_steps": 0,
+                     "source_cfg": 2.0, "target_cfg": 4.5,
+                     "steps": 30, "frames": 121, "fps": 24,
+                     "resolution": "768x512"},
+        "vram_min_gb": 14,
+        "notes": "R87: edit the style / content of REAL footage. Set "
+                  "overrides.input_video to a local path on the Guild "
+                  "host. Target prompt describes what you want; source "
+                  "description stays fixed. skip_steps controls intensity "
+                  "— 2 = subtle restyle, 8 = heavy transform.",
+    },
     "seedvr2_video_upscale": {
         "label": "SeedVR2 Video Upscaler (ComfyUI)",
         "family": "seedvr2",
