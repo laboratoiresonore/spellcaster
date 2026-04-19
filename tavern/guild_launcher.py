@@ -1964,34 +1964,6 @@ def main():
     elif not _assets_need_generation():
         print("  [assets] Assets already generated (delete .guild_assets_version to regenerate)")
 
-    # ── Auto-start apps tagged in guild_config.app_control ───────────
-    # The sidebar chips let the user flip an "auto-start on boot" toggle
-    # per app. On Guild startup, walk the persisted matrix and ask each
-    # target (local subprocess or remote antenna) to ensure the service
-    # is running. Failures are logged and ignored — the user can still
-    # start apps manually from the chip toggles.
-    _auto_start_matrix = (config.get("app_control") or {})
-    if _auto_start_matrix:
-        print("  [boot] Auto-starting apps tagged in app_control...")
-        for _app, _entry in _auto_start_matrix.items():
-            if not (isinstance(_entry, dict) and _entry.get("auto_start")):
-                continue
-            if _app not in ("comfyui", "ollama", "kobold",
-                             "kobold_rp", "kobold_tts"):
-                continue  # non-managed apps can't auto-launch
-            try:
-                payload = json.dumps({"app": _app}).encode("utf-8")
-                req = urllib.request.Request(
-                    f"{guild_url}/api/app_control/start",
-                    data=payload,
-                    headers={"Content-Type": "application/json"})
-                with urllib.request.urlopen(req, timeout=60) as resp:
-                    d = json.loads(resp.read().decode("utf-8", "replace"))
-                    print(f"  [boot]   {_app} → {d.get('target')}: "
-                          f"{d.get('state', d.get('error', '?'))}")
-            except Exception as e:
-                print(f"  [boot]   {_app} failed: {e}")
-
     # ── Open browser ─────────────────────────────────────────────────
     if config.get("auto_open_browser", True) and not args.no_browser:
         import webbrowser

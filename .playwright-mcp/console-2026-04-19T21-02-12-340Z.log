@@ -1,0 +1,63 @@
+[     899ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:8002/:0
+[    1739ms] [WARNING] No input elements found for key: api_key_comfy_runpod @ http://127.0.0.1:8002/scripts/secrets.js:570
+[    1744ms] [WARNING] Unsupported language: en-gb @ http://127.0.0.1:8002/scripts/i18n.js:142
+[    2184ms] [LOG] OpenAI model changed to gpt-4-turbo @ http://127.0.0.1:8002/scripts/openai.js:5145
+[    3492ms] [INFO] Using default TTS Provider settings @ http://127.0.0.1:8002/scripts/extensions/tts/system.js:119
+[    3626ms] [LOG] [QR2] sets:  [QuickReplySet] @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[    3628ms] [LOG] [QR2] settings:  QuickReplySettings @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[    3715ms] [LOG] [ToolManager] Registered function tool: ToolDefinition @ http://127.0.0.1:8002/scripts/tool-calling.js:288
+[    3715ms] [LOG] [ToolManager] Registered function tool: ToolDefinition @ http://127.0.0.1:8002/scripts/tool-calling.js:288
+[    3715ms] [LOG] [ToolManager] Registered function tool: ToolDefinition @ http://127.0.0.1:8002/scripts/tool-calling.js:288
+[    3718ms] [LOG] [Spellcaster] Extension loaded. ComfyUI: http://<INTERNAL_HOST>:8188 @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:1490
+[    4015ms] [WARNING] Failed to insert focus rule: SyntaxError: Failed to execute 'insertRule' on 'CSSStyleSheet': Failed to parse the rule '::-webkit-scrollbar-track:focus-visible { background-color: rgba(126, 126, 126, 0.2); }'.
+    at http://127.0.0.1:8002/scripts/dynamic-styles.js:144:34
+    at Array.forEach (<anonymous>)
+    at applyDynamicFocusStyles (http://127.0.0.1:8002/scripts/dynamic-styles.js:117:16)
+    at http://127.0.0.1:8002/scripts/dynamic-styles.js:192:13
+    at Array.forEach (<anonymous>)
+    at initDynamicStyles (http://127.0.0.1:8002/scripts/dynamic-styles.js:190:38)
+    at firstLoadInit (http://127.0.0.1:8002/script.js:751:5)
+    at async HTMLDocument.<anonymous> (http://127.0.0.1:8002/script.js:12473:5) @ http://127.0.0.1:8002/scripts/dynamic-styles.js:145
+[    8769ms] [LOG] [Spellcaster] Auto-casting 8 characters in background... @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:1389
+[   17029ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:8002/api/plugins/spellcaster/studio/body:0
+[   17030ms] [WARNING] [Spellcaster] Auto-body failed for Animancer: ComfyUI execution failed: undefined @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:1421
+[   26906ms] [LOG] [Spellcaster] Auto-cast complete: 8 cast, 6 bodies @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:1430
+[   28209ms] [INFO] Rendered 0 messages in 0.000 seconds. @ http://127.0.0.1:8002/script.js:1526
+[   28278ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[   28278ms] [LOG] [QR2] CHAT_CHANGED Assistant - 2026-04-10@17h07m34s928ms @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[   28477ms] [INFO] Rendered 0 messages in 0.000 seconds. @ http://127.0.0.1:8002/script.js:1526
+[   28504ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[   28504ms] [LOG] [QR2] CHAT_CHANGED Assistant - 2026-04-19@14h02m40s691ms @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[   28655ms] [LOG] Opened permanent assistant chat for Assistant. Assistant - 2026-04-19@14h02m40s691ms @ http://127.0.0.1:8002/scripts/welcome-screen.js:730
+[   28660ms] [LOG] Generate entered @ http://127.0.0.1:8002/script.js:4207
+[   28660ms] [LOG] [QR2] calling {functionToCall: , args: Array(3)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[   28675ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[   28786ms] [LOG] Core/all messages: 1/1 @ http://127.0.0.1:8002/script.js:4516
+[   28790ms] [LOG] skipWIAN not active, adding WIAN @ http://127.0.0.1:8002/script.js:4575
+[   38775ms] [LOG] [QR2] calling {functionToCall: , args: Array(2)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[   38780ms] [LOG] [Spellcaster] Scaffold: interval → "You gaze in awe at the magnificent sight of the ca..." @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:398
+[   79535ms] [INFO] Rendered 1 messages in 0.019 seconds. @ http://127.0.0.1:8002/script.js:1526
+[   79592ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[   79592ms] [LOG] [QR2] CHAT_CHANGED Sceneshifter - 2026-04-19@14h02m16s475ms @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[   79661ms] [LOG] [QR2] calling {functionToCall: , args: Array(0)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[   79662ms] [LOG] [QR2] calling {functionToCall: , args: Array(2)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[   79670ms] [LOG] [Spellcaster] Scaffold: Moved to: a forest, Character entered: someone walks in → ". I paint the world you speak into being.
+
+Right n..." @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:398
+[   99481ms] [INFO] Rendered 1 messages in 0.017 seconds. @ http://127.0.0.1:8002/script.js:1526
+[   99502ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[   99502ms] [LOG] [QR2] CHAT_CHANGED 2026-04-19@14h03m51s641ms @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  114861ms] [INFO] Rendered 2 messages in 0.016 seconds. @ http://127.0.0.1:8002/script.js:1526
+[  114916ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  114916ms] [LOG] [QR2] CHAT_CHANGED Assistant - 2026-04-19@14h02m40s691ms @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  121470ms] [INFO] Rendered 1 messages in 0.017 seconds. @ http://127.0.0.1:8002/script.js:1526
+[  121501ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  121501ms] [LOG] [QR2] CHAT_CHANGED 2026-04-19@14h03m51s641ms @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  152507ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:8002/api/plugins/spellcaster/studio/scene:0
+[  152508ms] [ERROR] [Spellcaster] Auto-background failed: Error: ComfyUI rejected workflow: {"error":{"type":"prompt_outputs_failed_validation","message":"Prompt outputs failed validation","details":"","extra_info":{}},"node_errors":{"64":{"errors":[{"type":"value_bigger_than_max","message":"Value 125 bigger than max of 100","details":"position_x","extra_info":{"input_name":"position_x","input_config":["INT",{"default":50,"min":0,"max":100,"step":1}],"received_value":125}}],"dependent_outputs":["9"],"class_type":"AILab_ImageCombiner"},"65":{"errors":[{"type":"value_bigger_than_max","message":"Value 150 bigger than max of 100","details":"position_x","extra_info":{"input_name":"position_x","input_config":["INT",{"default":50,"min":0,"max":100,"step":1}],"received_value":150}}],"dependent_outputs":["9"],"class_type":"AILab_ImageCombiner"},"66":{"errors":[{"type":"value_bigger_than_max","message":"Value 175 bigger than max of 100","details":"position_x","extra_info":{"input_name":"position_x","input_config":["INT",{"default":50,"min":0,"max":100,"step":1}],"received_value":175}}],"dependent_outputs":["9"],"class_type":"AILab_ImageCombiner"},"67":{"errors":[{"type":"value_bigger_than_max","message":"Value 200 bigger than max of 100","details":"position_x","extra_info":{"input_name":"position_x","input_config":["INT",{"default":50,"min":0,"max":100,"step":1}],"received_value":200}}],"dependent_outputs":["9"],"class_type":"AILab_ImageCombiner"}}}
+    at spellcasterAPI (http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:74:15)
+    at async onCharacterMessageRendered (http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:423:22) @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:449
+[  158013ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:8002/api/plugins/spellcaster/studio/scene:0
+[  158013ms] [ERROR] [Spellcaster] Auto-background failed: Error: ComfyUI rejected workflow: {"error":{"type":"prompt_outputs_failed_validation","message":"Prompt outputs failed validation","details":"","extra_info":{}},"node_errors":{"64":{"errors":[{"type":"value_bigger_than_max","message":"Value 125 bigger than max of 100","details":"position_x","extra_info":{"input_name":"position_x","input_config":["INT",{"default":50,"min":0,"max":100,"step":1}],"received_value":125}}],"dependent_outputs":["9"],"class_type":"AILab_ImageCombiner"},"65":{"errors":[{"type":"value_bigger_than_max","message":"Value 150 bigger than max of 100","details":"position_x","extra_info":{"input_name":"position_x","input_config":["INT",{"default":50,"min":0,"max":100,"step":1}],"received_value":150}}],"dependent_outputs":["9"],"class_type":"AILab_ImageCombiner"},"66":{"errors":[{"type":"value_bigger_than_max","message":"Value 175 bigger than max of 100","details":"position_x","extra_info":{"input_name":"position_x","input_config":["INT",{"default":50,"min":0,"max":100,"step":1}],"received_value":175}}],"dependent_outputs":["9"],"class_type":"AILab_ImageCombiner"},"67":{"errors":[{"type":"value_bigger_than_max","message":"Value 200 bigger than max of 100","details":"position_x","extra_info":{"input_name":"position_x","input_config":["INT",{"default":50,"min":0,"max":100,"step":1}],"received_value":200}}],"dependent_outputs":["9"],"class_type":"AILab_ImageCombiner"}}}
+    at spellcasterAPI (http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:74:15)
+    at async onCharacterMessageRendered (http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:423:22) @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:449

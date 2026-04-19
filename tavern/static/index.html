@@ -151,12 +151,12 @@
                 <button id="animate-all-btn" onclick="onAnimateAllClick()" title="Checking for video models..." disabled>✨ Animate All Avatars</button>
                 <a href="/static/guild.html" id="scaffold-link" title="Open The Travelling Wizard — scaffolds, workflows, configuration &amp; more">🧙 Travelling Wizard</a>
                 <button id="settings-btn">⚙️ Settings</button>
-                <!-- Graceful exit: calls /api/guild/exit which stops every
-                     app tagged with auto_start, then terminates the
-                     Guild process. Keyboard users can still Ctrl+C the
-                     console; this button is for the click-only path. -->
+                <!-- Graceful exit: calls /api/guild/exit which closes
+                     the Guild. Connected apps (ComfyUI/Ollama/Kobold)
+                     keep running; the user launches them on purpose and
+                     a Guild quit shouldn't tear them down. -->
                 <button id="guild-exit-btn" type="button"
-                        title="Stop auto-started apps and close the Wizard Guild">
+                        title="Close the Wizard Guild (connected apps keep running)">
                     ⏻ Exit
                 </button>
             </div>

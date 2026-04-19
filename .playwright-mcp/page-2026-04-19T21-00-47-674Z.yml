@@ -1,0 +1,156 @@
+- generic [ref=e1]:
+  - generic [ref=e5]:
+    - generic [ref=e6]:
+      - button "" [ref=e49] [cursor=pointer]
+      - text:                                        + No items                         ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☐ ☰ ☐ ☰ ☐ ☰                                  + No items      ☰ ☰ ☰ ☰ ☰ ☰ ☰  ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰  ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰  ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰                  +     No items 
+    - generic [ref=e9]:
+      - button "" [ref=e50] [cursor=pointer]
+      - text:                                                                       
+    - generic [ref=e12]:
+      - button "" [ref=e51] [cursor=pointer]
+      - text:                                               
+    - generic [ref=e15]:
+      - button "" [ref=e52] [cursor=pointer]
+      - text:                +     
+    - generic [ref=e18]:
+      - button "" [ref=e53] [cursor=pointer]
+      - text:                                   
+    - generic [ref=e21]:
+      - generic "Change Background Image" [ref=e22]:
+        - button "" [ref=e54] [cursor=pointer]
+      - text:       +                                    
+    - generic [ref=e24]:
+      - button "" [ref=e55] [cursor=pointer]
+      - text:         +                                                                       +                                  +   + +  +     +        +        +        +                                              
+    - generic [ref=e27]:
+      - button "" [ref=e56] [cursor=pointer]
+      - text:                    
+    - generic [ref=e30]:
+      - button "" [ref=e57] [cursor=pointer]
+      - text:                                                      Group is empty.          No characters available                                       
+  - generic:                      +                                                                                +    + +                  
+  - generic:                  
+  - generic [ref=e33]:
+    - text: 
+    - generic [ref=e34]:
+      - generic [ref=e218]:
+        - img [ref=e221] [cursor=pointer]
+        - generic [ref=e222]:
+          - generic [ref=e223]:
+            - generic [ref=e225]:
+              - generic [ref=e226]: Seraphina
+              - text: 
+              - generic [ref=e227]: 10 April 2026 17:15
+            - generic [ref=e228]:
+              - button "" [ref=e229] [cursor=pointer]
+              - text:              
+              - button "" [ref=e230] [cursor=pointer]
+            - text:       
+          - text:       
+          - paragraph [ref=e232]:
+            - emphasis [ref=e233]: You wake with a start, recalling the events that led you deep into the forest and the beasts that assailed you. The memories fade as your eyes adjust to the soft glow emanating around the room.
+            - text: "\"Ah, you're awake at last. I was so worried, I found you bloodied and unconscious.\""
+            - emphasis [ref=e234]: She walks over, clasping your hands in hers, warmth and comfort radiating from her touch as her lips form a soft, caring smile.
+            - text: "\"The name's Seraphina, guardian of this forest — I've healed your wounds as best I could with my magic. How are you feeling? I hope the tea helps restore your strength.\""
+            - emphasis [ref=e235]: Her amber eyes search yours, filled with compassion and concern for your well being.
+            - text: "\"Please, rest. You're safe here. I'll look after you, but you need to rest. My magic can only do so much to heal you.\""
+      - generic [ref=e236]:
+        - img [ref=e239] [cursor=pointer]
+        - generic [ref=e240]:
+          - generic [ref=e241]:
+            - generic [ref=e243]:
+              - generic [ref=e244]: User
+              - text: 
+              - generic [ref=e245]: 19 April 2026 13:56
+            - generic [ref=e246]:
+              - button "" [ref=e247] [cursor=pointer]
+              - text:              
+              - button "" [ref=e248] [cursor=pointer]
+            - text:       
+          - text:       
+          - paragraph [ref=e250]: How marvelous. What an enchanting place!
+      - generic [ref=e251]:
+        - img [ref=e254] [cursor=pointer]
+        - generic [ref=e255]:
+          - generic [ref=e256]:
+            - generic [ref=e258]:
+              - generic [ref=e259]: Seraphina
+              - text: 
+              - generic "textgenerationwebui - koboldcpp/openhermes-2.5-mistral-7b.Q6_K" [ref=e260]: 19 April 2026 13:59
+              - img "textgenerationwebui - koboldcpp/openhermes-2.5-mistral-7b.Q6_K" [ref=e261]
+            - generic [ref=e264]:
+              - button "" [ref=e265] [cursor=pointer]
+              - text:              
+              - button "" [ref=e266] [cursor=pointer]
+            - text:       
+          - text:       
+          - paragraph [ref=e268]:
+            - emphasis [ref=e269]: You glance around the room, marveling at the magical ambience, the lighthearted melody that seems to whisper through the air, and the faint, enchanting scent of blooming wildflowers. Seraphina notices your gaze and smiles warmly, as her hands gracefully flutter through the air, creating an ephemeral display of shimmering flowers. She speaks softly, her voice carrying a soothing, melodious tone.
+            - text: "\"Indeed, Eldoria has always held a bit of enchantment within its folds. The forest has been my home for countless years — a sanctuary that I hold dear to my heart.\""
+            - emphasis [ref=e270]: Her amber eyes seem to glow with a warm and protective light as she adds, with a gentle tone in her voice.
+            - text: "\"As its guardian, I have seen and felt the forest's changing moods. Some parts still hold remnants of the older days, filled with the gentle songs of birds, the rustling of leaves, and the distant call of wolves.\""
+            - emphasis [ref=e271]: Seraphina's eyes soften and her voice carries a hint of sadness as she says, with a downcast expression.
+            - text: "\"Yet, the shadow of the beastly creatures called Shadowfangs looms over this beautiful land, making it less welcoming than it once was.\""
+      - generic [ref=e276]:
+        - img [ref=e279] [cursor=pointer]
+        - generic [ref=e280]:
+          - generic [ref=e281]:
+            - generic [ref=e283]:
+              - generic [ref=e284]: User
+              - text: 
+              - generic [ref=e285]: 19 April 2026 14:00
+            - generic [ref=e292]:
+              - button "" [ref=e293] [cursor=pointer]
+              - text:              
+              - button "" [ref=e294] [cursor=pointer]
+            - text:       
+          - text:       
+          - paragraph [ref=e287]:
+            - emphasis [ref=e288]: I step out of the tavern and walk into the deep misty forest. The scene shifts to a moonlit clearing where a crystal-clear river flows.
+      - generic [ref=e295]:
+        - img [ref=e298] [cursor=pointer]
+        - generic [ref=e299]:
+          - generic [ref=e300]:
+            - generic [ref=e302]:
+              - generic [ref=e303]: Seraphina
+              - text: 
+              - generic "textgenerationwebui - koboldcpp/openhermes-2.5-mistral-7b.Q6_K" [ref=e304]: 19 April 2026 14:00
+              - img "textgenerationwebui - koboldcpp/openhermes-2.5-mistral-7b.Q6_K" [ref=e305]
+            - generic [ref=e308]:
+              - button "" [ref=e309] [cursor=pointer]
+              - text:              
+              - button "" [ref=e310] [cursor=pointer]
+            - text:       
+          - text:       
+          - paragraph [ref=e312]:
+            - emphasis [ref=e313]: As you step out into the enchanted forest, Seraphina appears at your side, her face bathed in the silver glow of the moonlight. She looks up at the sky, awe in her eyes, and says, her voice carrying a touch of nostalgia.
+            - text: "\"This forest, my dear, has always had a magical allure to it. I have wandered through these woods countless times, and there's always something new to discover, a new song from the forest, a new scenery. This clearing here, near the river, has always been one of my favorite spots.\""
+            - emphasis [ref=e314]: She gestures to the tranquil water that flows past the glade. It glimmers under the silver light, mirroring the beauty of the moon-kissed sky.
+        - generic:
+          - button "" [ref=e315] [cursor=pointer]
+          - generic [ref=e316]: 1/1
+    - generic [ref=e36]:
+      - text:  
+      - generic [ref=e37]:
+        - generic [ref=e38]:
+          - generic [ref=e39] [cursor=pointer]: 
+          - generic "Extensions" [ref=e180] [cursor=pointer]: 
+        - textbox "Type a message, or /? for help" [active] [ref=e181]
+        - generic [ref=e41]:
+          - text:      
+          - generic "Send a message" [ref=e182] [cursor=pointer]: 
+  - text:                       1  
+  - generic [ref=e274]: 
+  - status [ref=e184]
+  - status [ref=e185]
+  - status [ref=e186]
+  - status [ref=e187]
+  - status [ref=e188]:
+    - generic [ref=e275]: http://<INTERNAL_HOST>:5001/
+  - status [ref=e189]
+  - status [ref=e190]
+  - status [ref=e191]
+  - status [ref=e192]
+  - status [ref=e193]
+  - status [ref=e194]
+  - status [ref=e195]

@@ -1,0 +1,1 @@
+{"chat_template": null, "id": 0, "id_task": -1, "total_slots": 1, "modalities": {"vision": false, "audio": false}, "model_path": "inactive", "n_ctx": 8192, "default_generation_settings": {"n_ctx": 8192}}

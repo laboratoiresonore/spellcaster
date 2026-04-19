@@ -35,3 +35,59 @@
 [  370578ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:8002/api/plugins/spellcaster/studio/cast:0
 [  370579ms] [WARNING] [Spellcaster] Auto-cast failed for Erasure: Timeout waiting for ComfyUI @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:1425
 [  429653ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:8002/api/plugins/spellcaster/portrait:0
+[  431144ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:8002/api/plugins/spellcaster/studio/cast:0
+[  431145ms] [WARNING] [Spellcaster] Auto-cast failed for Imaginus: Timeout waiting for ComfyUI @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:1425
+[  491838ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:8002/api/plugins/spellcaster/studio/cast:0
+[  491839ms] [WARNING] [Spellcaster] Auto-cast failed for Masquerade: Timeout waiting for ComfyUI @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:1425
+[  578788ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://127.0.0.1:8002/api/plugins/spellcaster/cross/inbox:0
+[  662425ms] [LOG] Set background to spellcaster_scene_1776632147280.png @ http://127.0.0.1:8002/scripts/slash-commands.js:6322
+[  679727ms] [INFO] Rendered 1 messages in 0.030 seconds. @ http://127.0.0.1:8002/script.js:1526
+[  679845ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  679845ms] [LOG] [QR2] CHAT_CHANGED Seraphina - 2023-5-12 @21h 32m 29s 224ms @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  679875ms] [LOG] [QR2] calling {functionToCall: , args: Array(2)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  687856ms] [LOG] Generate entered @ http://127.0.0.1:8002/script.js:4207
+[  687871ms] [LOG] [QR2] calling {functionToCall: , args: Array(3)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  687891ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  688028ms] [LOG] 8192 350 @ http://127.0.0.1:8002/scripts/horde.js:147
+[  723400ms] [LOG] [Spellcaster] Auto-cast complete: 7 cast, 7 bodies @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:1430
+[  752477ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:8002/api/backends/text-completions/status:0
+[  752478ms] [ERROR] Error getting status SyntaxError: Unexpected token 'I', "Internal S"... is not valid JSON @ http://127.0.0.1:8002/scripts/textgen-settings.js:803
+[  856453ms] [LOG] Generate entered @ http://127.0.0.1:8002/script.js:4207
+[  856466ms] [LOG] [QR2] calling {functionToCall: , args: Array(3)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  856488ms] [LOG] Core/all messages: 2/2 @ http://127.0.0.1:8002/script.js:4516
+[  856594ms] [LOG] [WI] Adding 4 entries to prompt [Object, Object, Object, Object] @ http://127.0.0.1:8002/scripts/world-info.js:5140
+[  856595ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  856595ms] [LOG] skipWIAN not active, adding WIAN @ http://127.0.0.1:8002/script.js:4575
+[  891030ms] [LOG] [QR2] calling {functionToCall: , args: Array(2)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  919450ms] TypeError: Failed to execute 'observe' on 'MutationObserver': parameter 1 is not of type 'Node'.
+    at AutoComplete.getCursorPosition (http://127.0.0.1:8002/scripts/autocomplete/AutoComplete.js:669:16)
+    at AutoComplete.updateFloatingPosition (http://127.0.0.1:8002/scripts/autocomplete/AutoComplete.js:574:31)
+    at AutoComplete.updatePosition (http://127.0.0.1:8002/scripts/autocomplete/AutoComplete.js:518:18)
+    at http://127.0.0.1:8002/scripts/utils.js:578:41
+[  922685ms] [LOG] Generate entered @ http://127.0.0.1:8002/script.js:4207
+[  922718ms] [LOG] [QR2] calling {functionToCall: , args: Array(3)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  923221ms] TypeError: Cannot read properties of null (reading 'getBoundingClientRect')
+    at AutoComplete.updateFloatingPosition (http://127.0.0.1:8002/scripts/autocomplete/AutoComplete.js:576:42)
+    at AutoComplete.updatePosition (http://127.0.0.1:8002/scripts/autocomplete/AutoComplete.js:518:18)
+    at http://127.0.0.1:8002/scripts/utils.js:578:41
+[  923251ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  923377ms] [LOG] Core/all messages: 4/4 @ http://127.0.0.1:8002/script.js:4516
+[  923446ms] [LOG] [WI] Adding 4 entries to prompt [Object, Object, Object, Object] @ http://127.0.0.1:8002/scripts/world-info.js:5140
+[  923446ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  923447ms] [LOG] skipWIAN not active, adding WIAN @ http://127.0.0.1:8002/script.js:4575
+[  947928ms] [LOG] [QR2] calling {functionToCall: , args: Array(2)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[ 1007650ms] [INFO] Rendered 1 messages in 0.016 seconds. @ http://127.0.0.1:8002/script.js:1526
+[ 1007748ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[ 1007749ms] [LOG] [QR2] CHAT_CHANGED Autonoma - 2026-04-19@13h44m47s747ms @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[ 1007852ms] [LOG] [QR2] calling {functionToCall: , args: Array(0)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[ 1007852ms] [LOG] [QR2] calling {functionToCall: , args: Array(2)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[ 1021585ms] [INFO] Rendered 1 messages in 0.015 seconds. @ http://127.0.0.1:8002/script.js:1526
+[ 1021673ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[ 1021673ms] [LOG] [QR2] CHAT_CHANGED Imaginus - 2026-04-19@13h44m47s749ms @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[ 1021753ms] [LOG] [QR2] calling {functionToCall: , args: Array(0)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[ 1021754ms] [LOG] [QR2] calling {functionToCall: , args: Array(2)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[ 1033856ms] [INFO] Rendered 1 messages in 0.018 seconds. @ http://127.0.0.1:8002/script.js:1526
+[ 1033961ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[ 1033961ms] [LOG] [QR2] CHAT_CHANGED Sceneshifter - 2026-04-19@13h44m47s751ms @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[ 1034035ms] [LOG] [QR2] calling {functionToCall: , args: Array(0)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[ 1034035ms] [LOG] [QR2] calling {functionToCall: , args: Array(2)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18

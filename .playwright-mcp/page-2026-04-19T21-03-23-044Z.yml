@@ -1,0 +1,95 @@
+- generic [ref=e1]:
+  - generic [ref=e5]:
+    - generic [ref=e6]:
+      - button "" [ref=e49] [cursor=pointer]
+      - text:                                        + No items                         ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☐ ☰ ☐ ☰ ☐ ☰                                  + No items      ☰ ☰ ☰ ☰ ☰ ☰ ☰  ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰  ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰  ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰                  +     No items 
+    - generic [ref=e9]:
+      - button "" [ref=e50] [cursor=pointer]
+      - text:                                                                       
+    - generic [ref=e12]:
+      - button "" [ref=e51] [cursor=pointer]
+      - text:                                               
+    - generic [ref=e15]:
+      - button "" [ref=e52] [cursor=pointer]
+      - text:                +     
+    - generic [ref=e18]:
+      - button "" [ref=e53] [cursor=pointer]
+      - text:                                   
+    - generic [ref=e21]:
+      - generic "Change Background Image" [ref=e22]:
+        - button "" [ref=e54] [cursor=pointer]
+      - text:       +                                     
+    - generic [ref=e24]:
+      - button "" [ref=e55] [cursor=pointer]
+      - text:         +                                                                       +                                  +   + +  +     +        +        +        +                                              
+    - generic [ref=e27]:
+      - button "" [ref=e56] [cursor=pointer]
+      - text:                    
+    - generic [ref=e30]:
+      - button "" [ref=e57] [cursor=pointer]
+      - text:                                                     Group is empty.          No characters available                                       
+  - generic:                      +                                                                                +    + +                  
+  - generic:                  
+  - generic [ref=e33]:
+    - text: 
+    - generic [ref=e34]:
+      - generic [ref=e196]:
+        - img [ref=e199] [cursor=pointer]
+        - generic [ref=e200]:
+          - generic [ref=e201]:
+            - generic [ref=e203]:
+              - generic [ref=e204]: User
+              - text: 
+              - generic [ref=e205]: 19 April 2026 14:02
+            - generic [ref=e212]:
+              - button "" [ref=e213] [cursor=pointer]
+              - text:              
+              - button "" [ref=e214] [cursor=pointer]
+            - text:       
+          - text:       
+          - paragraph [ref=e207]:
+            - emphasis [ref=e208]: I walk into the crystal cave, lit by glowing mushrooms. The scene shifts to a vast underground cavern of shimmering amethysts.
+      - generic [ref=e215]:
+        - img [ref=e218] [cursor=pointer]
+        - generic [ref=e219]:
+          - generic [ref=e220]:
+            - generic [ref=e222]:
+              - generic [ref=e223]: Assistant
+              - text: 
+              - generic "textgenerationwebui - koboldcpp/openhermes-2.5-mistral-7b.Q6_K" [ref=e224]: 19 April 2026 14:02
+              - img "textgenerationwebui - koboldcpp/openhermes-2.5-mistral-7b.Q6_K" [ref=e225]
+            - generic [ref=e228]:
+              - button "" [ref=e229] [cursor=pointer]
+              - text:              
+              - button "" [ref=e230] [cursor=pointer]
+            - text:       
+          - text:       
+          - paragraph [ref=e232]:
+            - emphasis [ref=e233]: You gaze in awe at the magnificent sight of the cavern. Its walls glisten with a multitude of gemstones. The sound of dripping water echoes through the vast chamber. A cool breeze brushes past your face, carrying with it the scent of damp earth and crystal. As you make your way deeper into the cavern, you notice a path ahead of you, leading to an area of even more concentrated gemstones.
+        - generic:
+          - button "" [ref=e234] [cursor=pointer]
+          - generic [ref=e235]: 1/1
+    - generic [ref=e36]:
+      - text:  
+      - generic [ref=e37]:
+        - generic [ref=e38]:
+          - generic [ref=e39] [cursor=pointer]: 
+          - generic "Extensions" [ref=e180] [cursor=pointer]: 
+        - textbox "Type a message, or /? for help" [active] [ref=e181]
+        - generic [ref=e41]:
+          - text:      
+          - generic "Send a message" [ref=e182] [cursor=pointer]: 
+  - text:                       1  
+  - generic [ref=e183]: 
+  - status [ref=e184]
+  - status [ref=e185]
+  - status [ref=e186]
+  - status [ref=e187]
+  - status [ref=e188]
+  - status [ref=e189]
+  - status [ref=e190]
+  - status [ref=e191]
+  - status [ref=e192]
+  - status [ref=e193]
+  - status [ref=e194]
+  - status [ref=e195]

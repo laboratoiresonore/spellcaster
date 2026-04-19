@@ -1440,16 +1440,19 @@ async function autoCastOnStartup() {
 (function() {
     const context = getContext();
     const eventSource = context.eventSource;
+    const eventTypes = context.eventTypes || context.event_types || {};
+    const EV_CHAR_MSG = eventTypes.CHARACTER_MESSAGE_RENDERED || 'character_message_rendered';
+    const EV_SETTINGS = eventTypes.SETTINGS_LOADED || 'settings_loaded';
 
     // Register event handlers
     if (eventSource) {
         // Auto-background on character message
-        eventSource.on('CHARACTER_MESSAGE_RENDERED', (messageIndex) => {
+        eventSource.on(EV_CHAR_MSG, (messageIndex) => {
             onCharacterMessageRendered(messageIndex);
         });
 
         // Expression generation on character message
-        eventSource.on('CHARACTER_MESSAGE_RENDERED', (messageIndex) => {
+        eventSource.on(EV_CHAR_MSG, (messageIndex) => {
             const settings = getSettings();
             if (!settings.enabled || !settings.auto_expressions) return;
             const msg = context.chat[messageIndex];
@@ -1461,7 +1464,7 @@ async function autoCastOnStartup() {
         });
 
         // Configure server plugin when settings load
-        eventSource.on('SETTINGS_LOADED', () => {
+        eventSource.on(EV_SETTINGS, () => {
             const settings = getSettings();
             spellcasterAPI('/settings', {
                 comfyui_url: settings.comfyui_url,

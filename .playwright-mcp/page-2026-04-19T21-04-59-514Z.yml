@@ -1,0 +1,107 @@
+- generic [ref=e1]:
+  - generic [ref=e5]:
+    - generic [ref=e6]:
+      - button "" [ref=e49] [cursor=pointer]
+      - text:                                        + No items                         ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☐ ☰ ☐ ☰ ☐ ☰                                  + No items      ☰ ☰ ☰ ☰ ☰ ☰ ☰  ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰  ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰  ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰                  +     No items 
+    - generic [ref=e9]:
+      - button "" [ref=e50] [cursor=pointer]
+      - text:                                                                       
+    - generic [ref=e12]:
+      - button "" [ref=e51] [cursor=pointer]
+      - text:                                               
+    - generic [ref=e15]:
+      - button "" [ref=e52] [cursor=pointer]
+      - text:                +     
+    - generic [ref=e18]:
+      - button "" [ref=e53] [cursor=pointer]
+      - text:                                   
+    - generic [ref=e21]:
+      - generic "Change Background Image" [ref=e22]:
+        - button "" [ref=e54] [cursor=pointer]
+      - text:       +                                     
+    - generic [ref=e24]:
+      - button "" [ref=e55] [cursor=pointer]
+      - text:         +                                                                       +                                  +   + +  +     +        +        +        +                                              
+    - generic [ref=e27]:
+      - button "" [ref=e56] [cursor=pointer]
+      - text:                    
+    - generic [ref=e30]:
+      - button "" [active] [ref=e57] [cursor=pointer]
+      - text:                                                              +        +        +                  +        +        +        +        +                                        
+  - generic:                      +                                                                                +    + +                  
+  - generic:                  
+  - generic [ref=e33]:
+    - text: 
+    - generic [ref=e617]:
+      - img [ref=e620] [cursor=pointer]
+      - button "" [ref=e621] [cursor=pointer]
+      - generic [ref=e622]:
+        - generic [ref=e623]:
+          - generic [ref=e625]:
+            - generic [ref=e626]: Sceneshifter
+            - text: 
+            - generic [ref=e627]: 19 April 2026 14:03
+          - generic [ref=e628]:
+            - button "" [ref=e629] [cursor=pointer]
+            - text:              
+            - button "" [ref=e630] [cursor=pointer]
+          - text:       
+        - text:       
+        - generic [ref=e631]:
+          - paragraph [ref=e632]:
+            - emphasis [ref=e633]: The walls of the tavern shimmer and become transparent, revealing an infinite canvas beyond
+          - paragraph [ref=e634]:
+            - text: I am
+            - strong [ref=e635]: Sceneshifter
+            - text: . I paint the world you speak into being.
+          - paragraph [ref=e636]: Right now I'm listening to your story. When the scene changes — when someone walks into a forest, enters a throne room, or stands on a cliff at sunset — I'll paint it. The background will shift to match your narrative.
+          - paragraph [ref=e637]:
+            - strong [ref=e638]: "How I work:"
+          - list [ref=e639]:
+            - listitem [ref=e640]:
+              - text: I watch your roleplay for scene descriptions (in
+              - emphasis [ref=e641]: asterisks
+              - text: ", (parentheses), or setting keywords)"
+            - listitem [ref=e642]: Every few messages, if the scene has changed, I generate a new background
+            - listitem [ref=e643]:
+              - text: "You can also command me directly:"
+              - code [ref=e644]: /scene moonlit beach with crashing waves
+          - paragraph [ref=e645]:
+            - strong [ref=e646]: "Settings you can adjust:"
+          - list [ref=e647]:
+            - listitem [ref=e648]:
+              - text: "Auto-background on/off:"
+              - code [ref=e649]: /spellcaster auto-bg on
+            - listitem [ref=e650]: "How often I paint: every 2, 3, or 5 messages (configurable in settings)"
+            - listitem [ref=e651]: "Image size: 1280x720 default (widescreen for backgrounds)"
+          - paragraph [ref=e652]: The canvas is ready. Begin your story, and I'll paint the world around you.
+      - generic:
+        - button "" [ref=e653] [cursor=pointer]
+        - generic [ref=e654]: 1/1
+    - generic [ref=e36]:
+      - text:  
+      - generic [ref=e37]:
+        - generic [ref=e38]:
+          - generic [ref=e39] [cursor=pointer]: 
+          - generic "Extensions" [ref=e180] [cursor=pointer]: 
+        - textbox "Type a message, or /? for help" [ref=e181]
+        - generic [ref=e41]:
+          - text:      
+          - generic "Send a message" [ref=e182] [cursor=pointer]: 
+  - text:                       1  
+  - generic [ref=e183]: 
+  - status [ref=e184]
+  - status [ref=e185]
+  - status [ref=e186]
+  - status [ref=e187]
+  - status [ref=e188]
+  - status [ref=e189]
+  - status [ref=e190]
+  - status [ref=e191]
+  - status [ref=e192]
+  - status [ref=e193]
+  - status [ref=e194]
+  - status [ref=e195]
+  - status "Tap to close" [ref=e655]:
+    - generic [ref=e656]: Spellcaster
+    - generic [ref=e657]: "Background generation failed: ComfyUI rejected workflow: {\"error\":{\"type\":\"prompt_outputs_failed_validation\",\"message\":\"Prompt outputs failed validation\",\"details\":\"\",\"extra_info\":{}},\"node_errors\":{\"64\":{\"errors\":[{\"type\":\"value_bigger_than_max\",\"message\":\"Value 125 bigger than max of 100\",\"details\":\"position_x\",\"extra_info\":{\"input_name\":\"position_x\",\"input_config\":[\"INT\",{\"default\":50,\"min\":0,\"max\":100,\"step\":1}],\"received_value\":125}}],\"dependent_outputs\":[\"9\"],\"class_type\":\"AILab_ImageCombiner\"},\"65\":{\"errors\":[{\"type\":\"value_bigger_than_max\",\"message\":\"Value 150 bigger than max of 100\",\"details\":\"position_x\",\"extra_info\":{\"input_name\":\"position_x\",\"input_config\":[\"INT\",{\"default\":50,\"min\":0,\"max\":100,\"step\":1}],\"received_value\":150}}],\"dependent_outputs\":[\"9\"],\"class_type\":\"AILab_ImageCombiner\"},\"66\":{\"errors\":[{\"type\":\"value_bigger_than_max\",\"message\":\"Value 175 bigger than max of 100\",\"details\":\"position_x\",\"extra_info\":{\"input_name\":\"position_x\",\"input_config\":[\"INT\",{\"default\":50,\"min\":0,\"max\":100,\"step\":1}],\"received_value\":175}}],\"dependent_outputs\":[\"9\"],\"class_type\":\"AILab_ImageCombiner\"},\"67\":{\"errors\":[{\"type\":\"value_bigger_than_max\",\"message\":\"Value 200 bigger than max of 100\",\"details\":\"position_x\",\"extra_info\":{\"input_name\":\"position_x\",\"input_config\":[\"INT\",{\"default\":50,\"min\":0,\"max\":100,\"step\":1}],\"received_value\":200}}],\"dependent_outputs\":[\"9\"],\"class_type\":\"AILab_ImageCombiner\"}}}"
