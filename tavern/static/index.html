@@ -66,11 +66,23 @@
                     <span id="bridge-dot" class="dot red"></span> <span id="bridge-status">Signal Bridge: Disconnected</span>
                 </div>
                 <!-- Active interfaces: dynamically populated from /api/interfaces.
-                     Only interfaces that are installed + enabled + online appear.
-                     Empty = hidden entirely (no dead chips). -->
+                     Any interface that is enabled AND (installed OR online
+                     OR heartbeated in the last 5 min) is shown, so users
+                     see which apps the Guild has paired with. State is
+                     colour-coded (online / stale / idle) and hovering a
+                     chip reveals machine + capabilities. -->
                 <div id="active-interfaces-container" style="display:none;">
                     <div id="active-interfaces-label" class="active-interfaces-label">Connected apps</div>
                     <div id="active-interfaces-row" class="active-interfaces-row"></div>
+                </div>
+                <!-- Antennas: one chip per remote machine running an antenna
+                     agent. Each chip shows hostname + service count +
+                     detailed per-service status (ComfyUI VRAM, Kobold /
+                     Ollama / GIMP / Darktable / Resolve reachability)
+                     on hover. -->
+                <div id="connected-antennas-container" style="display:none;">
+                    <div id="connected-antennas-label" class="active-interfaces-label">Antennas</div>
+                    <div id="connected-antennas-row" class="active-interfaces-row"></div>
                 </div>
                 <!-- Recent assets across every interface: live cross-app
                      gallery. Clicking a thumbnail "uses" it (drops into
