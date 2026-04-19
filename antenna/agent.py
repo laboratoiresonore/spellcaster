@@ -317,6 +317,18 @@ def _build_routes(cfg: dict[str, Any]) -> dict[tuple[str, str], Callable]:
             print(f"[antenna] darktable_plugin endpoint failed to import: {e}",
                   file=sys.stderr)
 
+    # R116: SillyTavern deploy. Gated on the sillytavern service so
+    # hosts without ST don't expose the routes. Detection scans common
+    # install paths; operator can pin via cfg['sillytavern_dir'].
+    if "sillytavern" in services:
+        try:
+            from .endpoints import sillytavern_plugin as st_plugin_ep
+            routes[("GET",  "/sillytavern/plugin/status")]  = st_plugin_ep.status
+            routes[("POST", "/sillytavern/plugin/install")] = st_plugin_ep.install
+        except ImportError as e:
+            print(f"[antenna] sillytavern_plugin endpoint failed to import: {e}",
+                  file=sys.stderr)
+
     # R56: generic service start/logs — covers ComfyUI, Kobold, Ollama.
     # Always registered (not gated by a specific service) because
     # start_service chooses based on the request body, not route key.
