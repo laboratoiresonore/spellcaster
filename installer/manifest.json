@@ -267,6 +267,14 @@
         "klein_flux2"
       ],
       "note": "Optional quality upgrade for Klein pipelines — reference strength control, text/ref balance, and color drift correction. Auto-detected by Spellcaster; if not installed, standard pipelines run unchanged."
+    },
+    "ComfyUI-WanVideoWrapper": {
+      "repo": "https://github.com/kijai/ComfyUI-WanVideoWrapper",
+      "provides": [
+        "WanVideoNAG"
+      ],
+      "required_by": [],
+      "note": "Optional quality patch for WAN 2.2 I2V — Normalized Attention Guidance for sharper motion. Auto-detected by Spellcaster; if not installed, WAN workflows run unchanged. Also provides the block-swap path (WanVideoSetBlockSwap) for low-VRAM GPUs if the user later switches to the wrapper-native pipeline. Pattern borrowed from xb1n0ry/Comfy-Workflows."
     }
   },
   "features": {
