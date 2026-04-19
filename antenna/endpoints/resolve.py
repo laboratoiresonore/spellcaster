@@ -404,7 +404,127 @@ def render_timeline(ctx: dict[str, Any]) -> tuple[int, dict]:
         bus_client.emit(ctx, "antenna.resolve.render_started", result)
     except Exception:
         pass
+    # R51b: spawn a bg watcher that will emit render_progress + render_complete
+    try:
+        _start_render_watcher(ctx, job_id, project.GetName())
+    except Exception as e:  # noqa: BLE001 — watcher failure never blocks the start
+        print(f"[resolve] warn: render watcher failed to start: {e}",
+              file=sys.stderr)
     return 200, result
+
+
+def render_presets(ctx: dict[str, Any]) -> tuple[int, dict]:
+    """GET /resolve/render-presets
+
+    Return the list of render preset names available to the current
+    Resolve project. Populates the dropdown in the Guild's Render dialog
+    so users don't have to type a preset name.
+    """
+    cfg = ctx.get("config") or {}
+    app, err = _get_resolve(cfg)
+    if app is None:
+        return 503, {"error": err}
+    try:
+        pm = app.GetProjectManager()
+        project = pm.GetCurrentProject() if pm else None
+    except Exception as e:  # noqa: BLE001
+        return 500, {"error": f"could not query ProjectManager: {e}"}
+    if project is None:
+        return 503, {"error": "No active Resolve project"}
+    try:
+        presets = list(project.GetRenderPresetList() or [])
+    except Exception as e:  # noqa: BLE001
+        return 500, {"error": f"GetRenderPresetList failed: {e}"}
+    return 200, {"presets": presets, "project": project.GetName()}
+
+
+# ─── R51b: render-complete watcher (bg thread + bus emit) ─────────────────
+
+_RENDER_WATCHERS: dict[str, dict[str, Any]] = {}
+_RENDER_WATCHERS_LOCK = None
+
+
+def _start_render_watcher(ctx: dict[str, Any], job_id: str,
+                          project_name: str) -> None:
+    """Spawn a daemon thread that polls Resolve's render job until it
+    reaches a terminal state, then emits `antenna.resolve.render_complete`.
+
+    One watcher per job_id. Idempotent — if a watcher is already tracking
+    this job, this is a no-op.
+    """
+    global _RENDER_WATCHERS_LOCK
+    import threading
+    if _RENDER_WATCHERS_LOCK is None:
+        _RENDER_WATCHERS_LOCK = threading.Lock()
+    with _RENDER_WATCHERS_LOCK:
+        if job_id in _RENDER_WATCHERS:
+            return
+        _RENDER_WATCHERS[job_id] = {"started_at": time.time(),
+                                     "project": project_name}
+
+    def _watch():
+        import time as _time
+        try:
+            # Keep polling until terminal status. Resolve uses strings:
+            #   "Rendering", "Complete", "Cancelled", "Failed"
+            cfg = ctx.get("config") or {}
+            last_pct = -1
+            terminal = {"Complete", "Cancelled", "Failed"}
+            poll_interval = 5.0  # seconds between polls
+            max_runs = 7200      # 10 hours ceiling (poll_interval * max_runs)
+            for _ in range(max_runs):
+                _time.sleep(poll_interval)
+                app, err = _get_resolve(cfg)
+                if app is None:
+                    # Resolve went away mid-render — report and exit
+                    try:
+                        from .. import bus_client
+                        bus_client.emit(ctx, "antenna.resolve.render_complete",
+                                        {"job_id": job_id, "status": "Unknown",
+                                         "reason": err or "Resolve disconnected"})
+                    except Exception:
+                        pass
+                    return
+                try:
+                    pm = app.GetProjectManager()
+                    project = pm.GetCurrentProject() if pm else None
+                    if project is None:
+                        continue
+                    status = project.GetRenderJobStatus(job_id) or {}
+                except Exception:
+                    continue
+                js = status.get("JobStatus", "Unknown")
+                pct = status.get("CompletionPercentage")
+                # Emit progress periodically — every 10% change reduces noise
+                if isinstance(pct, (int, float)) and (pct - last_pct) >= 10:
+                    last_pct = int(pct)
+                    try:
+                        from .. import bus_client
+                        bus_client.emit(ctx, "antenna.resolve.render_progress",
+                                        {"job_id": job_id, "completion_percent": last_pct,
+                                         "status": js})
+                    except Exception:
+                        pass
+                if js in terminal:
+                    try:
+                        from .. import bus_client
+                        bus_client.emit(ctx, "antenna.resolve.render_complete", {
+                            "job_id": job_id,
+                            "status": js,
+                            "completion_percent": pct,
+                            "project": project_name,
+                            "time_elapsed_s": (status.get("TimeTakenToRenderInMs", 0) or 0) / 1000.0,
+                        })
+                    except Exception:
+                        pass
+                    return
+        finally:
+            with _RENDER_WATCHERS_LOCK:
+                _RENDER_WATCHERS.pop(job_id, None)
+
+    t = threading.Thread(target=_watch, daemon=True,
+                         name=f"resolve-render-watch-{job_id[:8]}")
+    t.start()
 
 
 def render_status(ctx: dict[str, Any]) -> tuple[int, dict]:
