@@ -3,3 +3,5 @@
 {"ts": 1776579353.151064, "action": "timeline_imported", "timeline": "smoke-test", "total": 2, "created": 2, "matched": 0, "failed": 0}
 {"ts": 1776583252.2569792, "action": "shot_created", "shot_id": "df41604bd1404847a85fb57eb630a261", "title": "marker test"}
 {"ts": 1776591709.6282003, "action": "shot_created", "shot_id": "9a5eb673228643fe9a4e2155edc90d52", "title": "R126 smoke"}
+{"ts": 1776592028.8170774, "action": "shot_created", "shot_id": "2b8111bb86874a37968cb69218f90c89", "title": "R126 smoke \u2014 var"}
+{"ts": 1776592028.891961, "action": "shot_removed", "shot_id": "9a5eb673228643fe9a4e2155edc90d52"}

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "saved_at": 1776591709.6221998,
+  "saved_at": 1776592028.8889632,
   "shots": [
     {
       "id": "1c53d3f0bfc54143bd1e5511fd9eefd9",
@@ -18,7 +18,7 @@
       "status": "draft",
       "job_id": null,
       "error": null,
-      "last_updated": 1776579353.143062,
+      "last_updated": 1776592028.7448208,
       "duration_s": null,
       "render_duration_s": null,
       "target_duration_s": 2.0,
@@ -58,7 +58,7 @@
       "status": "draft",
       "job_id": null,
       "error": null,
-      "last_updated": 1776579353.1460652,
+      "last_updated": 1776592028.7473395,
       "duration_s": null,
       "render_duration_s": null,
       "target_duration_s": 3.0,
@@ -98,7 +98,7 @@
       "status": "draft",
       "job_id": null,
       "error": null,
-      "last_updated": 1776583252.2539794,
+      "last_updated": 1776592028.7523375,
       "duration_s": null,
       "render_duration_s": null,
       "target_duration_s": 2.5,
@@ -123,9 +123,9 @@
       "rating": 0
     },
     {
-      "id": "9a5eb673228643fe9a4e2155edc90d52",
+      "id": "2b8111bb86874a37968cb69218f90c89",
       "index": 3,
-      "title": "R126 smoke",
+      "title": "R126 smoke \u2014 var",
       "prompt": "a ceramic wizard turning a glowing page",
       "negative": "",
       "seed": null,
@@ -138,7 +138,7 @@
       "status": "draft",
       "job_id": null,
       "error": null,
-      "last_updated": 1776591709.6212018,
+      "last_updated": 1776592028.8125417,
       "duration_s": null,
       "render_duration_s": null,
       "target_duration_s": null,

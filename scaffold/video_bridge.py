@@ -40,6 +40,20 @@ from .shotboard import Shotboard, Shot
 from .video_wizard import CinematographerWizard
 from .wangp_runner import WanGPRunner, describe_preset, preset_names
 
+# R126: native ComfyUI routing for Wan presets. Optional import — when
+# the dispatch module or spellcaster_core is missing the flag just
+# disables the native path and the old WanGP route still runs.
+try:
+    from .video_workflow_dispatch import (
+        build_native_workflow as _build_native_workflow,
+        probe_comfyui_models as _probe_comfyui_models,
+    )
+    _NATIVE_DISPATCH_AVAILABLE = True
+except ImportError:
+    _NATIVE_DISPATCH_AVAILABLE = False
+    _build_native_workflow = None  # type: ignore
+    _probe_comfyui_models = None   # type: ignore
+
 log = logging.getLogger("spellcaster.video_bridge")
 
 
@@ -337,6 +351,19 @@ class VideoBridge:
                 pass
 
         if effective_backend == "wangp":
+            # R126: native ComfyUI routing for wan22_* presets. If
+            # WanGP is unreachable but ComfyUI has the models, build
+            # the workflow from spellcaster_core and submit it
+            # directly. Falls through to WanGP on any resolver failure.
+            if self._should_try_native_wan(shot):
+                result = self._queue_comfy_native_wan(shot, on_complete)
+                if (result or {}).get("status") == "queued":
+                    return result
+                # Fall through — log once so the log tail shows what
+                # pushed us to WanGP.
+                log.info("native wan route skipped for shot %s: %s",
+                          shot.id[:8], (result or {}).get("message",
+                                                          "unknown"))
             return self._queue_wangp(shot, on_complete)
         if effective_backend == "comfyui":
             return self._queue_comfy(shot, on_complete)
@@ -347,6 +374,127 @@ class VideoBridge:
             return self._queue_wangp(shot, on_complete, chain_upscale=True)
         return {"status": "error",
                 "message": f"unknown backend {effective_backend!r}"}
+
+    # ---- R126: native ComfyUI routing for Wan presets --------------
+
+    def _should_try_native_wan(self, shot: Shot) -> bool:
+        """Only try native ComfyUI for wan22_* presets we've mapped.
+        i2v-family only in this phase (t2v needs a dedicated workflow
+        builder that isn't wired yet)."""
+        if not _NATIVE_DISPATCH_AVAILABLE:
+            return False
+        if shot.preset not in ("wan22_i2v_lightning", "wan22_i2v_hq"):
+            return False
+        # Need ComfyUI reachable — fail fast before building anything
+        if not self.comfy.is_available():
+            return False
+        # i2v requires a reference image
+        if not shot.ref_image or not os.path.isfile(shot.ref_image):
+            return False
+        return True
+
+    def _queue_comfy_native_wan(self, shot: Shot,
+                                 on_complete: Optional[Callable[[Shot], None]]
+                                 ) -> Dict[str, Any]:
+        """Submit a Wan render via ComfyUI directly, bypassing WanGP.
+        Relies on scaffold.video_workflow_dispatch to build the
+        workflow from spellcaster_core.workflows.build_wan_video."""
+        ref_basename = os.path.basename(shot.ref_image)
+        try:
+            with open(shot.ref_image, "rb") as _rf:
+                ref_bytes = _rf.read()
+            self.comfy.upload_image(ref_bytes, ref_basename)
+        except Exception as e:  # noqa: BLE001
+            return {"status": "error",
+                    "message": f"couldn't upload ref image: {e}"}
+
+        defaults = (describe_preset(shot.preset) or {}).get("defaults") or {}
+        width_h = defaults.get("resolution", "832x480").split("x")
+        try:
+            w = int((shot.overrides or {}).get("width") or width_h[0])
+            h = int((shot.overrides or {}).get("height") or width_h[1])
+        except Exception:
+            w, h = 832, 480
+        length = int((shot.overrides or {}).get("frames")
+                      or defaults.get("frames", 81))
+        fps = int((shot.overrides or {}).get("fps")
+                   or defaults.get("fps", 16))
+        seed = shot.seed if shot.seed is not None else int(time.time()) & 0xFFFFFFFF
+
+        workflow, err = _build_native_workflow(
+            shot.preset,
+            prompt=shot.prompt or "subtle gentle motion",
+            negative=shot.negative or "",
+            seed=seed,
+            image_filename=ref_basename,
+            comfyui_base_url=self.comfy.base_url,
+            width=w, height=h, length=length, fps=fps,
+            turbo=(shot.preset == "wan22_i2v_lightning"),
+        )
+        if not workflow:
+            return {"status": "error", "message": err or "build failed"}
+
+        self.board.mark_running(shot.id)
+        self.board.update(shot.id, backend="comfyui")
+
+        def worker() -> None:
+            self._render_sem.acquire()
+            try:
+                start = time.time()
+                result = self.comfy.run_raw(
+                    workflow, input_filenames=[ref_basename])
+                if result.get("status") != "ok":
+                    self.board.mark_failed(
+                        shot.id,
+                        f"ComfyUI: {result.get('message', 'unknown error')}")
+                    return
+                outputs = result.get("outputs") or []
+                remote = _pick_video_output(outputs)
+                if not remote:
+                    self.board.mark_failed(
+                        shot.id, "ComfyUI produced no video output")
+                    return
+                local = os.path.join(
+                    self.output_dir,
+                    f"{shot.id}_{int(time.time())}.mp4")
+                data = self.comfy.download_image(
+                    filename=remote["filename"],
+                    subfolder=remote.get("subfolder", ""),
+                    folder_type=remote.get("type", "output"))
+                with open(local, "wb") as fh:
+                    fh.write(data)
+                self.board.mark_ready(shot.id, local)
+                self.board.update(
+                    shot.id, render_duration_s=time.time() - start)
+                try:
+                    last_frame = extract_last_frame(local)
+                    self.board.export_for_next(shot.id, last_frame)
+                except Exception:
+                    pass
+                if on_complete:
+                    try:
+                        on_complete(self.board.get(shot.id))
+                    except Exception:  # noqa: BLE001
+                        log.exception("on_complete raised (native wan)")
+            except Exception as e:  # noqa: BLE001
+                self.board.mark_failed(shot.id,
+                                        f"native wan worker: {e}")
+            finally:
+                self._render_sem.release()
+                self._active_progress = 0.0
+                self._active_stage = "idle"
+                self._active_started = 0.0
+                with self._in_flight_lock:
+                    self._in_flight.pop(shot.id, None)
+
+        t = threading.Thread(target=worker,
+                              name=f"native-wan-{shot.id[:8]}",
+                              daemon=True)
+        with self._in_flight_lock:
+            self._in_flight[shot.id] = t
+        t.start()
+        return {"status": "queued", "shot_id": shot.id,
+                 "backend": "comfyui_native_wan"}
 
     # ---- WanGP path ------------------------------------------------
 
