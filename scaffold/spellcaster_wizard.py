@@ -434,7 +434,7 @@ SERVICE CONFLICT RESOLUTION (cue kind: service_conflict):
   When the cue seeder detects the same service on 2+ hosts (say GIMP
   is installed locally AND on 192.168.x.y via the antenna there), it
   enqueues a `service_conflict` issue with context:
-    {service: "gimp", label: "GIMP", hosts: ["Local", "192.168.x.y"]}
+    {{"service": "gimp", "label": "GIMP", "hosts": ["Local", "192.168.x.y"]}}
 
   Your job when that's the head of the cue:
     1. Speak the conflict in plain English:

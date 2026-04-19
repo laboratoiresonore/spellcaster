@@ -8130,11 +8130,17 @@ class GuildHandler(SimpleHTTPRequestHandler):
                         state = _spellcaster_state()
                         return self.end_json(
                             200, {"prompt": build_sys(state)})
-                except Exception as _e:
-                    # Fall through to the generic wrapper below on any
-                    # import / call failure. The static stub in the studio
-                    # definition is the last-resort fallback.
-                    pass
+                except Exception as _scaffold_err:
+                    # Log loudly — a silent swallow here is how we shipped
+                    # a dead scaffold for months. Fall through to the
+                    # generic wrapper so the Guild stays usable, but make
+                    # sure the failure is visible in the server log.
+                    import traceback
+                    print(f"[scaffold] build_system_prompt failed for "
+                          f"{studio.get('scaffold')!r}: "
+                          f"{type(_scaffold_err).__name__}: {_scaffold_err}",
+                          file=sys.stderr)
+                    traceback.print_exc()
             if studio:
                 # Get the character's auto-generated personality if available
                 char_personality = ""
@@ -12151,7 +12157,16 @@ class GuildHandler(SimpleHTTPRequestHandler):
 
 if __name__ == "__main__":
     print(f"Starting The Wizard Guild on port {PORT}...")
-    httpd = HTTPServer(('0.0.0.0', PORT), GuildHandler)
+    # ThreadingHTTPServer spawns one thread per request so a long-running
+    # handler (SSE stream at /api/events/stream, a shootout poll, a slow
+    # ComfyUI probe) doesn't block every other client. With the
+    # single-threaded HTTPServer one open SSE connection per browser tab
+    # would saturate the default listen backlog (5) and every new
+    # curl / Playwright / second browser got RST'd on connect.
+    httpd = ThreadingHTTPServer(('0.0.0.0', PORT), GuildHandler)
+    # daemon_threads=True so the process exits cleanly on Ctrl+C without
+    # waiting for idle SSE / long-poll threads to time out.
+    httpd.daemon_threads = True
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
