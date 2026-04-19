@@ -262,72 +262,47 @@ def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
 
     user_msg = f"Enhance this prompt for {profile['name']}:\n{prompt_text}"
 
-    # ── Try ComfyUI LLM nodes first (if server URL provided) ──
-    # WHY ComfyUI first: zero external dependencies, VRAM auto-managed,
-    # and the model is already on the generation server. This path uses
-    # comfyui_llm.generate_text() which handles model selection, retry on
-    # missing models, and output cleaning internally.
-    if comfy_url:
-        try:
-            from .comfyui_llm import generate_text
-            enhanced = generate_text(
-                comfy_url, prompt=user_msg, system_prompt=system_msg,
-                max_tokens=300, temperature=0.7)
-            # 10-char minimum: filters junk responses like "OK" or empty strings
-            if enhanced and len(enhanced) > 10:
-                return enhanced
-        except Exception:
-            pass  # Fall through to KoboldCpp
-
-    # ── Fall back to external LLM (KoboldCpp / OpenAI-compatible) ──
-    # If no ComfyUI LLM is available (or it failed), try the user-configured
-    # external LLM server. If no URL is configured, return the original prompt
-    # unchanged — enhancement is best-effort, never blocks generation.
-    if not kobold_url:
-        return prompt_text
-
-    # KoboldCpp exposes an OpenAI-compatible /v1/chat/completions endpoint.
-    # The "model" field is ignored by KoboldCpp (it only loads one model at a
-    # time) but is required by the OpenAI API spec, so we pass a placeholder.
-    payload = {
-        "messages": [
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": user_msg},
-        ],
-        "model": "koboldcpp",  # placeholder — KoboldCpp ignores this
-        "max_tokens": 300,     # enough for 60-200 word prompts
-        "temperature": 0.7,    # balanced creativity/coherence
-    }
-
+    # ── One backend, many surfaces ─────────────────────────────────────
+    # Route through spellcaster_core.guild_llm.chat — THE single LLM
+    # entry point shared by the Guild, the GIMP plugin, Darktable, and
+    # any other surface. Do NOT add a parallel LLM path here.
+    #
+    # For prompt enhancement we set purpose="enhance" which tries
+    # ComfyUI's purpose-built PromptEnhancer node first (it lives on
+    # the ComfyUI box alongside the diffusion model, and ComfyUI
+    # auto-unloads the LLM before image generation — the full cycle
+    # is load-LLM / enhance / unload-LLM / generate / reload-LLM).
+    # Ollama and KoboldCpp are the fallbacks.
     try:
-        # Call the LLM API
-        url = f"{kobold_url.rstrip('/')}/v1/chat/completions"
-        body = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            url, data=body,
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            result = json.loads(resp.read().decode("utf-8"))
-
-        # Extract the enhanced prompt from the response
-        enhanced = (
-            result.get("choices", [{}])[0]
-            .get("message", {})
-            .get("content", "")
-            .strip()
-        )
-
-        # 10-char minimum: same guard as ComfyUI path above.
-        # Filters responses like "OK", "Sure!", or empty/whitespace.
-        if enhanced and len(enhanced) > 10:
-            return enhanced
-
-        return prompt_text  # LLM returned empty or junk
-
-    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError,
-            TimeoutError, Exception) as e:
-        # Catch-all: timeout, connection refused, JSON parse error, SSL error, etc.
-        # Enhancement is strictly best-effort — never delay or block generation.
-        # The user's original prompt is always a valid fallback.
+        from . import guild_llm
+    except Exception:
         return prompt_text
+    try:
+        enhanced = guild_llm.chat(
+            message=user_msg, system_prompt=system_msg,
+            server=comfy_url, kobold_url=kobold_url,
+            max_tokens=300, temperature=0.7,
+            purpose="enhance",
+        )
+    except Exception:
+        enhanced = None
+    # 10-char minimum filters junk responses like "OK" or whitespace.
+    if enhanced and len(enhanced.strip()) > 10:
+        return _clean_enhanced(enhanced)
+    return prompt_text
+
+
+def _clean_enhanced(text):
+    """Strip wrappers the LLM sometimes adds (quotes, 'Enhanced:' label,
+    leading/trailing whitespace). Keep only the prompt itself.
+    """
+    s = (text or "").strip()
+    # Strip label prefixes like "Enhanced prompt:", "Prompt:", "Here:"
+    for prefix in ("Enhanced prompt:", "Enhanced:", "Prompt:", "Here:",
+                   "Here is:", "Output:"):
+        if s.lower().startswith(prefix.lower()):
+            s = s[len(prefix):].strip()
+    # Strip outer quotes (single or double)
+    if len(s) >= 2 and s[0] in ('"', "'") and s[-1] == s[0]:
+        s = s[1:-1].strip()
+    return s
