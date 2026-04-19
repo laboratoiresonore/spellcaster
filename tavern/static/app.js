@@ -1296,8 +1296,31 @@ async function initialize() {
     // Active-interfaces widget — polls /api/interfaces and renders chips
     // for every frontend the registry reports as installed+enabled+online.
     // Dynamic: if no interface qualifies, the whole strip stays hidden.
-    refreshActiveInterfaces();
-    setInterval(refreshActiveInterfaces, 10000);
+    // Seed the per-app control matrix before the first chip render so
+    // the ⚡ / 🔁 toggles reflect persisted state rather than flashing
+    // "off" for a second on first paint.
+    refreshAppControlMatrix().then(refreshActiveInterfaces);
+    setInterval(() => {
+        refreshAppControlMatrix().then(refreshActiveInterfaces);
+    }, 10000);
+    // Exit button — POSTs /api/guild/exit so the server can stop every
+    // auto_start app on its target machine before killing its own
+    // process. After the response lands the backend waits ~0.6s and
+    // calls os._exit(0); the page will hang the moment the socket is
+    // gone, which is the signal to the user that the Guild is down.
+    const _exitBtn = document.getElementById('guild-exit-btn');
+    if (_exitBtn) {
+        _exitBtn.addEventListener('click', async () => {
+            if (!confirm('Stop auto-started apps and close the Wizard Guild?')) return;
+            _exitBtn.disabled = true;
+            _exitBtn.textContent = '⏻ Exiting…';
+            try {
+                await fetch('/api/guild/exit', {method: 'POST'});
+            } catch (e) { /* expected: socket dies mid-reply */ }
+            document.body.style.filter = 'grayscale(1) brightness(0.7)';
+            document.body.style.pointerEvents = 'none';
+        });
+    }
     // Antennas strip — polls /api/antennas and renders one chip per
     // remote machine with declared / detected services. Gives the user
     // a live signal that a remote GPU pairing is alive (and how many
