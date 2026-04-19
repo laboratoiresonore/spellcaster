@@ -747,6 +747,87 @@ textarea::placeholder { color: #555; }
     color: #2ed573;
     filter: drop-shadow(0 0 4px rgba(46, 213, 115, 0.7));
 }
+/* State-coloured chips: online = green (default above), stale = amber
+   (recent heartbeat but no longer online), idle = grey (never seen
+   or heartbeat older than 5 min but interface enabled). */
+.active-iface-chip.iface-stale {
+    background: rgba(252, 211, 77, 0.10);
+    border-color: rgba(252, 211, 77, 0.35);
+    color: #f6d58a;
+}
+.active-iface-chip.iface-stale::before {
+    color: #f5c948;
+    filter: drop-shadow(0 0 3px rgba(252, 211, 77, 0.6));
+}
+.active-iface-chip.iface-idle {
+    background: rgba(170, 170, 170, 0.07);
+    border-color: rgba(170, 170, 170, 0.25);
+    color: #bdbdbd;
+}
+.active-iface-chip.iface-idle::before {
+    color: #8a8a8a;
+    filter: none;
+}
+/* Origin hint: remote chips get a subtle purple tint on the host badge.
+   Local stays neutral. */
+.active-iface-chip .iface-host {
+    font-size: 10px;
+    opacity: 0.7;
+    margin-left: 2px;
+    padding: 1px 5px;
+    border-radius: 6px;
+    background: rgba(178, 70, 242, 0.15);
+    color: #d8b8f0;
+}
+.active-iface-chip.iface-local .iface-host {
+    background: rgba(78, 156, 242, 0.15);
+    color: #a9cff0;
+}
+
+/* ── Antennas strip (remote-machine agents) ─────────────────────── */
+.antenna-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: rgba(178, 70, 242, 0.12);
+    border: 1px solid rgba(178, 70, 242, 0.38);
+    color: #e0c3ff;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: help;
+    white-space: nowrap;
+}
+.antenna-chip::before {
+    content: "●";
+    font-size: 8px;
+    color: #b246f2;
+    filter: drop-shadow(0 0 4px rgba(178, 70, 242, 0.7));
+}
+.antenna-chip.antenna-stale {
+    background: rgba(252, 211, 77, 0.10);
+    border-color: rgba(252, 211, 77, 0.35);
+    color: #f6d58a;
+}
+.antenna-chip.antenna-stale::before { color: #f5c948; filter: none; }
+.antenna-chip.antenna-idle {
+    background: rgba(170, 170, 170, 0.07);
+    border-color: rgba(170, 170, 170, 0.25);
+    color: #bdbdbd;
+}
+.antenna-chip.antenna-idle::before { color: #8a8a8a; filter: none; }
+.antenna-chip .antenna-host {
+    font-weight: 600;
+}
+.antenna-chip .antenna-count {
+    font-size: 9px;
+    padding: 1px 6px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.3);
+    color: #fff;
+    opacity: 0.75;
+}
 
 /* ── Recent assets across apps (sidebar) ── */
 #recent-assets-container {
