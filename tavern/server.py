@@ -9076,6 +9076,61 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 return self.end_json(400, {"error": str(e)})
 
         elif (self.path.startswith('/api/video/shots/')
+              and self.path.endswith('/mask-image')
+              and self.command == 'POST'):
+            # R91: symmetric to /input-video. Stages a mask PNG on the
+            # antenna host (reusing the same stage-input-video endpoint —
+            # the copy logic is file-type-agnostic) and records the
+            # basename in shot.overrides.mask_image.
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/api/video/shots/')[1].rsplit('/mask-image', 1)[0]
+            shot = _VIDEO_BRIDGE.board.get(shot_id)
+            if shot is None:
+                return self.end_json(404, {"error": "shot not found"})
+            src_path = (data.get('path') or '').strip()
+            if not src_path:
+                return self.end_json(400, {"error": "path is required"})
+            cfg = _guided_install_load_config()
+            antenna_url = (cfg.get('antenna_url') or '').strip().rstrip('/')
+            token = (cfg.get('antenna_token') or '').strip()
+            if not antenna_url or not token:
+                return self.end_json(503, {"error": "no antenna paired"})
+            import urllib.request as _ur, urllib.error as _ue, ssl as _ssl
+            req = _ur.Request(
+                antenna_url + "/resolve/stage-input-video",
+                data=json.dumps({"path": src_path}).encode('utf-8'),
+                headers={"Authorization": f"Bearer {token}",
+                          "Content-Type": "application/json",
+                          "User-Agent": "spellcaster-guild-stage-mask"},
+                method='POST')
+            ctx_ssl = _ssl.create_default_context()
+            ctx_ssl.check_hostname = False
+            ctx_ssl.verify_mode = _ssl.CERT_NONE
+            try:
+                with _ur.urlopen(req, timeout=30, context=ctx_ssl) as resp:
+                    staged = json.loads(resp.read().decode('utf-8', 'replace'))
+            except _ue.HTTPError as e:
+                try:
+                    err = e.read().decode('utf-8', 'replace')
+                except Exception:
+                    err = ''
+                return self.end_json(e.code, {"error": f"antenna rejected: {err[:300]}"})
+            except Exception as e:
+                return self.end_json(502, {"error": f"antenna unreachable: {e}"})
+            staged_name = (staged.get('staged_name') or '').strip()
+            if not staged_name:
+                return self.end_json(500, {"error": "antenna returned no staged_name"})
+            overrides = dict(shot.overrides or {})
+            overrides['mask_image'] = staged_name
+            _VIDEO_BRIDGE.board.update(shot_id, overrides=overrides)
+            return self.end_json(200, {
+                "shot_id": shot_id,
+                "staged_name": staged_name,
+                "size_bytes": staged.get('size_bytes'),
+            })
+
+        elif (self.path.startswith('/api/video/shots/')
               and self.path.endswith('/input-video')
               and self.command == 'POST'):
             # R87b: stage an antenna-host-local video file into ComfyUI
