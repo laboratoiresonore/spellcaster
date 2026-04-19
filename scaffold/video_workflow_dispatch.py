@@ -515,6 +515,39 @@ def build_native_workflow(preset_key: str, *, prompt: str,
 
     family = (spec.get("family") or "").lower()
 
+    # ── SeedVR2 upscaler ────────────────────────────────────────────
+    # Video-in → higher-resolution video-out. Takes a source video
+    # file that must already live in ComfyUI's input/ dir (uploaded
+    # by the dispatcher). No prompt, no ref image, no latent — it's
+    # a post-processing path.
+    if family == "seedvr2":
+        _ensure_spellcaster_core_on_path()
+        try:
+            from spellcaster_core.workflows import build_seedvr2_video_upscale  # type: ignore
+        except ImportError as e:
+            return None, f"spellcaster_core.workflows.build_seedvr2_video_upscale missing: {e}"
+        if not image_filename:
+            # For seedvr2 `image_filename` is reused as the input
+            # video basename — the caller uploads the mp4 to
+            # ComfyUI's input/ and passes the basename here.
+            return None, ("seedvr2_video_upscale requires an input "
+                          "video (set shot.overrides.input_video)")
+        try:
+            target_res = defaults.get("resolution", "1920x1080")
+            try:
+                w_target = int(target_res.split("x")[0])
+            except Exception:
+                w_target = 1920
+            workflow = build_seedvr2_video_upscale(
+                video_name=image_filename,
+                seed=seed,
+                resolution=w_target,
+                fps=fps,
+            )
+        except Exception as e:  # noqa: BLE001
+            return None, f"build_seedvr2_video_upscale raised: {e}"
+        return workflow, None
+
     # ── LTX-2 family ────────────────────────────────────────────────
     # Uses a completely different stack (Gemma encoder, LTX VAE,
     # STGGuider, LTXVBaseSampler). Canonical builder is
