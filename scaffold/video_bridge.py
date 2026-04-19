@@ -576,22 +576,36 @@ class VideoBridge:
                                              os.path.basename(shot.ref_image))
             except Exception as _ue:
                 log.warning(f"ref_image upload failed: {_ue}")
-        # R87: upload input video for v2v workflows. overrides.input_video
-        # must be a local path reachable from the Guild host; we ship the
-        # bytes to ComfyUI's /upload/image endpoint (which accepts arbitrary
-        # binary under the "image" field name — filename determines the
-        # on-disk destination).
+        # R87: resolve the input video for v2v workflows.
+        #   - A FULL PATH reachable from the Guild host → upload bytes
+        #     to ComfyUI's /upload/image endpoint (cross-host transfer).
+        #   - A BARE BASENAME → assumed pre-staged on ComfyUI's input
+        #     dir (e.g. via antenna /resolve/stage-input-video in R87b),
+        #     no upload needed.
         input_video = (shot.overrides or {}).get("input_video", "")
-        if input_video and os.path.isfile(input_video):
-            try:
-                with open(input_video, "rb") as _vf:
-                    self.comfy.upload_image(_vf.read(),
-                                             os.path.basename(input_video))
-            except Exception as _ue:
+        if input_video:
+            is_bare_basename = (
+                os.path.basename(input_video) == input_video
+                and not os.path.isabs(input_video)
+            )
+            if is_bare_basename:
+                # Pre-staged by the antenna. Nothing to upload.
+                pass
+            elif os.path.isfile(input_video):
+                try:
+                    with open(input_video, "rb") as _vf:
+                        self.comfy.upload_image(
+                            _vf.read(), os.path.basename(input_video))
+                except Exception as _ue:
+                    self.board.mark_failed(shot.id,
+                        f"input_video upload failed: {_ue}")
+                    return {"status": "error",
+                            "message": f"input_video upload failed: {_ue}"}
+            else:
                 self.board.mark_failed(shot.id,
-                    f"input_video upload failed: {_ue}")
+                    f"input_video not found: {input_video}")
                 return {"status": "error",
-                        "message": f"input_video upload failed: {_ue}"}
+                        "message": f"input_video not found: {input_video}"}
 
         self.board.mark_running(shot.id)
 

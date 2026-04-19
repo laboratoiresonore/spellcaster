@@ -212,6 +212,11 @@ def _build_routes(cfg: dict[str, Any]) -> dict[tuple[str, str], Callable]:
             routes[("GET",  "/resolve/plugin/debug")]     = resolve_plugin_ep.debug
             routes[("POST", "/resolve/plugin/install")]   = resolve_plugin_ep.install
             routes[("POST", "/resolve/plugin/configure")] = resolve_plugin_ep.configure
+            # R87b: stage a local video file into ComfyUI's input dir so
+            # VHS_LoadVideo can pick it up by basename without a
+            # cross-LAN byte transfer.
+            routes[("POST", "/resolve/stage-input-video")] = \
+                resolve_plugin_ep.stage_input_video
         except ImportError as e:
             print(f"[antenna] resolve_plugin endpoint failed to import: {e}",
                   file=sys.stderr)
