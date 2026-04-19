@@ -604,6 +604,17 @@ body {
    updates in place + the colour shifts so the user sees the swap
    without a menu. Value lives in localStorage.guild_preset and on
    window.generationPreset for consumers downstream. */
+/* Walkie-talkie mic button pulses red while recording so the user
+   sees "capture is live" without having to watch the tooltip. */
+#walkie-btn.walkie-recording {
+    color: #ff4d6d !important;
+    animation: walkie-pulse 0.9s ease-in-out infinite;
+}
+@keyframes walkie-pulse {
+    0%, 100% { transform: scale(1);    filter: drop-shadow(0 0 4px rgba(255, 77, 109, 0.45)); }
+    50%      { transform: scale(1.18); filter: drop-shadow(0 0 10px rgba(255, 77, 109, 0.85)); }
+}
+
 .global-preset-btn {
     position: absolute;
     right: 12px;
