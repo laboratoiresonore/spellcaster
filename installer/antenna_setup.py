@@ -218,6 +218,13 @@ if not exist antenna\agent.py (
     git pull --ff-only >nul 2>&1
 )
 
+REM ── Install the tray UI's pip deps (pystray + Pillow). Best-effort;
+REM  the antenna degrades to console mode if these aren't available. ──
+python -c "import pystray, PIL" 2>nul || (
+    echo Installing tray UI deps (pystray + Pillow)...
+    python -m pip install --quiet --disable-pip-version-check pystray Pillow 2>nul
+)
+
 REM ── Write config + token on first launch ──
 if not exist "%USERPROFILE%\.spellcaster\antenna_config.json" (
     mkdir "%USERPROFILE%\.spellcaster" 2>nul
@@ -239,7 +246,14 @@ if not exist "%USERPROFILE%\.spellcaster\antenna_config.json" (
 )
 
 REM ── Launch the antenna ──
-python -m antenna.agent
+REM  `python -m antenna` auto-picks: tray (Windows + pystray installed)
+REM  or console (otherwise). Tray gives a system-tray icon + toast
+REM  notifications + one-click Start/Stop on ComfyUI, Ollama, Kobold,
+REM  hidden-window subprocesses so the user's screen isn't cluttered
+REM  with cmd.exe flashes. Everything else — HTTP endpoints, heartbeats,
+REM  self-update, auth — is identical.
+REM  To force console mode: set SPELLCASTER_ANTENNA_NO_TRAY=1 first.
+python -m antenna
 goto :end
 
 :clone_failed
@@ -315,7 +329,7 @@ if [ ! -f "$SP_DIR/antenna_config.json" ]; then
 EOF
 fi
 
-exec python3 -m antenna.agent
+exec python3 -m antenna
 """
 
 
