@@ -77,7 +77,7 @@ Every tool starts with expert-tuned presets that just work. But as you get comfo
 
 ---
 
-## State of the Art AI Generation, Fingers (Far) Up Your Nose
+## State of the Art AI Generation, Fingers (Way) Up Your Nose
 
 <table>
 <tr>
