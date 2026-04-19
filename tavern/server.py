@@ -2599,31 +2599,65 @@ def _apply_user_settings(settings):
 
 
 def _resolve_stt_backend_url():
-    """Return the HTTP URL of a registered kobold_tts service, checking
-    in order: local app_control entry → paired antenna that declares
-    kobold_tts in its services list. Returns None when nothing is set
-    so the caller can surface a "register one first" hint.
+    """Return the HTTP URL of a registered kobold_tts service.
+
+    Precedence (highest → lowest):
+      1. ``app_control.kobold_tts.url`` — full URL override the user
+         set by hand (e.g. the KoboldCpp instance is on a box that
+         doesn't run a Spellcaster antenna).
+      2. ``host`` + ``port`` fields — any non-empty host wins, even
+         when ``target == "local"`` (the legacy shape).
+      3. ``target`` field pointing at an antenna hostname or bare
+         IP — we treat anything that isn't ``"local"`` as a hostname.
+      4. ``port`` alone → falls back to ``127.0.0.1:<port>``.
+      5. Paired-antenna discovery — any online antenna that declares
+         ``kobold_tts`` or ``kobold`` in its services list, port 5002.
+
+    Returns None when nothing is set so callers can surface a
+    "register one first" hint. R139 fix: the pre-R139 resolver
+    hardcoded 127.0.0.1 whenever it found any port, so a TTS
+    Kobold living on a LAN host (e.g. 192.168.x.x:5002) without a
+    Spellcaster antenna was unreachable until you also paired an
+    antenna there.
     """
     cfg = _guided_install_load_config()
-    local = (cfg.get("app_control") or {}).get("kobold_tts") or {}
-    lh = (local.get("launcher") or "").strip()
-    lp = local.get("port")
-    if lp:
-        try:
-            return f"http://127.0.0.1:{int(lp)}"
-        except (TypeError, ValueError):
-            pass
-    # Antenna fallback
+    entry = (cfg.get("app_control") or {}).get("kobold_tts") or {}
+
+    # 1. Explicit URL wins.
+    url = str(entry.get("url") or "").strip().rstrip("/")
+    if url:
+        return url
+
+    # 2 + 3. Host / target resolution.
+    host = str(entry.get("host") or "").strip()
+    if not host:
+        tgt = str(entry.get("target") or "").strip()
+        if tgt and tgt.lower() != "local":
+            host = tgt
+
+    # 4. Port resolution, defaulting to 5002 (KoboldCpp --ttsport).
+    port = entry.get("port")
+    try:
+        port_i = int(port) if port else 5002
+    except (TypeError, ValueError):
+        port_i = 5002
+
+    # If we picked up ANY field at all, build a URL from it —
+    # including the legacy `{target: "local", port: 5002}` shape
+    # which resolves to 127.0.0.1:5002.
+    if host or port or entry.get("target"):
+        return f"http://{host or '127.0.0.1'}:{port_i}"
+
+    # 5. Antenna fallback — no explicit entry, look for paired
+    # antennas that advertise kobold_tts in their services list.
     try:
         if ANTENNA_REGISTRY_AVAILABLE and _antenna_registry is not None:
             for a in _antenna_registry.list_entries(only_online=True):
                 svcs = set(a.services or [])
                 if 'kobold_tts' in svcs or 'kobold' in svcs:
-                    host = a.hostname or a.ip
-                    if host:
-                        # Convention: kobold_tts defaults to 5002 unless
-                        # overridden; RP kobold stays on 5001.
-                        return f"http://{host}:5002"
+                    ah = a.hostname or a.ip
+                    if ah:
+                        return f"http://{ah}:5002"
     except Exception:
         pass
     return None
@@ -10982,22 +11016,41 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     "error": "app_control must be an object",
                     "hint": '{"app_control": {"comfyui": {"auto_start": true, "target": "theo"}}}',
                 })
+            # R139: allow kobold_rp and kobold_tts here. Without them
+            # the bulk-save silently dropped TTS/STT routing — the
+            # register endpoint accepted them but the matrix-save
+            # wiped them out the moment the UI saved the chip row.
+            # Also preserve any launcher / host / url / port / root
+            # fields instead of erasing them back to defaults.
             cleaned = {}
             allowed_apps = {"comfyui", "ollama", "kobold",
+                             "kobold_rp", "kobold_tts",
                              "sillytavern", "signal", "gimp",
                              "darktable", "resolve"}
+            preserved_keys = ("launcher", "host", "url", "port", "root")
+            existing_cfg = _guided_install_load_config()
+            existing_matrix = existing_cfg.get("app_control") or {}
             for k, v in new_matrix.items():
                 if k not in allowed_apps:
                     continue
                 if not isinstance(v, dict):
                     continue
-                cleaned[k] = {
+                prior = existing_matrix.get(k) or {}
+                entry = {
                     "auto_start": bool(v.get("auto_start", False)),
                     "target": str(v.get("target") or "local").strip() or "local",
                 }
-            cfg = _guided_install_load_config()
-            cfg["app_control"] = cleaned
-            ok = _guided_install_save_config(cfg)
+                # Keep launcher/host/url/port/root when the caller
+                # omits them — they're set by /api/app_control/register
+                # and shouldn't be clobbered by a chip-row update.
+                for pk in preserved_keys:
+                    if pk in v and v[pk] not in (None, ""):
+                        entry[pk] = v[pk]
+                    elif pk in prior:
+                        entry[pk] = prior[pk]
+                cleaned[k] = entry
+            existing_cfg["app_control"] = cleaned
+            ok = _guided_install_save_config(existing_cfg)
             return self.end_json(200 if ok else 500,
                                   {"ok": ok, "app_control": cleaned})
 
@@ -11161,6 +11214,13 @@ class GuildHandler(SimpleHTTPRequestHandler):
                         entry["port"] = int(data["port"])
                     except (TypeError, ValueError):
                         pass
+                # R139: kobold_tts can be registered with just a host
+                # or a full URL — the _resolve_stt_backend_url resolver
+                # reads these fields to build the backend address.
+                if data.get("host"):
+                    entry["host"] = str(data["host"]).strip()
+                if data.get("url"):
+                    entry["url"] = str(data["url"]).strip().rstrip("/")
                 matrix[app] = entry
                 cfg["app_control"] = matrix
                 ok = _guided_install_save_config(cfg)
