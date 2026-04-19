@@ -498,8 +498,21 @@ async function checkSignalBridgeConnection() {
 // chip only appears when Resolve is actually there.
 window.activeInterfaces = {};   // key -> snapshot dict
 window.activeInterfacesKeys = []; // ordered list of active keys
+window.networkSurvey = {};       // key -> declared-placement record
 
 async function refreshActiveInterfaces() {
+    // Fetch the network survey in parallel — it holds the user's declared
+    // placement per service (which machine they WANT to use). We overlay
+    // that onto the live heartbeat state so a chip reflects the user's
+    // pick even when a remote antenna is still heartbeating the old path.
+    // Response shape: { catalog: {...}, survey: {key: {placement, host, ...}}, ready: bool }
+    try {
+        const sres = await fetch('/api/spellcaster/network/survey');
+        if (sres.ok) {
+            const sdata = await sres.json();
+            window.networkSurvey = sdata.survey || sdata.services || sdata || {};
+        }
+    } catch (_e) { /* survey optional */ }
     try {
         const res = await fetch('/api/interfaces');
         if (!res.ok) {
@@ -551,36 +564,208 @@ function renderActiveInterfaceChips() {
     }
     container.style.display = '';
     const NOW_S = Date.now() / 1000;
-    const html = keys.map(k => {
+    row.innerHTML = '';
+    for (const k of keys) {
         const v = window.activeInterfaces[k];
         const label = v.ui_label || k;
         const icon = v.icon || '🔌';
-        // State class: online-now / stale (recent heartbeat but not online) / idle
         const age = NOW_S - (v.last_heartbeat || 0);
-        const cls = v.online
-            ? 'online'
-            : (age < 300 ? 'stale' : 'idle');
-        // Origin badge: where is the app living?
         const meta = v.last_meta || {};
-        const origin = v.origin || (v.online_remote ? 'remote'
-                                   : v.online_local ? 'local' : 'none');
-        const host = meta.machine || meta.ip
-                   || (origin === 'local' ? 'this machine' : '');
         const caps = (v.capabilities || []).join(', ');
-        // Tooltip: one line of status + machine + capabilities
-        const statusTxt = v.online ? 'online' : (age < 300 ? 'recently seen' : 'idle');
+
+        // User's declared placement for this service (from /network/survey).
+        // When present, it wins over the heartbeat-derived origin — the
+        // chip should show where the user TOLD us to run it, not where
+        // a leftover heartbeat is still coming from.
+        const decl = (window.networkSurvey || {})[k] || null;
+        let origin, host, statusTxt, cls, subTip;
+        if (decl && decl.placement) {
+            origin = decl.placement === 'local' ? 'local'
+                   : decl.placement === 'remote' ? 'remote'
+                   : decl.placement;   // not_installed / skip / unknown
+            if (origin === 'local') {
+                host = 'this machine';
+                const localOn = v.online_local || (v.origin === 'local' && v.online);
+                cls = localOn ? 'online' : (age < 300 ? 'stale' : 'idle');
+                statusTxt = localOn ? 'online on this machine'
+                          : 'declared local — no heartbeat yet';
+            } else if (origin === 'remote') {
+                host = decl.host || meta.ip || meta.machine || 'remote';
+                const remoteOn = v.online_remote && (!decl.host || meta.ip === decl.host);
+                cls = remoteOn ? 'online' : (age < 300 ? 'stale' : 'idle');
+                statusTxt = remoteOn ? `online on ${host}`
+                          : `declared remote (${host}) — no heartbeat yet`;
+            } else {
+                host = origin === 'not_installed' ? 'skipped' : origin;
+                cls = 'idle';
+                statusTxt = origin === 'not_installed' ? 'not installed'
+                          : 'unknown placement';
+            }
+            subTip = decl.verified ? 'verified reachable' : 'not yet verified';
+        } else {
+            // No declared placement — fall back to heartbeat origin.
+            origin = v.origin || (v.online_remote ? 'remote'
+                                  : v.online_local ? 'local' : 'none');
+            host = meta.machine || meta.ip
+                   || (origin === 'local' ? 'this machine' : '');
+            cls = v.online ? 'online' : (age < 300 ? 'stale' : 'idle');
+            statusTxt = v.online ? 'online' : (age < 300 ? 'recently seen' : 'idle');
+            subTip = 'no declared placement';
+        }
+
         const tipParts = [`${label}: ${statusTxt}`];
-        if (host) tipParts.push(`on ${host}` + (origin === 'remote' ? ' (remote)' : ''));
         if (caps) tipParts.push(caps);
-        const tooltip = tipParts.join(' · ').replace(/"/g, '&quot;');
-        const hostBadge = host ? `<span class="iface-host">${host}</span>` : '';
-        return `<span class="active-iface-chip iface-${cls} iface-${origin}" title="${tooltip}">
-                  <span class="iface-icon">${icon}</span>
-                  <span class="iface-label">${label}</span>
-                  ${hostBadge}
-                </span>`;
-    }).join('');
-    row.innerHTML = html;
+        tipParts.push(subTip);
+        tipParts.push('(click to change where this app runs)');
+        const tooltip = tipParts.join(' · ');
+
+        const chip = document.createElement('span');
+        chip.className = `active-iface-chip iface-${cls} iface-${origin}`;
+        chip.title = tooltip;
+        chip.dataset.ifaceKey = k;
+        chip.dataset.ifaceLabel = label;
+        chip.innerHTML =
+            `<span class="iface-icon">${icon}</span>` +
+            `<span class="iface-label">${label}</span>` +
+            (host ? `<span class="iface-host">${host}</span>` : '');
+        chip.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            openIfacePlacementMenu(chip, k, label, v);
+        });
+        row.appendChild(chip);
+    }
+}
+
+// ── Placement popover ─────────────────────────────────────────────────
+// Clicking an interface chip opens a small menu listing every available
+// host for that service (localhost + each antenna). Picking one POSTs
+// to /api/spellcaster/network/declare which persists the choice to
+// survey.json and probes the new placement. The chip row refreshes
+// on the next /api/interfaces tick so state propagates cleanly.
+let _ifaceMenuEl = null;
+
+function _closeIfacePlacementMenu() {
+    if (_ifaceMenuEl && _ifaceMenuEl.parentNode) {
+        _ifaceMenuEl.parentNode.removeChild(_ifaceMenuEl);
+    }
+    _ifaceMenuEl = null;
+    document.removeEventListener('click', _closeIfacePlacementMenu);
+}
+
+async function openIfacePlacementMenu(anchorEl, ifaceKey, ifaceLabel, iface) {
+    _closeIfacePlacementMenu();
+    // Collect option list: localhost + each antenna that advertises this service
+    // or could run it. We trust the user: any antenna can in principle host
+    // any service, but we surface antennas that CURRENTLY declare / detect
+    // the service first, then offer the rest as "point this elsewhere" too.
+    let antennas = [];
+    try {
+        const resp = await fetch('/api/antennas');
+        if (resp.ok) antennas = (await resp.json()).antennas || [];
+    } catch (_e) { /* offline — localhost-only menu */ }
+
+    // "Current" = user's declared placement (persisted via
+    // /network/declare), not the heartbeat origin. Heartbeats are a
+    // discovery signal; the survey is what the user wants the Guild
+    // to actually use.
+    const decl = (window.networkSurvey || {})[ifaceKey] || {};
+    const currentPlacement = decl.placement
+        || iface.origin
+        || (iface.online_remote ? 'remote'
+            : iface.online_local ? 'local' : 'unknown');
+    const currentHost = decl.host
+        || (iface.last_meta || {}).ip
+        || (iface.last_meta || {}).machine || '';
+
+    const menu = document.createElement('div');
+    menu.className = 'iface-placement-menu';
+    menu.innerHTML =
+        `<div class="iface-menu-header">Where should <b>${ifaceLabel}</b> run?</div>`;
+
+    const addOption = (label, sub, placement, host, port, antenna_port, current) => {
+        const opt = document.createElement('button');
+        opt.type = 'button';
+        opt.className = 'iface-menu-option' + (current ? ' current' : '');
+        opt.innerHTML =
+            `<span class="opt-mark">${current ? '✓' : ''}</span>` +
+            `<span class="opt-label">${label}</span>` +
+            (sub ? `<span class="opt-sub">${sub}</span>` : '');
+        opt.addEventListener('click', async (ev) => {
+            ev.stopPropagation();
+            opt.classList.add('pending');
+            opt.innerHTML =
+                `<span class="opt-mark">…</span>` +
+                `<span class="opt-label">switching ${ifaceLabel} to ${label}</span>`;
+            const body = { key: ifaceKey, placement };
+            if (host) body.host = host;
+            if (port) body.port = port;
+            if (antenna_port) body.antenna_port = antenna_port;
+            try {
+                const r = await fetch('/api/spellcaster/network/declare', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                const data = await r.json().catch(() => ({}));
+                if (!r.ok || data.error) {
+                    opt.innerHTML =
+                        `<span class="opt-mark">✗</span>` +
+                        `<span class="opt-label">failed</span>` +
+                        `<span class="opt-sub">${data.error || ('HTTP ' + r.status)}</span>`;
+                    return;
+                }
+                // Success — close the menu and force an immediate refresh so
+                // the chip colour + host badge reflect the new placement.
+                _closeIfacePlacementMenu();
+                refreshActiveInterfaces();
+                refreshAntennas();
+            } catch (e) {
+                opt.innerHTML =
+                    `<span class="opt-mark">✗</span>` +
+                    `<span class="opt-label">failed</span>` +
+                    `<span class="opt-sub">${e.message || e}</span>`;
+            }
+        });
+        menu.appendChild(opt);
+    };
+
+    // Option 1: this machine (localhost)
+    addOption('This machine', 'localhost', 'local', '', 0, 0,
+              currentPlacement === 'local');
+
+    // Options 2..N: each registered antenna. Antennas that report this
+    // service already get highlighted at the top of their sub-label.
+    for (const a of antennas) {
+        const supports = (a.services || []).includes(ifaceKey);
+        const detail = (a.services_detail || {})[ifaceKey] || {};
+        const reachable = detail.reachable === true;
+        const host = a.ip || a.hostname || '';
+        const subParts = [host];
+        if (supports) subParts.push(reachable ? 'reachable' : 'declared');
+        else subParts.push('paired antenna');
+        addOption(a.hostname || host || 'remote',
+                  subParts.join(' · '),
+                  'remote',
+                  a.ip || '', 0, 7334,
+                  currentPlacement === 'remote' && currentHost === a.ip);
+    }
+
+    // Option N+1: skip this service entirely
+    addOption('Skip (not installed)', "don't route", 'not_installed',
+              '', 0, 0, currentPlacement === 'not_installed');
+
+    // Position below the chip
+    const rect = anchorEl.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.top = (rect.bottom + 6) + 'px';
+    menu.style.left = Math.min(rect.left, window.innerWidth - 260) + 'px';
+    document.body.appendChild(menu);
+    _ifaceMenuEl = menu;
+    // Close on any outside click (next tick so the opening click doesn't
+    // re-trigger the handler).
+    setTimeout(() => {
+        document.addEventListener('click', _closeIfacePlacementMenu);
+    }, 0);
 }
 
 // ── Antennas (remote-machine agents) ──────────────────────────────────

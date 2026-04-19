@@ -8824,7 +8824,10 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return _serve_placeholder_icon(self)
 
         # ── Video API GET endpoints ──
-        elif self.path == '/api/video/shots':
+        elif self.path == '/api/video/shots' and self.command == 'GET':
+            # R93b: explicit command check. Without it, POST /api/video/shots
+            # (redirected from do_POST via R83c's fall-through shim) would
+            # match this GET handler first and never reach the POST handler.
             if not _VIDEO_BRIDGE:
                 return self.end_json(503, {"error": "Video Bridge not initialised"})
             shots = []
@@ -8887,15 +8890,25 @@ class GuildHandler(SimpleHTTPRequestHandler):
 
         # ── Video API POST endpoints ──
         elif self.path == '/api/video/shots' and self.command == 'POST':
-            """Create a new shot."""
+            """Create a new shot. R93: pass through optional fields so
+            marker-driven and script-driven callers can set title,
+            color_label, tags, target_duration_s, scene_id, and notes
+            without a follow-up PUT."""
             if not _VIDEO_BRIDGE:
                 return self.end_json(503, {"error": "Video Bridge not initialised"})
-            shot = _VIDEO_BRIDGE.add_shot(
-                prompt=data.get('prompt', ''),
-                negative=data.get('negative', ''),
-                seed=data.get('seed'),
-                preset=data.get('preset', 'wan_480p'),
-            )
+            kw: dict = {
+                "prompt": data.get('prompt', ''),
+                "negative": data.get('negative', ''),
+                "seed": data.get('seed'),
+                "preset": data.get('preset', 'wan_480p'),
+            }
+            for field in ('title', 'notes', 'backend', 'scene_id',
+                           'target_duration_s', 'color_label',
+                           'bookmarked', 'priority', 'tags',
+                           'overrides'):
+                if field in data:
+                    kw[field] = data[field]
+            shot = _VIDEO_BRIDGE.add_shot(**kw)
             return self.end_json(200, shot)
 
         elif self.path == '/api/video/import-timeline' and self.command == 'POST':
