@@ -292,6 +292,12 @@ body {
 .dot.red { background: #ff4757; box-shadow: 0 0 8px rgba(255, 71, 87, 0.6); }
 .dot.green { background: #2ed573; box-shadow: 0 0 8px rgba(46, 213, 115, 0.6); }
 .dot.yellow { background: #ffa502; box-shadow: 0 0 8px rgba(255, 165, 2, 0.6); }
+.dot.blue { background: #4aa8ff; box-shadow: 0 0 10px rgba(74, 168, 255, 0.75); }
+.dot.pulse { animation: llm-dot-pulse 1.2s ease-in-out infinite; }
+@keyframes llm-dot-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.35); opacity: 0.55; }
+}
 /* Health stats — VRAM / RAM / cache line under the ComfyUI indicator.
    flex-basis:100% breaks the line so stats appear on their own row. */
 .health-stats {

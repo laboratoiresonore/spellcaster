@@ -8363,6 +8363,23 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 return self.end_json(200, {"connected": True, "url": SILLYTAVERN_URL})
             except Exception:
                 return self.end_json(200, {"connected": False, "url": SILLYTAVERN_URL})
+        elif self.path == '/api/llm_status':
+            # Live LLM snapshot for the sidebar indicator. Updated by
+            # spellcaster_core.guild_llm.chat() on every call so the UI
+            # can show "LLM: Theo:ComfyUI" with state transitions
+            # (idle → busy → idle, or reloading while a model swap is
+            # in flight). See guild_llm.get_status() for field docs.
+            try:
+                from spellcaster_core import guild_llm as _gllm
+                snap = _gllm.get_status()
+            except Exception:
+                snap = {"backend": None, "host": None, "state": "idle"}
+            # Never leak the raw host URL to the browser — the friendly
+            # label from _host_label() is enough. The UI only renders
+            # `host` and `backend`; host_url is used internally for
+            # alias lookups and is stripped here.
+            snap.pop("host_url", None)
+            return self.end_json(200, snap)
         elif self.path == '/api/signal_bridge_status':
             try:
                 req = urllib.request.Request(

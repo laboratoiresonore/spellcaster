@@ -201,7 +201,15 @@ class Bridge:
                 print(f"[Spellcaster Bridge] ingest failed: {e}", file=sys.stderr)
 
     def _ingest_external_image(self, image_url: str, evt: dict):
-        """Download an asset from the Guild and hand to MediaPoolSync."""
+        """Download an asset from the Guild and hand to MediaPoolSync.
+
+        R105: absolute URLs are used as-is. Relative paths are
+        prepended with the Bridge's own Guild base_url — this is
+        essential when the publisher (e.g. GIMP on a different host)
+        doesn't know the LAN URL the Bridge uses to reach the Guild.
+        """
+        if image_url.startswith("/"):
+            image_url = self.guild.base_url.rstrip("/") + image_url
         # Fake a "shot ready" event that the sync module already knows
         # how to handle — it'll download + import + add metadata marker
         shot_stub = {

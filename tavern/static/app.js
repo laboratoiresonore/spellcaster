@@ -514,7 +514,7 @@ async function refreshActiveInterfaces() {
         const active = {};
         const keys = [];
         for (const [k, v] of Object.entries(ifaces)) {
-            if (k === 'guild') continue;
+            if (k === 'guild' || k === 'antenna') continue;
             if (!v.enabled) continue;
             const recent = (v.last_heartbeat || 0) > NOW_S - RECENT_S;
             if (v.installed || v.online || recent) {
@@ -1912,6 +1912,62 @@ async function checkLlmAndGenerateNames() {
         llmDot.className = "dot red";
         llmStatus.textContent = "LLM: Disconnected";
     }
+    // Kick off the recurring status poll once chat/probe landed.
+    // The poll surfaces live backend transitions (Local:Ollama →
+    // Theo:ComfyUI → "Reloading…") that the one-shot probe can't see.
+    _startLlmStatusPoll();
+}
+
+// ─────────────────────────────────────────────────────────────────────
+//  Live LLM status poll — drives the sidebar indicator in real time.
+//  Server updates spellcaster_core.guild_llm._STATUS on every chat()
+//  call. We poll every 3s; the indicator flips green/blue/red based on
+//  the reported state. "busy" and "reloading" both pulse blue so the
+//  user gets immediate feedback when a prompt-enhance cycle fires.
+// ─────────────────────────────────────────────────────────────────────
+let _llmStatusTimer = null;
+let _llmStatusLastBusyAt = 0;
+function _startLlmStatusPoll() {
+    if (_llmStatusTimer) return;
+    _llmStatusTimer = setInterval(_pollLlmStatusOnce, 3000);
+    _pollLlmStatusOnce();
+}
+async function _pollLlmStatusOnce() {
+    try {
+        const r = await fetch('/api/llm_status', { cache: 'no-store' });
+        if (!r.ok) return;
+        const s = await r.json();
+        if (llmMode === 'horde') return; // Horde label wins
+        const backend = s.backend;
+        const host = s.host;
+        const state = s.state || 'idle';
+        // Map state → dot color + label. Blue pulse for busy so the
+        // user sees "something is happening" without needing a spinner.
+        if (state === 'busy') {
+            llmDot.className = 'dot blue pulse';
+            llmStatus.textContent = `LLM: ${host || '?'}:${_prettyBackend(backend)} · working`;
+            _llmStatusLastBusyAt = Date.now();
+        } else if (state === 'reloading' || state === 'unloaded') {
+            llmDot.className = 'dot blue pulse';
+            llmStatus.textContent = `LLM: ${host || '?'}:${_prettyBackend(backend)} · ${state}`;
+        } else if (state === 'error') {
+            llmDot.className = 'dot red';
+            llmStatus.textContent = `LLM: ${host || '?'}:${_prettyBackend(backend)} · error`;
+            llmStatus.title = s.last_error || '';
+        } else if (backend) {
+            // idle with a known last-used backend → connected
+            llmDot.className = 'dot green';
+            llmStatus.textContent = `LLM: ${host || '?'}:${_prettyBackend(backend)}`;
+            llmStatus.title = s.model ? `model: ${s.model}` : '';
+        }
+        // state == 'idle' with no backend means "never used yet" — leave
+        // whatever checkLlmAndGenerateNames put there.
+    } catch (e) { /* silent — indicator stays on last known state */ }
+}
+function _prettyBackend(b) {
+    if (!b) return '?';
+    const map = { ollama: 'Ollama', comfyui: 'ComfyUI', kobold: 'Kobold' };
+    return map[b] || b;
 }
 
 async function generateNamesForCharacters() {
