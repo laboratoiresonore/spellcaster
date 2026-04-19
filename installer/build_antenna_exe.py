@@ -80,6 +80,11 @@ def main() -> int:
         "--collect-submodules", "antenna",
         "--collect-submodules", "scaffold",
         "--collect-submodules", "spellcaster_core",
+        # Tkinter — PyInstaller does NOT auto-bundle Tcl/Tk; the
+        # first-run shortcut dialog needs it. --collect-all ensures
+        # the _tkinter C extension + the tcl/tk runtime DLLs land in
+        # the onefile bundle.
+        "--collect-all", "tkinter",
         # Native tray backends per OS — plus PIL's tk finder which pystray's
         # notification path imports on demand.
         "--hidden-import", "pystray._win32",

@@ -13,6 +13,44 @@ from __future__ import annotations
 
 import os
 import sys
+import traceback
+
+
+# ── Crash trap — windowless exe has no stderr, so any startup
+# exception disappears. Mirror the traceback to a file inside
+# ~/.spellcaster/ so we can debug "nothing happens when I launch the
+# .exe". The hook is installed BEFORE we touch anything that could
+# fail (tray backends, tkinter, pystray, PIL), so even an import-
+# error in one of those lands here.
+
+def _install_crash_trap() -> None:
+    home = os.path.expanduser("~")
+    log_dir = os.path.join(home, ".spellcaster")
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+    except Exception:
+        return
+    log_path = os.path.join(log_dir, "antenna-crash.log")
+
+    def hook(exc_type, exc, tb):
+        try:
+            with open(log_path, "a", encoding="utf-8") as f:
+                import datetime as _dt
+                f.write(f"\n\n=== {_dt.datetime.now().isoformat()} ===\n")
+                f.write(f"python  : {sys.version}\n")
+                f.write(f"argv    : {sys.argv}\n")
+                f.write(f"frozen  : {getattr(sys, 'frozen', False)}\n")
+                f.write(f"meipass : {getattr(sys, '_MEIPASS', '')}\n\n")
+                traceback.print_exception(exc_type, exc, tb, file=f)
+        except Exception:
+            pass
+        # Also re-raise so normal handling (console stderr) still works.
+        sys.__excepthook__(exc_type, exc, tb)
+
+    sys.excepthook = hook
+
+
+_install_crash_trap()
 
 
 def _prefer_tray() -> bool:
@@ -49,7 +87,20 @@ def _first_run_shortcut_prompt() -> None:
     try:
         import tkinter as tk
         from tkinter import ttk
-    except Exception:  # noqa: BLE001
+    except Exception as _e:  # noqa: BLE001
+        # Log so we can tell "tkinter missing from exe" apart from
+        # "user just doesn't want the dialog".
+        try:
+            import datetime as _dt
+            log_path = os.path.join(os.path.expanduser("~"),
+                                      ".spellcaster",
+                                      "antenna-crash.log")
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"\n[{_dt.datetime.now().isoformat()}] "
+                        f"first-run dialog skipped: tkinter import "
+                        f"failed ({type(_e).__name__}: {_e})\n")
+        except Exception:
+            pass
         return
     try:
         from . import install_shortcuts as _shc
@@ -145,14 +196,34 @@ def _first_run_shortcut_prompt() -> None:
 
 
 def main() -> int:
-    if _prefer_tray():
-        _first_run_shortcut_prompt()
-        from . import tray
-        return tray.main()
-    # Console mode — run the agent's serve loop
-    from . import agent, config
-    agent.serve(config.bootstrap(), block=True)
-    return 0
+    # Crash logger for EVERY code path below — if pystray or tkinter
+    # fails silently on a windowless exe, the crash log is the only
+    # way to tell the user what happened without recompiling a
+    # console build.
+    try:
+        if _prefer_tray():
+            _first_run_shortcut_prompt()
+            from . import tray
+            return tray.main()
+        # Console mode — run the agent's serve loop
+        from . import agent, config
+        agent.serve(config.bootstrap(), block=True)
+        return 0
+    except Exception:
+        import datetime as _dt
+        log_path = os.path.join(os.path.expanduser("~"),
+                                  ".spellcaster",
+                                  "antenna-crash.log")
+        try:
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"\n\n=== {_dt.datetime.now().isoformat()} "
+                        f"antenna __main__ crashed ===\n")
+                traceback.print_exc(file=f)
+        except Exception:
+            pass
+        # Surface the traceback to the default hook (logs to stderr
+        # when a console is attached).
+        raise
 
 
 if __name__ == "__main__":
