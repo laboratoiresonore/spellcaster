@@ -8336,49 +8336,102 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "color2": char.get("color2", "#6C63FF"),
             })
         elif self.path.startswith('/api/workflows/list'):
-            # R141: discover user-saved ComfyUI workflows for the
-            # Travelling Wizard's Workflow Library tab. Wraps
-            # scaffold.discover_workflows() so the Guild remains the
-            # single source of truth — no ComfyUI-side custom endpoint
-            # to maintain, no sync across the 3 spellcaster_core
-            # copies. Query params:
-            #   ?paths=C:/extra/path,/another  (optional, comma-
-            #      separated extra search roots alongside the defaults)
-            try:
-                from scaffold.workflow_parser import discover_workflows
-            except Exception as e:
-                return self.end_json(500, {
-                    "error": f"scaffold.workflow_parser missing: {e}",
-                })
+            # R145: the Workflow Library lives on the ComfyUI server
+            # (not the Guild host), so the R141 "read scaffold/workflows/
+            # off local disk" approach was blind to the user's actual
+            # ~100+ ComfyUI workflows. Fetch them from ComfyUI's
+            # `/userdata?dir=workflows&recurse=true` endpoint and merge
+            # with any local scaffold-shipped templates. Cheap: only
+            # filenames + subdir categories; full parse happens on
+            # demand via /api/workflows/detail.
             import urllib.parse as _up
+            import urllib.request as _ur
+            import hashlib as _h
             qs = _up.urlparse(self.path).query
             extra_paths = []
+            include_local = True
             if qs:
-                p = _up.parse_qs(qs).get("paths", [""])[0]
+                params = _up.parse_qs(qs)
+                p = params.get("paths", [""])[0]
                 extra_paths = [x.strip() for x in p.split(",") if x.strip()]
+                include_local = params.get("local", ["1"])[0] not in ("0", "false", "no")
+
+            out: list[dict] = []
+            comfy_err = None
+            # 1) ComfyUI userdata API. Fast, no parse — one HTTP call
+            # returns every workflow filename relative to
+            # user/default/workflows/ on the ComfyUI host, recursively.
             try:
-                entries = discover_workflows(
-                    search_dirs=extra_paths or None)
+                req = _ur.Request(
+                    f"{COMFYUI_URL.rstrip('/')}/userdata?dir=workflows&recurse=true",
+                    headers={"Accept": "application/json"})
+                with _ur.urlopen(req, timeout=10) as resp:
+                    names = json.loads(resp.read() or b"[]")
+                if isinstance(names, list):
+                    for raw in names:
+                        rel = str(raw or "").replace("\\", "/")
+                        if not rel.lower().endswith(".json"):
+                            continue
+                        if "/" in rel:
+                            cat, name = rel.split("/", 1)
+                        else:
+                            cat, name = "root", rel
+                        out.append({
+                            "id": _h.sha1(
+                                f"comfyui:{rel}".encode("utf-8")).hexdigest()[:16],
+                            "name": name.rsplit(".json", 1)[0],
+                            "path": rel,
+                            "category": cat,
+                            # node_count + workflow_type unknown until parsed
+                            "node_count": 0,
+                            "workflow_type": "",
+                            "source": "comfyui",
+                        })
             except Exception as e:
-                return self.end_json(500, {
-                    "error": f"discover_workflows raised: {e}",
-                    "workflows": [],
-                })
-            # Flatten to dicts. Add a stable `id` field so the UI can
-            # use it as a React key without touching the absolute path.
-            import hashlib as _h
-            out = []
-            for e in entries:
-                d = e.to_dict()
-                d["id"] = _h.sha1(d["path"].encode("utf-8")).hexdigest()[:16]
-                out.append(d)
-            # Categories for the UI's quick-filter chips.
+                comfy_err = f"{type(e).__name__}: {e}"
+
+            # 2) Bundled / local Spellcaster scaffolds — only included
+            # when local=1 (default). These are the archived R135
+            # snapshots + any templates the Guild ships in
+            # scaffold/workflows/.
+            if include_local:
+                try:
+                    from scaffold.workflow_parser import discover_workflows
+                    entries = discover_workflows(
+                        search_dirs=extra_paths or None)
+                    for e in entries:
+                        d = e.to_dict()
+                        d["id"] = _h.sha1(
+                            f"local:{d['path']}".encode("utf-8")
+                        ).hexdigest()[:16]
+                        d["source"] = "local"
+                        out.append(d)
+                except Exception as e:
+                    # If the local parse fails AND the ComfyUI probe
+                    # also failed, surface both errors in the response
+                    # so the user knows WHY it's empty.
+                    if comfy_err is None:
+                        comfy_err = f"local parse: {e}"
+
             cats = sorted({d["category"] for d in out})
-            return self.end_json(200, {
+            resp_payload = {
                 "workflows": out,
                 "categories": cats,
                 "total": len(out),
-            })
+                "sources": {
+                    "comfyui": sum(1 for d in out if d.get("source") == "comfyui"),
+                    "local":   sum(1 for d in out if d.get("source") == "local"),
+                },
+            }
+            if comfy_err and not out:
+                # Only surface the error when we have NO workflows at
+                # all — a partial success (e.g. comfyui down, local
+                # ones still listed) shouldn't force the UI into the
+                # error fallback screen.
+                resp_payload["error"] = comfy_err
+            elif comfy_err:
+                resp_payload["warning"] = f"comfyui probe failed: {comfy_err}"
+            return self.end_json(200, resp_payload)
         elif self.path == '/api/characters':
             visible = [c for c in CHARS_CACHE if c['id'] not in _BANISHED_IDS]
             return self.end_json(200, visible)
