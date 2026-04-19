@@ -198,6 +198,10 @@ class Shot:
     # order wins. Independent of dependencies (depends_on still forces
     # ordering across priority tiers).
     priority: str = "normal"  # "high" | "normal" | "low"
+    # R65a: user-toggled bookmark / favorite. Pure UI state — never
+    # affects render order or any automated behavior. Filter chip in
+    # the video panel shows "⭐ starred" to quickly return to them.
+    bookmarked: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -856,6 +860,39 @@ class Shotboard:
                     total += 1
         return {"total": total, "by_code": by_code,
                 "shots_with_warnings": by_shot}
+
+    def find_prompt_clusters(self, *, min_cluster: int = 2) -> List[Dict[str, Any]]:
+        """R65b: Group shots by exact prompt match. Returns one entry
+        per cluster with 2+ shots sharing the same (normalized) prompt.
+
+        Normalization: trim whitespace + collapse runs of whitespace.
+        Empty prompts are never clustered.
+
+        Use cases:
+          - find accidentally-duplicated work
+          - spot shots that share a prompt but diverge in preset/seed
+            (intentional variations — might want to group them as a scene)
+
+        Returns:
+          [{"prompt": "...", "count": 3, "shot_ids": ["a", "b", "c"]}, ...]
+        sorted by cluster size (largest first), then by prompt alpha.
+        """
+        import re
+        ws_re = re.compile(r"\s+")
+        by_prompt: Dict[str, List[str]] = {}
+        for shot in self._shots:
+            p = (shot.prompt or "").strip()
+            if not p:
+                continue
+            norm = ws_re.sub(" ", p).lower()
+            by_prompt.setdefault(norm, []).append(shot.id)
+        clusters = [
+            {"prompt": norm, "count": len(ids), "shot_ids": list(ids)}
+            for norm, ids in by_prompt.items()
+            if len(ids) >= min_cluster
+        ]
+        clusters.sort(key=lambda c: (-c["count"], c["prompt"]))
+        return clusters
 
     def batch_randomize_seeds(self, shot_ids,
                                seed_min: int = 0,
