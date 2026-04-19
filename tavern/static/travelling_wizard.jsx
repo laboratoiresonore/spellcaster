@@ -2074,7 +2074,9 @@ function CrossPluginManifest() {
   const [totals, setTotals] = useState({ total: 0, canonical: 0, duplicate: 0, unknown: 0 });
   const [status, setStatus] = useState("loading"); // loading | loaded | error
   const [err, setErr] = useState("");
-  const [openIds, setOpenIds] = useState(() => new Set(["wizard_guild"]));
+  // Collapsed by default — the user wants to scan the plugin counts
+  // first and expand on demand, not wade through 150+ rows on load.
+  const [openIds, setOpenIds] = useState(() => new Set());
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all"); // all | canonical | duplicate | thin_client | utility | unknown
   const [groupBy, setGroupBy] = useState("category"); // category | status | none
@@ -3649,7 +3651,22 @@ function SignalBridgeSettings() {
         {activeTab === "scaffolds" && (
           <div className="space-y-4">
             <CrossPluginManifest />
-            <ScaffoldEditor scaffolds={scaffolds} setScaffolds={setScaffolds} />
+            <div className="bg-slate-900 border border-amber-600/30 rounded-xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-amber-600/20 bg-purple-900/20">
+                <h3 className="text-lg font-semibold text-amber-50 flex items-center gap-2">
+                  <Icons.Feather /> Wizard Guild — edit scaffold behaviour
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Writes per-wizard overrides to <code className="text-amber-200">scaffold_overrides.json</code>
+                  &nbsp;(steps, LoRA slots, system prompt, NSFW flag, workflow_key).
+                  Only Wizard Guild scaffolds are editable here — GIMP/Darktable/Resolve/SillyTavern methods
+                  live in their plugin source and are audited above (read-only).
+                </p>
+              </div>
+              <div className="p-5">
+                <ScaffoldEditor scaffolds={scaffolds} setScaffolds={setScaffolds} />
+              </div>
+            </div>
           </div>
         )}
 

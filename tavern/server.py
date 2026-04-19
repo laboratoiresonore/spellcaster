@@ -6674,98 +6674,64 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
     if not BUILTIN_AVAILABLE or _workflows_v2 is None:
         return {"queued": False, "reason": "spellcaster not available"}
 
+    # Canonical "Animate All Avatars" path — LTX i2v only.
+    #
+    # Why LTX-only (no WAN fallback):
+    #   The WAN I2V schedule (even full-step non-turbo) reliably produces
+    #   pure-black 8KB MP4 output on the user's RTX 5060 Ti / 14B I2V-A14B
+    #   setup. LTX 2.3 distilled i2v produces the "perfect" gens the user
+    #   validated. Falling back to WAN was the cause of the
+    #   all-avatars-black incident; the fallback is removed for the same
+    #   reason we refuse T2V models — it's shape-correct but fails at
+    #   runtime in a way that looks fine until you watch the output.
+    #
+    # This mirrors tools/bake_ltx_avatars.py's canonical bake:
+    #   1. detect_ltx_preset → video_presets canon (real Gemma + LTX VAE)
+    #   2. ltx_mode_kwargs("i2v") → 8-step distilled with image conditioning
+    #   3. build_ltx_video(..., pingpong=True) → loopable MP4 output
+    # See docs/VIDEO_PIPELINES_CANON.md §16.3.
     image_filename = _extract_comfyui_filename(image_url, comfy_url=comfy_url)
     seed = random.randint(1, 1000000000)
-    engine = None
     workflow = None
+    engine = None
 
-    # Strategy 1: LTX (preferred -- reliable I2V, no channel mismatch).
-    # Canonical mode: "i2v" (distilled 8-step with image conditioning).
-    # See docs/VIDEO_PIPELINES_CANON.md §"LTX 2.3 — full formula".
     ltx_preset = _get_ltx_preset(comfy_url)
-    print(f"  [Guild] Anim strategy: LTX preset={'found' if ltx_preset else 'NONE'}")
-    if ltx_preset:
-        build_ltx = getattr(_workflows_v2, 'build_ltx_video', None)
-        if build_ltx:
-            try:
-                from spellcaster_core import video_presets as _vp
-                ltx_mode = _vp.ltx_mode_kwargs("i2v")
-            except ImportError:
-                ltx_mode = {"distilled": True, "two_stage": False}
-            try:
-                workflow = build_ltx(
-                    preset=ltx_preset,
-                    prompt_text=f"subtle magical animation, {prompt_text}, gentle swaying, "
-                                "mystical particles, flickering light, living portrait",
-                    seed=seed,
-                    width=512, height=512,
-                    num_frames=25,     # 1 sec at 25fps
-                    fps=25,
-                    image_filename=image_filename,
-                    i2v_strength=0.85,
-                    pingpong=True,
-                    **ltx_mode,
-                )
-                engine = "ltx"
-            except Exception as e:
-                print(f"  [Guild] LTX workflow build failed, trying WAN: {e}")
-
-    # Strategy 2: WAN (fallback -- image-to-video, may have channel issues)
-    if workflow is None:
-        wan_preset = _get_wan_preset(comfy_url)
-        if wan_preset and wan_preset.get("is_i2v", True):
-            build_wan = getattr(_workflows_v2, 'build_wan_video', None)
-            if build_wan:
-                try:
-                    # Canonical turbo-vs-full-step dispatch — see
-                    # CLAUDE.md §16.2 "WAN 2.2 — full formula" and
-                    # `spellcaster_core.video_presets.wan_turbo_kwargs`.
-                    # Default is full-step (turbo=False) because on the
-                    # user's RTX 5060 Ti the shipped LightX2V 4-step
-                    # LoRAs produced pure-black output with the preset's
-                    # turbo-tuned schedule. SPELLCASTER_WAN_TURBO=1 opts
-                    # into turbo for servers whose model/LoRA combo
-                    # tolerates it.
-                    import os as _os
-                    force_turbo = _os.environ.get(
-                        "SPELLCASTER_WAN_TURBO", "").strip().lower() in (
-                            "1", "true", "yes")
-                    try:
-                        from spellcaster_core import video_presets as _vp
-                        kwargs_extra = _vp.wan_turbo_kwargs(force_turbo)
-                    except ImportError:
-                        kwargs_extra = ({} if force_turbo
-                                         else {"steps": 30, "cfg": 3.5,
-                                               "second_step": 15})
-                    workflow = build_wan(
-                        image_filename=image_filename,
-                        preset=wan_preset,
-                        prompt_text=f"subtle magical animation, {prompt_text}, gentle swaying, "
-                                    "mystical particles, flickering candlelight, living portrait",
-                        negative_text="text, watermark, blurry, deformed",
-                        seed=seed,
-                        width=512, height=512,
-                        length=33,         # ~2 sec at 16fps
-                        turbo=force_turbo,
-                        loop=False,
-                        rtx_scale=0,
-                        interpolate=False,
-                        face_swap=False,
-                        save_raw=False,
-                        fps=16,
-                        pingpong=True,
-                        **kwargs_extra,
-                    )
-                    engine = "wan"
-                    print(f"  [Guild] WAN: turbo={force_turbo} "
-                          f"steps={30 if not force_turbo else 6} "
-                          f"(set SPELLCASTER_WAN_TURBO=1 to re-enable turbo)")
-                except Exception as e:
-                    print(f"  [Guild] WAN workflow build failed: {e}")
-
-    if workflow is None:
+    if not ltx_preset:
         return {"queued": False,
-                "reason": "No video models found (need WAN or LTX on ComfyUI)"}
+                "reason": ("LTX 2.3 models not found on ComfyUI. "
+                           "Install ltx-2.3 UNET + Gemma text encoder + "
+                           "ltx-video VAE + LTX embeddings connector.")}
+
+    build_ltx = getattr(_workflows_v2, 'build_ltx_video', None)
+    if not build_ltx:
+        return {"queued": False,
+                "reason": "spellcaster_core.workflows.build_ltx_video missing"}
+
+    try:
+        from spellcaster_core import video_presets as _vp
+        ltx_mode = _vp.ltx_mode_kwargs("i2v")
+    except ImportError:
+        ltx_mode = {"distilled": True, "two_stage": False}
+
+    try:
+        workflow = build_ltx(
+            preset=ltx_preset,
+            prompt_text=(f"subtle magical animation, {prompt_text}, gentle "
+                          "swaying, mystical particles, flickering candlelight, "
+                          "living portrait"),
+            seed=seed,
+            width=512, height=512,
+            num_frames=25, fps=25,    # 1 sec at 25fps
+            image_filename=image_filename,
+            i2v_strength=0.85,
+            pingpong=True,
+            **ltx_mode,
+        )
+        engine = "ltx"
+        print(f"  [Guild] Anim via LTX i2v (canonical): {char_id}")
+    except Exception as e:
+        return {"queued": False,
+                "reason": f"LTX workflow build failed: {e}"}
 
     # Submit to ComfyUI queue (non-blocking — just POST and get prompt_id)
     try:
@@ -6831,13 +6797,13 @@ def _poll_animated_avatars(comfy_url):
                             _privacy_cleanup(comfy_url, wf, {"urls": []})
                         except Exception:
                             pass
-                    # Auto-retry with LTX if WAN failed (channel mismatch, etc.)
-                    engine = entry.get("engine", "ltx")
-                    if engine in ("wan", "ltx") and not entry.get("_retried"):
-                        retry_engine = "wan" if engine == "ltx" else "ltx"
-                        print(f"  [Guild] {engine.upper()} failed for {char_id}, auto-retrying with {retry_engine.upper()}...")
+                    # Auto-retry LTX once with a fresh seed. Canonical path
+                    # is LTX-only now (see docs/VIDEO_PIPELINES_CANON.md
+                    # §16.3 + _queue_animated_avatar); we no longer fall
+                    # back to WAN because WAN produced pure-black output
+                    # on the user's box.
+                    if not entry.get("_retried"):
                         entry["_retried"] = True
-                        # Build LTX workflow as fallback
                         ltx_preset = _get_ltx_preset(comfy_url)
                         build_ltx = getattr(_workflows_v2, 'build_ltx_video', None) if _workflows_v2 else None
                         if ltx_preset and build_ltx:

@@ -217,31 +217,34 @@
 }
 
 :root {
-    --bg-main: #0B0A10;
-    --bg-sidebar: #13121C;
-    --bg-panel: rgba(25, 23, 38, 0.7);
-    --border-color: rgba(255, 255, 255, 0.08);
-    --text-main: #E2DFEB;
-    --text-muted: #8F8C9E;
-    --accent: #B246F2;
-    --accent-hover: #9833D4;
-    --accent-glow: rgba(178, 70, 242, 0.4);
-    --user-bubble: #281D45;
-    --ai-bubble: #1F1D2A;
-    --glow-soft: rgba(178, 70, 242, 0.15);
-    --glow-strong: rgba(178, 70, 242, 0.6);
+    --bg-main: #12101d; /* Deep-violet background */
+    --bg-sidebar: #12101d; /* Match main or use indigo panels? Let's use #1a1730 */
+    --bg-panel: #1a1730; /* Indigo panels */
+    --border-color: rgba(255, 215, 0, 0.15); /* Amber-gold tint */
+    --text-main: #e8e6f5; /* Lavender text */
+    --text-muted: #c4b8e3; /* Soft lavender */
+    --accent: #ffd700; /* Amber-gold */
+    --accent-hover: #ffea00;
+    --accent-glow: rgba(255, 215, 0, 0.4);
+    --user-bubble: #281D45; /* Darker purple */
+    --ai-bubble: #1a1730; /* Indigo panel */
+    --glow-soft: rgba(255, 215, 0, 0.15);
+    --glow-strong: rgba(255, 215, 0, 0.6);
+    --primary-purple: #B246F2;
+    --secondary-purple: #6a1b9a;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
     font-family: 'Outfit', sans-serif;
     background-color: var(--bg-main);
+    background-image: url('assets/01_guild_hero.png');
     color: var(--text-main);
     height: 100vh;
     display: flex;
     overflow: hidden;
     background-size: cover;
-    background-position: center;
+    background-position: center top;
     background-attachment: fixed;
 }
 #app-container { display: flex; width: 100%; height: 100vh; overflow: hidden; }
@@ -255,7 +258,9 @@ body {
 /* ── Sidebar ── */
 #sidebar {
     width: 280px; min-width: 280px; max-width: 280px;
-    background-color: rgba(19, 18, 28, 0.92);
+    background-color: var(--bg-sidebar);
+    background-image: url('assets/11_sidebar_bg_tile.png');
+    background-size: 256px 256px;
     backdrop-filter: blur(16px);
     border-right: 1px solid var(--border-color);
     display: flex; flex-direction: column;
