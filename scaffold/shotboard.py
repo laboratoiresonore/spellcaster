@@ -212,6 +212,11 @@ class Shot:
     # affects render order or any automated behavior. Filter chip in
     # the video panel shows "⭐ starred" to quickly return to them.
     bookmarked: bool = False
+    # R71a: soft-delete flag. Archived shots are excluded from the
+    # default view and all batch operations, but kept on disk so the
+    # user can restore them. Matches the common "trash" pattern.
+    archived: bool = False
+    archived_at: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -247,10 +252,18 @@ class Shotboard:
     elsewhere in Spellcaster.
     """
 
+    # R71b: board-level project metadata (title, author, synopsis, etc).
+    # Surfaces in EDL/FCPXML exports and the board-stats panel. All
+    # fields are free-form strings; empty ones get default-derived
+    # values in downstream exports.
+    _PROJECT_META_KEYS = ("title", "author", "synopsis",
+                           "copyright", "production")
+
     def __init__(self, path: str):
         self.path = os.path.abspath(path)
         self._shots: List[Shot] = []
         self._scenes: List[Scene] = []
+        self._project_meta: Dict[str, str] = {}
         self._load()
 
     # ------------------------------------------------------------------
@@ -279,6 +292,13 @@ class Shotboard:
         self._shots = [Shot.from_dict(s) for s in shots if isinstance(s, dict)]
         scenes_raw = raw.get("scenes") or []
         self._scenes = [Scene.from_dict(sc) for sc in scenes_raw if isinstance(sc, dict)]
+        # R71b: project metadata — tolerate missing key on old boards
+        pm = raw.get("project_meta") or {}
+        if isinstance(pm, dict):
+            self._project_meta = {k: str(v) for k, v in pm.items()
+                                    if k in self._PROJECT_META_KEYS}
+        else:
+            self._project_meta = {}
         self._reindex()
 
     def _persist(self) -> None:
@@ -293,6 +313,7 @@ class Shotboard:
             "saved_at": time.time(),
             "shots": [s.to_dict() for s in self._shots],
             "scenes": [sc.to_dict() for sc in self._scenes],
+            "project_meta": dict(self._project_meta),
         }
         # Write to a temp file in the same directory, then rename — so
         # if we crash mid-write, the original file is still intact.
@@ -432,6 +453,64 @@ class Shotboard:
         self._reindex()
         self.save()
         return True
+
+    def get_project_meta(self) -> Dict[str, str]:
+        """R71b: return a copy of the project-level metadata dict."""
+        return dict(self._project_meta)
+
+    def set_project_meta(self, **fields: str) -> Dict[str, str]:
+        """R71b: merge-update project metadata. Unknown keys ignored.
+        Empty-string values clear the field."""
+        for k, v in fields.items():
+            if k not in self._PROJECT_META_KEYS:
+                continue
+            if v is None or v == "":
+                self._project_meta.pop(k, None)
+            else:
+                self._project_meta[k] = str(v)
+        self.save()
+        return dict(self._project_meta)
+
+    def archive_shot(self, shot_id: str) -> Optional[Shot]:
+        """R71a: soft-delete. Keeps the shot on disk but hides it from
+        the default view and batch ops. Returns the archived shot.
+        """
+        shot = self.get(shot_id)
+        if shot is None or shot.archived:
+            return None
+        shot.archived = True
+        shot.archived_at = time.time()
+        shot.touch()
+        self.save()
+        return shot
+
+    def unarchive_shot(self, shot_id: str) -> Optional[Shot]:
+        """R71a: restore a shot from the archive."""
+        shot = self.get(shot_id)
+        if shot is None or not shot.archived:
+            return None
+        shot.archived = False
+        shot.archived_at = None
+        shot.touch()
+        self.save()
+        return shot
+
+    def batch_archive(self, shot_ids: List[str],
+                       archive: bool = True) -> Dict[str, Any]:
+        """Archive or restore many shots at once."""
+        changed = 0
+        for sid in shot_ids:
+            result = (self.archive_shot(sid) if archive
+                       else self.unarchive_shot(sid))
+            if result is not None:
+                changed += 1
+        return {"changed": changed, "archived": archive}
+
+    def archived_shots(self) -> List[Shot]:
+        """All shots currently in the archive, newest first."""
+        items = [s for s in self._shots if s.archived]
+        items.sort(key=lambda s: s.archived_at or 0, reverse=True)
+        return items
 
     def duplicate(self, shot_id: str) -> Optional[Shot]:
         """Create a copy of a shot and insert it right after the original."""
@@ -1569,8 +1648,11 @@ class Shotboard:
         mm, ss = divmod(rem, 60)
         return f"{hh:02d}:{mm:02d}:{ss:02d}:{ff:02d}"
 
-    def export_edl(self, fps: int = 30, title: str = "Spellcaster Timeline") -> str:
+    def export_edl(self, fps: int = 30, title: str = "") -> str:
         """Emit a CMX 3600 EDL referencing each ready shot as one event.
+
+        R71b: `title` defaults to project_meta['title'] when empty;
+        falls back to "Spellcaster Timeline" if no project title set.
 
         Only shots with status=="ready" AND a video_path are exported.
         Non-ready shots are skipped silently — EDLs don't represent gaps
@@ -1581,6 +1663,8 @@ class Shotboard:
         from this. Reel names are derived from the shot title, slugified,
         capped at 8 chars per CMX 3600 tradition.
         """
+        if not title:
+            title = self._project_meta.get("title") or "Spellcaster Timeline"
         lines = [f"TITLE: {title}", f"FCM: NON-DROP FRAME", ""]
         event = 1
         src_cursor = 0  # each clip starts at 0 in its own source
@@ -1607,7 +1691,7 @@ class Shotboard:
             event += 1
         return "\n".join(lines) + "\n"
 
-    def export_fcpxml(self, fps: int = 30, title: str = "Spellcaster Timeline") -> str:
+    def export_fcpxml(self, fps: int = 30, title: str = "") -> str:
         """Emit an FCPXML v1.10 document representing the ready shots
         as a single timeline. Preferred over EDL for Resolve because it
         preserves clip names, reference paths, and gaps.
@@ -1615,7 +1699,11 @@ class Shotboard:
         Missing shots are NOT represented as gaps (FCPXML would need
         explicit gap elements); they're simply omitted so the timeline
         stays contiguous.
+
+        R71b: `title` defaults to project_meta['title'] when empty.
         """
+        if not title:
+            title = self._project_meta.get("title") or "Spellcaster Timeline"
         fps = max(1, int(fps))
         # FCPXML uses rational time: N/Dsec, with frame duration as 1/fps
         fd = f"1/{fps}s"
