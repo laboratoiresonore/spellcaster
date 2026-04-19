@@ -1,4 +1,4 @@
-"""Build a standalone Spellcaster Antenna binary via PyInstaller.
+r"""Build a standalone Spellcaster Antenna binary via PyInstaller.
 
 Outputs
 -------
@@ -35,7 +35,49 @@ def _out_name() -> str:
     return f"spellcaster-antenna-{tag}{ext}"
 
 
+def _require_build_deps() -> None:
+    """Fail-fast if the build environment is missing anything
+    PyInstaller would silently omit. We got burned once: pystray
+    wasn't installed, --collect-all pystray was a no-op, and the
+    exe shipped with no tray. Every dep the onefile bundle needs
+    must actually import here — otherwise the exe is broken.
+    """
+    missing: list[str] = []
+    for mod, reason in (
+        ("pystray", "system-tray icon + menu — core UX"),
+        ("PIL",     "Pillow; pystray renders icons through it"),
+    ):
+        try:
+            __import__(mod)
+        except Exception as e:
+            missing.append(f"  - {mod}: {type(e).__name__}: {e}  ({reason})")
+    if missing:
+        print("\n[antenna-build] FAIL — build environment is missing deps:")
+        for line in missing:
+            print(line)
+        print("\n  Install them in this Python environment before rebuilding:")
+        print(f"    {sys.executable} -m pip install pystray Pillow")
+        sys.exit(2)
+
+    # Sanity: both --paths directories must exist. If the user cloned
+    # `spellcaster` but not `comfyui-spellcaster/` (which ships in the
+    # same repo as a subdir), PyInstaller will fail to find
+    # spellcaster_core and the exe won't start.
+    needed_dirs = [
+        REPO_ROOT / "antenna",
+        REPO_ROOT / "scaffold",
+        REPO_ROOT / "comfyui-spellcaster" / "spellcaster_core",
+    ]
+    missing_dirs = [p for p in needed_dirs if not p.is_dir()]
+    if missing_dirs:
+        print("\n[antenna-build] FAIL — required source trees missing:")
+        for p in missing_dirs:
+            print(f"  - {p}")
+        sys.exit(3)
+
+
 def main() -> int:
+    _require_build_deps()
     out_name = _out_name()
     print(f"[antenna-build] Target: {out_name}")
     print(f"[antenna-build] Repo:   {REPO_ROOT}")

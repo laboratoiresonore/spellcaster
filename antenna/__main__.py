@@ -68,6 +68,25 @@ def _log_startup_note(msg: str) -> None:
         pass
 
 
+def _show_user_warning(title: str, msg: str) -> None:
+    """Pop a native Windows message box with the warning so the user
+    isn't left staring at nothing. Uses ctypes (stdlib) so we don't
+    need pystray or tkinter — those might be the things that failed.
+    Silent no-op on non-Windows or when user32 isn't reachable."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        MB_ICONWARNING = 0x30
+        MB_OK = 0x0
+        MB_TOPMOST = 0x40000
+        # MessageBoxW unicode variant
+        ctypes.windll.user32.MessageBoxW(
+            0, msg, title, MB_ICONWARNING | MB_OK | MB_TOPMOST)
+    except Exception:
+        pass
+
+
 def _prefer_tray() -> bool:
     if os.name != "nt":
         _log_startup_note(f"tray skipped: os.name={os.name} (Windows only)")
@@ -82,6 +101,18 @@ def _prefer_tray() -> bool:
         _log_startup_note(
             f"tray disabled: pystray/PIL import failed "
             f"({type(e).__name__}: {e})")
+        # On the compiled --noconsole .exe the antenna would otherwise
+        # just… run invisibly. Pop a visible warning so the user knows
+        # what broke and where to look for the full log.
+        _show_user_warning(
+            "Spellcaster Antenna — tray disabled",
+            "The tray icon couldn't start because a required package "
+            "(pystray or Pillow) is missing.\n\n"
+            f"Reason: {type(e).__name__}: {e}\n\n"
+            "The antenna is still running in console mode on port 7334 "
+            "and will pair with the Wizard Guild normally — you just "
+            "won't see a tray icon.\n\n"
+            "Full log: %USERPROFILE%\\.spellcaster\\antenna-crash.log")
         return False
     _log_startup_note("tray path selected")
     return True
@@ -109,19 +140,24 @@ def _first_run_shortcut_prompt() -> None:
         import tkinter as tk
         from tkinter import ttk
     except Exception as _e:  # noqa: BLE001
-        # Log so we can tell "tkinter missing from exe" apart from
-        # "user just doesn't want the dialog".
-        try:
-            import datetime as _dt
-            log_path = os.path.join(os.path.expanduser("~"),
-                                      ".spellcaster",
-                                      "antenna-crash.log")
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(f"\n[{_dt.datetime.now().isoformat()}] "
-                        f"first-run dialog skipped: tkinter import "
-                        f"failed ({type(_e).__name__}: {_e})\n")
-        except Exception:
-            pass
+        # Log AND surface — silent "dialog didn't appear, sentinel
+        # got written anyway" was exactly the bug the audit flagged:
+        # future launches would skip the prompt forever. We neither
+        # write the sentinel nor swallow silently.
+        _log_startup_note(
+            f"first-run dialog skipped: tkinter import failed "
+            f"({type(_e).__name__}: {_e})")
+        _show_user_warning(
+            "Spellcaster Antenna — setup skipped",
+            "The first-run setup dialog couldn't start because Tcl/Tk "
+            "(tkinter) isn't bundled in this build.\n\n"
+            f"Reason: {type(_e).__name__}: {_e}\n\n"
+            "The antenna will start normally. To create a desktop icon, "
+            "a Start Menu entry, or launch-at-login later, right-click "
+            "the tray icon (if present) and pick the matching menu "
+            "entry. You can re-run this prompt by deleting "
+            "%USERPROFILE%\\.spellcaster\\antenna_shortcuts_done and "
+            "relaunching the antenna.")
         return
     try:
         from . import install_shortcuts as _shc
