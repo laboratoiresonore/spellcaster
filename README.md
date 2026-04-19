@@ -98,16 +98,17 @@ Every tool starts with expert-tuned presets that just work. But as you get comfo
 
 ---
 
-## See It in Action: Generate → Select → Map → Enhance
+## See It in Action: Generate → Select → Map → Enhance → Blend
 
-A real pipeline — 4 clicks, zero configuration, every step is one menu item. We timed it. It takes longer to microwave a Hot Pocket. And unlike a Hot Pocket, the result doesn't make you question your life choices:
+A real pipeline — 5 clicks, zero configuration, every step is one menu item. We timed it. It takes longer to microwave a Hot Pocket. And unlike a Hot Pocket, the result doesn't make you question your life choices:
 
 <table>
 <tr>
-<td width="25%"><img src="assets/showcase_3d_step1_generate.png" alt="Step 1: Generate" width="100%"/><br/><sub><strong>1. Generate</strong> — SDXL creates the scene</sub></td>
-<td width="25%"><img src="assets/showcase_3d_step2_sam3.png" alt="Step 2: AI Select" width="100%"/><br/><sub><strong>2. AI Select</strong> — SAM3 isolates the statue</sub></td>
-<td width="25%"><img src="assets/showcase_3d_step3_normalmap.png" alt="Step 3: Normal Map" width="100%"/><br/><sub><strong>3. 3D Normal Map</strong> — surface geometry extracted</sub></td>
-<td width="25%"><img src="assets/showcase_3d_step4_enhance.png" alt="Step 4: Enhance" width="100%"/><br/><sub><strong>4. Detail Enhance</strong> — surgical texture refinement</sub></td>
+<td width="20%"><img src="assets/showcase_3d_step1_generate.png" alt="Step 1: Generate" width="100%"/><br/><sub><strong>1. Generate</strong> — SDXL creates the scene</sub></td>
+<td width="20%"><img src="assets/showcase_3d_step2_sam3.png" alt="Step 2: AI Select" width="100%"/><br/><sub><strong>2. AI Select</strong> — SAM3 isolates the statue</sub></td>
+<td width="20%"><img src="assets/showcase_3d_step3_normalmap.png" alt="Step 3: Normal Map" width="100%"/><br/><sub><strong>3. 3D Normal Map</strong> — surface geometry extracted</sub></td>
+<td width="20%"><img src="assets/showcase_3d_step4_enhance.png" alt="Step 4: Enhance" width="100%"/><br/><sub><strong>4. Detail Enhance</strong> — surgical texture refinement on the isolated layer</sub></td>
+<td width="20%"><img src="assets/showcase_3d_step5_blend.png" alt="Step 5: Blend Layers" width="100%"/><br/><sub><strong>5. Blend Layers</strong> — reintegrated into the original scene</sub></td>
 </tr>
 </table>
 
