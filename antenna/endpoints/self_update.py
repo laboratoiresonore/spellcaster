@@ -302,6 +302,23 @@ def self_update(ctx: dict[str, Any]) -> tuple[int, dict]:
                 "error": f"{type(e).__name__}: {e}",
             }
 
+    # R115: same refresh pattern for Darktable. Separate module + same
+    # importlib.reload trick so a fresh pull's code takes effect on
+    # the current /self-update call instead of waiting for the next.
+    darktable_plugin_result: dict[str, Any] | None = None
+    if "darktable" in services and not bool(body.get("skip_darktable_plugin", False)):
+        try:
+            import importlib
+            from . import darktable_plugin as darktable_plugin_ep  # type: ignore
+            importlib.reload(darktable_plugin_ep)
+            darktable_plugin_result = darktable_plugin_ep.install_plugin_from_src(
+                cfg, force=bool(body.get("force_darktable_plugin", False)))
+        except Exception as e:  # noqa: BLE001
+            darktable_plugin_result = {
+                "ok": False,
+                "error": f"{type(e).__name__}: {e}",
+            }
+
     # Schedule restart AFTER we've replied
     _schedule_restart()
 
@@ -314,4 +331,6 @@ def self_update(ctx: dict[str, Any]) -> tuple[int, dict]:
     }
     if resolve_plugin_result is not None:
         out["resolve_plugin"] = resolve_plugin_result
+    if darktable_plugin_result is not None:
+        out["darktable_plugin"] = darktable_plugin_result
     return 202, out
