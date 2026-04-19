@@ -741,6 +741,8 @@ def find_gimp_install(cfg: dict[str, Any]) -> tuple[Path | None, str]:
             return p, "config-override"
     cached = _cached("gimp", verify=_gimp_install_verify)
     if cached is not None:
+        if cached.name.lower() in ("bin", "binaries"):
+            cached = cached.parent
         return cached, "cache-hit"
 
     # shutil.which for any GIMP binary name
@@ -839,6 +841,10 @@ def find_darktable_install(cfg: dict[str, Any]) -> tuple[Path | None, str]:
             return p, "config-override"
     cached = _cached("darktable", verify=_darktable_install_verify)
     if cached is not None:
+        # Stale caches sometimes stored bin/ subdir — strip it to return
+        # the install root consistently.
+        if cached.name.lower() in ("bin", "binaries"):
+            cached = cached.parent
         return cached, "cache-hit"
 
     for name in ("darktable", "darktable-cli"):
