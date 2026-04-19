@@ -271,6 +271,71 @@ def _find_manifest_model(manifest: dict[str, Any], model_path: str) -> dict | No
     return None
 
 
+# R55a: lazy ComfyUI URL probe. Tries a small set of common locations
+# when the configured URL fails, so users who run ComfyUI on a non-default
+# port (e.g. 8288 for the dev-server preset) don't need to touch
+# antenna_config.json to get node-catalog working.
+_COMFYUI_URL_CACHE: dict[str, Any] = {"url": None, "ts": 0.0}
+_COMFYUI_URL_CACHE_TTL = 30.0
+
+
+def _probe_one_comfyui_url(url: str, timeout: float = 1.5) -> bool:
+    """GET <url>/object_info with a small timeout. True iff the response
+    parses as a non-empty JSON object — a strong signal it's ComfyUI
+    and not, say, a random HTTP service claiming the port."""
+    try:
+        req = urllib.request.Request(url.rstrip("/") + "/object_info",
+                                      headers={"User-Agent": "spellcaster-antenna-probe"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read(512 * 1024)  # cap the response size
+            if not raw:
+                return False
+            parsed = json.loads(raw.decode("utf-8", "replace"))
+            return isinstance(parsed, dict) and len(parsed) > 0
+    except (urllib.error.URLError, urllib.error.HTTPError,
+            OSError, json.JSONDecodeError, TimeoutError):
+        return False
+
+
+def _resolve_comfyui_url(cfg: dict[str, Any]) -> str | None:
+    """Return a ComfyUI URL that actually responds, or None if nothing
+    on this machine looks like ComfyUI. Tries the configured URL first
+    (fast path) then a small set of common alternates. Cached for 30s."""
+    now = time.time()
+    if (_COMFYUI_URL_CACHE["url"] is not None
+            and (now - _COMFYUI_URL_CACHE["ts"]) < _COMFYUI_URL_CACHE_TTL):
+        return _COMFYUI_URL_CACHE["url"]
+
+    configured = (cfg.get("comfyui_url") or "").strip().rstrip("/")
+    candidates: list[str] = []
+    if configured:
+        candidates.append(configured)
+    # Common defaults. De-dupe against whatever's already there.
+    for default in ("http://127.0.0.1:8188",
+                    "http://127.0.0.1:8288",
+                    "http://localhost:8188",
+                    "http://localhost:8288"):
+        if default not in candidates:
+            candidates.append(default)
+
+    found: str | None = None
+    for url in candidates:
+        if _probe_one_comfyui_url(url):
+            found = url
+            break
+    _COMFYUI_URL_CACHE["url"] = found
+    _COMFYUI_URL_CACHE["ts"] = now
+    # Persist the discovered URL back into cfg so heartbeats / other
+    # endpoints benefit without another probe. We intentionally DO NOT
+    # rewrite antenna_config.json — auto-probe is advisory; if the user
+    # has set the URL explicitly they stay in control.
+    if found and found != configured:
+        cfg["comfyui_url"] = found
+        print(f"[antenna] auto-detected ComfyUI at {found} "
+              f"(configured was {configured or '(none)'})")
+    return found
+
+
 def node_catalog(ctx: dict[str, Any]) -> tuple[int, dict]:
     """GET /comfyui/node-catalog
 
@@ -300,7 +365,25 @@ def node_catalog(ctx: dict[str, Any]) -> tuple[int, dict]:
         return 200, _NODE_CATALOG_CACHE
 
     cfg = ctx.get("config") or {}
-    comfyui_url = (cfg.get("comfyui_url") or "http://127.0.0.1:8188").strip().rstrip("/")
+    # R55a: auto-probe instead of blindly hitting the configured URL.
+    # _resolve_comfyui_url tries the user setting, then common defaults,
+    # and updates cfg in place when it finds something.
+    comfyui_url = _resolve_comfyui_url(cfg)
+    if comfyui_url is None:
+        # No probe succeeded — report where we looked so the user knows.
+        attempted = [s for s in [
+            (cfg.get("comfyui_url") or "").strip().rstrip("/"),
+            "http://127.0.0.1:8188",
+            "http://127.0.0.1:8288",
+            "http://localhost:8188",
+            "http://localhost:8288",
+        ] if s]
+        return 503, {
+            "error": "ComfyUI not reachable on this machine",
+            "reachable": False,
+            "probed_urls": attempted,
+            "hint": "Start ComfyUI or set 'comfyui_url' in antenna_config.json",
+        }
     object_info_url = f"{comfyui_url}/object_info"
     try:
         req = urllib.request.Request(object_info_url, headers={

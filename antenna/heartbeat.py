@@ -149,7 +149,15 @@ def _build_payloads(cfg: dict[str, Any]) -> list[dict[str, Any]]:
     services_detail: dict[str, dict[str, Any]] = {}
     for svc in services:
         if svc == "comfyui":
-            services_detail[svc] = _probe_comfyui(cfg.get("comfyui_url", ""))
+            # R55a: use the auto-probe to find ComfyUI even when the
+            # configured URL is stale or empty. Side-effect: updates
+            # cfg['comfyui_url'] so subsequent requests skip the probe.
+            try:
+                from .endpoints.comfyui import _resolve_comfyui_url
+                url = _resolve_comfyui_url(cfg) or cfg.get("comfyui_url", "")
+            except Exception:
+                url = cfg.get("comfyui_url", "")
+            services_detail[svc] = _probe_comfyui(url)
         elif svc in ("llm", "kobold", "ollama"):
             services_detail[svc] = {"reachable": True}  # optimistic
         else:
