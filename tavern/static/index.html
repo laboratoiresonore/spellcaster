@@ -59,12 +59,13 @@
                     <span id="comfy-dot" class="dot red"></span> <span id="comfy-status">ComfyUI: Disconnected</span>
                     <div id="comfy-health-stats" class="health-stats"></div>
                 </div>
-                <div id="st-indicator-container">
-                    <span id="st-dot" class="dot red"></span> <span id="st-status">SillyTavern: Disconnected</span>
-                </div>
-                <div id="bridge-indicator-container">
-                    <span id="bridge-dot" class="dot red"></span> <span id="bridge-status">Signal Bridge: Disconnected</span>
-                </div>
+                <!-- SillyTavern + Signal Bridge used to have standalone
+                     red/green dot indicators here. They now surface as
+                     chips in the "Connected apps" row below when live,
+                     so disconnected state just means no chip (same as
+                     GIMP / Darktable / Resolve). The Guild still probes
+                     /api/sillytavern_status + /api/signal_bridge_status;
+                     those probes now feed interface_registry.heartbeat. -->
                 <!-- Active interfaces: dynamically populated from /api/interfaces.
                      Any interface that is enabled AND (installed OR online
                      OR heartbeated in the last 5 min) is shown, so users
@@ -79,9 +80,18 @@
                      agent. Each chip shows hostname + service count +
                      detailed per-service status (ComfyUI VRAM, Kobold /
                      Ollama / GIMP / Darktable / Resolve reachability)
-                     on hover. -->
-                <div id="connected-antennas-container" style="display:none;">
-                    <div id="connected-antennas-label" class="active-interfaces-label">Antennas</div>
+                     on hover. The "Pair new" button opens a dialog that
+                     uses the antenna's 6-digit pair code to exchange for
+                     the real bearer token — see antenna/pairing.py. -->
+                <div id="connected-antennas-container">
+                    <div class="active-interfaces-label antennas-header">
+                        Antennas
+                        <button type="button" id="pair-antenna-btn"
+                                class="pair-antenna-btn"
+                                title="Pair a new antenna by typing the 6-digit code from its tray">
+                            + Pair new
+                        </button>
+                    </div>
                     <div id="connected-antennas-row" class="active-interfaces-row"></div>
                 </div>
                 <!-- Recent assets across every interface: live cross-app
