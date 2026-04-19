@@ -42,28 +42,23 @@
 
 ---
 
-## 📣 Status — April 2026
+<div align="center">
 
-<table>
-<tr><td>
+<sub>
 
-### 🆕 News
-- **First version of the DaVinci Resolve plugin is out and needs testing!**
-- **Wizard Guild interface and the Antenna system both work quite well.**
+**📣 Status — April 2026**
 
-### ✅ What works
-- **The GIMP plugin is dope.** It's now all I use for image generation and retouching.
+**🆕 News** &nbsp;·&nbsp; First version of the DaVinci Resolve plugin is out and needs testing &nbsp;·&nbsp; Wizard Guild + Antenna work quite well
 
-### 🔧 Current focus
-- Debugging the **SillyTavern** plugin
-- Improving the **Wizard Guild** and the **Antenna** system
+**✅ What works** &nbsp;·&nbsp; The GIMP plugin is dope — it's now all I use for image generation and retouching
 
-### ⏭ Next
-- **Signal bridge**
-- Moar plugins / frontends
+**🔧 Current focus** &nbsp;·&nbsp; Debugging SillyTavern plugin &nbsp;·&nbsp; Improving Wizard Guild and Antenna
 
-</td></tr>
-</table>
+**⏭ Next** &nbsp;·&nbsp; Signal bridge &nbsp;·&nbsp; Moar plugins / frontends
+
+</sub>
+
+</div>
 
 ---
 
