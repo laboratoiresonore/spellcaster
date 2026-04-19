@@ -566,6 +566,17 @@ async function refreshActiveInterfaces() {
             if (v.installed || v.online || recent) {
                 active[k] = v;
                 keys.push(k);
+                // Engagement pulse: heartbeat moved forward since the
+                // last refresh → this interface just talked to us.
+                // First observation doesn't count (we have nothing to
+                // compare to). markIfaceEngaged schedules itself for
+                // after the DOM is updated below via a 0ms timeout.
+                const prev = window._ifaceLastHeartbeat[k] || 0;
+                const curr = v.last_heartbeat || 0;
+                if (prev && curr > prev) {
+                    setTimeout(() => markIfaceEngaged(k), 0);
+                }
+                if (curr) window._ifaceLastHeartbeat[k] = curr;
             }
         }
         // Synthesize chips for managed services (ComfyUI / Ollama /
@@ -1474,6 +1485,13 @@ function subscribeRecentAssetEvents() {
         const es = new EventSource(url);
         window._recentAssetSSE = es;
         const handler = (ev) => {
+            // Pulse the originating interface's chip so the user sees
+            // which app just delivered an asset. The event type name
+            // ("gimp.asset.uploaded") maps 1:1 to the chip key.
+            try {
+                const origin = (ev.type || '').split('.')[0];
+                if (origin) markIfaceEngaged(origin);
+            } catch (_) {/* no-op */}
             // Refresh and briefly flash the newly-landed thumb
             refreshRecentAssets().then(() => {
                 try {
@@ -3367,6 +3385,145 @@ function _refreshSidebarPlaceholders() {
     _refreshAnimateAllButtonGate();
 }
 
+// ── Model architecture metadata ─────────────────────────────────────
+// Every per-model wizard carries a model_arch key (sdxl, flux2klein, …).
+// This table turns those opaque keys into a sidebar sub-header: full
+// human name, vibe-appropriate accent gradient, display order, and a
+// rune emoji that hints at the arch's personality. Keep `order` tight
+// — the sidebar is vertical and wizards you're most likely to pick
+// should be at the top. video/unknown live at the bottom.
+//
+// Used by:
+//   - renderSidebar()        → groups per-model wizards under an
+//                              ".arch-group-<key>" sub-header
+//   - showWizardTooltip()    → colours the Model section's arch badge
+//                              and prints the full name
+//   - character-card         → subtle left border tint per arch so
+//                              scanning the sidebar you can tell
+//                              which family each wizard belongs to.
+const ARCH_META = {
+    // — Flagship flow-matching / diffusion flagships (2025) —
+    flux2klein:   { fullName: "Flux 2 Klein",        short: "Klein",
+                    order: 10, icon: "✦",
+                    c1: "#ffd700", c2: "#b470ff",
+                    glow: "255,215,0" },
+    flux1dev:     { fullName: "Flux 1 Dev",          short: "Flux",
+                    order: 20, icon: "◈",
+                    c1: "#58e0ff", c2: "#ffd700",
+                    glow: "88,224,255" },
+    flux_kontext: { fullName: "Flux Kontext",        short: "Kontext",
+                    order: 25, icon: "◆",
+                    c1: "#7ab6ff", c2: "#c6e0ff",
+                    glow: "122,182,255" },
+    chroma:       { fullName: "Chroma",              short: "Chroma",
+                    order: 30, icon: "❋",
+                    c1: "#ff7ad7", c2: "#7af0ff",
+                    glow: "255,122,215" },
+    sd3:          { fullName: "Stable Diffusion 3",  short: "SD3",
+                    order: 35, icon: "△",
+                    c1: "#a68eff", c2: "#e7ddff",
+                    glow: "166,142,255" },
+    sd3_turbo:    { fullName: "Stable Diffusion 3.5 Turbo", short: "SD3.5T",
+                    order: 37, icon: "⚡",
+                    c1: "#ffee58", c2: "#a68eff",
+                    glow: "255,238,88" },
+
+    // — SDXL & relatives —
+    sdxl:         { fullName: "Stable Diffusion XL", short: "SDXL",
+                    order: 40, icon: "✹",
+                    c1: "#b470ff", c2: "#ffc667",
+                    glow: "180,112,255" },
+    sdxl_turbo:   { fullName: "SDXL Turbo",          short: "SDXL-T",
+                    order: 45, icon: "⚡",
+                    c1: "#ffc667", c2: "#ff7a6b",
+                    glow: "255,198,103" },
+    illustrious:  { fullName: "Illustrious",         short: "Illus.",
+                    order: 50, icon: "❀",
+                    c1: "#ff8fd1", c2: "#ffd1ed",
+                    glow: "255,143,209" },
+    pony:         { fullName: "Pony Diffusion",      short: "Pony",
+                    order: 55, icon: "❀",
+                    c1: "#ff6bb5", c2: "#ffce5e",
+                    glow: "255,107,181" },
+
+    // — Classic SD1.5 —
+    sd15:         { fullName: "Stable Diffusion 1.5", short: "SD1.5",
+                    order: 60, icon: "✧",
+                    c1: "#8aa9ff", c2: "#c9d7ff",
+                    glow: "138,169,255" },
+
+    // — Speed-focused —
+    zit:          { fullName: "Z-Image Turbo",       short: "ZIT",
+                    order: 70, icon: "⚡",
+                    c1: "#ffef4a", c2: "#a6ff6b",
+                    glow: "255,239,74" },
+
+    // — Niche DiT/transformer —
+    hunyuan_dit:  { fullName: "Hunyuan DiT",         short: "HY-DiT",
+                    order: 80, icon: "龍",
+                    c1: "#ff8a5c", c2: "#ffcfa8",
+                    glow: "255,138,92" },
+    pixart:       { fullName: "PixArt",              short: "PixArt",
+                    order: 82, icon: "▦",
+                    c1: "#6bd9b5", c2: "#bff0dc",
+                    glow: "107,217,181" },
+    auraflow:     { fullName: "AuraFlow",            short: "Aura",
+                    order: 85, icon: "◎",
+                    c1: "#a8e0ff", c2: "#d8c3ff",
+                    glow: "168,224,255" },
+    kolors:       { fullName: "Kolors",              short: "Kolors",
+                    order: 88, icon: "◍",
+                    c1: "#ff8fa3", c2: "#8fe0ff",
+                    glow: "255,143,163" },
+    playground:   { fullName: "Playground v2.5",     short: "PG2.5",
+                    order: 90, icon: "◒",
+                    c1: "#ffb4a8", c2: "#ffe0d4",
+                    glow: "255,180,168" },
+
+    // — Video —
+    ltx2:         { fullName: "LTX Video",           short: "LTX",
+                    order: 100, icon: "◉",
+                    c1: "#5eead4", c2: "#c4b5fd",
+                    glow: "94,234,212" },
+    ltx:          { fullName: "LTX Video",           short: "LTX",
+                    order: 100, icon: "◉",
+                    c1: "#5eead4", c2: "#c4b5fd",
+                    glow: "94,234,212" },
+    wan22:        { fullName: "Wan 2.2 Video",       short: "Wan",
+                    order: 105, icon: "◉",
+                    c1: "#10b981", c2: "#6ee7b7",
+                    glow: "16,185,129" },
+    wan:          { fullName: "Wan 2.2 Video",       short: "Wan",
+                    order: 105, icon: "◉",
+                    c1: "#10b981", c2: "#6ee7b7",
+                    glow: "16,185,129" },
+
+    // Fallback bucket for anything the server hasn't classified yet.
+    unknown:      { fullName: "Other Models",        short: "Other",
+                    order: 900, icon: "❔",
+                    c1: "#888888", c2: "#cccccc",
+                    glow: "160,160,160" },
+};
+
+// Resolve a character's arch key → ARCH_META entry. Handles both the
+// typed comfyui_model (has `model_arch`) and the legacy model_wizard
+// (LTX / WAN — we infer from id or name).
+function _archKeyForChar(char) {
+    if (char.model_arch) return char.model_arch;
+    const id = (char.id || '').toLowerCase();
+    const name = (char.name || '').toLowerCase();
+    if (id.includes('ltx') || name.includes('ltx')) return 'ltx2';
+    if (id.includes('wan') || name.includes('wan')) return 'wan22';
+    return 'unknown';
+}
+function _archMeta(archKey) {
+    return ARCH_META[archKey] || ARCH_META.unknown;
+}
+// Exposed so the tooltip (and any future surface) can read the same
+// theme without duplicating the table.
+window.ARCH_META = ARCH_META;
+window._archMeta = _archMeta;
+window._archKeyForChar = _archKeyForChar;
 
 function renderSidebar(filter = "") {
     characterList.innerHTML = '';
@@ -3437,20 +3594,73 @@ function renderSidebar(filter = "") {
 
     coreChars.forEach(renderCard);
 
-    // Add separator if there are both core and model wizards (and filter allows model results)
-    if (modelChars.length > 0) {
-        const hasVisibleModels = modelChars.some(c =>
-            !filter || c.name.toLowerCase().includes(lowFilter) || c.subtext.toLowerCase().includes(lowFilter)
-        );
-        if (hasVisibleModels && coreChars.length > 0) {
-            const sep = document.createElement('div');
-            sep.className = 'sidebar-separator';
-            sep.innerHTML = '<span>Per-Model Wizards</span>';
-            characterList.appendChild(sep);
-        }
+    // Per-Model Wizards — grouped by architecture. Each arch gets its
+    // own themed sub-header so users can scan the sidebar and tell
+    // "these are my SDXL wizards, these are my Flux 2 Klein wizards"
+    // without reading every subtext. The umbrella "Per-Model Wizards"
+    // separator still appears on top when there are also core wizards
+    // above, so the visual hierarchy is:
+    //   Core Spellcasters
+    //     · Spellcaster, Imaginus, …
+    //   Per-Model Wizards
+    //     · Flux 2 Klein          ← arch sub-header (themed)
+    //         · Fluxx the Whisperer
+    //         · Flux Whisperer
+    //     · Stable Diffusion XL   ← arch sub-header (themed)
+    //         · Albedo the Luminous
+    //         · …
+    const matchesFilter = (c) =>
+        !filter || c.name.toLowerCase().includes(lowFilter)
+                || c.subtext.toLowerCase().includes(lowFilter);
+    const hasVisibleModels = modelChars.some(matchesFilter);
+    if (hasVisibleModels && coreChars.length > 0) {
+        const sep = document.createElement('div');
+        sep.className = 'sidebar-separator';
+        sep.innerHTML = '<span>Per-Model Wizards</span>';
+        characterList.appendChild(sep);
     }
 
-    modelChars.forEach(renderCard);
+    // Group by arch, preserve insertion order within each group.
+    const byArch = {};
+    for (const c of modelChars) {
+        const archKey = _archKeyForChar(c);
+        (byArch[archKey] = byArch[archKey] || []).push(c);
+    }
+    // Sort archs by display order (defined in ARCH_META). Missing
+    // archs get pushed to the end via the `unknown` fallback.
+    const orderedArchs = Object.keys(byArch).sort((a, b) =>
+        (_archMeta(a).order || 999) - (_archMeta(b).order || 999));
+
+    for (const archKey of orderedArchs) {
+        const group = byArch[archKey];
+        if (!group.some(matchesFilter)) continue;   // filter hid them all
+
+        const meta = _archMeta(archKey);
+        const header = document.createElement('div');
+        header.className = `sidebar-arch-header arch-${archKey}`;
+        header.style.setProperty('--arch-c1', meta.c1);
+        header.style.setProperty('--arch-c2', meta.c2);
+        header.style.setProperty('--arch-glow', meta.glow);
+        header.innerHTML = `
+            <span class="arch-rune">${meta.icon}</span>
+            <span class="arch-name">${meta.fullName}</span>
+            <span class="arch-count">${group.filter(matchesFilter).length}</span>`;
+        characterList.appendChild(header);
+        for (const char of group) {
+            if (!matchesFilter(char)) continue;
+            renderCard(char);
+            // Last rendered card picks up the arch class so a subtle
+            // left-border tint signals the group at a glance even
+            // when sub-headers scroll off.
+            const last = characterList.lastElementChild;
+            if (last && last.classList.contains('character-card')) {
+                last.classList.add(`arch-${archKey}`);
+                last.style.setProperty('--arch-c1', meta.c1);
+                last.style.setProperty('--arch-c2', meta.c2);
+                last.style.setProperty('--arch-glow', meta.glow);
+            }
+        }
+    }
 }
 
 searchInput.addEventListener('input', (e) => {
@@ -3532,15 +3742,32 @@ async function showWizardTooltip(char, cardEl) {
         fnHtml = `<div class="wt-section"><div class="wt-section-label">Capabilities</div><div class="wt-fn-list">${fns}${extra}</div></div>`;
     }
 
-    // Model info
+    // Model info. Arch badge picks up the ARCH_META theme so hover-
+    // over-GIMP and hover-over-Flux look instantly different even
+    // before the user reads the label. full name beats the raw key.
     let modelHtml = '';
     if (info.model_name) {
         const shortModel = info.model_name.split(/[/\\]/).pop();
+        const archKey = info.model_arch || _archKeyForChar(char) || 'unknown';
+        const meta = _archMeta(archKey);
+        const badgeStyle =
+            `background:linear-gradient(135deg, ${meta.c1}, ${meta.c2});` +
+            `box-shadow:0 0 10px rgba(${meta.glow},0.45), ` +
+                       `0 0 20px rgba(${meta.glow},0.25);`;
         modelHtml = `<div class="wt-section">
-            <div class="wt-section-label">Model</div>
-            <div class="wt-model-row">
+            <div class="wt-section-label">Architecture</div>
+            <div class="wt-arch-hero arch-${archKey}"
+                 style="--arch-c1:${meta.c1};--arch-c2:${meta.c2};--arch-glow:${meta.glow};">
+                <span class="wt-arch-rune">${meta.icon}</span>
+                <div class="wt-arch-lines">
+                    <div class="wt-arch-full">${meta.fullName}</div>
+                    <div class="wt-arch-sub">${archKey}</div>
+                </div>
+                <span class="wt-arch-badge" style="${badgeStyle}">${meta.short}</span>
+            </div>
+            <div class="wt-model-row" style="margin-top:6px;">
+                <span class="wt-section-label" style="margin-right:6px;">Model</span>
                 <span class="wt-model-name" title="${info.model_name}">${shortModel}</span>
-                <span class="wt-arch-badge">${info.model_arch}</span>
             </div>
         </div>`;
     }
