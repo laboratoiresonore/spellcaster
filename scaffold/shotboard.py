@@ -41,6 +41,22 @@ SHOT_STATUSES = ("draft", "queued", "running", "ready", "failed")
 TRANSITION_TYPES = ("cut", "fade", "crossfade", "wipeleft", "wiperight", "wipeup", "wipedown")
 
 
+def _slugify_reel(name: str) -> str:
+    """CMX 3600 reel names: ASCII upper, max 8 chars, no spaces/punct."""
+    clean = "".join(c for c in (name or "").upper() if c.isalnum())[:8]
+    return clean or "CLIP"
+
+
+def _xml_escape(s: str) -> str:
+    """Escape XML text content and attribute values (no HTML5 entities)."""
+    return (str(s or "")
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+            .replace("'", "&apos;"))
+
+
 # -----------------------------------------------------------------------------
 # Data model
 # -----------------------------------------------------------------------------
@@ -173,6 +189,10 @@ class Shot:
     # snapshots capture ANY creative state at ANY time (not just at render),
     # and they're user-driven (manually named, manually restored).
     snapshots: List[Dict[str, Any]] = field(default_factory=list)
+    # R47b: ids of snapshots the user has pinned. Pinned snapshots are
+    # NEVER auto-pruned when the 20-slot cap is hit — they stay until
+    # the user explicitly deletes them.
+    pinned_snapshots: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -824,6 +844,126 @@ class Shotboard:
         return [s.video_path for s in self._shots
                 if s.status == "ready" and s.video_path]
 
+    # ─── R47a: EDL / FCPXML export for DaVinci Resolve etc. ───────────
+
+    def _shot_duration_frames(self, shot: "Shot", fps: int) -> int:
+        """Estimate how many frames a shot occupies at the target ``fps``.
+        Priority order: render_duration_s (actual) → target_duration_s
+        (user intent) → duration_s (preset hint) → 2.0 seconds default.
+        Always returns at least 1 frame so timelines stay monotonic.
+        """
+        seconds = (shot.render_duration_s
+                   or shot.target_duration_s
+                   or shot.duration_s
+                   or 2.0)
+        return max(1, int(round(seconds * fps)))
+
+    @staticmethod
+    def _frames_to_tc(frames: int, fps: int) -> str:
+        """Convert frame count to HH:MM:SS:FF timecode (non-drop-frame)."""
+        fps = max(1, int(fps))
+        total_seconds, ff = divmod(frames, fps)
+        hh, rem = divmod(total_seconds, 3600)
+        mm, ss = divmod(rem, 60)
+        return f"{hh:02d}:{mm:02d}:{ss:02d}:{ff:02d}"
+
+    def export_edl(self, fps: int = 30, title: str = "Spellcaster Timeline") -> str:
+        """Emit a CMX 3600 EDL referencing each ready shot as one event.
+
+        Only shots with status=="ready" AND a video_path are exported.
+        Non-ready shots are skipped silently — EDLs don't represent gaps
+        cleanly, and the user can re-export once more shots land.
+
+        Timecode is non-drop-frame starting at 00:00:00:00. Resolve's
+        File > Import > Timeline > EDL will happily build a timeline
+        from this. Reel names are derived from the shot title, slugified,
+        capped at 8 chars per CMX 3600 tradition.
+        """
+        lines = [f"TITLE: {title}", f"FCM: NON-DROP FRAME", ""]
+        event = 1
+        src_cursor = 0  # each clip starts at 0 in its own source
+        rec_cursor = 0
+        for shot in self._shots:
+            if shot.status != "ready" or not shot.video_path:
+                continue
+            dur = self._shot_duration_frames(shot, fps)
+            reel = _slugify_reel(shot.title or f"shot{shot.index+1}")
+            src_in = Shotboard._frames_to_tc(0, fps)
+            src_out = Shotboard._frames_to_tc(dur, fps)
+            rec_in = Shotboard._frames_to_tc(rec_cursor, fps)
+            rec_out = Shotboard._frames_to_tc(rec_cursor + dur, fps)
+            lines.append(
+                f"{event:03d}  {reel:<8} V     C        "
+                f"{src_in} {src_out} {rec_in} {rec_out}"
+            )
+            # Source-file hint: Resolve reads this as * FROM CLIP NAME
+            lines.append(f"* FROM CLIP NAME: {os.path.basename(shot.video_path)}")
+            if shot.title:
+                lines.append(f"* COMMENT: {shot.title}")
+            lines.append("")
+            rec_cursor += dur
+            event += 1
+        return "\n".join(lines) + "\n"
+
+    def export_fcpxml(self, fps: int = 30, title: str = "Spellcaster Timeline") -> str:
+        """Emit an FCPXML v1.10 document representing the ready shots
+        as a single timeline. Preferred over EDL for Resolve because it
+        preserves clip names, reference paths, and gaps.
+
+        Missing shots are NOT represented as gaps (FCPXML would need
+        explicit gap elements); they're simply omitted so the timeline
+        stays contiguous.
+        """
+        fps = max(1, int(fps))
+        # FCPXML uses rational time: N/Dsec, with frame duration as 1/fps
+        fd = f"1/{fps}s"
+        events_xml = []
+        cursor = 0
+        asset_id = 1
+        assets = []
+        clips = []
+        for shot in self._shots:
+            if shot.status != "ready" or not shot.video_path:
+                continue
+            dur = self._shot_duration_frames(shot, fps)
+            src = _xml_escape(shot.video_path)
+            name = _xml_escape(shot.title or f"Shot {shot.index+1}")
+            assets.append(
+                f'    <asset id="r{asset_id}" name="{name}" src="file://{src}" '
+                f'start="0s" duration="{dur}/{fps}s" hasVideo="1" format="r1"/>'
+            )
+            clips.append(
+                f'                    <asset-clip name="{name}" ref="r{asset_id}" '
+                f'offset="{cursor}/{fps}s" duration="{dur}/{fps}s" start="0s"/>'
+            )
+            cursor += dur
+            asset_id += 1
+        assets_block = "\n".join(assets) if assets else ""
+        clips_block = "\n".join(clips) if clips else ""
+        total = cursor
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<!DOCTYPE fcpxml>\n'
+            '<fcpxml version="1.10">\n'
+            '  <resources>\n'
+            f'    <format id="r1" name="FFVideoFormat1080p{fps}" '
+            f'frameDuration="{fd}" width="1920" height="1080"/>\n'
+            f'{assets_block}\n'
+            '  </resources>\n'
+            '  <library>\n'
+            f'    <event name="{_xml_escape(title)}">\n'
+            f'      <project name="{_xml_escape(title)}">\n'
+            f'        <sequence format="r1" duration="{total}/{fps}s" tcStart="0s">\n'
+            '          <spine>\n'
+            f'{clips_block}\n'
+            '          </spine>\n'
+            '        </sequence>\n'
+            '      </project>\n'
+            '    </event>\n'
+            '  </library>\n'
+            '</fcpxml>\n'
+        )
+
     # ------------------------------------------------------------------
     # Diff indicator
     # ------------------------------------------------------------------
@@ -1065,8 +1205,16 @@ class Shotboard:
             else:
                 snap[key] = copy.deepcopy(val)
         shot.snapshots.append(snap)
+        # R47b: prune oldest UNPINNED when cap hit; pinned always survive
         if len(shot.snapshots) > 20:
-            shot.snapshots = shot.snapshots[-20:]
+            pinned_ids = set(shot.pinned_snapshots or [])
+            pinned = [s for s in shot.snapshots if s.get("id") in pinned_ids]
+            unpinned = [s for s in shot.snapshots if s.get("id") not in pinned_ids]
+            keep_unpinned = max(0, 20 - len(pinned))
+            unpinned = unpinned[-keep_unpinned:] if keep_unpinned > 0 else []
+            # Re-interleave to preserve chronological order (id-based)
+            keep = set(s["id"] for s in pinned) | set(s["id"] for s in unpinned)
+            shot.snapshots = [s for s in shot.snapshots if s.get("id") in keep]
         shot.touch()
         self.save()
         return snap
@@ -1104,17 +1252,45 @@ class Shotboard:
         return snap
 
     def delete_snapshot(self, shot_id: str, snap_id: str) -> bool:
-        """Remove a snapshot by id. Returns True if one was removed."""
+        """Remove a snapshot by id. Returns True if one was removed.
+        Also unpins it (R47b) so stale pin ids don't accumulate.
+        """
         shot = self.get(shot_id)
         if shot is None:
             return False
         before = len(shot.snapshots)
         shot.snapshots = [s for s in shot.snapshots if s.get("id") != snap_id]
         if len(shot.snapshots) < before:
+            if shot.pinned_snapshots and snap_id in shot.pinned_snapshots:
+                shot.pinned_snapshots = [p for p in shot.pinned_snapshots if p != snap_id]
             shot.touch()
             self.save()
             return True
         return False
+
+    def pin_snapshot(self, shot_id: str, snap_id: str) -> bool:
+        """R47b: Mark a snapshot as pinned so it won't auto-prune."""
+        shot = self.get(shot_id)
+        if shot is None:
+            return False
+        if not any(s.get("id") == snap_id for s in shot.snapshots):
+            return False
+        if snap_id in shot.pinned_snapshots:
+            return True  # already pinned = idempotent success
+        shot.pinned_snapshots.append(snap_id)
+        shot.touch()
+        self.save()
+        return True
+
+    def unpin_snapshot(self, shot_id: str, snap_id: str) -> bool:
+        """R47b: Remove a snapshot from the pinned list."""
+        shot = self.get(shot_id)
+        if shot is None or snap_id not in (shot.pinned_snapshots or []):
+            return False
+        shot.pinned_snapshots = [p for p in shot.pinned_snapshots if p != snap_id]
+        shot.touch()
+        self.save()
+        return True
 
     # ─── R45b: batch duplicate with counter ──────────────────────────
 
