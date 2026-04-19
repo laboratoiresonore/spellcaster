@@ -1859,6 +1859,9 @@ function VideoPanel() {
   const [loading, setLoading] = _useState(true);
   const [selectedShotId, setSelectedShotId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+  // R78b: which fields the search scans. All three default on; unchecking
+  // narrows the scope. Persists in component state only.
+  const [searchFields, setSearchFields] = _useState({prompt: true, title: true, notes: true, tags: true});
   const [assembling, setAssembling] = _useState(false);
   const [assembledPath, setAssembledPath] = _useState(null);
   const [error, setError] = _useState("");
@@ -1991,11 +1994,13 @@ function VideoPanel() {
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      result = result.filter(s =>
-        (s.prompt || "").toLowerCase().includes(q) ||
-        (s.title || "").toLowerCase().includes(q) ||
-        (s.notes || "").toLowerCase().includes(q)
-      );
+      result = result.filter(s => {
+        if (searchFields.prompt && (s.prompt || "").toLowerCase().includes(q)) return true;
+        if (searchFields.title  && (s.title  || "").toLowerCase().includes(q)) return true;
+        if (searchFields.notes  && (s.notes  || "").toLowerCase().includes(q)) return true;
+        if (searchFields.tags   && (s.tags || []).some(t => t.includes(q))) return true;
+        return false;
+      });
     }
     // R77a: apply sort if not board-order
     if (sortMode !== "board") {
@@ -2020,7 +2025,7 @@ function VideoPanel() {
       return sorted;
     }
     return result;
-  }, [shots, statusFilter, tagFilter, searchQuery, sortMode, isShotStale]);
+  }, [shots, statusFilter, tagFilter, searchQuery, searchFields, sortMode, isShotStale]);
 
   // R73b: distinct tags in use (derived from shots)
   const allTags = _useMemo(() => {
@@ -4392,6 +4397,46 @@ function VideoPanel() {
         </div>
       )}
 
+      {/* R78a: timeline duration ruler — colored segments proportional to
+          each shot's effective duration. Click to jump, hover for tooltip. */}
+      {!focusMode && shots.length > 0 && (() => {
+        const visibleShots = shots.filter(s => !s.archived && s.is_primary);
+        const durations = visibleShots.map(s =>
+          s.render_duration_s || s.target_duration_s || s.duration_s || 2.0);
+        const totalDur = durations.reduce((a, b) => a + b, 0) || 1;
+        const statusColor = {
+          ready:   "#34d399",  // emerald
+          running: "#fbbf24",  // amber
+          queued:  "#60a5fa",  // sky
+          draft:   "#94a3b8",  // slate
+          failed:  "#fb7185",  // rose
+        };
+        return (
+          <div className="timeline-ruler-wrap">
+            <div className="timeline-ruler flex gap-0.5 h-3 rounded overflow-hidden bg-slate-950 border border-slate-800">
+              {visibleShots.map((s, i) => {
+                const widthPct = (durations[i] / totalDur) * 100;
+                if (widthPct < 0.3) return null;  // skip slivers too thin to see
+                const bg = statusColor[s.status] || "#94a3b8";
+                return (
+                  <div key={s.id}
+                    onClick={() => jumpToShot(s.id)}
+                    className="timeline-seg cursor-pointer transition-all hover:opacity-70 hover:shadow-[0_0_0_2px_rgba(251,191,36,0.6)]"
+                    style={{width: widthPct + "%", backgroundColor: bg, minWidth: "2px"}}
+                    title={`${i+1}. ${s.title || "Untitled"} (${s.status}, ${durations[i].toFixed(1)}s)`}
+                  />
+                );
+              })}
+            </div>
+            <div className="flex justify-between text-[9px] text-slate-500 mt-0.5">
+              <span>0s</span>
+              <span>{visibleShots.length} shots · {totalDur.toFixed(1)}s total</span>
+              <span>{(totalDur/60).toFixed(1)}m</span>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* R62b: scene-quick-select + R73a scene export */}
       {scenes && scenes.length > 0 && (
         <div className="scene-quick-select flex items-center gap-2 text-xs text-slate-400 flex-wrap">
@@ -4659,22 +4704,39 @@ function VideoPanel() {
         </div>
       )}
 
-      {/* Search bar */}
-      <div className="search-bar relative">
-        <input
-          type="text"
-          placeholder="Search shots by prompt, title, or notes..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="search-input w-full bg-slate-800/50 border border-slate-700/50 rounded-lg px-4 py-2 pl-9 text-sm text-slate-300 placeholder-slate-500 focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/20"
-        />
-        <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
-        </svg>
+      {/* Search bar + R78b scope toggles */}
+      <div className={"search-bar-wrap space-y-1 " + (focusMode ? "hidden" : "")}>
+        <div className="search-bar relative">
+          <input
+            type="text"
+            placeholder="Search shots…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="search-input w-full bg-slate-800/50 border border-slate-700/50 rounded-lg px-4 py-2 pl-9 text-sm text-slate-300 placeholder-slate-500 focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/20"
+          />
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+          </svg>
+          {searchQuery && (
+            <button onClick={() => setSearchQuery("")} className="search-clear absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+              &times;
+            </button>
+          )}
+        </div>
+        {/* R78b: scope toggles — narrow what the search matches against */}
         {searchQuery && (
-          <button onClick={() => setSearchQuery("")} className="search-clear absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
-            &times;
-          </button>
+          <div className="search-scope-row flex items-center gap-3 text-[10px] text-slate-500 px-1">
+            <span>Scope:</span>
+            {["prompt", "title", "notes", "tags"].map(field => (
+              <label key={field} className="flex items-center gap-1 cursor-pointer">
+                <input type="checkbox"
+                  checked={searchFields[field]}
+                  onChange={(e) => setSearchFields(sf => ({...sf, [field]: e.target.checked}))}
+                  className="w-3 h-3 accent-amber-500" />
+                {field}
+              </label>
+            ))}
+          </div>
         )}
       </div>
 
