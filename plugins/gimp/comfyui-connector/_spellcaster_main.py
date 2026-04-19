@@ -11535,6 +11535,8 @@ class Spellcaster(Gimp.PlugIn):
             # SAM3 AI Selection
             "spellcaster-sam3-select": None,    # always register — preflight checks server at runtime
             "spellcaster-sam3-extract": None,
+            "spellcaster-anything-but": None,   # SAM3 reverse-select
+            "spellcaster-magic-eraser": None,   # SAM3 + LaMa
             # Flux Kontext
             "spellcaster-kontext": "flux_kontext",
             # Quick context-menu actions
@@ -11707,6 +11709,10 @@ class Spellcaster(Gimp.PlugIn):
                                          "Type what to select (person, shirt, hair) — AI creates the selection automatically"),
             "spellcaster-sam3-extract": ("AI Extract Subject...", self._run_sam3_extract,
                                           "One-click: detect subject, remove background, auto-crop to transparent PNG"),
+            "spellcaster-anything-but": ("Anything But... (Reverse Select)", self._run_sam3_anything_but,
+                                          "Type what to EXCLUDE — SAM3 detects it and selects everything else"),
+            "spellcaster-magic-eraser": ("Magic Eraser...", self._run_magic_eraser,
+                                          "Describe an unwanted object — SAM3 detects it and LaMa seamlessly inpaints over it"),
             # Flux Kontext
             "spellcaster-kontext": ("◆ Edit by Instruction (Kontext)...", self._run_kontext,
                                      "Type what to change in plain English — 'make the sky orange', 'remove the hat'"),
@@ -11792,6 +11798,8 @@ class Spellcaster(Gimp.PlugIn):
             # Select — AI-powered selection
             "spellcaster-sam3-select":       f"{_S}/Select",
             "spellcaster-sam3-extract":      f"{_S}/Select",
+            "spellcaster-anything-but":      f"{_S}/Select",
+            "spellcaster-magic-eraser":      f"{_S}/Select",
             "spellcaster-rembg":             f"{_S}/Select",
 
             # Video — generation and processing
@@ -11843,6 +11851,8 @@ class Spellcaster(Gimp.PlugIn):
             # Select menu — AI-powered selection belongs here
             "spellcaster-sam3-select":       "<Image>/Select",
             "spellcaster-sam3-extract":      "<Image>/Select",
+            "spellcaster-anything-but":      "<Image>/Select",
+            "spellcaster-magic-eraser":      "<Image>/Select",
             # Filters menu — AI eraser alongside other AI tools
             "spellcaster-quick-erase":       "<Image>/Filters",
             # Colors menu — color manipulation tools
@@ -22413,6 +22423,177 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster SAM3 Extract Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    def _run_sam3_anything_but(self, procedure, run_mode, image, drawables, config, data):
+        """SAM3 Anything But — select everything EXCEPT a described subject.
+
+        User types what to EXCLUDE ("person", "car", "sky") and SAM3 returns
+        an inverted mask. The mask becomes the active GIMP selection — marching
+        ants around everything in the image except the detected target.
+        """
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        srv = COMFYUI_DEFAULT_URL
+        try:
+            _api_get(srv, "/object_info/SAM3Segment")
+        except Exception:
+            Gimp.message(
+                "SAM3 node pack is not installed on your ComfyUI server.\n\n"
+                "Install via ComfyUI Manager, search for 'SAM3' or\n"
+                "'Segment Anything 3', then restart ComfyUI.\n\n"
+                f"Server checked: {srv}")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        GimpUi.init("spellcaster")
+        dlg = Gtk.Dialog(title="Spellcaster — Anything But... (Reverse Select)")
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Select", Gtk.ResponseType.OK)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
+        se.set_tooltip_text("ComfyUI server URL")
+        hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        hb2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb2.pack_start(Gtk.Label(label="Exclude:"), False, False, 0)
+        pe = Gtk.Entry(); pe.set_text("person"); pe.set_hexpand(True)
+        pe.set_tooltip_text("Describe what NOT to select. Everything else becomes the selection.\nExamples: 'person', 'sky', 'car', 'shirt'.")
+        hb2.pack_start(pe, True, True, 0); bx.pack_start(hb2, False, False, 0)
+        hb3 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb3.pack_start(Gtk.Label(label="Feather (px):"), False, False, 0)
+        fe = Gtk.SpinButton.new_with_range(0, 100, 1); fe.set_value(4)
+        fe.set_tooltip_text("Feather the selection edges by this many pixels (0 = hard edge).")
+        hb3.pack_start(fe, False, False, 0); bx.pack_start(hb3, False, False, 0)
+        bx.pack_start(Gtk.Label(label="SAM3 detects the target, inverts the mask,\nand creates a selection of everything else."), False, False, 4)
+        bx.show_all()
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        srv = se.get_text().strip()
+        prompt = pe.get_text().strip()
+        feather = int(fe.get_value())
+        _propagate_server_url(srv); dlg.destroy()
+        if not prompt:
+            Gimp.message("Anything But needs something to exclude. Type what to skip.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        try:
+            _update_spinner_status("Anything But: exporting image...")
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_antibut_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            # invert=True -> mask output (slot 1) is reversed.
+            wf = build_sam3_segment(uname, prompt, invert=True,
+                                     mask_expand=0, mask_blur=0)
+            _update_spinner_status("Anything But: segmenting on ComfyUI...")
+            results = _run_with_spinner("Anything But: segmenting on ComfyUI...",
+                                         lambda: list(_run_comfyui_workflow(srv, wf)))
+            mask_path = None
+            for fn, sf, ft in results:
+                if 'mask' in fn.lower():
+                    mask_path = _download_image(srv, fn, sf, ft)
+                    break
+            if not mask_path:
+                raise RuntimeError("SAM3 did not return a mask image")
+            _mask_image_to_gimp_selection(image, mask_path, feather=feather)
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-anything-but"
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Spellcaster Anything But Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    def _run_magic_eraser(self, procedure, run_mode, image, drawables, config, data):
+        """Magic Eraser — SAM3 detect + LaMa seamless inpaint.
+
+        User describes an unwanted object; SAM3 segments it and LaMa
+        paints over it. No mask painting, no selection needed — just describe
+        what to remove. Fast, deterministic, non-destructive (new layer).
+        """
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        srv = COMFYUI_DEFAULT_URL
+        try:
+            _api_get(srv, "/object_info/SAM3Segment")
+        except Exception:
+            Gimp.message(
+                "SAM3 node pack is not installed on your ComfyUI server.\n\n"
+                "Install via ComfyUI Manager (search 'SAM3'), then restart.\n\n"
+                f"Server checked: {srv}")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        try:
+            _api_get(srv, "/object_info/LamaRemover")
+        except Exception:
+            Gimp.message(
+                "LaMa node is not installed on your ComfyUI server.\n\n"
+                "Install 'ComfyUI-LaMA-Preprocessor' via ComfyUI Manager\n"
+                "(or equivalent LaMa pack), then restart ComfyUI.\n\n"
+                f"Server checked: {srv}")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        GimpUi.init("spellcaster")
+        dlg = Gtk.Dialog(title="Spellcaster — Magic Eraser")
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Erase", Gtk.ResponseType.OK)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
+        se.set_tooltip_text("ComfyUI server URL")
+        hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        hb2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb2.pack_start(Gtk.Label(label="Remove:"), False, False, 0)
+        pe = Gtk.Entry(); pe.set_text(""); pe.set_hexpand(True)
+        pe.set_tooltip_text("Describe what to remove — be specific.\nExamples: 'power line', 'tourist in background', 'car on road', 'watermark'.")
+        hb2.pack_start(pe, True, True, 0); bx.pack_start(hb2, False, False, 0)
+        hb3 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb3.pack_start(Gtk.Label(label="Mask expand (px):"), False, False, 0)
+        exp = Gtk.SpinButton.new_with_range(0, 64, 1); exp.set_value(8)
+        exp.set_tooltip_text("Grow the detected mask so LaMa can hide contact shadows and edge artifacts (default 8).")
+        hb3.pack_start(exp, False, False, 0); bx.pack_start(hb3, False, False, 0)
+        hb4 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb4.pack_start(Gtk.Label(label="Mask blur (px):"), False, False, 0)
+        blr = Gtk.SpinButton.new_with_range(0, 32, 1); blr.set_value(4)
+        blr.set_tooltip_text("Feather the grown mask edge for a seamless blend (default 4).")
+        hb4.pack_start(blr, False, False, 0); bx.pack_start(hb4, False, False, 0)
+        bx.pack_start(Gtk.Label(label="SAM3 detects what you described, LaMa inpaints over it.\nNo diffusion — fast and deterministic. Result is a new layer."), False, False, 4)
+        bx.show_all()
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        srv = se.get_text().strip()
+        prompt = pe.get_text().strip()
+        if not prompt:
+            Gimp.message("Magic Eraser needs a description of what to remove.")
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        expand_px = int(exp.get_value())
+        blur_px = int(blr.get_value())
+        _propagate_server_url(srv); dlg.destroy()
+        try:
+            _update_spinner_status("Magic Eraser: exporting image...")
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_magicerase_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            wf = build_magic_eraser(uname, prompt,
+                                     mask_expand=expand_px, mask_blur=blur_px)
+            _update_spinner_status("Magic Eraser: detecting + inpainting...")
+            results = _run_with_spinner("Magic Eraser: detecting + inpainting...",
+                                         lambda: list(_run_comfyui_workflow(srv, wf)))
+            if not results:
+                raise RuntimeError("Magic Eraser returned no result")
+            fn, sf, ft = results[0]
+            _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+                                    f"Erased: {prompt}", keep_size=True)
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-magic-eraser"
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Spellcaster Magic Eraser Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     def _run_send(self, procedure, run_mode, image, drawables, config, data):

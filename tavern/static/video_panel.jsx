@@ -146,6 +146,7 @@ function ShotCard({
   const [showCompare, setShowCompare] = _useState(false);
   const [showSnapshots, setShowSnapshots] = _useState(false);
   const [snapLabel, setSnapLabel] = _useState("");
+  const [snapCompare, setSnapCompare] = _useState([]);  // R46b: 0-2 snap ids selected for diff
 
   const isLocked = shot.locked || false;
   const [editTitle, setEditTitle] = _useState(shot.title);
@@ -554,24 +555,106 @@ function ShotCard({
                   <div className="text-[10px] text-slate-500">No snapshots yet. Save one before risky edits — you can restore later.</div>
                 ) : (
                   <div className="snapshots-list space-y-1 max-h-40 overflow-y-auto">
-                    {(shot.snapshots || []).slice().reverse().map((snap) => (
-                      <div key={snap.id} className="snapshot-entry flex items-center gap-2 text-[10px] px-2 py-1 rounded bg-slate-800/60">
-                        <span className="snapshot-time text-slate-400">{new Date((snap.created_at || 0) * 1000).toLocaleString()}</span>
-                        {snap.label && <span className="snapshot-label text-cyan-300 font-medium">— {snap.label}</span>}
-                        <span className="snapshot-preset text-slate-500">({snap.preset || "?"})</span>
-                        <button
-                          onClick={() => onRestoreSnapshot(shot.id, snap.id)}
-                          disabled={isLocked}
-                          className="snapshot-restore-btn ml-auto px-2 py-0.5 rounded bg-cyan-700/40 hover:bg-cyan-600/50 text-cyan-100 font-medium disabled:bg-slate-700 disabled:text-slate-500"
-                        >Restore</button>
-                        <button
-                          onClick={() => { if (confirm("Delete this snapshot?")) onDeleteSnapshot(shot.id, snap.id); }}
-                          className="snapshot-delete-btn px-2 py-0.5 rounded bg-red-700/30 hover:bg-red-600/50 text-red-200 font-medium"
-                        >×</button>
-                      </div>
-                    ))}
+                    {(shot.snapshots || []).slice().reverse().map((snap) => {
+                      const inCompare = snapCompare.includes(snap.id);
+                      const toggleCompare = () => {
+                        setSnapCompare(prev => {
+                          if (prev.includes(snap.id)) return prev.filter(x => x !== snap.id);
+                          if (prev.length >= 2) return [prev[1], snap.id];  // rolling 2-slot selection
+                          return [...prev, snap.id];
+                        });
+                      };
+                      return (
+                        <div key={snap.id} className={`snapshot-entry flex items-center gap-2 text-[10px] px-2 py-1 rounded ${inCompare ? "bg-cyan-900/40 border border-cyan-600/40" : "bg-slate-800/60"}`}>
+                          <input
+                            type="checkbox"
+                            checked={inCompare}
+                            onChange={toggleCompare}
+                            className="snapshot-compare-check w-3 h-3 accent-cyan-500"
+                            title="Select to compare (max 2)"
+                          />
+                          <span className="snapshot-time text-slate-400">{new Date((snap.created_at || 0) * 1000).toLocaleString()}</span>
+                          {snap.label && <span className="snapshot-label text-cyan-300 font-medium">— {snap.label}</span>}
+                          <span className="snapshot-preset text-slate-500">({snap.preset || "?"})</span>
+                          <button
+                            onClick={() => onRestoreSnapshot(shot.id, snap.id)}
+                            disabled={isLocked}
+                            className="snapshot-restore-btn ml-auto px-2 py-0.5 rounded bg-cyan-700/40 hover:bg-cyan-600/50 text-cyan-100 font-medium disabled:bg-slate-700 disabled:text-slate-500"
+                          >Restore</button>
+                          <button
+                            onClick={() => { if (confirm("Delete this snapshot?")) onDeleteSnapshot(shot.id, snap.id); }}
+                            className="snapshot-delete-btn px-2 py-0.5 rounded bg-red-700/30 hover:bg-red-600/50 text-red-200 font-medium"
+                          >×</button>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
+                {/* R46b: snapshot diff viewer */}
+                {snapCompare.length === 2 && (() => {
+                  const snaps = shot.snapshots || [];
+                  const a = snaps.find(s => s.id === snapCompare[0]);
+                  const b = snaps.find(s => s.id === snapCompare[1]);
+                  if (!a || !b) return null;
+                  const fields = [
+                    { key: "prompt", label: "Prompt" },
+                    { key: "negative", label: "Negative" },
+                    { key: "preset", label: "Preset" },
+                    { key: "seed", label: "Seed" },
+                    { key: "notes", label: "Notes" },
+                    { key: "backend", label: "Backend" },
+                    { key: "transition", label: "Transition" },
+                  ];
+                  const fmt = (v) => {
+                    if (v === null || v === undefined || v === "") return <span className="text-slate-600 italic">empty</span>;
+                    return String(v);
+                  };
+                  const ovA = JSON.stringify(a.overrides || {}, null, 1);
+                  const ovB = JSON.stringify(b.overrides || {}, null, 1);
+                  return (
+                    <div className="snapshot-diff-panel mt-2 rounded bg-slate-900/80 border border-cyan-700/30 p-2 text-[10px]">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="snapshot-diff-title text-[11px] font-semibold text-cyan-200">
+                          Comparing: <span className="text-cyan-400">{a.label || a.id.slice(0,6)}</span>
+                          {" ↔ "}
+                          <span className="text-cyan-400">{b.label || b.id.slice(0,6)}</span>
+                        </div>
+                        <button
+                          onClick={() => setSnapCompare([])}
+                          className="snapshot-diff-close text-slate-400 hover:text-slate-200 text-[10px] px-2"
+                        >Clear</button>
+                      </div>
+                      <div className="space-y-1">
+                        {fields.map(f => {
+                          const va = a[f.key], vb = b[f.key];
+                          const same = JSON.stringify(va) === JSON.stringify(vb);
+                          if (same) return null;
+                          return (
+                            <div key={f.key} className="snapshot-diff-row">
+                              <div className="text-slate-400 font-medium mb-0.5">{f.label}</div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="snapshot-diff-a rounded bg-red-950/30 border border-red-800/20 p-1.5 text-red-300 whitespace-pre-wrap break-words">{fmt(va)}</div>
+                                <div className="snapshot-diff-b rounded bg-emerald-950/30 border border-emerald-800/20 p-1.5 text-emerald-300 whitespace-pre-wrap break-words">{fmt(vb)}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {ovA !== ovB && (
+                          <div className="snapshot-diff-row">
+                            <div className="text-slate-400 font-medium mb-0.5">Overrides</div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="snapshot-diff-a rounded bg-red-950/30 border border-red-800/20 p-1.5 text-red-300 font-mono whitespace-pre-wrap">{ovA}</div>
+                              <div className="snapshot-diff-b rounded bg-emerald-950/30 border border-emerald-800/20 p-1.5 text-emerald-300 font-mono whitespace-pre-wrap">{ovB}</div>
+                            </div>
+                          </div>
+                        )}
+                        {fields.every(f => JSON.stringify(a[f.key]) === JSON.stringify(b[f.key])) && ovA === ovB && (
+                          <div className="text-slate-500 italic text-center py-1">No differences in creative state.</div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>

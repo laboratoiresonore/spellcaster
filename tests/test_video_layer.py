@@ -581,6 +581,24 @@ def main() -> int:
     check("video_panel.jsx has batch duplicate UI",
           test_video_panel_batch_duplicate_ui)
 
+    # Round 46 — Auto-snapshot + Snapshot diff viewer
+    check("_auto_snapshot_batch helper skips locked + missing",
+          test_auto_snapshot_batch_helper)
+    check("batch_revert auto-snapshots by default",
+          test_batch_revert_auto_snapshots)
+    check("batch_revert can disable auto-snapshot",
+          test_batch_revert_can_disable_auto_snapshot)
+    check("batch_prompt_edit auto-snapshots",
+          test_batch_prompt_edit_auto_snapshots)
+    check("batch_update_preset auto-snapshots",
+          test_batch_update_preset_auto_snapshots)
+    check("batch_update_preset skips no-op auto-snapshot",
+          test_batch_update_preset_skips_noop)
+    check("video_panel.jsx has snapshot compare state",
+          test_video_panel_snapshot_compare_state)
+    check("video_panel.jsx has snapshot diff panel",
+          test_video_panel_snapshot_diff_panel)
+
     print("-" * 50)
 
     from scaffold.shotboard import Shotboard, Shot, Trajectory
@@ -6350,6 +6368,125 @@ def test_video_panel_batch_duplicate_ui():
     assert "batch-duplicate-panel" in src
     assert "batchDuplicate" in src
     assert "batchDupeCount" in src
+
+
+# ════════════════════════════════════════════════════════════════════
+# R46 — Auto-snapshot before batch ops (R46a) + Snapshot diff viewer (R46b)
+# ════════════════════════════════════════════════════════════════════
+
+def test_auto_snapshot_batch_helper():
+    from scaffold.shotboard import Shotboard, Shot
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    board = Shotboard(os.path.join(d, "sb.json"))
+    board.add(Shot(id="a1", prompt="p1", preset="fast"))
+    board.add(Shot(id="a2", prompt="p2", preset="fast", locked=True))
+    board.add(Shot(id="a3", prompt="p3", preset="fast"))
+    # Locked shot is skipped, missing id ignored
+    taken = board._auto_snapshot_batch(["a1", "a2", "a3", "missing"], "test op")
+    assert taken == 2
+    assert len(board.list_snapshots("a1")) == 1
+    assert len(board.list_snapshots("a2")) == 0  # locked
+    assert len(board.list_snapshots("a3")) == 1
+    # Label convention
+    assert board.list_snapshots("a1")[0]["label"] == "Auto: test op"
+
+
+def test_batch_revert_auto_snapshots():
+    from scaffold.shotboard import Shotboard, Shot
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    board = Shotboard(os.path.join(d, "sb.json"))
+    board.add(Shot(id="r1", prompt="orig", preset="fast"))
+    board.record_render("r1", status="ready", duration_s=4.0)
+    board.get("r1").prompt = "changed"
+    board.get("r1").touch()
+    board.save()
+    result = board.batch_revert(["r1"])
+    assert result["reverted"] == 1
+    assert result.get("auto_snapshots") == 1
+    # Snapshot holds the pre-revert state (i.e. "changed")
+    snaps = board.list_snapshots("r1")
+    assert len(snaps) == 1
+    assert snaps[0]["prompt"] == "changed"
+    assert "Auto:" in snaps[0]["label"]
+
+
+def test_batch_revert_can_disable_auto_snapshot():
+    from scaffold.shotboard import Shotboard, Shot
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    board = Shotboard(os.path.join(d, "sb.json"))
+    board.add(Shot(id="r2", prompt="orig", preset="fast"))
+    board.record_render("r2", status="ready", duration_s=4.0)
+    board.get("r2").prompt = "changed"
+    board.get("r2").touch()
+    board.save()
+    result = board.batch_revert(["r2"], snapshot_before=False)
+    assert result["reverted"] == 1
+    assert result.get("auto_snapshots") == 0
+    assert board.list_snapshots("r2") == []
+
+
+def test_batch_prompt_edit_auto_snapshots():
+    from scaffold.shotboard import Shotboard, Shot
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    board = Shotboard(os.path.join(d, "sb.json"))
+    board.add(Shot(id="p1", prompt="a cat", preset="fast"))
+    board.add(Shot(id="p2", prompt="a dog", preset="fast"))
+    result = board.batch_prompt_edit(["p1", "p2"], prefix="cinematic, ", mode="add")
+    assert result["modified"] == 2
+    assert result.get("auto_snapshots") == 2
+    assert board.list_snapshots("p1")[0]["prompt"] == "a cat"  # pre-edit
+    assert board.get("p1").prompt == "cinematic, a cat"
+
+
+def test_batch_update_preset_auto_snapshots():
+    from scaffold.shotboard import Shotboard, Shot
+    from scaffold.video_bridge import VideoBridge
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    board = Shotboard(os.path.join(d, "sb.json"))
+    board.add(Shot(id="u1", prompt="p", preset="fast", status="draft"))
+    board.add(Shot(id="u2", prompt="q", preset="fast", status="draft"))
+    bridge = VideoBridge.__new__(VideoBridge)
+    bridge.board = board
+    result = bridge.batch_update_preset(["u1", "u2"], preset="quality")
+    assert result["updated"] == 2
+    assert result["preset"] == "quality"
+    assert result.get("auto_snapshots") == 2
+    # Snapshot captures pre-change preset
+    assert board.list_snapshots("u1")[0]["preset"] == "fast"
+    assert board.get("u1").preset == "quality"
+
+
+def test_batch_update_preset_skips_noop():
+    from scaffold.shotboard import Shotboard, Shot
+    from scaffold.video_bridge import VideoBridge
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    board = Shotboard(os.path.join(d, "sb.json"))
+    board.add(Shot(id="n1", prompt="p", preset="fast", status="draft"))
+    bridge = VideoBridge.__new__(VideoBridge)
+    bridge.board = board
+    result = bridge.batch_update_preset(["n1"], preset="fast")
+    # No change means no auto-snapshot
+    assert result.get("auto_snapshots") == 0
+
+
+def test_video_panel_snapshot_compare_state():
+    src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
+    assert "snapCompare" in src
+    assert "setSnapCompare" in src
+    assert "snapshot-compare-check" in src
+
+
+def test_video_panel_snapshot_diff_panel():
+    src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
+    assert "snapshot-diff-panel" in src
+    assert "snapshot-diff-close" in src
+    assert "No differences in creative state" in src
 
 
 if __name__ == "__main__":
