@@ -151,6 +151,10 @@
                 <!-- Chat messages inject here -->
             </div>
 
+            <!-- Shootouts button — sits above the chat input so it's
+                 reachable wherever the user is in the chat flow. Badge
+                 count is injected by lora_shootout.js. -->
+            <div id="chat-shootout-slot" class="chat-shootout-slot"></div>
             <!-- Input Area -->
             <div id="chat-input-area">
                 <div class="input-wrapper">
@@ -159,6 +163,16 @@
                     <button id="summon-wizard-btn" title="Summon a new Wizard from your models"><img src="/static/icons/summon-wand.svg" alt="Summon Wizard" style="width:24px;height:24px;"></button>
                     <button id="send-btn" title="Cast Spell">✨</button>
                 </div>
+                <!-- Global generation preset — click to cycle
+                     Turbo → Standard → Quality. Persisted to
+                     localStorage + published on window.generationPreset
+                     so every generation action can pick up the user's
+                     choice without passing it through props. -->
+                <button id="global-preset-btn" type="button"
+                        class="global-preset-btn"
+                        title="Click to cycle global generation preset (Turbo → Standard → Quality). Permanent — used by every generation action.">
+                    ⚡ Turbo
+                </button>
             </div>
         </main>
     </div>

@@ -1355,6 +1355,116 @@ async function initialize() {
             document.body.style.pointerEvents = 'none';
         });
     }
+
+    // ── Preset cycle + character-hover preview helpers ────────────────
+    // Declared as inner helpers because they close over nothing except
+    // DOM; top-level so the init block above can call them on boot.
+    function _wireGlobalPresetBtn() {
+        const btn = document.getElementById('global-preset-btn');
+        if (!btn) return;
+        const PRESETS = [
+            { key: 'turbo',    label: '⚡ Turbo',    cls: '' },
+            { key: 'standard', label: '⚖️ Standard', cls: 'preset-standard' },
+            { key: 'quality',  label: '💎 Quality',  cls: 'preset-quality' },
+        ];
+        const saved = localStorage.getItem('guild_preset') || 'turbo';
+        let idx = Math.max(0, PRESETS.findIndex(p => p.key === saved));
+        if (idx < 0) idx = 0;
+        const apply = () => {
+            const p = PRESETS[idx];
+            btn.textContent = p.label;
+            btn.classList.remove('preset-standard', 'preset-quality');
+            if (p.cls) btn.classList.add(p.cls);
+            window.generationPreset = p.key;
+            try { localStorage.setItem('guild_preset', p.key); } catch (e) {}
+            // Fire a window event so other modules can react without
+            // polling window.generationPreset on every render.
+            window.dispatchEvent(new CustomEvent('guildpresetchange',
+                { detail: { preset: p.key } }));
+        };
+        apply();
+        btn.addEventListener('click', () => {
+            idx = (idx + 1) % PRESETS.length;
+            apply();
+        });
+    }
+
+    function _installCharacterHoverPreview() {
+        // Single reusable overlay element — swapping src is cheaper than
+        // creating/destroying per hover. Positioned via mouse coords on
+        // mouseenter + mousemove; removed from view on mouseleave.
+        const preview = document.createElement('div');
+        preview.className = 'character-hover-preview';
+        preview.innerHTML = '<img alt="">';
+        document.body.appendChild(preview);
+        const img = preview.querySelector('img');
+
+        const show = (avatarEl) => {
+            const src = avatarEl.currentSrc || avatarEl.src
+                       || avatarEl.style.backgroundImage
+                              .replace(/^url\(["']?/, '')
+                              .replace(/["']?\)$/, '');
+            if (!src) return;
+            img.src = src;
+            preview.classList.add('visible');
+        };
+        const hide = () => preview.classList.remove('visible');
+        const position = (x, y) => {
+            // Pin the circle just to the right of the cursor. Clamp to
+            // viewport so it never scrolls the page or hides off-screen.
+            const w = preview.offsetWidth || 220;
+            const h = preview.offsetHeight || 220;
+            let left = x + 16;
+            let top  = y - h / 2;
+            if (left + w > window.innerWidth - 8)
+                left = x - w - 16;
+            if (top < 8) top = 8;
+            if (top + h > window.innerHeight - 8)
+                top = window.innerHeight - h - 8;
+            preview.style.left = `${left}px`;
+            preview.style.top  = `${top}px`;
+        };
+
+        // Delegate listener on #chat-stream so dynamically-added
+        // character avatars pick up the behavior without re-wiring.
+        const stream = document.getElementById('chat-stream');
+        if (!stream) return;
+        stream.addEventListener('mouseenter', (ev) => {
+            const t = ev.target;
+            if (!t || !t.classList) return;
+            // Chat avatars are <img class="message-avatar"> or similar;
+            // also match any .character-avatar the renderer may use.
+            if (t.matches && (t.matches('img.message-avatar') ||
+                               t.matches('.character-avatar') ||
+                               t.matches('.avatar'))) {
+                position(ev.clientX, ev.clientY);
+                show(t);
+            }
+        }, true);
+        stream.addEventListener('mousemove', (ev) => {
+            if (!preview.classList.contains('visible')) return;
+            position(ev.clientX, ev.clientY);
+        });
+        stream.addEventListener('mouseleave', (ev) => {
+            const related = ev.relatedTarget;
+            if (!related || !related.closest
+                    || !related.closest('.character-hover-preview')) {
+                hide();
+            }
+        }, true);
+    }
+    // Global generation preset cycling button. Persists to
+    // localStorage (guild_preset) + publishes to window.generationPreset
+    // so every generation action (wizards, spellcaster_actions, direct
+    // cast) can read the current preset without threading it through
+    // props. Order cycles: turbo → standard → quality → turbo.
+    _wireGlobalPresetBtn();
+
+    // Character-hover circle preview — large circular portrait that
+    // fades in near the cursor when the user mouses over an avatar in
+    // the chat stream. See _installCharacterHoverPreview for details.
+    _installCharacterHoverPreview();
+
     // Antennas strip — polls /api/antennas and renders one chip per
     // remote machine with declared / detected services. Gives the user
     // a live signal that a remote GPU pairing is alive (and how many

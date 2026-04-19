@@ -354,7 +354,7 @@ STUDIO_CHARACTERS = [
         "subtext": "Install Manager · Calibration · Custom Builds",
         "color1": "hsl(280, 95%, 35%)",
         "color2": "hsl(50, 100%, 60%)",
-        "archetype": "the master sorcerer of the Guild — calm authority, has set everyone up a hundred times before, knows every model, every sampler, every LoRA trick, and every way an install can go sideways",
+        "archetype": "a fluffy magical purple cat wearing a pointed wizard hat, glowing violet eyes, surrounded by swirling arcane runes and purple starlight, sitting on an open spellbook, magical aura, rich purples and blues, detailed fur, painterly illustration, centered portrait",
         "pinned": True,
         "scaffold": "spellcaster_wizard",
         "build_fns": [],  # not generative; actions are system-level
