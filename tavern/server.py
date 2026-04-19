@@ -9075,6 +9075,74 @@ class GuildHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.end_json(400, {"error": str(e)})
 
+        elif (self.path.startswith('/api/video/shots/')
+              and self.path.endswith('/input-video')
+              and self.command == 'POST'):
+            # R87b: stage an antenna-host-local video file into ComfyUI
+            # input/ and register its basename as the shot's
+            # overrides.input_video. Body: {"path": "<local path on
+            # antenna>"}. The Guild forwards the path to the paired
+            # antenna's /resolve/stage-input-video; the antenna does a
+            # filesystem copy (no LAN byte transfer). Response carries
+            # the staged basename so the UI / caller can show progress.
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/api/video/shots/')[1].rsplit('/input-video', 1)[0]
+            shot = _VIDEO_BRIDGE.board.get(shot_id)
+            if shot is None:
+                return self.end_json(404, {"error": "shot not found"})
+            src_path = (data.get('path') or '').strip()
+            if not src_path:
+                return self.end_json(400, {"error": "path is required"})
+
+            # Forward to paired antenna — same auth as the other antenna
+            # proxies (antenna_token in guild_config.json).
+            cfg = _guided_install_load_config()
+            antenna_url = (cfg.get('antenna_url') or '').strip().rstrip('/')
+            token = (cfg.get('antenna_token') or '').strip()
+            if not antenna_url or not token:
+                return self.end_json(503, {"error": "no antenna paired — POST /api/antenna/pair first"})
+            import urllib.request as _ur, urllib.error as _ue, ssl as _ssl
+            req = _ur.Request(
+                antenna_url + "/resolve/stage-input-video",
+                data=json.dumps({"path": src_path}).encode('utf-8'),
+                headers={"Authorization": f"Bearer {token}",
+                          "Content-Type": "application/json",
+                          "User-Agent": "spellcaster-guild-stage-video"},
+                method='POST')
+            ctx_ssl = _ssl.create_default_context()
+            ctx_ssl.check_hostname = False
+            ctx_ssl.verify_mode = _ssl.CERT_NONE
+            try:
+                with _ur.urlopen(req, timeout=60, context=ctx_ssl) as resp:
+                    staged = json.loads(resp.read().decode('utf-8', 'replace'))
+            except _ue.HTTPError as e:
+                try:
+                    err = e.read().decode('utf-8', 'replace')
+                except Exception:
+                    err = ''
+                return self.end_json(e.code, {"error": f"antenna rejected: {err[:300]}"})
+            except Exception as e:
+                return self.end_json(502, {"error": f"antenna unreachable: {e}"})
+
+            staged_name = (staged.get('staged_name') or '').strip()
+            if not staged_name:
+                return self.end_json(500, {"error": "antenna returned no staged_name"})
+
+            # Record in overrides so _queue_comfy / _patch_comfy_workflow
+            # pick it up. Basename-only signals the file is pre-staged
+            # and does not need a second Guild→ComfyUI upload.
+            overrides = dict(shot.overrides or {})
+            overrides['input_video'] = staged_name
+            _VIDEO_BRIDGE.board.update(shot_id, overrides=overrides)
+            return self.end_json(200, {
+                "shot_id": shot_id,
+                "staged_name": staged_name,
+                "size_bytes": staged.get('size_bytes'),
+                "note": "Set backend=comfyui and preset=ltx2_v2v_flowedit "
+                         "to use this input video in a v2v render.",
+            })
+
         elif self.path.startswith('/api/video/shots/') and self.path.endswith('/trajectories') and self.command == 'POST':
             """Set shot trajectories."""
             if not _VIDEO_BRIDGE:
