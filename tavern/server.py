@@ -9194,6 +9194,58 @@ class GuildHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.end_json(500, {"error": f"CSV import failed: {e}"})
 
+        elif self.path == '/api/video/project-meta' and self.command == 'GET':
+            # R71b: project-level metadata
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            return self.end_json(200, _VIDEO_BRIDGE.board.get_project_meta())
+
+        elif self.path == '/api/video/project-meta' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            if not isinstance(data, dict):
+                return self.end_json(400, {"error": "body must be JSON object"})
+            return self.end_json(200, _VIDEO_BRIDGE.board.set_project_meta(**data))
+
+        elif (self.path.startswith('/api/video/shots/')
+              and self.path.endswith('/archive')
+              and self.command == 'POST'):
+            # R71a: soft-delete (archive) a shot
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/')[4]
+            shot = _VIDEO_BRIDGE.board.archive_shot(shot_id)
+            if shot is None:
+                return self.end_json(404, {"error": "shot not found or already archived"})
+            return self.end_json(200, {"shot_id": shot_id, "archived": True})
+
+        elif (self.path.startswith('/api/video/shots/')
+              and self.path.endswith('/unarchive')
+              and self.command == 'POST'):
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/')[4]
+            shot = _VIDEO_BRIDGE.board.unarchive_shot(shot_id)
+            if shot is None:
+                return self.end_json(404, {"error": "shot not found or not archived"})
+            return self.end_json(200, {"shot_id": shot_id, "archived": False})
+
+        elif self.path == '/api/video/batch-archive' and self.command == 'POST':
+            # R71a: archive or restore many shots at once
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            ids = data.get('shot_ids', [])
+            arc = bool(data.get('archive', True))
+            if not ids:
+                return self.end_json(400, {"error": "No shot_ids provided"})
+            return self.end_json(200, _VIDEO_BRIDGE.board.batch_archive(ids, archive=arc))
+
+        elif self.path == '/api/video/archived-shots' and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            items = [s.to_dict() for s in _VIDEO_BRIDGE.board.archived_shots()]
+            return self.end_json(200, {"archived": items})
+
         elif self.path == '/api/video/named-states' and self.command == 'GET':
             # R69a: list all named board states
             if not _VIDEO_BRIDGE:
