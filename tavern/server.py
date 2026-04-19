@@ -7834,6 +7834,15 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(500, {"error": str(e)})
 
     def do_GET(self):
+        # R83c: many of the Guild's POST handlers live in do_GET's elif
+        # chain, gated by ``self.command == 'POST'``. They need a
+        # ``data`` dict in scope to read the request body. For genuine
+        # GET requests there's no body — an empty dict is the correct
+        # placeholder. For POST requests that fell through to do_GET
+        # from do_POST's tail-dispatch, do_POST stashed the parsed body
+        # on ``self._pending_post_data`` for us to pick up here.
+        data = getattr(self, "_pending_post_data", {})
+
         # Route: / → Guild chat UI. In setup_mode the Spellcaster wizard is
         # pinned at the top of the sidebar and acts as the onboarding flow,
         # so first-run users land in the same chat UI as everyone else —
@@ -12333,10 +12342,51 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 return self.end_json(500, {'error': str(e)})
 
         else:
-            return self.end_json(404, {"error": f"Unknown endpoint: {self.path}"})
+            # R83c: fall through to do_GET's elif chain. A large family of
+            # POST endpoints (/api/video/*, /api/antenna/*,
+            # /api/guild/self-update, /api/video/send-to-resolve, scene
+            # CRUD, batch ops, timeline import, etc.) were historically
+            # registered there, gated by ``self.command == 'POST'``. They
+            # are unreachable through do_POST's own chain. Stash the
+            # parsed body so those handlers find it, then re-enter the
+            # request via do_GET. do_GET's non-command-gated handlers
+            # only match GET-shaped paths (/, /setup, /api/characters,
+            # …) — none of which collide with the POST families — so
+            # this fall-through is safe in practice.
+            self._pending_post_data = data
+            return self.do_GET()
 
 
     # ════════════════════════════════════════════════════════════════════════════
+
+    def do_PUT(self):
+        """R83c: PUT handlers live in do_GET gated on ``self.command == 'PUT'``.
+        Parse the body and dispatch via the same fall-through path do_POST uses."""
+        content_len = int(self.headers.get('Content-Length', 0))
+        if content_len > MAX_POST_BYTES:
+            return self.end_json(413, {"error": "Payload too large"})
+        body = self.rfile.read(content_len) if content_len else b""
+        try:
+            data = json.loads(body.decode('utf-8')) if body else {}
+        except json.JSONDecodeError:
+            return self.end_json(400, {"error": "Invalid JSON"})
+        self._pending_post_data = data
+        return self.do_GET()
+
+    def do_DELETE(self):
+        """R83c: DELETE handlers live in do_GET gated on
+        ``self.command == 'DELETE'``. DELETE bodies are rare but some
+        callers include query-string params; do_GET reads them from self.path."""
+        content_len = int(self.headers.get('Content-Length', 0))
+        if content_len > MAX_POST_BYTES:
+            return self.end_json(413, {"error": "Payload too large"})
+        body = self.rfile.read(content_len) if content_len else b""
+        try:
+            data = json.loads(body.decode('utf-8')) if body else {}
+        except json.JSONDecodeError:
+            data = {}
+        self._pending_post_data = data
+        return self.do_GET()
 
     def do_OPTIONS(self):
         """Handle CORS preflight requests."""
