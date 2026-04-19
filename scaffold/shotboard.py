@@ -41,6 +41,16 @@ SHOT_STATUSES = ("draft", "queued", "running", "ready", "failed")
 TRANSITION_TYPES = ("cut", "fade", "crossfade", "wipeleft", "wiperight", "wipeup", "wipedown")
 
 
+def _words_share_prefix(a: list[str], b: list[str], length: int) -> bool:
+    """R67b helper — True iff the first ``length`` words match case-insensitively."""
+    if len(a) < length or len(b) < length:
+        return False
+    for i in range(length):
+        if a[i].lower() != b[i].lower():
+            return False
+    return True
+
+
 def _slugify_reel(name: str) -> str:
     """CMX 3600 reel names: ASCII upper, max 8 chars, no spaces/punct."""
     clean = "".join(c for c in (name or "").upper() if c.isalnum())[:8]
@@ -861,6 +871,119 @@ class Shotboard:
         return {"total": total, "by_code": by_code,
                 "shots_with_warnings": by_shot}
 
+    def auto_group_scenes(self, *, min_cluster: int = 2,
+                            min_prefix_words: int = 1,
+                            assign: bool = True) -> Dict[str, Any]:
+        """R67b: Auto-group shots into scenes by shared title prefix.
+
+        Detects clusters of shots whose titles share the first N words
+        (case-insensitive, ignoring leading/trailing whitespace). For
+        each cluster ≥ ``min_cluster`` shots:
+
+          1. Ensures a Scene with name = shared prefix exists (creates
+             one on the fly if needed, using the default color).
+          2. If ``assign=True``, sets `scene_id` on every shot in the
+             cluster that doesn't already belong to a scene.
+
+        Detection strategy is conservative: a shot title of
+        "INT. Kitchen — night" and "INT. Kitchen — day" will cluster
+        under "INT. Kitchen" (3 shared words before a divergent token).
+        We skip shots with placeholder titles (Untitled / "Shot N").
+
+        Returns:
+            {
+              "clusters_found": int,
+              "scenes_created": int,
+              "shots_assigned": int,
+              "clusters": [{"prefix": "INT. Kitchen", "shot_ids": [...],
+                             "scene_id": "..."}, ...]
+            }
+        """
+        import re
+
+        def _words(title: str) -> list[str]:
+            # Split on whitespace + common separators, drop empties
+            return [w for w in re.split(r"\s+", (title or "").strip()) if w]
+
+        def _common_prefix(a: list[str], b: list[str]) -> list[str]:
+            out = []
+            for x, y in zip(a, b):
+                if x.lower() == y.lower():
+                    out.append(x)
+                else:
+                    break
+            return out
+
+        # Index candidates: only real titles (skip placeholders)
+        candidates = [(s, _words(s.title)) for s in self._shots
+                       if not self._is_placeholder_title(s.title)
+                       and len(_words(s.title)) >= min_prefix_words]
+
+        # Union-find on shots sharing a common prefix of ≥ min_prefix_words
+        # Simple O(n²) pairing — shotboards rarely exceed a few hundred
+        # shots so perf isn't a concern here.
+        groups: Dict[str, List[Shot]] = {}
+        # Pick the LONGEST prefix that's shared by at least min_cluster shots
+        for i, (shot_i, words_i) in enumerate(candidates):
+            best_prefix = None
+            best_size = 0
+            for length in range(len(words_i), min_prefix_words - 1, -1):
+                prefix = " ".join(words_i[:length])
+                size = sum(1 for (_, w_j) in candidates
+                           if _words_share_prefix(w_j, words_i, length))
+                if size >= min_cluster and size > best_size:
+                    best_prefix = prefix
+                    best_size = size
+                    break
+            if best_prefix is not None:
+                groups.setdefault(best_prefix, []).append(shot_i)
+
+        clusters_found = 0
+        scenes_created = 0
+        shots_assigned = 0
+        cluster_results: List[Dict[str, Any]] = []
+
+        for prefix, shots_in_cluster in groups.items():
+            if len(shots_in_cluster) < min_cluster:
+                continue
+            clusters_found += 1
+            # Find or create the scene
+            scene = next((sc for sc in self._scenes
+                          if (sc.name or "").lower() == prefix.lower()),
+                         None)
+            if scene is None:
+                if assign:
+                    scene = self.add_scene(name=prefix, color="#4a9eff")
+                    scenes_created += 1
+                else:
+                    cluster_results.append({
+                        "prefix": prefix,
+                        "shot_ids": [s.id for s in shots_in_cluster],
+                        "scene_id": None,
+                    })
+                    continue
+            if assign:
+                for s in shots_in_cluster:
+                    # Only reassign shots that aren't already in a scene
+                    # (user-curated membership wins)
+                    if not s.scene_id:
+                        s.scene_id = scene.id
+                        s.touch()
+                        shots_assigned += 1
+            cluster_results.append({
+                "prefix": prefix,
+                "shot_ids": [s.id for s in shots_in_cluster],
+                "scene_id": scene.id if scene else None,
+            })
+        if shots_assigned or scenes_created:
+            self.save()
+        return {
+            "clusters_found": clusters_found,
+            "scenes_created": scenes_created,
+            "shots_assigned": shots_assigned,
+            "clusters": cluster_results,
+        }
+
     def find_prompt_clusters(self, *, min_cluster: int = 2) -> List[Dict[str, Any]]:
         """R65b: Group shots by exact prompt match. Returns one entry
         per cluster with 2+ shots sharing the same (normalized) prompt.
@@ -917,6 +1040,95 @@ class Shotboard:
         if changed:
             self.save()
         return {"changed": len(changed), "shots": changed}
+
+    def import_shots_from_csv(self, csv_text: str) -> Dict[str, Any]:
+        """R67a: bulk-create shots from a CSV.
+
+        Accepted columns (case-insensitive, any subset):
+          title, prompt, negative, preset, seed, notes, backend,
+          color_label, scene_id, priority, target_duration_s,
+          depends_on (comma-separated shot titles), carry_last_frame
+
+        Only `prompt` is required. If `title` is missing we auto-derive
+        from prompt (R63b). Unknown columns are ignored. Empty cells
+        keep the field's default.
+
+        Returns {"created": N, "errors": [...], "new_ids": [...]}.
+        """
+        import csv
+        import io
+
+        reader = csv.DictReader(io.StringIO(csv_text))
+        # Normalize headers to lowercase for case-insensitive access
+        known_fields = {f.name for f in Shot.__dataclass_fields__.values()}
+        created_ids: List[str] = []
+        errors: List[Dict[str, Any]] = []
+        # Index by title AFTER creation so depends_on can reference
+        # same-CSV siblings by title. Only top-level unique titles
+        # count — duplicates within one CSV silently overwrite.
+        title_to_id: Dict[str, str] = {s.title: s.id for s in self._shots
+                                         if s.title}
+        for row_i, row in enumerate(reader, start=2):  # row 1 is header
+            try:
+                # Lowercase keys; strip values
+                row_lc = {(k or "").strip().lower(): (v or "").strip()
+                           for k, v in row.items()}
+                prompt = row_lc.get("prompt", "")
+                if not prompt:
+                    errors.append({"row": row_i, "error": "empty prompt"})
+                    continue
+                fields: Dict[str, Any] = {}
+                for key, val in row_lc.items():
+                    if key not in known_fields:
+                        continue
+                    if val == "":
+                        continue
+                    # Type coercion for non-string fields
+                    if key == "seed":
+                        try:
+                            fields[key] = int(val)
+                        except ValueError:
+                            errors.append({"row": row_i,
+                                            "error": f"bad seed: {val}"})
+                            continue
+                    elif key == "target_duration_s":
+                        try:
+                            fields[key] = float(val)
+                        except ValueError:
+                            errors.append({"row": row_i,
+                                            "error": f"bad duration: {val}"})
+                            continue
+                    elif key == "carry_last_frame":
+                        fields[key] = val.lower() in ("1", "true", "yes", "y")
+                    elif key == "depends_on":
+                        # Comma-separated titles → ids, resolved against
+                        # the titles we know at this moment (including
+                        # siblings created earlier in this same CSV)
+                        dep_titles = [t.strip() for t in val.split(",") if t.strip()]
+                        dep_ids = [title_to_id[t] for t in dep_titles
+                                   if t in title_to_id]
+                        if dep_ids:
+                            fields[key] = dep_ids
+                    else:
+                        fields[key] = val
+                # Auto-title if missing
+                if "title" not in fields:
+                    auto = self._title_from_prompt(prompt)
+                    if auto:
+                        fields["title"] = auto
+                fields["prompt"] = prompt
+                shot = self.add(**fields)
+                created_ids.append(shot.id)
+                if shot.title:
+                    title_to_id[shot.title] = shot.id
+            except Exception as e:  # noqa: BLE001
+                errors.append({"row": row_i,
+                                "error": f"{type(e).__name__}: {e}"})
+        return {
+            "created": len(created_ids),
+            "errors": errors,
+            "new_ids": created_ids,
+        }
 
     def render_history_csv(self) -> str:
         """R64b: emit render history for every shot as a flat CSV.
