@@ -57,8 +57,10 @@ Meanwhile, GIMP is already an ultra-capable image editor with an intuitive inter
 **Spellcaster is dynamic middleware that sits between ComfyUI and any interface you want to use.** It absorbs all the complexity — models, nodes, samplers, schedulers, LoRAs, VAEs, ControlNets — and exposes it as simple menu items and one-click tools. Its entire purpose is to make ComfyUI's power accessible to people who have no interest in learning ComfyUI.
 
 - **GIMP / Darktable** — 69 AI tools appear in your menus. Generate, edit, upscale, swap faces, remove backgrounds, create videos — all from the same editor you already know.
+- **DaVinci Resolve** — Bridge plugin + shot-generation scripts. Drop a playhead, type a prompt, get a clip back in your Media Pool. Gap-fill between two clips with reference-aware rendering.
 - **The Wizard Guild** — a standalone chat UI where AI wizard characters walk you through every tool conversationally. No GIMP needed.
 - **SillyTavern** — 13 character cards that generate live visuals during roleplay.
+- **Blender / Krita / Photoshop** — experimental minimal plugins; full parity planned.
 
 You never touch ComfyUI. Spellcaster talks to it behind the scenes. Think of it like an engine under the hood — you just press the gas. With your eyes closed. Going 140 in a school zone. Spellcaster is the responsible adult in this relationship.
 
@@ -148,6 +150,7 @@ Listen. If you can order food on your phone, you can use this. If you once succe
 - **Prompts?** Automated. Type "a cat" and a local AI rewrites it into a paragraph of optimized gibberish that the image model actually understands. It knows that SDXL wants tags, Flux wants poetry, and Klein wants bullet points. You just type "a cat."
 - **Model selection?** Automated. The plugin detects what models are installed and picks the best one. You didn't even know you had models. You thought you just had a computer.
 - **VRAM management?** Automated. Video resolution auto-scales to fit your GPU. The LLM politely unloads itself during image generation. TeaCache acceleration is silently injected into every workflow. If you don't know what any of that means — congratulations, that's the point.
+- **Running ComfyUI on another machine?** Automated. The **Antenna** is a small HTTPS agent you install on the box that hosts ComfyUI. From then on, your laptop's GIMP plugin can install missing custom nodes, download new models, and self-update the stack on the remote machine — without you ever SSHing into it. Gaming PC in the closet, laptop on the couch, and they get along.
 - **Updates?** Automated. The plugin checks GitHub on launch and silently patches itself. You will never be asked to "pull the latest commit." You don't know what a commit is and we respect that.
 - **Recovery?** Automated. If an update corrupts the plugin, a 3-tier recovery system restores from backup, re-downloads from GitHub, or shows a visible error. GIMP never bricks. Your relationship with technology remains intact.
 
@@ -450,6 +453,8 @@ If you're reading this section voluntarily, you're either evaluating this for a 
 - **PDB procedures** — every tool callable from Script-Fu or Python-Fu
 - **Workflow Library** — import any ComfyUI workflow JSON and run it from GIMP
 - **`spellcaster_core/`** — single source of truth, shared across 4 repos. Auto-updater downloads from canonical source.
+- **Cross-interface backbone** — event bus, mailbox, asset gallery, and dynamic presence. Every surface (GIMP / Resolve / Darktable / SillyTavern / Guild) can publish and consume events: a shot rendered in the Guild auto-imports into Resolve's Media Pool; an image saved from GIMP auto-appears in the Guild gallery. The **Antenna** (remote HTTPS agent) extends the same presence/auth model across machines.
+- **7 plugin surfaces** in `plugins/`: `gimp` (mature, 61 files), `resolve`, `darktable`, `sillytavern` (real integrations), `blender`, `krita`, `photoshop` (minimal / experimental).
 
 </details>
 
