@@ -1,0 +1,3 @@
+[   13013ms] [LOG] [Guild] Synced 35 pre-generated assets from server @ http://127.0.0.1:7777/app.js:304
+[   13017ms] [LOG] [Guild] Synced 102 identity field(s) from server @ http://127.0.0.1:7777/app.js:332
+[  100909ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/events/stream?kinds=guild.asset.uploaded%2Cgimp.asset.uploaded%2Cdarktable.asset.uploaded%2Cresolve.asset.uploaded:0

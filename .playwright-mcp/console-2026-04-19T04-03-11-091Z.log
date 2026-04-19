@@ -1,2 +1,3 @@
 [   16112ms] [LOG] [Guild] Synced 35 pre-generated assets from server @ http://127.0.0.1:7777/app.js:304
 [   16118ms] [LOG] [Guild] Synced 102 identity field(s) from server @ http://127.0.0.1:7777/app.js:332
+[  212432ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/interfaces:0

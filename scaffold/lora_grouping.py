@@ -136,22 +136,48 @@ def classify_lora_purpose(name: str, registry_entry: Optional[dict] = None) -> s
     if isinstance(e.get("purpose_group"), str) and e["purpose_group"]:
         return e["purpose_group"]
 
+    # Strip the file extension BEFORE building the probe — otherwise
+    # short keywords like "ass" false-match inside "safetensors" and
+    # mis-classify anything as anatomy_body.
+    bare = str(name or "").replace("\\", "/").rsplit("/", 1)[-1]
+    if bare.lower().endswith(".safetensors"):
+        bare = bare[:-len(".safetensors")]
+    elif bare.lower().endswith(".ckpt"):
+        bare = bare[:-len(".ckpt")]
+
+    # Build probe WITHOUT lowercasing yet — the camelCase split needs
+    # case information, and lowercase() before the split would turn
+    # "FluxSideboob" into "fluxsideboob" (one token, unsplittable).
     probe = " ".join([
         str(e.get("purpose", "")),
         " ".join(str(t) for t in (e.get("trigger_words") or [])),
         str(e.get("user_desc", "")),
-        str(name or "").replace("\\", "/").rsplit("/", 1)[-1],
-    ]).lower()
+        bare,
+    ])
 
-    # Collapse separators so "hand_fix.safetensors" matches "hand_fix"
+    # Collapse separators so "hand_fix" and "hand-fix" both match "hand fix".
     normalised = re.sub(r"[\-_.]+", " ", probe)
+    # Split camelCase ("FluxSideboob" -> "Flux Sideboob").
+    normalised = re.sub(r"([a-z])([A-Z])", r"\1 \2", normalised)
+    # Break letter↔digit boundaries ("Wan22" -> "Wan 22", "2B" -> "2 B").
+    normalised = re.sub(r"([a-zA-Z])(\d)", r"\1 \2", normalised)
+    normalised = re.sub(r"(\d)([a-zA-Z])", r"\1 \2", normalised)
+    normalised = normalised.lower()
+    # Word-boundary tokens so "ass" doesn't hit "classic", "bass", etc.
+    tokens = set(normalised.split())
 
     for group, keywords in _PURPOSE_RULES:
         for kw in keywords:
-            # Whole-word match with light fuzziness — the separator
-            # collapse above makes substrings safe enough to use `in`.
-            if kw in normalised:
-                return group
+            # Multi-word keywords (e.g. "dark fantasy") stay as substring
+            # matches against the full normalised string; single-word
+            # keywords use the whole-token set to avoid substring false
+            # positives.
+            if " " in kw:
+                if kw in normalised:
+                    return group
+            else:
+                if kw in tokens:
+                    return group
     return "other"
 
 
@@ -277,6 +303,30 @@ _SHOOTOUT_PROMPTS: dict[str, tuple[str, str, float]] = {
                      "soft light, detailed",
                      "blurry, low quality",
                      0.7),
+    # Anatomy / body / action — test prompts that naturally exercise
+    # each cluster so the user sees the LoRA's effect clearly.
+    "anatomy_body":   ("full body shot of a person, natural pose, "
+                       "neutral background, soft studio lighting",
+                       "blurry, low quality, deformed",
+                       0.6),
+    "anatomy_chest":  ("upper body portrait of a person, natural pose, "
+                       "detailed anatomy",
+                       "blurry, low quality, deformed",
+                       0.6),
+    "anatomy_genital": ("full body study, detailed anatomy, natural pose",
+                        "blurry, low quality, deformed",
+                        0.6),
+    "action_pose":    ("a dynamic scene, natural depiction, cinematic",
+                       "blurry, low quality, static, flat",
+                       0.7),
+    "style_gothic":   ("a portrait in gothic aesthetic, dark atmospheric "
+                       "lighting, detailed ornament",
+                       "plain, generic, low quality",
+                       0.7),
+    "style_ethereal": ("an ethereal portrait, dreamy soft light, magical "
+                       "atmosphere",
+                       "harsh, grainy, low quality",
+                       0.7),
     "other":        ("a portrait of a person in natural light, detailed, "
                      "neutral composition",
                      "blurry, low quality",

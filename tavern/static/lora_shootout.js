@@ -201,10 +201,14 @@
   async function fetchGroups() {
     return apiFetch('/api/spellcaster/lora/groups');
   }
-  async function startShootout(arch, purpose_group) {
+  async function startShootout(arch, purpose_group, strength) {
+    const payload = { arch, purpose_group };
+    if (typeof strength === 'number' && isFinite(strength)) {
+      payload.strength = strength;
+    }
     return apiFetch('/api/spellcaster/lora/shootout/start', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ arch, purpose_group }),
+      body: JSON.stringify(payload),
     });
   }
   async function pollStatus(jobId) {
@@ -259,16 +263,18 @@
     }
   }
 
-  async function runShootout(arch, purpose_group) {
+  async function runShootout(arch, purpose_group, strength) {
     const body = mountModal('', `${arch} / ${purpose_group.replace(/_/g, ' ')}`);
+    const strengthNote = (typeof strength === 'number' && isFinite(strength))
+      ? ` — weight ${strength.toFixed(2)}` : '';
     body.innerHTML = `
       <div class="sc-shootout-progress">
-        <div>Spawning shootout job…</div>
+        <div>Spawning shootout job${strengthNote}…</div>
         <div class="sc-bar"><div class="sc-bar-fill" style="width:5%"></div></div>
       </div>`;
     let jobId;
     try {
-      const res = await startShootout(arch, purpose_group);
+      const res = await startShootout(arch, purpose_group, strength);
       jobId = res.job_id;
     } catch (e) {
       body.innerHTML = `<div class="sc-shootout-empty" style="color:#ff6b6b">
@@ -350,28 +356,6 @@
         }
       });
     });
-
-    // Secondary thumbs-up / thumbs-down on each tile — the "Pick this one"
-    // is the primary commit; 👍/👎 lets the user mark ambient preference
-    // without forcing a winner yet. Feeds the same feedback registry as
-    // chat generations, so patterns compound across surfaces.
-    if (typeof window.SpellcasterFeedback !== 'undefined') {
-      body.querySelectorAll('.sc-shootout-tile').forEach((tile) => {
-        const img = tile.querySelector('img');
-        if (!img) return;
-        const loraName = tile.dataset.lora;
-        const subjectId = `lshoot:${arch}:${purpose_group}:${loraName}`;
-        const meta = {
-          arch,
-          purpose_group,
-          lora:   loraName,
-          model:  state.result.model,
-          prompt: state.result.prompt,
-          seed:   state.result.seed,
-        };
-        window.SpellcasterFeedback.attach(img, 'shootout', subjectId, meta);
-      });
-    }
   }
 
   // ── Entry button ──────────────────────────────────────────────────────

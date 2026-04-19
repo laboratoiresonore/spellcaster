@@ -9079,6 +9079,37 @@ class GuildHandler(SimpleHTTPRequestHandler):
             history = _VIDEO_BRIDGE.board.get_render_history(shot_id)
             return self.end_json(200, {"shot_id": shot_id, "history": history})
 
+        elif self.path == '/api/video/queue-cost' and self.command == 'GET':
+            # R60b: Render-cost estimate for the pending queue, enriched
+            # with live telemetry from any ComfyUI-hosting antenna (GPU
+            # util + current queue depth). Falls back to historical
+            # averages when no antenna responds.
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            mc = 1
+            try:
+                mc = int(_VIDEO_BRIDGE.get_settings().get("max_concurrent", 1))
+            except Exception:
+                mc = 1
+            estimate = _VIDEO_BRIDGE.board.render_cost_estimate(max_concurrent=mc)
+            # Enrich with antenna telemetry when we can
+            antenna_telemetry = None
+            try:
+                if ANTENNA_REGISTRY_AVAILABLE and _antenna_registry is not None:
+                    chosen = _antenna_registry.choose_antenna_for("comfyui")
+                    if chosen is not None and chosen.agent_url:
+                        cfg = _guided_install_load_config()
+                        token = (cfg.get('antenna_token') or '').strip()
+                        if token:
+                            antenna_telemetry = self._fetch_antenna_json(
+                                chosen.agent_url, "/telemetry", token, timeout=4)
+                            if isinstance(antenna_telemetry, dict) and "error" not in antenna_telemetry:
+                                estimate["antenna_hostname"] = chosen.hostname
+                                estimate["antenna_telemetry"] = antenna_telemetry
+            except Exception as e:
+                estimate["telemetry_error"] = f"{type(e).__name__}: {e}"
+            return self.end_json(200, estimate)
+
         elif self.path == '/api/video/queue-eta' and self.command == 'GET':
             if not _VIDEO_BRIDGE:
                 return self.end_json(503, {"error": "Video Bridge not initialised"})
@@ -9118,6 +9149,21 @@ class GuildHandler(SimpleHTTPRequestHandler):
             shot_id = self.path.split('/')[4]
             snaps = _VIDEO_BRIDGE.board.list_snapshots(shot_id)
             return self.end_json(200, {"shot_id": shot_id, "snapshots": snaps})
+        elif (self.path.startswith('/api/video/shots/')
+              and '/snapshot/' in self.path
+              and self.path.endswith('/preview')
+              and self.command == 'GET'):
+            # R60a: /api/video/shots/<sid>/snapshot/<snap_id>/preview
+            # Returns what restore WOULD change, without applying it.
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            parts = self.path.split('/')
+            shot_id = parts[4] if len(parts) > 4 else ''
+            snap_id = parts[6] if len(parts) > 6 else ''
+            diff = _VIDEO_BRIDGE.board.preview_snapshot_restore(shot_id, snap_id)
+            if diff is None:
+                return self.end_json(404, {"error": "shot or snapshot not found"})
+            return self.end_json(200, diff)
         elif self.path.startswith('/api/video/shots/') and '/snapshot/' in self.path and self.path.endswith('/restore') and self.command == 'POST':
             # /api/video/shots/<sid>/snapshot/<snap_id>/restore
             if not _VIDEO_BRIDGE:
