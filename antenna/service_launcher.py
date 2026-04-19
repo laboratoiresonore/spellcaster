@@ -77,11 +77,22 @@ def _import_installer():
 
 
 def _find_comfyui_root(cfg: dict[str, Any]) -> Path | None:
+    """Locate the ComfyUI install root on this machine.
+
+    Fallback chain:
+      1. cfg['comfyui_root'] explicit override.
+      2. installer.find_default_comfyui() — the canonical finder.
+      3. antenna.detect's filesystem-evidence path — catches non-standard
+         installs that find_default_comfyui misses (e.g. ComfyUI not in
+         one of its default search dirs).
+    """
     explicit = (cfg.get("comfyui_root") or "").strip()
     if explicit and explicit != "auto":
         p = Path(os.path.expanduser(explicit))
         if p.is_dir():
             return p
+
+    # Installer-native finder
     inst = _import_installer()
     if inst is not None:
         try:
@@ -90,6 +101,37 @@ def _find_comfyui_root(cfg: dict[str, Any]) -> Path | None:
                 return Path(found)
         except Exception:
             pass
+
+    # Antenna-detector fallback — services_detected.comfyui.evidence
+    # carries the filesystem path when the probe found it on disk.
+    try:
+        from . import detect as _d
+        # Loading the service registry is how detect.py gets what to probe
+        inst2 = _import_installer()
+        if inst2 is None:
+            return None
+        try:
+            from installer import remote_services as _rs
+            services_list = _rs.load_services()
+        except Exception:
+            services_list = []
+        comfy_svc = next((s for s in services_list if s.get("key") == "comfyui"),
+                          None)
+        if comfy_svc is None:
+            return None
+        evidence = _d.detect_service(comfy_svc)
+        ev_str = evidence.get("evidence") or ""
+        if ev_str.startswith("filesystem:"):
+            path_str = ev_str[len("filesystem:"):].strip()
+            p = Path(path_str)
+            # detect returns the matched detect_path (e.g. ".../ComfyUI/main.py");
+            # we want the DIR containing main.py.
+            if p.is_file():
+                return p.parent
+            if p.is_dir():
+                return p
+    except Exception:
+        pass
     return None
 
 
