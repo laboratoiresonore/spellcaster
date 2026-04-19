@@ -223,6 +223,24 @@ WANGP_PRESETS: Dict[str, Dict[str, Any]] = {
         "notes": "LTX t2v followed by NVIDIA RTX Video Super-Resolution "
                   "to 1080p. Single-pass 'good-looking' preset.",
     },
+    "wan22_v2v_vace_mask": {
+        "label": "Wan 2.2 Video-to-Video + Mask (VACE / VFX)",
+        "family": "wan",
+        "task": "v2v_mask",
+        "engine": "comfyui",
+        "inputs": ["video", "mask?", "prompt"],
+        "defaults": {"strength": 0.7, "steps": 20, "cfg": 5.0,
+                     "sampler": "euler", "scheduler": "simple",
+                     "frames": 81, "fps": 16, "resolution": "832x480"},
+        "vram_min_gb": 12,
+        "notes": "R90: Wan 2.2 VACE pipeline — the go-to for localised "
+                  "VFX on real footage. Set overrides.input_video to the "
+                  "source file, and optionally overrides.mask_image to a "
+                  "PNG whose alpha (or luminance) marks the region to "
+                  "transform. Without a mask the whole frame is edited. "
+                  "strength tunes how strictly the output follows the "
+                  "source — 0.5 = loose, 1.0 = tight.",
+    },
     "ltx2_v2v_flowedit": {
         "label": "LTX-2.3 Video-to-Video (FlowEdit / VFX)",
         "family": "ltx",
