@@ -80,9 +80,18 @@
                      agent. Each chip shows hostname + service count +
                      detailed per-service status (ComfyUI VRAM, Kobold /
                      Ollama / GIMP / Darktable / Resolve reachability)
-                     on hover. -->
-                <div id="connected-antennas-container" style="display:none;">
-                    <div id="connected-antennas-label" class="active-interfaces-label">Antennas</div>
+                     on hover. The "Pair new" button opens a dialog that
+                     uses the antenna's 6-digit pair code to exchange for
+                     the real bearer token — see antenna/pairing.py. -->
+                <div id="connected-antennas-container">
+                    <div class="active-interfaces-label antennas-header">
+                        Antennas
+                        <button type="button" id="pair-antenna-btn"
+                                class="pair-antenna-btn"
+                                title="Pair a new antenna by typing the 6-digit code from its tray">
+                            + Pair new
+                        </button>
+                    </div>
                     <div id="connected-antennas-row" class="active-interfaces-row"></div>
                 </div>
                 <!-- Recent assets across every interface: live cross-app

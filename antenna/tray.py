@@ -54,7 +54,7 @@ except Exception:  # noqa: BLE001
     _PYSTRAY_OK = False
 
 from . import agent, config, heartbeat, service_launcher
-from . import detect
+from . import detect, pairing
 
 # ── Icon rendering ─────────────────────────────────────────────────────
 
@@ -180,6 +180,17 @@ class _TrayState:
         items.append(pystray.MenuItem(
             "Open Wizard Guild",
             lambda icon, _item: webbrowser.open(guild_url)))
+        # Pair-with-Guild — pops a blocking dialog showing the 6-digit code
+        # the user must type on the Guild side. Label flips to "Show
+        # current pair code" when a pairing is already active.
+        pair_state = pairing.get_pairing_state()
+        pair_label = ("Show pair code (expires in "
+                      f"{pair_state['expires_in']}s)"
+                      if pair_state["active"] else "Pair with Guild…")
+        items.append(pystray.MenuItem(
+            pair_label,
+            lambda icon, _item: threading.Thread(
+                target=self._pair_with_guild, daemon=True).start()))
         items.append(pystray.MenuItem(
             "Check for antenna update",
             lambda icon, _item: self._trigger_self_update()))
@@ -238,6 +249,72 @@ class _TrayState:
                 agent.notify("Self-update failed",
                               f"{type(e).__name__}: {e}", level="error")
         threading.Thread(target=worker, daemon=True).start()
+
+    def _pair_with_guild(self):
+        """Start (or resurface) a pairing session. Pops a tk dialog with
+        the 6-digit code + instructions, so the user can type the code
+        on the Guild machine. Blocks in its own thread — pystray's main
+        loop stays responsive.
+        """
+        state = pairing.get_pairing_state()
+        if state["active"]:
+            # There's already a live code — we don't re-issue. Fetch the
+            # current code via a direct internal call (safe since we're
+            # running in the antenna process).
+            code = pairing._PAIR_STATE["code"]  # noqa: SLF001
+            ttl = state["expires_in"]
+        else:
+            result = pairing.start_pairing()
+            code = result["code"]
+            ttl = result["expires_in"]
+        agent.notify(
+            "Antenna ready to pair",
+            f"Type code {code} on the Guild (expires in {ttl}s)",
+            level="info")
+        # Tiny tk modal for the big-readable code. Non-fatal if tk
+        # isn't available — the toast covers the essentials anyway.
+        try:
+            import tkinter as tk
+            from tkinter import ttk
+            root = tk.Tk()
+            root.title("Pair antenna with Guild")
+            root.attributes("-topmost", True)
+            root.configure(bg="#12101d")
+            frm = ttk.Frame(root, padding=24)
+            frm.pack()
+            ttk.Label(frm, text="Type this 6-digit code on the Guild",
+                       foreground="#c4b8e3",
+                       background="#12101d",
+                       font=("Segoe UI", 10)).pack()
+            code_var = tk.StringVar(value=code)
+            ttk.Label(frm, textvariable=code_var,
+                       foreground="#ffd700",
+                       background="#12101d",
+                       font=("Consolas", 36, "bold")).pack(pady=(8, 8))
+            subtitle = tk.StringVar(
+                value=f"expires in {ttl}s · Guild → Antennas → Pair new")
+            ttk.Label(frm, textvariable=subtitle,
+                       foreground="#8a7eaf",
+                       background="#12101d",
+                       font=("Segoe UI", 9)).pack()
+            ttk.Button(frm, text="Close", command=root.destroy).pack(
+                pady=(16, 0))
+            # Live-tick the countdown so users who leave the dialog up
+            # see when the code is about to expire.
+            def _tick():
+                s = pairing.get_pairing_state()
+                if not s["active"]:
+                    code_var.set("— consumed —")
+                    subtitle.set("Use the Guild side to finish.")
+                    return
+                subtitle.set(
+                    f"expires in {s['expires_in']}s · "
+                    "Guild → Antennas → Pair new")
+                root.after(1000, _tick)
+            root.after(1000, _tick)
+            root.mainloop()
+        except Exception:  # noqa: BLE001
+            pass  # toast already fired — dialog is a nicety
 
     def _quit(self, icon, _item):
         agent.notify("Antenna shutting down", "", level="info")

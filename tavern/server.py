@@ -10159,6 +10159,84 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "services": services,
             })
 
+        elif self.path == '/api/antennas/pair' and self.command == 'POST':
+            # Pair-code handshake: claim the antenna's bearer token by
+            # typing the short numeric code the antenna's tray is showing.
+            # See antenna/pairing.py for the server-side of this dance.
+            host = (data.get('host') or '').strip()
+            code = (data.get('code') or '').strip()
+            port = int(data.get('port') or 7334)
+            if not host or not code:
+                return self.end_json(400, {
+                    "error": "host and code are required",
+                    "hint": "pass {host:'192.168.x.y', code:'123456'}",
+                })
+            import urllib.request as _ur, urllib.error as _ue, ssl as _ssl, json as _json
+            body = _json.dumps({"code": code}).encode()
+            ctx_ssl = _ssl.create_default_context()
+            ctx_ssl.check_hostname = False
+            ctx_ssl.verify_mode = _ssl.CERT_NONE
+            last_err = None
+            got_token = None
+            for scheme in ("https", "http"):
+                # HTTPS first (matches antenna's default); HTTP fallback
+                # for the `ANTENNA_NO_TLS=1` dev path.
+                url = f"{scheme}://{host}:{port}/pair/claim"
+                req = _ur.Request(url,
+                                   headers={"Content-Type": "application/json",
+                                            "User-Agent": "spellcaster-guild-pair"},
+                                   data=body, method='POST')
+                try:
+                    resp_ctx = ctx_ssl if scheme == "https" else None
+                    with _ur.urlopen(req, timeout=10, context=resp_ctx) as resp:
+                        raw = resp.read().decode('utf-8', 'replace')
+                        try:
+                            parsed = _json.loads(raw)
+                        except _json.JSONDecodeError:
+                            parsed = {"raw": raw[:500]}
+                        if resp.status == 200 and isinstance(parsed, dict) \
+                                and parsed.get("token"):
+                            got_token = parsed["token"]
+                            agent_url = f"{scheme}://{host}:{port}"
+                            break
+                        last_err = parsed.get("error") or f"HTTP {resp.status}"
+                except _ue.HTTPError as e:
+                    try: err_body = e.read().decode('utf-8', 'replace')
+                    except Exception: err_body = ""
+                    try:
+                        parsed = _json.loads(err_body)
+                        last_err = parsed.get("error", f"HTTP {e.code}")
+                    except Exception:
+                        last_err = f"HTTP {e.code}: {err_body[:120]}"
+                    if e.code in (400, 403, 404, 409, 410):
+                        # Auth-level reasons — don't try the other scheme.
+                        break
+                except (_ue.URLError, OSError) as e:
+                    last_err = f"{type(e).__name__}: {e}"
+                    continue
+            if not got_token:
+                return self.end_json(
+                    502, {"error": last_err or "pair failed",
+                          "hint": "make sure the antenna is running and "
+                                  "showing a pair code. Tray → Pair with Guild."})
+            # Persist the new antenna as the "current" paired one so the
+            # self-update proxy + any other legacy single-slot caller can
+            # reach it. Don't clobber existing registrations of a
+            # different antenna — the user can switch from the chip UI.
+            cfg = _guided_install_load_config()
+            cfg['antenna_url'] = agent_url
+            cfg['antenna_token'] = got_token
+            cfg['antenna_host'] = host
+            cfg['antenna_port'] = port
+            _guided_install_save_config(cfg)
+            return self.end_json(200, {
+                "ok": True,
+                "agent_url": agent_url,
+                "host": host,
+                "port": port,
+                "note": "token stored. Antenna + chip row will refresh next poll.",
+            })
+
         elif self.path == '/api/antenna/self-update' and self.command == 'POST':
             # Forwards POST /self-update to the paired antenna.
             cfg = _guided_install_load_config()
