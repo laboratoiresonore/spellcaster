@@ -1,0 +1,5 @@
+[   20469ms] [LOG] [Guild] Synced 35 pre-generated assets from server @ http://127.0.0.1:7777/app.js:304
+[   20480ms] [LOG] [Guild] Synced 102 identity field(s) from server @ http://127.0.0.1:7777/app.js:332
+[   69531ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/batch_status:0
+[   69532ms] [ERROR] Batch poll error: TypeError: Failed to fetch
+    at http://127.0.0.1:7777/app.js:3606:45 @ http://127.0.0.1:7777/app.js:3641

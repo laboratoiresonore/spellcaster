@@ -1,0 +1,423 @@
+- generic [ref=e1]:
+  - generic [ref=e14]:
+    - complementary [ref=e15]:
+      - generic [ref=e16]:
+        - heading "The Wizard Guild" [level=2] [ref=e17]
+        - generic [ref=e20]: "LLM: Connected"
+        - generic [ref=e21]:
+          - generic [ref=e23]: "ComfyUI: Connected"
+          - generic [ref=e24]:
+            - generic [ref=e294]: VRAM 14.8/15.9
+            - generic [ref=e297]: RAM 46.4/63.8
+            - generic [ref=e300]: Cache 0.6/1.4
+        - generic [ref=e36]: "SillyTavern: Disconnected"
+        - generic [ref=e39]: "Signal Bridge: Disconnected"
+        - generic [ref=e81]:
+          - generic [ref=e82]: Recent across apps
+          - generic [ref=e83]:
+            - generic "Wizard Guild · intimate extreme close-up portrait of a sensual feline shapeshifter mid-transformation, galaxies swirling under translucent skin-tight fur, lithe predatory grace, sapphire bedroom eyes, a wizard named Spellcaster, the master sorcerer of the Guild — calm authority, has set everyone up a hundred times before, knows every model, every sampler, every LoRA trick, and every way an install can go sideways, specialist in Install Manager · Calibration · Custom Builds, sultry bedroom lighting, magical aura caressing bare skin, highly detailed face and décolletage filling the frame, half-lidded seductive eyes, sensual parted lips, painterly digital art, headshot composition, dark moody background with arcane sigils, face takes up 80 percent of image, photorealistic, highly detailed, sharp focus, professional photograph, 8K UHD, natural lighting, depth of field" [ref=e303] [cursor=pointer]:
+              - generic: 💬
+            - generic "Wizard Guild · intimate extreme close-up portrait of a chiselled Middle Eastern warlock with olive skin glistening with enchanted oils, loose open-chest robe revealing sculpted abs, piercing dark eyes, a wizard named The Enigma Mage, Mysterious and unpredictable, always weaving secrets into the fabric of creation., specialist in WAN Video Generation (Video), sultry bedroom lighting, magical aura caressing bare skin, highly detailed face and décolletage filling the frame, half-lidded seductive eyes, sensual parted lips, painterly digital art, headshot composition, dark moody background with arcane sigils, face takes up 80 percent of image, photorealistic, highly detailed, sharp focus, professional photograph, 8K UHD, natural lighting, depth of field" [ref=e304] [cursor=pointer]:
+              - generic: 💬
+            - generic "Wizard Guild · intimate extreme close-up portrait of a chiselled Middle Eastern warlock with olive skin glistening with enchanted oils, loose open-chest robe revealing sculpted abs, piercing dark eyes, a wizard named WAN Video, a mystic who conjures motion from stillness, swirling ink into life, specialist in WAN Video Generation (Video), sultry bedroom lighting, magical aura caressing bare skin, highly detailed face and décolletage filling the frame, half-lidded seductive eyes, sensual parted lips, painterly digital art, headshot composition, dark moody background with arcane sigils, face takes up 80 percent of image, photorealistic, highly detailed, sharp focus, professional photograph, 8K UHD, natural lighting, depth of field" [ref=e305] [cursor=pointer]:
+              - generic: 💬
+            - generic "GIMP · pink demo" [ref=e306] [cursor=pointer]:
+              - generic: 🖼️
+            - generic "DaVinci Resolve · test2" [ref=e307] [cursor=pointer]:
+              - generic: 🎬
+            - generic "GIMP · test pixel" [ref=e308] [cursor=pointer]:
+              - generic: 🖼️
+        - textbox "Search guild members..." [ref=e41]
+      - generic [ref=e42]:
+        - generic [ref=e91]: Core Spellcasters
+        - generic [ref=e94] [cursor=pointer]:
+          - heading "Spellcaster" [level=3] [ref=e95]
+          - paragraph [ref=e96]: Install Manager · Calibration · Custom Builds
+        - generic [ref=e99] [cursor=pointer]:
+          - heading "Imaginus" [level=3] [ref=e100]
+          - paragraph [ref=e101]: Image Creation (txt2img, ControlNet)
+        - generic [ref=e104] [cursor=pointer]:
+          - heading "Transmutex" [level=3] [ref=e105]
+          - paragraph [ref=e106]: Image Transformation (img2img, Style Transfer)
+        - generic [ref=e109] [cursor=pointer]:
+          - heading "Masquerade" [level=3] [ref=e110]
+          - paragraph [ref=e111]: Face & Identity (Face Swap, FaceID, PuLID)
+        - generic [ref=e114] [cursor=pointer]:
+          - heading "Restorix" [level=3] [ref=e115]
+          - paragraph [ref=e116]: Upscaling & Restoration Pipelines
+        - generic [ref=e119] [cursor=pointer]:
+          - heading "Erasure" [level=3] [ref=e120]
+          - paragraph [ref=e121]: Inpainting, Removal & Surgical Edits
+        - generic [ref=e124] [cursor=pointer]:
+          - heading "Videomancer" [level=3] [ref=e125]
+          - paragraph [ref=e126]: Video Generation & Enhancement
+        - generic [ref=e129] [cursor=pointer]:
+          - heading "Cinematic" [level=3] [ref=e130]
+          - paragraph [ref=e131]: Director's Chair — Multi-Step Video Sequences
+        - generic [ref=e134] [cursor=pointer]:
+          - heading "Studiocraft" [level=3] [ref=e135]
+          - paragraph [ref=e136]: Magic Studios — Full Character Pipeline
+        - generic [ref=e139] [cursor=pointer]:
+          - heading "Whimsy Weaver" [level=3] [ref=e140]
+          - paragraph [ref=e141]: LTX2 Video Generation & Enhancement (Video)
+        - generic [ref=e144] [cursor=pointer]:
+          - heading "The Enigma of Unknown" [level=3] [ref=e145]
+          - paragraph [ref=e146]: MISC Workflows
+        - generic [ref=e149] [cursor=pointer]:
+          - heading "The Enigma Mage" [level=3] [ref=e150]
+          - paragraph [ref=e151]: WAN Video Generation (Video)
+        - generic [ref=e153]: Per-Model Wizards
+        - generic [ref=e156] [cursor=pointer]:
+          - heading "Fluxx the Whisperer" [level=3] [ref=e157]
+          - paragraph [ref=e158]: flux-2-klein-9b — Flux 2 Klein — Explicit Image Generation
+        - generic [ref=e161] [cursor=pointer]:
+          - heading "Flux Whisperer" [level=3] [ref=e162]
+          - paragraph [ref=e163]: flux-2-klein-4b-fp8 — Flux 2 Klein — Explicit Image Generation
+        - generic [ref=e166] [cursor=pointer]:
+          - heading "Flux Whisperer" [level=3] [ref=e167]
+          - paragraph [ref=e168]: flux-2-klein-base-4b-fp8 — Flux 2 Klein — Explicit Image Generation
+        - generic [ref=e171] [cursor=pointer]:
+          - heading "ChromaWhisperer" [level=3] [ref=e172]
+          - paragraph [ref=e173]: Chroma1-HD-fp8_scaled_defaultloader_hybrid_large_rev2 — Chroma Image Generation
+        - generic [ref=e176] [cursor=pointer]:
+          - heading "Chroma Kali" [level=3] [ref=e177]
+          - paragraph [ref=e178]: chroma2_kaleidoscope — Flux 2 Klein — Explicit Image Generation
+        - generic [ref=e181] [cursor=pointer]:
+          - heading "Sparkle Flux" [level=3] [ref=e182]
+          - paragraph [ref=e183]: FLUX1 Dev fp8 — Flux — Photorealistic NSFW Generation
+        - generic [ref=e186] [cursor=pointer]:
+          - heading "Flux Hydra" [level=3] [ref=e187]
+          - paragraph [ref=e188]: HyFU-8-step-v1.0-pruned — Flux — Photorealistic NSFW Generation
+        - generic [ref=e191] [cursor=pointer]:
+          - heading "Sloppy Mix Wizard" [level=3] [ref=e192]
+          - paragraph [ref=e193]: sloppyMessyMix_sloppyMessyMixV1 — Illustrious — Anime NSFW Generation
+        - generic [ref=e196] [cursor=pointer]:
+          - heading "Juggernaut Reborn" [level=3] [ref=e197]
+          - paragraph [ref=e198]: juggernaut_reborn — SD 1.5 — Classic Explicit Generation
+        - generic [ref=e201] [cursor=pointer]:
+          - heading "Pixel Weave Mage" [level=3] [ref=e202]
+          - paragraph [ref=e203]: v1-5-pruned-emaonly — SD 1.5 — Classic Explicit Generation
+        - generic [ref=e206] [cursor=pointer]:
+          - heading "NoobAI-SuperDuper" [level=3] [ref=e207]
+          - paragraph [ref=e208]: NoobAI-XL-v1.1 — SDXL — Detailed Explicit Generation
+        - generic [ref=e211] [cursor=pointer]:
+          - heading "Nova Spark" [level=3] [ref=e212]
+          - paragraph [ref=e213]: novaAnimeXL_ilV170 — SDXL — Detailed Explicit Generation
+        - generic [ref=e216] [cursor=pointer]:
+          - heading "WaiIllustrious Wizard" [level=3] [ref=e217]
+          - paragraph [ref=e218]: waiIllustriousSDXL_v160-a5f5 — SDXL — Detailed Explicit Generation
+        - generic [ref=e221] [cursor=pointer]:
+          - heading "Albedo the Luminous" [level=3] [ref=e222]
+          - paragraph [ref=e223]: AlbedoBaseXL — SDXL — Detailed Explicit Generation
+        - generic [ref=e226] [cursor=pointer]:
+          - heading "SparkleStable" [level=3] [ref=e227]
+          - paragraph [ref=e228]: sd_xl_base_1.0 — SDXL — Detailed Explicit Generation
+        - generic [ref=e231] [cursor=pointer]:
+          - heading "Pixel Whiz" [level=3] [ref=e232]
+          - paragraph [ref=e233]: modernDisneyXL_v3 — SDXL — Detailed Explicit Generation
+        - generic [ref=e236] [cursor=pointer]:
+          - heading "NovaCartoonXL" [level=3] [ref=e237]
+          - paragraph [ref=e238]: novaCartoonXL_v60 — SDXL — Detailed Explicit Generation
+        - generic [ref=e241] [cursor=pointer]:
+          - heading "CybeReal Pony" [level=3] [ref=e242]
+          - paragraph [ref=e243]: cyberrealisticPony_v160 — SDXL — Detailed Explicit Generation
+        - generic [ref=e246] [cursor=pointer]:
+          - heading "JibMix Realistic XL" [level=3] [ref=e247]
+          - paragraph [ref=e248]: jibMixRealisticXL_v180SkinSupreme — SDXL — Detailed Explicit Generation
+        - generic [ref=e251] [cursor=pointer]:
+          - heading "Juggernaut XL" [level=3] [ref=e252]
+          - paragraph [ref=e253]: juggernautXL_ragnarok — SDXL — Detailed Explicit Generation
+        - generic [ref=e256] [cursor=pointer]:
+          - heading "JuggernautXL" [level=3] [ref=e257]
+          - paragraph [ref=e258]: juggernautXL_v9Rundiffusionphoto2 — SDXL — Detailed Explicit Generation
+        - generic [ref=e261] [cursor=pointer]:
+          - heading "Chroma Weaver" [level=3] [ref=e262]
+          - paragraph [ref=e263]: zavychromaxl_v100 — SDXL — Detailed Explicit Generation
+        - generic [ref=e266] [cursor=pointer]:
+          - heading "Zippy the Pixel Wizard" [level=3] [ref=e267]
+          - paragraph [ref=e268]: gonzalomoZpop_v30AIO — SD 1.5 — Classic Explicit Generation
+      - generic [ref=e43]:
+        - button "✨ Animate All Avatars" [ref=e44] [cursor=pointer]
+        - link "🧙 Travelling Wizard" [ref=e45] [cursor=pointer]:
+          - /url: /static/guild.html
+        - button "⚙️ Settings" [ref=e46] [cursor=pointer]
+    - main [ref=e47]:
+      - generic [ref=e48]:
+        - generic [ref=e51]:
+          - heading "Spellcaster" [level=2] [ref=e269]
+          - paragraph [ref=e53]: Install Manager · Calibration · Custom Builds
+        - generic [ref=e54]:
+          - button "Rename Wizard" [ref=e55] [cursor=pointer]
+          - button "Generate Background" [ref=e56] [cursor=pointer]
+          - button "Generate Avatar" [ref=e57] [cursor=pointer]
+          - button "Enchantments" [ref=e58] [cursor=pointer]
+          - button "Reset Memory" [ref=e59] [cursor=pointer]
+          - button "⚡ 0/36" [ref=e309] [cursor=pointer]
+      - generic [ref=e61]:
+        - paragraph [ref=e273]: Greetings. I am Spellcaster, the Guild's specialist in Install Manager · Calibration · Custom Builds. Describe what you need, and I shall present my tools for you to choose from.
+        - generic:
+          - img
+        - generic [ref=e285]:
+          - img [ref=e287]
+          - paragraph [ref=e292]:
+            - strong [ref=e293]: Batch Generation Started!
+            - text: Queuing avatars for all guild members + tavern background via ComfyUI. This runs in the background — you can keep chatting.
+      - generic [ref=e63]:
+        - button "📎" [ref=e64] [cursor=pointer]
+        - textbox "Just talk to it..." [ref=e65]
+        - button "Summon Wizard" [ref=e66] [cursor=pointer]:
+          - img "Summon Wizard" [ref=e67]
+        - button "🎬" [ref=e68] [cursor=pointer]
+        - button "✨" [ref=e69] [cursor=pointer]
+  - button "⚔ Shootouts 39" [active] [ref=e274] [cursor=pointer]:
+    - text: ⚔ Shootouts
+    - generic [ref=e71]: "39"
+  - generic:
+    - img
+    - generic: Batch spell in progress...
+  - generic [ref=e311]:
+    - generic [ref=e312]:
+      - generic [ref=e313]:
+        - heading "LoRA Shootout" [level=2] [ref=e314]
+        - text: Pending shootouts
+      - button "✕" [ref=e315] [cursor=pointer]
+    - generic [ref=e316]:
+      - generic [ref=e317]:
+        - generic [ref=e318]: 39 shootouts pending • 228 candidate LoRAs
+        - button "⚡ Run all shootouts" [ref=e319] [cursor=pointer]
+      - generic [ref=e320]:
+        - generic [ref=e321]:
+          - generic [ref=e322]: other
+          - generic [ref=e323]: sdxl • 29 candidates
+          - generic [ref=e324]: Sinozick_Style_XL_Pony.safetensors, Beautiful_female_model_face_-_ILL.safetensors, thicc_v1.4-pony_done.safetensors +26 more
+        - button "Run shootout" [ref=e325] [cursor=pointer]
+      - generic [ref=e326]:
+        - generic [ref=e327]:
+          - generic [ref=e328]: other
+          - generic [ref=e329]: flux2klein • 27 candidates
+          - generic [ref=e330]: Flux2Klein_AnythingtoRealCharacters.safetensors, f2k_anything2real_a_patched.safetensors, nicegirls_flux_klein9b.safetensors +24 more
+        - button "Run shootout" [ref=e331] [cursor=pointer]
+      - generic [ref=e332]:
+        - generic [ref=e333]:
+          - generic [ref=e334]: other
+          - generic [ref=e335]: wan • 22 candidates
+          - generic [ref=e336]: DR34ML4Y_I2V_14B_LOW_V2.safetensors, SVI_v2_PRO_Wan2.2-I2V-A14B_HIGH_lora_rank_128_fp16.safetensors, SVI_v2_PRO_Wan2.2-I2V-A14B_LOW_lora_rank_128_fp16.safetensors +19 more
+        - button "Run shootout" [ref=e337] [cursor=pointer]
+      - generic [ref=e338]:
+        - generic [ref=e339]:
+          - generic [ref=e340]: other
+          - generic [ref=e341]: flux1dev • 15 candidates
+          - generic [ref=e342]: Aesthetic texture enhancer.safetensors, detailed_v2_flux_ntc.safetensors, freckles_flux_v1.safetensors +12 more
+        - button "Run shootout" [ref=e343] [cursor=pointer]
+      - generic [ref=e344]:
+        - generic [ref=e345]:
+          - generic [ref=e346]: other
+          - generic [ref=e347]: flux_kontext • 14 candidates
+          - generic [ref=e348]: Aesthetic texture enhancer.safetensors, detailed_v2_flux_ntc.safetensors, freckles_flux_v1.safetensors +11 more
+        - button "Run shootout" [ref=e349] [cursor=pointer]
+      - generic [ref=e350]:
+        - generic [ref=e351]:
+          - generic [ref=e352]: other
+          - generic [ref=e353]: unknown • 8 candidates
+          - generic [ref=e354]: EFFECTSp001_zit.safetensors, Tentacledv1.safetensors, Z-cyborg.safetensors +5 more
+        - button "Run shootout" [ref=e355] [cursor=pointer]
+      - generic [ref=e356]:
+        - generic [ref=e357]:
+          - generic [ref=e358]: feet fix
+          - generic [ref=e359]: wan • 8 candidates
+          - generic [ref=e360]: wan22_i2v_footjob_v2_ab_high.safetensors, wan22_i2v_footjob_v2_ab_low.safetensors, wan2.2_i2v_highnoise_FOOT_WORSHIP_TOE_SUCKING_v1.0.safetensors +5 more
+        - button "Run shootout" [ref=e361] [cursor=pointer]
+      - generic [ref=e362]:
+        - generic [ref=e363]:
+          - generic [ref=e364]: anatomy body
+          - generic [ref=e365]: flux2klein • 6 candidates
+          - generic [ref=e366]: 1A_Back_Pose_Enhancer.safetensors, Klein_Anatomy_Male.safetensors, The_Body_Version_A_Flux2.k.9B.safetensors +3 more
+        - button "Run shootout" [ref=e367] [cursor=pointer]
+      - generic [ref=e368]:
+        - generic [ref=e369]:
+          - generic [ref=e370]: skin detail
+          - generic [ref=e371]: sdxl • 6 candidates
+          - generic [ref=e372]: Skin Color_alpha1.0_rank4_noxattn_250steps.safetensors, RealSkin_xxXL_v1.safetensors, skin texture style v4.safetensors +3 more
+        - button "Run shootout" [ref=e373] [cursor=pointer]
+      - generic [ref=e374]:
+        - generic [ref=e375]:
+          - generic [ref=e376]: style photoreal
+          - generic [ref=e377]: sdxl • 6 candidates
+          - generic [ref=e378]: Chiaroscuro film style pony v1.safetensors, Cinematic Photography Style pony v1.safetensors, HyperdetailedRealismMJ7Pony.safetensors +3 more
+        - button "Run shootout" [ref=e379] [cursor=pointer]
+      - generic [ref=e380]:
+        - generic [ref=e381]:
+          - generic [ref=e382]: action pose
+          - generic [ref=e383]: wan • 6 candidates
+          - generic [ref=e384]: Wan22_CumV2_High.safetensors, Wan22_CumV2_Low.safetensors, 23High noise-Cumshot Aesthetics.safetensors +3 more
+        - button "Run shootout" [ref=e385] [cursor=pointer]
+      - generic [ref=e386]:
+        - generic [ref=e387]:
+          - generic [ref=e388]: action pose
+          - generic [ref=e389]: flux2klein • 5 candidates
+          - generic [ref=e390]: POV_blowjobV1_A.safetensors, POV_blowjobV1_B.safetensors, PornMaster_cum_flux-2-klein-9b_V1.safetensors +2 more
+        - button "Run shootout" [ref=e391] [cursor=pointer]
+      - generic [ref=e392]:
+        - generic [ref=e393]:
+          - generic [ref=e394]: style photoreal
+          - generic [ref=e395]: pony • 5 candidates
+          - generic [ref=e396]: Chiaroscuro film style pony v1.safetensors, Cinematic Photography Style pony v1.safetensors, HyperdetailedRealismMJ7Pony.safetensors +2 more
+        - button "Run shootout" [ref=e397] [cursor=pointer]
+      - generic [ref=e398]:
+        - generic [ref=e399]:
+          - generic [ref=e400]: acceleration
+          - generic [ref=e401]: wan • 5 candidates
+          - generic [ref=e402]: lightx2v_I2V_14B_480p_cfg_step_distill_rank128_bf16.safetensors, lightx2v_T2V_14B_cfg_step_distill_v2_lora_rank256_bf16.safetensors, Wan2.2-Lightning_I2V-A14B-4steps-lora_HIGH_fp16.safetensors +2 more
+        - button "Run shootout" [ref=e403] [cursor=pointer]
+      - generic [ref=e404]:
+        - generic [ref=e405]:
+          - generic [ref=e406]: detail boost
+          - generic [ref=e407]: flux1dev • 4 candidates
+          - generic [ref=e408]: sharp detailed image (foot focus) v1.1.safetensors, detail_enhancer_flux_v1.safetensors, rMada - Enhance - beta2.safetensors +1 more
+        - button "Run shootout" [ref=e409] [cursor=pointer]
+      - generic [ref=e410]:
+        - generic [ref=e411]:
+          - generic [ref=e412]: style photoreal
+          - generic [ref=e413]: illustrious • 4 candidates
+          - generic [ref=e414]: Chiaroscuro film style pony v1.safetensors, Cinematic Photography Style pony v1.safetensors, HyperdetailedRealismMJ7Pony.safetensors +1 more
+        - button "Run shootout" [ref=e415] [cursor=pointer]
+      - generic [ref=e416]:
+        - generic [ref=e417]:
+          - generic [ref=e418]: other
+          - generic [ref=e419]: pony • 4 candidates
+          - generic [ref=e420]: Sinozick_Style_XL_Pony.safetensors, thicc_v1.4-pony_done.safetensors, amateur_style_v1_pony.safetensors +1 more
+        - button "Run shootout" [ref=e421] [cursor=pointer]
+      - generic [ref=e422]:
+        - generic [ref=e423]:
+          - generic [ref=e424]: feet fix
+          - generic [ref=e425]: sdxl • 4 candidates
+          - generic [ref=e426]: detailed foot focus style illustriousXL v1.safetensors, RealFeet_xl_v1.safetensors, feet v2.safetensors +1 more
+        - button "Run shootout" [ref=e427] [cursor=pointer]
+      - generic [ref=e428]:
+        - generic [ref=e429]:
+          - generic [ref=e430]: style gothic
+          - generic [ref=e431]: sdxl • 4 candidates
+          - generic [ref=e432]: Ethereal_Gothic_Elegance.safetensors, MoriiMee_Gothic_Niji_Style__Pony_LoRA.safetensors, MoriiMee_Gothic_Niji_Style__Pony_LoRA_V1_Redux.safetensors +1 more
+        - button "Run shootout" [ref=e433] [cursor=pointer]
+      - generic [ref=e434]:
+        - generic [ref=e435]:
+          - generic [ref=e436]: feet fix
+          - generic [ref=e437]: flux1dev • 3 candidates
+          - generic [ref=e438]: flux-lora-foot.safetensors, foot feet v1.safetensors, aidmaFeetFix-FLUX-V0.1.safetensors
+        - button "Run shootout" [ref=e439] [cursor=pointer]
+      - generic [ref=e440]:
+        - generic [ref=e441]:
+          - generic [ref=e442]: style photoreal
+          - generic [ref=e443]: flux1dev • 3 candidates
+          - generic [ref=e444]: CinematicStyleFlux_v1.safetensors, UltraRealPhoto.safetensors, HXHY-RealisticKontextLoRA1.6.safetensors
+        - button "Run shootout" [ref=e445] [cursor=pointer]
+      - generic [ref=e446]:
+        - generic [ref=e447]:
+          - generic [ref=e448]: detail boost
+          - generic [ref=e449]: flux_kontext • 3 candidates
+          - generic [ref=e450]: sharp detailed image (foot focus) v1.1.safetensors, detail_enhancer_flux_v1.safetensors, rMada - Enhance - beta2.safetensors
+        - button "Run shootout" [ref=e451] [cursor=pointer]
+      - generic [ref=e452]:
+        - generic [ref=e453]:
+          - generic [ref=e454]: feet fix
+          - generic [ref=e455]: flux_kontext • 3 candidates
+          - generic [ref=e456]: flux-lora-foot.safetensors, foot feet v1.safetensors, aidmaFeetFix-FLUX-V0.1.safetensors
+        - button "Run shootout" [ref=e457] [cursor=pointer]
+      - generic [ref=e458]:
+        - generic [ref=e459]:
+          - generic [ref=e460]: other
+          - generic [ref=e461]: illustrious • 3 candidates
+          - generic [ref=e462]: Sinozick_Style_XL_Pony.safetensors, Beautiful_female_model_face_-_ILL.safetensors, z-image-illustria-01.safetensors
+        - button "Run shootout" [ref=e463] [cursor=pointer]
+      - generic [ref=e464]:
+        - generic [ref=e465]:
+          - generic [ref=e466]: eye detail
+          - generic [ref=e467]: sdxl • 3 candidates
+          - generic [ref=e468]: perfect sclera eye style pony v1.3.safetensors, detailed_realistic_eyes-pony.safetensors, Eyes_High_Definition-000007.safetensors
+        - button "Run shootout" [ref=e469] [cursor=pointer]
+      - generic [ref=e470]:
+        - generic [ref=e471]:
+          - generic [ref=e472]: pose
+          - generic [ref=e473]: flux1dev • 2 candidates
+          - generic [ref=e474]: Portrait_Engine v2.0.safetensors, refcontrol_pose.safetensors
+        - button "Run shootout" [ref=e475] [cursor=pointer]
+      - generic [ref=e476]:
+        - generic [ref=e477]:
+          - generic [ref=e478]: skin detail
+          - generic [ref=e479]: flux1dev • 2 candidates
+          - generic [ref=e480]: detailed skin pore style v2.safetensors, skin texture style v5.safetensors
+        - button "Run shootout" [ref=e481] [cursor=pointer]
+      - generic [ref=e482]:
+        - generic [ref=e483]:
+          - generic [ref=e484]: detail boost
+          - generic [ref=e485]: flux2klein • 2 candidates
+          - generic [ref=e486]: detail_slider_klein_9b.safetensors, klein_slider_detail.safetensors
+        - button "Run shootout" [ref=e487] [cursor=pointer]
+      - generic [ref=e488]:
+        - generic [ref=e489]:
+          - generic [ref=e490]: pose
+          - generic [ref=e491]: flux_kontext • 2 candidates
+          - generic [ref=e492]: Portrait_Engine v2.0.safetensors, refcontrol_pose.safetensors
+        - button "Run shootout" [ref=e493] [cursor=pointer]
+      - generic [ref=e494]:
+        - generic [ref=e495]:
+          - generic [ref=e496]: skin detail
+          - generic [ref=e497]: flux_kontext • 2 candidates
+          - generic [ref=e498]: detailed skin pore style v2.safetensors, skin texture style v5.safetensors
+        - button "Run shootout" [ref=e499] [cursor=pointer]
+      - generic [ref=e500]:
+        - generic [ref=e501]:
+          - generic [ref=e502]: style photoreal
+          - generic [ref=e503]: flux_kontext • 2 candidates
+          - generic [ref=e504]: CinematicStyleFlux_v1.safetensors, UltraRealPhoto.safetensors
+        - button "Run shootout" [ref=e505] [cursor=pointer]
+      - generic [ref=e506]:
+        - generic [ref=e507]:
+          - generic [ref=e508]: eye detail
+          - generic [ref=e509]: illustrious • 2 candidates
+          - generic [ref=e510]: perfect sclera eye style pony v1.3.safetensors, detailed_realistic_eyes-pony.safetensors
+        - button "Run shootout" [ref=e511] [cursor=pointer]
+      - generic [ref=e512]:
+        - generic [ref=e513]:
+          - generic [ref=e514]: other
+          - generic [ref=e515]: ltx • 2 candidates
+          - generic [ref=e516]: ltx-2.3-22b-distilled-lora-384.safetensors, ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors
+        - button "Run shootout" [ref=e517] [cursor=pointer]
+      - generic [ref=e518]:
+        - generic [ref=e519]:
+          - generic [ref=e520]: style gothic
+          - generic [ref=e521]: pony • 2 candidates
+          - generic [ref=e522]: Ethereal_Gothic_Elegance.safetensors, MoriiMee_Gothic_Niji_Style__Pony_LoRA.safetensors
+        - button "Run shootout" [ref=e523] [cursor=pointer]
+      - generic [ref=e524]:
+        - generic [ref=e525]:
+          - generic [ref=e526]: anatomy body
+          - generic [ref=e527]: sdxl • 2 candidates
+          - generic [ref=e528]: Perfect_Booty_XL_V1.safetensors, Body Type Slider - Illustrious_alpha1.0_rank4_noxattn_last.safetensors
+        - button "Run shootout" [ref=e529] [cursor=pointer]
+      - generic [ref=e530]:
+        - generic [ref=e531]:
+          - generic [ref=e532]: anatomy chest
+          - generic [ref=e533]: sdxl • 2 candidates
+          - generic [ref=e534]: PerkyCTits_Pony.safetensors, Nipples XL - All in One.safetensors
+        - button "Run shootout" [ref=e535] [cursor=pointer]
+      - generic [ref=e536]:
+        - generic [ref=e537]:
+          - generic [ref=e538]: detail boost
+          - generic [ref=e539]: sdxl • 2 candidates
+          - generic [ref=e540]: StS_PonyXL_Detail_Slider_v1.4_iteration_3.safetensors, Wonderful_Details_XL_V1a.safetensors
+        - button "Run shootout" [ref=e541] [cursor=pointer]
+      - generic [ref=e542]:
+        - generic [ref=e543]:
+          - generic [ref=e544]: hand fix
+          - generic [ref=e545]: sdxl • 2 candidates
+          - generic [ref=e546]: HandFineTuning_XL.safetensors, hand 5.5.safetensors
+        - button "Run shootout" [ref=e547] [cursor=pointer]
+      - generic [ref=e548]:
+        - generic [ref=e549]:
+          - generic [ref=e550]: skin detail
+          - generic [ref=e551]: unknown • 2 candidates
+          - generic [ref=e552]: 93PXB5SENBFN8NEYSRYZA1DVX0-Chrome skin.safetensors, OiledSkin_Zit_Turbo_V1.safetensors
+        - button "Run shootout" [ref=e553] [cursor=pointer]
+  - generic: ᛖ
+  - generic: ⚔

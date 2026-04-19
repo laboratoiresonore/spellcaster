@@ -1,0 +1,46 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - img [ref=e4]
+    - heading "The Wizard Guild" [level=1] [ref=e10]
+    - paragraph [ref=e11]: The Guild awaits...
+  - generic [ref=e14]:
+    - complementary [ref=e15]:
+      - generic [ref=e16]:
+        - heading "The Wizard Guild" [level=2] [ref=e17]
+        - generic [ref=e20]: "LLM: Disconnected"
+        - generic [ref=e21]:
+          - generic [ref=e23]: "ComfyUI: Connected"
+          - generic [ref=e24]:
+            - generic [ref=e25]: VRAM 14.2/15.9
+            - generic [ref=e28]: RAM 49.9/63.8
+            - generic [ref=e31]: Cache 0.0/0.1
+        - generic [ref=e36]: "SillyTavern: Disconnected"
+        - generic [ref=e39]: "Signal Bridge: Disconnected"
+        - textbox "Search guild members..." [ref=e41]
+      - generic [ref=e43]:
+        - button "✨ Animate All Avatars" [disabled] [ref=e44]
+        - link "🧙 Travelling Wizard" [ref=e45] [cursor=pointer]:
+          - /url: /static/guild.html
+        - button "⚙️ Settings" [ref=e46] [cursor=pointer]
+    - main [ref=e47]:
+      - generic [ref=e48]:
+        - generic [ref=e51]:
+          - heading "Loading..." [level=2] [ref=e52]
+          - paragraph [ref=e53]: Connecting to guild...
+        - generic [ref=e54]:
+          - button "Rename Wizard" [ref=e55] [cursor=pointer]
+          - button "Generate Background" [ref=e56] [cursor=pointer]
+          - button "Generate Avatar" [ref=e57] [cursor=pointer]
+          - button "Enchantments" [ref=e58] [cursor=pointer]
+          - button "Reset Memory" [ref=e59] [cursor=pointer]
+          - button "⚡ Generate All" [ref=e60] [cursor=pointer]
+      - generic [ref=e63]:
+        - button "📎" [ref=e64] [cursor=pointer]
+        - textbox "Just talk to it..." [ref=e65]
+        - button "Summon Wizard" [ref=e66] [cursor=pointer]:
+          - img "Summon Wizard" [ref=e67]
+        - button "🎬" [ref=e68] [cursor=pointer]
+        - button "✨" [ref=e69] [cursor=pointer]
+  - button "⚔ Shootouts –" [ref=e70] [cursor=pointer]:
+    - text: ⚔ Shootouts
+    - generic [ref=e71]: –
