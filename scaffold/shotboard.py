@@ -857,6 +857,59 @@ class Shotboard:
         return {"total": total, "by_code": by_code,
                 "shots_with_warnings": by_shot}
 
+    def batch_randomize_seeds(self, shot_ids,
+                               seed_min: int = 0,
+                               seed_max: int = 2147483647):
+        """R64a: assign each shot a fresh random seed.
+
+        Useful for "render the same prompt 10 times with different
+        seeds" variation exploration. Locked shots are skipped.
+        Returns count + the new seeds for UI feedback.
+        """
+        import random
+        rng = random.Random()  # process-private, no seed = system entropy
+        changed: List[Dict[str, Any]] = []
+        for sid in shot_ids:
+            shot = self.get(sid)
+            if shot is None or shot.locked:
+                continue
+            new_seed = rng.randint(int(seed_min), int(seed_max))
+            shot.seed = new_seed
+            shot.touch()
+            changed.append({"id": sid, "seed": new_seed})
+        if changed:
+            self.save()
+        return {"changed": len(changed), "shots": changed}
+
+    def render_history_csv(self) -> str:
+        """R64b: emit render history for every shot as a flat CSV.
+        Columns: shot_id, shot_title, render_ts, preset, prompt, negative,
+                 status, duration_s, error.
+        Suitable for piping into a spreadsheet for analysis.
+        """
+        import csv
+        import io
+        buf = io.StringIO()
+        writer = csv.writer(buf, lineterminator="\n")
+        writer.writerow([
+            "shot_id", "shot_title", "render_ts", "preset",
+            "prompt", "negative", "status", "duration_s", "error",
+        ])
+        for shot in self._shots:
+            for entry in (shot.render_history or []):
+                writer.writerow([
+                    shot.id,
+                    shot.title or "",
+                    entry.get("timestamp", ""),
+                    entry.get("preset", ""),
+                    entry.get("prompt", ""),
+                    entry.get("negative", ""),
+                    entry.get("status", ""),
+                    entry.get("duration_s", ""),
+                    (entry.get("error", "") or "").replace("\n", " "),
+                ])
+        return buf.getvalue()
+
     def batch_priority(self, shot_ids, priority):
         """R61b: set render priority on multiple shots.
         `priority` must be one of 'high', 'normal', 'low'."""

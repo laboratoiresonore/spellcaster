@@ -2733,6 +2733,23 @@ function VideoPanel() {
              "info");
   };
 
+  // R64a: assign fresh random seeds to every selected shot
+  const batchRandomizeSeeds = async () => {
+    if (selected.size === 0) return;
+    try {
+      const res = await api.post("/api/video/batch-randomize-seeds", {
+        shot_ids: Array.from(selected),
+      });
+      if (res && res.changed != null) {
+        addToast(`Randomized seed on ${res.changed} shot(s)`,
+                 res.changed > 0 ? "success" : "info");
+      }
+      await refresh();
+    } catch (e) {
+      addToast("Batch randomize failed: " + (e.message || "unknown"), "error");
+    }
+  };
+
   // R61b: set priority on all selected shots
   const batchPriority = async (priority) => {
     if (selected.size === 0) return;
@@ -3226,6 +3243,12 @@ function VideoPanel() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>
             Import JSON
           </button>
+          <a href="/api/video/render-history.csv" download
+            className="export-csv flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+            title="Download flat CSV of every render attempt across all shots (for analysis / sharing)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
+            CSV
+          </a>
           <a href="/api/video/export/edl?fps=30" download
             className="export-edl flex items-center gap-1.5 bg-slate-800 hover:bg-emerald-700/50 text-slate-300 hover:text-emerald-100 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
             title="Download EDL (CMX 3600) — import into DaVinci Resolve / Avid / Premiere">
@@ -3461,6 +3484,10 @@ function VideoPanel() {
               <option value="normal">Normal</option>
               <option value="low">⬇ Low</option>
             </select>
+            <button onClick={batchRandomizeSeeds}
+              className="batch-randomize-seeds-btn px-3 py-1 rounded bg-indigo-700/40 hover:bg-indigo-600/50 text-indigo-100 text-xs"
+              title="Assign a fresh random seed to each selected shot (variation exploration)"
+            >🎲 Seeds</button>
             <button onClick={batchRevert} className="batch-revert-btn px-3 py-1 rounded bg-amber-700/40 hover:bg-amber-600/50 text-amber-100 text-xs">Batch Revert</button>
             <button onClick={() => setShowPromptEdit(v => !v)} className="batch-prompt-edit-btn px-3 py-1 rounded bg-violet-700/40 hover:bg-violet-600/50 text-violet-100 text-xs">
               {showPromptEdit ? "Close Prompt Edit" : "Prompt ±"}
