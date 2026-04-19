@@ -2895,11 +2895,35 @@ function _prettyBackend(b) {
     return map[b] || b;
 }
 
+// Detect when a character's `name` is still the raw ComfyUI model
+// filename (e.g., "juggernautXL_v9Rundiffusionphoto2" or
+// "sloppyMessyMix_sloppyMessyMixV1"). These look like filenames, not
+// fantasy wizard names, and should go through the LLM rename step.
+// We flag anything that:
+//   - contains an underscore AND a digit (version markers v9, v170, v1_0),
+//   - ends in a camelCase model suffix (vXX, fp8, Q6, safetensors),
+//   - contains 3+ consecutive caps (XL, HD, AIO), OR
+//   - already is the literal "Unnamed Wizard" sentinel.
+function _looksLikeRawModelFilename(name) {
+    if (!name) return true;
+    if (name === "Unnamed Wizard") return true;
+    if (/[_\-][vV]\d+/.test(name)) return true;            // _v9, _V170
+    if (/_\d/.test(name)) return true;                     // _1, _0
+    if (/(fp8|fp16|q4|q6|q8|bf16|safetensors|gguf|aio|xl|hd|pony|noob)/i.test(name)) return true;
+    if (/[A-Z]{3,}/.test(name)) return true;               // XL, HD, AIO
+    if (name.length > 30) return true;                     // too long to be a fantasy name
+    return false;
+}
+
 async function generateNamesForCharacters() {
-    // If a character name is Unnamed Wizard, prompt the LLM to rename it
-    // Studio characters already have proper names — skip them
-    // Track names already assigned so near-identical models don't collide
-    const takenNames = new Set(characters.filter(c => c.name && c.name !== "Unnamed Wizard").map(c => c.name.toLowerCase()));
+    // If a character name is Unnamed Wizard OR a raw model filename,
+    // prompt the LLM to rename it. Studio characters already have
+    // proper names — skip them. Track names already assigned so
+    // near-identical models don't collide.
+    const takenNames = new Set(
+        characters.filter(c => c.name && !_looksLikeRawModelFilename(c.name))
+                  .map(c => c.name.toLowerCase())
+    );
     for(let i=0; i<characters.length; i++) {
         let char = characters[i];
         if(char.type === "studio" && !char.personality) {
@@ -2914,10 +2938,13 @@ async function generateNamesForCharacters() {
             }
             saveIdentity(char);
         }
-        if(char.name === "Unnamed Wizard") {
+        if(_looksLikeRawModelFilename(char.name)) {
             // First attempt — free-form generation
             let avoidList = takenNames.size > 0 ? `\nAvoid these names (already taken): ${Array.from(takenNames).slice(0, 20).join(", ")}.` : "";
-            let context = `Context: We are naming magical avatars.\nCommand: Invent a single, very short, creative fantasy name (e.g. Zephyr) for a wizard specializing in: ${char.subtext}. Do NOT use titles like 'Master of'.${avoidList}\nName:`;
+            const modelHint = char.model_name
+                ? `\nTheir primary model is called "${char.model_name}" (architecture: ${char.model_arch || 'unknown'}). Hint at what the model does.`
+                : "";
+            let context = `Context: We are naming magical avatars for a ComfyUI image-generation interface.\nCommand: Invent a single, very short, creative fantasy name (1-2 words, e.g. Zephyr, Duskweave, Pyralis) for a wizard specializing in: ${char.subtext}. Do NOT use titles like 'Master of'.${modelHint}${avoidList}\nName:`;
             try {
                 const data = await llmGenerate({ prompt: context, max_length: 15, temperature: 0.8, stop_sequence: ["\n", "."] });
                 let llmName = data.results[0].text.trim().replace(/["']/g, '');
