@@ -139,6 +139,7 @@ function ShotCard({
   onSaveSnapshot,
   onRestoreSnapshot,
   onDeleteSnapshot,
+  onTogglePinSnapshot,
   focused = false,
 }) {
   const [expanded, setExpanded] = _useState(shot.status === "draft");
@@ -557,6 +558,7 @@ function ShotCard({
                   <div className="snapshots-list space-y-1 max-h-40 overflow-y-auto">
                     {(shot.snapshots || []).slice().reverse().map((snap) => {
                       const inCompare = snapCompare.includes(snap.id);
+                      const isPinned = (shot.pinned_snapshots || []).includes(snap.id);
                       const toggleCompare = () => {
                         setSnapCompare(prev => {
                           if (prev.includes(snap.id)) return prev.filter(x => x !== snap.id);
@@ -565,7 +567,7 @@ function ShotCard({
                         });
                       };
                       return (
-                        <div key={snap.id} className={`snapshot-entry flex items-center gap-2 text-[10px] px-2 py-1 rounded ${inCompare ? "bg-cyan-900/40 border border-cyan-600/40" : "bg-slate-800/60"}`}>
+                        <div key={snap.id} className={`snapshot-entry flex items-center gap-2 text-[10px] px-2 py-1 rounded ${inCompare ? "bg-cyan-900/40 border border-cyan-600/40" : (isPinned ? "bg-amber-900/20 border border-amber-600/30" : "bg-slate-800/60")}`}>
                           <input
                             type="checkbox"
                             checked={inCompare}
@@ -573,6 +575,11 @@ function ShotCard({
                             className="snapshot-compare-check w-3 h-3 accent-cyan-500"
                             title="Select to compare (max 2)"
                           />
+                          <button
+                            onClick={() => onTogglePinSnapshot(shot.id, snap.id, isPinned)}
+                            className={`snapshot-pin-btn text-sm leading-none ${isPinned ? "text-amber-400" : "text-slate-500 hover:text-amber-400"}`}
+                            title={isPinned ? "Pinned — won't auto-prune. Click to unpin." : "Pin to protect from auto-pruning"}
+                          >{isPinned ? "📌" : "📍"}</button>
                           <span className="snapshot-time text-slate-400">{new Date((snap.created_at || 0) * 1000).toLocaleString()}</span>
                           {snap.label && <span className="snapshot-label text-cyan-300 font-medium">— {snap.label}</span>}
                           <span className="snapshot-preset text-slate-500">({snap.preset || "?"})</span>
@@ -1996,6 +2003,22 @@ function VideoPanel() {
     }
   };
 
+  // R47b: pin/unpin a snapshot so it survives the 20-slot cap
+  const togglePinSnapshot = async (id, snapId, isPinned) => {
+    try {
+      const res = await api.post(`/api/video/shots/${id}/snapshot/${snapId}/pin`,
+                                 { _action: isPinned ? "unpin" : "pin" });
+      if (res && res.ok) {
+        addToast(isPinned ? "Snapshot unpinned" : "Snapshot pinned", "success");
+      } else {
+        addToast(res && res.error ? res.error : "Pin toggle failed", "error");
+      }
+      await refresh();
+    } catch (e) {
+      addToast("Pin failed: " + (e.message || "unknown"), "error");
+    }
+  };
+
   const exportShotboard = async () => {
     try {
       const resp = await api.post("/api/video/export", {});
@@ -2574,6 +2597,18 @@ function VideoPanel() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>
             Import JSON
           </button>
+          <a href="/api/video/export/edl?fps=30" download
+            className="export-edl flex items-center gap-1.5 bg-slate-800 hover:bg-emerald-700/50 text-slate-300 hover:text-emerald-100 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+            title="Download EDL (CMX 3600) — import into DaVinci Resolve / Avid / Premiere">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            EDL
+          </a>
+          <a href="/api/video/export/fcpxml?fps=30" download
+            className="export-fcpxml flex items-center gap-1.5 bg-slate-800 hover:bg-emerald-700/50 text-slate-300 hover:text-emerald-100 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+            title="Download FCPXML — preferred for DaVinci Resolve (preserves names + paths)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
+            FCPXML
+          </a>
           <button onClick={() => setViewMode(viewMode === "list" ? "grid" : "list")}
             className="view-toggle flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
             title={viewMode === "list" ? "Switch to grid view" : "Switch to list view"}
@@ -2926,6 +2961,7 @@ function VideoPanel() {
               onSaveSnapshot={saveSnapshot}
               onRestoreSnapshot={restoreSnapshot}
               onDeleteSnapshot={deleteSnapshot}
+              onTogglePinSnapshot={togglePinSnapshot}
               focused={focusedShotIndex === idx}
             />
           ))}

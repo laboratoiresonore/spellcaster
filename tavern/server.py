@@ -2509,8 +2509,19 @@ def _migrate_stale_urls(data, label="assets"):
                 continue
             # Try to cache it from ComfyUI (may still exist if cleanup hasn't run yet)
             try:
-                cached = _cache_comfyui_asset(val, 'video' if uk == 'animated_url' else 'image')
-                if cached and '/api/cached_asset/' in cached:
+                asset_kind = 'avatar' if uk in ('avatar_url', 'animated_url') else (
+                    'background' if uk == 'bg_url' else 'generation')
+                cached = _cache_comfyui_asset(
+                    val,
+                    'video' if uk == 'animated_url' else 'image',
+                    origin='guild', kind=asset_kind,
+                    title=f'{label}:{key}:{uk}',
+                    meta={'restored_from': 'generated_assets.json',
+                          'asset_key': key, 'url_key': uk},
+                    emit_event=False,
+                )
+                if cached and cached != val and (
+                        '/api/assets/' in cached or '/api/cached_asset/' in cached):
                     entry[uk] = cached
                     changed = True
                     print(f"  [Migration] Cached stale {uk} for {key}")
@@ -4218,12 +4229,62 @@ def _dispatch_workflow(workflow, comfy_url, timeout=180):
     raise Exception("Timeout waiting for ComfyUI response.")
 
 
-def _cache_comfyui_asset(comfy_url_str, asset_type="image"):
-    """Download an image/video from ComfyUI and cache it locally.
+def _cache_comfyui_asset(comfy_url_str, asset_type="image",
+                         *, origin="guild", kind="generation",
+                         prompt="", model="", seed=None,
+                         title="", tags=None, meta=None,
+                         emit_event=True):
+    """Download a ComfyUI asset and ingest it into the canonical AssetGallery.
 
-    Returns a local URL like /api/cached_asset/abc123.png that the browser
-    can use instead of the original ComfyUI URL.  This allows privacy cleanup
-    to delete the ComfyUI copy without breaking the browser's reference.
+    SINGLE SOURCE OF TRUTH for Guild-side asset caching. The gallery
+    (`tavern/creations/gallery/`) is the cross-interface bridge's unified
+    blob store. Every generation — whether authored in the Guild, imported
+    from GIMP, or posted by the Resolve Bridge — lives in one place,
+    addressed by hash-of-content, with typed metadata (origin/kind/prompt/
+    model/seed/tags) persisted in a JSON index.
+
+    Flow:
+      1. Download the raw bytes from ComfyUI's /view endpoint.
+      2. AssetGallery.put() — stores the blob, upserts the metadata record.
+      3. EventBus.publish("<origin>.asset.created") — notifies subscribers
+         (Resolve Bridge, GIMP gallery, Signal notifier) that a new asset
+         landed. Disable with emit_event=False for hot paths (e.g. one-off
+         rebuilds at server boot).
+      4. Return /api/assets/<hash> — the canonical, browser-loadable URL
+         served by the /api/assets/<hash> endpoint.
+
+    Privacy mode still wipes the ComfyUI server copies afterwards. The bytes
+    live locally in the gallery and the browser keeps working because the
+    returned URL points here, not at ComfyUI.
+
+    Fallback: if the cross-interface backbone is unavailable at import time
+    (_ASSET_GALLERY is None), the helper falls back to a legacy flat hash
+    cache at tavern/creations/<hash>.ext served by /api/cached_asset/<name>.
+    The legacy endpoint remains for compatibility; new code MUST use this
+    helper (see CLAUDE.md rule 15).
+
+    Args:
+        comfy_url_str: A ComfyUI /view?filename=... URL, or any non-view URL
+            (returned as-is).
+        asset_type: "image" or "video" — only used to tune download timeout.
+        origin: Where the generation came from. Guild-triggered renders use
+            "guild"; plugin ingest overrides with "gimp", "resolve", etc.
+        kind: Category — "generation" (default), "avatar", "background",
+            "shot", "upscale", "inpaint", etc.
+        prompt: The positive prompt, if known.
+        model: The checkpoint / UNET filename, if known.
+        seed: The sampling seed, if known.
+        title: Short human-readable label (optional).
+        tags: Free-form tag list (optional).
+        meta: Extra dict merged into the record's meta. Callers may use this
+            for tool-specific fields (wizard_id, char_id, arch_key, etc.).
+        emit_event: Whether to publish an <origin>.asset.created event.
+
+    Returns:
+        str: A Guild-served URL — /api/assets/<hash> (canonical) or
+        /api/cached_asset/<name> (legacy fallback) — or the original
+        comfy_url_str unchanged if it is not a ComfyUI view URL or the
+        download failed.
     """
     if not comfy_url_str or '/view?' not in comfy_url_str:
         return comfy_url_str  # not a ComfyUI URL, pass through
@@ -4236,29 +4297,75 @@ def _cache_comfyui_asset(comfy_url_str, asset_type="image"):
         if not fname:
             return comfy_url_str
 
-        # Determine extension
-        ext = os.path.splitext(fname)[1] or ".png"
+        ext_dotted = os.path.splitext(fname)[1].lower()
+        ext = ext_dotted.lstrip('.') or ('mp4' if asset_type == 'video' else 'png')
 
-        # Generate a stable cache filename from the original
-        cache_name = hashlib.sha256(comfy_url_str.encode()).hexdigest()[:16] + ext
-        cache_path = os.path.join(_ASSET_CACHE_DIR, cache_name)
-
-        # Download if not already cached
-        if not os.path.exists(cache_path):
-            dl_timeout = 300 if asset_type == "video" else 60
+        dl_timeout = 300 if asset_type == "video" else 60
+        try:
             req = urllib.request.Request(comfy_url_str)
             with urllib.request.urlopen(req, timeout=dl_timeout) as resp:
                 data = resp.read()
-            if len(data) < 100:
-                return comfy_url_str  # too small, probably already wiped
+        except Exception as e:
+            print(f"  [Asset] download failed for {fname}: {e}")
+            return comfy_url_str
+
+        if len(data) < 100:
+            return comfy_url_str  # too small — already wiped
+
+        merged_meta = dict(meta or {})
+        merged_meta.setdefault('src_filename', fname)
+        merged_meta.setdefault('src_subfolder', params.get('subfolder', [''])[0])
+        merged_meta.setdefault('src_type', params.get('type', ['output'])[0])
+
+        # Canonical path: AssetGallery + EventBus (single source of truth).
+        if _ASSET_GALLERY is not None:
+            try:
+                rec = _ASSET_GALLERY.put(
+                    data,
+                    origin=origin,
+                    kind=kind,
+                    ext=ext,
+                    title=title,
+                    prompt=prompt,
+                    model=model,
+                    seed=seed,
+                    tags=tags,
+                    meta=merged_meta,
+                )
+                if emit_event and _EVENT_BUS is not None:
+                    try:
+                        _EVENT_BUS.publish(
+                            f"{origin}.asset.created",
+                            origin=origin,
+                            data={
+                                'asset_hash': rec.hash,
+                                'kind': kind,
+                                'prompt': prompt,
+                                'model': model,
+                                'seed': seed,
+                                'title': title,
+                                'mime': rec.mime,
+                                'size': rec.size,
+                            },
+                        )
+                    except Exception:
+                        pass  # bus is best-effort
+                return f"/api/assets/{rec.hash}"
+            except Exception as e:
+                print(f"  [Asset] gallery put failed ({e}); falling back to flat cache")
+
+        # Fallback — legacy flat cache. Reached only when the cross-interface
+        # backbone couldn't initialize. Keeps privacy mode working even then.
+        cache_name = hashlib.sha256(comfy_url_str.encode()).hexdigest()[:16] + '.' + ext
+        cache_path = os.path.join(_ASSET_CACHE_DIR, cache_name)
+        if not os.path.exists(cache_path):
             with open(cache_path, 'wb') as f:
                 f.write(data)
                 f.flush()
                 os.fsync(f.fileno())
-
         return f"/api/cached_asset/{cache_name}"
     except Exception as e:
-        print(f"  [Privacy] Failed to cache asset: {e}")
+        print(f"  [Asset] ingest failed: {e}")
         return comfy_url_str  # fallback to original URL
 
 
@@ -4854,22 +4961,12 @@ def _get_ltx_preset(comfy_url):
 
 
 
-def _upload_cached_asset_to_comfyui(cache_name, comfy_url):
-    """Re-upload a locally cached asset to ComfyUI's input folder.
+def _upload_bytes_to_comfyui(data: bytes, filename: str, comfy_url: str) -> str:
+    """POST raw bytes to ComfyUI's /upload/image endpoint (input folder).
 
-    When privacy mode caches images locally as /api/cached_asset/<hash>.ext,
-    ComfyUI no longer has the file.  This re-uploads it so LoadImage can use it.
-    Returns the filename as uploaded to ComfyUI.
+    Returns the server-assigned filename (ComfyUI may rename on collision).
     """
-    cache_path = os.path.join(_ASSET_CACHE_DIR, cache_name)
-    if not os.path.exists(cache_path):
-        raise FileNotFoundError(f"Cached asset not found: {cache_path}")
-
-    with open(cache_path, 'rb') as f:
-        data = f.read()
-
-    # Detect MIME type from extension
-    ext = os.path.splitext(cache_name)[1].lower()
+    ext = os.path.splitext(filename)[1].lower()
     _mime_map = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
                  '.webp': 'image/webp', '.gif': 'image/gif',
                  '.mp4': 'video/mp4', '.webm': 'video/webm'}
@@ -4880,7 +4977,7 @@ def _upload_cached_asset_to_comfyui(cache_name, comfy_url):
     boundary = _uuid.uuid4().hex
     body = (
         f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="image"; filename="{cache_name}"\r\n'
+        f'Content-Disposition: form-data; name="image"; filename="{filename}"\r\n'
         f"Content-Type: {mime_type}\r\n\r\n"
     ).encode() + data + (
         f"\r\n--{boundary}\r\n"
@@ -4893,9 +4990,48 @@ def _upload_cached_asset_to_comfyui(cache_name, comfy_url):
         method="POST")
     with urllib.request.urlopen(req, timeout=30) as resp:
         result = json.loads(resp.read().decode("utf-8"))
-    uploaded_name = result.get("name", cache_name)
-    print(f"  [Privacy] Re-uploaded cached asset to ComfyUI input: {uploaded_name}")
-    return uploaded_name
+    return result.get("name", filename)
+
+
+def _upload_cached_asset_to_comfyui(cache_name, comfy_url):
+    """Re-upload a locally cached asset to ComfyUI's input folder.
+
+    Supports both storage backends — AssetGallery hashes and the legacy
+    /api/cached_asset/<hash>.ext flat files. The caller passes whatever
+    trailing path segment they got from the URL; we resolve it.
+
+    Returns the server-assigned filename on ComfyUI.
+    """
+    # Strip any stray cache-buster params — belt-and-suspenders alongside
+    # _extract_comfyui_filename which normally does this already.
+    for sep in ('?', '&'):
+        if sep in cache_name:
+            cache_name = cache_name.split(sep)[0]
+
+    # Path A: canonical AssetGallery hash (64-hex chars, no extension).
+    # We treat any 16-64 hex string as a gallery hash when the record exists.
+    import re as _re
+    gallery_match = _re.match(r'^([a-f0-9]{16,64})(\.[A-Za-z0-9]+)?$', cache_name)
+    if _ASSET_GALLERY is not None and gallery_match:
+        h = gallery_match.group(1)
+        rec = _ASSET_GALLERY.get(h)
+        if rec is not None:
+            data = _ASSET_GALLERY.bytes_of(h)
+            if data:
+                filename = f"{h}.{rec.ext}"
+                uploaded = _upload_bytes_to_comfyui(data, filename, comfy_url)
+                print(f"  [Asset] Re-uploaded gallery blob to ComfyUI: {uploaded}")
+                return uploaded
+
+    # Path B: legacy flat cache file.
+    cache_path = os.path.join(_ASSET_CACHE_DIR, cache_name)
+    if not os.path.exists(cache_path):
+        raise FileNotFoundError(f"Cached asset not found: {cache_path}")
+    with open(cache_path, 'rb') as f:
+        data = f.read()
+    uploaded = _upload_bytes_to_comfyui(data, cache_name, comfy_url)
+    print(f"  [Asset] Re-uploaded legacy cache to ComfyUI: {uploaded}")
+    return uploaded
 
 
 def _extract_comfyui_filename(image_url, comfy_url=None):
@@ -4908,6 +5044,17 @@ def _extract_comfyui_filename(image_url, comfy_url=None):
     Our proxy serves them as:
       /api/comfy_image/Wizard_Guild_00001_.png
     """
+    if '/api/assets/' in image_url:
+        # Canonical AssetGallery URL — the hash identifies the blob.
+        asset_hash = image_url.split('/api/assets/')[-1]
+        for sep in ('?', '&'):
+            if sep in asset_hash:
+                asset_hash = asset_hash.split(sep)[0]
+        if comfy_url:
+            # _upload_cached_asset_to_comfyui transparently handles gallery
+            # hashes — no extension needed because the record carries it.
+            return _upload_cached_asset_to_comfyui(asset_hash, comfy_url)
+        return asset_hash
     if '/api/cached_asset/' in image_url:
         cache_name = image_url.split('/api/cached_asset/')[-1]
         # Strip cache-buster params (?t= or &t= from frontend)
@@ -5480,11 +5627,14 @@ def _translate_params(build_fn_name, raw, comfy_url=None):
             p[new_key] = p.pop(old_key)
 
     # ── Re-upload cached assets to ComfyUI for any filename params ──
+    # Covers BOTH URL shapes: /api/assets/<hash> (canonical, AssetGallery-backed)
+    # and /api/cached_asset/<name> (legacy flat cache).
     _filename_params = ('image_filename', 'mask_filename', 'source_filename',
                         'target_filename', 'style_ref_filename', 'reference_filename')
     for fp in _filename_params:
         val = p.get(fp)
-        if val and isinstance(val, str) and '/api/cached_asset/' in val:
+        if val and isinstance(val, str) and (
+                '/api/assets/' in val or '/api/cached_asset/' in val):
             p[fp] = _extract_comfyui_filename(val, comfy_url=comfy_url)
 
     # ── Ensure required params have defaults ──
@@ -7161,8 +7311,12 @@ class GuildHandler(SimpleHTTPRequestHandler):
             shot = _VIDEO_BRIDGE.board.get(shot_id)
             return self.end_json(200, {"shot_id": shot_id, "restored": restored,
                                         "shot": shot.to_dict() if shot else None})
-        elif self.path.startswith('/api/video/shots/') and '/snapshot/' in self.path and self.command == 'POST' and not self.path.endswith('/restore'):
-            # /api/video/shots/<sid>/snapshot/<snap_id>  with no /restore suffix = delete
+        elif (self.path.startswith('/api/video/shots/')
+              and '/snapshot/' in self.path
+              and self.command == 'POST'
+              and not self.path.endswith('/restore')
+              and not self.path.endswith('/pin')):
+            # /api/video/shots/<sid>/snapshot/<snap_id>  with no /restore or /pin suffix = delete
             # (HTTP DELETE would be cleaner but the existing video endpoints pattern uses POST)
             if not _VIDEO_BRIDGE:
                 return self.end_json(503, {"error": "Video Bridge not initialised"})
@@ -7216,6 +7370,80 @@ class GuildHandler(SimpleHTTPRequestHandler):
             result = _VIDEO_BRIDGE.board.batch_duplicate(
                 shot_ids, count=count, title_suffix_mode=mode)
             return self.end_json(200, result)
+
+        # R47a: timeline export (EDL / FCPXML) — GET so users can click a download link
+        elif self.path.startswith('/api/video/export/edl') and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            fps = 30
+            if '?' in self.path:
+                try:
+                    from urllib.parse import urlparse, parse_qs
+                    qs = parse_qs(urlparse(self.path).query)
+                    fps = int(qs.get('fps', ['30'])[0])
+                except (ValueError, TypeError):
+                    fps = 30
+            try:
+                body = _VIDEO_BRIDGE.board.export_edl(fps=max(1, min(120, fps)))
+                payload = body.encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/edl')
+                self.send_header('Content-Disposition',
+                                 'attachment; filename="spellcaster_timeline.edl"')
+                self.send_header('Content-Length', str(len(payload)))
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+            except Exception as e:
+                return self.end_json(500, {"error": f"EDL export failed: {e}"})
+
+        elif self.path.startswith('/api/video/export/fcpxml') and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            fps = 30
+            if '?' in self.path:
+                try:
+                    from urllib.parse import urlparse, parse_qs
+                    qs = parse_qs(urlparse(self.path).query)
+                    fps = int(qs.get('fps', ['30'])[0])
+                except (ValueError, TypeError):
+                    fps = 30
+            try:
+                body = _VIDEO_BRIDGE.board.export_fcpxml(fps=max(1, min(120, fps)))
+                payload = body.encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/xml')
+                self.send_header('Content-Disposition',
+                                 'attachment; filename="spellcaster_timeline.fcpxml"')
+                self.send_header('Content-Length', str(len(payload)))
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+            except Exception as e:
+                return self.end_json(500, {"error": f"FCPXML export failed: {e}"})
+
+        # R47b: snapshot pinning — POST /snapshot/<sid>/pin (with _action)
+        elif (self.path.startswith('/api/video/shots/')
+              and '/snapshot/' in self.path
+              and self.path.endswith('/pin')
+              and self.command == 'POST'):
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            parts = self.path.split('/')
+            shot_id = parts[4] if len(parts) > 4 else ''
+            snap_id = parts[6] if len(parts) > 6 else ''
+            action = (data.get('_action') or 'pin').lower()
+            if action == 'pin':
+                ok = _VIDEO_BRIDGE.board.pin_snapshot(shot_id, snap_id)
+            elif action == 'unpin':
+                ok = _VIDEO_BRIDGE.board.unpin_snapshot(shot_id, snap_id)
+            else:
+                return self.end_json(400, {"error": "_action must be 'pin' or 'unpin'"})
+            return self.end_json(200 if ok else 404,
+                                 {"shot_id": shot_id, "snapshot_id": snap_id,
+                                  "action": action, "ok": ok})
 
         elif self.path == '/api/video/record-render' and self.command == 'POST':
             if not _VIDEO_BRIDGE:
