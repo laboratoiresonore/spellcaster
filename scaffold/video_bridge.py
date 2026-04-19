@@ -982,41 +982,41 @@ class VideoBridge:
         file.  On failure, the shot keeps the WanGP output and an
         informational log is emitted — the user still gets usable video.
         """
-        import json as _json
-
         if not self.comfy.is_available():
             log.warning("Hybrid upscale skipped: ComfyUI not reachable "
                         "at %s", self.comfy.base_url)
             return
 
-        wf_path = os.path.join(
-            os.path.dirname(__file__), "workflows",
-            "seedvr2_video_upscale.json",
-        )
-        if not os.path.isfile(wf_path):
-            log.warning("Hybrid upscale skipped: workflow not found at %s",
-                        wf_path)
+        # R135: build the upscale workflow from canonical
+        # spellcaster_core.workflows.build_seedvr2_video_upscale
+        # instead of loading the stale seedvr2_video_upscale.json.
+        # The JSON was a 5-node stub with hardcoded (missing) model
+        # names and was never a complete workflow.
+        try:
+            from spellcaster_core.workflows import (  # type: ignore
+                build_seedvr2_video_upscale,
+            )
+        except ImportError as exc:
+            log.warning("Hybrid upscale skipped: canonical builder "
+                        "unavailable: %s", exc)
+            return
+
+        # Upload the render first so ComfyUI can read it by basename
+        video_basename = os.path.basename(video_path)
+        try:
+            with open(video_path, "rb") as _vf:
+                self.comfy.upload_image(_vf.read(), video_basename)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Hybrid upscale: couldn't upload source video: %s",
+                        exc)
             return
 
         try:
-            with open(wf_path, "r", encoding="utf-8") as fh:
-                workflow = _json.load(fh)
+            workflow = build_seedvr2_video_upscale(
+                video_name=video_basename,
+            )
         except Exception as exc:  # noqa: BLE001
-            log.warning("Hybrid upscale skipped: bad workflow JSON: %s", exc)
-            return
-
-        # Patch the VHS_LoadVideo node's input to our render.
-        patched = False
-        for node in workflow.values():
-            if not isinstance(node, dict):
-                continue
-            if node.get("class_type") == "VHS_LoadVideo":
-                node.setdefault("inputs", {})["video"] = video_path
-                patched = True
-                break
-        if not patched:
-            log.warning("Hybrid upscale skipped: no VHS_LoadVideo node "
-                        "found in workflow")
+            log.warning("Hybrid upscale builder raised: %s", exc)
             return
 
         log.info("Chaining ComfyUI upscale for shot %s (%s)",
