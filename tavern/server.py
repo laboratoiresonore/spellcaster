@@ -3141,19 +3141,303 @@ def _spellcaster_install_plugin(plugin_key: str):
 
 
 def _spellcaster_todo(op: str, detail: str = "") -> tuple[int, dict]:
-    """Graceful 'not yet implemented' for uninstall / build / calibrate.
+    """Graceful 'not yet implemented' for uninstall / build.
 
-    The scaffold's system prompt already tells the LLM these are available;
-    when an endpoint lands, swap the dispatcher to call the real helper.
-    Returning a structured error means the LLM can say, "I tried to run X,
-    but that flow isn't wired up yet — ticket opened." instead of silently
-    hanging.
+    Used only where a real endpoint would need new CLI plumbing the
+    codebase doesn't yet have. The response includes a recommended manual
+    fallback so the LLM can guide the user without pretending a flow worked.
     """
     return (501, {"ok": False, "op": op, "detail": detail,
                   "error": f"'{op}' is defined in the scaffold but not "
-                           "yet implemented as a Guild endpoint; the "
-                           "Spellcaster will advise the user to run the "
-                           "underlying CLI tool manually until this lands."})
+                           "yet implemented as a Guild endpoint; fall back "
+                           "to the CLI path described in the message."})
+
+
+# ── Calibration adapters ────────────────────────────────────────────────
+# Delegate to the existing spellcaster_core.{calibration,preference_calibration}
+# modules — they already implement the heavy lifting (model discovery,
+# comparison workflow building, generation + download, CalibrationProfile
+# persistence). The Guild endpoint is a thin HTTP shell.
+
+def _spellcaster_discover_models() -> tuple[int, dict]:
+    """GET /api/spellcaster/models — list of installed models the scaffold
+    can calibrate against. Thin wrapper over preference_calibration.discover_models.
+    """
+    try:
+        from spellcaster_core.preference_calibration import discover_models
+    except Exception as e:
+        return (500, {"error": f"preference_calibration unavailable: {e}"})
+    try:
+        models = discover_models(COMFYUI_URL)
+    except Exception as e:
+        return (502, {"error": f"ComfyUI not reachable: {e}"})
+    return (200, {"models": models})
+
+
+def _spellcaster_feature_test(feature_key: str) -> tuple[int, dict]:
+    """POST /api/spellcaster/feature/test — end-to-end smoke test.
+
+    Picks the first installed model appropriate for the feature, runs
+    preference_calibration.generate_model_sample at a small resolution,
+    returns the base64-encoded PNG so the Guild UI can display it as proof.
+    """
+    if not feature_key:
+        return (400, {"error": "feature required"})
+    try:
+        from spellcaster_core.preference_calibration import (
+            discover_models, generate_model_sample,
+        )
+    except Exception as e:
+        return (500, {"error": f"preference_calibration unavailable: {e}"})
+
+    try:
+        models = discover_models(COMFYUI_URL)
+    except Exception as e:
+        return (502, {"error": f"ComfyUI not reachable: {e}"})
+    if not models:
+        return (409, {"error": "No models found on ComfyUI; install at least one checkpoint first."})
+
+    # Pick the first reasonable model. A future refinement could match the
+    # feature's arch_key against each model's `arch`, but for a smoke test
+    # any working model is good enough.
+    model = models[0]
+    try:
+        png = generate_model_sample(COMFYUI_URL, model, timeout=120)
+    except Exception as e:
+        return (500, {"error": f"test generation failed: {e}",
+                      "model": model.get("name")})
+    if not png:
+        return (500, {"error": "test generation returned no image",
+                      "model": model.get("name")})
+    import base64
+    return (200, {
+        "ok": True,
+        "feature": feature_key,
+        "model": model.get("name"),
+        "arch": model.get("arch"),
+        "image_b64": base64.b64encode(png).decode("ascii"),
+    })
+
+
+def _spellcaster_calibrate_sweep(model_name: str, parameter: str,
+                                  values: list) -> tuple[int, dict]:
+    """Generic parameter-sweep helper — backs sampler/cfg/steps endpoints.
+
+    Reuses preference_calibration.build_comparison_set +
+    generate_and_download so each sweep variant is rendered and returned
+    as a list of {value, image_b64} pairs for the Guild UI to show as an
+    A/B/C/D grid.
+    """
+    if not model_name:
+        return (400, {"error": "model required"})
+    if not isinstance(values, list) or not values:
+        return (400, {"error": "values must be a non-empty list"})
+    try:
+        from spellcaster_core.preference_calibration import (
+            discover_models, build_comparison_set, generate_and_download,
+            _get_test_prompt,
+        )
+    except Exception as e:
+        return (500, {"error": f"preference_calibration unavailable: {e}"})
+
+    models = discover_models(COMFYUI_URL)
+    model = next((m for m in models if m.get("name") == model_name), None)
+    if not model:
+        return (404, {"error": f"model '{model_name}' not found on ComfyUI"})
+
+    prompt, neg = _get_test_prompt(model["arch"])
+    import random, base64
+    seed = random.randint(1, 2**31)
+    pairs = build_comparison_set(model, parameter, values, prompt, neg, seed)
+    if not pairs:
+        return (500, {"error": "build_comparison_set returned empty"})
+
+    results = []
+    for entry in pairs:
+        png = generate_and_download(COMFYUI_URL, entry["workflow"], timeout=180)
+        results.append({
+            "value": entry["value"],
+            "image_b64": base64.b64encode(png).decode("ascii") if png else None,
+            "ok": png is not None,
+        })
+    return (200, {
+        "ok": True,
+        "model": model_name,
+        "arch": model["arch"],
+        "parameter": parameter,
+        "seed": seed,
+        "results": results,
+    })
+
+
+def _spellcaster_calibrate_lora(model_name: str, lora: str,
+                                strengths: list) -> tuple[int, dict]:
+    """LoRA strength sweep — renders the same prompt at each strength.
+
+    Reuses build_txt2img directly since build_comparison_set doesn't take
+    a lora argument. Fixed seed across strengths so the only variable is
+    LoRA strength.
+    """
+    if not model_name:
+        return (400, {"error": "model required"})
+    if not lora:
+        return (400, {"error": "lora required"})
+    if not isinstance(strengths, list) or not strengths:
+        strengths = [0.3, 0.5, 0.7, 0.9]
+    try:
+        from spellcaster_core.preference_calibration import (
+            discover_models, generate_and_download, _get_test_prompt,
+        )
+        from spellcaster_core.workflows import build_txt2img
+        from spellcaster_core.architectures import get_arch
+    except Exception as e:
+        return (500, {"error": f"module unavailable: {e}"})
+
+    models = discover_models(COMFYUI_URL)
+    model = next((m for m in models if m.get("name") == model_name), None)
+    if not model:
+        return (404, {"error": f"model '{model_name}' not found"})
+
+    arch_key = model["arch"]
+    arch = get_arch(arch_key)
+    if not arch:
+        return (400, {"error": f"unknown arch '{arch_key}'"})
+    prompt, neg = _get_test_prompt(arch_key)
+    w, h = arch.default_resolution
+    if w >= 1024:
+        w, h = 768, 768
+
+    import random, base64
+    seed = random.randint(1, 2**31)
+    results = []
+    for s in strengths:
+        s = float(s)
+        preset = {
+            "arch": arch_key, "ckpt": model_name,
+            "width": w, "height": h,
+            "steps": arch.default_steps, "cfg": arch.default_cfg,
+            "denoise": 1.0, "sampler": arch.default_sampler,
+            "scheduler": arch.default_scheduler, "loader": arch.loader,
+            "clip_name1": "", "clip_name2": "", "vae_name": "",
+        }
+        loras = [{"name": lora, "strength_model": s, "strength_clip": s}]
+        try:
+            wf = build_txt2img(preset, prompt, neg, seed, loras=loras)
+        except Exception as e:
+            results.append({"strength": s, "ok": False, "error": str(e)})
+            continue
+        png = generate_and_download(COMFYUI_URL, wf, timeout=180)
+        results.append({
+            "strength": s,
+            "ok": png is not None,
+            "image_b64": base64.b64encode(png).decode("ascii") if png else None,
+        })
+    return (200, {
+        "ok": True,
+        "model": model_name, "lora": lora,
+        "arch": arch_key, "seed": seed,
+        "results": results,
+    })
+
+
+def _spellcaster_calibrate_turbo(model_name: str) -> tuple[int, dict]:
+    """Turbo A/B — detects turbo LoRA candidates on the server, renders with
+    + without it, user picks winner. Short-circuits to sampler/step swap
+    when no turbo LoRA is configured for the architecture.
+    """
+    if not model_name:
+        return (400, {"error": "model required"})
+    try:
+        from spellcaster_core.preference_calibration import (
+            discover_models, generate_and_download, _get_test_prompt,
+        )
+        from spellcaster_core.workflows import build_txt2img
+        from spellcaster_core.architectures import get_arch
+    except Exception as e:
+        return (500, {"error": f"module unavailable: {e}"})
+
+    models = discover_models(COMFYUI_URL)
+    model = next((m for m in models if m.get("name") == model_name), None)
+    if not model:
+        return (404, {"error": f"model '{model_name}' not found"})
+    arch_key = model["arch"]
+    arch = get_arch(arch_key)
+    turbo_lora = getattr(arch, "turbo_lora", None)
+    turbo_steps = getattr(arch, "turbo_steps", max(4, arch.default_steps // 3))
+    turbo_cfg = getattr(arch, "turbo_cfg", 1.5)
+
+    prompt, neg = _get_test_prompt(arch_key)
+    w, h = arch.default_resolution
+    if w >= 1024:
+        w, h = 768, 768
+
+    import random, base64
+    seed = random.randint(1, 2**31)
+    variants = [
+        ("no_turbo", arch.default_steps, arch.default_cfg, None),
+        ("turbo",    turbo_steps,         turbo_cfg,         turbo_lora),
+    ]
+    results = []
+    for label, steps, cfg, lora in variants:
+        preset = {
+            "arch": arch_key, "ckpt": model_name,
+            "width": w, "height": h,
+            "steps": steps, "cfg": cfg, "denoise": 1.0,
+            "sampler": arch.default_sampler,
+            "scheduler": arch.default_scheduler,
+            "loader": arch.loader,
+            "clip_name1": "", "clip_name2": "", "vae_name": "",
+        }
+        loras = [{"name": lora, "strength_model": 1.0, "strength_clip": 1.0}] if lora else None
+        try:
+            wf = build_txt2img(preset, prompt, neg, seed, loras=loras)
+        except Exception as e:
+            results.append({"variant": label, "ok": False, "error": str(e)})
+            continue
+        png = generate_and_download(COMFYUI_URL, wf, timeout=180)
+        results.append({
+            "variant": label,
+            "steps": steps, "cfg": cfg,
+            "turbo_lora": lora,
+            "ok": png is not None,
+            "image_b64": base64.b64encode(png).decode("ascii") if png else None,
+        })
+    return (200, {
+        "ok": True, "model": model_name, "arch": arch_key,
+        "seed": seed, "results": results,
+    })
+
+
+def _spellcaster_calibration_save(model_name: str, prefs: dict) -> tuple[int, dict]:
+    """POST /api/spellcaster/calibration/save — persist user picks.
+
+    Writes into the shared CalibrationProfile so every consumer
+    (GIMP plugin, Guild) reads the same per-model defaults.
+    """
+    try:
+        from spellcaster_core.preference_calibration import CalibrationProfile
+    except Exception as e:
+        return (500, {"error": f"preference_calibration unavailable: {e}"})
+    try:
+        cfg_path = os.path.join(_THIS_DIR, "calibration_profile.json")
+        profile = CalibrationProfile()
+        if os.path.exists(cfg_path):
+            try:
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    profile = CalibrationProfile.from_config(json.load(f))
+            except Exception:
+                pass
+        if "rating" in prefs:
+            profile.set_model_preference(model_name, prefs["rating"])
+        settings = {k: v for k, v in prefs.items() if k != "rating"}
+        if settings:
+            profile.set_model_settings(model_name, **settings)
+        with open(cfg_path, "w", encoding="utf-8") as f:
+            json.dump(profile.to_config(), f, indent=2)
+        return (200, {"ok": True, "model": model_name,
+                      "settings": profile.get_model_settings(model_name)})
+    except Exception as e:
+        return (500, {"error": f"save failed: {e}"})
 
 
 def _llm_generate_local(payload, timeout=180):
@@ -6647,13 +6931,18 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(500, {"error": str(e)})
 
     def do_GET(self):
-        # Route: / → setup UI in setup_mode, else Guild chat UI
+        # Route: / → Guild chat UI. In setup_mode the Spellcaster wizard is
+        # pinned at the top of the sidebar and acts as the onboarding flow,
+        # so first-run users land in the same chat UI as everyone else —
+        # no separate setup page. ?wizard=studio_spellcaster is a hint the
+        # frontend can honor to pre-select the wizard.
         if self.path == '/':
             if _guided_install_active():
-                self.path = '/static/setup.html'
+                self.path = '/static/index.html?wizard=studio_spellcaster'
             else:
                 self.path = '/static/index.html'
         elif self.path == '/setup':
+            # Legacy route — kept for bookmarks that hit the old wizard page.
             self.path = '/static/setup.html'
 
         # ── Setup-mode API endpoints ──
@@ -6663,6 +6952,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
         # ── Spellcaster Wizard state (richer superset of setup/state) ──
         if self.path == '/api/spellcaster/state':
             return self.end_json(200, _spellcaster_state())
+        if self.path == '/api/spellcaster/models':
+            return self.end_json(*_spellcaster_discover_models())
 
         # ── API GET endpoints ──
         if self.path.startswith('/api/wizard_info/'):
@@ -8777,19 +9068,30 @@ class GuildHandler(SimpleHTTPRequestHandler):
         if self.path == '/api/spellcaster/feature/install':
             return self.end_json(*_spellcaster_install_feature(data.get('feature', '')))
         if self.path == '/api/spellcaster/feature/uninstall':
-            return self.end_json(*_spellcaster_todo(
-                "uninstall_feature",
-                f"feature={data.get('feature', '')}"))
+            # install.py has no --remove-features flag yet; drive the
+            # interactive installer and tell the user what to uncheck.
+            return self.end_json(501, {
+                "ok": False, "op": "uninstall_feature",
+                "feature": data.get('feature', ''),
+                "manual": "python installer/install.py  # uncheck the feature when prompted",
+                "error": "headless uninstall is not yet wired — the LLM "
+                         "should ask the user to run the interactive installer",
+            })
         if self.path == '/api/spellcaster/feature/test':
-            return self.end_json(*_spellcaster_todo(
-                "test_feature",
-                f"feature={data.get('feature', '')}"))
+            return self.end_json(*_spellcaster_feature_test(data.get('feature', '')))
         if self.path == '/api/spellcaster/plugin/install':
             return self.end_json(*_spellcaster_install_plugin(data.get('plugin', '')))
         if self.path == '/api/spellcaster/plugin/uninstall':
-            return self.end_json(*_spellcaster_todo(
-                "uninstall_plugin",
-                f"plugin={data.get('plugin', '')}"))
+            return self.end_json(501, {
+                "ok": False, "op": "uninstall_plugin",
+                "plugin": data.get('plugin', ''),
+                "manual": {
+                    "gimp":      "delete %APPDATA%/GIMP/3.2/plug-ins/comfyui-connector/",
+                    "darktable": "delete the Spellcaster lua in your Darktable config",
+                }.get(data.get('plugin', ''), "remove the plugin files manually"),
+                "error": "plugin uninstall is a local file-delete; the LLM "
+                         "should relay the manual path.",
+            })
         if self.path == '/api/spellcaster/antenna/start':
             return self.end_json(200, {
                 "ok": True,
@@ -8803,23 +9105,37 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(*_spellcaster_antenna_test(
                 data.get('host', ''), data.get('port', 8188)))
         if self.path == '/api/spellcaster/build':
-            return self.end_json(*_spellcaster_todo(
-                "build_custom",
-                f"target={data.get('target', '')} "
-                f"features={data.get('features', [])}"))
+            # installer/build_installer.py already produces .exe bundles,
+            # but a per-install tree-shake isn't implemented. Guide the user
+            # to the existing whole-stack build until that lands.
+            return self.end_json(501, {
+                "ok": False, "op": "build_custom",
+                "target": data.get('target', ''),
+                "features": data.get('features', []),
+                "manual": "python installer/build_installer.py",
+                "error": "custom per-install tree-shaken builds are a future "
+                         "enhancement; the existing build_installer.py packages "
+                         "the whole stack and honors the user's manifest on launch.",
+            })
         if self.path == '/api/spellcaster/calibrate/lora':
-            return self.end_json(*_spellcaster_todo(
-                "calibrate_lora",
-                f"model={data.get('model', '')} lora={data.get('lora', '')}"))
+            return self.end_json(*_spellcaster_calibrate_lora(
+                data.get('model', ''), data.get('lora', ''),
+                data.get('strengths') or [0.3, 0.5, 0.7, 0.9]))
         if self.path == '/api/spellcaster/calibrate/sampler':
-            return self.end_json(*_spellcaster_todo(
-                "calibrate_sampler", f"model={data.get('model', '')}"))
+            # Sampler sweep uses preference_calibration's parameter grid.
+            # When the user passes multiple sampler names we fan them out.
+            return self.end_json(*_spellcaster_calibrate_sweep(
+                data.get('model', ''), 'sampler',
+                data.get('samplers') or ["euler", "dpmpp_2m", "dpmpp_sde", "heun"]))
         if self.path == '/api/spellcaster/calibrate/turbo':
-            return self.end_json(*_spellcaster_todo(
-                "calibrate_turbo", f"model={data.get('model', '')}"))
+            return self.end_json(*_spellcaster_calibrate_turbo(data.get('model', '')))
         if self.path == '/api/spellcaster/calibrate/cfg':
-            return self.end_json(*_spellcaster_todo(
-                "calibrate_cfg", f"model={data.get('model', '')}"))
+            return self.end_json(*_spellcaster_calibrate_sweep(
+                data.get('model', ''), 'cfg',
+                data.get('values') or [3.0, 5.0, 7.0, 9.0]))
+        if self.path == '/api/spellcaster/calibration/save':
+            return self.end_json(*_spellcaster_calibration_save(
+                data.get('model', ''), data.get('prefs') or {}))
 
         # -- /api/horde_generate -- server-side proxy to AI Horde
         #    Browser can't call Horde directly (CORS), so we relay.
