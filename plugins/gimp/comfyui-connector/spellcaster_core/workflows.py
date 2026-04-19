@@ -3082,7 +3082,21 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
                      ip_adapter_image=None, ip_adapter_weight=0.5,
                      ip_adapter_start=0.0, ip_adapter_end=1.0,
                      motion_mask=None, pingpong=False, fps=16,
-                     end_image_filename=None):
+                     end_image_filename=None,
+                     # Quality patches (both off by default). Callers should
+                     # probe /object_info for the nodes before enabling.
+                     #   - SLG (SkipLayerGuidanceSD3) is core ComfyUI since
+                     #     the SD3 nodes landed — safe to enable on any recent
+                     #     server. Skips the last 3 layers during CFG for
+                     #     cleaner motion.
+                     #   - NAG (WanVideoNAG) ships with Kijai's
+                     #     WanVideoWrapper — NOT core. Requires that pack.
+                     # Defaults mirror xb1n0ry's WAN 2.2 I2V preset.
+                     enable_slg=False,
+                     slg_layers="7, 8, 9", slg_scale=3.0,
+                     slg_start=0.01, slg_end=0.15,
+                     enable_nag=False,
+                     nag_scale=11.0, nag_alpha=0.25, nag_tau=2.5):
     """WAN 2.2 frame-by-frame video generation with dual-model architecture.
 
     Generates video frame-by-frame using WAN (a lightweight video diffusion model).
@@ -3345,6 +3359,51 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
         sh_l = nf.model_sampling_sd3(low_ref, shift, node_id="31")
         high_ref = [sh_h, 0]
         low_ref = [sh_l, 0]
+
+    # ── Quality patches from xb1n0ry's WAN 2.2 I2V workflow ─────────────
+    # NAG (Normalized Attention Guidance): wraps each branch's model with
+    # the negative-conditioning attention for sharper motion / less drift.
+    # Requires Kijai's WanVideoWrapper (`WanVideoNAG` node). Preflight
+    # should probe /object_info/WanVideoNAG and set enable_nag accordingly.
+    if enable_nag:
+        nag_h = nf._add("WanVideoNAG", {
+            "model": high_ref,
+            "conditioning": [neg_id, 0],
+            "nag_scale": nag_scale,
+            "nag_alpha": nag_alpha,
+            "nag_tau": nag_tau,
+            "input_type": "default",
+        }, node_id="32a")
+        high_ref = [nag_h, 0]
+        nag_l = nf._add("WanVideoNAG", {
+            "model": low_ref,
+            "conditioning": [neg_id, 0],
+            "nag_scale": nag_scale,
+            "nag_alpha": nag_alpha,
+            "nag_tau": nag_tau,
+            "input_type": "default",
+        }, node_id="32b")
+        low_ref = [nag_l, 0]
+
+    # SLG (SkipLayerGuidanceSD3): skips mid-block layers during CFG for
+    # cleaner output. Core ComfyUI node — no extra pack needed.
+    if enable_slg:
+        slg_h = nf._add("SkipLayerGuidanceSD3", {
+            "model": high_ref,
+            "layers": slg_layers,
+            "scale": slg_scale,
+            "start_percent": slg_start,
+            "end_percent": slg_end,
+        }, node_id="33a")
+        high_ref = [slg_h, 0]
+        slg_l = nf._add("SkipLayerGuidanceSD3", {
+            "model": low_ref,
+            "layers": slg_layers,
+            "scale": slg_scale,
+            "start_percent": slg_start,
+            "end_percent": slg_end,
+        }, node_id="33b")
+        low_ref = [slg_l, 0]
 
     # Video conditioning — WanImageToVideo/WanFirstLastFrameToVideo
     # These nodes output: [0]=CONDITIONING(pos), [1]=CONDITIONING(neg), [2]=LATENT
