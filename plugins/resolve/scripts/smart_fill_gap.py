@@ -40,14 +40,14 @@ def _script_dir():
         if appdata:
             return os.path.join(
                 appdata, "Blackmagic Design", "DaVinci Resolve",
-                "Support", "Fusion", "Scripts", "Utility", "Spellcaster")
+                "Support", "Fusion", "Scripts", "Utility", "💎 Spellcaster")
     elif sys.platform == "darwin":
         return os.path.expanduser(
             "~/Library/Application Support/Blackmagic Design/DaVinci Resolve"
-            "/Fusion/Scripts/Utility/Spellcaster")
+            "/Fusion/Scripts/Utility/💎 Spellcaster")
     else:
         return os.path.expanduser(
-            "~/.local/share/DaVinciResolve/Fusion/Scripts/Utility/Spellcaster")
+            "~/.local/share/DaVinciResolve/Fusion/Scripts/Utility/💎 Spellcaster")
     return ""
 
 
