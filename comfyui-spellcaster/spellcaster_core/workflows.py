@@ -4829,6 +4829,95 @@ def build_sam3_extract(image_filename, prompt="person", confidence=0.6,
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  Magic Eraser — SAM3 detect + LaMa inpaint (zero-config distraction removal)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_magic_eraser(image_filename, prompt, confidence=0.6,
+                       mask_expand=8, mask_blur=4, gaussblur_radius=8):
+    """Magic Eraser — SAM3 detect + LaMa inpaint.
+
+    User describes an unwanted object ("power line", "tourist in the background",
+    "car on the road", "watermark") and the pipeline:
+      1. Runs SAM3 to segment the described object.
+      2. Grows + blurs the mask so LaMa can hide edge artifacts and contact
+         shadows.
+      3. LaMa-inpaints over the mask (no diffusion, no seed, deterministic).
+      4. Returns the cleaned image.
+
+    No mask painting, no selection needed. The only thing the user provides is
+    the description.
+
+    Args:
+        image_filename (str): Image to clean up.
+        prompt (str): Description of what to remove.
+        confidence (float): SAM3 detection threshold (0.0-1.0, default 0.6).
+        mask_expand (int): Grow the detected mask by this many pixels before
+            inpainting (default 8). Helps LaMa cover shadows and fringing.
+        mask_blur (int): Gaussian blur on the grown mask edge (default 4) for
+            seamless blending.
+        gaussblur_radius (int): LaMa's own edge feather (default 8).
+
+    Returns:
+        dict: ComfyUI workflow.
+
+    Node IDs:
+      - "1":  LoadImage
+      - "10": SAM3Segment
+      - "11": GrowMaskWithBlur (optional)
+      - "20": LamaRemover
+      - "30": SaveImage
+
+    Requires: SAM3 node pack AND ComfyUI-LaMA-Preprocessor (LamaRemover).
+
+    Gotchas:
+      - Large removals (>30% of image) hit LaMa's quality ceiling — fall back
+        to diffusion inpaint for those.
+      - If SAM3 returns an empty mask (nothing matched), LaMa is a no-op and
+        the image comes back essentially unchanged. Check the prompt spelling.
+    """
+    nf = NodeFactory()
+    img_id = nf.load_image(image_filename, node_id="1")
+
+    sam3_id = nf._add("SAM3Segment", {
+        "prompt": prompt,
+        "output_mode": "Merged",
+        "confidence_threshold": confidence,
+        "max_segments": 0,
+        "segment_pick": 0,
+        "mask_blur": 0,
+        "mask_offset": 0,
+        "device": "Auto",
+        "invert_output": False,
+        "unload_model": False,
+        "background": "Alpha",
+        "background_color": "#000000",
+        "image": [img_id, 0],
+    }, node_id="10")
+
+    mask_ref = [sam3_id, 1]
+    if mask_expand > 0 or mask_blur > 0:
+        grown_id = nf._add("GrowMaskWithBlur", {
+            "expand": int(mask_expand),
+            "incremental_expandrate": 0,
+            "tapered_corners": True,
+            "flip_input": False,
+            "blur_radius": int(mask_blur),
+            "lerp_alpha": 1,
+            "decay_factor": 1,
+            "fill_holes": False,
+            "mask": mask_ref,
+        }, node_id="11")
+        mask_ref = [grown_id, 0]
+
+    lama_id = nf.lama_remover([img_id, 0], mask_ref,
+                              gaussblur_radius=int(gaussblur_radius),
+                              node_id="20")
+    nf.save_image([lama_id, 0], "spellcaster_magic_eraser", node_id="30")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  Klein SAM3 Inpaint — text-prompted segmentation + Klein inpainting
 #  ───────────────────────────────────────────────────────────────────────
 #  Adapted from a local ComfyUI workflow using SAM3Segment + Klein
