@@ -9181,6 +9181,32 @@ class GuildHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.end_json(500, {"error": f"CSV export failed: {e}"})
 
+        elif self.path == '/api/video/import-csv' and self.command == 'POST':
+            # R67a: bulk-create shots from a CSV body
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            csv_text = data.get('csv') if isinstance(data, dict) else None
+            if not csv_text or not isinstance(csv_text, str):
+                return self.end_json(400, {"error": "POST body must have {csv: '<text>'}"})
+            try:
+                result = _VIDEO_BRIDGE.board.import_shots_from_csv(csv_text)
+                return self.end_json(200, result)
+            except Exception as e:
+                return self.end_json(500, {"error": f"CSV import failed: {e}"})
+
+        elif self.path == '/api/video/auto-group-scenes' and self.command == 'POST':
+            # R67b: cluster shots into scenes by shared title prefix
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            assign = bool(data.get('assign', True)) if isinstance(data, dict) else True
+            try:
+                min_cluster = int(data.get('min_cluster', 2)) if isinstance(data, dict) else 2
+            except (TypeError, ValueError):
+                min_cluster = 2
+            result = _VIDEO_BRIDGE.board.auto_group_scenes(
+                min_cluster=max(2, min_cluster), assign=assign)
+            return self.end_json(200, result)
+
         elif self.path == '/api/video/prompt-clusters' and self.command == 'GET':
             # R65b: find shots sharing the same prompt (possible dupes)
             if not _VIDEO_BRIDGE:

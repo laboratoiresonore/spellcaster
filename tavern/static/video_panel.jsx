@@ -2761,6 +2761,49 @@ function VideoPanel() {
     }
   };
 
+  // R67a: bulk-import shots from a CSV file. Triggered by a hidden file
+  // input; the button click opens the picker.
+  const importCsvRef = _useRef(null);
+  const handleCsvFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";  // allow picking the same file again later
+    try {
+      const csv = await file.text();
+      const res = await api.post("/api/video/import-csv", {csv});
+      if (res && res.created != null) {
+        addToast(`Imported ${res.created} shot(s) from ${file.name}`
+                 + (res.errors?.length ? ` (${res.errors.length} rows skipped)` : ""),
+                 res.created > 0 ? "success" : "error");
+        if (res.errors?.length) {
+          console.warn("[CSV import errors]", res.errors);
+        }
+        await refresh();
+      } else {
+        addToast(`Import failed: ${res?.error || "unknown"}`, "error");
+      }
+    } catch (err) {
+      addToast("CSV import failed: " + (err.message || "unknown"), "error");
+    }
+  };
+
+  // R67b: auto-group shots into scenes by title prefix
+  const autoGroupScenes = async () => {
+    try {
+      const res = await api.post("/api/video/auto-group-scenes", {assign: true});
+      if (res && res.clusters_found != null) {
+        addToast(
+          `Auto-grouped ${res.shots_assigned} shot(s) into `
+          + `${res.scenes_created + res.clusters_found - res.scenes_created} scene(s) `
+          + `(${res.scenes_created} new)`,
+          res.clusters_found > 0 ? "success" : "info");
+        await refresh();
+      }
+    } catch (e) {
+      addToast("Auto-group failed: " + (e.message || "unknown"), "error");
+    }
+  };
+
   // R62b: "Select all in scene X" populates the selection set from
   // scene membership. Every existing batch op (lock, color, priority,
   // preset, prompt edit, revert, duplicate, delete) then applies to the
@@ -3318,6 +3361,15 @@ function VideoPanel() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>
             Import JSON
           </button>
+          <input type="file" accept=".csv,text/csv"
+            ref={importCsvRef} onChange={handleCsvFile}
+            className="hidden" />
+          <button onClick={() => importCsvRef.current?.click()}
+            className="import-csv-btn flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+            title="Bulk-import shots from a CSV (prompt required; title/preset/seed/etc optional)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+            Import CSV
+          </button>
           <a href="/api/video/render-history.csv" download
             className="export-csv flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
             title="Download flat CSV of every render attempt across all shots (for analysis / sharing)">
@@ -3491,6 +3543,18 @@ function VideoPanel() {
           })}
         </div>
       </div>
+
+      {/* R67b: auto-group scenes button — always shown (useful even
+          when no scenes exist yet, since it CAN create them). Placed
+          just above the scene quick-select bar. */}
+      {shots.length >= 2 && (
+        <div className="auto-group-scenes-bar flex items-center gap-2 text-xs text-slate-500">
+          <button onClick={autoGroupScenes}
+            className="auto-group-scenes-btn px-2 py-1 rounded bg-slate-800 hover:bg-indigo-700/50 hover:text-indigo-200 text-xs font-medium"
+            title="Cluster shots with the same title prefix into a Scene. Shots already in a scene are left alone."
+          >🧩 Auto-group scenes</button>
+        </div>
+      )}
 
       {/* R62b: scene-quick-select — shown only when scenes exist, even if
           nothing is selected yet. Picking a scene populates `selected`

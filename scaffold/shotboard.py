@@ -41,6 +41,16 @@ SHOT_STATUSES = ("draft", "queued", "running", "ready", "failed")
 TRANSITION_TYPES = ("cut", "fade", "crossfade", "wipeleft", "wiperight", "wipeup", "wipedown")
 
 
+def _words_share_prefix(a: list[str], b: list[str], length: int) -> bool:
+    """R67b helper — True iff the first ``length`` words match case-insensitively."""
+    if len(a) < length or len(b) < length:
+        return False
+    for i in range(length):
+        if a[i].lower() != b[i].lower():
+            return False
+    return True
+
+
 def _slugify_reel(name: str) -> str:
     """CMX 3600 reel names: ASCII upper, max 8 chars, no spaces/punct."""
     clean = "".join(c for c in (name or "").upper() if c.isalnum())[:8]
@@ -860,6 +870,119 @@ class Shotboard:
                     total += 1
         return {"total": total, "by_code": by_code,
                 "shots_with_warnings": by_shot}
+
+    def auto_group_scenes(self, *, min_cluster: int = 2,
+                            min_prefix_words: int = 1,
+                            assign: bool = True) -> Dict[str, Any]:
+        """R67b: Auto-group shots into scenes by shared title prefix.
+
+        Detects clusters of shots whose titles share the first N words
+        (case-insensitive, ignoring leading/trailing whitespace). For
+        each cluster ≥ ``min_cluster`` shots:
+
+          1. Ensures a Scene with name = shared prefix exists (creates
+             one on the fly if needed, using the default color).
+          2. If ``assign=True``, sets `scene_id` on every shot in the
+             cluster that doesn't already belong to a scene.
+
+        Detection strategy is conservative: a shot title of
+        "INT. Kitchen — night" and "INT. Kitchen — day" will cluster
+        under "INT. Kitchen" (3 shared words before a divergent token).
+        We skip shots with placeholder titles (Untitled / "Shot N").
+
+        Returns:
+            {
+              "clusters_found": int,
+              "scenes_created": int,
+              "shots_assigned": int,
+              "clusters": [{"prefix": "INT. Kitchen", "shot_ids": [...],
+                             "scene_id": "..."}, ...]
+            }
+        """
+        import re
+
+        def _words(title: str) -> list[str]:
+            # Split on whitespace + common separators, drop empties
+            return [w for w in re.split(r"\s+", (title or "").strip()) if w]
+
+        def _common_prefix(a: list[str], b: list[str]) -> list[str]:
+            out = []
+            for x, y in zip(a, b):
+                if x.lower() == y.lower():
+                    out.append(x)
+                else:
+                    break
+            return out
+
+        # Index candidates: only real titles (skip placeholders)
+        candidates = [(s, _words(s.title)) for s in self._shots
+                       if not self._is_placeholder_title(s.title)
+                       and len(_words(s.title)) >= min_prefix_words]
+
+        # Union-find on shots sharing a common prefix of ≥ min_prefix_words
+        # Simple O(n²) pairing — shotboards rarely exceed a few hundred
+        # shots so perf isn't a concern here.
+        groups: Dict[str, List[Shot]] = {}
+        # Pick the LONGEST prefix that's shared by at least min_cluster shots
+        for i, (shot_i, words_i) in enumerate(candidates):
+            best_prefix = None
+            best_size = 0
+            for length in range(len(words_i), min_prefix_words - 1, -1):
+                prefix = " ".join(words_i[:length])
+                size = sum(1 for (_, w_j) in candidates
+                           if _words_share_prefix(w_j, words_i, length))
+                if size >= min_cluster and size > best_size:
+                    best_prefix = prefix
+                    best_size = size
+                    break
+            if best_prefix is not None:
+                groups.setdefault(best_prefix, []).append(shot_i)
+
+        clusters_found = 0
+        scenes_created = 0
+        shots_assigned = 0
+        cluster_results: List[Dict[str, Any]] = []
+
+        for prefix, shots_in_cluster in groups.items():
+            if len(shots_in_cluster) < min_cluster:
+                continue
+            clusters_found += 1
+            # Find or create the scene
+            scene = next((sc for sc in self._scenes
+                          if (sc.name or "").lower() == prefix.lower()),
+                         None)
+            if scene is None:
+                if assign:
+                    scene = self.add_scene(name=prefix, color="#4a9eff")
+                    scenes_created += 1
+                else:
+                    cluster_results.append({
+                        "prefix": prefix,
+                        "shot_ids": [s.id for s in shots_in_cluster],
+                        "scene_id": None,
+                    })
+                    continue
+            if assign:
+                for s in shots_in_cluster:
+                    # Only reassign shots that aren't already in a scene
+                    # (user-curated membership wins)
+                    if not s.scene_id:
+                        s.scene_id = scene.id
+                        s.touch()
+                        shots_assigned += 1
+            cluster_results.append({
+                "prefix": prefix,
+                "shot_ids": [s.id for s in shots_in_cluster],
+                "scene_id": scene.id if scene else None,
+            })
+        if shots_assigned or scenes_created:
+            self.save()
+        return {
+            "clusters_found": clusters_found,
+            "scenes_created": scenes_created,
+            "shots_assigned": shots_assigned,
+            "clusters": cluster_results,
+        }
 
     def find_prompt_clusters(self, *, min_cluster: int = 2) -> List[Dict[str, Any]]:
         """R65b: Group shots by exact prompt match. Returns one entry
