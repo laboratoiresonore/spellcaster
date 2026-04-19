@@ -39,7 +39,7 @@ jobs:
       - name: Build Wizard Guild standalone
         run: python tavern/build_guild.py --platform windows
       - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-installer
           path: |
@@ -68,7 +68,7 @@ jobs:
       - name: Zip macOS .app bundle
         run: cd dist && zip -r "../spellcaster-installer-macos.zip" "Spellcaster Installer.app"
       - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-installer
           path: |
@@ -96,7 +96,7 @@ jobs:
       - name: Build Wizard Guild standalone
         run: python tavern/build_guild.py --platform linux
       - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-installer
           path: |
