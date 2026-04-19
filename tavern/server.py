@@ -876,6 +876,130 @@ STUDIO_CHARACTERS = [
 _STUDIO_BY_ID = {c["id"]: c for c in STUDIO_CHARACTERS}
 
 
+# ─── Capability probe cache (for dynamic studio scaffolding) ──────────
+# Rebuilt once per 60s. Consulted by _studio_scaffold_ctx() which feeds
+# scaffold/studio_scaffold.py. Keeps /api/system_prompt/<id> fast because
+# the LLM hits it on every chat turn.
+_CAP_PROBE_CACHE: dict[str, Any] = {"ts": 0.0, "archs": set(), "nodes": set()}
+_CAP_PROBE_TTL_S = 60.0
+
+
+def _probe_capabilities(comfy_url: str) -> dict[str, Any]:
+    """Return {archs, node_classes} for the ComfyUI server at `comfy_url`.
+
+    archs        set of architecture keys derivable from installed checkpoints
+                 + UNETs (sd15, sdxl, flux1dev, flux2klein, chroma, wan, ltx,
+                 illustrious, zit, pony, flux_kontext).
+    node_classes set of class_type names the server exposes via /object_info.
+    """
+    import time as _t
+    now = _t.time()
+    if now - _CAP_PROBE_CACHE["ts"] < _CAP_PROBE_TTL_S:
+        return {
+            "archs": set(_CAP_PROBE_CACHE["archs"]),
+            "node_classes": set(_CAP_PROBE_CACHE["nodes"]),
+        }
+
+    archs: set = set()
+    nodes: set = set()
+    try:
+        with urllib.request.urlopen(f"{comfy_url}/object_info",
+                                     timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8", "replace"))
+        nodes = set(data.keys())
+    except Exception:
+        pass
+
+    # Derive archs from UNETLoader + CheckpointLoaderSimple lists by running
+    # each filename through the existing classify_* helpers. We re-use the
+    # same canonical paths that the model-family wizard discovery uses.
+    for nc, input_name, classifier in (
+        ("UNETLoader", "unet_name", classify_unet_model),
+        ("UnetLoaderGGUF", "unet_name", classify_unet_model),
+        ("CheckpointLoaderSimple", "ckpt_name", classify_ckpt_model),
+    ):
+        try:
+            choices = (data.get(nc, {}) if nodes else {}
+                        ).get("input", {}).get("required", {}
+                        ).get(input_name, [])
+        except Exception:
+            choices = []
+        # Legacy + modern shape unwrap.
+        enum_list = []
+        if isinstance(choices, list) and choices:
+            if isinstance(choices[0], list):
+                enum_list = choices[0]
+            elif len(choices) >= 2 and isinstance(choices[1], dict):
+                enum_list = choices[1].get("options") or []
+        for name in enum_list:
+            try:
+                arch = classifier(name)
+                if arch and arch != "unknown":
+                    archs.add(arch)
+            except Exception:
+                continue
+
+    _CAP_PROBE_CACHE["ts"] = now
+    _CAP_PROBE_CACHE["archs"] = archs
+    _CAP_PROBE_CACHE["nodes"] = nodes
+    return {"archs": archs, "node_classes": nodes}
+
+
+def _studio_scaffold_ctx(char_id: str) -> dict[str, Any]:
+    """Build the ctx dict that scaffold/studio_scaffold.build_prompt wants."""
+    caps = _probe_capabilities(COMFYUI_URL) if COMFYUI_URL else {"archs": set(), "node_classes": set()}
+
+    # Connected-app snapshot from interface_registry.
+    connected: dict[str, dict] = {}
+    try:
+        if CROSS_INTERFACE_AVAILABLE and _iface_registry is not None:
+            snap = _iface_registry.snapshot() or {}
+            # snap shape: {iface_key: {online, declared, last_meta, ...}}
+            connected = {k: v for k, v in snap.items()
+                          if isinstance(v, dict)}
+    except Exception:
+        pass
+
+    # Antennas snapshot.
+    antennas: list[dict] = []
+    try:
+        if ANTENNA_REGISTRY_AVAILABLE and _antenna_registry is not None:
+            for a in _antenna_registry.list_entries(only_online=False):
+                antennas.append({
+                    "hostname": a.hostname,
+                    "host": a.hostname,
+                    "services": list(a.services or []),
+                    "online": bool(a.online),
+                })
+    except Exception:
+        pass
+
+    # Compatible LoRA count.
+    lora_count = 0
+    try:
+        lora_count = len(_get_loras_for_wizard(char_id) or [])
+    except Exception:
+        pass
+
+    # Personality (auto-generated) from CHARS_CACHE.
+    personality = ""
+    for c in CHARS_CACHE:
+        if c.get("id") == char_id:
+            personality = c.get("personality") or ""
+            break
+
+    return {
+        "comfyui_reachable": bool(COMFYUI_URL and caps.get("node_classes")),
+        "comfyui_url":       COMFYUI_URL,
+        "archs":             caps.get("archs") or set(),
+        "node_classes":      caps.get("node_classes") or set(),
+        "connected_apps":    connected,
+        "antennas":          antennas,
+        "lora_count":        lora_count,
+        "personality":       personality,
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  Character Discovery — populate the Guild from scaffold introspection
 # ═══════════════════════════════════════════════════════════════════════
@@ -8590,6 +8714,32 @@ class GuildHandler(SimpleHTTPRequestHandler):
                           f"{type(_scaffold_err).__name__}: {_scaffold_err}",
                           file=sys.stderr)
                     traceback.print_exc()
+
+            # ── Dynamic studio scaffold for the 8 non-Spellcaster studios ──
+            # Imaginus / Transmutex / Masquerade / Restorix / Erasure /
+            # Videomancer / Cinematic / Studiocraft previously used hardcoded
+            # system_prompt strings that listed every tool regardless of
+            # which models/nodes were actually installed. scaffold/
+            # studio_scaffold.py produces a prompt filtered to live
+            # capabilities + connected-app awareness. This path runs only
+            # for studios that do NOT declare a `scaffold:` of their own
+            # (spellcaster is handled above).
+            if (studio and studio.get("type") == "studio"
+                    and not studio.get("scaffold")
+                    and studio.get("build_fns")):
+                try:
+                    from scaffold import studio_scaffold as _ss
+                    ctx = _studio_scaffold_ctx(char_id)
+                    dyn_prompt = _ss.build_prompt(
+                        char_id, studio.get("build_fns") or [], ctx)
+                    return self.end_json(200, {"prompt": dyn_prompt})
+                except Exception as _ss_err:
+                    import traceback
+                    print(f"[scaffold] studio_scaffold failed for {char_id}: "
+                          f"{type(_ss_err).__name__}: {_ss_err}",
+                          file=sys.stderr)
+                    traceback.print_exc()
+                    # fall through to static prompt below
             if studio:
                 # Get the character's auto-generated personality if available
                 char_personality = ""
