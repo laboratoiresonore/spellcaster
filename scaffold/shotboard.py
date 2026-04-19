@@ -918,6 +918,95 @@ class Shotboard:
             self.save()
         return {"changed": len(changed), "shots": changed}
 
+    def import_shots_from_csv(self, csv_text: str) -> Dict[str, Any]:
+        """R67a: bulk-create shots from a CSV.
+
+        Accepted columns (case-insensitive, any subset):
+          title, prompt, negative, preset, seed, notes, backend,
+          color_label, scene_id, priority, target_duration_s,
+          depends_on (comma-separated shot titles), carry_last_frame
+
+        Only `prompt` is required. If `title` is missing we auto-derive
+        from prompt (R63b). Unknown columns are ignored. Empty cells
+        keep the field's default.
+
+        Returns {"created": N, "errors": [...], "new_ids": [...]}.
+        """
+        import csv
+        import io
+
+        reader = csv.DictReader(io.StringIO(csv_text))
+        # Normalize headers to lowercase for case-insensitive access
+        known_fields = {f.name for f in Shot.__dataclass_fields__.values()}
+        created_ids: List[str] = []
+        errors: List[Dict[str, Any]] = []
+        # Index by title AFTER creation so depends_on can reference
+        # same-CSV siblings by title. Only top-level unique titles
+        # count — duplicates within one CSV silently overwrite.
+        title_to_id: Dict[str, str] = {s.title: s.id for s in self._shots
+                                         if s.title}
+        for row_i, row in enumerate(reader, start=2):  # row 1 is header
+            try:
+                # Lowercase keys; strip values
+                row_lc = {(k or "").strip().lower(): (v or "").strip()
+                           for k, v in row.items()}
+                prompt = row_lc.get("prompt", "")
+                if not prompt:
+                    errors.append({"row": row_i, "error": "empty prompt"})
+                    continue
+                fields: Dict[str, Any] = {}
+                for key, val in row_lc.items():
+                    if key not in known_fields:
+                        continue
+                    if val == "":
+                        continue
+                    # Type coercion for non-string fields
+                    if key == "seed":
+                        try:
+                            fields[key] = int(val)
+                        except ValueError:
+                            errors.append({"row": row_i,
+                                            "error": f"bad seed: {val}"})
+                            continue
+                    elif key == "target_duration_s":
+                        try:
+                            fields[key] = float(val)
+                        except ValueError:
+                            errors.append({"row": row_i,
+                                            "error": f"bad duration: {val}"})
+                            continue
+                    elif key == "carry_last_frame":
+                        fields[key] = val.lower() in ("1", "true", "yes", "y")
+                    elif key == "depends_on":
+                        # Comma-separated titles → ids, resolved against
+                        # the titles we know at this moment (including
+                        # siblings created earlier in this same CSV)
+                        dep_titles = [t.strip() for t in val.split(",") if t.strip()]
+                        dep_ids = [title_to_id[t] for t in dep_titles
+                                   if t in title_to_id]
+                        if dep_ids:
+                            fields[key] = dep_ids
+                    else:
+                        fields[key] = val
+                # Auto-title if missing
+                if "title" not in fields:
+                    auto = self._title_from_prompt(prompt)
+                    if auto:
+                        fields["title"] = auto
+                fields["prompt"] = prompt
+                shot = self.add(**fields)
+                created_ids.append(shot.id)
+                if shot.title:
+                    title_to_id[shot.title] = shot.id
+            except Exception as e:  # noqa: BLE001
+                errors.append({"row": row_i,
+                                "error": f"{type(e).__name__}: {e}"})
+        return {
+            "created": len(created_ids),
+            "errors": errors,
+            "new_ids": created_ids,
+        }
+
     def render_history_csv(self) -> str:
         """R64b: emit render history for every shot as a flat CSV.
         Columns: shot_id, shot_title, render_ts, preset, prompt, negative,
