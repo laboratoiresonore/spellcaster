@@ -494,17 +494,17 @@ If you're reading this section voluntarily, you're either evaluating this for a 
 Spellcaster is the connective tissue. Every generated asset lives in one canonical store, every surface sees every other surface, and every action in one app can finish in another. Drop an image in GIMP, drop it into the Guild chat, drop it onto the Resolve timeline — same bytes, one hash, zero copies.
 
 <p align="center">
-  <a href="https://www.gimp.org/" title="GIMP — image editor"><img src="https://cdn.simpleicons.org/gimp/5C5543" height="64" alt="GIMP"/></a>
-  &nbsp;&nbsp;
-  <a href="#the-wizard-guild-chat-interface" title="The Wizard Guild — chat UI"><img src="tavern/characters/Spellcaster.png" height="64" alt="Wizard Guild"/></a>
-  &nbsp;&nbsp;
-  <a href="https://www.blackmagicdesign.com/products/davinciresolve" title="DaVinci Resolve — video editor"><img src="https://cdn.simpleicons.org/davinciresolve/FFFFFF" height="64" alt="Resolve"/></a>
-  &nbsp;&nbsp;
-  <a href="https://github.com/LostRuins/koboldcpp" title="KoboldCpp — local LLM server"><img src="https://avatars.githubusercontent.com/u/23170807?s=128" height="64" alt="KoboldCpp"/></a>
-  &nbsp;&nbsp;
-  <a href="https://github.com/SillyTavern/SillyTavern" title="SillyTavern — roleplay chat"><img src="https://avatars.githubusercontent.com/u/138934974?s=128" height="64" alt="SillyTavern"/></a>
-  &nbsp;&nbsp;
-  <a href="https://www.darktable.org/" title="Darktable — RAW editor"><img src="https://cdn.simpleicons.org/darktable/FF7A21" height="64" alt="Darktable"/></a>
+  <a href="https://www.gimp.org/" title="GIMP — image editor"><img src="https://img.shields.io/badge/GIMP-5C5543?style=for-the-badge&logo=gimp&logoColor=white" height="48" alt="GIMP"/></a>
+  &nbsp;
+  <a href="#the-wizard-guild-chat-interface" title="The Wizard Guild — chat UI"><img src="https://img.shields.io/badge/Wizard%20Guild-6A1B9A?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI0ZGRDcwMCI+PHBhdGggZD0iTTE4LjUgMUw5IDE4bC0yLjUtNUwxIDE4LjUgMyAyM2wxNS01IDYgMi41TDIxIDExbC0yLjUtMTB6Ii8%2BPC9zdmc%2B&logoColor=FFD700" height="48" alt="Wizard Guild"/></a>
+  &nbsp;
+  <a href="https://www.blackmagicdesign.com/products/davinciresolve" title="DaVinci Resolve — video editor"><img src="https://img.shields.io/badge/DaVinci%20Resolve-222222?style=for-the-badge&logo=davinciresolve&logoColor=E74E3C" height="48" alt="Resolve"/></a>
+  &nbsp;
+  <a href="https://github.com/LostRuins/koboldcpp" title="KoboldCpp — local LLM server"><img src="https://img.shields.io/badge/KoboldCpp-FF6B00?style=for-the-badge&logo=openai&logoColor=white" height="48" alt="KoboldCpp"/></a>
+  &nbsp;
+  <a href="https://github.com/SillyTavern/SillyTavern" title="SillyTavern — roleplay chat"><img src="https://img.shields.io/badge/SillyTavern-6B7FD7?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI0ZGRkZGRiI+PHBhdGggZD0iTTEyIDJMMSAyMWgyMkwxMiAyem0wIDRsNy41IDEzaC0xNUwxMiA2eiIvPjwvc3ZnPg==&logoColor=white" height="48" alt="SillyTavern"/></a>
+  &nbsp;
+  <a href="https://www.darktable.org/" title="Darktable — RAW editor"><img src="https://img.shields.io/badge/Darktable-1F1F1F?style=for-the-badge&logo=darktable&logoColor=FF7A21" height="48" alt="Darktable"/></a>
 </p>
 
 <p align="center"><sub>All six talk through one event bus + one blob store + one registry. Add a plugin, get every capability for free.</sub></p>
@@ -517,50 +517,50 @@ Spellcaster is the connective tissue. Every generated asset lives in one canonic
 </tr>
 
 <tr>
-<td align="center"><img src="https://cdn.simpleicons.org/gimp/5C5543" height="36" alt="GIMP"/><br/><strong>GIMP</strong></td>
-<td align="center"><img src="tavern/characters/Spellcaster.png" height="36" alt="Guild"/><br/><strong>Wizard Guild</strong></td>
+<td align="center"><img src="https://img.shields.io/badge/GIMP-5C5543?style=flat-square&logo=gimp&logoColor=white" height="28" alt="GIMP"/><br/><strong>GIMP</strong></td>
+<td align="center"><img src="https://img.shields.io/badge/Wizard%20Guild-6A1B9A?style=flat-square&logoColor=FFD700" height="28" alt="Guild"/><br/><strong>Wizard Guild</strong></td>
 <td>Save any layer to the Guild gallery. It appears instantly under "Recent across apps" in the sidebar and drops into the active wizard's chat as a reference image on click. No upload step.</td>
 </tr>
 
 <tr>
-<td align="center"><img src="https://cdn.simpleicons.org/gimp/5C5543" height="36" alt="GIMP"/><br/><strong>GIMP</strong></td>
-<td align="center"><img src="https://cdn.simpleicons.org/davinciresolve/FFFFFF" height="36" alt="Resolve"/><br/><strong>Resolve</strong></td>
+<td align="center"><img src="https://img.shields.io/badge/GIMP-5C5543?style=flat-square&logo=gimp&logoColor=white" height="28" alt="GIMP"/><br/><strong>GIMP</strong></td>
+<td align="center"><img src="https://img.shields.io/badge/Resolve-222222?style=flat-square&logo=davinciresolve&logoColor=E74E3C" height="28" alt="Resolve"/><br/><strong>Resolve</strong></td>
 <td>Right-click a layer → <em>Send to Resolve Media Pool</em>. The Resolve Bridge picks up the <code>gimp.asset.created</code> event and imports the file at its canonical path. Works even when Resolve runs on a different machine (via the Antenna).</td>
 </tr>
 
 <tr>
-<td align="center"><img src="tavern/characters/Spellcaster.png" height="36" alt="Guild"/><br/><strong>Wizard Guild</strong></td>
-<td align="center"><img src="https://cdn.simpleicons.org/davinciresolve/FFFFFF" height="36" alt="Resolve"/><br/><strong>Resolve</strong></td>
+<td align="center"><img src="https://img.shields.io/badge/Wizard%20Guild-6A1B9A?style=flat-square&logoColor=FFD700" height="28" alt="Guild"/><br/><strong>Wizard Guild</strong></td>
+<td align="center"><img src="https://img.shields.io/badge/Resolve-222222?style=flat-square&logo=davinciresolve&logoColor=E74E3C" height="28" alt="Resolve"/><br/><strong>Resolve</strong></td>
 <td>Build a Shotboard in the Guild, click <em>Send to Resolve</em>. Every queued shot renders + auto-imports into the timeline in the correct order. Gap-fill between two clips with LTX first-last-frame.</td>
 </tr>
 
 <tr>
-<td align="center"><img src="https://cdn.simpleicons.org/davinciresolve/FFFFFF" height="36" alt="Resolve"/><br/><strong>Resolve</strong></td>
-<td align="center"><img src="tavern/characters/Spellcaster.png" height="36" alt="Guild"/><br/><strong>Wizard Guild</strong></td>
+<td align="center"><img src="https://img.shields.io/badge/Resolve-222222?style=flat-square&logo=davinciresolve&logoColor=E74E3C" height="28" alt="Resolve"/><br/><strong>Resolve</strong></td>
+<td align="center"><img src="https://img.shields.io/badge/Wizard%20Guild-6A1B9A?style=flat-square&logoColor=FFD700" height="28" alt="Guild"/><br/><strong>Wizard Guild</strong></td>
 <td>Drop the playhead on the timeline, type a prompt, get an 81-frame LTX-2 clip back in the Media Pool snapped to the playhead. Markers map to render profiles (red = high-effort, blue = turbo).</td>
 </tr>
 
 <tr>
-<td align="center"><img src="tavern/characters/Spellcaster.png" height="36" alt="Guild"/><br/><strong>Wizard Guild</strong></td>
-<td align="center"><img src="https://avatars.githubusercontent.com/u/138934974?s=128" height="36" alt="SillyTavern"/><br/><strong>SillyTavern</strong></td>
+<td align="center"><img src="https://img.shields.io/badge/Wizard%20Guild-6A1B9A?style=flat-square&logoColor=FFD700" height="28" alt="Guild"/><br/><strong>Wizard Guild</strong></td>
+<td align="center"><img src="https://img.shields.io/badge/SillyTavern-6B7FD7?style=flat-square&logoColor=white" height="28" alt="SillyTavern"/><br/><strong>SillyTavern</strong></td>
 <td>13 built-in Spellcaster wizard cards install themselves into SillyTavern on first launch. Sceneshifter generates backgrounds as your RP unfolds. Autonoma decides when a scene deserves an illustration. Portraitist paints mood-matched character art. All silent, all background.</td>
 </tr>
 
 <tr>
-<td align="center"><img src="https://avatars.githubusercontent.com/u/23170807?s=128" height="36" alt="Kobold"/><br/><strong>KoboldCpp</strong></td>
-<td align="center"><img src="tavern/characters/Spellcaster.png" height="36" alt="Guild"/><br/><strong>Wizard Guild</strong></td>
+<td align="center"><img src="https://img.shields.io/badge/KoboldCpp-FF6B00?style=flat-square&logoColor=white" height="28" alt="Kobold"/><br/><strong>KoboldCpp</strong></td>
+<td align="center"><img src="https://img.shields.io/badge/Wizard%20Guild-6A1B9A?style=flat-square&logoColor=FFD700" height="28" alt="Guild"/><br/><strong>Wizard Guild</strong></td>
 <td>Pair one Kobold in RP mode (<code>kobold_rp</code> on :5001) and another in Whisper/TTS mode (<code>kobold_tts</code> on :5002). The Guild's 🎙️ walkie-talkie uses the TTS/STT one; SillyTavern keeps chatting through the RP one. No conflict.</td>
 </tr>
 
 <tr>
-<td align="center"><img src="https://cdn.simpleicons.org/darktable/FF7A21" height="36" alt="Darktable"/><br/><strong>Darktable</strong></td>
-<td align="center"><img src="tavern/characters/Spellcaster.png" height="36" alt="Guild"/><br/><strong>Wizard Guild</strong></td>
+<td align="center"><img src="https://img.shields.io/badge/Darktable-1F1F1F?style=flat-square&logo=darktable&logoColor=FF7A21" height="28" alt="Darktable"/><br/><strong>Darktable</strong></td>
+<td align="center"><img src="https://img.shields.io/badge/Wizard%20Guild-6A1B9A?style=flat-square&logoColor=FFD700" height="28" alt="Guild"/><br/><strong>Wizard Guild</strong></td>
 <td>Darktable's export filter pushes the developed RAW into the Guild gallery with its full develop history preserved. Send it to the next wizard for upscaling, face restoration, or a cinematic colour pass — no manual export-import dance.</td>
 </tr>
 
 <tr>
-<td align="center"><img src="https://cdn.simpleicons.org/davinciresolve/FFFFFF" height="36" alt="Resolve"/><br/><strong>Resolve</strong></td>
-<td align="center"><img src="https://cdn.simpleicons.org/gimp/5C5543" height="36" alt="GIMP"/><br/><strong>GIMP</strong></td>
+<td align="center"><img src="https://img.shields.io/badge/Resolve-222222?style=flat-square&logo=davinciresolve&logoColor=E74E3C" height="28" alt="Resolve"/><br/><strong>Resolve</strong></td>
+<td align="center"><img src="https://img.shields.io/badge/GIMP-5C5543?style=flat-square&logo=gimp&logoColor=white" height="28" alt="GIMP"/><br/><strong>GIMP</strong></td>
 <td>Grab a frame out of Resolve, drop it into GIMP. The Cinematographer wizard reads the timeline context (surrounding clips, markers, grade) so the returned edit matches the cut it came from.</td>
 </tr>
 
