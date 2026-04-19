@@ -33,10 +33,11 @@ const llmDot = document.getElementById('llm-dot');
 const llmStatus = document.getElementById('llm-status');
 const comfyDot = document.getElementById('comfy-dot');
 const comfyStatus = document.getElementById('comfy-status');
-const stDot = document.getElementById('st-dot');
-const stStatus = document.getElementById('st-status');
-const bridgeDot = document.getElementById('bridge-dot');
-const bridgeStatus = document.getElementById('bridge-status');
+// SillyTavern + Signal Bridge no longer have standalone dot indicators
+// — their liveness surfaces through the shared chip row. checkSillyTavern
+// and checkSignalBridge still exist (they trigger the Guild's probe,
+// which in turn posts a heartbeat into the interface registry) but they
+// don't touch any DOM here.
 
 // Settings
 const settingsBtn = document.getElementById('settings-btn');
@@ -454,38 +455,18 @@ async function checkComfyConnection() {
     }
 }
 
+// Kicks the server-side probes for SillyTavern + Signal Bridge. The
+// server's endpoints call interface_registry.heartbeat(...) on success,
+// so whichever of those two apps is actually up appears as a chip in
+// the "Connected apps" row. No DOM touched here.
 async function checkSillyTavernConnection() {
-    try {
-        const testRes = await fetch('/api/sillytavern_status');
-        const data = await testRes.json();
-        if(data.connected) {
-            stDot.className = "dot green";
-            stStatus.textContent = "SillyTavern: Connected";
-        } else {
-            stDot.className = "dot red";
-            stStatus.textContent = "SillyTavern: Disconnected";
-        }
-    } catch(e) {
-        stDot.className = "dot red";
-        stStatus.textContent = "SillyTavern: Disconnected";
-    }
+    try { await fetch('/api/sillytavern_status'); }
+    catch (_e) { /* ignored — chip stays absent */ }
 }
 
 async function checkSignalBridgeConnection() {
-    try {
-        const testRes = await fetch('/api/signal_bridge_status');
-        const data = await testRes.json();
-        if(data.connected) {
-            bridgeDot.className = "dot green";
-            bridgeStatus.textContent = "Signal Bridge: Connected";
-        } else {
-            bridgeDot.className = "dot red";
-            bridgeStatus.textContent = "Signal Bridge: Disconnected";
-        }
-    } catch(e) {
-        bridgeDot.className = "dot red";
-        bridgeStatus.textContent = "Signal Bridge: Disconnected";
-    }
+    try { await fetch('/api/signal_bridge_status'); }
+    catch (_e) { /* ignored — chip stays absent */ }
 }
 
 // ── Active interfaces (cross-interface backbone) ──────────────────

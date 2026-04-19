@@ -72,6 +72,23 @@ except (ImportError, SyntaxError):
     AssetGallery = None
     _iface_registry = None
     _get_model_registry = None
+
+
+def _heartbeat_local_interface(key: str, meta: dict | None = None) -> None:
+    """Record a local-origin heartbeat for an interface that the Guild
+    probes itself (SillyTavern, Signal Bridge, etc.) — no dedicated
+    agent to send `POST /api/interfaces/heartbeat`, so the Guild's own
+    status probe doubles as the liveness signal. Surfaces the interface
+    as a chip in the sidebar alongside GIMP / Darktable / Resolve.
+    """
+    if _iface_registry is None:
+        return
+    try:
+        m = dict(meta or {})
+        m.setdefault("remote", False)
+        _iface_registry.heartbeat(key, m)
+    except Exception:  # noqa: BLE001
+        pass
     _start_signal_notifier = None
 
 # R52: per-machine antenna registry (one entry per physical box).
@@ -8337,9 +8354,14 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     headers={"Accept": "application/json"})
                 with urllib.request.urlopen(req, timeout=3) as resp:
                     resp.read()
+                # Mirror the live-probe result into the interface registry
+                # so the sidebar chip row picks SillyTavern up alongside
+                # GIMP / Darktable / Resolve. No more standalone indicator
+                # line — everything flows through /api/interfaces.
+                _heartbeat_local_interface("sillytavern",
+                                            {"url": SILLYTAVERN_URL})
                 return self.end_json(200, {"connected": True, "url": SILLYTAVERN_URL})
             except Exception:
-                # Silently return disconnected for health checks
                 return self.end_json(200, {"connected": False, "url": SILLYTAVERN_URL})
         elif self.path == '/api/signal_bridge_status':
             try:
@@ -8348,9 +8370,11 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     headers={"Accept": "application/json"})
                 with urllib.request.urlopen(req, timeout=3) as resp:
                     resp.read()
+                # Same treatment: route the live-probe into the registry.
+                _heartbeat_local_interface("signal",
+                                            {"url": SIGNAL_BRIDGE_URL})
                 return self.end_json(200, {"connected": True, "url": SIGNAL_BRIDGE_URL})
             except Exception:
-                # Silently return disconnected for health checks
                 return self.end_json(200, {"connected": False, "url": SIGNAL_BRIDGE_URL})
         elif self.path == '/api/batch_status':
             return self.end_json(200, {
