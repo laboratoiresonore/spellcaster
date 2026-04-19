@@ -603,9 +603,58 @@ def find_resolve_install(cfg: dict[str, Any]) -> tuple[Path | None, str]:
     return None, "none"
 
 
+# ─── Windows registry helper (shared across services) ───────────────
+
+def _win_registry_find_install_location(key_name_needle: str
+                                          ) -> Path | None:
+    """Walk Windows Uninstall registry keys for any entry whose name
+    contains ``key_name_needle`` (case-insensitive). Returns the first
+    InstallLocation found as an existing directory. Covers MSI, winget,
+    Chocolatey, and most third-party installers that register properly."""
+    if os.name != "nt":
+        return None
+    try:
+        import winreg  # type: ignore
+    except ImportError:
+        return None
+    needle_lc = key_name_needle.lower()
+    for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+        for subkey_path in (
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+            r"SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+        ):
+            try:
+                with winreg.OpenKey(hive, subkey_path) as root_key:
+                    i = 0
+                    while True:
+                        try:
+                            subname = winreg.EnumKey(root_key, i)
+                        except OSError:
+                            break
+                        i += 1
+                        if needle_lc not in subname.lower():
+                            continue
+                        try:
+                            with winreg.OpenKey(root_key, subname) as sub:
+                                loc, _ = winreg.QueryValueEx(sub, "InstallLocation")
+                                p = Path(str(loc))
+                                if p.is_dir():
+                                    return p
+                        except (OSError, FileNotFoundError):
+                            continue
+            except OSError:
+                continue
+    return None
+
+
 # ─── GIMP / Darktable / SillyTavern ──────────────────────────────────
 
 def find_gimp_install(cfg: dict[str, Any]) -> tuple[Path | None, str]:
+    """Find GIMP install root. Tries in order: config-override,
+    cache, explicit exe discovery (shutil.which), Windows registry,
+    Program Files versioned-dir walk, cross-drive PortableApps scan."""
+    import shutil
+
     explicit = (cfg.get("gimp_root") or "").strip()
     if explicit:
         p = Path(os.path.expanduser(explicit))
@@ -614,16 +663,92 @@ def find_gimp_install(cfg: dict[str, Any]) -> tuple[Path | None, str]:
     cached = _cached("gimp")
     if cached is not None:
         return cached, "cache-hit"
-    # Windows Program Files + cross-drive scan
-    names = ["gimp-3.0.exe", "gimp-3.2.exe", "gimp-2.10.exe",
-              "gimp"]  # POSIX executable
-    p, strat = find_binary_robust(cfg, "gimp", names)
+
+    # shutil.which for any GIMP binary name
+    for name in ("gimp-3.2", "gimp-3.0", "gimp3", "gimp-2.99", "gimp"):
+        exe = shutil.which(name)
+        if exe:
+            p = Path(exe).resolve()
+            # gimp.exe is typically in <install>/bin/ — go up to root
+            install_root = p.parent
+            if install_root.name.lower() in ("bin", "binaries"):
+                install_root = install_root.parent
+            _remember("gimp", install_root, "which")
+            return install_root, "which"
+
+    if os.name == "nt":
+        # Registry Uninstall entries
+        loc = _win_registry_find_install_location("gimp")
+        if loc is not None:
+            _remember("gimp", loc, "registry")
+            return loc, "registry"
+
+        # Program Files scan — GIMP always installs as GIMP 3/ or GIMP N/
+        # with bin/ holding gimp-X.Y.exe.
+        for env in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"):
+            pf = os.environ.get(env, "").strip()
+            if not pf:
+                continue
+            pf_path = Path(pf)
+            for gdir_pattern in ("GIMP 3", "GIMP 2", "GIMP", "GIMP3", "GIMP2"):
+                gdir = pf_path / gdir_pattern
+                if not gdir.is_dir():
+                    continue
+                for exe_name in ("gimp-3.2.exe", "gimp-3.0.exe",
+                                   "gimp-2.10.exe", "gimp.exe"):
+                    if (gdir / "bin" / exe_name).is_file():
+                        _remember("gimp", gdir, "program-files")
+                        return gdir, "program-files"
+
+        # PortableApps (USB / portable)
+        try:
+            import ctypes
+            bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+            for i in range(26):
+                if not (bitmask & (1 << i)):
+                    continue
+                drive_root = Path(chr(ord("A") + i) + ":\\")
+                try:
+                    for d in drive_root.glob("PortableApps/GIMPPortable*"):
+                        # Portable apps usually have App/gimp/bin/
+                        for p in d.glob("App/gimp*/bin/gimp*.exe"):
+                            _remember("gimp", p.parent.parent, "portable-apps")
+                            return p.parent.parent, "portable-apps"
+                except (OSError, PermissionError):
+                    continue
+        except Exception:
+            pass
+    elif sys.platform == "darwin":
+        for p in (Path("/Applications/GIMP.app"),
+                   Path("/Applications/GIMP-3.0.app"),
+                   Path("/Applications/GIMP-2.10.app")):
+            if p.exists():
+                _remember("gimp", p, "applications")
+                return p, "applications"
+    else:  # Linux
+        for prefix in ("/usr/bin", "/usr/local/bin", "/snap/bin"):
+            for exe in ("gimp", "gimp-3.0", "gimp-3.2"):
+                p = Path(prefix) / exe
+                if p.is_file():
+                    _remember("gimp", p.parent, "posix-prefix")
+                    return p.parent, "posix-prefix"
+
+    # Final fallback — generic binary search with bin/ subdir support
+    names = ["gimp-3.0.exe", "gimp-3.2.exe", "gimp-2.10.exe", "gimp.exe",
+              "gimp"]
+    p, strat = find_binary_robust(cfg, "gimp", names, depth=3, max_visits=4000)
     if p is not None:
-        return p.parent, strat
+        # Exe is at <install>/bin/<exe> — return install root
+        install_root = p.parent
+        if install_root.name.lower() in ("bin", "binaries"):
+            install_root = install_root.parent
+        return install_root, strat
     return None, "none"
 
 
 def find_darktable_install(cfg: dict[str, Any]) -> tuple[Path | None, str]:
+    """Find Darktable install root — parallel logic to GIMP."""
+    import shutil
     explicit = (cfg.get("darktable_root") or "").strip()
     if explicit:
         p = Path(os.path.expanduser(explicit))
@@ -632,10 +757,44 @@ def find_darktable_install(cfg: dict[str, Any]) -> tuple[Path | None, str]:
     cached = _cached("darktable")
     if cached is not None:
         return cached, "cache-hit"
+
+    for name in ("darktable", "darktable-cli"):
+        exe = shutil.which(name)
+        if exe:
+            p = Path(exe).resolve()
+            install_root = p.parent
+            if install_root.name.lower() in ("bin", "binaries"):
+                install_root = install_root.parent
+            _remember("darktable", install_root, "which")
+            return install_root, "which"
+
+    if os.name == "nt":
+        loc = _win_registry_find_install_location("darktable")
+        if loc is not None:
+            _remember("darktable", loc, "registry")
+            return loc, "registry"
+        for env in ("ProgramFiles", "ProgramFiles(x86)"):
+            pf = os.environ.get(env, "").strip()
+            if not pf:
+                continue
+            for sub in ("darktable",):
+                p = Path(pf) / sub / "bin" / "darktable.exe"
+                if p.is_file():
+                    _remember("darktable", p.parent.parent, "program-files")
+                    return p.parent.parent, "program-files"
+    elif sys.platform == "darwin":
+        for p in (Path("/Applications/darktable.app"),):
+            if p.exists():
+                _remember("darktable", p, "applications")
+                return p, "applications"
+
     names = ["darktable.exe", "darktable"]
     p, strat = find_binary_robust(cfg, "darktable", names)
     if p is not None:
-        return p.parent, strat
+        install_root = p.parent
+        if install_root.name.lower() in ("bin", "binaries"):
+            install_root = install_root.parent
+        return install_root, strat
     return None, "none"
 
 
