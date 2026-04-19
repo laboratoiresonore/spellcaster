@@ -5,7 +5,7 @@
 <h1 align="center">Spellcaster</h1>
 
 <p align="center">
-  <strong>Dynamic middleware between ComfyUI and everything else,<br/>hellbent on removing every bit of difficulty out of AI image generation.</strong><br/>
+  <strong>Dynamic middleware between ComfyUI and everything else,<br/>hellbent on removing every bit of difficulty out of AI generation.</strong><br/>
   <em>69 AI tools (nice) &bull; GIMP &bull; Darktable &bull; Chat UI &bull; 100% Local &bull; Zero Config</em>
 </p>
 
