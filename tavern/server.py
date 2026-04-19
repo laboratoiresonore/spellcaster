@@ -1620,6 +1620,18 @@ def _server_init(comfy_url=None):
     threading.Thread(
         target=_build_lora_registry, args=(url,), daemon=True
     ).start()
+    # Seed the Spellcaster's issue cue from current state. Runs on a
+    # background thread so a slow ComfyUI probe (for model-activation
+    # seeding) doesn't delay server startup. The seeder is idempotent
+    # so re-running is safe.
+    def _boot_seed_cue():
+        try:
+            from scaffold.cue_seeder import seed_all
+            counts = seed_all(lora_registry=_LORA_REGISTRY)
+            print(f"  [Guild] Issue cue seeded at boot: {counts}")
+        except Exception as e:
+            print(f"  [Guild] Cue seeding at boot failed: {e}")
+    threading.Thread(target=_boot_seed_cue, daemon=True).start()
     # Log privacy mode status
     if LLM_MODE == "horde":
         print("  [Guild] \u26a0 WARNING: LLM set to HORDE mode — ZERO PRIVACY")
@@ -3808,6 +3820,24 @@ def _spellcaster_cue_list(status: str = "open", limit: int = 50) -> tuple[int, d
     except Exception as e:
         return (500, {"error": f"issue_cue unavailable: {e}"})
     return (200, {"issues": list_issues(status=status, limit=limit)})
+
+
+def _spellcaster_cue_reseed() -> tuple[int, dict]:
+    """POST /api/spellcaster/cue/reseed — rescan registries + refresh the cue.
+
+    Idempotent. Returns per-bucket counts (new issues added + stale auto-
+    resolved). Called on user demand; boot runs this same logic in a
+    background thread.
+    """
+    try:
+        from scaffold.cue_seeder import seed_all
+    except Exception as e:
+        return (500, {"error": f"cue_seeder unavailable: {e}"})
+    try:
+        counts = seed_all(lora_registry=_LORA_REGISTRY)
+        return (200, {"ok": True, "counts": counts})
+    except Exception as e:
+        return (500, {"error": f"reseed failed: {e}"})
 
 
 def _spellcaster_feedback_summary(subject_type: str = "") -> tuple[int, dict]:
@@ -10089,6 +10119,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
         if self.path == '/api/spellcaster/cue/defer':
             return self.end_json(*_spellcaster_cue_defer(
                 data.get('id', ''), data.get('note', '')))
+        if self.path == '/api/spellcaster/cue/reseed':
+            return self.end_json(*_spellcaster_cue_reseed())
         # Network survey — user declares placements + refresh probes
         if self.path == '/api/spellcaster/network/declare':
             return self.end_json(*_spellcaster_network_declare(
