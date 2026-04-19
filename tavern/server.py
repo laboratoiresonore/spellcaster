@@ -7192,6 +7192,43 @@ class GuildHandler(SimpleHTTPRequestHandler):
             # traceback for that — the response is useless anyway.
             pass
 
+    def _guess_guild_lan_url(self) -> str | None:
+        """R83d: report this Guild's URL as reachable from another host on
+        the LAN. Used by the antenna pair flow to hand the Resolve bridge
+        a guild_url that isn't 127.0.0.1.
+
+        Strategy:
+          1. Explicit override in guild_config.json (``guild_public_url``).
+          2. Outbound-socket trick — ask the kernel which local address it
+             would use to reach a public IP; that's our LAN-facing IP.
+          3. socket.gethostbyname(hostname) as fallback.
+        """
+        cfg = _guided_install_load_config()
+        override = (cfg.get('guild_public_url') or '').strip().rstrip('/')
+        if override:
+            return override
+        port = int(cfg.get('guild_port') or PORT)
+        ip: str | None = None
+        try:
+            import socket as _s
+            s = _s.socket(_s.AF_INET, _s.SOCK_DGRAM)
+            try:
+                s.connect(("8.8.8.8", 80))
+                ip = s.getsockname()[0]
+            finally:
+                s.close()
+        except Exception:
+            ip = None
+        if not ip or ip == "0.0.0.0" or ip.startswith("127."):
+            try:
+                import socket as _s
+                ip = _s.gethostbyname(_s.gethostname())
+            except Exception:
+                return None
+        if not ip or ip.startswith("127."):
+            return None
+        return f"http://{ip}:{port}"
+
     def _fetch_antenna_json(self, base_url, path, token, timeout=15):
         """Helper: authenticated GET against an antenna, returns parsed JSON
         or a dict with an 'error' key. Shared by _capabilities_snapshot and
@@ -9894,8 +9931,39 @@ class GuildHandler(SimpleHTTPRequestHandler):
             ok = _guided_install_save_config(cfg)
             if not ok:
                 return self.end_json(500, {"error": "could not write guild_config.json"})
-            return self.end_json(200, {"ok": True, "antenna_url": url,
-                                       "antenna_status": status_body})
+
+            # R83d: if the paired antenna hosts Resolve, auto-configure the
+            # bridge's resolve_bridge.json with the Guild's own URL so
+            # scripts running inside Resolve on that remote box can find
+            # THIS Guild instead of falling back to 127.0.0.1. Failure is
+            # non-fatal — the pair itself is what matters; bridge config
+            # can be re-posted manually via /resolve/plugin/configure.
+            bridge_config_result: dict | None = None
+            try:
+                iface_services = (status_body.get('services_declared')
+                                   or status_body.get('services') or [])
+                if 'resolve' in iface_services:
+                    guild_lan_url = self._guess_guild_lan_url()
+                    if guild_lan_url:
+                        cfg_req = _ur.Request(
+                            url + "/resolve/plugin/configure",
+                            data=json.dumps({"guild_url": guild_lan_url}).encode('utf-8'),
+                            headers={"Authorization": f"Bearer {token}",
+                                      "Content-Type": "application/json",
+                                      "User-Agent": "spellcaster-guild-pair"},
+                            method='POST',
+                        )
+                        with _ur.urlopen(cfg_req, timeout=10, context=ctx_ssl) as cfg_resp:
+                            bridge_config_result = json.loads(
+                                cfg_resp.read().decode('utf-8', 'replace'))
+            except Exception as e:
+                bridge_config_result = {"ok": False, "error": str(e)}
+
+            out = {"ok": True, "antenna_url": url,
+                    "antenna_status": status_body}
+            if bridge_config_result is not None:
+                out["bridge_config"] = bridge_config_result
+            return self.end_json(200, out)
 
         elif self.path == '/api/antenna/status' and self.command == 'GET':
             # Report what the Guild knows about its paired antenna.
