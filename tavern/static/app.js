@@ -5038,6 +5038,39 @@ if (wipeAssetsBtn) {
     });
 }
 
+const restartBtn = document.getElementById('restart-server-btn');
+const restartStatus = document.getElementById('restart-status');
+if (restartBtn) {
+    restartBtn.addEventListener('click', async () => {
+        if (!confirm('Restart the Wizard Guild process? Browser will reconnect in ~3s.')) return;
+        restartBtn.disabled = true;
+        restartBtn.textContent = '⟳ Restarting…';
+        restartStatus.style.display = 'block';
+        restartStatus.textContent = 'Asking the server to restart…';
+        try {
+            await fetch('/api/guild/restart', { method: 'POST' });
+        } catch (e) { /* expected: socket dies mid-response */ }
+        restartStatus.textContent = 'Server down — waiting for it to come back up…';
+        // Poll /api/comfy_status (cheap, existing) until it responds,
+        // then reload the tab so every bit of state is fresh.
+        const started = Date.now();
+        const timer = setInterval(async () => {
+            try {
+                const r = await fetch('/api/comfy_status',
+                                       { cache: 'no-store' });
+                if (r.ok) { clearInterval(timer); window.location.reload(); }
+            } catch (e) { /* server still coming up */ }
+            if (Date.now() - started > 45000) {
+                clearInterval(timer);
+                restartStatus.textContent =
+                    'Server did not come back within 45s. Reload manually.';
+                restartBtn.disabled = false;
+                restartBtn.textContent = '⟳ Restart Wizard Guild';
+            }
+        }, 1000);
+    });
+}
+
 const reinitBtn = document.getElementById('reinit-btn');
 const reinitKeepAssets = document.getElementById('reinit-keep-assets');
 const reinitStatus = document.getElementById('reinit-status');
