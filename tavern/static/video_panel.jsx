@@ -1686,6 +1686,8 @@ function VideoPanel() {
   // R55b: the FULL /api/features response (both satisfied and unsatisfied)
   // so the Antenna modal can tell the user WHY a feature isn't showing up.
   const [featureReport, setFeatureReport] = _useState(null);
+  // R56: per-service launch state so the "Start" buttons show progress
+  const [serviceStartBusy, setServiceStartBusy] = _useState({});
   const pollRef = _useRef(null);
   const sseRef = _useRef(null);
   const [sseConnected, setSseConnected] = _useState(false);
@@ -2061,6 +2063,43 @@ function VideoPanel() {
   };
 
   // R49b: Antenna admin helpers. R52: also refreshes the multi-antenna list.
+  // R56: trigger a service start on the paired antenna.
+  const startServiceOnAntenna = async (service) => {
+    setServiceStartBusy(prev => ({ ...prev, [service]: true }));
+    addToast(`Starting ${service} on antenna…`, "info");
+    try {
+      const res = await api.post("/api/antenna/service/start", { service });
+      const ar = res && res.antenna_response;
+      if (ar && (ar.state === "started" || ar.state === "already_running")) {
+        addToast(`${service}: ${ar.state.replace("_", " ")} `
+                 + `(${ar.strategy || "—"}, ${ar.waited_seconds ?? 0}s)`,
+                 "success");
+        // Trigger an immediate /api/features poll to refresh the UI
+        try {
+          const r = await api.get("/api/features?refresh=1");
+          const m = {};
+          for (const row of (r.satisfied || [])) m[row.key] = row;
+          setFeatureMap(m);
+          setFeatureReport(r);
+        } catch (_) {}
+      } else if (ar && ar.state === "not_installed") {
+        addToast(`${service}: not installed on the antenna host`, "error");
+      } else if (ar && ar.state === "timeout") {
+        addToast(`${service}: launched but didn't become reachable in ${ar.waited_seconds}s`,
+                 "error");
+      } else if (ar && ar.error) {
+        addToast(`${service}: ${ar.error}`, "error");
+      } else {
+        addToast(`${service}: unexpected response (check console)`, "error");
+        console.warn("[service-start]", res);
+      }
+    } catch (e) {
+      addToast(`${service} start failed: ${e.message || "unknown"}`, "error");
+    } finally {
+      setServiceStartBusy(prev => ({ ...prev, [service]: false }));
+    }
+  };
+
   const refreshAntennaStatus = async () => {
     try {
       const st = await api.get("/api/antenna/status");
@@ -3542,21 +3581,52 @@ function VideoPanel() {
                   </span>
                 </div>
                 <div className="space-y-1 max-h-48 overflow-y-auto">
-                  {featureReport.unsatisfied.map(f => (
-                    <div key={f.key} className="feature-diag-row rounded bg-slate-800/40 border border-slate-700/30 p-2 text-[10px] space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                        <span className="font-medium text-slate-200">{f.label || f.key}</span>
-                        <span className="text-slate-500 ml-auto">{f.key}</span>
+                  {featureReport.unsatisfied.map(f => {
+                    // R56: infer if this feature is blocked by a launchable
+                    // service (comfyui/kobold/ollama). If so, offer a
+                    // "Start <svc>" button that POSTs /api/antenna/service/start.
+                    const startableServices = ["comfyui", "kobold", "ollama"];
+                    const launchable = [];
+                    for (const m of (f.missing || [])) {
+                      for (const svc of startableServices) {
+                        if ((m.startsWith(`service:${svc}`) ||
+                             m.startsWith(`${svc}:`)) &&
+                            !launchable.includes(svc)) {
+                          launchable.push(svc);
+                        }
+                      }
+                    }
+                    return (
+                      <div key={f.key} className="feature-diag-row rounded bg-slate-800/40 border border-slate-700/30 p-2 text-[10px] space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                          <span className="font-medium text-slate-200">{f.label || f.key}</span>
+                          <span className="text-slate-500 ml-auto">{f.key}</span>
+                        </div>
+                        <div className="text-slate-400">Needs:</div>
+                        <ul className="ml-3 space-y-0.5">
+                          {(f.missing || []).map((m, i) => (
+                            <li key={i} className="text-amber-300/80 leading-tight">{m}</li>
+                          ))}
+                        </ul>
+                        {launchable.length > 0 && (
+                          <div className="flex gap-1 pt-1">
+                            {launchable.map(svc => (
+                              <button
+                                key={svc}
+                                onClick={() => startServiceOnAntenna(svc)}
+                                disabled={!!serviceStartBusy[svc]}
+                                className="service-start-btn px-2 py-0.5 rounded bg-emerald-700/40 hover:bg-emerald-600/50 text-emerald-100 font-medium disabled:bg-slate-700 disabled:text-slate-500 text-[10px]"
+                                title={`POST /service/start on the paired antenna to launch ${svc}`}
+                              >
+                                {serviceStartBusy[svc] ? `Starting ${svc}…` : `Start ${svc}`}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <div className="text-slate-400">Needs:</div>
-                      <ul className="ml-3 space-y-0.5">
-                        {(f.missing || []).map((m, i) => (
-                          <li key={i} className="text-amber-300/80 leading-tight">{m}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 {(featureReport.satisfied || []).length > 0 && (
                   <div className="text-[10px] text-slate-500">
