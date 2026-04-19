@@ -391,6 +391,7 @@ def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
             max_tokens=int(sampling.get("max_tokens", 300)),
             temperature=float(sampling.get("temperature", 0.3)),
             purpose="enhance",
+            arch_key=arch_key,  # per-family VRAM + timeout config
         )
     except Exception:
         enhanced = None

@@ -54,26 +54,35 @@ from typing import Any
 # ─── Destination dir discovery ───────────────────────────────────────────
 
 
+# R84a: Resolve's Scripts menu is page-specific — scripts in
+# ``Fusion/Scripts/<PAGE>/`` appear only on that page's Workspace >
+# Scripts menu. Install into ALL of them so Spellcaster is one click
+# away from anywhere in Resolve. ``Utility`` is the always-available
+# catchall, the others are page-specific (Edit, Fusion/Comp, Color,
+# Deliver). We also surface under ``Comp`` (the Fusion page folder).
+_FUSION_SUBFOLDERS = ("Utility", "Edit", "Comp", "Color", "Deliver")
+
 _WIN_WFI_DIR = (
     r"{APPDATA}\Blackmagic Design\DaVinci Resolve"
     r"\Support\Workflow Integration Plugins"
 )
-_WIN_SCRIPTS_DIR = (
+_WIN_SCRIPTS_BASE = (
     r"{APPDATA}\Blackmagic Design\DaVinci Resolve"
-    r"\Support\Fusion\Scripts\Utility\Spellcaster"
+    r"\Support\Fusion\Scripts"
 )
+_WIN_SCRIPTS_DIR = _WIN_SCRIPTS_BASE + r"\Utility\Spellcaster"
 _MAC_WFI_DIR = (
     "{HOME}/Library/Application Support/Blackmagic Design/DaVinci Resolve"
     "/Workflow Integration Plugins"
 )
-_MAC_SCRIPTS_DIR = (
+_MAC_SCRIPTS_BASE = (
     "{HOME}/Library/Application Support/Blackmagic Design/DaVinci Resolve"
-    "/Fusion/Scripts/Utility/Spellcaster"
+    "/Fusion/Scripts"
 )
+_MAC_SCRIPTS_DIR = _MAC_SCRIPTS_BASE + "/Utility/Spellcaster"
 _LINUX_WFI_DIR = "{HOME}/.local/share/DaVinciResolve/Workflow Integration Plugins"
-_LINUX_SCRIPTS_DIR = (
-    "{HOME}/.local/share/DaVinciResolve/Fusion/Scripts/Utility/Spellcaster"
-)
+_LINUX_SCRIPTS_BASE = "{HOME}/.local/share/DaVinciResolve/Fusion/Scripts"
+_LINUX_SCRIPTS_DIR = _LINUX_SCRIPTS_BASE + "/Utility/Spellcaster"
 
 
 def _expand(p: str) -> Path:
@@ -88,6 +97,10 @@ def detect_plugin_dirs(cfg: dict[str, Any] | None = None) -> dict[str, Path]:
     Honors explicit overrides in the antenna config:
       resolve_plugin_workflow_dir, resolve_plugin_scripts_dir.
     Otherwise falls back to OS-standard locations.
+
+    ``scripts`` is the primary install dir (Utility/Spellcaster — always
+    available). ``scripts_base`` is the parent Scripts root, used by
+    R84a to additionally install into Edit/Comp/Color/Deliver.
     """
     cfg = cfg or {}
     override_wfi = (cfg.get("resolve_plugin_workflow_dir") or "").strip()
@@ -96,14 +109,21 @@ def detect_plugin_dirs(cfg: dict[str, Any] | None = None) -> dict[str, Path]:
     if os.name == "nt":
         wfi = _expand(override_wfi or _WIN_WFI_DIR)
         scripts = _expand(override_scripts or _WIN_SCRIPTS_DIR)
+        scripts_base = _expand(_WIN_SCRIPTS_BASE)
     elif sys.platform == "darwin":
         wfi = _expand(override_wfi or _MAC_WFI_DIR)
         scripts = _expand(override_scripts or _MAC_SCRIPTS_DIR)
+        scripts_base = _expand(_MAC_SCRIPTS_BASE)
     else:
         wfi = _expand(override_wfi or _LINUX_WFI_DIR)
         scripts = _expand(override_scripts or _LINUX_SCRIPTS_DIR)
+        scripts_base = _expand(_LINUX_SCRIPTS_BASE)
 
-    return {"workflow_integration": wfi, "scripts": scripts}
+    return {
+        "workflow_integration": wfi,
+        "scripts": scripts,
+        "scripts_base": scripts_base,
+    }
 
 
 # ─── Source discovery (same tree self-update pulls) ──────────────────────
