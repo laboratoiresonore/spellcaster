@@ -8,7 +8,7 @@ Spellcaster itself is a GIMP plugin + Python server. The AI capabilities come fr
 
 The Spellcaster installer (`spellcaster-installer.exe` or `python installer/install.py`) clones each required node pack into `ComfyUI/custom_nodes/` automatically. If you prefer to install manually, clone each repo from the **Repo** column below into your `custom_nodes` directory and restart ComfyUI.
 
-Total node packs: **24** (20 required, 4 optional).
+Total node packs: **25** (20 required, 5 optional).
 
 ## Required ComfyUI node packs
 
@@ -47,6 +47,7 @@ These packs unlock higher-quality or alternative pipelines when present. Spellca
 | `ComfyUI-DepthAnythingV3` | [ComfyUI-DepthAnythingV3](https://github.com/PozzettiAndrea/ComfyUI-DepthAnythingV3) | DepthAnythingV3 — 35% better depth estimation than V2. Optional upgrade for ControlNet depth. |
 | `ComfyUI-NormalCrafter` | [ComfyUI-NormalCrafter](https://github.com/AIWarper/ComfyUI-NormalCrafterWrapper) | NormalCrafter wrapper. Install via ComfyUI Manager if this repo is unavailable. |
 | `ComfyUI-RMBG` | [ComfyUI-RMBG](https://github.com/1038lab/ComfyUI-RMBG) | BiRefNet/RMBG-2.0 background removal — better hair and fine detail than standard rembg. |
+| `ComfyUI-WanVideoWrapper` | [ComfyUI-WanVideoWrapper](https://github.com/kijai/ComfyUI-WanVideoWrapper) | Optional quality patch for WAN 2.2 I2V — Normalized Attention Guidance for sharper motion. Auto-detected by Spellcaster; if not installed, WAN workflows run unchanged. Also provides the block-swap path (WanVideoSetBlockSwap) for low-VRAM GPUs if the user later switches to the wrapper-native pipeline. Pattern borrowed from xb1n0ry/Comfy-Workflows. |
 
 ## Python dependencies
 

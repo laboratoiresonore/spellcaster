@@ -657,6 +657,30 @@ def main() -> int:
     check("video_panel has send-to-resolve button",
           test_video_panel_has_send_to_resolve_button)
 
+    # Round 49 — Zero-config: antenna auto-detects services + Guild pair UI
+    check("antenna._autopopulate_services helper exists",
+          test_antenna_autopopulate_services_helper_exists)
+    check("autopopulate preserves declared services",
+          test_autopopulate_preserves_declared_services)
+    check("autopopulate never removes services",
+          test_autopopulate_never_removes_services)
+    check("autopopulate survives detector crash",
+          test_autopopulate_survives_detector_crash)
+    check("agent.serve calls autopopulate before _build_routes",
+          test_agent_calls_autopopulate_before_build_routes)
+    check("guild has antenna pair/status/self-update endpoints",
+          test_guild_has_antenna_pair_endpoint)
+    check("guild pair persists to guild_config",
+          test_guild_pair_persists_to_guild_config)
+    check("guild self-update is graceful on antenna restart",
+          test_guild_self_update_is_graceful_on_antenna_restart)
+    check("video_panel has antenna admin modal",
+          test_video_panel_has_antenna_admin_modal)
+    check("video_panel has antenna admin button",
+          test_video_panel_antenna_admin_button)
+    check("send-to-resolve opens admin when unpaired",
+          test_send_to_resolve_opens_admin_when_unpaired)
+
     print("-" * 50)
 
     from scaffold.shotboard import Shotboard, Shot, Trajectory
@@ -6854,6 +6878,100 @@ def test_video_panel_has_send_to_resolve_button():
     src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
     assert "send-to-resolve" in src
     assert "→ Resolve" in src
+
+
+# ════════════════════════════════════════════════════════════════════
+# R49 — Zero-config deploy: auto-detect services + Guild pairing UI
+# ════════════════════════════════════════════════════════════════════
+
+def test_antenna_autopopulate_services_helper_exists():
+    import importlib, inspect
+    agent = importlib.import_module("antenna.agent")
+    assert hasattr(agent, "_autopopulate_services")
+    sig = inspect.signature(agent._autopopulate_services)
+    assert len(sig.parameters) == 1
+
+
+def test_autopopulate_preserves_declared_services():
+    import importlib
+    agent = importlib.import_module("antenna.agent")
+    cfg = {"services": ["comfyui"]}
+    agent._autopopulate_services(cfg)
+    assert "comfyui" in cfg["services"], "declared services must survive"
+
+
+def test_autopopulate_never_removes_services():
+    import importlib
+    agent = importlib.import_module("antenna.agent")
+    cfg = {"services": ["declared_fake_svc"]}
+    agent._autopopulate_services(cfg)
+    assert "declared_fake_svc" in cfg["services"], "nothing may be pruned"
+
+
+def test_autopopulate_survives_detector_crash():
+    import importlib
+    agent = importlib.import_module("antenna.agent")
+    # Empty services → nothing to detect; must not raise
+    cfg = {}
+    try:
+        agent._autopopulate_services(cfg)
+    except Exception as e:
+        raise AssertionError(f"autopopulate must not raise: {e}")
+
+
+def test_agent_calls_autopopulate_before_build_routes():
+    # Spot-check the call order in serve() — autopopulate must run first
+    # so auto-added services get their routes registered.
+    src = open("antenna/agent.py", encoding="utf-8").read()
+    ap_pos = src.find("_autopopulate_services(cfg)")
+    br_pos = src.find("_build_routes(cfg)")
+    assert ap_pos > 0, "missing _autopopulate_services call in serve()"
+    assert br_pos > ap_pos, "_autopopulate_services must precede _build_routes"
+
+
+def test_guild_has_antenna_pair_endpoint():
+    src = open("tavern/server.py", encoding="utf-8").read()
+    assert "/api/antenna/pair" in src
+    assert "/api/antenna/status" in src
+    assert "/api/antenna/self-update" in src
+
+
+def test_guild_pair_persists_to_guild_config():
+    src = open("tavern/server.py", encoding="utf-8").read()
+    # Look for the pair endpoint writing antenna_url + antenna_token
+    assert "cfg['antenna_url'] = url" in src
+    assert "cfg['antenna_token'] = token" in src
+    assert "_guided_install_save_config" in src
+
+
+def test_guild_self_update_is_graceful_on_antenna_restart():
+    # The antenna kills itself when self-updating. The proxy should
+    # treat 'timed out' / 'reset' / 'refused' as success-ish.
+    src = open("tavern/server.py", encoding="utf-8").read()
+    assert "'timed out'" in src
+    assert "'reset'" in src
+    assert "restarts itself" in src
+
+
+def test_video_panel_has_antenna_admin_modal():
+    src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
+    assert "antenna-admin-modal" in src
+    assert "antenna-pair-btn" in src
+    assert "antenna-update-btn" in src
+    assert "showAntennaAdmin" in src
+
+
+def test_video_panel_antenna_admin_button():
+    src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
+    assert "antenna-admin-btn" in src
+    assert "openAntennaAdmin" in src
+
+
+def test_send_to_resolve_opens_admin_when_unpaired():
+    # If no token, sendToResolve must open the admin modal
+    src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
+    assert "No antenna paired" in src
+    assert "setShowAntennaAdmin(true)" in src
 
 
 if __name__ == "__main__":

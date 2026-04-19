@@ -3877,6 +3877,40 @@ def _fetch_wan_ipadapter_models(server):
     except Exception:
         return []
 
+
+_WAN_PATCH_PROBE_CACHE = {}
+
+
+def _wan_quality_patches_available(server):
+    """Probe the server for optional Wan 2.2 quality patches.
+
+    Returns a dict {"slg": bool, "nag": bool}:
+      - slg  — SkipLayerGuidanceSD3, core ComfyUI (present on any
+               reasonably-recent server; cleaner motion during CFG).
+      - nag  — WanVideoNAG, ships with Kijai's WanVideoWrapper pack.
+               Wraps each branch's attention with the negative conditioning
+               for sharper motion and less drift.
+
+    Cached per-server so we don't hammer /object_info on every tool run.
+    Imports of the Wan 2.2 quality patches are based on xb1n0ry's WAN 2.2
+    I2V workflow (github.com/xb1n0ry/Comfy-Workflows).
+    """
+    if server in _WAN_PATCH_PROBE_CACHE:
+        return _WAN_PATCH_PROBE_CACHE[server]
+    result = {"slg": False, "nag": False}
+    try:
+        _api_get(server, "/object_info/SkipLayerGuidanceSD3")
+        result["slg"] = True
+    except Exception:
+        pass
+    try:
+        _api_get(server, "/object_info/WanVideoNAG")
+        result["nag"] = True
+    except Exception:
+        pass
+    _WAN_PATCH_PROBE_CACHE[server] = result
+    return result
+
 def _fetch_reactor_models(server):
     """Fetch available ReActor swap_model and face_restore_model lists from the server."""
     try:
@@ -5363,6 +5397,14 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
                   f"not found on server — disabling Face Identity Lock for this run. "
                   f"Available: {available}")
             ip_adapter_image = None
+    # Quality patches — auto-enable when the nodes exist on the server.
+    # SLG is core ComfyUI; NAG needs Kijai's WanVideoWrapper pack.
+    enable_slg = False
+    enable_nag = False
+    if server_url:
+        probe = _wan_quality_patches_available(server_url)
+        enable_slg = probe["slg"]
+        enable_nag = probe["nag"]
     return build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
                            width=width, height=height, length=length,
                            steps=steps, cfg=cfg, shift=shift, second_step=second_step,
@@ -5375,7 +5417,8 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
                            ip_adapter_start=ip_adapter_start, ip_adapter_end=ip_adapter_end,
                            motion_mask=motion_mask,
                            pingpong=pingpong, fps=fps,
-                           end_image_filename=end_image_filename)
+                           end_image_filename=end_image_filename,
+                           enable_slg=enable_slg, enable_nag=enable_nag)
 
 def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negative_text, seed,
                     width=832, height=480, length=81,

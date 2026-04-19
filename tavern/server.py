@@ -7406,6 +7406,125 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 shot_ids, count=count, title_suffix_mode=mode)
             return self.end_json(200, result)
 
+        # R49b: Antenna pairing + self-update from Guild. One-button ops.
+        elif self.path == '/api/antenna/pair' and self.command == 'POST':
+            # Body: {url: "https://...", token: "..."} — Guild verifies and persists.
+            url = (data.get('url') or '').strip().rstrip('/')
+            token = (data.get('token') or '').strip()
+            if not url or not token:
+                return self.end_json(400, {"error": "url and token required"})
+            import urllib.request as _ur, urllib.error as _ue, ssl as _ssl
+            probe = _ur.Request(url + "/status",
+                                headers={"Authorization": f"Bearer {token}",
+                                         "User-Agent": "spellcaster-guild-pair"},
+                                method='GET')
+            ctx_ssl = _ssl.create_default_context()
+            ctx_ssl.check_hostname = False
+            ctx_ssl.verify_mode = _ssl.CERT_NONE
+            try:
+                with _ur.urlopen(probe, timeout=10, context=ctx_ssl) as resp:
+                    status_body = json.loads(resp.read().decode('utf-8', 'replace'))
+            except _ue.HTTPError as e:
+                return self.end_json(e.code, {
+                    "error": f"Pairing rejected ({e.code}) — "
+                             f"{'bad token' if e.code == 401 else 'antenna said no'}"
+                })
+            except (_ue.URLError, OSError) as e:
+                return self.end_json(502, {"error": f"could not reach antenna: {e}"})
+            except json.JSONDecodeError:
+                return self.end_json(502, {"error": "antenna response not JSON"})
+            # Persist
+            cfg = _guided_install_load_config()
+            cfg['antenna_url'] = url
+            cfg['antenna_token'] = token
+            ok = _guided_install_save_config(cfg)
+            if not ok:
+                return self.end_json(500, {"error": "could not write guild_config.json"})
+            return self.end_json(200, {"ok": True, "antenna_url": url,
+                                       "antenna_status": status_body})
+
+        elif self.path == '/api/antenna/status' and self.command == 'GET':
+            # Report what the Guild knows about its paired antenna.
+            cfg = _guided_install_load_config()
+            url = (cfg.get('antenna_url') or '').strip()
+            has_token = bool((cfg.get('antenna_token') or '').strip())
+            # Also report the live heartbeat so UI can show online/offline
+            online = False
+            registry_url = None
+            services = []
+            if CROSS_INTERFACE_AVAILABLE and _iface_registry is not None:
+                try:
+                    snap = _iface_registry.snapshot()
+                    entry = snap.get('antenna') or {}
+                    online = bool(entry.get('online'))
+                    registry_url = (entry.get('last_meta') or {}).get('agent_url')
+                    services = (entry.get('last_meta') or {}).get('services') or []
+                except Exception:
+                    pass
+            return self.end_json(200, {
+                "paired_url": url or None,
+                "has_token": has_token,
+                "heartbeat_url": registry_url,
+                "online": online,
+                "services": services,
+            })
+
+        elif self.path == '/api/antenna/self-update' and self.command == 'POST':
+            # Forwards POST /self-update to the paired antenna.
+            cfg = _guided_install_load_config()
+            url = (cfg.get('antenna_url') or '').strip()
+            token = (cfg.get('antenna_token') or '').strip()
+            # Also accept live-registry URL as fallback
+            if not url and CROSS_INTERFACE_AVAILABLE and _iface_registry is not None:
+                try:
+                    snap = _iface_registry.snapshot()
+                    entry = snap.get('antenna') or {}
+                    url = ((entry.get('last_meta') or {}).get('agent_url') or '').strip()
+                except Exception:
+                    url = ''
+            if not url:
+                return self.end_json(503, {"error": "no antenna paired",
+                                           "hint": "POST /api/antenna/pair first"})
+            if not token:
+                return self.end_json(400, {"error": "antenna_token missing — re-pair"})
+            import urllib.request as _ur, urllib.error as _ue, ssl as _ssl
+            req = _ur.Request(url.rstrip('/') + "/self-update",
+                              headers={"Authorization": f"Bearer {token}",
+                                       "User-Agent": "spellcaster-guild-antenna-update"},
+                              data=b'{}',
+                              method='POST')
+            ctx_ssl = _ssl.create_default_context()
+            ctx_ssl.check_hostname = False
+            ctx_ssl.verify_mode = _ssl.CERT_NONE
+            try:
+                # Self-update takes a while (git pull + restart); give it 60s
+                with _ur.urlopen(req, timeout=60, context=ctx_ssl) as resp:
+                    raw = resp.read().decode('utf-8', 'replace')
+                    try:
+                        parsed = json.loads(raw)
+                    except json.JSONDecodeError:
+                        parsed = {"raw": raw[:500]}
+                    return self.end_json(resp.status, parsed)
+            except _ue.HTTPError as e:
+                try:
+                    err_body = e.read().decode('utf-8', 'replace')
+                except Exception:
+                    err_body = ""
+                return self.end_json(e.code, {
+                    "error": f"antenna returned {e.code}",
+                    "body": err_body[:500]
+                })
+            except (_ue.URLError, OSError) as e:
+                # Expected: antenna kills itself to restart, so we get a
+                # connection reset. Treat timeout/reset as probable success.
+                msg = str(e).lower()
+                if 'timed out' in msg or 'reset' in msg or 'refused' in msg:
+                    return self.end_json(200, {
+                        "ok": True,
+                        "note": "antenna disconnected mid-response (expected — it restarts itself)"
+                    })
+                return self.end_json(502, {"error": f"could not reach antenna: {e}"})
+
         # R48b: Send timeline directly to a running DaVinci Resolve via the
         # antenna. POST only — mutates Resolve state. Body: {"format": "edl"|"fcpxml", "fps": 30, "bin": "Spellcaster"}
         elif self.path == '/api/video/send-to-resolve' and self.command == 'POST':
