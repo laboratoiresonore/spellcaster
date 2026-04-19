@@ -1130,11 +1130,11 @@ textarea::placeholder { color: #555; }
     font-size: 9px;
     opacity: 0.8;
 }
-/* Per-chip toggle cluster — two tiny icon buttons on the LEFT of the
-   chip: ⚡ Start (one-shot launch on the chosen target) and 🔁 Auto
-   (persist "auto-start on Guild boot / auto-close on exit"). The
-   cluster sits before the status dot via flex order so the eye still
-   lands on the service icon first. */
+/* Per-chip launch cluster — one tiny ⚡ icon button on the LEFT of
+   the chip. Clicking it starts the service on the target host (local
+   subprocess or remote antenna) on demand. The earlier 🔁 Auto toggle
+   was removed — auto-start on boot caused surprise launches, and the
+   user asked for explicit-only. */
 .active-iface-chip .iface-toggles {
     display: inline-flex;
     gap: 2px;
@@ -1164,12 +1164,6 @@ textarea::placeholder { color: #555; }
     cursor: not-allowed;
 }
 .iface-toggle-btn[disabled]:hover { transform: none; background: rgba(255,255,255,0.05); }
-.iface-auto-btn.is-on {
-    background: rgba(178, 70, 242, 0.35);
-    color: #f4e3ff;
-    opacity: 1;
-    box-shadow: 0 0 6px rgba(178, 70, 242, 0.55);
-}
 
 /* ── Antennas strip (remote-machine agents) ─────────────────────── */
 /* Colours mirror the Connected-apps chip row — online = green — so the
