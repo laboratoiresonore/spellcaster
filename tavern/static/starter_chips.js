@@ -124,7 +124,7 @@ const IMAGE_ACTION_CHIPS = [
         label: "Send to Resolve",
         targetInterface: "resolve",
         actionKind: "resolve.asset.send",
-        message: "Sending this image to your DaVinci Resolve Media Pool.",
+        message: "Sending this image to your Resolve Media Pool.",
     },
     {
         icon: "🖼️",

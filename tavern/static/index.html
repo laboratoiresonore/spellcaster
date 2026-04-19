@@ -52,18 +52,16 @@
             <button id="mobile-sidebar-close" type="button" onclick="closeMobileSidebar()" title="Close" aria-label="Close sidebar">&times;</button>
             <div class="sidebar-header">
                 <h2>The Wizard Guild</h2>
-                <!-- ComfyUI + LLM status used to have dedicated indicator
-                     rows at the top of the sidebar. They've been folded
-                     into the synthetic chips in the Connected apps row
-                     below (see refreshActiveInterfaces +
-                     window._managedLive). Offscreen mirrors stay wired
-                     so the existing pollers can keep updating without
-                     dangling references. -->
+                <!-- ComfyUI status stays visible at the top because it
+                     exposes live VRAM / RAM / cache stats that don't
+                     fit in a chip tooltip. LLM status is folded into
+                     the synthetic Connected-apps chip since its state
+                     line already reads "LLM: Host:Backend" there. -->
                 <div id="llm-indicator-container" style="display:none">
                     <span id="llm-dot" class="dot red"></span>
                     <span id="llm-status" title="">LLM: Disconnected</span>
                 </div>
-                <div id="comfy-indicator-container" style="display:none">
+                <div id="comfy-indicator-container">
                     <span id="comfy-dot" class="dot red"></span>
                     <span id="comfy-status">ComfyUI: Disconnected</span>
                     <div id="comfy-health-stats" class="health-stats"></div>
@@ -112,7 +110,7 @@
                     <div id="recent-assets-row" class="recent-assets-row"></div>
                 </div>
                 <div class="search-wrapper">
-                    <input type="text" id="character-search" placeholder="Search guild members...">
+                    <input type="text" id="character-search" placeholder="Search Wizard">
                 </div>
             </div>
             
@@ -160,10 +158,20 @@
                 <!-- Chat messages inject here -->
             </div>
 
-            <!-- Shootouts button — sits above the chat input so it's
-                 reachable wherever the user is in the chat flow. Badge
-                 count is injected by lora_shootout.js. -->
-            <div id="chat-shootout-slot" class="chat-shootout-slot"></div>
+            <!-- Row above the chat input that holds the Shootouts
+                 button (centred) and the global generation preset
+                 button (right-edge anchor). Both sit above the
+                 textarea so they stay reachable regardless of chat
+                 scroll. -->
+            <div id="chat-shootout-slot" class="chat-shootout-slot">
+                <!-- preset button gets injected on the right half; see
+                     .global-preset-btn CSS below -->
+                <button id="global-preset-btn" type="button"
+                        class="global-preset-btn"
+                        title="Click to cycle global generation preset (Turbo → Standard → Quality). Permanent — used by every generation action.">
+                    ⚡ Turbo
+                </button>
+            </div>
             <!-- Input Area -->
             <div id="chat-input-area">
                 <div class="input-wrapper">
@@ -180,16 +188,6 @@
                     <button id="summon-wizard-btn" title="Summon a new Wizard from your models"><img src="/static/icons/summon-wand.svg" alt="Summon Wizard" style="width:24px;height:24px;"></button>
                     <button id="send-btn" title="Cast Spell">✨</button>
                 </div>
-                <!-- Global generation preset — click to cycle
-                     Turbo → Standard → Quality. Persisted to
-                     localStorage + published on window.generationPreset
-                     so every generation action can pick up the user's
-                     choice without passing it through props. -->
-                <button id="global-preset-btn" type="button"
-                        class="global-preset-btn"
-                        title="Click to cycle global generation preset (Turbo → Standard → Quality). Permanent — used by every generation action.">
-                    ⚡ Turbo
-                </button>
             </div>
         </main>
     </div>
@@ -255,6 +253,12 @@
             <p style="margin-bottom:8px;color:#aaa;font-size:13px;">Delete <strong>every generated avatar and background</strong> from disk and from the in-memory state. The Archivist will re-fire setup mode on next page load and you can pick fresh styles for each wizard via the Generate Avatar dropdown. Use this if you've outgrown the auto-generated portraits and want to curate your own.</p>
             <button id="wipe-assets-btn" style="background:#dc2626;color:#fff;padding:10px 20px;border-radius:8px;border:none;cursor:pointer;font-family:'Outfit';font-size:13px;font-weight:600;width:100%;transition:all 0.2s;">⚠ Wipe Every Avatar &amp; Background</button>
             <p id="wipe-status" style="color:#888;font-size:12px;margin-top:6px;display:none;"></p>
+
+            <hr style="border:none;border-top:1px solid #333;margin:20px 0;">
+            <h3 style="margin-bottom:8px;">Restart Server</h3>
+            <p style="margin-bottom:8px;color:#aaa;font-size:13px;">Cleanly stop and relaunch the Wizard Guild process. Useful after editing config files on disk, or when a sidebar element is stuck on the old state. The browser tab will reconnect automatically once the server is back (≈3&nbsp;s).</p>
+            <button id="restart-server-btn" style="background:#6a1b9a;color:#fff;padding:10px 20px;border-radius:8px;border:none;cursor:pointer;font-family:'Outfit';font-size:13px;font-weight:600;width:100%;transition:all 0.2s;">⟳ Restart Wizard Guild</button>
+            <p id="restart-status" style="color:#888;font-size:12px;margin-top:6px;display:none;"></p>
 
             <hr style="border:none;border-top:1px solid #333;margin:20px 0;">
             <h3 style="margin-bottom:8px;">Re-initialize Guild</h3>

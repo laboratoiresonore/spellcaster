@@ -281,6 +281,11 @@ body {
     font-size: 18px; font-weight: 700; color: #fff; letter-spacing: 1.5px;
     text-shadow: 0 0 20px var(--accent-glow);
     animation: titleShimmer 3s ease-in-out infinite;
+    /* Centred within the sidebar so the glowing title reads as a
+       chapter-header for the whole left column. Default h2 is left-
+       aligned which left the title pinned against the edge. */
+    text-align: center;
+    margin: 0;
 }
 @keyframes titleShimmer {
     0%, 100% { text-shadow: 0 0 20px var(--accent-glow); }
@@ -305,7 +310,9 @@ body {
     font-family: monospace;
     font-size: 10px;
     opacity: 0.75;
-    margin-top: 2px;
+    /* 8px above the first stats row so "ComfyUI: Connected" and the
+       VRAM/RAM/cache meters don't read as one dense block. */
+    margin-top: 8px;
     margin-left: 14px;
     line-height: 1.35;
     display: none;   /* hidden until first successful stats update */
@@ -583,14 +590,22 @@ body {
     box-shadow: 0 0 15px rgba(178, 70, 242, 0.1);
 }
 
-/* ── Chat-area Shootouts slot (sits above the input, centred) ── */
+/* ── Chat-area Shootouts slot (sits above the input) ── */
+/* Relative parent so the preset button can absolute-position itself
+   ~halfway between the centred Shootouts button and the right edge.
+   We use flex+justify-center to centre any injected Shootouts chip;
+   the preset button overlays at right:12.5% which puts it 75% of
+   the way across — i.e. halfway between centre (50%) and the right
+   edge (100%). */
 .chat-shootout-slot {
+    position: relative;
     display: flex;
     justify-content: center;
     padding: 6px 12px 0 12px;
     background: rgba(11, 10, 16, 0.6);
+    min-height: 28px;
 }
-.chat-shootout-slot:empty { padding: 0; }
+.chat-shootout-slot:empty { padding: 0; min-height: 0; }
 
 /* ── Input Area ── */
 #chat-input-area {
@@ -616,9 +631,14 @@ body {
 }
 
 .global-preset-btn {
+    /* Sits in #chat-shootout-slot, anchored on the right half so the
+       centred Shootouts button doesn't collide with it. right:12.5%
+       puts the button roughly halfway between the centre and the
+       right edge (the visual target the user asked for). */
     position: absolute;
-    right: 12px;
-    bottom: 4px;
+    right: 12.5%;
+    top: 50%;
+    transform: translateY(-50%);
     padding: 3px 10px;
     font-size: 10px;
     font-weight: 700;
@@ -635,7 +655,9 @@ body {
     background: rgba(255, 215, 0, 0.22);
     border-color: rgba(255, 215, 0, 0.75);
     color: #fff4b8;
-    transform: translateY(-1px);
+    /* Keep the vertical centring from :not(:hover) so hover doesn't
+       jolt the button off its anchor. */
+    transform: translateY(calc(-50% - 1px));
 }
 .global-preset-btn.preset-standard {
     border-color: rgba(106, 160, 255, 0.4);
@@ -1022,20 +1044,46 @@ textarea::placeholder { color: #555; }
     color: #8a8a8a;
     filter: none;
 }
-/* Origin hint: remote chips get a subtle purple tint on the host badge.
-   Local stays neutral. */
+/* Origin hint: remote chips get a stronger visual tint on the whole
+   chip (not just the host badge) so the user can tell at a glance
+   which Connected apps live on this PC vs an antenna across the LAN.
+   Local stays in the pure-green family; remote shifts toward teal-
+   purple so the "over the network" signal reads instantly. */
 .active-iface-chip .iface-host {
     font-size: 10px;
-    opacity: 0.7;
+    opacity: 0.75;
     margin-left: 2px;
     padding: 1px 5px;
     border-radius: 6px;
-    background: rgba(178, 70, 242, 0.15);
-    color: #d8b8f0;
+    background: rgba(178, 70, 242, 0.22);
+    color: #e6cffd;
 }
 .active-iface-chip.iface-local .iface-host {
-    background: rgba(78, 156, 242, 0.15);
-    color: #a9cff0;
+    background: rgba(78, 156, 242, 0.18);
+    color: #bcd7ff;
+}
+/* Remote (antenna-backed) apps — teal-tinted green so they contrast
+   against the pure-green local chips. Keeps the "online" dot green
+   but the chip body reads as "elsewhere on your network". */
+.active-iface-chip.iface-remote {
+    background: linear-gradient(135deg,
+                                 rgba(46, 213, 115, 0.10),
+                                 rgba(138, 106, 209, 0.18));
+    border-color: rgba(138, 106, 209, 0.45);
+    color: #c8e8d5;
+}
+.active-iface-chip.iface-remote::before {
+    /* Dot stays green (online) but with a purple halo so there's a
+       hint of "remote" without hiding the status. */
+    filter: drop-shadow(0 0 4px rgba(138, 106, 209, 0.75));
+}
+/* Prepend a small 📡 indicator to remote chips so they read "remote"
+   in flat/screenshot contexts too, not just via colour. */
+.active-iface-chip.iface-remote .iface-icon::before {
+    content: "📡";
+    margin-right: 3px;
+    font-size: 9px;
+    opacity: 0.8;
 }
 /* Per-chip toggle cluster — two tiny icon buttons on the LEFT of the
    chip: ⚡ Start (one-shot launch on the chosen target) and 🔁 Auto
@@ -1432,9 +1480,15 @@ textarea::placeholder { color: #555; }
 .pair-submit:disabled { opacity: 0.65; cursor: default; }
 
 /* ── Recent assets across apps (sidebar) ── */
+/* The scrollbar must vertically align with the #character-list
+   scrollbar a bit further down the sidebar. Both tracks should sit
+   against the sidebar's right edge. .sidebar-header has 16px side
+   padding while #character-list has 8px — we cancel that 8px delta
+   here with a negative right margin + a right padding top-up so the
+   scrollbar lands in the same column as the Spellcasters one. */
 #recent-assets-container {
-    margin: 6px 0 4px;
-    padding: 6px 2px 0;
+    margin: 6px -8px 4px 0;
+    padding: 6px 2px 0 2px;
     border-top: 1px dashed rgba(178, 70, 242, 0.18);
 }
 .recent-assets-row {
@@ -1444,11 +1498,14 @@ textarea::placeholder { color: #555; }
     max-height: 220px;
     overflow-y: auto;
     overflow-x: hidden;
-    /* Match the core spellcasters (#character-list) scrollbar exactly:
-       thin 4px, purple thumb, transparent track. Keeps the sidebar
-       visually coherent — every vertical list scrolls the same way. */
+    /* Match #character-list's scrollbar exactly — width, thumb colour,
+       and transparent track — so both vertical lists share the same
+       right-edge rail. */
     scrollbar-width: thin;
     scrollbar-color: rgba(178, 70, 242, 0.3) transparent;
+    /* 4px padding-right lets the scrollbar track sit just inside the
+       row without squashing the thumbnails at full-width. */
+    padding-right: 4px;
 }
 .recent-assets-row::-webkit-scrollbar { width: 4px; }
 .recent-assets-row::-webkit-scrollbar-track { background: transparent; }
