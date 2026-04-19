@@ -22,3 +22,26 @@
 [   52646ms] [LOG] [Spellcaster] Auto-cast complete: 3 cast, 3 bodies @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:1437
 [   74030ms] [ERROR] Access to fetch at 'http://<INTERNAL_HOST>:8188/history?max_items=2' from origin 'http://127.0.0.1:8002' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource. @ http://127.0.0.1:8002/:0
 [   74030ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://<INTERNAL_HOST>:8188/history?max_items=2:0
+[  212381ms] [INFO] Rendered 6 messages in 0.032 seconds. @ http://127.0.0.1:8002/script.js:1526
+[  212416ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  212417ms] [LOG] [QR2] CHAT_CHANGED 2026-04-19@14h03m51s641ms @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  222050ms] [LOG] Generate entered @ http://127.0.0.1:8002/script.js:4207
+[  222081ms] [LOG] [QR2] calling {functionToCall: , args: Array(3)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  222081ms] [LOG] [QR2] Before-generation hook skipped for event before group wrapper. @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  222089ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  222089ms] [LOG] Generate entered @ http://127.0.0.1:8002/script.js:4207
+[  222089ms] [LOG] [QR2] calling {functionToCall: , args: Array(3)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  222114ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  222248ms] [LOG] Core/all messages: 7/7 @ http://127.0.0.1:8002/script.js:4516
+[  222293ms] [LOG] [WI] Adding 4 entries to prompt [Object, Object, Object, Object] @ http://127.0.0.1:8002/scripts/world-info.js:5140
+[  222293ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  222294ms] [LOG] skipWIAN not active, adding WIAN @ http://127.0.0.1:8002/script.js:4575
+[  237292ms] [LOG] [QR2] calling {functionToCall: , args: Array(2)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  237299ms] [LOG] [Spellcaster] Scaffold: interval → "Seraphina's eyes widen in wonder, her gaze fixed u..." @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:398
+[  237416ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  237417ms] [LOG] Generate entered @ http://127.0.0.1:8002/script.js:4207
+[  237417ms] [LOG] [QR2] calling {functionToCall: , args: Array(3)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  237427ms] [LOG] Core/all messages: 8/8 @ http://127.0.0.1:8002/script.js:4516
+[  237428ms] [LOG] skipWIAN not active, adding WIAN @ http://127.0.0.1:8002/script.js:4575
+[  243382ms] [LOG] [QR2] calling {functionToCall: , args: Array(2)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  272752ms] [LOG] Set background to spellcaster_studio_1776633588374.png @ http://127.0.0.1:8002/scripts/slash-commands.js:6322

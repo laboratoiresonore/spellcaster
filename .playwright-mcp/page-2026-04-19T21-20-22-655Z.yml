@@ -1,0 +1,211 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e5]:
+    - generic [ref=e6]:
+      - button "" [ref=e48] [cursor=pointer]
+      - text:                                        + No items                         ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☐ ☰ ☐ ☰ ☐ ☰                                  + No items      ☰ ☰ ☰ ☰ ☰ ☰ ☰  ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰  ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰  ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰                  +     No items 
+    - generic [ref=e9]:
+      - button "" [ref=e49] [cursor=pointer]
+      - text:                                                                       
+    - generic [ref=e12]:
+      - button "" [ref=e50] [cursor=pointer]
+      - text:                                               
+    - generic [ref=e15]:
+      - button "" [ref=e51] [cursor=pointer]
+      - text:                +     
+    - generic [ref=e18]:
+      - button "" [ref=e52] [cursor=pointer]
+      - text:                                   
+    - generic [ref=e21]:
+      - generic "Change Background Image" [ref=e22]:
+        - button "" [ref=e53] [cursor=pointer]
+      - text:       +                                      
+    - generic [ref=e24]:
+      - button "" [ref=e54] [cursor=pointer]
+      - text:         +                                                                       +                                  +   + +  +     +        +        +        +                                              
+    - generic [ref=e27]:
+      - button "" [ref=e55] [cursor=pointer]
+      - text:                    
+    - generic [ref=e30]:
+      - button "" [ref=e56] [cursor=pointer]
+      - text:                                                              +        +        +                  +        +        +        +        +                                        
+  - generic:                      +                                                                                +    + +                  
+  - generic:                  
+  - generic [ref=e33]:
+    - text: 
+    - generic [ref=e34]:
+      - generic [ref=e197]:
+        - img [ref=e200] [cursor=pointer]
+        - generic [ref=e201]:
+          - generic [ref=e202]:
+            - generic [ref=e204]:
+              - generic [ref=e205]: User
+              - text: 
+              - generic [ref=e206]: 19 April 2026 14:05
+            - generic [ref=e207]:
+              - button "" [ref=e208] [cursor=pointer]
+              - text:              
+              - button "" [ref=e209] [cursor=pointer]
+            - text:       
+          - text:       
+          - paragraph [ref=e211]: hi
+      - generic [ref=e212]:
+        - img [ref=e215] [cursor=pointer]
+        - generic [ref=e216]:
+          - generic [ref=e217]:
+            - generic [ref=e219]:
+              - generic [ref=e220]: User
+              - text: 
+              - generic [ref=e221]: 19 April 2026 14:05
+            - generic [ref=e222]:
+              - button "" [ref=e223] [cursor=pointer]
+              - text:              
+              - button "" [ref=e224] [cursor=pointer]
+            - text:       
+          - text:       
+          - paragraph [ref=e226]: Let's go into this magical forest!
+      - generic [ref=e227]:
+        - img [ref=e230] [cursor=pointer]
+        - generic [ref=e231]:
+          - generic [ref=e232]:
+            - generic [ref=e234]:
+              - generic [ref=e235]: Assistant
+              - text: 
+              - generic "textgenerationwebui - koboldcpp/openhermes-2.5-mistral-7b.Q6_K" [ref=e236]: 19 April 2026 14:05
+              - img "textgenerationwebui - koboldcpp/openhermes-2.5-mistral-7b.Q6_K" [ref=e237]
+            - generic [ref=e240]:
+              - button "" [ref=e241] [cursor=pointer]
+              - text:              
+              - button "" [ref=e242] [cursor=pointer]
+            - text:       
+          - text:       
+          - paragraph [ref=e244]: That sounds like a wonderful idea! It's always been a dream of mine to explore a magical forest. Where should we begin our adventure?
+      - generic [ref=e245]:
+        - img [ref=e248] [cursor=pointer]
+        - generic [ref=e249]:
+          - generic [ref=e250]:
+            - generic [ref=e252]:
+              - generic [ref=e253]: Seraphina
+              - text: 
+              - generic "textgenerationwebui - koboldcpp/openhermes-2.5-mistral-7b.Q6_K" [ref=e254]: 19 April 2026 14:06
+              - img "textgenerationwebui - koboldcpp/openhermes-2.5-mistral-7b.Q6_K" [ref=e255]
+            - generic [ref=e258]:
+              - button "" [ref=e259] [cursor=pointer]
+              - text:              
+              - button "" [ref=e260] [cursor=pointer]
+            - text:       
+          - text:       
+          - paragraph [ref=e262]:
+            - emphasis [ref=e263]: Seraphina's eyes light up with excitement, her smile warm and inviting.
+            - text: "\"Let's go to the heart of Eldoria!\""
+            - emphasis [ref=e264]: She gestures to the pathway that leads deeper into the forest.
+            - text: "\"The heart is the most enchanted and wondrous part of this realm. Behold, the ancients believe it's where the forest's true power lies.\""
+      - generic [ref=e265]:
+        - img [ref=e268] [cursor=pointer]
+        - generic [ref=e269]:
+          - generic [ref=e270]:
+            - generic [ref=e272]:
+              - generic [ref=e273]: User
+              - text: 
+              - generic [ref=e274]: 19 April 2026 14:07
+            - generic [ref=e275]:
+              - button "" [ref=e276] [cursor=pointer]
+              - text:              
+              - button "" [ref=e277] [cursor=pointer]
+            - text:       
+          - text:       
+          - paragraph [ref=e279]:
+            - emphasis [ref=e280]: The group leaves the tavern. We climb a narrow mountain path, reaching a windswept cliff overlooking a stormy sea at twilight.
+      - generic [ref=e281]:
+        - img [ref=e284] [cursor=pointer]
+        - generic [ref=e285]:
+          - generic [ref=e286]:
+            - generic [ref=e288]:
+              - generic [ref=e289]: Sceneshifter
+              - text: 
+              - generic "textgenerationwebui - koboldcpp/openhermes-2.5-mistral-7b.Q6_K" [ref=e290]: 19 April 2026 14:07
+              - img "textgenerationwebui - koboldcpp/openhermes-2.5-mistral-7b.Q6_K" [ref=e291]
+            - generic [ref=e294]:
+              - button "" [ref=e295] [cursor=pointer]
+              - text:              
+              - button "" [ref=e296] [cursor=pointer]
+            - text:       
+          - text:       
+          - paragraph [ref=e298]:
+            - emphasis [ref=e299]: The scene shifts to match — cliffs jutting above churning waves, seagulls cawing in the distance, a brisk sea wind stirring. I've included a touch of fog rolling in from the horizon to match your description.
+      - generic [ref=e302]:
+        - img [ref=e305] [cursor=pointer]
+        - generic [ref=e306]:
+          - generic [ref=e307]:
+            - generic [ref=e309]:
+              - generic [ref=e310]: User
+              - text: 
+              - generic [ref=e311]: 19 April 2026 14:18
+            - generic [ref=e318]:
+              - button "" [ref=e319] [cursor=pointer]
+              - text:              
+              - button "" [ref=e320] [cursor=pointer]
+            - text:       
+          - text:       
+          - paragraph [ref=e313]:
+            - emphasis [ref=e314]: I walk with my companions into a moonlit enchanted forest clearing. A gentle aurora shimmers above the ancient trees.
+      - generic [ref=e321]:
+        - img [ref=e324] [cursor=pointer]
+        - generic [ref=e325]:
+          - generic [ref=e326]:
+            - generic [ref=e328]:
+              - generic [ref=e329]: Seraphina
+              - text: 
+              - generic "textgenerationwebui - koboldcpp/openhermes-2.5-mistral-7b.Q6_K" [ref=e330]: 19 April 2026 14:19
+              - img "textgenerationwebui - koboldcpp/openhermes-2.5-mistral-7b.Q6_K" [ref=e331]
+            - generic [ref=e334]:
+              - button "" [ref=e335] [cursor=pointer]
+              - text:              
+              - button "" [ref=e336] [cursor=pointer]
+            - text:       
+          - text:       
+          - paragraph [ref=e338]:
+            - emphasis [ref=e339]: Seraphina's eyes widen in wonder, her gaze fixed upon the aurora above the ancient trees. She raises her hand, and a faint luminescence flickers about her fingertips, seemingly in tune with the dancing lights.
+            - text: "[The Actions: Seraphina raises her hand, feeling in tune with the dancing lights of the aurora.]"
+      - generic [ref=e340]:
+        - img [ref=e343] [cursor=pointer]
+        - generic [ref=e344]:
+          - generic [ref=e345]:
+            - generic [ref=e347]:
+              - generic [ref=e348]: Assistant
+              - text: 
+              - generic "textgenerationwebui - koboldcpp/openhermes-2.5-mistral-7b.Q6_K" [ref=e349]: 19 April 2026 14:19
+              - img "textgenerationwebui - koboldcpp/openhermes-2.5-mistral-7b.Q6_K" [ref=e350]
+            - generic [ref=e353]:
+              - button "" [ref=e354] [cursor=pointer]
+              - text:              
+              - button "" [ref=e355] [cursor=pointer]
+            - text:       
+          - text:       
+          - paragraph [ref=e357]: "\"Seraphina, that's incredible! The aurora seems to be reacting to your energy. Do you think you can try to channel its power and guide it towards a specific location?\""
+        - generic:
+          - button "" [ref=e358] [cursor=pointer]
+          - generic [ref=e359]: 1/1
+    - generic [ref=e36]:
+      - text:  
+      - generic [ref=e37]:
+        - generic [ref=e38]:
+          - generic [ref=e39] [cursor=pointer]: 
+          - generic "Extensions" [ref=e181] [cursor=pointer]: 
+        - textbox "Type a message, or /? for help" [ref=e182]
+        - generic [ref=e41]:
+          - text:      
+          - generic "Send a message" [ref=e183] [cursor=pointer]: 
+  - text:                       1  
+  - generic [ref=e360]: 
+  - status [ref=e185]
+  - status [ref=e186]
+  - status [ref=e187]
+  - status [ref=e188]
+  - status [ref=e189]
+  - status [ref=e190]
+  - status [ref=e191]
+  - status [ref=e192]
+  - status [ref=e193]
+  - status [ref=e194]
+  - status [ref=e195]
+  - status [ref=e196]

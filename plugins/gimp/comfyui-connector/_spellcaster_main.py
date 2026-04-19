@@ -5449,17 +5449,23 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
                       motion_mask=None,
                       pingpong=False, fps=16,
                       end_image_filename=None):
-    """→ Delegated to v2 builder (resolves preset_key → preset dict).
+    """→ Delegated to canonical build_wan_video with GIMP-side extras.
 
-    Probes the ComfyUI server for the IPAdapterWANLoader model named in the
-    preset. If the model is missing, logs a warning and disables the
-    IP-Adapter block so the workflow still runs instead of failing
-    validation with 'Value not in list: ipadapter'.
+    See CLAUDE.md §16 "Canonical Video Pipelines" — this wrapper adds
+    two GIMP-specific behaviours on top of the core builder:
+
+      1. IP-Adapter WAN model probe — gracefully skip if the model isn't
+         installed on the server (avoids a "Value not in list: ipadapter"
+         validation error that would otherwise kill the whole workflow).
+      2. SLG / NAG quality-patch probe — auto-enable when the nodes
+         exist on the server (SLG is core ComfyUI; NAG needs Kijai's
+         WanVideoWrapper pack).
+
+    Turbo / full-step schedules go through `video_presets.wan_turbo_kwargs`
+    so every WAN caller in the app agrees. Caller-explicit
+    steps/cfg/second_step still win — the canon only fills defaults.
     """
     preset = WAN_I2V_PRESETS[preset_key]
-    # IP-Adapter WAN model probe — gracefully skip if the model isn't
-    # installed on the server. Prevents the "Value not in list" validation
-    # error that otherwise kills the whole workflow.
     if ip_adapter_image and server_url:
         required_model = preset.get("ip_adapter_model", "ip-adapter.bin")
         available = _fetch_wan_ipadapter_models(server_url)
@@ -5468,14 +5474,27 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
                   f"not found on server — disabling Face Identity Lock for this run. "
                   f"Available: {available}")
             ip_adapter_image = None
-    # Quality patches — auto-enable when the nodes exist on the server.
-    # SLG is core ComfyUI; NAG needs Kijai's WanVideoWrapper pack.
     enable_slg = False
     enable_nag = False
     if server_url:
         probe = _wan_quality_patches_available(server_url)
         enable_slg = probe["slg"]
         enable_nag = probe["nag"]
+
+    # Canon: apply the turbo/full-step schedule when the caller did not
+    # override it explicitly. Caller's own steps/cfg/second_step win.
+    try:
+        from spellcaster_core import video_presets as _vp
+        _canon = _vp.wan_turbo_kwargs(bool(turbo))
+    except ImportError:
+        _canon = ({} if turbo else {"steps": 30, "cfg": 3.5, "second_step": 15})
+    if steps is None and "steps" in _canon:
+        steps = _canon["steps"]
+    if cfg is None and "cfg" in _canon:
+        cfg = _canon["cfg"]
+    if second_step is None and "second_step" in _canon:
+        second_step = _canon["second_step"]
+
     return build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
                            width=width, height=height, length=length,
                            steps=steps, cfg=cfg, shift=shift, second_step=second_step,

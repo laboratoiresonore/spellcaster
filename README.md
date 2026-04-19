@@ -42,6 +42,26 @@
 
 ---
 
+<div align="center">
+
+<sub>
+
+**📣 Status — April 2026**
+
+**🆕 News** &nbsp;·&nbsp; First version of the DaVinci Resolve plugin is out and needs testing &nbsp;·&nbsp; Wizard Guild + Antenna work quite well
+
+**✅ What works** &nbsp;·&nbsp; The GIMP plugin is dope — it's now all I use for image generation and retouching
+
+**🔧 Current focus** &nbsp;·&nbsp; Debugging SillyTavern plugin &nbsp;·&nbsp; Improving Wizard Guild and Antenna
+
+**⏭ Next** &nbsp;·&nbsp; Signal bridge &nbsp;·&nbsp; Moar plugins / frontends
+
+</sub>
+
+</div>
+
+---
+
 ## The Problem
 
 Experimenting with AI image generation locally is a huge pain in the ass, even for people who are good with computers.
@@ -407,7 +427,7 @@ Access: `Spellcaster > Tools > Calibration Wizard`
 
 </details>
 
-<details>
+<details open>
 <summary><strong>The Wizard Guild (chat interface)</strong></summary>
 
 Don't want to learn GIMP? Look, we get it. GIMP has 847 menu items and a learning curve that doubles as a cliff face. The Wizard Guild is a standalone web UI where AI wizard characters handle everything conversationally. It's like tech support, except the tech support is a wizard, and instead of telling you to restart your computer, it generates a photorealistic dragon.
