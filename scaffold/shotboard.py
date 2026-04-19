@@ -709,6 +709,23 @@ class Shotboard:
             total += self.effective_duration(s.id)
         return round(total, 2)
 
+    def average_render_time(self):
+        """Return the average render duration across all shots with render_duration_s."""
+        durations = [s.render_duration_s for s in self._shots
+                     if s.render_duration_s is not None and s.render_duration_s > 0]
+        if not durations:
+            return 0.0
+        return round(sum(durations) / len(durations), 2)
+
+    def queue_eta(self):
+        """Estimate time remaining for queued + running shots."""
+        avg = self.average_render_time()
+        pending = sum(1 for s in self._shots if s.status in ("queued", "running"))
+        if avg <= 0 or pending == 0:
+            return {"eta_seconds": 0, "pending_count": pending, "avg_render_s": avg}
+        eta = round(avg * pending, 1)
+        return {"eta_seconds": eta, "pending_count": pending, "avg_render_s": avg}
+
     def record_render(self, shot_id, preset=None, status="ready",
                       duration_s=None, error=None):
         """Append a render attempt to the shot's history log."""
@@ -718,6 +735,9 @@ class Shotboard:
         entry = {
             "timestamp": time.time(),
             "preset": preset or shot.preset,
+            "prompt": shot.prompt,
+            "negative": shot.negative,
+            "overrides": dict(shot.overrides) if shot.overrides else {},
             "status": status,
             "duration_s": duration_s,
             "error": error,
@@ -799,3 +819,172 @@ class Shotboard:
         """Return the ordered list of completed mp4 paths, skipping gaps."""
         return [s.video_path for s in self._shots
                 if s.status == "ready" and s.video_path]
+
+    # ------------------------------------------------------------------
+    # Diff indicator
+    # ------------------------------------------------------------------
+
+    def shot_diff(self, shot_id: str) -> Dict[str, Any]:
+        """Compare current shot fields against the last successful render.
+
+        Returns a dict with:
+          - "has_changes": bool
+          - "fields": dict mapping field name → {"old": ..., "new": ...}
+          - "last_render_ts": float or None
+        If the shot has no successful render history, returns has_changes=False.
+        """
+        shot = self.get(shot_id)
+        if not shot:
+            return {"has_changes": False, "fields": {}, "last_render_ts": None}
+
+        # Find most recent successful render
+        last_ok = None
+        for entry in reversed(shot.render_history):
+            if entry.get("status") == "ready":
+                last_ok = entry
+                break
+
+        if last_ok is None:
+            return {"has_changes": False, "fields": {}, "last_render_ts": None}
+
+        changes: Dict[str, Any] = {}
+
+        # Compare prompt
+        rendered_prompt = last_ok.get("prompt", "")
+        if shot.prompt != rendered_prompt:
+            changes["prompt"] = {"old": rendered_prompt, "new": shot.prompt}
+
+        # Compare negative prompt
+        rendered_negative = last_ok.get("negative", "")
+        if shot.negative != rendered_negative:
+            changes["negative"] = {"old": rendered_negative, "new": shot.negative}
+
+        # Compare preset
+        rendered_preset = last_ok.get("preset", "")
+        if shot.preset != rendered_preset:
+            changes["preset"] = {"old": rendered_preset, "new": shot.preset}
+
+        # Compare overrides (stored as dict)
+        rendered_overrides = last_ok.get("overrides") or {}
+        if shot.overrides != rendered_overrides:
+            changes["overrides"] = {"old": rendered_overrides,
+                                    "new": shot.overrides}
+
+
+        return {
+            "has_changes": len(changes) > 0,
+            "fields": changes,
+            "last_render_ts": last_ok.get("timestamp"),
+        }
+
+    def revert_to_last_render(self, shot_id: str) -> Optional[Dict[str, Any]]:
+        """Revert a shot's prompt/preset/overrides to the last successful render.
+
+        Returns a dict of the reverted fields, or None if the shot doesn't
+        exist, is locked, or has no successful render history.
+        """
+        shot = self.get(shot_id)
+        if not shot:
+            return None
+        if shot.locked:
+            return None
+
+        # Find most recent successful render
+        last_ok = None
+        for entry in reversed(shot.render_history):
+            if entry.get("status") == "ready":
+                last_ok = entry
+                break
+
+        if last_ok is None:
+            return None
+
+        reverted = {}
+        old_prompt = last_ok.get("prompt", "")
+        if shot.prompt != old_prompt:
+            reverted["prompt"] = {"from": shot.prompt, "to": old_prompt}
+            shot.prompt = old_prompt
+
+        old_negative = last_ok.get("negative", "")
+        if shot.negative != old_negative:
+            reverted["negative"] = {"from": shot.negative, "to": old_negative}
+            shot.negative = old_negative
+
+
+        old_preset = last_ok.get("preset", "")
+        if shot.preset != old_preset:
+            reverted["preset"] = {"from": shot.preset, "to": old_preset}
+            shot.preset = old_preset
+
+        old_overrides = last_ok.get("overrides") or {}
+        if shot.overrides != old_overrides:
+            reverted["overrides"] = {"from": dict(shot.overrides),
+                                     "to": old_overrides}
+            shot.overrides = dict(old_overrides)
+
+        if reverted:
+            shot.touch()
+            self.save()
+
+        return reverted
+
+    def batch_revert(self, shot_ids: List[str]) -> Dict[str, Any]:
+        """Revert multiple shots to their last rendered settings.
+
+        Returns a summary dict with 'reverted' count and 'skipped' count.
+        Skipped shots are locked, have no history, or don't exist.
+        """
+        reverted = 0
+        skipped = 0
+        for sid in shot_ids:
+            result = self.revert_to_last_render(sid)
+            if result is None:
+                skipped += 1
+            elif isinstance(result, dict):
+                if result:
+                    reverted += 1
+                else:
+                    skipped += 1  # no changes to revert
+        return {"reverted": reverted, "skipped": skipped}
+
+    def batch_prompt_edit(self, shot_ids: List[str], prefix: str = "",
+                          suffix: str = "", mode: str = "add") -> Dict[str, Any]:
+        """Add or remove a prefix/suffix to/from prompts of multiple shots.
+
+        mode='add': prepend prefix and/or append suffix to each shot's prompt.
+        mode='remove': strip prefix from start and/or suffix from end.
+        Locked shots are skipped.
+
+        Returns {'modified': int, 'skipped': int}.
+        """
+        modified = 0
+        skipped = 0
+        for sid in shot_ids:
+            shot = self.get(sid)
+            if not shot:
+                skipped += 1
+                continue
+            if shot.locked:
+                skipped += 1
+                continue
+            old_prompt = shot.prompt
+            new_prompt = old_prompt
+            if mode == "add":
+                if prefix and not new_prompt.startswith(prefix):
+                    new_prompt = prefix + new_prompt
+                if suffix and not new_prompt.endswith(suffix):
+                    new_prompt = new_prompt + suffix
+            elif mode == "remove":
+                if prefix and new_prompt.startswith(prefix):
+                    new_prompt = new_prompt[len(prefix):]
+                if suffix and new_prompt.endswith(suffix):
+                    new_prompt = new_prompt[:-len(suffix)]
+            if new_prompt != old_prompt:
+                shot.prompt = new_prompt
+                shot.touch()
+                modified += 1
+            else:
+                skipped += 1
+        if modified > 0:
+            self.save()
+        return {"modified": modified, "skipped": skipped}

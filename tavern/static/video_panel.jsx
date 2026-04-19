@@ -139,6 +139,8 @@ function ShotCard({
 }) {
   const [expanded, setExpanded] = _useState(shot.status === "draft");
   const [showHistory, setShowHistory] = _useState(false);
+  const [showCompare, setShowCompare] = _useState(false);
+
   const isLocked = shot.locked || false;
   const [editTitle, setEditTitle] = _useState(shot.title);
   const [editPrompt, setEditPrompt] = _useState(shot.prompt);
@@ -278,7 +280,7 @@ function ShotCard({
   const currentPreset = presets[editPreset];
 
   return (
-    <div className={`bg-slate-900 border rounded-xl overflow-hidden transition-all ${isSelected ? "border-amber-400 shadow-lg shadow-amber-600/30" : "border-amber-600/20"}`}>
+    <div data-shot-id={shot.id} className={`bg-slate-900 border rounded-xl overflow-hidden transition-all ${isSelected ? "shot-card-root border-amber-400 shadow-lg shadow-amber-600/30" : "border-amber-600/20"}`}>
       {/* Collapsed header */}
       <div
         draggable
@@ -406,6 +408,19 @@ function ShotCard({
               rows={3}
               className="w-full bg-slate-950 border border-amber-500/20 rounded-lg px-3 py-2 text-amber-50 placeholder-slate-500 focus:border-amber-500/60 outline-none text-sm resize-y"
             />
+            {(() => {
+              const currentPreset = presets.find(p => p.key === editPreset) || {};
+              const limit = currentPreset.prompt_char_limit || 500;
+              const len = editPrompt.length;
+              const color = len > limit ? "text-red-400" : len > limit * 0.8 ? "text-amber-400" : "text-slate-500";
+              return (
+                <div className="prompt-char-count flex justify-end text-[10px] mt-0.5">
+                  <span className={"prompt-char-current " + color}>{len}</span>
+                  <span className="prompt-char-limit text-slate-600">/{limit}</span>
+                  {len > limit && <span className="prompt-limit-warning text-red-400 ml-1">(over limit)</span>}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Negative prompt */}
@@ -499,6 +514,80 @@ function ShotCard({
               <div className="text-[10px] text-slate-500 mt-1">No renders yet</div>
             )}
           </div>
+
+          {/* Modified since last render indicator + comparison */}
+          {(() => {
+            const hist = shot.render_history || [];
+            const lastOk = hist.slice().reverse().find(e => e.status === "ready");
+            if (!lastOk) return null;
+            const diffs = [];
+            if (shot.prompt !== (lastOk.prompt || "")) diffs.push("prompt");
+            if ((shot.negative || "") !== (lastOk.negative || "")) diffs.push("negative");
+            if (shot.preset !== (lastOk.preset || "")) diffs.push("preset");
+            const oldOv = lastOk.overrides || {};
+            const newOv = shot.overrides || {};
+            if (JSON.stringify(oldOv) !== JSON.stringify(newOv)) diffs.push("overrides");
+            if (diffs.length === 0) return null;
+            return (
+              <div className="shot-diff-section">
+                <div className="shot-diff-badge flex items-center gap-2 px-2 py-1 rounded bg-amber-900/30 border border-amber-500/30 text-[11px] text-amber-300">
+                  <span className="shot-diff-icon">⚠</span>
+                  <span className="shot-diff-label">Modified since last render</span>
+                  <span className="shot-diff-fields text-amber-400/70">({diffs.join(", ")})</span>
+                  <button
+                    onClick={() => setShowCompare(!showCompare)}
+                    className="compare-toggle-btn px-2 py-0.5 rounded bg-slate-700/50 hover:bg-slate-600/60 text-slate-200 text-[10px] font-medium"
+                  >{showCompare ? "Hide" : "Compare"}</button>
+                  {!shot.locked && (
+                    <button
+                      onClick={() => revertShot(shot.id)}
+                      className="revert-btn ml-auto px-2 py-0.5 rounded bg-amber-700/50 hover:bg-amber-600/60 text-amber-100 text-[10px] font-medium"
+                    >Revert</button>
+                  )}
+                </div>
+                {showCompare && (
+                  <div className="shot-compare-panel mt-1 rounded bg-slate-900/60 border border-slate-700/40 p-2 text-[10px] space-y-2">
+                    {diffs.includes("prompt") && (
+                      <div className="compare-row-prompt">
+                        <div className="compare-field-label text-slate-400 font-medium mb-0.5">Prompt</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="compare-old rounded bg-red-950/30 border border-red-800/20 p-1.5 text-red-300 whitespace-pre-wrap break-words">{lastOk.prompt || ""}</div>
+                          <div className="compare-new rounded bg-emerald-950/30 border border-emerald-800/20 p-1.5 text-emerald-300 whitespace-pre-wrap break-words">{shot.prompt}</div>
+                        </div>
+                      </div>
+                    )}
+                    {diffs.includes("negative") && (
+                      <div className="compare-row-negative">
+                        <div className="compare-field-label text-slate-400 font-medium mb-0.5">Negative</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="compare-old rounded bg-red-950/30 border border-red-800/20 p-1.5 text-red-300 whitespace-pre-wrap break-words">{lastOk.negative || ""}</div>
+                          <div className="compare-new rounded bg-emerald-950/30 border border-emerald-800/20 p-1.5 text-emerald-300 whitespace-pre-wrap break-words">{shot.negative || ""}</div>
+                        </div>
+                      </div>
+                    )}
+                    {diffs.includes("preset") && (
+                      <div className="compare-row-preset">
+                        <div className="compare-field-label text-slate-400 font-medium mb-0.5">Preset</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="compare-old rounded bg-red-950/30 border border-red-800/20 p-1.5 text-red-300">{lastOk.preset || ""}</div>
+                          <div className="compare-new rounded bg-emerald-950/30 border border-emerald-800/20 p-1.5 text-emerald-300">{shot.preset}</div>
+                        </div>
+                      </div>
+                    )}
+                    {diffs.includes("overrides") && (
+                      <div className="compare-row-overrides">
+                        <div className="compare-field-label text-slate-400 font-medium mb-0.5">Overrides</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="compare-old rounded bg-red-950/30 border border-red-800/20 p-1.5 text-red-300 font-mono">{JSON.stringify(oldOv, null, 1)}</div>
+                          <div className="compare-new rounded bg-emerald-950/30 border border-emerald-800/20 p-1.5 text-emerald-300 font-mono">{JSON.stringify(newOv, null, 1)}</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Seed + Backend row */}
           <div className="grid grid-cols-3 gap-3">
@@ -1407,6 +1496,7 @@ function VideoPanel() {
   const [error, setError] = _useState("");
   const [statusFilter, setStatusFilter] = _useState("all");
   const [templates, setTemplates] = _useState([]);
+  const [autoScroll, setAutoScroll] = _useState(true);
   const [selected, setSelected] = _useState(new Set());
   const [maxConcurrent, setMaxConcurrent] = _useState(2);
   const [exportSettings, setExportSettings] = _useState({
@@ -1464,7 +1554,12 @@ function VideoPanel() {
     await refresh();
   };
 
-  const renderSelected = async () => {
+  const scrollToShot = (shotId) => {
+    const el = document.querySelector('[data-shot-id="' + shotId + '"]');
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
+    const renderSelected = async () => {
     for (const id of selected) {
       try {
         await api.post(`/api/video/shots/${id}/render`, {});
@@ -1494,6 +1589,9 @@ function VideoPanel() {
             } else if (ns.status === "failed") {
               addToast((ns.title || "Shot") + " render failed", "error");
             }
+          if ((ns.status === "running" || ns.status === "rendering") && autoScroll) {
+            setTimeout(() => scrollToShot(ns.id), 300);
+          }
           }
         }
       }
@@ -1717,6 +1815,30 @@ function VideoPanel() {
       addToast(lock ? "Locked " + selected.size + " shot(s)" : "Unlocked " + selected.size + " shot(s)", "success");
     } catch (e) {
       setError("Failed to batch lock/unlock");
+    }
+  };
+
+  const revertShot = async (shotId) => {
+    if (!confirm("Revert this shot to its last rendered settings?")) return;
+    try {
+      await api.post("/api/video/shots/" + shotId + "/revert", {});
+      await refresh();
+      addToast("Shot reverted to last render", "success");
+    } catch (e) {
+      addToast("Revert failed: " + (e.message || "unknown error"), "error");
+    }
+  };
+
+  const batchRevert = async () => {
+    if (!confirm("Revert " + selected.size + " shot(s) to their last rendered settings?")) return;
+    try {
+      await api.post("/api/video/batch-revert", {
+        shot_ids: Array.from(selected),
+      });
+      await refresh();
+      addToast("Batch revert complete", "success");
+    } catch (e) {
+      addToast("Batch revert failed", "error");
     }
   };
 
@@ -2030,7 +2152,18 @@ function VideoPanel() {
 
   // ── Render ──
   if (loading) {
-    return (
+    const queueEta = _useMemo(() => {
+    const durations = shots.filter(s => s.render_duration_s > 0).map(s => s.render_duration_s);
+    const avg = durations.length > 0 ? durations.reduce((a, b) => a + b, 0) / durations.length : 0;
+    const pending = shots.filter(s => s.status === "queued" || s.status === "running").length;
+    const eta = avg > 0 && pending > 0 ? avg * pending : 0;
+    const mins = Math.floor(eta / 60);
+    const secs = Math.round(eta % 60);
+    const label = eta > 0 ? (mins > 0 ? mins + "m " + secs + "s" : secs + "s") + " remaining" : "";
+    return { eta, pending, avg: Math.round(avg), label };
+  }, [shots]);
+
+  return (
       <div className="text-center py-12">
         <div className="inline-block w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
         <p className="text-slate-400 text-sm mt-3">Connecting to Video Bridge...</p>
@@ -2243,7 +2376,8 @@ function VideoPanel() {
                 <option key={c.key} value={c.key}>{c.label}</option>
               ))}
             </select>
-            <button onClick={batchResetStatus} className="batch-reset-btn flex items-center gap-1 bg-sky-700/30 hover:bg-sky-700/50 text-sky-300 px-3 py-1 rounded text-xs font-medium">
+            <button onClick={batchRevert} className="batch-revert-btn px-3 py-1 rounded bg-amber-700/40 hover:bg-amber-600/50 text-amber-100 text-xs">Batch Revert</button>
+                <button onClick={batchResetStatus} className="batch-reset-btn flex items-center gap-1 bg-sky-700/30 hover:bg-sky-700/50 text-sky-300 px-3 py-1 rounded text-xs font-medium">
               Reset
             </button>
             <button onClick={renderSelected} className="batch-render-btn flex items-center gap-1 bg-emerald-700/30 hover:bg-emerald-700/50 text-emerald-300 px-3 py-1 rounded text-xs font-medium">
@@ -2414,7 +2548,26 @@ function VideoPanel() {
       )}
 
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      {/* Auto-scroll toggle */}
+      <div className="auto-scroll-toggle flex justify-center gap-2 pt-2">
+        <label className="auto-scroll-label flex items-center gap-1 text-xs text-slate-500 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={autoScroll}
+            onChange={(e) => setAutoScroll(e.target.checked)}
+            className="auto-scroll-checkbox w-3 h-3 rounded accent-amber-500"
+          />
+          Auto-scroll to rendering shot
+        </label>
+      </div>
+
       {/* Keyboard shortcuts hint */}
+      {queueEta.label && (
+        <div className="queue-eta-header text-center text-xs text-amber-400 py-1">
+          <span className="queue-eta-label">~{queueEta.label}</span>
+        </div>
+      )}
+
       <div className="shortcut-hints text-xs text-slate-500 text-center pt-4 border-t border-slate-800">
         <span className="text-slate-600">Shortcuts:</span> <kbd className="px-1 rounded bg-slate-800">N</kbd> new shot · <kbd className="px-1 rounded bg-slate-800">Ctrl+Shift+R</kbd> render all
       </div>

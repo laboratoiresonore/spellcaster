@@ -6894,6 +6894,53 @@ class GuildHandler(SimpleHTTPRequestHandler):
             history = _VIDEO_BRIDGE.board.get_render_history(shot_id)
             return self.end_json(200, {"shot_id": shot_id, "history": history})
 
+        elif self.path == '/api/video/queue-eta' and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            eta = _VIDEO_BRIDGE.board.queue_eta()
+            return self.end_json(200, eta)
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/diff') and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/')[4]
+            diff = _VIDEO_BRIDGE.board.shot_diff(shot_id)
+            return self.end_json(200, {"shot_id": shot_id, **diff})
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/revert') and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/')[4]
+            result = _VIDEO_BRIDGE.board.revert_to_last_render(shot_id)
+            if result is None:
+                return self.end_json(400, {"error": "Cannot revert: shot not found, locked, or no render history"})
+            shot = _VIDEO_BRIDGE.board.get(shot_id)
+            return self.end_json(200, {"shot_id": shot_id, "reverted": result, "shot": shot.to_dict()})
+
+        elif self.path == '/api/video/batch-revert' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_ids = data.get('shot_ids', [])
+            if not shot_ids:
+                return self.end_json(400, {"error": "No shot_ids provided"})
+            result = _VIDEO_BRIDGE.board.batch_revert(shot_ids)
+            return self.end_json(200, result)
+        elif self.path == '/api/video/batch-prompt-edit' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_ids = data.get('shot_ids', [])
+            if not shot_ids:
+                return self.end_json(400, {"error": "No shot_ids provided"})
+            prefix = data.get('prefix', '')
+            suffix = data.get('suffix', '')
+            mode = data.get('mode', 'add')
+            if mode not in ('add', 'remove'):
+                return self.end_json(400, {"error": "mode must be 'add' or 'remove'"})
+            if not prefix and not suffix:
+                return self.end_json(400, {"error": "prefix or suffix required"})
+            result = _VIDEO_BRIDGE.board.batch_prompt_edit(shot_ids, prefix=prefix, suffix=suffix, mode=mode)
+            return self.end_json(200, result)
+
         elif self.path == '/api/video/record-render' and self.command == 'POST':
             if not _VIDEO_BRIDGE:
                 return self.end_json(503, {"error": "Video Bridge not initialised"})
@@ -8694,8 +8741,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
             path = path[1:]
         return os.path.join(root, path)
 
+
     def log_message(self, format, *args):
-        """Quieter logging — skip noisy static asset requests."""
         msg = format % args
         if '/static/' not in msg and '/api/avatar/' not in msg:
             print(f"  {msg}")

@@ -557,6 +557,143 @@ window.isInterfaceActive = function(key) {
     return !!(window.activeInterfaces && window.activeInterfaces[key]);
 };
 
+// ── Recent assets across every interface ──────────────────────────
+// The shared asset gallery (/api/assets) collects images from every
+// Spellcaster frontend. We render the last N image assets as thumbnails
+// in the sidebar. Clicking a thumb "uses" the asset — dropping it as a
+// reference into the currently-active wizard's chat.
+
+window._recentAssets = [];          // ordered by ts descending
+window._recentAssetLimit = 9;       // 3x3 grid
+window._recentAssetSSE = null;      // EventSource handle, re-created on need
+
+async function refreshRecentAssets() {
+    try {
+        const res = await fetch('/api/assets?limit=' + window._recentAssetLimit);
+        if (!res.ok) {
+            if (res.status === 501) return; // gallery disabled
+            throw new Error('HTTP ' + res.status);
+        }
+        const data = await res.json();
+        const assets = (data.assets || []).filter(a =>
+            a && a.mime && a.mime.startsWith('image/'));
+        window._recentAssets = assets;
+        renderRecentAssets();
+    } catch (e) {
+        // Silent — the widget is optional
+    }
+}
+
+function renderRecentAssets() {
+    const container = document.getElementById('recent-assets-container');
+    const row = document.getElementById('recent-assets-row');
+    if (!container || !row) return;
+    const assets = window._recentAssets || [];
+    if (assets.length === 0) {
+        container.style.display = 'none';
+        row.innerHTML = '';
+        return;
+    }
+    container.style.display = '';
+    row.innerHTML = '';
+    for (const a of assets) {
+        const thumb = document.createElement('div');
+        thumb.className = 'recent-asset-thumb';
+        thumb.dataset.hash = a.hash;
+        thumb.style.backgroundImage = "url('/api/assets/" + a.hash + "')";
+        const tooltipTitle = a.title || a.prompt || '';
+        const tooltip = `${_originLabel(a.origin)}${tooltipTitle ? ' · ' + tooltipTitle : ''}`;
+        thumb.title = tooltip;
+        const badge = document.createElement('span');
+        badge.className = 'recent-asset-origin-badge';
+        badge.textContent = _originIcon(a.origin);
+        thumb.appendChild(badge);
+        thumb.addEventListener('click', () => _onRecentAssetClick(a));
+        row.appendChild(thumb);
+    }
+}
+
+function _originIcon(origin) {
+    const icons = {
+        guild: '💬',
+        gimp: '🖼️',
+        darktable: '📷',
+        resolve: '🎬',
+        sillytavern: '🎭',
+        signal: '📱',
+    };
+    return icons[origin] || '🔌';
+}
+
+function _originLabel(origin) {
+    const labels = {
+        guild: 'Wizard Guild',
+        gimp: 'GIMP',
+        darktable: 'Darktable',
+        resolve: 'DaVinci Resolve',
+        sillytavern: 'SillyTavern',
+        signal: 'Signal',
+    };
+    return labels[origin] || origin || 'unknown';
+}
+
+function _onRecentAssetClick(asset) {
+    // Drop the asset into the active wizard's chat as an image
+    // reference. Uses the same pending-attachment mechanism cross-
+    // wizard chips use — adds a user-side attachment bubble with the
+    // thumbnail, then fires an LLM message referring to it.
+    if (!asset || !asset.hash) return;
+    const absUrl = window.location.origin + '/api/assets/' + asset.hash;
+    if (typeof _renderPendingAttachment === 'function') {
+        _renderPendingAttachment({
+            imageUrl: absUrl,
+            message: `I want to use this ${_originLabel(asset.origin).toLowerCase()} image as a reference.`,
+        });
+    }
+}
+
+function subscribeRecentAssetEvents() {
+    // EventSource auto-reconnects — we only need to set it up once.
+    if (window._recentAssetSSE) return;
+    try {
+        const url = '/api/events/stream?kinds=' + encodeURIComponent([
+            'guild.asset.uploaded', 'gimp.asset.uploaded',
+            'darktable.asset.uploaded', 'resolve.asset.uploaded',
+        ].join(','));
+        const es = new EventSource(url);
+        window._recentAssetSSE = es;
+        const handler = (ev) => {
+            // Refresh and briefly flash the newly-landed thumb
+            refreshRecentAssets().then(() => {
+                try {
+                    const data = JSON.parse(ev.data || '{}');
+                    const hash = data.data && data.data.hash;
+                    if (hash) _flashRecentAsset(hash);
+                } catch (_) {/* no-op */}
+            });
+        };
+        es.addEventListener('guild.asset.uploaded', handler);
+        es.addEventListener('gimp.asset.uploaded', handler);
+        es.addEventListener('darktable.asset.uploaded', handler);
+        es.addEventListener('resolve.asset.uploaded', handler);
+        es.addEventListener('error', () => {
+            // EventSource will auto-retry; nothing to do
+        });
+    } catch (e) {
+        // SSE unsupported — fall through to polling only
+    }
+}
+
+function _flashRecentAsset(hash) {
+    const el = document.querySelector(
+        `.recent-asset-thumb[data-hash="${hash}"]`);
+    if (!el) return;
+    el.classList.remove('recent-asset-flash');
+    // Force reflow so the animation restarts
+    void el.offsetWidth;
+    el.classList.add('recent-asset-flash');
+}
+
 function addTypingIndicator() {
     const div = document.createElement('div');
     div.className = 'message ai-message';
@@ -653,6 +790,12 @@ async function initialize() {
     // Dynamic: if no interface qualifies, the whole strip stays hidden.
     refreshActiveInterfaces();
     setInterval(refreshActiveInterfaces, 10000);
+    // Recent-assets strip — polls /api/assets and subscribes to
+    // *.asset.uploaded on the event bus for live updates. Shows the
+    // most recent N images from every connected interface.
+    refreshRecentAssets();
+    setInterval(refreshRecentAssets, 15000);
+    subscribeRecentAssetEvents();
 
     // Check if video models available (for Animate All button)
     checkVideoModelAvailable();
