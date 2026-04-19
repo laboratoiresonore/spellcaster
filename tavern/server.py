@@ -9162,6 +9162,25 @@ class GuildHandler(SimpleHTTPRequestHandler):
             warnings = _VIDEO_BRIDGE.board.shot_warnings(shot_id)
             return self.end_json(200, {"shot_id": shot_id, "warnings": warnings})
 
+        elif self.path.startswith('/api/video/render-history.csv') and self.command == 'GET':
+            # R64b: download every render attempt as a flat CSV.
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                body = _VIDEO_BRIDGE.board.render_history_csv()
+                payload = body.encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/csv; charset=utf-8')
+                self.send_header('Content-Disposition',
+                                 'attachment; filename="render-history.csv"')
+                self.send_header('Content-Length', str(len(payload)))
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+            except Exception as e:
+                return self.end_json(500, {"error": f"CSV export failed: {e}"})
+
         elif self.path == '/api/video/warnings' and self.command == 'GET':
             # R63a: board-wide warning summary
             if not _VIDEO_BRIDGE:
@@ -9812,6 +9831,16 @@ class GuildHandler(SimpleHTTPRequestHandler):
             result = _VIDEO_BRIDGE.board.batch_priority(shot_ids, priority)
             status = 200 if 'error' not in result else 400
             return self.end_json(status, result)
+
+        elif self.path == '/api/video/batch-randomize-seeds' and self.command == 'POST':
+            """R64a: fresh random seed per selected shot."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_ids = data.get('shot_ids', [])
+            if not shot_ids:
+                return self.end_json(400, {"error": "No shot_ids provided"})
+            result = _VIDEO_BRIDGE.board.batch_randomize_seeds(shot_ids)
+            return self.end_json(200, result)
 
         elif self.path == '/api/video/assemble' and self.command == 'POST':
             """Assemble shots into a video."""
