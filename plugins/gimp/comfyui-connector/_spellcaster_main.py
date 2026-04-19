@@ -4993,8 +4993,14 @@ def _rembg_post_process(server, filename, subfolder="", folder_type="output"):
 
 def _build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
                     left, top, right, bottom, feathering, loras=None, controlnet=None):
-    """→ Delegated to v2 builder."""
+    """→ Delegated to v2 builder, with method='outpaint' enhancement."""
     preset = _fix_preset_cfg(preset)
+    arch = preset.get("arch", "sdxl")
+    # Outpaint scope: describe what extends BEYOND the canvas, not the
+    # existing image. Profile caps at 40-80 words, reinforces "match
+    # the original's palette / lighting so the seam is invisible".
+    prompt_text, negative_text = _auto_enhance(prompt_text, arch, negative_text,
+                                                method="outpaint")
     return build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
                           left, top, right, bottom, feathering, loras=loras, controlnet=controlnet,
                           guide_modes=CONTROLNET_GUIDE_MODES)
@@ -5004,8 +5010,13 @@ def _build_style_transfer(target_filename, style_ref_filename, preset,
                            ipadapter_preset="PLUS (high strength)",
                            weight=0.8, denoise=0.6,
                            controlnet=None, controlnet_2=None, loras=None):
-    """→ Delegated to v2 builder."""
+    """→ Delegated to v2 builder, with method='style_transfer' enhancement."""
     preset = _fix_preset_cfg(preset)
+    arch = preset.get("arch", "sdxl")
+    # Style transfer: prompt describes the OUTPUT (scene default is fine
+    # — style_transfer method is registered as empty overlay).
+    prompt_text, negative_text = _auto_enhance(prompt_text, arch, negative_text,
+                                                method="style_transfer")
     return build_style_transfer(target_filename, style_ref_filename, preset,
                                 prompt_text, negative_text, seed,
                                 ipadapter_preset=ipadapter_preset,
@@ -5018,11 +5029,15 @@ def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text
                               seed, denoise, cfg, steps=None, scale_factor=2.0,
                               controlnet=None, controlnet_2=None, loras=None,
                               orig_width=512, orig_height=512):
-    """→ Delegated to v2 builder."""
+    """→ Delegated to v2 builder, with method='hallucinate' enhancement."""
     preset = _fix_preset_cfg(preset)
     arch = preset.get("arch", "sdxl")
     if arch in _CFG_OVERRIDE and cfg > _CFG_OVERRIDE[arch]:
         cfg = _CFG_OVERRIDE[arch]
+    # Detail hallucinate adds texture/detail without inventing new
+    # subjects — method='hallucinate' inherits from 'refine'.
+    prompt_text, negative_text = _auto_enhance(prompt_text, arch, negative_text,
+                                                method="hallucinate")
     return build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text, negative_text,
                                     seed, denoise, cfg, steps=steps,
                                     upscale_factor=scale_factor,
@@ -5033,11 +5048,15 @@ def _build_detail_hallucinate(image_filename, upscale_model, preset, prompt_text
 def _build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_text,
                     seed, denoise, cfg, steps, scale_factor, orig_width, orig_height,
                     controlnet=None, controlnet_2=None, loras=None):
-    """→ Delegated to v2 builder."""
+    """→ Delegated to v2 builder, with method='refine' enhancement."""
     preset = _fix_preset_cfg(preset)
     arch = preset.get("arch", "sdxl")
     if arch in _CFG_OVERRIDE and cfg > _CFG_OVERRIDE[arch]:
         cfg = _CFG_OVERRIDE[arch]
+    # Controllable upscale — prompt guides detail synthesis, not new
+    # subjects. Treat as refine scope.
+    prompt_text, negative_text = _auto_enhance(prompt_text, arch, negative_text,
+                                                method="refine")
     return build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_text,
                          seed, denoise, cfg, steps, scale_factor, orig_width, orig_height,
                          controlnet=controlnet, controlnet_2=controlnet_2,
@@ -14236,6 +14255,11 @@ class Spellcaster(Gimp.PlugIn):
                 src_name = f"gimp_hs_src_{uuid.uuid4().hex[:8]}.png"
                 _upload_image(srv, face_path, src_name)
 
+            # Head swap — prompt guides the new identity blended onto the
+            # target body. Face-specific scope.
+            prompt, _ = _auto_enhance(prompt, "flux2klein",
+                                       method="klein_face_detail")
+
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = build_klein_headswap(
@@ -14867,6 +14891,11 @@ class Spellcaster(Gimp.PlugIn):
             _upload_image(srv, fg_tmp_path, fg_name); os.unlink(fg_tmp_path)
             _upload_image(srv, bg_tmp_path, bg_name); os.unlink(bg_tmp_path)
 
+            # Blend — prompt describes the composited scene. Full scene
+            # scope (both fg subject and bg setting are already fixed by
+            # the input layers; LLM fills in atmosphere / lighting).
+            prompt, _ = _auto_enhance(prompt, "flux2klein", method="scene")
+
             km = KLEIN_MODELS[klein_key]
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
@@ -15334,6 +15363,10 @@ class Spellcaster(Gimp.PlugIn):
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_repose_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
+
+            # Repose preserves the subject and changes only the pose — treat
+            # as refine scope so the LLM doesn't invent new characters.
+            prompt, _ = _auto_enhance(prompt, "flux2klein", method="refine")
 
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
@@ -15892,6 +15925,12 @@ class Spellcaster(Gimp.PlugIn):
             uname = f"gimp_kinp_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
 
+            # Enhance once, use across all runs. method='klein_inpaint'
+            # narrows the LLM to "describe what fills the mask" so Klein
+            # doesn't invent a full scene for a tiny selection.
+            prompt, _ = _auto_enhance(prompt, "flux2klein",
+                                       method="klein_inpaint")
+
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = build_klein_inpaint(
@@ -16040,6 +16079,9 @@ class Spellcaster(Gimp.PlugIn):
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_detail_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
+            # Detail boost — preserves subject, adds quality/texture descriptors.
+            prompt, _ = _auto_enhance(prompt, "flux2klein",
+                                       method="klein_refine")
             wf = build_klein_detail(
                 uname, preset_key, prompt, seed,
                 klein_model_key=klein_key, steps=_steps, denoise=_denoise,
@@ -16177,6 +16219,11 @@ class Spellcaster(Gimp.PlugIn):
             tmp = _export_image_to_tmp(image)
             scene_uname = f"gimp_scene_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, scene_uname); os.unlink(tmp)
+            # Klein generate_object drops a described object into the
+            # scene — inpaint-scope (focus on the new object, not the
+            # whole scene which already exists).
+            prompt, _ = _auto_enhance(prompt, "flux2klein",
+                                       method="klein_inpaint")
             base_seed = seed
             for run_i in range(runs):
                 _seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
@@ -20957,6 +21004,12 @@ class Spellcaster(Gimp.PlugIn):
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_colorize_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
+            # Colorize scope: the LLM outputs ONLY colour/tone keywords
+            # (the subject comes from the B&W source). method='colorize'
+            # caps length at 15-30 words.
+            _cz_arch = preset.get("arch", "sdxl")
+            prompt, negative = _auto_enhance(prompt, _cz_arch, negative,
+                                              method="colorize")
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = build_colorize(uname, preset, prompt, negative, seed,
@@ -21281,6 +21334,10 @@ class Spellcaster(Gimp.PlugIn):
                         os.unlink(ntmp2.name)
                         # Also add the normal map as a layer for future use
                         _import_result_as_layer(image, ndata, "Normal Map (auto)", keep_size=True)
+            # IC-Light is a relight — prompt should describe lighting
+            # only (direction / colour / intensity / mood), NOT the
+            # subject which stays unchanged. IC-Light ships on SD 1.5.
+            prompt, _ = _auto_enhance(prompt, "sd15", method="iclight")
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = build_iclight(uname, ckpt_name, prompt, "", seed,
@@ -21777,6 +21834,9 @@ class Spellcaster(Gimp.PlugIn):
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_supir_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
+            # SUPIR is AI restoration — prompt adds quality/detail guidance,
+            # not new subjects. method='refine' caps at 15-40 words.
+            prompt, _ = _auto_enhance(prompt, "sdxl", method="refine")
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = build_supir(uname, "Other\\SUPIR-v0Q_fp16.safetensors", sdxl_model,

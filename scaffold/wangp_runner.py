@@ -143,6 +143,99 @@ WANGP_PRESETS: Dict[str, Dict[str, Any]] = {
         "vram_min_gb": 6,
         "notes": "Ultra-low VRAM talking-head video + audio.",
     },
+
+    # ─── R86: ComfyUI-backed presets ──────────────────────────────────
+    # These map to workflow JSONs at scaffold/workflows/<preset-key>.json.
+    # Shots using them must set backend="comfyui" — the video bridge's
+    # _queue_comfy path reads the JSON, patches in prompt / seed /
+    # ref_image via _patch_comfy_workflow, and sends to ComfyUI.
+    # `engine` is a new hint field: "comfyui" → Guild UI nudges the
+    # backend selector to ComfyUI.
+    "ltx2_image_to_video": {
+        "label": "LTX-2.3 Image-to-Video (ComfyUI)",
+        "family": "ltx",
+        "task": "i2v",
+        "engine": "comfyui",
+        "inputs": ["image", "prompt"],
+        "defaults": {"steps": 8, "guidance": 3.0, "frames": 121, "fps": 24,
+                     "resolution": "768x512"},
+        "vram_min_gb": 12,
+        "notes": "Footage-friendly: drop a frame in, get an animated "
+                  "clip back. Alternative to Wan i2v via ComfyUI. Use "
+                  "for restyling / extending individual shots.",
+    },
+    "ltx2_text_to_video_distilled": {
+        "label": "LTX-2.3 T2V Distilled (ComfyUI)",
+        "family": "ltx",
+        "task": "t2v",
+        "engine": "comfyui",
+        "inputs": ["prompt"],
+        "defaults": {"steps": 8, "guidance": 3.0, "frames": 121, "fps": 24,
+                     "resolution": "768x512"},
+        "vram_min_gb": 10,
+        "notes": "Fast LTX-2.3 t2v via ComfyUI. No audio (use "
+                  "ltx2_distilled if you want speech).",
+    },
+    "ltx2_text_to_video_2stage": {
+        "label": "LTX-2.3 T2V Two-Stage HQ (ComfyUI)",
+        "family": "ltx",
+        "task": "t2v",
+        "engine": "comfyui",
+        "inputs": ["prompt"],
+        "defaults": {"steps": 30, "guidance": 4.5, "frames": 121, "fps": 24,
+                     "resolution": "1280x720"},
+        "vram_min_gb": 16,
+        "notes": "Two-stage LTX-2.3 for maximum detail. Slower; use "
+                  "for finals and beauty passes.",
+    },
+    "ltx2_text_to_video": {
+        "label": "LTX-2.3 T2V Standard (ComfyUI)",
+        "family": "ltx",
+        "task": "t2v",
+        "engine": "comfyui",
+        "inputs": ["prompt"],
+        "defaults": {"steps": 20, "guidance": 4.0, "frames": 121, "fps": 24,
+                     "resolution": "1024x576"},
+        "vram_min_gb": 12,
+        "notes": "Baseline LTX-2.3 t2v at middling quality/speed tradeoff.",
+    },
+    "ltx2_t2v_with_rife_interpolation": {
+        "label": "LTX-2.3 T2V + RIFE (smooth 60fps)",
+        "family": "ltx",
+        "task": "t2v",
+        "engine": "comfyui",
+        "inputs": ["prompt"],
+        "defaults": {"steps": 20, "guidance": 4.0, "frames": 121, "fps": 60,
+                     "resolution": "1024x576"},
+        "vram_min_gb": 14,
+        "notes": "LTX t2v piped through RIFE for 60fps buttery output. "
+                  "Great for slow-mo sim.",
+    },
+    "ltx2_t2v_with_rtx_upscale": {
+        "label": "LTX-2.3 T2V + RTX Upscale",
+        "family": "ltx",
+        "task": "t2v",
+        "engine": "comfyui",
+        "inputs": ["prompt"],
+        "defaults": {"steps": 20, "guidance": 4.0, "frames": 121, "fps": 24,
+                     "resolution": "1920x1080"},
+        "vram_min_gb": 16,
+        "notes": "LTX t2v followed by NVIDIA RTX Video Super-Resolution "
+                  "to 1080p. Single-pass 'good-looking' preset.",
+    },
+    "seedvr2_video_upscale": {
+        "label": "SeedVR2 Video Upscaler (ComfyUI)",
+        "family": "seedvr2",
+        "task": "upscale",
+        "engine": "comfyui",
+        "inputs": ["video"],
+        "defaults": {"resolution": "1920x1080", "fps": 24},
+        "vram_min_gb": 12,
+        "notes": "AI video upscaler (2x-4x) — takes an existing clip and "
+                  "reprojects it at higher resolution with temporal "
+                  "consistency. Use on rendered Spellcaster clips before "
+                  "final delivery.",
+    },
 }
 
 
