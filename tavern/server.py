@@ -6521,7 +6521,17 @@ def _detect_wan_preset(comfy_url):
         except Exception:
             pass
 
-    # Auto-detect WAN VAE
+    # Auto-detect WAN VAE — MUST pair with the UNET family or the
+    # first conv layer explodes on channel mismatch. Observed in the
+    # wild:
+    #   wan2.2 14B I2V-A14B         patch_embedding = 36 ch input
+    #   wan2.2 5B TI2V              patch_embedding = 64 ch input
+    # The 14B I2V-A14B needs a 16-ch latent VAE (after WanImageToVideo
+    # adds the 20-ch conditioning concat → 36ch total). The 5B TI2V
+    # needs the 48-ch wan2.2_vae.safetensors (→ 64ch after concat).
+    # Picking the first "wan" VAE we find (prior behavior) gave
+    # wan2.2_vae.safetensors to every UNET — fine for the 5B, fatal
+    # for the 14B.
     try:
         url = f"{comfy_url}/object_info/VAELoader"
         req = urllib.request.Request(url)
@@ -6530,11 +6540,45 @@ def _detect_wan_preset(comfy_url):
             choices = (data.get("VAELoader", {})
                            .get("input", {}).get("required", {})
                            .get("vae_name", []))
-            if choices and isinstance(choices, list) and choices[0]:
-                for v in choices[0]:
-                    if "wan" in v.lower():
-                        wan_vae = v
-                        break
+        vae_list = choices[0] if (choices and isinstance(choices, list)
+                                    and choices[0]) else []
+
+        unet_l = (wan_high or "").lower()
+        is_14b_i2v = ("14b" in unet_l and "i2v" in unet_l)
+        is_5b_ti2v = ("5b" in unet_l and "ti2v" in unet_l)
+
+        # Preference lists per UNET family. First match wins.
+        if is_14b_i2v:
+            prefer = ("wan_2.1_vae", "wan2_1_vae", "wan2.1_vae",
+                      "wan2_2_vae_14b", "wan2.2_vae_14b")
+            avoid  = ("wan2.2_vae",)  # the TI2V-5B VAE — crashes on 14B
+        elif is_5b_ti2v:
+            prefer = ("wan2.2_vae", "wan_2.2_vae", "wan2_2_vae")
+            avoid  = ()
+        else:
+            prefer = ("wan",)
+            avoid  = ()
+
+        # First pass: try preferred names
+        for pref in prefer:
+            for v in vae_list:
+                vl = v.lower()
+                if pref in vl and not any(a in vl for a in avoid):
+                    wan_vae = v; break
+            if wan_vae: break
+
+        # Fallback: first "wan" that doesn't match the avoid list
+        if not wan_vae:
+            for v in vae_list:
+                vl = v.lower()
+                if "wan" in vl and not any(a in vl for a in avoid):
+                    wan_vae = v; break
+
+        if wan_vae:
+            fam = ("14B I2V" if is_14b_i2v
+                   else "5B TI2V" if is_5b_ti2v else "generic")
+            print(f"  [Guild] WAN VAE pairing: family={fam} "
+                  f"unet={wan_high} vae={wan_vae}")
     except Exception:
         pass
 
