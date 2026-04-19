@@ -389,25 +389,39 @@ class VideoBridge:
         "ltx2_t2v_with_rtx_upscale",
         "ltx2_image_to_video",
     )
+    _NATIVE_UPSCALE_PRESETS = (
+        # R134 — video-in presets. The dispatcher takes
+        # shot.overrides.input_video (not shot.ref_image) and uploads
+        # the source mp4 to ComfyUI's input/ before submitting.
+        "seedvr2_video_upscale",
+    )
     _NATIVE_I2V_PRESETS = (
         "wan22_i2v_lightning", "wan22_i2v_hq",
         "ltx2_image_to_video",
     )
 
     def _should_try_native_wan(self, shot: Shot) -> bool:
-        """Native ComfyUI routing for wan22_* and ltx2_* presets.
-        i2v variants need a ref image; t2v doesn't."""
+        """Native ComfyUI routing for wan22_* / ltx2_* / seedvr2_*
+        presets. Different presets have different input requirements:
+        - i2v presets need a ref image in shot.ref_image
+        - Upscale presets need a video in shot.overrides.input_video
+        - t2v presets need nothing
+        """
         if not _NATIVE_DISPATCH_AVAILABLE:
             return False
-        if shot.preset not in (self._NATIVE_WAN_PRESETS
-                                 + self._NATIVE_LTX2_PRESETS):
+        native = (self._NATIVE_WAN_PRESETS
+                   + self._NATIVE_LTX2_PRESETS
+                   + self._NATIVE_UPSCALE_PRESETS)
+        if shot.preset not in native:
             return False
-        # Need ComfyUI reachable — fail fast before building anything
         if not self.comfy.is_available():
             return False
-        # i2v variants require a reference image; t2v doesn't.
         if shot.preset in self._NATIVE_I2V_PRESETS:
             if not shot.ref_image or not os.path.isfile(shot.ref_image):
+                return False
+        if shot.preset in self._NATIVE_UPSCALE_PRESETS:
+            iv = (shot.overrides or {}).get("input_video")
+            if not iv or not os.path.isfile(iv):
                 return False
         return True
 
@@ -421,6 +435,7 @@ class VideoBridge:
         ref_basename: Optional[str] = None
         input_filenames: List[str] = []
         needs_ref = shot.preset in self._NATIVE_I2V_PRESETS
+        needs_video = shot.preset in self._NATIVE_UPSCALE_PRESETS
         if needs_ref:
             ref_basename = os.path.basename(shot.ref_image)
             try:
@@ -431,6 +446,16 @@ class VideoBridge:
             except Exception as e:  # noqa: BLE001
                 return {"status": "error",
                         "message": f"couldn't upload ref image: {e}"}
+        elif needs_video:
+            iv = (shot.overrides or {}).get("input_video", "")
+            ref_basename = os.path.basename(iv)
+            try:
+                with open(iv, "rb") as _vf:
+                    self.comfy.upload_image(_vf.read(), ref_basename)
+                input_filenames.append(ref_basename)
+            except Exception as e:  # noqa: BLE001
+                return {"status": "error",
+                        "message": f"couldn't upload input video: {e}"}
 
         defaults = (describe_preset(shot.preset) or {}).get("defaults") or {}
         width_h = defaults.get("resolution", "832x480").split("x")
