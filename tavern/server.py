@@ -8335,6 +8335,50 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "color1": char.get("color1", "#B246F2"),
                 "color2": char.get("color2", "#6C63FF"),
             })
+        elif self.path.startswith('/api/workflows/list'):
+            # R141: discover user-saved ComfyUI workflows for the
+            # Travelling Wizard's Workflow Library tab. Wraps
+            # scaffold.discover_workflows() so the Guild remains the
+            # single source of truth — no ComfyUI-side custom endpoint
+            # to maintain, no sync across the 3 spellcaster_core
+            # copies. Query params:
+            #   ?paths=C:/extra/path,/another  (optional, comma-
+            #      separated extra search roots alongside the defaults)
+            try:
+                from scaffold.workflow_parser import discover_workflows
+            except Exception as e:
+                return self.end_json(500, {
+                    "error": f"scaffold.workflow_parser missing: {e}",
+                })
+            import urllib.parse as _up
+            qs = _up.urlparse(self.path).query
+            extra_paths = []
+            if qs:
+                p = _up.parse_qs(qs).get("paths", [""])[0]
+                extra_paths = [x.strip() for x in p.split(",") if x.strip()]
+            try:
+                entries = discover_workflows(
+                    search_dirs=extra_paths or None)
+            except Exception as e:
+                return self.end_json(500, {
+                    "error": f"discover_workflows raised: {e}",
+                    "workflows": [],
+                })
+            # Flatten to dicts. Add a stable `id` field so the UI can
+            # use it as a React key without touching the absolute path.
+            import hashlib as _h
+            out = []
+            for e in entries:
+                d = e.to_dict()
+                d["id"] = _h.sha1(d["path"].encode("utf-8")).hexdigest()[:16]
+                out.append(d)
+            # Categories for the UI's quick-filter chips.
+            cats = sorted({d["category"] for d in out})
+            return self.end_json(200, {
+                "workflows": out,
+                "categories": cats,
+                "total": len(out),
+            })
         elif self.path == '/api/characters':
             visible = [c for c in CHARS_CACHE if c['id'] not in _BANISHED_IDS]
             return self.end_json(200, visible)
