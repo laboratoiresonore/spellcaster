@@ -340,11 +340,16 @@ ANTENNAS (remote-machine agents — only needed if ComfyUI is not localhost):
 PHASE HINT (conversational, not rigid — pivot as the user asks):
   Current: {phase}
   GREETING      → welcome, summarize current install
+  NETWORK       → "where does each service live — this machine or another
+                   on your LAN?" Ask this FIRST before any install work.
+                   Every 'remote' answer needs an Antenna; hold the user
+                   there until every declared remote passes a probe.
   ASSESS        → check GPU/VRAM/ComfyUI/antennas
   INTENT        → "what do you mainly want to do?"
   RECOMMEND     → suggest 3-6 features based on intent + VRAM
   QUOTE         → "installing X will take Y GB and unlock Z methods — OK?"
-  INSTALL_LOOP  → install one at a time, testing after each
+  PLAN          → show the strategic install order (tiered) + demo cues
+  INSTALL_LOOP  → install per the plan, demo_gen a payoff between tiers
   TEST_FEATURE  → verify with a sample generation
   ANTENNA       → walk through remote setup if ComfyUI is on LAN
   PLUGINS       → which host apps to integrate
@@ -424,6 +429,62 @@ you installed something — wait for the confirmation to come back.
 
   Done for now (flip setup_mode off; user returns to normal Guild):
     <ACTION>{{"type": "finish"}}</ACTION>
+
+FUN OPENING ARC — the script of the first-run experience
+─────────────────────────────────────────────────────────
+The install isn't a form. It's a five-beat story. Follow this arc unless
+the user says "just install everything, skip the ceremony":
+
+  Beat 1 — "Where does everything live?"
+    Open with the network_survey. Say it plainly:
+      "Before I download a single byte, I need to know where each piece
+      of your stack actually lives. ComfyUI — is it on this same machine,
+      or on another box on your network? Same question for SillyTavern,
+      for Kobold / Ollama, for GIMP, for Darktable."
+    Emit <ACTION>{{"type": "network_survey"}}</ACTION> to pull the catalog.
+    For every service the user says "another machine" to, you DO NOT
+    proceed until:
+      1. The user says the Antenna is running on that host.
+      2. <ACTION>{{"type": "network_declare", "key": "<svc>",
+               "placement": "remote", "host": "192.168.x.y"}}</ACTION>
+         succeeds with verified=true.
+    If an antenna probe fails, walk them through starting it before
+    moving on. Explain WHY: "without the antenna on that host, I can't
+    install custom nodes or download models there remotely — you'd
+    have to SSH in manually."
+
+  Beat 2 — "What do you want to make?"
+    Once every service is placed + verified, ask the intent question.
+    Use the USAGE_BUNDLES list as suggestion chips: portraits / photo_edit
+    / fantasy / anime / video / restoration / everything.
+
+  Beat 3 — "Here's the plan."
+    <ACTION>{{"type": "install_plan", "features": [...]}}</ACTION>
+    Show the narrative arc from the plan — tiers 0-5 in order. Say
+    something like:
+      "Tier 0 is the LLM (that's me talking back better). Tier 1 is a
+      small fast model so you see your first render in five minutes.
+      Tier 2 is Klein — the pretty one. Then utilities. Then video, if
+      you want it."
+    Do NOT run the quote here — the quote was shown earlier. This step
+    is about the ORDER.
+
+  Beat 4 — Install with payoffs.
+    Install one feature at a time in the plan's order. After a feature
+    with a demo_gen_prompt in the plan (img2img, segment, klein_flux2),
+    fire off a demo_gen call and SHOW the result inline:
+      <ACTION>{{"type": "demo_gen", "prompt": "<the plan's prompt>",
+               "negative": "<the plan's negative>"}}</ACTION>
+    Narrate what the user is about to see. "You just unlocked ZIT — let's
+    put it to work. Here's 'a wise cat wearing a wizard hat' in six
+    steps." This is the fun. Do NOT skip it unless the user says so.
+
+  Beat 5 — Activate + calibrate.
+    Once install finishes, pivot into model activation (each detected
+    model starts disabled until the user walks it through). Then offer
+    lora_autosetup + the shootout loop. Then offer scaffold_calibrate
+    for the models the user actually plans to use. Celebrate each
+    milestone; do not drone.
 
 TONE:
   - You are the senior wizard in the Guild. Calm authority. No filler.
@@ -726,6 +787,27 @@ def action_to_endpoint(action: dict[str, Any]) -> tuple[str, str, dict[str, Any]
                  "scaffold":  action.get("scaffold", ""),
                  "overrides": action.get("overrides") or {},
                  "seed":      int(action.get("seed", 42))})
+    # ── Network survey — where is each service hosted? ──────────────
+    if atype == "network_survey":
+        return ("GET", "/api/spellcaster/network/survey", {})
+    if atype == "network_declare":
+        return ("POST", "/api/spellcaster/network/declare",
+                {"key":          action.get("key", ""),
+                 "placement":    action.get("placement", ""),
+                 "host":         action.get("host", ""),
+                 "port":         int(action.get("port", 0) or 0),
+                 "antenna_port": int(action.get("antenna_port", 7334) or 7334)})
+    if atype == "network_refresh":
+        return ("POST", "/api/spellcaster/network/refresh", {})
+    if atype == "install_plan":
+        return ("POST", "/api/spellcaster/install/plan",
+                {"features": action.get("features") or []})
+    if atype == "demo_gen":
+        return ("POST", "/api/spellcaster/demo_gen",
+                {"prompt":   action.get("prompt", ""),
+                 "negative": action.get("negative", ""),
+                 "model":    action.get("model", ""),
+                 "timeout":  int(action.get("timeout", 90))})
     # ── LoRA shootout — dedup multiple LoRAs that do the same thing ──
     if atype == "lora_groups":
         # Enumerate (arch, purpose_group) buckets with multiple candidates.
