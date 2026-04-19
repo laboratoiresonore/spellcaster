@@ -228,6 +228,9 @@ class Shot:
     # from color_label (single categorical) and bookmarked (single bool).
     # Useful for: "hero", "needs-vfx", "wide-shot", "dreamlike", etc.
     tags: List[str] = field(default_factory=list)
+    # R76b: 0-5 star rating. 0 = unrated. Used to track quality judgments
+    # on rendered outputs; filter chip shows "★★★+ (12)".
+    rating: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
