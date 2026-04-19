@@ -61,9 +61,15 @@
                     <span id="llm-dot" class="dot red"></span>
                     <span id="llm-status" title="">LLM: Disconnected</span>
                 </div>
+                <!-- Only the VRAM / RAM / cache health strip is shown
+                     here. The "ComfyUI: Disconnected/Connected" label
+                     moved into the Connected-apps synthetic chip. Dot
+                     + label stay in the DOM so the existing poller
+                     (checkComfyConnection) can still write into them
+                     — display:none just hides them from view. -->
                 <div id="comfy-indicator-container">
-                    <span id="comfy-dot" class="dot red"></span>
-                    <span id="comfy-status">ComfyUI: Disconnected</span>
+                    <span id="comfy-dot" class="dot red" style="display:none"></span>
+                    <span id="comfy-status" style="display:none">ComfyUI: Disconnected</span>
                     <div id="comfy-health-stats" class="health-stats"></div>
                 </div>
                 <!-- SillyTavern + Signal Bridge used to have standalone

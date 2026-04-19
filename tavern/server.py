@@ -8733,6 +8733,15 @@ class GuildHandler(SimpleHTTPRequestHandler):
             # alias lookups and is stripped here.
             snap.pop("host_url", None)
             return self.end_json(200, snap)
+        elif self.path == '/api/user_settings':
+            # Server-side mirror of per-user UI choices that used to
+            # live only in localStorage (guild_preset etc.). The
+            # frontend POSTs on every change; GET returns the stored
+            # map so a fresh browser still sees the same preferences.
+            cfg = _guided_install_load_config()
+            return self.end_json(200, {
+                "user_settings": cfg.get("user_settings") or {},
+            })
         elif self.path == '/api/app_control/config':
             # GET the per-app control matrix: auto_start flag + target
             # machine (local or antenna hostname) for every known app.
@@ -10630,6 +10639,28 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "port": port,
                 "note": "token stored. Antenna + chip row will refresh next poll.",
             })
+
+        elif self.path == '/api/user_settings' and self.command == 'POST':
+            # Accepts {"key": "...", "value": ...} OR {"settings": {...}}.
+            # Merges into guild_config.user_settings and persists via the
+            # same atomic tempfile-replace that protects app_control.
+            cfg = _guided_install_load_config()
+            settings = dict(cfg.get("user_settings") or {})
+            if isinstance(data.get("settings"), dict):
+                settings.update(data["settings"])
+            elif data.get("key"):
+                k = str(data["key"]).strip()
+                if not k:
+                    return self.end_json(400, {"error": "empty key"})
+                settings[k] = data.get("value")
+            else:
+                return self.end_json(400, {
+                    "error": "expected {key, value} or {settings: {...}}",
+                })
+            cfg["user_settings"] = settings
+            ok = _guided_install_save_config(cfg)
+            return self.end_json(200 if ok else 500,
+                                  {"ok": ok, "user_settings": settings})
 
         elif self.path == '/api/app_control/config' and self.command == 'POST':
             # Persist per-app control settings. Shape:
