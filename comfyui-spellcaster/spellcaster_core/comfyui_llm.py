@@ -118,6 +118,102 @@ _MODEL_PREFERENCE = [
     "qwen3-8b",
 ]
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  PER-FAMILY LLM MANAGEMENT
+# ═══════════════════════════════════════════════════════════════════════════
+# Every diffusion family has a different VRAM profile and a different
+# prompt-length target. The LLM we run on the SAME ComfyUI GPU competes
+# with the diffusion model for that VRAM; the bigger the diffusion model,
+# the more aggressive we have to be about unloading the LLM after each
+# enhancement call. On the other end of the spectrum, tiny families like
+# SD 1.5 (~2 GB) leave enough headroom that we can leave the LLM warm
+# across turns and save the 0.8 s reload each time.
+#
+# Fields
+# ──────
+#   keep_model_loaded   False = unload LLM after enhance (default, safe).
+#                       True  = keep it resident (only on small diffusion
+#                               families + plenty of VRAM).
+#   keep_last_prompt    True  = cache the last prompt text server-side so
+#                               repeated same-prompt calls short-circuit.
+#                               Useful for iterative-seed workflows.
+#   max_quant_bits      Cap on the LLM quantisation we're willing to load.
+#                       4 = Q4_K_M (~2.5 GB). 5 = Q5_K_M (~3 GB). 8 = Q8
+#                       (~4.5 GB). Families with large diffusion models
+#                       should stay at 4; text-only tasks can go higher.
+#   max_model_size_b    Cap on the LLM parameter count in billions. 4 for
+#                       most image families, 8 only when the diffusion
+#                       model is tiny or video generation is so slow that
+#                       an extra 2 GB of LLM doesn't matter.
+#   poll_timeout_s      How long to wait for the LLM to finish. Tuned per
+#                       prompt-length target in the arch profile — longer
+#                       targets (LTX 100-200 words) need longer timeouts.
+#
+# When a caller passes arch_key to generate_text, the matching family
+# config's extra_inputs override the defaults baked into
+# _LLM_NODE_CANDIDATES (which stay safe for unknown families).
+_PER_FAMILY_LLM_CONFIG = {
+    # SDXL (~6-8 GB): tight on 8 GB cards. Unload LLM, 4B quant only.
+    "sdxl":        {"keep_model_loaded": False, "keep_last_prompt": False,
+                    "max_quant_bits": 4, "max_model_size_b": 4,
+                    "poll_timeout_s": 45},
+    # Illustrious / Pony are SDXL finetunes — same VRAM footprint.
+    "illustrious": {"keep_model_loaded": False, "keep_last_prompt": False,
+                    "max_quant_bits": 4, "max_model_size_b": 4,
+                    "poll_timeout_s": 45},
+    "pony":        {"keep_model_loaded": False, "keep_last_prompt": False,
+                    "max_quant_bits": 4, "max_model_size_b": 4,
+                    "poll_timeout_s": 45},
+    # SD 1.5 (~2 GB): lots of headroom. Keep LLM resident for fast
+    # iteration; cache last prompt so same-seed re-rolls don't re-query.
+    "sd15":        {"keep_model_loaded": True,  "keep_last_prompt": True,
+                    "max_quant_bits": 8, "max_model_size_b": 8,
+                    "poll_timeout_s": 30},
+    # Flux 1 Dev (~12-16 GB): must unload LLM, tight quant.
+    "flux1dev":    {"keep_model_loaded": False, "keep_last_prompt": False,
+                    "max_quant_bits": 4, "max_model_size_b": 4,
+                    "poll_timeout_s": 60},   # 80-150 word target
+    # Flux 2 Klein (~11-14 GB): same pressure.
+    "flux2klein":  {"keep_model_loaded": False, "keep_last_prompt": False,
+                    "max_quant_bits": 4, "max_model_size_b": 4,
+                    "poll_timeout_s": 45},
+    # Chroma uses the Flux 2 engine.
+    "chroma":      {"keep_model_loaded": False, "keep_last_prompt": False,
+                    "max_quant_bits": 4, "max_model_size_b": 4,
+                    "poll_timeout_s": 45},
+    # Flux Kontext (edit-instructions): skip enhancement; kept for
+    # completeness so callers that still invoke it get safe defaults.
+    "flux_kontext":{"keep_model_loaded": False, "keep_last_prompt": False,
+                    "max_quant_bits": 4, "max_model_size_b": 4,
+                    "poll_timeout_s": 30},
+    # Video: generation takes minutes — reload cost is noise. Use a
+    # roomier quant for better cinematic vocabulary (Q5_K_M fits 4B in
+    # ~3 GB), and push the poll timeout up because video prompts are
+    # long (80-150 words for WAN, 100-200 for LTX).
+    "wan":         {"keep_model_loaded": False, "keep_last_prompt": False,
+                    "max_quant_bits": 5, "max_model_size_b": 4,
+                    "poll_timeout_s": 75},
+    "ltx":         {"keep_model_loaded": False, "keep_last_prompt": False,
+                    "max_quant_bits": 5, "max_model_size_b": 4,
+                    "poll_timeout_s": 90},
+}
+
+# Default config for families not in the table (unknown archs, custom
+# registrations). Conservative: unload, 4B/Q4, 45s timeout.
+_DEFAULT_FAMILY_CONFIG = {
+    "keep_model_loaded": False, "keep_last_prompt": False,
+    "max_quant_bits": 4, "max_model_size_b": 4,
+    "poll_timeout_s": 45,
+}
+
+
+def _family_config(arch_key):
+    """Return the per-family LLM-management config for an arch key,
+    falling back to conservative defaults for unknown families.
+    """
+    return _PER_FAMILY_LLM_CONFIG.get(arch_key or "", _DEFAULT_FAMILY_CONFIG)
+
 # Cache: comfy_url -> discovery result dict (or None).
 # WHY cache: /object_info calls are slow (~200ms each) and the node inventory
 # doesn't change during a session. Cleared via invalidate_cache().
@@ -216,10 +312,50 @@ def _find_text_output_node(url):
     return None
 
 
-def _pick_model(models, exclude=None):
+def _model_quant_bits(name):
+    """Parse a GGUF filename for quantisation bit count.
+    Qwen3-4B-Instruct-Q4_K_M.gguf → 4, ...Q5_K_M... → 5, ...Q8_0... → 8,
+    fp16 / f16 → 16. Unknown → 8 (treat as heavy, so filters err on safe).
+    """
+    low = (name or "").lower()
+    if "f16" in low or "fp16" in low:
+        return 16
+    if "q8" in low:
+        return 8
+    if "q6" in low:
+        return 6
+    if "q5" in low:
+        return 5
+    if "q4" in low:
+        return 4
+    if "q3" in low:
+        return 3
+    if "q2" in low:
+        return 2
+    return 8
+
+
+def _model_size_b(name):
+    """Parse a GGUF filename for parameter count in billions.
+    Substring match on -4b- / -8b- / -13b- etc. Unknown → 999 so the
+    filter treats it as larger than any cap.
+    """
+    low = (name or "").lower()
+    for n in (1, 2, 3, 4, 6, 7, 8, 13, 14, 20, 30, 34, 70):
+        if f"-{n}b-" in low or f"-{n}b." in low or f"_{n}b_" in low \
+                or f"_{n}b." in low or f":{n}b" in low:
+            return n
+    return 999
+
+
+def _pick_model(models, exclude=None, arch_key=None):
     """Choose the best model from the available list.
 
     Skips models in _failed_models (not downloaded) and any in exclude set.
+    When arch_key is given, filters models whose quantisation or size
+    exceed the family's cap (see _PER_FAMILY_LLM_CONFIG) — so SDXL won't
+    try to load a Q8 8B model into a GPU that also has to host the SDXL
+    checkpoint.
     """
     # Combine permanently-failed models with this call's exclusion set
     skip = _failed_models | (exclude or set())
@@ -229,6 +365,19 @@ def _pick_model(models, exclude=None):
         # This handles the edge case where a model was re-downloaded since
         # the last attempt.
         available = models
+
+    # Apply per-family caps if we know the arch. We DON'T apply this before
+    # the _failed_models fallback above — if every preferred model failed
+    # we'd rather try an oversized one than return nothing.
+    if arch_key:
+        cfg = _family_config(arch_key)
+        max_bits = cfg.get("max_quant_bits", 4)
+        max_size = cfg.get("max_model_size_b", 4)
+        filtered = [m for m in available
+                    if _model_quant_bits(m) <= max_bits
+                    and _model_size_b(m) <= max_size]
+        if filtered:  # keep the cap; if it empties the list, fall through
+            available = filtered
 
     # Walk the preference list: first substring match in available models wins
     for pref in _MODEL_PREFERENCE:
@@ -251,12 +400,20 @@ def _pick_model(models, exclude=None):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def generate_text(comfy_url, prompt, system_prompt="", model=None,
-                  max_tokens=300, temperature=0.7):
+                  max_tokens=300, temperature=0.7, arch_key=None):
     """Generate text via a ComfyUI LLM node.
 
     Builds a single-node workflow, submits it, and polls for the result.
     If the chosen model isn't downloaded, automatically retries with the
     next best model (up to 3 attempts).
+
+    arch_key (optional): diffusion family this text will feed (sdxl,
+    sd15, flux1dev, flux2klein, chroma, illustrious, pony, wan, ltx,
+    flux_kontext). Controls LLM-side VRAM management via
+    _PER_FAMILY_LLM_CONFIG: model size / quant caps, keep_model_loaded
+    override, poll timeout, keep_last_prompt hint. Families with large
+    diffusion models stay on smaller LLM quants and always unload;
+    SD 1.5 (tiny diffusion) stays warm across calls.
 
     Returns the generated text string, or None on any failure.
     This function never raises — all errors return None so callers
@@ -269,6 +426,10 @@ def generate_text(comfy_url, prompt, system_prompt="", model=None,
         if not info:
             return None
 
+        # Per-family VRAM / timeout profile. Falls back to safe defaults
+        # when arch_key is None or unrecognised.
+        fam = _family_config(arch_key)
+
         tried = set()
         # If caller specified a model, don't retry with alternatives —
         # they asked for that specific model. Otherwise try up to 3
@@ -277,20 +438,24 @@ def generate_text(comfy_url, prompt, system_prompt="", model=None,
 
         for attempt in range(max_retries):
             chosen = model if model else _pick_model(info["models"],
-                                                     exclude=tried)
+                                                     exclude=tried,
+                                                     arch_key=arch_key)
             if chosen in tried:
                 break  # _pick_model returned one we already tried = exhausted
             tried.add(chosen)
 
             wf = _build_workflow(info, prompt, system_prompt, chosen,
-                                 max_tokens, temperature)
+                                 max_tokens, temperature, family=fam)
 
             pid = _submit(url, wf)
             if not pid:
                 return None  # Server unreachable or rejected the workflow
 
+            # Poll timeout scales with the family's prompt-length target:
+            # LTX needs 100-200 words → 90 s; SDXL 40-100 → 45 s; SD 1.5
+            # short tags → 30 s. Default 45 when the arch is unknown.
             text, error = _poll_result(url, pid, info["output_name"],
-                                       timeout=90)
+                                       timeout=fam.get("poll_timeout_s", 45))
 
             # "not found" = GGUF file listed in node dropdown but not actually
             # downloaded on the server. Mark it failed so future calls skip it.
@@ -314,11 +479,16 @@ def generate_text(comfy_url, prompt, system_prompt="", model=None,
 
 
 def _build_workflow(info, prompt, system_prompt, model,
-                    max_tokens, temperature):
+                    max_tokens, temperature, family=None):
     """Build a ComfyUI workflow for text generation.
 
     Includes an output node (required by ComfyUI) that captures the
     generated text so it appears in /history/{prompt_id} outputs.
+
+    family (optional): per-family LLM-management config (from
+    _PER_FAMILY_LLM_CONFIG). Overrides keep_model_loaded /
+    keep_last_prompt baked into info["extra_inputs"] so SD 1.5 can keep
+    the LLM warm while Flux / Klein / WAN / LTX force an unload.
     """
     inputs = {
         info["model_field"]: model,
@@ -334,6 +504,12 @@ def _build_workflow(info, prompt, system_prompt, model,
     for k, v in info["extra_inputs"].items():
         if k not in inputs:
             inputs[k] = v
+    # Per-family overrides LAST so they win over the node's default
+    # extra_inputs. Both fields are boolean in the AILab node schema.
+    if family:
+        for key in ("keep_model_loaded", "keep_last_prompt"):
+            if key in family:
+                inputs[key] = bool(family[key])
 
     workflow = {
         "1": {
