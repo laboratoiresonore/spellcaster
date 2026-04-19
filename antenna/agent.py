@@ -206,6 +206,18 @@ def _build_routes(cfg: dict[str, Any]) -> dict[tuple[str, str], Callable]:
         print(f"[antenna] WARN: services endpoint failed to import: {e}",
               file=sys.stderr)
 
+    # LLM install + status — always registered. /llm/install is the gating
+    # piece that lets the Guild's setup wizard bootstrap a local LLM on a
+    # remote ComfyUI host the user can't SSH into. /llm/status is a cheap
+    # probe the wizard calls before deciding whether install is even needed.
+    try:
+        from .endpoints import llm as llm_ep
+        routes[("GET",  "/llm/status")]  = llm_ep.status
+        routes[("POST", "/llm/install")] = llm_ep.install_llm
+    except ImportError as e:
+        print(f"[antenna] WARN: llm endpoint failed to import: {e}",
+              file=sys.stderr)
+
     # self-update is always available — it's how the agent updates itself.
     # Any import failure here is critical to surface so operators can
     # debug it — otherwise they see mysterious "no such endpoint" 404s.
