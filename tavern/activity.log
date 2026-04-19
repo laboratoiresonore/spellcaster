@@ -1,0 +1,3 @@
+{"ts": 1776579353.1450624, "action": "shot_created", "shot_id": "1c53d3f0bfc54143bd1e5511fd9eefd9", "title": "Smoke A"}
+{"ts": 1776579353.1490655, "action": "shot_created", "shot_id": "50f76af44ed543de8e75a040717f3dfe", "title": "Smoke B"}
+{"ts": 1776579353.151064, "action": "timeline_imported", "timeline": "smoke-test", "total": 2, "created": 2, "matched": 0, "failed": 0}

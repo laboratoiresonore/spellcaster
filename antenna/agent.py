@@ -208,8 +208,9 @@ def _build_routes(cfg: dict[str, Any]) -> dict[tuple[str, str], Callable]:
         # install (the install logic has no Resolve-API dependency).
         try:
             from .endpoints import resolve_plugin as resolve_plugin_ep
-            routes[("GET",  "/resolve/plugin/status")]  = resolve_plugin_ep.status
-            routes[("POST", "/resolve/plugin/install")] = resolve_plugin_ep.install
+            routes[("GET",  "/resolve/plugin/status")]    = resolve_plugin_ep.status
+            routes[("POST", "/resolve/plugin/install")]   = resolve_plugin_ep.install
+            routes[("POST", "/resolve/plugin/configure")] = resolve_plugin_ep.configure
         except ImportError as e:
             print(f"[antenna] resolve_plugin endpoint failed to import: {e}",
                   file=sys.stderr)
