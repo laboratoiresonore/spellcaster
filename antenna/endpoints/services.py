@@ -63,6 +63,27 @@ def start_service(ctx: dict[str, Any]) -> tuple[int, dict]:
     return status, result
 
 
+def stop_service(ctx: dict[str, Any]) -> tuple[int, dict]:
+    """POST /service/stop — kill the child we launched (or port-reap)."""
+    body = ctx.get("body") or {}
+    name = (body.get("service") or "").strip().lower()
+    if name not in ("comfyui", "kobold", "ollama"):
+        return 400, {"error": f"service must be one of comfyui/kobold/ollama, "
+                               f"got {name!r}"}
+    cfg = ctx.get("config") or {}
+    try:
+        result = _sl.stop_service(name, cfg)
+    except Exception as e:  # noqa: BLE001
+        return 500, {"error": f"stop failed: {type(e).__name__}: {e}"}
+    # Notify the tray so the user sees the transition.
+    try:
+        from .. import agent as _agent
+        _agent.notify(f"{name} stopped", f"state={result.get('state')}")
+    except Exception:  # noqa: BLE001
+        pass
+    return 200, result
+
+
 def detector_diag(ctx: dict[str, Any]) -> tuple[int, dict]:
     """GET /diag/detector — R57 diagnostic: what did the service detector
     find on this machine, with which strategy, and what's in its cache?

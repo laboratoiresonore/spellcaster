@@ -311,6 +311,7 @@ def _build_routes(cfg: dict[str, Any]) -> dict[tuple[str, str], Callable]:
     try:
         from .endpoints import services as services_ep
         routes[("POST", "/service/start")] = services_ep.start_service
+        routes[("POST", "/service/stop")]  = services_ep.stop_service
         routes[("GET",  "/service/logs")]  = services_ep.service_logs
         routes[("GET",  "/diag/detector")] = services_ep.detector_diag
     except ImportError as e:
