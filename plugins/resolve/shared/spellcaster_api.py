@@ -231,6 +231,25 @@ class GuildClient:
         return self._post_json(f"/api/video/shots/{shot_id}/clone",
                                {"prompt_variation": prompt_variation})
 
+    # ── Timeline import (Resolve → Shotboard round-trip) ─────────────
+
+    def import_timeline(self, *, timeline_name: str, fps: float,
+                          clips: list) -> dict:
+        """R83: POST a captured Resolve timeline for Shotboard ingestion.
+
+        `clips` is a list of dicts as produced by
+        resolve_helpers.walk_timeline_clips — optionally enriched with
+        `reference_b64` per-clip first-frame PNGs. The Guild creates a
+        new Scene for this import cohort, matches existing shots by
+        `spellcaster_shot_id`, and drafts new ones for clips that have
+        no Spellcaster metadata yet. See server.py:/api/video/import-timeline.
+        """
+        return self._post_json("/api/video/import-timeline", {
+            "timeline_name": timeline_name,
+            "fps": fps,
+            "clips": clips,
+        }, timeout=60.0)
+
     # ── Attachments ──────────────────────────────────────────────────
 
     def attach_reference(self, shot_id: str, png_bytes: bytes) -> dict:

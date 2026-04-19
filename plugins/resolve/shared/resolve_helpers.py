@@ -357,6 +357,104 @@ def detect_gap_at_playhead(timeline=None) -> dict | None:
     return None
 
 
+# ─── Timeline walker (capture for Shotboard import) ─────────────────────
+
+
+def walk_timeline_clips(timeline=None, *, tracks: str = "V1") -> list[dict]:
+    """R83: walk clips on the current timeline and return a list of dicts
+    suitable for POST /api/video/import-timeline.
+
+    `tracks` supports:
+       "V1"  — only the first video track (default; matches editor intent)
+       "all" — every video track (useful for multi-cam / VFX stacks)
+
+    Each returned dict has:
+       clip_name, track, start_frame, end_frame, duration_frames,
+       spellcaster_shot_id (if the clip carries a [SC] marker),
+       marker_meta (full JSON from the [SC] marker if present)
+    """
+    timeline = timeline or get_current_timeline()
+    if not timeline:
+        return []
+    try:
+        track_count = int(timeline.GetTrackCount("video") or 0)
+    except Exception:
+        track_count = 0
+    if track_count <= 0:
+        return []
+
+    if tracks.lower() == "all":
+        track_indices = range(1, track_count + 1)
+    else:
+        track_indices = [1] if track_count >= 1 else []
+
+    out: list[dict] = []
+    for tidx in track_indices:
+        try:
+            items = timeline.GetItemListInTrack("video", tidx) or []
+        except Exception:
+            continue
+        for it in items:
+            try:
+                start = int(it.GetStart())
+                end = int(it.GetEnd())
+            except Exception:
+                continue
+            try:
+                name = it.GetName() or ""
+            except Exception:
+                name = ""
+            clip = {
+                "clip_name": name,
+                "track": tidx,
+                "start_frame": start,
+                "end_frame": end,
+                "duration_frames": max(0, end - start),
+            }
+            # Look for a Spellcaster marker; round-trip its metadata
+            meta = read_spellcaster_marker(it)
+            if meta:
+                clip["spellcaster_shot_id"] = meta.get("shot_id", "")
+                clip["marker_meta"] = {
+                    k: v for k, v in meta.items()
+                    if k not in ("_frame",)
+                }
+            out.append(clip)
+    return out
+
+
+def grab_first_frame_of_clip(timeline_item) -> str | None:
+    """Render a single PNG at the first frame of a TimelineItem.
+
+    Uses the same Gallery still pipeline as capture_frame_at_playhead;
+    quick and dirty, sufficient for "here's what this clip looks like"
+    references. Returns a local PNG path, or None on failure.
+
+    We don't bump the playhead before grabbing, because GrabStill grabs
+    at the playhead position — the caller should JumpToTimecode first
+    if they want a specific frame.
+    """
+    project = get_current_project()
+    if not (project and timeline_item):
+        return None
+    timeline = project.GetCurrentTimeline()
+    if not timeline:
+        return None
+    # Move playhead to the clip's start
+    try:
+        fps = float(project.GetSetting("timelineFrameRate") or 24.0)
+        start_f = int(timeline_item.GetStart())
+        hh = int(start_f / fps // 3600)
+        mm = int((start_f / fps) % 3600 // 60)
+        ss = int((start_f / fps) % 60)
+        ff = int(start_f % int(round(fps)))
+        tc = f"{hh:02d}:{mm:02d}:{ss:02d}:{ff:02d}"
+        timeline.SetCurrentTimecode(tc)
+    except Exception:
+        pass
+    return capture_frame_at_playhead()
+
+
 # ─── UI utilities (Fusion) ──────────────────────────────────────────────
 
 
