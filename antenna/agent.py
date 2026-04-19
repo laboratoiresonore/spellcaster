@@ -64,6 +64,11 @@ from . import __version__, auth, config, heartbeat
 _UNAUTHENTICATED_PATHS: set[str] = {"/"}
 
 
+# R49a diagnostic: last run's result, readable via /status for debugging.
+# Populated by _autopopulate_services on every boot.
+_LAST_AUTODETECT: dict[str, Any] = {"ran": False}
+
+
 def _autopopulate_services(cfg: dict[str, Any]) -> None:
     """R49a: Merge auto-detected services into cfg['services'].
 
@@ -80,6 +85,13 @@ def _autopopulate_services(cfg: dict[str, Any]) -> None:
     the config-declared list untouched. The agent must boot regardless.
     """
     declared = list(cfg.get("services") or [])
+    _LAST_AUTODETECT.clear()
+    _LAST_AUTODETECT.update({
+        "ran": True,
+        "declared_before": list(declared),
+        "auto_added": [],
+        "error": None,
+    })
     try:
         from . import detect as _detect
         # Load the service registry (same path status.py uses)
@@ -92,12 +104,19 @@ def _autopopulate_services(cfg: dict[str, Any]) -> None:
             # load_services returns list[dict] directly (not a wrapper dict)
             services_list = _remote_services.load_services()
         except Exception as e:
-            print(f"[antenna] auto-detect: could not load service registry: {e}",
-                  file=sys.stderr)
+            msg = f"could not load service registry: {type(e).__name__}: {e}"
+            print(f"[antenna] auto-detect: {msg}", file=sys.stderr)
+            _LAST_AUTODETECT["error"] = msg
             return
+        _LAST_AUTODETECT["registry_keys"] = [s.get("key") for s in services_list]
         if not services_list:
+            _LAST_AUTODETECT["error"] = "empty service registry"
             return
         evidence = _detect.detect_installed_services(services_list, use_cache=False)
+        _LAST_AUTODETECT["evidence_keys"] = list(evidence.keys())
+        _LAST_AUTODETECT["installed_keys"] = [
+            k for k, v in evidence.items() if isinstance(v, dict) and v.get("installed")
+        ]
         auto_added: list[str] = []
         for svc in services_list:
             key = svc.get("key", "")
@@ -110,13 +129,17 @@ def _autopopulate_services(cfg: dict[str, Any]) -> None:
             if ev.get("installed"):
                 declared.append(key)
                 auto_added.append(key)
+        _LAST_AUTODETECT["auto_added"] = auto_added
+        _LAST_AUTODETECT["declared_after"] = list(declared)
         if auto_added:
             cfg["services"] = declared
             print(f"[antenna] auto-detected services added: {auto_added}")
             print(f"[antenna] effective services: {declared}")
     except Exception as e:  # noqa: BLE001
-        print(f"[antenna] auto-detect failed ({type(e).__name__}: {e}) — "
-              f"using declared services only", file=sys.stderr)
+        msg = f"{type(e).__name__}: {e}"
+        print(f"[antenna] auto-detect failed ({msg}) — using declared only",
+              file=sys.stderr)
+        _LAST_AUTODETECT["error"] = msg
 
 
 def _build_routes(cfg: dict[str, Any]) -> dict[tuple[str, str], Callable]:
