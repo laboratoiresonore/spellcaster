@@ -143,11 +143,25 @@ class _TrayController:
             pystray.MenuItem("Open Wizard Guild…",
                               lambda _i, _it: self._open_browser(),
                               default=True),
+            pystray.MenuItem("Connect an app…",
+                              lambda _i, _it: self._open_connect_app()),
             pystray.MenuItem("Copy Guild URL",
                               lambda _i, _it: self._copy_url()),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit", lambda _i, _it: self._quit()),
         )
+
+    def _open_connect_app(self):
+        # Open the Guild UI with the ?connect_app=1 query flag so the
+        # front-end auto-pops the local Connect-an-app picker. Same
+        # popover used by right-click on antenna chips, but pre-targeted
+        # at 'local'. Keeps tray and chip UX unified.
+        try:
+            sep = '&' if '?' in self.guild_url else '?'
+            webbrowser.open(f"{self.guild_url}{sep}connect_app=1")
+        except Exception as e:  # noqa: BLE001
+            notify("Could not open Connect dialog",
+                    str(e)[:200], level="error")
 
     def _open_browser(self):
         try:

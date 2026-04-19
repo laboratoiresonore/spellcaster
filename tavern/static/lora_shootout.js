@@ -39,6 +39,15 @@
       #sc-shootout-btn:hover { transform: translateY(-1px);
         box-shadow: 0 4px 14px rgba(106, 27, 154, 0.55); }
       #sc-shootout-btn[data-pending="0"] { display: none; }
+      /* Inline placement: sits in the chat-area slot above the text
+         input, centred, so the user doesn't hunt top-right for it. */
+      #sc-shootout-btn.sc-shootout-btn--inline {
+        position: static;
+        margin: 0 auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
       #sc-shootout-btn .sc-shootout-badge {
         display: inline-block; margin-left: 6px; background: #ffd700;
         color: #4a148c; border-radius: 12px; padding: 1px 8px;
@@ -1063,6 +1072,11 @@
   }
 
   // ── Entry button ──────────────────────────────────────────────────────
+  // The button lives in #chat-shootout-slot (above the chat input,
+  // centred in the chat area) when that slot exists, so the user can
+  // reach shootouts without hunting in the top-right corner. If the
+  // slot isn't in the DOM yet (setup wizard pages, etc.) we fall back
+  // to a floating top-right button so the UX stays usable.
   function ensureEntryButton() {
     if (document.getElementById('sc-shootout-btn')) return;
     const btn = document.createElement('button');
@@ -1070,7 +1084,13 @@
     btn.title = 'Spellcaster LoRA Shootout — pick a winner when you have duplicates';
     btn.innerHTML = `⚔ Shootouts <span class="sc-shootout-badge">–</span>`;
     btn.addEventListener('click', renderGroups);
-    document.body.appendChild(btn);
+    const slot = document.getElementById('chat-shootout-slot');
+    if (slot) {
+      btn.classList.add('sc-shootout-btn--inline');
+      slot.appendChild(btn);
+    } else {
+      document.body.appendChild(btn);
+    }
     refreshBadge();
   }
 
