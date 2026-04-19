@@ -340,10 +340,16 @@ class _TrayState:
         try:
             # Mark 'signal' as an enabled service so chips render.
             cfg = config.load_config()
-            services = list(cfg.get("services") or [])
-            if "signal" not in services:
-                services.append("signal")
-                cfg["services"] = services
+            # config.load_config guarantees services is a dict, but
+            # older in-memory state may still be a list — normalize.
+            svc = cfg.get("services")
+            if isinstance(svc, list):
+                svc = {k: {} for k in svc}
+            elif not isinstance(svc, dict):
+                svc = {}
+            if "signal" not in svc:
+                svc["signal"] = {}
+                cfg["services"] = svc
                 config.save_config(cfg)
             agent.notify("Signal bridge registered",
                           "This antenna is now advertised to the Guild "

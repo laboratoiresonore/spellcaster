@@ -62,7 +62,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # (e.g. LLM + ComfyUI on one beefy machine). Each string must match
     # a module in antenna/services/<name>.py. "self" is always implicit
     # and handles self-update / status / token rotation.
-    "services": ["comfyui"],
+    # Services the antenna exposes. Dict of {name: {launcher, port, root,
+    # …}} — an empty dict means "none declared yet; auto-detect will
+    # fill it on first boot via _autopopulate_services". Older configs
+    # stored this as a list; _normalize_services() migrates on load.
+    "services": {"comfyui": {}},
     # URL of the Spellcaster hub (workstation running the Wizard Guild)
     # that this antenna heartbeats to. Empty string → heartbeats disabled;
     # the agent still serves /status etc. locally.
@@ -91,6 +95,34 @@ def config_path() -> Path:
     return DEFAULT_DIR / DEFAULT_CONFIG_FILENAME
 
 
+def _normalize_services(config: dict[str, Any]) -> None:
+    """Schema migration: older antenna_config.json files stored
+    `services` as a list of keys (`["comfyui", "ollama"]`). The
+    /service/register endpoint now stores per-service overrides,
+    which needs a dict (`{"comfyui": {"launcher": "..."}, ...}`).
+
+    Every downstream reader (tray menu, service_launcher stop_service,
+    endpoints) assumes the dict shape. Normalize once at load time so
+    no caller has to defensively isinstance-check.
+
+    Mutates config in place. Idempotent — dicts stay dicts, list
+    becomes `{key: {}}`, anything else becomes `{}`.
+    """
+    svc = config.get("services")
+    if isinstance(svc, dict):
+        return
+    if isinstance(svc, list):
+        config["services"] = {str(k): {} for k in svc if k}
+        return
+    if svc is None:
+        config["services"] = {}
+        return
+    # Unknown shape — don't crash, just reset.
+    print(f"[antenna.config] Warning: unexpected 'services' shape "
+          f"{type(svc).__name__!r}, resetting.", file=sys.stderr)
+    config["services"] = {}
+
+
 def load_config() -> dict[str, Any]:
     """Load config from disk, merging in defaults for any missing keys.
 
@@ -110,6 +142,7 @@ def load_config() -> dict[str, Any]:
         except (json.JSONDecodeError, OSError) as e:
             print(f"[antenna.config] Warning: could not read {cfg_file}: {e}",
                   file=sys.stderr)
+    _normalize_services(config)
     return config
 
 

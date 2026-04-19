@@ -136,7 +136,16 @@ def _autopopulate_services(cfg: dict[str, Any]) -> None:
     Quiet on failure — if detection itself blows up, we log and keep
     the config-declared list untouched. The agent must boot regardless.
     """
-    declared = list(cfg.get("services") or [])
+    # config.load_config normalizes services to dict; tolerate either
+    # shape defensively in case this is called with a raw config.
+    svc = cfg.get("services")
+    if isinstance(svc, dict):
+        declared_map = dict(svc)
+    elif isinstance(svc, list):
+        declared_map = {str(k): {} for k in svc if k}
+    else:
+        declared_map = {}
+    declared = list(declared_map.keys())
     _LAST_AUTODETECT.clear()
     _LAST_AUTODETECT.update({
         "ran": True,
@@ -179,12 +188,13 @@ def _autopopulate_services(cfg: dict[str, Any]) -> None:
             # dict's top-level flag 'installed' is set by detect_service when
             # any of filesystem/process/network probes succeeded.
             if ev.get("installed"):
+                declared_map[key] = {}
                 declared.append(key)
                 auto_added.append(key)
         _LAST_AUTODETECT["auto_added"] = auto_added
         _LAST_AUTODETECT["declared_after"] = list(declared)
         if auto_added:
-            cfg["services"] = declared
+            cfg["services"] = declared_map
             print(f"[antenna] auto-detected services added: {auto_added}")
             print(f"[antenna] effective services: {declared}")
     except Exception as e:  # noqa: BLE001
