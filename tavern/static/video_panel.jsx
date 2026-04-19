@@ -143,6 +143,9 @@ function ShotCard({
   onTogglePinSnapshot,
   promptDupeCount = 0,
   onToggleArchive,
+  onMakeVariation,
+  onPromoteVariation,
+  variationSiblings = [],
   focused = false,
 }) {
   const [expanded, setExpanded] = _useState(shot.status === "draft");
@@ -401,6 +404,18 @@ function ShotCard({
           <span className="shot-dupe-badge px-1 rounded bg-purple-900/40 text-purple-200 text-[10px] font-semibold"
                 title={`${promptDupeCount} shots share this exact prompt — possible duplicate`}>
             ×{promptDupeCount}
+          </span>
+        )}
+        {/* R72a: variation badge */}
+        {shot.variation_group && (
+          <span className={"shot-variation-badge px-1 rounded text-[10px] font-semibold " +
+                  (shot.is_primary
+                    ? "bg-emerald-900/40 text-emerald-200"
+                    : "bg-slate-700/40 text-slate-300")}
+                title={shot.is_primary
+                  ? `Primary variation of ${1 + variationSiblings.length}`
+                  : `Alternate variation (primary elsewhere) — click Promote to activate`}>
+            {shot.is_primary ? "VAR★" : "VAR"}
           </span>
         )}
         <StatusBadge status={shot.status} />
@@ -1201,6 +1216,29 @@ function ShotCard({
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2m-6 12h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z" /></svg>
               Duplicate
             </button>
+            {/* R72a: variation controls */}
+            {onMakeVariation && (
+              <button
+                onClick={() => {
+                  const label = prompt("Variation label (e.g. 'darker tone', 'closer crop'):", "");
+                  if (label !== null) onMakeVariation(shot.id, label);
+                }}
+                className="make-variation-btn flex items-center gap-1.5 bg-emerald-700/30 hover:bg-emerald-700/50 text-emerald-300 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                title="Create an alternate version of this shot (shares creative state; gets fresh id + draft status)"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="4"/><circle cx="12" cy="4" r="2"/><circle cx="4" cy="20" r="2"/><circle cx="20" cy="20" r="2"/><line x1="12" y1="8" x2="12" y2="10"/><line x1="8" y1="14" x2="6" y2="18"/><line x1="16" y1="14" x2="18" y2="18"/></svg>
+                + Variation
+              </button>
+            )}
+            {onPromoteVariation && shot.variation_group && !shot.is_primary && (
+              <button
+                onClick={() => onPromoteVariation(shot.id)}
+                className="promote-variation-btn flex items-center gap-1.5 bg-emerald-600/50 hover:bg-emerald-500/70 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                title="Make this the primary variation — the one rendered/exported"
+              >
+                ★ Promote
+              </button>
+            )}
             <button
               onClick={() => {
                 const variation = prompt("Variation description (leave empty for exact clone):", "");
@@ -2888,6 +2926,43 @@ function VideoPanel() {
     }
   };
 
+  // R72a: create a variation from the given shot
+  const makeVariation = async (shotId, label = "") => {
+    try {
+      const res = await api.post(`/api/video/shots/${shotId}/variation`, {label});
+      if (res && res.shot) {
+        addToast(`Created variation "${res.shot.title}"`, "success");
+        await refresh();
+      } else {
+        addToast(`Variation failed: ${res?.error || "unknown"}`, "error");
+      }
+    } catch (e) {
+      addToast("Variation failed: " + (e.message || "unknown"), "error");
+    }
+  };
+
+  const promoteVariation = async (shotId) => {
+    try {
+      await api.post(`/api/video/shots/${shotId}/promote-variation`, {});
+      addToast("Promoted to primary variation", "success");
+      await refresh();
+    } catch (e) {
+      addToast("Promote failed: " + (e.message || "unknown"), "error");
+    }
+  };
+
+  // R72b: activity log panel
+  const [showActivityLog, setShowActivityLog] = _useState(false);
+  const [activityEntries, setActivityEntries] = _useState([]);
+  const refreshActivityLog = _useCallback(async () => {
+    try {
+      const res = await api.get("/api/video/activity-log?limit=200");
+      setActivityEntries((res?.entries || []).slice().reverse());
+    } catch (_) {}
+  }, []);
+  _useEffect(() => { if (showActivityLog) refreshActivityLog(); },
+              [showActivityLog, refreshActivityLog]);
+
   // R70a: jump to a shot by id (scroll its card into view + focus it)
   const jumpToShot = _useCallback((shotId) => {
     const idx = filteredShots.findIndex(s => s.id === shotId);
@@ -3552,6 +3627,12 @@ function VideoPanel() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2l10 6v8l-10 6-10-6V8z"/><path d="M12 12l10-6M12 12l-10-6M12 12v10"/></svg>
             {projectMeta.title ? projectMeta.title.slice(0, 18) : "Project"}
           </button>
+          <button onClick={() => setShowActivityLog(v => !v)}
+            className="activity-log-btn flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+            title="Activity log — who did what, when">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Activity
+          </button>
           <a href="/api/video/render-history.csv" download
             className="export-csv flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
             title="Download flat CSV of every render attempt across all shots (for analysis / sharing)">
@@ -3729,6 +3810,41 @@ function VideoPanel() {
           })}
         </div>
       </div>
+
+      {/* R72b: activity log — read-only event stream */}
+      {showActivityLog && (
+        <div className="activity-log-panel bg-slate-900 border border-sky-600/20 rounded-xl p-3 max-h-96 overflow-y-auto">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold text-sky-200">Activity log (newest first)</h3>
+            <div className="flex gap-2">
+              <button onClick={refreshActivityLog}
+                className="activity-refresh-btn text-xs text-slate-400 hover:text-sky-300">↻ Refresh</button>
+              <button onClick={() => setShowActivityLog(false)}
+                className="text-slate-400 hover:text-slate-200 text-xs">Close</button>
+            </div>
+          </div>
+          {activityEntries.length === 0 ? (
+            <div className="text-xs text-slate-500 italic">No activity yet.</div>
+          ) : (
+            <div className="space-y-0.5">
+              {activityEntries.map((e, i) => {
+                const when = e.ts ? new Date(e.ts * 1000).toLocaleString() : "?";
+                const { action, ts, ...rest } = e;
+                const details = Object.entries(rest)
+                  .map(([k, v]) => `${k}=${typeof v === "string" ? v.slice(0, 40) : JSON.stringify(v)}`)
+                  .join(" · ");
+                return (
+                  <div key={i} className="activity-row flex items-center gap-2 text-[11px] font-mono">
+                    <span className="text-slate-600 w-40 flex-shrink-0">{when}</span>
+                    <span className="text-sky-300 font-semibold w-36 flex-shrink-0">{action}</span>
+                    <span className="text-slate-400 truncate">{details}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* R70a: outline panel — jump-list with all scenes and shots */}
       {showOutline && (
@@ -4302,6 +4418,11 @@ function VideoPanel() {
               onTogglePinSnapshot={togglePinSnapshot}
               promptDupeCount={promptClusters.get(shot.id) || 0}
               onToggleArchive={toggleArchiveShot}
+              onMakeVariation={makeVariation}
+              onPromoteVariation={promoteVariation}
+              variationSiblings={shot.variation_group
+                ? shots.filter(x => x.variation_group === shot.variation_group && x.id !== shot.id)
+                : []}
               focused={focusedShotIndex === idx}
             />
           ))}

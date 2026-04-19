@@ -217,6 +217,13 @@ class Shot:
     # user can restore them. Matches the common "trash" pattern.
     archived: bool = False
     archived_at: Optional[float] = None
+    # R72a: variation grouping. Shots that are alternates of the same
+    # storyboard beat share a `variation_group` id. Exactly one of them
+    # carries `is_primary=True`; the others are shown as siblings you
+    # can swap into. The final timeline only renders/exports the
+    # primary of each group.
+    variation_group: Optional[str] = None
+    is_primary: bool = True
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -378,6 +385,7 @@ class Shotboard:
         shot.touch()
         self._shots.append(shot)
         self.save()
+        self.log_activity("shot_created", shot_id=shot.id, title=shot.title)
         return shot
 
     @staticmethod
@@ -452,6 +460,7 @@ class Shotboard:
             return False
         self._reindex()
         self.save()
+        self.log_activity("shot_removed", shot_id=shot_id)
         return True
 
     def get_project_meta(self) -> Dict[str, str]:
@@ -470,6 +479,119 @@ class Shotboard:
                 self._project_meta[k] = str(v)
         self.save()
         return dict(self._project_meta)
+
+    # ─── R72a: variation groups ────────────────────────────────────
+
+    def _new_group_id(self) -> str:
+        return "var-" + uuid.uuid4().hex[:10]
+
+    def make_variation(self, source_id: str,
+                         variation_label: str = "") -> Optional[Shot]:
+        """R72a: clone `source_id` into a new alternate of the same
+        variation group. First call establishes the group (source
+        becomes its primary); subsequent calls add siblings.
+        The new shot keeps the same prompt/preset/overrides but gets
+        a fresh id, status="draft", cleared video/history/snapshots,
+        and is_primary=False.
+        """
+        source = self.get(source_id)
+        if source is None:
+            return None
+        # Ensure source has a group
+        if not source.variation_group:
+            source.variation_group = self._new_group_id()
+            source.is_primary = True
+            source.touch()
+        copy_shot = copy.deepcopy(source)
+        copy_shot.id = uuid.uuid4().hex
+        copy_shot.status = "draft"
+        copy_shot.video_path = None
+        copy_shot.job_id = None
+        copy_shot.error = None
+        copy_shot.render_history = []
+        copy_shot.snapshots = []
+        copy_shot.pinned_snapshots = []
+        copy_shot.locked = False
+        copy_shot.archived = False
+        copy_shot.archived_at = None
+        copy_shot.render_duration_s = None
+        copy_shot.last_updated = time.time()
+        copy_shot.bookmarked = False
+        copy_shot.is_primary = False
+        if variation_label:
+            copy_shot.title = f"{source.title or 'Shot'} — {variation_label}"
+        elif source.title:
+            # Count existing siblings to pick the next letter
+            siblings = self.shots_in_group(source.variation_group)
+            letter = chr(ord('A') + len(siblings))  # A, B, C...
+            copy_shot.title = f"{source.title} — Var {letter}"
+        copy_shot.index = len(self._shots)
+        self._shots.append(copy_shot)
+        self.save()
+        return copy_shot
+
+    def shots_in_group(self, group_id: str) -> List[Shot]:
+        """All shots sharing a variation group, primary first."""
+        if not group_id:
+            return []
+        members = [s for s in self._shots if s.variation_group == group_id]
+        members.sort(key=lambda s: (not s.is_primary, s.index))
+        return members
+
+    def promote_variation(self, shot_id: str) -> Optional[Shot]:
+        """Make this variation the primary of its group; demote others."""
+        shot = self.get(shot_id)
+        if shot is None or not shot.variation_group:
+            return None
+        for s in self._shots:
+            if s.variation_group == shot.variation_group:
+                s.is_primary = (s.id == shot_id)
+                s.touch()
+        self.save()
+        return shot
+
+    # ─── R72b: activity log ─────────────────────────────────────────
+
+    def _activity_log_path(self) -> str:
+        return os.path.join(os.path.dirname(self.path), "activity.log")
+
+    def log_activity(self, action: str, **details: Any) -> None:
+        """R72b: append a structured line to the board's activity log.
+        Non-fatal — log write failures never interrupt the caller."""
+        try:
+            entry = {
+                "ts": time.time(),
+                "action": action,
+                **details,
+            }
+            line = json.dumps(entry) + "\n"
+            path = self._activity_log_path()
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(line)
+        except OSError:
+            pass
+
+    def read_activity_log(self, limit: int = 200) -> List[Dict[str, Any]]:
+        """Return the most recent `limit` entries (newest last)."""
+        path = self._activity_log_path()
+        if not os.path.isfile(path):
+            return []
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except OSError:
+            return []
+        out: List[Dict[str, Any]] = []
+        for line in lines[-limit:]:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                out.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        return out
 
     def archive_shot(self, shot_id: str) -> Optional[Shot]:
         """R71a: soft-delete. Keeps the shot on disk but hides it from
