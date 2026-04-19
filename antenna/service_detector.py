@@ -94,7 +94,12 @@ def _remember(service: str, root: Path, strategy: str) -> None:
     _save_state(state)
 
 
-def _cached(service: str) -> Path | None:
+def _cached(service: str, *, verify: Callable[[Path], bool] | None = None
+             ) -> Path | None:
+    """Return cached detected path if still valid. Optional verifier lets
+    callers reject stale hits that no longer pass structural checks
+    (e.g. a GIMP cache entry pointing at a plugin dir should fail the
+    gimp-bin verifier)."""
     state = _load_state()
     entry = (state.get("detected_paths") or {}).get(service)
     if not entry:
@@ -102,7 +107,15 @@ def _cached(service: str) -> Path | None:
     if (time.time() - entry.get("discovered_at", 0)) > _CACHE_MAX_AGE_S:
         return None
     p = Path(entry.get("root", ""))
-    return p if p.is_dir() else None
+    if not p.is_dir():
+        return None
+    if verify is not None and not verify(p):
+        # Stale / wrong entry — drop it so the next call re-probes
+        state = _load_state()
+        state.get("detected_paths", {}).pop(service, None)
+        _save_state(state)
+        return None
+    return p
 
 
 # ─── Helper: process cmdline lookup ──────────────────────────────────
@@ -605,12 +618,25 @@ def find_resolve_install(cfg: dict[str, Any]) -> tuple[Path | None, str]:
 
 # ─── Windows registry helper (shared across services) ───────────────
 
-def _win_registry_find_install_location(key_name_needle: str
-                                          ) -> Path | None:
-    """Walk Windows Uninstall registry keys for any entry whose name
-    contains ``key_name_needle`` (case-insensitive). Returns the first
-    InstallLocation found as an existing directory. Covers MSI, winget,
-    Chocolatey, and most third-party installers that register properly."""
+def _win_registry_find_install_location(
+        key_name_needle: str,
+        *,
+        verify: Callable[[Path], bool] | None = None,
+        prefer_display_name_prefix: str | None = None,
+) -> Path | None:
+    """Walk Windows Uninstall registry keys and return InstallLocation
+    for an entry matching ``key_name_needle`` (substring, case-insensitive).
+
+    Two noise filters to avoid returning plugin/addon entries that happen
+    to contain the service name:
+
+      * ``prefer_display_name_prefix`` (str): collect all candidates but
+        prioritize entries whose `DisplayName` starts with this prefix
+        (e.g. "GIMP " — filters out "GIMP G'MIC plugin" etc.).
+      * ``verify`` (callable): a path verifier. Returned candidates must
+        pass this callable (e.g. "has bin/gimp-*.exe"). Rejects plugin
+        uninstall entries that resolve to plugin dirs, not install dirs.
+    """
     if os.name != "nt":
         return None
     try:
@@ -618,6 +644,8 @@ def _win_registry_find_install_location(key_name_needle: str
     except ImportError:
         return None
     needle_lc = key_name_needle.lower()
+    # Collect all matches, then apply preference + verify.
+    matches: list[tuple[Path, str]] = []  # (path, display_name)
     for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
         for subkey_path in (
             r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
@@ -636,15 +664,66 @@ def _win_registry_find_install_location(key_name_needle: str
                             continue
                         try:
                             with winreg.OpenKey(root_key, subname) as sub:
-                                loc, _ = winreg.QueryValueEx(sub, "InstallLocation")
+                                try:
+                                    loc, _ = winreg.QueryValueEx(sub, "InstallLocation")
+                                except FileNotFoundError:
+                                    continue
+                                try:
+                                    display, _ = winreg.QueryValueEx(sub, "DisplayName")
+                                except FileNotFoundError:
+                                    display = ""
                                 p = Path(str(loc))
                                 if p.is_dir():
-                                    return p
+                                    matches.append((p, str(display)))
                         except (OSError, FileNotFoundError):
                             continue
             except OSError:
                 continue
-    return None
+
+    if not matches:
+        return None
+
+    # Filter by verify first — only keep candidates that pass structural check
+    if verify is not None:
+        matches = [(p, d) for p, d in matches if verify(p)]
+        if not matches:
+            return None
+
+    # Sort: preferred display-name prefix first, then by path length (shortest
+    # = most likely the real install root, not a buried plugin subdir)
+    if prefer_display_name_prefix:
+        prefix_lc = prefer_display_name_prefix.lower()
+        matches.sort(key=lambda t: (0 if t[1].lower().startswith(prefix_lc) else 1,
+                                      len(str(t[0])),
+                                      str(t[0]).lower()))
+    else:
+        matches.sort(key=lambda t: (len(str(t[0])), str(t[0]).lower()))
+    return matches[0][0]
+
+
+def _gimp_install_verify(p: Path) -> bool:
+    """True iff ``p`` looks like a real GIMP install root (has bin/gimp*.exe
+    on Windows or bin/gimp on POSIX)."""
+    bin_dir = p / "bin"
+    if not bin_dir.is_dir():
+        return False
+    for entry in bin_dir.iterdir():
+        name = entry.name.lower()
+        if name.startswith("gimp") and (name.endswith(".exe") or not "." in name):
+            return True
+    return False
+
+
+def _darktable_install_verify(p: Path) -> bool:
+    bin_dir = p / "bin"
+    if not bin_dir.is_dir():
+        # Darktable on POSIX might not have a bin/ subdir
+        return any(x.name.lower().startswith("darktable")
+                    for x in p.iterdir() if x.is_file())
+    for entry in bin_dir.iterdir():
+        if entry.name.lower().startswith("darktable"):
+            return True
+    return False
 
 
 # ─── GIMP / Darktable / SillyTavern ──────────────────────────────────
@@ -660,7 +739,7 @@ def find_gimp_install(cfg: dict[str, Any]) -> tuple[Path | None, str]:
         p = Path(os.path.expanduser(explicit))
         if p.is_dir():
             return p, "config-override"
-    cached = _cached("gimp")
+    cached = _cached("gimp", verify=_gimp_install_verify)
     if cached is not None:
         return cached, "cache-hit"
 
@@ -677,8 +756,12 @@ def find_gimp_install(cfg: dict[str, Any]) -> tuple[Path | None, str]:
             return install_root, "which"
 
     if os.name == "nt":
-        # Registry Uninstall entries
-        loc = _win_registry_find_install_location("gimp")
+        # Registry Uninstall entries — verify it's the REAL GIMP install
+        # (has bin/gimp-*.exe), not a plugin/addon that merely mentions "gimp".
+        loc = _win_registry_find_install_location(
+            "gimp",
+            verify=_gimp_install_verify,
+            prefer_display_name_prefix="GIMP ")
         if loc is not None:
             _remember("gimp", loc, "registry")
             return loc, "registry"
@@ -754,7 +837,7 @@ def find_darktable_install(cfg: dict[str, Any]) -> tuple[Path | None, str]:
         p = Path(os.path.expanduser(explicit))
         if p.is_dir():
             return p, "config-override"
-    cached = _cached("darktable")
+    cached = _cached("darktable", verify=_darktable_install_verify)
     if cached is not None:
         return cached, "cache-hit"
 
@@ -769,7 +852,10 @@ def find_darktable_install(cfg: dict[str, Any]) -> tuple[Path | None, str]:
             return install_root, "which"
 
     if os.name == "nt":
-        loc = _win_registry_find_install_location("darktable")
+        loc = _win_registry_find_install_location(
+            "darktable",
+            verify=_darktable_install_verify,
+            prefer_display_name_prefix="darktable")
         if loc is not None:
             _remember("darktable", loc, "registry")
             return loc, "registry"
