@@ -98,14 +98,21 @@ def _candidate_roots() -> list[Path]:
             Path("/Applications"),         # macOS
             Path.home() / ".local",
         ])
-    # Deduplicate while preserving order
+    # Deduplicate while preserving order. Tolerate PermissionError on
+    # network-mapped or offline drives (Windows issues a WinError 5 on .exists()
+    # when the mapped drive is down — don't let that kill the whole probe).
     seen: set[str] = set()
     out: list[Path] = []
     for r in roots:
         s = str(r)
-        if s not in seen and r.exists():
-            out.append(r)
-            seen.add(s)
+        if s in seen:
+            continue
+        seen.add(s)
+        try:
+            if r.exists():
+                out.append(r)
+        except (OSError, PermissionError):
+            continue
     return out
 
 
@@ -113,7 +120,9 @@ def _find_detect_path(detect_path: str, roots: list[Path]) -> Path | None:
     """Resolve a declared relative path against each root. Returns the first hit.
 
     `detect_path` is relative (e.g. "ComfyUI/main.py" or "GIMP 3/bin/gimp.exe").
-    We join against each root and check existence.
+    We join against each root and also try ONE directory level deep — so
+    e.g. `C:\\AI\\ComfyUI\\main.py` is discoverable even though the user's
+    parent dir isn't one of the standard roots.
     """
     for root in roots:
         try:
@@ -121,8 +130,22 @@ def _find_detect_path(detect_path: str, roots: list[Path]) -> Path | None:
             if candidate.exists():
                 return candidate
         except (OSError, ValueError):
-            # Permission denied / invalid chars in path — keep searching
             continue
+    # One level deep — the first path component is often a user-chosen
+    # umbrella dir (AI, Projects, Dev) that varies per-machine.
+    for root in roots:
+        try:
+            subdirs = [d for d in root.iterdir() if d.is_dir()]
+        except (OSError, PermissionError):
+            continue
+        # Cap to keep scan time bounded on huge drives
+        for sub in subdirs[:200]:
+            try:
+                candidate = sub / detect_path
+                if candidate.exists():
+                    return candidate
+            except (OSError, ValueError):
+                continue
     return None
 
 
