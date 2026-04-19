@@ -44,15 +44,13 @@
 
 <div align="center">
 
-<sub><strong>📣 Status — April 2026</strong></sub>
-
-<sub>───────────────</sub>
+<strong>📣 Status — April 2026</strong>
 
 <table>
-<tr><td><sub><strong>🆕 News</strong></sub></td><td><sub>First version of the DaVinci Resolve plugin is out and needs testing &nbsp;·&nbsp; Wizard Guild + Antenna work quite well</sub></td></tr>
-<tr><td><sub><strong>✅ What works</strong></sub></td><td><sub>The GIMP plugin is dope — it's now all I use for image generation and retouching</sub></td></tr>
-<tr><td><sub><strong>🔧 Current focus</strong></sub></td><td><sub>Debugging SillyTavern plugin &nbsp;·&nbsp; Improving Wizard Guild and Antenna</sub></td></tr>
-<tr><td><sub><strong>⏭ Next</strong></sub></td><td><sub>Signal bridge &nbsp;·&nbsp; Moar plugins / frontends</sub></td></tr>
+<tr><td><strong>🆕 News</strong></td><td>First version of the DaVinci Resolve plugin is out and needs testing &nbsp;·&nbsp; Wizard Guild + Antenna work quite well</td></tr>
+<tr><td><strong>✅ What works</strong></td><td>The GIMP plugin is dope — it's now all I use for image generation and retouching</td></tr>
+<tr><td><strong>🔧 Current focus</strong></td><td>Debugging SillyTavern plugin &nbsp;·&nbsp; Improving Wizard Guild and Antenna</td></tr>
+<tr><td><strong>⏭ Next</strong></td><td>Signal bridge &nbsp;·&nbsp; Moar plugins / frontends</td></tr>
 </table>
 
 </div>

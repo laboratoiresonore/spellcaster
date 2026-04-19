@@ -279,7 +279,8 @@ body {
 
 .sidebar-header {
     padding: 18px 16px 14px;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 2px solid transparent;
+    border-image: url('assets/10_rune_divider.png') 0 0 100% stretch;
     background: linear-gradient(180deg, rgba(178, 70, 242, 0.06) 0%, transparent 100%);
 }
 .sidebar-header h2 {
@@ -560,7 +561,8 @@ body {
 #chat-header {
     height: 70px; min-height: 70px; padding: 0 20px;
     display: flex; align-items: center; justify-content: space-between;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 2px solid transparent;
+    border-image: url('assets/10_rune_divider.png') 0 0 100% stretch;
     background: rgba(19, 18, 28, 0.7);
     backdrop-filter: blur(12px); z-index: 10;
 }
