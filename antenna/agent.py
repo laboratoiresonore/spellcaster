@@ -89,8 +89,8 @@ def _autopopulate_services(cfg: dict[str, Any]) -> None:
             if _repo_root not in _sys.path:
                 _sys.path.insert(0, _repo_root)
             from installer import remote_services as _remote_services  # type: ignore
-            registry = _remote_services.load_registry()
-            services_list = registry.get("services") or []
+            # load_services returns list[dict] directly (not a wrapper dict)
+            services_list = _remote_services.load_services()
         except Exception as e:
             print(f"[antenna] auto-detect: could not load service registry: {e}",
                   file=sys.stderr)
