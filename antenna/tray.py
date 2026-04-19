@@ -591,12 +591,22 @@ def main(argv: Optional[list] = None) -> int:
 
     # Attach tray to agent.notify() before building the icon so the
     # startup toast (emitted at the tail of agent.serve) lands visibly.
+    # Build the menu by CALLING state.menu() — passing the bound
+    # method directly made pystray try `Menu(*method)` which TypeErrors
+    # ("argument after * must be an iterable, not method"). A fresh
+    # Menu instance at startup is fine because the item labels that
+    # need live state (startup toggle, status subtitle, service
+    # running/stopped badge) are each wrapped in lambdas that pystray
+    # re-evaluates every time the user opens the menu. Service
+    # registration / removal during runtime still requires an
+    # icon.update_menu() call — _rebuild_menu() below is the hook.
     icon = pystray.Icon(
         "spellcaster-antenna",
         icon=_build_icon("running"),
         title=f"Spellcaster Antenna — {state.subtitle()}",
-        menu=state.menu,  # pystray re-invokes this on every open
+        menu=state.menu(),
     )
+    state._rebuild_menu = lambda: icon.update_menu()
     state.icon = icon
     _install_tray_sink(state)
     agent.notify("Spellcaster Antenna",
