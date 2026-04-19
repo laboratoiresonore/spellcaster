@@ -68,25 +68,37 @@ def main() -> int:
         "--distpath", str(dist_dir),
         "--clean",
         "--noconfirm",
-        # Hidden imports — antenna lazily imports these modules; PyInstaller
-        # can't discover them through pure import tracing.
+        # Paths PyInstaller searches when resolving imports. Adding the
+        # repo root + comfyui-spellcaster/ makes antenna/, scaffold/,
+        # and spellcaster_core/ all directly importable without data
+        # copies — the freezer collects the whole package graph.
+        "--paths", str(REPO_ROOT),
+        "--paths", str(REPO_ROOT / "comfyui-spellcaster"),
+        # Antenna submodules are lazily imported inside _build_routes /
+        # autopopulate_services / tray worker threads; PyInstaller's
+        # static analyser misses them, so list them explicitly.
+        "--collect-submodules", "antenna",
+        "--collect-submodules", "scaffold",
+        "--collect-submodules", "spellcaster_core",
+        # Native tray backends per OS — plus PIL's tk finder which pystray's
+        # notification path imports on demand.
         "--hidden-import", "pystray._win32",
         "--hidden-import", "pystray._darwin",
         "--hidden-import", "pystray._appindicator",
         "--hidden-import", "PIL._tkinter_finder",
-        "--hidden-import", "scaffold",
-        "--hidden-import", "scaffold.network_survey",
-        "--hidden-import", "spellcaster_core",
-        # Bundle the whole scaffold/ and spellcaster_core/ trees so the
-        # antenna can import them without the repo on disk.
-        "--add-data", f"{REPO_ROOT / 'scaffold'}{os.pathsep}scaffold",
-        "--add-data", (f"{REPO_ROOT / 'comfyui-spellcaster' / 'spellcaster_core'}"
-                        f"{os.pathsep}spellcaster_core"),
+        # remote_services.json is read by installer/remote_services.py
+        # at boot; it's a pure data file so --add-data is still the
+        # right tool here.
         "--add-data", (f"{REPO_ROOT / 'installer' / 'remote_services.json'}"
                         f"{os.pathsep}installer"),
     ]
-    if platform.system() == "Windows":
-        cmd.append("--noconsole")   # windowless — tray only
+    # Windows: keep the console window attached for now. A console
+    # build surfaces tracebacks on stderr so "exe crashes silently"
+    # is debuggable. Once the binary is stable, flip CONSOLE_ON to
+    # False to ship the windowless tray-only build.
+    CONSOLE_ON = True
+    if platform.system() == "Windows" and not CONSOLE_ON:
+        cmd.append("--noconsole")
     cmd.append(str(entry))
 
     print(f"[antenna-build] PyInstaller cmd:\n  {' '.join(cmd)}")
