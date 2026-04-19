@@ -817,6 +817,22 @@ def main() -> int:
     check("video_panel gates Resolve buttons by featureMap",
           test_video_panel_gates_resolve_buttons)
 
+    # Round 55 — ComfyUI URL auto-probe + feature diagnostics
+    check("comfyui has URL resolver helpers",
+          test_comfyui_has_url_resolver)
+    check("comfyui probe fails on dead port",
+          test_comfyui_probe_fails_on_dead_port)
+    check("comfyui resolve returns None when nothing reachable",
+          test_comfyui_resolve_returns_none_when_nothing_reachable)
+    check("comfyui resolve uses cache hit",
+          test_comfyui_resolve_uses_cache_hit)
+    check("node_catalog reports probed URLs on failure",
+          test_node_catalog_reports_probed_urls_on_failure)
+    check("heartbeat uses URL resolver",
+          test_heartbeat_uses_url_resolver)
+    check("video_panel has feature diagnostics panel",
+          test_video_panel_has_feature_diagnostics_panel)
+
     print("-" * 50)
 
     from scaffold.shotboard import Shotboard, Shot, Trajectory
@@ -7685,6 +7701,69 @@ def test_video_panel_gates_resolve_buttons():
     assert "featureMap" in src
     assert 'featureMap["video.send_to_resolve"]' in src
     assert 'featureMap["video.render_in_resolve"]' in src
+
+
+# ════════════════════════════════════════════════════════════════════
+# R55 — ComfyUI URL auto-probe + feature diagnostic panel
+# ════════════════════════════════════════════════════════════════════
+
+def test_comfyui_has_url_resolver():
+    from antenna.endpoints import comfyui as cu
+    assert callable(getattr(cu, "_resolve_comfyui_url", None))
+    assert callable(getattr(cu, "_probe_one_comfyui_url", None))
+
+
+def test_comfyui_probe_fails_on_dead_port():
+    from antenna.endpoints import comfyui as cu
+    # 65432 is nearly certainly not bound; probe should return False fast.
+    assert cu._probe_one_comfyui_url("http://127.0.0.1:65432",
+                                       timeout=0.5) is False
+
+
+def test_comfyui_resolve_returns_none_when_nothing_reachable():
+    from antenna.endpoints import comfyui as cu
+    cu._COMFYUI_URL_CACHE["url"] = None
+    cu._COMFYUI_URL_CACHE["ts"] = 0.0
+    cfg = {"comfyui_url": "http://127.0.0.1:65432"}
+    result = cu._resolve_comfyui_url(cfg)
+    assert result is None
+
+
+def test_comfyui_resolve_uses_cache_hit():
+    from antenna.endpoints import comfyui as cu
+    import time as _t
+    cu._COMFYUI_URL_CACHE["url"] = "http://cached:1234"
+    cu._COMFYUI_URL_CACHE["ts"] = _t.time()  # fresh
+    cfg: dict = {}
+    assert cu._resolve_comfyui_url(cfg) == "http://cached:1234"
+
+
+def test_node_catalog_reports_probed_urls_on_failure():
+    from antenna.endpoints import comfyui as cu
+    cu._COMFYUI_URL_CACHE["url"] = None
+    cu._COMFYUI_URL_CACHE["ts"] = 0.0
+    status, body = cu.node_catalog({"config": {"comfyui_url": "http://127.0.0.1:65432"}})
+    assert status == 503
+    assert "probed_urls" in body
+    # Should include at least the configured + defaults
+    urls = body["probed_urls"]
+    assert any(":65432" in u for u in urls)
+    assert any("8188" in u for u in urls)
+
+
+def test_heartbeat_uses_url_resolver():
+    src = open("antenna/heartbeat.py", encoding="utf-8").read()
+    # R55a: heartbeat comfyui probe now goes through the auto-resolver
+    assert "_resolve_comfyui_url" in src
+
+
+def test_video_panel_has_feature_diagnostics_panel():
+    src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
+    assert "featureReport" in src
+    assert "antenna-features-diag" in src
+    assert "feature-diag-row" in src
+    # Shows which capabilities are missing per feature
+    assert "f.missing" in src
 
 
 if __name__ == "__main__":
