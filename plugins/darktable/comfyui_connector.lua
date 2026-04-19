@@ -2070,14 +2070,30 @@ local function wan_video_dims(src_w, src_h, target_long, align)
   return w, h
 end
 
+-- R132 — Wan 2.2 tuning synced with the canonical spellcaster_core +
+-- GIMP plugin preset dicts (see plugins/gimp WAN_I2V_PRESETS and
+-- scaffold/video_workflow_dispatch.py resolve_wan_preset):
+--   * clip = umt5_xxl_fp8_e4m3fn_scaled.safetensors — the GGUF UMT5
+--     has conditioning-bleed issues on some ComfyUI installs that
+--     surface as the prompt text decoding into visible pixels.
+--   * With Lightning LoRAs: steps=4, second_step=2, cfg=1, shift=5.0
+--     (Lightning is 4-step distilled — running it for 30 steps is
+--     pointless overhead and produces the exact same render).
+--   * accel_strength=1.0 (canonical Lightning strength).
+-- TODO (zero-duplication-rule violation): the build_wan_i2v_json
+-- function below is a full duplicate of the canonical
+-- spellcaster_core.workflows.build_wan_video. Refactor Darktable to
+-- POST shots at the Guild's /api/video/shots endpoint like the
+-- Resolve + SillyTavern plugins do, so this dict + function can be
+-- deleted outright.
 local WAN_I2V_MODELS = {
   {
     label = "Wan I2V 14B (GGUF Q4)",
     high_model = "Wan\\wan2.2_i2v_high_noise_14B_Q4_K_S.gguf",
     low_model  = "Wan\\wan2.2_i2v_low_noise_14B_Q4_K_S.gguf",
-    clip       = "umt5-xxl-encoder-Q8_0.gguf",
+    clip       = "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
     vae        = "wan_2.1_vae.safetensors",
-    steps = 30, second_step = 20, cfg = 5.0, shift = 8.0,
+    steps = 4, second_step = 2, cfg = 1.0, shift = 5.0,
     lora_prefixes   = {"WAN\\", "Wan-2.2-I2V\\"},
     high_accel_lora = "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
     low_accel_lora  = "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
@@ -2087,13 +2103,22 @@ local WAN_I2V_MODELS = {
     label = "Wan I2V 14B (fp8)",
     high_model = "Wan\\wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
     low_model  = "Wan\\wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
-    clip       = "umt5-xxl-encoder-Q8_0.gguf",
+    clip       = "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
     vae        = "wan_2.1_vae.safetensors",
-    steps = 30, second_step = 20, cfg = 5.0, shift = 8.0,
+    steps = 4, second_step = 2, cfg = 1.0, shift = 5.0,
     lora_prefixes   = {"WAN\\", "Wan-2.2-I2V\\"},
     high_accel_lora = "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
     low_accel_lora  = "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
     accel_strength  = 1.0,
+  },
+  {
+    label = "Wan I2V 14B HQ (no LoRA)",
+    high_model = "Wan\\wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
+    low_model  = "Wan\\wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
+    clip       = "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+    vae        = "wan_2.1_vae.safetensors",
+    steps = 20, second_step = 10, cfg = 5.0, shift = 8.0,
+    lora_prefixes   = {"WAN\\", "Wan-2.2-I2V\\"},
   },
   -- NSFW_WAN_MODEL_INJECTION_POINT --
 }
@@ -2464,8 +2489,8 @@ local function build_wan_i2v_json(image_filename, wan_preset, prompt, negative, 
   "30":{"class_type":"ModelSamplingSD3","inputs":{"model":%s,"shift":%.1f}},
   "31":{"class_type":"ModelSamplingSD3","inputs":{"model":%s,"shift":%.1f}},
   %s,
-  "50":{"class_type":"KSamplerAdvanced","inputs":{"model":["30",0],"positive":["40",0],"negative":["40",1],"latent_image":["40",2],"add_noise":"enable","noise_seed":%d,"steps":%d,"cfg":%.1f,"sampler_name":"euler_ancestral","scheduler":"simple","start_at_step":0,"end_at_step":%d,"return_with_leftover_noise":"enable"}},
-  "51":{"class_type":"KSamplerAdvanced","inputs":{"model":["31",0],"positive":["40",0],"negative":["40",1],"latent_image":["50",0],"add_noise":"disable","noise_seed":%d,"steps":%d,"cfg":1.0,"sampler_name":"euler_ancestral","scheduler":"simple","start_at_step":%d,"end_at_step":10000,"return_with_leftover_noise":"disable"}},
+  "50":{"class_type":"KSamplerAdvanced","inputs":{"model":["30",0],"positive":["40",0],"negative":["40",1],"latent_image":["40",2],"add_noise":"enable","noise_seed":%d,"steps":%d,"cfg":%.1f,"sampler_name":"euler","scheduler":"simple","start_at_step":0,"end_at_step":%d,"return_with_leftover_noise":"enable"}},
+  "51":{"class_type":"KSamplerAdvanced","inputs":{"model":["31",0],"positive":["40",0],"negative":["40",1],"latent_image":["50",0],"add_noise":"disable","noise_seed":%d,"steps":%d,"cfg":1.0,"sampler_name":"euler","scheduler":"simple","start_at_step":%d,"end_at_step":10000,"return_with_leftover_noise":"disable"}},
   "60":{"class_type":"VAEDecode","inputs":{"samples":["51",0],"vae":["4",0]}}%s,
   "12":{"class_type":"VHS_VideoCombine","inputs":{"images":%s,"frame_rate":%.1f,"loop_count":0,"filename_prefix":"darktable_wan_i2v","format":"video/h264-mp4","pingpong":%s,"save_output":true}},
   "14":{"class_type":"VHS_VideoCombine","inputs":{"images":%s,"frame_rate":%.1f,"loop_count":0,"filename_prefix":"darktable_wan_i2v_gif","format":"image/gif","pingpong":%s,"save_output":true}}
