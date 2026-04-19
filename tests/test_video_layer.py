@@ -785,6 +785,38 @@ def main() -> int:
     check("status reports last_port_cleanup",
           test_status_reports_last_port_cleanup)
 
+    # Round 54 — Feature manifest + capability gating
+    check("resolve_capability service happy path",
+          test_resolve_capability_service_happy_path)
+    check("resolve_capability unknown service fails",
+          test_resolve_capability_unknown_service_fails)
+    check("resolve_capability comfyui node match",
+          test_resolve_capability_comfyui_node_match)
+    check("resolve_capability comfyui node miss",
+          test_resolve_capability_comfyui_node_miss)
+    check("resolve_capability LUT by name only",
+          test_resolve_capability_resolve_lut_by_name_only)
+    check("resolve_capability LUT with category",
+          test_resolve_capability_resolve_lut_with_category)
+    check("resolve_capability LUT wrong category fails",
+          test_resolve_capability_resolve_lut_wrong_category)
+    check("resolve_capability unknown grammar fails safely",
+          test_resolve_capability_unknown_grammar_fails_safely)
+    check("resolve_feature empty caps always passes",
+          test_resolve_feature_with_no_caps_always_passes)
+    check("resolve_feature missing caps reports all",
+          test_resolve_feature_missing_caps_reports_all)
+    check("SPELLCASTER_FEATURES shape is sane",
+          test_spellcaster_builtin_features_are_sane)
+    check("resolve_service_host returns hostname",
+          test_resolve_service_host_returns_hostname_or_none)
+    check("feature_capabilities synced to all copies",
+          test_feature_capabilities_synced_to_all_copies)
+    check("guild has /api/features endpoint",
+          test_guild_has_features_endpoint)
+    check("video_panel gates Resolve buttons by featureMap",
+          test_video_panel_gates_resolve_buttons)
+
     print("-" * 50)
 
     from scaffold.shotboard import Shotboard, Shot, Trajectory
@@ -7506,6 +7538,153 @@ def test_agent_exposes_last_port_cleanup():
 def test_status_reports_last_port_cleanup():
     src = open("antenna/endpoints/status.py", encoding="utf-8").read()
     assert "last_port_cleanup" in src
+
+
+# ════════════════════════════════════════════════════════════════════
+# R54 — Feature manifest + capability gating
+# ════════════════════════════════════════════════════════════════════
+
+def _fc_module():
+    import importlib, sys as _sys
+    _sys.path.insert(0, os.path.join(BASE, "comfyui-spellcaster"))
+    return importlib.import_module("spellcaster_core.feature_capabilities")
+
+
+def _sample_caps():
+    return {"antennas": {
+        "render-box": {
+            "online": True, "services": ["comfyui", "resolve"],
+            "comfyui": {"reachable": True, "custom_node_packs": {
+                "ComfyUI-Spellcaster": ["Flux2KleinRefLatentController",
+                                          "SpellcasterKleinEnhancer"],
+                "(core)": ["KSampler"],
+            }},
+            "resolve": {"reachable": True, "luts_by_category": {
+                "Film Looks": [{"name": "Kodak 2383", "path": "X", "ext": ".cube"}],
+            }},
+        },
+    }}
+
+
+def test_resolve_capability_service_happy_path():
+    fc = _fc_module()
+    ok, _ = fc.resolve_capability("service:comfyui", _sample_caps())
+    assert ok
+
+
+def test_resolve_capability_unknown_service_fails():
+    fc = _fc_module()
+    ok, reason = fc.resolve_capability("service:no-such-thing", _sample_caps())
+    assert ok is False
+    assert "no antenna" in reason
+
+
+def test_resolve_capability_comfyui_node_match():
+    fc = _fc_module()
+    ok, _ = fc.resolve_capability(
+        "comfyui:node:Flux2KleinRefLatentController", _sample_caps())
+    assert ok
+
+
+def test_resolve_capability_comfyui_node_miss():
+    fc = _fc_module()
+    ok, reason = fc.resolve_capability("comfyui:node:DoesNotExist",
+                                         _sample_caps())
+    assert ok is False
+    assert "not found" in reason
+
+
+def test_resolve_capability_resolve_lut_by_name_only():
+    fc = _fc_module()
+    ok, _ = fc.resolve_capability("resolve:lut:Kodak 2383", _sample_caps())
+    assert ok
+
+
+def test_resolve_capability_resolve_lut_with_category():
+    fc = _fc_module()
+    ok, _ = fc.resolve_capability(
+        "resolve:lut:Film Looks:Kodak 2383", _sample_caps())
+    assert ok
+
+
+def test_resolve_capability_resolve_lut_wrong_category():
+    fc = _fc_module()
+    ok, _ = fc.resolve_capability(
+        "resolve:lut:Legal:Kodak 2383", _sample_caps())
+    assert ok is False
+
+
+def test_resolve_capability_unknown_grammar_fails_safely():
+    fc = _fc_module()
+    ok, reason = fc.resolve_capability("bogus:weird", _sample_caps())
+    assert ok is False
+    assert "unknown capability" in reason
+
+
+def test_resolve_feature_with_no_caps_always_passes():
+    fc = _fc_module()
+    ok, missing = fc.resolve_feature({"key": "x"}, _sample_caps())
+    assert ok
+    assert missing == []
+
+
+def test_resolve_feature_missing_caps_reports_all():
+    fc = _fc_module()
+    feat = {"key": "x", "capabilities": [
+        "service:resolve",           # ok
+        "comfyui:node:DoesNotExist", # miss
+        "resolve:lut:Bogus",         # miss
+    ]}
+    ok, missing = fc.resolve_feature(feat, _sample_caps())
+    assert ok is False
+    assert len(missing) == 2
+    assert any("DoesNotExist" in m for m in missing)
+    assert any("Bogus" in m for m in missing)
+
+
+def test_spellcaster_builtin_features_are_sane():
+    fc = _fc_module()
+    for feat in fc.SPELLCASTER_FEATURES:
+        assert "key" in feat
+        assert "label" in feat
+        assert "capabilities" in feat
+        # Every cap has the expected head:tail shape
+        for cap in feat["capabilities"]:
+            assert ":" in cap
+
+
+def test_resolve_service_host_returns_hostname_or_none():
+    fc = _fc_module()
+    host = fc.resolve_service_host("resolve", _sample_caps())
+    assert host == "render-box"
+    none = fc.resolve_service_host("kobold", _sample_caps())
+    assert none is None
+
+
+def test_feature_capabilities_synced_to_all_copies():
+    import filecmp
+    canonical = os.path.join(BASE, "comfyui-spellcaster",
+                             "spellcaster_core", "feature_capabilities.py")
+    plugin = os.path.join(BASE, "plugins", "gimp", "comfyui-connector",
+                           "spellcaster_core", "feature_capabilities.py")
+    assert os.path.isfile(canonical), "canonical missing"
+    assert os.path.isfile(plugin), "plugin copy missing"
+    assert filecmp.cmp(canonical, plugin, shallow=False), \
+        "plugin feature_capabilities.py out of sync with canonical"
+
+
+def test_guild_has_features_endpoint():
+    src = open("tavern/server.py", encoding="utf-8").read()
+    assert "/api/features" in src
+    assert "FEATURE_CAPS_AVAILABLE" in src
+    assert "resolve_feature" in src
+
+
+def test_video_panel_gates_resolve_buttons():
+    src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
+    assert "featureMap" in src
+    assert 'featureMap["video.send_to_resolve"]' in src
+    assert 'featureMap["video.render_in_resolve"]' in src
 
 
 if __name__ == "__main__":

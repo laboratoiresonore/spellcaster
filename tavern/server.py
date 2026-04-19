@@ -10,6 +10,7 @@ import re
 import shutil
 import urllib.request
 import urllib.error
+import urllib.parse
 from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
 import sys
 import os
@@ -82,6 +83,15 @@ try:
 except ImportError:
     _antenna_registry = None
     ANTENNA_REGISTRY_AVAILABLE = False
+
+# R54: feature manifest + capability resolver. The Guild surfaces only
+# features whose declared capabilities are met on at least one antenna.
+try:
+    from spellcaster_core import feature_capabilities as _feature_caps
+    FEATURE_CAPS_AVAILABLE = True
+except ImportError:
+    _feature_caps = None
+    FEATURE_CAPS_AVAILABLE = False
 
 # Mailbox primitives — per-interface pull queues for short-lived clients.
 # Imported separately from the main backbone so existing installs without
@@ -3406,6 +3416,191 @@ def _spellcaster_calibrate_turbo(model_name: str) -> tuple[int, dict]:
         "ok": True, "model": model_name, "arch": arch_key,
         "seed": seed, "results": results,
     })
+
+
+# ── LoRA bulk calibration (cross-arch verify + trigger extraction) ──────
+# See scaffold/lora_calibration.py for the engine. The Guild exposes four
+# endpoints: start, status, results, approve. The approve endpoint is where
+# the user's review lands — accepted entries merge into _LORA_REGISTRY so
+# every surface (GIMP plugin, wizard sidebar) picks up the verified truth.
+
+def _spellcaster_detect_loras_root() -> str:
+    """Best-effort local path to ComfyUI's models/ directory.
+
+    Used by calibrate_one_lora to peek at LoRA safetensors metadata for
+    trigger-word extraction. If we can't find a local path, trigger
+    extraction falls back to filename-derived guesses.
+    """
+    for env_var in ("COMFYUI_ROOT", "COMFYUI_PATH"):
+        p = os.environ.get(env_var, "")
+        if p and os.path.isdir(os.path.join(p, "models", "loras")):
+            return os.path.join(p, "models")
+    # Walk up from the installer's comfyui_path config if present.
+    try:
+        cfg = _guided_install_load_config()
+        hints = [cfg.get("comfyui_path"), cfg.get("comfyui_root")]
+        for p in hints:
+            if p and os.path.isdir(os.path.join(p, "models", "loras")):
+                return os.path.join(p, "models")
+    except Exception:
+        pass
+    return ""
+
+
+def _spellcaster_list_server_loras() -> list[str]:
+    """Ask ComfyUI for the canonical lora list (same dropdown the UI sees)."""
+    try:
+        req = urllib.request.Request(
+            f"{COMFYUI_URL}/object_info/LoraLoaderModelOnly")
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            info = json.loads(resp.read())
+        choices = (info.get("LoraLoaderModelOnly", {})
+                       .get("input", {}).get("required", {})
+                       .get("lora_name", []))
+        if choices and isinstance(choices, list) and isinstance(choices[0], list):
+            return [str(x) for x in choices[0]]
+    except Exception:
+        pass
+    return []
+
+
+def _spellcaster_loras_start(loras: list, subset: str) -> tuple[int, dict]:
+    """POST /api/spellcaster/calibrate/loras/start — launch a bulk job.
+
+    Body:
+      loras:  optional explicit list. If empty, uses `subset`.
+      subset: "all" | "unknown" | "unverified". Selects the target set
+              from the server's LoRA list vs _LORA_REGISTRY state.
+    """
+    try:
+        from scaffold.lora_calibration import start_bulk_job
+        from spellcaster_core.preference_calibration import discover_models
+    except Exception as e:
+        return (500, {"error": f"calibration module unavailable: {e}"})
+
+    if isinstance(loras, list) and loras:
+        target = [str(x) for x in loras]
+    else:
+        all_loras = _spellcaster_list_server_loras()
+        if subset == "unknown":
+            target = [n for n in all_loras
+                      if (_LORA_REGISTRY.get(n, {}).get("archs") or []) in
+                         ([], ["unknown"])]
+        elif subset == "unverified":
+            target = [n for n in all_loras
+                      if not _LORA_REGISTRY.get(n, {}).get("verified_by_test")]
+        else:
+            target = all_loras
+
+    if not target:
+        return (409, {"error": "no LoRAs to calibrate",
+                      "hint": f"subset={subset!r} matched nothing"})
+
+    try:
+        models = discover_models(COMFYUI_URL)
+    except Exception as e:
+        return (502, {"error": f"ComfyUI not reachable: {e}"})
+    if not models:
+        return (409, {"error": "no installed models to test against; "
+                               "install at least one checkpoint first"})
+
+    state = start_bulk_job(
+        COMFYUI_URL, target, models,
+        comfy_models_root=_spellcaster_detect_loras_root() or None,
+    )
+    return (200, {"ok": True, "job_id": state.job_id,
+                  "total": state.total, "status": state.status})
+
+
+def _spellcaster_loras_status(job_id: str) -> tuple[int, dict]:
+    try:
+        from scaffold.lora_calibration import get_job_state
+    except Exception as e:
+        return (500, {"error": f"calibration module unavailable: {e}"})
+    state = get_job_state(job_id)
+    if not state:
+        return (404, {"error": f"job {job_id!r} not found"})
+    return (200, state.to_public_dict())
+
+
+def _spellcaster_loras_results(job_id: str) -> tuple[int, dict]:
+    try:
+        from scaffold.lora_calibration import get_job_state
+    except Exception as e:
+        return (500, {"error": f"calibration module unavailable: {e}"})
+    state = get_job_state(job_id)
+    if not state:
+        return (404, {"error": f"job {job_id!r} not found"})
+    return (200, {
+        "job_id": state.job_id,
+        "status": state.status,
+        "total": state.total,
+        "done": state.done,
+        "results": [r.to_dict() for r in state.results],
+    })
+
+
+def _spellcaster_loras_approve(approvals: list) -> tuple[int, dict]:
+    """POST /api/spellcaster/calibrate/loras/approve — commit user review.
+
+    Body:
+      approvals: list of {
+        lora_name:      str,
+        verified_archs: [str],      # user's final arch assignment
+        trigger_words:  [str],      # user may edit the auto-extracted list
+        strength:       float,      # default strength (optional)
+        accepted:       bool,       # False = drop from registry / hide
+        notes:          str,
+      }
+
+    Merges each approval into _LORA_REGISTRY. Drops entries flagged
+    accepted=False. Persists on success and returns a small summary.
+    """
+    if not isinstance(approvals, list):
+        return (400, {"error": "approvals must be a list"})
+    accepted = rejected = updated = 0
+    for appr in approvals:
+        if not isinstance(appr, dict):
+            continue
+        name = appr.get("lora_name")
+        if not name:
+            continue
+        if appr.get("accepted") is False:
+            # User said no-dice: remove from registry (not from disk).
+            if name in _LORA_REGISTRY:
+                del _LORA_REGISTRY[name]
+                rejected += 1
+            continue
+        entry = _LORA_REGISTRY.setdefault(name, {
+            "archs": [], "purpose": "", "tags": [], "source": "unknown",
+        })
+        archs = appr.get("verified_archs")
+        if isinstance(archs, list) and archs:
+            entry["archs"] = [str(a) for a in archs]
+        trig = appr.get("trigger_words")
+        if isinstance(trig, list):
+            entry["trigger_words"] = [str(t) for t in trig if t]
+        if "strength" in appr:
+            try:
+                entry["default_strength"] = float(appr["strength"])
+            except (TypeError, ValueError):
+                pass
+        notes = appr.get("notes")
+        if isinstance(notes, str) and notes:
+            entry["user_notes"] = notes[:500]
+        entry["source"] = "test_verified"
+        entry["verified_by_test"] = True
+        entry["last_verified_ts"] = time.time()
+        accepted += 1
+        updated += 1
+    if updated:
+        try:
+            _save_lora_registry()
+        except Exception as e:
+            return (500, {"error": f"save failed: {e}",
+                          "accepted": accepted, "rejected": rejected})
+    return (200, {"ok": True, "accepted": accepted, "rejected": rejected,
+                  "registry_size": len(_LORA_REGISTRY)})
 
 
 def _spellcaster_calibration_save(model_name: str, prefs: dict) -> tuple[int, dict]:
@@ -6954,6 +7149,17 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(200, _spellcaster_state())
         if self.path == '/api/spellcaster/models':
             return self.end_json(*_spellcaster_discover_models())
+        # LoRA bulk calibration status + results (polled by the review UI).
+        if self.path.startswith('/api/spellcaster/calibrate/loras/status'):
+            qs = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(qs)
+            return self.end_json(*_spellcaster_loras_status(
+                params.get('job', [''])[0]))
+        if self.path.startswith('/api/spellcaster/calibrate/loras/results'):
+            qs = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(qs)
+            return self.end_json(*_spellcaster_loras_results(
+                params.get('job', [''])[0]))
 
         # ── API GET endpoints ──
         if self.path.startswith('/api/wizard_info/'):
@@ -7551,6 +7757,53 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 return self.end_json(501, {"error": "antenna registry disabled"})
             snap = _antenna_registry.snapshot()
             return self.end_json(200, snap)
+        elif self.path == '/api/features' or self.path.startswith('/api/features?'):
+            # R54: Resolve each feature against the capability snapshot.
+            # Returns {satisfied:[...], unsatisfied:[{feature, missing}]}.
+            # The UI uses this to hide features whose prerequisites aren't met.
+            if not FEATURE_CAPS_AVAILABLE or _feature_caps is None:
+                return self.end_json(501, {"error": "feature manifest disabled"})
+            refresh = False
+            if '?' in self.path:
+                try:
+                    from urllib.parse import urlparse, parse_qs
+                    qs = parse_qs(urlparse(self.path).query)
+                    refresh = (qs.get('refresh') or ['0'])[0] in ('1', 'true', 'yes')
+                except Exception:
+                    refresh = False
+            snap = self._capabilities_snapshot(force_refresh=refresh)
+            satisfied: list[dict[str, Any]] = []
+            unsatisfied: list[dict[str, Any]] = []
+            for feature in _feature_caps.SPELLCASTER_FEATURES:
+                ok, missing = _feature_caps.resolve_feature(feature, snap)
+                row = dict(feature)
+                row["satisfied"] = ok
+                row["missing"] = missing
+                if ok:
+                    # Attach the elected host so the UI can show "(on render-box)"
+                    svc = None
+                    for cap in feature.get("capabilities", []):
+                        if cap.startswith("service:"):
+                            svc = cap.split(":", 2)[1]
+                            break
+                        if cap.startswith("comfyui:"):
+                            svc = "comfyui"
+                            break
+                        if cap.startswith("resolve:"):
+                            svc = "resolve"
+                            break
+                    if svc:
+                        row["host"] = _feature_caps.resolve_service_host(svc, snap)
+                    satisfied.append(row)
+                else:
+                    unsatisfied.append(row)
+            return self.end_json(200, {
+                "satisfied": satisfied,
+                "unsatisfied": unsatisfied,
+                "total": len(_feature_caps.SPELLCASTER_FEATURES),
+                "capabilities_snapshot_cached_at": snap.get("cached_at"),
+            })
+
         elif self.path == '/api/capabilities' or self.path.startswith('/api/capabilities?'):
             # R53b: Aggregate per-antenna capability report — what ComfyUI
             # nodes + Resolve LUTs are reachable, keyed by antenna hostname.
@@ -9136,6 +9389,13 @@ class GuildHandler(SimpleHTTPRequestHandler):
         if self.path == '/api/spellcaster/calibration/save':
             return self.end_json(*_spellcaster_calibration_save(
                 data.get('model', ''), data.get('prefs') or {}))
+        # LoRA bulk calibration (cross-arch verification + trigger extraction)
+        if self.path == '/api/spellcaster/calibrate/loras/start':
+            return self.end_json(*_spellcaster_loras_start(
+                data.get('loras') or [], data.get('subset', 'unknown')))
+        if self.path == '/api/spellcaster/calibrate/loras/approve':
+            return self.end_json(*_spellcaster_loras_approve(
+                data.get('approvals') or []))
 
         # -- /api/horde_generate -- server-side proxy to AI Horde
         #    Browser can't call Horde directly (CORS), so we relay.

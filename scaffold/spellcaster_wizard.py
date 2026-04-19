@@ -391,6 +391,33 @@ you installed something — wait for the confirmation to come back.
   Calibration — CFG sweep:
     <ACTION>{{"type": "calibrate_cfg", "model": "...", "values": [3.0, 5.0, 7.0, 9.0]}}</ACTION>
 
+  LoRA auto-setup — the headline calibration bubble. Verifies every LoRA
+  against every installed model architecture by actually RUNNING a tiny
+  64x64 test generation, not by guessing from filenames. Wan video LoRAs
+  land on video wizards only, SDXL LoRAs on SDXL wizards only, etc. Also
+  extracts trigger words from each LoRA's safetensors metadata. Returns
+  a job_id; poll status, fetch results, then let the user review:
+    <ACTION>{{"type": "lora_autosetup", "subset": "unknown"}}</ACTION>
+    ^^ subsets: "unknown" (default — only LoRAs with no verified arch)
+                "unverified" (everything that hasn't been test-verified)
+                "all" (nuclear; can take 30+ minutes on a large library)
+    Or pass an explicit list: {{"loras": ["A.safetensors", "B.safetensors"]}}
+
+  Poll a running job:
+    <ACTION>{{"type": "lora_autosetup_status", "job": "lcal_abc123"}}</ACTION>
+  Fetch final results (for the review step):
+    <ACTION>{{"type": "lora_autosetup_results", "job": "lcal_abc123"}}</ACTION>
+  Commit user-reviewed approvals back to the registry:
+    <ACTION>{{"type": "lora_autosetup_approve",
+             "approvals": [
+               {{"lora_name": "...", "accepted": true,
+                 "verified_archs": ["sdxl"],
+                 "trigger_words": ["detailed skin"],
+                 "strength": 0.6,
+                 "notes": "user's own note"}},
+               {{"lora_name": "bogus.safetensors", "accepted": false}}
+             ]}}</ACTION>
+
   Save user's calibration pick (writes into the shared CalibrationProfile
   used by every surface, so the GIMP plugin picks up the new default too):
     <ACTION>{{"type": "calibration_save", "model": "...", "prefs": {{"cfg": 5.0, "steps": 25, "rating": "love"}}}}</ACTION>
@@ -436,6 +463,34 @@ CALIBRATION:
   LoRA strength sweeps, turbo A/B, CFG sweeps, and sampler A/B all work
   the same way: you emit the action, the UI runs the grid, the user picks,
   you update the defaults and confirm.
+
+LORA AUTO-SETUP (headline calibration bubble — show this option early):
+  The legacy LoRA classifier looks at filenames and asks the local LLM to
+  guess — so Wan video LoRAs end up tagged as SDXL and show up under
+  image-gen wizards. The Spellcaster fixes this by actually TESTING:
+
+    For each LoRA file:
+      For each architecture the user has at least one model for:
+        build a tiny 64x64, 2-step test workflow with the LoRA loaded at
+        strength 0.5, dispatch to ComfyUI, wait up to 45s for success.
+      Any architecture where the test passes is "verified".
+      If every architecture errored (shape mismatch / dtype mismatch /
+      unknown key), the LoRA is flagged "no_dice" and the user is asked
+      whether to force-assign or drop.
+
+    Trigger words: read each LoRA's safetensors __metadata__ block,
+      looking for ss_network_trigger / ss_output_name / modelspec.trigger_phrase
+      first, then the top-N of ss_tag_frequency, then a cleaned filename
+      as the last resort.
+
+  Offer this proactively after the first install-loop success. Explain
+  it as: "I can verify every LoRA on your disk by actually running each
+  one — takes a few minutes but fixes the 'wrong wizard is suggesting
+  Wan LoRAs' problem permanently." When the user agrees, emit
+  `lora_autosetup`. Poll `lora_autosetup_status` until status=="complete",
+  then emit `lora_autosetup_results` and present a per-LoRA review: for
+  each entry, quote the verified_archs + trigger_words, let the user
+  accept / reject / edit, then `lora_autosetup_approve` the batch.
 
 IMPORTANT RULES:
   - Never promise a feature / tool / plugin not listed above.
@@ -528,6 +583,21 @@ def action_to_endpoint(action: dict[str, Any]) -> tuple[str, str, dict[str, Any]
         return ("POST", "/api/spellcaster/calibration/save",
                 {"model": action.get("model", ""),
                  "prefs": action.get("prefs") or {}})
+    if atype == "lora_autosetup":
+        return ("POST", "/api/spellcaster/calibrate/loras/start",
+                {"loras":  action.get("loras") or [],
+                 "subset": action.get("subset", "unknown")})
+    if atype == "lora_autosetup_status":
+        return ("GET",
+                f"/api/spellcaster/calibrate/loras/status?job={action.get('job', '')}",
+                {})
+    if atype == "lora_autosetup_results":
+        return ("GET",
+                f"/api/spellcaster/calibrate/loras/results?job={action.get('job', '')}",
+                {})
+    if atype == "lora_autosetup_approve":
+        return ("POST", "/api/spellcaster/calibrate/loras/approve",
+                {"approvals": action.get("approvals") or []})
     if atype == "finish":
         return ("POST", "/api/setup/finish", {})
     return None

@@ -1679,6 +1679,10 @@ function VideoPanel() {
   const [antennaPairUrl, setAntennaPairUrl] = _useState("");
   const [antennaPairToken, setAntennaPairToken] = _useState("");
   const [antennaBusy, setAntennaBusy] = _useState(false);
+  // R54: which features are currently satisfied by at least one online
+  // antenna. Features NOT in this set are hidden from the UI entirely
+  // (matches the "nothing dead-renders" rule).
+  const [featureMap, setFeatureMap] = _useState({});
   const pollRef = _useRef(null);
   const sseRef = _useRef(null);
   const [sseConnected, setSseConnected] = _useState(false);
@@ -2292,6 +2296,25 @@ function VideoPanel() {
     };
     poll();
     const id = setInterval(poll, 15000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  // R54: poll /api/features every 30s so capability-gated buttons
+  // (→ Resolve, Render, Klein, …) appear/disappear as antennas come
+  // and go. Features map to their satisfied-row by key.
+  _useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await api.get("/api/features");
+        if (cancelled) return;
+        const m = {};
+        for (const row of (res.satisfied || [])) m[row.key] = row;
+        setFeatureMap(m);
+      } catch (_) { /* older Guild: no endpoint → leave map empty, features hide */ }
+    };
+    poll();
+    const id = setInterval(poll, 30000);
     return () => { cancelled = true; clearInterval(id); };
   }, []);
 
@@ -2913,21 +2936,28 @@ function VideoPanel() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
             FCPXML
           </a>
-          <button onClick={sendToResolve}
-            className="send-to-resolve flex items-center gap-1.5 bg-pink-900/40 hover:bg-pink-700/50 text-pink-200 hover:text-pink-100 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
-            title="Build timeline directly in DaVinci Resolve via antenna (needs Resolve running + antenna online)">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            → Resolve
-          </button>
-          <button onClick={renderInResolve}
-            disabled={resolveRenderBusy}
-            className="render-in-resolve flex items-center gap-1.5 bg-rose-900/40 hover:bg-rose-700/50 text-rose-200 hover:text-rose-100 px-3 py-2 rounded-lg text-xs font-medium transition-colors disabled:bg-slate-700 disabled:text-slate-500"
-            title="Render the current Resolve timeline via antenna — uses a preset already saved in Resolve">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
-            {resolveRenderBusy && resolveRenderStatus && resolveRenderStatus.completion_percent != null
-              ? `Rendering ${resolveRenderStatus.completion_percent}%`
-              : (resolveRenderBusy ? "Rendering…" : "Render")}
-          </button>
+          {/* R54: only render Resolve-dependent buttons when the capability
+              resolves on at least one online antenna. Host hint shows which
+              machine will handle the request. */}
+          {featureMap["video.send_to_resolve"] && (
+            <button onClick={sendToResolve}
+              className="send-to-resolve flex items-center gap-1.5 bg-pink-900/40 hover:bg-pink-700/50 text-pink-200 hover:text-pink-100 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+              title={`Build timeline directly in DaVinci Resolve via antenna${featureMap["video.send_to_resolve"].host ? " (on " + featureMap["video.send_to_resolve"].host + ")" : ""}`}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              → Resolve
+            </button>
+          )}
+          {featureMap["video.render_in_resolve"] && (
+            <button onClick={renderInResolve}
+              disabled={resolveRenderBusy}
+              className="render-in-resolve flex items-center gap-1.5 bg-rose-900/40 hover:bg-rose-700/50 text-rose-200 hover:text-rose-100 px-3 py-2 rounded-lg text-xs font-medium transition-colors disabled:bg-slate-700 disabled:text-slate-500"
+              title={`Render the current Resolve timeline via antenna${featureMap["video.render_in_resolve"].host ? " (on " + featureMap["video.render_in_resolve"].host + ")" : ""}`}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+              {resolveRenderBusy && resolveRenderStatus && resolveRenderStatus.completion_percent != null
+                ? `Rendering ${resolveRenderStatus.completion_percent}%`
+                : (resolveRenderBusy ? "Rendering…" : "Render")}
+            </button>
+          )}
           {(() => {
             // R52: Antenna button shows hostnames instead of the generic "Antenna".
             // - 0 online : "No antenna" (greyed, tooltip hints to pair)
