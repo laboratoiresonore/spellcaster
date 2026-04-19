@@ -8980,6 +8980,133 @@ class GuildHandler(SimpleHTTPRequestHandler):
             )
             return self.end_json(200, shot)
 
+        elif self.path == '/api/video/import-timeline' and self.command == 'POST':
+            # R83: ingest a DaVinci Resolve timeline capture. Body:
+            #   {timeline_name, fps, clips: [
+            #      {clip_name, track, start_frame, duration_frames,
+            #       spellcaster_shot_id?, reference_b64?, marker_meta?,
+            #       color_label?, notes?}
+            #   ]}
+            # Clips already carrying spellcaster_shot_id are MATCHED to
+            # existing shots (no duplicate create). Clips without get a
+            # fresh draft shot using the Resolve clip_name as title and
+            # the (optional) first-frame reference as ref_image. All
+            # resulting shots are grouped under one new Scene named after
+            # the timeline, so the editor can see "what I pulled back from
+            # Resolve" as one cohort.
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            timeline_name = (data.get('timeline_name') or 'Resolve timeline').strip()
+            fps = float(data.get('fps') or 24.0) or 24.0
+            clips = data.get('clips') or []
+            if not isinstance(clips, list) or not clips:
+                return self.end_json(400, {"error": "clips must be a non-empty list"})
+
+            import base64 as _b64
+            import tempfile as _tf
+            import time as _time
+
+            # Single scene cohort per import — cheap way to group them
+            scene_label = f"Resolve: {timeline_name}"
+            try:
+                scene = _VIDEO_BRIDGE.board.add_scene(
+                    name=scene_label, color="#4a9eff")
+                scene_id = scene.id
+            except Exception:
+                scene_id = None
+
+            created = []
+            matched = []
+            failed = []
+            existing_ids = {s.id for s in _VIDEO_BRIDGE.board._shots}
+            creations_dir = os.path.join(os.path.dirname(__file__), 'creations')
+            os.makedirs(creations_dir, exist_ok=True)
+
+            for idx, clip in enumerate(clips):
+                if not isinstance(clip, dict):
+                    continue
+                sc_id = (clip.get('spellcaster_shot_id') or '').strip()
+
+                # MATCH path — clip already tied to a Spellcaster shot
+                if sc_id and sc_id in existing_ids:
+                    matched.append(sc_id)
+                    # Keep scene assignment fresh so re-imports regroup
+                    if scene_id:
+                        _VIDEO_BRIDGE.board.assign_shot_to_scene(sc_id, scene_id)
+                    continue
+
+                # CREATE path
+                title = (clip.get('clip_name') or f"Shot {idx+1}").strip()[:80]
+                duration_frames = int(clip.get('duration_frames') or 0)
+                target_duration_s = (duration_frames / fps) if duration_frames > 0 else None
+                meta = clip.get('marker_meta') or {}
+                prompt = str(meta.get('prompt') or clip.get('prompt') or '').strip()
+                preset = str(meta.get('preset') or clip.get('preset') or '').strip() \
+                         or "wan22_i2v_lightning"
+                notes = (f"Captured from Resolve timeline '{timeline_name}' "
+                          f"(clip '{title}', {duration_frames}f @ {fps:.2f}fps).")
+
+                # Save reference if one was shipped
+                ref_path = None
+                ref_b64 = clip.get('reference_b64') or ''
+                if ref_b64:
+                    try:
+                        raw = _b64.b64decode(ref_b64.split(',', 1)[-1])
+                        tmp = _tf.NamedTemporaryFile(
+                            delete=False, suffix='.png',
+                            dir=creations_dir, prefix=f"resolve_ref_")
+                        tmp.write(raw)
+                        tmp.close()
+                        ref_path = tmp.name
+                    except Exception:
+                        ref_path = None
+
+                try:
+                    kw = {
+                        "title": title,
+                        "prompt": prompt,
+                        "preset": preset,
+                        "notes": notes,
+                        "scene_id": scene_id,
+                    }
+                    if ref_path:
+                        kw["ref_image"] = ref_path
+                    if target_duration_s:
+                        kw["target_duration_s"] = target_duration_s
+                    if clip.get('color_label'):
+                        kw["color_label"] = str(clip['color_label']).lower()
+                    new_shot = _VIDEO_BRIDGE.add_shot(**kw)
+                    created.append(new_shot.get('id') or new_shot.get('shot_id'))
+                except Exception as e:
+                    failed.append({"clip_name": title, "error": str(e)})
+
+            # Log the import as a single activity line so the Guild
+            # history panel shows it as one event.
+            try:
+                _VIDEO_BRIDGE.board.log_activity(
+                    "timeline_imported",
+                    timeline=timeline_name,
+                    total=len(clips),
+                    created=len(created),
+                    matched=len(matched),
+                    failed=len(failed),
+                )
+            except Exception:
+                pass
+
+            return self.end_json(200, {
+                "timeline_name": timeline_name,
+                "scene_id": scene_id,
+                "fps": fps,
+                "total_clips": len(clips),
+                "created": len(created),
+                "matched": len(matched),
+                "failed": len(failed),
+                "shot_ids": created,
+                "matched_ids": matched,
+                "failures": failed[:20],
+            })
+
         elif self.path.startswith('/api/video/shots/') and self.path.endswith('/delete'):
             """Delete a shot."""
             if not _VIDEO_BRIDGE:
