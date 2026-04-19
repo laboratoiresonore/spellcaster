@@ -1686,6 +1686,12 @@ function VideoPanel() {
   // R55b: the FULL /api/features response (both satisfied and unsatisfied)
   // so the Antenna modal can tell the user WHY a feature isn't showing up.
   const [featureReport, setFeatureReport] = _useState(null);
+  // R60a: snapshot-restore preview (populated when user clicks Restore;
+  // cleared when they confirm or cancel in the modal).
+  const [restorePreview, setRestorePreview] = _useState(null);
+  // R60b: render-cost estimate + live antenna telemetry (GPU util, VRAM,
+  // ComfyUI queue depth). Polled every 20s; null when backend is old.
+  const [queueCost, setQueueCost] = _useState(null);
   // R56: per-service launch state so the "Start" buttons show progress
   const [serviceStartBusy, setServiceStartBusy] = _useState({});
   const pollRef = _useRef(null);
@@ -2005,13 +2011,41 @@ function VideoPanel() {
     }
   };
 
+  // R60a: restore flow is now two-step — first fetch a non-mutating
+  // preview of what would change, show the user, then apply on confirm.
+  // `restoreSnapshot` opens the preview; `confirmSnapshotRestore` applies.
   const restoreSnapshot = async (id, snapId) => {
     try {
-      const res = await api.post(`/api/video/shots/${id}/snapshot/${snapId}/restore`, {});
-      if (res && res.restored) {
-        addToast("Snapshot restored", "success");
+      const diff = await api.get(`/api/video/shots/${id}/snapshot/${snapId}/preview`);
+      if (diff && Array.isArray(diff.changes)) {
+        // No changes? skip the modal, just tell the user.
+        if (diff.changes.length === 0) {
+          addToast(`Snapshot "${diff.snap_label}" already matches current state`,
+                   "info");
+          return;
+        }
+        setRestorePreview(diff);
+      } else if (diff && diff.error) {
+        addToast(`Preview failed: ${diff.error}`, "error");
       } else {
-        addToast(res && res.error ? res.error : "Could not restore (shot may be locked)", "error");
+        addToast("Preview failed: unknown response", "error");
+      }
+    } catch (e) {
+      addToast("Preview failed: " + (e.message || "unknown"), "error");
+    }
+  };
+
+  const confirmSnapshotRestore = async () => {
+    if (!restorePreview) return;
+    const { shot_id, snap_id, snap_label } = restorePreview;
+    setRestorePreview(null);
+    try {
+      const res = await api.post(
+        `/api/video/shots/${shot_id}/snapshot/${snap_id}/restore`, {});
+      if (res && res.restored) {
+        addToast(`Restored "${snap_label}"`, "success");
+      } else {
+        addToast(res?.error || "Could not restore (shot may be locked)", "error");
       }
       await refresh();
     } catch (e) {
@@ -2375,6 +2409,21 @@ function VideoPanel() {
     };
     poll();
     const id = setInterval(poll, 15000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  // R60b: poll /api/video/queue-cost every 20s. Lightweight — the
+  // backend response is <1KB and we use it to render the header chip.
+  _useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await api.get("/api/video/queue-cost");
+        if (!cancelled) setQueueCost(res);
+      } catch (_) { /* older Guild: no endpoint */ }
+    };
+    poll();
+    const id = setInterval(poll, 20000);
     return () => { cancelled = true; clearInterval(id); };
   }, []);
 
@@ -3471,6 +3520,69 @@ function VideoPanel() {
         />
       )}
 
+      {/* R60a: snapshot-restore preview (shows diff before applying) */}
+      {restorePreview && (
+        <div className="restore-preview-modal fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-cyan-600/40 rounded-xl p-5 max-w-2xl w-full space-y-3 max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-cyan-200">
+                Restore snapshot
+                {restorePreview.snap_label && (
+                  <span className="text-slate-400 font-normal ml-2 text-sm">"{restorePreview.snap_label}"</span>
+                )}
+              </h2>
+              <button onClick={() => setRestorePreview(null)}
+                className="text-slate-400 hover:text-slate-200 text-xl leading-none">×</button>
+            </div>
+            {restorePreview.locked && (
+              <div className="rounded bg-amber-900/40 border border-amber-600/40 text-amber-200 text-xs p-2">
+                ⚠ This shot is locked. Restore will be refused until you unlock it.
+              </div>
+            )}
+            <div className="text-xs text-slate-400">
+              {restorePreview.changes.length} field{restorePreview.changes.length === 1 ? "" : "s"} will change:
+            </div>
+            <div className="restore-preview-diff space-y-2">
+              {restorePreview.changes.map((c, i) => (
+                <div key={i} className="restore-preview-row rounded bg-slate-800/60 border border-slate-700/40 p-2 text-[11px] space-y-1">
+                  <div className="font-medium text-slate-200">{c.field}</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded bg-red-950/30 border border-red-800/20 p-1.5">
+                      <div className="text-[9px] text-red-400/80 uppercase">current</div>
+                      <div className="text-red-200 whitespace-pre-wrap break-words font-mono">
+                        {typeof c.from === "object"
+                          ? JSON.stringify(c.from, null, 1)
+                          : (c.from === null || c.from === undefined || c.from === ""
+                              ? <span className="italic text-slate-600">empty</span>
+                              : String(c.from))}
+                      </div>
+                    </div>
+                    <div className="rounded bg-emerald-950/30 border border-emerald-800/20 p-1.5">
+                      <div className="text-[9px] text-emerald-400/80 uppercase">restored</div>
+                      <div className="text-emerald-200 whitespace-pre-wrap break-words font-mono">
+                        {typeof c.to === "object"
+                          ? JSON.stringify(c.to, null, 1)
+                          : (c.to === null || c.to === undefined || c.to === ""
+                              ? <span className="italic text-slate-600">empty</span>
+                              : String(c.to))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 pt-2 border-t border-slate-700/40">
+              <button onClick={() => setRestorePreview(null)}
+                className="flex-1 px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium">Cancel</button>
+              <button onClick={confirmSnapshotRestore}
+                disabled={restorePreview.locked}
+                className="restore-confirm-btn flex-1 px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium disabled:bg-slate-700 disabled:text-slate-500"
+              >Apply restore</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* R51a: Resolve render dialog with a proper preset picker */}
       {showRenderDialog && (
         <div className="render-dialog fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
@@ -3726,6 +3838,60 @@ function VideoPanel() {
           <span className="queue-eta-label">~{queueEta.label}</span>
         </div>
       )}
+      {/* R60b: render-cost chip — pending work + live antenna telemetry */}
+      {queueCost && queueCost.pending_count > 0 && (() => {
+        const serial = queueCost.total_seconds_serial || 0;
+        const parallel = queueCost.total_seconds_parallel || 0;
+        const mins = Math.floor(serial / 60);
+        const secs = Math.round(serial % 60);
+        const costLabel = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+        const tel = queueCost.antenna_telemetry;
+        const gpuPct = tel?.gpu_util_percent;
+        const vramUsed = tel?.vram_used_mb;
+        const vramTotal = tel?.vram_total_mb;
+        const comfy = tel?.services?.comfyui?.extra;
+        return (
+          <div className="queue-cost-header flex items-center justify-center gap-2 flex-wrap text-[11px] text-slate-400 py-1">
+            <span className="queue-cost-label">💸 {queueCost.pending_count} pending · {costLabel} serial
+              {parallel > 0 && parallel < serial && (
+                <span className="text-slate-500"> ({Math.floor(parallel/60)}m{Math.round(parallel%60)}s @{queueCost.total_seconds_serial/parallel|0}×)</span>
+              )}
+            </span>
+            <span className="text-slate-600">·</span>
+            <span className="queue-cost-source text-slate-500">avg from {queueCost.avg_source}</span>
+            {queueCost.antenna_hostname && (
+              <>
+                <span className="text-slate-600">·</span>
+                <span className="queue-cost-antenna text-indigo-300">📡 {queueCost.antenna_hostname}</span>
+              </>
+            )}
+            {gpuPct != null && (
+              <>
+                <span className="text-slate-600">·</span>
+                <span className={"queue-cost-gpu " + (gpuPct > 80 ? "text-rose-300" : gpuPct > 50 ? "text-amber-300" : "text-emerald-300")}>
+                  GPU {gpuPct.toFixed(0)}%
+                </span>
+              </>
+            )}
+            {vramUsed && vramTotal && (
+              <>
+                <span className="text-slate-600">·</span>
+                <span className="queue-cost-vram text-slate-400">
+                  VRAM {(vramUsed/1024).toFixed(1)}/{(vramTotal/1024).toFixed(1)}GB
+                </span>
+              </>
+            )}
+            {comfy && comfy.queue_pending + comfy.queue_running > 0 && (
+              <>
+                <span className="text-slate-600">·</span>
+                <span className="queue-cost-comfy text-cyan-300">
+                  Comfy {comfy.queue_running}R/{comfy.queue_pending}P
+                </span>
+              </>
+            )}
+          </div>
+        );
+      })()}
 
       <div className="shortcut-hints text-xs text-slate-500 text-center pt-4 border-t border-slate-800">
         <span className="text-slate-600">Shortcuts:</span> <kbd className="px-1 rounded bg-slate-800">N</kbd> new shot · <kbd className="px-1 rounded bg-slate-800">Ctrl+Shift+R</kbd> render all

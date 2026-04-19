@@ -750,6 +750,92 @@ class Shotboard:
         eta = round(avg * pending, 1)
         return {"eta_seconds": eta, "pending_count": pending, "avg_render_s": avg}
 
+    def render_cost_estimate(self, *, max_concurrent: int = 1):
+        """R60b: Estimate total render cost for everything NOT yet ready.
+
+        Draft + queued + running + failed counts as "pending work"; each
+        uses its own render history's average when available, falling back
+        to the global average otherwise. Returns:
+
+            {
+              "pending_count": int,         # total shots that need work
+              "by_status": {status: count},
+              "total_seconds_serial": float,     # if rendered 1-at-a-time
+              "total_seconds_parallel": float,   # given max_concurrent workers
+              "avg_seconds_per_shot": float,
+              "avg_source": "per-shot" | "board" | "preset-hint" | "default",
+              "per_shot": [{"id": "...", "status": "...", "estimate_s": float}],
+            }
+
+        Falls back through three estimators per shot:
+          1. This shot's own render_history (most accurate — learned)
+          2. The board-wide average_render_time() (avg of all shots)
+          3. 120s default (placeholder for a brand-new board).
+        """
+        global_avg = self.average_render_time()
+        by_status: Dict[str, int] = {}
+        per_shot: List[Dict[str, Any]] = []
+        total_serial = 0.0
+        sources: set = set()
+
+        for shot in self._shots:
+            if shot.status == "ready":
+                continue
+            by_status[shot.status] = by_status.get(shot.status, 0) + 1
+            # Per-shot history
+            durations = [e.get("duration_s") for e in (shot.render_history or [])
+                         if isinstance(e.get("duration_s"), (int, float))
+                         and e.get("status") == "ready"]
+            if durations:
+                estimate = sum(durations) / len(durations)
+                source = "per-shot"
+            elif shot.render_duration_s and shot.render_duration_s > 0:
+                estimate = float(shot.render_duration_s)
+                source = "per-shot"
+            elif global_avg > 0:
+                estimate = global_avg
+                source = "board"
+            elif shot.target_duration_s:
+                # Weak hint — target playback duration isn't render time,
+                # but it's a better guess than 120s when nothing else exists.
+                estimate = float(shot.target_duration_s) * 3
+                source = "preset-hint"
+            else:
+                estimate = 120.0
+                source = "default"
+            sources.add(source)
+            total_serial += estimate
+            per_shot.append({
+                "id": shot.id,
+                "status": shot.status,
+                "estimate_s": round(estimate, 1),
+                "source": source,
+            })
+
+        mc = max(1, int(max_concurrent))
+        total_parallel = total_serial / mc if per_shot else 0.0
+
+        # Dominant source reporting — the one that fired most often
+        if per_shot:
+            src_counts: Dict[str, int] = {}
+            for row in per_shot:
+                src_counts[row["source"]] = src_counts.get(row["source"], 0) + 1
+            dominant_source = max(src_counts.items(), key=lambda x: x[1])[0]
+            avg = total_serial / len(per_shot)
+        else:
+            dominant_source = "none"
+            avg = 0.0
+
+        return {
+            "pending_count": len(per_shot),
+            "by_status": by_status,
+            "total_seconds_serial": round(total_serial, 1),
+            "total_seconds_parallel": round(total_parallel, 1),
+            "avg_seconds_per_shot": round(avg, 1),
+            "avg_source": dominant_source,
+            "per_shot": per_shot,
+        }
+
     def record_render(self, shot_id, preset=None, status="ready",
                       duration_s=None, error=None):
         """Append a render attempt to the shot's history log."""
@@ -1225,6 +1311,61 @@ class Shotboard:
         if shot is None:
             return []
         return [dict(s) for s in shot.snapshots]
+
+    def preview_snapshot_restore(self, shot_id: str, snap_id: str
+                                   ) -> Optional[Dict[str, Any]]:
+        """R60a: Report what a `restore_snapshot` would change WITHOUT
+        mutating state. Returns per-field diff entries:
+
+            {"shot_id": "...", "snap_id": "...", "snap_label": "...",
+             "locked": False, "changes": [
+                {"field": "prompt", "from": "old", "to": "new"},
+                {"field": "preset", "from": "fast", "to": "quality"},
+                ...
+             ]}
+
+        Returns None if shot or snapshot don't exist. Locked shots
+        return the diff with locked=True so the UI can warn "this
+        restore would be refused".
+        """
+        shot = self.get(shot_id)
+        if shot is None:
+            return None
+        snap = next((s for s in shot.snapshots if s.get("id") == snap_id), None)
+        if snap is None:
+            return None
+        changes: List[Dict[str, Any]] = []
+        for key in self._SNAPSHOT_FIELDS:
+            if key not in snap:
+                continue
+            current = getattr(shot, key, None)
+            target = snap[key]
+            if key == "trajectories":
+                # Normalize both sides to dicts for comparison
+                current_n = [t.to_dict() if hasattr(t, "to_dict") else dict(t)
+                              for t in (current or [])]
+                target_n = [dict(t) for t in (target or [])]
+                if current_n != target_n:
+                    changes.append({
+                        "field": key,
+                        "from": f"{len(current_n)} trajectorie(s)",
+                        "to": f"{len(target_n)} trajectorie(s)",
+                    })
+                continue
+            if current != target:
+                changes.append({
+                    "field": key,
+                    "from": current,
+                    "to": target,
+                })
+        return {
+            "shot_id": shot_id,
+            "snap_id": snap_id,
+            "snap_label": snap.get("label", ""),
+            "snap_created_at": snap.get("created_at"),
+            "locked": bool(shot.locked),
+            "changes": changes,
+        }
 
     def restore_snapshot(self, shot_id: str, snap_id: str) -> Optional[Dict[str, Any]]:
         """Reset the shot's creative state to the named snapshot. Runtime

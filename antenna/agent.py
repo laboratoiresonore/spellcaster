@@ -163,6 +163,15 @@ def _build_routes(cfg: dict[str, Any]) -> dict[tuple[str, str], Callable]:
         ("GET", "/status"):   status_ep.status,
     }
 
+    # R60b: telemetry snapshot (GPU/RAM/queue-depth) for fleet dashboards.
+    # Schema is compatible with WhimWeaver's FleetTelemetry consumer.
+    try:
+        from .endpoints import telemetry_ep
+        routes[("GET", "/telemetry")] = telemetry_ep.snapshot
+    except ImportError as e:
+        print(f"[antenna] WARN: telemetry endpoint missing: {e}",
+              file=sys.stderr)
+
     # Service-specific routes
     services = cfg.get("services", [])
     if "comfyui" in services:
