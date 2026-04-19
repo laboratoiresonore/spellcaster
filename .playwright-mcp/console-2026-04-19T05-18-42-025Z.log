@@ -1,2 +1,6 @@
 [     230ms] [LOG] [Guild] Synced 35 pre-generated assets from server @ http://127.0.0.1:7777/app.js:304
 [     240ms] [LOG] [Guild] Synced 104 identity field(s) from server @ http://127.0.0.1:7777/app.js:332
+[  582405ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:7777/api/events/stream?kinds=guild.asset.uploaded%2Cgimp.asset.uploaded%2Cdarktable.asset.uploaded%2Cresolve.asset.uploaded:0
+[  587175ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/comfy_status:0
+[  587175ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/assets?limit=9:0
+[  587422ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/events/stream?kinds=guild.asset.uploaded%2Cgimp.asset.uploaded%2Cdarktable.asset.uploaded%2Cresolve.asset.uploaded:0

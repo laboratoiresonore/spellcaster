@@ -1531,6 +1531,126 @@ class Shotboard:
             "new_ids": created_ids,
         }
 
+    def shotboard_to_gallery_html(self) -> str:
+        """R80a: Standalone HTML document showing every ready shot as a
+        card with its thumbnail + metadata. Videos are linked (not
+        embedded) so the HTML stays small — hover any clip in the
+        browser to play. Self-contained styling so the user can share
+        this file on its own and it'll render anywhere.
+
+        The HTML references videos via /api/video/shots/<id>/video —
+        works when the Guild is running. For an offline share, the
+        user should copy the mp4s too and adjust src paths.
+        """
+        title = self._project_meta.get("title") or "Shotboard Gallery"
+        author = self._project_meta.get("author", "")
+        synopsis = self._project_meta.get("synopsis", "")
+        # Collect visible (non-archived, primary) shots that have video_path
+        visible = [s for s in self._shots
+                   if not s.archived and s.is_primary]
+        # Group by scene
+        scene_map = {sc.id: sc for sc in self._scenes}
+        groups: Dict[Optional[str], List[Shot]] = {}
+        for s in visible:
+            key = s.scene_id if s.scene_id in scene_map else None
+            groups.setdefault(key, []).append(s)
+        scene_order: List[Optional[str]] = [sc.id for sc in self._scenes
+                                              if sc.id in groups]
+        if None in groups:
+            scene_order.append(None)
+
+        def _html_escape(s: str) -> str:
+            return (str(s or "")
+                    .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    .replace('"', "&quot;"))
+
+        sections: List[str] = []
+        for key in scene_order:
+            scene_name = scene_map[key].name if key else "(Ungrouped)"
+            scene_color = scene_map[key].color if key else "#4a9eff"
+            cards: List[str] = []
+            for s in groups[key]:
+                video_path = f"/api/video/shots/{s.id}/video" if s.status == "ready" else ""
+                status_color = {
+                    "ready": "#34d399", "running": "#fbbf24",
+                    "queued": "#60a5fa", "draft": "#94a3b8", "failed": "#fb7185",
+                }.get(s.status, "#94a3b8")
+                stars = "★" * (s.rating or 0) + "☆" * (5 - (s.rating or 0))
+                tags_html = "".join(
+                    f'<span class="tag">#{_html_escape(t)}</span>'
+                    for t in (s.tags or []))
+                cards.append(f'''
+  <div class="card" data-shot-id="{_html_escape(s.id)}">
+    <div class="card-header">
+      <span class="idx">{s.index + 1}</span>
+      <span class="title">{_html_escape(s.title or "Untitled")}</span>
+      <span class="status" style="background:{status_color}">{_html_escape(s.status)}</span>
+    </div>
+    {f'<video class="preview" src="{_html_escape(video_path)}" muted loop preload="none" onmouseover="this.play()" onmouseout="this.pause();this.currentTime=0"></video>' if video_path else '<div class="preview placeholder">no render yet</div>'}
+    <div class="meta">
+      {f'<div class="rating" title="Rating">{stars}</div>' if s.rating else ''}
+      <div class="prompt">{_html_escape(s.prompt[:200])}{'…' if s.prompt and len(s.prompt) > 200 else ''}</div>
+      {f'<div class="notes"><strong>Notes:</strong> {_html_escape(s.notes[:150])}</div>' if s.notes else ''}
+      <div class="tags">{tags_html}</div>
+      <div class="footer">
+        <span>{_html_escape(s.preset or "—")}</span>
+        {f'<span>seed {s.seed}</span>' if s.seed is not None else ''}
+        {f'<span>{s.render_duration_s:.1f}s</span>' if s.render_duration_s else ''}
+      </div>
+    </div>
+  </div>''')
+            sections.append(f'''
+<section class="scene" style="border-left-color: {scene_color}">
+  <h2 style="color: {scene_color}">{_html_escape(scene_name)}</h2>
+  <div class="cards">{''.join(cards)}</div>
+</section>''')
+
+        html = f"""<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>{_html_escape(title)}</title>
+<style>
+  * {{ box-sizing: border-box; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+         background:#0f172a; color:#e2e8f0; margin:0; padding:20px; line-height:1.5; }}
+  .header {{ max-width: 1400px; margin: 0 auto 30px; border-bottom: 1px solid #334155; padding-bottom: 20px; }}
+  .header h1 {{ margin: 0 0 6px; color:#fbbf24; }}
+  .author {{ color:#94a3b8; font-size: 14px; }}
+  .synopsis {{ color:#cbd5e1; margin-top: 10px; }}
+  .scene {{ max-width: 1400px; margin: 0 auto 40px; border-left: 4px solid #4a9eff; padding-left: 20px; }}
+  .scene h2 {{ font-size: 18px; margin: 0 0 14px; }}
+  .cards {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }}
+  .card {{ background:#1e293b; border:1px solid #334155; border-radius:8px; overflow:hidden; }}
+  .card-header {{ padding:8px 10px; display:flex; align-items:center; gap:8px; background:#0f172a; border-bottom:1px solid #334155; }}
+  .idx {{ color:#64748b; font-family: monospace; width:24px; text-align:right; }}
+  .title {{ flex:1; font-weight:600; color:#fde68a; }}
+  .status {{ font-size:10px; padding:2px 6px; border-radius:3px; color:#0f172a; text-transform:uppercase; font-weight:600; }}
+  .preview {{ width:100%; aspect-ratio:16/9; background:#0f172a; object-fit:cover; }}
+  .preview.placeholder {{ display:flex; align-items:center; justify-content:center; color:#475569; font-size:12px; font-style:italic; }}
+  .meta {{ padding:10px; font-size:12px; }}
+  .rating {{ color:#fbbf24; margin-bottom: 6px; }}
+  .prompt {{ color:#cbd5e1; font-family: monospace; font-size: 11px; background: #0f172a;
+              padding:6px 8px; border-radius:4px; white-space: pre-wrap; }}
+  .notes {{ color:#94a3b8; margin-top: 6px; }}
+  .tags {{ margin-top: 6px; display:flex; flex-wrap: wrap; gap: 4px; }}
+  .tag {{ background:#0d4f66; color:#67e8f9; padding:1px 6px; border-radius:3px; font-size:10px; }}
+  .footer {{ margin-top: 8px; display:flex; gap:10px; color:#64748b; font-size: 10px; }}
+  @media print {{ body {{ background:#fff; color:#000; }} .card {{ break-inside: avoid; }} }}
+</style>
+</head><body>
+<div class="header">
+  <h1>{_html_escape(title)}</h1>
+  {f'<div class="author">by {_html_escape(author)}</div>' if author else ''}
+  {f'<div class="synopsis">{_html_escape(synopsis)}</div>' if synopsis else ''}
+  <div class="author" style="margin-top:10px">
+    {len(visible)} shot(s) across {len(scene_order)} scene(s)
+  </div>
+</div>
+{''.join(sections)}
+</body></html>"""
+        return html
+
     def shotboard_to_outline(self) -> str:
         """R75b: plaintext outline of the board — shareable with
         non-technical reviewers. Grouped by scene when scenes exist.
