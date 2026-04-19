@@ -51,6 +51,43 @@ function StatusBadge({ status }) {
 }
 
 // ── API helpers ──
+// R81a: tiny markdown → HTML for director's notes. Handles **bold**,
+// *italic*, `code`, [text](url), line-start "- " bullets, and
+// paragraph breaks. Escapes HTML first so user input is safe.
+function renderMarkdown(text) {
+  if (!text) return "";
+  let t = String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  // Links [text](url) — validate href starts with safe protocols
+  t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener" class="text-cyan-400 hover:text-cyan-300 underline">$1</a>');
+  // **bold**
+  t = t.replace(/\*\*([^*]+)\*\*/g, '<strong class="text-amber-200">$1</strong>');
+  // *italic* (non-greedy, no crossing newlines)
+  t = t.replace(/\*([^*\n]+)\*/g, '<em class="text-amber-100/90">$1</em>');
+  // `code`
+  t = t.replace(/`([^`]+)`/g,
+    '<code class="bg-slate-800 rounded px-1 py-0.5 font-mono text-[10px] text-slate-200">$1</code>');
+  // Bullet lists — convert runs of "- " lines to <ul>
+  const lines = t.split("\n");
+  const out = [];
+  let inList = false;
+  for (const line of lines) {
+    if (/^\s*-\s+/.test(line)) {
+      if (!inList) { out.push('<ul class="list-disc list-inside space-y-0.5">'); inList = true; }
+      out.push("<li>" + line.replace(/^\s*-\s+/, "") + "</li>");
+    } else {
+      if (inList) { out.push("</ul>"); inList = false; }
+      if (line.trim() === "") out.push("<br/>");
+      else out.push("<div>" + line + "</div>");
+    }
+  }
+  if (inList) out.push("</ul>");
+  return out.join("");
+}
+
 const api = {
   get:  (url) => fetch(url).then(r => r.json()),
   post: (url, body) => fetch(url, {
@@ -617,14 +654,24 @@ function ShotCard({
 
           {/* Director's notes */}
           <div>
-            <label className="block text-xs font-medium text-amber-200 mb-1">Director's Notes <span className="text-slate-500">(not sent to model)</span></label>
+            <label className="block text-xs font-medium text-amber-200 mb-1">
+              Director's Notes
+              <span className="text-slate-500 font-normal">
+                {" "}(markdown: **bold** *italic* `code` [text](url) - bullets)
+              </span>
+            </label>
             <textarea
               value={editNotes}
               onChange={e => setEditNotes(e.target.value)}
-              placeholder="Internal notes for you or your team..."
+              placeholder="Internal notes for you or your team... (supports markdown)"
               rows={2}
               className="shot-notes w-full bg-slate-950 border border-amber-500/20 rounded-lg px-3 py-2 text-amber-50 placeholder-slate-500 focus:border-amber-500/60 outline-none text-sm resize-y"
             />
+            {/* R81a: inline preview of what the notes render as */}
+            {editNotes && editNotes.trim() && (
+              <div className="shot-notes-preview mt-1 text-xs text-slate-300 bg-slate-900/40 rounded px-2 py-1.5 border border-slate-800"
+                   dangerouslySetInnerHTML={{__html: renderMarkdown(editNotes)}} />
+            )}
           </div>
 
           {/* R73b: tag editor */}
@@ -3385,6 +3432,30 @@ function VideoPanel() {
     await refresh();
   };
 
+  // R81b: bulk rename selected shots via pattern
+  const [showBatchRename, setShowBatchRename] = _useState(false);
+  const [renamePattern, setRenamePattern] = _useState("Shot_{nn}");
+  const [renameStart, setRenameStart] = _useState(1);
+
+  const batchRename = async () => {
+    if (selected.size === 0 || !renamePattern) return;
+    // Apply in board order so indexing is meaningful
+    const ordered = shots.filter(s => selected.has(s.id)).map(s => s.id);
+    try {
+      const res = await api.post("/api/video/batch-rename", {
+        shot_ids: ordered,
+        pattern: renamePattern,
+        start: parseInt(renameStart) || 1,
+        zero_pad: 2,
+      });
+      addToast(`Renamed ${res.changed} shot(s)`, res.changed > 0 ? "success" : "info");
+      setShowBatchRename(false);
+      await refresh();
+    } catch (e) {
+      addToast("Rename failed: " + (e.message || "unknown"), "error");
+    }
+  };
+
   // R64a: assign fresh random seeds to every selected shot
   const batchRandomizeSeeds = async () => {
     if (selected.size === 0) return;
@@ -4622,6 +4693,10 @@ function VideoPanel() {
               className="batch-search-replace-btn px-3 py-1 rounded bg-violet-700/40 hover:bg-violet-600/50 text-violet-100 text-xs"
               title="Find & replace text across selected shots' prompts"
             >{showSearchReplace ? "Close S/R" : "Find/Replace"}</button>
+            <button onClick={() => setShowBatchRename(v => !v)}
+              className="batch-rename-btn px-3 py-1 rounded bg-fuchsia-700/40 hover:bg-fuchsia-600/50 text-fuchsia-100 text-xs"
+              title="Apply a title pattern across selected shots (e.g. 'Shot_{nn}')"
+            >{showBatchRename ? "Close Rename" : "Rename"}</button>
             {/* R68a: compare — needs exactly 2 shots, both with videos */}
             {(() => {
               const selectedList = Array.from(selected);
@@ -4786,6 +4861,71 @@ function VideoPanel() {
             Locked shots are skipped. Changes are committed per-shot and cannot be
             undone atomically — use Ctrl+Z on a focused card to restore its
             auto-snapshot if you need to roll back.
+          </div>
+        </div>
+      )}
+
+      {/* R81b: bulk rename by pattern — expanding panel */}
+      {selected.size > 0 && showBatchRename && (
+        <div className="batch-rename-panel bg-slate-900 border border-fuchsia-600/30 rounded-xl px-4 py-3 flex flex-col gap-2">
+          <div className="text-xs text-fuchsia-200">
+            <span className="font-semibold">Bulk rename</span>
+            <span className="text-slate-400">
+              {" "}— apply a title pattern across {selected.size} selected shot(s).
+              Placeholders: <code className="text-fuchsia-300">{"{n}"}</code>,{" "}
+              <code className="text-fuchsia-300">{"{nn}"}</code> (zero-padded),{" "}
+              <code className="text-fuchsia-300">{"{original}"}</code>,{" "}
+              <code className="text-fuchsia-300">{"{scene}"}</code>
+            </span>
+          </div>
+          <div className="flex gap-2 items-center flex-wrap">
+            <input
+              type="text"
+              value={renamePattern}
+              onChange={(e) => setRenamePattern(e.target.value)}
+              placeholder="e.g. Shot_{nn}"
+              className="batch-rename-pattern bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 placeholder-slate-500 focus:border-fuchsia-500 focus:outline-none flex-1 min-w-[200px]"
+            />
+            <label className="text-xs text-slate-300 flex items-center gap-1">
+              Start:
+              <input
+                type="number"
+                min="1"
+                value={renameStart}
+                onChange={(e) => setRenameStart(Math.max(1, parseInt(e.target.value) || 1))}
+                className="batch-rename-start bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs w-20"
+              />
+            </label>
+            <button
+              onClick={batchRename}
+              disabled={!renamePattern.trim()}
+              className="batch-rename-apply px-3 py-1 rounded bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-xs font-medium disabled:bg-slate-700 disabled:text-slate-500"
+            >Apply rename</button>
+          </div>
+          {/* Live preview of the first renamed title */}
+          {renamePattern.trim() && (
+            <div className="text-[10px] text-slate-500">
+              Preview:{" "}
+              <span className="text-fuchsia-300">
+                {(() => {
+                  const n = parseInt(renameStart) || 1;
+                  const nn = String(n).padStart(2, "0");
+                  const firstId = Array.from(selected)[0];
+                  const first = shots.find(s => s.id === firstId);
+                  const orig = first?.title || "";
+                  const scene = first?.scene || "";
+                  return (renamePattern || "")
+                    .replaceAll("{nn}", nn)
+                    .replaceAll("{n}", String(n))
+                    .replaceAll("{original}", orig)
+                    .replaceAll("{scene}", scene);
+                })()}
+              </span>
+            </div>
+          )}
+          <div className="text-xs text-slate-500">
+            Locked shots are skipped. Renaming updates titles only — prompts,
+            seeds, and renders are untouched.
           </div>
         </div>
       )}
