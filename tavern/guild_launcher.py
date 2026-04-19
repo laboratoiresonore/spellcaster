@@ -1781,6 +1781,9 @@ def main():
                         help="Skip auto-update check")
     parser.add_argument("--no-assets", action="store_true",
                         help="Skip first-run asset generation")
+    parser.add_argument("--no-tray", action="store_true",
+                        help="Run in console mode instead of spawning a "
+                              "tray icon (Ctrl-C exits the server).")
     args = parser.parse_args()
 
     print()
@@ -1994,25 +1997,54 @@ def main():
         print(f"  [server] Opening browser: {guild_url}")
         webbrowser.open(guild_url)
 
-    # ── Keep running until Ctrl+C ────────────────────────────────────
-    print()
-    print("  Press Ctrl+C to stop the server.")
-    print()
-
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
+    # ── Tray icon + idle wait ────────────────────────────────────────
+    # When pystray is available we run a system-tray icon that blocks
+    # this thread in place of the old Ctrl-C sleep loop. The tray
+    # surfaces boot / quit events as toasts, opens the browser on
+    # demand, and offers a Quit menu item that calls the same shutdown
+    # path as Ctrl-C. If pystray isn't installed the old console mode
+    # kicks in unchanged.
+    def _shutdown_all():
         print("\n  [server] Shutting down...")
-        httpd.shutdown()
-        # Cleanup child processes
+        try:
+            httpd.shutdown()
+        except Exception:
+            pass
         if _kobold_process and _kobold_process.poll() is None:
             print("  [kobold] Stopping KoboldCPP...")
-            _kobold_process.terminate()
+            try: _kobold_process.terminate()
+            except Exception: pass
         if _st_process and _st_process.poll() is None:
             print("  [st] Stopping SillyTavern...")
-            _st_process.terminate()
+            try: _st_process.terminate()
+            except Exception: pass
         print("  [server] Goodbye!")
+
+    tray_started = False
+    if not getattr(args, "no_tray", False):
+        try:
+            from . import guild_tray  # when run as module
+        except Exception:
+            try:
+                import guild_tray  # when run as plain script
+            except Exception as e:
+                guild_tray = None
+                print(f"  [tray] could not import guild_tray: {e}")
+        if 'guild_tray' in locals() and guild_tray is not None:
+            try:
+                tray_started = guild_tray.run_tray(guild_url, _shutdown_all)
+            except Exception as e:
+                print(f"  [tray] failed to start: {e}")
+
+    if not tray_started:
+        print()
+        print("  Press Ctrl+C to stop the server.")
+        print()
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            _shutdown_all()
 
 
 if __name__ == '__main__':
