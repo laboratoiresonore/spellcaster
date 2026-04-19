@@ -8336,59 +8336,118 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "color2": char.get("color2", "#6C63FF"),
             })
         elif self.path.startswith('/api/workflows/list'):
-            # R145: the Workflow Library lives on the ComfyUI server
-            # (not the Guild host), so the R141 "read scaffold/workflows/
-            # off local disk" approach was blind to the user's actual
-            # ~100+ ComfyUI workflows. Fetch them from ComfyUI's
-            # `/userdata?dir=workflows&recurse=true` endpoint and merge
-            # with any local scaffold-shipped templates. Cheap: only
-            # filenames + subdir categories; full parse happens on
-            # demand via /api/workflows/detail.
+            # R145 + R147: the Workflow Library lives on the ComfyUI
+            # server (not the Guild host), so we fetch filenames from
+            # ComfyUI's `/userdata?dir=workflows&recurse=true` and
+            # then — R147 — fetch + classify each JSON in parallel so
+            # node_count + workflow_type land in the UI's list view
+            # instead of showing "0 nodes" for everything.
+            # Cache is hash-keyed on the filename set so we don't
+            # re-parse 150+ files on every poll.
             import urllib.parse as _up
             import urllib.request as _ur
             import hashlib as _h
             qs = _up.urlparse(self.path).query
             extra_paths = []
             include_local = True
+            force_refresh = False
             if qs:
                 params = _up.parse_qs(qs)
                 p = params.get("paths", [""])[0]
                 extra_paths = [x.strip() for x in p.split(",") if x.strip()]
                 include_local = params.get("local", ["1"])[0] not in ("0", "false", "no")
+                force_refresh = params.get("force", ["0"])[0] in ("1", "true", "yes")
 
             out: list[dict] = []
             comfy_err = None
-            # 1) ComfyUI userdata API. Fast, no parse — one HTTP call
-            # returns every workflow filename relative to
-            # user/default/workflows/ on the ComfyUI host, recursively.
+            # 1) ComfyUI userdata API. One HTTP call returns every
+            # workflow filename relative to user/default/workflows/
+            # on the ComfyUI host, recursively.
+            names: list[str] = []
             try:
                 req = _ur.Request(
                     f"{COMFYUI_URL.rstrip('/')}/userdata?dir=workflows&recurse=true",
                     headers={"Accept": "application/json"})
                 with _ur.urlopen(req, timeout=10) as resp:
-                    names = json.loads(resp.read() or b"[]")
-                if isinstance(names, list):
-                    for raw in names:
-                        rel = str(raw or "").replace("\\", "/")
-                        if not rel.lower().endswith(".json"):
-                            continue
-                        if "/" in rel:
-                            cat, name = rel.split("/", 1)
-                        else:
-                            cat, name = "root", rel
-                        out.append({
-                            "id": _h.sha1(
-                                f"comfyui:{rel}".encode("utf-8")).hexdigest()[:16],
-                            "name": name.rsplit(".json", 1)[0],
-                            "path": rel,
-                            "category": cat,
-                            # node_count + workflow_type unknown until parsed
-                            "node_count": 0,
-                            "workflow_type": "",
-                            "source": "comfyui",
-                        })
+                    raw = json.loads(resp.read() or b"[]")
+                if isinstance(raw, list):
+                    names = [str(n or "").replace("\\", "/")
+                             for n in raw
+                             if str(n or "").lower().endswith(".json")]
             except Exception as e:
                 comfy_err = f"{type(e).__name__}: {e}"
+
+            # 2) Enrich with node_count + workflow_type via parallel
+            # fetches of each workflow JSON. Cache the whole batch
+            # keyed on the sorted filename set so repeated polls
+            # return instantly.
+            global _WF_LIST_CACHE
+            try:
+                _WF_LIST_CACHE  # noqa: F821
+            except NameError:
+                _WF_LIST_CACHE = {"key": None, "ts": 0.0, "entries": []}
+            cache_key = _h.sha1(
+                (COMFYUI_URL + "|" + "\n".join(sorted(names))).encode("utf-8")
+            ).hexdigest()
+            cache_age = time.time() - _WF_LIST_CACHE["ts"]
+            # 10-min cache; bypassed by ?force=1 or a changed fileset.
+            if (not force_refresh
+                    and _WF_LIST_CACHE["key"] == cache_key
+                    and cache_age < 600):
+                out.extend(_WF_LIST_CACHE["entries"])
+            elif names:
+                try:
+                    from scaffold.workflow_parser import classify_workflow_data
+                except Exception:
+                    classify_workflow_data = None  # type: ignore
+                from concurrent.futures import ThreadPoolExecutor
+
+                def _fetch_and_classify(rel: str) -> dict:
+                    # ComfyUI's /userdata read endpoint wants the full
+                    # user-dir-relative path with every separator
+                    # URL-encoded: `/userdata/workflows%2F<rel>` where
+                    # the forward slash between `workflows` and the
+                    # filename is also `%2F`. The listing endpoint
+                    # returned entries relative to `?dir=workflows`
+                    # so we prepend that before encoding.
+                    encoded = _up.quote("workflows/" + rel, safe="")
+                    nc, wt = 0, ""
+                    try:
+                        r = _ur.Request(
+                            f"{COMFYUI_URL.rstrip('/')}/userdata/{encoded}",
+                            headers={"Accept": "application/json"})
+                        with _ur.urlopen(r, timeout=8) as resp:
+                            data = json.loads(resp.read())
+                        if classify_workflow_data is not None:
+                            nc, wt, _ = classify_workflow_data(data)
+                    except Exception:
+                        pass  # fall back to 0 / "" so the entry still lists
+                    if "/" in rel:
+                        cat, name = rel.split("/", 1)
+                    else:
+                        cat, name = "root", rel
+                    return {
+                        "id": _h.sha1(
+                            f"comfyui:{rel}".encode("utf-8")).hexdigest()[:16],
+                        "name": name.rsplit(".json", 1)[0],
+                        "path": rel,
+                        "category": cat,
+                        "node_count": nc,
+                        "workflow_type": wt,
+                        "source": "comfyui",
+                    }
+
+                # Bounded parallelism so we don't hammer ComfyUI with
+                # 150 concurrent reads. 8 workers keeps total runtime
+                # around ~5-8s on a ~150-workflow library even when
+                # ComfyUI is under load.
+                with ThreadPoolExecutor(max_workers=8) as pool:
+                    enriched = list(pool.map(_fetch_and_classify, names))
+                out.extend(enriched)
+                _WF_LIST_CACHE = {
+                    "key": cache_key, "ts": time.time(),
+                    "entries": list(enriched),
+                }
 
             # 2) Bundled / local Spellcaster scaffolds — only included
             # when local=1 (default). These are the archived R135
