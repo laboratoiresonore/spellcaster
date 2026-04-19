@@ -7668,6 +7668,10 @@ class GuildHandler(SimpleHTTPRequestHandler):
             if '?' in self.path:
                 qs = '?' + self.path.split('?', 1)[1]
             return self._proxy_to_antenna('/resolve/render-status' + qs, 'GET', None)
+        elif (self.path == '/api/antenna/resolve/render-presets'
+              and self.command == 'GET'):
+            # R51a: proxy to antenna for the preset dropdown
+            return self._proxy_to_antenna('/resolve/render-presets', 'GET', None)
 
         # R48b: Send timeline directly to a running DaVinci Resolve via the
         # antenna. POST only — mutates Resolve state. Body: {"format": "edl"|"fcpxml", "fps": 30, "bin": "Spellcaster"}

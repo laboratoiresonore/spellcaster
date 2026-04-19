@@ -4276,6 +4276,142 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  Klein Batch Variations — N Klein renders from one reference in one pass
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_klein_batch_variations(image_filename, klein_model_key, prompt_text,
+                                 seed, count=4, grid=True,
+                                 steps=20, denoise=0.7, guidance=1.0,
+                                 loras=None, klein_models=None, enhance=False):
+    """Klein batch variations — N Klein renders from one reference in a single pass.
+
+    Adapted from xb1n0ry/Comfy-Workflows (FKlein9B_referenceLatent_4ImagesGrid).
+    The original uses OlmDragCrop to split a 2x2 render; this builder uses
+    `RepeatLatentBatch` so the sampler produces `count` independent variations
+    in one dispatch, then optionally concats them into a 2x2 grid via
+    `ImageGridComposite2x2` for easy side-by-side comparison.
+
+    Pipeline:
+      1. Load Klein UNET + CLIP + VAE (via KLEIN_MODELS)
+      2. Load reference image, scale to 1 MP for Klein's latent resolution
+      3. VAE encode -> batch-1 latent
+      4. RepeatLatentBatch(amount=count) -> batch-N latent
+      5. CLIP encode positive; zero_out negative
+      6. ReferenceLatent wrapping on both positive and negative
+      7. Optional Flux2Klein-Enhancer model patch
+      8. CFGGuider + BasicScheduler + SamplerCustomAdvanced -> batch-N samples
+      9. VAEDecode -> batch-N images
+      10. SaveImage(batch) — individual variations
+      11. If grid=True and count == 4: extract via ImageFromBatch x4 +
+          ImageGridComposite2x2 -> SaveImage(grid)
+
+    Args:
+        image_filename: reference image used as the ReferenceLatent anchor.
+        klein_model_key: which Klein model — "Klein 9B" / "Klein 4B" / "Klein Base 4B".
+        prompt_text: positive prompt (applied to every variation).
+        seed: sampler seed. Noise is unique per batch slot, so each variation
+            differs even with one seed.
+        count: how many variations (default 4; 2-8 reasonable on 16GB).
+        grid: when True AND count == 4, also save a 2x2 grid composite.
+            Requires the ImageGridComposite2x2 node on the server.
+        steps: Klein sampling steps (default 20).
+        denoise: Klein img2img denoise (default 0.7 — leaves room for variation).
+        guidance: CFGGuider guidance (default 1.0 — Klein defaults).
+        loras: optional LoRA list.
+        klein_models: override mapping, defaults to KLEIN_MODELS.
+        enhance: wire Flux2Klein-Enhancer if True.
+
+    Returns:
+        ComfyUI workflow dict. Output: batch of `count` images, plus optional
+        grid image.
+
+    Gotchas:
+      - count > 4 and grid=True — the grid node only supports 2x2. Extra
+        variations still land as individual files, but aren't in the grid.
+      - Klein 9B at count=4 is heavy — test VRAM first. 4B is fine on 12GB.
+    """
+    if klein_models is None:
+        klein_models = KLEIN_MODELS
+
+    km = klein_models[klein_model_key]
+    nf = NodeFactory()
+    count = max(1, int(count))
+
+    # Model loaders
+    unet_id = nf.unet_loader(km["unet"], "default", node_id="10")
+    clip_id = nf.clip_loader(
+        km.get("clip", "qwen_3_8b.safetensors"),
+        clip_type="flux2", device="default", node_id="11",
+    )
+    vae_id = nf.vae_loader(FLUX2_VAE, node_id="12")
+
+    # LoRA chain
+    if loras:
+        unet_id, clip_id, _trig = inject_lora_chain(
+            nf, loras, _ref(unet_id), _ref(clip_id), base_id=100)
+
+    # Reference image
+    img_id = nf.load_image(image_filename, node_id="1")
+    scaled_id = nf.image_scale_to_total_pixels(
+        [img_id, 0], megapixels=1.0, node_id="15")
+    latent_id = nf.vae_encode([scaled_id, 0], [vae_id, 0], node_id="17")
+
+    # Batch-expand the latent so the sampler produces N variations at once.
+    batch_lat_id = nf._add("RepeatLatentBatch", {
+        "samples": [latent_id, 0],
+        "amount": count,
+    }, node_id="18")
+
+    # Conditioning
+    pos_id = nf.clip_encode(_ref(clip_id), prompt_text, node_id="13")
+    neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="14")
+    ref_pos_id = nf.reference_latent([pos_id, 0], [latent_id, 0], node_id="20")
+    ref_neg_id = nf.reference_latent([neg_id, 0], [latent_id, 0], node_id="21")
+
+    # Enhancer chain
+    _bl_model = (_klein_enhance_model(nf, _ref(unet_id), [ref_pos_id, 0],
+                                      node_base_id=930)
+                 if enhance else _ref(unet_id))
+
+    # Sampler
+    guider_id = nf.cfg_guider(_bl_model, [ref_pos_id, 0], [ref_neg_id, 0],
+                              guidance, node_id="30")
+    sampler_id = nf.ksampler_select("euler", node_id="31")
+    sched_id = nf.basic_scheduler(_bl_model, steps, denoise,
+                                  scheduler="simple", node_id="32")
+    noise_id = nf.random_noise(seed, node_id="33")
+
+    sample_id = nf.sampler_custom_advanced(
+        [noise_id, 0], [guider_id, 0], [sampler_id, 0],
+        [sched_id, 0], [batch_lat_id, 0], node_id="40",
+    )
+
+    dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="50")
+    nf.save_image([dec_id, 0], "spellcaster_klein_variations", node_id="60")
+
+    # Optional 2x2 grid (only when count is exactly 4).
+    if grid and count == 4:
+        slot_ids = []
+        for i in range(4):
+            slot = nf._add("ImageFromBatch", {
+                "image": [dec_id, 0],
+                "batch_index": i,
+                "length": 1,
+            }, node_id=f"70_{i}")
+            slot_ids.append(slot)
+        grid_id = nf._add("ImageGridComposite2x2", {
+            "image1": [slot_ids[0], 0],
+            "image2": [slot_ids[1], 0],
+            "image3": [slot_ids[2], 0],
+            "image4": [slot_ids[3], 0],
+        }, node_id="75")
+        nf.save_image([grid_id, 0], "spellcaster_klein_variations_grid",
+                      node_id="80")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  Klein Inpaint — mask-based with FluxGuidance + SetLatentNoiseMask
 #                  + optional GrowMask + optional DifferentialDiffusion
 # ═══════════════════════════════════════════════════════════════════════════
@@ -6162,6 +6298,207 @@ def build_frame_assembly(frame_filenames, fps=16.0, filename_prefix="gimp_assemb
                                "save_output": True,
                                "pix_fmt": "yuv420p",
                                "crf": crf}},
+    })
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  WAN 2.2 I2V — Wrapper-native pipeline with block-swap for low-VRAM GPUs
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_wan_video_blockswap(image_filename, wan_model, t5_model, vae_model,
+                              prompt_text, negative_text, seed,
+                              width=832, height=480, length=81,
+                              steps=20, cfg=6.0, shift=5.0,
+                              blocks_to_swap=20,
+                              offload_img_emb=False, offload_txt_emb=False,
+                              quantization="fp8_e4m3fn",
+                              base_precision="bf16",
+                              attention_mode="sdpa",
+                              enable_vae_tiling=True,
+                              fps=16, crf=19,
+                              clip_vision_name="clip_vision_h.safetensors"):
+    """WAN 2.2 I2V via Kijai's WanVideoWrapper with block-swap (low-VRAM path).
+
+    Sibling to `build_wan_video`. Uses Kijai's wrapper nodes end-to-end so
+    the transformer can offload a configurable number of blocks to CPU
+    during sampling — the *only* way to run WAN 2.2 720p I2V on a 12 GB GPU.
+    Native-path users should stick with `build_wan_video`; this builder is
+    aimed at low-VRAM callers who would otherwise OOM.
+
+    Adapted from xb1n0ry/Comfy-Workflows (kj-w2.2-i2v-painter.json). Trade-off
+    of block swapping: slower per-step inference, but it fits.
+
+    Pipeline:
+      1. WanVideoBlockSwap(blocks_to_swap) -> BLOCKSWAPARGS
+      2. WanVideoModelLoader(model, base_precision, quantization,
+         block_swap_args) -> WANVIDEOMODEL
+      3. LoadWanVideoT5TextEncoder(t5_model) -> WANTEXTENCODER
+      4. WanVideoVAELoader(vae_model) -> WANVAE
+      5. CLIPVisionLoader(clip_vision_h) + WanVideoClipVisionEncode ->
+         WANVIDIMAGE_CLIPEMBEDS
+      6. LoadImage + WanVideoImageToVideoEncode(vae, clip_embeds,
+         start_image, width, height, num_frames) -> WANVIDIMAGE_EMBEDS
+      7. WanVideoTextEncode(positive, negative, t5) -> WANVIDEOTEXTEMBEDS
+      8. WanVideoSampler(model, image_embeds, steps, cfg, shift, seed,
+         text_embeds) -> LATENT
+      9. WanVideoDecode(vae, samples, enable_vae_tiling) -> IMAGE
+      10. VHS_VideoCombine -> video file
+
+    Args:
+        image_filename: start frame for I2V.
+        wan_model: WanVideoModelLoader "model" dropdown value (a filename
+            from /models/diffusion_models/ that the wrapper recognizes).
+        t5_model: LoadWanVideoT5TextEncoder "model_name" dropdown value.
+        vae_model: WanVideoVAELoader "model_name" dropdown value.
+        prompt_text, negative_text: text conditioning.
+        seed: sampler seed.
+        width, height, length: frame size and count. Default 832x480x81
+            (~5s at 16fps). Blocks-swap lets 720p (1280x720) land on 12GB.
+        steps, cfg, shift: sampler knobs (wrapper defaults: 30/6.0/5.0).
+        blocks_to_swap: how many transformer blocks to offload to CPU.
+            14B model has 40 blocks; 20 is a reasonable "half" starting
+            point. Higher = less VRAM, slower.
+        offload_img_emb / offload_txt_emb: extra VRAM-saving knobs from
+            the BlockSwap node; off by default.
+        quantization: WanVideoModelLoader `quantization` input. "fp8_e4m3fn"
+            is the standard low-VRAM choice; "disabled" for full precision.
+        base_precision: bf16 / fp16 / fp32.
+        attention_mode: sdpa / flash_attn_2 / sageattn / ... Use sdpa if
+            you don't know what you installed.
+        enable_vae_tiling: tiles the decode to fit in less VRAM.
+        fps, crf: video encode params.
+        clip_vision_name: CLIPVisionLoader model; default
+            clip_vision_h.safetensors (same as native builder).
+
+    Returns:
+        dict: ComfyUI workflow.
+
+    Requires: ComfyUI-WanVideoWrapper (Kijai) — WanVideoModelLoader,
+    WanVideoBlockSwap, WanVideoClipVisionEncode, WanVideoImageToVideoEncode,
+    WanVideoTextEncode, WanVideoSampler, WanVideoDecode,
+    LoadWanVideoT5TextEncoder, WanVideoVAELoader — plus VHS_VideoCombine.
+    Preflight /object_info/WanVideoSetBlockSwap before using this builder;
+    fall back to build_wan_video on a bare server.
+    """
+    nf = NodeFactory()
+
+    # 1. Block-swap args
+    bs_id = nf._add("WanVideoBlockSwap", {
+        "blocks_to_swap": int(blocks_to_swap),
+        "offload_img_emb": bool(offload_img_emb),
+        "offload_txt_emb": bool(offload_txt_emb),
+    }, node_id="1")
+
+    # 2. Wrapper model loader with block-swap attached
+    model_id = nf._add("WanVideoModelLoader", {
+        "model": wan_model,
+        "base_precision": base_precision,
+        "quantization": quantization,
+        "load_device": "offload_device",
+        "attention_mode": attention_mode,
+        "block_swap_args": [bs_id, 0],
+    }, node_id="2")
+
+    # 3. Text encoder
+    t5_id = nf._add("LoadWanVideoT5TextEncoder", {
+        "model_name": t5_model,
+        "precision": base_precision,
+        "load_device": "offload_device",
+        "quantization": "disabled",
+    }, node_id="3")
+
+    # 4. Wrapper VAE
+    vae_id = nf._add("WanVideoVAELoader", {
+        "model_name": vae_model,
+        "precision": base_precision,
+    }, node_id="4")
+
+    # 5. CLIP vision for the start frame
+    cv_loader_id = nf.clip_vision_loader(clip_vision_name, node_id="5")
+
+    # 6. Load start image + pre-scale to exact WxH
+    img_id = nf.load_image(image_filename, node_id="6")
+    scaled_id = nf.image_scale(
+        [img_id, 0], width, height,
+        upscale_method="lanczos", crop="center", node_id="6r",
+    )
+
+    # 7. CLIP vision encode
+    cv_enc_id = nf._add("WanVideoClipVisionEncode", {
+        "clip_vision": [cv_loader_id, 0],
+        "image_1": [scaled_id, 0],
+        "strength_1": 1.0,
+        "strength_2": 1.0,
+        "crop": "center",
+        "combine_embeds": "average",
+        "force_offload": True,
+    }, node_id="7")
+
+    # 8. Image-to-video encoding (produces the WANVIDIMAGE_EMBEDS for sampler)
+    img_embeds_id = nf._add("WanVideoImageToVideoEncode", {
+        "width": int(width),
+        "height": int(height),
+        "num_frames": int(length),
+        "noise_aug_strength": 0.0,
+        "start_latent_strength": 1.0,
+        "end_latent_strength": 1.0,
+        "force_offload": True,
+        "vae": [vae_id, 0],
+        "clip_embeds": [cv_enc_id, 0],
+        "start_image": [scaled_id, 0],
+        "tiled_vae": bool(enable_vae_tiling),
+    }, node_id="8")
+
+    # 9. Text encode
+    text_embeds_id = nf._add("WanVideoTextEncode", {
+        "positive_prompt": prompt_text,
+        "negative_prompt": negative_text or "",
+        "t5": [t5_id, 0],
+        "force_offload": True,
+        "model_to_offload": [model_id, 0],
+        "use_disk_cache": False,
+        "device": "gpu",
+    }, node_id="9")
+
+    # 10. Sampler
+    sampler_id = nf._add("WanVideoSampler", {
+        "model": [model_id, 0],
+        "image_embeds": [img_embeds_id, 0],
+        "steps": int(steps),
+        "cfg": float(cfg),
+        "shift": float(shift),
+        "seed": int(seed),
+        "force_offload": True,
+        "scheduler": "unipc",
+        "riflex_freq_index": 0,
+        "text_embeds": [text_embeds_id, 0],
+        "denoise_strength": 1.0,
+        "batched_cfg": False,
+        "rope_function": "comfy",
+    }, node_id="10")
+
+    # 11. Decode
+    decode_id = nf._add("WanVideoDecode", {
+        "vae": [vae_id, 0],
+        "samples": [sampler_id, 0],
+        "enable_vae_tiling": bool(enable_vae_tiling),
+        "tile_x": 272, "tile_y": 272,
+        "tile_stride_x": 144, "tile_stride_y": 128,
+    }, node_id="11")
+
+    # 12. Video combine (VHS)
+    nf.update({
+        "12": {"class_type": "VHS_VideoCombine",
+               "inputs": {"images": [decode_id, 0],
+                          "frame_rate": int(fps),
+                          "loop_count": 0,
+                          "filename_prefix": "spellcaster_wan_blockswap",
+                          "format": "video/h264-mp4",
+                          "save_output": True,
+                          "pix_fmt": "yuv420p",
+                          "crf": int(crf)}},
     })
 
     return nf.build()

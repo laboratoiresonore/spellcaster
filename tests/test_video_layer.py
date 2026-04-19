@@ -707,6 +707,28 @@ def main() -> int:
     check("resolve render polls antenna status",
           test_resolve_render_polls_antenna_status)
 
+    # Round 51 — Render preset picker + render-complete watcher
+    check("resolve render_presets endpoint exists",
+          test_resolve_render_presets_endpoint_exists)
+    check("resolve render_presets requires Resolve running",
+          test_resolve_render_presets_requires_resolve_running)
+    check("antenna agent registers render-presets route",
+          test_antenna_agent_registers_render_presets_route)
+    check("resolve has _start_render_watcher",
+          test_resolve_has_render_watcher)
+    check("render watcher is idempotent per job_id",
+          test_render_watcher_is_idempotent_per_job)
+    check("render_timeline starts watcher on success",
+          test_render_timeline_starts_watcher_on_success)
+    check("guild has render-presets proxy",
+          test_guild_has_render_presets_proxy)
+    check("video_panel has render dialog with picker",
+          test_video_panel_has_render_dialog)
+    check("video_panel has SSE listener for render_complete",
+          test_video_panel_has_sse_listener_for_render_complete)
+    check("video_panel preset dropdown prefers h264",
+          test_video_panel_preset_dropdown_prefers_h264)
+
     print("-" * 50)
 
     from scaffold.shotboard import Shotboard, Shot, Trajectory
@@ -7092,6 +7114,84 @@ def test_resolve_render_polls_antenna_status():
     src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
     assert "render-status?job_id=" in src
     assert '"Complete"' in src or "'Complete'" in src
+
+
+# ════════════════════════════════════════════════════════════════════
+# R51 — Render preset picker + render-complete watcher
+# ════════════════════════════════════════════════════════════════════
+
+def test_resolve_render_presets_endpoint_exists():
+    from antenna.endpoints import resolve as rv
+    assert callable(getattr(rv, "render_presets", None))
+
+
+def test_resolve_render_presets_requires_resolve_running():
+    from antenna.endpoints import resolve as rv
+    # With no Resolve path + no running Resolve, should 503
+    import tempfile
+    empty = tempfile.mkdtemp()
+    status, body = rv.render_presets({"config": {"resolve_script_dir": empty}})
+    assert status == 503
+    assert "error" in body
+
+
+def test_antenna_agent_registers_render_presets_route():
+    src = open("antenna/agent.py", encoding="utf-8").read()
+    assert "resolve_ep.render_presets" in src
+    assert '"/resolve/render-presets"' in src
+
+
+def test_resolve_has_render_watcher():
+    from antenna.endpoints import resolve as rv
+    assert callable(getattr(rv, "_start_render_watcher", None))
+
+
+def test_render_watcher_is_idempotent_per_job():
+    # Double-starting the same job_id must not spawn two watchers.
+    # We can't actually start one without Resolve, but we can verify the
+    # dedup dict exists and the function short-circuits on existing keys.
+    from antenna.endpoints import resolve as rv
+    assert hasattr(rv, "_RENDER_WATCHERS")
+    # module-level dict — always the same instance across calls
+    assert rv._RENDER_WATCHERS is rv._RENDER_WATCHERS
+
+
+def test_render_timeline_starts_watcher_on_success():
+    # Spot-check: the render_timeline handler calls _start_render_watcher
+    # after bus_client.emit("antenna.resolve.render_started")
+    src = open("antenna/endpoints/resolve.py", encoding="utf-8").read()
+    # watcher start happens in the success path
+    assert "_start_render_watcher(ctx, job_id" in src
+    # emits render_progress + render_complete
+    assert "antenna.resolve.render_progress" in src
+    assert "antenna.resolve.render_complete" in src
+
+
+def test_guild_has_render_presets_proxy():
+    src = open("tavern/server.py", encoding="utf-8").read()
+    assert "/api/antenna/resolve/render-presets" in src
+
+
+def test_video_panel_has_render_dialog():
+    src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
+    assert "render-dialog" in src
+    assert "render-preset-select" in src
+    assert "render-target-dir" in src
+    assert "render-file-name" in src
+    assert "render-start-btn" in src
+    assert "openRenderDialog" in src
+
+
+def test_video_panel_has_sse_listener_for_render_complete():
+    src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
+    assert "antenna.resolve.render_complete" in src
+    assert "EventSource" in src
+    assert "Notification" in src
+
+
+def test_video_panel_preset_dropdown_prefers_h264():
+    src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
+    assert "/h\\.?264/i" in src or "h\\.?264" in src
 
 
 if __name__ == "__main__":

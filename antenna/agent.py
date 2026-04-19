@@ -183,6 +183,7 @@ def _build_routes(cfg: dict[str, Any]) -> dict[tuple[str, str], Callable]:
             routes[("POST", "/resolve/import-fcpxml")]   = resolve_ep.import_fcpxml
             routes[("POST", "/resolve/render-timeline")] = resolve_ep.render_timeline
             routes[("GET",  "/resolve/render-status")]   = resolve_ep.render_status
+            routes[("GET",  "/resolve/render-presets")]  = resolve_ep.render_presets
         except ImportError as e:
             print(f"[antenna] resolve service declared but endpoints missing: {e}",
                   file=sys.stderr)
