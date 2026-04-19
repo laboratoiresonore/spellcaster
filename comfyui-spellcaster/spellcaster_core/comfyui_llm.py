@@ -166,8 +166,11 @@ _PER_FAMILY_LLM_CONFIG = {
                     "max_quant_bits": 4, "max_model_size_b": 4,
                     "poll_timeout_s": 45},
     # SD 1.5 (~2 GB): lots of headroom. Keep LLM resident for fast
-    # iteration; cache last prompt so same-seed re-rolls don't re-query.
-    "sd15":        {"keep_model_loaded": True,  "keep_last_prompt": True,
+    # iteration, but DO NOT set keep_last_prompt=True — live testing
+    # showed the AILab node returns the PREVIOUS call's output for
+    # different prompts (cross-prompt cache bleed). The 0.8 s saving
+    # isn't worth the correctness bug; only keep_model_loaded stays on.
+    "sd15":        {"keep_model_loaded": True,  "keep_last_prompt": False,
                     "max_quant_bits": 8, "max_model_size_b": 8,
                     "poll_timeout_s": 30},
     # Flux 1 Dev (~12-16 GB): must unload LLM, tight quant.
