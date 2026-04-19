@@ -278,7 +278,14 @@ def self_update(ctx: dict[str, Any]) -> tuple[int, dict]:
     services = cfg.get("services", []) or []
     if "resolve" in services and not bool(body.get("skip_resolve_plugin", False)):
         try:
+            # R84d: the module is cached in sys.modules from startup
+            # import; importlib.reload forces a re-read of the
+            # freshly-pulled .py so install_plugin_from_src picks up
+            # any code changes (like R84's multi-folder deploy) on
+            # this SAME call rather than waiting for the restart.
+            import importlib
             from . import resolve_plugin as resolve_plugin_ep  # type: ignore
+            importlib.reload(resolve_plugin_ep)
             resolve_plugin_result = resolve_plugin_ep.install_plugin_from_src(
                 cfg, force=bool(body.get("force_resolve_plugin", False)))
         except Exception as e:  # noqa: BLE001
