@@ -833,6 +833,30 @@ def main() -> int:
     check("video_panel has feature diagnostics panel",
           test_video_panel_has_feature_diagnostics_panel)
 
+    # Round 56 — Service launcher (auto-start ComfyUI/Kobold/Ollama)
+    check("service_launcher module importable",
+          test_service_launcher_module_importable)
+    check("service_launcher prefers .bat over main.py",
+          test_service_launcher_prefers_bat_over_main_py)
+    check("service_launcher falls back to main.py",
+          test_service_launcher_falls_back_to_main_py)
+    check("service_launcher returns None when nothing found",
+          test_service_launcher_returns_none_when_nothing_found)
+    check("explicit launcher override wins",
+          test_explicit_launcher_override_wins)
+    check("ensure_service_running rejects unknown",
+          test_ensure_service_running_rejects_unknown)
+    check("ensure_service_running reports not_installed",
+          test_ensure_service_running_reports_not_installed)
+    check("tail_log handles missing file gracefully",
+          test_tail_log_handles_missing_file_gracefully)
+    check("agent registers service routes",
+          test_agent_registers_service_routes)
+    check("guild has service proxy endpoints",
+          test_guild_has_service_proxy_endpoints)
+    check("video_panel has start buttons in diag panel",
+          test_video_panel_has_start_buttons_in_diag)
+
     print("-" * 50)
 
     from scaffold.shotboard import Shotboard, Shot, Trajectory
@@ -7764,6 +7788,115 @@ def test_video_panel_has_feature_diagnostics_panel():
     assert "feature-diag-row" in src
     # Shows which capabilities are missing per feature
     assert "f.missing" in src
+
+
+# ════════════════════════════════════════════════════════════════════
+# R56 — Service launcher (auto-start ComfyUI/Kobold/Ollama)
+# ════════════════════════════════════════════════════════════════════
+
+def test_service_launcher_module_importable():
+    import importlib
+    sl = importlib.import_module("antenna.service_launcher")
+    for name in ("find_comfyui_launcher", "find_kobold_launcher",
+                 "find_ollama_launcher", "ensure_service_running", "tail_log"):
+        assert callable(getattr(sl, name, None)), f"missing {name}"
+
+
+def test_service_launcher_prefers_bat_over_main_py():
+    # Synthesize a fake ComfyUI root with both main.py AND launch_optimized.bat.
+    from antenna import service_launcher as sl
+    import tempfile
+    root = tempfile.mkdtemp()
+    from pathlib import Path
+    (Path(root) / "main.py").write_text("# fake", encoding="utf-8")
+    (Path(root) / "launch_optimized.bat").write_text("@echo off", encoding="utf-8")
+    cfg = {"comfyui_root": root}
+    found = sl.find_comfyui_launcher(cfg)
+    assert found is not None
+    argv, cwd, strategy = found
+    # The BAT wins even though main.py is also present
+    assert strategy == "launch_optimized.bat"
+    assert any("launch_optimized.bat" in a for a in argv)
+
+
+def test_service_launcher_falls_back_to_main_py():
+    # Root has main.py only — no .bat launchers
+    from antenna import service_launcher as sl
+    import tempfile
+    from pathlib import Path
+    root = tempfile.mkdtemp()
+    (Path(root) / "main.py").write_text("# fake", encoding="utf-8")
+    cfg = {"comfyui_root": root}
+    found = sl.find_comfyui_launcher(cfg)
+    assert found is not None
+    _, _, strategy = found
+    assert strategy == "python main.py"
+
+
+def test_service_launcher_returns_none_when_nothing_found():
+    from antenna import service_launcher as sl
+    import tempfile
+    empty = tempfile.mkdtemp()
+    cfg = {"comfyui_root": empty}
+    # Nothing in this dir — helper should return None
+    assert sl.find_comfyui_launcher(cfg) is None
+
+
+def test_explicit_launcher_override_wins():
+    from antenna import service_launcher as sl
+    import tempfile
+    from pathlib import Path
+    d = tempfile.mkdtemp()
+    bat = Path(d) / "my-custom-launcher.bat"
+    bat.write_text("@echo off", encoding="utf-8")
+    cfg = {"comfyui_launcher": str(bat)}
+    found = sl.find_comfyui_launcher(cfg)
+    assert found is not None
+    _, _, strategy = found
+    assert strategy.startswith("config:")
+
+
+def test_ensure_service_running_rejects_unknown():
+    from antenna import service_launcher as sl
+    result = sl.ensure_service_running("bogus", {})
+    assert result["state"] == "unknown_service"
+    assert result["pid"] is None
+
+
+def test_ensure_service_running_reports_not_installed():
+    from antenna import service_launcher as sl
+    # Point comfyui_root at an empty dir so no launcher is found
+    import tempfile
+    cfg = {"comfyui_root": tempfile.mkdtemp(),
+           "comfyui_port": 65432}  # nothing listens here
+    result = sl.ensure_service_running("comfyui", cfg, wait_s=2.0)
+    assert result["state"] in ("not_installed",)
+
+
+def test_tail_log_handles_missing_file_gracefully():
+    from antenna import service_launcher as sl
+    text = sl.tail_log("nonexistent_service_xyz", lines=10)
+    assert "no log yet" in text
+
+
+def test_agent_registers_service_routes():
+    src = open("antenna/agent.py", encoding="utf-8").read()
+    assert '"/service/start"' in src
+    assert '"/service/logs"' in src
+    assert "services_ep.start_service" in src
+
+
+def test_guild_has_service_proxy_endpoints():
+    src = open("tavern/server.py", encoding="utf-8").read()
+    assert "/api/antenna/service/start" in src
+    assert "/api/antenna/service/logs" in src
+
+
+def test_video_panel_has_start_buttons_in_diag():
+    src = open("tavern/static/video_panel.jsx", encoding="utf-8").read()
+    assert "service-start-btn" in src
+    assert "startServiceOnAntenna" in src
+    assert 'comfyui' in src and 'kobold' in src and 'ollama' in src
 
 
 if __name__ == "__main__":

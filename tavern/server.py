@@ -4645,6 +4645,12 @@ def _get_loras_for_wizard(char_id):
             continue
         if wizard_is_video and lora_video_tags and arch not in lora_video_tags:
             continue
+        # Dedup: if this (arch, purpose_group) has a preferred winner from
+        # the LoRA shootout, skip every other member unless it IS the winner.
+        # Prevents the per-model sidebar from stacking 5 feet LoRAs when
+        # the user already picked one as the canonical choice.
+        if info.get("deprioritized"):
+            continue
         # Auto-blacklist: if this LoRA has racked up failures against
         # this wizard's exact checkpoint, mark blocked so the F10 panel
         # can grey it out (and the user can manually unblock).
@@ -4654,6 +4660,8 @@ def _get_loras_for_wizard(char_id):
             "name": lora_name,
             "display_name": lora_name.replace("\\", "/").rsplit("/", 1)[-1].rsplit(".", 1)[0],
             "purpose": info.get("purpose", ""),
+            "purpose_group": info.get("purpose_group", ""),
+            "preferred_for_purpose": bool(info.get("preferred_for_purpose")),
             "tags": info.get("tags", []),
             "user_desc": info.get("user_desc", ""),
             "description": info.get("description", ""),
@@ -7430,6 +7438,14 @@ class GuildHandler(SimpleHTTPRequestHandler):
             params = urllib.parse.parse_qs(qs)
             return self.end_json(*_spellcaster_scaffold_calibrate_status(
                 params.get('job', [''])[0]))
+        # LoRA grouping + shootout
+        if self.path == '/api/spellcaster/lora/groups':
+            return self.end_json(*_spellcaster_lora_groups())
+        if self.path.startswith('/api/spellcaster/lora/shootout/status'):
+            qs = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(qs)
+            return self.end_json(*_spellcaster_lora_shootout_status(
+                params.get('job', [''])[0]))
         # LoRA bulk calibration status + results (polled by the review UI).
         if self.path.startswith('/api/spellcaster/calibrate/loras/status'):
             qs = urllib.parse.urlparse(self.path).query
@@ -8905,6 +8921,28 @@ class GuildHandler(SimpleHTTPRequestHandler):
             # R51a: proxy to antenna for the preset dropdown
             return self._proxy_to_antenna('/resolve/render-presets', 'GET', None,
                                            service='resolve')
+        elif (self.path == '/api/antenna/service/start'
+              and self.command == 'POST'):
+            # R56: Guild proxy to antenna's POST /service/start.
+            # Routes to the antenna that declares/detects the service.
+            svc = (data.get('service') or '').strip().lower()
+            return self._proxy_to_antenna('/service/start', 'POST', data,
+                                           service=svc if svc else None)
+        elif (self.path.startswith('/api/antenna/service/logs')
+              and self.command == 'GET'):
+            # R56: tail the launch log
+            qs = ''
+            svc = None
+            if '?' in self.path:
+                qs = '?' + self.path.split('?', 1)[1]
+                try:
+                    from urllib.parse import urlparse, parse_qs
+                    parsed = parse_qs(urlparse(self.path).query)
+                    svc = (parsed.get('service') or [''])[0].strip().lower() or None
+                except Exception:
+                    svc = None
+            return self._proxy_to_antenna('/service/logs' + qs, 'GET', None,
+                                           service=svc)
 
         # R48b: Send timeline directly to a running DaVinci Resolve via the
         # antenna. POST only — mutates Resolve state. Body: {"format": "edl"|"fcpxml", "fps": 30, "bin": "Spellcaster"}
@@ -9700,6 +9738,21 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 data.get('scaffold', ''),
                 overrides=data.get('overrides') or {},
                 seed=int(data.get('seed', 42))))
+        # LoRA shootout — render candidates + commit the winner
+        if self.path == '/api/spellcaster/lora/shootout/start':
+            return self.end_json(*_spellcaster_lora_shootout_start(
+                data.get('arch', ''),
+                data.get('purpose_group', ''),
+                candidate_loras=data.get('candidates') or [],
+                seed=int(data.get('seed', 12345)),
+                strength=(float(data['strength'])
+                           if 'strength' in data else None)))
+        if self.path == '/api/spellcaster/lora/preferred':
+            return self.end_json(*_spellcaster_lora_pick_preferred(
+                data.get('arch', ''),
+                data.get('purpose_group', ''),
+                data.get('winner', ''),
+                demote_losers=bool(data.get('demote_losers', True))))
 
         # -- /api/horde_generate -- server-side proxy to AI Horde
         #    Browser can't call Horde directly (CORS), so we relay.
