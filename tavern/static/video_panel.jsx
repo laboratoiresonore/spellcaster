@@ -136,11 +136,16 @@ function ShotCard({
   onAddDependency,
   onRemoveDependency,
   onToggleLock,
+  onSaveSnapshot,
+  onRestoreSnapshot,
+  onDeleteSnapshot,
   focused = false,
 }) {
   const [expanded, setExpanded] = _useState(shot.status === "draft");
   const [showHistory, setShowHistory] = _useState(false);
   const [showCompare, setShowCompare] = _useState(false);
+  const [showSnapshots, setShowSnapshots] = _useState(false);
+  const [snapLabel, setSnapLabel] = _useState("");
 
   const isLocked = shot.locked || false;
   const [editTitle, setEditTitle] = _useState(shot.title);
@@ -513,6 +518,61 @@ function ShotCard({
             )}
             {showHistory && (shot.render_history || []).length === 0 && (
               <div className="text-[10px] text-slate-500 mt-1">No renders yet</div>
+            )}
+          </div>
+
+          {/* R45a: Snapshots */}
+          <div className="snapshots-section">
+            <button
+              onClick={() => setShowSnapshots(!showSnapshots)}
+              className="snapshots-toggle text-xs text-slate-400 hover:text-cyan-300 flex items-center gap-1"
+            >
+              <span>{showSnapshots ? "Hide" : "Show"} snapshots</span>
+              <span className="snapshots-count text-slate-500">({(shot.snapshots || []).length})</span>
+            </button>
+            {showSnapshots && (
+              <div className="snapshots-panel mt-2 rounded bg-slate-900/60 border border-cyan-700/20 p-2 space-y-2">
+                <div className="snapshots-save-row flex gap-2 items-center">
+                  <input
+                    type="text"
+                    value={snapLabel}
+                    onChange={(e) => setSnapLabel(e.target.value)}
+                    placeholder="Snapshot label (optional)"
+                    className="snapshot-label-input flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-[11px] text-slate-200 placeholder-slate-500 focus:border-cyan-500 focus:outline-none"
+                  />
+                  <button
+                    onClick={async () => {
+                      await onSaveSnapshot(shot.id, snapLabel);
+                      setSnapLabel("");
+                    }}
+                    disabled={isLocked}
+                    className="snapshot-save-btn px-2 py-1 rounded bg-cyan-700/40 hover:bg-cyan-600/50 text-cyan-100 text-[11px] font-medium disabled:bg-slate-700 disabled:text-slate-500"
+                    title={isLocked ? "Locked — unlock to snapshot" : "Save a restorable copy of current creative state"}
+                  >Save snapshot</button>
+                </div>
+                {(shot.snapshots || []).length === 0 ? (
+                  <div className="text-[10px] text-slate-500">No snapshots yet. Save one before risky edits — you can restore later.</div>
+                ) : (
+                  <div className="snapshots-list space-y-1 max-h-40 overflow-y-auto">
+                    {(shot.snapshots || []).slice().reverse().map((snap) => (
+                      <div key={snap.id} className="snapshot-entry flex items-center gap-2 text-[10px] px-2 py-1 rounded bg-slate-800/60">
+                        <span className="snapshot-time text-slate-400">{new Date((snap.created_at || 0) * 1000).toLocaleString()}</span>
+                        {snap.label && <span className="snapshot-label text-cyan-300 font-medium">— {snap.label}</span>}
+                        <span className="snapshot-preset text-slate-500">({snap.preset || "?"})</span>
+                        <button
+                          onClick={() => onRestoreSnapshot(shot.id, snap.id)}
+                          disabled={isLocked}
+                          className="snapshot-restore-btn ml-auto px-2 py-0.5 rounded bg-cyan-700/40 hover:bg-cyan-600/50 text-cyan-100 font-medium disabled:bg-slate-700 disabled:text-slate-500"
+                        >Restore</button>
+                        <button
+                          onClick={() => { if (confirm("Delete this snapshot?")) onDeleteSnapshot(shot.id, snap.id); }}
+                          className="snapshot-delete-btn px-2 py-0.5 rounded bg-red-700/30 hover:bg-red-600/50 text-red-200 font-medium"
+                        >×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
@@ -1517,6 +1577,9 @@ function VideoPanel() {
   const [editMode, setEditMode] = _useState("add");
   // R44: keyboard navigation between shot cards
   const [focusedShotIndex, setFocusedShotIndex] = _useState(null);
+  // R45b: batch duplicate controls
+  const [showBatchDupe, setShowBatchDupe] = _useState(false);
+  const [batchDupeCount, setBatchDupeCount] = _useState(1);
   const pollRef = _useRef(null);
   const sseRef = _useRef(null);
   const [sseConnected, setSseConnected] = _useState(false);
@@ -1805,6 +1868,51 @@ function VideoPanel() {
     }
   };
 
+  // R45a: snapshots
+  const saveSnapshot = async (id, label = "") => {
+    try {
+      const res = await api.post(`/api/video/shots/${id}/snapshot`, { label });
+      addToast("Snapshot saved", "success");
+      await refresh();
+      return res;
+    } catch (e) {
+      addToast("Failed to save snapshot: " + (e.message || "unknown"), "error");
+      return null;
+    }
+  };
+
+  const listSnapshots = async (id) => {
+    try {
+      return await api.get(`/api/video/shots/${id}/snapshots`);
+    } catch (e) {
+      return { snapshots: [] };
+    }
+  };
+
+  const restoreSnapshot = async (id, snapId) => {
+    try {
+      const res = await api.post(`/api/video/shots/${id}/snapshot/${snapId}/restore`, {});
+      if (res && res.restored) {
+        addToast("Snapshot restored", "success");
+      } else {
+        addToast(res && res.error ? res.error : "Could not restore (shot may be locked)", "error");
+      }
+      await refresh();
+    } catch (e) {
+      addToast("Restore failed: " + (e.message || "unknown"), "error");
+    }
+  };
+
+  const deleteSnapshot = async (id, snapId) => {
+    try {
+      await api.post(`/api/video/shots/${id}/snapshot/${snapId}`, { _action: "delete" });
+      addToast("Snapshot deleted", "success");
+      await refresh();
+    } catch (e) {
+      addToast("Delete failed: " + (e.message || "unknown"), "error");
+    }
+  };
+
   const exportShotboard = async () => {
     try {
       const resp = await api.post("/api/video/export", {});
@@ -1929,6 +2037,29 @@ function VideoPanel() {
       await refresh();
     } catch (e) {
       setError("Failed to batch color label");
+    }
+  };
+
+  // R45b: clone each selected shot N times. Each copy gets a fresh id,
+  // status='draft', empty render_history + snapshots, and a versioned
+  // title ("Hero" → "Hero v2", "Hero v3", ...).
+  const batchDuplicate = async () => {
+    if (selected.size === 0) return;
+    const count = Math.max(1, Math.min(50, parseInt(batchDupeCount) || 1));
+    try {
+      const res = await api.post("/api/video/batch-duplicate", {
+        shot_ids: Array.from(selected),
+        count: count,
+        title_suffix_mode: "counter",
+      });
+      addToast(
+        `Duplicated ${selected.size} shot(s) × ${count} = ${res.created} new`,
+        res.created > 0 ? "success" : "error"
+      );
+      setShowBatchDupe(false);
+      await refresh();
+    } catch (e) {
+      addToast("Batch duplicate failed: " + (e.message || "unknown"), "error");
     }
   };
 
@@ -2473,6 +2604,9 @@ function VideoPanel() {
             <button onClick={() => setShowPromptEdit(v => !v)} className="batch-prompt-edit-btn px-3 py-1 rounded bg-violet-700/40 hover:bg-violet-600/50 text-violet-100 text-xs">
               {showPromptEdit ? "Close Prompt Edit" : "Prompt ±"}
             </button>
+            <button onClick={() => setShowBatchDupe(v => !v)} className="batch-duplicate-btn px-3 py-1 rounded bg-cyan-700/40 hover:bg-cyan-600/50 text-cyan-100 text-xs">
+              {showBatchDupe ? "Close Duplicate" : "Duplicate ×N"}
+            </button>
                 <button onClick={batchResetStatus} className="batch-reset-btn flex items-center gap-1 bg-sky-700/30 hover:bg-sky-700/50 text-sky-300 px-3 py-1 rounded text-xs font-medium">
               Reset
             </button>
@@ -2528,6 +2662,39 @@ function VideoPanel() {
           </div>
           <div className="text-xs text-slate-500">
             Idempotent — re-running with the same prefix won't double-add. Locked shots are skipped.
+          </div>
+        </div>
+      )}
+
+      {/* R45b: batch duplicate — expanding panel */}
+      {selected.size > 0 && showBatchDupe && (
+        <div className="batch-duplicate-panel bg-slate-900 border border-cyan-600/30 rounded-xl px-4 py-3 flex flex-col gap-2">
+          <div className="flex items-center gap-2 text-xs text-cyan-200">
+            <span className="font-semibold">Duplicate</span>
+            <span className="text-slate-400">
+              — create {batchDupeCount} cop{batchDupeCount === 1 ? "y" : "ies"} of each of the {selected.size} selected shot(s).
+              New shots get "v2", "v3"… suffix and reset status/video/snapshots.
+            </span>
+          </div>
+          <div className="flex gap-2 items-center flex-wrap">
+            <label className="text-xs text-slate-300 flex items-center gap-2">
+              Copies per shot:
+              <input
+                type="number"
+                min="1"
+                max="50"
+                value={batchDupeCount}
+                onChange={(e) => setBatchDupeCount(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
+                className="batch-dupe-count bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none w-20"
+              />
+            </label>
+            <span className="text-xs text-slate-500">
+              Will create {selected.size * batchDupeCount} new shot(s)
+            </span>
+            <button
+              onClick={batchDuplicate}
+              className="batch-dupe-apply px-3 py-1 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium ml-auto"
+            >Duplicate</button>
           </div>
         </div>
       )}
@@ -2673,6 +2840,9 @@ function VideoPanel() {
               onAddDependency={addDependency}
               onRemoveDependency={removeDependency}
               onToggleLock={toggleLock}
+              onSaveSnapshot={saveSnapshot}
+              onRestoreSnapshot={restoreSnapshot}
+              onDeleteSnapshot={deleteSnapshot}
               focused={focusedShotIndex === idx}
             />
           ))}

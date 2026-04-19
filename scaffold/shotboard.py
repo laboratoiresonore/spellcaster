@@ -169,6 +169,10 @@ class Shot:
     transition_ms: int = 500
     locked: bool = False
     render_history: List[Dict[str, Any]] = field(default_factory=list)
+    # R45: user-labelled save/restore points. Distinct from render_history:
+    # snapshots capture ANY creative state at ANY time (not just at render),
+    # and they're user-driven (manually named, manually restored).
+    snapshots: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -988,3 +992,143 @@ class Shotboard:
         if modified > 0:
             self.save()
         return {"modified": modified, "skipped": skipped}
+
+    # ─── R45a: shot version snapshots ────────────────────────────────
+
+    _SNAPSHOT_FIELDS = (
+        "title", "prompt", "negative", "seed", "ref_image", "backend",
+        "preset", "overrides", "notes", "transition", "transition_ms",
+        "target_duration_s", "trajectories",
+    )
+
+    def save_snapshot(self, shot_id: str, label: str = "") -> Optional[Dict[str, Any]]:
+        """Append a labelled snapshot of the shot's creative state.
+
+        Unlike render_history (auto-captured at render time), snapshots are
+        user-driven save points — taken before a risky prompt change,
+        before experimenting with a new preset, etc. Max 20 per shot
+        (oldest pruned on overflow).
+        """
+        shot = self.get(shot_id)
+        if shot is None:
+            return None
+        snap_id = uuid.uuid4().hex[:12]
+        snap: Dict[str, Any] = {
+            "id": snap_id,
+            "label": (label or f"Snapshot {len(shot.snapshots) + 1}").strip(),
+            "created_at": time.time(),
+        }
+        for key in self._SNAPSHOT_FIELDS:
+            val = getattr(shot, key, None)
+            if key == "trajectories":
+                # Trajectories are list[Trajectory]; serialize to dicts for
+                # stable restore regardless of in-memory object identity
+                snap[key] = [t.to_dict() if hasattr(t, "to_dict") else dict(t)
+                             for t in (val or [])]
+            else:
+                snap[key] = copy.deepcopy(val)
+        shot.snapshots.append(snap)
+        if len(shot.snapshots) > 20:
+            shot.snapshots = shot.snapshots[-20:]
+        shot.touch()
+        self.save()
+        return snap
+
+    def list_snapshots(self, shot_id: str) -> List[Dict[str, Any]]:
+        """Return shallow copies of this shot's snapshots (newest last)."""
+        shot = self.get(shot_id)
+        if shot is None:
+            return []
+        return [dict(s) for s in shot.snapshots]
+
+    def restore_snapshot(self, shot_id: str, snap_id: str) -> Optional[Dict[str, Any]]:
+        """Reset the shot's creative state to the named snapshot. Runtime
+        fields (status, video_path, job_id, error) are NOT touched — the
+        shot may still be locked/running; creative edits are independent.
+
+        Returns the snapshot dict that was applied, or None if not found.
+        Locked shots are skipped.
+        """
+        shot = self.get(shot_id)
+        if shot is None or shot.locked:
+            return None
+        snap = next((s for s in shot.snapshots if s.get("id") == snap_id), None)
+        if snap is None:
+            return None
+        for key in self._SNAPSHOT_FIELDS:
+            if key not in snap:
+                continue
+            if key == "trajectories":
+                shot.trajectories = [Trajectory.from_dict(t) for t in (snap[key] or [])]
+            else:
+                setattr(shot, key, copy.deepcopy(snap[key]))
+        shot.touch()
+        self.save()
+        return snap
+
+    def delete_snapshot(self, shot_id: str, snap_id: str) -> bool:
+        """Remove a snapshot by id. Returns True if one was removed."""
+        shot = self.get(shot_id)
+        if shot is None:
+            return False
+        before = len(shot.snapshots)
+        shot.snapshots = [s for s in shot.snapshots if s.get("id") != snap_id]
+        if len(shot.snapshots) < before:
+            shot.touch()
+            self.save()
+            return True
+        return False
+
+    # ─── R45b: batch duplicate with counter ──────────────────────────
+
+    def batch_duplicate(self, shot_ids: List[str], count: int = 1,
+                        title_suffix_mode: str = "counter") -> Dict[str, Any]:
+        """Create `count` copies of each shot in shot_ids.
+
+        For each source shot, copies share the source's creative state
+        (prompt, preset, overrides, notes, trajectories) but get fresh
+        ids, a fresh status ("draft"), and NO render_history / snapshots.
+
+        title_suffix_mode:
+          - "counter": source "Scene A" → "Scene A v2", "Scene A v3", ...
+                       (v1 assumed = original; new copies start at v2)
+          - "plain":   source "Scene A" → "Scene A (2)", "Scene A (3)", ...
+
+        Locked shots are copied but their copies are NOT locked — the
+        user just wanted a starting point.
+
+        Returns {"created": int, "skipped": int, "new_ids": [...]}
+        """
+        if count < 1:
+            return {"created": 0, "skipped": 0, "new_ids": []}
+        created: List[str] = []
+        skipped = 0
+        for sid in shot_ids:
+            source = self.get(sid)
+            if source is None:
+                skipped += 1
+                continue
+            for i in range(count):
+                new_shot = copy.deepcopy(source)
+                new_shot.id = uuid.uuid4().hex
+                new_shot.status = "draft"
+                new_shot.video_path = None
+                new_shot.job_id = None
+                new_shot.error = None
+                new_shot.render_history = []
+                new_shot.snapshots = []
+                new_shot.locked = False
+                new_shot.render_duration_s = None
+                new_shot.last_updated = time.time()
+                # Compose the new title
+                base = (source.title or "Untitled").rstrip()
+                if title_suffix_mode == "plain":
+                    new_shot.title = f"{base} ({i + 2})"
+                else:  # "counter"
+                    new_shot.title = f"{base} v{i + 2}"
+                new_shot.index = len(self._shots)
+                self._shots.append(new_shot)
+                created.append(new_shot.id)
+        if created:
+            self.save()
+        return {"created": len(created), "skipped": skipped, "new_ids": created}

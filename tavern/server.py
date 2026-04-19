@@ -7132,6 +7132,50 @@ class GuildHandler(SimpleHTTPRequestHandler):
             shot = _VIDEO_BRIDGE.board.get(shot_id)
             return self.end_json(200, {"shot_id": shot_id, "reverted": result, "shot": shot.to_dict()})
 
+        # R45a: per-shot version snapshots (save / list / restore / delete)
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/snapshot') and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/')[4]
+            label = str(data.get('label', '') or '')
+            snap = _VIDEO_BRIDGE.board.save_snapshot(shot_id, label=label)
+            if snap is None:
+                return self.end_json(404, {"error": "shot not found"})
+            return self.end_json(200, {"shot_id": shot_id, "snapshot": snap})
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/snapshots') and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/')[4]
+            snaps = _VIDEO_BRIDGE.board.list_snapshots(shot_id)
+            return self.end_json(200, {"shot_id": shot_id, "snapshots": snaps})
+        elif self.path.startswith('/api/video/shots/') and '/snapshot/' in self.path and self.path.endswith('/restore') and self.command == 'POST':
+            # /api/video/shots/<sid>/snapshot/<snap_id>/restore
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            parts = self.path.split('/')
+            shot_id = parts[4] if len(parts) > 4 else ''
+            snap_id = parts[6] if len(parts) > 6 else ''
+            restored = _VIDEO_BRIDGE.board.restore_snapshot(shot_id, snap_id)
+            if restored is None:
+                return self.end_json(400, {"error": "shot not found, snapshot not found, or shot locked"})
+            shot = _VIDEO_BRIDGE.board.get(shot_id)
+            return self.end_json(200, {"shot_id": shot_id, "restored": restored,
+                                        "shot": shot.to_dict() if shot else None})
+        elif self.path.startswith('/api/video/shots/') and '/snapshot/' in self.path and self.command == 'POST' and not self.path.endswith('/restore'):
+            # /api/video/shots/<sid>/snapshot/<snap_id>  with no /restore suffix = delete
+            # (HTTP DELETE would be cleaner but the existing video endpoints pattern uses POST)
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            parts = self.path.split('/')
+            shot_id = parts[4] if len(parts) > 4 else ''
+            snap_id = parts[6] if len(parts) > 6 else ''
+            action = data.get('_action', 'delete')
+            if action != 'delete':
+                return self.end_json(400, {"error": "unknown action for /snapshot/<id>; pass _action=delete"})
+            removed = _VIDEO_BRIDGE.board.delete_snapshot(shot_id, snap_id)
+            return self.end_json(200 if removed else 404,
+                                 {"shot_id": shot_id, "snapshot_id": snap_id, "deleted": removed})
+
         elif self.path == '/api/video/batch-revert' and self.command == 'POST':
             if not _VIDEO_BRIDGE:
                 return self.end_json(503, {"error": "Video Bridge not initialised"})
@@ -7154,6 +7198,23 @@ class GuildHandler(SimpleHTTPRequestHandler):
             if not prefix and not suffix:
                 return self.end_json(400, {"error": "prefix or suffix required"})
             result = _VIDEO_BRIDGE.board.batch_prompt_edit(shot_ids, prefix=prefix, suffix=suffix, mode=mode)
+            return self.end_json(200, result)
+        elif self.path == '/api/video/batch-duplicate' and self.command == 'POST':
+            # R45b: clone each selected shot N times with versioned titles
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_ids = data.get('shot_ids', [])
+            if not shot_ids:
+                return self.end_json(400, {"error": "No shot_ids provided"})
+            try:
+                count = max(1, min(50, int(data.get('count', 1))))  # safety cap
+            except (TypeError, ValueError):
+                return self.end_json(400, {"error": "count must be a positive integer"})
+            mode = data.get('title_suffix_mode', 'counter')
+            if mode not in ('counter', 'plain'):
+                return self.end_json(400, {"error": "title_suffix_mode must be 'counter' or 'plain'"})
+            result = _VIDEO_BRIDGE.board.batch_duplicate(
+                shot_ids, count=count, title_suffix_mode=mode)
             return self.end_json(200, result)
 
         elif self.path == '/api/video/record-render' and self.command == 'POST':
