@@ -4346,175 +4346,39 @@ def _spellcaster_calibration_save(model_name: str, prefs: dict) -> tuple[int, di
         return (500, {"error": f"save failed: {e}"})
 
 
-# ── Ollama chat-model priority (best → fallback) ──────────────────────
-# Used by _ollama_pick_model() to rank /api/tags output. First substring
-# match wins. We prefer chat-instruction models over base completion
-# models, and smaller quantizations over huge ones (to leave VRAM for
-# ComfyUI's image models). Any model not matching stays eligible as a
-# last resort so single-model installs still work.
-_OLLAMA_MODEL_PREFERENCE = (
-    "qwen3:4b", "qwen2.5:7b", "qwen2.5:3b",
-    "gemma3:4b", "gemma2:9b", "gemma2:2b",
-    "llama3.2:3b", "llama3.1:8b",
-    "phi3:3.8b", "phi3:mini",
-    "mistral:7b",
-)
-_OLLAMA_MODEL_CACHE = {"ts": 0.0, "model": None, "host": None}
-_OLLAMA_MODEL_TTL = 300.0
-
-
-def _ollama_pick_model(host):
-    """Probe Ollama /api/tags and return the best installed model name.
-
-    Cached for 5 min so a chat burst doesn't hammer /api/tags.
-    Returns None if Ollama isn't reachable or has no models.
-    """
-    now = time.time()
-    if (_OLLAMA_MODEL_CACHE["model"] is not None
-            and _OLLAMA_MODEL_CACHE["host"] == host
-            and now - _OLLAMA_MODEL_CACHE["ts"] < _OLLAMA_MODEL_TTL):
-        return _OLLAMA_MODEL_CACHE["model"]
-    try:
-        req = urllib.request.Request(f"{host}/api/tags")
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-    except Exception:
-        return None
-    names = [m.get("name", "") for m in data.get("models", [])]
-    if not names:
-        return None
-    chosen = None
-    for pref in _OLLAMA_MODEL_PREFERENCE:
-        for n in names:
-            if n.startswith(pref) or pref in n:
-                chosen = n
-                break
-        if chosen:
-            break
-    if not chosen:
-        chosen = names[0]  # last resort — take whatever's there
-    _OLLAMA_MODEL_CACHE["model"] = chosen
-    _OLLAMA_MODEL_CACHE["host"] = host
-    _OLLAMA_MODEL_CACHE["ts"] = now
-    return chosen
-
-
-def _ollama_generate(payload, host, timeout=180):
-    """Route a kobold-style payload to Ollama's /api/generate endpoint.
-
-    Ollama /api/generate takes a raw prompt (not messages) so the
-    client-side context concatenation (system + chat history + user
-    turn) works as-is. Returns kobold-format {"results":[{"text": ...}]}
-    or None on any failure.
-
-    This is the right backend for wizard chat — Ollama is a general-
-    purpose chat LLM, unlike AILab_QwenVL_GGUF_PromptEnhancer which is
-    hardwired to rewrite every input as an image-generation prompt.
-    """
-    model = _ollama_pick_model(host)
-    if not model:
-        return None
-    body = {
-        "model": model,
-        "prompt": payload.get("prompt", ""),
-        "stream": False,
-        "options": {
-            "num_predict": payload.get("max_length", 300),
-            "temperature": payload.get("temperature", 0.7),
-            "top_p": payload.get("top_p", 0.9),
-            "repeat_penalty": payload.get("rep_pen", 1.15),
-        },
-    }
-    stop = payload.get("stop_sequence") or []
-    if stop:
-        body["options"]["stop"] = list(stop)
-    try:
-        req = urllib.request.Request(
-            f"{host}/api/generate",
-            data=json.dumps(body).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        text = data.get("response", "")
-        if not text:
-            return None
-        return {"results": [{"text": text}]}
-    except Exception:
-        return None
-
-
 def _llm_generate_local(payload, timeout=180):
-    """Call a local LLM to generate text.
+    """Thin shim over spellcaster_core.guild_llm.chat().
 
-    Backend priority (highest-quality chat first):
-      1. Ollama native /api/generate — general-purpose chat LLM, honours
-         system prompts, doesn't hijack every input as an image prompt.
-         This is what the wizard chat needs.
-      2. ComfyUI AILab_QwenVL_GGUF_PromptEnhancer — fallback for boxes
-         without Ollama. Works fine for LoRA interrogation and similar
-         structured-text tasks. Does NOT work for conversation (it's
-         literally a prompt enhancer, not a chat model) but it's better
-         than nothing if that's all the user has.
-      3. KoboldCpp /api/v1/generate — last-resort fallback for users who
-         still run a KoboldCpp server locally.
+    Every LLM call in the Guild goes through the canonical
+    spellcaster_core.guild_llm module — the same one the GIMP and
+    Darktable plugins use. Do NOT implement a parallel path here; if
+    you need a new backend or priority tweak, do it in guild_llm.
 
-    Compatible with the payload format used in the frontend:
-    {prompt, max_length, temperature, stop_sequence, ...}
-
-    Returns the KoboldCpp-format response dict, or None on failure.
+    Accepts the kobold-style payload the frontend already speaks:
+        {prompt, max_length, temperature, stop_sequence, ...}
+    and returns the matching kobold-shaped envelope:
+        {"results": [{"text": "..."}]}
     """
-    prompt_text = payload.get("prompt", "")
-    max_length = payload.get("max_length", 300)
-    temperature = payload.get("temperature", 0.7)
-
-    # ── 1. Ollama native chat ──
-    # KOBOLD_URL is set to the user's configured local-LLM host; for most
-    # installs that's http://127.0.0.1:11434 (Ollama's default). If the
-    # user has KoboldCpp on 5001, try that host directly for Ollama too
-    # — the probe is cheap and will fail fast if nothing's there.
-    for host in (KOBOLD_URL, "http://127.0.0.1:11434"):
-        if not host:
-            continue
-        result = _ollama_generate(payload, host.rstrip("/"), timeout=timeout)
-        if result:
-            return result
-
-    # ── 2. ComfyUI LLM node fallback ──
     try:
-        from spellcaster_core.comfyui_llm import generate_text
-        result = generate_text(
-            COMFYUI_URL, prompt=prompt_text,
-            max_tokens=max_length, temperature=temperature)
-        if result:
-            return {"results": [{"text": result}]}
-    except Exception:
-        pass
-
-    # ── 3. KoboldCpp fallback ──
-    try:
-        kobold_payload = {
-            "prompt": prompt_text,
-            "max_context_length": payload.get("max_context_length", 4096),
-            "max_length": max_length,
-            "temperature": temperature,
-            "top_p": payload.get("top_p", 0.9),
-            "rep_pen": payload.get("rep_pen", 1.15),
-            "rep_pen_range": payload.get("rep_pen_range", 512),
-            "stop_sequence": payload.get("stop_sequence", []),
-        }
-        url = f"{KOBOLD_URL}/api/v1/generate"
-        body = json.dumps(kobold_payload).encode("utf-8")
-        req = urllib.request.Request(
-            url, data=body,
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except Exception as e:
-        print(f"  [LLM] Enhancement skipped ({type(e).__name__}: {e}) — "
-              f"continuing with un-enhanced prompt")
+        from spellcaster_core.guild_llm import chat
+    except ImportError:
         return None
+    try:
+        text = chat(
+            message=payload.get("prompt", ""),
+            system_prompt="",  # client already concatenates system into prompt
+            server=COMFYUI_URL,
+            kobold_url=KOBOLD_URL,
+            max_tokens=payload.get("max_length", 300),
+            temperature=payload.get("temperature", 0.7),
+            purpose="chat",
+        )
+    except Exception as e:
+        print(f"  [LLM] chat() raised {type(e).__name__}: {e}")
+        return None
+    if not text:
+        return None
+    return {"results": [{"text": text}]}
 _GENERATED_ASSETS = _load_generated_assets()
 _LORA_TOGGLES = _load_lora_toggles()
 _WIZARD_IDENTITIES = _load_wizard_identities()
