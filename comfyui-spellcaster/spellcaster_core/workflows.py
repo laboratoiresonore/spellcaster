@@ -6930,7 +6930,8 @@ def build_ltx_video(preset, prompt_text, seed,
                      two_stage=False, distilled=False,
                      loras=None, interpolate=False, rtx_scale=0,
                      fps=25, pingpong=False,
-                     image_filename=None, i2v_strength=0.9):
+                     image_filename=None, i2v_strength=0.9,
+                     negative_text=None):
     """LTX Video 2.3 generation — text-to-video or image-to-video.
 
     Supports three modes:
@@ -7019,10 +7020,19 @@ def build_ltx_video(preset, prompt_text, seed,
     stg_model_id = nf.ltxv_apply_stg([chunk_id, 0], "14, 19", node_id="3")
 
     # ── Text encoding ─────────────────────────────────────────────
+    # R133: the LTX-2.3 distilled training corpus includes subtitled /
+    # watermarked video, so the model will faithfully reproduce text
+    # overlays ("subtitle burn-in") unless the negative prompt blocks
+    # them. Default negative is tuned against those artifacts; caller
+    # can pass their own via `negative_text` to override or extend.
+    if negative_text is None:
+        negative_text = ("text, subtitles, captions, watermark, logo, "
+                          "timestamp, UI, interface, closed captions, "
+                          "overlay, written letters, typography")
     enc_id = nf.ltxav_text_encoder_loader(text_encoder, embeddings_connector,
                                            node_id="4")
     pos_id = nf.clip_encode([enc_id, 0], prompt_text, node_id="10")
-    neg_id = nf.clip_encode([enc_id, 0], "", node_id="11")
+    neg_id = nf.clip_encode([enc_id, 0], negative_text or "", node_id="11")
 
     # ── VAE ───────────────────────────────────────────────────────
     vae_id = nf.vae_loader(vae_name, node_id="5")

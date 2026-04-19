@@ -377,19 +377,36 @@ class VideoBridge:
 
     # ---- R126: native ComfyUI routing for Wan presets --------------
 
+    # R133: native routing also covers the LTX-2 family.
+    _NATIVE_WAN_PRESETS = (
+        "wan22_i2v_lightning", "wan22_i2v_hq", "wan22_t2v",
+    )
+    _NATIVE_LTX2_PRESETS = (
+        "ltx2_distilled", "ltx2_dev",
+        "ltx2_text_to_video", "ltx2_text_to_video_distilled",
+        "ltx2_text_to_video_2stage",
+        "ltx2_t2v_with_rife_interpolation",
+        "ltx2_t2v_with_rtx_upscale",
+        "ltx2_image_to_video",
+    )
+    _NATIVE_I2V_PRESETS = (
+        "wan22_i2v_lightning", "wan22_i2v_hq",
+        "ltx2_image_to_video",
+    )
+
     def _should_try_native_wan(self, shot: Shot) -> bool:
-        """Native ComfyUI routing for wan22_* presets we've mapped.
-        i2v presets need a ref image; t2v doesn't."""
+        """Native ComfyUI routing for wan22_* and ltx2_* presets.
+        i2v variants need a ref image; t2v doesn't."""
         if not _NATIVE_DISPATCH_AVAILABLE:
             return False
-        if shot.preset not in ("wan22_i2v_lightning", "wan22_i2v_hq",
-                                "wan22_t2v"):
+        if shot.preset not in (self._NATIVE_WAN_PRESETS
+                                 + self._NATIVE_LTX2_PRESETS):
             return False
         # Need ComfyUI reachable — fail fast before building anything
         if not self.comfy.is_available():
             return False
         # i2v variants require a reference image; t2v doesn't.
-        if shot.preset in ("wan22_i2v_lightning", "wan22_i2v_hq"):
+        if shot.preset in self._NATIVE_I2V_PRESETS:
             if not shot.ref_image or not os.path.isfile(shot.ref_image):
                 return False
         return True
@@ -403,8 +420,8 @@ class VideoBridge:
         (build_wan22_t2v and build_wan22_i2v — R128)."""
         ref_basename: Optional[str] = None
         input_filenames: List[str] = []
-        is_t2v = shot.preset == "wan22_t2v"
-        if not is_t2v:
+        needs_ref = shot.preset in self._NATIVE_I2V_PRESETS
+        if needs_ref:
             ref_basename = os.path.basename(shot.ref_image)
             try:
                 with open(shot.ref_image, "rb") as _rf:
