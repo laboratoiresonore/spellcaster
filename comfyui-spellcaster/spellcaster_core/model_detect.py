@@ -214,6 +214,63 @@ def classify_unet_model(name):
     return "unknown"
 
 
+# LoRAs trained for arch X are shape-compatible with all keys in the same
+# bucket. Cross-bucket injection causes the exact shape mismatches seen in
+# the ComfyUI log (e.g. Klein 4096-dim LoRA into Flux 1 Dev 3072-dim UNET).
+LORA_COMPAT_BUCKETS = {
+    "sd15":         ("sd15",),
+    "sdxl":         ("sdxl", "illustrious", "pony"),
+    "illustrious":  ("sdxl", "illustrious", "pony"),
+    "pony":         ("sdxl", "illustrious", "pony"),
+    "flux1dev":     ("flux1dev", "flux_kontext"),
+    "flux_kontext": ("flux1dev", "flux_kontext"),
+    "flux2klein":   ("flux2klein",),
+    "chroma":       ("chroma",),
+    "wan":          ("wan",),
+    "ltx":          ("ltx",),
+    "seedvr":       ("seedvr",),
+}
+
+
+def classify_lora_arch(lora_name):
+    """Best-effort arch detection for a LoRA filename.
+
+    Checks path prefixes first (most authoritative — the Spellcaster
+    convention organises LoRAs by arch folder), then falls back to
+    filename keyword hints. Returns None when uncertain so callers
+    can pass the LoRA through without blocking a potentially valid use.
+    """
+    if not isinstance(lora_name, str) or not lora_name:
+        return None
+    normalized = lora_name.replace("/", "\\")
+    for arch_key, prefixes in LORA_ARCH_PREFIXES.items():
+        for p in prefixes:
+            pn = p.replace("/", "\\")
+            if pn and normalized.startswith(pn):
+                return arch_key
+    ml = lora_name.lower()
+    for kw, arch_key in LORA_NAME_ARCH_HINTS:
+        if kw in ml:
+            return arch_key
+    return None
+
+
+def lora_is_compatible(lora_name, target_arch):
+    """Return True if the LoRA is safe to inject into target_arch.
+
+    Unknown LoRAs (no prefix, no name hint) are treated as compatible —
+    the alternative silently drops valid custom LoRAs. Known-incompatible
+    LoRAs (detected arch is in a different bucket) are rejected.
+    """
+    if not target_arch:
+        return True
+    detected = classify_lora_arch(lora_name)
+    if detected is None:
+        return True
+    bucket = LORA_COMPAT_BUCKETS.get(target_arch, (target_arch,))
+    return detected in bucket
+
+
 def classify_ckpt_model(name):
     """Return arch key for a checkpoint model name, or 'sd15' (default).
 

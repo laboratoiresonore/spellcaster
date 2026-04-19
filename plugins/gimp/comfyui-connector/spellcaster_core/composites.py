@@ -168,7 +168,7 @@ def load_model_stack(nf, preset, node_id="1"):
 # the model_ref and clip_ref after each LoRA to feed into the next one.
 
 def inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100,
-                      use_triggers=False):
+                      use_triggers=False, arch_key=None):
     """Apply a sequence of LoRAs to model and CLIP (or skip if empty list).
 
     LoRAs are applied in order, each one receiving the previous LoRA's output.
@@ -217,6 +217,30 @@ def inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100,
     """
     if not loras:
         return model_ref, clip_ref, []
+
+    # Drop LoRAs from incompatible architecture buckets — a Klein LoRA
+    # silently injected into Flux 1 Dev raises ComfyUI shape errors like
+    # "shape '[9216, 3072]' invalid for input of size 50331648" mid-sampling,
+    # which is hard to map back to the offender without this guard.
+    if arch_key:
+        try:
+            from .model_detect import lora_is_compatible
+        except ImportError:
+            from spellcaster_core.model_detect import lora_is_compatible
+        filtered = []
+        dropped = []
+        for lora in loras:
+            name = lora.get("name", "") if isinstance(lora, dict) else ""
+            if lora_is_compatible(name, arch_key):
+                filtered.append(lora)
+            else:
+                dropped.append(name)
+        if dropped:
+            print(f"  [inject_lora_chain] Skipped {len(dropped)} LoRA(s) "
+                  f"not compatible with arch={arch_key}: {dropped}")
+        loras = filtered
+        if not loras:
+            return model_ref, clip_ref, []
 
     prev_model = model_ref
     prev_clip = clip_ref

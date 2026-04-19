@@ -5,3 +5,20 @@
 {"ts": 1776591709.6282003, "action": "shot_created", "shot_id": "9a5eb673228643fe9a4e2155edc90d52", "title": "R126 smoke"}
 {"ts": 1776592028.8170774, "action": "shot_created", "shot_id": "2b8111bb86874a37968cb69218f90c89", "title": "R126 smoke \u2014 var"}
 {"ts": 1776592028.891961, "action": "shot_removed", "shot_id": "9a5eb673228643fe9a4e2155edc90d52"}
+{"ts": 1776630577.8800392, "action": "shot_created", "shot_id": "b13b09b40953415198bf875a173dd6e4", "title": "R139 wan22_i2v_lightning"}
+{"ts": 1776630577.8914135, "action": "shot_created", "shot_id": "d0337941887a4ccab5073e9a91268062", "title": "R139 wan22_t2v"}
+{"ts": 1776630577.9191487, "action": "shot_created", "shot_id": "509d62ac0550475c994c264c57d7a26d", "title": "R139 ltx2_distilled"}
+{"ts": 1776630577.9257085, "action": "shot_created", "shot_id": "3ff75f0905a34a84bc97ce3cf55f6186", "title": "R139 ltx2_text_to_video_distilled"}
+{"ts": 1776630577.9307365, "action": "shot_created", "shot_id": "3bb5fcb2735441a39296707071c5107c", "title": "R139 ltx2_image_to_video"}
+{"ts": 1776630577.9412909, "action": "shot_created", "shot_id": "ee7ef76213fb418fab256e213b7e9db4", "title": "R139 wan22_i2v_hq"}
+{"ts": 1776630577.9508083, "action": "shot_created", "shot_id": "e2459ace56944b6ca3663697babe6c18", "title": "R139 ltx2_dev"}
+{"ts": 1776630577.9563205, "action": "shot_created", "shot_id": "a9313506240d4f80a3536cd69f33ed4a", "title": "R139 ltx2_text_to_video"}
+{"ts": 1776630577.9628434, "action": "shot_created", "shot_id": "a417f6059e48455c896c494b2e13e7fb", "title": "R139 ltx2_text_to_video_2stage"}
+{"ts": 1776630577.9683576, "action": "shot_created", "shot_id": "16a5cd2a230d4c6e8367f3b61d428656", "title": "R139 ltx2_t2v_with_rife_interpolation"}
+{"ts": 1776630577.9783611, "action": "shot_created", "shot_id": "d30083c7837e4ec1a4293670a7fa05ac", "title": "R139 ltx2_t2v_with_rtx_upscale"}
+{"ts": 1776630577.9843569, "action": "shot_created", "shot_id": "9c61e1ba9b384b7e98e236a4420e85fe", "title": "R139 seedvr2_video_upscale"}
+{"ts": 1776630577.997877, "action": "shot_created", "shot_id": "5e1eec46413c48e0874d7f3659428a6e", "title": "R139 wan22_v2v_vace_mask"}
+{"ts": 1776630578.0159228, "action": "shot_created", "shot_id": "c6ec06777da640f6bae49409b99c0de3", "title": "R139 ltx2_v2v_flowedit"}
+{"ts": 1776630578.0309167, "action": "shot_created", "shot_id": "c64b79b5f2574ff9adc477d04176b37c", "title": "R139 wan_move_i2v"}
+{"ts": 1776630578.043961, "action": "shot_created", "shot_id": "8a7fd04abdd94ce8ad0d8bf2013d6955", "title": "R139 scail_preview"}
+{"ts": 1776630578.0544767, "action": "shot_created", "shot_id": "59ae1758436b4910837b9f2a24b6122c", "title": "R139 ovi_720p_audio"}
