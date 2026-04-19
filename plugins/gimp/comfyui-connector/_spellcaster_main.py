@@ -22983,6 +22983,12 @@ class Spellcaster(Gimp.PlugIn):
             uname = f"gimp_cs_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
 
+            # Clothing Store — a targeted outfit swap. Tryon scope focuses
+            # the LLM on garment details (cut / fabric / drape) and keeps
+            # it off the model's face or environment.
+            prompt, _ = _auto_enhance(prompt, "flux2klein",
+                                       method="klein_virtual_tryon")
+
             for run_i in range(runs):
                 seed = random.randint(0, 2**32 - 1)
                 wf = build_klein_inpaint(
