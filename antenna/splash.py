@@ -157,7 +157,7 @@ class _TkSplash:
             self._pulse_x += 8
             if self._pulse_x > w:
                 self._pulse_x = -60
-            self._root.after(40, self._schedule_pulse)
+            self._pulse_after = self._root.after(40, self._schedule_pulse)
         except self._tk.TclError:
             self._closed = True
 
@@ -175,6 +175,10 @@ class _TkSplash:
         if self._closed:
             return
         self._closed = True
+        pulse_after = getattr(self, "_pulse_after", None)
+        if pulse_after is not None:
+            try: self._root.after_cancel(pulse_after)
+            except Exception: pass  # noqa: BLE001
         try:
             self._root.destroy()
         except Exception:  # noqa: BLE001

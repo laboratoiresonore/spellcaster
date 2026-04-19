@@ -58,7 +58,9 @@
       "Read(//c/Users/redacted/Documents/AI/Spellcaster/spellcaster/=== TRACKED EXE/**)",
       "Bash(xargs -0 grep -l \"192\\\\.168\\\\.86\\\\.\\\\\\(31\\\\|23\\\\|77\\\\|219\\\\\\)\\\\|redacted\\\\|@gmail\\\\|ghp_\")",
       "Bash(grep -iE \"session_state|user_presets|\\\\.update$|\\\\.tmp$|\\\\.bak$\")",
-      "Bash(git rm *)"
+      "Bash(git rm *)",
+      "Bash(/c/Users/redacted/AppData/Local/ms-playwright/ffmpeg-1011/ffmpeg-win64.exe -y -i /tmp/sc_in.mp4 -vf fps=12,scale=320:-1:flags=lanczos,palettegen=max_colors=128 /tmp/sc_palette.png)",
+      "Bash(/c/Users/redacted/AppData/Local/ms-playwright/ffmpeg-1011/ffmpeg-win64.exe -y -i c:/tmp/sc/in.mp4 -vf fps=12,scale=320:-1:flags=lanczos,palettegen=max_colors=128 c:/tmp/sc/palette.png)"
     ],
     "additionalDirectories": [
       "\\tmp",

@@ -1,0 +1,1363 @@
+- generic [ref=e3]:
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - generic "The Travelling Wizard" [ref=e8]
+      - generic [ref=e10]:
+        - heading "The Travelling Wizard" [level=1] [ref=e11]
+        - paragraph [ref=e12]: Signal Bridge & Spellcaster Scaffold
+    - generic [ref=e13]:
+      - generic "Server config sync status" [ref=e14]: saved
+      - button "Import" [ref=e16] [cursor=pointer]:
+        - img [ref=e17]
+        - text: Import
+      - button "Export" [ref=e19] [cursor=pointer]:
+        - img [ref=e20]
+        - text: Export
+      - button "Copy JSON" [ref=e22] [cursor=pointer]:
+        - img [ref=e23]
+        - text: Copy JSON
+      - button "Guild" [ref=e26] [cursor=pointer]:
+        - img [ref=e27]
+        - text: Guild
+  - navigation [ref=e31]:
+    - button "Workflows" [active] [ref=e32] [cursor=pointer]:
+      - img [ref=e33]
+      - text: Workflows
+    - button "Scaffolds" [ref=e35] [cursor=pointer]:
+      - img [ref=e36]
+      - text: Scaffolds
+    - button "Integrations" [ref=e38] [cursor=pointer]:
+      - img [ref=e39]
+      - text: Integrations
+    - button "Network" [ref=e41] [cursor=pointer]:
+      - img [ref=e42]
+      - text: Network
+    - button "Signal" [ref=e44] [cursor=pointer]:
+      - img [ref=e45]
+      - text: Signal
+    - button "Users & Access" [ref=e47] [cursor=pointer]:
+      - img [ref=e48]
+      - text: Users & Access
+    - button "Privacy" [ref=e50] [cursor=pointer]:
+      - img [ref=e51]
+      - text: Privacy
+    - button "Paths" [ref=e53] [cursor=pointer]:
+      - img [ref=e54]
+      - text: Paths
+    - button "Advanced" [ref=e56] [cursor=pointer]:
+      - img [ref=e57]
+      - text: Advanced
+  - generic [ref=e575]:
+    - generic [ref=e576]:
+      - generic [ref=e577]:
+        - heading "ComfyUI Workflow Library" [level=2] [ref=e578]
+        - button [ref=e580] [cursor=pointer]:
+          - img [ref=e581]
+        - generic [ref=e583]: ComfyUI Online
+      - button "Refresh" [ref=e586] [cursor=pointer]:
+        - img [ref=e587]
+        - text: Refresh
+    - generic [ref=e589]:
+      - generic [ref=e590]:
+        - img [ref=e592]
+        - textbox "Search workflows by name or type..." [ref=e594]
+      - combobox [ref=e595]:
+        - option "All categories" [selected]
+        - option "3d-gen (2)"
+        - option "Face-Swap (9)"
+        - option "Style-Transfer (14)"
+        - option "_archived_R135 (8)"
+        - option "img2img (18)"
+        - option "img2vid (9)"
+        - option "inpaint (12)"
+        - option "pipelines (3)"
+        - option "reference (12)"
+        - option "root (3)"
+        - option "stegano (2)"
+        - option "tts (2)"
+        - option "txt2img (30)"
+        - option "txt2vid (1)"
+        - option "upscale (7)"
+        - option "utilities (16)"
+        - option "video-gen (11)"
+    - generic [ref=e596]:
+      - button "painfullyfixed Text-to-Video 131 nodes · root" [ref=e597] [cursor=pointer]:
+        - generic [ref=e598]:
+          - heading "painfullyfixed" [level=3] [ref=e599]
+          - generic [ref=e600]: Text-to-Video
+        - generic [ref=e601]:
+          - generic [ref=e602]: 131 nodes
+          - generic [ref=e603]: ·
+          - generic [ref=e604]: root
+      - button "painfullyfixed_i2vLOOP Text-to-Video 130 nodes · root" [ref=e605] [cursor=pointer]:
+        - generic [ref=e606]:
+          - heading "painfullyfixed_i2vLOOP" [level=3] [ref=e607]
+          - generic [ref=e608]: Text-to-Video
+        - generic [ref=e609]:
+          - generic [ref=e610]: 130 nodes
+          - generic [ref=e611]: ·
+          - generic [ref=e612]: root
+      - button "hunyuan3d-full Inpainting 22 nodes · 3d-gen" [ref=e613] [cursor=pointer]:
+        - generic [ref=e614]:
+          - heading "hunyuan3d-full" [level=3] [ref=e615]
+          - generic [ref=e616]: Inpainting
+        - generic [ref=e617]:
+          - generic [ref=e618]: 22 nodes
+          - generic [ref=e619]: ·
+          - generic [ref=e620]: 3d-gen
+      - button "hunyuan3d-mesh 3D Generation 8 nodes · 3d-gen" [ref=e621] [cursor=pointer]:
+        - generic [ref=e622]:
+          - heading "hunyuan3d-mesh" [level=3] [ref=e623]
+          - generic [ref=e624]: 3D Generation
+        - generic [ref=e625]:
+          - generic [ref=e626]: 8 nodes
+          - generic [ref=e627]: ·
+          - generic [ref=e628]: 3d-gen
+      - button "klein-headswap Text-to-Image 30 nodes · Face-Swap" [ref=e629] [cursor=pointer]:
+        - generic [ref=e630]:
+          - heading "klein-headswap" [level=3] [ref=e631]
+          - generic [ref=e632]: Text-to-Image
+        - generic [ref=e633]:
+          - generic [ref=e634]: 30 nodes
+          - generic [ref=e635]: ·
+          - generic [ref=e636]: Face-Swap
+      - button "klein-swapanything-tensor-fix Text-to-Image 44 nodes · Face-Swap" [ref=e637] [cursor=pointer]:
+        - generic [ref=e638]:
+          - heading "klein-swapanything-tensor-fix" [level=3] [ref=e639]
+          - generic [ref=e640]: Text-to-Image
+        - generic [ref=e641]:
+          - generic [ref=e642]: 44 nodes
+          - generic [ref=e643]: ·
+          - generic [ref=e644]: Face-Swap
+      - button "klein-swapanything Text-to-Image 44 nodes · Face-Swap" [ref=e645] [cursor=pointer]:
+        - generic [ref=e646]:
+          - heading "klein-swapanything" [level=3] [ref=e647]
+          - generic [ref=e648]: Text-to-Image
+        - generic [ref=e649]:
+          - generic [ref=e650]: 44 nodes
+          - generic [ref=e651]: ·
+          - generic [ref=e652]: Face-Swap
+      - button "LM Union face swap Text-to-Image 30 nodes · Face-Swap" [ref=e653] [cursor=pointer]:
+        - generic [ref=e654]:
+          - heading "LM Union face swap" [level=3] [ref=e655]
+          - generic [ref=e656]: Text-to-Image
+        - generic [ref=e657]:
+          - generic [ref=e658]: 30 nodes
+          - generic [ref=e659]: ·
+          - generic [ref=e660]: Face-Swap
+      - button "reactor-fast-faceswap Face Swap 18 nodes · Face-Swap" [ref=e661] [cursor=pointer]:
+        - generic [ref=e662]:
+          - heading "reactor-fast-faceswap" [level=3] [ref=e663]
+          - generic [ref=e664]: Face Swap
+        - generic [ref=e665]:
+          - generic [ref=e666]: 18 nodes
+          - generic [ref=e667]: ·
+          - generic [ref=e668]: Face-Swap
+      - button "reactor-video-faceswap-pro Face Swap 11 nodes · Face-Swap" [ref=e669] [cursor=pointer]:
+        - generic [ref=e670]:
+          - heading "reactor-video-faceswap-pro" [level=3] [ref=e671]
+          - generic [ref=e672]: Face Swap
+        - generic [ref=e673]:
+          - generic [ref=e674]: 11 nodes
+          - generic [ref=e675]: ·
+          - generic [ref=e676]: Face-Swap
+      - button "reactor-video-faceswap-simple Face Swap 7 nodes · Face-Swap" [ref=e677] [cursor=pointer]:
+        - generic [ref=e678]:
+          - heading "reactor-video-faceswap-simple" [level=3] [ref=e679]
+          - generic [ref=e680]: Face Swap
+        - generic [ref=e681]:
+          - generic [ref=e682]: 7 nodes
+          - generic [ref=e683]: ·
+          - generic [ref=e684]: Face-Swap
+      - button "sdxl-faceswap Face Swap 10 nodes · Face-Swap" [ref=e685] [cursor=pointer]:
+        - generic [ref=e686]:
+          - heading "sdxl-faceswap" [level=3] [ref=e687]
+          - generic [ref=e688]: Face Swap
+        - generic [ref=e689]:
+          - generic [ref=e690]: 10 nodes
+          - generic [ref=e691]: ·
+          - generic [ref=e692]: Face-Swap
+      - button "STAGE_2_body_swap_00029_ Image-to-Video 189 nodes · Face-Swap" [ref=e693] [cursor=pointer]:
+        - generic [ref=e694]:
+          - heading "STAGE_2_body_swap_00029_" [level=3] [ref=e695]
+          - generic [ref=e696]: Image-to-Video
+        - generic [ref=e697]:
+          - generic [ref=e698]: 189 nodes
+          - generic [ref=e699]: ·
+          - generic [ref=e700]: Face-Swap
+      - button "flux-img2img-highresfix Upscale 27 nodes · img2img" [ref=e701] [cursor=pointer]:
+        - generic [ref=e702]:
+          - heading "flux-img2img-highresfix" [level=3] [ref=e703]
+          - generic [ref=e704]: Upscale
+        - generic [ref=e705]:
+          - generic [ref=e706]: 27 nodes
+          - generic [ref=e707]: ·
+          - generic [ref=e708]: img2img
+      - button "flux-img2img-megapack General 17 nodes · img2img" [ref=e709] [cursor=pointer]:
+        - generic [ref=e710]:
+          - heading "flux-img2img-megapack" [level=3] [ref=e711]
+          - generic [ref=e712]: General
+        - generic [ref=e713]:
+          - generic [ref=e714]: 17 nodes
+          - generic [ref=e715]: ·
+          - generic [ref=e716]: img2img
+      - button "flux-img2img General 17 nodes · img2img" [ref=e717] [cursor=pointer]:
+        - generic [ref=e718]:
+          - heading "flux-img2img" [level=3] [ref=e719]
+          - generic [ref=e720]: General
+        - generic [ref=e721]:
+          - generic [ref=e722]: 17 nodes
+          - generic [ref=e723]: ·
+          - generic [ref=e724]: img2img
+      - button "flux2_klein_image_edit_4b_base General 8 nodes · img2img" [ref=e725] [cursor=pointer]:
+        - generic [ref=e726]:
+          - heading "flux2_klein_image_edit_4b_base" [level=3] [ref=e727]
+          - generic [ref=e728]: General
+        - generic [ref=e729]:
+          - generic [ref=e730]: 8 nodes
+          - generic [ref=e731]: ·
+          - generic [ref=e732]: img2img
+      - button "flux2_klein_image_edit_4b_distilled General 8 nodes · img2img" [ref=e733] [cursor=pointer]:
+        - generic [ref=e734]:
+          - heading "flux2_klein_image_edit_4b_distilled" [level=3] [ref=e735]
+          - generic [ref=e736]: General
+        - generic [ref=e737]:
+          - generic [ref=e738]: 8 nodes
+          - generic [ref=e739]: ·
+          - generic [ref=e740]: img2img
+      - button "flux2_klein_image_edit_9b_distilled General 8 nodes · img2img" [ref=e741] [cursor=pointer]:
+        - generic [ref=e742]:
+          - heading "flux2_klein_image_edit_9b_distilled" [level=3] [ref=e743]
+          - generic [ref=e744]: General
+        - generic [ref=e745]:
+          - generic [ref=e746]: 8 nodes
+          - generic [ref=e747]: ·
+          - generic [ref=e748]: img2img
+      - button "flux_inpaint_2.2_Kontext Inpainting 40 nodes · img2img" [ref=e749] [cursor=pointer]:
+        - generic [ref=e750]:
+          - heading "flux_inpaint_2.2_Kontext" [level=3] [ref=e751]
+          - generic [ref=e752]: Inpainting
+        - generic [ref=e753]:
+          - generic [ref=e754]: 40 nodes
+          - generic [ref=e755]: ·
+          - generic [ref=e756]: img2img
+      - button "flux_kontext_1.4 Upscale 123 nodes · img2img" [ref=e757] [cursor=pointer]:
+        - generic [ref=e758]:
+          - heading "flux_kontext_1.4" [level=3] [ref=e759]
+          - generic [ref=e760]: Upscale
+        - generic [ref=e761]:
+          - generic [ref=e762]: 123 nodes
+          - generic [ref=e763]: ·
+          - generic [ref=e764]: img2img
+      - button "klein-aio-mega-v6.4 Text-to-Video 100 nodes · img2img" [ref=e765] [cursor=pointer]:
+        - generic [ref=e766]:
+          - heading "klein-aio-mega-v6.4" [level=3] [ref=e767]
+          - generic [ref=e768]: Text-to-Video
+        - generic [ref=e769]:
+          - generic [ref=e770]: 100 nodes
+          - generic [ref=e771]: ·
+          - generic [ref=e772]: img2img
+      - button "klein-anime2real Text-to-Image 17 nodes · img2img" [ref=e773] [cursor=pointer]:
+        - generic [ref=e774]:
+          - heading "klein-anime2real" [level=3] [ref=e775]
+          - generic [ref=e776]: Text-to-Image
+        - generic [ref=e777]:
+          - generic [ref=e778]: 17 nodes
+          - generic [ref=e779]: ·
+          - generic [ref=e780]: img2img
+      - button "klein-create-and-undress Text-to-Image 24 nodes · img2img" [ref=e781] [cursor=pointer]:
+        - generic [ref=e782]:
+          - heading "klein-create-and-undress" [level=3] [ref=e783]
+          - generic [ref=e784]: Text-to-Image
+        - generic [ref=e785]:
+          - generic [ref=e786]: 24 nodes
+          - generic [ref=e787]: ·
+          - generic [ref=e788]: img2img
+      - button "klein-highres-4b-upscaler Upscale 20 nodes · img2img" [ref=e789] [cursor=pointer]:
+        - generic [ref=e790]:
+          - heading "klein-highres-4b-upscaler" [level=3] [ref=e791]
+          - generic [ref=e792]: Upscale
+        - generic [ref=e793]:
+          - generic [ref=e794]: 20 nodes
+          - generic [ref=e795]: ·
+          - generic [ref=e796]: img2img
+      - button "klein-highres-9b Upscale 19 nodes · img2img" [ref=e797] [cursor=pointer]:
+        - generic [ref=e798]:
+          - heading "klein-highres-9b" [level=3] [ref=e799]
+          - generic [ref=e800]: Upscale
+        - generic [ref=e801]:
+          - generic [ref=e802]: 19 nodes
+          - generic [ref=e803]: ·
+          - generic [ref=e804]: img2img
+      - button "klein-prograde-v3.1-nsfw Video Upscale (SeedVR2) 258 nodes · img2img" [ref=e805] [cursor=pointer]:
+        - generic [ref=e806]:
+          - heading "klein-prograde-v3.1-nsfw" [level=3] [ref=e807]
+          - generic [ref=e808]: Video Upscale (SeedVR2)
+        - generic [ref=e809]:
+          - generic [ref=e810]: 258 nodes
+          - generic [ref=e811]: ·
+          - generic [ref=e812]: img2img
+      - button "klein-prograde-v3.1 Video Upscale (SeedVR2) 258 nodes · img2img" [ref=e813] [cursor=pointer]:
+        - generic [ref=e814]:
+          - heading "klein-prograde-v3.1" [level=3] [ref=e815]
+          - generic [ref=e816]: Video Upscale (SeedVR2)
+        - generic [ref=e817]:
+          - generic [ref=e818]: 258 nodes
+          - generic [ref=e819]: ·
+          - generic [ref=e820]: img2img
+      - button "Lonecats Fix That Image Ver 2.0 Text-to-Video 298 nodes · img2img" [ref=e821] [cursor=pointer]:
+        - generic [ref=e822]:
+          - heading "Lonecats Fix That Image Ver 2.0" [level=3] [ref=e823]
+          - generic [ref=e824]: Text-to-Video
+        - generic [ref=e825]:
+          - generic [ref=e826]: 298 nodes
+          - generic [ref=e827]: ·
+          - generic [ref=e828]: img2img
+      - button "sdxl-refiner-dual-prompt Text-to-Image 20 nodes · img2img" [ref=e829] [cursor=pointer]:
+        - generic [ref=e830]:
+          - heading "sdxl-refiner-dual-prompt" [level=3] [ref=e831]
+          - generic [ref=e832]: Text-to-Image
+        - generic [ref=e833]:
+          - generic [ref=e834]: 20 nodes
+          - generic [ref=e835]: ·
+          - generic [ref=e836]: img2img
+      - button "z-image-turbo-controlnet-union General 7 nodes · img2img" [ref=e837] [cursor=pointer]:
+        - generic [ref=e838]:
+          - heading "z-image-turbo-controlnet-union" [level=3] [ref=e839]
+          - generic [ref=e840]: General
+        - generic [ref=e841]:
+          - generic [ref=e842]: 7 nodes
+          - generic [ref=e843]: ·
+          - generic [ref=e844]: img2img
+      - button "fatberg_slim I2V-FLF-LOOP Upscale-Interpolate 1.0 Text-to-Video 118 nodes · img2vid" [ref=e845] [cursor=pointer]:
+        - generic [ref=e846]:
+          - heading "fatberg_slim I2V-FLF-LOOP Upscale-Interpolate 1.0" [level=3] [ref=e847]
+          - generic [ref=e848]: Text-to-Video
+        - generic [ref=e849]:
+          - generic [ref=e850]: 118 nodes
+          - generic [ref=e851]: ·
+          - generic [ref=e852]: img2vid
+      - button "fatberg_slim I2V-FLF-LOOP Upscale-Interpolate 1.0_tnmt Text-to-Video 118 nodes · img2vid" [ref=e853] [cursor=pointer]:
+        - generic [ref=e854]:
+          - heading "fatberg_slim I2V-FLF-LOOP Upscale-Interpolate 1.0_tnmt" [level=3] [ref=e855]
+          - generic [ref=e856]: Text-to-Video
+        - generic [ref=e857]:
+          - generic [ref=e858]: 118 nodes
+          - generic [ref=e859]: ·
+          - generic [ref=e860]: img2vid
+      - button "Full_Wan_Pipeline_Opt Video Upscale (SeedVR2) 64 nodes · img2vid" [ref=e861] [cursor=pointer]:
+        - generic [ref=e862]:
+          - heading "Full_Wan_Pipeline_Opt" [level=3] [ref=e863]
+          - generic [ref=e864]: Video Upscale (SeedVR2)
+        - generic [ref=e865]:
+          - generic [ref=e866]: 64 nodes
+          - generic [ref=e867]: ·
+          - generic [ref=e868]: img2vid
+      - button "WAN 2.1 - IMG to VIDEO 3.0 (base) Text-to-Video 30 nodes · img2vid" [ref=e869] [cursor=pointer]:
+        - generic [ref=e870]:
+          - heading "WAN 2.1 - IMG to VIDEO 3.0 (base)" [level=3] [ref=e871]
+          - generic [ref=e872]: Text-to-Video
+        - generic [ref=e873]:
+          - generic [ref=e874]: 30 nodes
+          - generic [ref=e875]: ·
+          - generic [ref=e876]: img2vid
+      - button "WAN 2.1 - IMG to VIDEO 3.0 (gguf) Text-to-Video 30 nodes · img2vid" [ref=e877] [cursor=pointer]:
+        - generic [ref=e878]:
+          - heading "WAN 2.1 - IMG to VIDEO 3.0 (gguf)" [level=3] [ref=e879]
+          - generic [ref=e880]: Text-to-Video
+        - generic [ref=e881]:
+          - generic [ref=e882]: 30 nodes
+          - generic [ref=e883]: ·
+          - generic [ref=e884]: img2vid
+      - button "Wan 2.1 Image to Video Loop Workflow (GGUF) Text-to-Video 85 nodes · img2vid" [ref=e885] [cursor=pointer]:
+        - generic [ref=e886]:
+          - heading "Wan 2.1 Image to Video Loop Workflow (GGUF)" [level=3] [ref=e887]
+          - generic [ref=e888]: Text-to-Video
+        - generic [ref=e889]:
+          - generic [ref=e890]: 85 nodes
+          - generic [ref=e891]: ·
+          - generic [ref=e892]: img2vid
+      - button "Wan 2.1 Image to Video Loop Workflow Text-to-Video 85 nodes · img2vid" [ref=e893] [cursor=pointer]:
+        - generic [ref=e894]:
+          - heading "Wan 2.1 Image to Video Loop Workflow" [level=3] [ref=e895]
+          - generic [ref=e896]: Text-to-Video
+        - generic [ref=e897]:
+          - generic [ref=e898]: 85 nodes
+          - generic [ref=e899]: ·
+          - generic [ref=e900]: img2vid
+      - button "Wan 2.2 FLF2V First-Last Frame Video Generation in ComfyUI Text-to-Video 20 nodes · img2vid" [ref=e901] [cursor=pointer]:
+        - generic [ref=e902]:
+          - heading "Wan 2.2 FLF2V First-Last Frame Video Generation in ComfyUI" [level=3] [ref=e903]
+          - generic [ref=e904]: Text-to-Video
+        - generic [ref=e905]:
+          - generic [ref=e906]: 20 nodes
+          - generic [ref=e907]: ·
+          - generic [ref=e908]: img2vid
+      - button "Wan_Pipeline_Max Text-to-Video 90 nodes · img2vid" [ref=e909] [cursor=pointer]:
+        - generic [ref=e910]:
+          - heading "Wan_Pipeline_Max" [level=3] [ref=e911]
+          - generic [ref=e912]: Text-to-Video
+        - generic [ref=e913]:
+          - generic [ref=e914]: 90 nodes
+          - generic [ref=e915]: ·
+          - generic [ref=e916]: img2vid
+      - button "acly-inpaint-preprocess Inpainting 30 nodes · inpaint" [ref=e917] [cursor=pointer]:
+        - generic [ref=e918]:
+          - heading "acly-inpaint-preprocess" [level=3] [ref=e919]
+          - generic [ref=e920]: Inpainting
+        - generic [ref=e921]:
+          - generic [ref=e922]: 30 nodes
+          - generic [ref=e923]: ·
+          - generic [ref=e924]: inpaint
+      - button "acly-inpaint-promptless Inpainting 32 nodes · inpaint" [ref=e925] [cursor=pointer]:
+        - generic [ref=e926]:
+          - heading "acly-inpaint-promptless" [level=3] [ref=e927]
+          - generic [ref=e928]: Inpainting
+        - generic [ref=e929]:
+          - generic [ref=e930]: 32 nodes
+          - generic [ref=e931]: ·
+          - generic [ref=e932]: inpaint
+      - button "acly-inpaint-refine Inpainting 11 nodes · inpaint" [ref=e933] [cursor=pointer]:
+        - generic [ref=e934]:
+          - heading "acly-inpaint-refine" [level=3] [ref=e935]
+          - generic [ref=e936]: Inpainting
+        - generic [ref=e937]:
+          - generic [ref=e938]: 11 nodes
+          - generic [ref=e939]: ·
+          - generic [ref=e940]: inpaint
+      - button "acly-inpaint-simple Inpainting 11 nodes · inpaint" [ref=e941] [cursor=pointer]:
+        - generic [ref=e942]:
+          - heading "acly-inpaint-simple" [level=3] [ref=e943]
+          - generic [ref=e944]: Inpainting
+        - generic [ref=e945]:
+          - generic [ref=e946]: 11 nodes
+          - generic [ref=e947]: ·
+          - generic [ref=e948]: inpaint
+      - button "flux-inpaint-kontext IMAGE GROWER Inpainting 36 nodes · inpaint" [ref=e949] [cursor=pointer]:
+        - generic [ref=e950]:
+          - heading "flux-inpaint-kontext IMAGE GROWER" [level=3] [ref=e951]
+          - generic [ref=e952]: Inpainting
+        - generic [ref=e953]:
+          - generic [ref=e954]: 36 nodes
+          - generic [ref=e955]: ·
+          - generic [ref=e956]: inpaint
+      - button "flux-inpaint-kontext NARROW Inpainting 42 nodes · inpaint" [ref=e957] [cursor=pointer]:
+        - generic [ref=e958]:
+          - heading "flux-inpaint-kontext NARROW" [level=3] [ref=e959]
+          - generic [ref=e960]: Inpainting
+        - generic [ref=e961]:
+          - generic [ref=e962]: 42 nodes
+          - generic [ref=e963]: ·
+          - generic [ref=e964]: inpaint
+      - button "flux-inpaint-kontext-megapack Inpainting 40 nodes · inpaint" [ref=e965] [cursor=pointer]:
+        - generic [ref=e966]:
+          - heading "flux-inpaint-kontext-megapack" [level=3] [ref=e967]
+          - generic [ref=e968]: Inpainting
+        - generic [ref=e969]:
+          - generic [ref=e970]: 40 nodes
+          - generic [ref=e971]: ·
+          - generic [ref=e972]: inpaint
+      - button "flux-inpaint-kontext Inpainting 40 nodes · inpaint" [ref=e973] [cursor=pointer]:
+        - generic [ref=e974]:
+          - heading "flux-inpaint-kontext" [level=3] [ref=e975]
+          - generic [ref=e976]: Inpainting
+        - generic [ref=e977]:
+          - generic [ref=e978]: 40 nodes
+          - generic [ref=e979]: ·
+          - generic [ref=e980]: inpaint
+      - button "klein-inpaint-sam2-reference General 11 nodes · inpaint" [ref=e981] [cursor=pointer]:
+        - generic [ref=e982]:
+          - heading "klein-inpaint-sam2-reference" [level=3] [ref=e983]
+          - generic [ref=e984]: General
+        - generic [ref=e985]:
+          - generic [ref=e986]: 11 nodes
+          - generic [ref=e987]: ·
+          - generic [ref=e988]: inpaint
+      - button "klein-inpaint-sam2-simple General 5 nodes · inpaint" [ref=e989] [cursor=pointer]:
+        - generic [ref=e990]:
+          - heading "klein-inpaint-sam2-simple" [level=3] [ref=e991]
+          - generic [ref=e992]: General
+        - generic [ref=e993]:
+          - generic [ref=e994]: 5 nodes
+          - generic [ref=e995]: ·
+          - generic [ref=e996]: inpaint
+      - button "klein-inpaint-sam3-reference General 15 nodes · inpaint" [ref=e997] [cursor=pointer]:
+        - generic [ref=e998]:
+          - heading "klein-inpaint-sam3-reference" [level=3] [ref=e999]
+          - generic [ref=e1000]: General
+        - generic [ref=e1001]:
+          - generic [ref=e1002]: 15 nodes
+          - generic [ref=e1003]: ·
+          - generic [ref=e1004]: inpaint
+      - button "klein-inpaint-sam3-simple General 6 nodes · inpaint" [ref=e1005] [cursor=pointer]:
+        - generic [ref=e1006]:
+          - heading "klein-inpaint-sam3-simple" [level=3] [ref=e1007]
+          - generic [ref=e1008]: General
+        - generic [ref=e1009]:
+          - generic [ref=e1010]: 6 nodes
+          - generic [ref=e1011]: ·
+          - generic [ref=e1012]: inpaint
+      - button "5 Phase SDXL + Refiner V2 Text-to-Video 206 nodes · pipelines" [ref=e1013] [cursor=pointer]:
+        - generic [ref=e1014]:
+          - heading "5 Phase SDXL + Refiner V2" [level=3] [ref=e1015]
+          - generic [ref=e1016]: Text-to-Video
+        - generic [ref=e1017]:
+          - generic [ref=e1018]: 206 nodes
+          - generic [ref=e1019]: ·
+          - generic [ref=e1020]: pipelines
+      - button "SDXL-2Phase-Dual-Detailer-V1.3 Upscale 93 nodes · pipelines" [ref=e1021] [cursor=pointer]:
+        - generic [ref=e1022]:
+          - heading "SDXL-2Phase-Dual-Detailer-V1.3" [level=3] [ref=e1023]
+          - generic [ref=e1024]: Upscale
+        - generic [ref=e1025]:
+          - generic [ref=e1026]: 93 nodes
+          - generic [ref=e1027]: ·
+          - generic [ref=e1028]: pipelines
+      - button "Ultimate_SDXL-PDXL_Workflow Upscale 567 nodes · pipelines" [ref=e1029] [cursor=pointer]:
+        - generic [ref=e1030]:
+          - heading "Ultimate_SDXL-PDXL_Workflow" [level=3] [ref=e1031]
+          - generic [ref=e1032]: Upscale
+        - generic [ref=e1033]:
+          - generic [ref=e1034]: 567 nodes
+          - generic [ref=e1035]: ·
+          - generic [ref=e1036]: pipelines
+      - button "IMG-SDTune-Lightning-RD Upscale 97 nodes · reference" [ref=e1037] [cursor=pointer]:
+        - generic [ref=e1038]:
+          - heading "IMG-SDTune-Lightning-RD" [level=3] [ref=e1039]
+          - generic [ref=e1040]: Upscale
+        - generic [ref=e1041]:
+          - generic [ref=e1042]: 97 nodes
+          - generic [ref=e1043]: ·
+          - generic [ref=e1044]: reference
+      - button "IPAdapter - Grounding Dino - Apply Styles v2 Inpainting 19 nodes · reference" [ref=e1045] [cursor=pointer]:
+        - generic [ref=e1046]:
+          - heading "IPAdapter - Grounding Dino - Apply Styles v2" [level=3] [ref=e1047]
+          - generic [ref=e1048]: Inpainting
+        - generic [ref=e1049]:
+          - generic [ref=e1050]: 19 nodes
+          - generic [ref=e1051]: ·
+          - generic [ref=e1052]: reference
+      - button "ipadapter-sdxl-sd15-basic Text-to-Image 27 nodes · reference" [ref=e1053] [cursor=pointer]:
+        - generic [ref=e1054]:
+          - heading "ipadapter-sdxl-sd15-basic" [level=3] [ref=e1055]
+          - generic [ref=e1056]: Text-to-Image
+        - generic [ref=e1057]:
+          - generic [ref=e1058]: 27 nodes
+          - generic [ref=e1059]: ·
+          - generic [ref=e1060]: reference
+      - button "ipadapter_advanced Text-to-Image 12 nodes · reference" [ref=e1061] [cursor=pointer]:
+        - generic [ref=e1062]:
+          - heading "ipadapter_advanced" [level=3] [ref=e1063]
+          - generic [ref=e1064]: Text-to-Image
+        - generic [ref=e1065]:
+          - generic [ref=e1066]: 12 nodes
+          - generic [ref=e1067]: ·
+          - generic [ref=e1068]: reference
+      - button "ipadapter_negative_image Text-to-Image 17 nodes · reference" [ref=e1069] [cursor=pointer]:
+        - generic [ref=e1070]:
+          - heading "ipadapter_negative_image" [level=3] [ref=e1071]
+          - generic [ref=e1072]: Text-to-Image
+        - generic [ref=e1073]:
+          - generic [ref=e1074]: 17 nodes
+          - generic [ref=e1075]: ·
+          - generic [ref=e1076]: reference
+      - button "ipadapter_portrait Text-to-Image 10 nodes · reference" [ref=e1077] [cursor=pointer]:
+        - generic [ref=e1078]:
+          - heading "ipadapter_portrait" [level=3] [ref=e1079]
+          - generic [ref=e1080]: Text-to-Image
+        - generic [ref=e1081]:
+          - generic [ref=e1082]: 10 nodes
+          - generic [ref=e1083]: ·
+          - generic [ref=e1084]: reference
+      - button "ipadapter_precise_composition Text-to-Image 14 nodes · reference" [ref=e1085] [cursor=pointer]:
+        - generic [ref=e1086]:
+          - heading "ipadapter_precise_composition" [level=3] [ref=e1087]
+          - generic [ref=e1088]: Text-to-Image
+        - generic [ref=e1089]:
+          - generic [ref=e1090]: 14 nodes
+          - generic [ref=e1091]: ·
+          - generic [ref=e1092]: reference
+      - button "ipadapter_regional_conditioning Text-to-Image 24 nodes · reference" [ref=e1093] [cursor=pointer]:
+        - generic [ref=e1094]:
+          - heading "ipadapter_regional_conditioning" [level=3] [ref=e1095]
+          - generic [ref=e1096]: Text-to-Image
+        - generic [ref=e1097]:
+          - generic [ref=e1098]: 24 nodes
+          - generic [ref=e1099]: ·
+          - generic [ref=e1100]: reference
+      - button "ipadapter_simple Text-to-Image 10 nodes · reference" [ref=e1101] [cursor=pointer]:
+        - generic [ref=e1102]:
+          - heading "ipadapter_simple" [level=3] [ref=e1103]
+          - generic [ref=e1104]: Text-to-Image
+        - generic [ref=e1105]:
+          - generic [ref=e1106]: 10 nodes
+          - generic [ref=e1107]: ·
+          - generic [ref=e1108]: reference
+      - button "ipadapter_style_composition Text-to-Image 11 nodes · reference" [ref=e1109] [cursor=pointer]:
+        - generic [ref=e1110]:
+          - heading "ipadapter_style_composition" [level=3] [ref=e1111]
+          - generic [ref=e1112]: Text-to-Image
+        - generic [ref=e1113]:
+          - generic [ref=e1114]: 11 nodes
+          - generic [ref=e1115]: ·
+          - generic [ref=e1116]: reference
+      - button "ipadapter_tiled Text-to-Image 11 nodes · reference" [ref=e1117] [cursor=pointer]:
+        - generic [ref=e1118]:
+          - heading "ipadapter_tiled" [level=3] [ref=e1119]
+          - generic [ref=e1120]: Text-to-Image
+        - generic [ref=e1121]:
+          - generic [ref=e1122]: 11 nodes
+          - generic [ref=e1123]: ·
+          - generic [ref=e1124]: reference
+      - button "ipadapter_weight_types Text-to-Image 27 nodes · reference" [ref=e1125] [cursor=pointer]:
+        - generic [ref=e1126]:
+          - heading "ipadapter_weight_types" [level=3] [ref=e1127]
+          - generic [ref=e1128]: Text-to-Image
+        - generic [ref=e1129]:
+          - generic [ref=e1130]: 27 nodes
+          - generic [ref=e1131]: ·
+          - generic [ref=e1132]: reference
+      - button "image-cipher-encode-decode General 6 nodes · stegano" [ref=e1133] [cursor=pointer]:
+        - generic [ref=e1134]:
+          - heading "image-cipher-encode-decode" [level=3] [ref=e1135]
+          - generic [ref=e1136]: General
+        - generic [ref=e1137]:
+          - generic [ref=e1138]: 6 nodes
+          - generic [ref=e1139]: ·
+          - generic [ref=e1140]: stegano
+      - button "lsb-steganography-encode-decode General 5 nodes · stegano" [ref=e1141] [cursor=pointer]:
+        - generic [ref=e1142]:
+          - heading "lsb-steganography-encode-decode" [level=3] [ref=e1143]
+          - generic [ref=e1144]: General
+        - generic [ref=e1145]:
+          - generic [ref=e1146]: 5 nodes
+          - generic [ref=e1147]: ·
+          - generic [ref=e1148]: stegano
+      - button "cozymantis-style-transfer-test Text-to-Image 56 nodes · Style-Transfer" [ref=e1149] [cursor=pointer]:
+        - generic [ref=e1150]:
+          - heading "cozymantis-style-transfer-test" [level=3] [ref=e1151]
+          - generic [ref=e1152]: Text-to-Image
+        - generic [ref=e1153]:
+          - generic [ref=e1154]: 56 nodes
+          - generic [ref=e1155]: ·
+          - generic [ref=e1156]: Style-Transfer
+      - button "flux-controlnet-pose ControlNet 27 nodes · Style-Transfer" [ref=e1157] [cursor=pointer]:
+        - generic [ref=e1158]:
+          - heading "flux-controlnet-pose" [level=3] [ref=e1159]
+          - generic [ref=e1160]: ControlNet
+        - generic [ref=e1161]:
+          - generic [ref=e1162]: 27 nodes
+          - generic [ref=e1163]: ·
+          - generic [ref=e1164]: Style-Transfer
+      - button "ipa-ipadapter_advanced Text-to-Image 12 nodes · Style-Transfer" [ref=e1165] [cursor=pointer]:
+        - generic [ref=e1166]:
+          - heading "ipa-ipadapter_advanced" [level=3] [ref=e1167]
+          - generic [ref=e1168]: Text-to-Image
+        - generic [ref=e1169]:
+          - generic [ref=e1170]: 12 nodes
+          - generic [ref=e1171]: ·
+          - generic [ref=e1172]: Style-Transfer
+      - button "ipa-ipadapter_faceid Text-to-Image 10 nodes · Style-Transfer" [ref=e1173] [cursor=pointer]:
+        - generic [ref=e1174]:
+          - heading "ipa-ipadapter_faceid" [level=3] [ref=e1175]
+          - generic [ref=e1176]: Text-to-Image
+        - generic [ref=e1177]:
+          - generic [ref=e1178]: 10 nodes
+          - generic [ref=e1179]: ·
+          - generic [ref=e1180]: Style-Transfer
+      - button "ipa-ipadapter_portrait Text-to-Image 10 nodes · Style-Transfer" [ref=e1181] [cursor=pointer]:
+        - generic [ref=e1182]:
+          - heading "ipa-ipadapter_portrait" [level=3] [ref=e1183]
+          - generic [ref=e1184]: Text-to-Image
+        - generic [ref=e1185]:
+          - generic [ref=e1186]: 10 nodes
+          - generic [ref=e1187]: ·
+          - generic [ref=e1188]: Style-Transfer
+      - button "ipa-ipadapter_regional_conditioning Text-to-Image 24 nodes · Style-Transfer" [ref=e1189] [cursor=pointer]:
+        - generic [ref=e1190]:
+          - heading "ipa-ipadapter_regional_conditioning" [level=3] [ref=e1191]
+          - generic [ref=e1192]: Text-to-Image
+        - generic [ref=e1193]:
+          - generic [ref=e1194]: 24 nodes
+          - generic [ref=e1195]: ·
+          - generic [ref=e1196]: Style-Transfer
+      - button "ipa-ipadapter_simple Text-to-Image 10 nodes · Style-Transfer" [ref=e1197] [cursor=pointer]:
+        - generic [ref=e1198]:
+          - heading "ipa-ipadapter_simple" [level=3] [ref=e1199]
+          - generic [ref=e1200]: Text-to-Image
+        - generic [ref=e1201]:
+          - generic [ref=e1202]: 10 nodes
+          - generic [ref=e1203]: ·
+          - generic [ref=e1204]: Style-Transfer
+      - button "ipa-ipadapter_style_composition Text-to-Image 11 nodes · Style-Transfer" [ref=e1205] [cursor=pointer]:
+        - generic [ref=e1206]:
+          - heading "ipa-ipadapter_style_composition" [level=3] [ref=e1207]
+          - generic [ref=e1208]: Text-to-Image
+        - generic [ref=e1209]:
+          - generic [ref=e1210]: 11 nodes
+          - generic [ref=e1211]: ·
+          - generic [ref=e1212]: Style-Transfer
+      - button "ipa-ipadapter_tiled Text-to-Image 11 nodes · Style-Transfer" [ref=e1213] [cursor=pointer]:
+        - generic [ref=e1214]:
+          - heading "ipa-ipadapter_tiled" [level=3] [ref=e1215]
+          - generic [ref=e1216]: Text-to-Image
+        - generic [ref=e1217]:
+          - generic [ref=e1218]: 11 nodes
+          - generic [ref=e1219]: ·
+          - generic [ref=e1220]: Style-Transfer
+      - button "ipa-ipadapter_weight_types Text-to-Image 27 nodes · Style-Transfer" [ref=e1221] [cursor=pointer]:
+        - generic [ref=e1222]:
+          - heading "ipa-ipadapter_weight_types" [level=3] [ref=e1223]
+          - generic [ref=e1224]: Text-to-Image
+        - generic [ref=e1225]:
+          - generic [ref=e1226]: 27 nodes
+          - generic [ref=e1227]: ·
+          - generic [ref=e1228]: Style-Transfer
+      - button "ipadapter-grounding-dino-styles Inpainting 19 nodes · Style-Transfer" [ref=e1229] [cursor=pointer]:
+        - generic [ref=e1230]:
+          - heading "ipadapter-grounding-dino-styles" [level=3] [ref=e1231]
+          - generic [ref=e1232]: Inpainting
+        - generic [ref=e1233]:
+          - generic [ref=e1234]: 19 nodes
+          - generic [ref=e1235]: ·
+          - generic [ref=e1236]: Style-Transfer
+      - button "sepro-dual_controlnet_basic ControlNet 22 nodes · Style-Transfer" [ref=e1237] [cursor=pointer]:
+        - generic [ref=e1238]:
+          - heading "sepro-dual_controlnet_basic" [level=3] [ref=e1239]
+          - generic [ref=e1240]: ControlNet
+        - generic [ref=e1241]:
+          - generic [ref=e1242]: 22 nodes
+          - generic [ref=e1243]: ·
+          - generic [ref=e1244]: Style-Transfer
+      - button "sepro-dual_controlnet_refiner ControlNet 25 nodes · Style-Transfer" [ref=e1245] [cursor=pointer]:
+        - generic [ref=e1246]:
+          - heading "sepro-dual_controlnet_refiner" [level=3] [ref=e1247]
+          - generic [ref=e1248]: ControlNet
+        - generic [ref=e1249]:
+          - generic [ref=e1250]: 25 nodes
+          - generic [ref=e1251]: ·
+          - generic [ref=e1252]: Style-Transfer
+      - button "sepro-photography_workflow Upscale 57 nodes · Style-Transfer" [ref=e1253] [cursor=pointer]:
+        - generic [ref=e1254]:
+          - heading "sepro-photography_workflow" [level=3] [ref=e1255]
+          - generic [ref=e1256]: Upscale
+        - generic [ref=e1257]:
+          - generic [ref=e1258]: 57 nodes
+          - generic [ref=e1259]: ·
+          - generic [ref=e1260]: Style-Transfer
+      - button "DreamID-Omni Single & Dual Talking Video from Photo + Audio (ComfyUI) Audio/Music 9 nodes · tts" [ref=e1261] [cursor=pointer]:
+        - generic [ref=e1262]:
+          - heading "DreamID-Omni Single & Dual Talking Video from Photo + Audio (ComfyUI)" [level=3] [ref=e1263]
+          - generic [ref=e1264]: Audio/Music
+        - generic [ref=e1265]:
+          - generic [ref=e1266]: 9 nodes
+          - generic [ref=e1267]: ·
+          - generic [ref=e1268]: tts
+      - button "Fish Audio S2 TTS Emotion, Multi-Speaker & Voice Cloning in ComfyUI Audio/Music 18 nodes · tts" [ref=e1269] [cursor=pointer]:
+        - generic [ref=e1270]:
+          - heading "Fish Audio S2 TTS Emotion, Multi-Speaker & Voice Cloning in ComfyUI" [level=3] [ref=e1271]
+          - generic [ref=e1272]: Audio/Music
+        - generic [ref=e1273]:
+          - generic [ref=e1274]: 18 nodes
+          - generic [ref=e1275]: ·
+          - generic [ref=e1276]: tts
+      - button "anime-nova-xl-hires Text-to-Image 13 nodes · txt2img" [ref=e1277] [cursor=pointer]:
+        - generic [ref=e1278]:
+          - heading "anime-nova-xl-hires" [level=3] [ref=e1279]
+          - generic [ref=e1280]: Text-to-Image
+        - generic [ref=e1281]:
+          - generic [ref=e1282]: 13 nodes
+          - generic [ref=e1283]: ·
+          - generic [ref=e1284]: txt2img
+      - button "anime-wai-illustrious-hires Text-to-Image 13 nodes · txt2img" [ref=e1285] [cursor=pointer]:
+        - generic [ref=e1286]:
+          - heading "anime-wai-illustrious-hires" [level=3] [ref=e1287]
+          - generic [ref=e1288]: Text-to-Image
+        - generic [ref=e1289]:
+          - generic [ref=e1290]: 13 nodes
+          - generic [ref=e1291]: ·
+          - generic [ref=e1292]: txt2img
+      - button "cartoon-nova-xl-hires Text-to-Image 13 nodes · txt2img" [ref=e1293] [cursor=pointer]:
+        - generic [ref=e1294]:
+          - heading "cartoon-nova-xl-hires" [level=3] [ref=e1295]
+          - generic [ref=e1296]: Text-to-Image
+        - generic [ref=e1297]:
+          - generic [ref=e1298]: 13 nodes
+          - generic [ref=e1299]: ·
+          - generic [ref=e1300]: txt2img
+      - button "chroma2-kaleidoscope Text-to-Image 13 nodes · txt2img" [ref=e1301] [cursor=pointer]:
+        - generic [ref=e1302]:
+          - heading "chroma2-kaleidoscope" [level=3] [ref=e1303]
+          - generic [ref=e1304]: Text-to-Image
+        - generic [ref=e1305]:
+          - generic [ref=e1306]: 13 nodes
+          - generic [ref=e1307]: ·
+          - generic [ref=e1308]: txt2img
+      - button "DA_flux2_klein-9b_distilled_union V1.8 Text-to-Video 44 nodes · txt2img" [ref=e1309] [cursor=pointer]:
+        - generic [ref=e1310]:
+          - heading "DA_flux2_klein-9b_distilled_union V1.8" [level=3] [ref=e1311]
+          - generic [ref=e1312]: Text-to-Video
+        - generic [ref=e1313]:
+          - generic [ref=e1314]: 44 nodes
+          - generic [ref=e1315]: ·
+          - generic [ref=e1316]: txt2img
+      - button "disney-pixar-3d-hires Text-to-Image 13 nodes · txt2img" [ref=e1317] [cursor=pointer]:
+        - generic [ref=e1318]:
+          - heading "disney-pixar-3d-hires" [level=3] [ref=e1319]
+          - generic [ref=e1320]: Text-to-Image
+        - generic [ref=e1321]:
+          - generic [ref=e1322]: 13 nodes
+          - generic [ref=e1323]: ·
+          - generic [ref=e1324]: txt2img
+      - button "easy-sdxl-illustrious-txt2img-hires Upscale 15 nodes · txt2img" [ref=e1325] [cursor=pointer]:
+        - generic [ref=e1326]:
+          - heading "easy-sdxl-illustrious-txt2img-hires" [level=3] [ref=e1327]
+          - generic [ref=e1328]: Upscale
+        - generic [ref=e1329]:
+          - generic [ref=e1330]: 15 nodes
+          - generic [ref=e1331]: ·
+          - generic [ref=e1332]: txt2img
+      - button "FLUX+text2img+upscale (2 options) Upscale 46 nodes · txt2img" [ref=e1333] [cursor=pointer]:
+        - generic [ref=e1334]:
+          - heading "FLUX+text2img+upscale (2 options)" [level=3] [ref=e1335]
+          - generic [ref=e1336]: Upscale
+        - generic [ref=e1337]:
+          - generic [ref=e1338]: 46 nodes
+          - generic [ref=e1339]: ·
+          - generic [ref=e1340]: txt2img
+      - button "flux-kontext Upscale 123 nodes · txt2img" [ref=e1341] [cursor=pointer]:
+        - generic [ref=e1342]:
+          - heading "flux-kontext" [level=3] [ref=e1343]
+          - generic [ref=e1344]: Upscale
+        - generic [ref=e1345]:
+          - generic [ref=e1346]: 123 nodes
+          - generic [ref=e1347]: ·
+          - generic [ref=e1348]: txt2img
+      - button "flux-txt2img-ultimate-cn-union Upscale 144 nodes · txt2img" [ref=e1349] [cursor=pointer]:
+        - generic [ref=e1350]:
+          - heading "flux-txt2img-ultimate-cn-union" [level=3] [ref=e1351]
+          - generic [ref=e1352]: Upscale
+        - generic [ref=e1353]:
+          - generic [ref=e1354]: 144 nodes
+          - generic [ref=e1355]: ·
+          - generic [ref=e1356]: txt2img
+      - button "FluxGGUFSuper Upscale 25 nodes · txt2img" [ref=e1357] [cursor=pointer]:
+        - generic [ref=e1358]:
+          - heading "FluxGGUFSuper" [level=3] [ref=e1359]
+          - generic [ref=e1360]: Upscale
+        - generic [ref=e1361]:
+          - generic [ref=e1362]: 25 nodes
+          - generic [ref=e1363]: ·
+          - generic [ref=e1364]: txt2img
+      - button "flux_img2img_1_2 General 17 nodes · txt2img" [ref=e1365] [cursor=pointer]:
+        - generic [ref=e1366]:
+          - heading "flux_img2img_1_2" [level=3] [ref=e1367]
+          - generic [ref=e1368]: General
+        - generic [ref=e1369]:
+          - generic [ref=e1370]: 17 nodes
+          - generic [ref=e1371]: ·
+          - generic [ref=e1372]: txt2img
+      - button "flux_img2img_1_3_HighresFix Upscale 27 nodes · txt2img" [ref=e1373] [cursor=pointer]:
+        - generic [ref=e1374]:
+          - heading "flux_img2img_1_3_HighresFix" [level=3] [ref=e1375]
+          - generic [ref=e1376]: Upscale
+        - generic [ref=e1377]:
+          - generic [ref=e1378]: 27 nodes
+          - generic [ref=e1379]: ·
+          - generic [ref=e1380]: txt2img
+      - button "flux_text2img_4.5_Ultimate (CN Union) Upscale 144 nodes · txt2img" [ref=e1381] [cursor=pointer]:
+        - generic [ref=e1382]:
+          - heading "flux_text2img_4.5_Ultimate (CN Union)" [level=3] [ref=e1383]
+          - generic [ref=e1384]: Upscale
+        - generic [ref=e1385]:
+          - generic [ref=e1386]: 144 nodes
+          - generic [ref=e1387]: ·
+          - generic [ref=e1388]: txt2img
+      - button "flux_text2img_highrez-fix_1_7_Upscaler Upscale 48 nodes · txt2img" [ref=e1389] [cursor=pointer]:
+        - generic [ref=e1390]:
+          - heading "flux_text2img_highrez-fix_1_7_Upscaler" [level=3] [ref=e1391]
+          - generic [ref=e1392]: Upscale
+        - generic [ref=e1393]:
+          - generic [ref=e1394]: 48 nodes
+          - generic [ref=e1395]: ·
+          - generic [ref=e1396]: txt2img
+      - button "flux_text2img_highrez-fix_1_8_CN_Upscaler Upscale 62 nodes · txt2img" [ref=e1397] [cursor=pointer]:
+        - generic [ref=e1398]:
+          - heading "flux_text2img_highrez-fix_1_8_CN_Upscaler" [level=3] [ref=e1399]
+          - generic [ref=e1400]: Upscale
+        - generic [ref=e1401]:
+          - generic [ref=e1402]: 62 nodes
+          - generic [ref=e1403]: ·
+          - generic [ref=e1404]: txt2img
+      - button "green Text-to-Image 31 nodes · txt2img" [ref=e1405] [cursor=pointer]:
+        - generic [ref=e1406]:
+          - heading "green" [level=3] [ref=e1407]
+          - generic [ref=e1408]: Text-to-Image
+        - generic [ref=e1409]:
+          - generic [ref=e1410]: 31 nodes
+          - generic [ref=e1411]: ·
+          - generic [ref=e1412]: txt2img
+      - button "HanJammer_Flux.1_img2img_&_upscale Upscale 16 nodes · txt2img" [ref=e1413] [cursor=pointer]:
+        - generic [ref=e1414]:
+          - heading "HanJammer_Flux.1_img2img_&_upscale" [level=3] [ref=e1415]
+          - generic [ref=e1416]: Upscale
+        - generic [ref=e1417]:
+          - generic [ref=e1418]: 16 nodes
+          - generic [ref=e1419]: ·
+          - generic [ref=e1420]: txt2img
+      - button "klein-9b-character-dataset-builder Text-to-Image 31 nodes · txt2img" [ref=e1421] [cursor=pointer]:
+        - generic [ref=e1422]:
+          - heading "klein-9b-character-dataset-builder" [level=3] [ref=e1423]
+          - generic [ref=e1424]: Text-to-Image
+        - generic [ref=e1425]:
+          - generic [ref=e1426]: 31 nodes
+          - generic [ref=e1427]: ·
+          - generic [ref=e1428]: txt2img
+      - button "klein-character-dataset-builder Text-to-Image 31 nodes · txt2img" [ref=e1429] [cursor=pointer]:
+        - generic [ref=e1430]:
+          - heading "klein-character-dataset-builder" [level=3] [ref=e1431]
+          - generic [ref=e1432]: Text-to-Image
+        - generic [ref=e1433]:
+          - generic [ref=e1434]: 31 nodes
+          - generic [ref=e1435]: ·
+          - generic [ref=e1436]: txt2img
+      - button "klein-t2i-9b Text-to-Image 10 nodes · txt2img" [ref=e1437] [cursor=pointer]:
+        - generic [ref=e1438]:
+          - heading "klein-t2i-9b" [level=3] [ref=e1439]
+          - generic [ref=e1440]: Text-to-Image
+        - generic [ref=e1441]:
+          - generic [ref=e1442]: 10 nodes
+          - generic [ref=e1443]: ·
+          - generic [ref=e1444]: txt2img
+      - button "klein-t2i-nsfw Text-to-Image 13 nodes · txt2img" [ref=e1445] [cursor=pointer]:
+        - generic [ref=e1446]:
+          - heading "klein-t2i-nsfw" [level=3] [ref=e1447]
+          - generic [ref=e1448]: Text-to-Image
+        - generic [ref=e1449]:
+          - generic [ref=e1450]: 13 nodes
+          - generic [ref=e1451]: ·
+          - generic [ref=e1452]: txt2img
+      - button "regular klein-9b-character-dataset-builder Text-to-Image 33 nodes · txt2img" [ref=e1453] [cursor=pointer]:
+        - generic [ref=e1454]:
+          - heading "regular klein-9b-character-dataset-builder" [level=3] [ref=e1455]
+          - generic [ref=e1456]: Text-to-Image
+        - generic [ref=e1457]:
+          - generic [ref=e1458]: 33 nodes
+          - generic [ref=e1459]: ·
+          - generic [ref=e1460]: txt2img
+      - button "sdxl-hires-detailer-daemon Upscale 104 nodes · txt2img" [ref=e1461] [cursor=pointer]:
+        - generic [ref=e1462]:
+          - heading "sdxl-hires-detailer-daemon" [level=3] [ref=e1463]
+          - generic [ref=e1464]: Upscale
+        - generic [ref=e1465]:
+          - generic [ref=e1466]: 104 nodes
+          - generic [ref=e1467]: ·
+          - generic [ref=e1468]: txt2img
+      - button "sdxl-txt2img-v3.3 Upscale 23 nodes · txt2img" [ref=e1469] [cursor=pointer]:
+        - generic [ref=e1470]:
+          - heading "sdxl-txt2img-v3.3" [level=3] [ref=e1471]
+          - generic [ref=e1472]: Upscale
+        - generic [ref=e1473]:
+          - generic [ref=e1474]: 23 nodes
+          - generic [ref=e1475]: ·
+          - generic [ref=e1476]: txt2img
+      - button "Z-Image Workflow in ComfyUI High-Fidelity Image Generation Text-to-Image 12 nodes · txt2img" [ref=e1477] [cursor=pointer]:
+        - generic [ref=e1478]:
+          - heading "Z-Image Workflow in ComfyUI High-Fidelity Image Generation" [level=3] [ref=e1479]
+          - generic [ref=e1480]: Text-to-Image
+        - generic [ref=e1481]:
+          - generic [ref=e1482]: 12 nodes
+          - generic [ref=e1483]: ·
+          - generic [ref=e1484]: txt2img
+      - button "_altGIFv-animatediff-lightning-gif Text-to-Video 10 nodes · txt2img" [ref=e1485] [cursor=pointer]:
+        - generic [ref=e1486]:
+          - heading "_altGIFv-animatediff-lightning-gif" [level=3] [ref=e1487]
+          - generic [ref=e1488]: Text-to-Video
+        - generic [ref=e1489]:
+          - generic [ref=e1490]: 10 nodes
+          - generic [ref=e1491]: ·
+          - generic [ref=e1492]: txt2img
+      - button "_altGIFv-animatediff-v2-hq-gif Text-to-Video 10 nodes · txt2img" [ref=e1493] [cursor=pointer]:
+        - generic [ref=e1494]:
+          - heading "_altGIFv-animatediff-v2-hq-gif" [level=3] [ref=e1495]
+          - generic [ref=e1496]: Text-to-Video
+        - generic [ref=e1497]:
+          - generic [ref=e1498]: 10 nodes
+          - generic [ref=e1499]: ·
+          - generic [ref=e1500]: txt2img
+      - button "_Upscale_Loop_Flux_v2_Batch_fix Text-to-Video 167 nodes · txt2img" [ref=e1501] [cursor=pointer]:
+        - generic [ref=e1502]:
+          - heading "_Upscale_Loop_Flux_v2_Batch_fix" [level=3] [ref=e1503]
+          - generic [ref=e1504]: Text-to-Video
+        - generic [ref=e1505]:
+          - generic [ref=e1506]: 167 nodes
+          - generic [ref=e1507]: ·
+          - generic [ref=e1508]: txt2img
+      - button "_Upscale_Loop_Flux_v2_fix Text-to-Video 154 nodes · txt2img" [ref=e1509] [cursor=pointer]:
+        - generic [ref=e1510]:
+          - heading "_Upscale_Loop_Flux_v2_fix" [level=3] [ref=e1511]
+          - generic [ref=e1512]: Text-to-Video
+        - generic [ref=e1513]:
+          - generic [ref=e1514]: 154 nodes
+          - generic [ref=e1515]: ·
+          - generic [ref=e1516]: txt2img
+      - button "wan22_t2v_with_upscaler Text-to-Video 41 nodes · txt2vid" [ref=e1517] [cursor=pointer]:
+        - generic [ref=e1518]:
+          - heading "wan22_t2v_with_upscaler" [level=3] [ref=e1519]
+          - generic [ref=e1520]: Text-to-Video
+        - generic [ref=e1521]:
+          - generic [ref=e1522]: 41 nodes
+          - generic [ref=e1523]: ·
+          - generic [ref=e1524]: txt2vid
+      - button "flux-img2img-hires-fix Upscale 27 nodes · upscale" [ref=e1525] [cursor=pointer]:
+        - generic [ref=e1526]:
+          - heading "flux-img2img-hires-fix" [level=3] [ref=e1527]
+          - generic [ref=e1528]: Upscale
+        - generic [ref=e1529]:
+          - generic [ref=e1530]: 27 nodes
+          - generic [ref=e1531]: ·
+          - generic [ref=e1532]: upscale
+      - button "GTM_Stepped_Upscaler_Image2Image_v1.9 Upscale 98 nodes · upscale" [ref=e1533] [cursor=pointer]:
+        - generic [ref=e1534]:
+          - heading "GTM_Stepped_Upscaler_Image2Image_v1.9" [level=3] [ref=e1535]
+          - generic [ref=e1536]: Upscale
+        - generic [ref=e1537]:
+          - generic [ref=e1538]: 98 nodes
+          - generic [ref=e1539]: ·
+          - generic [ref=e1540]: upscale
+      - button "Klein 4MP Upscale Workflow General 52 nodes · upscale" [ref=e1541] [cursor=pointer]:
+        - generic [ref=e1542]:
+          - heading "Klein 4MP Upscale Workflow" [level=3] [ref=e1543]
+          - generic [ref=e1544]: General
+        - generic [ref=e1545]:
+          - generic [ref=e1546]: 52 nodes
+          - generic [ref=e1547]: ·
+          - generic [ref=e1548]: upscale
+      - button "Lonecats Fix That Image Ver 2.0 Text-to-Video 298 nodes · upscale" [ref=e1549] [cursor=pointer]:
+        - generic [ref=e1550]:
+          - heading "Lonecats Fix That Image Ver 2.0" [level=3] [ref=e1551]
+          - generic [ref=e1552]: Text-to-Video
+        - generic [ref=e1553]:
+          - generic [ref=e1554]: 298 nodes
+          - generic [ref=e1555]: ·
+          - generic [ref=e1556]: upscale
+      - button "sdxl-controlnet-upscaler Upscale 16 nodes · upscale" [ref=e1557] [cursor=pointer]:
+        - generic [ref=e1558]:
+          - heading "sdxl-controlnet-upscaler" [level=3] [ref=e1559]
+          - generic [ref=e1560]: Upscale
+        - generic [ref=e1561]:
+          - generic [ref=e1562]: 16 nodes
+          - generic [ref=e1563]: ·
+          - generic [ref=e1564]: upscale
+      - button "SUPIR-Upscale Upscale 59 nodes · upscale" [ref=e1565] [cursor=pointer]:
+        - generic [ref=e1566]:
+          - heading "SUPIR-Upscale" [level=3] [ref=e1567]
+          - generic [ref=e1568]: Upscale
+        - generic [ref=e1569]:
+          - generic [ref=e1570]: 59 nodes
+          - generic [ref=e1571]: ·
+          - generic [ref=e1572]: upscale
+      - button "tiled-diffusion-controlnet-upscale ControlNet 53 nodes · upscale" [ref=e1573] [cursor=pointer]:
+        - generic [ref=e1574]:
+          - heading "tiled-diffusion-controlnet-upscale" [level=3] [ref=e1575]
+          - generic [ref=e1576]: ControlNet
+        - generic [ref=e1577]:
+          - generic [ref=e1578]: 53 nodes
+          - generic [ref=e1579]: ·
+          - generic [ref=e1580]: upscale
+      - button "ApplySignature General 13 nodes · utilities" [ref=e1581] [cursor=pointer]:
+        - generic [ref=e1582]:
+          - heading "ApplySignature" [level=3] [ref=e1583]
+          - generic [ref=e1584]: General
+        - generic [ref=e1585]:
+          - generic [ref=e1586]: 13 nodes
+          - generic [ref=e1587]: ·
+          - generic [ref=e1588]: utilities
+      - button "BackgroundRemover General 5 nodes · utilities" [ref=e1589] [cursor=pointer]:
+        - generic [ref=e1590]:
+          - heading "BackgroundRemover" [level=3] [ref=e1591]
+          - generic [ref=e1592]: General
+        - generic [ref=e1593]:
+          - generic [ref=e1594]: 5 nodes
+          - generic [ref=e1595]: ·
+          - generic [ref=e1596]: utilities
+      - button "BatchJoyCaption General 5 nodes · utilities" [ref=e1597] [cursor=pointer]:
+        - generic [ref=e1598]:
+          - heading "BatchJoyCaption" [level=3] [ref=e1599]
+          - generic [ref=e1600]: General
+        - generic [ref=e1601]:
+          - generic [ref=e1602]: 5 nodes
+          - generic [ref=e1603]: ·
+          - generic [ref=e1604]: utilities
+      - button "BatchWD14Tagger Captioning 4 nodes · utilities" [ref=e1605] [cursor=pointer]:
+        - generic [ref=e1606]:
+          - heading "BatchWD14Tagger" [level=3] [ref=e1607]
+          - generic [ref=e1608]: Captioning
+        - generic [ref=e1609]:
+          - generic [ref=e1610]: 4 nodes
+          - generic [ref=e1611]: ·
+          - generic [ref=e1612]: utilities
+      - button "caption-qwen-vl Text-to-Video 35 nodes · utilities" [ref=e1613] [cursor=pointer]:
+        - generic [ref=e1614]:
+          - heading "caption-qwen-vl" [level=3] [ref=e1615]
+          - generic [ref=e1616]: Text-to-Video
+        - generic [ref=e1617]:
+          - generic [ref=e1618]: 35 nodes
+          - generic [ref=e1619]: ·
+          - generic [ref=e1620]: utilities
+      - button "CaptioningWithExtraSteps Captioning 19 nodes · utilities" [ref=e1621] [cursor=pointer]:
+        - generic [ref=e1622]:
+          - heading "CaptioningWithExtraSteps" [level=3] [ref=e1623]
+          - generic [ref=e1624]: Captioning
+        - generic [ref=e1625]:
+          - generic [ref=e1626]: 19 nodes
+          - generic [ref=e1627]: ·
+          - generic [ref=e1628]: utilities
+      - button "CheckpointMerger Text-to-Image 40 nodes · utilities" [ref=e1629] [cursor=pointer]:
+        - generic [ref=e1630]:
+          - heading "CheckpointMerger" [level=3] [ref=e1631]
+          - generic [ref=e1632]: Text-to-Image
+        - generic [ref=e1633]:
+          - generic [ref=e1634]: 40 nodes
+          - generic [ref=e1635]: ·
+          - generic [ref=e1636]: utilities
+      - button "DetectionModelTesting General 13 nodes · utilities" [ref=e1637] [cursor=pointer]:
+        - generic [ref=e1638]:
+          - heading "DetectionModelTesting" [level=3] [ref=e1639]
+          - generic [ref=e1640]: General
+        - generic [ref=e1641]:
+          - generic [ref=e1642]: 13 nodes
+          - generic [ref=e1643]: ·
+          - generic [ref=e1644]: utilities
+      - button "Florence2Caption Captioning 7 nodes · utilities" [ref=e1645] [cursor=pointer]:
+        - generic [ref=e1646]:
+          - heading "Florence2Caption" [level=3] [ref=e1647]
+          - generic [ref=e1648]: Captioning
+        - generic [ref=e1649]:
+          - generic [ref=e1650]: 7 nodes
+          - generic [ref=e1651]: ·
+          - generic [ref=e1652]: utilities
+      - button "ImageRefiner Video Upscale (SeedVR2) 19 nodes · utilities" [ref=e1653] [cursor=pointer]:
+        - generic [ref=e1654]:
+          - heading "ImageRefiner" [level=3] [ref=e1655]
+          - generic [ref=e1656]: Video Upscale (SeedVR2)
+        - generic [ref=e1657]:
+          - generic [ref=e1658]: 19 nodes
+          - generic [ref=e1659]: ·
+          - generic [ref=e1660]: utilities
+      - button "JoyCaption General 5 nodes · utilities" [ref=e1661] [cursor=pointer]:
+        - generic [ref=e1662]:
+          - heading "JoyCaption" [level=3] [ref=e1663]
+          - generic [ref=e1664]: General
+        - generic [ref=e1665]:
+          - generic [ref=e1666]: 5 nodes
+          - generic [ref=e1667]: ·
+          - generic [ref=e1668]: utilities
+      - button "Preprocessor General 11 nodes · utilities" [ref=e1669] [cursor=pointer]:
+        - generic [ref=e1670]:
+          - heading "Preprocessor" [level=3] [ref=e1671]
+          - generic [ref=e1672]: General
+        - generic [ref=e1673]:
+          - generic [ref=e1674]: 11 nodes
+          - generic [ref=e1675]: ·
+          - generic [ref=e1676]: utilities
+      - button "PreprocessorVideo General 16 nodes · utilities" [ref=e1677] [cursor=pointer]:
+        - generic [ref=e1678]:
+          - heading "PreprocessorVideo" [level=3] [ref=e1679]
+          - generic [ref=e1680]: General
+        - generic [ref=e1681]:
+          - generic [ref=e1682]: 16 nodes
+          - generic [ref=e1683]: ·
+          - generic [ref=e1684]: utilities
+      - button "QwenVLCaption Captioning 4 nodes · utilities" [ref=e1685] [cursor=pointer]:
+        - generic [ref=e1686]:
+          - heading "QwenVLCaption" [level=3] [ref=e1687]
+          - generic [ref=e1688]: Captioning
+        - generic [ref=e1689]:
+          - generic [ref=e1690]: 4 nodes
+          - generic [ref=e1691]: ·
+          - generic [ref=e1692]: utilities
+      - button "VideoRefiner Video Upscale (SeedVR2) 18 nodes · utilities" [ref=e1693] [cursor=pointer]:
+        - generic [ref=e1694]:
+          - heading "VideoRefiner" [level=3] [ref=e1695]
+          - generic [ref=e1696]: Video Upscale (SeedVR2)
+        - generic [ref=e1697]:
+          - generic [ref=e1698]: 18 nodes
+          - generic [ref=e1699]: ·
+          - generic [ref=e1700]: utilities
+      - button "WD14Tagger Captioning 4 nodes · utilities" [ref=e1701] [cursor=pointer]:
+        - generic [ref=e1702]:
+          - heading "WD14Tagger" [level=3] [ref=e1703]
+          - generic [ref=e1704]: Captioning
+        - generic [ref=e1705]:
+          - generic [ref=e1706]: 4 nodes
+          - generic [ref=e1707]: ·
+          - generic [ref=e1708]: utilities
+      - button "LTX 2.3 Distilled AIO v2.43 Video Upscale (RTX) 25 nodes · video-gen" [ref=e1709] [cursor=pointer]:
+        - generic [ref=e1710]:
+          - heading "LTX 2.3 Distilled AIO v2.43" [level=3] [ref=e1711]
+          - generic [ref=e1712]: Video Upscale (RTX)
+        - generic [ref=e1713]:
+          - generic [ref=e1714]: 25 nodes
+          - generic [ref=e1715]: ·
+          - generic [ref=e1716]: video-gen
+      - button "LTX2-simple-img2vid LTX2 Image-to-Video 21 nodes · video-gen" [ref=e1717] [cursor=pointer]:
+        - generic [ref=e1718]:
+          - heading "LTX2-simple-img2vid" [level=3] [ref=e1719]
+          - generic [ref=e1720]: LTX2 Image-to-Video
+        - generic [ref=e1721]:
+          - generic [ref=e1722]: 21 nodes
+          - generic [ref=e1723]: ·
+          - generic [ref=e1724]: video-gen
+      - button "LTX2-simple-txt2vid Audio/Music 18 nodes · video-gen" [ref=e1725] [cursor=pointer]:
+        - generic [ref=e1726]:
+          - heading "LTX2-simple-txt2vid" [level=3] [ref=e1727]
+          - generic [ref=e1728]: Audio/Music
+        - generic [ref=e1729]:
+          - generic [ref=e1730]: 18 nodes
+          - generic [ref=e1731]: ·
+          - generic [ref=e1732]: video-gen
+      - button "LTX2-txt2vid-upscale LTX2 Text-to-Video 21 nodes · video-gen" [ref=e1733] [cursor=pointer]:
+        - generic [ref=e1734]:
+          - heading "LTX2-txt2vid-upscale" [level=3] [ref=e1735]
+          - generic [ref=e1736]: LTX2 Text-to-Video
+        - generic [ref=e1737]:
+          - generic [ref=e1738]: 21 nodes
+          - generic [ref=e1739]: ·
+          - generic [ref=e1740]: video-gen
+      - button "video_wan2_2_5B_ti2v Text-to-Video 57 nodes · video-gen" [ref=e1741] [cursor=pointer]:
+        - generic [ref=e1742]:
+          - heading "video_wan2_2_5B_ti2v" [level=3] [ref=e1743]
+          - generic [ref=e1744]: Text-to-Video
+        - generic [ref=e1745]:
+          - generic [ref=e1746]: 57 nodes
+          - generic [ref=e1747]: ·
+          - generic [ref=e1748]: video-gen
+      - button "Wan 2.2 Animate V2 Pose-Driven Video Generation in ComfyUI Text-to-Video 73 nodes · video-gen" [ref=e1749] [cursor=pointer]:
+        - generic [ref=e1750]:
+          - heading "Wan 2.2 Animate V2 Pose-Driven Video Generation in ComfyUI" [level=3] [ref=e1751]
+          - generic [ref=e1752]: Text-to-Video
+        - generic [ref=e1753]:
+          - generic [ref=e1754]: 73 nodes
+          - generic [ref=e1755]: ·
+          - generic [ref=e1756]: video-gen
+      - button "Wan 2.2 FLF2V First-Last Frame Video Generation in ComfyUI Text-to-Video 20 nodes · video-gen" [ref=e1757] [cursor=pointer]:
+        - generic [ref=e1758]:
+          - heading "Wan 2.2 FLF2V First-Last Frame Video Generation in ComfyUI" [level=3] [ref=e1759]
+          - generic [ref=e1760]: Text-to-Video
+        - generic [ref=e1761]:
+          - generic [ref=e1762]: 20 nodes
+          - generic [ref=e1763]: ·
+          - generic [ref=e1764]: video-gen
+      - button "scaffolds/ltx2-img2vid.scaffold unknown 0 nodes · video-gen" [ref=e1765] [cursor=pointer]:
+        - generic [ref=e1766]:
+          - heading "scaffolds/ltx2-img2vid.scaffold" [level=3] [ref=e1767]
+          - generic [ref=e1768]: unknown
+        - generic [ref=e1769]:
+          - generic [ref=e1770]: 0 nodes
+          - generic [ref=e1771]: ·
+          - generic [ref=e1772]: video-gen
+      - button "scaffolds/ltx2-txt2vid.scaffold unknown 0 nodes · video-gen" [ref=e1773] [cursor=pointer]:
+        - generic [ref=e1774]:
+          - heading "scaffolds/ltx2-txt2vid.scaffold" [level=3] [ref=e1775]
+          - generic [ref=e1776]: unknown
+        - generic [ref=e1777]:
+          - generic [ref=e1778]: 0 nodes
+          - generic [ref=e1779]: ·
+          - generic [ref=e1780]: video-gen
+      - button "Wan22_14B_I2V_MultiClip_LongLook/Wan22_14B_I2V_LL_Normal/Wan22_14B_I2V_LongLook_NORMAL Text-to-Video 132 nodes · video-gen" [ref=e1781] [cursor=pointer]:
+        - generic [ref=e1782]:
+          - heading "Wan22_14B_I2V_MultiClip_LongLook/Wan22_14B_I2V_LL_Normal/Wan22_14B_I2V_LongLook_NORMAL" [level=3] [ref=e1783]
+          - generic [ref=e1784]: Text-to-Video
+        - generic [ref=e1785]:
+          - generic [ref=e1786]: 132 nodes
+          - generic [ref=e1787]: ·
+          - generic [ref=e1788]: video-gen
+      - button "Wan22_14B_I2V_MultiClip_LongLook/Wan22_14B_I2V_LL_Ollama/Wan22_14B_I2V_LongLook_Ollama Text-to-Video 153 nodes · video-gen" [ref=e1789] [cursor=pointer]:
+        - generic [ref=e1790]:
+          - heading "Wan22_14B_I2V_MultiClip_LongLook/Wan22_14B_I2V_LL_Ollama/Wan22_14B_I2V_LongLook_Ollama" [level=3] [ref=e1791]
+          - generic [ref=e1792]: Text-to-Video
+        - generic [ref=e1793]:
+          - generic [ref=e1794]: 153 nodes
+          - generic [ref=e1795]: ·
+          - generic [ref=e1796]: video-gen
+      - button "ltx2_image_to_video LTX2 Image-to-Video 17 nodes · _archived_R135" [ref=e1797] [cursor=pointer]:
+        - generic [ref=e1798]:
+          - heading "ltx2_image_to_video" [level=3] [ref=e1799]
+          - generic [ref=e1800]: LTX2 Image-to-Video
+        - generic [ref=e1801]:
+          - generic [ref=e1802]: 17 nodes
+          - generic [ref=e1803]: ·
+          - generic [ref=e1804]: _archived_R135
+      - button "ltx2_t2v_with_rife_interpolation LTX2 Text-to-Video 16 nodes · _archived_R135" [ref=e1805] [cursor=pointer]:
+        - generic [ref=e1806]:
+          - heading "ltx2_t2v_with_rife_interpolation" [level=3] [ref=e1807]
+          - generic [ref=e1808]: LTX2 Text-to-Video
+        - generic [ref=e1809]:
+          - generic [ref=e1810]: 16 nodes
+          - generic [ref=e1811]: ·
+          - generic [ref=e1812]: _archived_R135
+      - button "ltx2_t2v_with_rtx_upscale LTX2 Text-to-Video 16 nodes · _archived_R135" [ref=e1813] [cursor=pointer]:
+        - generic [ref=e1814]:
+          - heading "ltx2_t2v_with_rtx_upscale" [level=3] [ref=e1815]
+          - generic [ref=e1816]: LTX2 Text-to-Video
+        - generic [ref=e1817]:
+          - generic [ref=e1818]: 16 nodes
+          - generic [ref=e1819]: ·
+          - generic [ref=e1820]: _archived_R135
+      - button "ltx2_text_to_video LTX2 Text-to-Video 15 nodes · _archived_R135" [ref=e1821] [cursor=pointer]:
+        - generic [ref=e1822]:
+          - heading "ltx2_text_to_video" [level=3] [ref=e1823]
+          - generic [ref=e1824]: LTX2 Text-to-Video
+        - generic [ref=e1825]:
+          - generic [ref=e1826]: 15 nodes
+          - generic [ref=e1827]: ·
+          - generic [ref=e1828]: _archived_R135
+      - button "ltx2_text_to_video_2stage LTX2 Text-to-Video 20 nodes · _archived_R135" [ref=e1829] [cursor=pointer]:
+        - generic [ref=e1830]:
+          - heading "ltx2_text_to_video_2stage" [level=3] [ref=e1831]
+          - generic [ref=e1832]: LTX2 Text-to-Video
+        - generic [ref=e1833]:
+          - generic [ref=e1834]: 20 nodes
+          - generic [ref=e1835]: ·
+          - generic [ref=e1836]: _archived_R135
+      - button "ltx2_text_to_video_distilled LTX2 Text-to-Video 16 nodes · _archived_R135" [ref=e1837] [cursor=pointer]:
+        - generic [ref=e1838]:
+          - heading "ltx2_text_to_video_distilled" [level=3] [ref=e1839]
+          - generic [ref=e1840]: LTX2 Text-to-Video
+        - generic [ref=e1841]:
+          - generic [ref=e1842]: 16 nodes
+          - generic [ref=e1843]: ·
+          - generic [ref=e1844]: _archived_R135
+      - button "ltx2_v2v_flowedit LTX2 Text-to-Video 20 nodes · _archived_R135" [ref=e1845] [cursor=pointer]:
+        - generic [ref=e1846]:
+          - heading "ltx2_v2v_flowedit" [level=3] [ref=e1847]
+          - generic [ref=e1848]: LTX2 Text-to-Video
+        - generic [ref=e1849]:
+          - generic [ref=e1850]: 20 nodes
+          - generic [ref=e1851]: ·
+          - generic [ref=e1852]: _archived_R135
+      - button "seedvr2_video_upscale Video Upscale (SeedVR2) 4 nodes · _archived_R135" [ref=e1853] [cursor=pointer]:
+        - generic [ref=e1854]:
+          - heading "seedvr2_video_upscale" [level=3] [ref=e1855]
+          - generic [ref=e1856]: Video Upscale (SeedVR2)
+        - generic [ref=e1857]:
+          - generic [ref=e1858]: 4 nodes
+          - generic [ref=e1859]: ·
+          - generic [ref=e1860]: _archived_R135
+      - button "wan22_v2v_vace_mask Text-to-Video 11 nodes · root" [ref=e1861] [cursor=pointer]:
+        - generic [ref=e1862]:
+          - heading "wan22_v2v_vace_mask" [level=3] [ref=e1863]
+          - generic [ref=e1864]: Text-to-Video
+        - generic [ref=e1865]:
+          - generic [ref=e1866]: 11 nodes
+          - generic [ref=e1867]: ·
+          - generic [ref=e1868]: root
+    - generic [ref=e1869]:
+      - generic [ref=e1870]: 159 of 159 workflows shown · 17 categories
+      - generic [ref=e1871]: Powered by Spellcaster Workflow Parser
+  - generic [ref=e376]:
+    - paragraph [ref=e377]: The Travelling Wizard · Spellcaster Suite · 63 scaffold(s) configured
+    - button "Export All" [ref=e378] [cursor=pointer]:
+      - img [ref=e379]
+      - text: Export All

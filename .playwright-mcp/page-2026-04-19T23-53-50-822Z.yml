@@ -1,0 +1,167 @@
+- generic [ref=e3]:
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - generic "The Travelling Wizard" [ref=e8]
+      - generic [ref=e10]:
+        - heading "The Travelling Wizard" [level=1] [ref=e11]
+        - paragraph [ref=e12]: Signal Bridge & Spellcaster Scaffold
+    - generic [ref=e13]:
+      - generic "Server config sync status" [ref=e14]: saved
+      - button "Import" [ref=e16] [cursor=pointer]:
+        - img [ref=e17]
+        - text: Import
+      - button "Export" [ref=e19] [cursor=pointer]:
+        - img [ref=e20]
+        - text: Export
+      - button "Copy JSON" [ref=e22] [cursor=pointer]:
+        - img [ref=e23]
+        - text: Copy JSON
+      - button "Guild" [ref=e26] [cursor=pointer]:
+        - img [ref=e27]
+        - text: Guild
+  - navigation [ref=e31]:
+    - button "Workflows" [ref=e32] [cursor=pointer]:
+      - img [ref=e33]
+      - text: Workflows
+    - button "Scaffolds" [ref=e35] [cursor=pointer]:
+      - img [ref=e36]
+      - text: Scaffolds
+    - button "Integrations" [active] [ref=e38] [cursor=pointer]:
+      - img [ref=e39]
+      - text: Integrations
+    - button "Network" [ref=e41] [cursor=pointer]:
+      - img [ref=e42]
+      - text: Network
+    - button "Signal" [ref=e44] [cursor=pointer]:
+      - img [ref=e45]
+      - text: Signal
+    - button "Users & Access" [ref=e47] [cursor=pointer]:
+      - img [ref=e48]
+      - text: Users & Access
+    - button "Privacy" [ref=e50] [cursor=pointer]:
+      - img [ref=e51]
+      - text: Privacy
+    - button "Paths" [ref=e53] [cursor=pointer]:
+      - img [ref=e54]
+      - text: Paths
+    - button "Advanced" [ref=e56] [cursor=pointer]:
+      - img [ref=e57]
+      - text: Advanced
+  - generic [ref=e1873]:
+    - generic [ref=e1874]:
+      - img [ref=e1876]
+      - paragraph [ref=e1878]: Auto-detect installed tools and services. Click "Detect" to probe for running instances, then configure connections. ComfyUI / Ollama / Kobold URLs come from the main Guild sidebar's app-control registry — single source of truth.
+    - generic [ref=e1879]:
+      - generic [ref=e1881]:
+        - generic [ref=e1882]:
+          - img [ref=e1884]
+          - generic [ref=e1886]:
+            - heading "SillyTavern" [level=3] [ref=e1887]
+            - paragraph [ref=e1888]: Full-featured AI chat interface with character cards, lorebooks, and group chats
+          - generic [ref=e1891]: Not checked
+        - paragraph [ref=e1893]: http://localhost:8000
+        - generic [ref=e1894]:
+          - button "Detect" [ref=e1895] [cursor=pointer]:
+            - img [ref=e1896]
+            - text: Detect
+          - button "Configure" [ref=e1898] [cursor=pointer]:
+            - img [ref=e1899]
+            - text: Configure
+        - button "Show Setup Guide" [ref=e1901] [cursor=pointer]:
+          - text: Show Setup Guide
+          - img [ref=e1902]
+      - generic [ref=e1905]:
+        - generic [ref=e1906]:
+          - img [ref=e1908]
+          - generic [ref=e1910]:
+            - heading "Open WebUI" [level=3] [ref=e1911]
+            - paragraph [ref=e1912]: Open-source ChatGPT-style interface with model management
+          - generic [ref=e1915]: Not checked
+        - paragraph [ref=e1917]: http://127.0.0.1:8080
+        - generic [ref=e1918]:
+          - button "Detect" [ref=e1919] [cursor=pointer]:
+            - img [ref=e1920]
+            - text: Detect
+          - button "Configure" [ref=e1922] [cursor=pointer]:
+            - img [ref=e1923]
+            - text: Configure
+        - button "Show Setup Guide" [ref=e1925] [cursor=pointer]:
+          - text: Show Setup Guide
+          - img [ref=e1926]
+      - generic [ref=e1929]:
+        - generic [ref=e1930]:
+          - img [ref=e1932]
+          - generic [ref=e1934]:
+            - heading "LM Studio" [level=3] [ref=e1935]
+            - paragraph [ref=e1936]: Desktop app for running local LLMs with OpenAI-compatible API
+          - generic [ref=e1939]: Not checked
+        - paragraph [ref=e1941]: http://localhost:1234
+        - generic [ref=e1942]:
+          - button "Detect" [ref=e1943] [cursor=pointer]:
+            - img [ref=e1944]
+            - text: Detect
+          - button "Configure" [ref=e1946] [cursor=pointer]:
+            - img [ref=e1947]
+            - text: Configure
+        - button "Show Setup Guide" [ref=e1949] [cursor=pointer]:
+          - text: Show Setup Guide
+          - img [ref=e1950]
+      - generic [ref=e1953]:
+        - generic [ref=e1954]:
+          - img [ref=e1956]
+          - generic [ref=e1958]:
+            - heading "KoboldCpp" [level=3] [ref=e1959]
+            - paragraph [ref=e1960]: Lightweight local LLM server optimized for roleplay and stories
+          - generic [ref=e1963]: Not checked
+        - paragraph [ref=e1965]: http://localhost:5001
+        - generic [ref=e1966]:
+          - button "Detect" [ref=e1967] [cursor=pointer]:
+            - img [ref=e1968]
+            - text: Detect
+          - button "Configure" [ref=e1970] [cursor=pointer]:
+            - img [ref=e1971]
+            - text: Configure
+        - button "Show Setup Guide" [ref=e1973] [cursor=pointer]:
+          - text: Show Setup Guide
+          - img [ref=e1974]
+      - generic [ref=e1977]:
+        - generic [ref=e1978]:
+          - img [ref=e1980]
+          - generic [ref=e1982]:
+            - heading "ComfyUI" [level=3] [ref=e1983]
+            - paragraph [ref=e1984]: Node-based image generation pipeline with Spellcaster nodes
+          - generic [ref=e1987]: Not checked
+        - paragraph [ref=e1989]: http://127.0.0.1:8188
+        - generic [ref=e1990]:
+          - button "Detect" [ref=e1991] [cursor=pointer]:
+            - img [ref=e1992]
+            - text: Detect
+          - button "Configure" [ref=e1994] [cursor=pointer]:
+            - img [ref=e1995]
+            - text: Configure
+        - button "Show Setup Guide" [ref=e1997] [cursor=pointer]:
+          - text: Show Setup Guide
+          - img [ref=e1998]
+      - generic [ref=e2001]:
+        - generic [ref=e2002]:
+          - img [ref=e2004]
+          - generic [ref=e2006]:
+            - heading "Ollama" [level=3] [ref=e2007]
+            - paragraph [ref=e2008]: Local LLM runner with a simple HTTP API and model library
+          - generic [ref=e2011]: Not checked
+        - paragraph [ref=e2013]: http://127.0.0.1:11434
+        - generic [ref=e2014]:
+          - button "Detect" [ref=e2015] [cursor=pointer]:
+            - img [ref=e2016]
+            - text: Detect
+          - button "Configure" [ref=e2018] [cursor=pointer]:
+            - img [ref=e2019]
+            - text: Configure
+        - button "Show Setup Guide" [ref=e2021] [cursor=pointer]:
+          - text: Show Setup Guide
+          - img [ref=e2022]
+  - generic [ref=e376]:
+    - paragraph [ref=e377]: The Travelling Wizard · Spellcaster Suite · 63 scaffold(s) configured
+    - button "Export All" [ref=e378] [cursor=pointer]:
+      - img [ref=e379]
+      - text: Export All

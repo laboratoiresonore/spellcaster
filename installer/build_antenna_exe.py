@@ -142,6 +142,12 @@ def main() -> int:
         # right tool here.
         "--add-data", (f"{REPO_ROOT / 'installer' / 'remote_services.json'}"
                         f"{os.pathsep}installer"),
+        # Antenna splash asset — PyInstaller's import analyser doesn't
+        # see it (it's read via pathlib at runtime). Bundled under
+        # antenna/assets/ so the splash resolver in antenna/splash.py
+        # finds it relative to _MEIPASS without further tweaking.
+        "--add-data", (f"{REPO_ROOT / 'antenna' / 'assets' / 'antenna_logo.png'}"
+                        f"{os.pathsep}antenna/assets"),
     ]
     # Windows: tray-only (--noconsole). Use build_antenna_exe_debug.py
     # if you need a console build for troubleshooting; the shipped

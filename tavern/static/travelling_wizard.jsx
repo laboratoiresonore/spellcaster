@@ -3562,16 +3562,31 @@ function SignalBridgeSettings() {
   // Clicking a wizard in the GuildSidebar no longer retargets tabs here.
 
   return (
-    <div className="min-h-screen bg-slate-950 text-amber-50" style={{background: "linear-gradient(135deg, #0f172a 0%, #1a1f35 50%, #0a0e1a 100%)", marginRight: guildOpen ? "384px" : "0", transition: "margin-right 0.3s ease"}}>
-      {/* Header */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-900 border-b border-amber-600/30 sticky top-0 z-50" style={{boxShadow: "0 4px 20px rgba(217, 119, 6, 0.15)"}}>
+    <div className="min-h-screen text-amber-50" style={{marginRight: guildOpen ? "384px" : "0", transition: "margin-right 0.3s ease"}}>
+      {/* Header — translucent so the page-level purple/pentagram backdrop
+          defined in guild.html's <style> bleeds through. The sigil image
+          replaces the flat amber squircle so the page has a real
+          character icon instead of a filler button. */}
+      <div className="border-b border-amber-600/25 sticky top-0 z-50"
+           style={{
+             background: "linear-gradient(180deg, rgba(20, 12, 40, 0.88), rgba(15, 10, 30, 0.82))",
+             backdropFilter: "blur(10px)",
+             WebkitBackdropFilter: "blur(10px)",
+             boxShadow: "0 4px 30px rgba(178, 70, 242, 0.18), 0 2px 10px rgba(217, 119, 6, 0.12)"
+           }}>
         <div className="max-w-6xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-amber-600 to-amber-700 rounded-xl flex items-center justify-center text-amber-50" style={{boxShadow: "0 0 16px rgba(217, 119, 6, 0.5), inset 0 0 8px rgba(217, 119, 6, 0.3)"}}><Icons.Signal /></div>
+              <div className="tw-sigil-wrap" title="The Travelling Wizard">
+                <div className="tw-sigil" />
+              </div>
               <div>
-                <h1 className="text-xl font-bold text-amber-50">The Travelling Wizard</h1>
-                <p className="text-xs text-amber-200/70">Signal Bridge & Spellcaster Scaffold</p>
+                <h1 className="text-xl font-bold text-amber-50"
+                    style={{letterSpacing: "0.01em",
+                            textShadow: "0 0 18px rgba(178, 70, 242, 0.35)"}}>
+                  The Travelling Wizard
+                </h1>
+                <p className="text-xs text-amber-200/70">Signal Bridge &amp; Spellcaster Scaffold</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -3634,8 +3649,10 @@ function SignalBridgeSettings() {
         </div>
       </div>
 
-      {/* Content */}
-      <div className="max-w-6xl mx-auto px-6 py-6">
+      {/* Content — wrapped in .tw-tab-panel so each tab switch has a
+          gentle 180ms fade-in (defined in guild.html). Keyed on activeTab
+          so React remounts the panel and the animation replays. */}
+      <div className="max-w-6xl mx-auto px-6 py-6 tw-tab-panel" key={activeTab}>
         {/* R120: Video tab removed — Cinematographer lives only in the
             main Guild GUI (🎬 toggle next to the chat send button). */}
 

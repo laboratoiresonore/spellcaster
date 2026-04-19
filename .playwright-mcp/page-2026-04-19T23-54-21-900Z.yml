@@ -1,0 +1,103 @@
+- generic [ref=e3]:
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - generic "The Travelling Wizard" [ref=e8]
+      - generic [ref=e10]:
+        - heading "The Travelling Wizard" [level=1] [ref=e11]
+        - paragraph [ref=e12]: Signal Bridge & Spellcaster Scaffold
+    - generic [ref=e13]:
+      - generic "Server config sync status" [ref=e14]: saved
+      - button "Import" [ref=e16] [cursor=pointer]:
+        - img [ref=e17]
+        - text: Import
+      - button "Export" [ref=e19] [cursor=pointer]:
+        - img [ref=e20]
+        - text: Export
+      - button "Copy JSON" [ref=e22] [cursor=pointer]:
+        - img [ref=e23]
+        - text: Copy JSON
+      - button "Guild" [ref=e26] [cursor=pointer]:
+        - img [ref=e27]
+        - text: Guild
+  - navigation [ref=e31]:
+    - button "Workflows" [ref=e32] [cursor=pointer]:
+      - img [ref=e33]
+      - text: Workflows
+    - button "Scaffolds" [ref=e35] [cursor=pointer]:
+      - img [ref=e36]
+      - text: Scaffolds
+    - button "Integrations" [ref=e38] [cursor=pointer]:
+      - img [ref=e39]
+      - text: Integrations
+    - button "Network" [ref=e41] [cursor=pointer]:
+      - img [ref=e42]
+      - text: Network
+    - button "Signal" [active] [ref=e44] [cursor=pointer]:
+      - img [ref=e45]
+      - text: Signal
+    - button "Users & Access" [ref=e47] [cursor=pointer]:
+      - img [ref=e48]
+      - text: Users & Access
+    - button "Privacy" [ref=e50] [cursor=pointer]:
+      - img [ref=e51]
+      - text: Privacy
+    - button "Paths" [ref=e53] [cursor=pointer]:
+      - img [ref=e54]
+      - text: Paths
+    - button "Advanced" [ref=e56] [cursor=pointer]:
+      - img [ref=e57]
+      - text: Advanced
+  - generic [ref=e2125]:
+    - generic [ref=e2126]:
+      - button "Signal Configuration" [ref=e2127] [cursor=pointer]:
+        - img [ref=e2129]
+        - generic [ref=e2131]: Signal Configuration
+        - img [ref=e2133]
+      - generic [ref=e2135]:
+        - generic [ref=e2136]:
+          - generic [ref=e2137]:
+            - text: Signal Phone Number
+            - button "Signal Phone Number" [ref=e2139] [cursor=pointer]:
+              - img [ref=e2140]
+          - textbox [ref=e2142]: +1XXXXXXXXXX
+        - generic [ref=e2143]:
+          - generic [ref=e2144]:
+            - text: Admin Phone Number
+            - button "Admin Phone Number" [ref=e2146] [cursor=pointer]:
+              - img [ref=e2147]
+          - textbox [ref=e2149]: +1XXXXXXXXXX
+        - generic [ref=e2150]:
+          - generic [ref=e2151]:
+            - text: signal-cli Path
+            - button "signal-cli Path" [ref=e2153] [cursor=pointer]:
+              - img [ref=e2154]
+          - textbox [ref=e2156]: signal-cli-0.13.24
+        - generic [ref=e2157]:
+          - generic [ref=e2158]:
+            - text: Poll Interval (seconds)
+            - button "Poll Interval (seconds)" [ref=e2160] [cursor=pointer]:
+              - img [ref=e2161]
+          - spinbutton [ref=e2163]: "2"
+    - generic [ref=e2164]:
+      - button "Google Integration" [ref=e2165] [cursor=pointer]:
+        - img [ref=e2167]
+        - generic [ref=e2169]: Google Integration
+        - img [ref=e2171]
+      - generic [ref=e2173]:
+        - generic [ref=e2174]:
+          - generic [ref=e2175]:
+            - text: Credentials File
+            - button "Credentials File" [ref=e2177] [cursor=pointer]:
+              - img [ref=e2178]
+          - textbox [ref=e2180]
+        - generic [ref=e2181]:
+          - generic [ref=e2182]:
+            - text: Admin Email
+            - button "Admin Email" [ref=e2184] [cursor=pointer]:
+              - img [ref=e2185]
+          - textbox [ref=e2187]
+  - generic [ref=e376]:
+    - paragraph [ref=e377]: The Travelling Wizard · Spellcaster Suite · 63 scaffold(s) configured
+    - button "Export All" [ref=e378] [cursor=pointer]:
+      - img [ref=e379]
+      - text: Export All

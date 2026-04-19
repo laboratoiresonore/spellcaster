@@ -1,0 +1,80 @@
+- generic [ref=e3]:
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - generic "The Travelling Wizard" [ref=e8]
+      - generic [ref=e10]:
+        - heading "The Travelling Wizard" [level=1] [ref=e11]
+        - paragraph [ref=e12]: Signal Bridge & Spellcaster Scaffold
+    - generic [ref=e13]:
+      - generic "Server config sync status" [ref=e14]: saved
+      - button "Import" [ref=e16] [cursor=pointer]:
+        - img [ref=e17]
+        - text: Import
+      - button "Export" [ref=e19] [cursor=pointer]:
+        - img [ref=e20]
+        - text: Export
+      - button "Copy JSON" [ref=e22] [cursor=pointer]:
+        - img [ref=e23]
+        - text: Copy JSON
+      - button "Guild" [ref=e26] [cursor=pointer]:
+        - img [ref=e27]
+        - text: Guild
+  - navigation [ref=e31]:
+    - button "Workflows" [ref=e32] [cursor=pointer]:
+      - img [ref=e33]
+      - text: Workflows
+    - button "Scaffolds" [ref=e35] [cursor=pointer]:
+      - img [ref=e36]
+      - text: Scaffolds
+    - button "Integrations" [ref=e38] [cursor=pointer]:
+      - img [ref=e39]
+      - text: Integrations
+    - button "Network" [ref=e41] [cursor=pointer]:
+      - img [ref=e42]
+      - text: Network
+    - button "Signal" [ref=e44] [cursor=pointer]:
+      - img [ref=e45]
+      - text: Signal
+    - button "Users & Access" [ref=e47] [cursor=pointer]:
+      - img [ref=e48]
+      - text: Users & Access
+    - button "Privacy" [active] [ref=e50] [cursor=pointer]:
+      - img [ref=e51]
+      - text: Privacy
+    - button "Paths" [ref=e53] [cursor=pointer]:
+      - img [ref=e54]
+      - text: Paths
+    - button "Advanced" [ref=e56] [cursor=pointer]:
+      - img [ref=e57]
+      - text: Advanced
+  - generic [ref=e2189]:
+    - button "Privacy & Cleanup" [ref=e2190] [cursor=pointer]:
+      - img [ref=e2192]
+      - generic [ref=e2194]: Privacy & Cleanup
+    - generic [ref=e2196]:
+      - generic [ref=e2197]:
+        - img [ref=e2199]
+        - paragraph [ref=e2201]: Privacy controls use Spellcaster methods to sanitize all ComfyUI input/output.
+      - generic [ref=e2205] [cursor=pointer]:
+        - generic [ref=e2206]: Sanitize ComfyUI Input
+        - paragraph [ref=e2207]: Strips EXIF metadata, GPS coordinates, camera info, and other identifying data from images before they reach ComfyUI.
+      - generic [ref=e2211] [cursor=pointer]:
+        - generic [ref=e2212]: Sanitize ComfyUI Output
+        - paragraph [ref=e2213]: Removes all embedded metadata from AI-generated images before sending them back to users via Signal.
+      - generic [ref=e2217] [cursor=pointer]:
+        - generic [ref=e2218]: Strip Metadata on Send
+        - paragraph [ref=e2219]: Additional metadata scrubbing on every outbound image, regardless of source. Prevents accidental location leaks.
+      - generic [ref=e2223] [cursor=pointer]:
+        - generic [ref=e2224]: Auto-Delete Generated
+        - paragraph [ref=e2225]: Automatically removes generated image files from the ComfyUI server after they've been delivered to the user.
+      - generic [ref=e2226]:
+        - generic [ref=e2227]:
+          - text: Cleanup Interval
+          - button "Cleanup Interval" [ref=e2229] [cursor=pointer]:
+            - img [ref=e2230]
+        - spinbutton [ref=e2232]: "30"
+  - generic [ref=e376]:
+    - paragraph [ref=e377]: The Travelling Wizard · Spellcaster Suite · 63 scaffold(s) configured
+    - button "Export All" [ref=e378] [cursor=pointer]:
+      - img [ref=e379]
+      - text: Export All

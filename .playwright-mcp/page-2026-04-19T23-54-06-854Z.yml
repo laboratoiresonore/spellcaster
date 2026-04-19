@@ -1,0 +1,138 @@
+- generic [ref=e3]:
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - generic "The Travelling Wizard" [ref=e8]
+      - generic [ref=e10]:
+        - heading "The Travelling Wizard" [level=1] [ref=e11]
+        - paragraph [ref=e12]: Signal Bridge & Spellcaster Scaffold
+    - generic [ref=e13]:
+      - generic "Server config sync status" [ref=e14]: saved
+      - button "Import" [ref=e16] [cursor=pointer]:
+        - img [ref=e17]
+        - text: Import
+      - button "Export" [ref=e19] [cursor=pointer]:
+        - img [ref=e20]
+        - text: Export
+      - button "Copy JSON" [ref=e22] [cursor=pointer]:
+        - img [ref=e23]
+        - text: Copy JSON
+      - button "Guild" [ref=e26] [cursor=pointer]:
+        - img [ref=e27]
+        - text: Guild
+  - navigation [ref=e31]:
+    - button "Workflows" [ref=e32] [cursor=pointer]:
+      - img [ref=e33]
+      - text: Workflows
+    - button "Scaffolds" [ref=e35] [cursor=pointer]:
+      - img [ref=e36]
+      - text: Scaffolds
+    - button "Integrations" [ref=e38] [cursor=pointer]:
+      - img [ref=e39]
+      - text: Integrations
+    - button "Network" [active] [ref=e41] [cursor=pointer]:
+      - img [ref=e42]
+      - text: Network
+    - button "Signal" [ref=e44] [cursor=pointer]:
+      - img [ref=e45]
+      - text: Signal
+    - button "Users & Access" [ref=e47] [cursor=pointer]:
+      - img [ref=e48]
+      - text: Users & Access
+    - button "Privacy" [ref=e50] [cursor=pointer]:
+      - img [ref=e51]
+      - text: Privacy
+    - button "Paths" [ref=e53] [cursor=pointer]:
+      - img [ref=e54]
+      - text: Paths
+    - button "Advanced" [ref=e56] [cursor=pointer]:
+      - img [ref=e57]
+      - text: Advanced
+  - generic [ref=e2025]:
+    - generic [ref=e2026]:
+      - img [ref=e2028]
+      - paragraph [ref=e2030]:
+        - strong [ref=e2031]: ComfyUI / Ollama / Kobold URLs below reflect the main Guild sidebar's app-control registry (single source of truth).
+        - text: Edits here are persisted via
+        - code [ref=e2032]: /api/app_control/register
+        - text: so chip status and Travelling Wizard stay in sync.
+    - generic [ref=e2033]:
+      - button "LLM Server" [ref=e2034] [cursor=pointer]:
+        - img [ref=e2036]
+        - generic [ref=e2038]: LLM Server
+        - img [ref=e2040]
+      - generic [ref=e2042]:
+        - generic [ref=e2043]:
+          - generic [ref=e2044]:
+            - text: Open WebUI URL
+            - button "Open WebUI URL" [ref=e2046] [cursor=pointer]:
+              - img [ref=e2047]
+          - textbox [ref=e2049]: http://127.0.0.1:8080
+        - generic [ref=e2050]:
+          - generic [ref=e2051]:
+            - text: Open WebUI API Key
+            - button "Open WebUI API Key" [ref=e2053] [cursor=pointer]:
+              - img [ref=e2054]
+          - generic [ref=e2056]:
+            - textbox "sk-..." [ref=e2057]
+            - button [ref=e2058] [cursor=pointer]:
+              - img [ref=e2059]
+        - generic [ref=e2061]:
+          - generic [ref=e2062]:
+            - text: Ollama URL
+            - button "Ollama URL" [ref=e2064] [cursor=pointer]:
+              - img [ref=e2065]
+          - textbox "http://192.168.x.x:PORT or host:port" [ref=e2067]: http://127.0.0.1:11434
+        - generic [ref=e2068]:
+          - generic [ref=e2069]:
+            - text: Default Model
+            - button "Default Model" [ref=e2071] [cursor=pointer]:
+              - img [ref=e2072]
+          - textbox [ref=e2074]
+        - generic [ref=e2075]:
+          - generic [ref=e2076]:
+            - text: KoboldCpp URL
+            - button "KoboldCpp URL" [ref=e2078] [cursor=pointer]:
+              - img [ref=e2079]
+          - textbox "http://192.168.x.x:PORT or host:port" [ref=e2081]
+        - generic [ref=e2082]:
+          - generic [ref=e2083]:
+            - text: Kobold · TTS/STT URL
+            - button "Kobold · TTS/STT URL" [ref=e2085] [cursor=pointer]:
+              - img [ref=e2086]
+          - textbox "http://192.168.x.x:PORT or host:port" [ref=e2088]: http://<INTERNAL_HOST>:5002
+          - paragraph [ref=e2089]:
+            - text: "app_control entry: target="
+            - code [ref=e2090]: local
+            - text: · host=
+            - code [ref=e2091]: <INTERNAL_HOST>
+            - text: · port=
+            - code [ref=e2092]: "5002"
+    - generic [ref=e2093]:
+      - button "ComfyUI Server" [ref=e2094] [cursor=pointer]:
+        - img [ref=e2096]
+        - generic [ref=e2098]: ComfyUI Server
+        - img [ref=e2100]
+      - generic [ref=e2102]:
+        - generic [ref=e2103]:
+          - generic [ref=e2104]:
+            - text: ComfyUI URL
+            - button "ComfyUI URL" [ref=e2106] [cursor=pointer]:
+              - img [ref=e2107]
+          - textbox "http://192.168.x.x:PORT or host:port" [ref=e2109]: http://127.0.0.1:8188
+        - generic [ref=e2110]:
+          - generic [ref=e2111]:
+            - text: Output Directory
+            - button "Output Directory" [ref=e2113] [cursor=pointer]:
+              - img [ref=e2114]
+          - textbox [ref=e2116]: /opt/ComfyUI/output
+        - generic [ref=e2117]:
+          - generic [ref=e2118]:
+            - text: Cleanup Timer (minutes)
+            - button "Cleanup Timer (minutes)" [ref=e2120] [cursor=pointer]:
+              - img [ref=e2121]
+          - spinbutton [ref=e2123]: "30"
+  - generic [ref=e376]:
+    - paragraph [ref=e377]: The Travelling Wizard · Spellcaster Suite · 63 scaffold(s) configured
+    - button "Export All" [ref=e378] [cursor=pointer]:
+      - img [ref=e379]
+      - text: Export All

@@ -1,0 +1,84 @@
+- generic [ref=e3]:
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - generic "The Travelling Wizard" [ref=e8]
+      - generic [ref=e10]:
+        - heading "The Travelling Wizard" [level=1] [ref=e11]
+        - paragraph [ref=e12]: Signal Bridge & Spellcaster Scaffold
+    - generic [ref=e13]:
+      - generic "Server config sync status" [ref=e14]: saved
+      - button "Import" [ref=e16] [cursor=pointer]:
+        - img [ref=e17]
+        - text: Import
+      - button "Export" [ref=e19] [cursor=pointer]:
+        - img [ref=e20]
+        - text: Export
+      - button "Copy JSON" [ref=e22] [cursor=pointer]:
+        - img [ref=e23]
+        - text: Copy JSON
+      - button "Guild" [ref=e26] [cursor=pointer]:
+        - img [ref=e27]
+        - text: Guild
+  - navigation [ref=e31]:
+    - button "Workflows" [ref=e32] [cursor=pointer]:
+      - img [ref=e33]
+      - text: Workflows
+    - button "Scaffolds" [ref=e35] [cursor=pointer]:
+      - img [ref=e36]
+      - text: Scaffolds
+    - button "Integrations" [ref=e38] [cursor=pointer]:
+      - img [ref=e39]
+      - text: Integrations
+    - button "Network" [ref=e41] [cursor=pointer]:
+      - img [ref=e42]
+      - text: Network
+    - button "Signal" [ref=e44] [cursor=pointer]:
+      - img [ref=e45]
+      - text: Signal
+    - button "Users & Access" [active] [ref=e47] [cursor=pointer]:
+      - img [ref=e48]
+      - text: Users & Access
+    - button "Privacy" [ref=e50] [cursor=pointer]:
+      - img [ref=e51]
+      - text: Privacy
+    - button "Paths" [ref=e53] [cursor=pointer]:
+      - img [ref=e54]
+      - text: Paths
+    - button "Advanced" [ref=e56] [cursor=pointer]:
+      - img [ref=e57]
+      - text: Advanced
+  - generic [ref=e2258]:
+    - button "Authorized Users" [ref=e2259] [cursor=pointer]:
+      - img [ref=e2261]
+      - generic [ref=e2263]: Authorized Users
+    - generic [ref=e2264]:
+      - generic [ref=e2265]:
+        - img [ref=e2267]
+        - paragraph [ref=e2269]:
+          - strong [ref=e2270]: Restricted
+          - text: = SFW only.
+          - strong [ref=e2271]: Unrestricted
+          - text: = full NSFW access. Admin always has unrestricted access.
+      - generic [ref=e2272]:
+        - generic [ref=e2273]: No authorized users yet.
+        - generic [ref=e2274]:
+          - paragraph [ref=e2275]: Add Authorized User
+          - generic [ref=e2276]:
+            - textbox "+1234567890" [ref=e2277]
+            - textbox "Display name" [ref=e2278]
+          - generic [ref=e2279]:
+            - generic [ref=e2280]:
+              - textbox "WebUI API key (optional)" [ref=e2281]
+              - button [ref=e2282] [cursor=pointer]:
+                - img [ref=e2283]
+            - combobox [ref=e2285]:
+              - option "Restricted (SFW only)" [selected]
+              - option "Unrestricted (NSFW)"
+          - button "Add User" [ref=e2286] [cursor=pointer]:
+            - img [ref=e2287]
+            - text: Add User
+  - generic [ref=e376]:
+    - paragraph [ref=e377]: The Travelling Wizard · Spellcaster Suite · 63 scaffold(s) configured
+    - button "Export All" [ref=e378] [cursor=pointer]:
+      - img [ref=e379]
+      - text: Export All

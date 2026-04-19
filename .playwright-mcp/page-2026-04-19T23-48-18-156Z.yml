@@ -1,0 +1,330 @@
+- generic [ref=e3]:
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - img [ref=e9]
+      - generic [ref=e11]:
+        - heading "The Travelling Wizard" [level=1] [ref=e12]
+        - paragraph [ref=e13]: Signal Bridge & Spellcaster Scaffold
+    - generic [ref=e14]:
+      - generic "Server config sync status" [ref=e15]: loading…
+      - button "Import" [ref=e17] [cursor=pointer]:
+        - img [ref=e18]
+        - text: Import
+      - button "Export" [ref=e20] [cursor=pointer]:
+        - img [ref=e21]
+        - text: Export
+      - button "Copy JSON" [ref=e23] [cursor=pointer]:
+        - img [ref=e24]
+        - text: Copy JSON
+      - button "Guild" [ref=e27] [cursor=pointer]:
+        - img [ref=e28]
+        - text: Guild
+  - navigation [ref=e32]:
+    - button "Workflows" [ref=e33] [cursor=pointer]:
+      - img [ref=e34]
+      - text: Workflows
+    - button "Scaffolds" [ref=e36] [cursor=pointer]:
+      - img [ref=e37]
+      - text: Scaffolds
+    - button "Integrations" [ref=e39] [cursor=pointer]:
+      - img [ref=e40]
+      - text: Integrations
+    - button "Network" [ref=e42] [cursor=pointer]:
+      - img [ref=e43]
+      - text: Network
+    - button "Signal" [ref=e45] [cursor=pointer]:
+      - img [ref=e46]
+      - text: Signal
+    - button "Users & Access" [ref=e48] [cursor=pointer]:
+      - img [ref=e49]
+      - text: Users & Access
+    - button "Privacy" [ref=e51] [cursor=pointer]:
+      - img [ref=e52]
+      - text: Privacy
+    - button "Paths" [ref=e54] [cursor=pointer]:
+      - img [ref=e55]
+      - text: Paths
+    - button "Advanced" [ref=e57] [cursor=pointer]:
+      - img [ref=e58]
+      - text: Advanced
+  - generic [ref=e61]:
+    - generic [ref=e63]:
+      - generic [ref=e64]:
+        - generic [ref=e65]:
+          - heading "Cross-plugin scaffold manifest" [level=3] [ref=e66]
+          - paragraph [ref=e67]: Every callable method across the Wizard Guild, GIMP, Darktable, DaVinci Resolve, and SillyTavern plugins. Read-only here; Guild wizards are editable in the panel below.
+        - generic [ref=e68]:
+          - generic [ref=e69]: 0 methods • 0 canonical • 0 thin-client • 0 duplicate • 0 utility • 0 unknown
+          - button "refreshing…" [disabled] [ref=e70]
+      - generic [ref=e71]:
+        - textbox "Filter by name / id / description" [ref=e72]
+        - combobox [ref=e73]:
+          - option "All SSoT statuses" [selected]
+          - option "canonical only"
+          - option "thin-client only"
+          - option "duplicate only (SSoT violations)"
+          - option "utility only"
+          - option "unknown only"
+        - combobox [ref=e74]:
+          - option "Group by category" [selected]
+          - option "Group by SSoT status"
+          - option "Flat list"
+    - generic [ref=e75]:
+      - generic [ref=e76]:
+        - heading "Wizard Guild — edit scaffold behaviour" [level=3] [ref=e77]:
+          - img [ref=e78]
+          - text: Wizard Guild — edit scaffold behaviour
+        - paragraph [ref=e80]:
+          - text: Writes per-wizard overrides to
+          - code [ref=e81]: scaffold_overrides.json
+          - text: (steps, LoRA slots, system prompt, NSFW flag, workflow_key). Only Wizard Guild scaffolds are editable here — GIMP/Darktable/Resolve/SillyTavern methods live in their plugin source and are audited above (read-only).
+      - generic [ref=e83]:
+        - generic [ref=e84]:
+          - heading "Scaffolds" [level=3] [ref=e85]
+          - generic [ref=e86]:
+            - button "Text-to-Image 5 steps Image Generation" [ref=e87] [cursor=pointer]:
+              - paragraph [ref=e88]: Text-to-Image
+              - generic [ref=e89]:
+                - generic [ref=e90]: 5 steps
+                - generic [ref=e91]: Image Generation
+            - button "Image-to-Image 5 steps Image Transformation" [ref=e92] [cursor=pointer]:
+              - paragraph [ref=e93]: Image-to-Image
+              - generic [ref=e94]:
+                - generic [ref=e95]: 5 steps
+                - generic [ref=e96]: Image Transformation
+            - button "Inpainting 5 steps Image Editing" [ref=e97] [cursor=pointer]:
+              - paragraph [ref=e98]: Inpainting
+              - generic [ref=e99]:
+                - generic [ref=e100]: 5 steps
+                - generic [ref=e101]: Image Editing
+            - button "Outpainting 5 steps Image Editing" [ref=e102] [cursor=pointer]:
+              - paragraph [ref=e103]: Outpainting
+              - generic [ref=e104]:
+                - generic [ref=e105]: 5 steps
+                - generic [ref=e106]: Image Editing
+            - button "Klein Image Editor 5 steps Klein Flux 2" [ref=e107] [cursor=pointer]:
+              - paragraph [ref=e108]: Klein Image Editor
+              - generic [ref=e109]:
+                - generic [ref=e110]: 5 steps
+                - generic [ref=e111]: Klein Flux 2
+            - button "Klein Inpaint 5 steps Klein Flux 2" [ref=e112] [cursor=pointer]:
+              - paragraph [ref=e113]: Klein Inpaint
+              - generic [ref=e114]:
+                - generic [ref=e115]: 5 steps
+                - generic [ref=e116]: Klein Flux 2
+            - button "Klein Re-poser 5 steps Klein Flux 2" [ref=e117] [cursor=pointer]:
+              - paragraph [ref=e118]: Klein Re-poser
+              - generic [ref=e119]:
+                - generic [ref=e120]: 5 steps
+                - generic [ref=e121]: Klein Flux 2
+            - button "AI Upscale 5 steps Restoration" [ref=e122] [cursor=pointer]:
+              - paragraph [ref=e123]: AI Upscale
+              - generic [ref=e124]:
+                - generic [ref=e125]: 5 steps
+                - generic [ref=e126]: Restoration
+            - button "Photo Restoration 5 steps Restoration" [ref=e127] [cursor=pointer]:
+              - paragraph [ref=e128]: Photo Restoration
+              - generic [ref=e129]:
+                - generic [ref=e130]: 5 steps
+                - generic [ref=e131]: Restoration
+            - button "SUPIR Restoration 5 steps Restoration" [ref=e132] [cursor=pointer]:
+              - paragraph [ref=e133]: SUPIR Restoration
+              - generic [ref=e134]:
+                - generic [ref=e135]: 5 steps
+                - generic [ref=e136]: Restoration
+            - button "Detail Hallucination 5 steps Restoration" [ref=e137] [cursor=pointer]:
+              - paragraph [ref=e138]: Detail Hallucination
+              - generic [ref=e139]:
+                - generic [ref=e140]: 5 steps
+                - generic [ref=e141]: Restoration
+            - button "Face Swap (ReActor) 5 steps Face & Identity" [ref=e142] [cursor=pointer]:
+              - paragraph [ref=e143]: Face Swap (ReActor)
+              - generic [ref=e144]:
+                - generic [ref=e145]: 5 steps
+                - generic [ref=e146]: Face & Identity
+            - button "FaceID (IPAdapter) 5 steps Face & Identity" [ref=e147] [cursor=pointer]:
+              - paragraph [ref=e148]: FaceID (IPAdapter)
+              - generic [ref=e149]:
+                - generic [ref=e150]: 5 steps
+                - generic [ref=e151]: Face & Identity
+            - button "PuLID Flux 5 steps Face & Identity" [ref=e152] [cursor=pointer]:
+              - paragraph [ref=e153]: PuLID Flux
+              - generic [ref=e154]:
+                - generic [ref=e155]: 5 steps
+                - generic [ref=e156]: Face & Identity
+            - button "IC-Light Relighting 5 steps Style & Lighting" [ref=e157] [cursor=pointer]:
+              - paragraph [ref=e158]: IC-Light Relighting
+              - generic [ref=e159]:
+                - generic [ref=e160]: 5 steps
+                - generic [ref=e161]: Style & Lighting
+            - button "Style Transfer 5 steps Style & Lighting" [ref=e162] [cursor=pointer]:
+              - paragraph [ref=e163]: Style Transfer
+              - generic [ref=e164]:
+                - generic [ref=e165]: 5 steps
+                - generic [ref=e166]: Style & Lighting
+            - button "WAN 2.2 Image-to-Video 5 steps Video Generation" [ref=e167] [cursor=pointer]:
+              - paragraph [ref=e168]: WAN 2.2 Image-to-Video
+              - generic [ref=e169]:
+                - generic [ref=e170]: 5 steps
+                - generic [ref=e171]: Video Generation
+            - button "LTX 2.3 Text-to-Video 5 steps Video Generation" [ref=e172] [cursor=pointer]:
+              - paragraph [ref=e173]: LTX 2.3 Text-to-Video
+              - generic [ref=e174]:
+                - generic [ref=e175]: 5 steps
+                - generic [ref=e176]: Video Generation
+            - button "LTX 2.3 Image-to-Video 5 steps Video Generation" [ref=e177] [cursor=pointer]:
+              - paragraph [ref=e178]: LTX 2.3 Image-to-Video
+              - generic [ref=e179]:
+                - generic [ref=e180]: 5 steps
+                - generic [ref=e181]: Video Generation
+            - button "Director's Chair 5 steps Video Generation" [ref=e182] [cursor=pointer]:
+              - paragraph [ref=e183]: Director's Chair
+              - generic [ref=e184]:
+                - generic [ref=e185]: 5 steps
+                - generic [ref=e186]: Video Generation
+            - button "SeedVR2 Video Upscale 5 steps Video Upscale" [ref=e187] [cursor=pointer]:
+              - paragraph [ref=e188]: SeedVR2 Video Upscale
+              - generic [ref=e189]:
+                - generic [ref=e190]: 5 steps
+                - generic [ref=e191]: Video Upscale
+            - button "Video Face Swap 5 steps Video Post-Processing" [ref=e192] [cursor=pointer]:
+              - paragraph [ref=e193]: Video Face Swap
+              - generic [ref=e194]:
+                - generic [ref=e195]: 5 steps
+                - generic [ref=e196]: Video Post-Processing
+            - button "Remove Background 5 steps Utility" [ref=e197] [cursor=pointer]:
+              - paragraph [ref=e198]: Remove Background
+              - generic [ref=e199]:
+                - generic [ref=e200]: 5 steps
+                - generic [ref=e201]: Utility
+            - button "Object Removal (LaMa) 5 steps Utility" [ref=e202] [cursor=pointer]:
+              - paragraph [ref=e203]: Object Removal (LaMa)
+              - generic [ref=e204]:
+                - generic [ref=e205]: 5 steps
+                - generic [ref=e206]: Utility
+            - button "Casting Polaroids 5 steps Magic Studios" [ref=e207] [cursor=pointer]:
+              - paragraph [ref=e208]: Casting Polaroids
+              - generic [ref=e209]:
+                - generic [ref=e210]: 5 steps
+                - generic [ref=e211]: Magic Studios
+            - button "Body Double 5 steps Magic Studios" [ref=e212] [cursor=pointer]:
+              - paragraph [ref=e213]: Body Double
+              - generic [ref=e214]:
+                - generic [ref=e215]: 5 steps
+                - generic [ref=e216]: Magic Studios
+            - button "Wardrobe Department 5 steps Magic Studios" [ref=e217] [cursor=pointer]:
+              - paragraph [ref=e218]: Wardrobe Department
+              - generic [ref=e219]:
+                - generic [ref=e220]: 5 steps
+                - generic [ref=e221]: Magic Studios
+            - button "Set Design 5 steps Magic Studios" [ref=e222] [cursor=pointer]:
+              - paragraph [ref=e223]: Set Design
+              - generic [ref=e224]:
+                - generic [ref=e225]: 5 steps
+                - generic [ref=e226]: Magic Studios
+            - button "ControlNet Generation 5 steps ControlNet" [ref=e227] [cursor=pointer]:
+              - paragraph [ref=e228]: ControlNet Generation
+              - generic [ref=e229]:
+                - generic [ref=e230]: 5 steps
+                - generic [ref=e231]: ControlNet
+          - generic [ref=e232]:
+            - button "Import Workflow" [ref=e233] [cursor=pointer]:
+              - img [ref=e234]
+              - text: Import Workflow
+            - button "Blank Scaffold" [ref=e236] [cursor=pointer]:
+              - img [ref=e237]
+              - text: Blank Scaffold
+            - button "Duplicate" [ref=e239] [cursor=pointer]:
+              - img [ref=e240]
+              - text: Duplicate
+            - button "Delete" [ref=e242] [cursor=pointer]:
+              - img [ref=e243]
+              - text: Delete
+        - generic [ref=e245]:
+          - heading "Workflow Steps" [level=3] [ref=e247]
+          - generic [ref=e248]:
+            - 'button "prompt #1 Greeting What image would you like to create? Describe it or pick a s..." [ref=e253] [cursor=pointer]':
+              - generic [ref=e254]:
+                - generic [ref=e255]: prompt
+                - generic [ref=e256]: "#1"
+                - img [ref=e259]
+              - paragraph [ref=e261]: Greeting
+              - paragraph [ref=e262]: What image would you like to create? Describe it or pick a s...
+            - 'button "choice #2 Mode 3 options" [ref=e268] [cursor=pointer]':
+              - generic [ref=e269]:
+                - generic [ref=e270]: choice
+                - generic [ref=e271]: "#2"
+                - generic [ref=e272]:
+                  - img [ref=e274]
+                  - img [ref=e277]
+              - paragraph [ref=e279]: Mode
+              - paragraph [ref=e280]: 3 options
+            - 'button "param collect #3 Parameters 7 parameters" [ref=e286] [cursor=pointer]':
+              - generic [ref=e287]:
+                - generic [ref=e288]: param collect
+                - generic [ref=e289]: "#3"
+                - generic [ref=e290]:
+                  - img [ref=e292]
+                  - img [ref=e295]
+              - paragraph [ref=e297]: Parameters
+              - paragraph [ref=e298]: 7 parameters
+            - 'button "confirm #4 Review" [ref=e304] [cursor=pointer]':
+              - generic [ref=e305]:
+                - generic [ref=e306]: confirm
+                - generic [ref=e307]: "#4"
+                - generic [ref=e308]:
+                  - img [ref=e310]
+                  - img [ref=e313]
+              - paragraph [ref=e315]: Review
+            - 'button "execute #5 Generate" [ref=e320] [cursor=pointer]':
+              - generic [ref=e321]:
+                - generic [ref=e322]: execute
+                - generic [ref=e323]: "#5"
+                - img [ref=e326]
+              - paragraph [ref=e328]: Generate
+          - button "Add Step" [ref=e329] [cursor=pointer]:
+            - img [ref=e330]
+            - text: Add Step
+        - generic [ref=e332]:
+          - generic [ref=e333]:
+            - button "Props" [ref=e334] [cursor=pointer]
+            - button "Rules" [ref=e335] [cursor=pointer]
+            - button "LoRAs" [ref=e336] [cursor=pointer]
+          - generic [ref=e337]:
+            - generic [ref=e338]:
+              - generic [ref=e339]:
+                - text: Workflow Name
+                - button "Workflow Name" [ref=e341] [cursor=pointer]:
+                  - img [ref=e342]
+              - textbox [ref=e344]: Text-to-Image
+            - generic [ref=e345]:
+              - generic [ref=e346]: Description
+              - textbox [ref=e347]: Generate images from text prompts. Supports SD 1.5, SDXL, ZIT, Flux Dev, Flux Klein, Illustrious.
+            - generic [ref=e348]:
+              - generic [ref=e349]:
+                - text: Workflow Key
+                - button "Workflow Key" [ref=e351] [cursor=pointer]:
+                  - img [ref=e352]
+              - textbox "my_workflow_key" [ref=e354]: txt2img
+            - generic [ref=e355]:
+              - paragraph [ref=e356]: Workflow Source
+              - paragraph [ref=e357]: "Type: Image Generation"
+              - paragraph [ref=e358]: "Nodes: ?"
+              - paragraph [ref=e359]: "Category: Image Generation"
+            - generic [ref=e360] [cursor=pointer]:
+              - checkbox "NSFW Only" [ref=e361]
+              - generic [ref=e363]:
+                - text: NSFW Only
+                - button [ref=e365]:
+                  - img [ref=e366]
+            - generic [ref=e368] [cursor=pointer]:
+              - checkbox "Admin Only" [ref=e369]
+              - generic [ref=e371]:
+                - text: Admin Only
+                - button [ref=e373]:
+                  - img [ref=e374]
+  - generic [ref=e377]:
+    - paragraph [ref=e378]: The Travelling Wizard · Spellcaster Suite · 29 scaffold(s) configured
+    - button "Export All" [ref=e379] [cursor=pointer]:
+      - img [ref=e380]
+      - text: Export All

@@ -59,37 +59,69 @@ from . import detect, pairing
 # ── Icon rendering ─────────────────────────────────────────────────────
 
 _ICON_SIZE = 64
+# State ring colour — matches installer/theme.py TRAY_* tokens. Kept
+# inline here so the antenna .exe doesn't need to import the installer
+# package (they ship as separate bundles).
 _STATE_COLOURS = {
-    "running": (80, 200, 120, 255),    # green
-    "busy":    (240, 200, 80, 255),    # amber
-    "warn":    (240, 170, 70, 255),    # orange
+    "running": (80, 200, 120, 255),    # OK  / green
+    "busy":    (240, 200, 80, 255),    # busy
+    "warn":    (240, 170, 70, 255),    # amber
     "error":   (220, 60, 60, 255),     # red
     "stopped": (160, 160, 160, 255),   # grey
+    "pairing": (209, 34, 227, 255),    # magenta — matches brand accent
 }
+_BRAND_DEEP   = (43, 18, 66, 255)    # deep violet base
+_BRAND_GOLD   = (255, 215, 0, 255)   # crystal gold
+_BRAND_RUNE   = (232, 222, 255, 255) # soft runic white
 
 
 def _build_icon(state: str = "running"):
     """Render the tray icon as a PIL image.
 
-    We draw programmatically rather than shipping a .ico so the icon
-    can reflect agent state (green = serving, amber = starting a
-    service, red = something failed) without bundling artwork.
+    Drawn programmatically (not shipped as a .ico) so the icon can
+    reflect agent state — green = serving, amber = starting a service,
+    red = something failed, magenta = active pairing. The glyph is a
+    stylised brand crystal over concentric signal rings, echoing the
+    antenna_logo asset used by the splash.
     """
     if not _PYSTRAY_OK:
         return None
-    base = (0, 0, 0, 0)
-    img = Image.new("RGBA", (_ICON_SIZE, _ICON_SIZE), base)
+    img = Image.new("RGBA", (_ICON_SIZE, _ICON_SIZE), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    colour = _STATE_COLOURS.get(state, _STATE_COLOURS["running"])
-    # Filled circle backdrop
-    pad = 4
-    d.ellipse((pad, pad, _ICON_SIZE - pad, _ICON_SIZE - pad), fill=colour)
-    # White antenna glyph: two crossed lines + a tiny dot at the top
+
+    pad = 2
+    # Deep violet disc backdrop — reads as "Spellcaster" on any taskbar
+    d.ellipse((pad, pad, _ICON_SIZE - pad, _ICON_SIZE - pad),
+               fill=_BRAND_DEEP)
+
+    # State ring: 4px ring at the outer edge whose colour signals the
+    # current service health at a glance.
+    ring_colour = _STATE_COLOURS.get(state, _STATE_COLOURS["running"])
+    d.ellipse((pad, pad, _ICON_SIZE - pad, _ICON_SIZE - pad),
+               outline=ring_colour, width=4)
+
     c = _ICON_SIZE // 2
-    arm = int(_ICON_SIZE * 0.28)
-    d.line((c, c - arm, c, c + arm), fill=(255, 255, 255, 255), width=3)
-    d.line((c - arm, c, c + arm, c), fill=(255, 255, 255, 255), width=3)
-    d.ellipse((c - 3, c - arm - 6, c + 3, c - arm), fill=(255, 255, 255, 255))
+
+    # Concentric signal arcs, fading outward. Drawn with PIL's arc()
+    # so we get anti-aliased curves on Windows 10+.
+    for i, r in enumerate((24, 19, 14)):
+        alpha = 110 - i * 30
+        arc_colour = (_BRAND_GOLD[0], _BRAND_GOLD[1], _BRAND_GOLD[2], alpha)
+        d.arc((c - r, c - r - 3, c + r, c + r - 3),
+              start=200, end=340, fill=arc_colour, width=2)
+
+    # Crystal glyph — diamond silhouette centred low on the disc
+    crystal = [
+        (c,       c - 12),
+        (c + 7,   c - 4),
+        (c + 4,   c + 12),
+        (c - 4,   c + 12),
+        (c - 7,   c - 4),
+    ]
+    d.polygon(crystal, fill=_BRAND_GOLD, outline=_BRAND_RUNE)
+    # Inner facet highlight
+    d.line([(c - 3, c - 6), (c + 3, c - 6)], fill=_BRAND_RUNE, width=1)
+    d.line([(c,      c - 10), (c,      c + 10)], fill=_BRAND_RUNE, width=1)
     return img
 
 
