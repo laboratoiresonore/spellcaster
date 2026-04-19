@@ -464,6 +464,56 @@ CALIBRATION:
   the same way: you emit the action, the UI runs the grid, the user picks,
   you update the defaults and confirm.
 
+LORA SHOOTOUT (pick ONE winner per purpose-group):
+  The user will accumulate duplicates: five "feet fix" LoRAs for SDXL, three
+  "hand fix" LoRAs, four "skin detail" LoRAs, a dozen acceleration /
+  turbo / lightning LoRAs, etc. Stacking them degrades the output and
+  bloats the per-wizard sidebar. So:
+
+    1. After LoRA auto-setup completes (lora_autosetup flow), classify
+       every verified LoRA into a purpose_group (hand_fix / feet_fix /
+       face_detail / skin_detail / eye_detail / hair_detail / teeth_fix /
+       detail_boost / acceleration / style_* / clothing / lighting /
+       environment / pose / motion / character / other). The engine does
+       this from trigger words + filename keywords + explicit purpose
+       field; see scaffold/lora_grouping.py for the taxonomy.
+
+    2. List the (arch, purpose_group) buckets that have >= 2 candidates:
+         <ACTION>{{"type": "lora_groups"}}</ACTION>
+       Returns `pending` = the buckets that still need a pick, sorted by
+       candidate count descending (biggest clutter first).
+
+    3. For each pending bucket, run a SHOOTOUT — render every candidate
+       with the same prompt / seed / strength so the user can eyeball
+       which one actually does the job:
+         <ACTION>{{"type": "lora_shootout",
+                  "arch": "sdxl",
+                  "purpose_group": "feet_fix",
+                  "seed": 12345}}</ACTION>
+       Returns a job_id. Poll `lora_shootout_status` with that job_id
+       until status == "complete". The result contains a list of
+       `samples` with image_b64 per candidate.
+
+    4. Present the N images side by side to the user; they pick one.
+       Commit that winner and automatically demote the others:
+         <ACTION>{{"type": "lora_pick_preferred",
+                  "arch": "sdxl",
+                  "purpose_group": "feet_fix",
+                  "winner": "best_feet_xl.safetensors",
+                  "demote_losers": true}}</ACTION>
+       The winner gets `preferred_for_purpose=true` written to the
+       registry; every other member gets `deprioritized=true` with
+       `replaced_by` pointing at the winner. The Guild's per-wizard LoRA
+       list filter (tavern/server.py::_get_loras_for_wizard) skips
+       demoted entries, so no wizard ever suggests a losing duplicate
+       again. The user can still force-unblock from the F10 LoRA panel
+       if they change their mind.
+
+  Offer this after `lora_autosetup` finishes. Pitch it as: "you have 5
+  LoRAs that all look like they're for feet on SDXL — pick your favorite
+  and I'll stop suggesting the others." Don't ask up-front — only pitch
+  it when `lora_groups` comes back with at least one pending bucket.
+
 MODEL ACTIVATION (disable-by-default, walk-through-to-enable):
   Every detected checkpoint / UNET starts DISABLED. When the user clicks
   an unactivated model, the Guild UI points them back here with "meet
@@ -676,6 +726,32 @@ def action_to_endpoint(action: dict[str, Any]) -> tuple[str, str, dict[str, Any]
                  "scaffold":  action.get("scaffold", ""),
                  "overrides": action.get("overrides") or {},
                  "seed":      int(action.get("seed", 42))})
+    # ── LoRA shootout — dedup multiple LoRAs that do the same thing ──
+    if atype == "lora_groups":
+        # Enumerate (arch, purpose_group) buckets with multiple candidates.
+        return ("GET", "/api/spellcaster/lora/groups", {})
+    if atype == "lora_shootout":
+        # Spawn a shootout job: render every candidate with the same prompt
+        # / seed / strength. Returns a job_id; poll status for results.
+        return ("POST", "/api/spellcaster/lora/shootout/start",
+                {"arch":          action.get("arch", ""),
+                 "purpose_group": action.get("purpose_group", ""),
+                 "candidates":    action.get("candidates") or [],
+                 "seed":          int(action.get("seed", 12345)),
+                 **({"strength": float(action["strength"])}
+                    if "strength" in action else {})})
+    if atype == "lora_shootout_status":
+        return ("GET",
+                f"/api/spellcaster/lora/shootout/status?job={action.get('job', '')}",
+                {})
+    if atype == "lora_pick_preferred":
+        # Commit the user's winner; demote losers so they stop being
+        # suggested by any wizard's sidebar.
+        return ("POST", "/api/spellcaster/lora/preferred",
+                {"arch":          action.get("arch", ""),
+                 "purpose_group": action.get("purpose_group", ""),
+                 "winner":        action.get("winner", ""),
+                 "demote_losers": bool(action.get("demote_losers", True))})
     if atype == "finish":
         return ("POST", "/api/setup/finish", {})
     return None
