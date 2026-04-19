@@ -54,26 +54,35 @@ from typing import Any
 # ─── Destination dir discovery ───────────────────────────────────────────
 
 
+# R84a: Resolve's Scripts menu is page-specific — scripts in
+# ``Fusion/Scripts/<PAGE>/`` appear only on that page's Workspace >
+# Scripts menu. Install into ALL of them so Spellcaster is one click
+# away from anywhere in Resolve. ``Utility`` is the always-available
+# catchall, the others are page-specific (Edit, Fusion/Comp, Color,
+# Deliver). We also surface under ``Comp`` (the Fusion page folder).
+_FUSION_SUBFOLDERS = ("Utility", "Edit", "Comp", "Color", "Deliver")
+
 _WIN_WFI_DIR = (
     r"{APPDATA}\Blackmagic Design\DaVinci Resolve"
     r"\Support\Workflow Integration Plugins"
 )
-_WIN_SCRIPTS_DIR = (
+_WIN_SCRIPTS_BASE = (
     r"{APPDATA}\Blackmagic Design\DaVinci Resolve"
-    r"\Support\Fusion\Scripts\Utility\Spellcaster"
+    r"\Support\Fusion\Scripts"
 )
+_WIN_SCRIPTS_DIR = _WIN_SCRIPTS_BASE + r"\Utility\Spellcaster"
 _MAC_WFI_DIR = (
     "{HOME}/Library/Application Support/Blackmagic Design/DaVinci Resolve"
     "/Workflow Integration Plugins"
 )
-_MAC_SCRIPTS_DIR = (
+_MAC_SCRIPTS_BASE = (
     "{HOME}/Library/Application Support/Blackmagic Design/DaVinci Resolve"
-    "/Fusion/Scripts/Utility/Spellcaster"
+    "/Fusion/Scripts"
 )
+_MAC_SCRIPTS_DIR = _MAC_SCRIPTS_BASE + "/Utility/Spellcaster"
 _LINUX_WFI_DIR = "{HOME}/.local/share/DaVinciResolve/Workflow Integration Plugins"
-_LINUX_SCRIPTS_DIR = (
-    "{HOME}/.local/share/DaVinciResolve/Fusion/Scripts/Utility/Spellcaster"
-)
+_LINUX_SCRIPTS_BASE = "{HOME}/.local/share/DaVinciResolve/Fusion/Scripts"
+_LINUX_SCRIPTS_DIR = _LINUX_SCRIPTS_BASE + "/Utility/Spellcaster"
 
 
 def _expand(p: str) -> Path:
@@ -88,6 +97,10 @@ def detect_plugin_dirs(cfg: dict[str, Any] | None = None) -> dict[str, Path]:
     Honors explicit overrides in the antenna config:
       resolve_plugin_workflow_dir, resolve_plugin_scripts_dir.
     Otherwise falls back to OS-standard locations.
+
+    ``scripts`` is the primary install dir (Utility/Spellcaster — always
+    available). ``scripts_base`` is the parent Scripts root, used by
+    R84a to additionally install into Edit/Comp/Color/Deliver.
     """
     cfg = cfg or {}
     override_wfi = (cfg.get("resolve_plugin_workflow_dir") or "").strip()
@@ -96,14 +109,21 @@ def detect_plugin_dirs(cfg: dict[str, Any] | None = None) -> dict[str, Path]:
     if os.name == "nt":
         wfi = _expand(override_wfi or _WIN_WFI_DIR)
         scripts = _expand(override_scripts or _WIN_SCRIPTS_DIR)
+        scripts_base = _expand(_WIN_SCRIPTS_BASE)
     elif sys.platform == "darwin":
         wfi = _expand(override_wfi or _MAC_WFI_DIR)
         scripts = _expand(override_scripts or _MAC_SCRIPTS_DIR)
+        scripts_base = _expand(_MAC_SCRIPTS_BASE)
     else:
         wfi = _expand(override_wfi or _LINUX_WFI_DIR)
         scripts = _expand(override_scripts or _LINUX_SCRIPTS_DIR)
+        scripts_base = _expand(_LINUX_SCRIPTS_BASE)
 
-    return {"workflow_integration": wfi, "scripts": scripts}
+    return {
+        "workflow_integration": wfi,
+        "scripts": scripts,
+        "scripts_base": scripts_base,
+    }
 
 
 # ─── Source discovery (same tree self-update pulls) ──────────────────────
@@ -262,21 +282,45 @@ def install_plugin_from_src(cfg: dict[str, Any] | None = None,
         total_files += _copy_tree_atomic(shared_src, wfi_shared)
         _version_stamp(dirs["workflow_integration"], sha)
 
-        # scripts/ contains .py files directly (not a subfolder named
-        # "scripts"), so we copy its CONTENTS into dirs["scripts"].
-        # Using a staged temp + rglob copy so we keep the atomic-swap
-        # safety at the leaf-dir level.
-        dirs["scripts"].mkdir(parents=True, exist_ok=True)
-        for f in scripts_src.iterdir():
-            if f.is_file() and f.suffix in (".py",):
-                target = dirs["scripts"] / f.name
-                tmp = target.with_suffix(target.suffix + ".new")
-                shutil.copy2(f, tmp)
-                if target.exists():
-                    target.unlink()
-                tmp.rename(target)
-                total_files += 1
-        total_files += _copy_tree_atomic(shared_src, scripts_shared)
+        # R84a: deploy into EVERY page-specific Scripts folder
+        # (Utility/Edit/Comp/Color/Deliver) so Spellcaster appears in
+        # the Workspace > Scripts menu on every page. ``Utility`` is
+        # primary (pointed to by dirs["scripts"]) and stamped with
+        # .spellcaster_version; the others are copies kept in sync.
+        scripts_base = dirs.get("scripts_base")
+        page_targets: list[Path] = []
+        if scripts_base:
+            for sub in _FUSION_SUBFOLDERS:
+                page_targets.append(scripts_base / sub / "Spellcaster")
+        else:
+            page_targets.append(dirs["scripts"])
+
+        # Ensure the primary ("scripts" dir, Utility) is always the
+        # first target and gets the version stamp.
+        primary = dirs["scripts"]
+        if primary in page_targets:
+            page_targets.remove(primary)
+        page_targets.insert(0, primary)
+
+        installed_pages: list[str] = []
+        for target_root in page_targets:
+            target_root.mkdir(parents=True, exist_ok=True)
+            for f in scripts_src.iterdir():
+                if f.is_file() and f.suffix in (".py",):
+                    target = target_root / f.name
+                    tmp = target.with_suffix(target.suffix + ".new")
+                    shutil.copy2(f, tmp)
+                    if target.exists():
+                        target.unlink()
+                    tmp.rename(target)
+                    total_files += 1
+            # shared/ sibling of the scripts, same dir layout in each
+            # page copy — matches what _script_dir() expects.
+            page_shared = target_root / "shared"
+            total_files += _copy_tree_atomic(shared_src, page_shared)
+            installed_pages.append(target_root.parent.name
+                                    if target_root.name == "Spellcaster"
+                                    else target_root.name)
         _version_stamp(dirs["scripts"], sha)
     except Exception as e:  # noqa: BLE001
         return {
@@ -293,11 +337,13 @@ def install_plugin_from_src(cfg: dict[str, Any] | None = None,
         "sha": sha,
         "workflow_integration_dir": str(dirs["workflow_integration"]),
         "scripts_dir": str(scripts),
+        "pages_installed": installed_pages,
         "files_copied": total_files,
         "previous_wfi_sha": installed_wfi,
         "previous_scripts_sha": installed_scripts,
         "note": ("Workflow Integration Plugins require a Resolve restart; "
-                  "scripts are picked up on next menu open."),
+                  "scripts are picked up on next menu open. Scripts are "
+                  "deployed under every page's Workspace > Scripts menu."),
     }
 
 
