@@ -9463,6 +9463,20 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(200, {"tags": _VIDEO_BRIDGE.board.all_tags()})
 
         elif (self.path.startswith('/api/video/shots/')
+              and self.path.endswith('/color-label')
+              and self.command == 'POST'):
+            # R82a: set a single shot's color label
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/')[4]
+            color = (data.get('color') or '').strip().lower() if isinstance(data, dict) else ''
+            shot = _VIDEO_BRIDGE.board.set_color_label(shot_id, color)
+            if shot is None:
+                return self.end_json(400, {"error": "shot not found or invalid color"})
+            return self.end_json(200, {"shot_id": shot_id,
+                                        "color_label": shot.color_label})
+
+        elif (self.path.startswith('/api/video/shots/')
               and self.path.endswith('/tags')
               and self.command == 'POST'):
             if not _VIDEO_BRIDGE:
@@ -10335,6 +10349,27 @@ class GuildHandler(SimpleHTTPRequestHandler):
             result = _VIDEO_BRIDGE.board.batch_rename(
                 shot_ids, pattern, start=start, zero_pad=zero_pad)
             return self.end_json(200, result)
+
+        elif self.path == '/api/video/batch-color-label' and self.command == 'POST':
+            # R82a: bulk apply a Lightroom-style color label
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_ids = data.get('shot_ids', [])
+            color = (data.get('color') or '').strip().lower()
+            if not shot_ids:
+                return self.end_json(400, {"error": "shot_ids required"})
+            result = _VIDEO_BRIDGE.board.batch_set_color_label(shot_ids, color)
+            if result.get('error'):
+                return self.end_json(400, result)
+            return self.end_json(200, result)
+
+        elif self.path == '/api/video/color-labels' and self.command == 'GET':
+            # R82a: counts per color — powers filter chips
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            return self.end_json(200, {
+                "counts": _VIDEO_BRIDGE.board.color_label_counts()
+            })
 
         elif self.path == '/api/video/batch-randomize-seeds' and self.command == 'POST':
             """R64a: fresh random seed per selected shot."""
