@@ -663,6 +663,17 @@ def check_for_updates(verbose=True):
         _write_local_sha(latest_sha)
         if verbose:
             print(f"  [update] Version updated to {latest_sha[:7]}")
+        # R144: Bust the plugin-manifest parse cache so fresh plugin
+        # methods appear in /api/scaffolds/all without waiting the
+        # 5-min TTL. Best-effort — the Guild restarts right after a
+        # successful update anyway, but a running caller that edited
+        # a plugin in the repo and hit the guild update endpoint
+        # should see the change immediately.
+        try:
+            from scaffold.plugin_manifest import invalidate_cache
+            invalidate_cache()
+        except Exception:
+            pass
         return True
 
     return False

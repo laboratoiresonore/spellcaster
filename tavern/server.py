@@ -8886,6 +8886,54 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 {"name": w.name, "type": w.workflow_type, "path": str(w.path)}
                 for w in wfs
             ])
+        elif self.path.startswith('/api/scaffolds/all'):
+            # R144: cross-plugin scaffold manifest. Returns every
+            # callable method across the Wizard Guild + GIMP +
+            # Darktable + Resolve + SillyTavern plugins, grouped by
+            # source, with per-method SSoT status (whether the
+            # handler routes through spellcaster_core.workflows or
+            # constructs its own workflow JSON). Query params:
+            #   ?force=1  bypass the per-plugin 5-min parse cache.
+            try:
+                from scaffold.plugin_manifest import build_manifest
+            except Exception as e:
+                return self.end_json(500, {
+                    "error": f"plugin_manifest import failed: {e}",
+                })
+            import urllib.parse as _up
+            qs = _up.urlparse(self.path).query
+            force = False
+            if qs:
+                force = (_up.parse_qs(qs).get("force", ["0"])[0]
+                         in ("1", "true", "yes"))
+            # Pull the Guild's own scaffold list (existing code path
+            # below); we feed it in so the enumerator doesn't need
+            # to reach into _STUDIO_BY_ID itself.
+            guild_scaffolds = []
+            for cid, studio in _STUDIO_BY_ID.items():
+                ov = _SCAFFOLD_OVERRIDES.get(cid, {}) or {}
+                guild_scaffolds.append({
+                    "id": cid,
+                    "name": studio.get("name", "Unknown"),
+                    "description": ov.get("description", "")
+                                   or studio.get("subtext", ""),
+                    "handler": "",
+                    "ssot_status": "canonical",
+                    "ssot_notes": "chat scaffold (non-workflow)",
+                })
+            groups = build_manifest(_REPO_ROOT,
+                                     wizard_guild_scaffolds=guild_scaffolds,
+                                     force=force)
+            # Aggregate counts for the tab badge.
+            totals = {"total": 0, "canonical": 0,
+                       "duplicate": 0, "unknown": 0}
+            for g in groups:
+                for k in totals:
+                    totals[k] += g["summary"].get(k, 0)
+            return self.end_json(200, {
+                "groups": groups,
+                "totals": totals,
+            })
         elif self.path == '/api/scaffolds':
             # GET /api/scaffolds — all wizard scaffolds for the Travelling Wizard
             # Scaffold Editor. Returns every scaffold (studio, model, custom,
