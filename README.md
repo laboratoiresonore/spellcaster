@@ -432,7 +432,7 @@ Access: `Spellcaster > Tools > Calibration Wizard`
 
 </details>
 
-<details>
+<details open>
 <summary><strong>The Wizard Guild (chat interface)</strong></summary>
 
 Don't want to learn GIMP? Look, we get it. GIMP has 847 menu items and a learning curve that doubles as a cliff face. The Wizard Guild is a standalone web UI where AI wizard characters handle everything conversationally. It's like tech support, except the tech support is a wizard, and instead of telling you to restart your computer, it generates a photorealistic dragon.
