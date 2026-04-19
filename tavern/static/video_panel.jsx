@@ -1776,6 +1776,13 @@ function VideoPanel() {
   // R60a: snapshot-restore preview (populated when user clicks Restore;
   // cleared when they confirm or cancel in the modal).
   const [restorePreview, setRestorePreview] = _useState(null);
+  // R66a: keyboard shortcuts cheatsheet modal (toggled with '?')
+  const [showShortcuts, setShowShortcuts] = _useState(false);
+  // R66b: bulk search-replace panel toggle
+  const [showSearchReplace, setShowSearchReplace] = _useState(false);
+  const [searchReplaceFind, setSearchReplaceFind] = _useState("");
+  const [searchReplaceWith, setSearchReplaceWith] = _useState("");
+  const [searchReplaceCase, setSearchReplaceCase] = _useState(false);
   // R60b: render-cost estimate + live antenna telemetry (GPU util, VRAM,
   // ComfyUI queue depth). Polled every 20s; null when backend is old.
   const [queueCost, setQueueCost] = _useState(null);
@@ -1896,6 +1903,10 @@ function VideoPanel() {
         e.preventDefault();
         const focusedShot = filteredShots[focusedShotIndex];
         if (focusedShot) undoLastAutoSnapshot(focusedShot);
+      } else if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
+        // R66a: '?' toggles the keyboard-shortcuts cheatsheet
+        e.preventDefault();
+        setShowShortcuts(v => !v);
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -2770,6 +2781,33 @@ function VideoPanel() {
              "info");
   };
 
+  // R66b: bulk search/replace across selected shots' prompts.
+  // Unlike batch_prompt_edit (prepend/append), this replaces ALL
+  // occurrences of `find` with `replaceWith` inside each prompt.
+  const batchSearchReplace = async () => {
+    if (selected.size === 0 || !searchReplaceFind) return;
+    let changed = 0;
+    const flags = searchReplaceCase ? "g" : "gi";
+    // Escape regex special chars — we're doing literal replacement
+    const escaped = searchReplaceFind.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(escaped, flags);
+    for (const id of selected) {
+      const shot = shots.find(s => s.id === id);
+      if (!shot || shot.locked) continue;
+      const newPrompt = (shot.prompt || "").replace(re, searchReplaceWith);
+      if (newPrompt !== shot.prompt) {
+        try {
+          await api.post(`/api/video/shots/${id}`, {prompt: newPrompt});
+          changed++;
+        } catch (_) { /* skip failures, keep going */ }
+      }
+    }
+    addToast(`Search/replace: updated ${changed} shot(s)`,
+             changed > 0 ? "success" : "info");
+    setShowSearchReplace(false);
+    await refresh();
+  };
+
   // R64a: assign fresh random seeds to every selected shot
   const batchRandomizeSeeds = async () => {
     if (selected.size === 0) return;
@@ -3529,6 +3567,10 @@ function VideoPanel() {
               className="batch-randomize-seeds-btn px-3 py-1 rounded bg-indigo-700/40 hover:bg-indigo-600/50 text-indigo-100 text-xs"
               title="Assign a fresh random seed to each selected shot (variation exploration)"
             >🎲 Seeds</button>
+            <button onClick={() => setShowSearchReplace(v => !v)}
+              className="batch-search-replace-btn px-3 py-1 rounded bg-violet-700/40 hover:bg-violet-600/50 text-violet-100 text-xs"
+              title="Find & replace text across selected shots' prompts"
+            >{showSearchReplace ? "Close S/R" : "Find/Replace"}</button>
             <button onClick={batchRevert} className="batch-revert-btn px-3 py-1 rounded bg-amber-700/40 hover:bg-amber-600/50 text-amber-100 text-xs">Batch Revert</button>
             <button onClick={() => setShowPromptEdit(v => !v)} className="batch-prompt-edit-btn px-3 py-1 rounded bg-violet-700/40 hover:bg-violet-600/50 text-violet-100 text-xs">
               {showPromptEdit ? "Close Prompt Edit" : "Prompt ±"}
@@ -3624,6 +3666,50 @@ function VideoPanel() {
               onClick={batchDuplicate}
               className="batch-dupe-apply px-3 py-1 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium ml-auto"
             >Duplicate</button>
+          </div>
+        </div>
+      )}
+
+      {/* R66b: batch search/replace — expanding panel */}
+      {selected.size > 0 && showSearchReplace && (
+        <div className="batch-search-replace-panel bg-slate-900 border border-violet-600/30 rounded-xl px-4 py-3 flex flex-col gap-2">
+          <div className="flex items-center gap-2 text-xs text-violet-200">
+            <span className="font-semibold">Find / Replace</span>
+            <span className="text-slate-400">
+              — replace ALL occurrences of "find" with "replace" across all {selected.size} selected shots' prompts.
+            </span>
+          </div>
+          <div className="flex gap-2 items-center flex-wrap">
+            <input
+              type="text"
+              value={searchReplaceFind}
+              onChange={(e) => setSearchReplaceFind(e.target.value)}
+              placeholder="find..."
+              className="batch-sr-find bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 placeholder-slate-500 focus:border-violet-500 focus:outline-none flex-1 min-w-[180px]"
+            />
+            <input
+              type="text"
+              value={searchReplaceWith}
+              onChange={(e) => setSearchReplaceWith(e.target.value)}
+              placeholder="replace with..."
+              className="batch-sr-with bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 placeholder-slate-500 focus:border-violet-500 focus:outline-none flex-1 min-w-[180px]"
+            />
+            <label className="text-[10px] text-slate-400 flex items-center gap-1 cursor-pointer">
+              <input type="checkbox" checked={searchReplaceCase}
+                onChange={(e) => setSearchReplaceCase(e.target.checked)}
+                className="w-3 h-3 accent-violet-500" />
+              Case-sensitive
+            </label>
+            <button
+              onClick={batchSearchReplace}
+              disabled={!searchReplaceFind}
+              className="batch-sr-apply px-3 py-1 rounded bg-violet-600 hover:bg-violet-500 text-white text-xs font-medium disabled:bg-slate-700 disabled:text-slate-500"
+            >Replace all</button>
+          </div>
+          <div className="text-xs text-slate-500">
+            Locked shots are skipped. Changes are committed per-shot and cannot be
+            undone atomically — use Ctrl+Z on a focused card to restore its
+            auto-snapshot if you need to roll back.
           </div>
         </div>
       )}
@@ -3787,6 +3873,46 @@ function VideoPanel() {
           onClose={() => setTrajShot(null)}
           onSaved={saveTrajectories}
         />
+      )}
+
+      {/* R66a: keyboard shortcuts cheatsheet — toggle with '?' */}
+      {showShortcuts && (
+        <div className="shortcuts-modal fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+             onClick={() => setShowShortcuts(false)}>
+          <div className="bg-slate-900 border border-amber-600/40 rounded-xl p-5 max-w-lg w-full space-y-3"
+               onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-amber-200">Keyboard shortcuts</h2>
+              <button onClick={() => setShowShortcuts(false)}
+                className="text-slate-400 hover:text-slate-200 text-xl leading-none">×</button>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              {[
+                ["?", "Show/hide this panel"],
+                ["N", "Create a new shot"],
+                ["↑ / ↓", "Focus previous / next shot"],
+                ["Esc", "Clear shot focus"],
+                ["Space", "Toggle selection on focused shot"],
+                ["Ctrl+Z", "Restore last auto-snapshot (focused shot)"],
+                ["Ctrl+Shift+R", "Render all drafts"],
+                ["Shift+click (scene chip)", "Add scene's shots to selection"],
+                ["Click star (☆/★)", "Bookmark shot"],
+                ["Drag card", "Reorder shots across the board"],
+              ].map(([k, v]) => (
+                <React.Fragment key={k}>
+                  <div className="text-slate-300">
+                    <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-amber-300 font-mono text-[11px]">{k}</kbd>
+                  </div>
+                  <div className="text-slate-400">{v}</div>
+                </React.Fragment>
+              ))}
+            </div>
+            <p className="text-[10px] text-slate-500 pt-2 border-t border-slate-700/40">
+              Shortcuts are ignored while typing in an input/textarea.
+              Shot focus is required for per-shot shortcuts (use arrows to focus).
+            </p>
+          </div>
+        </div>
       )}
 
       {/* R60a: snapshot-restore preview (shows diff before applying) */}
