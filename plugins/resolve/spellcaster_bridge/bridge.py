@@ -199,6 +199,183 @@ class Bridge:
                 self._ingest_external_image(image_url, evt)
             except Exception as e:
                 print(f"[Spellcaster Bridge] ingest failed: {e}", file=sys.stderr)
+        elif kind == "resolve.playhead.grab":
+            # R122: Cinematographer asked us for the current playhead
+            # frame. Capture it + upload to the Guild's asset gallery,
+            # then publish resolve.playhead.ready so the wizard can
+            # attach it as a shot reference.
+            try:
+                self._handle_playhead_grab(evt)
+            except Exception as e:
+                print(f"[Spellcaster Bridge] playhead grab failed: {e}",
+                      file=sys.stderr)
+        elif kind == "resolve.timeline.import":
+            # R122: Cinematographer asked us to import the current
+            # shotboard as a new Resolve timeline. Fetch EDL from
+            # Guild + MediaPool.ImportTimelineFromFile.
+            try:
+                self._handle_timeline_import(evt)
+            except Exception as e:
+                print(f"[Spellcaster Bridge] timeline import failed: {e}",
+                      file=sys.stderr)
+
+    # ── R122: bus-triggered Resolve actions ──────────────────────────
+
+    def _handle_playhead_grab(self, evt: dict):
+        """Capture the current Resolve playhead frame and create a
+        draft Shot on the Guild with the frame as reference_png.
+
+        Chain:
+          1. resolve_helpers.capture_frame_at_playhead → PNG bytes
+          2. GuildClient.create_shot(reference_png=...) → shot dict
+          3. publish resolve.playhead.ready with shot_id so the
+             Cinematographer can acknowledge the new entry on its
+             next turn.
+
+        Creating the shot directly (rather than a bare asset upload)
+        means the user sees the new entry immediately in the
+        Shotboard — no second round-trip needed to attach the
+        reference.
+        """
+        import os
+        try:
+            from resolve_helpers import capture_frame_at_playhead  # type: ignore
+            from spellcaster_api import GuildError  # type: ignore
+        except ImportError:
+            return
+        png_path = capture_frame_at_playhead()
+        if not png_path or not os.path.isfile(png_path):
+            self._publish_resolve_ready({
+                "error": ("Couldn't grab a still at the playhead. "
+                           "Switch to the Color page and retry.")})
+            return
+        try:
+            with open(png_path, "rb") as f:
+                png_bytes = f.read()
+        except OSError as e:
+            self._publish_resolve_ready({"error": f"read failed: {e}"})
+            return
+        finally:
+            try:
+                os.unlink(png_path)
+            except Exception:
+                pass
+        try:
+            shot = self.guild.create_shot(
+                title="Playhead grab (Cinematographer)",
+                prompt="",
+                preset="wan22_i2v_lightning",
+                reference_png=png_bytes,
+                notes=("Cinematographer wizard requested a playhead "
+                        "grab from Resolve. Edit the prompt + queue "
+                        "the shot to render."),
+            )
+        except GuildError as e:
+            self._publish_resolve_ready({"error": f"create_shot failed: {e}"})
+            return
+        shot_id = (shot or {}).get("id") or (shot or {}).get("shot_id") or ""
+        if not shot_id:
+            self._publish_resolve_ready(
+                {"error": "Guild didn't return a shot id"})
+            return
+        self.sync._log(
+            f"Cinema playhead grab → new shot {shot_id[:8]}")
+        self._publish_resolve_ready({
+            "ok": True,
+            "shot_id": shot_id,
+            "size_bytes": len(png_bytes),
+        })
+
+    def _handle_timeline_import(self, evt: dict):
+        """Fetch the Guild's shotboard as an EDL and import it as a
+        new Resolve timeline."""
+        import os
+        import tempfile
+        import urllib.request as _ur
+        # Use the project's framerate if we can; default 24.
+        fps = 24
+        try:
+            from resolve_helpers import (  # type: ignore
+                get_current_project, get_media_pool,
+            )
+            proj = get_current_project()
+            if proj:
+                try:
+                    fps = int(float(proj.GetSetting("timelineFrameRate") or 24))
+                except Exception:
+                    fps = 24
+            mp = get_media_pool()
+        except ImportError:
+            proj, mp = None, None
+        if not mp:
+            self._publish_timeline_imported({
+                "error": "no active Resolve project"})
+            return
+        url = f"{self.guild.base_url}/api/video/export/edl?fps={fps}"
+        try:
+            req = _ur.Request(url, headers={"Accept": "text/plain"})
+            with _ur.urlopen(req, timeout=30) as resp:
+                edl_bytes = resp.read()
+        except Exception as e:
+            self._publish_timeline_imported({
+                "error": f"EDL fetch failed: {e}"})
+            return
+        edl_text = edl_bytes.decode("utf-8", errors="replace")
+        if not edl_text.strip():
+            self._publish_timeline_imported({
+                "error": "Guild returned an empty EDL — render some shots first."})
+            return
+        tmp = tempfile.NamedTemporaryFile(
+            delete=False, suffix=".edl",
+            prefix="spellcaster_cinema_",
+            mode="w", encoding="utf-8")
+        tmp.write(edl_text)
+        tmp_path = tmp.name
+        tmp.close()
+        try:
+            timeline = mp.ImportTimelineFromFile(tmp_path)
+        except Exception as e:
+            self._publish_timeline_imported({
+                "error": f"ImportTimelineFromFile raised: {e}",
+                "edl_path": tmp_path})
+            return
+        if not timeline:
+            self._publish_timeline_imported({
+                "error": "Resolve returned no timeline",
+                "edl_path": tmp_path})
+            return
+        try:
+            tl_name = timeline.GetName()
+        except Exception:
+            tl_name = "Spellcaster"
+        self.sync._log(f"Cinema imported timeline: {tl_name}")
+        self._publish_timeline_imported({
+            "ok": True,
+            "timeline_name": tl_name,
+        })
+
+    def _publish_resolve_ready(self, data: dict):
+        """Best-effort publish of resolve.playhead.ready. Wraps the
+        Guild's /api/events/emit. Silent on failure — the Bridge log
+        has enough detail already."""
+        try:
+            self.guild._post_json("/api/events/emit", {
+                "kind": "resolve.playhead.ready",
+                "origin": "resolve",
+                "data": data,
+            }, timeout=5.0)
+        except Exception:
+            pass
+
+    def _publish_timeline_imported(self, data: dict):
+        try:
+            self.guild._post_json("/api/events/emit", {
+                "kind": "resolve.timeline.imported",
+                "origin": "resolve",
+                "data": data,
+            }, timeout=5.0)
+        except Exception:
+            pass
 
     def _ingest_external_image(self, image_url: str, evt: dict):
         """Download an asset from the Guild and hand to MediaPoolSync.
