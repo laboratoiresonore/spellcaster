@@ -67,6 +67,11 @@ config.json
 # intended for Claude-to-Claude orchestration, never for the public repo
 HANDOVER_*.md
 
+# CLAUDE.md — dev-guide for Claude, kept local. Contains project-specific
+# instructions + paths/tokens referenced contextually. Every contributor
+# maintains their own.
+CLAUDE.md
+
 # Gemini MCP output
 gemini-output/
 
