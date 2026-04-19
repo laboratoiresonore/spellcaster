@@ -156,13 +156,44 @@ KNOWN_INTERFACES: dict[str, InterfaceSpec] = {
 
 @dataclass
 class InterfaceState:
+    """Presence state for one interface.
+
+    R58: we split heartbeat meta into LOCAL and REMOTE tracks because
+    the same interface key (e.g. "gimp") can receive pings from both
+    the native plugin on the Guild's host AND any remote antenna that
+    declares that service. Without the split, whichever heartbeats last
+    clobbers the UI chip — the local plugin (slower cadence) gets
+    overwritten by the antenna's 15s heartbeat and "GIMP" in the sidebar
+    starts showing as remote even though the user's actually using the
+    local install.
+
+    Rule: the native-plugin meta (no `remote` flag) wins whenever it's
+    online. Remote antenna metas are preserved separately so callers
+    that NEED the remote view (e.g. debug tools, multi-host router)
+    can still get it.
+    """
     installed: bool = False
     enabled: bool = True
+    # Superseded by the split below but kept for back-compat. Mirrors
+    # whichever track has a live heartbeat, preferring local over remote.
     last_heartbeat: float = 0.0
-    last_meta: dict = field(default_factory=dict)  # free-form data from the interface
+    last_meta: dict = field(default_factory=dict)
+    # R58: per-origin tracks. Each side records its own heartbeat
+    # timestamp so the UI can tell (a) the local plugin is online right
+    # now, or (b) only a remote antenna is pinging, or (c) both.
+    last_meta_local: dict = field(default_factory=dict)
+    last_heartbeat_local: float = 0.0
+    last_meta_remote: dict = field(default_factory=dict)
+    last_heartbeat_remote: float = 0.0
 
     def is_online(self, ttl_s: float) -> bool:
         return (time.time() - self.last_heartbeat) < ttl_s
+
+    def is_online_local(self, ttl_s: float) -> bool:
+        return (time.time() - self.last_heartbeat_local) < ttl_s
+
+    def is_online_remote(self, ttl_s: float) -> bool:
+        return (time.time() - self.last_heartbeat_remote) < ttl_s
 
 
 class InterfaceRegistry:
@@ -215,17 +246,42 @@ class InterfaceRegistry:
 
     def heartbeat(self, key: str, meta: dict | None = None) -> bool:
         """Record that an interface is alive *now*. Plugins call this
-        every ~10 seconds while they're loaded."""
+        every ~10 seconds while they're loaded.
+
+        R58: routes to the local or remote track based on `meta.remote`.
+        The legacy `last_meta` + `last_heartbeat` fields mirror LOCAL
+        when the local track is live, otherwise REMOTE — so existing
+        consumers that read only `last_meta` naturally get local-first.
+        """
         if key not in KNOWN_INTERFACES:
             return False
+        now = time.time()
+        meta = dict(meta or {})
+        is_remote = bool(meta.get("remote"))
         with self._lock:
             st = self._state[key]
-            st.last_heartbeat = time.time()
-            if meta:
-                st.last_meta = dict(meta)
-            # A heartbeat is proof-of-installation, even if the filesystem
-            # probe missed the install location.
-            st.installed = True
+            if is_remote:
+                st.last_heartbeat_remote = now
+                st.last_meta_remote = meta
+            else:
+                st.last_heartbeat_local = now
+                st.last_meta_local = meta
+            # Rebuild the aggregate view: prefer local when it's online,
+            # fall back to remote otherwise. Remote never overwrites a
+            # fresh local entry — this is what fixes the user's
+            # "GIMP shows as remote even though I'm on local" issue.
+            if (now - st.last_heartbeat_local) < self.online_ttl_s:
+                st.last_heartbeat = st.last_heartbeat_local
+                st.last_meta = dict(st.last_meta_local)
+            else:
+                st.last_heartbeat = st.last_heartbeat_remote
+                st.last_meta = dict(st.last_meta_remote)
+            # Heartbeat is proof-of-installation for LOCAL plugins. For
+            # remote heartbeats, don't flip `installed` — that field
+            # means "Spellcaster plugin is installed on THIS (Guild's)
+            # host". A remote antenna doesn't change that.
+            if not is_remote:
+                st.installed = True
         return True
 
     def mark_enabled(self, key: str, enabled: bool) -> bool:
@@ -267,15 +323,31 @@ class InterfaceRegistry:
         with self._lock:
             for key, spec in KNOWN_INTERFACES.items():
                 st = self._state[key]
+                ttl = self.online_ttl_s
+                online_local = (now - st.last_heartbeat_local) < ttl
+                online_remote = (now - st.last_heartbeat_remote) < ttl
                 out[key] = {
                     "ui_label": spec.ui_label,
                     "icon": spec.icon,
                     "capabilities": list(spec.capabilities),
                     "installed": st.installed,
                     "enabled": st.enabled,
-                    "online": (now - st.last_heartbeat) < self.online_ttl_s,
+                    # Aggregate (local-preferred) for legacy consumers
+                    "online": online_local or online_remote,
                     "last_heartbeat": st.last_heartbeat,
                     "last_meta": dict(st.last_meta),
+                    # R58: split view for UIs that want to distinguish
+                    # "local plugin is running here" from "some antenna
+                    # on the LAN claims this service"
+                    "online_local": online_local,
+                    "online_remote": online_remote,
+                    "last_meta_local": dict(st.last_meta_local),
+                    "last_heartbeat_local": st.last_heartbeat_local,
+                    "last_meta_remote": dict(st.last_meta_remote),
+                    "last_heartbeat_remote": st.last_heartbeat_remote,
+                    # Convenience: which track is currently authoritative
+                    "origin": ("local" if online_local
+                                else ("remote" if online_remote else "none")),
                 }
         return out
 
