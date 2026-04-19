@@ -11152,31 +11152,87 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 })
 
         elif self.path == '/api/tts' and self.command == 'POST':
-            # Forward text → audio to the same kobold_tts backend via
-            # /api/extra/generate_audio. The client plays the returned
-            # base64 WAV directly. When no backend is registered, we
-            # return 503 and the client falls back to Web Speech API.
+            # R140: KoboldCpp renamed its TTS endpoint across versions.
+            # 1.x drops `/api/extra/generate_audio` and uses
+            # `/api/extra/tts`; some forks expose the OpenAI-compat
+            # `/v1/audio/speech` alongside. Probe each path until one
+            # answers with audio. Stop on the first non-404 error
+            # (meaning the route exists but the request was rejected
+            # for a different reason) so we don't mask genuine failures.
+            # Returns {"audio_b64","mime","backend","endpoint"} so the
+            # browser can play a WAV regardless of Kobold version.
             text = (data.get("text") or "").strip()
             if not text:
                 return self.end_json(400, {"error": "text required"})
-            tts_url = _resolve_stt_backend_url()  # same service handles both
+            tts_url = _resolve_stt_backend_url()
             if not tts_url:
                 return self.end_json(503, {"error": "no kobold_tts registered"})
-            try:
-                import urllib.request as _ur
-                body_bytes = json.dumps({"prompt": text}).encode('utf-8')
-                req = _ur.Request(
-                    tts_url.rstrip('/') + '/api/extra/generate_audio',
-                    data=body_bytes,
-                    headers={"Content-Type": "application/json"},
-                    method='POST')
-                with _ur.urlopen(req, timeout=30) as resp:
-                    out = json.loads(resp.read().decode('utf-8', 'replace'))
-                return self.end_json(200, out)
-            except Exception as e:
-                return self.end_json(502, {
-                    "error": f"TTS failed: {type(e).__name__}: {e}",
-                })
+            import urllib.request as _ur
+            import urllib.error as _ue
+            import base64 as _b64
+            voice = (data.get("voice") or "af").strip() or "af"
+
+            def _parse_json_b64(blob):
+                j = json.loads(blob.decode('utf-8', 'replace'))
+                for key in ("audio", "data", "audio_b64", "wav"):
+                    v = j.get(key)
+                    if isinstance(v, str) and v:
+                        return _b64.b64decode(v), "audio/wav"
+                raise ValueError(
+                    f"no audio field in JSON: {list(j.keys())[:4]}")
+
+            def _parse_binary(blob):
+                return blob, "audio/wav"
+
+            candidates = [
+                ("/api/extra/tts",
+                 {"prompt": text, "voice": voice},
+                 _parse_json_b64),
+                ("/v1/audio/speech",
+                 {"model": "tts-1", "input": text, "voice": voice,
+                  "response_format": "wav"},
+                 _parse_binary),
+                ("/api/v1/audio/speech",
+                 {"model": "tts-1", "input": text, "voice": voice,
+                  "response_format": "wav"},
+                 _parse_binary),
+                ("/api/extra/generate_audio",
+                 {"prompt": text, "voice": voice},
+                 _parse_json_b64),
+            ]
+            tried = []
+            last_err = None
+            for path, body_dict, parser in candidates:
+                try:
+                    body_bytes = json.dumps(body_dict).encode('utf-8')
+                    req = _ur.Request(
+                        tts_url.rstrip('/') + path,
+                        data=body_bytes,
+                        headers={"Content-Type": "application/json"},
+                        method='POST')
+                    with _ur.urlopen(req, timeout=60) as resp:
+                        audio, mime = parser(resp.read())
+                    return self.end_json(200, {
+                        "audio_b64": _b64.b64encode(audio).decode('ascii'),
+                        "mime": mime,
+                        "backend": tts_url,
+                        "endpoint": path,
+                    })
+                except _ue.HTTPError as e:
+                    tried.append(f"{path}:HTTP{e.code}")
+                    last_err = e
+                    if e.code != 404:
+                        break  # genuine error — stop probing
+                except Exception as e:
+                    tried.append(f"{path}:{type(e).__name__}")
+                    last_err = e
+            return self.end_json(502, {
+                "error": f"TTS failed on every endpoint candidate: "
+                          f"{', '.join(tried)}",
+                "last_error": (f"{type(last_err).__name__}: {last_err}"
+                                if last_err else ""),
+                "backend": tts_url,
+            })
 
         elif self.path == '/api/app_control/register' and self.command == 'POST':
             # "Connect an app" — persist a launcher path for a specific
@@ -11275,31 +11331,11 @@ class GuildHandler(SimpleHTTPRequestHandler):
             # Cleanly restart the Wizard Guild process. Spawn a detached
             # relauncher that waits ~1s then re-execs the current argv
             # so the browser tab reconnects to a fresh process once the
-            # old one exits. Everything else mirrors /api/guild/exit —
-            # we stop auto_start apps first so nothing is orphaned.
-            cfg = _guided_install_load_config()
-            matrix = (cfg.get("app_control") or {})
-            stopped = []
-            for app, entry in matrix.items():
-                if not (isinstance(entry, dict) and entry.get("auto_start")):
-                    continue
-                if app not in ("comfyui", "ollama", "kobold",
-                                "kobold_rp", "kobold_tts"):
-                    continue
-                target = str(entry.get("target") or "local").strip()
-                try:
-                    if target == "local":
-                        from antenna import service_launcher as _sl
-                        r = _sl.stop_service(app, cfg)
-                    else:
-                        url, tok = self._resolve_antenna_agent(target)
-                        if not url: continue
-                        r = self._post_antenna_json(
-                            url, "/service/stop", tok,
-                            {"service": app}, timeout=6)
-                    stopped.append({"app": app, "result": r})
-                except Exception:
-                    pass
+            # old one exits. Connected apps (ComfyUI / Ollama / Kobold)
+            # keep running — the user launches them explicitly via the
+            # ⚡ chip button, so tearing them down on every Guild restart
+            # is more disruptive than orphaning.
+            stopped: list[dict] = []
             # R138: the old code spawned the relauncher on a daemon
             # thread with sleep(1.2), then os._exit'd the whole
             # process at 0.6s. os._exit tears down every thread
@@ -11375,37 +11411,11 @@ class GuildHandler(SimpleHTTPRequestHandler):
             })
 
         elif self.path == '/api/guild/exit' and self.command == 'POST':
-            # Graceful shutdown: iterate auto-start apps and ask their
-            # targets to stop, then os._exit on a short delay so the
-            # HTTP response flushes to the browser before we die.
-            cfg = _guided_install_load_config()
-            matrix = (cfg.get("app_control") or {})
-            stopped = []
-            errors = []
-            for app, entry in matrix.items():
-                if not (isinstance(entry, dict) and entry.get("auto_start")):
-                    continue
-                if app not in ("comfyui", "ollama", "kobold",
-                            "kobold_rp", "kobold_tts"):
-                    continue
-                target = str(entry.get("target") or "local").strip()
-                try:
-                    if target == "local":
-                        from antenna import service_launcher as _sl
-                        r = _sl.stop_service(app, cfg)
-                    else:
-                        url, tok = self._resolve_antenna_agent(target)
-                        if not url:
-                            errors.append({"app": app, "error": "no antenna"})
-                            continue
-                        r = self._post_antenna_json(
-                            url, "/service/stop", tok, {"service": app},
-                            timeout=8)
-                    stopped.append({"app": app, "target": target,
-                                     "result": r})
-                except Exception as e:
-                    errors.append({"app": app, "error": str(e)[:200]})
-            # Schedule process exit after response flush.
+            # Graceful shutdown. Connected apps (ComfyUI / Ollama /
+            # Kobold) are NOT stopped — the user starts them on purpose
+            # via the ⚡ chip button and expects them to outlive a Guild
+            # quit. Auto-start was removed; the symmetric auto-stop went
+            # with it.
             import threading as _th, time as _ti, os as _os
             def _bye():
                 _ti.sleep(0.6)
@@ -11413,8 +11423,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
             _th.Thread(target=_bye, daemon=True).start()
             return self.end_json(200, {
                 "ok": True,
-                "stopped": stopped,
-                "errors": errors,
+                "stopped": [],
+                "errors": [],
                 "note": "Guild exiting in ~0.6s",
             })
 
