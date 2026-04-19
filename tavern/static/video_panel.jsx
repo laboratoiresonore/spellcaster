@@ -3060,17 +3060,11 @@ function VideoPanel() {
     }
   };
 
-  const batchColorLabel = async (colorKey) => {
-    try {
-      await api.post("/api/video/batch-color", {
-        shot_ids: Array.from(selected),
-        color_label: colorKey,
-      });
-      await refresh();
-    } catch (e) {
-      setError("Failed to batch color label");
-    }
-  };
+  // (batchColorLabel lived here as an older /api/video/batch-color
+  // caller — superseded by the R82a version above that hits
+  // /api/video/batch-color-label with toast feedback. Kept as a
+  // comment so anyone grepping for the second definition lands on
+  // the explanation for its removal instead of resurrecting it.)
 
   // R69a: named board states — save/load/delete whole-board snapshots
   const [namedStates, setNamedStates] = _useState([]);
@@ -3223,7 +3217,11 @@ function VideoPanel() {
   // either a plain 1-based index ("7") or a title match (any string
   // that appears in a shot's title, case-insensitive — first hit wins).
   // Returns true on success so the modal can close + clear state.
-  const jumpToShot = (input) => {
+  // (Renamed from jumpToShot → jumpToShotByQuery in R149: the R70a
+  // by-id helper below already owned the `jumpToShot` name and the
+  // duplicate `const` declarations broke Babel compilation of the
+  // Travelling Wizard shell.)
+  const jumpToShotByQuery = (input) => {
     const q = (input || "").trim();
     if (!q || filteredShots.length === 0) return false;
     let targetIdx = -1;
@@ -3980,37 +3978,39 @@ function VideoPanel() {
             Refresh
           </button>
           {shots.some(s => s.status === "ready") && (
-            <button onClick={assembleAll} disabled={assembling}
-              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-40">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>
-              {assembling ? "Assembling..." : "Export Video"}
-            </button>
-            <button onClick={() => setShowExportSettings(!showExportSettings)}
-              className="render-queue-toggle bg-slate-700 hover:bg-slate-600 text-amber-200 px-3 py-1.5 rounded text-xs font-medium transition-colors"
-              onClick={() => setShowRenderQueue(!showRenderQueue)} title="Render queue">
-              {showRenderQueue ? "Hide Queue" : "Queue"}
-            </button>
-            <button
-              className="undo-btn bg-slate-700 hover:bg-slate-600 text-amber-200 px-3 py-1.5 rounded text-xs font-medium transition-colors disabled:opacity-40"
-              disabled={!canUndo} onClick={doUndo} title="Undo (Ctrl+Z)">
-              Undo
-            </button>
-            <button
-              className="redo-btn bg-slate-700 hover:bg-slate-600 text-amber-200 px-3 py-1.5 rounded text-xs font-medium transition-colors disabled:opacity-40"
-              disabled={!canRedo} onClick={doRedo} title="Redo (Ctrl+Y)">
-              Redo
-            </button>
-            <button
-              className="scene-manager-toggle bg-slate-700 hover:bg-slate-600 text-amber-200 px-3 py-1.5 rounded text-xs font-medium transition-colors"
-              title="Manage scenes"
-              onClick={() => setShowSceneManager(!showSceneManager)}>
-              {showSceneManager ? "Hide Scenes" : "Scenes"}
-            </button>
-            <button
-              className="export-settings-toggle bg-slate-700 hover:bg-slate-600 text-amber-200 px-3 py-1.5 rounded text-xs font-medium transition-colors"
-              title="Export settings">
-              {showExportSettings ? "Hide Settings" : "Settings"}
-            </button>
+            <>
+              <button onClick={assembleAll} disabled={assembling}
+                className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-40">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>
+                {assembling ? "Assembling..." : "Export Video"}
+              </button>
+              <button onClick={() => setShowRenderQueue(!showRenderQueue)}
+                className="render-queue-toggle bg-slate-700 hover:bg-slate-600 text-amber-200 px-3 py-1.5 rounded text-xs font-medium transition-colors"
+                title="Render queue">
+                {showRenderQueue ? "Hide Queue" : "Queue"}
+              </button>
+              <button
+                className="undo-btn bg-slate-700 hover:bg-slate-600 text-amber-200 px-3 py-1.5 rounded text-xs font-medium transition-colors disabled:opacity-40"
+                disabled={!canUndo} onClick={doUndo} title="Undo (Ctrl+Z)">
+                Undo
+              </button>
+              <button
+                className="redo-btn bg-slate-700 hover:bg-slate-600 text-amber-200 px-3 py-1.5 rounded text-xs font-medium transition-colors disabled:opacity-40"
+                disabled={!canRedo} onClick={doRedo} title="Redo (Ctrl+Y)">
+                Redo
+              </button>
+              <button
+                className="scene-manager-toggle bg-slate-700 hover:bg-slate-600 text-amber-200 px-3 py-1.5 rounded text-xs font-medium transition-colors"
+                title="Manage scenes"
+                onClick={() => setShowSceneManager(!showSceneManager)}>
+                {showSceneManager ? "Hide Scenes" : "Scenes"}
+              </button>
+              <button onClick={() => setShowExportSettings(!showExportSettings)}
+                className="export-settings-toggle bg-slate-700 hover:bg-slate-600 text-amber-200 px-3 py-1.5 rounded text-xs font-medium transition-colors"
+                title="Export settings">
+                {showExportSettings ? "Hide Settings" : "Settings"}
+              </button>
+            </>
           )}
           {shots.some(s => s.status === "failed") && (
             <button data-endpoint="reset-failed" onClick={resetFailed}
@@ -4020,21 +4020,23 @@ function VideoPanel() {
             </button>
           )}
           {shots.some(s => s.status === "draft" || s.status === "failed") && (
-            <button onClick={togglePause}
-              className={`queue-pause-btn flex items-center gap-1 ${queuePaused ? 'bg-emerald-700/30 hover:bg-emerald-700/50 text-emerald-300' : 'bg-amber-700/30 hover:bg-amber-700/50 text-amber-300'} px-3 py-1.5 rounded-lg text-xs font-medium transition-colors`}
-            >
-              {queuePaused ? "▶ Resume" : "⏸ Pause"}
-            </button>
-            <button onClick={renderNext}
-              className="queue-next-btn flex items-center gap-1 bg-sky-700/30 hover:bg-sky-700/50 text-sky-300 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-              title="Render one shot then pause (step-through mode for iterative review)"
-            >⏭ Next
-            </button>
-            <button onClick={renderAll}
-              className="flex items-center gap-1.5 bg-emerald-700/30 hover:bg-emerald-700/50 text-emerald-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 3l14 9-14 9V3z" /></svg>
-              Render All
-            </button>
+            <>
+              <button onClick={togglePause}
+                className={`queue-pause-btn flex items-center gap-1 ${queuePaused ? 'bg-emerald-700/30 hover:bg-emerald-700/50 text-emerald-300' : 'bg-amber-700/30 hover:bg-amber-700/50 text-amber-300'} px-3 py-1.5 rounded-lg text-xs font-medium transition-colors`}
+              >
+                {queuePaused ? "▶ Resume" : "⏸ Pause"}
+              </button>
+              <button onClick={renderNext}
+                className="queue-next-btn flex items-center gap-1 bg-sky-700/30 hover:bg-sky-700/50 text-sky-300 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                title="Render one shot then pause (step-through mode for iterative review)"
+              >⏭ Next
+              </button>
+              <button onClick={renderAll}
+                className="flex items-center gap-1.5 bg-emerald-700/30 hover:bg-emerald-700/50 text-emerald-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 3l14 9-14 9V3z" /></svg>
+                Render All
+              </button>
+            </>
           )}
           {cycleWarning && (
             <span className="cycle-warning text-xs text-red-400 bg-red-900/30 px-2 py-1 rounded">
@@ -5465,7 +5467,7 @@ function VideoPanel() {
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  if (jumpToShot(jumpToInput)) {
+                  if (jumpToShotByQuery(jumpToInput)) {
                     setShowJumpTo(false);
                     setJumpToInput("");
                   }
