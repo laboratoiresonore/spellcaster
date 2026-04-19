@@ -6679,12 +6679,19 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
     engine = None
     workflow = None
 
-    # Strategy 1: LTX (preferred -- reliable I2V, no channel mismatch)
+    # Strategy 1: LTX (preferred -- reliable I2V, no channel mismatch).
+    # Canonical mode: "i2v" (distilled 8-step with image conditioning).
+    # See docs/VIDEO_PIPELINES_CANON.md §"LTX 2.3 — full formula".
     ltx_preset = _get_ltx_preset(comfy_url)
     print(f"  [Guild] Anim strategy: LTX preset={'found' if ltx_preset else 'NONE'}")
     if ltx_preset:
         build_ltx = getattr(_workflows_v2, 'build_ltx_video', None)
         if build_ltx:
+            try:
+                from spellcaster_core import video_presets as _vp
+                ltx_mode = _vp.ltx_mode_kwargs("i2v")
+            except ImportError:
+                ltx_mode = {"distilled": True, "two_stage": False}
             try:
                 workflow = build_ltx(
                     preset=ltx_preset,
@@ -6697,6 +6704,7 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
                     image_filename=image_filename,
                     i2v_strength=0.85,
                     pingpong=True,
+                    **ltx_mode,
                 )
                 engine = "ltx"
             except Exception as e:
@@ -6835,6 +6843,12 @@ def _poll_animated_avatars(comfy_url):
                         if ltx_preset and build_ltx:
                             try:
                                 img_fn = entry.get("_image_filename", "")
+                                try:
+                                    from spellcaster_core import video_presets as _vp
+                                    _ltx_mode = _vp.ltx_mode_kwargs("i2v")
+                                except ImportError:
+                                    _ltx_mode = {"distilled": True,
+                                                  "two_stage": False}
                                 ltx_wf = build_ltx(
                                     preset=ltx_preset,
                                     prompt_text=entry.get("_prompt_text",
@@ -6845,6 +6859,7 @@ def _poll_animated_avatars(comfy_url):
                                     image_filename=img_fn,
                                     i2v_strength=0.85,
                                     pingpong=True,
+                                    **_ltx_mode,
                                 )
                                 url_q = f"{comfy_url}/prompt"
                                 body = json.dumps({"prompt": ltx_wf}).encode("utf-8")
