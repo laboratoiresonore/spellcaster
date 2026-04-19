@@ -314,6 +314,32 @@ def _kill_prior_instances(port: int):
 
 STUDIO_CHARACTERS = [
     {
+        # ── The Spellcaster: always-top, never-banished onboarding wizard ──
+        # Replaces the legacy setup wizard. Owns: install manager, real-time
+        # size + method-count quotes, antenna setup, per-feature verification,
+        # custom plugin builds, advanced calibration (LoRA / turbo / CFG /
+        # sampler sweeps), expand/reduce. Scaffold lives in
+        # scaffold/spellcaster_wizard.py — the system_prompt here is a stub
+        # the Guild overrides at chat time with scaffold.build_system_prompt.
+        "id": "studio_spellcaster",
+        "type": "studio",
+        "name": "Spellcaster",
+        "subtext": "Install Manager · Calibration · Custom Builds",
+        "color1": "hsl(280, 95%, 35%)",
+        "color2": "hsl(50, 100%, 60%)",
+        "archetype": "the master sorcerer of the Guild — calm authority, has set everyone up a hundred times before, knows every model, every sampler, every LoRA trick, and every way an install can go sideways",
+        "pinned": True,
+        "scaffold": "spellcaster_wizard",
+        "build_fns": [],  # not generative; actions are system-level
+        "system_prompt": (
+            "You are the Spellcaster — the master wizard who onboards, "
+            "maintains, calibrates, and expands every Spellcaster "
+            "installation. Your full system prompt is generated dynamically "
+            "from the live install state; this static stub is a fallback "
+            "when the scaffold isn't wired. Be terse and authoritative."
+        ),
+    },
+    {
         "id": "studio_imaginus",
         "type": "studio",
         "name": "Imaginus",
@@ -2916,6 +2942,218 @@ def _guided_install_finish() -> tuple[int, dict]:
     _guided_install_save_config(config)
     SETUP_MODE = False
     return (200, {"setup_mode": False, "redirect": "/"})
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Spellcaster Wizard — scaffold-backed onboarding, install mgmt, calibration
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# See scaffold/spellcaster_wizard.py for the state machine + system prompt.
+# Endpoints here are thin HTTP adapters over the existing setup helpers
+# plus a few new calculators (install quote, feature→method mapping).
+
+def _spellcaster_state() -> dict:
+    """Full state snapshot the LLM needs to reason about install / calibration.
+
+    Richer superset of /api/setup/state: adds per-feature size_mb, model_count,
+    method_count + methods, total_methods and installed_methods, detected
+    antennas, remote-ComfyUI flag, GPU/VRAM if we can probe it.
+    """
+    try:
+        from scaffold.spellcaster_wizard import FEATURE_METHODS
+    except Exception:
+        FEATURE_METHODS = {}
+
+    base = _guided_install_get_state()
+    installed_keys = set(base.get("features_installed", []))
+
+    # Load raw manifest so we can compute sizes + model counts.
+    manifest = {}
+    try:
+        if INSTALLER_PATH and os.path.exists(INSTALLER_PATH):
+            mpath = os.path.join(os.path.dirname(INSTALLER_PATH), "manifest.json")
+            if os.path.exists(mpath):
+                with open(mpath, 'r', encoding='utf-8') as f:
+                    manifest = json.load(f)
+    except Exception:
+        pass
+
+    features_out = []
+    total_available_mb = 0
+    all_methods: set = set()
+    installed_methods: set = set()
+
+    for feat in base.get("features", []):
+        key = feat.get("key", "")
+        raw = (manifest.get("features", {}) or {}).get(key, {})
+        size_mb = 0
+        model_count = 0
+        for category, lst in (raw.get("models", {}) or {}).items():
+            if isinstance(lst, list):
+                for item in lst:
+                    if isinstance(item, dict):
+                        size_mb += int(item.get("size_mb", 0) or 0)
+                        model_count += 1
+        methods = FEATURE_METHODS.get(key, [])
+        all_methods.update(methods)
+        if key in installed_keys:
+            installed_methods.update(methods)
+            total_available_mb += 0  # already on disk; counted in installed_gb
+        else:
+            total_available_mb += size_mb
+        features_out.append({
+            **feat,
+            "size_mb":      size_mb,
+            "model_count":  model_count,
+            "methods":      methods,
+            "method_count": len(methods),
+            "custom_nodes": raw.get("custom_nodes", []),
+        })
+
+    # Totals: installed_gb is rough (we don't walk the filesystem); it's the
+    # sum of sizes of features the user has opted into.
+    installed_mb = sum(
+        f["size_mb"] for f in features_out if f.get("installed")
+    )
+    total_mb = installed_mb + total_available_mb
+
+    # Remote-ComfyUI detection — localhost / 127.0.0.1 / :: = local.
+    comfy_url = base.get("comfyui_url", "") or ""
+    try:
+        from urllib.parse import urlparse as _up
+        host = (_up(comfy_url).hostname or "").lower()
+    except Exception:
+        host = ""
+    comfy_remote = bool(host) and host not in (
+        "localhost", "127.0.0.1", "0.0.0.0", "::1")
+
+    # Best-effort GPU / VRAM — reuse ComfyUI's /system_stats if reachable.
+    gpu_name = ""
+    vram_gb = 0
+    try:
+        req = urllib.request.Request(f"{comfy_url}/system_stats")
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            stats = json.loads(resp.read())
+        devices = stats.get("devices") or []
+        if devices:
+            gpu_name = str(devices[0].get("name", "")) or ""
+            vram_bytes = int(devices[0].get("vram_total", 0) or 0)
+            vram_gb = round(vram_bytes / (1024**3))
+    except Exception:
+        pass
+
+    # Antenna inventory (lives in antenna.json if the user set any up).
+    antennas_out = []
+    try:
+        cfg = _guided_install_load_config()
+        for a in cfg.get("antennas", []) or []:
+            if not isinstance(a, dict):
+                continue
+            reachable = False
+            try:
+                req = urllib.request.Request(
+                    f"http://{a['host']}:{int(a.get('port', 8188))}/system_stats")
+                with urllib.request.urlopen(req, timeout=2) as resp:
+                    reachable = resp.status == 200
+            except Exception:
+                pass
+            antennas_out.append({**a, "reachable": reachable})
+    except Exception:
+        pass
+
+    # Plugin install detection — shared with /api/setup/state via
+    # plugins_installed, but surface as a dict for the scaffold's prompt.
+    plugins_installed = set(base.get("plugins_installed", []))
+    plugins = {
+        k: (k in plugins_installed)
+        for k in ("gimp", "darktable", "resolve", "sillytavern",
+                  "blender", "krita", "photoshop")
+    }
+
+    return {
+        "phase": "GREETING",  # caller overrides if it knows better
+        "system": {
+            "gpu": gpu_name,
+            "vram_gb": vram_gb,
+            "platform": sys.platform,
+            "comfyui_reachable": base.get("comfyui_reachable"),
+            "comfyui_url": comfy_url,
+            "comfyui_remote": comfy_remote,
+            "antenna_reachable": any(a.get("reachable") for a in antennas_out),
+            "llm_available": base.get("llm_available"),
+        },
+        "features": features_out,
+        "plugins": plugins,
+        "antennas": antennas_out,
+        "totals": {
+            "installed_gb": round(installed_mb / 1024.0, 1),
+            "available_gb": round(total_mb / 1024.0, 1),
+            "installed_methods": len(installed_methods),
+            "total_methods": len(all_methods),
+        },
+    }
+
+
+def _spellcaster_quote(feature_keys) -> tuple[int, dict]:
+    """POST /api/spellcaster/quote — compute install cost before committing.
+
+    Returns size_gb + method_count + unlocked method list + required custom
+    node packs. The LLM uses this to tell the user exactly what they're
+    signing up for before any install runs.
+    """
+    try:
+        from scaffold.spellcaster_wizard import calc_install_quote
+    except Exception as e:
+        return (500, {"error": f"scaffold unavailable: {e}"})
+    if not isinstance(feature_keys, list):
+        return (400, {"error": "features must be a list"})
+    return (200, calc_install_quote(
+        [str(k) for k in feature_keys], _spellcaster_state()))
+
+
+def _spellcaster_antenna_test(host: str, port: int) -> tuple[int, dict]:
+    """POST /api/spellcaster/antenna/test — probe a remote ComfyUI / Antenna host."""
+    if not host:
+        return (400, {"error": "host required"})
+    port = int(port or 8188)
+    out = {"host": host, "port": port}
+    try:
+        req = urllib.request.Request(f"http://{host}:{port}/system_stats")
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            out["reachable"] = True
+            out["system_stats"] = json.loads(resp.read())
+    except Exception as e:
+        out["reachable"] = False
+        out["error"] = str(e)
+    return (200, out)
+
+
+# Thin adapters that delegate to the existing /api/setup/* implementation.
+# Kept separate so the scaffold's action vocabulary has a clean namespace
+# distinct from the legacy first-run UI.
+
+def _spellcaster_install_feature(feature_key: str):
+    return _guided_install_feature(feature_key)
+
+
+def _spellcaster_install_plugin(plugin_key: str):
+    return _guided_install_plugin(plugin_key)
+
+
+def _spellcaster_todo(op: str, detail: str = "") -> tuple[int, dict]:
+    """Graceful 'not yet implemented' for uninstall / build / calibrate.
+
+    The scaffold's system prompt already tells the LLM these are available;
+    when an endpoint lands, swap the dispatcher to call the real helper.
+    Returning a structured error means the LLM can say, "I tried to run X,
+    but that flow isn't wired up yet — ticket opened." instead of silently
+    hanging.
+    """
+    return (501, {"ok": False, "op": op, "detail": detail,
+                  "error": f"'{op}' is defined in the scaffold but not "
+                           "yet implemented as a Guild endpoint; the "
+                           "Spellcaster will advise the user to run the "
+                           "underlying CLI tool manually until this lands."})
 
 
 def _llm_generate_local(payload, timeout=180):
@@ -6422,6 +6660,10 @@ class GuildHandler(SimpleHTTPRequestHandler):
         if self.path == '/api/setup/state':
             return self.end_json(200, _guided_install_get_state())
 
+        # ── Spellcaster Wizard state (richer superset of setup/state) ──
+        if self.path == '/api/spellcaster/state':
+            return self.end_json(200, _spellcaster_state())
+
         # ── API GET endpoints ──
         if self.path.startswith('/api/wizard_info/'):
             # GET /api/wizard_info/<char_id> — detailed wizard info for tooltip
@@ -8528,6 +8770,57 @@ class GuildHandler(SimpleHTTPRequestHandler):
         if self.path == '/api/setup/finish':
             return self.end_json(*_guided_install_finish())
 
+        # -- Spellcaster Wizard endpoints (scaffold-backed) --
+        # See scaffold/spellcaster_wizard.py for the action vocabulary.
+        if self.path == '/api/spellcaster/quote':
+            return self.end_json(*_spellcaster_quote(data.get('features') or []))
+        if self.path == '/api/spellcaster/feature/install':
+            return self.end_json(*_spellcaster_install_feature(data.get('feature', '')))
+        if self.path == '/api/spellcaster/feature/uninstall':
+            return self.end_json(*_spellcaster_todo(
+                "uninstall_feature",
+                f"feature={data.get('feature', '')}"))
+        if self.path == '/api/spellcaster/feature/test':
+            return self.end_json(*_spellcaster_todo(
+                "test_feature",
+                f"feature={data.get('feature', '')}"))
+        if self.path == '/api/spellcaster/plugin/install':
+            return self.end_json(*_spellcaster_install_plugin(data.get('plugin', '')))
+        if self.path == '/api/spellcaster/plugin/uninstall':
+            return self.end_json(*_spellcaster_todo(
+                "uninstall_plugin",
+                f"plugin={data.get('plugin', '')}"))
+        if self.path == '/api/spellcaster/antenna/start':
+            return self.end_json(200, {
+                "ok": True,
+                "instructions": [
+                    "Run the Antenna installer on the machine hosting ComfyUI:",
+                    "  curl -fsSL https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main/antenna/install.sh | bash",
+                    "(or the equivalent .bat on Windows).",
+                    "Then return here and ask the Spellcaster to test the antenna.",
+                ]})
+        if self.path == '/api/spellcaster/antenna/test':
+            return self.end_json(*_spellcaster_antenna_test(
+                data.get('host', ''), data.get('port', 8188)))
+        if self.path == '/api/spellcaster/build':
+            return self.end_json(*_spellcaster_todo(
+                "build_custom",
+                f"target={data.get('target', '')} "
+                f"features={data.get('features', [])}"))
+        if self.path == '/api/spellcaster/calibrate/lora':
+            return self.end_json(*_spellcaster_todo(
+                "calibrate_lora",
+                f"model={data.get('model', '')} lora={data.get('lora', '')}"))
+        if self.path == '/api/spellcaster/calibrate/sampler':
+            return self.end_json(*_spellcaster_todo(
+                "calibrate_sampler", f"model={data.get('model', '')}"))
+        if self.path == '/api/spellcaster/calibrate/turbo':
+            return self.end_json(*_spellcaster_todo(
+                "calibrate_turbo", f"model={data.get('model', '')}"))
+        if self.path == '/api/spellcaster/calibrate/cfg':
+            return self.end_json(*_spellcaster_todo(
+                "calibrate_cfg", f"model={data.get('model', '')}"))
+
         # -- /api/horde_generate -- server-side proxy to AI Horde
         #    Browser can't call Horde directly (CORS), so we relay.
         if self.path == '/api/horde_generate':
@@ -8904,6 +9197,16 @@ class GuildHandler(SimpleHTTPRequestHandler):
             char_id = data.get('id', '')
             if not char_id:
                 return self.end_json(400, {"error": "Missing character id"})
+            # Pinned wizards (e.g. the Spellcaster) can never be banished —
+            # they are structural entry points the user always needs access to.
+            pinned = any(
+                c.get('id') == char_id and c.get('pinned')
+                for c in STUDIO_CHARACTERS
+            )
+            if pinned:
+                return self.end_json(
+                    403, {"error": f"Cannot banish pinned wizard '{char_id}' — "
+                                   "it is a structural entry point."})
             found = any(c['id'] == char_id for c in CHARS_CACHE)
             if not found:
                 return self.end_json(404, {"error": f"Character '{char_id}' not found"})
