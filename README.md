@@ -44,19 +44,16 @@
 
 <div align="center">
 
-<sub>
+<sub><strong>📣 Status — April 2026</strong></sub>
 
-**📣 Status — April 2026**
+<sub>───────────────</sub>
 
-**🆕 News** &nbsp;·&nbsp; First version of the DaVinci Resolve plugin is out and needs testing &nbsp;·&nbsp; Wizard Guild + Antenna work quite well
-
-**✅ What works** &nbsp;·&nbsp; The GIMP plugin is dope — it's now all I use for image generation and retouching
-
-**🔧 Current focus** &nbsp;·&nbsp; Debugging SillyTavern plugin &nbsp;·&nbsp; Improving Wizard Guild and Antenna
-
-**⏭ Next** &nbsp;·&nbsp; Signal bridge &nbsp;·&nbsp; Moar plugins / frontends
-
-</sub>
+<table>
+<tr><td><sub><strong>🆕 News</strong></sub></td><td><sub>First version of the DaVinci Resolve plugin is out and needs testing &nbsp;·&nbsp; Wizard Guild + Antenna work quite well</sub></td></tr>
+<tr><td><sub><strong>✅ What works</strong></sub></td><td><sub>The GIMP plugin is dope — it's now all I use for image generation and retouching</sub></td></tr>
+<tr><td><sub><strong>🔧 Current focus</strong></sub></td><td><sub>Debugging SillyTavern plugin &nbsp;·&nbsp; Improving Wizard Guild and Antenna</sub></td></tr>
+<tr><td><sub><strong>⏭ Next</strong></sub></td><td><sub>Signal bridge &nbsp;·&nbsp; Moar plugins / frontends</sub></td></tr>
+</table>
 
 </div>
 
