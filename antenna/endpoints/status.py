@@ -153,11 +153,33 @@ def status(ctx: dict[str, Any]) -> tuple[int, dict]:
     # agent.py:_autopopulate_services at boot) so operators can see why a
     # declared-services list isn't matching what's on disk.
     autodetect_trace = None
+    registered_routes: list[str] = []
     try:
-        from .. import agent as _agent  # type: ignore
-        autodetect_trace = dict(getattr(_agent, "_LAST_AUTODETECT", {}) or {})
+        # Read state from sys.modules["__main__"] first — when the agent is
+        # started as `python antenna/agent.py` the mutated state lives on
+        # __main__, not antenna.agent (two module instances). Fall back to
+        # antenna.agent for the `python -m antenna.agent` launch path.
+        import sys as _sys
+        agent_mod = _sys.modules.get("__main__")
+        if agent_mod is None or not hasattr(agent_mod, "_LAST_AUTODETECT"):
+            from .. import agent as agent_mod  # type: ignore
+        autodetect_trace = dict(getattr(agent_mod, "_LAST_AUTODETECT", {}) or {})
+        # R53 diagnostic: list the actually-registered route keys so we can
+        # confirm /comfyui/node-catalog etc. landed on the active handler.
+        handler_cls = None
+        try:
+            handler_cls = getattr(agent_mod, "_AntennaHandler", None)
+        except Exception:
+            handler_cls = None
+        if handler_cls is not None:
+            rt = getattr(handler_cls, "_routes", None)
+            if isinstance(rt, dict):
+                registered_routes = sorted(
+                    f"{m} {p}" for (m, p) in rt.keys()
+                )
     except Exception:
         autodetect_trace = None
+        registered_routes = []
 
     return 200, {
         "service": "spellcaster-antenna",
@@ -169,6 +191,7 @@ def status(ctx: dict[str, Any]) -> tuple[int, dict]:
         "services_detail": services_detail,
         "services_detected": services_detected,
         "autodetect_trace": autodetect_trace,
+        "registered_routes": registered_routes,
         "rate_limit_rpm": cfg.get("rate_limit_rpm", 30),
         "heartbeat": heartbeat.current_state(),
         # Paths are returned as basenames only — full paths leak the user's
