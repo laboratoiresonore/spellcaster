@@ -63,30 +63,50 @@ else
         || fail "git clone failed — check your internet connection."
 fi
 
-# ── 3. Dependencies (best-effort; tray is optional) ──────────────────
+# ── 3. Dependencies ──────────────────────────────────────────────────
+# Required, not best-effort. Without pystray/Pillow the antenna silently
+# falls back to console mode — the "useless piece of shit" failure
+# mode. Fail loudly so the user sees what broke and can fix it.
 say "[...]   Installing tray dependencies (pystray + Pillow)"
 python3 -m pip install --user --quiet --disable-pip-version-check --upgrade pip 2>/dev/null || true
 
+_pip_install() {
+    # $@ = packages. Prints the error if install fails instead of
+    # swallowing it with /dev/null + true.
+    local pkgs=("$@")
+    if ! python3 -m pip install --user --disable-pip-version-check \
+            "${pkgs[@]}"; then
+        say ""
+        say "[error] pip install ${pkgs[*]} failed."
+        say "        The antenna needs these for the system-tray icon."
+        say "        Common causes:"
+        say "          - network unreachable / proxy blocks pypi.org"
+        say "          - compiler missing for Pillow source build"
+        say "            (Debian: sudo apt install build-essential libjpeg-dev zlib1g-dev)"
+        say "          - pip in a read-only system site-packages"
+        say "            (use a venv: python3 -m venv ~/.spellcaster/venv)"
+        say ""
+        say "        Fix the error above, then re-run this script."
+        exit 3
+    fi
+}
+
 case "${OS}" in
     Darwin)
-        python3 -m pip install --user --quiet --disable-pip-version-check \
-            pystray Pillow pyobjc-core pyobjc-framework-Cocoa 2>/dev/null \
-            || say "[warn]  tray deps failed — antenna will run in console mode."
+        _pip_install pystray Pillow pyobjc-core pyobjc-framework-Cocoa
         ;;
     Linux)
-        python3 -m pip install --user --quiet --disable-pip-version-check \
-            pystray Pillow 2>/dev/null \
-            || say "[warn]  tray deps failed — antenna will run in console mode."
+        _pip_install pystray Pillow
         if ! python3 -c "import gi; gi.require_version('AppIndicator3', '0.1')" 2>/dev/null; then
             say "[warn]  AppIndicator3 not installed — system-tray icon may not appear."
             say "        Debian/Ubuntu: sudo apt install gir1.2-appindicator3-0.1"
             say "        Fedora:        sudo dnf install libappindicator-gtk3"
+            say "        Continuing — the antenna will still serve HTTP; tray just hides."
         fi
         ;;
     *)
-        say "[warn]  Unknown OS: ${OS} — best-effort install only."
-        python3 -m pip install --user --quiet --disable-pip-version-check \
-            pystray Pillow 2>/dev/null || true
+        say "[warn]  Unknown OS: ${OS} — installing pystray + Pillow only."
+        _pip_install pystray Pillow
         ;;
 esac
 
