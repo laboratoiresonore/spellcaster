@@ -203,6 +203,68 @@ class _TrayState:
             "Setup Signal bridge…",
             lambda icon, _item: threading.Thread(
                 target=self._setup_signal_bridge, daemon=True).start()))
+        # Windows shortcut management — surfaces the same install
+        # flow the antenna.bat runs on first launch, but also lets
+        # users toggle run-on-startup after the fact without hunting
+        # in the registry. Non-Windows boxes hide this entry.
+        if os.name == "nt":
+            try:
+                from . import install_shortcuts as _shc
+                st = _shc.current_status()
+            except Exception:  # noqa: BLE001
+                _shc = None; st = {}
+            if _shc is not None:
+                def _toggle_startup(_i=None, _it=None):
+                    def worker():
+                        from . import install_shortcuts as _s
+                        cur = _s.current_status()
+                        if cur.get("startup"):
+                            _s.install_shortcuts(
+                                desktop=False, start_menu=False,
+                                startup=False)
+                            # install_shortcuts only creates — use
+                            # remove to toggle off
+                            _s.remove_shortcuts()
+                            # Re-install desktop + start menu if those
+                            # existed before (remove_shortcuts nuked
+                            # all three)
+                            if cur.get("desktop") or cur.get("start_menu"):
+                                _s.install_shortcuts(
+                                    desktop=bool(cur.get("desktop")),
+                                    start_menu=bool(cur.get("start_menu")),
+                                    startup=False)
+                            agent.notify("Antenna shortcut removed",
+                                          "will no longer auto-start at login",
+                                          level="info")
+                        else:
+                            _s.install_shortcuts(
+                                desktop=False, start_menu=False,
+                                startup=True)
+                            agent.notify("Antenna auto-start enabled",
+                                          "will launch at every Windows login",
+                                          level="success")
+                    threading.Thread(target=worker, daemon=True).start()
+                def _reinstall_shortcuts(_i=None, _it=None):
+                    def worker():
+                        from . import install_shortcuts as _s
+                        r = _s.install_shortcuts(
+                            desktop=True, start_menu=True, startup=False)
+                        ok = sum(1 for v in
+                                  (r.get("desktop"), r.get("start_menu"))
+                                  if v)
+                        agent.notify(f"Antenna shortcuts ({ok}/2)",
+                                      "\n".join(r.get("errors") or [])
+                                         or "desktop + Start Menu refreshed",
+                                      level="success" if ok else "warn")
+                    threading.Thread(target=worker, daemon=True).start()
+                items.append(pystray.MenuItem(
+                    "Reinstall desktop + Start Menu icons",
+                    _reinstall_shortcuts))
+                items.append(pystray.MenuItem(
+                    lambda _i: ("Disable run-at-Windows-startup"
+                                 if _shc.current_status().get("startup")
+                                 else "Enable run-at-Windows-startup"),
+                    _toggle_startup))
         items.append(pystray.MenuItem(
             "Open antenna folder",
             lambda icon, _item: _open_folder(os.path.dirname(

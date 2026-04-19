@@ -245,6 +245,20 @@ if not exist "%USERPROFILE%\.spellcaster\antenna_config.json" (
     echo.
 )
 
+REM ── First-run Windows shortcut setup ──
+REM  On the VERY FIRST launch, offer to create a desktop icon, a Start
+REM  Menu entry, and optionally add the antenna to Windows startup.
+REM  A sentinel file under %%USERPROFILE%%\.spellcaster\ flags that the
+REM  prompt has been shown so repeat launches don't nag.
+set SHORTCUTS_SENTINEL=%USERPROFILE%\.spellcaster\antenna_shortcuts_done
+if not exist "%SHORTCUTS_SENTINEL%" (
+    echo.
+    python -m antenna.install_shortcuts
+    if %errorlevel% equ 0 (
+        echo.> "%SHORTCUTS_SENTINEL%"
+    )
+)
+
 REM ── Launch the antenna ──
 REM  `python -m antenna` auto-picks: tray (Windows + pystray installed)
 REM  or console (otherwise). Tray gives a system-tray icon + toast
