@@ -193,6 +193,11 @@ class Shot:
     # NEVER auto-pruned when the 20-slot cap is hit — they stay until
     # the user explicitly deletes them.
     pinned_snapshots: List[str] = field(default_factory=list)
+    # R61b: priority for render dispatch. "high" shots queue ahead of
+    # "normal" which queue ahead of "low". Within a priority, board
+    # order wins. Independent of dependencies (depends_on still forces
+    # ordering across priority tiers).
+    priority: str = "normal"  # "high" | "normal" | "low"
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -613,6 +618,26 @@ class Shotboard:
                     return True
         return False
 
+    # R61b: priority → rank. Lower rank = earlier in queue. Unknown
+    # priorities fall back to normal.
+    _PRIORITY_RANK = {"high": 0, "normal": 1, "low": 2}
+
+    def _priority_key(self, sid_to_shot: dict[str, "Shot"],
+                       order_map: dict[str, int]):
+        """Return a sort-key factory for a dependency-satisfied frontier.
+
+        Sorts by (priority_rank, board_position) so high-priority shots
+        queue ahead of normal, without breaking dependency constraints
+        (those are enforced by the topological frontier itself — priority
+        only reorders the READY-TO-QUEUE set).
+        """
+        def key(sid: str):
+            shot = sid_to_shot.get(sid)
+            prio = getattr(shot, "priority", "normal") if shot else "normal"
+            rank = self._PRIORITY_RANK.get(prio, 1)
+            return (rank, order_map.get(sid, 0))
+        return key
+
     def topological_sort(self):
         id_to_shot = {s.id: s for s in self._shots}
         in_degree = {s.id: 0 for s in self._shots}
@@ -628,7 +653,9 @@ class Shotboard:
                 queue_list.append(sid)
 
         order_map = {s.id: i for i, s in enumerate(self._shots)}
-        queue_list.sort(key=lambda sid: order_map.get(sid, 0))
+        # R61b: sort ready frontier by (priority, board-position)
+        prio_key = self._priority_key(id_to_shot, order_map)
+        queue_list.sort(key=prio_key)
 
         result = []
         visited_set = set()
@@ -642,7 +669,7 @@ class Shotboard:
                     in_degree[s.id] -= 1
                     if in_degree[s.id] == 0:
                         queue_list.append(s.id)
-                        queue_list.sort(key=lambda x: order_map.get(x, 0))
+                        queue_list.sort(key=prio_key)
 
         for s in self._shots:
             if s.id not in visited_set:
@@ -714,6 +741,23 @@ class Shotboard:
         if changed:
             self.save()
         return {"changed": changed, "color_label": color_label}
+
+    def batch_priority(self, shot_ids, priority):
+        """R61b: set render priority on multiple shots.
+        `priority` must be one of 'high', 'normal', 'low'."""
+        if priority not in self._PRIORITY_RANK:
+            return {"changed": 0, "priority": priority,
+                    "error": f"invalid priority {priority!r}"}
+        changed = 0
+        for sid in shot_ids:
+            shot = self.get(sid)
+            if shot and shot.priority != priority:
+                shot.priority = priority
+                shot.touch()
+                changed += 1
+        if changed:
+            self.save()
+        return {"changed": changed, "priority": priority}
 
     def effective_duration(self, shot_id):
         """Return the effective duration for a shot: target override or preset default."""

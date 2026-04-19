@@ -1,0 +1,178 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e14]:
+    - complementary [ref=e15]:
+      - generic [ref=e16]:
+        - heading "The Wizard Guild" [level=2] [ref=e17]
+        - generic [ref=e20]: "LLM: Connected"
+        - generic [ref=e21]:
+          - generic [ref=e23]: "ComfyUI: Connected"
+          - generic [ref=e62]:
+            - generic [ref=e607]: VRAM 14.1/15.9
+            - generic [ref=e610]: RAM 50.2/63.8
+            - generic [ref=e613]: Cache 0.0/0.1
+        - generic [ref=e26]: "SillyTavern: Disconnected"
+        - generic [ref=e29]: "Signal Bridge: Disconnected"
+        - generic [ref=e72]:
+          - generic [ref=e73]: Recent across apps
+          - generic [ref=e74]:
+            - generic "Wizard Guild · intimate extreme close-up portrait of a sensual feline shapeshifter mid-transformation, galaxies swirling under translucent skin-tight fur, lithe predatory grace, sapphire bedroom eyes, a wizard named Spellcaster, the master sorcerer of the Guild — calm authority, has set everyone up a hundred times before, knows every model, every sampler, every LoRA trick, and every way an install can go sideways, specialist in Install Manager · Calibration · Custom Builds, sultry bedroom lighting, magical aura caressing bare skin, highly detailed face and décolletage filling the frame, half-lidded seductive eyes, sensual parted lips, painterly digital art, headshot composition, dark moody background with arcane sigils, face takes up 80 percent of image, photorealistic, highly detailed, sharp focus, professional photograph, 8K UHD, natural lighting, depth of field" [ref=e616] [cursor=pointer]:
+              - generic: 💬
+            - generic "Wizard Guild · intimate extreme close-up portrait of a chiselled Middle Eastern warlock with olive skin glistening with enchanted oils, loose open-chest robe revealing sculpted abs, piercing dark eyes, a wizard named The Enigma Mage, Mysterious and unpredictable, always weaving secrets into the fabric of creation., specialist in WAN Video Generation (Video), sultry bedroom lighting, magical aura caressing bare skin, highly detailed face and décolletage filling the frame, half-lidded seductive eyes, sensual parted lips, painterly digital art, headshot composition, dark moody background with arcane sigils, face takes up 80 percent of image, photorealistic, highly detailed, sharp focus, professional photograph, 8K UHD, natural lighting, depth of field" [ref=e617] [cursor=pointer]:
+              - generic: 💬
+            - generic "Wizard Guild · intimate extreme close-up portrait of a chiselled Middle Eastern warlock with olive skin glistening with enchanted oils, loose open-chest robe revealing sculpted abs, piercing dark eyes, a wizard named WAN Video, a mystic who conjures motion from stillness, swirling ink into life, specialist in WAN Video Generation (Video), sultry bedroom lighting, magical aura caressing bare skin, highly detailed face and décolletage filling the frame, half-lidded seductive eyes, sensual parted lips, painterly digital art, headshot composition, dark moody background with arcane sigils, face takes up 80 percent of image, photorealistic, highly detailed, sharp focus, professional photograph, 8K UHD, natural lighting, depth of field" [ref=e618] [cursor=pointer]:
+              - generic: 💬
+            - generic "GIMP · pink demo" [ref=e619] [cursor=pointer]:
+              - generic: 🖼️
+            - generic "DaVinci Resolve · test2" [ref=e620] [cursor=pointer]:
+              - generic: 🎬
+            - generic "GIMP · test pixel" [ref=e621] [cursor=pointer]:
+              - generic: 🖼️
+        - textbox "Search guild members..." [ref=e31]
+      - generic [ref=e32]:
+        - generic [ref=e82]: Core Spellcasters
+        - generic [ref=e85] [cursor=pointer]:
+          - heading "Spellcaster" [level=3] [ref=e86]
+          - paragraph [ref=e87]: Install Manager · Calibration · Custom Builds
+        - generic [ref=e90] [cursor=pointer]:
+          - heading "Imaginus" [level=3] [ref=e91]
+          - paragraph [ref=e92]: Image Creation (txt2img, ControlNet)
+        - generic [ref=e95] [cursor=pointer]:
+          - heading "Transmutex" [level=3] [ref=e96]
+          - paragraph [ref=e97]: Image Transformation (img2img, Style Transfer)
+        - generic [ref=e100] [cursor=pointer]:
+          - heading "Masquerade" [level=3] [ref=e101]
+          - paragraph [ref=e102]: Face & Identity (Face Swap, FaceID, PuLID)
+        - generic [ref=e105] [cursor=pointer]:
+          - heading "Restorix" [level=3] [ref=e106]
+          - paragraph [ref=e107]: Upscaling & Restoration Pipelines
+        - generic [ref=e110] [cursor=pointer]:
+          - heading "Erasure" [level=3] [ref=e111]
+          - paragraph [ref=e112]: Inpainting, Removal & Surgical Edits
+        - generic [ref=e115] [cursor=pointer]:
+          - heading "Videomancer" [level=3] [ref=e116]
+          - paragraph [ref=e117]: Video Generation & Enhancement
+        - generic [ref=e120] [cursor=pointer]:
+          - heading "Cinematic" [level=3] [ref=e121]
+          - paragraph [ref=e122]: Director's Chair — Multi-Step Video Sequences
+        - generic [ref=e125] [cursor=pointer]:
+          - heading "Studiocraft" [level=3] [ref=e126]
+          - paragraph [ref=e127]: Magic Studios — Full Character Pipeline
+        - generic [ref=e130] [cursor=pointer]:
+          - heading "Whimsy Weaver" [level=3] [ref=e131]
+          - paragraph [ref=e132]: LTX2 Video Generation & Enhancement (Video)
+        - generic [ref=e135] [cursor=pointer]:
+          - heading "The Enigma of Unknown" [level=3] [ref=e136]
+          - paragraph [ref=e137]: MISC Workflows
+        - generic [ref=e140] [cursor=pointer]:
+          - heading "The Enigma Mage" [level=3] [ref=e141]
+          - paragraph [ref=e142]: WAN Video Generation (Video)
+        - generic [ref=e144]: Per-Model Wizards
+        - generic [ref=e147] [cursor=pointer]:
+          - heading "Fluxx the Whisperer" [level=3] [ref=e148]
+          - paragraph [ref=e149]: flux-2-klein-9b — Flux 2 Klein — Explicit Image Generation
+        - generic [ref=e152] [cursor=pointer]:
+          - heading "Flux Whisperer" [level=3] [ref=e153]
+          - paragraph [ref=e154]: flux-2-klein-4b-fp8 — Flux 2 Klein — Explicit Image Generation
+        - generic [ref=e157] [cursor=pointer]:
+          - heading "Flux Whisperer" [level=3] [ref=e158]
+          - paragraph [ref=e159]: flux-2-klein-base-4b-fp8 — Flux 2 Klein — Explicit Image Generation
+        - generic [ref=e162] [cursor=pointer]:
+          - heading "ChromaWhisperer" [level=3] [ref=e163]
+          - paragraph [ref=e164]: Chroma1-HD-fp8_scaled_defaultloader_hybrid_large_rev2 — Chroma Image Generation
+        - generic [ref=e167] [cursor=pointer]:
+          - heading "Chroma Kali" [level=3] [ref=e168]
+          - paragraph [ref=e169]: chroma2_kaleidoscope — Flux 2 Klein — Explicit Image Generation
+        - generic [ref=e172] [cursor=pointer]:
+          - heading "Sparkle Flux" [level=3] [ref=e173]
+          - paragraph [ref=e174]: FLUX1 Dev fp8 — Flux — Photorealistic NSFW Generation
+        - generic [ref=e177] [cursor=pointer]:
+          - heading "Flux Hydra" [level=3] [ref=e178]
+          - paragraph [ref=e179]: HyFU-8-step-v1.0-pruned — Flux — Photorealistic NSFW Generation
+        - generic [ref=e182] [cursor=pointer]:
+          - heading "Sloppy Mix Wizard" [level=3] [ref=e183]
+          - paragraph [ref=e184]: sloppyMessyMix_sloppyMessyMixV1 — Illustrious — Anime NSFW Generation
+        - generic [ref=e187] [cursor=pointer]:
+          - heading "Juggernaut Reborn" [level=3] [ref=e188]
+          - paragraph [ref=e189]: juggernaut_reborn — SD 1.5 — Classic Explicit Generation
+        - generic [ref=e192] [cursor=pointer]:
+          - heading "Pixel Weave Mage" [level=3] [ref=e193]
+          - paragraph [ref=e194]: v1-5-pruned-emaonly — SD 1.5 — Classic Explicit Generation
+        - generic [ref=e197] [cursor=pointer]:
+          - heading "NoobAI-SuperDuper" [level=3] [ref=e198]
+          - paragraph [ref=e199]: NoobAI-XL-v1.1 — SDXL — Detailed Explicit Generation
+        - generic [ref=e202] [cursor=pointer]:
+          - heading "Nova Spark" [level=3] [ref=e203]
+          - paragraph [ref=e204]: novaAnimeXL_ilV170 — SDXL — Detailed Explicit Generation
+        - generic [ref=e207] [cursor=pointer]:
+          - heading "WaiIllustrious Wizard" [level=3] [ref=e208]
+          - paragraph [ref=e209]: waiIllustriousSDXL_v160-a5f5 — SDXL — Detailed Explicit Generation
+        - generic [ref=e212] [cursor=pointer]:
+          - heading "Albedo the Luminous" [level=3] [ref=e213]
+          - paragraph [ref=e214]: AlbedoBaseXL — SDXL — Detailed Explicit Generation
+        - generic [ref=e217] [cursor=pointer]:
+          - heading "SparkleStable" [level=3] [ref=e218]
+          - paragraph [ref=e219]: sd_xl_base_1.0 — SDXL — Detailed Explicit Generation
+        - generic [ref=e222] [cursor=pointer]:
+          - heading "Pixel Whiz" [level=3] [ref=e223]
+          - paragraph [ref=e224]: modernDisneyXL_v3 — SDXL — Detailed Explicit Generation
+        - generic [ref=e227] [cursor=pointer]:
+          - heading "NovaCartoonXL" [level=3] [ref=e228]
+          - paragraph [ref=e229]: novaCartoonXL_v60 — SDXL — Detailed Explicit Generation
+        - generic [ref=e232] [cursor=pointer]:
+          - heading "CybeReal Pony" [level=3] [ref=e233]
+          - paragraph [ref=e234]: cyberrealisticPony_v160 — SDXL — Detailed Explicit Generation
+        - generic [ref=e237] [cursor=pointer]:
+          - heading "JibMix Realistic XL" [level=3] [ref=e238]
+          - paragraph [ref=e239]: jibMixRealisticXL_v180SkinSupreme — SDXL — Detailed Explicit Generation
+        - generic [ref=e242] [cursor=pointer]:
+          - heading "Juggernaut XL" [level=3] [ref=e243]
+          - paragraph [ref=e244]: juggernautXL_ragnarok — SDXL — Detailed Explicit Generation
+        - generic [ref=e247] [cursor=pointer]:
+          - heading "JuggernautXL" [level=3] [ref=e248]
+          - paragraph [ref=e249]: juggernautXL_v9Rundiffusionphoto2 — SDXL — Detailed Explicit Generation
+        - generic [ref=e252] [cursor=pointer]:
+          - heading "Chroma Weaver" [level=3] [ref=e253]
+          - paragraph [ref=e254]: zavychromaxl_v100 — SDXL — Detailed Explicit Generation
+        - generic [ref=e257] [cursor=pointer]:
+          - heading "Zippy the Pixel Wizard" [level=3] [ref=e258]
+          - paragraph [ref=e259]: gonzalomoZpop_v30AIO — SD 1.5 — Classic Explicit Generation
+      - generic [ref=e33]:
+        - button "✨ Animate All Avatars" [ref=e34] [cursor=pointer]
+        - link "🧙 Travelling Wizard" [ref=e35] [cursor=pointer]:
+          - /url: /static/guild.html
+        - button "⚙️ Settings" [ref=e36] [cursor=pointer]
+    - main [ref=e37]:
+      - generic [ref=e38]:
+        - generic [ref=e41]:
+          - heading "Spellcaster" [level=2] [ref=e260]
+          - paragraph [ref=e43]: Install Manager · Calibration · Custom Builds
+        - generic [ref=e44]:
+          - button "Rename Wizard" [ref=e45] [cursor=pointer]
+          - button "Generate Background" [ref=e46] [cursor=pointer]
+          - button "Generate Avatar" [ref=e47] [cursor=pointer]
+          - button "Enchantments" [ref=e48] [cursor=pointer]
+          - button "Reset Memory" [ref=e49] [cursor=pointer]
+          - button "⚡ Generate All" [ref=e50] [cursor=pointer]
+      - generic [ref=e51]:
+        - paragraph [ref=e264]: Greetings. I am Spellcaster, the Guild's specialist in Install Manager · Calibration · Custom Builds. Describe what you need, and I shall present my tools for you to choose from.
+        - generic:
+          - img
+      - generic [ref=e53]:
+        - button "📎" [ref=e54] [cursor=pointer]
+        - textbox "Just talk to it..." [ref=e55]
+        - button "Summon Wizard" [ref=e56] [cursor=pointer]:
+          - img "Summon Wizard" [ref=e57]
+        - button "🎬" [ref=e58] [cursor=pointer]
+        - button "✨" [ref=e59] [cursor=pointer]
+  - button "⚔ Shootouts 39" [ref=e60] [cursor=pointer]:
+    - text: ⚔ Shootouts
+    - generic [ref=e61]: "39"
+  - generic: ᛞ
+  - generic [ref=e623]:
+    - generic [ref=e624]:
+      - generic [ref=e625]:
+        - heading "LoRA Shootout" [level=2] [ref=e626]
+        - text: flux2klein / detail boost
+      - button "✕" [ref=e627] [cursor=pointer]
+    - generic [ref=e630]: 0 of 2 rendered — detail_slider_klein_9b.safetensors
+  - generic: ᚦ

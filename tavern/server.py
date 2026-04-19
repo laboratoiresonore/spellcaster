@@ -8586,6 +8586,37 @@ class GuildHandler(SimpleHTTPRequestHandler):
             snap = self._capabilities_snapshot(force_refresh=refresh)
             return self.end_json(200, snap)
 
+        elif self.path == '/api/antennas/telemetry' or self.path.startswith('/api/antennas/telemetry?'):
+            # R61a: fan-out to every online antenna's /telemetry for a
+            # fleet dashboard view. Cached 10s so the UI can poll cheaply.
+            if not ANTENNA_REGISTRY_AVAILABLE or _antenna_registry is None:
+                return self.end_json(501, {"error": "antenna registry disabled"})
+            now = time.time()
+            cache = getattr(GuildHandler, "_FLEET_TELEMETRY_CACHE", None)
+            refresh = '?refresh=1' in self.path or '?refresh=true' in self.path
+            if (cache and not refresh
+                    and (now - cache.get("cached_at", 0)) < 10.0):
+                return self.end_json(200, cache)
+            cfg = _guided_install_load_config()
+            token = (cfg.get('antenna_token') or '').strip()
+            entries = _antenna_registry.list_entries(only_online=True)
+            results: dict[str, Any] = {}
+            for a in entries:
+                if not token or not a.agent_url:
+                    results[a.hostname] = {"error": "missing token or url"}
+                    continue
+                telem = self._fetch_antenna_json(a.agent_url, "/telemetry",
+                                                   token, timeout=5)
+                if isinstance(telem, dict):
+                    results[a.hostname] = telem
+            out = {
+                "antennas": results,
+                "total": len(entries),
+                "cached_at": now,
+            }
+            GuildHandler._FLEET_TELEMETRY_CACHE = out
+            return self.end_json(200, out)
+
         elif self.path.startswith('/api/antennas/choose'):
             # R52: returns the best antenna for a given service. Query:
             # ?service=resolve / comfyui / ollama / etc. 404 if nothing matches.
@@ -9755,6 +9786,18 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 return self.end_json(200, result)
             except Exception as e:
                 return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/api/video/batch-priority' and self.command == 'POST':
+            """R61b: set render priority on multiple shots."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_ids = data.get('shot_ids', [])
+            priority = (data.get('priority') or 'normal').strip().lower()
+            if not shot_ids:
+                return self.end_json(400, {"error": "No shot_ids provided"})
+            result = _VIDEO_BRIDGE.board.batch_priority(shot_ids, priority)
+            status = 200 if 'error' not in result else 400
+            return self.end_json(status, result)
 
         elif self.path == '/api/video/assemble' and self.command == 'POST':
             """Assemble shots into a video."""
