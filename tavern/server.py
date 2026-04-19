@@ -1342,6 +1342,21 @@ def fetch_all_characters(comfy_url=None):
         hue = int(hashlib.md5(mname.encode('utf-8')).hexdigest(), 16) % 360
         subtext = f"{display} — {profile['subtext_hint']}"
 
+        # Activation status — every auto-detected model starts DISABLED.
+        # The user activates via the Spellcaster wizard's scaffold flow.
+        # When an arch profile exists (another same-arch model is already
+        # activated), the cold model is marked `has_presettings=True` so
+        # the UI can hint "pre-configured, awaiting your OK".
+        try:
+            from scaffold.model_activation import (
+                is_activated, get_arch_profile,
+            )
+            _m_active = is_activated(mname)
+            _arch_prof = get_arch_profile(march)
+            _has_preset = bool(_arch_prof)
+        except Exception:
+            _m_active = False
+            _has_preset = False
         char_entry = {
             "id": char_id,
             "type": "comfyui_model",
@@ -1352,6 +1367,13 @@ def fetch_all_characters(comfy_url=None):
             "model_name": mname,
             "model_arch": march,
             "model_type": mtype,
+            # Activation flags. UI: grey out when activated=False; if
+            # has_presettings is also True, show "pre-configured (meet
+            # the Spellcaster to confirm)" tooltip instead of
+            # "unconfigured (meet the Spellcaster to activate)".
+            "activated": _m_active,
+            "has_presettings": _has_preset,
+            "needs_spellcaster": not _m_active,
         }
         chars.append(char_entry)
 
@@ -3601,6 +3623,127 @@ def _spellcaster_loras_approve(approvals: list) -> tuple[int, dict]:
                           "accepted": accepted, "rejected": rejected})
     return (200, {"ok": True, "accepted": accepted, "rejected": rejected,
                   "registry_size": len(_LORA_REGISTRY)})
+
+
+# ── Model activation + arch-level propagation ──────────────────────────
+# Detected models default to DISABLED. Clicking an inactive model tells
+# the user to visit the Spellcaster, which walks them through a scaffold-
+# calibration flow. Activating one model of an arch writes an arch profile
+# that every other unactivated same-arch model inherits as presettings.
+
+def _spellcaster_activation_bulk(detected_models: list = None) -> tuple[int, dict]:
+    """GET /api/spellcaster/activation — current per-model activation status.
+
+    Also returns the propagation summary so the Spellcaster can tell the
+    user "3 SDXL models activated — the next one is pre-configured".
+    """
+    try:
+        from scaffold.model_activation import (
+            all_activation_statuses, propagation_summary,
+        )
+        from spellcaster_core.preference_calibration import discover_models
+    except Exception as e:
+        return (500, {"error": f"scaffold modules unavailable: {e}"})
+    try:
+        models = detected_models or discover_models(COMFYUI_URL)
+    except Exception as e:
+        return (502, {"error": f"ComfyUI not reachable: {e}"})
+    return (200, {
+        "statuses":    all_activation_statuses(models),
+        "propagation": propagation_summary(),
+    })
+
+
+def _spellcaster_activate_model(
+    model_name: str, arch: str,
+    settings: dict = None, samples: list = None,
+    notes: str = "", propagate: bool = True,
+) -> tuple[int, dict]:
+    """POST /api/spellcaster/activate — flip a model ON and propagate."""
+    try:
+        from scaffold.model_activation import activate_model
+    except Exception as e:
+        return (500, {"error": f"scaffold modules unavailable: {e}"})
+    if not model_name:
+        return (400, {"error": "model required"})
+    try:
+        entry = activate_model(model_name, arch,
+                                settings=settings or {},
+                                samples=samples or [],
+                                notes=notes,
+                                propagate_to_arch=propagate)
+    except Exception as e:
+        return (500, {"error": f"activation failed: {e}"})
+    return (200, {"ok": True, "entry": entry})
+
+
+def _spellcaster_deactivate_model(model_name: str) -> tuple[int, dict]:
+    try:
+        from scaffold.model_activation import deactivate_model
+    except Exception as e:
+        return (500, {"error": f"scaffold modules unavailable: {e}"})
+    ok = deactivate_model(model_name)
+    return (200, {"ok": ok, "model": model_name})
+
+
+def _spellcaster_scaffold_calibrate_start(
+    model_name: str, scenarios: list = None, seed: int = 42,
+) -> tuple[int, dict]:
+    """POST /api/spellcaster/scaffold/calibrate — run the canonical scenario
+    battery against a model, returning a job_id the Guild polls for results.
+    """
+    try:
+        from scaffold.scaffold_calibration import start_scaffold_job
+        from spellcaster_core.preference_calibration import discover_models
+    except Exception as e:
+        return (500, {"error": f"scaffold modules unavailable: {e}"})
+    try:
+        models = discover_models(COMFYUI_URL)
+    except Exception as e:
+        return (502, {"error": f"ComfyUI not reachable: {e}"})
+    model = next((m for m in models if m.get("name") == model_name), None)
+    if not model:
+        return (404, {"error": f"model {model_name!r} not found"})
+    state = start_scaffold_job(COMFYUI_URL, model,
+                                scenarios=scenarios, seed=seed)
+    return (200, {"ok": True, "job_id": state.job_id,
+                  "model": model_name, "arch": model.get("arch")})
+
+
+def _spellcaster_scaffold_calibrate_status(job_id: str) -> tuple[int, dict]:
+    try:
+        from scaffold.scaffold_calibration import get_scaffold_job
+    except Exception as e:
+        return (500, {"error": f"scaffold modules unavailable: {e}"})
+    state = get_scaffold_job(job_id)
+    if not state:
+        return (404, {"error": f"job {job_id!r} not found"})
+    return (200, state.to_public_dict())
+
+
+def _spellcaster_scaffold_retry(
+    model_name: str, scenario: str, scaffold: str,
+    overrides: dict = None, seed: int = 42,
+) -> tuple[int, dict]:
+    """POST /api/spellcaster/scaffold/retry — re-render one scenario with a
+    different scaffold or overridden settings. Called by the Spellcaster
+    when the user marks a sample `scaffold_broken` or `cfg_wrong`.
+    """
+    try:
+        from scaffold.scaffold_calibration import retry_scenario
+        from spellcaster_core.preference_calibration import discover_models
+    except Exception as e:
+        return (500, {"error": f"scaffold modules unavailable: {e}"})
+    try:
+        models = discover_models(COMFYUI_URL)
+    except Exception as e:
+        return (502, {"error": f"ComfyUI not reachable: {e}"})
+    model = next((m for m in models if m.get("name") == model_name), None)
+    if not model:
+        return (404, {"error": f"model {model_name!r} not found"})
+    sample = retry_scenario(COMFYUI_URL, model, scenario, scaffold,
+                             overrides=overrides or {}, seed=seed)
+    return (200, {"ok": True, "sample": sample.to_dict()})
 
 
 def _spellcaster_calibration_save(model_name: str, prefs: dict) -> tuple[int, dict]:
@@ -7149,6 +7292,14 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(200, _spellcaster_state())
         if self.path == '/api/spellcaster/models':
             return self.end_json(*_spellcaster_discover_models())
+        # Model activation status (bulk) + scaffold-calibration job status.
+        if self.path == '/api/spellcaster/activation':
+            return self.end_json(*_spellcaster_activation_bulk())
+        if self.path.startswith('/api/spellcaster/scaffold/status'):
+            qs = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(qs)
+            return self.end_json(*_spellcaster_scaffold_calibrate_status(
+                params.get('job', [''])[0]))
         # LoRA bulk calibration status + results (polled by the review UI).
         if self.path.startswith('/api/spellcaster/calibrate/loras/status'):
             qs = urllib.parse.urlparse(self.path).query
@@ -9396,6 +9547,29 @@ class GuildHandler(SimpleHTTPRequestHandler):
         if self.path == '/api/spellcaster/calibrate/loras/approve':
             return self.end_json(*_spellcaster_loras_approve(
                 data.get('approvals') or []))
+        # Model activation + scaffold calibration
+        if self.path == '/api/spellcaster/activate':
+            return self.end_json(*_spellcaster_activate_model(
+                data.get('model', ''), data.get('arch', ''),
+                settings=data.get('settings') or {},
+                samples=data.get('samples') or [],
+                notes=data.get('notes', ''),
+                propagate=bool(data.get('propagate', True))))
+        if self.path == '/api/spellcaster/deactivate':
+            return self.end_json(*_spellcaster_deactivate_model(
+                data.get('model', '')))
+        if self.path == '/api/spellcaster/scaffold/calibrate':
+            return self.end_json(*_spellcaster_scaffold_calibrate_start(
+                data.get('model', ''),
+                scenarios=data.get('scenarios'),
+                seed=int(data.get('seed', 42))))
+        if self.path == '/api/spellcaster/scaffold/retry':
+            return self.end_json(*_spellcaster_scaffold_retry(
+                data.get('model', ''),
+                data.get('scenario', ''),
+                data.get('scaffold', ''),
+                overrides=data.get('overrides') or {},
+                seed=int(data.get('seed', 42))))
 
         # -- /api/horde_generate -- server-side proxy to AI Horde
         #    Browser can't call Horde directly (CORS), so we relay.

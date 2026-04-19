@@ -464,6 +464,51 @@ CALIBRATION:
   the same way: you emit the action, the UI runs the grid, the user picks,
   you update the defaults and confirm.
 
+MODEL ACTIVATION (disable-by-default, walk-through-to-enable):
+  Every detected checkpoint / UNET starts DISABLED. When the user clicks
+  an unactivated model, the Guild UI points them back here with "meet
+  with the Spellcaster to activate this model."
+
+  To activate a model properly you walk them through scaffold calibration
+  — a battery of canonical test gens (single portrait, two-character
+  interaction, scene with a prop, plus a turbo variant) run against
+  their model. They rate each one:
+    ok               — sample is good; bless it as the default.
+    scaffold_broken  — prompt template is wrong; try the next variant.
+    cfg_wrong        — composition fine but cfg off; bump and retry.
+    turbo_bad        — turbo sample unusable; turbo=false for this model.
+    elsewhere        — something deeper is wrong (VAE / arch mismatch /
+                       corrupt file). Diagnose; don't auto-activate.
+
+  Workflow:
+    1. <ACTION>{{"type": "scaffold_calibrate", "model": "<name>"}}</ACTION>
+       -> returns a job_id; poll with scaffold_calibrate_status.
+    2. Present the samples to the user. For each one they rate
+       `scaffold_broken` or `cfg_wrong`, emit a focused
+       <ACTION>{{"type": "scaffold_retry", ...}}</ACTION> to get a replacement.
+    3. Once every scenario is `ok`, emit
+       <ACTION>{{"type": "activate_model", "model": "<name>",
+                "arch": "<arch>", "settings": {{...}}, "samples": [...],
+                "propagate": true}}</ACTION>
+       The settings become the arch profile — every OTHER unactivated
+       same-arch model inherits them as presettings (pre-filled defaults
+       ready for the user's OK, no re-calibration from scratch). The
+       models still stay disabled until the user clicks each one and
+       confirms; the Spellcaster's job is to make that confirmation
+       fast. That's how we avoid setting up LoRAs / CFGs / turbo
+       ten thousand times.
+
+  Presettings vs activation:
+    - Presettings: the settings ARE in the arch profile, so a cold
+      SDXL-model activation starts pre-filled. The user still clicks OK.
+    - Activation: the `activated: true` flag that unblocks the model
+      across GIMP / Darktable / the Guild sidebar.
+  One implies the other when the user signs off, never the reverse.
+
+  Use `<ACTION>{{"type": "deactivate_model", "model": "..."}}</ACTION>`
+  to flip a previously-activated model back off. Keeps the settings
+  cached for a zero-cost re-activation later.
+
 LORA AUTO-SETUP (headline calibration bubble — show this option early):
   The legacy LoRA classifier looks at filenames and asks the local LLM to
   guess — so Wan video LoRAs end up tagged as SDXL and show up under
@@ -598,6 +643,39 @@ def action_to_endpoint(action: dict[str, Any]) -> tuple[str, str, dict[str, Any]
     if atype == "lora_autosetup_approve":
         return ("POST", "/api/spellcaster/calibrate/loras/approve",
                 {"approvals": action.get("approvals") or []})
+    if atype == "activate_model":
+        # Flip a model ON + commit blessed settings + propagate to same arch.
+        return ("POST", "/api/spellcaster/activate",
+                {"model":    action.get("model", ""),
+                 "arch":     action.get("arch", ""),
+                 "settings": action.get("settings") or {},
+                 "samples":  action.get("samples")  or [],
+                 "notes":    action.get("notes", ""),
+                 "propagate": bool(action.get("propagate", True))})
+    if atype == "deactivate_model":
+        return ("POST", "/api/spellcaster/deactivate",
+                {"model": action.get("model", "")})
+    if atype == "scaffold_calibrate":
+        # Render the canonical scenario battery (single_portrait,
+        # two_char_interact, scene_with_object, turbo_single) against a model.
+        return ("POST", "/api/spellcaster/scaffold/calibrate",
+                {"model":     action.get("model", ""),
+                 "scenarios": action.get("scenarios"),
+                 "seed":      int(action.get("seed", 42))})
+    if atype == "scaffold_calibrate_status":
+        return ("GET",
+                f"/api/spellcaster/scaffold/status?job={action.get('job', '')}",
+                {})
+    if atype == "scaffold_retry":
+        # Re-render one scenario with a different prompt template /
+        # overridden cfg-steps-sampler. Used when user rates a sample
+        # "scaffold_broken" or "cfg_wrong".
+        return ("POST", "/api/spellcaster/scaffold/retry",
+                {"model":     action.get("model", ""),
+                 "scenario":  action.get("scenario", ""),
+                 "scaffold":  action.get("scaffold", ""),
+                 "overrides": action.get("overrides") or {},
+                 "seed":      int(action.get("seed", 42))})
     if atype == "finish":
         return ("POST", "/api/setup/finish", {})
     return None
