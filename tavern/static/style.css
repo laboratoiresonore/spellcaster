@@ -284,21 +284,30 @@ body {
     background: linear-gradient(180deg, rgba(178, 70, 242, 0.06) 0%, transparent 100%);
 }
 .sidebar-header h2 {
-    font-size: 18px; font-weight: 700; letter-spacing: 2px;
+    font-size: 20px; font-weight: 700; letter-spacing: 2.5px;
     text-align: center;
     margin: 0;
     position: relative;
+    padding: 2px 0 4px;
     background: linear-gradient(92deg,
-        #e9d5ff 0%, #ffd700 18%, #fff2c6 32%,
-        #b470ff 50%, #ffb84a 68%, #fff2c6 82%, #e9d5ff 100%);
-    background-size: 300% 100%;
+        #f5e7ff 0%, #ffd700 14%, #fff8d6 26%,
+        #c88dff 40%, #ffc667 56%, #fff8d6 70%,
+        #b470ff 84%, #f5e7ff 100%);
+    background-size: 400% 100%;
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
-    filter: drop-shadow(0 0 10px rgba(178,70,242,0.55))
-            drop-shadow(0 0 20px rgba(255,215,0,0.25));
-    animation: titleSweep 5.5s linear infinite,
-               titlePulse 3s ease-in-out infinite;
+    filter: drop-shadow(0 0 14px rgba(178,70,242,0.85))
+            drop-shadow(0 0 28px rgba(255,215,0,0.45))
+            drop-shadow(0 0 54px rgba(178,70,242,0.30));
+    animation: titleSweep 4.5s linear infinite,
+               titlePulse 3s ease-in-out infinite,
+               titleFloat 6s ease-in-out infinite;
+    will-change: background-position, filter, transform;
+}
+@keyframes titleFloat {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-1.5px); }
 }
 /* Rune particles drifting above the title. Rotating conic-gradient
    sits behind the text (z-index -1 on a pseudo-element) so the
@@ -306,17 +315,18 @@ body {
    DOM. Intensifies in is-generating state. */
 .sidebar-header h2::before {
     content: '';
-    position: absolute; inset: -8px -20px;
+    position: absolute; inset: -12px -28px;
     background:
-        radial-gradient(circle at 15% 50%, rgba(178,70,242,0.35) 0%, transparent 24%),
-        radial-gradient(circle at 85% 50%, rgba(255,215,0,0.28) 0%, transparent 24%),
-        radial-gradient(circle at 50% 10%, rgba(220,180,255,0.22) 0%, transparent 28%);
-    filter: blur(6px);
-    opacity: 0.55;
-    animation: titleAura 6s ease-in-out infinite;
+        radial-gradient(ellipse at 15% 50%, rgba(178,70,242,0.55) 0%, transparent 38%),
+        radial-gradient(ellipse at 85% 50%, rgba(255,215,0,0.48) 0%, transparent 38%),
+        radial-gradient(circle at 50% 20%, rgba(220,180,255,0.35) 0%, transparent 40%),
+        radial-gradient(circle at 50% 80%, rgba(255,180,110,0.22) 0%, transparent 42%);
+    filter: blur(8px);
+    opacity: 0.7;
+    animation: titleAura 5s ease-in-out infinite;
     pointer-events: none;
     z-index: -1;
-    border-radius: 16px;
+    border-radius: 18px;
 }
 /* Tiny travelling sparks across the title — conic gradient rotating
    gives a "spell-word being spoken" feel. */
@@ -501,12 +511,13 @@ body.is-generating .health-stats .meter-bar::after {
     position: absolute; inset: 0;
     background: linear-gradient(90deg,
         transparent 0%,
-        rgba(255,215,0,0.0) 30%,
-        rgba(255,215,0,0.55) 50%,
-        rgba(255,255,255,0.7) 55%,
-        rgba(178,70,242,0.55) 60%,
-        transparent 80%);
-    animation: meterSteam 1.8s linear infinite;
+        transparent 42%,
+        rgba(255,215,0,0.85) 48%,
+        rgba(255,255,255,0.95) 50%,
+        rgba(178,70,242,0.85) 52%,
+        transparent 58%,
+        transparent 100%);
+    animation: meterSteam 1.5s linear infinite;
     pointer-events: none;
     mix-blend-mode: screen;
 }
@@ -1223,11 +1234,15 @@ textarea::placeholder { color: #555; }
    the Guild RIGHT NOW". Applied on top of whatever state class the
    chip already has (online/stale/idle) so it works everywhere. */
 .active-iface-chip.iface-engaged {
-    animation: chipEngage 1.4s ease-in-out infinite;
+    animation: chipEngage 1.2s ease-in-out infinite;
     border-color: #ffd700 !important;
-    box-shadow: 0 0 12px rgba(255,215,0,0.55),
-                0 0 24px rgba(178,70,242,0.35);
+    background: linear-gradient(135deg,
+        rgba(255,215,0,0.22),
+        rgba(178,70,242,0.28)) !important;
+    box-shadow: 0 0 14px rgba(255,215,0,0.65),
+                0 0 28px rgba(178,70,242,0.45);
     color: #fff8d6 !important;
+    transform-origin: center;
 }
 .active-iface-chip.iface-engaged::before {
     color: #ffd700 !important;
@@ -1237,13 +1252,15 @@ textarea::placeholder { color: #555; }
 }
 @keyframes chipEngage {
     0%, 100% {
-        box-shadow: 0 0 10px rgba(255,215,0,0.45),
-                    0 0 20px rgba(178,70,242,0.3);
+        transform: scale(1);
+        box-shadow: 0 0 10px rgba(255,215,0,0.5),
+                    0 0 20px rgba(178,70,242,0.35);
     }
     50% {
-        box-shadow: 0 0 18px rgba(255,215,0,0.85),
-                    0 0 36px rgba(178,70,242,0.55),
-                    0 0 54px rgba(220,180,255,0.35);
+        transform: scale(1.05);
+        box-shadow: 0 0 22px rgba(255,215,0,0.95),
+                    0 0 42px rgba(178,70,242,0.65),
+                    0 0 64px rgba(220,180,255,0.45);
     }
 }
 @keyframes chipEngageDot {
