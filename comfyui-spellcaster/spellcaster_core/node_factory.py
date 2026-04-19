@@ -172,19 +172,12 @@ class NodeFactory:
     def unet_loader(self, unet_name, weight_dtype="default", node_id=None):
         """UNETLoader — loads the diffusion model for Flux / Klein architectures.
 
-        Unlike checkpoint-based models, Flux and Klein architectures separate the
-        UNET (diffusion model) from the CLIP and VAE. This loader handles the UNET
-        only; CLIP and VAE are loaded separately via clip_loader/dual_clip_loader
-        and vae_loader.
-
-        Args:
-            unet_name: UNET filename (e.g. "flux1-dev-Q6_K.gguf" or "flux2-klein.safetensors")
-            weight_dtype: Data type ("default", "fp8", "fp16", "fp32", etc)
-
-        Returns:
-            Node ID (string). The node has one output:
-              - [node_id, 0]: MODEL (the UNET for diffusion sampling)
+        Auto-dispatches to UnetLoaderGGUF for .gguf files; the stock UNETLoader
+        only accepts .safetensors and fails prompt validation on .gguf paths.
         """
+        if isinstance(unet_name, str) and unet_name.lower().endswith(".gguf"):
+            return self._add("UnetLoaderGGUF",
+                             {"unet_name": unet_name}, node_id)
         return self._add("UNETLoader",
                          {"unet_name": unet_name,
                           "weight_dtype": weight_dtype}, node_id)
