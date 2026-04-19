@@ -209,22 +209,24 @@ Yes, we counted. Yes, we noticed. No, we will not be adding a 70th (officially).
 The **Antenna** is the small always-on bridge that lets a Spellcaster running on your laptop drive ComfyUI, KoboldCpp, Ollama, DaVinci Resolve, Darktable, GIMP, or SillyTavern on **another PC** on your LAN. Gaming tower in the closet does the work; the laptop on the couch sends the prompts. Pair once, forget forever.
 
 <p align="center">
-  <a href="https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main/installer/install_antenna.bat">
-    <img src="https://img.shields.io/badge/Windows-install__antenna.bat-2ed573?style=for-the-badge&logo=windows&logoColor=white" alt="Download antenna installer (Windows)"/>
+  <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-antenna-windows.exe">
+    <img src="https://img.shields.io/badge/Windows-spellcaster--antenna.exe-2ed573?style=for-the-badge&logo=windows&logoColor=white" alt="Download compiled antenna (Windows)"/>
   </a>
   &nbsp;
   <a href="https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main/installer/install_antenna.sh">
-    <img src="https://img.shields.io/badge/macOS-install__antenna.sh-2ed573?style=for-the-badge&logo=apple&logoColor=white" alt="Download antenna installer (macOS)"/>
+    <img src="https://img.shields.io/badge/macOS-install__antenna.sh-2ed573?style=for-the-badge&logo=apple&logoColor=white" alt="Antenna installer (macOS)"/>
   </a>
   &nbsp;
   <a href="https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main/installer/install_antenna.sh">
-    <img src="https://img.shields.io/badge/GNU%2FLinux-install__antenna.sh-2ed573?style=for-the-badge&logo=linux&logoColor=white" alt="Download antenna installer (Linux)"/>
+    <img src="https://img.shields.io/badge/GNU%2FLinux-install__antenna.sh-2ed573?style=for-the-badge&logo=linux&logoColor=white" alt="Antenna installer (Linux)"/>
   </a>
 </p>
 
-**Windows:** right-click → *Save link as…* → double-click. First launch asks whether to create a desktop icon, a Start Menu entry, and / or launch at login. Tray icon appears; right-click → *Pair with Guild…* → type the 6-digit code into your Guild sidebar.
+**Windows:** download the ~140&nbsp;MB compiled binary from the latest release, double-click. No Python required. First launch offers to create a desktop icon, a Start Menu entry, and / or launch at login. Tray icon appears; right-click → *Pair with Guild…* → type the 6-digit code into your Guild sidebar.
 
-**macOS / GNU/Linux:** `curl -LO <link>` and `chmod +x install_antenna.sh && ./install_antenna.sh`. Same flow; tray works on macOS out of the box, Linux falls back to console mode without AppIndicator.
+**macOS / GNU/Linux:** `curl -LO <link>` and `chmod +x install_antenna.sh && ./install_antenna.sh`. The shell installer checks for Python 3.10+, clones the repo, installs tray deps, and runs the antenna. Tray works on macOS out of the box; Linux falls back to console mode without AppIndicator.
+
+> Prefer the source path on Windows too? The Python installer ([install_antenna.bat](https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main/installer/install_antenna.bat)) still works — double-click it, same first-run shortcut flow as the .exe.
 
 Under the hood the bootstrap clones this repo into `~/.spellcaster/repo`, best-effort `pip install`s `pystray` + `Pillow`, and runs `python -m antenna`. Everything is re-runnable — the installer is also the updater.
 
