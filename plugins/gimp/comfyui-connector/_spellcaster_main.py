@@ -1014,8 +1014,12 @@ def _publish_event(kind, **data):
         pass
 
 
-def _auto_enhance(prompt, arch_key, negative=""):
+def _auto_enhance(prompt, arch_key, negative="", model_name=None):
     """Enhance a prompt via local LLM if the global toggle is ON.
+
+    When model_name is passed, spellcaster_core.llm_prompt_db overlays
+    any per-model hints and sampling overrides the user has curated
+    for that specific checkpoint on top of the arch baseline.
 
     Returns (enhanced_prompt, enhanced_negative). If enhancement is
     disabled, the LLM is unreachable, or the prompt is already detailed,
@@ -1029,9 +1033,11 @@ def _auto_enhance(prompt, arch_key, negative=""):
     try:
         from spellcaster_core.prompt_enhance import enhance_prompt
         enhanced = enhance_prompt(prompt, arch_key, _LLM_URL, is_negative=False,
-                                  comfy_url=COMFYUI_DEFAULT_URL)
+                                  comfy_url=COMFYUI_DEFAULT_URL,
+                                  model_name=model_name)
         if enhanced and enhanced != prompt:
-            print(f"[Spellcaster] Prompt enhanced ({arch_key}): "
+            tail = f", {model_name.split('/')[-1]}" if model_name else ""
+            print(f"[Spellcaster] Prompt enhanced ({arch_key}{tail}): "
                   f"{len(prompt.split())}→{len(enhanced.split())} words")
         else:
             enhanced = prompt

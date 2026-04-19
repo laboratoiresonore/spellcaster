@@ -28,11 +28,19 @@ import traceback
 
 
 def _locate_shared():
+    """Add shared/ to sys.path.
+
+    Checks, in order: installed layout (./shared next to this script),
+    dev layout (../shared), legacy fallback (../../shared).
+    """
     here = os.path.dirname(os.path.abspath(__file__))
-    for rel in ("shared", os.path.join("..", "shared")):
-        p = os.path.normpath(os.path.join(here, "..", rel))
-        if os.path.isdir(p) and p not in sys.path:
-            sys.path.insert(0, p)
+    for cand in (
+        os.path.join(here, "shared"),
+        os.path.normpath(os.path.join(here, "..", "shared")),
+        os.path.normpath(os.path.join(here, "..", "..", "shared")),
+    ):
+        if os.path.isdir(cand) and cand not in sys.path:
+            sys.path.insert(0, cand)
             return True
     return False
 
