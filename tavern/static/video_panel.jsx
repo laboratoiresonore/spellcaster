@@ -1722,8 +1722,30 @@ function VideoPanel() {
   const [sseConnected, setSseConnected] = _useState(false);
 
   // ── Filtered shots ──
+  // R62a: "modified since last render" helper + filter toggle.
+  // A shot is STALE when: it has a ready render_history entry AND the
+  // current creative state differs from what that entry recorded. These
+  // are the shots the user probably wants to re-render.
+  const isShotStale = _useCallback((shot) => {
+    const hist = shot.render_history || [];
+    let lastOk = null;
+    for (let i = hist.length - 1; i >= 0; i--) {
+      if (hist[i].status === "ready") { lastOk = hist[i]; break; }
+    }
+    if (!lastOk) return false;
+    if ((shot.prompt || "") !== (lastOk.prompt || "")) return true;
+    if ((shot.negative || "") !== (lastOk.negative || "")) return true;
+    if ((shot.preset || "") !== (lastOk.preset || "")) return true;
+    const curOv = JSON.stringify(shot.overrides || {});
+    const lastOv = JSON.stringify(lastOk.overrides || {});
+    if (curOv !== lastOv) return true;
+    return false;
+  }, []);
+
   const filteredShots = _useMemo(() => {
-    let result = statusFilter === "all" ? shots : shots.filter(s => s.status === statusFilter);
+    let result = statusFilter === "all" ? shots
+      : statusFilter === "stale" ? shots.filter(isShotStale)
+      : shots.filter(s => s.status === statusFilter);
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter(s =>
@@ -1733,7 +1755,7 @@ function VideoPanel() {
       );
     }
     return result;
-  }, [shots, statusFilter, searchQuery]);
+  }, [shots, statusFilter, searchQuery, isShotStale]);
 
   // R44: keyboard navigation — Arrow up/down moves focus between cards,
   // Escape clears it, Space toggles the focused card's selection.
@@ -2640,6 +2662,26 @@ function VideoPanel() {
     }
   };
 
+  // R62b: "Select all in scene X" populates the selection set from
+  // scene membership. Every existing batch op (lock, color, priority,
+  // preset, prompt edit, revert, duplicate, delete) then applies to the
+  // whole scene without any per-op scene plumbing.
+  const selectSceneShots = (sceneId, additive = false) => {
+    const ids = shots.filter(s => s.scene_id === sceneId).map(s => s.id);
+    if (ids.length === 0) {
+      addToast("Scene has no shots yet", "info");
+      return;
+    }
+    setSelected(prev => {
+      const next = new Set(additive ? prev : []);
+      ids.forEach(id => next.add(id));
+      return next;
+    });
+    const scene = scenes.find(sc => sc.id === sceneId);
+    addToast(`Selected ${ids.length} shot(s) from "${scene?.name || sceneId}"`,
+             "info");
+  };
+
   // R61b: set priority on all selected shots
   const batchPriority = async (priority) => {
     if (selected.size === 0) return;
@@ -3267,22 +3309,62 @@ function VideoPanel() {
           </span>
         </div>
         <ShotSummary shots={shots} />
-        <div className="flex gap-1.5">
-          {["all", "draft", "queued", "running", "ready", "failed"].map(status => (
-            <button
-              key={status}
-              onClick={() => setStatusFilter(status)}
-              className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
-                statusFilter === status
-                  ? "bg-amber-600 text-white"
-                  : "bg-slate-800 hover:bg-slate-700 text-slate-300"
-              }`}
-            >
-              {status}
-            </button>
-          ))}
+        <div className="flex gap-1.5 flex-wrap">
+          {["all", "draft", "queued", "running", "ready", "failed", "stale"].map(status => {
+            const staleCount = status === "stale"
+              ? shots.filter(isShotStale).length
+              : null;
+            return (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                  statusFilter === status
+                    ? "bg-amber-600 text-white"
+                    : (status === "stale"
+                        ? "bg-amber-900/30 hover:bg-amber-800/40 text-amber-300"
+                        : "bg-slate-800 hover:bg-slate-700 text-slate-300")
+                }`}
+                title={status === "stale"
+                  ? "Shots whose prompt/preset/overrides changed since their last successful render"
+                  : ""}
+              >
+                {status === "stale" ? "⚠ stale" : status}
+                {staleCount !== null && staleCount > 0 && (
+                  <span className="ml-1 text-[10px] opacity-70">({staleCount})</span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
+
+      {/* R62b: scene-quick-select — shown only when scenes exist, even if
+          nothing is selected yet. Picking a scene populates `selected`
+          with every shot in that scene so the bulk bar appears below. */}
+      {scenes && scenes.length > 0 && (
+        <div className="scene-quick-select flex items-center gap-2 text-xs text-slate-400">
+          <span>Select scene:</span>
+          {scenes.map(sc => {
+            const count = shots.filter(s => s.scene_id === sc.id).length;
+            if (count === 0) return null;
+            return (
+              <button
+                key={sc.id}
+                onClick={(e) => selectSceneShots(sc.id, e.shiftKey)}
+                className="scene-quick-btn px-2 py-0.5 rounded text-[10px] font-medium border"
+                style={{
+                  borderColor: sc.color || "#4a9eff",
+                  color: sc.color || "#4a9eff",
+                }}
+                title={`${count} shot(s). Shift-click to add to current selection.`}
+              >
+                {sc.name || sc.id.slice(0,6)} <span className="opacity-70">({count})</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Bulk action bar */}
       {selected.size > 0 && (
