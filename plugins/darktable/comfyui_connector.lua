@@ -7556,6 +7556,112 @@ local server_save_btn = dt.new_widget("button") {
   end,
 }
 
+-- R113: Check Inbox — pull pending assets other apps have sent to
+-- Darktable and drop them into an inbox folder the user can then
+-- import via Darktable's native Import panel. Uses GET /api/darktable
+-- /inbox?consume=1 (mailbox fanout from event bus routes
+-- darktable.asset.* events to darktable's mailbox automatically).
+local function _inbox_dir()
+  -- Prefer OS-standard Pictures dir + Spellcaster-Inbox subfolder.
+  -- Fall back to tmp_dir() if HOME isn't set.
+  local home = os.getenv("USERPROFILE") or os.getenv("HOME")
+  if not home or home == "" then return tmp_dir() end
+  local pics = home .. sep .. "Pictures" .. sep .. "Spellcaster-Inbox"
+  -- Ensure directory exists. mkdir is fine to run repeatedly.
+  if package.config:sub(1,1) == "\\" then
+    os.execute(string.format('if not exist "%s" mkdir "%s" 2>NUL',
+                              pics, pics))
+  else
+    os.execute(string.format('mkdir -p "%s" 2>/dev/null', pics))
+  end
+  return pics
+end
+
+local function _check_spellcaster_inbox()
+  local guild = get_guild_url()
+  if not guild or guild == "" then
+    dt.print(_("💎 Inbox: no Guild URL configured — set Server in Spellcaster panel."))
+    return
+  end
+  -- 1) pull the inbox queue with consume=1 (pop on read)
+  local resp_file = tmp_dir() .. sep .. "spellcaster_inbox_" .. os.time() .. ".json"
+  local cmd
+  if package.config:sub(1,1) == "\\" then
+    cmd = string.format(
+      'curl -s --max-time 10 "%s/api/darktable/inbox?consume=1&max=20" -o "%s" 2>NUL',
+      shell_esc(guild), shell_esc(resp_file))
+  else
+    cmd = string.format(
+      'curl -s --max-time 10 "%s/api/darktable/inbox?consume=1&max=20" -o "%s" 2>/dev/null',
+      shell_esc(guild), shell_esc(resp_file))
+  end
+  os.execute(cmd)
+  local f = io.open(resp_file, "r")
+  if not f then
+    dt.print(_("💎 Inbox: couldn't reach the Guild."))
+    return
+  end
+  local body = f:read("*all"); f:close(); os.remove(resp_file)
+  if not body or body == "" then
+    dt.print(_("💎 Inbox: Guild returned an empty response."))
+    return
+  end
+  -- 2) collect every image_url field (darktable.asset.* events).
+  --    Regex-level extraction keeps us off a JSON library dependency.
+  local urls = {}
+  for url in body:gmatch('"image_url"%s*:%s*"([^"]+)"') do
+    table.insert(urls, url)
+  end
+  if #urls == 0 then
+    dt.print(_("💎 Inbox: nothing waiting."))
+    return
+  end
+  -- 3) download each to the Spellcaster-Inbox folder
+  local dir = _inbox_dir()
+  local downloaded = 0
+  local failed = 0
+  for i, url in ipairs(urls) do
+    -- Resolve relative paths against the Guild URL
+    if url:sub(1, 1) == "/" then
+      url = guild:gsub("/+$", "") .. url
+    end
+    -- Infer filename from last URL segment; default to timestamped PNG
+    local hash = url:match("/api/assets/([^/?#]+)") or tostring(i)
+    local out = dir .. sep .. "sc_" .. os.time() .. "_" .. hash:sub(1, 8) .. ".png"
+    local dcmd
+    if package.config:sub(1,1) == "\\" then
+      dcmd = string.format('curl -s --max-time 30 -o "%s" "%s" 2>NUL',
+                            shell_esc(out), shell_esc(url))
+    else
+      dcmd = string.format('curl -s --max-time 30 -o "%s" "%s" 2>/dev/null',
+                            shell_esc(out), shell_esc(url))
+    end
+    os.execute(dcmd)
+    -- Verify file exists + non-empty
+    local check = io.open(out, "rb")
+    if check then
+      local chunk = check:read(16); check:close()
+      if chunk and #chunk > 0 then
+        downloaded = downloaded + 1
+      else
+        os.remove(out)
+        failed = failed + 1
+      end
+    else
+      failed = failed + 1
+    end
+  end
+  dt.print(string.format(
+    _("💎 Inbox: %d image(s) saved to %s. Open Darktable's Import panel to add them to the library."),
+    downloaded, dir))
+end
+
+local inbox_btn = dt.new_widget("button") {
+  label = _("💎 Check Spellcaster Inbox"),
+  tooltip = _("Pull any assets other Spellcaster apps have sent to Darktable. Downloads go to Pictures/Spellcaster-Inbox; import via Darktable's native Import panel."),
+  clicked_callback = _check_spellcaster_inbox,
+}
+
 -- R110: cross-plugin send buttons. Use the ACTIVE lighttable image
 -- (dt.gui.selection()[1] or act_image) as the source, export via
 -- the existing export_to_temp() helper, then upload + publish via
@@ -7620,12 +7726,12 @@ local module_widget = dt.new_widget("box") {
   test_btn,
   dt.new_widget("separator") {},
 
-  -- R110: cross-plugin transfer buttons at the top so editors spot
-  -- them without scrolling past the giant AI-controls block.
+  -- R110 + R113: cross-plugin transfer — send outbound + check inbox.
   dt.new_widget("label") { label = _("💎 CROSS-APP TRANSFER") },
   send_to_resolve_btn,
   send_to_gimp_btn,
   send_to_sillytavern_btn,
+  inbox_btn,
   dt.new_widget("separator") {},
 
   -- Global scaling control

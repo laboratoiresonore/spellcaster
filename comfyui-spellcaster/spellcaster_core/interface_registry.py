@@ -113,7 +113,7 @@ KNOWN_INTERFACES: dict[str, InterfaceSpec] = {
     ),
     "resolve": InterfaceSpec(
         key="resolve",
-        ui_label="DaVinci Resolve",
+        ui_label="Resolve",
         icon="🎬",
         detector_paths=[
             "$APPDATA/Blackmagic Design/DaVinci Resolve/Support/Workflow Integration Plugins/spellcaster_bridge",

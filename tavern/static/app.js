@@ -1138,7 +1138,7 @@ function _originLabel(origin) {
         guild: 'Wizard Guild',
         gimp: 'GIMP',
         darktable: 'Darktable',
-        resolve: 'DaVinci Resolve',
+        resolve: 'Resolve',
         sillytavern: 'SillyTavern',
         signal: 'Signal',
     };
