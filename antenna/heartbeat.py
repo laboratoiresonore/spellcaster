@@ -13,7 +13,7 @@ home sees:
 
   - local: GIMP ●       (heartbeat from their own GIMP plugin)
   - local: Darktable ●
-  - remote (Theo): ComfyUI ●     (heartbeat from antenna on 192.168.86.77)
+  - remote (<hostname>): ComfyUI ●   (heartbeat from antenna on the LAN)
   - remote (Theo): Ollama ●
 
 Namespacing
@@ -111,13 +111,25 @@ def _probe_comfyui(url: str) -> dict[str, Any]:
         return {"reachable": False}
 
 
-def _build_payloads(cfg: dict[str, Any]) -> list[dict[str, Any]]:
-    """Build one heartbeat payload per declared service.
+_FRONTEND_INTERFACES = {"gimp", "darktable", "resolve", "sillytavern"}
 
-    A beefy box that hosts comfyui + ollama sends TWO heartbeats each
-    cycle so both appear in the Guild sidebar independently. Lets users
-    filter / click each one separately (e.g. "install node on this
-    ComfyUI" without affecting Ollama state).
+
+def _build_payloads(cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    """Build the heartbeat payload(s) for this cycle.
+
+    Strategy:
+      1. One `antenna` heartbeat per cycle — represents the remote box as
+         a single first-class interface chip in the Guild. Meta carries
+         the full per-service state (machine, services, agent_url, vitals).
+      2. For any declared service that ALSO happens to be a user-facing
+         frontend (gimp, darktable, resolve, sillytavern), send a second
+         heartbeat under that key with `remote=true` + `source_antenna`
+         so the native chip also lights up with remote-origin attribution.
+
+    Why NOT heartbeat per-backend-service (comfyui/kobold/ollama) as
+    their own interface keys: the Guild's KNOWN_INTERFACES registry
+    only accepts frontends. Backend services live inside the antenna's
+    meta and are surfaced via /api/interfaces.antenna.last_meta.services.
     """
     hostname = socket.gethostname()
     # Detect LAN IP the same way config.py does
@@ -131,34 +143,44 @@ def _build_payloads(cfg: dict[str, Any]) -> list[dict[str, Any]]:
 
     agent_port = cfg.get("port", 7334)
     agent_url = f"https://{ip}:{agent_port}"
-
-    payloads = []
     services = cfg.get("services", [])
 
+    # Build per-service vital snapshots (embedded in the antenna meta)
+    services_detail: dict[str, dict[str, Any]] = {}
     for svc in services:
-        base_meta: dict[str, Any] = {
-            "machine": hostname,
-            "ip": ip,
-            "service": svc,
-            "agent_url": agent_url,   # how the bridge can reach us
-            "source_antenna": agent_url,  # explicit remote-origin flag
-            "remote": True,               # UI can style remote chips distinctly
-        }
-
-        # Service-specific vitals
         if svc == "comfyui":
-            base_meta.update(_probe_comfyui(cfg.get("comfyui_url", "")))
-        elif svc == "llm" or svc == "kobold" or svc == "ollama":
-            # LLM liveness is cheap — skip for now to avoid adding another
-            # probe every 10s. Can add later if the bridge needs it.
-            base_meta["reachable"] = True  # optimistic; /status is authoritative
+            services_detail[svc] = _probe_comfyui(cfg.get("comfyui_url", ""))
+        elif svc in ("llm", "kobold", "ollama"):
+            services_detail[svc] = {"reachable": True}  # optimistic
+        else:
+            services_detail[svc] = {"declared": True}
 
-        # Bare interface key — matches the Guild's KNOWN_INTERFACES allowlist.
-        # Remote-origin info lives in meta.source_antenna + meta.machine.
-        payloads.append({
-            "interface": svc,
-            "meta": base_meta,
-        })
+    antenna_meta: dict[str, Any] = {
+        "machine": hostname,
+        "ip": ip,
+        "agent_url": agent_url,
+        "services": services,
+        "services_detail": services_detail,
+        "remote": True,
+    }
+
+    payloads: list[dict[str, Any]] = [
+        {"interface": "antenna", "meta": antenna_meta},
+    ]
+
+    # For any service that's a native frontend interface, also heartbeat
+    # under its bare key so the sidebar chip for that frontend lights up
+    # with remote-origin attribution.
+    for svc in services:
+        if svc in _FRONTEND_INTERFACES:
+            frontend_meta = {
+                "machine": hostname,
+                "ip": ip,
+                "agent_url": agent_url,
+                "source_antenna": agent_url,
+                "remote": True,
+            }
+            payloads.append({"interface": svc, "meta": frontend_meta})
 
     return payloads
 
