@@ -1109,8 +1109,16 @@ function buildSceneCompositeWorkflow(scenePrompt, characters, modelName) {
     };
 
     // Composite each character onto the scene
+    // AILab_ImageCombiner clamps position_x/position_y to [0..100].
+    // Cap at 4 bodies to keep spacing readable and to stay within range.
+    const toComp = characters.slice(0, 4);
+    const denom = Math.max(1, toComp.length - 1);
+    const clamp01 = (v, fb) => {
+        const n = Number.isFinite(v) ? v : fb;
+        return Math.max(0, Math.min(100, Math.round(n)));
+    };
     let currentImageRef = ["8", 0];  // Start with the scene
-    characters.forEach((char, i) => {
+    toComp.forEach((char, i) => {
         const loadId = `${50 + i}`;
         const compId = `${60 + i}`;
 
@@ -1118,14 +1126,18 @@ function buildSceneCompositeWorkflow(scenePrompt, characters, modelName) {
             "image": char.bodyImageName,
         }};
 
+        const evenX = toComp.length === 1 ? 50
+            : toComp.length === 2 ? (i === 0 ? 35 : 65)
+            : Math.round(15 + (i * 70) / denom);
+
         workflow[compId] = { "class_type": "AILab_ImageCombiner", "inputs": {
             "foreground": [loadId, 0],
             "background": currentImageRef,
             "mode": "normal",
             "foreground_opacity": 1.0,
             "foreground_scale": char.placement?.scale || 0.45,
-            "position_x": char.placement?.x || (30 + i * 30),
-            "position_y": char.placement?.y || 70,
+            "position_x": clamp01(char.placement?.x, evenX),
+            "position_y": clamp01(char.placement?.y, 70),
         }};
 
         currentImageRef = [compId, 0];

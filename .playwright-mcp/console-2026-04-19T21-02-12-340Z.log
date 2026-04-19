@@ -61,3 +61,32 @@ Right n..." @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-s
 [  158013ms] [ERROR] [Spellcaster] Auto-background failed: Error: ComfyUI rejected workflow: {"error":{"type":"prompt_outputs_failed_validation","message":"Prompt outputs failed validation","details":"","extra_info":{}},"node_errors":{"64":{"errors":[{"type":"value_bigger_than_max","message":"Value 125 bigger than max of 100","details":"position_x","extra_info":{"input_name":"position_x","input_config":["INT",{"default":50,"min":0,"max":100,"step":1}],"received_value":125}}],"dependent_outputs":["9"],"class_type":"AILab_ImageCombiner"},"65":{"errors":[{"type":"value_bigger_than_max","message":"Value 150 bigger than max of 100","details":"position_x","extra_info":{"input_name":"position_x","input_config":["INT",{"default":50,"min":0,"max":100,"step":1}],"received_value":150}}],"dependent_outputs":["9"],"class_type":"AILab_ImageCombiner"},"66":{"errors":[{"type":"value_bigger_than_max","message":"Value 175 bigger than max of 100","details":"position_x","extra_info":{"input_name":"position_x","input_config":["INT",{"default":50,"min":0,"max":100,"step":1}],"received_value":175}}],"dependent_outputs":["9"],"class_type":"AILab_ImageCombiner"},"67":{"errors":[{"type":"value_bigger_than_max","message":"Value 200 bigger than max of 100","details":"position_x","extra_info":{"input_name":"position_x","input_config":["INT",{"default":50,"min":0,"max":100,"step":1}],"received_value":200}}],"dependent_outputs":["9"],"class_type":"AILab_ImageCombiner"}}}
     at spellcasterAPI (http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:74:15)
     at async onCharacterMessageRendered (http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:423:22) @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:449
+[  187482ms] [LOG] Generate entered @ http://127.0.0.1:8002/script.js:4207
+[  187499ms] [LOG] [QR2] calling {functionToCall: , args: Array(3)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  187500ms] [LOG] [QR2] Before-generation hook skipped for event before group wrapper. @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  187508ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  187508ms] [LOG] Generate entered @ http://127.0.0.1:8002/script.js:4207
+[  187509ms] [LOG] [QR2] calling {functionToCall: , args: Array(3)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  187531ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  187658ms] [LOG] Core/all messages: 2/2 @ http://127.0.0.1:8002/script.js:4516
+[  187660ms] [LOG] skipWIAN not active, adding WIAN @ http://127.0.0.1:8002/script.js:4575
+[  191271ms] [LOG] [QR2] calling {functionToCall: , args: Array(2)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  218875ms] [LOG] Generate entered @ http://127.0.0.1:8002/script.js:4207
+[  218902ms] [LOG] [QR2] calling {functionToCall: , args: Array(3)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  218902ms] [LOG] [QR2] Before-generation hook skipped for event before group wrapper. @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  218914ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  218914ms] [LOG] Generate entered @ http://127.0.0.1:8002/script.js:4207
+[  218915ms] [LOG] [QR2] calling {functionToCall: , args: Array(3)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  218956ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  219082ms] [LOG] Core/all messages: 2/2 @ http://127.0.0.1:8002/script.js:4516
+[  219084ms] [LOG] skipWIAN not active, adding WIAN @ http://127.0.0.1:8002/script.js:4575
+[  222536ms] [LOG] [QR2] calling {functionToCall: , args: Array(2)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  222664ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  222664ms] [LOG] Generate entered @ http://127.0.0.1:8002/script.js:4207
+[  222664ms] [LOG] [QR2] calling {functionToCall: , args: Array(3)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  222677ms] [LOG] Core/all messages: 3/3 @ http://127.0.0.1:8002/script.js:4516
+[  222749ms] [LOG] [WI] Adding 4 entries to prompt [Object, Object, Object, Object] @ http://127.0.0.1:8002/scripts/world-info.js:5140
+[  222749ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  222749ms] [LOG] skipWIAN not active, adding WIAN @ http://127.0.0.1:8002/script.js:4575
+[  237251ms] [LOG] [QR2] calling {functionToCall: , args: Array(2)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[  237255ms] [LOG] [Spellcaster] Scaffold: Moved to: heart of Eldoria → "Seraphina's eyes light up with excitement, her smi..." @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:398

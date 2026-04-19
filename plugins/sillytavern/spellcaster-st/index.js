@@ -406,17 +406,22 @@ async function onCharacterMessageRendered(messageIndex) {
             .map(([name]) => name) : [];
 
         if (readyChars.length > 0) {
-            const characters = readyChars.map((name, i) => ({
+            // AILab_ImageCombiner position_x/y are percentages [0..100].
+            // Cap the composited crowd at 4 bodies to avoid a clown-car
+            // horizontal line, then distribute evenly across 15..85.
+            const toComp = readyChars.slice(0, 4);
+            const denom = Math.max(1, toComp.length - 1);
+            const characters = toComp.map((name, i) => ({
                 name,
                 attire: attireHint
                     ? `${name}, ${attireHint}`
                     : `${name}, clothing appropriate for: ${effectiveScene}`,
                 placement: {
-                    x: readyChars.length === 1 ? 50 :
-                       readyChars.length === 2 ? (i === 0 ? 35 : 65) :
-                       (25 + i * 25),
+                    x: toComp.length === 1 ? 50
+                        : toComp.length === 2 ? (i === 0 ? 35 : 65)
+                        : Math.round(15 + (i * 70) / denom),
                     y: 70,
-                    scale: readyChars.length <= 2 ? 0.5 : 0.4,
+                    scale: toComp.length <= 2 ? 0.5 : 0.4,
                 },
             }));
 
@@ -856,8 +861,10 @@ function registerSlashCommands() {
                     .filter(Boolean)
                     .map(c => c.name);
 
-                // Build character list with placement
-                const characters = charNames.map((name, i) => ({
+                // Build character list with placement (x,y are percentages 0..100)
+                const toComp = charNames.slice(0, 4);
+                const denom2 = Math.max(1, toComp.length - 1);
+                const characters = toComp.map((name, i) => ({
                     name,
                     attire: value.includes('tavern') ? `${name}, medieval fantasy tavern clothing` :
                             value.includes('forest') ? `${name}, adventurer outdoor clothing` :
@@ -866,11 +873,11 @@ function registerSlashCommands() {
                             value.includes('battle') ? `${name}, battle armor and weapons` :
                             undefined,  // Use existing body
                     placement: {
-                        x: charNames.length === 1 ? 50 :
-                           charNames.length === 2 ? (i === 0 ? 35 : 65) :
-                           (25 + i * 25),
+                        x: toComp.length === 1 ? 50
+                            : toComp.length === 2 ? (i === 0 ? 35 : 65)
+                            : Math.round(15 + (i * 70) / denom2),
                         y: 70,
-                        scale: charNames.length <= 2 ? 0.5 : 0.4,
+                        scale: toComp.length <= 2 ? 0.5 : 0.4,
                     },
                 }));
 
