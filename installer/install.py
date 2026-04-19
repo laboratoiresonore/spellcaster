@@ -120,10 +120,11 @@ def fmt_size(mb: float) -> str:
 
 def ask_yn(prompt: str, default: bool = True, auto_yes: bool = False) -> bool:
     """Prompt user for yes/no input. Returns *default* when --yes is active."""
-    if auto_yes:
-        print(f"{C_BOLD}{prompt} [Y/n]:{C_RESET} Y (auto)")
-        return default
     suffix = "[Y/n]" if default else "[y/N]"
+    if auto_yes:
+        label = "Y (auto)" if default else "N (auto)"
+        print(f"{C_BOLD}{prompt} {suffix}:{C_RESET} {label}")
+        return default
     while True:
         raw = input(f"{C_BOLD}{prompt} {suffix}:{C_RESET} ").strip().lower()
         if not raw:
@@ -2306,9 +2307,15 @@ def step_select_features(manifest: dict, paths: dict, args,
         # - "installed" -> locked on, already present on server
         default_on = status in ("ok", "warn")
 
-        # Also check if the host app is available
+        # Also check if the host app is available. An empty plugins list
+        # means the feature is self-hosted (e.g. Wizard Guild, a standalone
+        # web UI) and doesn't need GIMP or Darktable.
         plugins = feat.get("plugins", [])
-        app_available = ("gimp" in plugins and has_gimp) or ("darktable" in plugins and has_dt)
+        if not plugins:
+            app_available = True
+        else:
+            app_available = (("gimp" in plugins and has_gimp)
+                             or ("darktable" in plugins and has_dt))
         if not app_available:
             default_on = False
             if status not in ("no", "nogpu"):
