@@ -9194,6 +9194,59 @@ class GuildHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.end_json(500, {"error": f"CSV import failed: {e}"})
 
+        elif self.path == '/api/video/named-states' and self.command == 'GET':
+            # R69a: list all named board states
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            return self.end_json(200, {"states": _VIDEO_BRIDGE.board.list_named_states()})
+
+        elif self.path == '/api/video/named-states' and self.command == 'POST':
+            # R69a: save current board as a named state
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            name = (data.get('name') or '').strip() if isinstance(data, dict) else ''
+            if not name:
+                return self.end_json(400, {"error": "name required"})
+            result = _VIDEO_BRIDGE.board.save_named_state(name)
+            return self.end_json(200 if result.get("status") == "ok" else 400, result)
+
+        elif (self.path.startswith('/api/video/named-states/')
+              and self.path.endswith('/load') and self.command == 'POST'):
+            # R69a: restore to a named state
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            name = self.path.split('/')[4]
+            merge = bool(data.get('merge', False)) if isinstance(data, dict) else False
+            result = _VIDEO_BRIDGE.board.load_named_state(name, merge=merge)
+            return self.end_json(200 if result.get("status") == "ok" else 404, result)
+
+        elif (self.path.startswith('/api/video/named-states/')
+              and self.command == 'DELETE'):
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            name = self.path.split('/')[4]
+            result = _VIDEO_BRIDGE.board.delete_named_state(name)
+            return self.end_json(200 if result.get("status") == "ok" else 404, result)
+
+        elif self.path.startswith('/api/video/shotboard.csv') and self.command == 'GET':
+            # R69b: export the current board as CSV (round-trips with R67a)
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                body = _VIDEO_BRIDGE.board.shotboard_to_csv()
+                payload = body.encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/csv; charset=utf-8')
+                self.send_header('Content-Disposition',
+                                 'attachment; filename="shotboard.csv"')
+                self.send_header('Content-Length', str(len(payload)))
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+            except Exception as e:
+                return self.end_json(500, {"error": f"CSV export failed: {e}"})
+
         elif self.path == '/api/video/auto-group-scenes' and self.command == 'POST':
             # R67b: cluster shots into scenes by shared title prefix
             if not _VIDEO_BRIDGE:

@@ -1386,6 +1386,161 @@ class Shotboard:
             "shots": [s.to_dict() for s in self._shots],
         }
 
+    # ─── R69a: Named board states (whole-board save/restore) ───────────
+
+    def _named_states_dir(self) -> str:
+        """Where named-state snapshots live. One JSON file per name."""
+        d = os.path.join(os.path.dirname(self.path), "named_states")
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    @staticmethod
+    def _sanitize_state_name(name: str) -> str:
+        """Filesystem-safe version of a user-provided state name."""
+        import re
+        s = re.sub(r"[^\w\-\. ]", "_", (name or "").strip())
+        return s.replace(" ", "_")[:80] or "state"
+
+    def save_named_state(self, name: str) -> Dict[str, Any]:
+        """R69a: Snapshot the entire board (shots + scenes) to a named
+        file. User can later restore to this exact state.
+        Overwrites if the name exists."""
+        safe = self._sanitize_state_name(name)
+        if not safe:
+            return {"status": "error", "message": "empty name"}
+        payload = {
+            "version": 1,
+            "saved_at": time.time(),
+            "name": name.strip(),
+            "shots": [s.to_dict() for s in self._shots],
+            "scenes": [sc.to_dict() if hasattr(sc, "to_dict") else dict(sc.__dict__)
+                        for sc in self._scenes],
+        }
+        path = os.path.join(self._named_states_dir(), f"{safe}.json")
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2)
+        except OSError as e:
+            return {"status": "error", "message": f"write failed: {e}"}
+        return {"status": "ok", "name": name.strip(), "file": path,
+                "shot_count": len(self._shots),
+                "scene_count": len(self._scenes)}
+
+    def list_named_states(self) -> List[Dict[str, Any]]:
+        """Return all saved named states with summary info."""
+        d = self._named_states_dir()
+        results: List[Dict[str, Any]] = []
+        try:
+            entries = os.listdir(d)
+        except OSError:
+            return results
+        for entry in entries:
+            if not entry.endswith(".json"):
+                continue
+            path = os.path.join(d, entry)
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                continue
+            results.append({
+                "name": data.get("name", entry[:-5]),
+                "file_name": entry,
+                "saved_at": data.get("saved_at"),
+                "shot_count": len(data.get("shots") or []),
+                "scene_count": len(data.get("scenes") or []),
+            })
+        results.sort(key=lambda x: x.get("saved_at") or 0, reverse=True)
+        return results
+
+    def load_named_state(self, name: str, *,
+                          merge: bool = False) -> Dict[str, Any]:
+        """Restore a named state. Default (merge=False) replaces the
+        current board entirely. merge=True appends the saved shots +
+        scenes to what's currently loaded."""
+        safe = self._sanitize_state_name(name)
+        path = os.path.join(self._named_states_dir(), f"{safe}.json")
+        if not os.path.isfile(path):
+            return {"status": "error", "message": f"no state named {name!r}"}
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            return {"status": "error", "message": f"read failed: {e}"}
+        shots = [Shot.from_dict(s) for s in (data.get("shots") or [])
+                 if isinstance(s, dict)]
+        scenes = []
+        for sc_d in (data.get("scenes") or []):
+            if not isinstance(sc_d, dict):
+                continue
+            if hasattr(Scene, "from_dict"):
+                try:
+                    scenes.append(Scene.from_dict(sc_d))
+                    continue
+                except Exception:
+                    pass
+            # Fallback: construct with best-effort kwargs
+            known = {f.name for f in Scene.__dataclass_fields__.values()} \
+                if hasattr(Scene, "__dataclass_fields__") else set()
+            scenes.append(Scene(**{k: v for k, v in sc_d.items() if k in known}))
+        if merge:
+            self._shots.extend(shots)
+            self._scenes.extend(scenes)
+        else:
+            self._shots = shots
+            self._scenes = scenes
+        self._reindex()
+        self.save()
+        return {"status": "ok", "name": name.strip(),
+                "loaded_shots": len(shots),
+                "loaded_scenes": len(scenes),
+                "merge": merge}
+
+    def delete_named_state(self, name: str) -> Dict[str, Any]:
+        """Delete a saved state file."""
+        safe = self._sanitize_state_name(name)
+        path = os.path.join(self._named_states_dir(), f"{safe}.json")
+        try:
+            os.remove(path)
+            return {"status": "ok", "name": name.strip()}
+        except FileNotFoundError:
+            return {"status": "error", "message": "not found"}
+        except OSError as e:
+            return {"status": "error", "message": str(e)}
+
+    def shotboard_to_csv(self) -> str:
+        """R69b: emit the current board as a CSV that round-trips
+        through R67a's import_shots_from_csv. Columns match the
+        importer's accept list."""
+        import csv
+        import io
+        cols = ["title", "prompt", "negative", "preset", "seed",
+                 "notes", "backend", "color_label", "priority",
+                 "target_duration_s", "carry_last_frame", "depends_on"]
+        buf = io.StringIO()
+        writer = csv.writer(buf, lineterminator="\n")
+        writer.writerow(cols)
+        # Build id→title map so depends_on refs are human-readable
+        id_to_title = {s.id: (s.title or "") for s in self._shots}
+        for s in self._shots:
+            dep_titles = [id_to_title.get(d, d) for d in (s.depends_on or [])
+                           if d in id_to_title]
+            writer.writerow([
+                s.title or "",
+                s.prompt or "",
+                s.negative or "",
+                s.preset or "",
+                s.seed if s.seed is not None else "",
+                s.notes or "",
+                s.backend or "",
+                s.color_label or "",
+                s.priority or "normal",
+                s.target_duration_s if s.target_duration_s is not None else "",
+                "true" if s.carry_last_frame else "false",
+                ",".join(dep_titles),
+            ])
+        return buf.getvalue()
+
     def ready_videos(self) -> List[str]:
         """Return the ordered list of completed mp4 paths, skipping gaps."""
         return [s.video_path for s in self._shots

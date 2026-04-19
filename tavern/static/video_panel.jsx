@@ -58,6 +58,7 @@ const api = {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   }).then(r => r.json()),
+  delete: (url) => fetch(url, { method: "DELETE" }).then(r => r.json()),
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -2765,6 +2766,69 @@ function VideoPanel() {
     }
   };
 
+  // R69a: named board states — save/load/delete whole-board snapshots
+  const [namedStates, setNamedStates] = _useState([]);
+  const [showStatesPanel, setShowStatesPanel] = _useState(false);
+
+  const refreshNamedStates = _useCallback(async () => {
+    try {
+      const res = await api.get("/api/video/named-states");
+      setNamedStates(res?.states || []);
+    } catch (_) {}
+  }, []);
+
+  _useEffect(() => { if (showStatesPanel) refreshNamedStates(); },
+             [showStatesPanel, refreshNamedStates]);
+
+  const saveNamedState = async () => {
+    const name = window.prompt("Name this board state:", "");
+    if (!name) return;
+    try {
+      const res = await api.post("/api/video/named-states", {name});
+      if (res?.status === "ok") {
+        addToast(`Saved state "${name}" (${res.shot_count} shots, ${res.scene_count} scenes)`,
+                 "success");
+        await refreshNamedStates();
+      } else {
+        addToast(`Save failed: ${res?.message || "unknown"}`, "error");
+      }
+    } catch (e) {
+      addToast("Save failed: " + (e.message || "unknown"), "error");
+    }
+  };
+
+  const loadNamedState = async (name, merge = false) => {
+    const ok = window.confirm(
+      merge
+        ? `Merge "${name}" into the current board?`
+        : `REPLACE the current board with "${name}"? Current shots will be discarded.`);
+    if (!ok) return;
+    try {
+      const res = await api.post(`/api/video/named-states/${encodeURIComponent(name)}/load`,
+                                   {merge});
+      if (res?.status === "ok") {
+        addToast(`Loaded "${name}" — ${res.loaded_shots} shots, ${res.loaded_scenes} scenes`,
+                 "success");
+        await refresh();
+      } else {
+        addToast(`Load failed: ${res?.message || "unknown"}`, "error");
+      }
+    } catch (e) {
+      addToast("Load failed: " + (e.message || "unknown"), "error");
+    }
+  };
+
+  const deleteNamedState = async (name) => {
+    if (!window.confirm(`Delete saved state "${name}"?`)) return;
+    try {
+      await api.delete(`/api/video/named-states/${encodeURIComponent(name)}`);
+      addToast(`Deleted "${name}"`, "success");
+      await refreshNamedStates();
+    } catch (e) {
+      addToast("Delete failed: " + (e.message || "unknown"), "error");
+    }
+  };
+
   // R67a: bulk-import shots from a CSV file. Triggered by a hidden file
   // input; the button click opens the picker.
   const importCsvRef = _useRef(null);
@@ -3374,6 +3438,18 @@ function VideoPanel() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
             Import CSV
           </button>
+          <a href="/api/video/shotboard.csv" download
+            className="export-shotboard-csv flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+            title="Export current board as CSV (round-trips with Import CSV for spreadsheet edits)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            Export CSV
+          </a>
+          <button onClick={() => setShowStatesPanel(v => !v)}
+            className="states-toggle-btn flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+            title="Save and restore named board states (alternate storyboards)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            States
+          </button>
           <a href="/api/video/render-history.csv" download
             className="export-csv flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
             title="Download flat CSV of every render attempt across all shots (for analysis / sharing)">
@@ -3547,6 +3623,53 @@ function VideoPanel() {
           })}
         </div>
       </div>
+
+      {/* R69a: named-states panel — save/load/delete whole-board snapshots */}
+      {showStatesPanel && (
+        <div className="states-panel bg-slate-900 border border-amber-600/20 rounded-xl p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-amber-200">Named board states</h3>
+            <div className="flex gap-2">
+              <button onClick={saveNamedState}
+                className="states-save-btn px-2 py-0.5 rounded bg-emerald-700/40 hover:bg-emerald-600/50 text-emerald-100 text-xs font-medium"
+              >+ Save current</button>
+              <button onClick={() => setShowStatesPanel(false)}
+                className="text-slate-400 hover:text-slate-200 text-xs">Close</button>
+            </div>
+          </div>
+          {namedStates.length === 0 ? (
+            <div className="text-xs text-slate-500 italic">
+              No saved states yet. Click "+ Save current" to snapshot the board.
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {namedStates.map(st => (
+                <div key={st.file_name} className="states-row flex items-center gap-2 text-[11px] px-2 py-1 rounded bg-slate-800/60">
+                  <span className="font-medium text-slate-200 flex-1 truncate">{st.name}</span>
+                  <span className="text-slate-500">
+                    {st.shot_count} shot(s){st.scene_count > 0 ? `, ${st.scene_count} scene(s)` : ""}
+                  </span>
+                  {st.saved_at && (
+                    <span className="text-slate-500 text-[10px]">
+                      {new Date(st.saved_at * 1000).toLocaleString()}
+                    </span>
+                  )}
+                  <button onClick={() => loadNamedState(st.name, false)}
+                    className="states-load-btn px-2 py-0.5 rounded bg-amber-700/40 hover:bg-amber-600/50 text-amber-100 font-medium"
+                  >Load</button>
+                  <button onClick={() => loadNamedState(st.name, true)}
+                    className="states-merge-btn px-2 py-0.5 rounded bg-cyan-700/40 hover:bg-cyan-600/50 text-cyan-100 font-medium"
+                    title="Append this state's shots + scenes to the current board"
+                  >Merge</button>
+                  <button onClick={() => deleteNamedState(st.name)}
+                    className="states-delete-btn px-2 py-0.5 rounded bg-red-700/30 hover:bg-red-600/50 text-red-200 font-medium"
+                  >×</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* R68b: board-stats fold-out — lazy-compute on click */}
       {shots.length > 0 && (
