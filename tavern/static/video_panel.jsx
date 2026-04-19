@@ -4865,6 +4865,71 @@ function VideoPanel() {
         </div>
       )}
 
+      {/* R81b: bulk rename by pattern — expanding panel */}
+      {selected.size > 0 && showBatchRename && (
+        <div className="batch-rename-panel bg-slate-900 border border-fuchsia-600/30 rounded-xl px-4 py-3 flex flex-col gap-2">
+          <div className="text-xs text-fuchsia-200">
+            <span className="font-semibold">Bulk rename</span>
+            <span className="text-slate-400">
+              {" "}— apply a title pattern across {selected.size} selected shot(s).
+              Placeholders: <code className="text-fuchsia-300">{"{n}"}</code>,{" "}
+              <code className="text-fuchsia-300">{"{nn}"}</code> (zero-padded),{" "}
+              <code className="text-fuchsia-300">{"{original}"}</code>,{" "}
+              <code className="text-fuchsia-300">{"{scene}"}</code>
+            </span>
+          </div>
+          <div className="flex gap-2 items-center flex-wrap">
+            <input
+              type="text"
+              value={renamePattern}
+              onChange={(e) => setRenamePattern(e.target.value)}
+              placeholder="e.g. Shot_{nn}"
+              className="batch-rename-pattern bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 placeholder-slate-500 focus:border-fuchsia-500 focus:outline-none flex-1 min-w-[200px]"
+            />
+            <label className="text-xs text-slate-300 flex items-center gap-1">
+              Start:
+              <input
+                type="number"
+                min="1"
+                value={renameStart}
+                onChange={(e) => setRenameStart(Math.max(1, parseInt(e.target.value) || 1))}
+                className="batch-rename-start bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs w-20"
+              />
+            </label>
+            <button
+              onClick={batchRename}
+              disabled={!renamePattern.trim()}
+              className="batch-rename-apply px-3 py-1 rounded bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-xs font-medium disabled:bg-slate-700 disabled:text-slate-500"
+            >Apply rename</button>
+          </div>
+          {/* Live preview of the first renamed title */}
+          {renamePattern.trim() && (
+            <div className="text-[10px] text-slate-500">
+              Preview:{" "}
+              <span className="text-fuchsia-300">
+                {(() => {
+                  const n = parseInt(renameStart) || 1;
+                  const nn = String(n).padStart(2, "0");
+                  const firstId = Array.from(selected)[0];
+                  const first = shots.find(s => s.id === firstId);
+                  const orig = first?.title || "";
+                  const scene = first?.scene || "";
+                  return (renamePattern || "")
+                    .replaceAll("{nn}", nn)
+                    .replaceAll("{n}", String(n))
+                    .replaceAll("{original}", orig)
+                    .replaceAll("{scene}", scene);
+                })()}
+              </span>
+            </div>
+          )}
+          <div className="text-xs text-slate-500">
+            Locked shots are skipped. Renaming updates titles only — prompts,
+            seeds, and renders are untouched.
+          </div>
+        </div>
+      )}
+
       {/* Search bar + R78b scope toggles */}
       <div className={"search-bar-wrap space-y-1 " + (focusMode ? "hidden" : "")}>
         <div className="search-bar relative">
