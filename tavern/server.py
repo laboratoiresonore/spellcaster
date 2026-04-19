@@ -9904,20 +9904,24 @@ class GuildHandler(SimpleHTTPRequestHandler):
             if not _VIDEO_BRIDGE:
                 return self.end_json(503, {"error": "Video Bridge not initialised"})
             fps = 30
+            scene_id = None  # R73a: optional scene filter
             if '?' in self.path:
                 try:
                     from urllib.parse import urlparse, parse_qs
                     qs = parse_qs(urlparse(self.path).query)
                     fps = int(qs.get('fps', ['30'])[0])
+                    scene_id = (qs.get('scene') or [None])[0] or None
                 except (ValueError, TypeError):
                     fps = 30
             try:
-                body = _VIDEO_BRIDGE.board.export_edl(fps=max(1, min(120, fps)))
+                body = _VIDEO_BRIDGE.board.export_edl(
+                    fps=max(1, min(120, fps)), scene_id=scene_id)
                 payload = body.encode('utf-8')
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/edl')
+                fname = f"spellcaster_{'scene_' + scene_id + '_' if scene_id else ''}timeline.edl"
                 self.send_header('Content-Disposition',
-                                 'attachment; filename="spellcaster_timeline.edl"')
+                                 f'attachment; filename="{fname}"')
                 self.send_header('Content-Length', str(len(payload)))
                 self.send_header('Access-Control-Allow-Origin', '*')
                 self.end_headers()
@@ -9930,20 +9934,24 @@ class GuildHandler(SimpleHTTPRequestHandler):
             if not _VIDEO_BRIDGE:
                 return self.end_json(503, {"error": "Video Bridge not initialised"})
             fps = 30
+            scene_id = None
             if '?' in self.path:
                 try:
                     from urllib.parse import urlparse, parse_qs
                     qs = parse_qs(urlparse(self.path).query)
                     fps = int(qs.get('fps', ['30'])[0])
+                    scene_id = (qs.get('scene') or [None])[0] or None
                 except (ValueError, TypeError):
                     fps = 30
             try:
-                body = _VIDEO_BRIDGE.board.export_fcpxml(fps=max(1, min(120, fps)))
+                body = _VIDEO_BRIDGE.board.export_fcpxml(
+                    fps=max(1, min(120, fps)), scene_id=scene_id)
                 payload = body.encode('utf-8')
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/xml')
+                fname = f"spellcaster_{'scene_' + scene_id + '_' if scene_id else ''}timeline.fcpxml"
                 self.send_header('Content-Disposition',
-                                 'attachment; filename="spellcaster_timeline.fcpxml"')
+                                 f'attachment; filename="{fname}"')
                 self.send_header('Content-Length', str(len(payload)))
                 self.send_header('Access-Control-Allow-Origin', '*')
                 self.end_headers()
