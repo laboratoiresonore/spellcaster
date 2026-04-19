@@ -423,6 +423,36 @@ def walk_timeline_clips(timeline=None, *, tracks: str = "V1") -> list[dict]:
     return out
 
 
+def grab_last_frame_of_clip(timeline_item) -> str | None:
+    """R92: grab a PNG of the last playable frame of a TimelineItem.
+
+    Symmetric to grab_first_frame_of_clip but jumps to
+    GetEnd() - 1 before triggering GrabStill. Used for
+    "continue this clip" VFX workflows where the real footage's
+    final frame is the seed for a Wan i2v generation.
+    """
+    project = get_current_project()
+    if not (project and timeline_item):
+        return None
+    timeline = project.GetCurrentTimeline()
+    if not timeline:
+        return None
+    try:
+        fps = float(project.GetSetting("timelineFrameRate") or 24.0)
+        # GetEnd is exclusive; the last rendered frame index is
+        # GetEnd() - 1.
+        end_f = max(0, int(timeline_item.GetEnd()) - 1)
+        hh = int(end_f / fps // 3600)
+        mm = int((end_f / fps) % 3600 // 60)
+        ss = int((end_f / fps) % 60)
+        ff = int(end_f % int(round(fps)))
+        tc = f"{hh:02d}:{mm:02d}:{ss:02d}:{ff:02d}"
+        timeline.SetCurrentTimecode(tc)
+    except Exception:
+        pass
+    return capture_frame_at_playhead()
+
+
 def grab_first_frame_of_clip(timeline_item) -> str | None:
     """Render a single PNG at the first frame of a TimelineItem.
 
