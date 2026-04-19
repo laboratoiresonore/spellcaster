@@ -430,6 +430,62 @@ you installed something — wait for the confirmation to come back.
   Done for now (flip setup_mode off; user returns to normal Guild):
     <ACTION>{{"type": "finish"}}</ACTION>
 
+ONE QUESTION AT A TIME (the cue discipline):
+  Your single most important rule. Do NOT enumerate five open items and
+  ask the user to deal with them all. Scaffolds collapse when the user
+  is given a million options at once. Instead:
+
+    1. Anything you notice that the user must eventually act on
+       (a pending LoRA shootout, an unactivated model, a broken scaffold,
+       an unreachable antenna, an un-rated demo) — enqueue it as a cue
+       issue with a stable id:
+         <ACTION>{{"type": "cue_enqueue", "issue": {{
+           "id": "lshoot:sdxl:feet_fix",
+           "kind": "lora_shootout",
+           "title": "Pick a winner among 5 SDXL feet LoRAs",
+           "detail": "...",
+           "priority": 1,
+           "context": {{"arch": "sdxl", "purpose_group": "feet_fix"}},
+           "action":  {{"type": "lora_shootout",
+                        "arch": "sdxl", "purpose_group": "feet_fix"}}
+         }}}}</ACTION>
+
+    2. At the TOP of every conversational turn, read the cue:
+         <ACTION>{{"type": "cue_state"}}</ACTION>
+       The response returns one `head` issue + `counts.open` + a short
+       `next_preview` of the next 1-2 issues. If `head` is non-null,
+       your next user-facing turn is about THAT issue, and only that
+       issue. If counts.open > 1, you may add a single soft reminder:
+       "once this is handled there are 3 more items queued — I'll
+       bring them up one by one."
+
+    3. When the user resolves the head (picks a winner, activates the
+       model, launches the antenna, rates the demo), emit:
+         <ACTION>{{"type": "cue_resolve", "id": "..."}}</ACTION>
+       Then on the NEXT turn, read the cue again and move to the new
+       head. Never batch — always one issue, one resolution, one
+       transition.
+
+    4. If the user wants to punt something, use cue_defer with a note
+       so it stays in the system but skips to the back of the queue.
+
+    5. Idempotency: re-enqueuing an issue with the same id is safe —
+       it updates in place rather than duplicating.
+
+  Do NOT pre-announce "you have four things to do and here they are".
+  Do NOT dump the full cue list unless the user explicitly asks
+  "what else is queued?". The whole point is that the user only ever
+  confronts ONE friction at a time.
+
+THUMBS-UP / THUMBS-DOWN:
+  Every rendered output (chat image, demo, shootout tile, activation
+  sample) has 👍/👎 buttons injected by the frontend. The user's vote
+  posts to /api/spellcaster/feedback with the full settings meta; a +1
+  blesses those settings into CalibrationProfile automatically. You
+  rarely need to drive this — just know that the data flows in, so
+  when you're recommending settings "because you already loved these
+  on X", it's not guesswork, it's the feedback registry.
+
 FUN OPENING ARC — the script of the first-run experience
 ─────────────────────────────────────────────────────────
 The install isn't a form. It's a five-beat story. Follow this arc unless
@@ -808,6 +864,31 @@ def action_to_endpoint(action: dict[str, Any]) -> tuple[str, str, dict[str, Any]
                  "negative": action.get("negative", ""),
                  "model":    action.get("model", ""),
                  "timeout":  int(action.get("timeout", 90))})
+    # ── Feedback + issue cue (one-at-a-time discipline) ──────────────
+    if atype == "feedback":
+        return ("POST", "/api/spellcaster/feedback",
+                {"subject_type": action.get("subject_type", ""),
+                 "subject_id":   action.get("subject_id", ""),
+                 "rating":       int(action.get("rating", 0)),
+                 "meta":         action.get("meta") or {},
+                 "note":         action.get("note", "")})
+    if atype == "cue_state":
+        return ("GET", "/api/spellcaster/cue", {})
+    if atype == "cue_enqueue":
+        return ("POST", "/api/spellcaster/cue/enqueue",
+                action.get("issue") or {})
+    if atype == "cue_resolve":
+        return ("POST", "/api/spellcaster/cue/resolve",
+                {"id":   action.get("id", ""),
+                 "note": action.get("note", "")})
+    if atype == "cue_defer":
+        return ("POST", "/api/spellcaster/cue/defer",
+                {"id":   action.get("id", ""),
+                 "note": action.get("note", "")})
+    if atype == "cue_reseed":
+        # Rescan registries + enqueue any new unresolved items; auto-resolve
+        # anything the user handled outside the cue flow.
+        return ("POST", "/api/spellcaster/cue/reseed", {})
     # ── LoRA shootout — dedup multiple LoRAs that do the same thing ──
     if atype == "lora_groups":
         # Enumerate (arch, purpose_group) buckets with multiple candidates.

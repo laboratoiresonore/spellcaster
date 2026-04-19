@@ -1620,6 +1620,18 @@ def _server_init(comfy_url=None):
     threading.Thread(
         target=_build_lora_registry, args=(url,), daemon=True
     ).start()
+    # Seed the Spellcaster's issue cue from current state. Runs on a
+    # background thread so a slow ComfyUI probe (for model-activation
+    # seeding) doesn't delay server startup. The seeder is idempotent
+    # so re-running is safe.
+    def _boot_seed_cue():
+        try:
+            from scaffold.cue_seeder import seed_all
+            counts = seed_all(lora_registry=_LORA_REGISTRY)
+            print(f"  [Guild] Issue cue seeded at boot: {counts}")
+        except Exception as e:
+            print(f"  [Guild] Cue seeding at boot failed: {e}")
+    threading.Thread(target=_boot_seed_cue, daemon=True).start()
     # Log privacy mode status
     if LLM_MODE == "horde":
         print("  [Guild] \u26a0 WARNING: LLM set to HORDE mode — ZERO PRIVACY")
@@ -3630,6 +3642,224 @@ def _spellcaster_loras_approve(approvals: list) -> tuple[int, dict]:
 # the user to visit the Spellcaster, which walks them through a scaffold-
 # calibration flow. Activating one model of an arch writes an arch profile
 # that every other unactivated same-arch model inherits as presettings.
+
+# ── Thumbs-up / thumbs-down feedback on any generated output ───────────
+# Every rendered output (chat image, shootout tile, scaffold sample, demo
+# gen, model activation test) gets a ±1 button. A +1 feeds the paired
+# settings into CalibrationProfile so the user's taste compounds across
+# every subsequent render on the same model. A -1 records the exact combo
+# as "don't do this again". All entries persist to feedback.json.
+
+_FEEDBACK_PATH = os.path.join(_STATE_DIR, "feedback.json")
+_FEEDBACK_LOCK = threading.Lock()
+
+
+def _load_feedback() -> dict:
+    if not os.path.isfile(_FEEDBACK_PATH):
+        return {"entries": [], "version": 1}
+    try:
+        with open(_FEEDBACK_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return {"entries": [], "version": 1}
+        data.setdefault("entries", [])
+        return data
+    except Exception:
+        return {"entries": [], "version": 1}
+
+
+def _save_feedback(data: dict) -> None:
+    os.makedirs(os.path.dirname(_FEEDBACK_PATH) or ".", exist_ok=True)
+    tmp = _FEEDBACK_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, _FEEDBACK_PATH)
+
+
+def _spellcaster_feedback_submit(payload: dict) -> tuple[int, dict]:
+    """POST /api/spellcaster/feedback — user 👍/👎 on any output.
+
+    Body:
+      subject_type:   "chat_gen" | "demo_gen" | "shootout" | "scaffold"
+                      | "activation_test" | "feature_test" | ...
+      subject_id:     stable identifier (asset_hash, job_id, image URL)
+      rating:         +1 (👍) or -1 (👎)
+      meta:           {model, arch, cfg, steps, sampler, scheduler,
+                       seed, prompt, negative, loras, tags, ...}
+      note:           optional user text
+
+    Side effects:
+      - Appends to feedback.json (all votes persist; history is the record).
+      - On +1 with {model, cfg, sampler, scheduler, steps} in meta,
+        blesses those as the default via CalibrationProfile — the settings
+        propagate through every same-model render going forward.
+      - On -1, no setting change (we don't know what's SUPPOSED to be good,
+        only that this combo isn't). The entry stays in history so
+        analytics / future calibrations can demote similar combos.
+    """
+    subject_type = str(payload.get("subject_type", "")).strip()
+    subject_id   = str(payload.get("subject_id", "")).strip()
+    rating       = payload.get("rating")
+    meta         = payload.get("meta") or {}
+    note         = str(payload.get("note", ""))[:500]
+
+    if not subject_type or not subject_id:
+        return (400, {"error": "subject_type and subject_id required"})
+    try:
+        rating = int(rating)
+    except (TypeError, ValueError):
+        return (400, {"error": "rating must be +1 or -1"})
+    if rating not in (-1, 1):
+        return (400, {"error": "rating must be +1 or -1"})
+
+    entry = {
+        "ts":            time.time(),
+        "subject_type":  subject_type,
+        "subject_id":    subject_id,
+        "rating":        rating,
+        "meta":          meta if isinstance(meta, dict) else {},
+        "note":          note,
+    }
+
+    with _FEEDBACK_LOCK:
+        data = _load_feedback()
+        # De-dupe: if the same user rates the same subject_id twice, we
+        # overwrite their previous vote rather than logging both.
+        entries = [e for e in data.get("entries", [])
+                   if not (e.get("subject_type") == subject_type
+                           and e.get("subject_id") == subject_id)]
+        entries.append(entry)
+        data["entries"] = entries[-2000:]     # cap history
+        _save_feedback(data)
+
+    # On +1 with enough settings, bless them via CalibrationProfile so
+    # every future render of that model inherits the thumbs-up config.
+    blessed = False
+    if rating == 1 and isinstance(meta, dict):
+        model = str(meta.get("model") or "")
+        keys = ("cfg", "steps", "sampler", "scheduler", "denoise",
+                "width", "height")
+        blessable = {k: meta[k] for k in keys if k in meta}
+        if model and blessable:
+            try:
+                from spellcaster_core.preference_calibration import (
+                    CalibrationProfile,
+                )
+                prof_path = os.path.join(_THIS_DIR, "calibration_profile.json")
+                profile = CalibrationProfile()
+                if os.path.isfile(prof_path):
+                    try:
+                        with open(prof_path, "r", encoding="utf-8") as f:
+                            profile = CalibrationProfile.from_config(json.load(f))
+                    except Exception:
+                        pass
+                profile.set_model_preference(model, "love")
+                profile.set_model_settings(model, **blessable)
+                with open(prof_path, "w", encoding="utf-8") as f:
+                    json.dump(profile.to_config(), f, indent=2)
+                blessed = True
+            except Exception as e:
+                print(f"  [feedback] profile save failed: {e}")
+
+    return (200, {"ok": True, "subject_type": subject_type,
+                  "subject_id": subject_id, "rating": rating,
+                  "blessed": blessed, "total": len(data.get("entries", []))})
+
+
+# ── Issue cue — one question at a time ────────────────────────────────
+
+def _spellcaster_cue_state() -> tuple[int, dict]:
+    try:
+        from scaffold.issue_cue import get_cue_state
+    except Exception as e:
+        return (500, {"error": f"issue_cue unavailable: {e}"})
+    return (200, get_cue_state())
+
+
+def _spellcaster_cue_enqueue(payload: dict) -> tuple[int, dict]:
+    try:
+        from scaffold.issue_cue import enqueue
+    except Exception as e:
+        return (500, {"error": f"issue_cue unavailable: {e}"})
+    if not isinstance(payload, dict):
+        return (400, {"error": "payload must be an object"})
+    try:
+        entry = enqueue(payload)
+    except ValueError as e:
+        return (400, {"error": str(e)})
+    return (200, {"ok": True, "entry": entry})
+
+
+def _spellcaster_cue_resolve(issue_id: str, note: str = "") -> tuple[int, dict]:
+    try:
+        from scaffold.issue_cue import resolve
+    except Exception as e:
+        return (500, {"error": f"issue_cue unavailable: {e}"})
+    entry = resolve(issue_id, note=note)
+    if not entry:
+        return (404, {"error": f"issue {issue_id!r} not found"})
+    return (200, {"ok": True, "entry": entry})
+
+
+def _spellcaster_cue_defer(issue_id: str, note: str = "") -> tuple[int, dict]:
+    try:
+        from scaffold.issue_cue import defer
+    except Exception as e:
+        return (500, {"error": f"issue_cue unavailable: {e}"})
+    entry = defer(issue_id, note=note)
+    if not entry:
+        return (404, {"error": f"issue {issue_id!r} not found"})
+    return (200, {"ok": True, "entry": entry})
+
+
+def _spellcaster_cue_list(status: str = "open", limit: int = 50) -> tuple[int, dict]:
+    try:
+        from scaffold.issue_cue import list_issues
+    except Exception as e:
+        return (500, {"error": f"issue_cue unavailable: {e}"})
+    return (200, {"issues": list_issues(status=status, limit=limit)})
+
+
+def _spellcaster_cue_reseed() -> tuple[int, dict]:
+    """POST /api/spellcaster/cue/reseed — rescan registries + refresh the cue.
+
+    Idempotent. Returns per-bucket counts (new issues added + stale auto-
+    resolved). Called on user demand; boot runs this same logic in a
+    background thread.
+    """
+    try:
+        from scaffold.cue_seeder import seed_all
+    except Exception as e:
+        return (500, {"error": f"cue_seeder unavailable: {e}"})
+    try:
+        counts = seed_all(lora_registry=_LORA_REGISTRY)
+        return (200, {"ok": True, "counts": counts})
+    except Exception as e:
+        return (500, {"error": f"reseed failed: {e}"})
+
+
+def _spellcaster_feedback_summary(subject_type: str = "") -> tuple[int, dict]:
+    """GET /api/spellcaster/feedback — aggregate stats.
+
+    Returns {ups, downs, ratio, entries: [...]}. When `subject_type` is set,
+    filters to just that stream.
+    """
+    with _FEEDBACK_LOCK:
+        data = _load_feedback()
+    entries = data.get("entries", [])
+    if subject_type:
+        entries = [e for e in entries if e.get("subject_type") == subject_type]
+    ups = sum(1 for e in entries if e.get("rating") == 1)
+    downs = sum(1 for e in entries if e.get("rating") == -1)
+    return (200, {
+        "subject_type": subject_type or "all",
+        "ups": ups, "downs": downs,
+        "ratio": (ups / max(ups + downs, 1)),
+        "entries": entries[-200:],
+    })
+
 
 # ── Network survey + strategic install plan + live demo generation ─────
 
@@ -7561,6 +7791,20 @@ class GuildHandler(SimpleHTTPRequestHandler):
             params = urllib.parse.parse_qs(qs)
             return self.end_json(*_spellcaster_scaffold_calibrate_status(
                 params.get('job', [''])[0]))
+        # Feedback + issue cue — "stupidly easy to move things forward"
+        if self.path.startswith('/api/spellcaster/feedback'):
+            qs = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(qs)
+            return self.end_json(*_spellcaster_feedback_summary(
+                params.get('subject_type', [''])[0]))
+        if self.path == '/api/spellcaster/cue':
+            return self.end_json(*_spellcaster_cue_state())
+        if self.path.startswith('/api/spellcaster/cue/list'):
+            qs = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(qs)
+            return self.end_json(*_spellcaster_cue_list(
+                status=params.get('status', ['open'])[0],
+                limit=int(params.get('limit', ['50'])[0])))
         # Network survey (read-only — catalog + current placements)
         if self.path == '/api/spellcaster/network/survey':
             return self.end_json(*_spellcaster_network_survey())
@@ -9864,6 +10108,19 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 data.get('scaffold', ''),
                 overrides=data.get('overrides') or {},
                 seed=int(data.get('seed', 42))))
+        # Thumbs-up / thumbs-down feedback + issue cue
+        if self.path == '/api/spellcaster/feedback':
+            return self.end_json(*_spellcaster_feedback_submit(data or {}))
+        if self.path == '/api/spellcaster/cue/enqueue':
+            return self.end_json(*_spellcaster_cue_enqueue(data or {}))
+        if self.path == '/api/spellcaster/cue/resolve':
+            return self.end_json(*_spellcaster_cue_resolve(
+                data.get('id', ''), data.get('note', '')))
+        if self.path == '/api/spellcaster/cue/defer':
+            return self.end_json(*_spellcaster_cue_defer(
+                data.get('id', ''), data.get('note', '')))
+        if self.path == '/api/spellcaster/cue/reseed':
+            return self.end_json(*_spellcaster_cue_reseed())
         # Network survey — user declares placements + refresh probes
         if self.path == '/api/spellcaster/network/declare':
             return self.end_json(*_spellcaster_network_declare(
