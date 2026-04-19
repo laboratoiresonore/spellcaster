@@ -2652,6 +2652,35 @@ function addGenerationMessage(payload, mediaType, urls, opts = {}) {
         });
     }
 
+    // 👍 / 👎 per generated image. Meta fields let the backend bless the
+    // settings into CalibrationProfile on +1, so the user's taste compounds
+    // without them ever having to open a settings panel.
+    if (typeof window.SpellcasterFeedback !== 'undefined'
+        && mediaType === 'images' && urls.length > 0) {
+        const imgs = msg.querySelectorAll('img.generated-image');
+        imgs.forEach((img, i) => {
+            const subjectId = urls[i] || img.src;
+            const params = (payload && payload.params) || {};
+            const preset = params.preset || {};
+            const meta = {
+                model:     preset.ckpt || preset.unet || params.model || '',
+                arch:      preset.arch || '',
+                cfg:       preset.cfg,
+                steps:     preset.steps,
+                sampler:   preset.sampler,
+                scheduler: preset.scheduler,
+                denoise:   preset.denoise,
+                width:     preset.width,
+                height:    preset.height,
+                seed:      params.seed,
+                prompt:    params.prompt || params.prompt_text || '',
+                negative:  params.negative_prompt || params.negative_text || '',
+                build_fn:  (payload && payload.build_fn) || '',
+            };
+            window.SpellcasterFeedback.attach(img, 'chat_gen', subjectId, meta);
+        });
+    }
+
     // Wire image action chips — switch wizard (if needed) + attach image + send canned message
     const actionStrip = msg.querySelector('.image-action-chips');
     if (actionStrip) {

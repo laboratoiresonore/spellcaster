@@ -350,6 +350,28 @@
         }
       });
     });
+
+    // Secondary thumbs-up / thumbs-down on each tile — the "Pick this one"
+    // is the primary commit; 👍/👎 lets the user mark ambient preference
+    // without forcing a winner yet. Feeds the same feedback registry as
+    // chat generations, so patterns compound across surfaces.
+    if (typeof window.SpellcasterFeedback !== 'undefined') {
+      body.querySelectorAll('.sc-shootout-tile').forEach((tile) => {
+        const img = tile.querySelector('img');
+        if (!img) return;
+        const loraName = tile.dataset.lora;
+        const subjectId = `lshoot:${arch}:${purpose_group}:${loraName}`;
+        const meta = {
+          arch,
+          purpose_group,
+          lora:   loraName,
+          model:  state.result.model,
+          prompt: state.result.prompt,
+          seed:   state.result.seed,
+        };
+        window.SpellcasterFeedback.attach(img, 'shootout', subjectId, meta);
+      });
+    }
   }
 
   // ── Entry button ──────────────────────────────────────────────────────
