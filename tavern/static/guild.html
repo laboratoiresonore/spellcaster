@@ -13,22 +13,116 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Outfit', sans-serif;
-            background: linear-gradient(135deg, #0f172a 0%, #1a1f35 50%, #0a0e1a 100%);
+            /* Purple-violet pentagram base to match the main Guild index.
+               Three soft radial washes anchored like pentagram points so
+               the page has an atmospheric backdrop without a busy canvas
+               animation. Amber content glows read warmer against this. */
+            background:
+                radial-gradient(ellipse at 20% 18%, rgba(120, 58, 190, 0.30), transparent 55%),
+                radial-gradient(ellipse at 78% 30%, rgba(178, 70, 242, 0.22), transparent 60%),
+                radial-gradient(ellipse at 50% 90%, rgba(80, 35, 140, 0.35), transparent 70%),
+                linear-gradient(135deg, #0d0a18 0%, #171028 50%, #090612 100%);
+            background-attachment: fixed;
             min-height: 100vh;
             color: #fef3c7;
+            overflow-x: hidden;
+        }
+        /* Subtle full-page pentagram glyph tile — very low opacity so it
+           hints at the theme without fighting content. Pulls from the
+           shared rune divider asset used on the main Guild. */
+        body::before {
+            content: "";
+            position: fixed; inset: 0;
+            pointer-events: none; z-index: 0;
+            background:
+                url('/static/assets/10_rune_divider.png') center top / 1200px auto no-repeat,
+                url('/static/assets/10_rune_divider.png') center bottom / 1200px auto no-repeat;
+            opacity: 0.035;
+            mix-blend-mode: screen;
         }
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(217, 119, 6, 0.3); border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: rgba(217, 119, 6, 0.5); }
+        ::-webkit-scrollbar-thumb { background: rgba(178, 70, 242, 0.35); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(178, 70, 242, 0.55); }
+
+        /* Gentle, short-duration animations. Re-usable across the JSX. */
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes gentleFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+        @keyframes sigilGlow {
+            0%, 100% { filter: drop-shadow(0 0 8px rgba(217, 119, 6, 0.35))
+                              drop-shadow(0 0 14px rgba(178, 70, 242, 0.25)); }
+            50%      { filter: drop-shadow(0 0 12px rgba(217, 119, 6, 0.55))
+                              drop-shadow(0 0 20px rgba(178, 70, 242, 0.40)); }
+        }
+        @keyframes sigilSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        /* Header sigil replacing the flat amber squircle. The PNG already
+           has its own glow; we keep the container transparent and layer
+           a soft breathing animation on top. */
+        .tw-sigil {
+            width: 44px; height: 44px;
+            background-image: url('/static/assets/03_guild_loading.png');
+            background-size: cover;
+            background-position: center;
+            border-radius: 50%;
+            animation: sigilGlow 4.5s ease-in-out infinite;
+            transition: transform 0.35s ease;
+        }
+        .tw-sigil:hover { transform: scale(1.04); }
+        /* Optional: a second, very slow rotation of a halo ring. Kept
+           subtle — too much motion would distract from data-dense tabs. */
+        .tw-sigil-wrap {
+            position: relative;
+            display: inline-flex;
+            width: 44px; height: 44px;
+            align-items: center; justify-content: center;
+        }
+        .tw-sigil-wrap::after {
+            content: "";
+            position: absolute; inset: -4px;
+            border: 1px solid rgba(178, 70, 242, 0.25);
+            border-radius: 50%;
+            border-top-color: rgba(217, 119, 6, 0.55);
+            animation: sigilSpin 30s linear infinite;
+            pointer-events: none;
+        }
+
+        /* Apply the fadeIn to tab-panel switches — 180ms, no-op after
+           mount so data-heavy tabs don't flicker on every re-render. */
+        .tw-tab-panel { animation: fadeIn 0.18s ease-out; }
+
+        /* Section-card polish: soft purple-tinted border that brightens
+           on hover, with a gentle shadow lift. Targets the Tailwind
+           class combo SectionCard already emits (bg-slate-900 border
+           border-amber-600/20). Non-invasive — no JSX changes needed. */
+        .tw-tab-panel [class*="border-amber-600/20"]:not(:hover),
+        .tw-tab-panel [class*="border-amber-600/25"]:not(:hover),
+        .tw-tab-panel [class*="border-amber-600/30"]:not(:hover) {
+            border-color: rgba(178, 70, 242, 0.22) !important;
+            transition: border-color 0.25s ease, box-shadow 0.25s ease;
+        }
+        .tw-tab-panel [class*="border-amber-600/20"]:hover,
+        .tw-tab-panel [class*="border-amber-600/25"]:hover,
+        .tw-tab-panel [class*="border-amber-600/30"]:hover {
+            border-color: rgba(217, 119, 6, 0.45) !important;
+            box-shadow: 0 0 18px rgba(178, 70, 242, 0.15),
+                        0 2px 12px rgba(0, 0, 0, 0.25);
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        /* Make sure the React content renders above the body::before glyph. */
+        #root { position: relative; z-index: 1; }
     </style>
 </head>
 <body>
     <div id="root"></div>
+    <!-- ?v=… cache-bust: the Babel transformer caches precompiled JSX by
+         URL, so we must rotate this stamp whenever the component source
+         changes. Build it into the URL instead of HTTP headers so it
+         survives aggressive reverse-proxy caches too. -->
     <script src="/static/trajectory_canvas.js"></script>
-    <script type="text/babel" data-presets="react" src="/static/video_panel.jsx"></script>
-    <script type="text/babel" data-presets="react" src="/static/travelling_wizard.jsx"></script>
+    <script type="text/babel" data-presets="react" src="/static/video_panel.jsx?v=20260419c"></script>
+    <script type="text/babel" data-presets="react" src="/static/travelling_wizard.jsx?v=20260419c"></script>
     <script type="text/babel" data-presets="react">
         // Wait for Babel to compile the JSX, then render
         function waitAndRender() {
