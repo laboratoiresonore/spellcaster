@@ -194,6 +194,7 @@ try:
         load_model_stack, inject_lora_chain, encode_prompts,
         sample_standard, sample_klein_img2img,
         inject_controlnet, inject_controlnet_pair,
+        build_sam3_mask, apply_sam3_scope,
     )
 except ImportError:
     # Fallback: when running from GIMP plugin directory (shim imports via _nodes etc.)
@@ -203,6 +204,7 @@ except ImportError:
         load_model_stack, inject_lora_chain, encode_prompts,
         sample_standard, sample_klein_img2img,
         inject_controlnet, inject_controlnet_pair,
+        build_sam3_mask, apply_sam3_scope,
     )
 
 
@@ -303,7 +305,13 @@ STUDIO_BODY_IN_SCENE_SCALE = round((STUDIO_SCENE_H * 0.85) / STUDIO_BODY_H, 3)
 
 def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
                   loras=None, controlnet=None, controlnet_2=None,
-                  guide_modes=None):
+                  guide_modes=None,
+                  # SAM3 scoping — when sam3_prompt is set, the transform is
+                  # composited back onto the original image using a SAM3 mask,
+                  # so only the described region visibly changes. Requires
+                  # SAM3Segment on the server (preflight at the caller side).
+                  sam3_prompt=None, sam3_invert=False, sam3_confidence=0.6,
+                  sam3_expand=4, sam3_blur=4):
     """Image-to-image generation (standard diffusion variant).
 
     Loads an input image, encodes it to latent space, diffuses it with a prompt,
@@ -409,7 +417,17 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
             node_id="6",
         )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="7")
-    nf.save_image([dec_id, 0], "gimp_comfy", node_id="8")
+    # Optional SAM3 scoping — gate the transform with a SAM3 mask so only
+    # the described region is visibly altered in the final save.
+    final_ref = [dec_id, 0]
+    if sam3_prompt:
+        _mask = build_sam3_mask(nf, img_ref, sam3_prompt,
+                                 invert=sam3_invert,
+                                 confidence=sam3_confidence,
+                                 mask_expand=sam3_expand,
+                                 mask_blur=sam3_blur)
+        final_ref = apply_sam3_scope(nf, final_ref, img_ref, _mask)
+    nf.save_image(final_ref, "gimp_comfy", node_id="8")
 
     # 7. ControlNet injection (optional)
     # ControlNet adds spatial constraints to the diffusion process. It:

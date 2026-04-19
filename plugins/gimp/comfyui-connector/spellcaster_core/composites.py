@@ -679,3 +679,130 @@ def ensure_mod16(nf, image_ref, arch_key, scale_node_id=None):
     # computes the target dims in Python and injects an ImageScale node.
     # This will be integrated when workflow builders are migrated.
     return image_ref
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  SAM3 scoping — add "only affect what I describe" to any image->image builder
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_sam3_mask(nf, image_ref, prompt, *,
+                    invert=False, confidence=0.6,
+                    mask_expand=4, mask_blur=4,
+                    base_node_id=950):
+    """Produce a SAM3 mask for the given image, with optional grow+blur.
+
+    Used by two different integration patterns:
+      1. Inpaint builders — pass the returned mask into the sampler's
+         InpaintModelConditioning / SetLatentNoiseMask so the model regenerates
+         inside it. "Smart selection via SAM3" replaces a painted mask.
+      2. Transform builders — pair with `apply_sam3_scope` to composite the
+         builder's output onto the original image using the mask, so the
+         transform only visibly affects the described region.
+
+    Args:
+        nf: NodeFactory instance.
+        image_ref: [node_id, slot] pointing at the source IMAGE.
+        prompt: What to detect ("person", "the car", "sky", etc.). When empty
+            or None, the helper returns None — callers treat that as
+            "no SAM3 scoping requested".
+        invert: If True, select everything EXCEPT the target. Same
+            "Anything But" semantics as the GIMP tool.
+        confidence: SAM3 detection threshold (0.0-1.0).
+        mask_expand: Pixels to grow the mask (helps cover soft edges).
+        mask_blur: Gaussian blur radius on the grown mask for seamless edges.
+        base_node_id: First numeric ID to assign (950 by default to avoid
+            clashing with the main builder's node-id range).
+
+    Returns:
+        A [node_id, 0] MASK reference, or None if prompt is empty.
+
+    Notes:
+      - Output slot 1 of SAM3Segment is MASK. We always pull from slot 1.
+      - GrowMaskWithBlur is from KJNodes; most Spellcaster servers have it.
+      - Callers should preflight /object_info/SAM3Segment before relying on
+        this helper.
+    """
+    if not prompt:
+        return None
+
+    sam3_id = nf._add("SAM3Segment", {
+        "prompt": prompt,
+        "output_mode": "Merged",
+        "confidence_threshold": float(confidence),
+        "max_segments": 0, "segment_pick": 0,
+        "mask_blur": 0, "mask_offset": 0,
+        "device": "Auto",
+        "invert_output": bool(invert),
+        "unload_model": False,
+        "background": "Alpha",
+        "background_color": "#000000",
+        "image": image_ref,
+    }, node_id=str(base_node_id))
+
+    mask_ref = [sam3_id, 1]
+    if mask_expand > 0 or mask_blur > 0:
+        grown_id = nf._add("GrowMaskWithBlur", {
+            "expand": int(mask_expand),
+            "incremental_expandrate": 0,
+            "tapered_corners": True,
+            "flip_input": False,
+            "blur_radius": int(mask_blur),
+            "lerp_alpha": 1,
+            "decay_factor": 1,
+            "fill_holes": False,
+            "mask": mask_ref,
+        }, node_id=str(base_node_id + 1))
+        mask_ref = [grown_id, 0]
+
+    return mask_ref
+
+
+def apply_sam3_scope(nf, output_image_ref, original_image_ref, mask_ref,
+                     *, base_node_id=955):
+    """Composite a transformed output back onto the original using a mask.
+
+    Universal wrapper that turns "this builder changes the whole image" into
+    "this builder only changes the described region, original pixels survive
+    everywhere else." Pairs with `build_sam3_mask` — caller produces the mask
+    once, then passes it here after the builder's normal sampling+decode is
+    done, in place of the final SaveImage input.
+
+    The composite uses `ImageCompositeMasked` with:
+      - destination = original_image_ref (the untouched input)
+      - source      = output_image_ref (the transformed result)
+      - mask        = mask_ref
+
+    So mask=1 (detected) takes pixels from the transform, mask=0 (not
+    detected) keeps the original.
+
+    Args:
+        nf: NodeFactory instance.
+        output_image_ref: [node_id, 0] of the IMAGE after VAEDecode.
+        original_image_ref: [node_id, 0] of the ORIGINAL image (typically the
+            LoadImage slot 0).
+        mask_ref: [node_id, 0] MASK from `build_sam3_mask`. If None, this
+            function returns `output_image_ref` unchanged (no-op).
+        base_node_id: First numeric ID to assign (955 by default).
+
+    Returns:
+        [node_id, 0] IMAGE reference for the downstream SaveImage.
+
+    Edge cases:
+      - If mask_ref is None, returns output_image_ref unchanged. Lets callers
+        call this unconditionally and let the helper decide.
+      - If the transform changed the image dimensions (e.g. upscale), caller
+        must resize the original to match BEFORE passing it in, otherwise
+        ImageCompositeMasked will reject mismatched sizes.
+    """
+    if mask_ref is None:
+        return output_image_ref
+
+    composite_id = nf._add("ImageCompositeMasked", {
+        "destination": original_image_ref,
+        "source": output_image_ref,
+        "mask": mask_ref,
+        "x": 0, "y": 0,
+        "resize_source": False,
+    }, node_id=str(base_node_id))
+
+    return [composite_id, 0]
