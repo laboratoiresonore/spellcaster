@@ -2045,13 +2045,22 @@ function ToolDetectionCard({ tool, config, appControl, onConfigure }) {
 
 function SsotBadge({ status }) {
   const spec = {
-    canonical: { color: "emerald", label: "✓ canonical", tip: "Routes through spellcaster_core.workflows — single source of truth." },
-    duplicate: { color: "rose", label: "⚠ duplicate", tip: "Builds its own workflow JSON. SSoT violation — flagged for refactor." },
-    unknown:   { color: "slate", label: "· unknown", tip: "Non-workflow method (cross-plugin send, utility action, chat scaffold, etc)." },
+    canonical:   { color: "emerald", label: "✓ canonical",
+                    tip: "Routes through spellcaster_core.workflows — single source of truth." },
+    duplicate:   { color: "rose",    label: "⚠ duplicate",
+                    tip: "Builds its own workflow JSON (SSoT violation). Should refactor to a canonical builder or a thin-client Guild API call." },
+    thin_client: { color: "sky",     label: "→ thin client",
+                    tip: "Calls the Guild HTTP API. Correct design for out-of-process clients (Resolve / SillyTavern / cross-plugin send)." },
+    utility:     { color: "amber",   label: "· utility",
+                    tip: "Local UI / preferences handler — no workflow to unify." },
+    unknown:     { color: "slate",   label: "? unknown",
+                    tip: "Could not classify automatically. Likely worth a manual look." },
   }[status] || { color: "slate", label: status, tip: "" };
   const cls = {
     emerald: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
     rose:    "bg-rose-500/20 text-rose-300 border-rose-500/40",
+    sky:     "bg-sky-500/20 text-sky-300 border-sky-500/40",
+    amber:   "bg-amber-500/20 text-amber-300 border-amber-500/40",
     slate:   "bg-slate-500/20 text-slate-300 border-slate-500/40",
   }[spec.color];
   return (
@@ -2067,7 +2076,8 @@ function CrossPluginManifest() {
   const [err, setErr] = useState("");
   const [openIds, setOpenIds] = useState(() => new Set(["wizard_guild"]));
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all"); // all | canonical | duplicate | unknown
+  const [filter, setFilter] = useState("all"); // all | canonical | duplicate | thin_client | utility | unknown
+  const [groupBy, setGroupBy] = useState("category"); // category | status | none
 
   const load = useCallback((force = false) => {
     setStatus("loading");
@@ -2117,7 +2127,9 @@ function CrossPluginManifest() {
             <span className="text-xs text-slate-400">
               <b className="text-amber-200">{totals.total}</b> methods
               &nbsp;•&nbsp; <b className="text-emerald-400">{totals.canonical}</b> canonical
+              &nbsp;•&nbsp; <b className="text-sky-400">{totals.thin_client || 0}</b> thin-client
               &nbsp;•&nbsp; <b className="text-rose-400">{totals.duplicate}</b> duplicate
+              &nbsp;•&nbsp; <b className="text-amber-400">{totals.utility || 0}</b> utility
               &nbsp;•&nbsp; <b className="text-slate-400">{totals.unknown}</b> unknown
             </span>
             <button onClick={() => load(true)} disabled={status === "loading"}
@@ -2134,8 +2146,16 @@ function CrossPluginManifest() {
                   className="bg-slate-950 border border-amber-600/20 rounded px-2 py-1 text-sm text-amber-100">
             <option value="all">All SSoT statuses</option>
             <option value="canonical">canonical only</option>
+            <option value="thin_client">thin-client only</option>
             <option value="duplicate">duplicate only (SSoT violations)</option>
+            <option value="utility">utility only</option>
             <option value="unknown">unknown only</option>
+          </select>
+          <select value={groupBy} onChange={e => setGroupBy(e.target.value)}
+                  className="bg-slate-950 border border-amber-600/20 rounded px-2 py-1 text-sm text-amber-100">
+            <option value="category">Group by category</option>
+            <option value="status">Group by SSoT status</option>
+            <option value="none">Flat list</option>
           </select>
         </div>
         {status === "error" && (
@@ -2146,6 +2166,30 @@ function CrossPluginManifest() {
       {groups.map(g => {
         const list = filtered(g.scaffolds || []);
         const open = openIds.has(g.id);
+        // Sub-group within each plugin. `category` is the default —
+        // maps every method to its "what it does" bucket; `status`
+        // groups by canonical/thin-client/duplicate/utility/unknown;
+        // `none` shows the flat sorted list (server already sorts
+        // by category → name).
+        const subBuckets = {};
+        for (const s of list) {
+          let key;
+          if (groupBy === "status") {
+            key = {
+              canonical: "✓ Canonical (spellcaster_core)",
+              thin_client: "→ Thin client (Guild API)",
+              duplicate: "⚠ Duplicate (SSoT violation)",
+              utility: "· Utility",
+              unknown: "? Unknown",
+            }[s.ssot_status] || "? Unknown";
+          } else if (groupBy === "category") {
+            key = s.category_label || "Other";
+          } else {
+            key = "";
+          }
+          (subBuckets[key] = subBuckets[key] || []).push(s);
+        }
+        const subKeys = Object.keys(subBuckets).sort();
         return (
           <div key={g.id} className="bg-slate-900 border border-amber-600/30 rounded-xl overflow-hidden">
             <button onClick={() => toggle(g.id)}
@@ -2155,38 +2199,56 @@ function CrossPluginManifest() {
                 <span className="block text-base font-semibold text-amber-50">{g.label}</span>
                 <span className="block text-xs text-slate-400">{g.description}</span>
               </span>
-              <span className="text-xs text-slate-400 flex items-center gap-2">
-                <b className="text-amber-200">{list.length}</b> / {g.summary.total}
-                <span className="text-emerald-400">{g.summary.canonical}✓</span>
+              <span className="text-xs text-slate-400 flex items-center gap-2 flex-wrap justify-end">
+                <b className="text-amber-200">{list.length}</b>/{g.summary.total}
+                {g.summary.canonical > 0 && <span className="text-emerald-400">{g.summary.canonical}✓</span>}
+                {g.summary.thin_client > 0 && <span className="text-sky-400">{g.summary.thin_client}→</span>}
                 {g.summary.duplicate > 0 && <span className="text-rose-400">{g.summary.duplicate}⚠</span>}
+                {g.summary.utility > 0 && <span className="text-amber-400">{g.summary.utility}·</span>}
+                {g.summary.unknown > 0 && <span className="text-slate-400">{g.summary.unknown}?</span>}
                 <span className={`text-amber-500 transition-transform ${open ? "rotate-180" : ""}`}>▾</span>
               </span>
             </button>
             {open && (
-              <div className="border-t border-amber-600/20 divide-y divide-slate-800">
+              <div className="border-t border-amber-600/20">
                 {list.length === 0 ? (
                   <div className="px-5 py-4 text-sm text-slate-500 italic">
                     {g.scaffolds.length === 0
                       ? "No methods detected in the repo tree. If this plugin has been recently added / updated, click ↻ re-scan above."
                       : "No methods match the current filter."}
                   </div>
-                ) : list.map(s => (
-                  <div key={s.id} className="px-5 py-2 hover:bg-slate-800/30">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-amber-100 truncate">{s.name || s.id}</span>
-                      <SsotBadge status={s.ssot_status || "unknown"} />
-                      {s.feature_gate && s.feature_gate !== "None" && (
-                        <span className="text-[10px] font-mono text-slate-400">gate:{s.feature_gate}</span>
-                      )}
-                    </div>
-                    {(s.description || s.ssot_notes) && (
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        {s.description}
-                        {s.description && s.ssot_notes ? " · " : ""}
-                        {s.ssot_notes && <span className="italic">{s.ssot_notes}</span>}
-                      </p>
+                ) : subKeys.map(sub => (
+                  <div key={sub}>
+                    {sub && (
+                      <div className="px-5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-300/80 bg-slate-950/50 border-t border-amber-600/10 flex items-center justify-between">
+                        <span>{sub}</span>
+                        <span className="text-slate-500 font-mono normal-case">{subBuckets[sub].length}</span>
+                      </div>
                     )}
-                    <p className="text-[10px] font-mono text-slate-600 mt-0.5">{s.id}</p>
+                    <div className="divide-y divide-slate-800">
+                      {subBuckets[sub].map(s => (
+                        <div key={s.id} className="px-5 py-2 hover:bg-slate-800/30">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-medium text-amber-100">{s.name || s.id}</span>
+                            <SsotBadge status={s.ssot_status || "unknown"} />
+                            {s.category_label && groupBy !== "category" && (
+                              <span className="text-[10px] text-slate-400 italic">{s.category_label}</span>
+                            )}
+                            {s.feature_gate && s.feature_gate !== "None" && (
+                              <span className="text-[10px] font-mono text-slate-400">gate:{s.feature_gate}</span>
+                            )}
+                          </div>
+                          {(s.description || s.ssot_notes) && (
+                            <p className="text-xs text-slate-400 mt-0.5">
+                              {s.description}
+                              {s.description && s.ssot_notes ? " · " : ""}
+                              {s.ssot_notes && <span className="italic">{s.ssot_notes}</span>}
+                            </p>
+                          )}
+                          <p className="text-[10px] font-mono text-slate-600 mt-0.5">{s.id}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
