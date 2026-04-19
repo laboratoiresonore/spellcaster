@@ -63,6 +63,10 @@ config.json
 .claude/
 .mcp.json
 
+# Per-session handover docs — contain real LAN IPs and local paths,
+# intended for Claude-to-Claude orchestration, never for the public repo
+HANDOVER_*.md
+
 # Gemini MCP output
 gemini-output/
 
