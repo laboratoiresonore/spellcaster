@@ -64,6 +64,61 @@ from . import __version__, auth, config, heartbeat
 _UNAUTHENTICATED_PATHS: set[str] = {"/"}
 
 
+def _autopopulate_services(cfg: dict[str, Any]) -> None:
+    """R49a: Merge auto-detected services into cfg['services'].
+
+    The antenna's config file declares services the user explicitly wants
+    to expose — but fresh users shouldn't have to edit JSON to enable
+    every locally-installed app. Instead, we probe the machine at
+    startup and UNION detected services with config-declared ones.
+
+    Precedence: declared services always stay. Detected services are
+    added if not already present. Nothing is ever removed here (user
+    can still disable a service by editing config).
+
+    Quiet on failure — if detection itself blows up, we log and keep
+    the config-declared list untouched. The agent must boot regardless.
+    """
+    declared = list(cfg.get("services") or [])
+    try:
+        from . import detect as _detect
+        # Load the service registry (same path status.py uses)
+        try:
+            import sys as _sys
+            _repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            if _repo_root not in _sys.path:
+                _sys.path.insert(0, _repo_root)
+            from installer import remote_services as _remote_services  # type: ignore
+            registry = _remote_services.load_registry()
+            services_list = registry.get("services") or []
+        except Exception as e:
+            print(f"[antenna] auto-detect: could not load service registry: {e}",
+                  file=sys.stderr)
+            return
+        if not services_list:
+            return
+        evidence = _detect.detect_installed_services(services_list, use_cache=False)
+        auto_added: list[str] = []
+        for svc in services_list:
+            key = svc.get("key", "")
+            if not key or key in declared:
+                continue
+            ev = evidence.get(key, {})
+            # A service is auto-activated if ANY signal fired. The evidence
+            # dict's top-level flag 'installed' is set by detect_service when
+            # any of filesystem/process/network probes succeeded.
+            if ev.get("installed"):
+                declared.append(key)
+                auto_added.append(key)
+        if auto_added:
+            cfg["services"] = declared
+            print(f"[antenna] auto-detected services added: {auto_added}")
+            print(f"[antenna] effective services: {declared}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[antenna] auto-detect failed ({type(e).__name__}: {e}) — "
+              f"using declared services only", file=sys.stderr)
+
+
 def _build_routes(cfg: dict[str, Any]) -> dict[tuple[str, str], Callable]:
     """Return the (method, path) → handler routing table.
 
@@ -325,6 +380,10 @@ def serve(cfg: dict[str, Any] | None = None,
     """
     if cfg is None:
         cfg = config.bootstrap()
+
+    # R49a: auto-populate services so users don't edit JSON. Runs BEFORE
+    # _build_routes so auto-detected services get their routes registered.
+    _autopopulate_services(cfg)
 
     # Install handler class attributes BEFORE the server starts accepting
     _AntennaHandler._config = cfg
