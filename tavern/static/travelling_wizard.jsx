@@ -2979,8 +2979,10 @@ function SignalBridgeSettings() {
   const [saved, setSaved] = useState(false);
   const [importError, setImportError] = useState("");
   const [guildOpen, setGuildOpen] = useState(false);
-  // Track the tab before a video-wizard auto-switch so we can restore it
-  const prevTabRef = useRef(null);
+  // R120: prevTabRef + isVideoWizard / handleWizardSelect auto-switch
+  // logic were removed along with the Video tab — the main Guild GUI
+  // handles Cinematographer mode directly.
+  //
   // Server config status: "" (idle) | "loading" | "loaded" | "saving" |
   // "saved" | "error". Surfaced in the header so the user knows their
   // edits are actually persisting.
@@ -3091,7 +3093,9 @@ function SignalBridgeSettings() {
   }, []);
 
   const tabs = [
-    { id: "video", label: "Video", icon: <Icons.Play /> },
+    // R120: the Video / Cinematographer tab was removed from the
+    // Travelling Wizard — video generation now lives exclusively in
+    // the main Guild GUI (🎬 toggle next to the send button).
     { id: "workflows", label: "Workflows", icon: <Icons.Film /> },
     { id: "scaffolds", label: "Scaffolds", icon: <Icons.Wand /> },
     { id: "integrations", label: "Integrations", icon: <Icons.Compass /> },
@@ -3142,32 +3146,8 @@ function SignalBridgeSettings() {
     setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
 
-  // Detect whether a wizard is video-related by checking build_fns or subtext
-  const isVideoWizard = (char) => {
-    if (!char) return false;
-    if (char.subtext && /video/i.test(char.subtext)) return true;
-    if (Array.isArray(char.build_fns)) {
-      return char.build_fns.some(fn => /video/i.test(fn));
-    }
-    return false;
-  };
-
-  // Called by GuildSidebar when a wizard is clicked
-  const handleWizardSelect = useCallback((char) => {
-    if (isVideoWizard(char)) {
-      // Save current tab so we can restore it later
-      if (activeTab !== "video") {
-        prevTabRef.current = activeTab;
-      }
-      setActiveTab("video");
-    } else {
-      // Restore previous tab (or default to scaffolds)
-      if (activeTab === "video" && prevTabRef.current) {
-        setActiveTab(prevTabRef.current);
-        prevTabRef.current = null;
-      }
-    }
-  }, [activeTab]);
+  // R120: isVideoWizard + handleWizardSelect removed with the Video tab.
+  // Clicking a wizard in the GuildSidebar no longer retargets tabs here.
 
   return (
     <div className="min-h-screen bg-slate-950 text-amber-50" style={{background: "linear-gradient(135deg, #0f172a 0%, #1a1f35 50%, #0a0e1a 100%)", marginRight: guildOpen ? "384px" : "0", transition: "margin-right 0.3s ease"}}>
@@ -3244,13 +3224,8 @@ function SignalBridgeSettings() {
 
       {/* Content */}
       <div className="max-w-6xl mx-auto px-6 py-6">
-        {/* ── Video Tab — always mounted, hidden when inactive to preserve state ── */}
-        <div style={{ display: activeTab === "video" ? "block" : "none" }}>
-          {typeof VideoPanel !== 'undefined'
-            ? React.createElement(VideoPanel)
-            : <div className="text-center py-12 text-slate-400 text-sm">Video panel loading...</div>}
-        </div>
-
+        {/* R120: Video tab removed — Cinematographer lives only in the
+            main Guild GUI (🎬 toggle next to the chat send button). */}
 
         {/* ── Workflows Tab ── */}
         {activeTab === "workflows" && (
@@ -3391,7 +3366,7 @@ function SignalBridgeSettings() {
         onToggle={() => setGuildOpen(false)}
         comfyUrl={config.comfyui_url || "http://127.0.0.1:8188"}
         koboldUrl={config.kobold_url || "http://127.0.0.1:5001"}
-        onWizardSelect={handleWizardSelect}
+        // R120: onWizardSelect dropped — video auto-switch logic gone.
       />
     </div>
   );
