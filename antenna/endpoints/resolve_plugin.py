@@ -443,6 +443,68 @@ def _write_bridge_config(guild_url: str) -> dict[str, Any]:
     return {"ok": True, "path": str(path), "guild_url": url}
 
 
+def stage_input_video(ctx: dict[str, Any]) -> tuple[int, dict]:
+    """POST /resolve/stage-input-video — copy a local video file into
+    ComfyUI's input/ directory so VHS_LoadVideo can reference it by
+    basename alone.
+
+    Body: {"path": "<absolute path on the antenna host>"}.
+
+    The antenna's co-located with both Resolve and ComfyUI, so this is
+    a plain filesystem copy (no LAN transfer). Returns the staged
+    basename on success; the caller then sets that basename as the
+    shot's overrides.input_video and the Guild renders without a
+    separate upload.
+    """
+    body = ctx.get("body") or {}
+    cfg = ctx["config"]
+    src = (body.get("path") or "").strip()
+    if not src:
+        return 400, {"error": "path is required"}
+    src_path = Path(os.path.expanduser(src))
+    if not src_path.is_file():
+        return 404, {"error": f"no file at {src}"}
+
+    # Locate ComfyUI's input directory. The antenna config already
+    # carries comfyui_root for service launching; input/ is a
+    # well-known child.
+    comfy_root = (cfg.get("comfyui_root") or "").strip()
+    if not comfy_root:
+        return 500, {"error": "antenna config has no comfyui_root"}
+    input_dir = Path(os.path.expanduser(comfy_root)) / "input"
+    if not input_dir.is_dir():
+        # Some ComfyUI layouts have input/ one level deeper (inside the
+        # main/, venv-adjacent repo clone). Walk up one shallow.
+        alt = Path(os.path.expanduser(comfy_root)) / "ComfyUI" / "input"
+        if alt.is_dir():
+            input_dir = alt
+        else:
+            return 500, {"error": f"ComfyUI input dir not found at "
+                                     f"{input_dir}"}
+
+    # Keep filename collision-free by prefixing with content hash —
+    # avoids clobbering "bedroom.mp4" in the test fixtures. Use first 8
+    # hex chars to keep the name readable.
+    h = hashlib.sha1()
+    with src_path.open("rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    digest = h.hexdigest()[:8]
+    dest_name = f"sc_{digest}_{src_path.name}"
+    dest = input_dir / dest_name
+    if not dest.exists():
+        try:
+            shutil.copy2(src_path, dest)
+        except OSError as e:
+            return 500, {"error": f"copy failed: {e}"}
+    return 200, {
+        "ok": True,
+        "staged_name": dest_name,
+        "comfyui_input_dir": str(input_dir),
+        "size_bytes": dest.stat().st_size,
+    }
+
+
 def debug(ctx: dict[str, Any]) -> tuple[int, dict]:
     """GET /resolve/plugin/debug — dump bridge config + reachability test.
 
