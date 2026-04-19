@@ -152,25 +152,44 @@ def _schedule_restart(delay_seconds: float = 0.5) -> None:
     def _respawn():
         time.sleep(delay_seconds)
         root = _src_root()
-        # Use start_new_session / DETACHED on Windows so the child lives
-        # past this process exiting. On Windows, subprocess.Popen with
-        # CREATE_NEW_PROCESS_GROUP is the equivalent.
+        # Order of operations matters:
+        # 1. Exit THIS process FIRST so the port is freed.
+        # 2. Then the child, spawned with DETACHED, binds it cleanly.
+        # The previous version spawned-then-exit which failed on Windows
+        # because the successor raced the old process for the port and
+        # lost — leaving the old (pre-update) process running despite
+        # the "restart imminent" response.
         kwargs: dict[str, Any] = {"cwd": str(root)}
         if os.name == "nt":
             kwargs["creationflags"] = (
                 subprocess.CREATE_NEW_PROCESS_GROUP | 0x00000008)  # DETACHED_PROCESS
         else:
             kwargs["start_new_session"] = True
+        # Use a small shell "sleep-then-start" trampoline so the child
+        # definitely comes up AFTER this process dies. On Windows the
+        # trampoline is an inline python -c; on POSIX it's a shell command.
+        py = sys.executable
+        if os.name == "nt":
+            trampoline_cmd = [
+                py, "-c",
+                f"import time, subprocess; time.sleep(1.5); "
+                f"subprocess.Popen([r'{py}', '-m', 'antenna.agent'], "
+                f"cwd=r'{str(root)}')",
+            ]
+        else:
+            trampoline_cmd = [
+                "sh", "-c",
+                f"sleep 1.5 && '{py}' -m antenna.agent",
+            ]
         try:
-            subprocess.Popen(
-                [sys.executable, "-m", "antenna.agent"],
-                **kwargs,
-            )
+            subprocess.Popen(trampoline_cmd, **kwargs)
         except Exception as e:
-            print(f"[self-update] failed to spawn successor: {e}", file=sys.stderr)
+            print(f"[self-update] failed to spawn trampoline: {e}",
+                  file=sys.stderr)
             return
-        # Give the child a beat to bind the port before we release it
-        time.sleep(0.8)
+        # Now actually die so the port frees up before the trampoline fires.
+        print("[self-update] exiting to let trampoline rebind port",
+              file=sys.stderr)
         os._exit(0)
 
     threading.Thread(target=_respawn, daemon=True).start()
