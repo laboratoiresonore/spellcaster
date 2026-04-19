@@ -136,6 +136,7 @@ function ShotCard({
   onAddDependency,
   onRemoveDependency,
   onToggleLock,
+  focused = false,
 }) {
   const [expanded, setExpanded] = _useState(shot.status === "draft");
   const [showHistory, setShowHistory] = _useState(false);
@@ -280,7 +281,7 @@ function ShotCard({
   const currentPreset = presets[editPreset];
 
   return (
-    <div data-shot-id={shot.id} className={`bg-slate-900 border rounded-xl overflow-hidden transition-all ${isSelected ? "shot-card-root border-amber-400 shadow-lg shadow-amber-600/30" : "border-amber-600/20"}`}>
+    <div data-shot-id={shot.id} className={`bg-slate-900 border rounded-xl overflow-hidden transition-all ${focused ? "shot-card-focused ring-2 ring-amber-400 border-amber-400" : ""} ${isSelected ? "shot-card-root border-amber-400 shadow-lg shadow-amber-600/30" : focused ? "" : "border-amber-600/20"}`}>
       {/* Collapsed header */}
       <div
         draggable
@@ -1509,6 +1510,13 @@ function VideoPanel() {
   const [showRenderQueue, setShowRenderQueue] = _useState(false);
   const [canUndo, setCanUndo] = _useState(false);
   const [canRedo, setCanRedo] = _useState(false);
+  // R44: batch prompt prefix/suffix edit UI
+  const [showPromptEdit, setShowPromptEdit] = _useState(false);
+  const [editPrefix, setEditPrefix] = _useState("");
+  const [editSuffix, setEditSuffix] = _useState("");
+  const [editMode, setEditMode] = _useState("add");
+  // R44: keyboard navigation between shot cards
+  const [focusedShotIndex, setFocusedShotIndex] = _useState(null);
   const pollRef = _useRef(null);
   const sseRef = _useRef(null);
   const [sseConnected, setSseConnected] = _useState(false);
@@ -1526,6 +1534,62 @@ function VideoPanel() {
     }
     return result;
   }, [shots, statusFilter, searchQuery]);
+
+  // R44: keyboard navigation — Arrow up/down moves focus between cards,
+  // Escape clears it, Space toggles the focused card's selection.
+  // Enter intentionally NOT handled here so it stays available for form
+  // submission inside ShotCard (prompt editor, etc.).
+  // Typing in an input/textarea bypasses this handler so users can
+  // Arrow through text.
+  _useEffect(() => {
+    const onKeyDown = (e) => {
+      // Skip when the user is typing in any editable control
+      const tag = (e.target?.tagName || "").toUpperCase();
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT"
+          || e.target?.isContentEditable) {
+        return;
+      }
+      if (filteredShots.length === 0) return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setFocusedShotIndex((i) => {
+          const next = i === null ? 0 : Math.min(i + 1, filteredShots.length - 1);
+          // Scroll the newly-focused card into view
+          setTimeout(() => {
+            const card = document.querySelector(`[data-shot-id="${filteredShots[next]?.id}"]`);
+            if (card) card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+          }, 0);
+          return next;
+        });
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setFocusedShotIndex((i) => {
+          const next = i === null ? 0 : Math.max(i - 1, 0);
+          setTimeout(() => {
+            const card = document.querySelector(`[data-shot-id="${filteredShots[next]?.id}"]`);
+            if (card) card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+          }, 0);
+          return next;
+        });
+      } else if (e.key === "Escape") {
+        setFocusedShotIndex(null);
+      } else if (e.key === " " && focusedShotIndex !== null) {
+        // Space toggles selection of the focused card (no scroll)
+        e.preventDefault();
+        const focusedShot = filteredShots[focusedShotIndex];
+        if (focusedShot) toggleSelect(focusedShot.id);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [filteredShots, focusedShotIndex]);
+
+  // Clamp focusedShotIndex if filter shrinks the list below it
+  _useEffect(() => {
+    if (focusedShotIndex !== null && focusedShotIndex >= filteredShots.length) {
+      setFocusedShotIndex(filteredShots.length > 0 ? filteredShots.length - 1 : null);
+    }
+  }, [filteredShots.length, focusedShotIndex]);
 
   // ── Bulk select helpers ──
   const toggleSelect = (id) => {
@@ -1865,6 +1929,35 @@ function VideoPanel() {
       await refresh();
     } catch (e) {
       setError("Failed to batch color label");
+    }
+  };
+
+  // R44: add/remove a common prefix/suffix across selected shots' prompts.
+  // Calls into Shotboard.batch_prompt_edit which is idempotent — repeated
+  // "add" with the same prefix is a no-op, safe to re-run.
+  const batchPromptEdit = async () => {
+    if (selected.size === 0) return;
+    if (!editPrefix && !editSuffix) {
+      addToast("Enter a prefix or suffix first", "error");
+      return;
+    }
+    try {
+      const res = await api.post("/api/video/batch-prompt-edit", {
+        shot_ids: Array.from(selected),
+        prefix: editPrefix,
+        suffix: editSuffix,
+        mode: editMode,
+      });
+      addToast(
+        `Prompt ${editMode}: ${res.modified} modified, ${res.skipped} skipped`,
+        res.modified > 0 ? "success" : "info"
+      );
+      setShowPromptEdit(false);
+      setEditPrefix("");
+      setEditSuffix("");
+      await refresh();
+    } catch (e) {
+      addToast("Batch prompt edit failed: " + (e.message || "unknown"), "error");
     }
   };
 
@@ -2377,6 +2470,9 @@ function VideoPanel() {
               ))}
             </select>
             <button onClick={batchRevert} className="batch-revert-btn px-3 py-1 rounded bg-amber-700/40 hover:bg-amber-600/50 text-amber-100 text-xs">Batch Revert</button>
+            <button onClick={() => setShowPromptEdit(v => !v)} className="batch-prompt-edit-btn px-3 py-1 rounded bg-violet-700/40 hover:bg-violet-600/50 text-violet-100 text-xs">
+              {showPromptEdit ? "Close Prompt Edit" : "Prompt ±"}
+            </button>
                 <button onClick={batchResetStatus} className="batch-reset-btn flex items-center gap-1 bg-sky-700/30 hover:bg-sky-700/50 text-sky-300 px-3 py-1 rounded text-xs font-medium">
               Reset
             </button>
@@ -2388,6 +2484,50 @@ function VideoPanel() {
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
               Delete
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* R44: batch prompt prefix/suffix edit — expanding panel */}
+      {selected.size > 0 && showPromptEdit && (
+        <div className="batch-prompt-edit-panel bg-slate-900 border border-violet-600/30 rounded-xl px-4 py-3 flex flex-col gap-2">
+          <div className="flex items-center gap-2 text-xs text-violet-200">
+            <span className="font-semibold">Prompt editor</span>
+            <span className="text-slate-400">— add or remove a common prefix/suffix on all {selected.size} selected shot(s)</span>
+          </div>
+          <div className="flex gap-2 items-center flex-wrap">
+            <input
+              type="text"
+              value={editPrefix}
+              onChange={(e) => setEditPrefix(e.target.value)}
+              placeholder="prefix (e.g. 'cinematic, ')"
+              className="batch-prompt-prefix bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 placeholder-slate-500 focus:border-violet-500 focus:outline-none flex-1 min-w-[180px]"
+            />
+            <input
+              type="text"
+              value={editSuffix}
+              onChange={(e) => setEditSuffix(e.target.value)}
+              placeholder="suffix (e.g. ', 4k')"
+              className="batch-prompt-suffix bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 placeholder-slate-500 focus:border-violet-500 focus:outline-none flex-1 min-w-[180px]"
+            />
+            <div className="batch-prompt-mode inline-flex rounded overflow-hidden border border-slate-600">
+              <button
+                onClick={() => setEditMode("add")}
+                className={`batch-prompt-mode-add px-3 py-1 text-xs ${editMode === "add" ? "bg-violet-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}
+              >Add</button>
+              <button
+                onClick={() => setEditMode("remove")}
+                className={`batch-prompt-mode-remove px-3 py-1 text-xs ${editMode === "remove" ? "bg-violet-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}
+              >Remove</button>
+            </div>
+            <button
+              onClick={batchPromptEdit}
+              disabled={!editPrefix && !editSuffix}
+              className="batch-prompt-apply px-3 py-1 rounded bg-violet-600 hover:bg-violet-500 text-white text-xs font-medium disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed"
+            >Apply</button>
+          </div>
+          <div className="text-xs text-slate-500">
+            Idempotent — re-running with the same prefix won't double-add. Locked shots are skipped.
           </div>
         </div>
       )}
@@ -2533,6 +2673,7 @@ function VideoPanel() {
               onAddDependency={addDependency}
               onRemoveDependency={removeDependency}
               onToggleLock={toggleLock}
+              focused={focusedShotIndex === idx}
             />
           ))}
         </div>
