@@ -1912,8 +1912,16 @@ def main():
         print(f"  [server] (Assets will be generated when ComfyUI comes online)")
 
     # ── Start the HTTP server in a background thread ─────────────────
+    # ThreadingHTTPServer spawns a worker thread per request. With the
+    # single-threaded HTTPServer a long-running handler (SSE stream at
+    # /api/events/stream, slow ComfyUI probe, shootout poll) blocked
+    # every other client; the default listen backlog of 5 filled up
+    # and new connects got RST'd — only the existing browser tab
+    # with its SSE keep-alive could talk to the Guild, curl and every
+    # other probe got "connection refused".
     print(f"  [server] Starting Wizard Guild on port {port}...")
-    httpd = server.HTTPServer(('0.0.0.0', port), server.GuildHandler)
+    httpd = server.ThreadingHTTPServer(('0.0.0.0', port), server.GuildHandler)
+    httpd.daemon_threads = True
     httpd.directory = os.path.join(APP_DIR, 'static')
 
     server_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
