@@ -844,7 +844,7 @@
       ${counts.error ? `&nbsp;•&nbsp; <span style="color:#ff6b6b">${counts.error} failed</span>` : ''}`;
   }
 
-  function _renderSlotGallery(slot) {
+  async function _renderSlotGallery(slot) {
     const state = slot.jobState;
     const samples = (state.result && state.result.samples) || [];
     const body = slot.el.querySelector('.sc-slot-body');
@@ -856,93 +856,172 @@
       return;
     }
     const prompt = (state.result && state.result.prompt) || '';
+    const negative = (state.result && state.result.negative) || '';
     const model  = (state.result && state.result.model) || '';
-    const currentStrength = (samples[0] && typeof samples[0].strength === 'number')
-      ? samples[0].strength : 0.8;
-    const stepDown = Math.max(0, Math.round((currentStrength - 0.2) * 100) / 100);
-    const stepUp   = Math.min(1, Math.round((currentStrength + 0.2) * 100) / 100);
+
+    // R137: every slot now gets the full approve-many UI that the
+    // single-group view uses — per-tile strength slider, retry
+    // buttons, subject dropdown, model picker, approve checkbox,
+    // keyword input, description input. No more "Pick ONE winner"
+    // only; for "other" with 29 SDXL LoRAs the user approves every
+    // one they want and attaches keywords. For named categories
+    // (hand_fix / feet_fix / ...) the "Pick winner" action is still
+    // one click away via the per-tile crown button.
+    const [subjects, archModels] = await Promise.all([
+      getSubjects(), fetchModelsForArch(slot.arch),
+    ]);
+    const subjectGlobalOpts = subjects.map(s =>
+      `<option value="${s.key}">${s.label}</option>`
+    ).join('');
+    const modelGlobalOpts = ['<option value="">(auto)</option>']
+      .concat(archModels.map(m =>
+        `<option value="${m.name}"${m.name === model ? ' selected' : ''}>${m.name}</option>`
+      )).join('');
+    const isOtherBucket = slot.purpose_group === 'other';
     body.innerHTML = `
-      <div style="color:#8a7eaf; font-size:11px; margin-bottom:8px;">
-        Prompt: “${prompt}” &nbsp;•&nbsp; Model: ${model.split(/[/\\\\]/).pop()}
-        &nbsp;•&nbsp; weight ${currentStrength.toFixed(2)}
-      </div>
-      <div class="sc-shootout-retry">
-        <button class="sc-shootout-retry-btn sc-slot-retry-down"
-                title="Re-run with LoRA weight ${stepDown.toFixed(2)} (currently ${currentStrength.toFixed(2)}). Useful when every candidate looks too strong."
-                ${stepDown >= currentStrength ? 'disabled' : ''}>↩ Retry softer</button>
-        <div class="sc-shootout-slider-wrap">
-          <input type="range" min="0" max="1" step="0.01"
-                 value="${currentStrength.toFixed(2)}" class="sc-slot-slider"
-                 title="Pick an exact LoRA weight and retry.">
-          <span class="sc-slot-slider-val">${currentStrength.toFixed(2)}</span>
-          <button class="sc-shootout-retry-btn sc-slot-retry-apply"
-                  title="Re-run the shootout at the selected LoRA weight.">Retry at this weight</button>
+      <details class="sc-shootout-globals" open>
+        <summary>Test prompt &amp; controls for this group</summary>
+        <div class="sc-globals-row">
+          <label>Prompt<textarea class="sc-slot-prompt" rows="2"
+                                  placeholder="Leave blank to reuse the subject template">${escapeHTML(prompt)}</textarea></label>
+          <label>Negative<textarea class="sc-slot-negative" rows="2"
+                                    placeholder="Leave blank to reuse the subject template">${escapeHTML(negative)}</textarea></label>
         </div>
-        <button class="sc-shootout-retry-btn sc-slot-retry-up"
-                title="Re-run with LoRA weight ${stepUp.toFixed(2)} (currently ${currentStrength.toFixed(2)}). Useful when every candidate looks too weak."
-                ${stepUp <= currentStrength ? 'disabled' : ''}>Retry stronger ↪</button>
-      </div>
-      <div class="sc-shootout-gallery">
-        ${samples.map((s) => `
-          <div class="sc-shootout-tile" data-lora="${s.lora_name}">
-            ${s.ok && s.image_b64
-              ? `<img src="data:image/png;base64,${s.image_b64}" alt="${s.lora_name}">`
-              : `<div class="sc-tile-error">${s.error || 'no image'}</div>`}
-            <div class="sc-tile-meta">
-              <div class="sc-tile-name">${s.lora_name.split(/[/\\\\]/).pop()}</div>
-              <button class="sc-tile-pick" ${!s.ok ? 'disabled' : ''}>👑 Pick this one</button>
-            </div>
-          </div>`).join('')}
+        <div class="sc-globals-row">
+          <label>Batch subject
+            <select class="sc-slot-subject"><option value="">(keep per-card)</option>${subjectGlobalOpts}</select>
+          </label>
+          <label>Model
+            <select class="sc-slot-model">${modelGlobalOpts}</select>
+          </label>
+          <button class="sc-shootout-retry-btn sc-slot-rerun"
+                  title="Re-run every card below with the prompt/negative/subject/model above (one render per LoRA, slow).">Re-run all</button>
+        </div>
+        <div class="sc-globals-row" style="grid-template-columns: 1fr auto;">
+          <label>Batch keyword
+            <input type="text" class="sc-slot-batch-keyword"
+                   placeholder="Typed in Guild prompts → auto-suggest every LoRA approved in this group"
+                   style="background:#12101d;color:#e8e6f5;border:1px solid #3a3360;border-radius:6px;padding:6px 8px;font-family:inherit;font-size:12px;">
+          </label>
+          <button class="sc-shootout-retry-btn sc-slot-apply-keyword"
+                  title="Append this keyword to every approved card's keyword field below.">Apply to approved</button>
+        </div>
+      </details>
+      <div class="sc-shootout-gallery sc-slot-gallery"></div>
+      <div class="sc-shootout-approve-bar">
+        <div class="sc-approve-count">
+          <b class="sc-slot-approve-count">0</b> approved in this group
+          ${isOtherBucket ? '' : '&nbsp;•&nbsp; <span style="color:#8a7eaf;">(tip: a named category usually only needs one winner)</span>'}
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="sc-shootout-retry-btn sc-slot-approve-all"
+                  title="Tick every card's Approve checkbox (useful for 'other' buckets).">Approve all</button>
+          <button class="sc-shootout-run-btn sc-slot-approve-submit" disabled>
+            Approve selected
+          </button>
+        </div>
       </div>`;
 
-    const slider = body.querySelector('.sc-slot-slider');
-    const sliderVal = body.querySelector('.sc-slot-slider-val');
-    if (slider && sliderVal) {
-      slider.addEventListener('input',
-        () => sliderVal.textContent = parseFloat(slider.value).toFixed(2));
+    const gallery = body.querySelector('.sc-slot-gallery');
+    for (const s of samples) {
+      gallery.appendChild(await _buildTile(s, slot.arch, slot.purpose_group,
+                                            subjects, archModels));
     }
-    const retryAt = (weight) => {
-      if (slot.pollTimer) { clearTimeout(slot.pollTimer); slot.pollTimer = null; }
-      _runMegaSlot(slot, weight);
+
+    // Approve-count wiring
+    const countEl = body.querySelector('.sc-slot-approve-count');
+    const submitBtn = body.querySelector('.sc-slot-approve-submit');
+    const updateApproveCount = () => {
+      const n = body.querySelectorAll('.sc-tile-approve-cb:checked').length;
+      countEl.textContent = String(n);
+      submitBtn.disabled = n === 0;
     };
-    body.querySelector('.sc-slot-retry-down')
-        ?.addEventListener('click', () => retryAt(stepDown));
-    body.querySelector('.sc-slot-retry-up')
-        ?.addEventListener('click', () => retryAt(stepUp));
-    body.querySelector('.sc-slot-retry-apply')
-        ?.addEventListener('click', () => retryAt(parseFloat(slider.value)));
-    body.querySelectorAll('.sc-tile-pick').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const tile = btn.closest('.sc-shootout-tile');
-        const winner = tile.dataset.lora;
-        tile.classList.add('winner');
-        body.querySelectorAll('.sc-tile-pick').forEach(b => b.disabled = true);
-        btn.textContent = 'Committing…';
-        try {
-          const res = await pickWinner(slot.arch, slot.purpose_group, winner);
-          _slotStatus(slot, 'picked', '✓ picked');
-          body.innerHTML = `
-            <div class="sc-slot-winner-line">
-              👑 Winner: ${winner.split(/[/\\\\]/).pop()}
-              &nbsp;•&nbsp; demoted ${res.demoted} other${res.demoted === 1 ? '' : 's'}
-            </div>`;
-          _updateMegaStats();
-          refreshBadge();
-        } catch (e) {
-          toast(`✗ Pick failed: ${e.message}`, 4000);
-          body.querySelectorAll('.sc-tile-pick').forEach(b => b.disabled = false);
-          btn.textContent = '👑 Pick this one';
+    body.querySelectorAll('.sc-tile-approve-cb').forEach(cb =>
+      cb.addEventListener('change', updateApproveCount));
+
+    // "Approve all" quick action
+    body.querySelector('.sc-slot-approve-all')?.addEventListener('click', () => {
+      body.querySelectorAll('.sc-tile-approve-cb').forEach(cb => {
+        cb.checked = true;
+      });
+      updateApproveCount();
+    });
+
+    // "Apply batch keyword to every approved card's keyword field"
+    body.querySelector('.sc-slot-apply-keyword')?.addEventListener('click', () => {
+      const kw = body.querySelector('.sc-slot-batch-keyword').value.trim();
+      if (!kw) { toast('Type a keyword first.', 2500); return; }
+      let n = 0;
+      body.querySelectorAll('.sc-shootout-tile').forEach(tile => {
+        const cb = tile.querySelector('.sc-tile-approve-cb');
+        // Apply to approved tiles (or every tile if nothing's approved
+        // yet — user intent is "tag these with this keyword").
+        const approvedAny = !!body.querySelector('.sc-tile-approve-cb:checked');
+        if (approvedAny && !cb.checked) return;
+        const kwInput = tile.querySelector('.sc-tile-keywords');
+        const existing = kwInput.value.trim();
+        const tokens = existing ? existing.split(',').map(t => t.trim()).filter(Boolean) : [];
+        if (!tokens.includes(kw)) {
+          tokens.push(kw);
+          kwInput.value = tokens.join(', ');
+          n += 1;
         }
       });
+      toast(`✓ Added "${kw}" to ${n} LoRA${n === 1 ? '' : 's'}`);
     });
-    _slotStatus(slot, 'ready', 'awaiting pick');
+
+    // Re-run this slot with the new globals
+    body.querySelector('.sc-slot-rerun')?.addEventListener('click', () => {
+      if (slot.pollTimer) { clearTimeout(slot.pollTimer); slot.pollTimer = null; }
+      _runMegaSlot(slot, undefined, {
+        prompt:   body.querySelector('.sc-slot-prompt').value || undefined,
+        negative: body.querySelector('.sc-slot-negative').value || undefined,
+        subject:  body.querySelector('.sc-slot-subject').value || undefined,
+        model:    body.querySelector('.sc-slot-model').value || undefined,
+      });
+    });
+
+    // Approve submit — send every checked tile with its own keywords.
+    submitBtn.addEventListener('click', async () => {
+      const approvals = [];
+      body.querySelectorAll('.sc-shootout-tile').forEach(tile => {
+        if (!tile.querySelector('.sc-tile-approve-cb').checked) return;
+        const kws = tile.querySelector('.sc-tile-keywords').value.trim();
+        const desc = tile.querySelector('.sc-tile-description').value.trim();
+        approvals.push({
+          name: tile.dataset.lora,
+          keywords: kws ? kws.split(',').map(s => s.trim()).filter(Boolean) : [],
+          description: desc,
+          strength: parseFloat(tile.querySelector('.sc-tile-slider').value),
+          subject: tile.querySelector('.sc-tile-subject-sel').value || undefined,
+        });
+      });
+      if (!approvals.length) return;
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Saving…';
+      try {
+        const res = await approveLoras(approvals);
+        _slotStatus(slot, 'picked', `✓ ${res.accepted.length} approved`);
+        _updateMegaStats();
+        body.querySelectorAll('.sc-tile-approve-cb').forEach(cb =>
+          cb.disabled = true);
+        submitBtn.textContent = `✓ Saved ${res.accepted.length}`;
+        refreshBadge();
+      } catch (e) {
+        toast(`✗ Approve failed: ${e.message}`, 5000);
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Approve selected';
+      }
+    });
+
+    _slotStatus(slot, 'ready', 'review + approve');
     _updateMegaStats();
-    // Free ComfyUI so the next queued slot can start in parallel with the
-    // user's review.
+    // Free ComfyUI so the next queued slot can start in parallel with
+    // the user's review.
     _advanceMegaQueue();
   }
 
-  async function _runMegaSlot(slot, strength) {
+  async function _runMegaSlot(slot, strength, overrides) {
     if (slot.pollTimer) { clearTimeout(slot.pollTimer); slot.pollTimer = null; }
     _slotStatus(slot, 'running', 'starting…');
     _updateMegaStats();
@@ -952,8 +1031,18 @@
         <div>Spawning…</div>
         <div class="sc-bar"><div class="sc-bar-fill" style="width:5%"></div></div>
       </div>`;
+    // Merge optional per-slot overrides with top-level mega-panel
+    // overrides (prompt/negative/subject/model set in the panel
+    // header apply to every slot unless the per-slot panel overrides
+    // them).
+    const startOpts = Object.assign({},
+      (window._MEGA_OVERRIDES || {}),
+      overrides || {});
+    if (typeof strength === 'number' && isFinite(strength)) {
+      startOpts.strength = strength;
+    }
     try {
-      const res = await startShootout(slot.arch, slot.purpose_group, strength);
+      const res = await startShootout(slot.arch, slot.purpose_group, startOpts);
       slot.jobId = res.job_id;
     } catch (e) {
       body.innerHTML = `<div class="sc-tile-error">${e.message}</div>`;
@@ -1034,11 +1123,80 @@
       pollTimer: null,
     }));
     _megaBusy = false;
+    window._MEGA_OVERRIDES = {};
+    // Collect ALL archs present so the mega-panel can pre-fetch their
+    // subject list + model list without waiting for each slot.
+    const subjects = await getSubjects();
+    const subjectGlobalOpts = subjects.map(s =>
+      `<option value="${s.key}">${s.label}</option>`
+    ).join('');
     body.innerHTML = `
       <div class="sc-shootout-mega-head">
         <div class="sc-mega-stats" id="sc-mega-stats"></div>
       </div>
+      <details class="sc-shootout-globals" open style="margin-bottom:14px;">
+        <summary>Global test overrides (apply to every group below)</summary>
+        <div class="sc-globals-row">
+          <label>Prompt<textarea id="sc-mega-prompt" rows="2"
+                                  placeholder="Override the default subject template for every slot"></textarea></label>
+          <label>Negative<textarea id="sc-mega-negative" rows="2"
+                                    placeholder="Override the default negative"></textarea></label>
+        </div>
+        <div class="sc-globals-row">
+          <label>Batch subject
+            <select id="sc-mega-subject"><option value="">(keep per-group)</option>${subjectGlobalOpts}</select>
+          </label>
+          <label>Batch keyword
+            <input type="text" id="sc-mega-batch-keyword"
+                   placeholder="Applied to every approved LoRA after 'Apply keyword'"
+                   style="background:#12101d;color:#e8e6f5;border:1px solid #3a3360;border-radius:6px;padding:6px 8px;font-family:inherit;font-size:12px;">
+          </label>
+          <button id="sc-mega-apply-keyword" class="sc-shootout-retry-btn"
+                  title="Append the batch keyword to every approved card across every ready/picked slot. Useful for 'this is my SDXL realism toolkit' style tagging.">Apply keyword</button>
+        </div>
+        <div style="margin-top:8px; font-size:11px; color:#8a7eaf;">
+          Values above are used when a slot starts or is re-run. Each
+          slot has its own per-tile strength slider, subject picker,
+          approve checkbox, keyword list, and description.
+        </div>
+      </details>
       <div id="sc-mega-slots"></div>`;
+
+    // Top-level Apply keyword — fills empty keyword fields across
+    // EVERY ready slot so the user can tag their whole "SDXL realism"
+    // batch in one shot.
+    body.querySelector('#sc-mega-apply-keyword').addEventListener('click', () => {
+      const kw = body.querySelector('#sc-mega-batch-keyword').value.trim();
+      if (!kw) { toast('Type a keyword first.', 2500); return; }
+      let n = 0;
+      body.querySelectorAll('.sc-slot-body .sc-shootout-tile').forEach(tile => {
+        const cb = tile.querySelector('.sc-tile-approve-cb');
+        if (!cb || !cb.checked) return;
+        const kwInput = tile.querySelector('.sc-tile-keywords');
+        if (!kwInput) return;
+        const existing = kwInput.value.trim();
+        const tokens = existing ? existing.split(',').map(t => t.trim()).filter(Boolean) : [];
+        if (!tokens.includes(kw)) {
+          tokens.push(kw);
+          kwInput.value = tokens.join(', ');
+          n += 1;
+        }
+      });
+      toast(`✓ Tagged ${n} approved LoRA${n === 1 ? '' : 's'} with "${kw}"`);
+    });
+
+    // Plumb prompt/negative/subject into _runMegaSlot via a module
+    // global — _runMegaSlot merges them into every startShootout call.
+    const updateOverrides = () => {
+      window._MEGA_OVERRIDES = {
+        prompt:   body.querySelector('#sc-mega-prompt').value || undefined,
+        negative: body.querySelector('#sc-mega-negative').value || undefined,
+        subject:  body.querySelector('#sc-mega-subject').value || undefined,
+      };
+    };
+    body.querySelector('#sc-mega-prompt').addEventListener('input', updateOverrides);
+    body.querySelector('#sc-mega-negative').addEventListener('input', updateOverrides);
+    body.querySelector('#sc-mega-subject').addEventListener('change', updateOverrides);
     const slotsEl = body.querySelector('#sc-mega-slots');
     _megaSlots.forEach((slot) => {
       const el = document.createElement('div');
