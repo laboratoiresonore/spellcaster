@@ -197,13 +197,16 @@ The **Antenna** is a small always-on bridge that lets Spellcaster on your laptop
 <table>
 <tr>
 <td width="33%" align="center" valign="top">
-  <img src="assets/demo_step1_inpaint.png" alt="GIMP plugin" width="100%"/>
+  <img src="assets/demo_step1_inpaint.png" alt="GIMP plugin — select what to fix" width="100%"/>
+  <img src="assets/demo_step2_inpaint.png" alt="GIMP plugin — pick a preset" width="100%"/>
+  <img src="assets/demo_step4_inpaint.png" alt="GIMP plugin — result on a new layer" width="100%"/>
   <br/><br/>
   <strong>🖌️ GIMP plugin</strong><br/>
   <sub>The menu. 69 tools across <code>Filters > Spellcaster</code>. Select layers, paint masks, click a tool. Keyboard shortcuts (<code>Ctrl+Alt+E/U/F/B/X</code>) for the quick ones. Every output lands as a new layer. Non-destructive, reversible, composable.</sub>
 </td>
 <td width="33%" align="center" valign="top">
-  <img src="assets/wizardguild.png" alt="Wizard Guild" width="100%"/>
+  <img src="assets/wizardguild.png" alt="Wizard Guild — chat UI" width="100%"/>
+  <img src="assets/wizardguild2.png" alt="Travelling Wizard — visual scaffold editor" width="100%"/>
   <br/><br/>
   <strong>🧙 Wizard Guild</strong><br/>
   <sub>The chat UI. AI wizard characters walk you through every tool conversationally. "Restore this photo." "Make the sky orange." "Turn this into a video." No menus, no modes. <a href="DEEP_DIVE.md#the-wizard-guild-chat-interface">How it works →</a></sub>
