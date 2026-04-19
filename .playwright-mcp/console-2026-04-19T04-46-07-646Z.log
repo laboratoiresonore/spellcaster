@@ -41,3 +41,4 @@
     at dispatchToComfy (http://127.0.0.1:7777/app.js:3343:32)
     at askKobold (http://127.0.0.1:7777/app.js:3307:13) @ http://127.0.0.1:7777/app.js:3371
 [  520667ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:7777/api/wizard_info/comfyui_Flux_FLUX1%20Dev%20fp8_safetensors:0
+[  653777ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:7777/api/wizard_info/comfyui_Flux_FLUX1%20Dev%20fp8_safetensors:0
