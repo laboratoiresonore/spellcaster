@@ -430,13 +430,23 @@ Access: `Spellcaster > Tools > Calibration Wizard`
 <details open>
 <summary><strong>The Wizard Guild (chat interface)</strong></summary>
 
-Don't want to learn GIMP? Look, we get it. GIMP has 847 menu items and a learning curve that doubles as a cliff face. The Wizard Guild is a standalone web UI where AI wizard characters handle everything conversationally. It's like tech support, except the tech support is a wizard, and instead of telling you to restart your computer, it generates a photorealistic dragon.
+Don't want to learn GIMP? GIMP has 847 menu items and a learning curve that doubles as a cliff face. The Wizard Guild is a standalone web UI where AI wizard characters handle everything conversationally — tech support, except the support agent is a wizard and instead of restarting your computer it generates a photorealistic dragon.
 
-<img src="assets/wizardguild.png" alt="The Wizard Guild" width="80%"/>
+<p align="center">
+  <img src="assets/wizardguild.png" alt="The Wizard Guild" width="80%"/>
+</p>
 
-Each wizard specializes in different tools. A local LLM runs natively inside ComfyUI — no separate server needed. Click action buttons to generate directly, or chat for guidance.
+Each wizard specialises in one tool family. The backend chip row at the top shows which local LLMs are live (Ollama / KoboldCpp / ComfyUI-hosted), and every wizard's own chip row exposes the three or four actions it can do — no menus, no modes.
 
-The **Travelling Wizard** bridges Spellcaster with external LLM apps — SillyTavern, OpenWebUI, LM Studio — through a scaffold system that routes your intent to the right tool. A **Meta Wizard** interprets what you want ("make it cinematic," "fix the hands," "turn this into a video") and dispatches to specialized sub-wizards for enhancement, generation, video, or pipeline orchestration.
+**Scaffolding a local LLM is a drag-and-drop affair.** The Travelling Wizard below is the editor:
+
+<p align="center">
+  <img src="assets/wizardguild2.png" alt="The Travelling Wizard — visual scaffold editor" width="80%"/>
+</p>
+
+Pick a flow from the left column (*Text-to-Image*, *Inpainting*, *Klein Image Editor*, *Photo Restoration*, *SUPIR Restoration* …), reorder its steps in the middle — **Greeting → Mode → Parameters → Review → Generate** — and tune the system prompt + rule checklist on the right. No JSON, no LangChain, no prompt engineering. Hit **Export** and the scaffold runs on any 3B–14B chat model: Ollama, KoboldCpp, LM Studio, SillyTavern, or the ComfyUI-hosted LLM node. The Meta Wizard and every plugin surface (GIMP / Darktable / Resolve / Signal bridge) consume the same format, so one tuning round travels everywhere.
+
+A **Workflow Library** tab sits next to the scaffold editor and lists every ComfyUI workflow on your server — parsed with `scaffold.workflow_parser.discover_workflows`, auto-classified, with each workflow's tunable parameters surfaced — so a scaffold step can drive a real ComfyUI render without writing a single node. One author, every LLM plays.
 
 Launch: `start_guild.bat` (Windows) or `python tavern/guild_launcher.py`
 
