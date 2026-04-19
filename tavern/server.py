@@ -6993,6 +6993,14 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
             build_wan = getattr(_workflows_v2, 'build_wan_video', None)
             if build_wan:
                 try:
+                    # turbo=True compresses 20-30 steps down to 4-6,
+                    # which only works when a Lightning/LightX2V I2V
+                    # acceleration LoRA is loaded. Without those LoRAs
+                    # the 6-step path produces black frames (undercooked
+                    # diffusion). Check the preset — only enable turbo
+                    # if the accel LoRAs were actually detected.
+                    has_accel = bool(wan_preset.get("high_accel_lora")
+                                      or wan_preset.get("low_accel_lora"))
                     workflow = build_wan(
                         image_filename=image_filename,
                         preset=wan_preset,
@@ -7002,7 +7010,7 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
                         seed=seed,
                         width=512, height=512,
                         length=33,         # ~2 sec at 16fps
-                        turbo=True,
+                        turbo=has_accel,
                         loop=False,
                         rtx_scale=0,
                         interpolate=False,
@@ -7012,6 +7020,9 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
                         pingpong=True,
                     )
                     engine = "wan"
+                    if not has_accel:
+                        print(f"  [Guild] WAN: no accel LoRA detected — "
+                              f"rendering full-step quality (slower, no black frames)")
                 except Exception as e:
                     print(f"  [Guild] WAN workflow build failed: {e}")
 
@@ -11125,35 +11136,78 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     stopped.append({"app": app, "result": r})
                 except Exception:
                     pass
+            # R138: the old code spawned the relauncher on a daemon
+            # thread with sleep(1.2), then os._exit'd the whole
+            # process at 0.6s. os._exit tears down every thread
+            # instantly — including the unspawned relauncher — so
+            # the restart "worked" only in the sense of killing the
+            # Guild. Now the relauncher is an independently-scheduled
+            # OS child (cmd.exe /c on Windows, sh -c on Unix) with the
+            # delay baked INTO the child's command line. The child
+            # survives the parent's os._exit; all we have to do on
+            # our side is flush the HTTP response and die.
             import subprocess as _sp, threading as _th, time as _ti
-            import os as _os, sys as _sys
+            import os as _os, sys as _sys, shlex as _shlex
             argv = list(_sys.argv)
             exe = _sys.executable
-            # Python path must be preserved across the relaunch so our
-            # repo-root sys.path tweak still finds antenna/.
             env = dict(_os.environ)
-            def _relaunch():
-                _ti.sleep(1.2)
-                try:
-                    if _os.name == "nt":
-                        _sp.Popen([exe] + argv,
-                                   env=env,
-                                   creationflags=0x00000008 | 0x00000200,  # DETACHED + NEW_GROUP
-                                   close_fds=True)
-                    else:
-                        _sp.Popen([exe] + argv, env=env,
-                                   start_new_session=True, close_fds=True)
-                except Exception as e:
-                    print(f"  [restart] relauncher spawn failed: {e}")
-            _th.Thread(target=_relaunch, daemon=True).start()
+            spawn_err = None
+            try:
+                if _os.name == "nt":
+                    # cmd.exe chains: timeout /t 2 & python argv...
+                    # `start "" /B` detaches without a new window.
+                    # Each argv token is wrapped in double-quotes via
+                    # a simple escape — Windows cmd can't handle the
+                    # shlex POSIX-style quoting.
+                    def _win_quote(s):
+                        # Escape embedded double-quotes by doubling.
+                        return '"' + str(s).replace('"', '""') + '"'
+                    argv_str = " ".join(_win_quote(a) for a in [exe] + argv)
+                    shell_cmd = (
+                        f'timeout /t 2 /nobreak >nul & '
+                        f'start "" /B {argv_str}'
+                    )
+                    # DETACHED_PROCESS (0x08) + NEW_PROCESS_GROUP (0x200)
+                    # + CREATE_NO_WINDOW (0x08000000) so the cmd.exe
+                    # shim doesn't flash a console on Windows.
+                    _sp.Popen(
+                        ["cmd.exe", "/c", shell_cmd],
+                        env=env,
+                        creationflags=0x00000008 | 0x00000200 | 0x08000000,
+                        close_fds=True,
+                    )
+                else:
+                    shell_cmd = "sleep 2; exec " + " ".join(
+                        _shlex.quote(a) for a in [exe] + argv)
+                    _sp.Popen(
+                        ["sh", "-c", shell_cmd],
+                        env=env, start_new_session=True, close_fds=True,
+                    )
+            except Exception as e:
+                spawn_err = str(e)
+                print(f"  [restart] relauncher spawn failed: {e}")
+
+            if spawn_err:
+                # Don't exit — the user is stranded on a half-stopped
+                # Guild. Surface the error so they can restart by hand.
+                return self.end_json(500, {
+                    "ok": False,
+                    "error": f"relauncher spawn failed: {spawn_err}",
+                    "stopped": stopped,
+                })
+
             def _bye():
-                _ti.sleep(0.6)
+                # Short delay so the HTTP response reaches the browser
+                # before the socket drops. Any value > 50ms is enough;
+                # the critical thing is that the child above is ALREADY
+                # running as a detached process — we're not racing it.
+                _ti.sleep(0.3)
                 _os._exit(0)
             _th.Thread(target=_bye, daemon=True).start()
             return self.end_json(200, {
                 "ok": True,
                 "stopped": stopped,
-                "note": "restart in ~1.5s — reload the page to reconnect.",
+                "note": "restart in ~2s — reload the page to reconnect.",
             })
 
         elif self.path == '/api/guild/exit' and self.command == 'POST':
