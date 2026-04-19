@@ -10016,6 +10016,30 @@ class GuildHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.end_json(400, {"error": str(e)})
 
+        elif (self.path.startswith('/api/video/shots/')
+              and self.path.endswith('/render')
+              and self.command == 'POST'):
+            # Render a single shot — the frontend's per-card Render
+            # button posts here. Without this handler the path fell
+            # through to the catch-all PUT updater's exclusion list and
+            # returned 404, which is why every shot sat in "failed" or
+            # stuck in "draft" depending on when the request was made.
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/api/video/shots/')[1].rsplit('/render', 1)[0]
+            try:
+                result = _VIDEO_BRIDGE.queue_shot(shot_id)
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+            # queue_shot returns {"status": "queued"|"error"|"paused"|...};
+            # surface non-ok statuses as 4xx so the UI toasts the reason.
+            status = (result or {}).get("status")
+            if status in ("error",):
+                return self.end_json(400, result)
+            if status in ("paused",):
+                return self.end_json(409, result)
+            return self.end_json(200, result or {"status": "queued"})
+
         elif self.path == '/api/video/render-all' and self.command == 'POST':
             """Queue all draft shots in dependency-aware order."""
             if not _VIDEO_BRIDGE:
