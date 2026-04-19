@@ -1683,6 +1683,9 @@ function VideoPanel() {
   // antenna. Features NOT in this set are hidden from the UI entirely
   // (matches the "nothing dead-renders" rule).
   const [featureMap, setFeatureMap] = _useState({});
+  // R55b: the FULL /api/features response (both satisfied and unsatisfied)
+  // so the Antenna modal can tell the user WHY a feature isn't showing up.
+  const [featureReport, setFeatureReport] = _useState(null);
   const pollRef = _useRef(null);
   const sseRef = _useRef(null);
   const [sseConnected, setSseConnected] = _useState(false);
@@ -2301,7 +2304,7 @@ function VideoPanel() {
 
   // R54: poll /api/features every 30s so capability-gated buttons
   // (→ Resolve, Render, Klein, …) appear/disappear as antennas come
-  // and go. Features map to their satisfied-row by key.
+  // and go. R55b also retains the unsatisfied list for the diag panel.
   _useEffect(() => {
     let cancelled = false;
     const poll = async () => {
@@ -2311,6 +2314,7 @@ function VideoPanel() {
         const m = {};
         for (const row of (res.satisfied || [])) m[row.key] = row;
         setFeatureMap(m);
+        setFeatureReport(res);
       } catch (_) { /* older Guild: no endpoint → leave map empty, features hide */ }
     };
     poll();
@@ -3527,6 +3531,46 @@ function VideoPanel() {
               services to <span className="font-mono">antenna_config.json</span>. Just pair once
               and use "→ Resolve".
             </p>
+
+            {/* R55b: feature diagnostics — why a button isn't showing up */}
+            {featureReport && (featureReport.unsatisfied || []).length > 0 && (
+              <div className="antenna-features-diag border-t border-slate-700/40 pt-3 space-y-2">
+                <div className="text-xs font-semibold text-slate-300">
+                  Features hidden from UI
+                  <span className="text-slate-500 font-normal">
+                    {' '}({featureReport.unsatisfied.length}/{featureReport.total} unmet)
+                  </span>
+                </div>
+                <div className="space-y-1 max-h-48 overflow-y-auto">
+                  {featureReport.unsatisfied.map(f => (
+                    <div key={f.key} className="feature-diag-row rounded bg-slate-800/40 border border-slate-700/30 p-2 text-[10px] space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                        <span className="font-medium text-slate-200">{f.label || f.key}</span>
+                        <span className="text-slate-500 ml-auto">{f.key}</span>
+                      </div>
+                      <div className="text-slate-400">Needs:</div>
+                      <ul className="ml-3 space-y-0.5">
+                        {(f.missing || []).map((m, i) => (
+                          <li key={i} className="text-amber-300/80 leading-tight">{m}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+                {(featureReport.satisfied || []).length > 0 && (
+                  <div className="text-[10px] text-slate-500">
+                    {featureReport.satisfied.length} feature(s) satisfied and visible.
+                  </div>
+                )}
+              </div>
+            )}
+            {featureReport && (featureReport.unsatisfied || []).length === 0
+                && (featureReport.satisfied || []).length > 0 && (
+              <div className="text-[10px] text-emerald-300 border-t border-slate-700/40 pt-3">
+                ✓ All {featureReport.total} features are satisfied and visible.
+              </div>
+            )}
           </div>
         </div>
       )}
