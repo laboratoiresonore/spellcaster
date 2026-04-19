@@ -74,15 +74,29 @@ core agent.
 
 All endpoints require `Authorization: Bearer <token>` except `/`.
 
-| Method | Path             | Purpose                                         |
-|--------|------------------|-------------------------------------------------|
-| GET    | `/`              | Liveness check (unauthenticated, returns `ok`)  |
-| GET    | `/status`        | Version, uptime, ComfyUI reachability, VRAM     |
-| POST   | `/install-node`  | Git-clone a custom node pack into ComfyUI       |
-| POST   | `/install-model` | Download a model file into ComfyUI's models/    |
-| POST   | `/self-update`   | Fetch latest agent code from GitHub and restart |
+All endpoints except `/` require `Authorization: Bearer <token>`.
 
-Planned for later phases: `/uninstall-node`, `/heartbeat`, `/logs`,
+**Phase 1 — live now**:
+
+| Method | Path           | Purpose                                              |
+|--------|----------------|------------------------------------------------------|
+| GET    | `/`            | Liveness check (unauthenticated)                     |
+| GET    | `/status`      | Version, uptime, per-service probes, heartbeat state |
+| POST   | `/self-update` | Fetch latest agent code from GitHub + restart        |
+
+**Phase 2 — stub (returns 501 `not_yet_implemented`)**:
+
+| Method | Path             | Stub-returns 501 until...                    |
+|--------|------------------|----------------------------------------------|
+| POST   | `/install-node`  | antenna roadmap item 7 ships                 |
+| POST   | `/install-model` | antenna roadmap item 7 ships                 |
+
+Until Phase 2 lands, use the Spellcaster installer to manage custom
+nodes and models on the remote ComfyUI. The stub endpoints accept
+the future request shape (see `antenna/endpoints/comfyui.py` docstrings)
+so client code can pin against it today.
+
+**Planned for later phases**: `/uninstall-node`, `/heartbeat`, `/logs`,
 `/resolve/*` (DaVinci bridge).
 
 ## Security model
