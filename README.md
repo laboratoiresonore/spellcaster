@@ -59,10 +59,10 @@ Three things Spellcaster does in one click that most people spend an afternoon (
 <table>
 <tr>
 <td width="33%" align="center" valign="top">
-  <img src="assets/sam3demo.png" alt="AI Select with SAM3" width="100%"/>
+  <img src="assets/sam3demo.png" alt="AI Select with SAM3 — earring mask" width="100%"/>
   <br/><br/>
   <strong>Type what to select</strong><br/>
-  <sub>Open the AI Select tool. Type <code>hair</code>. SAM3 gives you a perfect mask. No lasso, no quick-mask, no endless zooming. The thing graphics people said saves a day of work.</sub>
+  <sub>Open the AI Select tool. Type <code>earring</code> (or <code>hair</code>, or <code>left shoe</code>). SAM3 gives you a perfect mask. No lasso, no quick-mask, no endless zooming. The thing graphics people said saves a day of work.</sub>
 </td>
 <td width="33%" align="center" valign="top">
   <img src="assets/showcase_supir.png" alt="SUPIR Restoration" width="100%"/>
