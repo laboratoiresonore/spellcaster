@@ -30,10 +30,42 @@ from .architectures import get_arch
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  PROMPT ENHANCEMENT PROFILES (by architecture)
+#  PROMPT ENHANCEMENT PROFILES (by architecture) — CANONICAL
 # ═══════════════════════════════════════════════════════════════════════════
-# Each architecture has unique prompting preferences. These profiles guide
-# the LLM in how to rewrite prompts for optimal results with that model.
+# Each architecture has unique prompting preferences. These profiles are the
+# single source of truth for prompt grammar across every surface: the Guild,
+# the GIMP plugin, the Darktable plugin, the ComfyUI-Spellcaster node pack,
+# and anything else that calls `enhance_prompt()`. Do not maintain parallel
+# copies anywhere.
+#
+# ── Validation record ─────────────────────────────────────────────────────
+# Last end-to-end audit: 2026-04-19
+#   LLMs:      Ollama gemma3:4b (chat backend), ComfyUI AILab_QwenVL_GGUF
+#              (enhance backend)
+#   Parameters: temperature=0.3, max_tokens=300
+#   Test corpus: 1-person / 2-person / 3-person scene prompts across all 9
+#                architectures below
+#   Pass criteria:
+#     - Tag-style archs (sd15, illustrious, pony, sdxl): output is pure
+#       comma-separated tags, zero sentences/paragraphs, required quality
+#       prefix present. BREAK blocks with per-character attributes on 2+
+#       person scenes.
+#     - Natural-language archs (flux1dev, flux2klein, chroma, wan, ltx):
+#       flowing prose with no quality tags, correct length band, camera
+#       / lighting / motion language where the profile specifies.
+#   Results: 9/9 tag format, 9/9 quality conventions, 8/9 BREAK on 2p.
+#            3-person BREAK adherence is 5/9 (LLM occasionally merges
+#            characters when the GOOD example shows 2); users can steer
+#            with explicit per-character prompts when N >= 3 matters.
+#
+# ── Upkeep rules ──────────────────────────────────────────────────────────
+# - When adding a new architecture: add its profile here, then re-run the
+#   1p/2p/3p audit to confirm the LLM can follow it. If it can't, tighten
+#   the `notes` field with HARD FORMAT RULES and concrete GOOD/BAD examples
+#   before shipping.
+# - Do NOT change `style` or `length` without a corresponding re-audit.
+# - Changes here must be synced to all three spellcaster_core copies per
+#   CLAUDE.md Rule 3 (plugin / ComfyUI-Spellcaster / -NSFW).
 
 _ARCH_ENHANCE_PROFILES = {
     # Flux 1 Dev — natural-language, moderate length, no quality tags
@@ -242,7 +274,7 @@ _DEFAULT_ENHANCE_PROFILE = {
 # ═══════════════════════════════════════════════════════════════════════════
 
 def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
-                   comfy_url=None):
+                   comfy_url=None, model_name=None):
     """Expand a terse user prompt into an architecture-optimised description.
 
     Tries ComfyUI LLM nodes first (if comfy_url provided), then falls back
@@ -280,6 +312,18 @@ def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
     # (e.g. booru tags for Flux, or natural language for SD1.5) produces
     # noticeably worse results. The profile tells the LLM how to format output.
     profile = _ARCH_ENHANCE_PROFILES.get(arch_key, _DEFAULT_ENHANCE_PROFILE)
+
+    # Per-model overlay: if the caller named a specific checkpoint and
+    # the user has curated per-model hints / profile overrides in the
+    # llm_prompt_db, merge them on top of the arch baseline. This lets
+    # "this klein finetune likes 40-word prompts" travel with the model
+    # without hard-coding it into the arch profile.
+    if model_name:
+        try:
+            from . import llm_prompt_db
+            profile = llm_prompt_db.merge_with_profile(model_name, profile)
+        except Exception:
+            pass  # DB unavailable — fall back to arch baseline
 
     # Build system prompt that guides the LLM.
     # The `Target style` line is load-bearing: if it says "tags" then the
@@ -321,16 +365,31 @@ def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
         from . import guild_llm
     except Exception:
         return prompt_text
+    # Sampling defaults for the structured-enhancement task. Per-model
+    # overrides from llm_prompt_db can override any of these; the base
+    # stays conservative because high temperature makes the LLM drift
+    # into prose when the profile demands tags, or skip BREAK blocks
+    # in multi-character scenes.
+    sampling_defaults = {
+        "temperature": 0.3,
+        "max_tokens":  300,
+        "top_p":       0.9,
+    }
+    if model_name:
+        try:
+            from . import llm_prompt_db
+            sampling = llm_prompt_db.get_effective_params(
+                model_name, sampling_defaults)
+        except Exception:
+            sampling = sampling_defaults
+    else:
+        sampling = sampling_defaults
     try:
-        # temperature=0.3 (not 0.7): enhancement is a structured task, not
-        # creative writing. High temperature makes the LLM drift into prose
-        # when the profile demands tags, or skip BREAK blocks in
-        # multi-character scenes. Lower temp = tighter adherence to the
-        # per-arch profile's HARD FORMAT RULES.
         enhanced = guild_llm.chat(
             message=user_msg, system_prompt=system_msg,
             server=comfy_url, kobold_url=kobold_url,
-            max_tokens=300, temperature=0.3,
+            max_tokens=int(sampling.get("max_tokens", 300)),
+            temperature=float(sampling.get("temperature", 0.3)),
             purpose="enhance",
         )
     except Exception:

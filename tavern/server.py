@@ -6855,12 +6855,13 @@ def _is_direct_generation_prompt(text):
     return False
 
 
-def _enhance_prompt(prompt_text, arch_key, is_negative=False):
+def _enhance_prompt(prompt_text, arch_key, is_negative=False, model_name=None):
     """Expand a terse user prompt into a platform-optimised description.
 
-    Delegates to spellcaster_core.prompt_enhance which tries ComfyUI LLM
-    nodes first, then falls back to external KoboldCpp.  Returns the
-    original prompt unchanged on any error (never blocks generation).
+    Delegates to spellcaster_core.prompt_enhance which routes through
+    guild_llm.chat(purpose='enhance') and honours the per-model
+    settings DB (spellcaster_core.llm_prompt_db) when model_name is
+    passed. Returns the original prompt unchanged on any error.
     """
     if not PROMPT_ENHANCE:
         return prompt_text
@@ -6872,9 +6873,11 @@ def _enhance_prompt(prompt_text, arch_key, is_negative=False):
             kobold_url=KOBOLD_URL,
             is_negative=is_negative,
             comfy_url=COMFYUI_URL,
+            model_name=model_name,
         )
         if enhanced and enhanced != prompt_text:
-            print(f"  [Guild] Prompt enhanced ({arch_key}): "
+            print(f"  [Guild] Prompt enhanced ({arch_key}"
+                  f"{(', ' + model_name.split('/')[-1]) if model_name else ''}): "
                   f"{len(prompt_text.split())}→{len(enhanced.split())} words")
         return enhanced
     except ImportError:
@@ -12151,7 +12154,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 seed = random.randint(1, 1000000000)
                 negative = 'text, watermark, blurry, deformed, ugly, low quality'
 
-                prompt_text = _enhance_prompt(user_prompt, arch_key)
+                prompt_text = _enhance_prompt(user_prompt, arch_key,
+                                               model_name=ckpt)
                 preset = _build_optimized_preset(ckpt, arch_key, width, height)
                 if get_arch:
                     arch = get_arch(arch_key)

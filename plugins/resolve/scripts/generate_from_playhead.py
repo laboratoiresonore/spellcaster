@@ -17,17 +17,20 @@ import traceback
 
 
 def _locate_shared():
-    """Add shared/ to sys.path so we can import spellcaster_api + resolve_helpers."""
+    """Add shared/ to sys.path so we can import spellcaster_api + resolve_helpers.
+
+    Checks, in order: installed layout (./shared next to this script),
+    dev layout (../shared), legacy fallback (../../shared).
+    """
     here = os.path.dirname(os.path.abspath(__file__))
-    shared = os.path.normpath(os.path.join(here, "..", "shared"))
-    if os.path.isdir(shared) and shared not in sys.path:
-        sys.path.insert(0, shared)
-        return True
-    # Installed location fallback (scripts dir ships alongside shared)
-    installed_shared = os.path.normpath(os.path.join(here, "..", "..", "shared"))
-    if os.path.isdir(installed_shared) and installed_shared not in sys.path:
-        sys.path.insert(0, installed_shared)
-        return True
+    for cand in (
+        os.path.join(here, "shared"),
+        os.path.normpath(os.path.join(here, "..", "shared")),
+        os.path.normpath(os.path.join(here, "..", "..", "shared")),
+    ):
+        if os.path.isdir(cand) and cand not in sys.path:
+            sys.path.insert(0, cand)
+            return True
     return False
 
 
