@@ -217,6 +217,45 @@ def _family_config(arch_key):
     """
     return _PER_FAMILY_LLM_CONFIG.get(arch_key or "", _DEFAULT_FAMILY_CONFIG)
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  PER-METHOD NODE PRESET SELECTION
+# ═══════════════════════════════════════════════════════════════════════════
+# The AILab_QwenVL_GGUF_PromptEnhancer node concatenates its
+# `preset_system_prompt` dropdown with the custom_system_prompt we send.
+# The default "📝 Enhance" preset pushes the LLM toward aggressive
+# expansion, which fights narrow-scope methods (refine, colorize,
+# iclight, face_detail, tryon — where we WANT it to stay terse). For
+# those methods we swap to "📝 Refine" (a tightening preset) so the
+# node-level bias aligns with our method scope instead of fighting it.
+#
+# Video methods get "📝 Detailed Visual" which is the node's cinematic-
+# framing preset. Everything else stays on "📝 Enhance".
+_METHOD_PRESET = {
+    "refine":              "📝 Refine",
+    "klein_refine":        "📝 Refine",
+    "detail_boost":        "📝 Refine",
+    "hallucinate":         "📝 Refine",
+    "face_detail":         "📝 Refine",
+    "klein_face_detail":   "📝 Refine",
+    "iclight":             "📝 Refine",
+    "relight":             "📝 Refine",
+    "colorize":            "📝 Refine",
+    "tryon":               "📝 Refine",
+    "klein_virtual_tryon": "📝 Refine",
+    "wan_video":           "📝 Detailed Visual",
+    "ltx_video":           "📝 Detailed Visual",
+    "video":               "📝 Detailed Visual",
+}
+_DEFAULT_PRESET = "📝 Enhance"
+
+
+def _method_preset(method):
+    """Return the AILab preset dropdown value that best matches the
+    method's intent. Unknown / empty methods default to 📝 Enhance.
+    """
+    return _METHOD_PRESET.get(method or "", _DEFAULT_PRESET)
+
 # Cache: comfy_url -> discovery result dict (or None).
 # WHY cache: /object_info calls are slow (~200ms each) and the node inventory
 # doesn't change during a session. Cleared via invalidate_cache().
@@ -403,7 +442,8 @@ def _pick_model(models, exclude=None, arch_key=None):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def generate_text(comfy_url, prompt, system_prompt="", model=None,
-                  max_tokens=300, temperature=0.7, arch_key=None):
+                  max_tokens=300, temperature=0.7, arch_key=None,
+                  method=None):
     """Generate text via a ComfyUI LLM node.
 
     Builds a single-node workflow, submits it, and polls for the result.
@@ -417,6 +457,14 @@ def generate_text(comfy_url, prompt, system_prompt="", model=None,
     override, poll timeout, keep_last_prompt hint. Families with large
     diffusion models stay on smaller LLM quants and always unload;
     SD 1.5 (tiny diffusion) stays warm across calls.
+
+    method (optional): generation method this text will feed (refine,
+    colorize, iclight, inpaint, wan_video, ltx_video, ...). Selects the
+    AILab node's `preset_system_prompt` dropdown via _METHOD_PRESET
+    so node-level bias aligns with our method scope — narrow-scope
+    methods get "📝 Refine" (tightening), video methods get
+    "📝 Detailed Visual" (cinematic), everything else stays on
+    "📝 Enhance" (default expansion).
 
     Returns the generated text string, or None on any failure.
     This function never raises — all errors return None so callers
@@ -448,7 +496,8 @@ def generate_text(comfy_url, prompt, system_prompt="", model=None,
             tried.add(chosen)
 
             wf = _build_workflow(info, prompt, system_prompt, chosen,
-                                 max_tokens, temperature, family=fam)
+                                 max_tokens, temperature, family=fam,
+                                 method=method)
 
             pid = _submit(url, wf)
             if not pid:
@@ -482,7 +531,7 @@ def generate_text(comfy_url, prompt, system_prompt="", model=None,
 
 
 def _build_workflow(info, prompt, system_prompt, model,
-                    max_tokens, temperature, family=None):
+                    max_tokens, temperature, family=None, method=None):
     """Build a ComfyUI workflow for text generation.
 
     Includes an output node (required by ComfyUI) that captures the
@@ -492,6 +541,11 @@ def _build_workflow(info, prompt, system_prompt, model,
     _PER_FAMILY_LLM_CONFIG). Overrides keep_model_loaded /
     keep_last_prompt baked into info["extra_inputs"] so SD 1.5 can keep
     the LLM warm while Flux / Klein / WAN / LTX force an unload.
+
+    method (optional): generation method. Selects the AILab node's
+    preset_system_prompt dropdown via _METHOD_PRESET so narrow-scope
+    methods (refine / iclight / colorize / ...) get "📝 Refine"
+    instead of "📝 Enhance", and video methods get "📝 Detailed Visual".
     """
     inputs = {
         info["model_field"]: model,
@@ -513,6 +567,12 @@ def _build_workflow(info, prompt, system_prompt, model,
         for key in ("keep_model_loaded", "keep_last_prompt"):
             if key in family:
                 inputs[key] = bool(family[key])
+    # Per-method preset selection wins over family / node defaults.
+    # The preset is a string from the node's dropdown; if the method
+    # has no mapping we fall through to _DEFAULT_PRESET ("📝 Enhance"),
+    # which is also what the node baked-in extra_inputs already say.
+    if method:
+        inputs["preset_system_prompt"] = _method_preset(method)
 
     workflow = {
         "1": {

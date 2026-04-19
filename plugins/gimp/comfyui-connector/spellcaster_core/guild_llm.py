@@ -46,7 +46,7 @@ RECOMMENDED_LLM = {
 
 def chat(message, system_prompt="", server=None, kobold_url=None,
          model=None, max_tokens=512, temperature=0.7, purpose="chat",
-         arch_key=None):
+         arch_key=None, method=None):
     """THE single LLM entry point for every surface (Guild, GIMP, Darktable,
     ComfyUI nodes, scaffolding). Do not implement parallel LLM paths
     elsewhere — everything goes through this function.
@@ -90,7 +90,8 @@ def chat(message, system_prompt="", server=None, kobold_url=None,
         if not server:
             return None
         return _chat_comfyui(message, system_prompt, server, model,
-                             max_tokens, temperature, arch_key=arch_key)
+                             max_tokens, temperature,
+                             arch_key=arch_key, method=method)
 
     def try_kobold():
         if not kobold_url:
@@ -114,18 +115,19 @@ def chat(message, system_prompt="", server=None, kobold_url=None,
 
 
 def _chat_comfyui(message, system_prompt, server, model, max_tokens,
-                   temperature, arch_key=None):
+                   temperature, arch_key=None, method=None):
     """Chat via ComfyUI's native LLM nodes (GGUF models loaded on server).
 
-    Forwards arch_key so generate_text can apply per-family VRAM caps
-    and keep_model_loaded overrides (see comfyui_llm._PER_FAMILY_LLM_CONFIG).
+    Forwards arch_key + method so generate_text can apply:
+      - per-family VRAM caps / keep_model_loaded (_PER_FAMILY_LLM_CONFIG)
+      - per-method preset selection on the AILab node (_METHOD_PRESET)
     """
     try:
         from .comfyui_llm import generate_text
         return generate_text(
             server, prompt=message, system_prompt=system_prompt,
             model=model, max_tokens=max_tokens, temperature=temperature,
-            arch_key=arch_key)
+            arch_key=arch_key, method=method)
     except Exception:
         return None
 
