@@ -504,6 +504,18 @@ def serve(cfg: dict[str, Any] | None = None,
     return server
 
 
+# Under `python -m antenna.agent`, Python creates TWO module objects:
+# one keyed on "__main__" (this file) and one on "antenna.agent" (via the
+# package import). Module-level state (_LAST_AUTODETECT, _AntennaHandler
+# class) only lives on whichever Python first touched — usually __main__.
+# Force them to be the same object so status.py etc. see current state
+# regardless of which name they import through.
 if __name__ == "__main__":
+    # Unconditional: if `antenna.agent` already points at a DIFFERENT
+    # module object (runpy under certain CPython builds re-imports),
+    # force it to point at the running __main__ so `from .. import agent`
+    # from status.py lands on the module whose state was actually mutated.
+    import sys as _sys
+    _sys.modules["antenna.agent"] = _sys.modules["__main__"]
     # python -m antenna.agent → start the server with default config
     serve()
