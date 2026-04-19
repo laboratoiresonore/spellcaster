@@ -4563,14 +4563,54 @@ def _download_image(server, filename, subfolder="", folder_type="output"):
 
     Checks the pre-download cache first (populated by _precache_results before
     server cleanup). Falls back to direct download if not cached.
+
+    Side-effect: when the Wizard Guild is reachable, every successful
+    download is also uploaded to the Guild's shared asset gallery and
+    fires a `gimp.asset.uploaded` bus event. That lights the image up
+    in the Guild's Recent-across-apps sidebar strip. Failures here are
+    silent — the download return value is unaffected.
     """
     key = (filename, subfolder, folder_type)
     cached_path = _download_cache.get(key)
     if cached_path and os.path.isfile(cached_path):
         data = Path(cached_path).read_bytes()
         if len(data) > 100:
+            _maybe_publish_to_guild_gallery(data, filename)
             return data
-    return _download_image_raw(server, filename, subfolder, folder_type)
+    data = _download_image_raw(server, filename, subfolder, folder_type)
+    if data:
+        _maybe_publish_to_guild_gallery(data, filename)
+    return data
+
+
+def _maybe_publish_to_guild_gallery(data, filename):
+    """Best-effort upload to the Guild's shared asset gallery.
+
+    Silent on every error path — this is a bonus feature, not a
+    critical path. Only images (PNG/JPEG) are published; videos are
+    skipped to avoid hammering the gallery with huge blobs.
+    """
+    if not data or len(data) < 100 or len(data) > 32 * 1024 * 1024:
+        return  # empty / way-too-big
+    lower = (filename or "").lower()
+    if not lower.endswith((".png", ".jpg", ".jpeg", ".webp")):
+        return  # skip video/anim formats
+    try:
+        client = _get_cross_interface_client()
+        if client is None:
+            return
+        # Title from filename sans extension, no directories
+        title = os.path.basename(filename or "").rsplit(".", 1)[0][:60]
+        ext = lower.rsplit(".", 1)[-1]
+        client.upload_asset(
+            data,
+            kind="generation",
+            title=title,
+            ext=ext,
+            meta={"source": "gimp_download", "source_filename": filename},
+        )
+    except Exception:
+        pass
 
 def _wait_for_prompt(server, prompt_id, timeout=300):
     """Poll ComfyUI's /history endpoint until the prompt finishes or times out.
