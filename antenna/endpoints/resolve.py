@@ -551,6 +551,116 @@ def render_presets(ctx: dict[str, Any]) -> tuple[int, dict]:
     return 200, {"presets": presets, "project": project.GetName()}
 
 
+# ─── R55: project picker ─────────────────────────────────────────────────
+
+def projects(ctx: dict[str, Any]) -> tuple[int, dict]:
+    """GET /resolve/projects
+
+    Enumerate Resolve projects reachable from the currently-open folder.
+    Unlike the render dialog which only targets the current project, the
+    project picker lets the Guild ask the user which project to target
+    BEFORE any send-to-Resolve action. Returns the project list, the
+    current folder path, sibling folders for drilling, and the currently
+    loaded project (if any) so the UI can mark it as selected.
+
+    Shape:
+        {
+          "current_project": "My Edit" | null,
+          "current_folder":  "Demos/Shortfilm",
+          "folders":         ["Archive", "Sound Design"],
+          "projects":        ["My Edit", "My Edit — backup"]
+        }
+
+    Resolve scripting has no cross-folder enumeration — "projects in
+    current folder" is literally what the API exposes. Callers that want
+    to browse up/down must POST /resolve/project-folder first; keeping the
+    GET side stateless (reads only current folder) means no shared
+    session lock in the antenna.
+    """
+    cfg = ctx.get("config") or {}
+    app, err = _get_resolve(cfg)
+    if app is None:
+        return 503, {"error": err}
+    try:
+        pm = app.GetProjectManager()
+    except Exception as e:  # noqa: BLE001
+        return 500, {"error": f"could not query ProjectManager: {e}"}
+    if pm is None:
+        return 503, {"error": "ProjectManager unavailable"}
+    out: dict[str, Any] = {}
+    try:
+        current_proj = pm.GetCurrentProject()
+        out["current_project"] = (current_proj.GetName()
+                                  if current_proj else None)
+    except Exception as e:  # noqa: BLE001
+        out["current_project"] = None
+        out["current_project_error"] = f"{type(e).__name__}: {e}"
+    # Folder context. Some older Resolve versions omit GetCurrentFolder so
+    # we guard each call individually and report partial state rather than
+    # 500'ing the whole response.
+    try:
+        out["current_folder"] = pm.GetCurrentFolder() or ""
+    except Exception as e:  # noqa: BLE001
+        out["current_folder"] = ""
+        out["current_folder_error"] = f"{type(e).__name__}: {e}"
+    try:
+        out["folders"] = list(pm.GetFolderListInCurrentFolder() or [])
+    except Exception as e:  # noqa: BLE001
+        out["folders"] = []
+        out["folders_error"] = f"{type(e).__name__}: {e}"
+    try:
+        out["projects"] = list(pm.GetProjectListInCurrentFolder() or [])
+    except Exception as e:  # noqa: BLE001
+        out["projects"] = []
+        out["projects_error"] = f"{type(e).__name__}: {e}"
+    return 200, out
+
+
+def load_project(ctx: dict[str, Any]) -> tuple[int, dict]:
+    """POST /resolve/load-project  body: { "name": "<project name>" }
+
+    Open the named project in the current folder. Fails fast if nothing
+    matches — a typo should not silently leave the previous project
+    loaded. The picker UI resolves the name it got from /projects and
+    posts it verbatim; we don't globally search, only the current folder.
+    """
+    cfg = ctx.get("config") or {}
+    body = ctx.get("body") or {}
+    name = str(body.get("name", "")).strip()
+    if not name:
+        return 400, {"error": "missing 'name'"}
+    app, err = _get_resolve(cfg)
+    if app is None:
+        return 503, {"error": err}
+    try:
+        pm = app.GetProjectManager()
+    except Exception as e:  # noqa: BLE001
+        return 500, {"error": f"could not query ProjectManager: {e}"}
+    if pm is None:
+        return 503, {"error": "ProjectManager unavailable"}
+    try:
+        available = list(pm.GetProjectListInCurrentFolder() or [])
+    except Exception as e:  # noqa: BLE001
+        return 500, {"error": f"GetProjectListInCurrentFolder failed: {e}"}
+    if name not in available:
+        return 404, {
+            "error": f"Project {name!r} not found in current folder",
+            "available": available,
+        }
+    try:
+        loaded = pm.LoadProject(name)
+    except Exception as e:  # noqa: BLE001
+        return 500, {"error": f"LoadProject raised: {type(e).__name__}: {e}"}
+    if not loaded:
+        return 500, {"error": f"LoadProject({name!r}) returned falsy"}
+    try:
+        current = pm.GetCurrentProject()
+        current_name = current.GetName() if current else None
+    except Exception:
+        current_name = None
+    return 200, {"ok": True, "current_project": current_name}
+
+
 # ─── R51b: render-complete watcher (bg thread + bus emit) ─────────────────
 
 _RENDER_WATCHERS: dict[str, dict[str, Any]] = {}
