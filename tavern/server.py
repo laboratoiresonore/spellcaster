@@ -4346,11 +4346,118 @@ def _spellcaster_calibration_save(model_name: str, prefs: dict) -> tuple[int, di
         return (500, {"error": f"save failed: {e}"})
 
 
+# ── Ollama chat-model priority (best → fallback) ──────────────────────
+# Used by _ollama_pick_model() to rank /api/tags output. First substring
+# match wins. We prefer chat-instruction models over base completion
+# models, and smaller quantizations over huge ones (to leave VRAM for
+# ComfyUI's image models). Any model not matching stays eligible as a
+# last resort so single-model installs still work.
+_OLLAMA_MODEL_PREFERENCE = (
+    "qwen3:4b", "qwen2.5:7b", "qwen2.5:3b",
+    "gemma3:4b", "gemma2:9b", "gemma2:2b",
+    "llama3.2:3b", "llama3.1:8b",
+    "phi3:3.8b", "phi3:mini",
+    "mistral:7b",
+)
+_OLLAMA_MODEL_CACHE = {"ts": 0.0, "model": None, "host": None}
+_OLLAMA_MODEL_TTL = 300.0
+
+
+def _ollama_pick_model(host):
+    """Probe Ollama /api/tags and return the best installed model name.
+
+    Cached for 5 min so a chat burst doesn't hammer /api/tags.
+    Returns None if Ollama isn't reachable or has no models.
+    """
+    now = time.time()
+    if (_OLLAMA_MODEL_CACHE["model"] is not None
+            and _OLLAMA_MODEL_CACHE["host"] == host
+            and now - _OLLAMA_MODEL_CACHE["ts"] < _OLLAMA_MODEL_TTL):
+        return _OLLAMA_MODEL_CACHE["model"]
+    try:
+        req = urllib.request.Request(f"{host}/api/tags")
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return None
+    names = [m.get("name", "") for m in data.get("models", [])]
+    if not names:
+        return None
+    chosen = None
+    for pref in _OLLAMA_MODEL_PREFERENCE:
+        for n in names:
+            if n.startswith(pref) or pref in n:
+                chosen = n
+                break
+        if chosen:
+            break
+    if not chosen:
+        chosen = names[0]  # last resort — take whatever's there
+    _OLLAMA_MODEL_CACHE["model"] = chosen
+    _OLLAMA_MODEL_CACHE["host"] = host
+    _OLLAMA_MODEL_CACHE["ts"] = now
+    return chosen
+
+
+def _ollama_generate(payload, host, timeout=180):
+    """Route a kobold-style payload to Ollama's /api/generate endpoint.
+
+    Ollama /api/generate takes a raw prompt (not messages) so the
+    client-side context concatenation (system + chat history + user
+    turn) works as-is. Returns kobold-format {"results":[{"text": ...}]}
+    or None on any failure.
+
+    This is the right backend for wizard chat — Ollama is a general-
+    purpose chat LLM, unlike AILab_QwenVL_GGUF_PromptEnhancer which is
+    hardwired to rewrite every input as an image-generation prompt.
+    """
+    model = _ollama_pick_model(host)
+    if not model:
+        return None
+    body = {
+        "model": model,
+        "prompt": payload.get("prompt", ""),
+        "stream": False,
+        "options": {
+            "num_predict": payload.get("max_length", 300),
+            "temperature": payload.get("temperature", 0.7),
+            "top_p": payload.get("top_p", 0.9),
+            "repeat_penalty": payload.get("rep_pen", 1.15),
+        },
+    }
+    stop = payload.get("stop_sequence") or []
+    if stop:
+        body["options"]["stop"] = list(stop)
+    try:
+        req = urllib.request.Request(
+            f"{host}/api/generate",
+            data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        text = data.get("response", "")
+        if not text:
+            return None
+        return {"results": [{"text": text}]}
+    except Exception:
+        return None
+
+
 def _llm_generate_local(payload, timeout=180):
     """Call a local LLM to generate text.
 
-    Tries ComfyUI LLM nodes first (if available), then falls back to
-    KoboldCpp's /api/v1/generate endpoint.
+    Backend priority (highest-quality chat first):
+      1. Ollama native /api/generate — general-purpose chat LLM, honours
+         system prompts, doesn't hijack every input as an image prompt.
+         This is what the wizard chat needs.
+      2. ComfyUI AILab_QwenVL_GGUF_PromptEnhancer — fallback for boxes
+         without Ollama. Works fine for LoRA interrogation and similar
+         structured-text tasks. Does NOT work for conversation (it's
+         literally a prompt enhancer, not a chat model) but it's better
+         than nothing if that's all the user has.
+      3. KoboldCpp /api/v1/generate — last-resort fallback for users who
+         still run a KoboldCpp server locally.
 
     Compatible with the payload format used in the frontend:
     {prompt, max_length, temperature, stop_sequence, ...}
@@ -4361,19 +4468,30 @@ def _llm_generate_local(payload, timeout=180):
     max_length = payload.get("max_length", 300)
     temperature = payload.get("temperature", 0.7)
 
-    # ── Try ComfyUI LLM nodes first ──
+    # ── 1. Ollama native chat ──
+    # KOBOLD_URL is set to the user's configured local-LLM host; for most
+    # installs that's http://127.0.0.1:11434 (Ollama's default). If the
+    # user has KoboldCpp on 5001, try that host directly for Ollama too
+    # — the probe is cheap and will fail fast if nothing's there.
+    for host in (KOBOLD_URL, "http://127.0.0.1:11434"):
+        if not host:
+            continue
+        result = _ollama_generate(payload, host.rstrip("/"), timeout=timeout)
+        if result:
+            return result
+
+    # ── 2. ComfyUI LLM node fallback ──
     try:
         from spellcaster_core.comfyui_llm import generate_text
         result = generate_text(
             COMFYUI_URL, prompt=prompt_text,
             max_tokens=max_length, temperature=temperature)
         if result:
-            # Wrap in KoboldCpp-compatible response format
             return {"results": [{"text": result}]}
     except Exception:
         pass
 
-    # ── Fall back to KoboldCpp ──
+    # ── 3. KoboldCpp fallback ──
     try:
         kobold_payload = {
             "prompt": prompt_text,
@@ -9198,6 +9316,25 @@ class GuildHandler(SimpleHTTPRequestHandler):
             shot_id = self.path.split('/')[4]
             warnings = _VIDEO_BRIDGE.board.shot_warnings(shot_id)
             return self.end_json(200, {"shot_id": shot_id, "warnings": warnings})
+
+        elif self.path.startswith('/api/video/gallery.html') and self.command == 'GET':
+            # R80a: standalone single-page HTML review doc
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                body = _VIDEO_BRIDGE.board.shotboard_to_gallery_html()
+                payload = body.encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                self.send_header('Content-Disposition',
+                                 'attachment; filename="shotboard_gallery.html"')
+                self.send_header('Content-Length', str(len(payload)))
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+            except Exception as e:
+                return self.end_json(500, {"error": f"gallery export failed: {e}"})
 
         elif self.path.startswith('/api/video/outline.txt') and self.command == 'GET':
             # R75b: plaintext outline (shareable with non-technical reviewers)
