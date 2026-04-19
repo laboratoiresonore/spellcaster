@@ -6855,13 +6855,16 @@ def _is_direct_generation_prompt(text):
     return False
 
 
-def _enhance_prompt(prompt_text, arch_key, is_negative=False, model_name=None):
+def _enhance_prompt(prompt_text, arch_key, is_negative=False, model_name=None,
+                    method="scene"):
     """Expand a terse user prompt into a platform-optimised description.
 
     Delegates to spellcaster_core.prompt_enhance which routes through
-    guild_llm.chat(purpose='enhance') and honours the per-model
-    settings DB (spellcaster_core.llm_prompt_db) when model_name is
-    passed. Returns the original prompt unchanged on any error.
+    guild_llm.chat(purpose='enhance'), honours the per-model settings
+    DB (spellcaster_core.llm_prompt_db) when model_name is passed, and
+    applies the method overlay (inpaint / outpaint / refine / face_detail
+    / tryon / iclight / colorize / kontext / ...). Returns the original
+    prompt unchanged on any error.
     """
     if not PROMPT_ENHANCE:
         return prompt_text
@@ -6874,10 +6877,12 @@ def _enhance_prompt(prompt_text, arch_key, is_negative=False, model_name=None):
             is_negative=is_negative,
             comfy_url=COMFYUI_URL,
             model_name=model_name,
+            method=method,
         )
         if enhanced and enhanced != prompt_text:
-            print(f"  [Guild] Prompt enhanced ({arch_key}"
-                  f"{(', ' + model_name.split('/')[-1]) if model_name else ''}): "
+            mtag = f"/{method}" if method and method != "scene" else ""
+            mdl = f", {model_name.split('/')[-1]}" if model_name else ""
+            print(f"  [Guild] Prompt enhanced ({arch_key}{mtag}{mdl}): "
                   f"{len(prompt_text.split())}→{len(enhanced.split())} words")
         return enhanced
     except ImportError:
