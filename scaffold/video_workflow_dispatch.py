@@ -364,15 +364,23 @@ def build_native_workflow(preset_key: str, *, prompt: str,
     except ImportError as e:
         return None, f"spellcaster_core.workflows not importable: {e}"
 
-    # R128: route through the Wan-2.2-correct canonical builders in
-    # spellcaster_core/workflows.py. build_wan_video (used in the
-    # R126/R127 first cut) is Wan-2.1 shaped — its 16-channel latent
-    # path mismatches the Wan 2.2 VAE (48 channels) and fails at
-    # VAEDecode. The new builders use Wan22ImageToVideoLatent /
-    # WanImageToVideo_F2 which match the Wan 2.2 architecture.
+    # R128: route through the canonical builders.
+    #
+    # t2v → build_wan22_t2v (uses Wan22ImageToVideoLatent, which matches
+    # the Wan 2.2 A14B t2v models cleanly).
+    #
+    # i2v → build_wan_video (the Wan 2.1-era builder). It uses
+    # WanImageToVideo (base) + CLIPVisionEncode which works correctly
+    # on Wan 2.2 A14B i2v models. The Wan 2.2-native alternative
+    # WanImageToVideo_F2 has a local reshape bug on some ComfyUI
+    # installs (adds 3 phantom channels worth of data that the downstream
+    # tensor reshape rejects — "shape [1, 21, 4, 60, 104] invalid for
+    # input of size 542880"). Staying on the base node avoids it and
+    # inherits build_wan_video's full quality chain (face_swap,
+    # interpolate, NAG, SLG, IP-Adapter) when callers want them.
     try:
         from spellcaster_core.workflows import (  # type: ignore
-            build_wan22_t2v, build_wan22_i2v,
+            build_wan22_t2v, build_wan_video,
         )
     except ImportError as e:
         return None, f"spellcaster_core.workflows (R128 builders) missing: {e}"
@@ -387,12 +395,16 @@ def build_native_workflow(preset_key: str, *, prompt: str,
             )
         else:
             # i2v / move_i2v / any task that needs a ref image
-            workflow = build_wan22_i2v(
+            workflow = build_wan_video(
                 image_filename=image_filename,
                 preset=preset_dict,
                 prompt_text=prompt, negative_text=negative, seed=seed,
-                width=width, height=height, length=length, fps=fps,
-                turbo=turbo,
+                width=width, height=height, length=length,
+                fps=fps, turbo=turbo,
+                # Keep the first cut minimal — editor-requested quality
+                # features (face swap, RIFE interpolation, RTX upscale)
+                # can be opted in later via preset overrides.
+                face_swap=False, interpolate=False, rtx_scale=1.0,
             )
     except Exception as e:  # noqa: BLE001
         return None, f"wan22 builder raised: {e}"
