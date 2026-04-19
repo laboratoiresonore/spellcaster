@@ -92,12 +92,13 @@ def main() -> int:
         "--add-data", (f"{REPO_ROOT / 'installer' / 'remote_services.json'}"
                         f"{os.pathsep}installer"),
     ]
-    # Windows: keep the console window attached for now. A console
-    # build surfaces tracebacks on stderr so "exe crashes silently"
-    # is debuggable. Once the binary is stable, flip CONSOLE_ON to
-    # False to ship the windowless tray-only build.
-    CONSOLE_ON = True
-    if platform.system() == "Windows" and not CONSOLE_ON:
+    # Windows: tray-only (--noconsole). Use build_antenna_exe_debug.py
+    # if you need a console build for troubleshooting; the shipped
+    # binary should always be windowless so the user sees the tray
+    # icon and nothing else. Tracebacks land in the log file the
+    # antenna writes into %USERPROFILE%\.spellcaster\antenna.log via
+    # antenna.agent — they're not silently dropped.
+    if platform.system() == "Windows":
         cmd.append("--noconsole")
     cmd.append(str(entry))
 

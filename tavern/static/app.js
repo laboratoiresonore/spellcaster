@@ -941,7 +941,10 @@ function openAntennaPairDialog() {
                 </p>
                 <label class="pair-field">
                     <span>Machine IP or hostname</span>
-                    <input type="text" id="pair-host-input" placeholder="192.168.1.42" autocomplete="off">
+                    <input type="text" id="pair-host-input"
+                           placeholder="192.168.1.42 (no http://)"
+                           autocomplete="off">
+                    <small class="pair-subhint">Just the IP or hostname. The scheme (http / https) and port are handled for you.</small>
                 </label>
                 <label class="pair-field">
                     <span>6-digit pair code</span>
@@ -991,9 +994,24 @@ function openAntennaPairDialog() {
     hostEl.focus();
 
     const submit = async () => {
-        const host = (hostEl.value || '').trim();
+        let host = (hostEl.value || '').trim();
+        // Strip any scheme + trailing slash the user typed. The server
+        // does this too (belt-and-suspenders) but doing it here keeps
+        // the status line readable ("Contacting 192.168.x.y:7334…"
+        // rather than "Contacting http://192.168.x.y:7334:7334…").
+        let port = parseInt(portEl.value, 10) || 7334;
+        try {
+            if (/^https?:\/\//i.test(host)) {
+                const u = new URL(host);
+                host = u.hostname;
+                if (u.port) port = parseInt(u.port, 10) || port;
+            } else if (host.split(':').length === 2) {
+                const [h, p] = host.split(':');
+                if (/^\d+$/.test(p)) { host = h; port = parseInt(p, 10); }
+            }
+            host = host.replace(/\/+$/, '');
+        } catch (_e) { /* let server handle bad input */ }
         const code = (codeEl.value || '').replace(/[ \-]/g, '').trim();
-        const port = parseInt(portEl.value, 10) || 7334;
         if (!host) { statusEl.className = 'pair-status error'; statusEl.textContent = 'Machine IP or hostname required.'; return; }
         if (!/^\d{6}$/.test(code)) {
             statusEl.className = 'pair-status error';
@@ -1004,6 +1022,10 @@ function openAntennaPairDialog() {
         submitBtn.textContent = 'Pairing…';
         statusEl.className = 'pair-status';
         statusEl.textContent = `Contacting ${host}:${port}…`;
+        // Reflect any auto-strip back into the visible inputs so the
+        // user understands what we sent.
+        hostEl.value = host;
+        portEl.value = String(port);
         try {
             const r = await fetch('/api/antennas/pair', {
                 method: 'POST',
