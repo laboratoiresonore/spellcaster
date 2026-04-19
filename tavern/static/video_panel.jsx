@@ -2141,33 +2141,68 @@ function VideoPanel() {
   };
 
   // R47b: pin/unpin a snapshot so it survives the 20-slot cap
-  // R50b: trigger a Resolve render of the currently-loaded timeline.
-  // Prompts the user for a target directory + preset; Guild proxies to
-  // the antenna which drives the Resolve scripting API.
+  // R50b + R51a: trigger a Resolve render with a proper modal + preset dropdown.
   const [resolveRenderBusy, setResolveRenderBusy] = _useState(false);
   const [resolveRenderJob, setResolveRenderJob] = _useState(null);
   const [resolveRenderStatus, setResolveRenderStatus] = _useState(null);
+  const [showRenderDialog, setShowRenderDialog] = _useState(false);
+  const [renderPresets, setRenderPresets] = _useState([]);
+  const [renderPresetsLoading, setRenderPresetsLoading] = _useState(false);
+  const [renderPresetsError, setRenderPresetsError] = _useState("");
+  const [renderPreset, setRenderPreset] = _useState("");
+  const [renderTargetDir, setRenderTargetDir] = _useState("C:\\Spellcaster\\renders");
+  const [renderFileName, setRenderFileName] = _useState("spellcaster_cut");
 
-  const renderInResolve = async () => {
-    const targetDir = window.prompt(
-      "Resolve render target directory (absolute path on the Resolve machine):",
-      "C:\\Spellcaster\\renders");
-    if (!targetDir) return;
-    const preset = window.prompt(
-      "Resolve render preset (must already exist in Resolve):",
-      "H.264 Master") || "H.264 Master";
+  const openRenderDialog = async () => {
+    setShowRenderDialog(true);
+    setRenderPresetsLoading(true);
+    setRenderPresetsError("");
+    try {
+      const res = await api.get("/api/antenna/resolve/render-presets");
+      const ar = res && res.antenna_response;
+      if (ar && Array.isArray(ar.presets)) {
+        setRenderPresets(ar.presets);
+        if (!renderPreset && ar.presets.length > 0) {
+          // Prefer H.264 Master if present, else first
+          const pref = ar.presets.find(p => /h\.?264/i.test(p)) || ar.presets[0];
+          setRenderPreset(pref);
+        }
+      } else if (ar && ar.error) {
+        setRenderPresetsError(ar.error);
+      } else if (res && res.error) {
+        setRenderPresetsError(res.error);
+      } else {
+        setRenderPresetsError("Could not load presets");
+      }
+    } catch (e) {
+      setRenderPresetsError(e.message || "unknown");
+    } finally {
+      setRenderPresetsLoading(false);
+    }
+  };
+
+  const startRender = async () => {
+    if (!renderPreset) {
+      addToast("Pick a render preset", "error");
+      return;
+    }
+    if (!renderTargetDir.trim()) {
+      addToast("Target directory required", "error");
+      return;
+    }
     setResolveRenderBusy(true);
-    addToast("Starting Resolve render...", "info");
+    setShowRenderDialog(false);
+    addToast("Starting Resolve render…", "info");
     try {
       const res = await api.post("/api/antenna/resolve/render-timeline", {
-        preset, target_dir: targetDir,
-        file_name: "spellcaster_cut_" + Date.now(),
+        preset: renderPreset,
+        target_dir: renderTargetDir.trim(),
+        file_name: (renderFileName.trim() || "spellcaster_cut") + "_" + Date.now(),
       });
       const ar = res && res.antenna_response;
       if (ar && ar.ok && ar.job_id) {
         setResolveRenderJob(ar.job_id);
-        addToast(`Resolve render started (job ${ar.job_id.slice(0,8)}...)`, "success");
-        // Start polling
+        addToast(`Resolve render started (job ${ar.job_id.slice(0,8)}…)`, "success");
         const tick = async () => {
           try {
             const s = await api.get(
@@ -2188,7 +2223,7 @@ function VideoPanel() {
             }
             setTimeout(tick, 2000);
           } catch (_) {
-            setTimeout(tick, 4000);  // transient blip; keep trying
+            setTimeout(tick, 4000);
           }
         };
         setTimeout(tick, 2000);
@@ -2196,8 +2231,9 @@ function VideoPanel() {
         const err = (ar && ar.error) || (res && res.error) || "unknown";
         addToast(`Resolve render failed: ${err}`, "error");
         if (ar && Array.isArray(ar.available_presets)) {
-          console.warn("Available Resolve presets:", ar.available_presets);
-          addToast("See console for available presets", "info");
+          setRenderPresets(ar.available_presets);
+          setShowRenderDialog(true);
+          addToast("Pick one of the available presets", "info");
         }
         setResolveRenderBusy(false);
       }
@@ -2206,6 +2242,49 @@ function VideoPanel() {
       setResolveRenderBusy(false);
     }
   };
+
+  // R51b: listen for antenna.resolve.render_complete events via SSE so the UI
+  // reacts even if the user closed the tab mid-render.
+  _useEffect(() => {
+    const src = new EventSource("/api/events/sse?topic=antenna.resolve.render_complete");
+    src.onmessage = (ev) => {
+      try {
+        const data = JSON.parse(ev.data || "{}");
+        const d = data.data || data;
+        const status = d.status || "Unknown";
+        if (status === "Complete") {
+          addToast(`Resolve render complete (${d.time_elapsed_s?.toFixed?.(1) || "?"}s)`,
+                    "success");
+          // Fire a browser notification if permission granted
+          try {
+            if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+              new Notification("Spellcaster: Resolve render complete", {
+                body: d.project ? `Project: ${d.project}` : "Render finished",
+              });
+            }
+          } catch (_) {}
+        } else {
+          addToast(`Resolve render ${status}`, "error");
+        }
+        setResolveRenderBusy(false);
+      } catch (_) { /* ignore malformed */ }
+    };
+    src.onerror = () => { /* transient — browser retries automatically */ };
+    return () => { try { src.close(); } catch (_) {} };
+  }, []);
+
+  // Ask for notification permission on first load so render_complete can surface
+  _useEffect(() => {
+    try {
+      if (typeof Notification !== "undefined"
+          && Notification.permission === "default") {
+        // Non-blocking request
+        Notification.requestPermission().catch(() => {});
+      }
+    } catch (_) {}
+  }, []);
+
+  const renderInResolve = openRenderDialog;
 
   const togglePinSnapshot = async (id, snapId, isPinned) => {
     try {
@@ -3199,6 +3278,69 @@ function VideoPanel() {
           onClose={() => setTrajShot(null)}
           onSaved={saveTrajectories}
         />
+      )}
+
+      {/* R51a: Resolve render dialog with a proper preset picker */}
+      {showRenderDialog && (
+        <div className="render-dialog fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-rose-600/40 rounded-xl p-5 max-w-md w-full space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-rose-200">Render in Resolve</h2>
+              <button onClick={() => setShowRenderDialog(false)}
+                className="text-slate-400 hover:text-slate-200 text-xl leading-none">×</button>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Render preset</label>
+              {renderPresetsLoading ? (
+                <div className="text-xs text-slate-500 italic">Loading presets from Resolve…</div>
+              ) : renderPresetsError ? (
+                <div className="text-xs text-amber-300">{renderPresetsError}</div>
+              ) : (
+                <select
+                  value={renderPreset}
+                  onChange={(e) => setRenderPreset(e.target.value)}
+                  className="render-preset-select w-full bg-slate-950 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:border-rose-500 focus:outline-none"
+                >
+                  {renderPresets.length === 0 && <option value="">(no presets found)</option>}
+                  {renderPresets.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              )}
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Target directory (on the Resolve host)</label>
+              <input
+                type="text"
+                value={renderTargetDir}
+                onChange={(e) => setRenderTargetDir(e.target.value)}
+                placeholder="C:\\Spellcaster\\renders"
+                className="render-target-dir w-full bg-slate-950 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 placeholder-slate-500 focus:border-rose-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">File name (a timestamp is appended)</label>
+              <input
+                type="text"
+                value={renderFileName}
+                onChange={(e) => setRenderFileName(e.target.value)}
+                className="render-file-name w-full bg-slate-950 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 placeholder-slate-500 focus:border-rose-500 focus:outline-none"
+              />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => setShowRenderDialog(false)}
+                className="flex-1 px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium">Cancel</button>
+              <button
+                onClick={startRender}
+                disabled={!renderPreset || renderPresetsLoading}
+                className="render-start-btn flex-1 px-3 py-1.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-xs font-medium disabled:bg-slate-700 disabled:text-slate-500"
+              >Start render</button>
+            </div>
+            <p className="text-[10px] text-slate-500">
+              The render runs on the Resolve machine; you'll get a toast (and a browser
+              notification if you allow them) when it finishes. You can close this tab and
+              the antenna will still send the completion event on reconnection.
+            </p>
+          </div>
+        </div>
       )}
 
       {/* R49b: Antenna admin modal — pair + self-update, no JSON editing */}
