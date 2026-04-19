@@ -3253,6 +3253,48 @@ function VideoPanel() {
     }
   };
 
+  // R79b: paste-to-shots — paste multi-line text to create many shots
+  const [showPasteShots, setShowPasteShots] = _useState(false);
+  const [pasteShotsText, setPasteShotsText] = _useState("");
+  const pasteShots = async () => {
+    if (!pasteShotsText.trim()) return;
+    try {
+      const res = await api.post("/api/video/import-lines",
+                                  {text: pasteShotsText});
+      if (res?.created != null) {
+        addToast(
+          `Created ${res.created} shot(s)`
+          + (res.scenes_created ? ` + ${res.scenes_created} scene(s)` : "")
+          + (res.skipped ? ` (${res.skipped} skipped)` : ""),
+          res.created > 0 ? "success" : "info");
+        setShowPasteShots(false);
+        setPasteShotsText("");
+        await refresh();
+      } else {
+        addToast(`Paste failed: ${res?.error || "unknown"}`, "error");
+      }
+    } catch (e) {
+      addToast("Paste failed: " + (e.message || "unknown"), "error");
+    }
+  };
+
+  // R79a: diff two named states
+  const [diffModal, setDiffModal] = _useState(null);  // {a, b, result}
+  const [diffSelection, setDiffSelection] = _useState({a: "", b: "current"});
+  const runStateDiff = async () => {
+    const {a, b} = diffSelection;
+    if (!a || !b) {
+      addToast("Pick two states to diff", "error");
+      return;
+    }
+    try {
+      const res = await api.post("/api/video/named-states/diff", {a, b});
+      setDiffModal({a, b, result: res});
+    } catch (e) {
+      addToast("Diff failed: " + (e.message || "unknown"), "error");
+    }
+  };
+
   // R67a: bulk-import shots from a CSV file. Triggered by a hidden file
   // input; the button click opens the picker.
   const importCsvRef = _useRef(null);

@@ -9237,6 +9237,32 @@ class GuildHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.end_json(500, {"error": f"CSV export failed: {e}"})
 
+        elif self.path == '/api/video/named-states/diff' and self.command == 'POST':
+            # R79a: diff two states
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            a = (data.get('a') or '').strip() if isinstance(data, dict) else ''
+            b = (data.get('b') or '').strip() if isinstance(data, dict) else ''
+            if not a or not b:
+                return self.end_json(400, {"error": "a and b names required ('current' allowed)"})
+            return self.end_json(200, _VIDEO_BRIDGE.board.diff_named_states(a, b))
+
+        elif self.path == '/api/video/import-lines' and self.command == 'POST':
+            # R79b: paste-to-shots
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            text = data.get('text') if isinstance(data, dict) else None
+            if not text or not isinstance(text, str):
+                return self.end_json(400, {"error": "POST body must have {text: '<lines>'}"})
+            preset = (data.get('preset') or '').strip() if isinstance(data, dict) else ''
+            backend = (data.get('backend') or '').strip() if isinstance(data, dict) else ''
+            try:
+                result = _VIDEO_BRIDGE.board.import_shots_from_lines(
+                    text, preset=preset, backend=backend)
+                return self.end_json(200, result)
+            except Exception as e:
+                return self.end_json(500, {"error": f"import failed: {e}"})
+
         elif self.path == '/api/video/import-csv' and self.command == 'POST':
             # R67a: bulk-create shots from a CSV body
             if not _VIDEO_BRIDGE:
