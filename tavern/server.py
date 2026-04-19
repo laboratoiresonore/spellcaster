@@ -3631,6 +3631,129 @@ def _spellcaster_loras_approve(approvals: list) -> tuple[int, dict]:
 # calibration flow. Activating one model of an arch writes an arch profile
 # that every other unactivated same-arch model inherits as presettings.
 
+# ── Network survey + strategic install plan + live demo generation ─────
+
+def _spellcaster_network_survey() -> tuple[int, dict]:
+    try:
+        from scaffold.network_survey import get_survey_state
+    except Exception as e:
+        return (500, {"error": f"network_survey unavailable: {e}"})
+    try:
+        return (200, get_survey_state())
+    except Exception as e:
+        return (500, {"error": f"survey load failed: {e}"})
+
+
+def _spellcaster_network_declare(
+    key: str, placement: str,
+    host: str = "", port: int = 0, antenna_port: int = 7334,
+) -> tuple[int, dict]:
+    try:
+        from scaffold.network_survey import declare_placement
+    except Exception as e:
+        return (500, {"error": f"network_survey unavailable: {e}"})
+    if not key or not placement:
+        return (400, {"error": "key and placement required"})
+    try:
+        rec = declare_placement(key, placement, host=host,
+                                 port=port, antenna_port=antenna_port)
+    except ValueError as e:
+        return (400, {"error": str(e)})
+    except Exception as e:
+        return (500, {"error": f"declare failed: {e}"})
+    return (200, {"ok": True, "service": rec})
+
+
+def _spellcaster_network_refresh() -> tuple[int, dict]:
+    try:
+        from scaffold.network_survey import refresh_all_probes
+    except Exception as e:
+        return (500, {"error": f"network_survey unavailable: {e}"})
+    try:
+        return (200, refresh_all_probes())
+    except Exception as e:
+        return (500, {"error": f"refresh failed: {e}"})
+
+
+def _spellcaster_install_plan(features: list) -> tuple[int, dict]:
+    try:
+        from scaffold.install_plan import make_plan_view
+    except Exception as e:
+        return (500, {"error": f"install_plan unavailable: {e}"})
+    if not isinstance(features, list):
+        return (400, {"error": "features must be a list"})
+    return (200, make_plan_view([str(f) for f in features]))
+
+
+def _spellcaster_demo_gen(prompt: str, negative: str = "",
+                          model: str = "", timeout: int = 90) -> tuple[int, dict]:
+    """Render a small celebratory sample after a milestone — interleaves
+    demo images into the install flow so the user sees value per tier.
+    """
+    try:
+        from spellcaster_core.preference_calibration import (
+            discover_models, generate_and_download,
+        )
+        from spellcaster_core.workflows import build_txt2img
+        from spellcaster_core.architectures import get_arch
+    except Exception as e:
+        return (500, {"error": f"core unavailable: {e}"})
+
+    if not prompt:
+        return (400, {"error": "prompt required"})
+    try:
+        models = discover_models(COMFYUI_URL)
+    except Exception as e:
+        return (502, {"error": f"ComfyUI not reachable: {e}"})
+    if not models:
+        return (409, {"error": "no models yet — first install is still landing"})
+
+    chosen = None
+    if model:
+        chosen = next((m for m in models if m.get("name") == model), None)
+    if not chosen:
+        chosen = models[0]
+
+    arch = get_arch(chosen.get("arch", ""))
+    if not arch:
+        return (400, {"error": f"unknown arch for {chosen.get('name')!r}"})
+
+    w, h = arch.default_resolution
+    if w >= 1024:
+        w, h = 768, 768
+
+    preset = {
+        "arch": chosen["arch"], "ckpt": chosen["name"],
+        "width": w, "height": h,
+        "steps": arch.default_steps, "cfg": arch.default_cfg,
+        "denoise": 1.0,
+        "sampler": arch.default_sampler,
+        "scheduler": arch.default_scheduler,
+        "loader": arch.loader,
+        "clip_name1": "", "clip_name2": "", "vae_name": "",
+    }
+    import random, base64
+    seed = random.randint(1, 2**31)
+    try:
+        wf = build_txt2img(preset, prompt, negative, seed)
+    except Exception as e:
+        return (500, {"error": f"build failed: {e}"})
+    try:
+        png = generate_and_download(COMFYUI_URL, wf, timeout=timeout)
+    except Exception as e:
+        return (500, {"error": f"dispatch failed: {e}"})
+    if not png:
+        return (500, {"error": "no image returned"})
+    return (200, {
+        "ok": True,
+        "prompt": prompt,
+        "model": chosen["name"],
+        "arch": chosen["arch"],
+        "seed": seed,
+        "image_b64": base64.b64encode(png).decode("ascii"),
+    })
+
+
 # ── LoRA grouping + shootout (pick ONE winner per purpose-group per arch) ─
 
 def _spellcaster_lora_groups() -> tuple[int, dict]:
@@ -7438,6 +7561,9 @@ class GuildHandler(SimpleHTTPRequestHandler):
             params = urllib.parse.parse_qs(qs)
             return self.end_json(*_spellcaster_scaffold_calibrate_status(
                 params.get('job', [''])[0]))
+        # Network survey (read-only — catalog + current placements)
+        if self.path == '/api/spellcaster/network/survey':
+            return self.end_json(*_spellcaster_network_survey())
         # LoRA grouping + shootout
         if self.path == '/api/spellcaster/lora/groups':
             return self.end_json(*_spellcaster_lora_groups())
@@ -9738,6 +9864,26 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 data.get('scaffold', ''),
                 overrides=data.get('overrides') or {},
                 seed=int(data.get('seed', 42))))
+        # Network survey — user declares placements + refresh probes
+        if self.path == '/api/spellcaster/network/declare':
+            return self.end_json(*_spellcaster_network_declare(
+                data.get('key', ''), data.get('placement', ''),
+                host=data.get('host', ''),
+                port=int(data.get('port', 0) or 0),
+                antenna_port=int(data.get('antenna_port', 7334) or 7334)))
+        if self.path == '/api/spellcaster/network/refresh':
+            return self.end_json(*_spellcaster_network_refresh())
+        # Strategic install plan for a chosen feature set
+        if self.path == '/api/spellcaster/install/plan':
+            return self.end_json(*_spellcaster_install_plan(
+                data.get('features') or []))
+        # Live demo generation between install tiers
+        if self.path == '/api/spellcaster/demo_gen':
+            return self.end_json(*_spellcaster_demo_gen(
+                data.get('prompt', ''),
+                negative=data.get('negative', ''),
+                model=data.get('model', ''),
+                timeout=int(data.get('timeout', 90))))
         # LoRA shootout — render candidates + commit the winner
         if self.path == '/api/spellcaster/lora/shootout/start':
             return self.end_json(*_spellcaster_lora_shootout_start(
