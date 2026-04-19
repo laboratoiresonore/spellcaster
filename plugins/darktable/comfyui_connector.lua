@@ -1102,6 +1102,74 @@ local function guild_emit_event(kind, data_json)
   os.remove(tmp)
 end
 
+-- R110: cross-plugin asset send — upload an image file to the Guild's
+-- content-hashed /api/assets endpoint, then publish a
+-- <target>.asset.send event. Both steps are fire-and-best-effort;
+-- returns true on successful publish, false otherwise.
+-- We use a Python helper to base64-encode the file since Lua's
+-- stdlib has no b64. Python ships with the Spellcaster runtime and is
+-- reliably on PATH for every install tier.
+local function _asset_upload_and_emit(target, png_path, friendly)
+  local guild = get_guild_url()
+  if not guild or guild == "" then return false, "no guild url" end
+  -- 1) base64-encode the file to a temp .txt via python helper
+  local b64_out = tmp_dir() .. sep
+                  .. "spellcaster_b64_" .. os.time() .. ".txt"
+  local b64_cmd
+  if package.config:sub(1,1) == "\\" then
+    b64_cmd = string.format(
+      'python -c "import base64,sys; sys.stdout.buffer.write(base64.b64encode(open(r\'%s\',\'rb\').read()))" > "%s" 2>NUL',
+      shell_esc(png_path), shell_esc(b64_out))
+  else
+    b64_cmd = string.format(
+      'python -c "import base64,sys; sys.stdout.buffer.write(base64.b64encode(open(\'%s\',\'rb\').read()))" > "%s" 2>/dev/null',
+      shell_esc(png_path), shell_esc(b64_out))
+  end
+  os.execute(b64_cmd)
+  local bf = io.open(b64_out, "r")
+  if not bf then return false, "b64 helper failed" end
+  local b64 = bf:read("*all"); bf:close(); os.remove(b64_out)
+  if not b64 or b64 == "" then return false, "empty b64" end
+  -- 2) build asset-upload JSON + post
+  local asset_body = tmp_dir() .. sep
+                     .. "spellcaster_asset_" .. os.time() .. ".json"
+  local asset_resp = tmp_dir() .. sep
+                     .. "spellcaster_asset_resp_" .. os.time() .. ".json"
+  local payload = string.format(
+    '{"origin":"darktable","kind":"asset","title":"From Darktable → %s","tags":["to_%s","darktable_export"],"body_b64":"%s"}',
+    tostring(friendly):gsub('"', "'"),
+    tostring(target):gsub('"', "'"),
+    b64)
+  local f = io.open(asset_body, "w")
+  if not f then return false, "tmp write failed" end
+  f:write(payload); f:close()
+  local upload_cmd
+  if package.config:sub(1,1) == "\\" then
+    upload_cmd = string.format(
+      'curl -s --max-time 60 -X POST -H "Content-Type: application/json" --data-binary "@%s" "%s/api/assets" -o "%s" 2>NUL',
+      shell_esc(asset_body), shell_esc(guild), shell_esc(asset_resp))
+  else
+    upload_cmd = string.format(
+      'curl -s --max-time 60 -X POST -H "Content-Type: application/json" --data-binary "@%s" "%s/api/assets" -o "%s" 2>/dev/null',
+      shell_esc(asset_body), shell_esc(guild), shell_esc(asset_resp))
+  end
+  os.execute(upload_cmd)
+  os.remove(asset_body)
+  local rf = io.open(asset_resp, "r")
+  if not rf then return false, "no response" end
+  local resp = rf:read("*all"); rf:close(); os.remove(asset_resp)
+  -- json_val defined further down — use inline regex since we might be
+  -- earlier in the file than json_val's definition. Hash is `"hash":"..."`.
+  local hash = resp and resp:match('"hash"%s*:%s*"([^"]+)"') or nil
+  if not hash or hash == "" then return false, "no hash in response" end
+  -- 3) publish event for the target's subscriber (Bridge / GIMP / ST)
+  local data_json = string.format(
+    '{"image_url":"/api/assets/%s","hash":"%s","source":"darktable","kind":"asset"}',
+    hash, hash)
+  guild_emit_event(target .. ".asset.send", data_json)
+  return true, hash
+end
+
 -- SIMPLE JSON VALUE EXTRACTION
 -- ═════════════════════════════════════════════════════════════════════════
 -- Minimal parser to avoid adding a JSON library dependency.
@@ -7388,6 +7456,60 @@ local server_save_btn = dt.new_widget("button") {
   end,
 }
 
+-- R110: cross-plugin send buttons. Use the ACTIVE lighttable image
+-- (dt.gui.selection()[1] or act_image) as the source, export via
+-- the existing export_to_temp() helper, then upload + publish via
+-- _asset_upload_and_emit. Diamond (\xf0\x9f\x92\x8e = 💎) prefix
+-- matches the Resolve-plugin convention from R104 so the "AI-related
+-- branch" jumps out of Darktable's lighttable module list.
+local function _cross_send_active_image(target, friendly)
+  local sel = dt.gui.selection() or {}
+  local image = sel[1] or dt.gui.act_image
+  if not image then
+    dt.print(_("💎 Select an image first, then click Send to ") ..
+             friendly)
+    return
+  end
+  dt.print(_("💎 Exporting image for ") .. friendly .. _(" …"))
+  local path, fname = export_to_temp(image)
+  if not path then
+    dt.print(_("💎 Couldn't export the selected image."))
+    return
+  end
+  local ok, info = _asset_upload_and_emit(target, path, friendly)
+  os.remove(path)
+  if ok then
+    dt.print(string.format(
+      _("💎 Sent to %s (asset %s…) — open %s and pick it up."),
+      friendly, tostring(info):sub(1, 10), friendly))
+  else
+    dt.print(string.format(
+      _("💎 Send to %s failed: %s"), friendly, tostring(info or "?")))
+  end
+end
+
+local send_to_resolve_btn = dt.new_widget("button") {
+  label = _("💎 Send to DaVinci Resolve"),
+  tooltip = _("Publish the selected image to Resolve's Media Pool via the Spellcaster Bridge"),
+  clicked_callback = function()
+    _cross_send_active_image("resolve", "DaVinci Resolve")
+  end,
+}
+local send_to_gimp_btn = dt.new_widget("button") {
+  label = _("💎 Send to GIMP"),
+  tooltip = _("Publish the selected image to GIMP's inbox (GIMP: Spellcaster > Cross-App > Check Inbox)"),
+  clicked_callback = function()
+    _cross_send_active_image("gimp", "GIMP")
+  end,
+}
+local send_to_sillytavern_btn = dt.new_widget("button") {
+  label = _("💎 Send to SillyTavern"),
+  tooltip = _("Publish the selected image to SillyTavern as a character / scene asset"),
+  clicked_callback = function()
+    _cross_send_active_image("sillytavern", "SillyTavern")
+  end,
+}
+
 local module_widget = dt.new_widget("box") {
   orientation = "vertical",
   dt.new_widget("label") { label = _("\xe2\x9c\xa8 Spellcaster \xe2\x80\x94 AI Superpowers") },
@@ -7396,6 +7518,14 @@ local module_widget = dt.new_widget("box") {
   server_save_btn,
   status_label,
   test_btn,
+  dt.new_widget("separator") {},
+
+  -- R110: cross-plugin transfer buttons at the top so editors spot
+  -- them without scrolling past the giant AI-controls block.
+  dt.new_widget("label") { label = _("💎 CROSS-APP TRANSFER") },
+  send_to_resolve_btn,
+  send_to_gimp_btn,
+  send_to_sillytavern_btn,
   dt.new_widget("separator") {},
 
   -- Global scaling control
