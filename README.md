@@ -87,6 +87,10 @@ Pick the thing you want. One tool per row. Every one of these lives in the `Filt
 
 <table>
 <tr>
+<td width="20%" align="center"><img src="assets/showcase_spellcaster_cat.gif" alt="Spellcaster — the mascot cat wizard" width="100%"/></td>
+<td><strong>Have fun and generate whatever the hell I want</strong><br/><sub>Text to Image across 9 model families. Type "a cat wizard reading a spellbook." Get a cat wizard reading a spellbook. Pick SDXL, Flux, Klein, Chroma, Illustrious — or let Spellcaster pick for you. 25 scene presets, infinite variations, zero judgement.</sub></td>
+</tr>
+<tr>
 <td width="20%" align="center"><img src="assets/showcase_lama_remove.png" alt="AI Eraser" width="100%"/></td>
 <td><strong>Remove something from a photo</strong><br/><sub>Select + <code>Ctrl+Alt+X</code>. LaMa inpainting erases anything — tourists, power lines, ex-boyfriends — and fills the gap cleanly.</sub></td>
 </tr>
