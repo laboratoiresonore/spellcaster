@@ -962,6 +962,37 @@ def discover_workflows(search_dirs: Optional[List[Union[str, Path]]] = None,
     return entries
 
 
+def classify_workflow_data(data: dict) -> tuple[int, str, Set[str]]:
+    """Return (node_count, workflow_type, class_types) for a parsed
+    workflow JSON dict.
+
+    Public helper so callers outside workflow_parser.py (notably the
+    Guild's remote-ComfyUI workflow proxy in tavern/server.py) get
+    the same classification as discover_workflows() does for local
+    files, without re-implementing the format-detection + type rules.
+    Returns (0, "unknown", set()) when the format can't be detected.
+    """
+    if not isinstance(data, dict):
+        return (0, "unknown", set())
+    fmt = detect_format(data)
+    ct_set: Set[str] = set()
+    node_count = 0
+    if fmt == "litegraph":
+        nodes = data.get("nodes", []) or []
+        node_count = len(nodes)
+        ct_set = {n.get("type", "") for n in nodes if isinstance(n, dict)}
+    elif fmt == "api":
+        for v in data.values():
+            if isinstance(v, dict) and "class_type" in v:
+                node_count += 1
+                ct_set.add(v["class_type"])
+    else:
+        return (0, "unknown", set())
+    ct_lower = {t.lower() for t in ct_set if t}
+    wf_type = _classify_workflow(ct_lower)
+    return (node_count, wf_type, ct_set)
+
+
 def _default_search_dirs() -> List[Path]:
     """Find ComfyUI's user workflow directories and bundled scaffold workflows."""
     candidates = [
