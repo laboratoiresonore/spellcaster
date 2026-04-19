@@ -245,9 +245,32 @@ class GuildClient:
                                {"trajectories": trajectories})
 
     # ── Rendering ────────────────────────────────────────────────────
+    #
+    # The Guild does NOT expose a per-shot `/render` endpoint today.
+    # Rendering is triggered by `/api/video/render-all` (queues every
+    # draft shot) or implicitly through the chat-driven
+    # CinematographerWizard. For single-shot queueing from a plugin we
+    # mark the shot as ready-to-render by bumping its status to
+    # "queued" via /update and then calling render-all, which picks up
+    # any draft/queued shots that have carry_last_frame=False satisfied.
 
-    def render_shot(self, shot_id: str) -> dict:
-        return self._post_json(f"/api/video/shots/{shot_id}/render", {})
+    def queue_shot(self, shot_id: str) -> dict:
+        """Queue a single shot for rendering.
+
+        Flips status to queued via /update, then calls render-all so
+        the video bridge picks it up on its next tick. Safe to call
+        multiple times — the video bridge de-dupes.
+        """
+        try:
+            self.update_shot(shot_id, status="queued")
+        except GuildError:
+            # If the server rejects the status bump, fall through — the
+            # render-all sweep still picks up drafts
+            pass
+        return self._post_json("/api/video/render-all", {})
+
+    # Back-compat alias — older callers used `render_shot`
+    render_shot = queue_shot
 
     def render_all_drafts(self) -> dict:
         return self._post_json("/api/video/render-all", {})
@@ -261,11 +284,35 @@ class GuildClient:
     # ── Presets ──────────────────────────────────────────────────────
 
     def list_presets(self) -> list:
-        """All WanGP/ComfyUI presets available for shot creation."""
+        """All WanGP/ComfyUI presets available for shot creation.
+
+        Normalizes every shape the Guild has exposed over time:
+          1. [{key, label, task, ...}, ...]       — list of records
+          2. {"presets": [...]}                    — wrapped list
+          3. {"presets": {key: record, ...}}       — dict-of-records (current)
+          4. {key: record, ...}                    — bare dict
+
+        Always returns a list of records, each with a `key` field
+        populated so callers can match presets by name.
+        """
         d = self._get_json("/api/video/presets")
+        # Unwrap {"presets": ...} if present
+        if isinstance(d, dict) and "presets" in d:
+            d = d["presets"]
         if isinstance(d, list):
             return d
-        return d.get("presets", [])
+        if isinstance(d, dict):
+            out = []
+            for k, rec in d.items():
+                if isinstance(rec, dict):
+                    # Inject the dict key as `key` so matching works
+                    r = dict(rec)
+                    r.setdefault("key", k)
+                    out.append(r)
+                else:
+                    out.append({"key": k, "label": str(rec)})
+            return out
+        return []
 
     # ── Media download ───────────────────────────────────────────────
 
