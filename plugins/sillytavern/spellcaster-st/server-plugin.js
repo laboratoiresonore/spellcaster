@@ -15,6 +15,12 @@ import https from 'node:https';
 // Default ComfyUI URL — overridden by settings
 let COMFYUI_URL = 'http://127.0.0.1:8188';
 
+// R111: Wizard Guild URL — separate from ComfyUI. Used for
+// cross-plugin asset publishing / inbox polling via the shared event
+// bus and asset gallery. Defaults to the standard Guild port; can be
+// overridden via the settings endpoint.
+let GUILD_URL = 'http://127.0.0.1:7777';
+
 // Backgrounds directory (SillyTavern stores them here)
 let BG_DIR = '';
 
@@ -203,11 +209,157 @@ function init(router) {
                 _cachedModel = null;  // Invalidate — new server may have different models
             }
         }
+        if (req.body.guild_url) {
+            GUILD_URL = String(req.body.guild_url).replace(/\/+$/, '');
+        }
         if (req.body.backgrounds_dir) {
             BG_DIR = req.body.backgrounds_dir;
         }
         autoDetectBgDir();  // Auto-detect if not explicitly set
-        res.json({ status: 'ok', comfyui_url: COMFYUI_URL, bg_dir: BG_DIR });
+        res.json({
+            status: 'ok',
+            comfyui_url: COMFYUI_URL,
+            guild_url: GUILD_URL,
+            bg_dir: BG_DIR,
+        });
+    });
+
+    // ══════════════════════════════════════════════════════════════════
+    // R111: Cross-plugin transfer routes — server-plugin proxies to the
+    // Wizard Guild's shared asset gallery + event bus so the browser
+    // extension can send images to Resolve / GIMP / Darktable and pull
+    // its own pending inbox. Server-side forwarding avoids CORS issues
+    // on browsers that reject cross-origin fetches to 127.0.0.1:7777.
+    // ══════════════════════════════════════════════════════════════════
+
+    // POST /cross/send — publish the supplied image to <target>.
+    // Body: { target: 'resolve'|'gimp'|'darktable',
+    //         image_data_url: '<data:image/png;base64,...>',
+    //         title?: string }
+    // OR:   { target, image_url: '<absolute http url>' }
+    // Returns: { ok, hash, asset_url }
+    router.post('/cross/send', async (req, res) => {
+        const target = String(req.body.target || '').trim().toLowerCase();
+        if (!['resolve', 'gimp', 'darktable', 'sillytavern'].includes(target)) {
+            return res.status(400).json({
+                error: 'target must be one of: resolve, gimp, darktable, sillytavern',
+            });
+        }
+        // Resolve body_b64 from whichever source the caller provided.
+        let body_b64 = '';
+        if (req.body.image_data_url) {
+            const comma = req.body.image_data_url.indexOf(',');
+            body_b64 = comma >= 0
+                ? req.body.image_data_url.slice(comma + 1)
+                : req.body.image_data_url;
+        } else if (req.body.image_url) {
+            // Server-side fetch the absolute URL then base64.
+            try {
+                const bin = await new Promise((resolve, reject) => {
+                    const mod = req.body.image_url.startsWith('https')
+                        ? https : http;
+                    mod.get(req.body.image_url, (r) => {
+                        const chunks = [];
+                        r.on('data', (c) => chunks.push(c));
+                        r.on('end', () => resolve(Buffer.concat(chunks)));
+                        r.on('error', reject);
+                    }).on('error', reject);
+                });
+                body_b64 = bin.toString('base64');
+            } catch (e) {
+                return res.status(502).json({
+                    error: 'image_url fetch failed: ' + e.message,
+                });
+            }
+        } else {
+            return res.status(400).json({
+                error: 'need image_data_url or image_url',
+            });
+        }
+        if (!body_b64) {
+            return res.status(400).json({ error: 'empty image data' });
+        }
+        // 1) upload to /api/assets
+        let rec;
+        try {
+            const up = await fetchJSON(`${GUILD_URL}/api/assets`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    origin: 'sillytavern',
+                    kind: 'asset',
+                    title: req.body.title || `From SillyTavern → ${target}`,
+                    tags: [`to_${target}`, 'sillytavern_export'],
+                    body_b64,
+                }),
+            });
+            rec = up.data;
+        } catch (e) {
+            return res.status(502).json({ error: 'guild upload failed: ' + e.message });
+        }
+        if (!rec || !rec.hash) {
+            return res.status(502).json({
+                error: 'guild upload returned no hash',
+                detail: rec,
+            });
+        }
+        const asset_url = `/api/assets/${rec.hash}`;
+        // 2) publish <target>.asset.send event — mailbox fanout
+        //    routes it to the target interface's inbox automatically.
+        try {
+            await fetchJSON(`${GUILD_URL}/api/events/emit`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    kind: `${target}.asset.send`,
+                    origin: 'sillytavern',
+                    data: {
+                        image_url: asset_url,
+                        hash: rec.hash,
+                        source: 'sillytavern',
+                        title: req.body.title || '',
+                    },
+                }),
+            });
+        } catch (e) {
+            // Upload succeeded, publish failed — still useful for manual
+            // pickup via the asset URL. Report the mixed state.
+            return res.json({
+                ok: true,
+                hash: rec.hash,
+                asset_url: `${GUILD_URL}${asset_url}`,
+                warning: 'event publish failed: ' + e.message,
+            });
+        }
+        res.json({
+            ok: true,
+            hash: rec.hash,
+            asset_url: `${GUILD_URL}${asset_url}`,
+        });
+    });
+
+    // GET /cross/inbox — pull pending sillytavern.asset.* messages.
+    // Returns: { messages: [{kind, data:{image_url,hash,source,...}}] }
+    router.get('/cross/inbox', async (req, res) => {
+        try {
+            const consume = (req.query.consume || '1');
+            const max = Math.min(100, parseInt(req.query.max || '20', 10));
+            const r = await fetchJSON(
+                `${GUILD_URL}/api/sillytavern/inbox?consume=${consume}&max=${max}`);
+            const messages = ((r.data && r.data.messages) || [])
+                .filter(m => (m.kind || '').startsWith('sillytavern.asset.'));
+            // Resolve relative image_urls to absolute so the extension
+            // can render them directly without knowing the Guild URL.
+            for (const m of messages) {
+                const d = m.data || {};
+                if (d.image_url && d.image_url.startsWith('/')) {
+                    d.image_url = `${GUILD_URL}${d.image_url}`;
+                }
+            }
+            res.json({ messages });
+        } catch (e) {
+            res.status(502).json({ error: 'inbox fetch failed: ' + e.message });
+        }
     });
 
     // ── Health check ──
