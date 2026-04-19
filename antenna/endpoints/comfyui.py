@@ -43,6 +43,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from .. import bus_client
+
 
 # Lazy-import the installer's primitives; antenna/ and installer/ live in
 # the same repo so this works as long as the agent was bootstrapped via
@@ -213,12 +215,15 @@ def install_node(ctx: dict[str, Any]) -> tuple[int, dict]:
         req_ok = False
 
     took = round(time.time() - t_start, 1)
-    return 200, {
+    result = {
         "node_key": node_key,
         "installed_at": str(dest),
         "took_seconds": took,
         "requirements_installed": req_ok,
     }
+    # Tell the hub so its UI can react (fire-and-forget, silent on failure)
+    bus_client.emit(ctx, "antenna.node.installed", result)
+    return 200, result
 
 
 # ─── POST /install-model ──────────────────────────────────────────────────
@@ -355,9 +360,11 @@ def install_model(ctx: dict[str, Any]) -> tuple[int, dict]:
         return 500, {"error": "download failed (see agent logs)"}
 
     took = round(time.time() - t_start, 1)
-    return 200, {
+    result = {
         "model_key": model_key,
         "saved_to": str(dest),
         "bytes": dest.stat().st_size,
         "took_seconds": took,
     }
+    bus_client.emit(ctx, "antenna.model.installed", result)
+    return 200, result
