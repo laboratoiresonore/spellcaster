@@ -541,15 +541,20 @@ Spellcaster is the connective tissue. Every generated asset lives in one canonic
 
 <table>
 <tr>
-<th width="18%" align="center">From</th>
-<th width="18%" align="center">To</th>
+<th width="15%" align="center">From</th>
+<th width="15%" align="center">To</th>
 <th>What it does</th>
+<th width="20%" align="center">Example — Resolve Plugin</th>
 </tr>
 
 <tr>
 <td align="center"><img src="https://img.shields.io/badge/GIMP-5C5543?style=flat-square&logo=gimp&logoColor=white" height="28" alt="GIMP"/><br/><strong>GIMP</strong></td>
 <td align="center"><img src="https://img.shields.io/badge/Wizard%20Guild-6A1B9A?style=flat-square&logoColor=FFD700" height="28" alt="Guild"/><br/><strong>Wizard Guild</strong></td>
 <td>Save any layer to the Guild gallery. It appears instantly under "Recent across apps" in the sidebar and drops into the active wizard's chat as a reference image on click. No upload step.</td>
+<td rowspan="8" align="center" valign="top">
+  <img src="assets/ResolvePlugin.png" alt="DaVinci Resolve plugin — 💎 Spellcaster scripts menu (30 entries: capture, generate, send-to, queue control)" width="220"/>
+  <br/><sub><em>Resolve plugin's script menu — 30 💎 Spellcaster entries. Every cross-app send/capture on the left is a one-click script here.</em></sub>
+</td>
 </tr>
 
 <tr>
