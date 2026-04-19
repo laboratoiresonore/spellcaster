@@ -99,14 +99,30 @@ _ARCH_ENHANCE_PROFILES = {
         "style": "comma-separated tags",
         "length": "30-80 words",
         "notes": (
-            "SD 1.5 works best with comma-separated tags/keywords. "
-            "Quality tags are essential: 'masterpiece, best quality, highly detailed'. "
-            "Order matters — put the most important concepts first. "
-            "Include style, medium, lighting, and composition tags.\n\n"
-            "MULTI-CHARACTER: Use BREAK to separate characters. Start with count "
-            "('2girls', '1boy 1girl'). Each BREAK block = one character with ALL their "
-            "attributes. Specify positions ('on the left', 'on the right'). "
-            "Use (attention:1.3) on distinguishing features to prevent attribute bleed."
+            "SD 1.5 works best with comma-separated tags/keywords.\n\n"
+            "HARD FORMAT RULES — violating these destroys quality:\n"
+            "- Output ONLY a flat comma-separated list of short tags and 2-4 word phrases.\n"
+            "- NEVER write sentences or paragraphs. No 'The', 'A', 'With', 'Her', 'His' as sentence starters.\n"
+            "- NO punctuation except commas and optional (attention:1.3) weights.\n"
+            "- NO conjunctions (and, or, but, while, as).\n"
+            "- Start with quality tags: 'masterpiece, best quality, highly detailed'.\n"
+            "- Then subject, style, lighting, composition tags. Most important first.\n\n"
+            "SINGLE CHARACTER GOOD: 'masterpiece, best quality, highly detailed, 1wizard, "
+            "long silver hair, green eyes, blue cloak, casting fire spell, mystical forest, "
+            "golden light, cinematic'\n"
+            "BAD (never do this): 'masterpiece, best quality: the wizard stands in the forest "
+            "with his hands raised as flames dance around him'\n\n"
+            "MULTI-CHARACTER (2+ people) — BREAK IS MANDATORY:\n"
+            "- First block: scene/setting + count tag ('2girls', '3friends'). No individual traits.\n"
+            "- Each BREAK block after = ONE character with unique hair, eyes, clothing, pose, position.\n"
+            "- Every character gets a position tag: 'on the left', 'on the right', 'in the center'.\n"
+            "- Use (attention:1.3) on distinguishing features to prevent attribute bleed.\n"
+            "GOOD 2-person: 'masterpiece, best quality, highly detailed, 2wizards, mystical forest, "
+            "golden light BREAK 1wizard, (long silver hair:1.3), sharp blue eyes, green robe, "
+            "on the left, holding staff BREAK 1wizard, (wavy brown hair:1.4), amber eyes, "
+            "purple cloak, on the right, casting fire spell'\n"
+            "BAD (never do this): '2wizards, long hair, dueling with staffs, dramatic lighting' "
+            "— this merges both characters and causes attribute bleed."
         ),
     },
     # Illustrious / Pony — anime-focused SDXL derivatives
@@ -132,12 +148,33 @@ _ARCH_ENHANCE_PROFILES = {
         "style": "score-prefixed booru tags",
         "length": "30-80 words",
         "notes": (
-            "Pony Diffusion uses booru tags with score prefixes. "
-            "Start with 'score_9, score_8_up, score_7_up' for quality. "
-            "Then character/scene tags. Use underscores for multi-word tags.\n\n"
-            "MULTI-CHARACTER: After score tags, add count (2girls). Use BREAK "
-            "between character blocks. Each BREAK block = one character with ALL "
-            "their tags. Specify positions. Boost unique features with (tag:1.3)."
+            "Pony Diffusion uses booru tags with score prefixes.\n\n"
+            "HARD FORMAT RULES — violating these destroys quality:\n"
+            "- Output ONLY comma-separated booru tags. NO sentences. NO paragraphs.\n"
+            "- NO conjunctions (and, or, but, while, as). NO articles (the, a, with).\n"
+            "- Every multi-word concept MUST use underscores: long_hair, blue_eyes, "
+            "holding_staff, magical_battle, forest_clearing.\n"
+            "- NEVER write 'two wizards dueling' — write '2boys, dueling, holding_staff'.\n"
+            "- ALWAYS start with: 'score_9, score_8_up, score_7_up'\n"
+            "- Then add scene tags, character tags, action tags. Most important first.\n\n"
+            "SINGLE CHARACTER GOOD: 'score_9, score_8_up, score_7_up, 1wizard, "
+            "long_silver_hair, blue_cloak, casting_fire_spell, mystical_forest, "
+            "golden_light, (glowing_runes:1.3), cinematic'\n"
+            "BAD (never do this): 'score_9, score_8_up, score_7_up wizard duel, two wizards "
+            "in magical battle attire, staffs glowing with arcane energy'\n\n"
+            "MULTI-CHARACTER (2+ people) — BREAK IS MANDATORY:\n"
+            "- First block: scene/setting + count tag (2girls, 1boy_1girl, 3friends). No individual traits.\n"
+            "- Each BREAK block after = ONE character with unique underscored tags for "
+            "hair, eyes, clothing, pose, position.\n"
+            "- Every character gets a position tag (on_the_left, on_the_right, in_the_center).\n"
+            "- Use (attention:1.3) on distinguishing features to prevent attribute bleed.\n"
+            "GOOD 2-person: 'score_9, score_8_up, score_7_up, 2boys, mystical_forest, "
+            "golden_light BREAK boy, (long_silver_hair:1.3), blue_eyes, green_robe, "
+            "on_the_left, holding_staff BREAK boy, (wavy_brown_hair:1.4), amber_eyes, "
+            "purple_cloak, on_the_right, casting_fire_spell'\n"
+            "BAD (never do this): 'score_9, score_8_up, score_7_up, 2boys, dueling, "
+            "holding_staff, magical_battle' — this merges both characters and "
+            "causes attribute bleed."
         ),
     },
     # WAN — video/image, natural language
@@ -244,7 +281,12 @@ def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
     # noticeably worse results. The profile tells the LLM how to format output.
     profile = _ARCH_ENHANCE_PROFILES.get(arch_key, _DEFAULT_ENHANCE_PROFILE)
 
-    # Build system prompt that guides the LLM
+    # Build system prompt that guides the LLM.
+    # The `Target style` line is load-bearing: if it says "tags" then the
+    # output MUST be tags (not prose). Small LLMs (4B Qwen/Gemma) tend to
+    # default to paragraph prose unless we insist otherwise. The per-arch
+    # notes reinforce this with concrete GOOD/BAD examples for tag-style
+    # archs; see sd15 and pony profiles above.
     system_msg = (
         f"You are a prompt engineer for {profile['name']} image generation. "
         f"Your ONLY job is to expand the user's short description into an optimised "
@@ -254,6 +296,8 @@ def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
         f"{profile['notes']}\n\n"
         "RULES:\n"
         "- Output ONLY the enhanced prompt text — no explanations, no labels, no markdown.\n"
+        "- The Target style is MANDATORY. If it says 'tags', output tags, never sentences. "
+        "If it says 'natural language', output a paragraph, never a tag list.\n"
         "- Preserve the user's core intent exactly — do NOT change what they asked for.\n"
         "- Add detail, atmosphere, lighting, and style where missing.\n"
         "- Do NOT add NSFW content unless the input already contains it.\n"
@@ -278,10 +322,15 @@ def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
     except Exception:
         return prompt_text
     try:
+        # temperature=0.3 (not 0.7): enhancement is a structured task, not
+        # creative writing. High temperature makes the LLM drift into prose
+        # when the profile demands tags, or skip BREAK blocks in
+        # multi-character scenes. Lower temp = tighter adherence to the
+        # per-arch profile's HARD FORMAT RULES.
         enhanced = guild_llm.chat(
             message=user_msg, system_prompt=system_msg,
             server=comfy_url, kobold_url=kobold_url,
-            max_tokens=300, temperature=0.7,
+            max_tokens=300, temperature=0.3,
             purpose="enhance",
         )
     except Exception:
