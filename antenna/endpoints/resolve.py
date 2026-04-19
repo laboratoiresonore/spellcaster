@@ -413,6 +413,119 @@ def render_timeline(ctx: dict[str, Any]) -> tuple[int, dict]:
     return 200, result
 
 
+def list_luts(ctx: dict[str, Any]) -> tuple[int, dict]:
+    """GET /resolve/luts
+
+    Enumerate every LUT that Resolve can see on this machine. Walks the
+    standard Blackmagic LUT directories (per-OS) plus any user-configured
+    extra dirs declared in antenna_config.json:`resolve_lut_dirs`.
+
+    Returns:
+        {
+          "luts_by_category": {
+            "Creative": [{"name": "Kodak 2383", "path": "...", "ext": ".cube"}, ...],
+            "Legal": [...]
+          },
+          "total": 1234,
+          "scanned_dirs": ["..."]
+        }
+
+    This endpoint does NOT require Resolve to be running — it just reads
+    the filesystem. Cached for 60s to make capability-discovery cheap.
+    """
+    # Cached result per-process (module-level since each endpoint call
+    # spawns a fresh handler but the module is long-lived).
+    global _LUT_CACHE, _LUT_CACHE_TS
+    now = time.time()
+    if _LUT_CACHE is not None and (now - _LUT_CACHE_TS) < 60.0:
+        return 200, _LUT_CACHE
+
+    cfg = ctx.get("config") or {}
+    scanned: list[str] = []
+    by_cat: dict[str, list[dict[str, Any]]] = {}
+    total = 0
+
+    # Candidate LUT roots — Blackmagic ships LUTs here. Order matters only
+    # for the "scanned_dirs" field; duplicates across dirs are de-duped.
+    roots: list[Path] = []
+    if sys.platform.startswith("win"):
+        roots += [
+            Path(r"C:\ProgramData\Blackmagic Design\DaVinci Resolve\Support\LUT"),
+            Path(r"C:\Program Files\Blackmagic Design\DaVinci Resolve\LUT"),
+        ]
+    elif sys.platform == "darwin":
+        roots += [
+            Path("/Library/Application Support/Blackmagic Design/DaVinci Resolve/LUT"),
+            Path(os.path.expanduser(
+                "~/Library/Application Support/Blackmagic Design/DaVinci Resolve/LUT")),
+        ]
+    else:
+        roots += [
+            Path("/opt/resolve/LUT"),
+            Path(os.path.expanduser("~/.local/share/DaVinciResolve/LUT")),
+        ]
+    # User overrides from antenna_config.resolve_lut_dirs (list or comma-string)
+    extra = cfg.get("resolve_lut_dirs") or []
+    if isinstance(extra, str):
+        extra = [p.strip() for p in extra.split(",") if p.strip()]
+    for e in extra:
+        roots.append(Path(os.path.expanduser(str(e))))
+
+    # LUT file extensions Resolve understands (docs: .cube, .3dl, .ilut, .olut)
+    exts = {".cube", ".3dl", ".ilut", ".olut", ".csp", ".dat"}
+    seen: set[str] = set()
+
+    for root in roots:
+        if not root.is_dir():
+            continue
+        scanned.append(str(root))
+        try:
+            for path in root.rglob("*"):
+                if not path.is_file():
+                    continue
+                ext = path.suffix.lower()
+                if ext not in exts:
+                    continue
+                key = str(path.resolve())
+                if key in seen:
+                    continue
+                seen.add(key)
+                # Category = first directory under root (e.g. "Creative",
+                # "Legal", "Film"). LUTs directly under root fall into "(root)".
+                try:
+                    rel = path.relative_to(root)
+                    cat = rel.parts[0] if len(rel.parts) > 1 else "(root)"
+                except ValueError:
+                    cat = "(root)"
+                by_cat.setdefault(cat, []).append({
+                    "name": path.stem,
+                    "path": str(path),
+                    "ext": ext,
+                })
+                total += 1
+        except OSError:
+            # Permission or network issue on one root — skip, don't fail others
+            continue
+
+    # Stable ordering inside each category
+    for cat in by_cat:
+        by_cat[cat].sort(key=lambda x: x["name"].lower())
+
+    result = {
+        "luts_by_category": by_cat,
+        "total": total,
+        "scanned_dirs": scanned,
+    }
+    _LUT_CACHE = result
+    _LUT_CACHE_TS = now
+    return 200, result
+
+
+# Module-level LUT cache (60s TTL)
+_LUT_CACHE: dict[str, Any] | None = None
+_LUT_CACHE_TS: float = 0.0
+
+
 def render_presets(ctx: dict[str, Any]) -> tuple[int, dict]:
     """GET /resolve/render-presets
 
