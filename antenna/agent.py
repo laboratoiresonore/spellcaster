@@ -202,6 +202,17 @@ def _build_routes(cfg: dict[str, Any]) -> dict[tuple[str, str], Callable]:
         except ImportError as e:
             print(f"[antenna] resolve service declared but endpoints missing: {e}",
                   file=sys.stderr)
+        # R83b: resolve plugin deployment — antenna-driven refresh of
+        # Resolve's Workflow Integration Plugins + Fusion/Scripts dirs.
+        # Independent import so a stale resolve.py doesn't block plugin
+        # install (the install logic has no Resolve-API dependency).
+        try:
+            from .endpoints import resolve_plugin as resolve_plugin_ep
+            routes[("GET",  "/resolve/plugin/status")]  = resolve_plugin_ep.status
+            routes[("POST", "/resolve/plugin/install")] = resolve_plugin_ep.install
+        except ImportError as e:
+            print(f"[antenna] resolve_plugin endpoint failed to import: {e}",
+                  file=sys.stderr)
 
     # R56: generic service start/logs — covers ComfyUI, Kobold, Ollama.
     # Always registered (not gated by a specific service) because
