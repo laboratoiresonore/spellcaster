@@ -1379,6 +1379,69 @@ class Shotboard:
             self.save()
         return {"changed": len(changed), "shots": changed}
 
+    def import_shots_from_lines(self, text: str,
+                                   preset: str = "",
+                                   backend: str = "") -> Dict[str, Any]:
+        """R79b: one shot per non-empty line. Each line becomes the
+        prompt; title auto-derives via _title_from_prompt (R63b).
+        Blank lines are skipped. Lines beginning with '#' are skipped
+        (comments). Lines prefixed with '##' become scene headers
+        grouping subsequent shots.
+
+        Example input:
+            ## Opening scene
+            wide shot of a ruined cathedral at sunset
+            close-up of dusty stained glass
+            ## Interior
+            protagonist enters through splintered door
+            # this line is a comment and is skipped
+
+        Returns {created, skipped, new_ids, scenes_created}.
+        """
+        created: List[str] = []
+        skipped = 0
+        scenes_created = 0
+        current_scene_id: Optional[str] = None
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            if line.startswith("##"):
+                # Scene header
+                name = line.lstrip("#").strip()
+                if not name:
+                    continue
+                scene = next((sc for sc in self._scenes
+                               if (sc.name or "").lower() == name.lower()), None)
+                if scene is None:
+                    scene = self.add_scene(name=name, color="#4a9eff")
+                    scenes_created += 1
+                current_scene_id = scene.id
+                continue
+            if line.startswith("#"):
+                skipped += 1
+                continue
+            # Prompt line
+            title = self._title_from_prompt(line) or "Shot"
+            fields: Dict[str, Any] = {
+                "prompt": line,
+                "title": title,
+            }
+            if preset:
+                fields["preset"] = preset
+            if backend:
+                fields["backend"] = backend
+            if current_scene_id:
+                fields["scene_id"] = current_scene_id
+            shot = self.add(**fields)
+            created.append(shot.id)
+        return {
+            "created": len(created),
+            "skipped": skipped,
+            "new_ids": created,
+            "scenes_created": scenes_created,
+        }
+
     def import_shots_from_csv(self, csv_text: str) -> Dict[str, Any]:
         """R67a: bulk-create shots from a CSV.
 
@@ -1899,6 +1962,104 @@ class Shotboard:
                 "loaded_shots": len(shots),
                 "loaded_scenes": len(scenes),
                 "merge": merge}
+
+    def diff_named_states(self, name_a: str,
+                            name_b: str) -> Dict[str, Any]:
+        """R79a: compare two saved states (or 'current' for the live board).
+
+        Either arg can be a saved-state name OR the special sentinel
+        'current' to compare against the live in-memory board. Returns:
+
+            {
+              "a": {"name": ..., "shot_count": N, "scene_count": M},
+              "b": {"name": ..., "shot_count": N, "scene_count": M},
+              "shots": {
+                "added":   [shot_dict, ...]     # in B, not A
+                "removed": [shot_dict, ...]     # in A, not B
+                "changed": [{"id":..., "title":..., "fields":[...]}, ...]
+              },
+              "scenes": {"added": [...], "removed": [...]}
+            }
+
+        Shots are matched by id. A shot is "changed" if any creative
+        field differs — we compare prompt, negative, preset, seed,
+        overrides, backend, transition, carry_last_frame.
+        """
+        def _load(name: str) -> Dict[str, Any]:
+            if name == "current":
+                return {
+                    "name": "current",
+                    "shots": [s.to_dict() for s in self._shots],
+                    "scenes": [sc.to_dict() if hasattr(sc, "to_dict")
+                                else dict(sc.__dict__) for sc in self._scenes],
+                }
+            safe = self._sanitize_state_name(name)
+            path = os.path.join(self._named_states_dir(), f"{safe}.json")
+            if not os.path.isfile(path):
+                return {"name": name, "missing": True, "shots": [], "scenes": []}
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except (OSError, json.JSONDecodeError):
+                return {"name": name, "missing": True, "shots": [], "scenes": []}
+
+        a = _load(name_a)
+        b = _load(name_b)
+
+        def _by_id(items):
+            return {x.get("id"): x for x in items if isinstance(x, dict) and x.get("id")}
+
+        a_shots = _by_id(a.get("shots") or [])
+        b_shots = _by_id(b.get("shots") or [])
+        a_scenes = _by_id(a.get("scenes") or [])
+        b_scenes = _by_id(b.get("scenes") or [])
+
+        added_shots   = [b_shots[k] for k in b_shots if k not in a_shots]
+        removed_shots = [a_shots[k] for k in a_shots if k not in b_shots]
+        compare_fields = ["prompt", "negative", "preset", "seed",
+                           "overrides", "backend", "transition",
+                           "carry_last_frame", "priority", "tags",
+                           "scene_id", "color_label", "rating",
+                           "title", "notes"]
+        changed = []
+        for k in a_shots:
+            if k not in b_shots:
+                continue
+            sa, sb = a_shots[k], b_shots[k]
+            diff_fields = []
+            for fld in compare_fields:
+                if sa.get(fld) != sb.get(fld):
+                    diff_fields.append({
+                        "field": fld,
+                        "from": sa.get(fld),
+                        "to": sb.get(fld),
+                    })
+            if diff_fields:
+                changed.append({
+                    "id": k,
+                    "title": sb.get("title") or sa.get("title") or "",
+                    "fields": diff_fields,
+                })
+
+        return {
+            "a": {"name": a.get("name") or name_a,
+                   "shot_count": len(a.get("shots") or []),
+                   "scene_count": len(a.get("scenes") or []),
+                   "missing": bool(a.get("missing"))},
+            "b": {"name": b.get("name") or name_b,
+                   "shot_count": len(b.get("shots") or []),
+                   "scene_count": len(b.get("scenes") or []),
+                   "missing": bool(b.get("missing"))},
+            "shots": {
+                "added": added_shots,
+                "removed": removed_shots,
+                "changed": changed,
+            },
+            "scenes": {
+                "added":   [b_scenes[k] for k in b_scenes if k not in a_scenes],
+                "removed": [a_scenes[k] for k in a_scenes if k not in b_scenes],
+            },
+        }
 
     def delete_named_state(self, name: str) -> Dict[str, Any]:
         """Delete a saved state file."""
