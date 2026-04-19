@@ -75,6 +75,93 @@ def guild_or_die():
     return guild
 
 
+def require_presets(guild, presets: list[str], *, friendly: str = "") -> bool:
+    """R114: pre-flight check that every preset in `presets` is installed
+    on the Guild. If any is missing, show a friendly modal with an
+    install hint and return False. Scripts should abort immediately
+    (return 1) when this returns False.
+
+    friendly: optional one-line feature name for the modal ("SeedVR2
+    video upscale", "Wan VACE v2v + mask", …). Defaults to the first
+    missing preset name.
+    """
+    if not presets:
+        return True
+    try:
+        listing = guild.list_presets()
+    except Exception:
+        listing = []
+    have = {p.get("key") for p in listing if p.get("key")}
+    missing = [p for p in presets if p not in have]
+    if not missing:
+        return True
+    try:
+        from resolve_helpers import show_message
+    except ImportError:
+        print(f"[Spellcaster] missing presets: {missing}")
+        return False
+    label = friendly or missing[0]
+    lines = [
+        f"💎 '{label}' needs a preset that isn't installed on the Guild.",
+        "",
+        "Missing:",
+    ]
+    for m in missing:
+        lines.append(f"  • {m}")
+    lines.append("")
+    lines.append(
+        "Open the Guild web UI → Video tab → Model Manager, install "
+        "the missing model family, then retry. Or /sc-help on the Guild "
+        "chat for an interactive install flow."
+    )
+    show_message("Spellcaster — Missing Preset", "\n".join(lines))
+    return False
+
+
+def require_services(guild, services: list[str], *, friendly: str = "") -> bool:
+    """R114: check that every named service (comfyui, wangp, kobold,
+    ollama) is declared + reachable on the Guild / paired antenna.
+
+    Uses /api/video/health for the wangp/comfyui distinction and
+    /api/antenna/status for antenna-hosted services. Shows a modal
+    with an install hint on failure; returns bool.
+    """
+    if not services:
+        return True
+    reachable: set[str] = set()
+    try:
+        h = guild.video_health()
+        if h.get("wangp", {}).get("reachable") or h.get("wangp_reachable"):
+            reachable.add("wangp")
+        if h.get("comfyui", {}).get("reachable") or h.get("comfyui_reachable"):
+            reachable.add("comfyui")
+    except Exception:
+        pass
+    try:
+        ant = guild._get_json("/api/antenna/status", timeout=3.0)
+        if ant.get("online"):
+            for s in (ant.get("services") or []):
+                reachable.add(s)
+    except Exception:
+        pass
+    missing = [s for s in services if s not in reachable]
+    if not missing:
+        return True
+    try:
+        from resolve_helpers import show_message
+    except ImportError:
+        print(f"[Spellcaster] missing services: {missing}")
+        return False
+    label = friendly or missing[0]
+    show_message(
+        "Spellcaster — Service Offline",
+        f"💎 '{label}' needs these services online: {', '.join(missing)}.\n\n"
+        f"Start them via the Guild (Services tab or the antenna's "
+        f"/service/start endpoint), then retry."
+    )
+    return False
+
+
 def enhance_prompt(guild, raw: str, *, max_tokens: int = 180,
                     temperature: float = 0.7) -> str:
     """R96: send a terse prompt to the Guild's LLM and get back a
