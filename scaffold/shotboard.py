@@ -231,6 +231,11 @@ class Shot:
     # R76b: 0-5 star rating. 0 = unrated. Used to track quality judgments
     # on rendered outputs; filter chip shows "★★★+ (12)".
     rating: int = 0
+    # R82a: Lightroom-style color label. Single categorical flag for
+    # visual triage at a glance. Empty string = no label. Valid values:
+    # "red", "orange", "yellow", "green", "blue", "purple". Orthogonal
+    # to tags (free-form, multi) and bookmarked (boolean).
+    color_label: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -550,6 +555,57 @@ class Shotboard:
         if changed:
             self.save()
         return {"changed": changed, "tag": t}
+
+    # R82a: color label methods — Lightroom-style flags.
+    _VALID_COLOR_LABELS = ("", "red", "orange", "yellow",
+                            "green", "blue", "purple")
+
+    def set_color_label(self, shot_id: str,
+                          color: str) -> Optional[Shot]:
+        """Set a single shot's color label. Empty string clears it."""
+        c = (color or "").strip().lower()
+        if c not in self._VALID_COLOR_LABELS:
+            return None
+        shot = self.get(shot_id)
+        if shot is None:
+            return None
+        if shot.color_label != c:
+            shot.color_label = c
+            shot.touch()
+            self.save()
+        return shot
+
+    def batch_set_color_label(self, shot_ids: List[str],
+                                color: str) -> Dict[str, Any]:
+        """Bulk-apply a color label. Empty string clears. Locked shots
+        are skipped."""
+        c = (color or "").strip().lower()
+        if c not in self._VALID_COLOR_LABELS:
+            return {"changed": 0, "color": c, "error": "invalid color"}
+        changed = 0
+        for sid in shot_ids:
+            shot = self.get(sid)
+            if shot is None or shot.locked:
+                continue
+            if shot.color_label != c:
+                shot.color_label = c
+                shot.touch()
+                changed += 1
+        if changed:
+            self.save()
+        return {"changed": changed, "color": c}
+
+    def color_label_counts(self) -> Dict[str, int]:
+        """Count shots per color label across non-archived shots."""
+        counts: Dict[str, int] = {c: 0 for c in self._VALID_COLOR_LABELS
+                                    if c}
+        for s in self._shots:
+            if s.archived:
+                continue
+            c = (s.color_label or "").strip().lower()
+            if c in counts:
+                counts[c] += 1
+        return counts
 
     def all_tags(self) -> List[Dict[str, Any]]:
         """List every tag in use across the board with shot counts."""

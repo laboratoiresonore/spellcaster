@@ -39,6 +39,19 @@ const STATUS_STYLE = {
 
 const BACKENDS = ["wangp", "comfyui", "hybrid"];
 
+// R82a: Lightroom-style color labels. `key` is what we persist
+// (also what the backend validates against in _VALID_COLOR_LABELS);
+// `color` is the swatch. Empty key = no label (clear).
+const COLOR_LABELS = [
+  { key: "",       label: "None",   color: "transparent" },
+  { key: "red",    label: "Red",    color: "#ef4444" },
+  { key: "orange", label: "Orange", color: "#f97316" },
+  { key: "yellow", label: "Yellow", color: "#eab308" },
+  { key: "green",  label: "Green",  color: "#22c55e" },
+  { key: "blue",   label: "Blue",   color: "#3b82f6" },
+  { key: "purple", label: "Purple", color: "#a855f7" },
+];
+
 // ── Small helpers ──
 function StatusBadge({ status }) {
   const s = STATUS_STYLE[status] || STATUS_STYLE.draft;
@@ -1653,9 +1666,12 @@ function GridCard({ shot, presets, onRender, onRemove, isSelected, onToggleSelec
           >Render</button>
         )}
       </div>
-      {/* Color label stripe */}
+      {/* R82a: Color label stripe — left-edge flag */}
       {shot.color_label && (
-        <div className="absolute top-0 left-0 w-1 h-full" style={{ backgroundColor: shot.color_label }} />
+        <div className="absolute top-0 left-0 w-1 h-full pointer-events-none"
+          style={{ backgroundColor:
+            (COLOR_LABELS.find(c => c.key === shot.color_label) || {}).color
+            || shot.color_label }} />
       )}
     </div>
   );
@@ -1965,6 +1981,11 @@ function VideoPanel() {
   const [restorePreview, setRestorePreview] = _useState(null);
   // R66a: keyboard shortcuts cheatsheet modal (toggled with '?')
   const [showShortcuts, setShowShortcuts] = _useState(false);
+  // R82b: jump-to-shot modal. Ctrl+G opens a numeric input; Enter
+  // focuses that shot index (1-based within the filtered list) and
+  // scrolls it into view. Works from anywhere including text fields.
+  const [showJumpTo, setShowJumpTo] = _useState(false);
+  const [jumpToInput, setJumpToInput] = _useState("");
   // R76a: command palette (Ctrl+K) — fuzzy-searchable action launcher
   const [showCommandPalette, setShowCommandPalette] = _useState(false);
   const [commandQuery, setCommandQuery] = _useState("");
@@ -2115,11 +2136,13 @@ function VideoPanel() {
   _useEffect(() => {
     const onKeyDown = (e) => {
       // Skip when the user is typing in any editable control,
-      // UNLESS this is the Ctrl+K command palette (available everywhere).
+      // UNLESS this is the Ctrl+K command palette or R82b Ctrl+G
+      // jump-to-shot (both available globally).
       const tag = (e.target?.tagName || "").toUpperCase();
       const isPaletteKey = (e.key === "k" && (e.ctrlKey || e.metaKey));
+      const isJumpKey = (e.key === "g" && (e.ctrlKey || e.metaKey));
       if ((tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT"
-          || e.target?.isContentEditable) && !isPaletteKey) {
+          || e.target?.isContentEditable) && !isPaletteKey && !isJumpKey) {
         return;
       }
       if (filteredShots.length === 0) return;
@@ -2167,6 +2190,11 @@ function VideoPanel() {
         // R76a: Ctrl+K / Cmd+K opens the command palette
         e.preventDefault();
         setCommandPaletteOpen();
+      } else if (e.key === "g" && (e.ctrlKey || e.metaKey)) {
+        // R82b: Ctrl+G / Cmd+G opens jump-to-shot
+        e.preventDefault();
+        setJumpToInput("");
+        setShowJumpTo(true);
       } else if (e.key === "f" && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
         // R77b: F toggles focus mode (when no other modifier)
         e.preventDefault();
@@ -2333,11 +2361,30 @@ function VideoPanel() {
   };
 
   const setColorLabel = async (id, colorKey) => {
+    // R82a: dedicated endpoint — the generic PUT whitelist drops color_label.
     try {
-      await api.put(`/api/video/shots/${id}`, { color_label: colorKey });
+      await api.post(`/api/video/shots/${id}/color-label`, { color: colorKey });
       await refresh();
     } catch (e) {
       setError("Failed to set color label");
+    }
+  };
+
+  // R82a: bulk color-label apply from the multi-select bar.
+  const batchColorLabel = async (colorKey) => {
+    if (selected.size === 0) return;
+    try {
+      const res = await api.post("/api/video/batch-color-label", {
+        shot_ids: Array.from(selected),
+        color: colorKey,
+      });
+      addToast(colorKey
+        ? `Labeled ${res.changed} shot(s) ${colorKey}`
+        : `Cleared label on ${res.changed} shot(s)`,
+        res.changed > 0 ? "success" : "info");
+      await refresh();
+    } catch (e) {
+      addToast("Color label failed: " + (e.message || "unknown"), "error");
     }
   };
 
@@ -3170,6 +3217,38 @@ function VideoPanel() {
     setCommandQuery("");
     setCommandSelectedIdx(0);
     setShowCommandPalette(true);
+  };
+
+  // R82b: jump to the Nth shot in the current filtered list. Accepts
+  // either a plain 1-based index ("7") or a title match (any string
+  // that appears in a shot's title, case-insensitive — first hit wins).
+  // Returns true on success so the modal can close + clear state.
+  const jumpToShot = (input) => {
+    const q = (input || "").trim();
+    if (!q || filteredShots.length === 0) return false;
+    let targetIdx = -1;
+    if (/^\d+$/.test(q)) {
+      const n = parseInt(q, 10);
+      if (n >= 1 && n <= filteredShots.length) {
+        targetIdx = n - 1;
+      }
+    }
+    if (targetIdx === -1) {
+      const needle = q.toLowerCase();
+      targetIdx = filteredShots.findIndex(s =>
+        (s.title || "").toLowerCase().includes(needle));
+    }
+    if (targetIdx === -1) {
+      addToast(`No shot matches "${q}"`, "error");
+      return false;
+    }
+    setFocusedShotIndex(targetIdx);
+    setTimeout(() => {
+      const card = document.querySelector(
+        `[data-shot-id="${filteredShots[targetIdx]?.id}"]`);
+      if (card) card.scrollIntoView({block: "center", behavior: "smooth"});
+    }, 0);
+    return true;
   };
 
   // The list of commands available to the palette. Each entry:
@@ -5367,6 +5446,47 @@ function VideoPanel() {
         </div>
       )}
 
+      {/* R82b: jump-to-shot modal — Ctrl+G */}
+      {showJumpTo && (
+        <div className="jump-to-shot-modal fixed inset-0 bg-black/70 z-50 flex items-start justify-center p-4 pt-32"
+             onClick={() => { setShowJumpTo(false); setJumpToInput(""); }}>
+          <div className="bg-slate-900 border border-cyan-600/40 rounded-xl p-4 max-w-md w-full space-y-3"
+               onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-cyan-200">Jump to shot</h2>
+              <button onClick={() => { setShowJumpTo(false); setJumpToInput(""); }}
+                className="text-slate-400 hover:text-slate-200 text-xl leading-none">&times;</button>
+            </div>
+            <input
+              type="text"
+              autoFocus
+              value={jumpToInput}
+              onChange={(e) => setJumpToInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  if (jumpToShot(jumpToInput)) {
+                    setShowJumpTo(false);
+                    setJumpToInput("");
+                  }
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  setShowJumpTo(false);
+                  setJumpToInput("");
+                }
+              }}
+              placeholder={`Shot # (1–${filteredShots.length}) or title…`}
+              className="jump-to-input w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-cyan-500 focus:outline-none"
+            />
+            <div className="text-[10px] text-slate-500">
+              Enter a 1-based position within the current filtered view,
+              or a fragment of a shot's title. <kbd className="px-1 rounded bg-slate-800 border border-slate-700">Enter</kbd> to jump,{" "}
+              <kbd className="px-1 rounded bg-slate-800 border border-slate-700">Esc</kbd> to cancel.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* R66a: keyboard shortcuts cheatsheet — toggle with '?' */}
       {showShortcuts && (
         <div className="shortcuts-modal fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
@@ -5382,6 +5502,7 @@ function VideoPanel() {
               {[
                 ["?", "Show/hide this panel"],
                 ["Ctrl+K", "Open command palette (any action by name)"],
+                ["Ctrl+G", "Jump to shot by number or title"],
                 ["F", "Toggle focus mode (hide toolbars)"],
                 ["N", "Create a new shot"],
                 ["↑ / ↓", "Focus previous / next shot"],
