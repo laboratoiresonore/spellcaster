@@ -23,6 +23,35 @@ import base64
 import traceback
 
 
+def _script_dir():
+    """Best-effort lookup of the directory this script lives in.
+
+    DaVinci Resolve's Workspace > Scripts menu exec()'s scripts in a
+    context where ``__file__`` is NOT defined (NameError). We probe a
+    few fallbacks before giving up:
+      1. ``__file__`` when it works (dev runs, REPL).
+      2. Standard Resolve Scripts location for each OS.
+    """
+    try:
+        return os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        pass
+    if os.name == "nt":
+        appdata = os.environ.get("APPDATA", "")
+        if appdata:
+            return os.path.join(
+                appdata, "Blackmagic Design", "DaVinci Resolve",
+                "Support", "Fusion", "Scripts", "Utility", "Spellcaster")
+    elif sys.platform == "darwin":
+        return os.path.expanduser(
+            "~/Library/Application Support/Blackmagic Design/DaVinci Resolve"
+            "/Fusion/Scripts/Utility/Spellcaster")
+    else:
+        return os.path.expanduser(
+            "~/.local/share/DaVinciResolve/Fusion/Scripts/Utility/Spellcaster")
+    return ""
+
+
 def _locate_shared():
     """Add the shared/ dir to sys.path.
 
@@ -30,7 +59,9 @@ def _locate_shared():
     file), then the dev layout (shared/ at plugins/resolve/shared/
     relative to plugins/resolve/scripts/), then the legacy fallback.
     """
-    here = os.path.dirname(os.path.abspath(__file__))
+    here = _script_dir()
+    if not here:
+        return False
     for cand in (
         os.path.join(here, "shared"),                    # installed layout
         os.path.normpath(os.path.join(here, "..", "shared")),        # dev layout
