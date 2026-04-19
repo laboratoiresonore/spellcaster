@@ -5819,11 +5819,24 @@ def _api_post_json(server, path, data):
 
 
 def _find_output_node(workflow):
-    """Find the output node ID in a workflow (SaveImage, VHS_VideoCombine, etc.)."""
-    OUTPUT_TYPES = {"SaveImage", "VHS_VideoCombine", "SaveVideo",
-                    "PreviewImage", "SaveAnimatedWEBP"}
+    """Find the output node ID in a workflow (SaveImage, VHS_VideoCombine, etc.).
+
+    Prefers VIDEO output classes over still-image classes. WAN + LTX
+    workflows often declare intermediate SaveImage / PreviewImage nodes
+    alongside the final VHS_VideoCombine — returning the SaveImage
+    steered the animated-avatar poll to pick a single frame instead of
+    the video. We now walk the workflow twice: first for any video-
+    producing class, then for any image class as fallback.
+    """
+    VIDEO_TYPES = {"VHS_VideoCombine", "SaveVideo", "SaveAnimatedWEBP"}
+    IMAGE_TYPES = {"SaveImage", "PreviewImage"}
+    # Pass 1: videos win
     for nid, node in workflow.items():
-        if isinstance(node, dict) and node.get("class_type") in OUTPUT_TYPES:
+        if isinstance(node, dict) and node.get("class_type") in VIDEO_TYPES:
+            return nid
+    # Pass 2: still images
+    for nid, node in workflow.items():
+        if isinstance(node, dict) and node.get("class_type") in IMAGE_TYPES:
             return nid
     return None
 
@@ -7059,16 +7072,24 @@ def _poll_animated_avatars(comfy_url):
                     _save_anim_queue()
                     continue
 
-                # Look for output
+                # Look for output. CRITICAL: videos take priority over
+                # still images, across EVERY output node — not just the
+                # preferred one. WAN + LTX workflows often emit
+                # SaveImage / PreviewImage nodes alongside the video
+                # encoder, and if we stop on the first images hit the
+                # user ends up with a 1-frame "animated" avatar. We
+                # now do two full passes: videos across all nodes,
+                # then images as fallback.
                 outputs = hist.get("outputs", {})
                 result_url = None
                 output_nid = entry.get("output_nid")
+                ordered_nids = ([output_nid] if output_nid else []) + [
+                    n for n in outputs.keys() if n != output_nid
+                ]
 
-                # Try the known output node first, then scan all
-                check_nids = ([output_nid] if output_nid else []) + list(outputs.keys())
-                for nid in check_nids:
+                # Pass 1: videos (gifs=VHS_VideoCombine, videos=SaveVideo)
+                for nid in ordered_nids:
                     out = outputs.get(nid, {})
-                    # Videos (VHS_VideoCombine → "gifs", SaveVideo → "videos")
                     for vkey in ("gifs", "videos"):
                         items = out.get(vkey, [])
                         if items:
@@ -7079,14 +7100,32 @@ def _poll_animated_avatars(comfy_url):
                             break
                     if result_url:
                         break
-                    # Images fallback
-                    imgs = out.get("images", [])
-                    if imgs:
-                        im = imgs[0]
-                        result_url = (f"{comfy_url}/view?filename={im['filename']}"
-                                      f"&subfolder={im.get('subfolder', '')}"
-                                      f"&type={im.get('type', 'output')}")
-                        break
+
+                # Pass 2: fall back to still images only when there's
+                # NO video anywhere — genuinely image-producing flows
+                # (WAN with save_raw=True or similar) still work.
+                if not result_url:
+                    for nid in ordered_nids:
+                        imgs = outputs.get(nid, {}).get("images", [])
+                        if imgs:
+                            im = imgs[0]
+                            # Extra guard: animated-avatar jobs should
+                            # only accept animated WEBPs here. Anything
+                            # ending .png/.jpg is a frame sample, not
+                            # the final animation — ignore it and keep
+                            # waiting (the VHS_VideoCombine output
+                            # arrives a moment later).
+                            fn = (im.get("filename") or "").lower()
+                            engine = entry.get("engine", "")
+                            if (engine in ("wan", "ltx") and
+                                    not fn.endswith((".webp", ".gif",
+                                                      ".mp4", ".webm",
+                                                      ".mov"))):
+                                continue
+                            result_url = (f"{comfy_url}/view?filename={im['filename']}"
+                                          f"&subfolder={im.get('subfolder', '')}"
+                                          f"&type={im.get('type', 'output')}")
+                            break
 
                 if result_url:
                     # Cache locally BEFORE privacy cleanup wipes ComfyUI files
