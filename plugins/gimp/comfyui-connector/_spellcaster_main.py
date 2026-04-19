@@ -11560,6 +11560,12 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-iclight": "iclight",
             "spellcaster-klein-detail": "klein_flux2",
             "spellcaster-klein-generate": "klein_flux2",
+            "spellcaster-klein-auto-inpaint": "klein_flux2",
+            "spellcaster-klein-sam3-inpaint": "klein_flux2",
+            "spellcaster-klein-refine": "klein_flux2",
+            "spellcaster-klein-face-detail": "klein_flux2",
+            "spellcaster-klein-color-match": "klein_flux2",
+            "spellcaster-klein-virtual-tryon": "klein_flux2",
             "spellcaster-generate-anything": None,  # works with all models
             "spellcaster-settings": None,
             "spellcaster-my-presets": None,
@@ -11683,6 +11689,18 @@ class Spellcaster(Gimp.PlugIn):
                                           "Enhance any region — face, eyes, hands, skin, hair, clothing"),
             "spellcaster-klein-generate": ("Generate Object...", self._run_klein_generate,
                                             "Generate any object as a transparent layer — matches scene lighting"),
+            "spellcaster-klein-auto-inpaint": ("Klein Auto-Inpaint... (Florence)", self._run_klein_auto_inpaint,
+                                                "Florence2 auto-mask + Klein inpaint — describe what to replace, no mask painting"),
+            "spellcaster-klein-sam3-inpaint": ("Klein SAM3 Inpaint...", self._run_klein_sam3_inpaint,
+                                                "SAM3 segment + Klein inpaint — optionally guided by a reference image"),
+            "spellcaster-klein-refine": ("Klein Refine...", self._run_klein_refine,
+                                          "Multi-reference Klein refine — LineArt/HED/Tile/Depth structural enhancement"),
+            "spellcaster-klein-face-detail": ("Klein Face Detailer...", self._run_klein_face_detail,
+                                               "YOLO face detection + Klein high-detail regeneration of each face"),
+            "spellcaster-klein-color-match": ("Klein Color Match...", self._run_klein_color_match,
+                                               "ColorMatchV2 — harmonize image colors against a reference photo (no diffusion)"),
+            "spellcaster-klein-virtual-tryon": ("Klein Virtual Try-On...", self._run_klein_virtual_tryon,
+                                                 "4-reference photoshoot — face + outfit + optional background + pose"),
             "spellcaster-generate-anything": ("Generate Anything...", self._run_generate_anything,
                                                "Generate any object as a transparent layer — works with ALL models"),
             "spellcaster-ltx-t2v": ("LTX 2.3 Text to Video...", self._run_ltx_t2v,
@@ -11802,6 +11820,12 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-klein-inpaint":     f"{_S}/Flux 2",
             "spellcaster-klein-detail":      f"{_S}/Flux 2",
             "spellcaster-klein-generate":    f"{_S}/Flux 2",
+            "spellcaster-klein-auto-inpaint":  f"{_S}/Klein",
+            "spellcaster-klein-sam3-inpaint":  f"{_S}/Klein",
+            "spellcaster-klein-refine":        f"{_S}/Klein",
+            "spellcaster-klein-face-detail":   f"{_S}/Klein",
+            "spellcaster-klein-color-match":   f"{_S}/Klein",
+            "spellcaster-klein-virtual-tryon": f"{_S}/Klein",
 
             # Enhance — fix, upscale, restore
             "spellcaster-upscale":           f"{_S}/Enhance",
@@ -15989,6 +16013,944 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Klein Generate Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Klein Auto-Inpaint (Florence2 mask + Klein inpaint) ──────────
+    def _run_klein_auto_inpaint(self, procedure, run_mode, image, drawables, config, data):
+        """Klein Auto-Inpaint: Florence2 auto-mask + Klein inpaint."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # Preflight: Florence2
+        srv_probe = COMFYUI_DEFAULT_URL
+        try:
+            _api_get(srv_probe, "/object_info/Florence2ModelLoader")
+        except Exception:
+            try:
+                _api_get(srv_probe, "/object_info/DownloadAndLoadFlorence2Model")
+            except Exception:
+                Gimp.message(
+                    "Florence2 node pack is not installed on your ComfyUI server.\n\n"
+                    "Install ComfyUI-Florence2 (kijai) via ComfyUI Manager,\n"
+                    "then restart ComfyUI.\n\n"
+                    f"Server checked: {srv_probe}")
+                return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        GimpUi.init("spellcaster")
+        dlg = Gtk.Dialog(title="Spellcaster — Klein Auto-Inpaint (Florence)")
+        dlg.set_default_size(520, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Inpaint", Gtk.ResponseType.OK)
+        _style_dialog_buttons(dlg)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+        _hdr = _make_branded_header()
+        if _hdr: bx.pack_start(_hdr, False, False, 0)
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
+        hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
+        # Klein model
+        bx.pack_start(Gtk.Label(label="Klein Model:", xalign=0), False, False, 0)
+        klein_combo = Gtk.ComboBoxText()
+        for k in KLEIN_MODELS: klein_combo.append(k, k)
+        klein_combo.set_active_id("Klein 9B")
+        klein_combo.set_tooltip_text("Flux 2 Klein model variant (9B = best quality, 4B = faster).")
+        bx.pack_start(klein_combo, False, False, 0)
+        # Mask prompt
+        bx.pack_start(Gtk.Label(label="What to mask (Florence2 target):", xalign=0), False, False, 0)
+        mask_e = Gtk.Entry()
+        mask_e.set_placeholder_text("the shirt, her hair, the background...")
+        mask_e.set_tooltip_text("Florence2 referring-expression segmentation:\n'the shirt', 'his face', 'the dog', 'the sky'.")
+        bx.pack_start(mask_e, False, False, 0)
+        # Inpaint prompt
+        bx.pack_start(Gtk.Label(label="Replacement prompt:", xalign=0), False, False, 0)
+        prompt_tv = Gtk.TextView(); prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        prompt_tv.set_size_request(-1, 60)
+        prompt_tv.set_tooltip_text("Describe what should appear in the masked area.")
+        sw = Gtk.ScrolledWindow(); sw.set_min_content_height(60); sw.add(prompt_tv)
+        bx.pack_start(sw, False, False, 0)
+        # Parameters
+        grid = Gtk.Grid(column_spacing=8, row_spacing=4)
+        grid.attach(Gtk.Label(label="Steps:", xalign=1), 0, 0, 1, 1)
+        steps_sp = Gtk.SpinButton.new_with_range(1, 50, 1); steps_sp.set_value(4)
+        steps_sp.set_tooltip_text("Klein default is 4.")
+        grid.attach(steps_sp, 1, 0, 1, 1)
+        grid.attach(Gtk.Label(label="Denoise:", xalign=1), 2, 0, 1, 1)
+        denoise_sp = Gtk.SpinButton.new_with_range(0.1, 1.0, 0.05); denoise_sp.set_value(1.0)
+        denoise_sp.set_digits(2)
+        denoise_sp.set_tooltip_text("Inpaint strength. 1.0 = full regeneration of the masked region.")
+        grid.attach(denoise_sp, 3, 0, 1, 1)
+        grid.attach(Gtk.Label(label="Guidance:", xalign=1), 0, 1, 1, 1)
+        guidance_sp = Gtk.SpinButton.new_with_range(0.5, 10.0, 0.5); guidance_sp.set_value(1.0)
+        guidance_sp.set_digits(1)
+        guidance_sp.set_tooltip_text("CFG. 1.0 for Klein.")
+        grid.attach(guidance_sp, 1, 1, 1, 1)
+        grid.attach(Gtk.Label(label="Seed:", xalign=1), 2, 1, 1, 1)
+        seed_sp = Gtk.SpinButton.new_with_range(-1, 2**32-1, 1); seed_sp.set_value(-1)
+        grid.attach(seed_sp, 3, 1, 1, 1)
+        bx.pack_start(grid, False, False, 0)
+        # Enhance toggle
+        enhance_cb = Gtk.CheckButton(label="Auto-enhance prompt (LLM)")
+        enhance_cb.set_active(True)
+        enhance_cb.set_tooltip_text("Rewrite prompt via local LLM before sending to Klein.")
+        bx.pack_start(enhance_cb, False, False, 0)
+        _add_runs_spinner(dlg, bx)
+        bx.show_all()
+        last = _SESSION.get("klein_auto_inpaint")
+        if last:
+            if "klein_model" in last: klein_combo.set_active_id(last["klein_model"])
+            if "mask_prompt" in last: mask_e.set_text(last["mask_prompt"])
+            if "prompt" in last: prompt_tv.get_buffer().set_text(last["prompt"])
+            if "steps" in last: steps_sp.set_value(last["steps"])
+            if "denoise" in last: denoise_sp.set_value(last["denoise"])
+            if "guidance" in last: guidance_sp.set_value(last["guidance"])
+            if "enhance" in last: enhance_cb.set_active(bool(last["enhance"]))
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        srv = se.get_text().strip(); _propagate_server_url(srv)
+        klein_key = klein_combo.get_active_id() or "Klein 9B"
+        mask_prompt = mask_e.get_text().strip()
+        pbuf = prompt_tv.get_buffer()
+        inpaint_prompt = pbuf.get_text(pbuf.get_start_iter(), pbuf.get_end_iter(), False)
+        steps = int(steps_sp.get_value())
+        denoise = denoise_sp.get_value()
+        guidance = guidance_sp.get_value()
+        base_seed = int(seed_sp.get_value())
+        if base_seed < 0: base_seed = random.randint(0, 2**32 - 1)
+        enhance = enhance_cb.get_active()
+        runs = int(dlg._runs_spin.get_value())
+        _SESSION["klein_auto_inpaint"] = {
+            "klein_model": klein_key, "mask_prompt": mask_prompt,
+            "prompt": inpaint_prompt, "steps": steps, "denoise": denoise,
+            "guidance": guidance, "enhance": enhance,
+        }
+        _save_session()
+        dlg.destroy()
+        if not mask_prompt:
+            Gimp.message("Type what to mask (e.g. 'the shirt').")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        if not inpaint_prompt.strip():
+            Gimp.message("Type a replacement prompt.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        try:
+            _update_spinner_status("Klein Auto-Inpaint: exporting image...")
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_klauto_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            _prompt = inpaint_prompt
+            if enhance:
+                _prompt, _ = _auto_enhance(inpaint_prompt, "flux2klein")
+            for run_i in range(runs):
+                seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+                wf = build_klein_auto_inpaint(
+                    uname, mask_prompt, _prompt, seed,
+                    klein_model_key=klein_key,
+                    steps=steps, denoise=denoise, guidance=guidance,
+                )
+                label = f"Klein Auto-Inpaint run {run_i+1}/{runs}" if runs > 1 else "Klein Auto-Inpaint"
+                _wf = wf
+                results = _run_with_spinner(f"{label}: processing...",
+                                             lambda: list(_run_comfyui_workflow(srv, _wf, timeout=300)))
+                for i, (fn, sf, ft) in enumerate(results):
+                    lbl = f"{label} #{i+1}"
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
+            _LAST_PROCEDURE["name"] = "spellcaster-klein-auto-inpaint"
+            _LAST_PROCEDURE["session_key"] = "klein_auto_inpaint"
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Klein Auto-Inpaint Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Klein SAM3 Inpaint ──────────────────────────────────────────
+    def _run_klein_sam3_inpaint(self, procedure, run_mode, image, drawables, config, data):
+        """Klein SAM3 Inpaint: SAM3 segment + Klein inpaint, optional reference."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        srv_probe = COMFYUI_DEFAULT_URL
+        try:
+            _api_get(srv_probe, "/object_info/SAM3Segment")
+        except Exception:
+            Gimp.message(
+                "SAM3 node pack is not installed on your ComfyUI server.\n\n"
+                "Install via ComfyUI Manager (search 'SAM3'), then restart.\n\n"
+                f"Server checked: {srv_probe}")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        GimpUi.init("spellcaster")
+        dlg = Gtk.Dialog(title="Spellcaster — Klein SAM3 Inpaint")
+        dlg.set_default_size(540, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Inpaint", Gtk.ResponseType.OK)
+        _style_dialog_buttons(dlg)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+        _hdr = _make_branded_header()
+        if _hdr: bx.pack_start(_hdr, False, False, 0)
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
+        hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
+        # Klein model
+        bx.pack_start(Gtk.Label(label="Klein Model:", xalign=0), False, False, 0)
+        klein_combo = Gtk.ComboBoxText()
+        for k in KLEIN_MODELS: klein_combo.append(k, k)
+        klein_combo.set_active_id("Klein 9B")
+        bx.pack_start(klein_combo, False, False, 0)
+        # Segment prompt
+        bx.pack_start(Gtk.Label(label="What to detect (SAM3):", xalign=0), False, False, 0)
+        seg_e = Gtk.Entry()
+        seg_e.set_placeholder_text("person, shirt, hair, background...")
+        seg_e.set_tooltip_text("SAM3 text prompt — what to segment.")
+        bx.pack_start(seg_e, False, False, 0)
+        # Inpaint prompt
+        bx.pack_start(Gtk.Label(label="Replacement prompt:", xalign=0), False, False, 0)
+        prompt_tv = Gtk.TextView(); prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        prompt_tv.set_size_request(-1, 60)
+        sw = Gtk.ScrolledWindow(); sw.set_min_content_height(60); sw.add(prompt_tv)
+        bx.pack_start(sw, False, False, 0)
+        # Optional reference image
+        bx.pack_start(Gtk.Label(label="Reference image (optional, for identity/style):", xalign=0), False, False, 0)
+        hf = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        ref_entry = Gtk.Entry()
+        ref_entry.set_placeholder_text("Leave empty for text-only inpaint...")
+        ref_entry.set_hexpand(True)
+        ref_entry.set_tooltip_text("Optional: the reference is BiRefNet-cut and VAE-encoded as a ReferenceLatent.")
+        hf.pack_start(ref_entry, True, True, 0)
+        def _browse_ref(*_a):
+            fc = Gtk.FileChooserDialog(title="Select Reference Image",
+                                       action=Gtk.FileChooserAction.OPEN)
+            fc.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+            fc.add_button("_Open", Gtk.ResponseType.OK)
+            ff = Gtk.FileFilter(); ff.set_name("Images")
+            for ext in ["*.png", "*.jpg", "*.jpeg", "*.webp"]: ff.add_pattern(ext)
+            fc.add_filter(ff)
+            if fc.run() == Gtk.ResponseType.OK:
+                ref_entry.set_text(fc.get_filename())
+            fc.destroy()
+        browse_btn = Gtk.Button(label="Browse...")
+        browse_btn.connect("clicked", _browse_ref)
+        hf.pack_start(browse_btn, False, False, 0)
+        bx.pack_start(hf, False, False, 0)
+        # Parameters
+        grid = Gtk.Grid(column_spacing=8, row_spacing=4)
+        grid.attach(Gtk.Label(label="Steps:", xalign=1), 0, 0, 1, 1)
+        steps_sp = Gtk.SpinButton.new_with_range(1, 50, 1); steps_sp.set_value(10)
+        grid.attach(steps_sp, 1, 0, 1, 1)
+        grid.attach(Gtk.Label(label="Guidance:", xalign=1), 2, 0, 1, 1)
+        guidance_sp = Gtk.SpinButton.new_with_range(0.5, 10.0, 0.5); guidance_sp.set_value(1.0)
+        guidance_sp.set_digits(1)
+        grid.attach(guidance_sp, 3, 0, 1, 1)
+        grid.attach(Gtk.Label(label="Mask expand:", xalign=1), 0, 1, 1, 1)
+        expand_sp = Gtk.SpinButton.new_with_range(0, 500, 5); expand_sp.set_value(120)
+        expand_sp.set_tooltip_text("Grow the SAM3 mask by N pixels.")
+        grid.attach(expand_sp, 1, 1, 1, 1)
+        grid.attach(Gtk.Label(label="Mask blur:", xalign=1), 2, 1, 1, 1)
+        blur_sp = Gtk.SpinButton.new_with_range(0, 100, 1); blur_sp.set_value(15)
+        blur_sp.set_tooltip_text("Feather radius on the grown mask.")
+        grid.attach(blur_sp, 3, 1, 1, 1)
+        grid.attach(Gtk.Label(label="Confidence:", xalign=1), 0, 2, 1, 1)
+        conf_sp = Gtk.SpinButton.new_with_range(0.1, 1.0, 0.05); conf_sp.set_value(0.6)
+        conf_sp.set_digits(2)
+        conf_sp.set_tooltip_text("SAM3 detection threshold.")
+        grid.attach(conf_sp, 1, 2, 1, 1)
+        grid.attach(Gtk.Label(label="Seed:", xalign=1), 2, 2, 1, 1)
+        seed_sp = Gtk.SpinButton.new_with_range(-1, 2**32-1, 1); seed_sp.set_value(-1)
+        grid.attach(seed_sp, 3, 2, 1, 1)
+        bx.pack_start(grid, False, False, 0)
+        # Enhance toggle
+        enhance_cb = Gtk.CheckButton(label="Auto-enhance prompt (LLM)")
+        enhance_cb.set_active(False)
+        bx.pack_start(enhance_cb, False, False, 0)
+        _add_runs_spinner(dlg, bx)
+        bx.show_all()
+        last = _SESSION.get("klein_sam3_inpaint")
+        if last:
+            if "klein_model" in last: klein_combo.set_active_id(last["klein_model"])
+            if "segment_prompt" in last: seg_e.set_text(last["segment_prompt"])
+            if "prompt" in last: prompt_tv.get_buffer().set_text(last["prompt"])
+            if "ref_file" in last: ref_entry.set_text(last["ref_file"])
+            if "steps" in last: steps_sp.set_value(last["steps"])
+            if "guidance" in last: guidance_sp.set_value(last["guidance"])
+            if "mask_expand" in last: expand_sp.set_value(last["mask_expand"])
+            if "mask_blur" in last: blur_sp.set_value(last["mask_blur"])
+            if "confidence" in last: conf_sp.set_value(last["confidence"])
+            if "enhance" in last: enhance_cb.set_active(bool(last["enhance"]))
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        srv = se.get_text().strip(); _propagate_server_url(srv)
+        klein_key = klein_combo.get_active_id() or "Klein 9B"
+        seg_prompt = seg_e.get_text().strip()
+        pbuf = prompt_tv.get_buffer()
+        inpaint_prompt = pbuf.get_text(pbuf.get_start_iter(), pbuf.get_end_iter(), False)
+        ref_file = ref_entry.get_text().strip() or None
+        steps = int(steps_sp.get_value())
+        guidance = guidance_sp.get_value()
+        mask_expand = int(expand_sp.get_value())
+        mask_blur = int(blur_sp.get_value())
+        confidence = conf_sp.get_value()
+        base_seed = int(seed_sp.get_value())
+        if base_seed < 0: base_seed = random.randint(0, 2**32 - 1)
+        enhance = enhance_cb.get_active()
+        runs = int(dlg._runs_spin.get_value())
+        _SESSION["klein_sam3_inpaint"] = {
+            "klein_model": klein_key, "segment_prompt": seg_prompt,
+            "prompt": inpaint_prompt, "ref_file": ref_file or "",
+            "steps": steps, "guidance": guidance,
+            "mask_expand": mask_expand, "mask_blur": mask_blur,
+            "confidence": confidence, "enhance": enhance,
+        }
+        _save_session()
+        dlg.destroy()
+        if not seg_prompt:
+            Gimp.message("Type what to detect (e.g. 'person').")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        if not inpaint_prompt.strip():
+            Gimp.message("Type a replacement prompt.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        try:
+            _update_spinner_status("Klein SAM3 Inpaint: exporting image...")
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_klsam3_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            ref_name = None
+            if ref_file:
+                ref_name = f"gimp_klsam3ref_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, ref_file, ref_name)
+            _prompt = inpaint_prompt
+            if enhance:
+                _prompt, _ = _auto_enhance(inpaint_prompt, "flux2klein")
+            for run_i in range(runs):
+                seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+                wf = build_klein_sam3_inpaint(
+                    uname, seg_prompt, _prompt, seed,
+                    ref_filename=ref_name,
+                    klein_model_key=klein_key,
+                    steps=steps, guidance=guidance,
+                    mask_expand=mask_expand, mask_blur=mask_blur,
+                    confidence=confidence,
+                )
+                label = f"Klein SAM3 Inpaint run {run_i+1}/{runs}" if runs > 1 else "Klein SAM3 Inpaint"
+                _wf = wf
+                results = _run_with_spinner(f"{label}: processing...",
+                                             lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
+                for i, (fn, sf, ft) in enumerate(results):
+                    lbl = f"{label} #{i+1}"
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
+            _LAST_PROCEDURE["name"] = "spellcaster-klein-sam3-inpaint"
+            _LAST_PROCEDURE["session_key"] = "klein_sam3_inpaint"
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Klein SAM3 Inpaint Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Klein Refine (multi-reference structural enhancement) ────────
+    def _run_klein_refine(self, procedure, run_mode, image, drawables, config, data):
+        """Klein Refine: multi-reference structural enhancement."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+        dlg = Gtk.Dialog(title="Spellcaster — Klein Refine")
+        dlg.set_default_size(520, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Refine", Gtk.ResponseType.OK)
+        _style_dialog_buttons(dlg)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+        _hdr = _make_branded_header()
+        if _hdr: bx.pack_start(_hdr, False, False, 0)
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
+        hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
+        # Klein model
+        bx.pack_start(Gtk.Label(label="Klein Model:", xalign=0), False, False, 0)
+        klein_combo = Gtk.ComboBoxText()
+        for k in KLEIN_MODELS: klein_combo.append(k, k)
+        klein_combo.set_active_id("Klein 9B")
+        bx.pack_start(klein_combo, False, False, 0)
+        # Refinement prompt
+        bx.pack_start(Gtk.Label(label="Refinement prompt:", xalign=0), False, False, 0)
+        prompt_tv = Gtk.TextView(); prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        prompt_tv.set_size_request(-1, 60)
+        prompt_tv.get_buffer().set_text(
+            "cinematic studio lighting, ultra-realistic skin texture, "
+            "sharp details, professional photography, 8k resolution")
+        prompt_tv.set_tooltip_text("Describe the desired look — lighting, detail, quality.")
+        sw = Gtk.ScrolledWindow(); sw.set_min_content_height(60); sw.add(prompt_tv)
+        bx.pack_start(sw, False, False, 0)
+        # Preprocessor toggles
+        bx.pack_start(Gtk.Label(label="Preprocessors (structural references):", xalign=0), False, False, 0)
+        pp_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        pp_lineart = Gtk.CheckButton(label="LineArt"); pp_lineart.set_active(True)
+        pp_hed = Gtk.CheckButton(label="HED"); pp_hed.set_active(True)
+        pp_tile = Gtk.CheckButton(label="Tile"); pp_tile.set_active(True)
+        pp_depth = Gtk.CheckButton(label="Depth"); pp_depth.set_active(True)
+        for cb in (pp_lineart, pp_hed, pp_tile, pp_depth):
+            pp_box.pack_start(cb, False, False, 0)
+        bx.pack_start(pp_box, False, False, 0)
+        # Parameters
+        grid = Gtk.Grid(column_spacing=8, row_spacing=4)
+        grid.attach(Gtk.Label(label="Steps:", xalign=1), 0, 0, 1, 1)
+        steps_sp = Gtk.SpinButton.new_with_range(1, 50, 1); steps_sp.set_value(4)
+        grid.attach(steps_sp, 1, 0, 1, 1)
+        grid.attach(Gtk.Label(label="Guidance:", xalign=1), 2, 0, 1, 1)
+        guidance_sp = Gtk.SpinButton.new_with_range(0.5, 10.0, 0.5); guidance_sp.set_value(1.0)
+        guidance_sp.set_digits(1)
+        grid.attach(guidance_sp, 3, 0, 1, 1)
+        grid.attach(Gtk.Label(label="Seed:", xalign=1), 0, 1, 1, 1)
+        seed_sp = Gtk.SpinButton.new_with_range(-1, 2**32-1, 1); seed_sp.set_value(-1)
+        grid.attach(seed_sp, 1, 1, 1, 1)
+        bx.pack_start(grid, False, False, 0)
+        # Enhance toggle
+        enhance_cb = Gtk.CheckButton(label="Auto-enhance prompt (LLM)")
+        enhance_cb.set_active(False)
+        bx.pack_start(enhance_cb, False, False, 0)
+        _add_runs_spinner(dlg, bx)
+        bx.show_all()
+        last = _SESSION.get("klein_refine")
+        if last:
+            if "klein_model" in last: klein_combo.set_active_id(last["klein_model"])
+            if "prompt" in last: prompt_tv.get_buffer().set_text(last["prompt"])
+            if "preprocessors" in last:
+                pps = set(last["preprocessors"] or [])
+                pp_lineart.set_active("lineart" in pps)
+                pp_hed.set_active("hed" in pps)
+                pp_tile.set_active("tile" in pps)
+                pp_depth.set_active("depth" in pps)
+            if "steps" in last: steps_sp.set_value(last["steps"])
+            if "guidance" in last: guidance_sp.set_value(last["guidance"])
+            if "enhance" in last: enhance_cb.set_active(bool(last["enhance"]))
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        srv = se.get_text().strip(); _propagate_server_url(srv)
+        klein_key = klein_combo.get_active_id() or "Klein 9B"
+        pbuf = prompt_tv.get_buffer()
+        prompt = pbuf.get_text(pbuf.get_start_iter(), pbuf.get_end_iter(), False)
+        preprocessors = []
+        if pp_lineart.get_active(): preprocessors.append("lineart")
+        if pp_hed.get_active(): preprocessors.append("hed")
+        if pp_tile.get_active(): preprocessors.append("tile")
+        if pp_depth.get_active(): preprocessors.append("depth")
+        steps = int(steps_sp.get_value())
+        guidance = guidance_sp.get_value()
+        base_seed = int(seed_sp.get_value())
+        if base_seed < 0: base_seed = random.randint(0, 2**32 - 1)
+        enhance = enhance_cb.get_active()
+        runs = int(dlg._runs_spin.get_value())
+        _SESSION["klein_refine"] = {
+            "klein_model": klein_key, "prompt": prompt,
+            "preprocessors": preprocessors, "steps": steps,
+            "guidance": guidance, "enhance": enhance,
+        }
+        _save_session()
+        dlg.destroy()
+        if not preprocessors:
+            Gimp.message("Enable at least one preprocessor.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        try:
+            _update_spinner_status("Klein Refine: exporting image...")
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_klrefine_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            _prompt = prompt
+            if enhance:
+                _prompt, _ = _auto_enhance(prompt, "flux2klein")
+            for run_i in range(runs):
+                seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+                wf = build_klein_refine(
+                    uname, klein_key, _prompt, seed,
+                    steps=steps, guidance=guidance,
+                    preprocessors=preprocessors,
+                )
+                label = f"Klein Refine run {run_i+1}/{runs}" if runs > 1 else "Klein Refine"
+                _wf = wf
+                results = _run_with_spinner(f"{label}: processing...",
+                                             lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
+                for i, (fn, sf, ft) in enumerate(results):
+                    lbl = f"{label} #{i+1}"
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
+            _LAST_PROCEDURE["name"] = "spellcaster-klein-refine"
+            _LAST_PROCEDURE["session_key"] = "klein_refine"
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Klein Refine Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Klein Face Detailer (YOLO bbox + Klein face regen) ───────────
+    def _run_klein_face_detail(self, procedure, run_mode, image, drawables, config, data):
+        """Klein Face Detailer: YOLO face detection + Klein high-detail regen."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        srv_probe = COMFYUI_DEFAULT_URL
+        try:
+            _api_get(srv_probe, "/object_info/FaceDetailer")
+        except Exception:
+            Gimp.message(
+                "ComfyUI-Impact-Pack is not installed on your server.\n\n"
+                "Install via ComfyUI Manager (search 'Impact Pack'), then restart.\n"
+                "Also ensure face_yolov8m.pt is in models/ultralytics/bbox/.\n\n"
+                f"Server checked: {srv_probe}")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        GimpUi.init("spellcaster")
+        dlg = Gtk.Dialog(title="Spellcaster — Klein Face Detailer")
+        dlg.set_default_size(520, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Detail", Gtk.ResponseType.OK)
+        _style_dialog_buttons(dlg)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+        _hdr = _make_branded_header()
+        if _hdr: bx.pack_start(_hdr, False, False, 0)
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
+        hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
+        # Klein model
+        bx.pack_start(Gtk.Label(label="Klein Model:", xalign=0), False, False, 0)
+        klein_combo = Gtk.ComboBoxText()
+        for k in KLEIN_MODELS: klein_combo.append(k, k)
+        klein_combo.set_active_id("Klein 9B")
+        bx.pack_start(klein_combo, False, False, 0)
+        # Face prompt
+        bx.pack_start(Gtk.Label(label="Face prompt:", xalign=0), False, False, 0)
+        prompt_tv = Gtk.TextView(); prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        prompt_tv.set_size_request(-1, 60)
+        prompt_tv.get_buffer().set_text(
+            "detailed realistic face, sharp eyes, smooth skin, "
+            "natural lighting, high detail")
+        prompt_tv.set_tooltip_text("Describes how detected faces should be regenerated.")
+        sw = Gtk.ScrolledWindow(); sw.set_min_content_height(60); sw.add(prompt_tv)
+        bx.pack_start(sw, False, False, 0)
+        # Detector selector
+        bx.pack_start(Gtk.Label(label="Detector model:", xalign=0), False, False, 0)
+        det_combo = Gtk.ComboBoxText()
+        for d in ("bbox/face_yolov8m.pt", "bbox/face_yolov8n.pt", "bbox/face_yolov8s.pt"):
+            det_combo.append(d, d)
+        det_combo.set_active_id("bbox/face_yolov8m.pt")
+        det_combo.set_tooltip_text("YOLO face detector in models/ultralytics/.")
+        bx.pack_start(det_combo, False, False, 0)
+        # Parameters
+        grid = Gtk.Grid(column_spacing=8, row_spacing=4)
+        grid.attach(Gtk.Label(label="Steps:", xalign=1), 0, 0, 1, 1)
+        steps_sp = Gtk.SpinButton.new_with_range(1, 50, 1); steps_sp.set_value(4)
+        grid.attach(steps_sp, 1, 0, 1, 1)
+        grid.attach(Gtk.Label(label="Denoise:", xalign=1), 2, 0, 1, 1)
+        denoise_sp = Gtk.SpinButton.new_with_range(0.1, 1.0, 0.05); denoise_sp.set_value(0.4)
+        denoise_sp.set_digits(2)
+        denoise_sp.set_tooltip_text("How much to change each face. 0.3-0.5 recommended.")
+        grid.attach(denoise_sp, 3, 0, 1, 1)
+        grid.attach(Gtk.Label(label="Guidance:", xalign=1), 0, 1, 1, 1)
+        guidance_sp = Gtk.SpinButton.new_with_range(0.5, 10.0, 0.5); guidance_sp.set_value(1.0)
+        guidance_sp.set_digits(1)
+        grid.attach(guidance_sp, 1, 1, 1, 1)
+        grid.attach(Gtk.Label(label="Guide size:", xalign=1), 2, 1, 1, 1)
+        guide_sp = Gtk.SpinButton.new_with_range(128, 2048, 64); guide_sp.set_value(512)
+        guide_sp.set_tooltip_text("Target face crop size for regeneration.")
+        grid.attach(guide_sp, 3, 1, 1, 1)
+        grid.attach(Gtk.Label(label="Max size:", xalign=1), 0, 2, 1, 1)
+        max_sp = Gtk.SpinButton.new_with_range(128, 4096, 64); max_sp.set_value(1024)
+        grid.attach(max_sp, 1, 2, 1, 1)
+        grid.attach(Gtk.Label(label="Seed:", xalign=1), 2, 2, 1, 1)
+        seed_sp = Gtk.SpinButton.new_with_range(-1, 2**32-1, 1); seed_sp.set_value(-1)
+        grid.attach(seed_sp, 3, 2, 1, 1)
+        bx.pack_start(grid, False, False, 0)
+        # Enhance toggle
+        enhance_cb = Gtk.CheckButton(label="Auto-enhance prompt (LLM)")
+        enhance_cb.set_active(False)
+        bx.pack_start(enhance_cb, False, False, 0)
+        _add_runs_spinner(dlg, bx)
+        bx.show_all()
+        last = _SESSION.get("klein_face_detail")
+        if last:
+            if "klein_model" in last: klein_combo.set_active_id(last["klein_model"])
+            if "prompt" in last: prompt_tv.get_buffer().set_text(last["prompt"])
+            if "detector_model" in last: det_combo.set_active_id(last["detector_model"])
+            if "steps" in last: steps_sp.set_value(last["steps"])
+            if "denoise" in last: denoise_sp.set_value(last["denoise"])
+            if "guidance" in last: guidance_sp.set_value(last["guidance"])
+            if "guide_size" in last: guide_sp.set_value(last["guide_size"])
+            if "max_size" in last: max_sp.set_value(last["max_size"])
+            if "enhance" in last: enhance_cb.set_active(bool(last["enhance"]))
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        srv = se.get_text().strip(); _propagate_server_url(srv)
+        klein_key = klein_combo.get_active_id() or "Klein 9B"
+        pbuf = prompt_tv.get_buffer()
+        prompt = pbuf.get_text(pbuf.get_start_iter(), pbuf.get_end_iter(), False)
+        detector = det_combo.get_active_id() or "bbox/face_yolov8m.pt"
+        steps = int(steps_sp.get_value())
+        denoise = denoise_sp.get_value()
+        guidance = guidance_sp.get_value()
+        guide_size = int(guide_sp.get_value())
+        max_size = int(max_sp.get_value())
+        base_seed = int(seed_sp.get_value())
+        if base_seed < 0: base_seed = random.randint(0, 2**32 - 1)
+        enhance = enhance_cb.get_active()
+        runs = int(dlg._runs_spin.get_value())
+        _SESSION["klein_face_detail"] = {
+            "klein_model": klein_key, "prompt": prompt,
+            "detector_model": detector, "steps": steps, "denoise": denoise,
+            "guidance": guidance, "guide_size": guide_size,
+            "max_size": max_size, "enhance": enhance,
+        }
+        _save_session()
+        dlg.destroy()
+        try:
+            _update_spinner_status("Klein Face Detail: exporting image...")
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_klface_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            _prompt = prompt
+            if enhance:
+                _prompt, _ = _auto_enhance(prompt, "flux2klein")
+            for run_i in range(runs):
+                seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+                wf = build_klein_face_detail(
+                    uname, _prompt, seed,
+                    klein_model_key=klein_key,
+                    steps=steps, denoise=denoise, guidance=guidance,
+                    guide_size=guide_size, max_size=max_size,
+                    detector_model=detector,
+                )
+                label = f"Klein Face Detail run {run_i+1}/{runs}" if runs > 1 else "Klein Face Detail"
+                _wf = wf
+                results = _run_with_spinner(f"{label}: processing...",
+                                             lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
+                for i, (fn, sf, ft) in enumerate(results):
+                    lbl = f"{label} #{i+1}"
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
+            _LAST_PROCEDURE["name"] = "spellcaster-klein-face-detail"
+            _LAST_PROCEDURE["session_key"] = "klein_face_detail"
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Klein Face Detail Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Klein Color Match (ColorMatchV2, no diffusion) ───────────────
+    def _run_klein_color_match(self, procedure, run_mode, image, drawables, config, data):
+        """Klein Color Match: ColorMatchV2 to a reference image (no diffusion)."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        srv_probe = COMFYUI_DEFAULT_URL
+        try:
+            _api_get(srv_probe, "/object_info/ColorMatchV2")
+        except Exception:
+            Gimp.message(
+                "comfyui-kjnodes (ColorMatchV2) is not installed.\n\n"
+                "Install via ComfyUI Manager (search 'kjnodes'), then restart.\n\n"
+                f"Server checked: {srv_probe}")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        GimpUi.init("spellcaster")
+        dlg = Gtk.Dialog(title="Spellcaster — Klein Color Match")
+        dlg.set_default_size(500, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Match", Gtk.ResponseType.OK)
+        _style_dialog_buttons(dlg)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+        _hdr = _make_branded_header()
+        if _hdr: bx.pack_start(_hdr, False, False, 0)
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
+        hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
+        # Reference file picker
+        bx.pack_start(Gtk.Label(label="Reference image (color source):", xalign=0), False, False, 0)
+        hf = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        ref_entry = Gtk.Entry()
+        ref_entry.set_placeholder_text("Browse for a reference image...")
+        ref_entry.set_hexpand(True)
+        ref_entry.set_tooltip_text("The reference whose palette/grade will be transferred.")
+        hf.pack_start(ref_entry, True, True, 0)
+        def _browse_ref(*_a):
+            fc = Gtk.FileChooserDialog(title="Select Reference Image",
+                                       action=Gtk.FileChooserAction.OPEN)
+            fc.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+            fc.add_button("_Open", Gtk.ResponseType.OK)
+            ff = Gtk.FileFilter(); ff.set_name("Images")
+            for ext in ["*.png", "*.jpg", "*.jpeg", "*.webp"]: ff.add_pattern(ext)
+            fc.add_filter(ff)
+            if fc.run() == Gtk.ResponseType.OK:
+                ref_entry.set_text(fc.get_filename())
+            fc.destroy()
+        browse_btn = Gtk.Button(label="Browse...")
+        browse_btn.connect("clicked", _browse_ref)
+        hf.pack_start(browse_btn, False, False, 0)
+        bx.pack_start(hf, False, False, 0)
+        # Method
+        bx.pack_start(Gtk.Label(label="Method:", xalign=0), False, False, 0)
+        method_combo = Gtk.ComboBoxText()
+        for m in ("mkl", "histogram", "reinhard"):
+            method_combo.append(m, m)
+        method_combo.set_active_id("mkl")
+        method_combo.set_tooltip_text(
+            "mkl = Monge-Kantorovich (best, default)\n"
+            "histogram = channel histogram matching\n"
+            "reinhard = global mean/std transfer")
+        bx.pack_start(method_combo, False, False, 0)
+        # Strength
+        hs = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hs.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
+        strength_sp = Gtk.SpinButton.new_with_range(0.0, 1.0, 0.05); strength_sp.set_value(0.95)
+        strength_sp.set_digits(2)
+        strength_sp.set_tooltip_text("Blend factor. 1.0 = full transfer, 0.5 = half-way.")
+        hs.pack_start(strength_sp, False, False, 0)
+        bx.pack_start(hs, False, False, 0)
+        bx.show_all()
+        last = _SESSION.get("klein_color_match")
+        if last:
+            if "ref_file" in last: ref_entry.set_text(last["ref_file"])
+            if "method" in last: method_combo.set_active_id(last["method"])
+            if "strength" in last: strength_sp.set_value(last["strength"])
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        srv = se.get_text().strip(); _propagate_server_url(srv)
+        ref_file = ref_entry.get_text().strip()
+        method = method_combo.get_active_id() or "mkl"
+        strength = strength_sp.get_value()
+        _SESSION["klein_color_match"] = {
+            "ref_file": ref_file, "method": method, "strength": strength,
+        }
+        _save_session()
+        dlg.destroy()
+        if not ref_file:
+            Gimp.message("Select a reference image.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        try:
+            _update_spinner_status("Klein Color Match: uploading...")
+            tmp = _export_image_to_tmp(image)
+            tgt_name = f"gimp_klcm_tgt_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, tgt_name); os.unlink(tmp)
+            ref_name = f"gimp_klcm_ref_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, ref_file, ref_name)
+            wf = build_klein_color_match(tgt_name, ref_name, method=method, strength=strength)
+            _wf = wf
+            results = _run_with_spinner("Klein Color Match: matching...",
+                                         lambda: list(_run_comfyui_workflow(srv, _wf, timeout=120)))
+            for i, (fn, sf, ft) in enumerate(results):
+                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
+                                 f"Color Match ({method}) #{i+1}", False)
+            _LAST_PROCEDURE["name"] = "spellcaster-klein-color-match"
+            _LAST_PROCEDURE["session_key"] = "klein_color_match"
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Klein Color Match Error: {e}")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ── Klein Virtual Try-On (face + outfit + optional bg + pose) ────
+    def _run_klein_virtual_tryon(self, procedure, run_mode, image, drawables, config, data):
+        """Klein Virtual Try-On: 4-reference photoshoot composition.
+
+        NOTE: the current canvas is used as the FACE reference (primary
+        character identity). The outfit picker is required; bg/pose are
+        optional. Klein synthesises all refs through chained ReferenceLatent.
+        """
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+        dlg = Gtk.Dialog(title="Spellcaster — Klein Virtual Try-On")
+        dlg.set_default_size(560, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Generate", Gtk.ResponseType.OK)
+        _style_dialog_buttons(dlg)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+        _hdr = _make_branded_header()
+        if _hdr: bx.pack_start(_hdr, False, False, 0)
+        bx.pack_start(Gtk.Label(
+            label="Canvas = face/identity reference (ref #1).\n"
+                  "Pick an outfit, and optionally a background and pose."),
+            False, False, 4)
+        # Server
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.pack_start(Gtk.Label(label="Server:"), False, False, 0)
+        se = Gtk.Entry(); se.set_text(COMFYUI_DEFAULT_URL); se.set_hexpand(True)
+        hb.pack_start(se, True, True, 0); bx.pack_start(hb, False, False, 0)
+        se.set_tooltip_text("ComfyUI server URL (e.g. http://192.168.x.x:8188)")
+        # Klein model
+        bx.pack_start(Gtk.Label(label="Klein Model:", xalign=0), False, False, 0)
+        klein_combo = Gtk.ComboBoxText()
+        for k in KLEIN_MODELS: klein_combo.append(k, k)
+        klein_combo.set_active_id("Klein 9B")
+        bx.pack_start(klein_combo, False, False, 0)
+
+        def _file_row(label_text, placeholder, tooltip):
+            bx.pack_start(Gtk.Label(label=label_text, xalign=0), False, False, 0)
+            hf = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+            entry = Gtk.Entry()
+            entry.set_placeholder_text(placeholder)
+            entry.set_hexpand(True)
+            entry.set_tooltip_text(tooltip)
+            hf.pack_start(entry, True, True, 0)
+            def _browse(*_a):
+                fc = Gtk.FileChooserDialog(title=f"Select {label_text}",
+                                           action=Gtk.FileChooserAction.OPEN)
+                fc.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+                fc.add_button("_Open", Gtk.ResponseType.OK)
+                ff = Gtk.FileFilter(); ff.set_name("Images")
+                for ext in ["*.png", "*.jpg", "*.jpeg", "*.webp"]: ff.add_pattern(ext)
+                fc.add_filter(ff)
+                if fc.run() == Gtk.ResponseType.OK:
+                    entry.set_text(fc.get_filename())
+                fc.destroy()
+            btn = Gtk.Button(label="Browse...")
+            btn.connect("clicked", _browse)
+            hf.pack_start(btn, False, False, 0)
+            bx.pack_start(hf, False, False, 0)
+            return entry
+
+        outfit_entry = _file_row("Outfit reference (required):",
+                                  "headless body / outfit photo...",
+                                  "Wardrobe reference. A headless body works best.")
+        bg_entry = _file_row("Background (optional):",
+                              "location / environment photo...",
+                              "Optional background reference.")
+        pose_entry = _file_row("Pose reference (optional):",
+                                "DAZ render / pose photo...",
+                                "Optional pose reference.")
+
+        # Prompt
+        bx.pack_start(Gtk.Label(label="Scene description:", xalign=0), False, False, 0)
+        prompt_tv = Gtk.TextView(); prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        prompt_tv.set_size_request(-1, 60)
+        prompt_tv.set_tooltip_text("Describe the desired composition.")
+        sw = Gtk.ScrolledWindow(); sw.set_min_content_height(60); sw.add(prompt_tv)
+        bx.pack_start(sw, False, False, 0)
+        # Parameters
+        grid = Gtk.Grid(column_spacing=8, row_spacing=4)
+        grid.attach(Gtk.Label(label="Steps:", xalign=1), 0, 0, 1, 1)
+        steps_sp = Gtk.SpinButton.new_with_range(1, 50, 1); steps_sp.set_value(4)
+        grid.attach(steps_sp, 1, 0, 1, 1)
+        grid.attach(Gtk.Label(label="Denoise:", xalign=1), 2, 0, 1, 1)
+        denoise_sp = Gtk.SpinButton.new_with_range(0.1, 1.0, 0.05); denoise_sp.set_value(1.0)
+        denoise_sp.set_digits(2)
+        grid.attach(denoise_sp, 3, 0, 1, 1)
+        grid.attach(Gtk.Label(label="Guidance:", xalign=1), 0, 1, 1, 1)
+        guidance_sp = Gtk.SpinButton.new_with_range(0.5, 10.0, 0.5); guidance_sp.set_value(1.0)
+        guidance_sp.set_digits(1)
+        grid.attach(guidance_sp, 1, 1, 1, 1)
+        grid.attach(Gtk.Label(label="Seed:", xalign=1), 2, 1, 1, 1)
+        seed_sp = Gtk.SpinButton.new_with_range(-1, 2**32-1, 1); seed_sp.set_value(-1)
+        grid.attach(seed_sp, 3, 1, 1, 1)
+        bx.pack_start(grid, False, False, 0)
+        # Enhance toggle
+        enhance_cb = Gtk.CheckButton(label="Auto-enhance prompt (LLM)")
+        enhance_cb.set_active(False)
+        bx.pack_start(enhance_cb, False, False, 0)
+        _add_runs_spinner(dlg, bx)
+        bx.show_all()
+        last = _SESSION.get("klein_virtual_tryon")
+        if last:
+            if "klein_model" in last: klein_combo.set_active_id(last["klein_model"])
+            if "outfit_file" in last: outfit_entry.set_text(last["outfit_file"])
+            if "bg_file" in last: bg_entry.set_text(last["bg_file"])
+            if "pose_file" in last: pose_entry.set_text(last["pose_file"])
+            if "prompt" in last: prompt_tv.get_buffer().set_text(last["prompt"])
+            if "steps" in last: steps_sp.set_value(last["steps"])
+            if "denoise" in last: denoise_sp.set_value(last["denoise"])
+            if "guidance" in last: guidance_sp.set_value(last["guidance"])
+            if "enhance" in last: enhance_cb.set_active(bool(last["enhance"]))
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        srv = se.get_text().strip(); _propagate_server_url(srv)
+        klein_key = klein_combo.get_active_id() or "Klein 9B"
+        outfit_file = outfit_entry.get_text().strip()
+        bg_file = bg_entry.get_text().strip() or None
+        pose_file = pose_entry.get_text().strip() or None
+        pbuf = prompt_tv.get_buffer()
+        prompt = pbuf.get_text(pbuf.get_start_iter(), pbuf.get_end_iter(), False)
+        steps = int(steps_sp.get_value())
+        denoise = denoise_sp.get_value()
+        guidance = guidance_sp.get_value()
+        base_seed = int(seed_sp.get_value())
+        if base_seed < 0: base_seed = random.randint(0, 2**32 - 1)
+        enhance = enhance_cb.get_active()
+        runs = int(dlg._runs_spin.get_value())
+        _SESSION["klein_virtual_tryon"] = {
+            "klein_model": klein_key,
+            "outfit_file": outfit_file,
+            "bg_file": bg_file or "", "pose_file": pose_file or "",
+            "prompt": prompt, "steps": steps, "denoise": denoise,
+            "guidance": guidance, "enhance": enhance,
+        }
+        _save_session()
+        dlg.destroy()
+        if not outfit_file:
+            Gimp.message("Outfit reference is required.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        if not prompt.strip():
+            Gimp.message("Type a scene description.")
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        try:
+            _update_spinner_status("Klein Try-On: exporting face (canvas)...")
+            tmp = _export_image_to_tmp(image)
+            face_name = f"gimp_tryon_face_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, face_name); os.unlink(tmp)
+            outfit_name = f"gimp_tryon_outfit_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, outfit_file, outfit_name)
+            bg_name = None
+            if bg_file:
+                bg_name = f"gimp_tryon_bg_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, bg_file, bg_name)
+            pose_name = None
+            if pose_file:
+                pose_name = f"gimp_tryon_pose_{uuid.uuid4().hex[:8]}.png"
+                _upload_image(srv, pose_file, pose_name)
+            _prompt = prompt
+            if enhance:
+                _prompt, _ = _auto_enhance(prompt, "flux2klein")
+            for run_i in range(runs):
+                seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
+                wf = build_klein_virtual_tryon(
+                    face_name, outfit_name, _prompt, seed,
+                    bg_filename=bg_name, pose_filename=pose_name,
+                    klein_model_key=klein_key,
+                    steps=steps, denoise=denoise, guidance=guidance,
+                )
+                label = f"Klein Try-On run {run_i+1}/{runs}" if runs > 1 else "Klein Try-On"
+                _wf = wf
+                results = _run_with_spinner(f"{label}: processing...",
+                                             lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
+                for i, (fn, sf, ft) in enumerate(results):
+                    lbl = f"{label} #{i+1}"
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
+            _LAST_PROCEDURE["name"] = "spellcaster-klein-virtual-tryon"
+            _LAST_PROCEDURE["session_key"] = "klein_virtual_tryon"
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            Gimp.message(f"Klein Virtual Try-On Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     # ── Generate Anything (all models) ────────────────────────────────
