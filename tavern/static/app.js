@@ -534,9 +534,10 @@ async function refreshActiveInterfaces() {
         // reachability; the sidebar's other pollers already drive the
         // green/idle state via window._managedLive below.
         const managedDefs = [
-            { key: 'comfyui', label: 'ComfyUI', icon: '🎨' },
-            { key: 'ollama',  label: 'Ollama',  icon: '🦙' },
-            { key: 'kobold',  label: 'Kobold',  icon: '📜' },
+            { key: 'comfyui',     label: 'ComfyUI',      icon: '🎨' },
+            { key: 'ollama',      label: 'Ollama',       icon: '🦙' },
+            { key: 'kobold_rp',   label: 'Kobold · RP',  icon: '📜' },
+            { key: 'kobold_tts',  label: 'Kobold · TTS', icon: '🎙️' },
         ];
         const managedLive = window._managedLive || {};
         for (const m of managedDefs) {
@@ -660,7 +661,9 @@ function renderActiveInterfaceChips() {
         // Only meaningful for managed services; for GIMP / Darktable /
         // SillyTavern etc. we still render the cluster so the UI is
         // uniform but the Start button is disabled with a tooltip.
-        const managed = (k === 'comfyui' || k === 'ollama' || k === 'kobold');
+        const managed = (k === 'comfyui' || k === 'ollama' ||
+                          k === 'kobold' || k === 'kobold_rp' ||
+                          k === 'kobold_tts');
         const ctrl = (window.appControlMatrix || {})[k] || {};
         const autoOn = !!ctrl.auto_start;
         const startTip = managed
@@ -1594,6 +1597,103 @@ async function initialize() {
         });
     }
 
+    function _wireWalkieTalkieBtn() {
+        const btn = document.getElementById('walkie-btn');
+        const input = document.getElementById('chat-input');
+        if (!btn || !input) return;
+        let recorder = null;
+        let chunks = [];
+        let active = false;
+        const supportsMic = !!(navigator.mediaDevices &&
+                                navigator.mediaDevices.getUserMedia &&
+                                window.MediaRecorder);
+        if (!supportsMic) {
+            btn.disabled = true;
+            btn.title = 'Browser does not support MediaRecorder / mic access.';
+            return;
+        }
+
+        const start = async (ev) => {
+            ev.preventDefault();
+            if (active) return;
+            active = true;
+            btn.classList.add('walkie-recording');
+            btn.textContent = '🔴';
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia(
+                    { audio: true });
+                chunks = [];
+                const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                    ? 'audio/webm;codecs=opus' : 'audio/webm';
+                recorder = new MediaRecorder(stream, { mimeType: mime });
+                recorder.addEventListener('dataavailable', e => {
+                    if (e.data && e.data.size > 0) chunks.push(e.data);
+                });
+                recorder.addEventListener('stop', async () => {
+                    stream.getTracks().forEach(t => t.stop());
+                    const blob = new Blob(chunks, { type: mime });
+                    // Reset the UI even if the upload fails so the
+                    // user can try again; we'll reopen the error below
+                    // via a toast-style title update.
+                    btn.classList.remove('walkie-recording');
+                    btn.textContent = '⏳';
+                    const reader = new FileReader();
+                    reader.onloadend = async () => {
+                        const b64 = String(reader.result || '')
+                            .replace(/^data:[^,]+,/, '');
+                        try {
+                            const r = await fetch('/api/stt', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({
+                                    audio_b64: b64, mime,
+                                }),
+                            });
+                            const d = await r.json();
+                            if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+                            const text = (d.text || '').trim();
+                            if (text) {
+                                // Append to existing input — never clobber
+                                // half-typed content the user left there.
+                                input.value = (input.value
+                                    ? input.value.trimEnd() + ' '
+                                    : '') + text;
+                                input.dispatchEvent(new Event('input'));
+                                input.focus();
+                            } else {
+                                btn.title = 'STT returned empty text.';
+                            }
+                        } catch (err) {
+                            btn.title = `STT failed: ${err.message || err}`;
+                        } finally {
+                            btn.textContent = '🎙️';
+                        }
+                    };
+                    reader.readAsDataURL(blob);
+                });
+                recorder.start();
+            } catch (err) {
+                btn.classList.remove('walkie-recording');
+                btn.textContent = '🎙️';
+                btn.title = `Mic access denied: ${err.message || err}`;
+                active = false;
+            }
+        };
+        const stop = (ev) => {
+            if (ev) ev.preventDefault();
+            if (!active) return;
+            active = false;
+            if (recorder && recorder.state === 'recording') {
+                try { recorder.stop(); } catch (e) {}
+            }
+        };
+        // Pointer events cover mouse + touch uniformly.
+        btn.addEventListener('pointerdown', start);
+        btn.addEventListener('pointerup', stop);
+        btn.addEventListener('pointercancel', stop);
+        btn.addEventListener('pointerleave', stop);
+    }
+
     function _installCharacterHoverPreview() {
         // Single reusable overlay element — swapping src is cheaper than
         // creating/destroying per hover. Positioned via mouse coords on
@@ -1664,6 +1764,14 @@ async function initialize() {
     // cast) can read the current preset without threading it through
     // props. Order cycles: turbo → standard → quality → turbo.
     _wireGlobalPresetBtn();
+
+    // Walkie-talkie STT: press-and-hold the 🎙️ button → record audio
+    // → release → POST /api/stt with base64 audio → transcript lands
+    // in the chat textarea. MediaRecorder + getUserMedia drive the
+    // capture. Graceful degradation when the browser blocks mic, or
+    // when no kobold_tts backend is registered (503 from the endpoint
+    // prompts the user to right-click an antenna chip to register one).
+    _wireWalkieTalkieBtn();
 
     // Character-hover circle preview — large circular portrait that
     // fades in near the cursor when the user mouses over an avatar in

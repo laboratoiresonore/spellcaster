@@ -1976,7 +1976,8 @@ def main():
         for _app, _entry in _auto_start_matrix.items():
             if not (isinstance(_entry, dict) and _entry.get("auto_start")):
                 continue
-            if _app not in ("comfyui", "ollama", "kobold"):
+            if _app not in ("comfyui", "ollama", "kobold",
+                             "kobold_rp", "kobold_tts"):
                 continue  # non-managed apps can't auto-launch
             try:
                 payload = json.dumps({"app": _app}).encode("utf-8")
