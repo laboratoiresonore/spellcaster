@@ -30,7 +30,9 @@
   <a href="#the-solution">The Solution</a> &bull;
   <a href="#see-it-in-action-generate--select--map--enhance">See It</a> &bull;
   <a href="#install">Install</a> &bull;
+  <a href="#the-antenna--your-other-machines-one-click-away">Antenna</a> &bull;
   <a href="#all-69-tools">All Tools</a> &bull;
+  <a href="#deep-dives--every-system-all-the-details">Deep Dives</a> &bull;
   <a href="DEPENDENCIES.md">Dependencies</a> &bull;
   <a href="#faq">FAQ</a> &bull;
   <a href="https://www.reddit.com/r/Spellcaster_Studio/">Reddit</a>
@@ -201,6 +203,30 @@ Yes, we counted. Yes, we noticed. No, we will not be adding a 70th (officially).
 4. **Pick any tool and click Generate.** Every preset is already optimized
 
 > **From source:** `git clone https://github.com/laboratoiresonore/spellcaster && cd spellcaster && python installer/install.py`
+
+### The Antenna — your other machines, one click away
+
+The **Antenna** is the small always-on bridge that lets a Spellcaster running on your laptop drive ComfyUI, KoboldCpp, Ollama, DaVinci Resolve, Darktable, GIMP, or SillyTavern on **another PC** on your LAN. Gaming tower in the closet does the work; the laptop on the couch sends the prompts. Pair once, forget forever.
+
+<p align="center">
+  <a href="https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main/installer/install_antenna.bat">
+    <img src="https://img.shields.io/badge/Windows-install__antenna.bat-2ed573?style=for-the-badge&logo=windows&logoColor=white" alt="Download antenna installer (Windows)"/>
+  </a>
+  &nbsp;
+  <a href="https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main/installer/install_antenna.sh">
+    <img src="https://img.shields.io/badge/macOS-install__antenna.sh-2ed573?style=for-the-badge&logo=apple&logoColor=white" alt="Download antenna installer (macOS)"/>
+  </a>
+  &nbsp;
+  <a href="https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main/installer/install_antenna.sh">
+    <img src="https://img.shields.io/badge/GNU%2FLinux-install__antenna.sh-2ed573?style=for-the-badge&logo=linux&logoColor=white" alt="Download antenna installer (Linux)"/>
+  </a>
+</p>
+
+**Windows:** right-click → *Save link as…* → double-click. First launch asks whether to create a desktop icon, a Start Menu entry, and / or launch at login. Tray icon appears; right-click → *Pair with Guild…* → type the 6-digit code into your Guild sidebar.
+
+**macOS / GNU/Linux:** `curl -LO <link>` and `chmod +x install_antenna.sh && ./install_antenna.sh`. Same flow; tray works on macOS out of the box, Linux falls back to console mode without AppIndicator.
+
+Under the hood the bootstrap clones this repo into `~/.spellcaster/repo`, best-effort `pip install`s `pystray` + `Pillow`, and runs `python -m antenna`. Everything is re-runnable — the installer is also the updater.
 
 ---
 
@@ -461,6 +487,168 @@ If you're reading this section voluntarily, you're either evaluating this for a 
 
 ---
 
+## Deep Dives — every system, all the details
+
+The sections below document the non-obvious subsystems that make Spellcaster more than a menu of ComfyUI shortcuts. Each one is opt-in reading — open the `<details>` you care about.
+
+<details>
+<summary><strong>🔀 Cross-interface backbone — every surface is the same surface</strong></summary>
+
+Six user-visible interfaces (GIMP, Darktable, Resolve Bridge, SillyTavern, the Wizard Guild web UI, the remote Antenna) all speak the same backbone. When a shot renders in one, every other surface sees it.
+
+Four components in [comfyui-spellcaster/spellcaster_core/](comfyui-spellcaster/spellcaster_core/):
+
+- **`asset_gallery.py` — canonical blob store.** Every generated image or video is stored by content-hash under `tavern/creations/gallery/blobs/<xx>/<hash>.png` with a metadata row (prompt, seed, model, arch, kind, tags, origin, timestamps) written atomically to `index.json`. No matter which surface generates, the bytes land here once and exactly once. Deduplication is free — two identical generations share one blob.
+- **`event_bus.py` — publish/subscribe.** Every generation publishes `<origin>.asset.created` with the asset hash. The Resolve Bridge listens for `gimp.asset.created` and auto-imports into the Media Pool. The Guild gallery listens for `resolve.asset.created` and surfaces the new clip under "Recent across apps". Signal Bridge subscribes to any origin and pushes notifications to the user's phone. No polling.
+- **`interface_registry.py` — presence + capabilities.** Each surface heartbeats every 10s with `{enabled, online, last_meta, capabilities, origin}`. The sidebar "Connected apps" chip row reads this registry — local chips render green, remote (antenna-backed) chips render in a teal-green gradient with a 📡 prefix + purple dot halo. Disconnected services just stop appearing as chips; no sad-dot spam.
+- **`mailbox.py` + `cross_interface.py` — directed delivery.** A wizard in the Guild can say "send this portrait to GIMP" and the image lands as a new GIMP layer the next time the plugin polls its inbox (HTTP long-poll, < 2s typical latency).
+
+All of this travels through **one** canonical URL shape: `/api/assets/<hash>`. Plugins that stored flat paths against pre-refactor ComfyUI `/view?filename=…` URLs still work via the `/api/cached_asset/<name>` compat shim, but every new path produces only the canonical shape.
+
+</details>
+
+<details>
+<summary><strong>🧠 Prompt enhancement — per-architecture, per-method, per-model</strong></summary>
+
+Every "Enhance prompt" click (automatic on most tools, manual on others) routes through a three-layer LLM rewrite so the raw prompt the user typed becomes the exact flavour the target model was trained on.
+
+- **Per-architecture profile** (`_ARCH_ENHANCE_PROFILES` in [prompt_enhance.py](comfyui-spellcaster/spellcaster_core/prompt_enhance.py)) — 9 architectures each with their own `max_tokens`, target `length`, `style`, and guidance notes. SDXL gets booru-style comma-separated tags (≤256 tokens). Flux 1 Dev and LTX Video get verbose natural-language paragraphs (512–768 tokens). Klein gets concise bullet-style descriptions with subject preservation. Illustrious gets a "SUBJECT PRESERVATION" block that stops it from inventing extra characters when the user asks for a single subject.
+- **Per-method profile** (`_METHOD_PROFILES`) — 41+ method-level overrides. `refine`, `detailed_visual`, `colorize`, `iclight`, `feet_fix`, `face_detail`, etc. Each method extends the arch baseline with `extra_notes`, `length_override`, or `max_tokens`. A `skip` flag suppresses enhancement for methods where the raw prompt is already optimal (edit-by-instruction, ZIT). Methods inherit from parents up to 5 levels deep so groups stay DRY.
+- **Per-family VRAM management** (`_PER_FAMILY_LLM_CONFIG` in [comfyui_llm.py](comfyui-spellcaster/spellcaster_core/comfyui_llm.py)) — `keep_model_loaded`, `keep_last_prompt`, `max_quant_bits`, `max_model_size_b`, `poll_timeout_s` all tuned per diffusion family. SD 1.5 runs with `keep_last_prompt=False` after the cross-prompt cache-bleed incident (iclight was returning colorize output); Flux 2 Klein keeps the LLM loaded between calls because its sampler is slow enough to mask the reload cost.
+- **Per-model overrides** — `~/.spellcaster/llm_prompt_settings.json` stores optimal settings per checkpoint as the user fine-tunes them. Atomic writes via `tempfile + os.replace` so a crash mid-save can't corrupt the file.
+- **Per-method AILab preset** (`_METHOD_PRESET` in [comfyui_llm.py](comfyui-spellcaster/spellcaster_core/comfyui_llm.py)) — KoboldCpp's AILab QwenVL GGUF enhancer node has a `preset_system_prompt` dropdown (*Refine*, *Detailed Visual*, *Enhance*, etc.). Each enhance method picks the right one so the node's internal system prompt matches the arch's guidance.
+
+The chain routing is dynamic: `purpose='chat'` prefers Ollama → ComfyUI → Kobold (Ollama speaks conversation natively), `purpose='enhance'` prefers ComfyUI → Ollama → Kobold (ComfyUI's AILab is purpose-built for image prompts). A sidebar pill picker pins the primary backend; the others stay as live fallbacks.
+
+</details>
+
+<details>
+<summary><strong>🎯 LLM primary picker — ComfyUI reroute, Ollama / Kobold auto-start</strong></summary>
+
+Three pills under the Guild title. Clicking one pins that backend as the first hop in `guild_llm.chat()`'s chain and, if necessary, spins up the matching service via `/api/app_control/start`. The other backends stay alive.
+
+- **🎨 ComfyUI** — pure reroute. No service starts; ComfyUI's embedded LLM is reachable whenever ComfyUI is online.
+- **🦙 Ollama** — auto-starts the local Ollama daemon if it isn't running. Auto-detects the best installed model (`qwen3:4b` > `gemma3:4b` > `llama3.2:3b` > … in [guild_llm.py](comfyui-spellcaster/spellcaster_core/guild_llm.py)'s `_OLLAMA_MODEL_PREFERENCE`).
+- **📜 Kobold (RP)** — auto-starts the dedicated `kobold_rp` service on port 5001.
+
+Running three LLMs at once is fine and useful — SillyTavern keeps talking to Kobold-RP while the Guild uses ComfyUI for image prompts and Ollama for install scaffolding. The picker just decides who answers **chat()** first. The active pill lights up in a purple→gold gradient; state is stored server-side in `guild_config.user_settings.preferred_llm` so it survives browser clears, private-window sessions, and cross-device sync.
+
+</details>
+
+<details>
+<summary><strong>🛠 Scaffold system — state-machine wizards for 7B models</strong></summary>
+
+[scaffold/](scaffold/) contains every conversational flow the Wizard Guild exposes. These are explicit state machines — not free-form LLM chat — because a 4–7B model running locally can't reliably plan multi-step installs, calibration sweeps, or video pipelines on its own.
+
+- **`spellcaster_wizard.py`** — the install manager. Owns `/api/spellcaster/*` endpoints: feature install/uninstall quotes (GB cost + # of unlocked methods), antenna setup, per-feature smoke tests, plugin install/uninstall (GIMP / Darktable / Resolve), custom build flows. Emits `<ACTION>{...}</ACTION>` JSON blocks that the Guild's frontend parses and dispatches.
+- **`meta_wizard.py`** — interprets plain-English intent and routes to the right sub-wizard. "Make it cinematic" → cinematographer. "Fix the hands" → feet/hand-fix LoRA suggestion. "Turn this into a video" → video wizard.
+- **`video_wizard.py`** + **`shotboard.py`** — persistent multi-shot video production. Each shot tracks its own motion trajectory, prompt, model, status (draft → queued → running → ready). Shots chain for continuity (last frame of shot 1 seeds shot 2); batch queue renders overnight and RIFE/GIMM-VFI stitches them.
+- **`scaffold_calibration.py`** — optometrist-style A/B sweeps. Shows two outputs with different samplers/CFG/denoise, asks "A or B?", repeats; the winning settings propagate to every other checkpoint of the same arch.
+- **`lora_calibration.py`** — real-test LoRA verification. For each LoRA: load it onto one checkpoint per installed arch, actually render a sample, record where it works vs where it errors. Trigger words come from the safetensors metadata directly, not the LLM. No more "Wan video LoRA showing up on SDXL wizards".
+- **`lora_grouping.py`** — purpose-aware LoRA shootout. Classifies LoRAs into 20+ purpose groups (`feet_fix`, `skin_detail`, `style_photoreal`, etc.), runs a multi-sample render with subject-specific prompts (portrait / fullbody / macro / animal), lets the user approve many LoRAs with user-supplied keywords so the Guild auto-proposes the right one when the keyword appears in a chat prompt. Auto-fallback tries up to 3 different checkpoints of the same arch on generation failure — a single broken NoobAI-anime SDXL doesn't kill the row anymore.
+- **`cue_seeder.py`**, **`issue_cue.py`**, **`frame_extract.py`**, **`network_survey.py`** — cue-sheet pipeline for storyboarded work, install-plan survey, and the lead-question "where does each service live on your network?" flow the Spellcaster runs on first launch.
+
+Every scaffold is a Python state class that writes to `tavern/.guild_state/` (atomic tempfile + `os.replace` + `fsync` on every write) so interrupted flows resume cleanly.
+
+</details>
+
+<details>
+<summary><strong>⚡ Global preset cycle — Turbo / Standard / Quality</strong></summary>
+
+A small pill above the chat input cycles through three generation presets on each click:
+
+- **⚡ Turbo** — fastest. Architecture-specific turbo LoRAs auto-injected (Hyper-FLUX.1-dev-8steps at 0.125 strength, LightX2V on video). Step counts cut by 2–3×. CFG stays honest. Expect ~30% quality dip in exchange for 3–5× speedup.
+- **⚖️ Standard** — the calibrated defaults. What the Calibration Wizard landed on. Balanced.
+- **💎 Quality** — max-effort path. Klein enhancer chain, higher step counts, no turbo LoRAs, full CFG.
+
+The label + colour shifts with the state. Value persists to both `localStorage.guild_preset` AND `guild_config.user_settings.guild_preset` (via `/api/user_settings`), then gets published on `window.generationPreset` + a `guildpresetchange` CustomEvent so downstream action builders can opt in with a single listener.
+
+</details>
+
+<details>
+<summary><strong>📡 Antenna — 15+ endpoints, tray menu, self-update</strong></summary>
+
+The [antenna/](antenna/) module is a single-process stdlib HTTPS server that wraps one remote box with the following capabilities:
+
+- **`/service/start` + `/service/stop` + `/service/register`** — orchestrate ComfyUI, KoboldCpp, Ollama on this box. `/service/register` persists launcher paths so future starts don't need one-shot overrides. Generic over: ComfyUI, Kobold (RP / TTS-STT), Ollama, plus path registration for GIMP, Darktable, Resolve, SillyTavern, Signal.
+- **`/llm/install` + `/llm/status`** — Guild-driven install of a local LLM on a remote ComfyUI host the user can't SSH into.
+- **`/comfyui/node-catalog`** — scans installed custom-node packs + returns a capability map.
+- **`/resolve/luts`** — enumerates DaVinci Resolve LUTs on this box for the cross-app LUT picker.
+- **`/self-update`** — `git pull` + rebuild + restart. POST with `{"force": true}` to restart even when there's no code change (useful after config edits).
+- **`/pair/claim` + `/pair/state` + `/pair/start`** — 6-digit pair-code handshake. The antenna tray shows a code, the user types it into the Guild sidebar, the Guild exchanges the code for a 43-char bearer token. Constant-time comparison, single-use, 5-minute TTL.
+- **`/telemetry`** — VRAM, CPU, disk, rate-limiter state. Fed into chip tooltips.
+- **Heartbeats** — posts to Guild `/api/interfaces/heartbeat` every 10s so the sidebar chip stays green / stale / idle.
+
+The **system-tray icon** (pystray + PIL, Windows only) exposes the same operations as a native right-click menu: per-service Start/Stop, View recent log, Pair with Guild (live countdown on the code), Check for antenna update, Setup Signal bridge, Reinstall Desktop + Start Menu icons, Enable/Disable run-at-Windows-startup, Open antenna folder, Quit antenna. Console-mode fallback when pystray isn't installed.
+
+The tray installer lives at [`antenna/install_shortcuts.py`](antenna/install_shortcuts.py) — stdlib-only, shells out to PowerShell's `WScript.Shell` COM object to create `.lnk` files. The generated antenna.bat runs it once on first launch gated by a sentinel at `%USERPROFILE%\.spellcaster\antenna_shortcuts_done`.
+
+</details>
+
+<details>
+<summary><strong>🎙️ Voice — walkie-talkie STT + TTS playback</strong></summary>
+
+A mic-button between the chat textarea and the summon-wand. Press-and-hold starts MediaRecorder capture (webm/opus); release uploads the base64 blob to `/api/stt`, which forwards to a registered **Kobold · TTS** backend running KoboldCpp in Whisper mode (`/api/extra/transcribe`). The transcript lands in the chat textarea so the user can edit before sending. Pointer-events cover both mouse and touch; the button pulses red while recording.
+
+Symmetric `/api/tts` forwards text → audio via `/api/extra/generate_audio` so the Guild can read wizard replies aloud. Backend discovery via `_resolve_stt_backend_url()`: checks `guild_config.app_control.kobold_tts` (local) first, then falls back to any paired antenna advertising `kobold_tts`. Kobold in TTS/STT mode runs on port 5002 by convention; RP mode stays on 5001. Both modes coexist on the same box as separate services.
+
+Registering a Kobold TTS backend: right-click any antenna chip → *Connect an app* → **Kobold**, type the launcher path + add `--whisper <model.gguf>` args. Guild tray → *Connect an app* for the local flow.
+
+</details>
+
+<details>
+<summary><strong>🧩 Connect-an-app — register launchers, Windows shortcuts, auto-start</strong></summary>
+
+Right-click any antenna chip (or open the Guild tray → *Connect an app…*) to pick one of eight app types — ComfyUI, Ollama, KoboldCpp, GIMP, Darktable, Resolve, SillyTavern, Signal Bridge — and type the launcher path on that machine. The Guild proxies the registration to the antenna's `/service/register` endpoint; the antenna persists it into `~/.spellcaster/antenna_config.json` (atomic tempfile + replace) under both the nested `services` map and the flat `<name>_launcher` keys so `service_launcher`'s override chain finds it either way.
+
+Each chip also carries two tiny toggles on the left:
+- **⚡ Start** — launches the app now on its configured target (local subprocess or remote via the antenna).
+- **🔁 Auto-start** — persists "launch on Guild boot / auto-close on Guild exit" to `guild_config.app_control`. Toggled apps auto-start via the boot auto-launch loop in [guild_launcher.py](tavern/guild_launcher.py); `/api/guild/exit` iterates the same matrix on shutdown so nothing orphans.
+
+The **Restart Server** button in Settings does a graceful restart: stops every `auto_start` app on its target, spawns a detached relauncher that sleeps 1.2s then re-execs the current argv, then `os._exit(0)`s the old process. The client polls `/api/comfy_status` until the new process responds, then reloads the page — so a full cycle takes about 3s.
+
+</details>
+
+<details>
+<summary><strong>🔐 Privacy, boot safety, auto-update risk</strong></summary>
+
+- **Privacy cleanup** ([privacy.py](comfyui-spellcaster/spellcaster_core/privacy.py)) — every temporary file on the ComfyUI server is atomically overwritten with a 1×1 pixel PNG then deleted after use. Your images don't linger. Configurable TTL.
+- **Crash-safe boot shim** — the GIMP plugin is split into a 228-line immutable loader ([comfyui-connector.py](plugins/gimp/comfyui-connector/comfyui-connector.py)) + the 22K-line main plugin. The shim has 3-tier recovery: local backup → GitHub download → visible "CRASHED" menu entry. The auto-updater has the shim in its protected set — it will never overwrite or delete the loader.
+- **Auto-update risk** — three separate auto-updaters run on launch (Wizard Guild, GIMP plugin, installer bootstrap). They download from GitHub and prune local files that aren't in the remote. CLAUDE.md rule 13 documents what each one clobbers and the safe-restart order (commit + push → restart is always safe).
+- **Preflight validation** ([preflight.py](comfyui-spellcaster/spellcaster_core/preflight.py)) — every workflow is checked and patched before submission. Missing nodes get substituted, unsupported architectures get fallbacks. A user with a stale ComfyUI custom-node set still gets a working generation instead of a red error.
+- **Atomic persistence, everywhere** — `guild_config.json`, `network_survey.json`, `generated_assets.json`, `wizard_identities.json`, `lora_registry.json`, `llm_prompt_settings.json`, `antenna_config.json`. All write via `tempfile` → `fsync` → `os.replace` so a power-cut mid-save leaves you with either the old version or the new, never half.
+
+</details>
+
+<details>
+<summary><strong>🎬 Resolve Bridge — timeline-aware shot generation</strong></summary>
+
+The Resolve plugin in [plugins/resolve/](plugins/resolve/) adds a Spellcaster menu to DaVinci Resolve 20+:
+
+- **Generate from playhead** — drop the cursor on the timeline, type a prompt, get an 81-frame LTX-2 clip back in the Media Pool snapped to the playhead.
+- **Smart gap fill** — place two clips with a gap between them; Spellcaster reads the last frame of clip A + the first frame of clip B and renders an LTX-2 "first-last frame" transition that fills the gap.
+- **Markers to shots** — Resolve marker colours map to Spellcaster render profiles (red = high-effort, blue = turbo, etc.); batch-render every marker at once.
+- **Send to Resolve** — any image anywhere (GIMP, Guild gallery, Darktable) can be pushed into the Resolve Media Pool with one click via the event bus.
+
+The actual Resolve automation runs in a Python script in Resolve's scripting engine; the Guild-side trigger reaches it via the antenna's `/resolve/*` endpoints when Resolve lives on a different box.
+
+</details>
+
+<details>
+<summary><strong>🖼️ Everything else worth mentioning</strong></summary>
+
+- **9-architecture `ArchConfig` registry** ([architectures.py](comfyui-spellcaster/spellcaster_core/architectures.py)) — every arch declares its loader (checkpoint / unet_clip_vae / etc.), sampler, CFG, denoise, resolution, supports-negative flag, prompt style, LoRA prefixes, ControlNet model, turbo config, CLIP+VAE filenames, quality positive/negative tails, autoset LoRA lists per method. One object drives every builder.
+- **`NodeFactory` DSL** ([node_factory.py](comfyui-spellcaster/spellcaster_core/node_factory.py)) — every ComfyUI node type is a typed Python method call. Zero raw dicts. Refactors ripple through every workflow without string-editing JSON.
+- **Composites** ([composites.py](comfyui-spellcaster/spellcaster_core/composites.py)) — multi-node helpers that compose into a canonical shape: `load_model_stack`, `inject_lora_chain`, `encode_prompts`, `build_klein_enhancer_chain`, etc. Every builder that wants these behaviours gets them by calling the composite; there is no parallel implementation anywhere.
+- **Model detect** ([model_detect.py](comfyui-spellcaster/spellcaster_core/model_detect.py)) — maps filename → architecture + family. Handles SD1.5 vs SDXL vs Illustrious vs Pony vs Flux Dev vs Klein vs Kontext vs Chroma vs LTX vs Wan. Extensive test matrix for adversarial filenames (`wan_mixl` shouldn't match "xl" before "wan").
+- **Network survey** ([network_survey.py](scaffold/network_survey.py)) — first-time install asks "where does ComfyUI live? Local / LAN / skip / not installed?" for every tracked service. Persists to `.guild_state/network_survey.json` and drives the chip renderer's local vs remote origin hint.
+- **Character-hover portrait** — 220px circular preview near the cursor whenever you mouse over a chat avatar. Pointer-events:none so it never steals a click. Delegated listener on `#chat-stream` so dynamically-added avatars pick up the behaviour with zero per-message wiring.
+- **Recent-across-apps strip** — sidebar row showing the last N generated assets from **every** origin (GIMP / Resolve / Guild / …). Click a thumbnail → the image drops into the active wizard's chat as a reference. Scrollbar aligns with the character-list scrollbar exactly (both 4px purple thumb on transparent track).
+
+</details>
+
+---
+
 <p align="center"><em>"the smugness radiates 'I'm better than everyone' it kills the interest"</em> — u/kanatakkun, r/GIMP</p>
 
 <p align="center">You know I am, baby. Xoxo</p>
@@ -503,6 +691,29 @@ Yes. `Filters > Spellcaster Tools > Workflow Library` runs any workflow JSON fro
 <summary><strong>ComfyUI on another machine?</strong></summary>
 
 Yes. The Antenna Installer auto-detects ComfyUI servers on your network. Or set the URL in Settings. One of our beta testers runs ComfyUI on a gaming PC in their closet and generates images from a laptop on their couch. We have enabled laziness at an architectural level and we're proud of it.
+
+**Direct antenna downloads:** [Windows .bat](https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main/installer/install_antenna.bat) &bull; [macOS / Linux .sh](https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main/installer/install_antenna.sh). See [The Antenna](#the-antenna--your-other-machines-one-click-away) for pairing instructions.
+
+</details>
+
+<details>
+<summary><strong>Can I have more than one LLM running at once?</strong></summary>
+
+Yes. That's the whole point of the LLM pill picker under the Guild title. ComfyUI's embedded LLM, Ollama, and a dedicated RP Kobold can all stay online together — SillyTavern keeps chatting with Kobold, the Guild uses ComfyUI for image prompts, Ollama handles install scaffolding. The pill just decides who answers **chat()** first; nobody gets stopped. See [🎯 LLM primary picker](#-llm-primary-picker--comfyui-reroute-ollama--kobold-auto-start).
+
+</details>
+
+<details>
+<summary><strong>How does the LoRA Shootout actually work?</strong></summary>
+
+Purpose-aware multi-sample renders: the LoRA registry is grouped into 20+ purpose buckets (`feet_fix`, `skin_detail`, `style_photoreal`, …), each with a subject-specific prompt (portrait / fullbody / macro / animal). You approve **many** LoRAs — not pick one winner — with user-supplied keywords that the Guild auto-proposes when the keyword appears in a chat prompt. Auto-fallback tries up to 3 checkpoints of the same arch on generation failure. See [🛠 Scaffold system](#-scaffold-system--state-machine-wizards-for-7b-models) → `lora_grouping.py`.
+
+</details>
+
+<details>
+<summary><strong>Can I talk to the Guild instead of typing?</strong></summary>
+
+Yes — register a KoboldCpp in TTS/STT mode (right-click any antenna chip → *Connect an app* → *Kobold* with `--whisper <model.gguf>`), then press-and-hold the 🎙️ button next to the chat input. Walkie-talkie — release to transcribe. See [🎙️ Voice](#%EF%B8%8F-voice--walkie-talkie-stt--tts-playback).
 
 </details>
 
