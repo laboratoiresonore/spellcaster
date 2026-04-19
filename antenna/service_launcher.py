@@ -106,10 +106,6 @@ def _find_comfyui_root(cfg: dict[str, Any]) -> Path | None:
     # carries the filesystem path when the probe found it on disk.
     try:
         from . import detect as _d
-        # Loading the service registry is how detect.py gets what to probe
-        inst2 = _import_installer()
-        if inst2 is None:
-            return None
         try:
             from installer import remote_services as _rs
             services_list = _rs.load_services()
@@ -117,21 +113,70 @@ def _find_comfyui_root(cfg: dict[str, Any]) -> Path | None:
             services_list = []
         comfy_svc = next((s for s in services_list if s.get("key") == "comfyui"),
                           None)
-        if comfy_svc is None:
-            return None
-        evidence = _d.detect_service(comfy_svc)
-        ev_str = evidence.get("evidence") or ""
-        if ev_str.startswith("filesystem:"):
-            path_str = ev_str[len("filesystem:"):].strip()
-            p = Path(path_str)
-            # detect returns the matched detect_path (e.g. ".../ComfyUI/main.py");
-            # we want the DIR containing main.py.
-            if p.is_file():
-                return p.parent
-            if p.is_dir():
-                return p
+        if comfy_svc is not None:
+            evidence = _d.detect_service(comfy_svc)
+            ev_str = evidence.get("evidence") or ""
+            if ev_str.startswith("filesystem:"):
+                path_str = ev_str[len("filesystem:"):].strip()
+                p = Path(path_str)
+                if p.is_file():
+                    return p.parent
+                if p.is_dir():
+                    return p
     except Exception:
         pass
+
+    # Deep glob fallback — walk 2 levels deep under each drive/home
+    # looking for any dir named comfy* (case-insensitive) that holds a
+    # main.py. Catches installs like D:\AI\ComfyUI\ or C:\Dev\MyComfyUI\
+    # that no shallower detector will find.
+    try:
+        search_roots: list[Path] = [Path.home()]
+        if os.name == "nt":
+            try:
+                import ctypes
+                bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+                for i in range(26):
+                    if bitmask & (1 << i):
+                        search_roots.append(Path(chr(ord("A") + i) + ":\\"))
+            except Exception:
+                pass
+        else:
+            search_roots += [Path("/opt"), Path("/usr/local")]
+
+        candidates: list[Path] = []
+        for root in search_roots:
+            try:
+                if not root.exists():
+                    continue
+                # Level 1: root/comfy*/main.py
+                for sub in list(root.iterdir())[:500]:
+                    try:
+                        if not sub.is_dir():
+                            continue
+                        if "comfy" in sub.name.lower() and (sub / "main.py").is_file():
+                            candidates.append(sub)
+                        # Level 2: root/*/comfy*/main.py
+                        try:
+                            for ssub in list(sub.iterdir())[:200]:
+                                if (ssub.is_dir()
+                                    and "comfy" in ssub.name.lower()
+                                    and (ssub / "main.py").is_file()):
+                                    candidates.append(ssub)
+                        except (OSError, PermissionError):
+                            continue
+                    except (OSError, PermissionError):
+                        continue
+            except (OSError, PermissionError):
+                continue
+        if candidates:
+            # Prefer shorter paths (closer to drive root) — typically the
+            # "real" install vs a backup/clone buried deep.
+            candidates.sort(key=lambda p: (len(str(p)), str(p).lower()))
+            return candidates[0]
+    except Exception:
+        pass
+
     return None
 
 

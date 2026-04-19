@@ -340,11 +340,16 @@ ANTENNAS (remote-machine agents — only needed if ComfyUI is not localhost):
 PHASE HINT (conversational, not rigid — pivot as the user asks):
   Current: {phase}
   GREETING      → welcome, summarize current install
+  NETWORK       → "where does each service live — this machine or another
+                   on your LAN?" Ask this FIRST before any install work.
+                   Every 'remote' answer needs an Antenna; hold the user
+                   there until every declared remote passes a probe.
   ASSESS        → check GPU/VRAM/ComfyUI/antennas
   INTENT        → "what do you mainly want to do?"
   RECOMMEND     → suggest 3-6 features based on intent + VRAM
   QUOTE         → "installing X will take Y GB and unlock Z methods — OK?"
-  INSTALL_LOOP  → install one at a time, testing after each
+  PLAN          → show the strategic install order (tiered) + demo cues
+  INSTALL_LOOP  → install per the plan, demo_gen a payoff between tiers
   TEST_FEATURE  → verify with a sample generation
   ANTENNA       → walk through remote setup if ComfyUI is on LAN
   PLUGINS       → which host apps to integrate
@@ -726,6 +731,27 @@ def action_to_endpoint(action: dict[str, Any]) -> tuple[str, str, dict[str, Any]
                  "scaffold":  action.get("scaffold", ""),
                  "overrides": action.get("overrides") or {},
                  "seed":      int(action.get("seed", 42))})
+    # ── Network survey — where is each service hosted? ──────────────
+    if atype == "network_survey":
+        return ("GET", "/api/spellcaster/network/survey", {})
+    if atype == "network_declare":
+        return ("POST", "/api/spellcaster/network/declare",
+                {"key":          action.get("key", ""),
+                 "placement":    action.get("placement", ""),
+                 "host":         action.get("host", ""),
+                 "port":         int(action.get("port", 0) or 0),
+                 "antenna_port": int(action.get("antenna_port", 7334) or 7334)})
+    if atype == "network_refresh":
+        return ("POST", "/api/spellcaster/network/refresh", {})
+    if atype == "install_plan":
+        return ("POST", "/api/spellcaster/install/plan",
+                {"features": action.get("features") or []})
+    if atype == "demo_gen":
+        return ("POST", "/api/spellcaster/demo_gen",
+                {"prompt":   action.get("prompt", ""),
+                 "negative": action.get("negative", ""),
+                 "model":    action.get("model", ""),
+                 "timeout":  int(action.get("timeout", 90))})
     # ── LoRA shootout — dedup multiple LoRAs that do the same thing ──
     if atype == "lora_groups":
         # Enumerate (arch, purpose_group) buckets with multiple candidates.
