@@ -110,49 +110,58 @@
     chatStream.scrollTop = chatStream.scrollHeight;
   }
 
-  // ── Intercept the send button ──
-  // We override by capturing the click before app.js's handler
-  // using the capture phase.
-  const inputArea = document.getElementById('chat-input-area');
-  if (inputArea) {
-    inputArea.addEventListener('click', (e) => {
-      if (!videoChatActive) return;
+  // ── Intercept the send path while Cinematographer mode is active ──
+  //
+  // Two interceptors, both capture-phase, both belt-and-suspenders:
+  //
+  // (1) Direct click on #send-btn. We attach to the button itself in
+  //     capture phase so we fire BEFORE app.js's bubble-phase click
+  //     handler on the same element. stopImmediatePropagation prevents
+  //     app.js's handler from running and steering "1" into the main
+  //     LLM chat → Spellcaster system prompt.
+  //
+  // (2) Enter on #chat-input. Same pattern — capture phase on the
+  //     textarea, stopImmediatePropagation, then drive _sendVideoChat
+  //     directly (not via a synthesized click, which has race-conditions
+  //     on some browsers).
+  //
+  // Both paths call _submitVideoMessage() which encapsulates the "add
+  // user bubble + clear input + POST to /api/video/chat" flow so there
+  // is ONE code path for the Cinematographer-routed send.
 
-      // Only intercept send button clicks
-      const target = e.target.closest('#send-btn');
-      if (!target) return;
-
-      e.stopImmediatePropagation();
-      e.preventDefault();
-
-      const text = chatInput.value.trim();
-      if (!text) return;
-
-      // Add user message to chat
-      const chatStream = document.getElementById('chat-stream');
+  function _submitVideoMessage() {
+    const text = chatInput.value.trim();
+    if (!text) return;
+    const chatStream = document.getElementById('chat-stream');
+    if (chatStream) {
       const userDiv = document.createElement('div');
       userDiv.className = 'message user';
       userDiv.style.animation = 'fadeIn 0.3s ease-in-out';
       userDiv.innerHTML = `<div class="msg-content">${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>`;
       chatStream.appendChild(userDiv);
       chatStream.scrollTop = chatStream.scrollHeight;
+    }
+    chatInput.value = '';
+    chatInput.style.height = 'auto';
+    _sendVideoChat(text);
+  }
 
-      chatInput.value = '';
-      chatInput.style.height = 'auto';
-
-      _sendVideoChat(text);
-    }, true);  // capture phase — fires before app.js's bubble handler
-
-    // Also intercept Enter key
+  if (sendBtn) {
+    sendBtn.addEventListener('click', (e) => {
+      if (!videoChatActive) return;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      _submitVideoMessage();
+    }, true);
+  }
+  if (chatInput) {
     chatInput.addEventListener('keydown', (e) => {
       if (!videoChatActive) return;
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         e.stopImmediatePropagation();
-        // Trigger the same flow as clicking send
-        const fakeClick = new MouseEvent('click', { bubbles: true });
-        sendBtn.dispatchEvent(fakeClick);
+        _submitVideoMessage();
       }
-    }, true);  // capture phase
+    }, true);
   }
 })();
