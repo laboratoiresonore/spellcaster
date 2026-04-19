@@ -9443,6 +9443,25 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 min_cluster=max(2, min_cluster), assign=assign)
             return self.end_json(200, result)
 
+        elif self.path.startswith('/api/video/near-duplicates') and self.command == 'GET':
+            # R74b: Jaccard-similarity near-duplicate pairs.
+            # ?threshold=0.80 (default)
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            threshold = 0.80
+            if '?' in self.path:
+                try:
+                    from urllib.parse import urlparse, parse_qs
+                    qs = parse_qs(urlparse(self.path).query)
+                    threshold = float((qs.get('threshold') or ['0.80'])[0])
+                except (ValueError, TypeError):
+                    threshold = 0.80
+            threshold = max(0.5, min(1.0, threshold))
+            return self.end_json(200, {
+                "pairs": _VIDEO_BRIDGE.board.find_near_duplicate_prompts(threshold=threshold),
+                "threshold": threshold,
+            })
+
         elif self.path == '/api/video/prompt-clusters' and self.command == 'GET':
             # R65b: find shots sharing the same prompt (possible dupes)
             if not _VIDEO_BRIDGE:
