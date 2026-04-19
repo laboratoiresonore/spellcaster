@@ -203,6 +203,8 @@ function ShotCard({
   const fileRef = _useRef(null);
   const [dragOver, setDragOver] = _useState(false);
   const [showAdvanced, setShowAdvanced] = _useState(false);
+  // R73b: tag input field
+  const [newTag, setNewTag] = _useState("");
   const [editCarryFrame, setEditCarryFrame] = _useState(shot.carry_last_frame || false);
   const [editTransition, setEditTransition] = _useState(shot.transition || "cut");
   const [editTransitionMs, setEditTransitionMs] = _useState(shot.transition_ms ?? 500);
@@ -381,6 +383,15 @@ function ShotCard({
         <span className="flex-1 text-amber-50 text-sm font-medium truncate">
           {editTitle || <span className="text-slate-500 italic">Untitled shot</span>}
         </span>
+        {/* R73b: tag chips (compact, up to 3 shown in collapsed header) */}
+        {(shot.tags || []).slice(0, 3).map(t => (
+          <span key={t} className="shot-tag-chip px-1.5 py-0.5 rounded bg-teal-900/40 text-teal-200 text-[10px] font-medium">
+            #{t}
+          </span>
+        ))}
+        {(shot.tags || []).length > 3 && (
+          <span className="text-[10px] text-slate-400">+{shot.tags.length - 3}</span>
+        )}
         {/* R65a: bookmark toggle */}
         <button
           onClick={(e) => { e.stopPropagation(); onUpdate(shot.id, {bookmarked: !shot.bookmarked}); }}
@@ -584,6 +595,45 @@ function ShotCard({
               rows={2}
               className="shot-notes w-full bg-slate-950 border border-amber-500/20 rounded-lg px-3 py-2 text-amber-50 placeholder-slate-500 focus:border-amber-500/60 outline-none text-sm resize-y"
             />
+          </div>
+
+          {/* R73b: tag editor */}
+          <div>
+            <label className="block text-xs font-medium text-amber-200 mb-1">Tags</label>
+            <div className="shot-tag-editor flex flex-wrap gap-1 items-center">
+              {(shot.tags || []).map(t => (
+                <span key={t}
+                  className="shot-tag-pill inline-flex items-center gap-1 px-2 py-0.5 rounded bg-teal-900/40 text-teal-200 text-[11px]">
+                  #{t}
+                  <button
+                    onClick={async () => {
+                      await fetch(`/api/video/shots/${shot.id}/tags?tag=${encodeURIComponent(t)}`,
+                                  {method: "DELETE"});
+                      // Refresh via parent's onUpdate mechanism (fallback: set same field)
+                      onUpdate(shot.id, {});
+                    }}
+                    className="text-teal-300 hover:text-rose-300 leading-none"
+                    title="Remove tag"
+                  >×</button>
+                </span>
+              ))}
+              <input type="text" value={newTag}
+                onChange={(e) => setNewTag(e.target.value)}
+                onKeyDown={async (e) => {
+                  if (e.key === "Enter" && newTag.trim()) {
+                    e.preventDefault();
+                    await fetch(`/api/video/shots/${shot.id}/tags`, {
+                      method: "POST",
+                      headers: {"Content-Type": "application/json"},
+                      body: JSON.stringify({tag: newTag.trim()}),
+                    });
+                    setNewTag("");
+                    onUpdate(shot.id, {});
+                  }
+                }}
+                placeholder="+ tag (Enter)"
+                className="shot-tag-input bg-slate-800 border border-slate-600 rounded px-2 py-0.5 text-[11px] text-slate-200 placeholder-slate-500 focus:border-teal-500 focus:outline-none w-32" />
+            </div>
           </div>
 
           {/* Render history */}
@@ -1783,6 +1833,9 @@ function VideoPanel() {
   const [assembledPath, setAssembledPath] = _useState(null);
   const [error, setError] = _useState("");
   const [statusFilter, setStatusFilter] = _useState("all");
+  // R73b: tag filter — when set, filters to shots that carry this tag.
+  // Distinct axis from statusFilter so a user can combine "stale" + "tag:hero".
+  const [tagFilter, setTagFilter] = _useState("");
   const [templates, setTemplates] = _useState([]);
   const [autoScroll, setAutoScroll] = _useState(true);
   const [selected, setSelected] = _useState(new Set());
@@ -1883,6 +1936,9 @@ function VideoPanel() {
       : statusFilter === "stale" ? base.filter(isShotStale)
       : statusFilter === "starred" ? base.filter(s => s.bookmarked)
       : base.filter(s => s.status === statusFilter);
+    if (tagFilter) {
+      result = result.filter(s => (s.tags || []).includes(tagFilter));
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter(s =>
@@ -1892,7 +1948,19 @@ function VideoPanel() {
       );
     }
     return result;
-  }, [shots, statusFilter, searchQuery, isShotStale]);
+  }, [shots, statusFilter, tagFilter, searchQuery, isShotStale]);
+
+  // R73b: distinct tags in use (derived from shots)
+  const allTags = _useMemo(() => {
+    const counts = {};
+    for (const s of shots) {
+      if (s.archived) continue;
+      for (const t of (s.tags || [])) counts[t] = (counts[t] || 0) + 1;
+    }
+    return Object.entries(counts)
+      .sort(([,a], [,b]) => b - a)
+      .map(([tag, count]) => ({tag, count}));
+  }, [shots]);
 
   // R65b: shot-id → cluster size when prompt is shared with 2+ other shots.
   // Recomputed from shot list only (no API call) — duplicate detection
@@ -3774,6 +3842,19 @@ function VideoPanel() {
         </div>
         <ShotSummary shots={shots} />
         <div className="flex gap-1.5 flex-wrap">
+          {allTags.length > 0 && (
+            <select
+              className="tag-filter-select bg-slate-800 border border-slate-600 text-slate-300 text-xs rounded px-2 py-1 self-center"
+              value={tagFilter}
+              onChange={(e) => setTagFilter(e.target.value)}
+              title="Filter to shots carrying this tag"
+            >
+              <option value="">All tags</option>
+              {allTags.map(({tag, count}) => (
+                <option key={tag} value={tag}>#{tag} ({count})</option>
+              ))}
+            </select>
+          )}
           {["all", "draft", "queued", "running", "ready", "failed", "stale", "starred", "archived"].map(status => {
             const count = status === "stale" ? shots.filter(s => !s.archived && isShotStale(s)).length
                         : status === "starred" ? shots.filter(s => !s.archived && s.bookmarked).length
@@ -4031,28 +4112,48 @@ function VideoPanel() {
         </div>
       )}
 
-      {/* R62b: scene-quick-select — shown only when scenes exist, even if
-          nothing is selected yet. Picking a scene populates `selected`
-          with every shot in that scene so the bulk bar appears below. */}
+      {/* R62b: scene-quick-select + R73a scene export */}
       {scenes && scenes.length > 0 && (
-        <div className="scene-quick-select flex items-center gap-2 text-xs text-slate-400">
-          <span>Select scene:</span>
+        <div className="scene-quick-select flex items-center gap-2 text-xs text-slate-400 flex-wrap">
+          <span>Scenes:</span>
           {scenes.map(sc => {
             const count = shots.filter(s => s.scene_id === sc.id).length;
             if (count === 0) return null;
             return (
-              <button
-                key={sc.id}
-                onClick={(e) => selectSceneShots(sc.id, e.shiftKey)}
-                className="scene-quick-btn px-2 py-0.5 rounded text-[10px] font-medium border"
-                style={{
-                  borderColor: sc.color || "#4a9eff",
-                  color: sc.color || "#4a9eff",
-                }}
-                title={`${count} shot(s). Shift-click to add to current selection.`}
-              >
-                {sc.name || sc.id.slice(0,6)} <span className="opacity-70">({count})</span>
-              </button>
+              <div key={sc.id} className="scene-quick-group inline-flex items-center gap-0.5">
+                <button
+                  onClick={(e) => selectSceneShots(sc.id, e.shiftKey)}
+                  className="scene-quick-btn px-2 py-0.5 rounded-l text-[10px] font-medium border"
+                  style={{
+                    borderColor: sc.color || "#4a9eff",
+                    color: sc.color || "#4a9eff",
+                  }}
+                  title={`${count} shot(s). Shift-click to add to current selection.`}
+                >
+                  {sc.name || sc.id.slice(0,6)} <span className="opacity-70">({count})</span>
+                </button>
+                {/* R73a: per-scene export dropdown */}
+                <div className="relative group">
+                  <button
+                    className="scene-export-menu-btn px-1.5 py-0.5 rounded-r text-[10px] font-medium border border-l-0"
+                    style={{borderColor: sc.color || "#4a9eff",
+                             color: sc.color || "#4a9eff"}}
+                    title="Export this scene only"
+                  >▾</button>
+                  <div className="scene-export-menu hidden group-hover:flex absolute top-5 left-0 z-10 bg-slate-800 rounded-lg shadow-xl border border-slate-700 p-1 flex-col gap-0.5 min-w-max">
+                    <a href={`/api/video/export/edl?fps=30&scene=${encodeURIComponent(sc.id)}`}
+                       download
+                       className="px-2 py-1 rounded hover:bg-slate-700 text-[10px] text-slate-200">
+                      Export scene EDL
+                    </a>
+                    <a href={`/api/video/export/fcpxml?fps=30&scene=${encodeURIComponent(sc.id)}`}
+                       download
+                       className="px-2 py-1 rounded hover:bg-slate-700 text-[10px] text-slate-200">
+                      Export scene FCPXML
+                    </a>
+                  </div>
+                </div>
+              </div>
             );
           })}
         </div>

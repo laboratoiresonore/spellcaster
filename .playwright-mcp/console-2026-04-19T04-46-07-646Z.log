@@ -42,3 +42,18 @@
     at askKobold (http://127.0.0.1:7777/app.js:3307:13) @ http://127.0.0.1:7777/app.js:3371
 [  520667ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:7777/api/wizard_info/comfyui_Flux_FLUX1%20Dev%20fp8_safetensors:0
 [  653777ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:7777/api/wizard_info/comfyui_Flux_FLUX1%20Dev%20fp8_safetensors:0
+[ 1130459ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/comfy_status:0
+[ 1130475ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/assets?limit=9:0
+[ 1130723ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/events/stream?kinds=guild.asset.uploaded%2Cgimp.asset.uploaded%2Cdarktable.asset.uploaded%2Cresolve.asset.uploaded:0
+[ 1135444ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/comfy_status:0
+[ 1135444ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/interfaces:0
+[ 1135707ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/events/stream?kinds=guild.asset.uploaded%2Cgimp.asset.uploaded%2Cdarktable.asset.uploaded%2Cresolve.asset.uploaded:0
+[ 1140460ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/comfy_status:0
+[ 1140708ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/events/stream?kinds=guild.asset.uploaded%2Cgimp.asset.uploaded%2Cdarktable.asset.uploaded%2Cresolve.asset.uploaded:0
+[ 1145459ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/comfy_status:0
+[ 1145459ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/sillytavern_status:0
+[ 1145460ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/signal_bridge_status:0
+[ 1145460ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/interfaces:0
+[ 1145460ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/assets?limit=9:0
+[ 1145723ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/events/stream?kinds=guild.asset.uploaded%2Cgimp.asset.uploaded%2Cdarktable.asset.uploaded%2Cresolve.asset.uploaded:0
+[ 1155480ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/api/interfaces:0
