@@ -82,7 +82,7 @@
     },
     {
       "key": "resolve",
-      "label": "DaVinci Resolve",
+      "label": "Resolve",
       "description": "Video editor for cutting together Spellcaster-generated shots",
       "default_port": 0,
       "detect_paths": [
