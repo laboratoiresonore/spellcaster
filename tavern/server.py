@@ -313,7 +313,8 @@ STUDIO_CHARACTERS = [
         "archetype": "a radiant conjurer of visions, surrounded by swirling paint and prismatic light",
         "build_fns": [
             "build_txt2img", "build_controlnet_gen", "build_colorize",
-            "build_iclight", "build_lut",
+            "build_ddcolor", "build_iclight", "build_lut",
+            "build_generate_anything",
         ],
         "system_prompt": (
             "You are Imaginus, the Guild's master of image creation.\n\n"
@@ -381,6 +382,7 @@ STUDIO_CHARACTERS = [
             "build_klein_refine", "build_klein_color_match",
             "build_klein_virtual_tryon",
             "build_style_transfer", "build_layer_blend",
+            "build_color_match", "build_normal_map",
         ],
         "system_prompt": (
             "You are Transmutex, the Guild's alchemist of image transformation.\n\n"
@@ -549,10 +551,12 @@ STUDIO_CHARACTERS = [
         "color2": "hsl(260, 100%, 60%)",
         "archetype": "an ethereal figure phasing between dimensions, partially transparent, erasing reality with glowing fingertips",
         "build_fns": [
-            "build_rembg", "build_lama_remove", "build_inpaint",
+            "build_rembg", "build_rembg_birefnet",
+            "build_lama_remove", "build_inpaint",
             "build_outpaint", "build_klein_inpaint", "build_klein_auto_inpaint",
             "build_klein_face_detail", "build_klein_sam3_inpaint",
             "build_sam3_segment", "build_sam3_extract",
+            "build_magic_eraser",
         ],
         "system_prompt": (
             "You are Erasure, the Guild's specialist in surgical image editing.\n\n"
