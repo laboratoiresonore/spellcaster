@@ -163,7 +163,17 @@ class _TrayState:
         items.append(pystray.Menu.SEPARATOR)
 
         # Services block — Start/Stop per service that the antenna knows about.
-        declared = list((self.cfg.get("services") or {}).keys())
+        # cfg["services"] is normalized to dict at load time, but older
+        # in-memory mutations (endpoints/services.py, external writers)
+        # can leave it as a list. Tolerate both shapes without crashing
+        # the tray menu, which is user-facing.
+        svc = self.cfg.get("services")
+        if isinstance(svc, dict):
+            declared = list(svc.keys())
+        elif isinstance(svc, list):
+            declared = [str(k) for k in svc if k]
+        else:
+            declared = []
         detected = list(detect.detect_all(self.cfg).keys()) \
                     if hasattr(detect, "detect_all") else []
         services = sorted(set(declared + detected))
@@ -501,7 +511,8 @@ def _stop_service_best_effort(service: str, cfg: dict) -> None:
             pass
     # 2. Port-based reaping as fallback
     if not killed:
-        svc_cfg = (cfg.get("services") or {}).get(service, {})
+        svc_raw = cfg.get("services") or {}
+        svc_cfg = svc_raw.get(service, {}) if isinstance(svc_raw, dict) else {}
         port = int(svc_cfg.get("port") or 0)
         if port:
             from . import port_cleanup
@@ -567,6 +578,11 @@ def main(argv: Optional[list] = None) -> int:
     surface failure. On non-Windows or when pystray is missing we
     delegate to antenna.agent.main (console mode).
     """
+    # Splash up FIRST so a silent EXE never looks frozen while config
+    # bootstrap + service autodetect run (can take several seconds).
+    from . import splash as _splash
+    sp = _splash.show_splash()
+
     # Non-Windows or missing deps → straight to console mode
     if os.name != "nt" or not _PYSTRAY_OK:
         if os.name == "nt":
@@ -575,14 +591,20 @@ def main(argv: Optional[list] = None) -> int:
                   "\n    pip install pystray Pillow", file=sys.stderr)
         # agent.main() doesn't exist — but running `python -m antenna.agent`
         # does the serve loop. Replicate that inline here.
+        sp.status("Loading config…")
         cfg = config.bootstrap()
+        sp.status("Starting HTTP server…")
+        sp.close()
         agent.serve(cfg, block=True)
         return 0
 
     # Windows + pystray: start agent on a background thread, run the
     # tray on the main thread (pystray + COM require the main thread).
+    sp.status("Loading config + credentials…")
     cfg = config.bootstrap()
+    sp.status("Probing installed services…")
     server = agent.serve(cfg, block=False)
+    sp.status("Wiring tray controls…")
     state = _TrayState(cfg, server)
 
     # Background: drive the HTTP server loop. Daemon thread so Ctrl-C
@@ -606,6 +628,7 @@ def main(argv: Optional[list] = None) -> int:
     # re-evaluates every time the user opens the menu. Service
     # registration / removal during runtime still requires an
     # icon.update_menu() call — _rebuild_menu() below is the hook.
+    sp.status("Building tray icon…")
     icon = pystray.Icon(
         "spellcaster-antenna",
         icon=_build_icon("running"),
@@ -615,6 +638,9 @@ def main(argv: Optional[list] = None) -> int:
     state._rebuild_menu = lambda: icon.update_menu()
     state.icon = icon
     _install_tray_sink(state)
+    # Close splash just before the tray claims the main thread; the
+    # icon.run() call below blocks until the user picks Quit.
+    sp.close()
     agent.notify("Spellcaster Antenna",
                   f"Ready on {state.subtitle()}. Right-click the tray "
                   f"icon to control services.",

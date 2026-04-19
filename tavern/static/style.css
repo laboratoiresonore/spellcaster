@@ -1929,6 +1929,90 @@ textarea::placeholder { color: #555; }
 }
 .sidebar-separator span { white-space: nowrap; }
 
+/* ── Arch sub-header inside Per-Model Wizards ──────────────────────
+   Each architecture (SDXL, Flux 2 Klein, Chroma, …) gets a themed
+   sub-header between its wizards. Gradient pulls from CSS custom
+   properties --arch-c1 / --arch-c2 / --arch-glow set by the
+   renderer — add a new arch to ARCH_META in app.js and this rule
+   styles it automatically. No per-arch CSS needed. */
+.sidebar-arch-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px 6px; margin-top: 6px;
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 1.2px;
+    color: transparent;
+    background: linear-gradient(92deg,
+        var(--arch-c1, #b470ff),
+        var(--arch-c2, #ffd700),
+        var(--arch-c1, #b470ff));
+    background-size: 250% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 0 6px rgba(var(--arch-glow, 178,70,242), 0.5));
+    animation: archHeaderSweep 7s linear infinite;
+    position: relative;
+}
+.sidebar-arch-header::before,
+.sidebar-arch-header::after {
+    content: '';
+    flex: 1; height: 1px;
+    background: linear-gradient(90deg,
+        transparent,
+        rgba(var(--arch-glow, 178,70,242), 0.45),
+        transparent);
+}
+.sidebar-arch-header .arch-rune {
+    font-size: 14px;
+    color: rgb(var(--arch-glow, 178,70,242));
+    filter: drop-shadow(0 0 4px rgba(var(--arch-glow, 178,70,242), 0.7));
+    /* Emoji + chrome glyphs don't pick up background-clip:text, so
+       paint them directly. */
+    -webkit-text-fill-color: rgb(var(--arch-glow, 178,70,242));
+    animation: archRuneBreathe 3.2s ease-in-out infinite;
+}
+.sidebar-arch-header .arch-name {
+    white-space: nowrap;
+}
+.sidebar-arch-header .arch-count {
+    font-size: 9px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 999px;
+    color: rgb(var(--arch-glow, 178,70,242));
+    -webkit-text-fill-color: rgb(var(--arch-glow, 178,70,242));
+    background: rgba(var(--arch-glow, 178,70,242), 0.14);
+    border: 1px solid rgba(var(--arch-glow, 178,70,242), 0.35);
+}
+@keyframes archHeaderSweep {
+    0%   { background-position: 0% 50%; }
+    100% { background-position: 250% 50%; }
+}
+@keyframes archRuneBreathe {
+    0%, 100% { transform: scale(1);   opacity: 0.85; }
+    50%      { transform: scale(1.15); opacity: 1; }
+}
+
+/* Arch-themed left-border tint on individual per-model cards. Runs
+   alongside the card's existing hover/active treatments — a subtle
+   2px accent that matches the sub-header above. Kept dim enough
+   that it reads as a "family marker", not a hover state. */
+.character-card[class*="arch-"] {
+    position: relative;
+    border-left: 2px solid transparent;
+    border-image: linear-gradient(180deg,
+        rgba(var(--arch-glow, 178,70,242), 0.55),
+        rgba(var(--arch-glow, 178,70,242), 0.15)) 1 100%;
+}
+.character-card[class*="arch-"]:hover {
+    box-shadow: inset 3px 0 12px rgba(var(--arch-glow, 178,70,242), 0.25);
+}
+.character-card.active[class*="arch-"] {
+    border-left-color: rgb(var(--arch-glow, 178,70,242));
+    box-shadow: inset 4px 0 18px rgba(var(--arch-glow, 178,70,242), 0.35),
+                0 0 16px rgba(var(--arch-glow, 178,70,242), 0.2);
+}
+
 /* ── Ambient floating runes (CSS-only decoration) ── */
 .magic-rune {
     position: fixed; pointer-events: none; z-index: 0;
@@ -2224,14 +2308,80 @@ textarea::placeholder { color: #555; }
     text-overflow: ellipsis;
 }
 .wt-arch-badge {
-    font-size: 9px;
-    font-weight: 600;
-    padding: 1px 6px;
-    border-radius: 3px;
-    background: rgba(6, 182, 212, 0.2);
-    color: #67e8f9;
-    border: 1px solid rgba(6, 182, 212, 0.3);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    color: #1a1422;
+    text-shadow: 0 1px 0 rgba(255,255,255,0.35);
     flex-shrink: 0;
+    white-space: nowrap;
+}
+/* The arch hero panel shown at the top of a per-model wizard's
+   tooltip. Gradient matches the arch colours fed from app.js; rune
+   glyph glows in the arch tint so the user instantly sees which
+   family the hovered wizard belongs to. */
+.wt-arch-hero {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: linear-gradient(135deg,
+        rgba(var(--arch-glow, 178,70,242), 0.18),
+        rgba(var(--arch-glow, 178,70,242), 0.04));
+    border: 1px solid rgba(var(--arch-glow, 178,70,242), 0.40);
+    box-shadow: 0 0 14px rgba(var(--arch-glow, 178,70,242), 0.22),
+                inset 0 1px 0 rgba(255,255,255,0.04);
+    position: relative;
+    overflow: hidden;
+}
+.wt-arch-hero::after {
+    content: '';
+    position: absolute; top: -50%; right: -20%;
+    width: 120%; height: 200%;
+    background: radial-gradient(ellipse at center,
+        rgba(var(--arch-glow, 178,70,242), 0.28) 0%, transparent 65%);
+    filter: blur(8px);
+    pointer-events: none;
+    animation: archHeroGlow 5s ease-in-out infinite;
+}
+@keyframes archHeroGlow {
+    0%, 100% { opacity: 0.55; transform: translateX(0); }
+    50%      { opacity: 1;    transform: translateX(-6%); }
+}
+.wt-arch-rune {
+    font-size: 28px;
+    line-height: 1;
+    color: var(--arch-c1, #b470ff);
+    filter: drop-shadow(0 0 6px rgba(var(--arch-glow, 178,70,242), 0.75))
+            drop-shadow(0 0 14px rgba(var(--arch-glow, 178,70,242), 0.35));
+    flex-shrink: 0;
+    animation: archRuneBreathe 3.2s ease-in-out infinite;
+    position: relative; z-index: 1;
+}
+.wt-arch-lines {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    position: relative; z-index: 1;
+}
+.wt-arch-full {
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff6e0;
+    letter-spacing: 0.3px;
+    text-shadow: 0 0 10px rgba(var(--arch-glow, 178,70,242), 0.5);
+}
+.wt-arch-sub {
+    font-size: 9px;
+    font-family: 'JetBrains Mono', monospace;
+    color: rgba(255,255,255,0.55);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
 }
 .wt-fn-list {
     display: flex;

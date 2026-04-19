@@ -6034,6 +6034,26 @@ def _build_avatar_prompt(char):
         f"specialist in {subtext}, "
         f"{style_tail}"
     )
+
+    # Per-model prompt profile — prepends model-specific trigger words +
+    # quality tags, strips tokens that burn Flux/Chroma, injects NSFW
+    # modifiers only when NSFW_MODE is on. Canonical logic lives in
+    # spellcaster_core/model_prompt_profiles.py so GIMP / Resolve /
+    # Darktable plugins can share it. The per-model wizard entry carries
+    # a `model_name` field; the profile matches on filename substring.
+    model_name = char.get("model_name") or ""
+    model_arch = char.get("model_arch") or ""
+    if model_name or model_arch:
+        try:
+            from spellcaster_core import model_prompt_profiles as _mpp
+            prof = _mpp.profile_for(model_name, arch=model_arch,
+                                     nsfw=bool(NSFW_MODE))
+            if prof:
+                base_prompt, _ = _mpp.apply_profile(base_prompt, "", prof)
+        except Exception as e:
+            print(f"  [Guild] model_prompt_profile failed for "
+                  f"{model_name!r}: {e}")
+
     return base_prompt
 
 
