@@ -31,6 +31,20 @@ from pathlib import Path
 from typing import Any
 
 from .. import __version__, heartbeat
+from .. import detect as _detect
+
+# Lazy import of the installer's service registry loader — it lives in
+# `installer/remote_services.py` but is fetched at runtime from GitHub
+# (with baked fallback) so it's always current.
+try:
+    import sys as _sys
+    _repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__),
+                                               "..", ".."))
+    if _repo_root not in _sys.path:
+        _sys.path.insert(0, _repo_root)
+    from installer import remote_services as _remote_services  # type: ignore
+except ImportError:
+    _remote_services = None
 
 
 # Epoch when the agent started, set lazily on first call. Accurate
@@ -121,6 +135,20 @@ def status(ctx: dict[str, Any]) -> tuple[int, dict]:
             "reachable": False, "note": "resolve service module not yet built"}
 
     uptime_seconds = int(time.time() - _PROCESS_START)
+
+    # Auto-detect all Spellcaster-compatible services present on this
+    # machine, not just the ones this antenna was configured to advertise.
+    # Operators can use this to discover "oh, Darktable is installed here,
+    # should I add it to my antenna's services list?"
+    services_detected: dict[str, dict] = {}
+    if _remote_services is not None:
+        try:
+            registry = _remote_services.load_services()
+            services_detected = _detect.detect_installed_services(registry)
+        except Exception as e:  # noqa: BLE001 — detection must never fail status
+            services_detected = {"_error": {"installed": False,
+                                             "evidence": f"detect failed: {e}"}}
+
     return 200, {
         "service": "spellcaster-antenna",
         "version": __version__,
@@ -129,6 +157,7 @@ def status(ctx: dict[str, Any]) -> tuple[int, dict]:
         "hostname": socket.gethostname(),
         "services_declared": services_declared,
         "services_detail": services_detail,
+        "services_detected": services_detected,
         "rate_limit_rpm": cfg.get("rate_limit_rpm", 30),
         "heartbeat": heartbeat.current_state(),
         # Paths are returned as basenames only — full paths leak the user's

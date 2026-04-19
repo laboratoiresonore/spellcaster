@@ -1,0 +1,107 @@
+name: Bug report
+description: Report a problem with Spellcaster (GIMP plugin, Wizard Guild, installer, or Darktable plugin)
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. The more specific you are about the tool, model, and error text, the faster this gets fixed.
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which part of Spellcaster is affected?
+      options:
+        - GIMP plugin
+        - Wizard Guild (chat UI)
+        - Installer (installing / updating)
+        - Darktable plugin
+        - SillyTavern character(s)
+        - ComfyUI-Spellcaster nodes (file a bug at the node repo instead if so)
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: input
+    id: tool
+    attributes:
+      label: Which tool / menu item?
+      description: e.g. "Filters > Spellcaster > Generate > Inpaint Selection", or the Guild action you clicked.
+      placeholder: e.g. Filters > Spellcaster > Face > Face Swap (ReActor)
+    validations:
+      required: false
+
+  - type: dropdown
+    id: architecture
+    attributes:
+      label: Model architecture (if relevant)
+      options:
+        - SD 1.5
+        - SDXL
+        - Illustrious / Pony
+        - ZIT (turbo)
+        - Flux 1 Dev
+        - Flux 2 Klein
+        - Flux Kontext
+        - Chroma
+        - Wan 2.2 (video)
+        - LTX 2.3 (video)
+        - Not applicable
+    validations:
+      required: false
+
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened?
+      description: What did you expect? What did you see instead? Screenshots welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: error_text
+    attributes:
+      label: Error text / console output
+      description: |
+        Paste the full traceback or console output. Do NOT redact paths — they help debugging. Relevant places to look:
+        - GIMP plugin: GIMP's error console and `%APPDATA%/GIMP/3.2/plug-ins/comfyui-connector/.spellcaster_log.txt`
+        - Wizard Guild: the terminal that launched the Guild
+        - ComfyUI: the ComfyUI server terminal
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: comfyui_address
+    attributes:
+      label: ComfyUI address
+      description: `localhost:8188`, a LAN IP, or "Antenna mode"? (If LAN, feel free to redact the IP.)
+      placeholder: e.g. localhost:8188
+    validations:
+      required: false
+
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: e.g. Windows 11, macOS 14.6, Ubuntu 24.04
+    validations:
+      required: true
+
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU / VRAM
+      placeholder: e.g. RTX 4090 24GB
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Spellcaster version / commit
+      description: "Menu: Filters > Spellcaster > Tools > About, or check `.spellcaster_version` in the plugin dir."
+      placeholder: e.g. v1.3.2 or commit 608a115
+    validations:
+      required: false
