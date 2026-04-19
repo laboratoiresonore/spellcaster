@@ -22,3 +22,22 @@
     at initDynamicStyles (http://127.0.0.1:8002/scripts/dynamic-styles.js:190:38)
     at firstLoadInit (http://127.0.0.1:8002/script.js:751:5)
     at async HTMLDocument.<anonymous> (http://127.0.0.1:8002/script.js:12473:5) @ http://127.0.0.1:8002/scripts/dynamic-styles.js:145
+[    8824ms] [LOG] [Spellcaster] Auto-casting 6 characters in background... @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:1396
+[   50251ms] [INFO] Rendered 4 messages in 0.027 seconds. @ http://127.0.0.1:8002/script.js:1526
+[   50287ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[   50287ms] [LOG] [QR2] CHAT_CHANGED 2026-04-19@14h03m51s641ms @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[   62406ms] [LOG] Generate entered @ http://127.0.0.1:8002/script.js:4207
+[   62463ms] [LOG] [QR2] calling {functionToCall: , args: Array(3)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[   62463ms] [LOG] [QR2] Before-generation hook skipped for event before group wrapper. @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[   62474ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[   62474ms] [LOG] Generate entered @ http://127.0.0.1:8002/script.js:4207
+[   62474ms] [LOG] [QR2] calling {functionToCall: , args: Array(3)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[   62510ms] [LOG] [QR2] calling {functionToCall: , args: Array(1)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[   62633ms] [LOG] Core/all messages: 5/5 @ http://127.0.0.1:8002/script.js:4516
+[   62636ms] [LOG] skipWIAN not active, adding WIAN @ http://127.0.0.1:8002/script.js:4575
+[   71241ms] [LOG] [QR2] calling {functionToCall: , args: Array(2)} @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[   71249ms] [LOG] [Spellcaster] Scaffold: Moved to: match — cliffs jutting above churning waves, Atmosphere: fog roll → "The scene shifts to match — cliffs jutting above c..." @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:398
+[   92636ms] [LOG] [Spellcaster] Auto-cast complete: 6 cast, 5 bodies @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:1437
+[  135699ms] [LOG] Set background to spellcaster_studio_1776632935042.png @ http://127.0.0.1:8002/scripts/slash-commands.js:6322
+[  169319ms] [LOG] Set background to spellcaster_studio_1776632935042.png @ http://127.0.0.1:8002/scripts/slash-commands.js:6322
+[  209033ms] [LOG] Set background to spellcaster_studio_1776632935042.png @ http://127.0.0.1:8002/scripts/slash-commands.js:6322
