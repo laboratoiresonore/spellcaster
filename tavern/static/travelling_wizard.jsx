@@ -1895,16 +1895,19 @@ function ScaffoldEditor({ scaffolds, setScaffolds }) {
 
 // ─── Tool Detection Card ──────────────────────────────────────────
 
-function ToolDetectionCard({ tool, config, onConfigure }) {
+function ToolDetectionCard({ tool, config, appControl, onConfigure }) {
   const [status, setStatus] = useState("unchecked"); // unchecked | checking | found | not_found
   const [probeInfo, setProbeInfo] = useState(""); // server-returned status text
   const [expanded, setExpanded] = useState(false);
 
-  // Resolve the probe URL from live config when the tool declares a
-  // configKey — falls back to the hardcoded defaultUrl. SillyTavern,
-  // LM Studio, KoboldCpp don't have config fields yet so they always
-  // probe their canonical local-host port.
-  const effectiveUrl = (tool.urlConfigKey && config && config[tool.urlConfigKey])
+  // R143: resolve the probe URL with the Guild's app_control registry
+  // as the highest-priority source so sidebar chip edits reflect here
+  // without a manual refresh. Precedence: app_control entry → tool's
+  // urlConfigKey in signal_bridge_config → hardcoded defaultUrl.
+  const acKey = APP_CONTROL_KEY_MAP[tool.id];
+  const acUrl = acKey ? appControlUrl(appControl, acKey) : null;
+  const effectiveUrl = acUrl
+    || (tool.urlConfigKey && config && config[tool.urlConfigKey])
     || tool.defaultUrl
     || "";
 
@@ -2032,19 +2035,20 @@ function ToolDetectionCard({ tool, config, onConfigure }) {
 
 // ─── Integrations Panel ───────────────────────────────────────────
 
-function IntegrationsPanel({ config, onConfigure }) {
+function IntegrationsPanel({ config, appControl, onConfigure }) {
   return (
     <div className="space-y-4">
       <div className="bg-amber-500/10 border border-amber-600/30 rounded-lg p-3 flex items-start gap-3">
         <span className="text-amber-500 mt-0.5"><Icons.Compass size={18} /></span>
         <p className="text-sm text-amber-200">
           Auto-detect installed tools and services. Click "Detect" to probe for running instances, then configure connections.
+          ComfyUI / Ollama / Kobold URLs come from the main Guild sidebar's app-control registry — single source of truth.
         </p>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {TOOL_DEFINITIONS.map(tool => (
           <ToolDetectionCard key={tool.id} tool={tool}
-            config={config} onConfigure={onConfigure} />
+            config={config} appControl={appControl} onConfigure={onConfigure} />
         ))}
       </div>
     </div>
@@ -2090,6 +2094,61 @@ function Field({ label, tip, children }) {
         {tip && <Tip text={tip} />}
       </label>
       {children}
+    </div>
+  );
+}
+
+// R143: input bound to the Guild's app_control registry. Reads the
+// current URL from a live snapshot, accepts host:port or full URL on
+// edit, and writes through `onSave` (usually the parent's
+// `saveServiceUrl` wrapper around /api/app_control/register).
+function AppControlField({ label, tip, serviceKey, appControl, fallback, onSave }) {
+  const canonical = appControlUrl(appControl, serviceKey);
+  const [draft, setDraft] = useState(canonical || fallback || "");
+  const [status, setStatus] = useState(""); // "" | "saving" | "saved" | "error"
+  const [err, setErr] = useState("");
+  // Keep the draft in sync when the upstream changes (e.g. a sidebar
+  // edit propagates via the 10s poll). Don't clobber while the user
+  // is mid-edit — only overwrite if the field lost focus.
+  const focusedRef = useRef(false);
+  useEffect(() => {
+    if (focusedRef.current) return;
+    setDraft(canonical || fallback || "");
+  }, [canonical, fallback]);
+  const commit = async () => {
+    const v = draft.trim();
+    if (v === (canonical || "")) { setStatus(""); return; }
+    setStatus("saving"); setErr("");
+    const res = await onSave(serviceKey, v);
+    if (res && res.ok) { setStatus("saved"); setTimeout(() => setStatus(""), 1400); }
+    else { setStatus("error"); setErr(res ? res.error : "save failed"); }
+  };
+  const entry = appControl && appControl[serviceKey];
+  return (
+    <div>
+      <label className="block text-sm font-medium text-amber-200 mb-1 flex items-center gap-1">
+        {label}
+        {tip && <Tip text={tip} />}
+        {status === "saving" && <span className="text-xs text-amber-500 ml-2">saving…</span>}
+        {status === "saved"  && <span className="text-xs text-emerald-400 ml-2">✓ saved</span>}
+        {status === "error"  && <span className="text-xs text-red-400 ml-2" title={err}>✗ {err.slice(0, 40)}</span>}
+      </label>
+      <input
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onFocus={() => { focusedRef.current = true; }}
+        onBlur={() => { focusedRef.current = false; commit(); }}
+        onKeyDown={e => { if (e.key === "Enter") { e.currentTarget.blur(); } }}
+        placeholder="http://192.168.x.x:PORT or host:port"
+        className={inputCls} />
+      {entry && (
+        <p className="text-xs text-slate-500 mt-1">
+          app_control entry: target=<code>{entry.target || "local"}</code>
+          {entry.host && <> · host=<code>{entry.host}</code></>}
+          {entry.port && <> · port=<code>{entry.port}</code></>}
+          {entry.url && <> · url=<code>{entry.url}</code></>}
+        </p>
+      )}
     </div>
   );
 }
@@ -2988,6 +3047,67 @@ function GuildSidebar({ isOpen, onToggle, comfyUrl, koboldUrl: initialKoboldUrl,
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════════
 
+// R143: single-source-of-truth helpers for service URLs.
+// `signal_bridge_config.json` and the Guild's `app_control` matrix
+// both carried ComfyUI / Ollama / Kobold endpoints; the Travelling
+// Wizard only read the former, so any edit the user made in the
+// sidebar chip row never surfaced here. These two helpers let the
+// Network + Integrations tabs read+write the canonical `app_control`
+// entry via /api/app_control/config + /api/app_control/register.
+
+// Map Travelling Wizard tool ids → app_control service key.
+const APP_CONTROL_KEY_MAP = {
+  comfyui: "comfyui",
+  ollama: "ollama",
+  koboldcpp: "kobold",
+  kobold_rp: "kobold_rp",
+  kobold_tts: "kobold_tts",
+};
+
+// Default port per service (used when app_control entry has host but
+// no explicit port — matches the Guild's register endpoint defaults).
+const DEFAULT_PORT = {
+  comfyui: 8188, ollama: 11434, kobold: 5001,
+  kobold_rp: 5001, kobold_tts: 5002,
+};
+
+function appControlUrl(appControl, serviceKey) {
+  const entry = (appControl && appControl[serviceKey]) || null;
+  if (!entry) return null;
+  if (entry.url) return String(entry.url).replace(/\/+$/, "");
+  const host = entry.host
+    || (entry.target && entry.target !== "local" ? entry.target : null);
+  if (!host) return null;
+  const port = entry.port || DEFAULT_PORT[serviceKey] || 8188;
+  return `http://${host}:${port}`;
+}
+
+function parseUrlToRegisterPayload(app, rawInput) {
+  const raw = (rawInput || "").trim();
+  if (!raw) return null;
+  const payload = { app, target: "local" };
+  if (/^https?:\/\//i.test(raw)) {
+    payload.url = raw.replace(/\/+$/, "");
+    payload.launcher = payload.url;
+    // Also split out host+port for the legacy codepath.
+    try {
+      const u = new URL(raw);
+      if (u.hostname) payload.host = u.hostname;
+      if (u.port) payload.port = parseInt(u.port, 10);
+    } catch { /* best-effort */ }
+  } else {
+    // bare host:port or just host
+    const [h, p] = raw.replace(/^https?[:/]+/i, "").split(":");
+    payload.host = h;
+    if (p) {
+      const n = parseInt(p, 10);
+      if (!Number.isNaN(n)) payload.port = n;
+    }
+    payload.launcher = raw;
+  }
+  return payload;
+}
+
 function SignalBridgeSettings() {
   const [config, setConfig] = useState(deepClone(DEFAULT_CONFIG));
   const [scaffolds, setScaffolds] = useState(() => builtInScaffolds());
@@ -2995,6 +3115,10 @@ function SignalBridgeSettings() {
   const [saved, setSaved] = useState(false);
   const [importError, setImportError] = useState("");
   const [guildOpen, setGuildOpen] = useState(false);
+  // R143: app_control cached from /api/app_control/config so the
+  // Network + Integrations tabs point at the Guild's canonical
+  // service registry instead of diverging from signal_bridge_config.
+  const [appControl, setAppControl] = useState({});
   // R120: prevTabRef + isVideoWizard / handleWizardSelect auto-switch
   // logic were removed along with the Video tab — the main Guild GUI
   // handles Cinematographer mode directly.
@@ -3069,6 +3193,48 @@ function SignalBridgeSettings() {
     }, 800);
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
   }, [config]);
+
+  // R143: load app_control on mount + refresh it every 10s so chip
+  // edits made in the main Guild sidebar surface here without a hard
+  // reload. The Network / Integrations tabs render from this state.
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      fetch("/api/app_control/config")
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {
+          if (cancelled || !d) return;
+          setAppControl(d.app_control || {});
+        })
+        .catch(() => {});
+    };
+    load();
+    const t = setInterval(load, 10000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, []);
+
+  // R143: register a service URL back into the Guild's app_control.
+  // Called from the Network tab inputs + ToolDetectionCard's
+  // configure flow. Returns a Promise so callers can surface save
+  // status locally without polling.
+  const saveServiceUrl = useCallback(async (serviceKey, rawInput) => {
+    const payload = parseUrlToRegisterPayload(serviceKey, rawInput);
+    if (!payload) return { ok: false, error: "empty input" };
+    try {
+      const r = await fetch("/api/app_control/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) return { ok: false, error: d.error || `HTTP ${r.status}` };
+      // Optimistic local update so the UI doesn't wait for the 10s poll.
+      setAppControl(prev => ({ ...prev, [serviceKey]: d.entry || prev[serviceKey] }));
+      return { ok: true, entry: d.entry };
+    } catch (e) {
+      return { ok: false, error: String(e.message || e) };
+    }
+  }, []);
 
   // Load server-side scaffolds (auto-detected wizards + persisted
   // overrides) and merge with built-ins. The server now returns the
@@ -3259,12 +3425,23 @@ function SignalBridgeSettings() {
 
         {/* ── Integrations Tab ── */}
         {activeTab === "integrations" && (
-          <IntegrationsPanel config={config} onConfigure={(tabId) => setActiveTab(tabId)} />
+          <IntegrationsPanel config={config} appControl={appControl}
+            onConfigure={(tabId) => setActiveTab(tabId)} />
         )}
 
         {/* ── Network Tab ── */}
         {activeTab === "network" && (
           <div className="space-y-4">
+            <div className="bg-amber-500/10 border border-amber-600/30 rounded-lg p-3 flex items-start gap-3">
+              <span className="text-amber-500 mt-0.5"><Icons.Compass size={18} /></span>
+              <p className="text-sm text-amber-200">
+                <strong>ComfyUI / Ollama / Kobold URLs below reflect the
+                main Guild sidebar's app-control registry (single source of
+                truth).</strong> Edits here are persisted via
+                <code className="mx-1 px-1 rounded bg-slate-800/60 text-amber-200">/api/app_control/register</code>
+                so chip status and Travelling Wizard stay in sync.
+              </p>
+            </div>
             <SectionCard title="LLM Server" icon={<Icons.Server />}>
               <Field label="Open WebUI URL" tip="The address of your Open WebUI instance. This is where the LLM processes messages. Default: http://localhost:8080">
                 <input value={config.webui_url} onChange={e => update("webui_url", e.target.value)} className={inputCls} />
@@ -3272,17 +3449,43 @@ function SignalBridgeSettings() {
               <Field label="Open WebUI API Key" tip="Authentication token for the WebUI API. Generate this from Open WebUI → Settings → Account → API Keys">
                 <PasswordField value={config.webui_api_key} onChange={e => update("webui_api_key", e.target.value)} placeholder="sk-..." className={inputCls} />
               </Field>
-              <Field label="Ollama URL" tip="Direct Ollama API endpoint. Used as fallback when Open WebUI is unavailable. Default: http://localhost:11434">
-                <input value={config.ollama_url || ""} onChange={e => update("ollama_url", e.target.value)} className={inputCls} />
-              </Field>
+              <AppControlField
+                label="Ollama URL"
+                tip="Direct Ollama API endpoint, shared with the main Guild sidebar. Default: http://localhost:11434"
+                serviceKey="ollama"
+                appControl={appControl}
+                fallback={config.ollama_url || ""}
+                onSave={saveServiceUrl}
+              />
               <Field label="Default Model" tip="The Ollama model tag used for all conversations. Must be pulled on the Ollama server first (e.g. llama3:latest, mistral:latest)">
                 <input value={config.model} onChange={e => update("model", e.target.value)} className={inputCls} />
               </Field>
+              <AppControlField
+                label="KoboldCpp URL"
+                tip="KoboldCpp chat/RP instance URL. Default: http://localhost:5001"
+                serviceKey="kobold"
+                appControl={appControl}
+                fallback={config.kobold_url || ""}
+                onSave={saveServiceUrl}
+              />
+              <AppControlField
+                label="Kobold · TTS/STT URL"
+                tip="Separate KoboldCpp instance for voice (walkie-talkie + text-to-speech). Default: http://localhost:5002"
+                serviceKey="kobold_tts"
+                appControl={appControl}
+                fallback=""
+                onSave={saveServiceUrl}
+              />
             </SectionCard>
             <SectionCard title="ComfyUI Server" icon={<Icons.Zap />}>
-              <Field label="ComfyUI URL" tip="Address of your ComfyUI server for image generation. The Spellcaster nodes must be installed. Default: http://localhost:8188">
-                <input value={config.comfyui_url} onChange={e => update("comfyui_url", e.target.value)} className={inputCls} />
-              </Field>
+              <AppControlField
+                label="ComfyUI URL"
+                tip="Address of your ComfyUI server for image generation. Shared with the main Guild sidebar. Default: http://localhost:8188"
+                serviceKey="comfyui"
+                appControl={appControl}
+                fallback={config.comfyui_url || ""}
+                onSave={saveServiceUrl}
+              />
               <Field label="Output Directory" tip="Where ComfyUI saves generated images on the server filesystem. Used for cleanup and retrieval">
                 <input value={config.comfyui_output_dir || ""} onChange={e => update("comfyui_output_dir", e.target.value)} className={inputCls} />
               </Field>
