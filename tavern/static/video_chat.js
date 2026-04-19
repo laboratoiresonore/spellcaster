@@ -51,8 +51,11 @@
       btn.style.background = 'rgba(59,130,246,0.2)';
       indicator.style.display = 'block';
       chatInput.placeholder = 'Describe a shot, or type a number to navigate the wizard menu...';
-      // Send an initial greeting to start the wizard
-      _sendVideoChat('');
+      // R120: server's /api/video/chat 400s on empty text — used to
+      // send '' which surfaced as an ugly {"error":"text required"}
+      // JSON dump in chat and made the toggle look broken. Send a
+      // non-empty trigger so the Cinematographer returns its menu.
+      _sendVideoChat('menu');
     } else {
       btn.style.opacity = '0.5';
       btn.style.background = 'transparent';
