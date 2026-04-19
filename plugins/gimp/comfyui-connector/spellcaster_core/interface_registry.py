@@ -138,6 +138,16 @@ KNOWN_INTERFACES: dict[str, InterfaceSpec] = {
         config_flag="signal_enabled",
         capabilities=["notify", "receive_text", "send_text"],
     ),
+    "antenna": InterfaceSpec(
+        key="antenna",
+        ui_label="Remote Antenna",
+        icon="📡",
+        # Antennas are detected entirely by heartbeat — they run on remote
+        # LAN machines, not on the controller. No filesystem detector_paths
+        # and no config flag; a fresh heartbeat is sufficient proof of life.
+        capabilities=["remote_comfyui", "remote_llm", "remote_resolve",
+                      "install_node", "install_model", "self_update"],
+    ),
 }
 
 
