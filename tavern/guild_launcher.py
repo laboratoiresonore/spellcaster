@@ -472,7 +472,17 @@ def check_for_updates(verbose=True):
 
     Returns True if an update was applied (caller should restart).
     Returns False if already up to date or if the check failed.
+
+    Shared primitives (SHA fetch, SHA compare, tree walk) live in
+    spellcaster_core.auto_updater. This function keeps the Guild-specific
+    logic: tavern/scaffold filter, frozen-vs-source write base, live
+    replace with PermissionError fallback.
     """
+    try:
+        from spellcaster_core import auto_updater as _au
+    except ImportError:
+        _au = None
+
     hdrs = _guild_headers()
     local_sha = _read_local_sha()
 
@@ -482,31 +492,43 @@ def check_for_updates(verbose=True):
         if local_sha:
             print(f"  [update] Local version: {local_sha[:7]}")
 
-    # Step 1: Get latest commit SHA
+    # Step 1: Get latest commit SHA (shared primitive)
     try:
-        req = urllib.request.Request(_GUILD_COMMITS_URL, headers=hdrs)
-        with urllib.request.urlopen(req, timeout=10) as r:
-            commits = json.loads(r.read())
-            latest_sha = commits[0]["sha"]
+        if _au is not None:
+            latest_sha = _au.fetch_latest_sha(_GUILD_COMMITS_URL, hdrs, timeout=10)
+        else:
+            req = urllib.request.Request(_GUILD_COMMITS_URL, headers=hdrs)
+            with urllib.request.urlopen(req, timeout=10) as r:
+                commits = json.loads(r.read())
+                latest_sha = commits[0]["sha"]
     except Exception as e:
         if verbose:
             print(f"  [update] Could not reach GitHub: {e}")
         return False
 
-    # Step 2: Compare
-    if latest_sha == local_sha or latest_sha[:7] == local_sha[:7]:
-        if verbose:
-            print(f"  [update] Already up to date ({latest_sha[:7]})")
-        return False
+    # Step 2: Compare (shared primitive)
+    if _au is not None:
+        if _au.shas_match(latest_sha, local_sha):
+            if verbose:
+                print(f"  [update] Already up to date ({latest_sha[:7]})")
+            return False
+    else:
+        if latest_sha == local_sha or latest_sha[:7] == local_sha[:7]:
+            if verbose:
+                print(f"  [update] Already up to date ({latest_sha[:7]})")
+            return False
 
     if verbose:
         print(f"  [update] New version available: {latest_sha[:7]}")
 
-    # Step 3: Fetch full repo tree
+    # Step 3: Fetch full repo tree (shared primitive)
     try:
-        req = urllib.request.Request(_GUILD_TREE_URL, headers=hdrs)
-        with urllib.request.urlopen(req, timeout=20) as r:
-            tree = json.loads(r.read())
+        if _au is not None:
+            tree = {"tree": _au.fetch_tree(_GUILD_TREE_URL, hdrs, timeout=20)}
+        else:
+            req = urllib.request.Request(_GUILD_TREE_URL, headers=hdrs)
+            with urllib.request.urlopen(req, timeout=20) as r:
+                tree = json.loads(r.read())
     except Exception as e:
         if verbose:
             print(f"  [update] Could not fetch file tree: {e}")
@@ -1841,6 +1863,19 @@ def main():
     server.HORDE_MODEL = config.get("horde_model", "")
     server.PROMPT_ENHANCE = config.get("prompt_enhance", True)
     server.NSFW_MODE = bool(_GUILD_AUTH_TOKEN)
+
+    # ── Setup mode — drives /static/setup.html + /api/setup/* endpoints ──
+    server.SETUP_MODE = bool(config.get("setup_mode", False))
+    server.GUILD_CONFIG_PATH = _CONFIG_FILE
+    # Best-effort: locate installer/install.py so setup endpoints can shell to it
+    _guild_dir = os.path.dirname(os.path.abspath(__file__))
+    for candidate in (
+        os.path.join(_guild_dir, "..", "installer", "install.py"),
+        os.path.join(_guild_dir, "..", "..", "installer", "install.py"),
+    ):
+        if os.path.exists(candidate):
+            server.INSTALLER_PATH = os.path.abspath(candidate)
+            break
 
     # ── Runtime NSFW content injection ──────────────────────────────
     # When running from source with nsfw/.github_token present, the server

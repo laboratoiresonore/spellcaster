@@ -10,7 +10,7 @@ import re
 import shutil
 import urllib.request
 import urllib.error
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
 import sys
 import os
 import random
@@ -52,6 +52,56 @@ except (ImportError, SyntaxError):
     build_txt2img = None
     ARCHITECTURES = {}
     get_arch = None
+
+# Cross-interface backbone: event bus, shared asset gallery, presence registry.
+# All three are optional — if the core import fails, the Guild still runs
+# and every cross-interface endpoint below returns a 501.
+try:
+    from spellcaster_core.event_bus import EventBus, validate_kind, sse_format
+    from spellcaster_core.asset_gallery import AssetGallery
+    from spellcaster_core.interface_registry import registry as _iface_registry
+    from spellcaster_core.model_registry import get_registry as _get_model_registry
+    from spellcaster_core.signal_notifier import start_default as _start_signal_notifier
+    CROSS_INTERFACE_AVAILABLE = True
+except (ImportError, SyntaxError):
+    CROSS_INTERFACE_AVAILABLE = False
+    EventBus = None
+    validate_kind = None
+    sse_format = None
+    AssetGallery = None
+    _iface_registry = None
+    _get_model_registry = None
+    _start_signal_notifier = None
+
+# Mailbox primitives — per-interface pull queues for short-lived clients.
+# Imported separately from the main backbone so existing installs without
+# mailbox.py (before the 2026-04-18 sync) still start; mailbox endpoints
+# just 501 in that case.
+try:
+    from spellcaster_core.mailbox import (
+        get_mailbox as _get_mailbox,
+        all_mailboxes as _all_mailboxes,
+        fanout_from_event as _fanout_from_event,
+    )
+    MAILBOX_AVAILABLE = True
+except (ImportError, SyntaxError):
+    MAILBOX_AVAILABLE = False
+    _get_mailbox = None
+    _all_mailboxes = None
+    _fanout_from_event = None
+
+
+def _mailbox_fanout(evt):
+    """Route an event into the matching per-interface mailbox. No-op if the
+    mailbox module is unavailable — never raises, never blocks the caller.
+    Caller is expected to have already published the event on _EVENT_BUS.
+    """
+    if _fanout_from_event is None or not isinstance(evt, dict):
+        return
+    try:
+        _fanout_from_event(evt)
+    except Exception:
+        pass  # Never let a mailbox hiccup break an event-emit flow
 
 # Scaffold imports — graceful fallback if any module has import errors
 try:
@@ -96,6 +146,14 @@ HORDE_API_KEY = ""         # AI Horde API key (empty = anonymous = 0000000000)
 HORDE_MODEL = ""           # Preferred Horde model (empty = any) — delete inputs+outputs from ComfyUI after delivery
 NSFW_MODE = False        # Set by launcher when running the NSFW edition
 PROMPT_ENHANCE = True    # LLM-based prompt enhancement before ComfyUI dispatch
+
+# ── Setup-mode state (Guild-driven install) ──────────────────────────
+# Persisted in guild_config.json {"setup_mode": bool, "setup_state": {...}}
+# When True, "/" routes to /static/setup.html instead of the chat UI and
+# the /api/setup/* endpoints become callable.
+SETUP_MODE = False
+GUILD_CONFIG_PATH = ""           # Absolute path to guild_config.json (set by launcher)
+INSTALLER_PATH = ""              # Absolute path to installer/install.py for shell-outs
 
 # ── NSFW personality overlay ─────────────────────────────────────────
 # Populated by build_nsfw.py. In SFW builds these stay empty/None.
@@ -1306,6 +1364,8 @@ def fetch_all_characters(comfy_url=None):
 
 
 CHARS_CACHE, NODES_CACHE = [], []   # populated by _server_init()
+_VIDEO_BRIDGE = None  # initialized in _server_init()
+_VIDEO_BRIDGE = None                 # populated by _server_init()
 
 
 def _llm_enhance_scaffolds():
@@ -1469,7 +1529,18 @@ def _server_init(comfy_url=None):
     Args:
         comfy_url: Explicit ComfyUI URL. Falls back to global COMFYUI_URL.
     """
-    global CHARS_CACHE, NODES_CACHE, _ANIM_POLL_THREAD
+    global CHARS_CACHE, NODES_CACHE, _ANIM_POLL_THREAD, _VIDEO_BRIDGE, _VIDEO_BRIDGE
+    # Initialize VideoBridge for video generation
+    try:
+        from scaffold.video_bridge import VideoBridge
+        _VIDEO_BRIDGE = VideoBridge(
+            shotboard_path=os.path.expanduser("~/pinokio/api/spellcaster/shotboard.json"),
+            wangp_url="http://localhost:7860",
+            comfyui_url=comfy_url or COMFYUI_URL,
+        )
+    except (ImportError, Exception):
+        _VIDEO_BRIDGE = None
+    
     url = comfy_url or COMFYUI_URL
     CHARS_CACHE, NODES_CACHE = fetch_all_characters(comfy_url=url)
     _apply_scaffold_overrides()
@@ -1514,6 +1585,21 @@ def _server_init(comfy_url=None):
             target=_anim_poll_background, daemon=True)
         _ANIM_POLL_THREAD.start()
 
+    # ── Video Bridge init ──
+    try:
+        from scaffold.video_bridge import VideoBridge
+        shotboard_path = os.path.join(_THIS_DIR, "shotboard.json")
+        _VIDEO_BRIDGE = VideoBridge(
+            shotboard_path=shotboard_path,
+            wangp_url="http://localhost:7860",
+            comfyui_url=url or COMFYUI_URL,
+            output_dir=os.path.join(_THIS_DIR, "creations"),
+        )
+        print(f"  [Guild] Video Bridge: ON ({len(_VIDEO_BRIDGE.board)} shots)")
+    except Exception as e:
+        print(f"  [Guild] Video Bridge: OFF ({e})")
+        _VIDEO_BRIDGE = None
+
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Persistent State — survives server restarts via JSON files
@@ -1542,7 +1628,7 @@ os.makedirs(_STATE_DIR, exist_ok=True)
 # ═══════════════════════════════════════════════════════════════════════
 
 _WIZARD_SPEECH_SECTION_ORDER = [
-    "welcome", "architecture", "scaffolding", "spells",
+    "welcome", "architecture", "vram_dance", "scaffolding", "spells",
     "sillytavern", "gimp", "ready",
 ]
 _WIZARD_SPEECH_GITHUB_URL = (
@@ -1566,6 +1652,14 @@ _WIZARD_SPEECH_FALLBACK = {
     "architecture": (
         "Under the hood: **You → Wizard Guild → local LLM → Spellcaster "
         "scaffold → ComfyUI → your GPU.** Everything runs on your machine."
+    ),
+    "vram_dance": (
+        "**The VRAM dance.** We never run the language model and the image "
+        "model at the same time. When you chat, the LLM loads. When you "
+        "generate, Spellcaster calls ComfyUI's `/free` endpoint, the LLM "
+        "atomically unloads, and the diffusion model takes the whole GPU. "
+        "Next time you type, the LLM reloads. You don't see it, you don't "
+        "configure it — it just works on 8 GB, 12 GB, and 16 GB cards."
     ),
     "scaffolding": (
         "We **scaffold** the local language model with structured menus "
@@ -2236,6 +2330,34 @@ _CREATIONS_DIR = os.path.join(_THIS_DIR, "creations")
 os.makedirs(_CREATIONS_DIR, exist_ok=True)
 _ASSET_CACHE_DIR = _CREATIONS_DIR  # alias for existing cache code
 
+# Cross-interface backbone singletons. Lazy-instantiated so import
+# failures above don't crash the Guild — they just disable the feature.
+_EVENT_BUS = None
+_ASSET_GALLERY = None
+_SIGNAL_NOTIFIER = None
+if CROSS_INTERFACE_AVAILABLE:
+    try:
+        _EVENT_BUS = EventBus.default()
+        _ASSET_GALLERY = AssetGallery(
+            os.path.join(_CREATIONS_DIR, "gallery"))
+        # Signal Bridge outbound notifier — subscribes to the bus and
+        # sends the admin a phone ping when long renders finish. No-ops
+        # silently if signal_bridge_config.json has the placeholder
+        # +1XXXXXXXXXX number, so it doesn't spam dev installs.
+        if _start_signal_notifier is not None:
+            try:
+                _signal_cfg_path = os.path.join(
+                    _THIS_DIR, "signal_bridge_config.json")
+                _SIGNAL_NOTIFIER = _start_signal_notifier(
+                    _EVENT_BUS, SIGNAL_BRIDGE_URL, _signal_cfg_path)
+            except Exception as _sn_err:
+                print(f"[Guild] Signal notifier init skipped: {_sn_err}")
+    except Exception as _e:
+        print(f"[Guild] Cross-interface backbone init failed: {_e}")
+        _EVENT_BUS = None
+        _ASSET_GALLERY = None
+        _SIGNAL_NOTIFIER = None
+
 _BANISHED_PATH = os.path.join(_STATE_DIR, "banished_ids.json")
 _ASSETS_PATH = os.path.join(_STATE_DIR, "generated_assets.json")
 _CUSTOM_WIZARDS_PATH = os.path.join(_STATE_DIR, "custom_wizards.json")
@@ -2574,6 +2696,202 @@ def _save_anim_queue():
 
 # ── Load persisted state ──
 _BANISHED_IDS = _load_banished_ids()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Setup-mode admin API — Guild-driven install
+# ═══════════════════════════════════════════════════════════════════════
+# These helpers back /api/setup/* endpoints. They let the Wizard Guild
+# drive the remaining installer steps conversationally after the
+# minimal bootstrap installed just the LLM and the Guild itself.
+#
+# State lives in guild_config.json under "setup_state". When the user
+# finishes setup, setup_mode flips to false and "/" routes to the
+# normal chat UI instead of /static/setup.html.
+
+def _guided_install_active() -> bool:
+    """Check if the Guild was launched in setup mode."""
+    return bool(SETUP_MODE)
+
+
+def _guided_install_load_config() -> dict:
+    """Load guild_config.json. Returns {} if missing or unreadable."""
+    path = GUILD_CONFIG_PATH or os.path.join(os.path.dirname(__file__),
+                                             "guild_config.json")
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _guided_install_save_config(config: dict) -> bool:
+    path = GUILD_CONFIG_PATH or os.path.join(os.path.dirname(__file__),
+                                             "guild_config.json")
+    try:
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=2)
+        return True
+    except Exception as e:
+        print(f"  [setup] Failed to save guild_config: {e}")
+        return False
+
+
+def _guided_install_get_state() -> dict:
+    """GET /api/setup/state — what's installed, what's still missing.
+
+    Returns a snapshot used by the setup UI to render progress. Includes
+    the manifest feature list so the UI can show labels/sizes/VRAM gates.
+    """
+    config = _guided_install_load_config()
+    state = config.get("setup_state", {})
+
+    # Probe ComfyUI for currently installed node classes (best-effort)
+    installed_nodes = set()
+    try:
+        req = urllib.request.Request(f"{COMFYUI_URL}/object_info")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            installed_nodes = set(json.loads(resp.read()).keys())
+    except Exception:
+        pass
+
+    # Load manifest so the UI knows what CAN be installed
+    manifest_features = []
+    try:
+        if INSTALLER_PATH and os.path.exists(INSTALLER_PATH):
+            manifest_file = os.path.join(os.path.dirname(INSTALLER_PATH),
+                                         "manifest.json")
+            if os.path.exists(manifest_file):
+                with open(manifest_file, 'r', encoding='utf-8') as f:
+                    manifest = json.load(f)
+                for key, feat in manifest.get("features", {}).items():
+                    if key == "prompt_enhance":
+                        continue  # already installed in bootstrap
+                    manifest_features.append({
+                        "key": key,
+                        "label": feat.get("label", key),
+                        "description": feat.get("description", ""),
+                        "vram_min_gb": feat.get("vram_min_gb", 0),
+                        "plugins": feat.get("plugins", []),
+                        "installed": key in state.get("features_installed", []),
+                    })
+    except Exception as e:
+        print(f"  [setup] Manifest load error: {e}")
+
+    return {
+        "setup_mode": _guided_install_active(),
+        "bootstrap_complete": state.get("bootstrap_complete", False),
+        "features_installed": state.get("features_installed", []),
+        "plugins_installed": state.get("plugins_installed", []),
+        "comfyui_url": COMFYUI_URL,
+        "comfyui_reachable": len(installed_nodes) > 0,
+        "llm_available": "AILab_QwenVL_GGUF_PromptEnhancer" in installed_nodes,
+        "features": manifest_features,
+        "plugins_available": ["gimp", "darktable"],
+    }
+
+
+def _guided_install_run_installer(cmd_args: list[str]) -> tuple[int, dict]:
+    """Shell out to installer/install.py with the given args.
+
+    Runs with --yes so it doesn't prompt. Captures stdout/stderr so we
+    can return progress to the UI (small installs only — large model
+    downloads will just block until done). Returns (http_status, json_body).
+    """
+    if not INSTALLER_PATH or not os.path.exists(INSTALLER_PATH):
+        return (500, {"error": "installer not found",
+                      "path_attempted": INSTALLER_PATH})
+    try:
+        import subprocess
+        proc = subprocess.run(
+            [sys.executable, INSTALLER_PATH, "--yes",
+             "--server-url", COMFYUI_URL, "--mode", "expert"] + cmd_args,
+            capture_output=True, text=True, timeout=1800,
+        )
+        return (200 if proc.returncode == 0 else 500, {
+            "returncode": proc.returncode,
+            "stdout_tail": (proc.stdout or "")[-3000:],
+            "stderr_tail": (proc.stderr or "")[-1500:],
+        })
+    except subprocess.TimeoutExpired:
+        return (504, {"error": "installer timeout (30 min)"})
+    except Exception as e:
+        return (500, {"error": str(e)})
+
+
+def _guided_install_feature(feature_key: str) -> tuple[int, dict]:
+    """POST /api/setup/feature/install — install one manifest feature.
+
+    Shells out to install.py --features=KEY so only this feature's
+    custom nodes and models get installed. --skip-plugins suppresses
+    the GIMP/Darktable copy step (handled separately via /plugin/install).
+    """
+    if not feature_key:
+        return (400, {"error": "feature key required"})
+
+    # Record intent before running so the UI can show "installing" state
+    config = _guided_install_load_config()
+    state = config.setdefault("setup_state", {})
+    pending = state.setdefault("features_pending", [])
+    if feature_key not in pending:
+        pending.append(feature_key)
+    _guided_install_save_config(config)
+
+    # Shell out to the real CLI installer
+    status, result = _guided_install_run_installer(
+        ["--features", feature_key])
+
+    # Update state based on outcome
+    config = _guided_install_load_config()
+    state = config.setdefault("setup_state", {})
+    pending = state.setdefault("features_pending", [])
+    installed = state.setdefault("features_installed", [])
+    if feature_key in pending:
+        pending.remove(feature_key)
+    if status == 200 and feature_key not in installed:
+        installed.append(feature_key)
+    _guided_install_save_config(config)
+
+    result["feature"] = feature_key
+    result["status"] = "installed" if status == 200 else "failed"
+    return (status, result)
+
+
+def _guided_install_plugin(plugin_key: str) -> tuple[int, dict]:
+    """POST /api/setup/plugin/install — install GIMP or Darktable plugin.
+
+    Shells out to install.py --plugins=KEY --skip-nodes --skip-models so
+    only the plugin copy step runs.
+    """
+    if plugin_key not in ("gimp", "darktable"):
+        return (400, {"error": "plugin must be gimp or darktable"})
+
+    status, result = _guided_install_run_installer(
+        ["--plugins", plugin_key, "--skip-nodes", "--skip-models"])
+
+    config = _guided_install_load_config()
+    state = config.setdefault("setup_state", {})
+    installed = state.setdefault("plugins_installed", [])
+    if status == 200 and plugin_key not in installed:
+        installed.append(plugin_key)
+    _guided_install_save_config(config)
+
+    result["plugin"] = plugin_key
+    result["status"] = "installed" if status == 200 else "failed"
+    return (status, result)
+
+
+def _guided_install_finish() -> tuple[int, dict]:
+    """POST /api/setup/finish — flip setup_mode off and return to normal UI."""
+    global SETUP_MODE
+    config = _guided_install_load_config()
+    config["setup_mode"] = False
+    state = config.setdefault("setup_state", {})
+    state["finished_at"] = int(time.time())
+    _guided_install_save_config(config)
+    SETUP_MODE = False
+    return (200, {"setup_mode": False, "redirect": "/"})
+
 
 def _llm_generate_local(payload, timeout=180):
     """Call a local LLM to generate text.
@@ -3956,80 +4274,27 @@ _TINY_PNG = (
 def _privacy_cleanup(comfy_url, workflow, result):
     """Delete uploaded inputs and generated outputs from ComfyUI after delivery.
 
-    This is the Guild equivalent of the GIMP plugin's _cleanup_server_temps().
-    Called after _dispatch_workflow() when PRIVACY_CLEANUP is enabled.
-
-    Cleans:
-      1. Input images: any LoadImage node's "image" value that looks like a
-         guild-uploaded temp file (guild_*, gimp_*, spellcaster_*)
-      2. Output images/videos: the files returned in result["urls"]
+    Delegates to spellcaster_core.privacy (single source of truth).
     """
-    import uuid as _uuid
-
-    # 1. Overwrite uploaded input images with a 1x1 transparent pixel
-    for nid, node in workflow.items():
-        if not isinstance(node, dict):
-            continue
-        ct = node.get("class_type", "")
-        if ct not in ("LoadImage", "VHS_LoadVideo"):
-            continue
-        fname = node.get("inputs", {}).get("image", "") or node.get("inputs", {}).get("video", "")
-        if not fname or not isinstance(fname, str):
-            continue
-        # Only clean guild/gimp temp uploads, not user's permanent files
-        fl = fname.lower()
-        import re as _re_clean
-        is_cached_asset = bool(_re_clean.match(r'^[a-f0-9]{16}\.', fl))
-        if not is_cached_asset and not any(fl.startswith(p) for p in ("guild_", "gimp_", "spellcaster_")):
-            continue
-        try:
-            url = f"{comfy_url}/upload/image"
-            boundary = _uuid.uuid4().hex
-            body = (
-                f"--{boundary}\r\n"
-                f'Content-Disposition: form-data; name="image"; filename="{fname}"\r\n'
-                f"Content-Type: image/png\r\n\r\n"
-            ).encode() + _TINY_PNG + f"\r\n--{boundary}--\r\n".encode()
-            req = urllib.request.Request(url, data=body,
-                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
-                method="POST")
-            urllib.request.urlopen(req, timeout=10)
-        except Exception:
-            pass
-
-    # 2. Delete output files from ComfyUI (output or temp folder)
-    from urllib.parse import urlparse, parse_qs
-    for url in result.get("urls", []):
-        try:
-            parsed = urlparse(url)
-            params = parse_qs(parsed.query)
-            fname = params.get("filename", [""])[0]
-            subfolder = params.get("subfolder", [""])[0]
-            ftype = params.get("type", ["output"])[0]  # respect actual type
-            if not fname:
-                continue
-            # ComfyUI lacks a delete API — overwrite with tiny PNG
-            upload_url = f"{comfy_url}/upload/image"
-            boundary = _uuid.uuid4().hex
-            body = (
-                f"--{boundary}\r\n"
-                f'Content-Disposition: form-data; name="image"; filename="{fname}"\r\n'
-                f"Content-Type: image/png\r\n\r\n"
-            ).encode() + _TINY_PNG + (
-                f"\r\n--{boundary}\r\n"
-                f'Content-Disposition: form-data; name="subfolder"\r\n\r\n'
-                f"{subfolder}\r\n"
-                f"--{boundary}\r\n"
-                f'Content-Disposition: form-data; name="type"\r\n\r\n'
-                f"{ftype}\r\n"
-                f"--{boundary}--\r\n"
-            ).encode()
-            req = urllib.request.Request(upload_url, data=body,
-                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
-                method="POST")
-            urllib.request.urlopen(req, timeout=10)
-        except Exception:
-            pass
+    try:
+        from spellcaster_core.privacy import cleanup_server_files
+        # Convert result URLs to (filename, subfolder, type) tuples
+        results_tuples = []
+        if result and result.get("urls"):
+            from urllib.parse import urlparse, parse_qs
+            for url in result["urls"]:
+                try:
+                    params = parse_qs(urlparse(url).query)
+                    fn = params.get("filename", [""])[0]
+                    sf = params.get("subfolder", [""])[0]
+                    ft = params.get("type", ["output"])[0]
+                    if fn:
+                        results_tuples.append((fn, sf, ft))
+                except Exception:
+                    pass
+        cleanup_server_files(comfy_url, workflow=workflow, results=results_tuples)
+    except ImportError:
+        pass  # privacy module not available
 
 
 def _detect_best_model(comfy_url):
@@ -5303,7 +5568,6 @@ class GuildHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(payload).encode('utf-8'))
 
-
     def _serve_file(self, filepath):
         """Serve a local file by path with appropriate MIME type."""
         import mimetypes
@@ -5311,20 +5575,18 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(404, {"error": "File not found"})
         mime, _ = mimetypes.guess_type(filepath)
         if not mime:
-            mime = "application/octet-stream"
+            mime = 'application/octet-stream'
         try:
-            with open(filepath, "rb") as f:
+            with open(filepath, 'rb') as f:
                 data = f.read()
             self.send_response(200)
-            self.send_header("Content-Type", mime)
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Cache-Control", "no-cache")
+            self.send_header('Content-Type', mime)
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             self.wfile.write(data)
         except Exception:
             return self.end_json(500, {"error": "Failed to read file"})
-
 
     def _handle_config_update(self, data):
         global COMFYUI_URL, KOBOLD_URL, SILLYTAVERN_URL, SIGNAL_BRIDGE_URL, LLM_MODE, HORDE_API_KEY, HORDE_MODEL, PROMPT_ENHANCE
@@ -5383,6 +5645,380 @@ class GuildHandler(SimpleHTTPRequestHandler):
 
         return self.end_json(200, {"status": "ok", "changed": changed})
 
+    # ── Cross-interface backbone handlers ─────────────────────────────
+    #
+    # Event bus + asset gallery + interface registry. See
+    # spellcaster_core/{event_bus,asset_gallery,interface_registry}.py
+    # for the underlying implementations. These handlers are just thin
+    # HTTP adapters — they return 501 if the backbone failed to import,
+    # so none of them poison the Guild on environments where the core
+    # module isn't on the path.
+
+    def _handle_events_stream(self):
+        """SSE stream of cross-interface events. Filters via query string:
+        ?kinds=gimp.,resolve. &origins=gimp,resolve"""
+        import urllib.parse as _up
+        parsed = _up.urlparse(self.path)
+        qs = _up.parse_qs(parsed.query)
+        kinds = [k.strip() for k in (qs.get("kinds", [""])[0]).split(",") if k.strip()]
+        origins = [o.strip() for o in (qs.get("origins", [""])[0]).split(",") if o.strip()]
+        since = float(qs.get("since", ["0"])[0] or 0)
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+        except Exception:
+            return
+        # Push an immediate keep-alive so EventSource.onopen fires
+        try:
+            self.wfile.write(b": spellcaster event stream\n\n")
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            return
+        # Drive the bus; timeout=5s makes the generator yield keep-alives
+        try:
+            for evt in _EVENT_BUS.subscribe(
+                    since_ts=since, kinds=kinds or None,
+                    origins=origins or None, timeout=5.0):
+                try:
+                    chunk = sse_format(evt) if sse_format else (
+                        f"event: {evt.get('kind','message')}\n"
+                        f"data: {json.dumps(evt)}\n\n".encode())
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    return
+        except Exception:
+            # Subscription generator exhausted (timeout) — send a keep-alive
+            try:
+                self.wfile.write(b": keepalive\n\n")
+                self.wfile.flush()
+            except Exception:
+                return
+
+    def _handle_events_recent(self):
+        """GET /api/events?limit=N&since=TS&kinds=...&origins=..."""
+        import urllib.parse as _up
+        parsed = _up.urlparse(self.path)
+        qs = _up.parse_qs(parsed.query)
+        try:
+            limit = max(1, min(500, int(qs.get("limit", ["50"])[0])))
+        except Exception:
+            limit = 50
+        try:
+            since = float(qs.get("since", ["0"])[0] or 0)
+        except Exception:
+            since = 0.0
+        kinds = [k.strip() for k in (qs.get("kinds", [""])[0]).split(",") if k.strip()]
+        origins = [o.strip() for o in (qs.get("origins", [""])[0]).split(",") if o.strip()]
+        events = _EVENT_BUS.recent(
+            limit=limit, since_ts=since,
+            kinds=kinds or None, origins=origins or None)
+        return self.end_json(200, {
+            "events": events,
+            "subscriber_count": _EVENT_BUS.subscriber_count(),
+            "ring_size": _EVENT_BUS.ring_size(),
+        })
+
+    def _handle_assets_list(self):
+        """GET /api/assets?limit=N&origins=...&kinds=...&active_only=1"""
+        import urllib.parse as _up
+        parsed = _up.urlparse(self.path)
+        qs = _up.parse_qs(parsed.query)
+        try:
+            limit = max(1, min(200, int(qs.get("limit", ["20"])[0])))
+        except Exception:
+            limit = 20
+        origins = [o.strip() for o in (qs.get("origins", [""])[0]).split(",") if o.strip()]
+        kinds = [k.strip() for k in (qs.get("kinds", [""])[0]).split(",") if k.strip()]
+        active_only = qs.get("active_only", ["0"])[0] in ("1", "true", "yes")
+        assets = _ASSET_GALLERY.list_assets(
+            limit=limit,
+            origins=origins or None,
+            kinds=kinds or None,
+            active_only=active_only,
+            registry=_iface_registry if active_only else None,
+        )
+        return self.end_json(200, {
+            "assets": [r.to_dict() for r in assets],
+            "stats": _ASSET_GALLERY.stats(),
+        })
+
+    def _handle_assets_get(self):
+        """GET /api/assets/<hash> — serve the raw bytes."""
+        import re as _re
+        h = self.path.split('/api/assets/')[-1]
+        # Strip query string if present
+        for sep in ('?', '&'):
+            if sep in h:
+                h = h.split(sep)[0]
+        if not _re.match(r'^[a-f0-9]{16,64}$', h):
+            return self.end_json(400, {"error": "invalid hash"})
+        rec = _ASSET_GALLERY.get(h)
+        if not rec:
+            return self.end_json(404, {"error": "not found"})
+        path = _ASSET_GALLERY.path(h)
+        if not path:
+            return self.end_json(404, {"error": "blob missing"})
+        try:
+            with open(path, 'rb') as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header('Content-Type', rec.mime)
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Cache-Control', 'public, max-age=86400, immutable')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(data)
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            pass
+
+    # ─── Per-interface ingress handlers ───────────────────────────────
+    #
+    # Each _handle_iface_* method:
+    #   1. Validates kind prefix (prevents forged origins — a GIMP client
+    #      can't submit `resolve.*` events via /api/gimp/*).
+    #   2. Optionally stores attached body_b64 in the asset gallery.
+    #   3. Publishes the typed event on the bus.
+    #   4. Fans the event into the matching mailbox (pickup by pollers).
+    #   5. Heartbeats the interface registry so the chip stays lit even
+    #      during quiet-but-chatty streams (many events, no gaps).
+
+    def _handle_iface_event(self, iface, kind, data):
+        """Event-only ingress — no asset bytes. Validates, publishes, fans out.
+
+        Used by endpoints like /api/gimp/selection, /api/resolve/gap,
+        /api/sillytavern/dialogue — anything that just conveys state
+        changes without a payload image.
+        """
+        if _EVENT_BUS is None:
+            return self.end_json(501, {"error": "event bus disabled"})
+        # Kind-prefix validation — must match the declared interface
+        if not kind.startswith(f"{iface}."):
+            return self.end_json(400, {
+                "error": f"kind {kind!r} does not match interface {iface!r}"})
+        payload = data.get('data', {}) if isinstance(data.get('data'), dict) else data
+        meta = data.get('meta', {}) if isinstance(data.get('meta'), dict) else {}
+        event_data = dict(payload) if isinstance(payload, dict) else {}
+        if meta:
+            event_data["meta"] = meta
+        try:
+            evt = _EVENT_BUS.publish(kind, origin=iface, data=event_data)
+        except Exception as e:
+            return self.end_json(500, {"error": f"publish failed: {e}"})
+        _mailbox_fanout(evt)
+        if _iface_registry is not None:
+            try:
+                _iface_registry.heartbeat(iface, meta)
+            except Exception:
+                pass
+        return self.end_json(200, evt)
+
+    def _handle_iface_ingress(self, iface, kind, data, *,
+                              asset_kind="generation", asset_optional=True):
+        """Asset-bearing ingress — optional or required body_b64, plus event.
+
+        When body_b64 is present, the bytes go into the asset gallery and
+        the resulting hash is embedded in the event's data payload so
+        subscribers can fetch via GET /api/assets/<hash>.
+        """
+        import base64 as _b64
+        if _EVENT_BUS is None:
+            return self.end_json(501, {"error": "event bus disabled"})
+        if not kind.startswith(f"{iface}."):
+            return self.end_json(400, {
+                "error": f"kind {kind!r} does not match interface {iface!r}"})
+
+        body_b64 = data.get('body_b64') or ''
+        asset_hash = None
+        asset_record = None
+        if body_b64:
+            if _ASSET_GALLERY is None:
+                # Bytes submitted but gallery is off — preserve the event
+                # but drop the asset. Client gets a warning in the reply.
+                pass
+            else:
+                try:
+                    body = _b64.b64decode(body_b64)
+                except Exception as e:
+                    return self.end_json(400, {"error": f"invalid base64: {e}"})
+                if not body:
+                    return self.end_json(400, {"error": "empty body"})
+                if len(body) > 128 * 1024 * 1024:  # 128 MB cap matches /api/assets
+                    return self.end_json(413, {"error": "asset too large"})
+                try:
+                    rec = _ASSET_GALLERY.put(
+                        body,
+                        origin=iface,
+                        kind=asset_kind,
+                        ext=data.get('ext'),
+                        title=str(data.get('title', '')),
+                        prompt=str(data.get('prompt', '')),
+                        model=str(data.get('model', '')),
+                        seed=data.get('seed'),
+                        tags=data.get('tags') or [],
+                        meta=data.get('meta') or {},
+                    )
+                    asset_hash = rec.hash
+                    asset_record = rec.to_dict()
+                except Exception as e:
+                    return self.end_json(500, {"error": f"gallery put failed: {e}"})
+        elif not asset_optional:
+            return self.end_json(400, {
+                "error": f"{iface} endpoint requires body_b64"})
+
+        # Build event payload — include asset_hash so subscribers can
+        # lazy-fetch the bytes via GET /api/assets/<hash>
+        event_data = {
+            "title": str(data.get('title', '')),
+            "prompt": str(data.get('prompt', '')),
+            "meta": data.get('meta') or {},
+            "notes": str(data.get('notes', '')),
+        }
+        if asset_hash:
+            event_data["asset_hash"] = asset_hash
+        # Pass through any extra caller-provided keys that aren't
+        # auth-sensitive (no body_b64, obviously)
+        for k, v in (data.items() if isinstance(data, dict) else []):
+            if k in event_data or k in ('body_b64', 'ext', 'tags'):
+                continue
+            event_data[k] = v
+
+        try:
+            evt = _EVENT_BUS.publish(kind, origin=iface, data=event_data)
+        except Exception as e:
+            return self.end_json(500, {"error": f"publish failed: {e}"})
+        _mailbox_fanout(evt)
+        if _iface_registry is not None:
+            try:
+                _iface_registry.heartbeat(iface, data.get('meta') or {})
+            except Exception:
+                pass
+        return self.end_json(200, {
+            "event": evt,
+            "asset": asset_record,
+        })
+
+    def _handle_inbox_get(self, iface):
+        """GET /api/<iface>/inbox — pull queued messages.
+
+        Query params:
+          consume=1        pop returned messages
+          max=50           cap result length
+          since=<msg_id>   only messages after this id
+        """
+        if not MAILBOX_AVAILABLE or _get_mailbox is None:
+            return self.end_json(501, {"error": "mailbox primitives disabled"})
+        import urllib.parse as _up
+        parsed = _up.urlparse(self.path)
+        qs = _up.parse_qs(parsed.query)
+        consume = (qs.get('consume', ['0'])[0]).lower() in ('1', 'true', 'yes')
+        try:
+            max_messages = max(1, min(500, int(qs.get('max', ['50'])[0])))
+        except ValueError:
+            max_messages = 50
+        since_id = qs.get('since', [None])[0]
+        mb = _get_mailbox(iface)
+        msgs = mb.peek(consume=consume, max_messages=max_messages, since_id=since_id)
+        return self.end_json(200, {
+            "interface": iface,
+            "messages": msgs,
+            "consumed": consume,
+        })
+
+    def _handle_inbox_ack(self, iface, data):
+        """POST /api/<iface>/inbox/ack — remove messages by id.
+
+        Body: { "ids": ["msg_abc123", "msg_def456", ...] }
+        """
+        if not MAILBOX_AVAILABLE or _get_mailbox is None:
+            return self.end_json(501, {"error": "mailbox primitives disabled"})
+        ids = data.get('ids') if isinstance(data.get('ids'), list) else []
+        if not ids:
+            return self.end_json(400, {"error": "ids array required"})
+        mb = _get_mailbox(iface)
+        removed = mb.ack_ids(ids)
+        return self.end_json(200, {"interface": iface, "removed": removed})
+
+    def _handle_assets_upload(self, data):
+        """POST /api/assets — JSON body with body_b64 + metadata."""
+        import base64 as _b64
+        body_b64 = data.get('body_b64', '')
+        if not body_b64:
+            return self.end_json(400, {"error": "missing body_b64"})
+        try:
+            body = _b64.b64decode(body_b64)
+        except Exception as e:
+            return self.end_json(400, {"error": f"invalid base64: {e}"})
+        if not body:
+            return self.end_json(400, {"error": "empty body"})
+        # Reasonable upload cap: 128 MB (accepts video, rejects pathological)
+        if len(body) > 128 * 1024 * 1024:
+            return self.end_json(413, {"error": "asset too large"})
+        try:
+            rec = _ASSET_GALLERY.put(
+                body,
+                origin=str(data.get('origin', 'unknown')),
+                kind=str(data.get('kind', 'generation')),
+                ext=data.get('ext'),
+                title=str(data.get('title', '')),
+                prompt=str(data.get('prompt', '')),
+                model=str(data.get('model', '')),
+                seed=data.get('seed'),
+                tags=data.get('tags') or [],
+                meta=data.get('meta') or {},
+            )
+        except Exception as e:
+            return self.end_json(500, {"error": f"gallery put failed: {e}"})
+        # Fire an event so other interfaces can react
+        if _EVENT_BUS is not None:
+            try:
+                _EVENT_BUS.publish(f"{rec.origin}.asset.uploaded",
+                                   origin=rec.origin,
+                                   data={"hash": rec.hash, "kind": rec.kind,
+                                         "title": rec.title, "model": rec.model})
+            except Exception:
+                pass
+        return self.end_json(200, rec.to_dict())
+
+    def _handle_models_list(self):
+        """GET /api/models[?kind=...][&arch=...][&refresh=1]
+
+        Shared model discovery cache. Every interface queries this
+        instead of probing ComfyUI's /object_info independently.
+        Refresh interval is 5 minutes by default.
+        """
+        import urllib.parse as _up
+        parsed = _up.urlparse(self.path)
+        qs = _up.parse_qs(parsed.query)
+        kind = (qs.get("kind", [""])[0] or "").strip()
+        arch = (qs.get("arch", [""])[0] or "").strip() or None
+        force = qs.get("refresh", ["0"])[0] in ("1", "true", "yes")
+        try:
+            reg = _get_model_registry(COMFYUI_URL)
+        except Exception as e:
+            return self.end_json(500, {"error": f"registry init failed: {e}"})
+        if kind:
+            items = reg.kind(kind, arch=arch)
+            return self.end_json(200, {
+                "kind": kind,
+                "arch": arch,
+                "items": items,
+                "last_refresh": reg.last_refresh_ts,
+            })
+        snap = reg.snapshot(force_refresh=force)
+        if arch:
+            for k in list(snap.keys()):
+                snap[k] = [m for m in snap[k] if m.get("arch") == arch]
+        return self.end_json(200, {
+            "models": snap,
+            "last_refresh": reg.last_refresh_ts,
+            "last_error": reg.last_error,
+        })
+
     def _handle_horde_generate(self, data):
         # Basic proxy to AI Horde
         try:
@@ -5410,9 +6046,18 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(500, {"error": str(e)})
 
     def do_GET(self):
-        # Route: / → Guild chat UI
+        # Route: / → setup UI in setup_mode, else Guild chat UI
         if self.path == '/':
-            self.path = '/static/index.html'
+            if _guided_install_active():
+                self.path = '/static/setup.html'
+            else:
+                self.path = '/static/index.html'
+        elif self.path == '/setup':
+            self.path = '/static/setup.html'
+
+        # ── Setup-mode API endpoints ──
+        if self.path == '/api/setup/state':
+            return self.end_json(200, _guided_install_get_state())
 
         # ── API GET endpoints ──
         if self.path.startswith('/api/wizard_info/'):
@@ -5995,6 +6640,60 @@ class GuildHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 print(f"  [ChatHist] read failed for {char_id}: {e}")
                 return self.end_json(500, {"error": str(e)})
+        elif self.path == '/api/interfaces':
+            # Cross-interface registry — what frontends are installed,
+            # enabled, and alive right now. UI reads this before
+            # rendering "Send to X" chips etc.
+            if not CROSS_INTERFACE_AVAILABLE or _iface_registry is None:
+                return self.end_json(501, {"error": "cross-interface backbone disabled"})
+            return self.end_json(200, {"interfaces": _iface_registry.snapshot()})
+        elif self.path == '/api/mailboxes':
+            # Aggregate mailbox stats for debugging — one entry per
+            # interface that has ever received at least one event.
+            if not MAILBOX_AVAILABLE or _all_mailboxes is None:
+                return self.end_json(501, {"error": "mailbox primitives disabled"})
+            return self.end_json(200, {"mailboxes": _all_mailboxes()})
+        elif (self.path.startswith('/api/gimp/inbox')
+              or self.path.startswith('/api/sillytavern/inbox')
+              or self.path.startswith('/api/resolve/inbox')
+              or self.path.startswith('/api/darktable/inbox')):
+            # Pull-queue inbox for short-lived clients (GIMP plugin,
+            # antenna-mediated Resolve, etc.). Query params:
+            #   consume=1        pop returned messages from the queue
+            #   max=50           cap returned list length
+            #   since=<msg_id>   only messages that arrived after <msg_id>
+            # See spellcaster_core/mailbox.py for semantics.
+            iface = self.path.split('/')[2]  # /api/<iface>/inbox → <iface>
+            return self._handle_inbox_get(iface)
+        elif self.path == '/api/models' or self.path.startswith('/api/models?'):
+            # Unified model registry — one cache of ComfyUI's /object_info
+            # that every interface queries instead of probing independently.
+            # Query params: kind=checkpoints|loras|...  arch=sdxl|flux1dev|...
+            if not CROSS_INTERFACE_AVAILABLE or _get_model_registry is None:
+                return self.end_json(501, {"error": "model registry disabled"})
+            return self._handle_models_list()
+        elif self.path.startswith('/api/events/stream'):
+            # SSE stream of cross-interface events. Filters via query
+            # string: ?kinds=gimp.,resolve. &origins=gimp,resolve
+            if _EVENT_BUS is None:
+                return self.end_json(501, {"error": "event bus disabled"})
+            return self._handle_events_stream()
+        elif self.path.startswith('/api/events'):
+            # Polling fallback: GET recent events as a JSON list.
+            # ?limit=50&since=<ts>&kinds=...&origins=...
+            if _EVENT_BUS is None:
+                return self.end_json(501, {"error": "event bus disabled"})
+            return self._handle_events_recent()
+        elif self.path == '/api/assets' or self.path.startswith('/api/assets?'):
+            # List recent assets in the shared gallery.
+            if _ASSET_GALLERY is None:
+                return self.end_json(501, {"error": "asset gallery disabled"})
+            return self._handle_assets_list()
+        elif self.path.startswith('/api/assets/'):
+            # Fetch asset bytes by hash: /api/assets/<sha256hex>
+            if _ASSET_GALLERY is None:
+                return self.end_json(501, {"error": "asset gallery disabled"})
+            return self._handle_assets_get()
         elif self.path.startswith('/api/cached_asset/'):
             # Serve locally cached assets (downloaded from ComfyUI before privacy cleanup)
             asset_name = self.path.split('/api/cached_asset/')[-1]
@@ -6063,37 +6762,40 @@ class GuildHandler(SimpleHTTPRequestHandler):
             shots = []
             for s in _VIDEO_BRIDGE.board._shots:
                 shots.append({
-                    "id": s.id, "prompt": s.prompt, "negative": s.negative,
-                    "preset": s.preset, "seed": s.seed,
+                    "id": s.id, "index": s.index,
+                    "title": s.title, "prompt": s.prompt,
+                    "negative": s.negative, "preset": s.preset,
+                    "seed": s.seed, "backend": s.backend,
                     "status": s.status.value if hasattr(s.status, 'value') else s.status,
                     "ref_image": bool(s.ref_image),
                     "video_path": bool(s.video_path),
                     "trajectories": s.trajectories or [],
+                    "duration_s": s.duration_s,
+                    "target_duration_s": getattr(s, "target_duration_s", None),
+                    "carry_last_frame": s.carry_last_frame,
+                    "transition": getattr(s, 'transition', 'cut'),
+                    "transition_ms": getattr(s, 'transition_ms', 500),
+                    "scene_id": getattr(s, 'scene_id', None),
+                    "depends_on": getattr(s, 'depends_on', []),
+                    "error": getattr(s, 'error', None),
+                    "progress": _VIDEO_BRIDGE.render_progress().get("progress", 0) if s.id == getattr(_VIDEO_BRIDGE, '_active_shot_id', None) else None,
                 })
-            return self.end_json(200, {"shots": shots})
+            scenes = [sc.to_dict() for sc in _VIDEO_BRIDGE.board.scenes()]
+            return self.end_json(200, {"shots": shots, "scenes": scenes})
 
         elif self.path == '/api/video/presets':
-            if not _VIDEO_BRIDGE:
-                return self.end_json(503, {"error": "Video Bridge not initialised"})
-            presets = {}
-            for name, p in _VIDEO_BRIDGE.presets.items():
-                presets[name] = {
-                    "description": getattr(p, 'description', ''),
-                    "width": getattr(p, 'width', 0),
-                    "height": getattr(p, 'height', 0),
-                    "fps": getattr(p, 'fps', 0),
-                    "frames": getattr(p, 'frames', 0),
-                }
-            return self.end_json(200, {"presets": presets})
+            try:
+                from scaffold.wangp_runner import WANGP_PRESETS
+                return self.end_json(200, {"presets": WANGP_PRESETS})
+            except ImportError:
+                return self.end_json(200, {"presets": {}})
 
         elif self.path == '/api/video/health':
             if not _VIDEO_BRIDGE:
                 return self.end_json(200, {"status": "no_bridge", "queue": 0, "active": None})
-            return self.end_json(200, {
-                "status": "ok",
-                "queue": _VIDEO_BRIDGE.render_queue.qsize() if hasattr(_VIDEO_BRIDGE, 'render_queue') else 0,
-                "active": getattr(_VIDEO_BRIDGE, '_active_shot_id', None),
-            })
+            health = _VIDEO_BRIDGE.health()
+            health["status"] = "ok"
+            return self.end_json(200, health)
 
         elif self.path.startswith('/api/video/shots/') and self.path.endswith('/reference'):
             if not _VIDEO_BRIDGE:
@@ -6115,6 +6817,762 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 return self.end_json(404, {"error": "No video"})
             return self._serve_file(shot.video_path)
 
+        # ── Video API POST endpoints ──
+        elif self.path == '/api/video/shots' and self.command == 'POST':
+            """Create a new shot."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot = _VIDEO_BRIDGE.add_shot(
+                prompt=data.get('prompt', ''),
+                negative=data.get('negative', ''),
+                seed=data.get('seed'),
+                preset=data.get('preset', 'wan_480p'),
+            )
+            return self.end_json(200, shot)
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/delete'):
+            """Delete a shot."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/api/video/shots/')[1].rsplit('/delete', 1)[0]
+            try:
+                _VIDEO_BRIDGE.remove_shot(shot_id)
+                return self.end_json(200, {"status": "deleted"})
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/reference') and self.command == 'POST':
+            """Upload reference image (base64 image_data)."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/api/video/shots/')[1].rsplit('/reference', 1)[0]
+            image_data = data.get('image_data', '')
+            if not image_data:
+                return self.end_json(400, {"error": "No image_data provided"})
+            import base64 as _b64
+            import tempfile as _tf
+            try:
+                raw = _b64.b64decode(image_data.split(',', 1)[-1])
+                ext = '.png'
+                if image_data.startswith('data:image/jpeg'):
+                    ext = '.jpg'
+                tmp = _tf.NamedTemporaryFile(delete=False, suffix=ext,
+                    dir=os.path.join(os.path.dirname(__file__), 'creations'))
+                tmp.write(raw)
+                tmp.close()
+                result = _VIDEO_BRIDGE.update_shot(shot_id, ref_image=tmp.name)
+                return self.end_json(200, result)
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/update'):
+            """Update shot fields."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/api/video/shots/')[1].rsplit('/update', 1)[0]
+            try:
+                update_kw = {}
+                for field in ('title', 'prompt', 'negative', 'preset', 'seed', 'backend', 'overrides', 'carry_last_frame'):
+                    if field in data:
+                        update_kw[field] = data[field]
+                _VIDEO_BRIDGE.update_shot(shot_id, **update_kw)
+                return self.end_json(200, {"status": "updated"})
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/trajectories') and self.command == 'POST':
+            """Set shot trajectories."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/api/video/shots/')[1].rsplit('/trajectories', 1)[0]
+            try:
+                trajectories = data.get('trajectories', [])
+                _VIDEO_BRIDGE.set_trajectories(shot_id, trajectories)
+                return self.end_json(200, {"status": "updated"})
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/api/video/reorder' and self.command == 'POST':
+            """Reorder shots."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                ordered_ids = data.get('ordered_ids', [])
+                _VIDEO_BRIDGE.reorder_shots(ordered_ids)
+                return self.end_json(200, {"status": "reordered"})
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/continuity' and self.command == 'POST':
+            """Export shot state for continuity on next startup."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                export = _VIDEO_BRIDGE.board.export_for_next()
+                return self.end_json(200, export)
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/duplicate' and self.command == 'POST':
+            """Duplicate a shot."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                shot_id = data.get('shot_id')
+                result = _VIDEO_BRIDGE.board.duplicate(shot_id)
+                return self.end_json(200, result)
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/retry' and self.command == 'POST':
+            """Reset a failed shot to draft and re-queue it."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                shot_id = data.get('shot_id')
+                # Reset status to draft before re-queueing
+                _VIDEO_BRIDGE.update_shot(shot_id, status='draft')
+                _VIDEO_BRIDGE.queue_shot(shot_id)
+                return self.end_json(200, {"status": "queued"})
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/cancel') and self.command == 'POST':
+            """Cancel an in-flight render."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                shot_id = self.path.split('/api/video/shots/')[1].rsplit('/cancel', 1)[0]
+                result = _VIDEO_BRIDGE.cancel_shot(shot_id)
+                return self.end_json(200, result)
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/api/video/render-all' and self.command == 'POST':
+            """Queue all draft shots in dependency-aware order."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                result = _VIDEO_BRIDGE.queue_all_drafts()
+                result["status"] = "queued"
+                return self.end_json(200, result)
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/api/video/reset-failed' and self.command == 'POST':
+            """Reset all failed shots."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                _VIDEO_BRIDGE.reset_failed()
+                return self.end_json(200, {"status": "reset"})
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/api/video/queue/pause' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            return self.end_json(200, _VIDEO_BRIDGE.pause_queue())
+
+        elif self.path == '/api/video/queue/resume' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            return self.end_json(200, _VIDEO_BRIDGE.resume_queue())
+
+        elif self.path == '/api/video/queue/status' and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            return self.end_json(200, _VIDEO_BRIDGE.queue_status())
+
+        elif self.path == '/api/video/settings' and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            return self.end_json(200, _VIDEO_BRIDGE.get_settings())
+
+        elif self.path == '/api/video/settings' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            max_c = data.get('max_concurrent')
+            if max_c is not None:
+                result = _VIDEO_BRIDGE.set_max_concurrent(int(max_c))
+                return self.end_json(200, result)
+            return self.end_json(400, {"error": "No settings to update"})
+
+        elif self.path == '/api/video/export-settings' and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            return self.end_json(200, _VIDEO_BRIDGE.get_export_settings())
+
+        elif self.path == '/api/video/export-settings' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            result = _VIDEO_BRIDGE.set_export_settings(data)
+            return self.end_json(200, result)
+
+        # ── Preset Favorites ──────────────────────────────────────────
+        elif self.path == '/api/video/favorites' and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            return self.end_json(200, {"favorites": _VIDEO_BRIDGE.get_favorite_presets()})
+
+        elif self.path == '/api/video/favorites' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            preset = data.get('preset')
+            if preset:
+                result = _VIDEO_BRIDGE.toggle_favorite_preset(preset)
+                return self.end_json(200, result)
+            presets_list = data.get('favorites')
+            if presets_list is not None:
+                result = _VIDEO_BRIDGE.set_favorite_presets(presets_list)
+                return self.end_json(200, {"favorites": result})
+            return self.end_json(400, {"error": "preset or favorites required"})
+
+        # ── Shot Dependencies ─────────────────────────────────────
+        elif self.path == '/api/video/dependencies' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = data.get('shot_id')
+            depends_on_id = data.get('depends_on')
+            if not shot_id or not depends_on_id:
+                return self.end_json(400, {"error": "shot_id and depends_on required"})
+            result = _VIDEO_BRIDGE.board.add_dependency(shot_id, depends_on_id)
+            if result is None:
+                return self.end_json(404, {"error": "Shot not found or invalid dependency"})
+            return self.end_json(200, {"shot_id": shot_id, "depends_on": result.depends_on})
+
+        elif self.path == '/api/video/dependencies' and self.command == 'DELETE':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = data.get('shot_id')
+            depends_on_id = data.get('depends_on')
+            if not shot_id or not depends_on_id:
+                return self.end_json(400, {"error": "shot_id and depends_on required"})
+            result = _VIDEO_BRIDGE.board.remove_dependency(shot_id, depends_on_id)
+            if result is None:
+                return self.end_json(404, {"error": "Shot not found"})
+            return self.end_json(200, {"shot_id": shot_id, "depends_on": result.depends_on})
+
+        elif self.path.startswith('/api/video/dependencies/') and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/')[-1]
+            met = _VIDEO_BRIDGE.board.dependencies_met(shot_id)
+            ready = _VIDEO_BRIDGE.board.ready_to_render(shot_id)
+            shot = _VIDEO_BRIDGE.board.get(shot_id)
+            if not shot:
+                return self.end_json(404, {"error": "Shot not found"})
+            return self.end_json(200, {
+                "shot_id": shot_id,
+                "depends_on": shot.depends_on,
+                "dependencies_met": met,
+                "ready_to_render": ready,
+            })
+
+        elif self.path == '/api/video/render-order' and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            order = _VIDEO_BRIDGE.board.render_order()
+            return self.end_json(200, order)
+
+        elif self.path == '/api/video/total-duration' and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            total = _VIDEO_BRIDGE.board.total_duration()
+            shot_durations = []
+            for s in _VIDEO_BRIDGE.board:
+                eff = _VIDEO_BRIDGE.board.effective_duration(s.id)
+                shot_durations.append({"id": s.id, "effective": eff,
+                    "target": getattr(s, 'target_duration_s', None),
+                    "preset": s.duration_s})
+            return self.end_json(200, {"total_duration": total, "shots": shot_durations})
+
+        elif self.path == '/api/video/lock' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = data.get('shot_id')
+            lock = data.get('lock', True)
+            if not shot_id:
+                return self.end_json(400, {"error": "shot_id required"})
+            if lock:
+                result = _VIDEO_BRIDGE.board.lock_shot(shot_id)
+            else:
+                result = _VIDEO_BRIDGE.board.unlock_shot(shot_id)
+            if result is None:
+                return self.end_json(404, {"error": "Shot not found"})
+            return self.end_json(200, {"shot_id": shot_id, "locked": result.locked})
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/history') and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/')[4]
+            history = _VIDEO_BRIDGE.board.get_render_history(shot_id)
+            return self.end_json(200, {"shot_id": shot_id, "history": history})
+
+        elif self.path == '/api/video/queue-eta' and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            eta = _VIDEO_BRIDGE.board.queue_eta()
+            return self.end_json(200, eta)
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/diff') and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/')[4]
+            diff = _VIDEO_BRIDGE.board.shot_diff(shot_id)
+            return self.end_json(200, {"shot_id": shot_id, **diff})
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/revert') and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/')[4]
+            result = _VIDEO_BRIDGE.board.revert_to_last_render(shot_id)
+            if result is None:
+                return self.end_json(400, {"error": "Cannot revert: shot not found, locked, or no render history"})
+            shot = _VIDEO_BRIDGE.board.get(shot_id)
+            return self.end_json(200, {"shot_id": shot_id, "reverted": result, "shot": shot.to_dict()})
+
+        # R45a: per-shot version snapshots (save / list / restore / delete)
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/snapshot') and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/')[4]
+            label = str(data.get('label', '') or '')
+            snap = _VIDEO_BRIDGE.board.save_snapshot(shot_id, label=label)
+            if snap is None:
+                return self.end_json(404, {"error": "shot not found"})
+            return self.end_json(200, {"shot_id": shot_id, "snapshot": snap})
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/snapshots') and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/')[4]
+            snaps = _VIDEO_BRIDGE.board.list_snapshots(shot_id)
+            return self.end_json(200, {"shot_id": shot_id, "snapshots": snaps})
+        elif self.path.startswith('/api/video/shots/') and '/snapshot/' in self.path and self.path.endswith('/restore') and self.command == 'POST':
+            # /api/video/shots/<sid>/snapshot/<snap_id>/restore
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            parts = self.path.split('/')
+            shot_id = parts[4] if len(parts) > 4 else ''
+            snap_id = parts[6] if len(parts) > 6 else ''
+            restored = _VIDEO_BRIDGE.board.restore_snapshot(shot_id, snap_id)
+            if restored is None:
+                return self.end_json(400, {"error": "shot not found, snapshot not found, or shot locked"})
+            shot = _VIDEO_BRIDGE.board.get(shot_id)
+            return self.end_json(200, {"shot_id": shot_id, "restored": restored,
+                                        "shot": shot.to_dict() if shot else None})
+        elif self.path.startswith('/api/video/shots/') and '/snapshot/' in self.path and self.command == 'POST' and not self.path.endswith('/restore'):
+            # /api/video/shots/<sid>/snapshot/<snap_id>  with no /restore suffix = delete
+            # (HTTP DELETE would be cleaner but the existing video endpoints pattern uses POST)
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            parts = self.path.split('/')
+            shot_id = parts[4] if len(parts) > 4 else ''
+            snap_id = parts[6] if len(parts) > 6 else ''
+            action = data.get('_action', 'delete')
+            if action != 'delete':
+                return self.end_json(400, {"error": "unknown action for /snapshot/<id>; pass _action=delete"})
+            removed = _VIDEO_BRIDGE.board.delete_snapshot(shot_id, snap_id)
+            return self.end_json(200 if removed else 404,
+                                 {"shot_id": shot_id, "snapshot_id": snap_id, "deleted": removed})
+
+        elif self.path == '/api/video/batch-revert' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_ids = data.get('shot_ids', [])
+            if not shot_ids:
+                return self.end_json(400, {"error": "No shot_ids provided"})
+            result = _VIDEO_BRIDGE.board.batch_revert(shot_ids)
+            return self.end_json(200, result)
+        elif self.path == '/api/video/batch-prompt-edit' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_ids = data.get('shot_ids', [])
+            if not shot_ids:
+                return self.end_json(400, {"error": "No shot_ids provided"})
+            prefix = data.get('prefix', '')
+            suffix = data.get('suffix', '')
+            mode = data.get('mode', 'add')
+            if mode not in ('add', 'remove'):
+                return self.end_json(400, {"error": "mode must be 'add' or 'remove'"})
+            if not prefix and not suffix:
+                return self.end_json(400, {"error": "prefix or suffix required"})
+            result = _VIDEO_BRIDGE.board.batch_prompt_edit(shot_ids, prefix=prefix, suffix=suffix, mode=mode)
+            return self.end_json(200, result)
+        elif self.path == '/api/video/batch-duplicate' and self.command == 'POST':
+            # R45b: clone each selected shot N times with versioned titles
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_ids = data.get('shot_ids', [])
+            if not shot_ids:
+                return self.end_json(400, {"error": "No shot_ids provided"})
+            try:
+                count = max(1, min(50, int(data.get('count', 1))))  # safety cap
+            except (TypeError, ValueError):
+                return self.end_json(400, {"error": "count must be a positive integer"})
+            mode = data.get('title_suffix_mode', 'counter')
+            if mode not in ('counter', 'plain'):
+                return self.end_json(400, {"error": "title_suffix_mode must be 'counter' or 'plain'"})
+            result = _VIDEO_BRIDGE.board.batch_duplicate(
+                shot_ids, count=count, title_suffix_mode=mode)
+            return self.end_json(200, result)
+
+        elif self.path == '/api/video/record-render' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = data.get('shot_id')
+            if not shot_id:
+                return self.end_json(400, {"error": "shot_id required"})
+            entry = _VIDEO_BRIDGE.board.record_render(
+                shot_id,
+                preset=data.get('preset'),
+                status=data.get('status', 'ready'),
+                duration_s=data.get('duration_s'),
+                error=data.get('error'),
+            )
+            if entry is None:
+                return self.end_json(404, {"error": "Shot not found"})
+            return self.end_json(200, {"shot_id": shot_id, "entry": entry})
+
+        # ── Scene CRUD ────────────────────────────────────────────────
+        elif self.path == '/api/video/scenes' and self.command == 'GET':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            scenes = [sc.to_dict() for sc in _VIDEO_BRIDGE.board.scenes()]
+            return self.end_json(200, {"scenes": scenes})
+
+        elif self.path == '/api/video/scenes' and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            name = data.get('name', '')
+            color = data.get('color', '#4a9eff')
+            sc = _VIDEO_BRIDGE.board.add_scene(name=name, color=color)
+            return self.end_json(201, sc.to_dict())
+
+        elif self.path.startswith('/api/video/scenes/') and self.command == 'POST':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            scene_id = self.path.split('/api/video/scenes/')[1].split('/')[0]
+            if '/assign' in self.path:
+                shot_id = data.get('shot_id')
+                if not shot_id:
+                    return self.end_json(400, {"error": "shot_id required"})
+                result = _VIDEO_BRIDGE.board.assign_shot_to_scene(shot_id, scene_id)
+                if result:
+                    return self.end_json(200, result.to_dict())
+                return self.end_json(404, {"error": "Shot or scene not found"})
+            else:
+                sc = _VIDEO_BRIDGE.board.update_scene(scene_id, **data)
+                if sc:
+                    return self.end_json(200, sc.to_dict())
+                return self.end_json(404, {"error": "Scene not found"})
+
+        elif self.path.startswith('/api/video/scenes/') and self.command == 'DELETE':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            scene_id = self.path.split('/api/video/scenes/')[1].split('/')[0]
+            ok = _VIDEO_BRIDGE.board.remove_scene(scene_id)
+            return self.end_json(200 if ok else 404,
+                                 {"ok": ok} if ok else {"error": "Scene not found"})
+
+        elif self.path == '/api/video/estimate' and self.command == 'POST':
+            """Estimate render time for a preset."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                preset = data.get('preset')
+                result = _VIDEO_BRIDGE.estimate_render_time(preset=preset)
+                return self.end_json(200, result)
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/api/video/batch-preset' and self.command == 'POST':
+            """Change preset for multiple shots."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                shot_ids = data.get('shot_ids', [])
+                preset = data.get('preset', '')
+                result = _VIDEO_BRIDGE.batch_update_preset(shot_ids, preset)
+                return self.end_json(200, result)
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/api/video/batch-lock' and self.command == 'POST':
+            """Lock or unlock multiple shots."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                shot_ids = data.get('shot_ids', [])
+                lock = data.get('lock', True)
+                result = _VIDEO_BRIDGE.board.batch_lock(shot_ids, lock)
+                return self.end_json(200, result)
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/api/video/batch-reset' and self.command == 'POST':
+            """Reset multiple shots to draft status."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                shot_ids = data.get('shot_ids', [])
+                result = _VIDEO_BRIDGE.board.batch_reset_status(shot_ids)
+                return self.end_json(200, result)
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/api/video/batch-color' and self.command == 'POST':
+            """Set color label on multiple shots."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                shot_ids = data.get('shot_ids', [])
+                color_label = data.get('color_label', '')
+                result = _VIDEO_BRIDGE.board.batch_color_label(shot_ids, color_label)
+                return self.end_json(200, result)
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/api/video/assemble' and self.command == 'POST':
+            """Assemble shots into a video."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                from scaffold.video_assembler import assemble_shots
+                shot_ids = data.get('shot_ids', [])
+                result = assemble_shots(shot_ids, _VIDEO_BRIDGE.output_dir)
+                return self.end_json(200, result)
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/api/video/assembled' and self.command == 'GET':
+            """Get assembled video."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                result = {"status": "ok"}
+                return self.end_json(200, result)
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/thumbnail':
+            """Get thumbnail for a shot."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                shot_id = None
+                if '?shot_id=' in self.path:
+                    shot_id = self.path.split('?shot_id=')[1]
+                if not shot_id:
+                    return self.end_json(400, {"error": "shot_id required"})
+                shot = next((s for s in _VIDEO_BRIDGE.board._shots if s.id == shot_id), None)
+                if not shot:
+                    return self.end_json(404, {"error": "Shot not found"})
+                thumb_path = getattr(shot, 'thumb_path', None)
+                if thumb_path and os.path.isfile(thumb_path):
+                    return self._serve_file(thumb_path)
+                return self.end_json(404, {"error": "No thumbnail (thumb.jpg)"})
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/api/video/events' and self.command == 'GET':
+            """Server-Sent Events stream for real-time updates."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/event-stream')
+                self.send_header('Cache-Control', 'no-cache')
+                self.send_header('Connection', 'keep-alive')
+                self.end_headers()
+                
+                event_queue = _VIDEO_BRIDGE.subscribe()
+                try:
+                    while True:
+                        try:
+                            event = event_queue.get(timeout=30)
+                            msg = json.dumps(event)
+                            self.wfile.write(f'data: {msg}\n\n'.encode('utf-8'))
+                            self.wfile.flush()
+                        except:
+                            self.wfile.write(b': ping\n\n')
+                            self.wfile.flush()
+                except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                    pass
+                finally:
+                    _VIDEO_BRIDGE.unsubscribe(event_queue)
+            except Exception as e:
+                pass
+
+        elif self.path == '/api/video/templates' and self.command == 'GET':
+            """List saved templates."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                result = _VIDEO_BRIDGE.list_templates()
+                return self.end_json(200, result)
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/api/video/templates/save' and self.command == 'POST':
+            """Save a template."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                template_name = data.get('name', '')
+                _VIDEO_BRIDGE.save_template(template_name, data)
+                return self.end_json(200, {"status": "saved"})
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/api/video/templates/delete' and self.command == 'POST':
+            """Delete a template."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                template_name = data.get('name', '')
+                _VIDEO_BRIDGE.delete_template(template_name)
+                return self.end_json(200, {"status": "deleted"})
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/clone') and self.command == 'POST':
+            """Clone a shot with optional prompt variation."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                shot_id = self.path.split('/api/video/shots/')[1].rsplit('/clone', 1)[0]
+                variation = data.get('variation', '')
+                result = _VIDEO_BRIDGE.clone_shot(shot_id, variation=variation)
+                return self.end_json(200, result)
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/api/video/export' and self.command == 'POST':
+            """Export the shotboard as JSON."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                result = _VIDEO_BRIDGE.export_shotboard()
+                return self.end_json(200, result)
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/api/video/import' and self.command == 'POST':
+            """Import a shotboard from JSON."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                result = _VIDEO_BRIDGE.import_shotboard(data)
+                return self.end_json(200, result)
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path == '/api/video/chat' and self.command == 'POST':
+            """Chat with the CinematographerWizard."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            try:
+                user_id = data.get('user_id', 'guild_default')
+                text = data.get('text', '')
+                if not text:
+                    return self.end_json(400, {"error": "text required"})
+                result = _VIDEO_BRIDGE.handle_chat(user_id, text)
+                return self.end_json(200, result)
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif (self.path.startswith('/api/video/shots/') and self.command == 'PUT' and
+              not self.path.endswith(('/render', '/reference', '/trajectories', '/continuity', '/duplicate'))):
+            """Generic shot update handler (catch-all)."""
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/api/video/shots/')[1]
+            try:
+                update_kw = {}
+                for field in ('title', 'prompt', 'negative', 'preset', 'seed', 'backend', 'overrides', 'carry_last_frame'):
+                    if field in data:
+                        update_kw[field] = data[field]
+                _VIDEO_BRIDGE.update_shot(shot_id, **update_kw)
+                return self.end_json(200, {"status": "updated"})
+            except Exception as e:
+                return self.end_json(400, {"error": str(e)})
+
+        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/thumbnail'):
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            shot_id = self.path.split('/api/video/shots/')[1].rsplit('/thumbnail', 1)[0]
+            shots = _VIDEO_BRIDGE.board._shots
+            shot = next((s for s in shots if s.id == shot_id), None)
+            if not shot:
+                return self.end_json(404, {"error": "Shot not found"})
+            thumb = None
+            if shot.ref_image and os.path.isfile(shot.ref_image):
+                thumb = shot.ref_image
+            elif shot.video_path and os.path.isfile(shot.video_path):
+                thumb_path = shot.video_path + ".thumb.jpg"
+                if not os.path.isfile(thumb_path):
+                    import subprocess
+                    try:
+                        subprocess.run(
+                            ["ffmpeg", "-y", "-i", shot.video_path,
+                             "-vframes", "1", "-vf", "scale=128:-1",
+                             "-q:v", "5", thumb_path],
+                            capture_output=True, timeout=10,
+                        )
+                    except Exception:
+                        pass
+                if os.path.isfile(thumb_path):
+                    thumb = thumb_path
+            if not thumb:
+                return self.end_json(404, {"error": "No thumbnail available"})
+            return self._serve_file(thumb)
+
+        elif self.path == '/api/video/assembled':
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            assembled = getattr(_VIDEO_BRIDGE, '_last_assembled', None)
+            if not assembled or not os.path.isfile(assembled):
+                return self.end_json(404, {"error": "No assembled video"})
+            return self._serve_file(assembled)
+
+        elif self.path == '/api/video/events':
+            # SSE endpoint — hold connection open and stream events.
+            if not _VIDEO_BRIDGE:
+                return self.end_json(503, {"error": "Video Bridge not initialised"})
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream')
+            self.send_header('Cache-Control', 'no-cache')
+            self.send_header('Connection', 'keep-alive')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            q = _VIDEO_BRIDGE.subscribe()
+            try:
+                # Send initial heartbeat so client knows connection is live
+                self.wfile.write(b": heartbeat\n\n")
+                self.wfile.flush()
+                while True:
+                    try:
+                        evt = q.get(timeout=5.0)
+                        event_name = evt.get("event", "message")
+                        data_str = json.dumps(evt.get("data", {}))
+                        self.wfile.write(
+                            f"event: {event_name}\ndata: {data_str}\n\n".encode()
+                        )
+                        self.wfile.flush()
+                    except Exception:
+                        # queue.Empty — send a keep-alive comment
+                        try:
+                            self.wfile.write(b": keepalive\n\n")
+                            self.wfile.flush()
+                        except (BrokenPipeError, ConnectionResetError,
+                                OSError):
+                            break
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
+            finally:
+                _VIDEO_BRIDGE.unsubscribe(q)
+            return
 
         # Static routing — files under /static/ and /characters/ served as-is
         if (not self.path.startswith('/static/')
@@ -6139,6 +7597,129 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(400, {"error": "Invalid JSON"})
 
         comfy = data.get('comfy_url', COMFYUI_URL)
+
+        # -- Cross-interface backbone (events + gallery + presence) --
+        # Dynamic: every endpoint 501s if the backbone failed to init,
+        # so the Guild runs fine without it. UI gates off /api/interfaces
+        # so nothing dead-renders.
+        if self.path == '/api/interfaces/heartbeat':
+            if not CROSS_INTERFACE_AVAILABLE or _iface_registry is None:
+                return self.end_json(501, {"error": "cross-interface disabled"})
+            iface_key = str(data.get('interface', '')).strip()
+            meta = data.get('meta', {}) or {}
+            if not iface_key:
+                return self.end_json(400, {"error": "missing 'interface'"})
+            ok = _iface_registry.heartbeat(iface_key, meta if isinstance(meta, dict) else {})
+            if not ok:
+                return self.end_json(404, {"error": f"unknown interface '{iface_key}'"})
+            if _EVENT_BUS is not None:
+                try:
+                    _EVENT_BUS.publish(f"{iface_key}.presence.heartbeat",
+                                       origin=iface_key, data={"meta": meta})
+                except Exception:
+                    pass
+            return self.end_json(200, {"ok": True, "interface": iface_key})
+
+        if self.path == '/api/events/emit':
+            if _EVENT_BUS is None:
+                return self.end_json(501, {"error": "event bus disabled"})
+            kind = str(data.get('kind', '')).strip()
+            origin = str(data.get('origin', 'unknown')).strip()
+            payload = data.get('data', {}) or {}
+            if not kind or (validate_kind and not validate_kind(kind)):
+                return self.end_json(400, {"error": "missing or invalid 'kind'"})
+            evt = _EVENT_BUS.publish(kind, origin=origin,
+                                     data=payload if isinstance(payload, dict) else {})
+            # Fan the event into the matching per-interface mailbox so
+            # short-lived clients (poll-based) catch up without needing
+            # to hold an SSE subscription open
+            _mailbox_fanout(evt)
+            # Auto-heartbeat on event emit so "chatty" interfaces don't
+            # need a separate ping loop
+            if _iface_registry is not None and origin in (
+                    "gimp", "darktable", "resolve", "sillytavern", "signal"):
+                try:
+                    _iface_registry.heartbeat(origin)
+                except Exception:
+                    pass
+            return self.end_json(200, evt)
+
+        if self.path == '/api/assets':
+            if _ASSET_GALLERY is None:
+                return self.end_json(501, {"error": "asset gallery disabled"})
+            return self._handle_assets_upload(data)
+
+        # -- Per-interface ingress endpoints --
+        # Short clients (GIMP plugin menu action, DaVinci bridge script, etc.)
+        # POST one of these to publish a typed event on the bus + gallery
+        # asset (optional) WITHOUT needing an SSE subscription. Every
+        # handler validates the kind-prefix against the declared iface so
+        # a compromised client can't forge events for other interfaces.
+
+        # GIMP
+        if self.path == '/api/gimp/layer':
+            return self._handle_iface_ingress("gimp", "gimp.layer.publish", data,
+                                              asset_kind="layer", asset_optional=True)
+        if self.path == '/api/gimp/canvas':
+            return self._handle_iface_ingress("gimp", "gimp.canvas.snapshot", data,
+                                              asset_kind="canvas", asset_optional=True)
+        if self.path == '/api/gimp/selection':
+            return self._handle_iface_event("gimp", "gimp.selection.change", data)
+        if self.path == '/api/gimp/tool':
+            return self._handle_iface_event("gimp", "gimp.tool.change", data)
+        if self.path == '/api/gimp/inbox/ack':
+            return self._handle_inbox_ack("gimp", data)
+
+        # SillyTavern
+        if self.path == '/api/sillytavern/scene':
+            return self._handle_iface_ingress("sillytavern", "sillytavern.scene.describe",
+                                              data, asset_kind="scene_ref",
+                                              asset_optional=True)
+        if self.path == '/api/sillytavern/character':
+            return self._handle_iface_ingress("sillytavern", "sillytavern.character.card",
+                                              data, asset_kind="portrait",
+                                              asset_optional=True)
+        if self.path == '/api/sillytavern/dialogue':
+            return self._handle_iface_event("sillytavern", "sillytavern.dialogue.line", data)
+        if self.path == '/api/sillytavern/worldinfo':
+            return self._handle_iface_event("sillytavern", "sillytavern.worldinfo.entry", data)
+        if self.path == '/api/sillytavern/mood':
+            return self._handle_iface_event("sillytavern", "sillytavern.mood.signal", data)
+        if self.path == '/api/sillytavern/inbox/ack':
+            return self._handle_inbox_ack("sillytavern", data)
+
+        # DaVinci Resolve
+        if self.path == '/api/resolve/clip':
+            return self._handle_iface_ingress("resolve", "resolve.clip.register", data,
+                                              asset_kind="still", asset_optional=True)
+        if self.path == '/api/resolve/gap':
+            return self._handle_iface_event("resolve", "resolve.gap.detect", data)
+        if self.path == '/api/resolve/color_ref':
+            return self._handle_iface_ingress("resolve", "resolve.color_ref.upload",
+                                              data, asset_kind="color_ref",
+                                              asset_optional=False)  # REQUIRES body_b64
+        if self.path == '/api/resolve/marker':
+            return self._handle_iface_event("resolve", "resolve.marker.edit", data)
+        if self.path == '/api/resolve/inbox/ack':
+            return self._handle_inbox_ack("resolve", data)
+
+        # Darktable
+        if self.path == '/api/darktable/export':
+            return self._handle_iface_ingress("darktable", "darktable.export.ready",
+                                              data, asset_kind="export",
+                                              asset_optional=False)  # REQUIRES body_b64
+        if self.path == '/api/darktable/style':
+            return self._handle_iface_event("darktable", "darktable.style.apply", data)
+        if self.path == '/api/darktable/inbox/ack':
+            return self._handle_inbox_ack("darktable", data)
+
+        # -- Setup-mode admin endpoints (Guild-driven install) --
+        if self.path == '/api/setup/feature/install':
+            return self.end_json(*_guided_install_feature(data.get('feature', '')))
+        if self.path == '/api/setup/plugin/install':
+            return self.end_json(*_guided_install_plugin(data.get('plugin', '')))
+        if self.path == '/api/setup/finish':
+            return self.end_json(*_guided_install_finish())
 
         # -- /api/horde_generate -- server-side proxy to AI Horde
         #    Browser can't call Horde directly (CORS), so we relay.
@@ -7462,7 +9043,6 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     result['cached_urls'] = cached
                     result['urls'] = cached
 
-                # Privacy cleanup
                 if PRIVACY_CLEANUP:
                     try:
                         _privacy_cleanup(exec_comfy, workflow, {'urls': _original_urls})
@@ -7482,124 +9062,6 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 print(f'  [Execute] {build_fn_name} failed: {e}')
                 import traceback; traceback.print_exc()
                 return self.end_json(500, {'error': str(e)})
-
-
-
-        # ── Video API POST endpoints ──
-        elif self.path == '/api/video/shots' and self.command == 'POST':
-            if not _VIDEO_BRIDGE:
-                return self.end_json(503, {"error": "Video Bridge not initialised"})
-            shot = _VIDEO_BRIDGE.board.add_shot(
-                prompt=data.get('prompt', ''),
-                negative=data.get('negative', ''),
-                preset=data.get('preset', 'wan_480p'),
-                seed=data.get('seed'),
-            )
-            return self.end_json(200, {"id": shot.id, "status": "created"})
-
-        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/render'):
-            if not _VIDEO_BRIDGE:
-                return self.end_json(503, {"error": "Video Bridge not initialised"})
-            shot_id = self.path.split('/api/video/shots/')[1].rsplit('/render', 1)[0]
-            try:
-                _VIDEO_BRIDGE.queue_shot(shot_id)
-                return self.end_json(200, {"status": "queued"})
-            except Exception as e:
-                return self.end_json(400, {"error": str(e)})
-
-        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/reference'):
-            if not _VIDEO_BRIDGE:
-                return self.end_json(503, {"error": "Video Bridge not initialised"})
-            shot_id = self.path.split('/api/video/shots/')[1].rsplit('/reference', 1)[0]
-            image_data = data.get('image_data', '')
-            if not image_data:
-                return self.end_json(400, {"error": "No image_data provided"})
-            import base64, uuid as _uuid
-            # Strip data URI prefix if present
-            if ',' in image_data:
-                header, image_data = image_data.split(',', 1)
-                ext = 'png'
-                if 'jpeg' in header or 'jpg' in header:
-                    ext = 'jpg'
-                elif 'webp' in header:
-                    ext = 'webp'
-            else:
-                ext = 'png'
-            try:
-                img_bytes = base64.b64decode(image_data)
-            except Exception:
-                return self.end_json(400, {"error": "Invalid base64 data"})
-            creations_dir = os.path.join(os.path.dirname(__file__), 'creations')
-            os.makedirs(creations_dir, exist_ok=True)
-            filename = f"vidref_{_uuid.uuid4().hex[:12]}.{ext}"
-            filepath = os.path.join(creations_dir, filename)
-            with open(filepath, 'wb') as f:
-                f.write(img_bytes)
-            try:
-                _VIDEO_BRIDGE.attach_reference(shot_id, filepath)
-                return self.end_json(200, {"status": "attached", "path": filepath})
-            except Exception as e:
-                return self.end_json(400, {"error": str(e)})
-
-        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/trajectories'):
-            if not _VIDEO_BRIDGE:
-                return self.end_json(503, {"error": "Video Bridge not initialised"})
-            shot_id = self.path.split('/api/video/shots/')[1].rsplit('/trajectories', 1)[0]
-            trajectories = data.get('trajectories', [])
-            try:
-                _VIDEO_BRIDGE.board.set_trajectories(shot_id, trajectories)
-                return self.end_json(200, {"status": "saved"})
-            except Exception as e:
-                return self.end_json(400, {"error": str(e)})
-
-        elif self.path.startswith('/api/video/shots/') and not self.path.endswith('/render') and not self.path.endswith('/reference') and not self.path.endswith('/trajectories'):
-            if not _VIDEO_BRIDGE:
-                return self.end_json(503, {"error": "Video Bridge not initialised"})
-            shot_id = self.path.split('/api/video/shots/')[-1]
-            # DELETE via _method field
-            if data.get('_method') == 'DELETE':
-                try:
-                    _VIDEO_BRIDGE.board.remove_shot(shot_id)
-                    return self.end_json(200, {"status": "deleted"})
-                except Exception as e:
-                    return self.end_json(400, {"error": str(e)})
-            # UPDATE shot fields
-            updates = {}
-            for key in ('prompt', 'negative', 'preset', 'seed'):
-                if key in data:
-                    updates[key] = data[key]
-            if updates:
-                try:
-                    _VIDEO_BRIDGE.board.update_shot(shot_id, **updates)
-                    return self.end_json(200, {"status": "updated"})
-                except Exception as e:
-                    return self.end_json(400, {"error": str(e)})
-            return self.end_json(400, {"error": "No fields to update"})
-
-        elif self.path == '/api/video/reorder':
-            if not _VIDEO_BRIDGE:
-                return self.end_json(503, {"error": "Video Bridge not initialised"})
-            order = data.get('order', [])
-            if not order:
-                return self.end_json(400, {"error": "No order provided"})
-            try:
-                _VIDEO_BRIDGE.board.reorder(order)
-                return self.end_json(200, {"status": "reordered"})
-            except Exception as e:
-                return self.end_json(400, {"error": str(e)})
-
-        elif self.path == '/api/video/chat':
-            if not _VIDEO_BRIDGE:
-                return self.end_json(503, {"error": "Video Bridge not initialised"})
-            message = data.get('message', '')
-            if not message:
-                return self.end_json(400, {"error": "No message provided"})
-            try:
-                response = _VIDEO_BRIDGE.handle_chat(message)
-                return self.end_json(200, {"response": response})
-            except Exception as e:
-                return self.end_json(500, {"error": str(e)})
-
 
         else:
             return self.end_json(404, {"error": f"Unknown endpoint: {self.path}"})
@@ -7623,8 +9085,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
             path = path[1:]
         return os.path.join(root, path)
 
+
     def log_message(self, format, *args):
-        """Quieter logging — skip noisy static asset requests."""
         msg = format % args
         if '/static/' not in msg and '/api/avatar/' not in msg:
             print(f"  {msg}")
@@ -7637,15 +9099,4 @@ if __name__ == "__main__":
         httpd.serve_forever()
     except KeyboardInterrupt:
         pass
-    httpd.server_close()
-
-
-if __name__ == "__main__":
-    print(f"Starting The Wizard Guild on port {PORT}...")
-    httpd = HTTPServer(('0.0.0.0', PORT), GuildHandler)
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    httpd.server_close()
     httpd.server_close()

@@ -1,0 +1,4 @@
+[    6334ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/static/icons/wizard_banner.gif:0
+[    6335ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/starter_chips.js:0
+[    6335ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/app.js:0
+[    6335ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7777/video_chat.js:0

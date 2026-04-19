@@ -1,0 +1,361 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e13]:
+    - complementary [ref=e14]:
+      - generic [ref=e15]:
+        - heading "The Wizard Guild" [level=2] [ref=e16]
+        - generic [ref=e19]: "LLM: Disconnected"
+        - generic [ref=e20]:
+          - generic [ref=e22]: "ComfyUI: Connected"
+          - generic [ref=e23]:
+            - generic [ref=e529]: VRAM 10.7/15.9
+            - generic [ref=e532]: RAM 25.8/63.8
+            - generic [ref=e535]: Cache 0.2/0.3
+        - generic [ref=e35]: "SillyTavern: Disconnected"
+        - generic [ref=e38]: "Signal Bridge: Disconnected"
+        - textbox "Search guild members..." [ref=e40]
+      - generic [ref=e41]:
+        - generic [ref=e539]: Core Spellcasters
+        - generic [ref=e542] [cursor=pointer]:
+          - heading "The Archivist" [level=3] [ref=e543]
+          - paragraph [ref=e544]: First-run guide — banishes himself when setup is done
+        - generic:
+          - generic:
+            - heading "Imaginus" [level=3]
+            - paragraph: Image Creation (txt2img, ControlNet)
+        - generic:
+          - generic:
+            - heading "Transmutex" [level=3]
+            - paragraph: Image Transformation (img2img, Style Transfer)
+        - generic:
+          - generic:
+            - heading "Masquerade" [level=3]
+            - paragraph: Face & Identity (Face Swap, FaceID, PuLID)
+        - generic:
+          - generic:
+            - heading "Restorix" [level=3]
+            - paragraph: Upscaling & Restoration Pipelines
+        - generic:
+          - generic:
+            - heading "Erasure" [level=3]
+            - paragraph: Inpainting, Removal & Surgical Edits
+        - generic:
+          - generic:
+            - heading "Videomancer" [level=3]
+            - paragraph: Video Generation & Enhancement
+        - generic:
+          - generic:
+            - heading "Cinematic" [level=3]
+            - paragraph: Director's Chair — Multi-Step Video Sequences
+        - generic:
+          - generic:
+            - heading "Studiocraft" [level=3]
+            - paragraph: Magic Studios — Full Character Pipeline
+        - generic:
+          - generic:
+            - heading "Whimsy Weaver" [level=3]
+            - paragraph: LTX2 Video Generation & Enhancement (Video)
+        - generic:
+          - generic:
+            - heading "The Enigma of Unknown" [level=3]
+            - paragraph: MISC Workflows
+        - generic [ref=e546]: Per-Model Wizards
+        - generic:
+          - generic:
+            - heading "Fluxx the Whisperer" [level=3]
+            - paragraph: flux-2-klein-9b — Flux 2 Klein — Explicit Image Generation
+        - generic:
+          - generic:
+            - heading "Flux Whisperer" [level=3]
+            - paragraph: flux-2-klein-4b-fp8 — Flux 2 Klein — Explicit Image Generation
+        - generic:
+          - generic:
+            - heading "Flux Whisperer" [level=3]
+            - paragraph: flux-2-klein-base-4b-fp8 — Flux 2 Klein — Explicit Image Generation
+        - generic:
+          - generic:
+            - heading "ChromaWhisperer" [level=3]
+            - paragraph: Chroma1-HD-fp8_scaled_defaultloader_hybrid_large_rev2 — Chroma Image Generation
+        - generic:
+          - generic:
+            - heading "Chroma Kali" [level=3]
+            - paragraph: chroma2_kaleidoscope — Flux 2 Klein — Explicit Image Generation
+        - generic:
+          - generic:
+            - heading "Sparkle Flux" [level=3]
+            - paragraph: FLUX1 Dev fp8 — Flux — Photorealistic NSFW Generation
+        - generic:
+          - generic:
+            - heading "Flux Hydra" [level=3]
+            - paragraph: HyFU-8-step-v1.0-pruned — Flux — Photorealistic NSFW Generation
+        - generic:
+          - generic:
+            - heading "Sloppy Mix Wizard" [level=3]
+            - paragraph: sloppyMessyMix_sloppyMessyMixV1 — Illustrious — Anime NSFW Generation
+        - generic:
+          - generic:
+            - heading "Juggernaut Reborn" [level=3]
+            - paragraph: juggernaut_reborn — SD 1.5 — Classic Explicit Generation
+        - generic:
+          - generic:
+            - heading "Pixel Weave Mage" [level=3]
+            - paragraph: v1-5-pruned-emaonly — SD 1.5 — Classic Explicit Generation
+        - generic:
+          - generic:
+            - heading "NoobAI-SuperDuper" [level=3]
+            - paragraph: NoobAI-XL-v1.1 — SDXL — Detailed Explicit Generation
+        - generic:
+          - generic:
+            - heading "Nova Spark" [level=3]
+            - paragraph: novaAnimeXL_ilV170 — SDXL — Detailed Explicit Generation
+        - generic:
+          - generic:
+            - heading "WaiIllustrious Wizard" [level=3]
+            - paragraph: waiIllustriousSDXL_v160-a5f5 — SDXL — Detailed Explicit Generation
+        - generic:
+          - generic:
+            - heading "Albedo the Luminous" [level=3]
+            - paragraph: AlbedoBaseXL — SDXL — Detailed Explicit Generation
+        - generic:
+          - generic:
+            - heading "SparkleStable" [level=3]
+            - paragraph: sd_xl_base_1.0 — SDXL — Detailed Explicit Generation
+        - generic:
+          - generic:
+            - heading "Pixel Whiz" [level=3]
+            - paragraph: modernDisneyXL_v3 — SDXL — Detailed Explicit Generation
+        - generic:
+          - generic:
+            - heading "NovaCartoonXL" [level=3]
+            - paragraph: novaCartoonXL_v60 — SDXL — Detailed Explicit Generation
+        - generic:
+          - generic:
+            - heading "CybeReal Pony" [level=3]
+            - paragraph: cyberrealisticPony_v160 — SDXL — Detailed Explicit Generation
+        - generic:
+          - generic:
+            - heading "JibMix Realistic XL" [level=3]
+            - paragraph: jibMixRealisticXL_v180SkinSupreme — SDXL — Detailed Explicit Generation
+        - generic:
+          - generic:
+            - heading "Juggernaut XL" [level=3]
+            - paragraph: juggernautXL_ragnarok — SDXL — Detailed Explicit Generation
+        - generic:
+          - generic:
+            - heading "JuggernautXL" [level=3]
+            - paragraph: juggernautXL_v9Rundiffusionphoto2 — SDXL — Detailed Explicit Generation
+        - generic:
+          - generic:
+            - heading "Chroma Weaver" [level=3]
+            - paragraph: zavychromaxl_v100 — Chroma Image Generation
+        - generic:
+          - generic:
+            - heading "Zippy the Pixel Wizard" [level=3]
+            - paragraph: gonzalomoZpop_v30AIO — SD 1.5 — Classic Explicit Generation
+      - generic [ref=e42]:
+        - button "✨ Animate All Avatars" [disabled]
+        - link "🧙 Travelling Wizard":
+          - /url: /static/guild.html
+        - button "⚙️ Settings" [ref=e45] [cursor=pointer]
+    - main [ref=e46]:
+      - generic [ref=e47]:
+        - generic [ref=e50]:
+          - heading "The Archivist" [level=2] [ref=e87]
+          - paragraph [ref=e52]: First-run guide — banishes himself when setup is done
+        - generic [ref=e53]:
+          - button "Rename Wizard"
+          - button "Generate Background"
+          - button "Generate Avatar"
+          - button "Enchantments"
+          - button "Reset Memory"
+          - button "⚡ Generate All"
+      - generic [ref=e60]:
+        - paragraph [ref=e91]: Greetings. I am The Archivist, the Guild's specialist in First-run guide — banishes himself when setup is done. Describe what you need, and I shall present my tools for you to choose from.
+        - generic:
+          - img
+        - generic [ref=e92]:
+          - generic [ref=e93]: 📜
+          - paragraph [ref=e95]:
+            - strong [ref=e96]: Detecting wizards…
+            - text: Found 33 entries in your Wizard Guild — a mix of core Spellcasters and per-model wizards auto-generated from the checkpoints, GGUFs, and custom nodes installed on your ComfyUI server.
+        - generic [ref=e97]:
+          - generic [ref=e98]: 📜
+          - paragraph [ref=e100]: Resuming a partial setup — 8 portraits already exist on disk, 25 still need to be summoned.
+        - generic [ref=e101]:
+          - generic [ref=e102]: 📜
+          - paragraph [ref=e104]: The guild tavern is already painted — skipping background.
+        - generic [ref=e105]:
+          - generic [ref=e106]: 📜
+          - paragraph [ref=e108]:
+            - strong [ref=e109]: Summoning 25 wizard avatars…
+            - text: Each wizard generates its own portrait through the model best matched to its specialty. Image-gen wizards (Imaginus, Klein, Flux) use their own checkpoint; per-model wizards use themselves; video and utility wizards borrow Imaginus' brush.
+        - paragraph [ref=e111]:
+          - text: Summoning
+          - strong [ref=e112]: Whimsy Weaver
+          - text: (1/25)
+        - generic [ref=e113]:
+          - generic [ref=e114]: 📜
+          - generic [ref=e115]:
+            - paragraph [ref=e116]:
+              - strong [ref=e117]: Why "scaffolding" matters.
+            - paragraph [ref=e118]:
+              - img "The Wizard Guild" [ref=e119]
+            - paragraph [ref=e120]:
+              - text: Local language models are
+              - emphasis [ref=e121]: small
+              - text: . A 7B-parameter model is brilliant at conversation but terrible at remembering long instructions or producing valid JSON. If you just asked one to "drive ComfyUI", it would hallucinate node names, forget parameters, mix up models, and generally embarrass itself.
+            - paragraph [ref=e122]:
+              - text: So we don't ask it to. Instead, we
+              - strong [ref=e123]: scaffold
+              - text: it.
+            - paragraph [ref=e124]: "For every wizard you meet, the scaffold:"
+            - list [ref=e125]:
+              - listitem [ref=e126]:
+                - strong [ref=e127]: Inspects your ComfyUI
+                - text: to see what models, LoRAs, and custom nodes
+            - paragraph [ref=e128]: you actually have installed.
+            - list [ref=e129]:
+              - listitem [ref=e130]:
+                - strong [ref=e131]: Builds a tiny menu
+                - text: of just the relevant tools for that wizard's
+            - paragraph [ref=e132]: specialty (Imaginus does image generation, Restorix does upscaling, Videomancer does video, etc.).
+            - list [ref=e133]:
+              - listitem [ref=e134]:
+                - strong [ref=e135]: Hands the LLM a numbered choice list
+                - text: instead of an open-ended
+            - paragraph [ref=e136]: blank page. The model picks a number. We turn the number into a workflow.
+            - list [ref=e137]:
+              - listitem [ref=e138]:
+                - strong [ref=e139]: Validates the result
+                - text: before submitting it to ComfyUI, so a
+            - paragraph [ref=e140]: confused LLM can't crash a generation.
+            - paragraph [ref=e141]:
+              - text: That's how a 7B model can flawlessly drive a 49-tool image suite. The intelligence isn't in the LLM — it's in the
+              - emphasis [ref=e142]: constraints
+              - text: we wrap around it.
+            - paragraph [ref=e143]: You can inspect every wizard's scaffold yourself in the **Travelling Wizard** — the 🧙 button in the lower-left corner of the sidebar (right above ⚙️ Settings). It shows the live workflow JSON, the parameter menus, and the auto-discovered LoRA list each wizard sees. If a wizard is misbehaving, that's where you go to debug them.
+        - generic [ref=e154]:
+          - generic [ref=e155]: 📜
+          - generic [ref=e156]:
+            - paragraph [ref=e157]:
+              - strong [ref=e158]: What's a "spell"?
+            - paragraph [ref=e159]:
+              - text: A
+              - strong [ref=e160]: spell
+              - text: "is a saved workflow you can run with one click. Think of it like a preset on steroids: it remembers the model, the LoRAs, the prompt template, the resolution, the sampler — every dial set the way you want it. Cast it from the chat by name, or pin it to your spell bar for instant access."
+            - paragraph [ref=e161]: "You build spells in two ways:"
+            - list [ref=e162]:
+              - listitem [ref=e163]:
+                - strong [ref=e164]: Right in the chat.
+                - text: Generate something you like, then say *"save
+            - paragraph [ref=e165]: this as a spell called Cinematic Portrait"*. The wizard captures the current settings and gives you a one-click button.
+            - list [ref=e166]:
+              - listitem [ref=e167]:
+                - strong [ref=e168]: From an existing ComfyUI workflow.
+                - text: Drop any
+                - code [ref=e169]: .json
+                - text: workflow file
+            - paragraph [ref=e170]:
+              - text: into the Guild and the
+              - strong [ref=e171]: Travelling Wizard
+              - text: parses it, extracts every parameter, and turns the whole thing into a runnable spell — no code, no node graph editing.
+            - paragraph [ref=e172]: Spells survive restarts, sync between your wizards, and can be shared with other Guild users.
+        - generic [ref=e173]:
+          - generic [ref=e174]: 📜
+          - generic [ref=e175]:
+            - paragraph [ref=e176]:
+              - strong [ref=e177]: The Wizard Guild as a SillyTavern back end.
+            - paragraph [ref=e178]:
+              - img "Imaginus" [ref=e179]
+              - img "Sceneshifter" [ref=e180]
+              - img "Restyler" [ref=e181]
+              - img "Cinematic" [ref=e182]
+            - paragraph [ref=e183]:
+              - text: If you use
+              - link "SillyTavern" [ref=e184] [cursor=pointer]:
+                - /url: https://github.com/SillyTavern/SillyTavern
+              - text: for character roleplay, the Guild plugs straight into it. SillyTavern keeps doing what it does best — long-form conversation, character cards, group chats — and offloads every "I want a picture of this" moment to the Guild's wizards.
+            - paragraph [ref=e185]:
+              - text: Your roleplay gets
+              - emphasis [ref=e186]: eyes
+              - text: ": backgrounds change as the story moves, character portraits shift with emotions, dramatic moments get illustrated automatically. Spellcaster ships **13 SillyTavern character cards** that map cleanly onto the Guild's wizards (Imaginus draws, Sceneshifter rebuilds the scene background, Restyler restyles a character mid-conversation, Cinematic stitches multi-shot animations), so the AI in your story can call them mid-scene without you ever leaving the chat window."
+            - paragraph [ref=e187]:
+              - text: The Guild also exposes the same back end to
+              - strong [ref=e188]: any other front end
+              - text: that can talk to a local LLM — OpenWebUI, LM Studio, even a Signal bot via the
+              - strong [ref=e189]: Signal Bridge
+              - text: . The wizards don't care who's calling. If it speaks LLM, it can ask the Guild to generate art.
+        - generic [ref=e190]:
+          - generic [ref=e191]: 📜
+          - generic [ref=e192]:
+            - paragraph [ref=e193]:
+              - strong [ref=e194]: "When you want a real image editor: GIMP."
+            - paragraph [ref=e195]:
+              - img "Inpaint demo" [ref=e196]
+            - paragraph [ref=e197]:
+              - text: The Wizard Guild is built for
+              - emphasis [ref=e198]: conversation
+              - text: "— describe what you want, get a result. But sometimes you want pixel-level control: a selection mask shaped exactly the way you need, a layer blend at 47% opacity, a clone-stamp pass on a single eyelash."
+            - paragraph [ref=e199]:
+              - text: That's what
+              - strong [ref=e200]: GIMP
+              - text: is for, and Spellcaster ships a full GIMP plugin that mirrors every Guild wizard as a
+              - code [ref=e201]: Filters → Spellcaster …
+              - text: menu entry. You get
+              - strong [ref=e202]: 49 AI tools right inside GIMP
+              - text: ": text-to-image, inpaint, face swap (ReActor + IPAdapter + PuLID + Klein), Klein img2img, LTX / Wan video, SeedVR2 upscale, ControlNet, IC-Light, LUT grading, RemBG, the full Magic Studios actor pipeline, and more."
+            - paragraph [ref=e203]: The same scaffold drives both. The Guild is the conversational front door; GIMP is the workshop. Bounce between them as the task demands — chat with a wizard to get the rough composition, switch to GIMP for the detail pass, then come back to the chat to animate the result.
+        - paragraph [ref=e232]:
+          - text: Summoning
+          - strong [ref=e233]: The Enigma of Unknown
+          - text: (2/25)
+        - generic [ref=e234]:
+          - generic [ref=e235]: 📜
+          - generic [ref=e236]:
+            - paragraph [ref=e237]:
+              - strong [ref=e238]: Whimsy Weaver
+              - text: has arrived.
+            - img "Whimsy Weaver" [ref=e239]
+        - paragraph [ref=e268]:
+          - text: Summoning
+          - strong [ref=e269]: Fluxx the Whisperer
+          - text: (3/25)
+        - generic [ref=e270]:
+          - generic [ref=e271]: 📜
+          - generic [ref=e272]:
+            - paragraph [ref=e273]:
+              - strong [ref=e274]: The Enigma of Unknown
+              - text: has arrived.
+            - img "The Enigma of Unknown" [ref=e275]
+        - paragraph [ref=e295]:
+          - text: Summoning
+          - strong [ref=e296]: Flux Whisperer
+          - text: (4/25)
+        - generic [ref=e297]:
+          - generic [ref=e298]: 📜
+          - generic [ref=e299]:
+            - paragraph [ref=e300]:
+              - strong [ref=e301]: Fluxx the Whisperer
+              - text: has arrived.
+            - img "Fluxx the Whisperer" [ref=e302]
+        - paragraph [ref=e548]:
+          - text: Summoning
+          - strong [ref=e549]: Flux Whisperer
+          - text: (5/25)
+        - generic [ref=e550]:
+          - generic [ref=e551]: 📜
+          - generic [ref=e552]:
+            - paragraph [ref=e553]:
+              - strong [ref=e554]: Flux Whisperer
+              - text: has arrived.
+            - img "Flux Whisperer" [ref=e555]
+      - generic [ref=e61]:
+        - text: 🔒 Setup in progress — chat unlocks when the Archivist finishes.
+        - generic [ref=e62]:
+          - button "📎" [ref=e63] [cursor=pointer]
+          - textbox "The Archivist is finishing setup… one moment." [disabled] [ref=e144]
+          - button "Summon Wizard" [ref=e65] [cursor=pointer]:
+            - img "Summon Wizard" [ref=e66]
+          - button "🎬" [ref=e67] [cursor=pointer]
+          - button "✨" [disabled] [ref=e68] [cursor=pointer]
+  - generic: ᚷ
+  - generic: ᚠ

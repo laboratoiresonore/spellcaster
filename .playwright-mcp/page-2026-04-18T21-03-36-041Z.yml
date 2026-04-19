@@ -1,0 +1,43 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - img [ref=e4]
+    - heading "The Wizard Guild" [level=1] [ref=e10]
+    - paragraph [ref=e11]: The Guild awaits...
+  - generic [ref=e13]:
+    - complementary [ref=e14]:
+      - generic [ref=e15]:
+        - heading "The Wizard Guild" [level=2] [ref=e16]
+        - generic [ref=e19]: "LLM: Disconnected"
+        - generic [ref=e20]:
+          - generic [ref=e22]: "ComfyUI: Connected"
+          - generic [ref=e23]:
+            - generic [ref=e24]: VRAM 3.1/15.9
+            - generic [ref=e27]: RAM 16.9/63.8
+            - generic [ref=e30]: Cache 0.2/0.3
+        - generic [ref=e35]: "SillyTavern: Disconnected"
+        - generic [ref=e38]: "Signal Bridge: Disconnected"
+        - textbox "Search guild members..." [ref=e40]
+      - generic [ref=e42]:
+        - button "✨ Animate All Avatars" [disabled] [ref=e43]
+        - link "🧙 Travelling Wizard" [ref=e44] [cursor=pointer]:
+          - /url: /static/guild.html
+        - button "⚙️ Settings" [ref=e45] [cursor=pointer]
+    - main [ref=e46]:
+      - generic [ref=e47]:
+        - generic [ref=e50]:
+          - heading "Loading..." [level=2] [ref=e51]
+          - paragraph [ref=e52]: Connecting to guild...
+        - generic [ref=e53]:
+          - button "Rename Wizard" [ref=e54] [cursor=pointer]
+          - button "Generate Background" [ref=e55] [cursor=pointer]
+          - button "Generate Avatar" [ref=e56] [cursor=pointer]
+          - button "Enchantments" [ref=e57] [cursor=pointer]
+          - button "Reset Memory" [ref=e58] [cursor=pointer]
+          - button "⚡ Generate All" [ref=e59] [cursor=pointer]
+      - generic [ref=e62]:
+        - button "📎" [ref=e63] [cursor=pointer]
+        - textbox "Just talk to it..." [ref=e64]
+        - button "Summon Wizard" [ref=e65] [cursor=pointer]:
+          - img "Summon Wizard" [ref=e66]
+        - button "🎬" [ref=e67] [cursor=pointer]
+        - button "✨" [ref=e68] [cursor=pointer]

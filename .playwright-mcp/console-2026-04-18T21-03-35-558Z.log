@@ -1,0 +1,2 @@
+[    4791ms] [LOG] [Guild] Synced 8 pre-generated assets from server @ http://127.0.0.1:7777/app.js:292
+[    4808ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:11434/api/v1/model:0

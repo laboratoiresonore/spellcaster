@@ -2720,7 +2720,7 @@ function WorkflowBrowser({ comfyuiUrl, onCreateScaffold }) {
 // GUILD SIDEBAR — Collapsible right panel with characters + chat
 // ═══════════════════════════════════════════════════════════════════
 
-function GuildSidebar({ isOpen, onToggle, comfyUrl, koboldUrl: initialKoboldUrl }) {
+function GuildSidebar({ isOpen, onToggle, comfyUrl, koboldUrl: initialKoboldUrl, onWizardSelect }) {
   const [characters, setCharacters] = useState([]);
   const [activeCharId, setActiveCharId] = useState(null);
   const [chatHistory, setChatHistory] = useState([]);
@@ -2771,13 +2771,16 @@ function GuildSidebar({ isOpen, onToggle, comfyUrl, koboldUrl: initialKoboldUrl 
     })();
   }, []);
 
-  // Check LLM on mount
+  // Check LLM on mount — probe both Ollama (/api/tags) and KoboldCpp (/api/v1/model)
   useEffect(() => {
     (async () => {
-      try {
-        const res = await fetch(`${koboldUrl}/api/v1/model`);
-        setLlmConnected(res.ok);
-      } catch { setLlmConnected(false); }
+      for (const path of ['/api/tags', '/api/v1/model']) {
+        try {
+          const res = await fetch(`${koboldUrl}${path}`, { signal: AbortSignal.timeout(5000) });
+          if (res.ok) { setLlmConnected(true); return; }
+        } catch { /* try next */ }
+      }
+      setLlmConnected(false);
     })();
   }, [koboldUrl]);
 
@@ -2798,6 +2801,7 @@ function GuildSidebar({ isOpen, onToggle, comfyUrl, koboldUrl: initialKoboldUrl 
     if (char) {
       const intro = `Greetings. I am ${char.name}, master of ${char.subtext}. Tell me what you wish to conjure.`;
       setChatHistory([{ role: "assistant", content: intro }]);
+      if (onWizardSelect) onWizardSelect(char);
     }
   };
 
@@ -2975,6 +2979,8 @@ function SignalBridgeSettings() {
   const [saved, setSaved] = useState(false);
   const [importError, setImportError] = useState("");
   const [guildOpen, setGuildOpen] = useState(false);
+  // Track the tab before a video-wizard auto-switch so we can restore it
+  const prevTabRef = useRef(null);
   // Server config status: "" (idle) | "loading" | "loaded" | "saving" |
   // "saved" | "error". Surfaced in the header so the user knows their
   // edits are actually persisting.
@@ -3136,6 +3142,33 @@ function SignalBridgeSettings() {
     setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
 
+  // Detect whether a wizard is video-related by checking build_fns or subtext
+  const isVideoWizard = (char) => {
+    if (!char) return false;
+    if (char.subtext && /video/i.test(char.subtext)) return true;
+    if (Array.isArray(char.build_fns)) {
+      return char.build_fns.some(fn => /video/i.test(fn));
+    }
+    return false;
+  };
+
+  // Called by GuildSidebar when a wizard is clicked
+  const handleWizardSelect = useCallback((char) => {
+    if (isVideoWizard(char)) {
+      // Save current tab so we can restore it later
+      if (activeTab !== "video") {
+        prevTabRef.current = activeTab;
+      }
+      setActiveTab("video");
+    } else {
+      // Restore previous tab (or default to scaffolds)
+      if (activeTab === "video" && prevTabRef.current) {
+        setActiveTab(prevTabRef.current);
+        prevTabRef.current = null;
+      }
+    }
+  }, [activeTab]);
+
   return (
     <div className="min-h-screen bg-slate-950 text-amber-50" style={{background: "linear-gradient(135deg, #0f172a 0%, #1a1f35 50%, #0a0e1a 100%)", marginRight: guildOpen ? "384px" : "0", transition: "margin-right 0.3s ease"}}>
       {/* Header */}
@@ -3211,12 +3244,12 @@ function SignalBridgeSettings() {
 
       {/* Content */}
       <div className="max-w-6xl mx-auto px-6 py-6">
-        {/* ── Video Tab ── */}
-        {activeTab === "video" && (
-          typeof VideoPanel !== 'undefined'
+        {/* ── Video Tab — always mounted, hidden when inactive to preserve state ── */}
+        <div style={{ display: activeTab === "video" ? "block" : "none" }}>
+          {typeof VideoPanel !== 'undefined'
             ? React.createElement(VideoPanel)
-            : <div className="text-center py-12 text-slate-400 text-sm">Video panel loading...</div>
-        )}
+            : <div className="text-center py-12 text-slate-400 text-sm">Video panel loading...</div>}
+        </div>
 
 
         {/* ── Workflows Tab ── */}
@@ -3314,4 +3347,54 @@ function SignalBridgeSettings() {
         {/* ── Paths Tab ── */}
         {activeTab === "paths" && <SectionCard title="File Paths" icon={<Icons.Folder />} collapsible={false}><PathEditor config={config} setConfig={setConfig} /></SectionCard>}
 
-        {/* ─�
+        {/* ── Advanced Tab ── */}
+        {activeTab === "advanced" && (
+          <div className="space-y-4">
+            <SectionCard title="Rate Limiting" icon={<Icons.Zap />}>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Max Requests" tip="Maximum number of messages a user can send within the rate window. Prevents abuse and runaway API costs">
+                  <input type="number" value={config.rate_limit} onChange={e => update("rate_limit", parseInt(e.target.value) || 20)} className={inputCls} />
+                </Field>
+                <Field label="Window (seconds)" tip="Time window for rate limiting. A user can send 'Max Requests' messages within this many seconds before being throttled">
+                  <input type="number" value={config.rate_window} onChange={e => update("rate_window", parseInt(e.target.value) || 60)} className={inputCls} />
+                </Field>
+              </div>
+              <Field label="Max History" tip="Number of previous messages kept in the conversation context. Higher = better memory but more tokens per request">
+                <input type="number" value={config.max_history} onChange={e => update("max_history", parseInt(e.target.value) || 30)} className={inputCls + " w-32"} />
+              </Field>
+            </SectionCard>
+            <SectionCard title="System Prompt" icon={<Icons.Server />}>
+              <Field label="Default System Prompt" tip="Base system prompt injected into every LLM conversation. Persona-specific instructions are appended after this">
+                <textarea value={config.system_prompt} onChange={e => update("system_prompt", e.target.value)} rows={6} className={inputCls + " resize-y"} />
+              </Field>
+            </SectionCard>
+            <SectionCard title="Raw JSON" icon={<Icons.Copy />}>
+              <pre className="bg-slate-950 border border-amber-600/20 rounded-lg p-4 text-xs text-slate-300 overflow-auto max-h-96 font-mono">
+                {JSON.stringify({ config, scaffolds }, null, 2)}
+              </pre>
+            </SectionCard>
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-900 border-t border-amber-600/30 mt-8">
+        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+          <p className="text-xs text-amber-200/60">The Travelling Wizard · Spellcaster Suite · {scaffolds.length} scaffold(s) configured</p>
+          <button onClick={exportAll} className={btnPrimary}><Icons.Save /> Export All</button>
+        </div>
+      </div>
+
+      {/* Guild Sidebar Panel */}
+      <GuildSidebar
+        isOpen={guildOpen}
+        onToggle={() => setGuildOpen(false)}
+        comfyUrl={config.comfyui_url || "http://127.0.0.1:8188"}
+        koboldUrl={config.kobold_url || "http://127.0.0.1:5001"}
+        onWizardSelect={handleWizardSelect}
+      />
+    </div>
+  );
+}
+
+window.SignalBridgeSettings = SignalBridgeSettings;

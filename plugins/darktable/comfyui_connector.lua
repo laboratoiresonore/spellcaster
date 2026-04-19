@@ -870,6 +870,14 @@ dt.preferences.register(MODULE_NAME, "timeout", "integer",
   _("Max wait for ComfyUI processing"),
   300, 10, 3600)
 
+-- Wizard Guild URL — used by the cross-interface backbone (heartbeat
+-- registration + event emit). Leave blank to disable the integration;
+-- Darktable will still work against ComfyUI as a stand-alone tool.
+dt.preferences.register(MODULE_NAME, "guild_url", "string",
+  _("Wizard Guild URL (optional)"),
+  _("Leave blank to run stand-alone; set to e.g. http://127.0.0.1:7777 to show Darktable in the Guild UI"),
+  "http://127.0.0.1:7777")
+
 -- ═══════════════════════════════════════════════════════════════════════
 -- HTTP communication via curl
 -- ═══════════════════════════════════════════════════════════════════════
@@ -1003,6 +1011,95 @@ end
 -- Used by: result polling + importing into Darktable (see wait_result, process_image)
 local function curl_download(url, out)
   os.execute(string.format('curl -s -o "%s" "%s"', shell_esc(out), shell_esc(url)))
+end
+
+-- ═══════════════════════════════════════════════════════════════════════
+-- CROSS-INTERFACE BACKBONE — heartbeat + event emit to the Wizard Guild
+-- ═══════════════════════════════════════════════════════════════════════
+-- The Guild's /api/interfaces registry expects each frontend (GIMP,
+-- Darktable, Resolve, etc.) to ping /api/interfaces/heartbeat
+-- periodically. When Darktable heartbeats, the Guild UI starts showing
+-- Darktable-specific chips like "Edit in Darktable" on generated
+-- images. When Darktable quits, the TTL expires and those chips
+-- disappear automatically.
+--
+-- Darktable's Lua sandbox gives us no threading primitives, so we
+-- don't run a polling loop. Instead we heartbeat on plugin load and
+-- again every time the user triggers any Spellcaster action. That
+-- keeps us "online" during active sessions without any background
+-- work. The Guild's 30s TTL handles graceful disappearance.
+
+local function get_guild_url()
+  return dt.preferences.read(MODULE_NAME, "guild_url", "string")
+end
+
+local function guild_heartbeat(meta_pairs)
+  -- meta_pairs: optional flat k=v list, e.g. { active_image = "photo.raw" }
+  local guild = get_guild_url()
+  if not guild or guild == "" then return end
+  -- Build a tiny JSON payload without pulling in a JSON library
+  local meta = ""
+  if meta_pairs then
+    local first = true
+    for k, v in pairs(meta_pairs) do
+      if not first then meta = meta .. "," end
+      meta = meta .. string.format('"%s":"%s"',
+        tostring(k):gsub('"', "'"),
+        tostring(v):gsub('"', "'"))
+      first = false
+    end
+  end
+  local body = string.format(
+    '{"interface":"darktable","meta":{%s}}', meta)
+  local tmp = tmp_dir() .. sep .. "spellcaster_hb_" .. os.time() .. ".json"
+  local f = io.open(tmp, "w")
+  if not f then return end
+  f:write(body); f:close()
+  -- Fire-and-forget; 2s timeout keeps us from blocking the UI if the
+  -- Guild is down. `--max-time 2` ensures curl doesn't hang on a stuck
+  -- route. Output goes to null.
+  local cmd
+  if package.config:sub(1,1) == "\\" then
+    -- Windows: hide the console window with conhost spawning via start /b
+    cmd = string.format(
+      'curl -s --max-time 2 -X POST -H "Content-Type: application/json" --data-binary "@%s" "%s/api/interfaces/heartbeat" -o NUL 2>NUL',
+      shell_esc(tmp), shell_esc(guild))
+  else
+    cmd = string.format(
+      'curl -s --max-time 2 -X POST -H "Content-Type: application/json" --data-binary "@%s" "%s/api/interfaces/heartbeat" -o /dev/null 2>/dev/null',
+      shell_esc(tmp), shell_esc(guild))
+  end
+  os.execute(cmd)
+  os.remove(tmp)
+end
+
+local function guild_emit_event(kind, data_json)
+  -- data_json: raw JSON string for the 'data' field, e.g.
+  --   '{"prompt":"sunset","model":"sdxl"}'
+  -- Keeping it as a raw string means callers format it however they
+  -- want without this helper reinventing JSON encoding.
+  local guild = get_guild_url()
+  if not guild or guild == "" then return end
+  data_json = data_json or "{}"
+  local body = string.format(
+    '{"kind":"%s","origin":"darktable","data":%s}',
+    tostring(kind):gsub('"', "'"), data_json)
+  local tmp = tmp_dir() .. sep .. "spellcaster_evt_" .. os.time() .. ".json"
+  local f = io.open(tmp, "w")
+  if not f then return end
+  f:write(body); f:close()
+  local cmd
+  if package.config:sub(1,1) == "\\" then
+    cmd = string.format(
+      'curl -s --max-time 2 -X POST -H "Content-Type: application/json" --data-binary "@%s" "%s/api/events/emit" -o NUL 2>NUL',
+      shell_esc(tmp), shell_esc(guild))
+  else
+    cmd = string.format(
+      'curl -s --max-time 2 -X POST -H "Content-Type: application/json" --data-binary "@%s" "%s/api/events/emit" -o /dev/null 2>/dev/null',
+      shell_esc(tmp), shell_esc(guild))
+  end
+  os.execute(cmd)
+  os.remove(tmp)
 end
 
 -- SIMPLE JSON VALUE EXTRACTION
@@ -8185,5 +8282,11 @@ do
   end
 end
 if _apply_theme then pcall(install_spellcaster_theme) end
+
+-- Tell the Wizard Guild we're alive. Non-blocking (fires a curl and
+-- moves on). If the Guild isn't running, the heartbeat silently fails
+-- and Darktable stays out of the Guild's active-interface list — no
+-- "dead function" chips appear in the Guild UI.
+pcall(guild_heartbeat, { active_view = "lighttable" })
 
 return script_data

@@ -1,0 +1,4 @@
+[    6882ms] [LOG] [Guild] Synced 33 pre-generated assets from server @ http://127.0.0.1:7777/app.js:304
+[    6890ms] [LOG] [Guild] Synced 98 identity field(s) from server @ http://127.0.0.1:7777/app.js:332
+[   30691ms] [ERROR] Failed to load resource: the server responded with a status of 409 (Conflict) @ http://127.0.0.1:7777/api/direct_cast:0
+[   54405ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7777/api/execute:0

@@ -18,11 +18,20 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/laboratoiresonore/spellcaster/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/laboratoiresonore/spellcaster?style=flat&color=7c3aed"/></a>
+  <a href="https://github.com/laboratoiresonore/spellcaster/issues"><img alt="Issues" src="https://img.shields.io/github/issues/laboratoiresonore/spellcaster?color=7c3aed"/></a>
+  <a href="https://github.com/laboratoiresonore/spellcaster/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/laboratoiresonore/spellcaster?color=7c3aed"/></a>
+  <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest"><img alt="Downloads" src="https://img.shields.io/github/downloads/laboratoiresonore/spellcaster/total?color=7c3aed"/></a>
+  <a href="DEPENDENCIES.md"><img alt="ComfyUI deps" src="https://img.shields.io/badge/ComfyUI%20node%20packs-24-5b8def"/></a>
+</p>
+
+<p align="center">
   <a href="#the-problem">The Problem</a> &bull;
   <a href="#the-solution">The Solution</a> &bull;
-  <a href="#see-it-in-action">See It</a> &bull;
+  <a href="#see-it-in-action-generate--select--map--enhance">See It</a> &bull;
   <a href="#install">Install</a> &bull;
   <a href="#all-69-tools">All Tools</a> &bull;
+  <a href="DEPENDENCIES.md">Dependencies</a> &bull;
   <a href="#faq">FAQ</a> &bull;
   <a href="https://www.reddit.com/r/Spellcaster_Studio/">Reddit</a>
 </p>
@@ -48,8 +57,10 @@ Meanwhile, GIMP is already an ultra-capable image editor with an intuitive inter
 **Spellcaster is dynamic middleware that sits between ComfyUI and any interface you want to use.** It absorbs all the complexity — models, nodes, samplers, schedulers, LoRAs, VAEs, ControlNets — and exposes it as simple menu items and one-click tools. Its entire purpose is to make ComfyUI's power accessible to people who have no interest in learning ComfyUI.
 
 - **GIMP / Darktable** — 69 AI tools appear in your menus. Generate, edit, upscale, swap faces, remove backgrounds, create videos — all from the same editor you already know.
+- **DaVinci Resolve** — Bridge plugin + shot-generation scripts. Drop a playhead, type a prompt, get a clip back in your Media Pool. Gap-fill between two clips with reference-aware rendering.
 - **The Wizard Guild** — a standalone chat UI where AI wizard characters walk you through every tool conversationally. No GIMP needed.
 - **SillyTavern** — 13 character cards that generate live visuals during roleplay.
+- **Blender / Krita / Photoshop** — experimental minimal plugins; full parity planned.
 
 You never touch ComfyUI. Spellcaster talks to it behind the scenes. Think of it like an engine under the hood — you just press the gas. With your eyes closed. Going 140 in a school zone. Spellcaster is the responsible adult in this relationship.
 
@@ -66,7 +77,46 @@ Every tool starts with expert-tuned presets that just work. But as you get comfo
 
 ---
 
+## State of the Art AI Generation, Fingers (Far) Up Your Nose
+
+<table>
+<tr>
+<th align="left" width="40%">🔬 What's Actually Happening</th>
+<th align="left" width="60%">👆👃 What You Actually Do</th>
+</tr>
+<tr><td>Flow-matching diffusion across 9 model architectures with architecture-aware CFG, denoise, sampler, and scheduler selection</td><td>Pick a preset. Click Generate.</td></tr>
+<tr><td>SAM3 zero-shot segmentation with Florence 2 grounding + DepthAnything V3 compositing</td><td>Type "hair." It selects the hair.</td></tr>
+<tr><td>NormalCrafter 3D surface normal estimation for physically-based relighting</td><td>Click "3D Normal Map." Get a 3D map.</td></tr>
+<tr><td>Multi-LoRA injection chains with per-architecture prefix routing and strength calibration</td><td>Pick a style from a dropdown.</td></tr>
+<tr><td>CFGGuider + BasicScheduler pipeline with Flux 2 Klein Enhancer (RefLatentController, TextRefBalance, ColorAnchor)</td><td>Click "AI Editor."</td></tr>
+<tr><td>IC-Light relighting with directional conditioning and HDR multiplier control</td><td>Pick "Golden Hour." Click Generate.</td></tr>
+<tr><td>TeaCache acceleration + FBCache + WaveSpeed inference optimization (auto-injected)</td><td>You don't even know this is happening.</td></tr>
+<tr><td>Local 4B LLM prompt enhancement with architecture-specific rewriting (booru tags vs natural language vs minimal)</td><td>Type "a cat."</td></tr>
+<tr><td>ReActor face embedding + Klein refinement + face segmentation compositing pipeline</td><td>Upload a selfie. Click Swap.</td></tr>
+<tr><td>Optometrist-style A/B preference calibration across 54 models with per-model parameter sweeps</td><td>"Which picture do you like better, A or B?"</td></tr>
+</table>
+
+---
+
+## See It in Action: Generate → Select → Map → Enhance → Blend
+
+A real pipeline — 5 clicks, zero configuration, every step is one menu item. We timed it. It takes longer to microwave a Hot Pocket. And unlike a Hot Pocket, the result doesn't make you question your life choices:
+
+<table>
+<tr>
+<td width="20%"><img src="assets/showcase_3d_step1_generate.png" alt="Step 1: Generate" width="100%"/><br/><sub><strong>1. Generate</strong> — SDXL creates the scene</sub></td>
+<td width="20%"><img src="assets/showcase_3d_step2_sam3.png" alt="Step 2: AI Select" width="100%"/><br/><sub><strong>2. AI Select</strong> — SAM3 isolates the statue</sub></td>
+<td width="20%"><img src="assets/showcase_3d_step3_normalmap.png" alt="Step 3: Normal Map" width="100%"/><br/><sub><strong>3. 3D Normal Map</strong> — surface geometry extracted</sub></td>
+<td width="20%"><img src="assets/showcase_3d_step4_enhance.png" alt="Step 4: Enhance" width="100%"/><br/><sub><strong>4. Detail Enhance</strong> — surgical texture refinement on the isolated layer</sub></td>
+<td width="20%"><img src="assets/showcase_3d_step5_blend.png" alt="Step 5: Blend Layers" width="100%"/><br/><sub><strong>5. Blend Layers</strong> — reintegrated into the original scene</sub></td>
+</tr>
+</table>
+
+---
+
 ## 69 Finely Tuned AI Tools, Each One Click Away
+
+Yes, we counted. Yes, we noticed. No, we will not be adding a 70th (officially).
 
 <table>
 <tr>
@@ -85,7 +135,7 @@ Every tool starts with expert-tuned presets that just work. But as you get comfo
 <td align="center" width="25%"><img src="assets/showcase_inpaint_chrome.png" alt="Inpaint" width="100%"/><br/><sub><strong>Inpaint</strong> — replace any selected area</sub></td>
 <td align="center" width="25%"><img src="assets/showcase_supir.png" alt="SUPIR" width="100%"/><br/><sub><strong>AI Restoration</strong> — fix old photos</sub></td>
 <td align="center" width="25%"><img src="assets/showcase_detail_hallucinate.png" alt="Detail" width="100%"/><br/><sub><strong>Detail Hallucination</strong> — add texture</sub></td>
-<td align="center" width="25%"><img src="assets/demo_step4_faceswap.png" alt="Face Swap" width="100%"/><br/><sub><strong>Face Swap</strong> — paste any face</sub></td>
+<td align="center" width="25%"><img src="assets/showcase_normal_map.png" alt="3D Normal Map" width="100%"/><br/><sub><strong>3D Normal Map</strong> — surface geometry</sub></td>
 </tr>
 </table>
 
@@ -97,10 +147,11 @@ Every tool starts with expert-tuned presets that just work. But as you get comfo
 Listen. If you can order food on your phone, you can use this. If you once successfully connected a printer on the first try, you're overqualified. The entire thing is automated to a degree that borders on suspicious:
 
 - **Installation?** Automated. The installer sniffs your GPU like a sommelier sniffs wine, figures out what AI models your hardware can swallow, downloads them, installs everything, creates shortcuts, and tucks you into bed. You click "Next" a few times. That's your contribution.
-- **Settings?** Automated. Every tool has expert-tuned presets crafted by someone who spent way too long tweaking denoise values at 3 AM so you don't have to. You never configure a sampler, pick a scheduler, set a CFG scale, or write a negative prompt. You don't even know what those words mean. *Good.* Keep it that way.
+- **Settings?** Automated. Every tool has expert-tuned presets crafted by someone who spent way too long tweaking denoise values at 3 AM so you don't have to. Or run the **Calibration Wizard** — it shows you real images side by side and asks "which do you prefer?" Like an eye exam. Your preferences become the new defaults everywhere. You never configure a sampler, pick a scheduler, set a CFG scale, or write a negative prompt. You don't even know what those words mean. *Good.* Keep it that way.
 - **Prompts?** Automated. Type "a cat" and a local AI rewrites it into a paragraph of optimized gibberish that the image model actually understands. It knows that SDXL wants tags, Flux wants poetry, and Klein wants bullet points. You just type "a cat."
 - **Model selection?** Automated. The plugin detects what models are installed and picks the best one. You didn't even know you had models. You thought you just had a computer.
 - **VRAM management?** Automated. Video resolution auto-scales to fit your GPU. The LLM politely unloads itself during image generation. TeaCache acceleration is silently injected into every workflow. If you don't know what any of that means — congratulations, that's the point.
+- **Running ComfyUI on another machine?** Automated. The **Antenna** is a small HTTPS agent you install on the box that hosts ComfyUI. From then on, your laptop's GIMP plugin can install missing custom nodes, download new models, and self-update the stack on the remote machine — without you ever SSHing into it. Gaming PC in the closet, laptop on the couch, and they get along.
 - **Updates?** Automated. The plugin checks GitHub on launch and silently patches itself. You will never be asked to "pull the latest commit." You don't know what a commit is and we respect that.
 - **Recovery?** Automated. If an update corrupts the plugin, a 3-tier recovery system restores from backup, re-downloads from GitHub, or shows a visible error. GIMP never bricks. Your relationship with technology remains intact.
 
@@ -175,7 +226,9 @@ Too intimidated by GIMP? The [Wizard Guild](#under-the-hood) is a chat interface
 </details>
 
 <details>
-<summary><h3>Flux 2 Klein (9)</h3></summary>
+<summary><h3>Flux 2 Klein (9) — the fancy one</h3></summary>
+
+Klein is what happens when you tell a diffusion model "no, I said *good*." It's 4-20 steps where every other architecture needs 30. It doesn't use a sampler — it uses a *guider*. It doesn't have a CFG scale — it has a *TextRefBalance*. It is, objectively, better than you. Here are its tools:
 
 | Tool | What It Does |
 |---|---|
@@ -192,7 +245,7 @@ Too intimidated by GIMP? The [Wizard Guild](#under-the-hood) is a chat interface
 </details>
 
 <details>
-<summary><h3>Enhance (9)</h3></summary>
+<summary><h3>Enhance (9) — because your photo deserves better than what your camera gave it</h3></summary>
 
 | Tool | What It Does |
 |---|---|
@@ -209,7 +262,9 @@ Too intimidated by GIMP? The [Wizard Guild](#under-the-hood) is a chat interface
 </details>
 
 <details>
-<summary><h3>Face (7)</h3></summary>
+<summary><h3>Face (7) — the identity crisis suite</h3></summary>
+
+Seven different ways to put your face where it doesn't belong. We built them for "creative portrait work." You will use them to put your boss's face on a medieval knight. We know. It's fine. We've made our peace with it.
 
 | Tool | What It Does |
 |---|---|
@@ -224,7 +279,7 @@ Too intimidated by GIMP? The [Wizard Guild](#under-the-hood) is a chat interface
 </details>
 
 <details>
-<summary><h3>Style (4) &bull; Select (3) &bull; Video (7)</h3></summary>
+<summary><h3>Style (4) &bull; Select (3) &bull; Video (7) — the "wait, it can do THAT?" section</h3></summary>
 
 **Style:**
 
@@ -258,9 +313,9 @@ Too intimidated by GIMP? The [Wizard Guild](#under-the-hood) is a chat interface
 </details>
 
 <details>
-<summary><h3>Studios (7) &bull; Quick (7) &bull; Tools (8)</h3></summary>
+<summary><h3>Studios (7) &bull; Quick (7) &bull; Tools (8) — for when you've gone full method actor</h3></summary>
 
-**Studios** — full character production pipeline:
+**Studios** — full character production pipeline. You're not "using an AI tool" anymore. You're *running a one-person visual effects studio from inside a free image editor.* Your parents still think you're "playing on the computer."
 
 | Tool | Pipeline step |
 |---|---|
@@ -296,33 +351,62 @@ Too intimidated by GIMP? The [Wizard Guild](#under-the-hood) is a chat interface
 
 ## Under the Hood
 
+This section is for people who read ingredients on cereal boxes. If you don't care how the sausage is made — and honestly, you shouldn't, it's horrifying in there — skip to the [FAQ](#faq).
+
 <details>
 <summary><strong>What makes it fast</strong></summary>
 
 - **TeaCache auto-acceleration** — every image generation is automatically 1.4x faster. Zero config, zero quality loss. The optimizer injects it into all workflows.
-- **Architecture-aware everything** — CFG, denoise, prompts, and ControlNet models are auto-configured per architecture (SDXL, Flux, Klein, Illustrious, Pony, SD1.5, WAN, LTX).
-- **AI Prompt Enhancement** — a small LLM runs inside ComfyUI, rewrites your simple prompts into architecture-optimized descriptions. SDXL gets tags, Flux gets natural language, Klein gets concise descriptions. Multi-character prompts use BREAK separation with attention weights.
+- **Architecture-aware everything** — CFG, denoise, prompts, and ControlNet models are auto-configured per architecture. 9 supported: SD 1.5, SDXL, Illustrious/Pony, ZIT, Flux Dev, Flux 2 Klein, Flux Kontext, Chroma, and WAN/LTX for video.
+- **AI Prompt Enhancement** — a local 4B LLM runs inside ComfyUI, rewrites your simple prompts into architecture-optimized descriptions. SDXL gets booru tags, Flux gets natural language, Klein gets concise descriptions. Multi-character prompts use BREAK separation with attention weights.
 - **VRAM management** — LLM auto-unloads during image generation. LTX resolution auto-scales to fit your GPU. Video frame counts auto-cap on low VRAM.
+- **Privacy cleanup** — all temporary files on ComfyUI are atomically overwritten with 1x1 pixel PNGs after use. Your images don't linger on the server.
+
+</details>
+
+<details>
+<summary><strong>Calibration Wizard — optometrist for your GPU</strong></summary>
+
+First time using Spellcaster? The Calibration Wizard tests every installed model and tunes all settings to your taste — no technical knowledge required. It is, to our knowledge, the only software that treats your artistic preferences like a medical condition that needs diagnosing.
+
+1. **Model Taste Test** — generates the same scene with every installed model. You rate each one: Love / OK / Dislike.
+2. **Settings Calibration** — for your favorite models, shows A/B/C comparisons (CFG, steps, sampler). You pick the image you prefer. That's it.
+3. **Apply** — your preferences become the default everywhere. Every dialog reads from your calibrated profile.
+
+It's an eye exam, but for art. "Which is better — A or B?" Repeat until your defaults are perfect.
+
+Access: `Spellcaster > Tools > Calibration Wizard`
 
 </details>
 
 <details>
 <summary><strong>The Wizard Guild (chat interface)</strong></summary>
 
-Don't want to learn GIMP? The Wizard Guild is a standalone web UI where AI wizard characters handle everything conversationally.
+Don't want to learn GIMP? Look, we get it. GIMP has 847 menu items and a learning curve that doubles as a cliff face. The Wizard Guild is a standalone web UI where AI wizard characters handle everything conversationally. It's like tech support, except the tech support is a wizard, and instead of telling you to restart your computer, it generates a photorealistic dragon.
 
 <img src="assets/wizardguild.png" alt="The Wizard Guild" width="80%"/>
 
 Each wizard specializes in different tools. A local LLM runs natively inside ComfyUI — no separate server needed. Click action buttons to generate directly, or chat for guidance.
+
+The **Travelling Wizard** bridges Spellcaster with external LLM apps — SillyTavern, OpenWebUI, LM Studio — through a scaffold system that routes your intent to the right tool. A **Meta Wizard** interprets what you want ("make it cinematic," "fix the hands," "turn this into a video") and dispatches to specialized sub-wizards for enhancement, generation, video, or pipeline orchestration.
 
 Launch: `start_guild.bat` (Windows) or `python tavern/guild_launcher.py`
 
 </details>
 
 <details>
-<summary><strong>SillyTavern integration — 13 AI wizard characters</strong></summary>
+<summary><strong>Video Shotboard — you are now a film director, apparently</strong></summary>
 
-Drop these characters into any SillyTavern group chat. They work silently in the background — generating scene backgrounds, character portraits, and dramatic illustrations as your story unfolds.
+The Shotboard is a persistent video production system for multi-shot sequences. At some point during development we stopped making a GIMP plugin and accidentally built a pre-production suite. We don't know when it happened. We're not apologizing. Each shot tracks its own motion trajectory, prompt, model, and status (draft → queued → running → ready). Shots link together for continuity — the last frame of shot 1 feeds into shot 2.
+
+Build a full storyboard in the Guild UI, queue all shots, and let them render overnight. The assembly pipeline stitches them together with frame interpolation (RIFE/GIMM-VFI) for smooth transitions.
+
+</details>
+
+<details>
+<summary><strong>SillyTavern integration — 13 AI wizard characters who live in your group chat and won't shut up</strong></summary>
+
+Drop these characters into any SillyTavern group chat. They work silently in the background — generating scene backgrounds, character portraits, and dramatic illustrations as your story unfolds. Yes, we gave each one a name, a backstory, and a portrait. Yes, we are aware this is unhinged. Imaginus is our favorite and we will not be taking questions.
 
 <table>
 <tr>
@@ -356,14 +440,22 @@ Drop these characters into any SillyTavern group chat. They work silently in the
 </details>
 
 <details>
-<summary><strong>For developers</strong></summary>
+<summary><strong>For developers — abandon hope, all ye who peek behind the curtain</strong></summary>
 
-- **8 model architectures**: SD 1.5, SDXL, Pony, ZIT, Flux Dev, Flux Schnell, Flux 2 Klein (4B/9B), LTX, Wan
-- **NodeFactory DSL** — every tool is defined declaratively
-- **Crash-safe boot shim** — 3-tier recovery. GIMP never bricks.
+If you're reading this section voluntarily, you're either evaluating this for a pull request or you're the kind of person who reads disassembly for fun. Either way: welcome. You will find no clean abstractions here. Only 22,000 lines of Python that somehow work, a node factory that generates ComfyUI workflows like a possessed printer, and a boot shim so paranoid it has three backup plans for its backup plan. Godspeed.
+
+- **9 model architectures**: SD 1.5, SDXL, Illustrious/Pony, ZIT, Flux Dev, Flux 2 Klein (4B/9B), Flux Kontext, Chroma, LTX, Wan — each with full `ArchConfig` (loader, sampler, CFG, denoise, resolution, prompt style, LoRA prefixes, ControlNet support, turbo config)
+- **NodeFactory DSL** — every ComfyUI node type is a typed method call. No raw dicts.
+- **Crash-safe boot shim** — 228-line immutable loader + 3-tier recovery (backup → GitHub → visible error). GIMP never bricks.
+- **Scaffold system** — LLM state machines (`scaffold/`) that guide users conversationally. Meta Wizard → sub-wizards → build functions. Designed for 7B models.
+- **Calibration engine** — headless A/B comparison generator + compatibility matrix. UI-agnostic (works in GIMP dialogs and Guild chat).
+- **Preflight validation** — every workflow is checked and patched before submission. Missing nodes get substituted, unsupported architectures get fallbacks.
+- **Privacy module** — atomic temp file cleanup on ComfyUI server (1x1 pixel overwrite + delete).
 - **PDB procedures** — every tool callable from Script-Fu or Python-Fu
 - **Workflow Library** — import any ComfyUI workflow JSON and run it from GIMP
-- **`spellcaster_core/`** — single source of truth, shared across all repos
+- **`spellcaster_core/`** — single source of truth, shared across 4 repos. Auto-updater downloads from canonical source.
+- **Cross-interface backbone** — event bus, mailbox, asset gallery, and dynamic presence. Every surface (GIMP / Resolve / Darktable / SillyTavern / Guild) can publish and consume events: a shot rendered in the Guild auto-imports into Resolve's Media Pool; an image saved from GIMP auto-appears in the Guild gallery. The **Antenna** (remote HTTPS agent) extends the same presence/auth model across machines.
+- **7 plugin surfaces** in `plugins/`: `gimp` (mature, 61 files), `resolve`, `darktable`, `sillytavern` (real integrations), `blender`, `krita`, `photoshop` (minimal / experimental).
 
 </details>
 
@@ -374,6 +466,8 @@ Drop these characters into any SillyTavern group chat. They work silently in the
 <p align="center">You know I am, baby. Xoxo</p>
 
 ## FAQ
+
+The questions below are "frequently asked" in the sense that we asked them to ourselves in the shower and decided the answers were important enough to write down.
 
 <details>
 <summary><strong>What GPU do I need?</strong></summary>
@@ -408,9 +502,18 @@ Yes. `Filters > Spellcaster Tools > Workflow Library` runs any workflow JSON fro
 <details>
 <summary><strong>ComfyUI on another machine?</strong></summary>
 
-Yes. The Antenna Installer auto-detects ComfyUI servers on your network. Or set the URL in Settings.
+Yes. The Antenna Installer auto-detects ComfyUI servers on your network. Or set the URL in Settings. One of our beta testers runs ComfyUI on a gaming PC in their closet and generates images from a laptop on their couch. We have enabled laziness at an architectural level and we're proud of it.
 
 </details>
+
+<details>
+<summary><strong>Why "Spellcaster"?</strong></summary>
+
+Because every tool is a spell, every workflow is an incantation, your GPU is a familiar, and the entire project radiates the energy of someone who played too much D&D and then learned Python. Also "ComfyUI-GIMP-Middleware-With-69-Tools-And-A-Chat-UI-Full-Of-Wizards" didn't fit in the GitHub repo name.
+
+</details>
+
+<details>
 
 ---
 
@@ -488,4 +591,16 @@ Spellcaster doesn't reinvent the wheel — it duct-tapes together the best wheel
 
 **Vibe coding assistant:** [Claude](https://claude.ai/) by Anthropic — wrote most of this while being yelled at
 
+**Moral support:** r/GIMP — for keeping us humble, grounded, and deeply motivated by spite
+
 </details>
+
+---
+
+<p align="center">
+  <sub>
+    Made with unhealthy amounts of coffee, mass delusion, and a GPU that sounds like a jet engine.<br/>
+    If you've read this far, you're either installing it or writing a hate comment. Either way, we appreciate the engagement.<br/><br/>
+    <strong>Star the repo if you like it. Fork it if you hate it. Ignore it if you're u/Ill_Morning_4282.</strong>
+  </sub>
+</p>

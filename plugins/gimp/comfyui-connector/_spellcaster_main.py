@@ -559,25 +559,46 @@ def _auto_update():
       7. Remove local files that no longer exist in the repo
       8. Delete GIMP pluginrc cache (forces menu re-scan on next restart)
       9. Write new SHA to .spellcaster_version
+
+    Shared primitives live in spellcaster_core.auto_updater. This function
+    keeps the GIMP-specific logic: canonical-source priority for sc_core
+    files, .py-always-staged policy, pluginrc purge, theme reapply.
     """
     import sys as _sys
     _hdrs = _github_headers()
 
+    # Import shared auto-updater primitives from spellcaster_core (bundled
+    # next to this plugin). Fall back to legacy inline path if import fails
+    # (shouldn't happen in normal installs, but defensive).
+    try:
+        from spellcaster_core import auto_updater as _au
+    except ImportError:
+        _au = None
+
     try:
         # Step 1: Check latest commit SHA
         local_sha = _VERSION_FILE.read_text().strip() if _VERSION_FILE.exists() else ""
-        req = urllib.request.Request(_GITHUB_API, headers=_hdrs)
-        with urllib.request.urlopen(req, timeout=15) as r:
-            latest_sha = json.loads(r.read())[0]["sha"]
-
-        # Compare: support both 7-char truncated and 40-char full SHA
-        if latest_sha == local_sha or latest_sha[:7] == local_sha[:7]:
-            return
-
-        # Step 2: Fetch full repo tree to discover ALL plugin files
-        req_tree = urllib.request.Request(_GITHUB_TREE, headers=_hdrs)
-        with urllib.request.urlopen(req_tree, timeout=30) as r:
-            tree = json.loads(r.read())
+        if _au is not None:
+            try:
+                latest_sha = _au.fetch_latest_sha(_GITHUB_API, _hdrs, timeout=15)
+            except Exception:
+                return
+            if _au.shas_match(latest_sha, local_sha):
+                return
+            try:
+                tree = {"tree": _au.fetch_tree(_GITHUB_TREE, _hdrs, timeout=30)}
+            except Exception:
+                return
+        else:
+            # Legacy fallback (kept so shim-only installs still self-heal)
+            req = urllib.request.Request(_GITHUB_API, headers=_hdrs)
+            with urllib.request.urlopen(req, timeout=15) as r:
+                latest_sha = json.loads(r.read())[0]["sha"]
+            if latest_sha == local_sha or latest_sha[:7] == local_sha[:7]:
+                return
+            req_tree = urllib.request.Request(_GITHUB_TREE, headers=_hdrs)
+            with urllib.request.urlopen(req_tree, timeout=30) as r:
+                tree = json.loads(r.read())
 
         # Step 3: Filter for files in our plugin directory (including subdirectories)
         # Also grab spellcaster_core/ — the shims need it at runtime.
@@ -829,6 +850,88 @@ def _load_config():
         except Exception:
             return {}
 
+
+# Feature → sentinel node class names. When ANY sentinel is present in
+# ComfyUI's /object_info the feature is considered installed. Kept compact:
+# we don't list every node, just the distinctive ones per feature.
+#
+# This map is the authoritative mapping for menu-registration purposes.
+# Features not listed here are treated as always-present (fail-open).
+_FEATURE_SENTINELS: dict[str, tuple[str, ...]] = {
+    "klein_flux2":       ("Flux2KleinRefLatentController", "Flux2KleinTextRefBalance"),
+    "flux_kontext":      ("FluxKontextImageScale", "FluxKontextModelLoader"),
+    "face_swap_reactor": ("ReActorFaceSwap",),
+    "face_swap_mtb":     ("Face Swap (mtb)", "MTB_FaceSwap"),
+    "faceid_img2img":    ("IPAdapterFaceID", "IPAdapterUnifiedLoaderFaceID"),
+    "pulid_flux":        ("PulidFluxModelLoader", "ApplyPulidFlux"),
+    "upscale":           ("UltimateSDUpscale", "UpscaleModelLoader"),
+    "face_restore":      ("FaceRestoreCFWithModel", "ReActorRestoreFace"),
+    "photo_restore":     ("FaceRestoreCFWithModel",),   # reuses face_restore
+    "supir":             ("SUPIR_sample", "SUPIR_first_stage"),
+    "seedv2r":           ("SeedVR2VideoUpscaler", "SeedVR2Upscaler"),
+    "colorize":          ("DDColor_Colorize",),
+    "lama_remove":       ("LaMaInpaint", "LaMaInpaintingModelLoader"),
+    "wan_i2v":           ("WanImageToVideo", "LoadWanVideoModel"),
+    "detail_hallucinate": ("UltimateSDUpscale",),
+    "rembg":             ("BiRefNetRMBG", "RMBG"),
+    "lut_grading":       ("ApplyLUT",),
+    "style_transfer":    ("IPAdapterAdvanced", "IPAdapterUnifiedLoader"),
+    "iclight":           ("LoadICLightModel", "ICLightApplyMaskGrey"),
+}
+
+
+def _probe_comfyui_nodes(server_url: str, timeout: float = 3.0) -> set[str]:
+    """One-shot GET /object_info → set of class_type names. Empty on failure."""
+    try:
+        import urllib.request as _ur
+        req = _ur.Request(f"{server_url.rstrip('/')}/object_info")
+        with _ur.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        return set(data.keys()) if isinstance(data, dict) else set()
+    except Exception:
+        return set()
+
+
+def _get_features_present_cached(cfg: dict):
+    """Return the set of features currently installed on the ComfyUI server,
+    or None if the probe can't run (fail-open: caller shows everything).
+
+    Caches the probe per server_url in config.json under "features_probe":
+      {"server_url": "...", "features_present": ["klein_flux2", ...], "ts": <epoch>}
+    so we only hit /object_info once per GIMP launch. The cache is invalidated
+    when the server URL changes or the TTL expires (default 1 hour).
+    """
+    import time as _time
+    TTL_SECONDS = 3600
+    server_url = cfg.get("server_url") or COMFYUI_DEFAULT_URL
+    probe = cfg.get("features_probe") or {}
+    # Use cached value if fresh and still pointing at the same server
+    if (probe.get("server_url") == server_url
+            and probe.get("features_present") is not None
+            and (_time.time() - probe.get("ts", 0)) < TTL_SECONDS):
+        return set(probe["features_present"])
+    # Miss — probe now. Fail-open on error: return None so caller falls back
+    # to showing every non-disabled procedure.
+    nodes = _probe_comfyui_nodes(server_url)
+    if not nodes:
+        return None
+    present = {
+        feat for feat, sentinels in _FEATURE_SENTINELS.items()
+        if any(s in nodes for s in sentinels)
+    }
+    # Write cache back (best-effort; don't crash registration if config is RO)
+    try:
+        cfg_copy = dict(cfg)
+        cfg_copy["features_probe"] = {
+            "server_url": server_url,
+            "features_present": sorted(present),
+            "ts": int(_time.time()),
+        }
+        _save_config(cfg_copy)
+    except Exception:
+        pass
+    return present
+
 # Default ComfyUI server URL — overridable via config.json {"server_url": "..."}
 # Updated at runtime whenever the user successfully runs a workflow with a different URL.
 COMFYUI_DEFAULT_URL = _load_config().get("server_url", "http://127.0.0.1:8188")
@@ -847,6 +950,68 @@ WORKFLOW_TIMEOUT = _load_config().get("workflow_timeout", 0)
 # or via the Settings dialog.
 _PROMPT_ENHANCE = _load_config().get("prompt_enhance", False)
 _LLM_URL = _load_config().get("llm_url", "http://127.0.0.1:5001")
+
+# ── Cross-interface backbone client ───────────────────────────────────
+# Announces GIMP's presence to the Wizard Guild and lets _run_* methods
+# publish events like `gimp.generation.finished` so the Guild and other
+# interfaces can react. When the client is healthy, GIMP appears as an
+# active interface in the Guild UI (Settings panel + "Send to GIMP" chip).
+#
+# Known limitation: GIMP 3 plug-ins run as short-lived per-invocation
+# processes, so a long-lived SSE subscription to receive events from the
+# Guild (e.g., "Open in GIMP" clicks) isn't reliable here. The heartbeat
+# + emit half — the GIMP→Guild direction — works cleanly. Guild→GIMP
+# receive is handled by a separate optional background helper (future).
+_CROSS_IFACE_CLIENT = None
+
+
+def _get_cross_interface_client():
+    """Lazily start the cross-interface client on first use.
+
+    Memoized. Only retained if the Guild actually answers — we never
+    leave a zombie heartbeat thread pinging a dead port.
+    """
+    global _CROSS_IFACE_CLIENT
+    if _CROSS_IFACE_CLIENT is not None:
+        return _CROSS_IFACE_CLIENT
+    try:
+        from spellcaster_core.cross_interface import CrossInterfaceClient
+        cfg = _load_config()
+        guild_url = cfg.get("guild_url") or "http://127.0.0.1:7777"
+        client = CrossInterfaceClient(
+            interface_key="gimp",
+            guild_url=guild_url,
+            auto_heartbeat=True,
+        )
+        if client.is_reachable():
+            _CROSS_IFACE_CLIENT = client
+            print(f"[Spellcaster] Cross-interface client online (guild={guild_url})")
+        else:
+            client.stop_auto_heartbeat()
+    except Exception as e:
+        print(f"[Spellcaster] Cross-interface client disabled: {e}")
+    return _CROSS_IFACE_CLIENT
+
+
+def _publish_event(kind, **data):
+    """Publish an event to the Guild's cross-interface bus.
+
+    Fire-and-forget — callers should not depend on success. Typical use:
+
+        _publish_event("gimp.generation.finished",
+                       prompt=prompt, model=model, arch=arch,
+                       image_path=out_path)
+
+    If the Guild is unreachable or the client isn't available, this
+    silently no-ops.
+    """
+    try:
+        client = _get_cross_interface_client()
+        if client is None:
+            return
+        client.publish(kind, data=dict(data))
+    except Exception:
+        pass
 
 
 def _auto_enhance(prompt, arch_key, negative=""):
@@ -1251,6 +1416,97 @@ def _add_runs_spinner(dialog, box):
     hb.pack_start(dialog._runs_spin, False, False, 0)
     hb.pack_start(Gtk.Label(label="(each run gets a new seed)"), False, False, 0)
     box.pack_start(hb, False, False, 0)
+
+
+def _add_normal_map_selector(dialog, box, image):
+    """Add a normal map layer dropdown to any dialog.
+
+    Scans the image's layers for any with 'normal' in the name and
+    populates a dropdown. If no normal map layers exist, shows a
+    'Generate one first' hint. The selected layer can be exported
+    and used as ControlNet input or IC-Light background guidance.
+
+    Sets dialog._normal_combo (ComboBoxText) and dialog._normal_enabled
+    (CheckButton). Use dialog._normal_combo.get_active_id() to get the
+    layer index, or None/"none" if disabled.
+    """
+    frame = Gtk.Frame(label="  3D Normal Map (optional)  ")
+    fbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+    fbox.set_margin_start(8); fbox.set_margin_end(8)
+    fbox.set_margin_top(4); fbox.set_margin_bottom(6)
+
+    dialog._normal_enabled = Gtk.CheckButton(label="Use normal map for 3D-aware generation")
+    dialog._normal_enabled.set_tooltip_text(
+        "When enabled, the selected normal map layer provides 3D surface\n"
+        "information to the AI. This dramatically improves:\n"
+        "  • Relighting accuracy (light wraps around surfaces correctly)\n"
+        "  • Inpainting consistency (fills respect 3D geometry)\n"
+        "  • Style transfer (preserves 3D structure)\n\n"
+        "Generate a normal map first: Enhance > 3D Normal Map")
+    fbox.pack_start(dialog._normal_enabled, False, False, 0)
+
+    dialog._normal_combo = Gtk.ComboBoxText()
+    dialog._normal_combo.append("none", "(no normal map)")
+    dialog._normal_combo.set_tooltip_text(
+        "Select which layer contains the 3D normal map.\n"
+        "Normal maps are RGB images where R=X, G=Y, B=Z surface direction.\n"
+        "Generate one via Enhance > 3D Normal Map (NormalCrafter).")
+
+    # Populate with layers that look like normal maps
+    found_normal = False
+    for i, layer in enumerate(image.get_layers()):
+        name = layer.get_name() or f"Layer {i}"
+        if "normal" in name.lower():
+            dialog._normal_combo.append(str(i), f"● {name}")
+            if not found_normal:
+                dialog._normal_combo.set_active_id(str(i))
+                dialog._normal_enabled.set_active(True)
+                found_normal = True
+        else:
+            dialog._normal_combo.append(str(i), name)
+
+    if not found_normal:
+        dialog._normal_combo.set_active_id("none")
+        dialog._normal_enabled.set_active(False)
+
+    fbox.pack_start(dialog._normal_combo, False, False, 0)
+
+    # Grey out combo when checkbox unchecked
+    dialog._normal_combo.set_sensitive(found_normal)
+    def _on_toggle(cb):
+        dialog._normal_combo.set_sensitive(cb.get_active())
+    dialog._normal_enabled.connect("toggled", _on_toggle)
+
+    frame.add(fbox)
+    box.pack_start(frame, False, False, 0)
+
+
+def _export_normal_map_layer(image, layer_index):
+    """Export a specific layer as a temp PNG file for upload to ComfyUI.
+
+    Temporarily makes only the target layer visible, exports the
+    flattened image, then restores original visibility.
+
+    Returns the temp file path (caller must unlink after upload).
+    """
+    layers = image.get_layers()
+    if layer_index < 0 or layer_index >= len(layers):
+        return None
+
+    # Save and hide all layers
+    orig_vis = [(l, l.get_visible()) for l in layers]
+    for l, _ in orig_vis:
+        l.set_visible(False)
+    layers[layer_index].set_visible(True)
+
+    # Export
+    path = _export_image_to_tmp(image)
+
+    # Restore
+    for l, v in orig_vis:
+        l.set_visible(v)
+
+    return path
 
 
 def _add_mask_mode_checkbox(dialog, box):
@@ -4307,14 +4563,54 @@ def _download_image(server, filename, subfolder="", folder_type="output"):
 
     Checks the pre-download cache first (populated by _precache_results before
     server cleanup). Falls back to direct download if not cached.
+
+    Side-effect: when the Wizard Guild is reachable, every successful
+    download is also uploaded to the Guild's shared asset gallery and
+    fires a `gimp.asset.uploaded` bus event. That lights the image up
+    in the Guild's Recent-across-apps sidebar strip. Failures here are
+    silent — the download return value is unaffected.
     """
     key = (filename, subfolder, folder_type)
     cached_path = _download_cache.get(key)
     if cached_path and os.path.isfile(cached_path):
         data = Path(cached_path).read_bytes()
         if len(data) > 100:
+            _maybe_publish_to_guild_gallery(data, filename)
             return data
-    return _download_image_raw(server, filename, subfolder, folder_type)
+    data = _download_image_raw(server, filename, subfolder, folder_type)
+    if data:
+        _maybe_publish_to_guild_gallery(data, filename)
+    return data
+
+
+def _maybe_publish_to_guild_gallery(data, filename):
+    """Best-effort upload to the Guild's shared asset gallery.
+
+    Silent on every error path — this is a bonus feature, not a
+    critical path. Only images (PNG/JPEG) are published; videos are
+    skipped to avoid hammering the gallery with huge blobs.
+    """
+    if not data or len(data) < 100 or len(data) > 32 * 1024 * 1024:
+        return  # empty / way-too-big
+    lower = (filename or "").lower()
+    if not lower.endswith((".png", ".jpg", ".jpeg", ".webp")):
+        return  # skip video/anim formats
+    try:
+        client = _get_cross_interface_client()
+        if client is None:
+            return
+        # Title from filename sans extension, no directories
+        title = os.path.basename(filename or "").rsplit(".", 1)[0][:60]
+        ext = lower.rsplit(".", 1)[-1]
+        client.upload_asset(
+            data,
+            kind="generation",
+            title=title,
+            ext=ext,
+            meta={"source": "gimp_download", "source_filename": filename},
+        )
+    except Exception:
+        pass
 
 def _wait_for_prompt(server, prompt_id, timeout=300):
     """Poll ComfyUI's /history endpoint until the prompt finishes or times out.
@@ -5716,77 +6012,70 @@ _TINY_PNG = (
 def _cleanup_server_temps(server, results, cleanup_mode):
     """Clean up temp files from the ComfyUI server after generation.
 
-    - Overwrites gimp_* input files with a 1x1 pixel to reclaim space
-    - Deletes output files from server if cleanup_mode is "move" or "delete"
+    Delegates to spellcaster_core.privacy (single source of truth).
     """
     if cleanup_mode not in ("move", "delete"):
         return
-
-    # Overwrite our temp input uploads with tiny PNGs
     try:
-        info = _api_get(server, "/object_info/LoadImage")
-        input_files = info["LoadImage"]["input"]["required"]["image"][0]
-        for fname in input_files:
-            if fname.startswith("gimp_") and (fname.endswith(".png") or fname.endswith(".jpg")):
-                try:
-                    # Upload a 1x1 pixel over the temp file to reclaim space
-                    url = f"{server.rstrip('/')}/upload/image"
-                    boundary = uuid.uuid4().hex
-                    body = (
-                        f"--{boundary}\r\n"
-                        f'Content-Disposition: form-data; name="image"; filename="{fname}"\r\n'
-                        f"Content-Type: image/png\r\n\r\n"
-                    ).encode() + _TINY_PNG + f"\r\n--{boundary}--\r\n".encode()
-                    req = urllib.request.Request(url, data=body,
-                        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
-                        method="POST")
-                    urllib.request.urlopen(req, timeout=10)
-                except Exception:
-                    pass
-    except Exception:
-        pass
+        from spellcaster_core.privacy import cleanup_server_files
+        cleanup_server_files(server, results=results)
+    except ImportError:
+        pass  # privacy module not available — skip cleanup
 
 
 def _run_comfyui_workflow(server, workflow, timeout=300):
     """Wait for ComfyUI queue to clear, then submit workflow and wait for results.
 
-    Respects ComfyUI's queue: waits until no other jobs are running or
-    pending before submitting. This prevents cutting in line ahead of
-    jobs from the ComfyUI UI or other clients.
+    Delegates to spellcaster_core.dispatch for unified LLM lifecycle
+    management (VRAM free before generation) and privacy cleanup.
 
-    Uses a global lock to serialize Spellcaster's own requests too.
+    GIMP-specific steps (queue wait, lock, upload flush, precache) run
+    around the dispatch call. If dispatch is unavailable, falls back to
+    the inline implementation.
     """
     global _workflow_queue_depth
     _workflow_queue_depth += 1
     try:
-        # Preflight: check node availability and apply automatic fallbacks
-        try:
-            from spellcaster_core.preflight import preflight_workflow
-            ok, workflow, report = preflight_workflow(workflow, server)
-            if report.get("substituted"):
-                for orig, desc in report["substituted"]:
-                    print(f"[Spellcaster Preflight] {orig} -> {desc}")
-            if not ok:
-                missing = report.get("missing", [])
-                raise RuntimeError(
-                    f"Missing ComfyUI nodes: {', '.join(missing)}. "
-                    f"Install the required custom nodes on your server.")
-        except ImportError:
-            pass
-
-        # Optimizer: VRAM check, resolution capping, auto-tuning
-        try:
-            from spellcaster_core.optimizer import optimize_workflow
-            workflow, opt_warnings = optimize_workflow(workflow, comfy_url=server)
-            for w in opt_warnings:
-                print(f"[Spellcaster Optimizer] {w}")
-        except ImportError:
-            pass
-
-        # Wait for ComfyUI's queue before acquiring the lock
+        # GIMP-specific: wait for ComfyUI queue + flush pending uploads
         _wait_for_comfy_queue_empty(server)
         with _workflow_lock:
             _flush_pending_uploads()
+
+        try:
+            from spellcaster_core.dispatch import dispatch_workflow
+            # GIMP passes privacy=False to dispatch because it needs to
+            # download outputs to local temp files BEFORE they get wiped.
+            # Privacy cleanup runs after _precache_results below.
+            result = dispatch_workflow(
+                server, workflow, timeout=timeout,
+                free_vram=True,
+                privacy=False,  # GIMP handles privacy after precache
+            )
+            images = result.outputs
+            for w in result.warnings:
+                print(f"[Spellcaster] {w}")
+        except ImportError:
+            # Fallback: inline implementation if dispatch not available
+            try:
+                from spellcaster_core.preflight import preflight_workflow
+                ok, workflow, report = preflight_workflow(workflow, server)
+                if report.get("substituted"):
+                    for orig, desc in report["substituted"]:
+                        print(f"[Spellcaster Preflight] {orig} -> {desc}")
+                if not ok:
+                    missing = report.get("missing", [])
+                    raise RuntimeError(
+                        f"Missing ComfyUI nodes: {', '.join(missing)}. "
+                        f"Install the required custom nodes on your server.")
+            except ImportError:
+                pass
+            try:
+                from spellcaster_core.optimizer import optimize_workflow
+                workflow, opt_warnings = optimize_workflow(workflow, comfy_url=server)
+                for w in opt_warnings:
+                    print(f"[Spellcaster Optimizer] {w}")
+            except ImportError:
+                pass
             result = _api_post_json(server, "/prompt", {
                 "prompt": workflow,
                 "extra_pnginfo": {"workflow": workflow},
@@ -5794,15 +6083,12 @@ def _run_comfyui_workflow(server, workflow, timeout=300):
             prompt_id = result.get("prompt_id")
             if not prompt_id:
                 raise RuntimeError(f"ComfyUI did not return a prompt_id: {result}")
-        # Poll for results outside the lock
-        images = _get_output_images(server, prompt_id, timeout)
-        # Pre-download all outputs to local temp files BEFORE cleanup.
-        # _repatriate_outputs overwrites server files with tiny PNGs,
-        # so any later re-download (e.g. _import_video_results) would
-        # get empty data. We cache each output as a temp file and
-        # replace the server reference with the local path.
+            images = _get_output_images(server, prompt_id, timeout)
+
+        # GIMP-specific: pre-download outputs to local temp files BEFORE
+        # privacy cleanup wipes them from the server
         _precache_results(server, images)
-        # Now safe to clean up the server
+        # Now safe to clean up server files
         try:
             _repatriate_outputs(server, images)
         except Exception:
@@ -10488,11 +10774,697 @@ def _bridge_import_workflow(parent_dlg, path, cfg):
         err.run(); err.destroy()
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Calibration Wizard — optometrist-style A/B model and settings tuning
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class CalibrationWizardDialog(Gtk.Dialog):
+    """Multi-page wizard for calibrating model preferences and settings.
+
+    Page 0: Welcome — explains what happens, shows model count
+    Page 1: Model Taste Test — one image per model, user rates Love/OK/Dislike
+    Page 2: Settings Calibration — A/B/C comparisons for denoise/CFG/steps/sampler
+    Page 3: Results — summary table, Apply button
+    """
+
+    def __init__(self, server_url):
+        super().__init__(title="Spellcaster — Calibration Wizard")
+        self.set_default_size(820, 640)
+        self.server = server_url
+
+        # Navigation buttons
+        self._btn_back = self.add_button("← _Back", Gtk.ResponseType.REJECT)
+        self._btn_next = self.add_button("_Next →", Gtk.ResponseType.APPLY)
+        self._btn_close = self.add_button("_Close", Gtk.ResponseType.CANCEL)
+        _style_dialog_buttons(self)
+        self._btn_back.set_sensitive(False)
+
+        bx = self.get_content_area()
+        bx.set_spacing(8)
+        bx.set_margin_start(16); bx.set_margin_end(16)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+
+        # Header
+        _hdr = _make_branded_header()
+        if _hdr:
+            bx.pack_start(_hdr, False, False, 0)
+
+        # Page stack (no visible tabs)
+        self._stack = Gtk.Stack()
+        self._stack.set_transition_type(Gtk.StackTransitionType.SLIDE_LEFT_RIGHT)
+        bx.pack_start(self._stack, True, True, 0)
+
+        # State
+        self._page = 0
+        self._models = []
+        self._model_ratings = {}      # model_name -> "love" | "ok" | "dislike"
+        self._model_images = {}       # model_name -> GdkPixbuf or None
+        self._settings_results = {}   # model_name -> {param: chosen_value}
+        self._profile = None
+
+        # Build pages
+        self._build_page_welcome()
+        self._build_page_taste_test()
+        self._build_page_settings()
+        self._build_page_results()
+
+        self._stack.set_visible_child_name("welcome")
+        self.show_all()
+
+        # Override dialog response to handle page navigation
+        self.connect("response", self._on_response)
+
+    # ── Page builders ─────────────────────────────────────────────────
+
+    def _build_page_welcome(self):
+        """Page 0: Welcome and overview."""
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        vbox.set_margin_top(20)
+
+        title = Gtk.Label()
+        title.set_markup(
+            "<span size='x-large' weight='bold'>Calibration Wizard</span>")
+        vbox.pack_start(title, False, False, 0)
+
+        desc = Gtk.Label()
+        desc.set_markup(
+            "This wizard tests your installed AI models and tunes settings\n"
+            "to your taste — like an eye exam, but for art.\n\n"
+            "You'll see real generated images side by side.\n"
+            "Pick the ones you prefer. That's it.\n\n"
+            "<b>Step 1:</b> Rate your models (Love / OK / Dislike)\n"
+            "<b>Step 2:</b> Fine-tune settings for your favorites\n"
+            "<b>Step 3:</b> Review and apply\n")
+        desc.set_line_wrap(True)
+        desc.set_max_width_chars(60)
+        desc.set_justify(Gtk.Justification.CENTER)
+        vbox.pack_start(desc, False, False, 0)
+
+        self._welcome_status = Gtk.Label()
+        self._welcome_status.set_markup("<i>Click Next to discover your models...</i>")
+        vbox.pack_start(self._welcome_status, False, False, 10)
+
+        self._stack.add_named(vbox, "welcome")
+
+    def _build_page_taste_test(self):
+        """Page 1: Model taste test — grid of generated images with ratings."""
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+
+        header = Gtk.Label()
+        header.set_markup("<b>Which models do you prefer?</b>  "
+                          "Rate each one after generation.")
+        vbox.pack_start(header, False, False, 4)
+
+        self._taste_progress = Gtk.Label()
+        self._taste_progress.set_text("")
+        vbox.pack_start(self._taste_progress, False, False, 0)
+
+        self._taste_bar = Gtk.ProgressBar()
+        self._taste_bar.set_show_text(True)
+        vbox.pack_start(self._taste_bar, False, False, 0)
+
+        # Scrollable grid for model images
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_min_content_height(400)
+
+        self._taste_grid = Gtk.FlowBox()
+        self._taste_grid.set_valign(Gtk.Align.START)
+        self._taste_grid.set_max_children_per_line(3)
+        self._taste_grid.set_min_children_per_line(2)
+        self._taste_grid.set_selection_mode(Gtk.SelectionMode.NONE)
+        self._taste_grid.set_homogeneous(True)
+        self._taste_grid.set_row_spacing(8)
+        self._taste_grid.set_column_spacing(8)
+        scroll.add(self._taste_grid)
+        vbox.pack_start(scroll, True, True, 0)
+
+        self._btn_generate = Gtk.Button(label="⚡ Generate Samples")
+        self._btn_generate.connect("clicked", self._on_generate_samples)
+        vbox.pack_start(self._btn_generate, False, False, 4)
+
+        self._stack.add_named(vbox, "taste_test")
+
+    def _build_page_settings(self):
+        """Page 2: Settings calibration — A/B/C parameter comparisons."""
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+
+        self._settings_header = Gtk.Label()
+        self._settings_header.set_markup("<b>Settings Calibration</b>")
+        vbox.pack_start(self._settings_header, False, False, 4)
+
+        self._settings_progress = Gtk.Label()
+        vbox.pack_start(self._settings_progress, False, False, 0)
+
+        self._settings_bar = Gtk.ProgressBar()
+        self._settings_bar.set_show_text(True)
+        vbox.pack_start(self._settings_bar, False, False, 0)
+
+        # Comparison area: images side by side
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_min_content_height(400)
+
+        self._settings_grid = Gtk.FlowBox()
+        self._settings_grid.set_valign(Gtk.Align.START)
+        self._settings_grid.set_max_children_per_line(4)
+        self._settings_grid.set_min_children_per_line(2)
+        self._settings_grid.set_selection_mode(Gtk.SelectionMode.NONE)
+        self._settings_grid.set_homogeneous(True)
+        self._settings_grid.set_row_spacing(8)
+        self._settings_grid.set_column_spacing(8)
+        scroll.add(self._settings_grid)
+        vbox.pack_start(scroll, True, True, 0)
+
+        self._btn_generate_comp = Gtk.Button(label="⚡ Generate Comparison")
+        self._btn_generate_comp.connect("clicked", self._on_generate_comparison)
+        vbox.pack_start(self._btn_generate_comp, False, False, 4)
+
+        self._stack.add_named(vbox, "settings")
+
+    def _build_page_results(self):
+        """Page 3: Results summary."""
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        vbox.set_margin_top(20)
+
+        title = Gtk.Label()
+        title.set_markup(
+            "<span size='large' weight='bold'>Calibration Complete</span>")
+        vbox.pack_start(title, False, False, 0)
+
+        self._results_label = Gtk.Label()
+        self._results_label.set_line_wrap(True)
+        self._results_label.set_max_width_chars(70)
+        vbox.pack_start(self._results_label, False, False, 0)
+
+        # Results table
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_min_content_height(200)
+        self._results_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        scroll.add(self._results_box)
+        vbox.pack_start(scroll, True, True, 0)
+
+        self._btn_apply = Gtk.Button(label="✓ Apply Settings")
+        self._btn_apply.connect("clicked", self._on_apply)
+        vbox.pack_start(self._btn_apply, False, False, 8)
+
+        self._stack.add_named(vbox, "results")
+
+    # ── Navigation ────────────────────────────────────────────────────
+
+    def _on_response(self, dialog, response_id):
+        if response_id == Gtk.ResponseType.APPLY:  # Next
+            self._navigate(1)
+            self.emit_stop_by_name("response")
+        elif response_id == Gtk.ResponseType.REJECT:  # Back
+            self._navigate(-1)
+            self.emit_stop_by_name("response")
+        # CANCEL falls through and closes the dialog
+
+    def _navigate(self, direction):
+        self._page += direction
+        self._page = max(0, min(3, self._page))
+
+        pages = ["welcome", "taste_test", "settings", "results"]
+        self._stack.set_visible_child_name(pages[self._page])
+
+        self._btn_back.set_sensitive(self._page > 0)
+        self._btn_next.set_sensitive(self._page < 3)
+
+        # Trigger page-enter logic
+        if self._page == 1:
+            self._enter_taste_test()
+        elif self._page == 2:
+            self._enter_settings()
+        elif self._page == 3:
+            self._enter_results()
+
+    # ── Page 1: Model Taste Test ──────────────────────────────────────
+
+    def _enter_taste_test(self):
+        """Called when entering the taste test page."""
+        if self._models:
+            return  # Already discovered
+        try:
+            from spellcaster_core.preference_calibration import discover_models
+            self._models = discover_models(self.server)
+            self._taste_progress.set_markup(
+                f"<b>{len(self._models)}</b> models found. "
+                f"Click <b>Generate Samples</b> to start.")
+        except Exception as e:
+            self._taste_progress.set_markup(
+                f"<span foreground='red'>Error discovering models: {e}</span>")
+
+    def _on_generate_samples(self, button):
+        """Generate one sample image per discovered model."""
+        if not self._models:
+            return
+        button.set_sensitive(False)
+
+        import threading
+        thread = threading.Thread(
+            target=self._generate_samples_thread, daemon=True)
+        thread.start()
+
+    def _generate_samples_thread(self):
+        """Background thread: generate one image per model."""
+        from spellcaster_core.preference_calibration import generate_model_sample
+        import random
+
+        seed = random.randint(1, 2**31)
+        total = len(self._models)
+
+        for i, model in enumerate(self._models):
+            # Update progress on main thread
+            frac = (i + 1) / total
+            short = model["short_name"][:30]
+            GLib.idle_add(self._update_taste_progress, i + 1, total, short)
+
+            png_data = generate_model_sample(
+                self.server, model, seed=seed, timeout=180)
+            self._model_images[model["name"]] = png_data
+
+            # Add card to grid on main thread
+            GLib.idle_add(self._add_model_card, model, png_data)
+
+        GLib.idle_add(self._generation_complete)
+
+    def _update_taste_progress(self, current, total, name):
+        self._taste_bar.set_fraction(current / total)
+        self._taste_bar.set_text(f"{current}/{total}")
+        self._taste_progress.set_markup(
+            f"Generating <b>{name}</b>... ({current}/{total})")
+        return False
+
+    def _generation_complete(self):
+        self._btn_generate.set_sensitive(True)
+        self._btn_generate.set_label("↻ Regenerate Samples")
+        self._taste_progress.set_markup(
+            "<b>Done!</b> Rate each model, then click Next.")
+        return False
+
+    def _add_model_card(self, model, png_data):
+        """Add one model image + rating controls to the taste grid."""
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        card.set_margin_start(4); card.set_margin_end(4)
+        card.set_margin_top(4); card.set_margin_bottom(4)
+
+        # Image
+        if png_data:
+            try:
+                loader = GdkPixbuf.PixbufLoader()
+                loader.write(png_data)
+                loader.close()
+                pixbuf = loader.get_pixbuf()
+                # Scale to fit 220px wide, maintain aspect ratio
+                w, h = pixbuf.get_width(), pixbuf.get_height()
+                target_w = 220
+                target_h = int(h * target_w / w) if w > 0 else target_w
+                scaled = pixbuf.scale_simple(
+                    target_w, target_h, GdkPixbuf.InterpType.BILINEAR)
+                img_widget = Gtk.Image.new_from_pixbuf(scaled)
+            except Exception:
+                img_widget = Gtk.Image.new_from_icon_name(
+                    "image-missing", Gtk.IconSize.DIALOG)
+        else:
+            img_widget = Gtk.Label()
+            img_widget.set_markup("<i>Generation failed</i>")
+
+        card.pack_start(img_widget, False, False, 0)
+
+        # Model name
+        name_label = Gtk.Label()
+        short = model["short_name"][:25]
+        name_label.set_markup(f"<small><b>{GLib.markup_escape_text(short)}</b>"
+                              f" ({model['arch']})</small>")
+        name_label.set_line_wrap(True)
+        card.pack_start(name_label, False, False, 0)
+
+        # Rating radio buttons
+        rating_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        rating_box.set_halign(Gtk.Align.CENTER)
+
+        btn_love = Gtk.RadioButton.new_with_label(None, "♥ Love")
+        btn_ok = Gtk.RadioButton.new_with_label_from_widget(btn_love, "OK")
+        btn_dislike = Gtk.RadioButton.new_with_label_from_widget(btn_love, "✗")
+
+        # Default to OK
+        btn_ok.set_active(True)
+        self._model_ratings[model["name"]] = "ok"
+
+        model_name = model["name"]
+        btn_love.connect("toggled", lambda b, n=model_name:
+                         self._on_rating_toggled(b, n, "love"))
+        btn_ok.connect("toggled", lambda b, n=model_name:
+                       self._on_rating_toggled(b, n, "ok"))
+        btn_dislike.connect("toggled", lambda b, n=model_name:
+                            self._on_rating_toggled(b, n, "dislike"))
+
+        rating_box.pack_start(btn_love, False, False, 0)
+        rating_box.pack_start(btn_ok, False, False, 0)
+        rating_box.pack_start(btn_dislike, False, False, 0)
+        card.pack_start(rating_box, False, False, 0)
+
+        self._taste_grid.add(card)
+        card.show_all()
+        return False
+
+    def _on_rating_toggled(self, button, model_name, rating):
+        if button.get_active():
+            self._model_ratings[model_name] = rating
+
+    # ── Page 2: Settings Calibration ──────────────────────────────────
+
+    def _enter_settings(self):
+        """Called when entering the settings page."""
+        from spellcaster_core.preference_calibration import arch_valid_ranges
+
+        # Collect models that need settings calibration
+        self._calibrate_queue = []
+        for model in self._models:
+            name = model["name"]
+            rating = self._model_ratings.get(name, "ok")
+            if rating == "dislike":
+                continue
+            ranges = arch_valid_ranges(model["arch"])
+            if not ranges:
+                continue
+            self._calibrate_queue.append(model)
+
+        if not self._calibrate_queue:
+            self._settings_header.set_markup(
+                "<b>No models need settings calibration.</b>\n"
+                "Your preferred models use fixed settings. Click Next.")
+            self._btn_generate_comp.hide()
+            return
+
+        self._cal_model_idx = 0
+        self._cal_param_idx = 0
+        self._cal_params = ["cfg", "steps", "sampler"]
+        self._settings_radio_group = {}
+        self._show_current_calibration()
+
+    def _show_current_calibration(self):
+        """Display the current calibration comparison."""
+        from spellcaster_core.preference_calibration import arch_valid_ranges
+
+        if self._cal_model_idx >= len(self._calibrate_queue):
+            self._settings_header.set_markup(
+                "<b>Settings calibration complete!</b> Click Next.")
+            self._btn_generate_comp.hide()
+            return
+
+        model = self._calibrate_queue[self._cal_model_idx]
+        param = self._cal_params[self._cal_param_idx]
+        ranges = arch_valid_ranges(model["arch"])
+
+        total_tests = len(self._calibrate_queue) * len(self._cal_params)
+        current_test = self._cal_model_idx * len(self._cal_params) + self._cal_param_idx + 1
+
+        self._settings_header.set_markup(
+            f"<b>{GLib.markup_escape_text(model['short_name'])}</b> — "
+            f"Which <b>{param.upper()}</b> do you prefer?")
+        self._settings_progress.set_markup(
+            f"Test {current_test}/{total_tests}")
+        self._settings_bar.set_fraction(current_test / total_tests)
+        self._btn_generate_comp.show()
+        self._btn_generate_comp.set_label(f"⚡ Generate {param.upper()} Comparison")
+
+        # Store current values for generation
+        self._current_cal_model = model
+        self._current_cal_param = param
+        self._current_cal_values = ranges[param]
+
+    def _on_generate_comparison(self, button):
+        """Generate comparison images for current calibration test."""
+        button.set_sensitive(False)
+
+        import threading
+        thread = threading.Thread(
+            target=self._generate_comparison_thread, daemon=True)
+        thread.start()
+
+    def _generate_comparison_thread(self):
+        """Background thread: generate comparison images."""
+        from spellcaster_core.preference_calibration import (
+            build_comparison_set, generate_and_download, _get_test_prompt)
+        import random
+
+        model = self._current_cal_model
+        param = self._current_cal_param
+        values = self._current_cal_values
+
+        prompt, neg = _get_test_prompt(model["arch"])
+        seed = random.randint(1, 2**31)
+
+        comparisons = build_comparison_set(model, param, values, prompt, neg, seed)
+
+        results = []
+        for i, comp in enumerate(comparisons):
+            GLib.idle_add(
+                self._settings_progress.set_markup,
+                f"Generating {param}={comp['value']} ({i+1}/{len(comparisons)})...")
+            png = generate_and_download(self.server, comp["workflow"], timeout=180)
+            results.append((comp["value"], png))
+
+        GLib.idle_add(self._show_comparison_results, results)
+
+    def _show_comparison_results(self, results):
+        """Display comparison images with selection radio buttons."""
+        # Clear old children
+        for child in self._taste_grid.get_children():
+            child.destroy()
+        for child in self._settings_grid.get_children():
+            child.destroy()
+
+        param = self._current_cal_param
+        model = self._current_cal_model
+        first_btn = None
+
+        for val, png_data in results:
+            card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            card.set_margin_start(4); card.set_margin_end(4)
+
+            # Image
+            if png_data:
+                try:
+                    loader = GdkPixbuf.PixbufLoader()
+                    loader.write(png_data)
+                    loader.close()
+                    pixbuf = loader.get_pixbuf()
+                    w, h = pixbuf.get_width(), pixbuf.get_height()
+                    target_w = 180
+                    target_h = int(h * target_w / w) if w > 0 else target_w
+                    scaled = pixbuf.scale_simple(
+                        target_w, target_h, GdkPixbuf.InterpType.BILINEAR)
+                    img_widget = Gtk.Image.new_from_pixbuf(scaled)
+                except Exception:
+                    img_widget = Gtk.Label(label="(error)")
+            else:
+                img_widget = Gtk.Label(label="(failed)")
+
+            card.pack_start(img_widget, False, False, 0)
+
+            # Value label
+            val_label = Gtk.Label()
+            val_label.set_markup(f"<b>{param}</b> = {val}")
+            card.pack_start(val_label, False, False, 0)
+
+            # Radio button for selection
+            if first_btn is None:
+                radio = Gtk.RadioButton.new_with_label(None, "Prefer this")
+                first_btn = radio
+            else:
+                radio = Gtk.RadioButton.new_with_label_from_widget(
+                    first_btn, "Prefer this")
+
+            radio._cal_value = val
+            card.pack_start(radio, False, False, 0)
+
+            self._settings_grid.add(card)
+
+        # "Accept" button to confirm choice and advance
+        accept_btn = Gtk.Button(label="✓ Accept Choice")
+        accept_btn.connect("clicked",
+                           lambda b, fb=first_btn: self._accept_calibration(fb))
+
+        # Add accept button outside the grid
+        parent = self._settings_grid.get_parent()  # ScrolledWindow
+        if parent:
+            grandparent = parent.get_parent()  # vbox
+            if grandparent:
+                grandparent.pack_start(accept_btn, False, False, 4)
+
+        self._settings_grid.show_all()
+        accept_btn.show()
+        self._btn_generate_comp.set_sensitive(True)
+        return False
+
+    def _accept_calibration(self, first_radio):
+        """Record the user's choice and advance to next test."""
+        # Find which radio is selected
+        chosen_val = None
+        group = first_radio.get_group() if first_radio else []
+        for radio in group:
+            if radio.get_active() and hasattr(radio, '_cal_value'):
+                chosen_val = radio._cal_value
+                break
+
+        if chosen_val is not None:
+            model_name = self._current_cal_model["name"]
+            param = self._current_cal_param
+            if model_name not in self._settings_results:
+                self._settings_results[model_name] = {}
+            self._settings_results[model_name][param] = chosen_val
+
+        # Advance to next test
+        self._cal_param_idx += 1
+        if self._cal_param_idx >= len(self._cal_params):
+            self._cal_param_idx = 0
+            self._cal_model_idx += 1
+
+        # Clear grid and show next
+        for child in self._settings_grid.get_children():
+            child.destroy()
+
+        # Remove the accept button we added
+        parent = self._settings_grid.get_parent()
+        if parent:
+            grandparent = parent.get_parent()
+            if grandparent:
+                for child in grandparent.get_children():
+                    if isinstance(child, Gtk.Button) and child.get_label() == "✓ Accept Choice":
+                        child.destroy()
+
+        self._show_current_calibration()
+
+    # ── Page 3: Results ───────────────────────────────────────────────
+
+    def _enter_results(self):
+        """Called when entering the results page."""
+        from spellcaster_core.preference_calibration import CalibrationProfile
+        import time as _time
+
+        profile = CalibrationProfile()
+        profile.timestamp = _time.strftime("%Y-%m-%d %H:%M:%S")
+
+        # Set model preferences
+        for model in self._models:
+            name = model["name"]
+            rating = self._model_ratings.get(name, "ok")
+            profile.set_model_preference(name, rating)
+
+        # Set calibrated settings
+        for model_name, settings in self._settings_results.items():
+            profile.set_model_settings(model_name, **settings)
+
+        self._profile = profile
+
+        # Build results display
+        for child in self._results_box.get_children():
+            child.destroy()
+
+        loved = [m for m in self._models
+                 if self._model_ratings.get(m["name"]) == "love"]
+        ok_models = [m for m in self._models
+                     if self._model_ratings.get(m["name"]) == "ok"]
+        disliked = [m for m in self._models
+                    if self._model_ratings.get(m["name"]) == "dislike"]
+
+        summary_parts = []
+        if loved:
+            summary_parts.append(f"<b>♥ Loved:</b> {len(loved)}")
+        if ok_models:
+            summary_parts.append(f"<b>OK:</b> {len(ok_models)}")
+        if disliked:
+            summary_parts.append(f"<b>✗ Disliked:</b> {len(disliked)}")
+        self._results_label.set_markup(
+            "  |  ".join(summary_parts) + "\n\n"
+            "These settings will be used as defaults in all dialogs:")
+
+        # Settings table
+        if self._settings_results:
+            grid = Gtk.Grid()
+            grid.set_row_spacing(4)
+            grid.set_column_spacing(12)
+            grid.set_margin_start(20)
+
+            # Header row
+            for col, text in enumerate(["Model", "CFG", "Steps", "Sampler"]):
+                lbl = Gtk.Label()
+                lbl.set_markup(f"<b>{text}</b>")
+                lbl.set_xalign(0)
+                grid.attach(lbl, col, 0, 1, 1)
+
+            row = 1
+            for model_name, settings in self._settings_results.items():
+                short = model_name.rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
+                short = short.rsplit(".", 1)[0][:25]
+                for col, key in enumerate(["", "cfg", "steps", "sampler"]):
+                    if col == 0:
+                        lbl = Gtk.Label(label=short)
+                    else:
+                        val = settings.get(key, "—")
+                        lbl = Gtk.Label(label=str(val))
+                    lbl.set_xalign(0)
+                    grid.attach(lbl, col, row, 1, 1)
+                row += 1
+
+            self._results_box.pack_start(grid, False, False, 0)
+        else:
+            no_cal = Gtk.Label()
+            no_cal.set_markup("<i>No settings were calibrated "
+                              "(your models use fixed parameters).</i>")
+            self._results_box.pack_start(no_cal, False, False, 0)
+
+        self._results_box.show_all()
+
+    def _on_apply(self, button):
+        """Save calibration profile to config.json."""
+        if self._profile:
+            config_data = self._profile.to_config()
+            _save_config(config_data)
+
+            # Also update favourite_model index if we have a preferred model
+            if self._profile.preferred_models:
+                top_model = self._profile.preferred_models[0]
+                for i, p in enumerate(MODEL_PRESETS):
+                    if p.get("ckpt") == top_model:
+                        _save_config({"favourite_model": i})
+                        break
+
+            info = Gtk.MessageDialog(
+                parent=self, flags=Gtk.DialogFlags.MODAL,
+                type=Gtk.MessageType.INFO, buttons=Gtk.ButtonsType.OK)
+            info.set_markup(
+                "<b>Calibration saved!</b>\n\n"
+                "Your preferences will be used as defaults in all dialogs.")
+            info.run(); info.destroy()
+
+        self.response(Gtk.ResponseType.CANCEL)  # Close the wizard
+
+    def get_profile(self):
+        """Return the calibration profile, or None."""
+        return self._profile
+
+
 class Spellcaster(Gimp.PlugIn):
 
     def do_set_i18n(self, name):
         """Disable internationalization (i18n) — plugin uses English only."""
         return False
+
+    def __init__(self):
+        super().__init__()
+        # Fire the cross-interface client bootstrap once per plugin
+        # invocation. Memoized, so repeated menu clicks don't re-spawn
+        # heartbeat threads. If the Guild isn't running, this silently
+        # no-ops — no errors bubble up to GIMP.
+        try:
+            _get_cross_interface_client()
+        except Exception:
+            pass
 
     def do_query_procedures(self):
         """Return procedure names filtered by installed features.
@@ -10577,29 +11549,43 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-rerun-last": None,
             # AI Color Match
             "spellcaster-color-match": None,
+            # Calibration Wizard
+            "spellcaster-calibration-wizard": None,
         }
 
-        # ── Feature-gate logic: denylist, not allowlist ──
-        # Old behaviour was an allowlist: the user's installed_features
-        # list was the source of truth, and any procedure whose feature
-        # wasn't in it got hidden from the menu. That broke every time we
-        # added a NEW feature post-install — older config.json files
-        # didn't know about wan_i2v / ltx_video / etc., so the new menu
-        # items silently never appeared even though the underlying models
-        # were installed and working. Users had no way to recover except
-        # by deleting their config.
+        # ── Feature-gate logic: denylist + probe-cached allowlist ──
+        # History:
+        #   v1 = allowlist from installed_features: broke on post-install
+        #        additions (wan_i2v/ltx_video added later never appeared
+        #        because old config.json didn't list them).
+        #   v2 = pure denylist: "show everything unless disabled". Fixed
+        #        the post-install bug but showed tools with no backing
+        #        models — users clicked Klein Editor with no Klein model
+        #        installed and got empty dropdowns / 400 errors.
+        #   v3 (this code) = denylist + probe-cached presence check:
         #
-        # New behaviour is a denylist: every procedure registers by
-        # default, unless the user has explicitly disabled its feature
-        # via 'disabled_features' in config.json. Missing-model errors
-        # are caught at dialog-open time by runtime probes (per the
-        # "don't show broken" policy), not by a stale install manifest.
+        #   - `disabled_features` from config is still honoured (user
+        #     explicitly hid it).
+        #   - `features_present` is a cached probe result: we hit ComfyUI's
+        #     /object_info on plugin load, derive which features' backing
+        #     nodes are actually available, and cache the set in config.
+        #     If a feature's node isn't installed, hide it. If the probe
+        #     can't run (server down, first launch), fall back to showing
+        #     everything (fail-open — better than hiding working tools).
+        #   - New features added post-install re-probe on next launch so
+        #     they auto-appear once installed. No stale config problem.
         cfg = _load_config()
         disabled = set(cfg.get("disabled_features") or [])
+        present = _get_features_present_cached(cfg)  # None = couldn't probe
         procs = []
         for name, feature in _PROC_FEATURES.items():
-            if feature is not None and feature in disabled:
+            if feature is None:
+                procs.append(name)               # always-on core tool
                 continue
+            if feature in disabled:
+                continue                          # explicitly hidden
+            if present is not None and feature not in present:
+                continue                          # probe says node missing
             procs.append(name)
         return procs
 
@@ -10745,6 +11731,9 @@ class Spellcaster(Gimp.PlugIn):
             # AI Color Match
             "spellcaster-color-match": ("AI Color Match...", self._run_color_match,
                                           "Match your image's colors to a reference photo — automatic palette transfer"),
+            # Calibration Wizard
+            "spellcaster-calibration-wizard": ("Calibration Wizard...", self._run_calibration_wizard,
+                                                "Tune AI settings to your taste with A/B image comparisons"),
         }
 
         label, callback, doc = menu_map[name]
@@ -10842,6 +11831,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-send-image":        f"{_S}/Tools",
             "spellcaster-settings":          f"{_S}/Tools",
             "spellcaster-bridge":            f"{_S}/Tools",
+            "spellcaster-calibration-wizard": f"{_S}/Tools",
         }
 
         # ── Native GIMP menu integration ─────────────────────────────
@@ -10866,6 +11856,22 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-klein-outpaint":    "<Image>/Image",
         }
 
+        # ── 3D submenu — groups all normal-map-enabled tools ──────
+        # These tools appear in BOTH their original submenu AND in
+        # ◆ Spellcaster > 3D for easy discovery.
+        _3d_tools = {
+            "spellcaster-normal-map",        # Generate 3D Normal Map
+            "spellcaster-iclight",           # Relighting (uses normal map as FBC background)
+            "spellcaster-img2img",           # CN: Normal Map mode
+            "spellcaster-txt2img",           # CN: Normal Map mode
+            "spellcaster-inpaint",           # CN: Normal Map mode
+            "spellcaster-outpaint",          # CN: Normal Map mode
+            "spellcaster-style-transfer",    # CN: Normal Map mode
+            "spellcaster-colorize",          # CN: Normal Map mode
+            "spellcaster-detail-hallucinate",# CN: Normal Map mode
+            "spellcaster-seedv2r",           # CN: Normal Map mode
+        }
+
         proc = Gimp.ImageProcedure.new(self, name, Gimp.PDBProcType.PLUGIN, callback, None)
         proc.set_menu_label(label)
         # Primary Spellcaster top-level menu path
@@ -10876,7 +11882,13 @@ class Spellcaster(Gimp.PlugIn):
             try:
                 proc.add_menu_path(native)
             except Exception:
-                pass  # GIMP version may not support this path
+                pass
+        # 3D submenu (secondary registration)
+        if name in _3d_tools:
+            try:
+                proc.add_menu_path(f"{_S}/3D")
+            except Exception:
+                pass
         proc.set_documentation(doc, doc, name)
         proc.set_attribution("Spellcaster", "Spellcaster", "2026")
         proc.set_image_types("*")
@@ -11147,6 +12159,7 @@ class Spellcaster(Gimp.PlugIn):
                                   f"FaceSwap #{i+1}", v.get("mask_mode", False))
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-faceswap"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Face Swap Error: {e}")
@@ -11192,6 +12205,7 @@ class Spellcaster(Gimp.PlugIn):
                                   f"FaceSwap Model #{i+1}", v.get("mask_mode", False))
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-faceswap-model"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Face Swap (Model) Error: {e}")
@@ -11315,6 +12329,8 @@ class Spellcaster(Gimp.PlugIn):
             if saved:
                 msg += f"\nFiles saved: {', '.join(saved)}"
             Gimp.message(msg)
+            _LAST_PROCEDURE["name"] = "spellcaster-ltx-t2v"
+            Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster LTX T2V Error: {e}")
@@ -11455,6 +12471,8 @@ class Spellcaster(Gimp.PlugIn):
             if saved:
                 msg += f"\nFiles saved: {', '.join(saved)}"
             Gimp.message(msg)
+            _LAST_PROCEDURE["name"] = "spellcaster-wan-i2v"
+            Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Wan I2V Error: {e}")
@@ -11623,6 +12641,8 @@ class Spellcaster(Gimp.PlugIn):
             if saved:
                 msg += f"\nFiles saved: {', '.join(saved)}"
             Gimp.message(msg)
+            _LAST_PROCEDURE["name"] = "spellcaster-wan-flf"
+            Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Wan FLF Error: {e}")
@@ -12390,6 +13410,8 @@ class Spellcaster(Gimp.PlugIn):
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), "Video Upscale frame", False)
             Gimp.displays_flush()
             Gimp.message("Video upscale complete! Check ComfyUI output folder.")
+            _LAST_PROCEDURE["name"] = "spellcaster-video-upscale"
+            Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Video Upscale Error: {e}")
@@ -12544,6 +13566,8 @@ class Spellcaster(Gimp.PlugIn):
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), "Video ReActor frame", False)
             Gimp.displays_flush()
             Gimp.message("Video face swap + upscale complete!\nCheck ComfyUI output folder.")
+            _LAST_PROCEDURE["name"] = "spellcaster-video-reactor"
+            Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Video ReActor Error: {e}")
@@ -12789,6 +13813,7 @@ class Spellcaster(Gimp.PlugIn):
                 _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"FaceSwap mtb #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-faceswap-mtb"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Face Swap (mtb) Error: {e}")
@@ -12844,6 +13869,7 @@ class Spellcaster(Gimp.PlugIn):
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-faceid-img2img"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster FaceID Error: {e}")
@@ -12900,6 +13926,7 @@ class Spellcaster(Gimp.PlugIn):
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-pulid-flux"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster PuLID Flux Error: {e}")
@@ -13232,6 +14259,7 @@ class Spellcaster(Gimp.PlugIn):
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-klein-img2img-ref"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Klein+Ref Error: {e}")
@@ -15393,6 +16421,7 @@ class Spellcaster(Gimp.PlugIn):
                 _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"Blend {100 - ratio*100:.0f}A/{ratio*100:.0f}B #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-layer-blend-ratio"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Layer Blend Error: {e}")
@@ -15522,6 +16551,7 @@ class Spellcaster(Gimp.PlugIn):
                                         f" + {ratio*100:.0f}%{mb_key.split('(')[0].strip()} #{i+1}")
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-upscale-blend"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Upscaler Blend Error: {e}")
@@ -16684,6 +17714,8 @@ class Spellcaster(Gimp.PlugIn):
                          f"Bits per pixel: {bpp_used:.5f} (safe limit: 0.05)\n"
                          f"Author: {author or '(none)'}\n\n"
                          f"Save as PNG to preserve the watermark.")
+            _LAST_PROCEDURE["name"] = "spellcaster-embed-watermark"
+            Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Watermark embedding failed: {e}")
@@ -16751,6 +17783,8 @@ class Spellcaster(Gimp.PlugIn):
                     lines.append(f"  {k}: {v}")
                 Gimp.message("\n".join(lines))
 
+            _LAST_PROCEDURE["name"] = "spellcaster-read-watermark"
+            Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Watermark reading failed: {e}")
@@ -17032,6 +18066,7 @@ class Spellcaster(Gimp.PlugIn):
                 _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"{label_text}: {obj_desc or 'removed'} #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-lama-remove"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Object Removal Error: {e}")
@@ -17102,6 +18137,7 @@ class Spellcaster(Gimp.PlugIn):
                 _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"LUT {preset_key} #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-lut"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster LUT Error: {e}")
@@ -17285,6 +18321,7 @@ class Spellcaster(Gimp.PlugIn):
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-outpaint"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Outpaint Error: {e}")
@@ -17776,6 +18813,7 @@ class Spellcaster(Gimp.PlugIn):
                 _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"Face Restore {preset_key} #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-face-restore"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Face Restore Error: {e}")
@@ -17913,6 +18951,7 @@ class Spellcaster(Gimp.PlugIn):
                 _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"Photo Restore #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-photo-restore"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Photo Restore Error: {e}")
@@ -18949,6 +19988,7 @@ class Spellcaster(Gimp.PlugIn):
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-batch-variations"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Batch Variations Error: {e}")
@@ -21215,6 +22255,7 @@ class Spellcaster(Gimp.PlugIn):
                 _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), f"Background Removed #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-rembg"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster Remove Background Error: {e}")
@@ -21303,6 +22344,7 @@ class Spellcaster(Gimp.PlugIn):
                                         f"SAM3: {prompt}", keep_size=True)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-sam3-select"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster SAM3 Selection Error: {e}")
@@ -21367,6 +22409,7 @@ class Spellcaster(Gimp.PlugIn):
                                         keep_size=True)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-sam3-extract"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Spellcaster SAM3 Extract Error: {e}")
@@ -21405,6 +22448,7 @@ class Spellcaster(Gimp.PlugIn):
             r = _upload_image_sync(srv, tmp, fn); os.unlink(tmp)
             Gimp.message(f"Uploaded as: {r.get('name', fn)}")
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-send-image"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"Upload Error: {e}")
@@ -21529,6 +22573,8 @@ class Spellcaster(Gimp.PlugIn):
         bx.show_all()
         dlg.run()
         dlg.destroy()
+        _LAST_PROCEDURE["name"] = "spellcaster-my-presets"
+        Gimp.progress_end()
         return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
     # ── Travelling Wizard (Signal Bridge + Scaffold) ───────────────────
@@ -21694,6 +22740,8 @@ class Spellcaster(Gimp.PlugIn):
         bx.show_all()
         dlg.run()
         dlg.destroy()
+        _LAST_PROCEDURE["name"] = "spellcaster-bridge"
+        Gimp.progress_end()
         return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
     # ══════════════════════════════════════════════════════════════════════
@@ -21989,6 +23037,7 @@ class Spellcaster(Gimp.PlugIn):
                                  f"Normal Map #{i+1}", False)
             Gimp.displays_flush()
             Gimp.progress_end()
+            _LAST_PROCEDURE["name"] = "spellcaster-normal-map"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             Gimp.message(f"NormalCrafter Error: {e}")
@@ -22152,6 +23201,28 @@ class Spellcaster(Gimp.PlugIn):
         except Exception as e:
             Gimp.message(f"Spellcaster Color Match Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    def _run_calibration_wizard(self, procedure, run_mode, image, drawables, config, data):
+        """Calibration Wizard: tune AI settings with A/B image comparisons."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        try:
+            GimpUi.init("spellcaster")
+        except Exception:
+            pass
+        try:
+            _apply_spellcaster_theme()
+        except Exception:
+            pass
+
+        cfg = _load_config()
+        server = cfg.get("server_url", "http://127.0.0.1:8188")
+
+        dlg = CalibrationWizardDialog(server)
+        dlg.run()
+        dlg.destroy()
+
+        return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
     def _run_settings(self, procedure, run_mode, image, drawables, config, data):
         """Spellcaster Settings: configure server URL, defaults, and preferences."""

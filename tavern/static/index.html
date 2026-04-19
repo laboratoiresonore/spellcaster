@@ -65,6 +65,21 @@
                 <div id="bridge-indicator-container">
                     <span id="bridge-dot" class="dot red"></span> <span id="bridge-status">Signal Bridge: Disconnected</span>
                 </div>
+                <!-- Active interfaces: dynamically populated from /api/interfaces.
+                     Only interfaces that are installed + enabled + online appear.
+                     Empty = hidden entirely (no dead chips). -->
+                <div id="active-interfaces-container" style="display:none;">
+                    <div id="active-interfaces-label" class="active-interfaces-label">Connected apps</div>
+                    <div id="active-interfaces-row" class="active-interfaces-row"></div>
+                </div>
+                <!-- Recent assets across every interface: live cross-app
+                     gallery. Clicking a thumbnail "uses" it (drops into
+                     the current wizard chat as a reference). Hidden
+                     entirely while empty. -->
+                <div id="recent-assets-container" style="display:none;">
+                    <div id="recent-assets-label" class="active-interfaces-label">Recent across apps</div>
+                    <div id="recent-assets-row" class="recent-assets-row"></div>
+                </div>
                 <div class="search-wrapper">
                     <input type="text" id="character-search" placeholder="Search guild members...">
                 </div>
@@ -124,13 +139,13 @@
             <h3>Guild Server Settings</h3>
             <p><strong>LLM Source:</strong> Choose how Guild Members come alive.</p>
             <div style="display:flex;gap:8px;margin:8px 0 12px 0;">
-                <button id="llm-mode-local" class="llm-mode-btn active" onclick="setLlmMode('local')" style="flex:1;padding:10px;border-radius:8px;border:2px solid #B246F2;background:#1e1e2e;color:#eee;cursor:pointer;font-family:'Outfit';font-size:13px;font-weight:600;transition:all 0.2s;">Local (KoboldAI)</button>
+                <button id="llm-mode-local" class="llm-mode-btn active" onclick="setLlmMode('local')" style="flex:1;padding:10px;border-radius:8px;border:2px solid #B246F2;background:#1e1e2e;color:#eee;cursor:pointer;font-family:'Outfit';font-size:13px;font-weight:600;transition:all 0.2s;">Local (Ollama / KoboldCpp)</button>
                 <button id="llm-mode-horde" class="llm-mode-btn" onclick="setLlmMode('horde')" style="flex:1;padding:10px;border-radius:8px;border:2px solid #333;background:#1e1e2e;color:#888;cursor:pointer;font-family:'Outfit';font-size:13px;font-weight:600;transition:all 0.2s;">AI Horde</button>
             </div>
 
             <div id="llm-local-settings">
-                <p style="color:#aaa;font-size:12px;margin-bottom:6px;">Local inference via KoboldAI — private, on your machine.</p>
-                <input type="text" id="kobold-url-input" placeholder="http://127.0.0.1:5001" value="http://127.0.0.1:5001">
+                <p style="color:#aaa;font-size:12px;margin-bottom:6px;">Local inference via Ollama or KoboldCpp — private, on your machine.</p>
+                <input type="text" id="kobold-url-input" placeholder="http://127.0.0.1:11434 (Ollama) or :5001 (KoboldCpp)" value="http://127.0.0.1:11434">
             </div>
 
             <div id="llm-horde-settings" style="display:none;">
@@ -385,7 +400,6 @@
             </div>
         </div>
     </div>
-
     <!-- Spinner Overlay -->
     <div id="loading-overlay" class="hidden">
         <img class="loading-banner" src="/static/icons/wizard_banner.gif" alt="Wizard conjuring...">
@@ -395,6 +409,7 @@
 
     <!-- GSAP — the one ring to rule all animations -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <script src="starter_chips.js"></script>
     <script src="app.js"></script>
     <script src="video_chat.js"></script>
 </body>

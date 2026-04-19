@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: ComfyUI-Spellcaster (the 4 custom ComfyUI nodes)
+    url: https://github.com/laboratoiresonore/ComfyUI-Spellcaster/issues
+    about: If your issue is about the SpellcasterLoader / PromptEnhance / Sampler / Output nodes specifically, file it there.
+  - name: ComfyUI itself
+    url: https://github.com/comfyanonymous/ComfyUI/issues
+    about: Bugs in ComfyUI core belong upstream.
+  - name: r/Spellcaster_Studio
+    url: https://www.reddit.com/r/Spellcaster_Studio/
+    about: General questions, showcase, and community discussion.
+  - name: Dependency info (which ComfyUI node packs you need)
+    url: https://github.com/laboratoiresonore/spellcaster/blob/main/DEPENDENCIES.md
+    about: Before filing "a workflow fails with 'unknown node type X'", check DEPENDENCIES.md — the required custom-node pack may not be installed.

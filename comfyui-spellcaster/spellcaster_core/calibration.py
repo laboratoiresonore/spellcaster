@@ -135,7 +135,29 @@ def _get_opts(server, node, field):
 
 
 def _submit_and_wait(server, workflow, timeout=60):
-    """Submit a workflow and wait. Returns (ok, elapsed, error)."""
+    """Submit a workflow and wait. Returns (ok, elapsed, error).
+
+    Delegates to spellcaster_core.dispatch when available. Calibration
+    jobs are lightweight (64x64, 2 steps) so free_vram and optimize are
+    skipped for speed.
+    """
+    try:
+        from .dispatch import dispatch_workflow
+        result = dispatch_workflow(
+            server, workflow, timeout=timeout,
+            free_vram=False,   # 64x64 jobs — no VRAM pressure
+            optimize=False,    # already minimal resolution
+            privacy=False,     # test outputs are disposable noise
+        )
+        return True, result.elapsed, ""
+    except ImportError:
+        pass  # dispatch not available — fall through
+    except RuntimeError as e:
+        return False, 0, str(e)[:120]
+    except Exception as e:
+        return False, 0, str(e)[:120]
+
+    # Fallback: inline implementation
     try:
         ok_pf, workflow, _ = preflight_workflow(workflow, server)
     except Exception:

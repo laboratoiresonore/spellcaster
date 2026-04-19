@@ -1,0 +1,40 @@
+name: Feature request
+description: Suggest a new tool, architecture, preset, or integration
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the workflow or result that's awkward or impossible today.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you add?
+      description: Proposed new menu item, preset, architecture support, integration with another app, or API endpoint.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which area?
+      multiple: true
+      options:
+        - New model architecture
+        - New tool / menu item
+        - New preset for an existing tool
+        - Wizard Guild (chat UI / new wizard)
+        - SillyTavern integration
+        - Installer / auto-update
+        - Calibration Wizard
+        - Shotboard / video production
+        - API / scripting
+        - Docs / examples
+        - Other
+    validations:
+      required: true

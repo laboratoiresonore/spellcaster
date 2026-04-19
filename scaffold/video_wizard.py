@@ -595,5 +595,4 @@ def _parse_index(text: str, upper_bound: int) -> Optional[int]:
     if idx < 0 or idx >= upper_bound:
         return None
     return idx
-        return None
-    return idx
+

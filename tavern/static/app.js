@@ -60,7 +60,19 @@ let koboldUrl = localStorage.getItem('kobold_url') || 'http://127.0.0.1:5001';
 let comfyUrl = localStorage.getItem('comfy_url') || 'http://127.0.0.1:8188';
 let stUrl = localStorage.getItem('sillytavern_url') || 'http://127.0.0.1:8000';
 let bridgeUrl = localStorage.getItem('signal_bridge_url') || 'http://127.0.0.1:8765';
-let llmMode = 'local';  // 'local' (KoboldAI) or 'horde' (AI Horde)
+let llmMode = 'local';  // 'local' (Ollama/KoboldAI) or 'horde' (AI Horde)
+
+// Probe a local LLM server for liveness. Works for Ollama (/api/tags)
+// OR KoboldCpp (/api/v1/model). Returns true if either responds.
+async function probeLlm(url) {
+    for (const path of ['/api/tags', '/api/v1/model']) {
+        try {
+            const r = await fetch(`${url}${path}`, { signal: AbortSignal.timeout(5000) });
+            if (r.ok) return true;
+        } catch (e) { /* try next */ }
+    }
+    return false;
+}
 
 let characters = [];
 let activeCharacterId = null;
@@ -476,6 +488,212 @@ async function checkSignalBridgeConnection() {
     }
 }
 
+// ── Active interfaces (cross-interface backbone) ──────────────────
+// Polls /api/interfaces and renders a chip row for each interface the
+// Guild registry reports as installed + enabled + online. No dead chips
+// — an uninstalled or offline interface simply doesn't appear here.
+//
+// `window.activeInterfaces` is the source of truth consumed by the
+// starter-chip and image-action-chip renderers, so a "Send to Resolve"
+// chip only appears when Resolve is actually there.
+window.activeInterfaces = {};   // key -> snapshot dict
+window.activeInterfacesKeys = []; // ordered list of active keys
+
+async function refreshActiveInterfaces() {
+    try {
+        const res = await fetch('/api/interfaces');
+        if (!res.ok) {
+            if (res.status === 501) return; // backbone disabled — skip silently
+            throw new Error(`HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        const ifaces = data.interfaces || {};
+        // Filter to active only (installed + enabled + online). The Guild
+        // itself is always active when this page is loaded; skip it here
+        // since it's the thing rendering the UI.
+        const active = {};
+        const keys = [];
+        for (const [k, v] of Object.entries(ifaces)) {
+            if (k === 'guild') continue;
+            if (v.installed && v.enabled && v.online) {
+                active[k] = v;
+                keys.push(k);
+            }
+        }
+        window.activeInterfaces = active;
+        window.activeInterfacesKeys = keys;
+        renderActiveInterfaceChips();
+    } catch (e) {
+        // Silent — the feature is optional. Hide the strip.
+        window.activeInterfaces = {};
+        window.activeInterfacesKeys = [];
+        renderActiveInterfaceChips();
+    }
+}
+
+function renderActiveInterfaceChips() {
+    const container = document.getElementById('active-interfaces-container');
+    const row = document.getElementById('active-interfaces-row');
+    if (!container || !row) return;
+    const keys = window.activeInterfacesKeys || [];
+    if (keys.length === 0) {
+        container.style.display = 'none';
+        row.innerHTML = '';
+        return;
+    }
+    container.style.display = '';
+    const html = keys.map(k => {
+        const v = window.activeInterfaces[k];
+        const label = v.ui_label || k;
+        const icon = v.icon || '🔌';
+        const tooltip = (v.capabilities || []).join(', ') || 'connected';
+        return `<span class="active-iface-chip" title="${tooltip}">${icon} ${label}</span>`;
+    }).join('');
+    row.innerHTML = html;
+}
+
+// Exposed so starter_chips.js and image-action renderers can filter by it
+window.isInterfaceActive = function(key) {
+    return !!(window.activeInterfaces && window.activeInterfaces[key]);
+};
+
+// ── Recent assets across every interface ──────────────────────────
+// The shared asset gallery (/api/assets) collects images from every
+// Spellcaster frontend. We render the last N image assets as thumbnails
+// in the sidebar. Clicking a thumb "uses" the asset — dropping it as a
+// reference into the currently-active wizard's chat.
+
+window._recentAssets = [];          // ordered by ts descending
+window._recentAssetLimit = 9;       // 3x3 grid
+window._recentAssetSSE = null;      // EventSource handle, re-created on need
+
+async function refreshRecentAssets() {
+    try {
+        const res = await fetch('/api/assets?limit=' + window._recentAssetLimit);
+        if (!res.ok) {
+            if (res.status === 501) return; // gallery disabled
+            throw new Error('HTTP ' + res.status);
+        }
+        const data = await res.json();
+        const assets = (data.assets || []).filter(a =>
+            a && a.mime && a.mime.startsWith('image/'));
+        window._recentAssets = assets;
+        renderRecentAssets();
+    } catch (e) {
+        // Silent — the widget is optional
+    }
+}
+
+function renderRecentAssets() {
+    const container = document.getElementById('recent-assets-container');
+    const row = document.getElementById('recent-assets-row');
+    if (!container || !row) return;
+    const assets = window._recentAssets || [];
+    if (assets.length === 0) {
+        container.style.display = 'none';
+        row.innerHTML = '';
+        return;
+    }
+    container.style.display = '';
+    row.innerHTML = '';
+    for (const a of assets) {
+        const thumb = document.createElement('div');
+        thumb.className = 'recent-asset-thumb';
+        thumb.dataset.hash = a.hash;
+        thumb.style.backgroundImage = "url('/api/assets/" + a.hash + "')";
+        const tooltipTitle = a.title || a.prompt || '';
+        const tooltip = `${_originLabel(a.origin)}${tooltipTitle ? ' · ' + tooltipTitle : ''}`;
+        thumb.title = tooltip;
+        const badge = document.createElement('span');
+        badge.className = 'recent-asset-origin-badge';
+        badge.textContent = _originIcon(a.origin);
+        thumb.appendChild(badge);
+        thumb.addEventListener('click', () => _onRecentAssetClick(a));
+        row.appendChild(thumb);
+    }
+}
+
+function _originIcon(origin) {
+    const icons = {
+        guild: '💬',
+        gimp: '🖼️',
+        darktable: '📷',
+        resolve: '🎬',
+        sillytavern: '🎭',
+        signal: '📱',
+    };
+    return icons[origin] || '🔌';
+}
+
+function _originLabel(origin) {
+    const labels = {
+        guild: 'Wizard Guild',
+        gimp: 'GIMP',
+        darktable: 'Darktable',
+        resolve: 'DaVinci Resolve',
+        sillytavern: 'SillyTavern',
+        signal: 'Signal',
+    };
+    return labels[origin] || origin || 'unknown';
+}
+
+function _onRecentAssetClick(asset) {
+    // Drop the asset into the active wizard's chat as an image
+    // reference. Uses the same pending-attachment mechanism cross-
+    // wizard chips use — adds a user-side attachment bubble with the
+    // thumbnail, then fires an LLM message referring to it.
+    if (!asset || !asset.hash) return;
+    const absUrl = window.location.origin + '/api/assets/' + asset.hash;
+    if (typeof _renderPendingAttachment === 'function') {
+        _renderPendingAttachment({
+            imageUrl: absUrl,
+            message: `I want to use this ${_originLabel(asset.origin).toLowerCase()} image as a reference.`,
+        });
+    }
+}
+
+function subscribeRecentAssetEvents() {
+    // EventSource auto-reconnects — we only need to set it up once.
+    if (window._recentAssetSSE) return;
+    try {
+        const url = '/api/events/stream?kinds=' + encodeURIComponent([
+            'guild.asset.uploaded', 'gimp.asset.uploaded',
+            'darktable.asset.uploaded', 'resolve.asset.uploaded',
+        ].join(','));
+        const es = new EventSource(url);
+        window._recentAssetSSE = es;
+        const handler = (ev) => {
+            // Refresh and briefly flash the newly-landed thumb
+            refreshRecentAssets().then(() => {
+                try {
+                    const data = JSON.parse(ev.data || '{}');
+                    const hash = data.data && data.data.hash;
+                    if (hash) _flashRecentAsset(hash);
+                } catch (_) {/* no-op */}
+            });
+        };
+        es.addEventListener('guild.asset.uploaded', handler);
+        es.addEventListener('gimp.asset.uploaded', handler);
+        es.addEventListener('darktable.asset.uploaded', handler);
+        es.addEventListener('resolve.asset.uploaded', handler);
+        es.addEventListener('error', () => {
+            // EventSource will auto-retry; nothing to do
+        });
+    } catch (e) {
+        // SSE unsupported — fall through to polling only
+    }
+}
+
+function _flashRecentAsset(hash) {
+    const el = document.querySelector(
+        `.recent-asset-thumb[data-hash="${hash}"]`);
+    if (!el) return;
+    el.classList.remove('recent-asset-flash');
+    // Force reflow so the animation restarts
+    void el.offsetWidth;
+    el.classList.add('recent-asset-flash');
+}
+
 function addTypingIndicator() {
     const div = document.createElement('div');
     div.className = 'message ai-message';
@@ -567,6 +785,17 @@ async function initialize() {
     setInterval(checkComfyConnection, 5000);
     setInterval(checkSillyTavernConnection, 30000);
     setInterval(checkSignalBridgeConnection, 30000);
+    // Active-interfaces widget — polls /api/interfaces and renders chips
+    // for every frontend the registry reports as installed+enabled+online.
+    // Dynamic: if no interface qualifies, the whole strip stays hidden.
+    refreshActiveInterfaces();
+    setInterval(refreshActiveInterfaces, 10000);
+    // Recent-assets strip — polls /api/assets and subscribes to
+    // *.asset.uploaded on the event bus for live updates. Shows the
+    // most recent N images from every connected interface.
+    refreshRecentAssets();
+    setInterval(refreshRecentAssets, 15000);
+    subscribeRecentAssetEvents();
 
     // Check if video models available (for Animate All button)
     checkVideoModelAvailable();
@@ -1250,8 +1479,7 @@ async function checkLlmAndGenerateNames() {
             llmStatus.title = "\u26a0 ZERO PRIVACY — All text sent to volunteer workers";
             await generateNamesForCharacters();
         } else {
-            const testRes = await fetch(`${koboldUrl}/api/v1/model`);
-            if(testRes.ok) {
+            if (await probeLlm(koboldUrl)) {
                 llmDot.className = "dot green";
                 llmStatus.textContent = "LLM: Connected";
                 await generateNamesForCharacters();
@@ -1266,6 +1494,8 @@ async function checkLlmAndGenerateNames() {
 async function generateNamesForCharacters() {
     // If a character name is Unnamed Wizard, prompt the LLM to rename it
     // Studio characters already have proper names — skip them
+    // Track names already assigned so near-identical models don't collide
+    const takenNames = new Set(characters.filter(c => c.name && c.name !== "Unnamed Wizard").map(c => c.name.toLowerCase()));
     for(let i=0; i<characters.length; i++) {
         let char = characters[i];
         if(char.type === "studio" && !char.personality) {
@@ -1281,11 +1511,21 @@ async function generateNamesForCharacters() {
             saveIdentity(char);
         }
         if(char.name === "Unnamed Wizard") {
-            let context = `Context: We are naming magical avatars.\nCommand: Invent a single, very short, creative fantasy name (e.g. Zephyr) for a wizard specializing in: ${char.subtext}. Do NOT use titles like 'Master of'.\nName:`;
+            // First attempt — free-form generation
+            let avoidList = takenNames.size > 0 ? `\nAvoid these names (already taken): ${Array.from(takenNames).slice(0, 20).join(", ")}.` : "";
+            let context = `Context: We are naming magical avatars.\nCommand: Invent a single, very short, creative fantasy name (e.g. Zephyr) for a wizard specializing in: ${char.subtext}. Do NOT use titles like 'Master of'.${avoidList}\nName:`;
             try {
                 const data = await llmGenerate({ prompt: context, max_length: 15, temperature: 0.8, stop_sequence: ["\n", "."] });
                 let llmName = data.results[0].text.trim().replace(/["']/g, '');
-                if(llmName) char.name = llmName;
+                // Uniquify against taken names — append roman numeral if collision
+                if (llmName && takenNames.has(llmName.toLowerCase())) {
+                    const romans = ["II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
+                    for (const r of romans) {
+                        const candidate = `${llmName} ${r}`;
+                        if (!takenNames.has(candidate.toLowerCase())) { llmName = candidate; break; }
+                    }
+                }
+                if(llmName) { char.name = llmName; takenNames.add(llmName.toLowerCase()); }
                 saveIdentity(char);
                 renderSidebar(searchInput.value);
                 
@@ -2142,6 +2382,10 @@ async function selectCharacter(id) {
             chatHistory.push(rec);
             _replayChatRecord(rec);
         }
+        // If the only record is a greeting (no user interaction yet), show chips
+        if (history.length === 1 && history[0].role === 'assistant') {
+            renderStarterChips();
+        }
     } else {
         let intro;
         if (char.type === "studio") {
@@ -2151,10 +2395,70 @@ async function selectCharacter(id) {
         }
         chatHistory.push({ role: 'assistant', content: intro });
         addAIMessage(intro);
+        renderStarterChips();
+    }
+
+    // If a pending image is coming in from an "image action chip" on
+    // another wizard, drop an attachment bubble + canned message now.
+    if (window._pendingImageContext) {
+        const ctx = window._pendingImageContext;
+        window._pendingImageContext = null;
+        _renderPendingAttachment(ctx);
     }
 
     // GSAP: burst effect on avatar selection
     _avatarSelectBurst(activeAvatar);
+}
+
+// Render the starter chip strip below the current greeting.
+// Chips send a natural-English phrase to the LLM on click.
+function renderStarterChips() {
+    if (typeof window.getStarterChips !== 'function') return;
+    const chips = window.getStarterChips(activeCharacterId);
+    if (!chips || !chips.length) return;
+
+    // Kill any existing strip first (defensive)
+    const old = chatStream.querySelector('.starter-chips');
+    if (old) old.remove();
+
+    const strip = document.createElement('div');
+    strip.className = 'starter-chips';
+    chips.forEach(c => {
+        const btn = document.createElement('button');
+        btn.className = 'option-btn starter-chip';
+        btn.innerHTML = `<span class="chip-icon">${c.icon}</span><span class="chip-label">${c.label}</span>`;
+        btn.addEventListener('click', () => {
+            strip.remove();
+            addUserMessage(c.label);
+            askKobold(c.message);
+        });
+        strip.appendChild(btn);
+    });
+    chatStream.appendChild(strip);
+    chatStream.scrollTop = chatStream.scrollHeight;
+}
+
+// Called when the user clicked an image-action chip on a DIFFERENT wizard.
+// Renders an "attachment" bubble in the new wizard's chat and fires the
+// canned message to the LLM.
+function _renderPendingAttachment(ctx) {
+    const { imageUrl, message } = ctx;
+    // Show the image as an attachment bubble (user side)
+    const msg = document.createElement('div');
+    msg.className = 'message user-message';
+    msg.innerHTML = `
+        <div class="avatar-small">${USER_SPARKLE_SVG}</div>
+        <div class="bubble">
+            <p style="font-size:12px;opacity:.8;margin:0 0 6px;">📎 Working with this image:</p>
+            <img src="${imageUrl}" class="attachment-image" style="max-width:200px;border-radius:6px;display:block;">
+        </div>
+    `;
+    chatStream.appendChild(msg);
+    _persistChatRecord({ role: 'user', content: `[attached image: ${imageUrl}]`, ts: Date.now() / 1000 });
+
+    // Then send the canned LLM message
+    addUserMessage(message);
+    askKobold(`${message}\n\n[The user has attached this image: ${imageUrl}]`);
 }
 
 function _parseNumberedOptions(text) {
@@ -2231,6 +2535,9 @@ function addUserMessage(text, opts = {}) {
         <div class="avatar-small">${USER_SPARKLE_SVG}</div>
         <div class="bubble"><p>${text}</p></div>
     `;
+    // Starter chips are only for the cold-start. Any user message kills them.
+    const starter = chatStream.querySelector('.starter-chips');
+    if (starter) starter.remove();
     chatStream.appendChild(msg);
     chatStream.scrollTop = chatStream.scrollHeight;
     _messageEntrance(msg);
@@ -2295,12 +2602,39 @@ function addGenerationMessage(payload, mediaType, urls, opts = {}) {
         `;
     }
 
+    // Image action chips — universal next-step actions below every
+    // generated image. Clicking either switches to another wizard
+    // (with the image attached as context) or stays and fires a
+    // canned message. Only rendered for image outputs; videos skip.
+    //
+    // Cross-interface chips (targetInterface set) are filtered here
+    // so a "Send to Resolve" chip never appears when Resolve isn't
+    // installed + online. No dead functions in the UI.
+    let imageActionsHtml = '';
+    if (mediaType === 'images' && urls.length > 0 && typeof window.getImageActionChips === 'function') {
+        const actions = window.getImageActionChips().filter(a => {
+            if (!a.targetInterface) return true;  // guild-internal chips always show
+            return typeof window.isInterfaceActive === 'function'
+                && window.isInterfaceActive(a.targetInterface);
+        });
+        const firstUrl = urls[0];
+        imageActionsHtml = '<div class="image-action-chips" data-img-url="' + firstUrl + '">' +
+            actions.map((a, i) =>
+                `<button class="option-btn image-action-chip" data-idx="${i}" title="${a.label}">` +
+                `<span class="chip-icon">${a.icon}</span><span class="chip-label">${a.label}</span></button>`
+            ).join('') +
+            `<button class="option-btn image-action-chip image-action-more" data-more="1" title="More actions">` +
+            `<span class="chip-icon">\u22ef</span><span class="chip-label">More</span></button>` +
+            '</div>';
+    }
+
     msg.innerHTML = `
         <div class="avatar-small comfyui-logo">${COMFYUI_LOGO_SVG}</div>
         <div class="bubble system-bubble">
             <p><strong>Spell Complete!</strong></p>
             ${mediaHtml}
             ${recastBtnHtml}
+            ${imageActionsHtml}
         </div>
     `;
 
@@ -2318,6 +2652,32 @@ function addGenerationMessage(payload, mediaType, urls, opts = {}) {
         });
     }
 
+    // Wire image action chips — switch wizard (if needed) + attach image + send canned message
+    const actionStrip = msg.querySelector('.image-action-chips');
+    if (actionStrip) {
+        const imgUrl = actionStrip.dataset.imgUrl;
+        actionStrip.querySelectorAll('.image-action-chip').forEach(btn => {
+            btn.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                if (btn.dataset.more === '1') {
+                    _showImageActionOverflow(btn, imgUrl);
+                    return;
+                }
+                const idx = parseInt(btn.dataset.idx, 10);
+                // Same filter as the renderer so indices line up with
+                // the chips that were actually displayed
+                const actions = window.getImageActionChips().filter(a => {
+                    if (!a.targetInterface) return true;
+                    return typeof window.isInterfaceActive === 'function'
+                        && window.isInterfaceActive(a.targetInterface);
+                });
+                const action = actions[idx];
+                if (!action) return;
+                _dispatchImageAction(action, imgUrl);
+            });
+        });
+    }
+
     chatStream.appendChild(msg);
     chatStream.scrollTop = chatStream.scrollHeight;
     _messageEntrance(msg);
@@ -2330,6 +2690,163 @@ function addGenerationMessage(payload, mediaType, urls, opts = {}) {
             ts: Date.now() / 1000,
         });
     }
+}
+
+// Dispatch an image-action chip click.
+// If the action targets another wizard, stash the image URL + message
+// in a global, switch to that wizard (which will render an attachment
+// bubble + fire the canned message via _renderPendingAttachment).
+// If targetWizard is null, fire the message on the current wizard.
+// Special case: message === "__DOWNLOAD__" triggers a download.
+function _dispatchImageAction(action, imageUrl) {
+    if (!action) return;
+    if (action.message === "__DOWNLOAD__") {
+        // Save-to-disk: open the image in a new tab with download hint
+        const a = document.createElement('a');
+        a.href = imageUrl;
+        a.download = imageUrl.split('/').pop().split('?')[0] || 'spellcaster_image.png';
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        return;
+    }
+
+    // Cross-interface chip: persist the image to the shared gallery
+    // (so the URL is stable across privacy cleanup) then fire a bus
+    // event the external plugin subscribes to. Plugin does whatever's
+    // appropriate on its side (import into media pool, open in editor).
+    // We only render a confirmation bubble in chat — no wizard switch.
+    if (action.targetInterface) {
+        const absUrl = (imageUrl && imageUrl.startsWith('http'))
+            ? imageUrl
+            : new URL(imageUrl, window.location.origin).href;
+        const kind = action.actionKind || `${action.targetInterface}.asset.send`;
+        addSystemMessage(`<em>${action.icon} ${action.message}</em>`);
+        // Fire-and-forget async: persist → emit. If the gallery is
+        // disabled or the source URL is unreachable, fall back to
+        // emitting with the raw URL.
+        _persistAndEmitAsset(absUrl, kind, action);
+        return;
+    }
+
+    // Fire on current wizard — just send the canned message inline
+    if (!action.targetWizard || action.targetWizard === activeCharacterId) {
+        addUserMessage(action.label);
+        askKobold(`${action.message}\n\n[The user is referring to this image: ${imageUrl}]`);
+        return;
+    }
+
+    // Cross-wizard: stash context, switch, and let selectCharacter render
+    // the attachment bubble + fire the canned message once history loads.
+    window._pendingImageContext = {
+        imageUrl: imageUrl,
+        message: action.message,
+    };
+    selectCharacter(action.targetWizard);
+}
+
+// Persist an image URL to the shared gallery, then emit a bus event
+// so the target interface receives both a stable hash URL AND the
+// original reference. External plugins can use whichever they prefer.
+async function _persistAndEmitAsset(imageUrl, kind, action) {
+    let assetHash = null;
+    let galleryUrl = null;
+    try {
+        // Pull the bytes (same-origin, should be fast)
+        const resp = await fetch(imageUrl);
+        if (resp.ok) {
+            const blob = await resp.blob();
+            const b64 = await _blobToBase64(blob);
+            const uploadResp = await fetch('/api/assets', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    origin: 'guild',
+                    kind: 'send_to_' + (action.targetInterface || 'other'),
+                    title: action.label || '',
+                    prompt: action.message || '',
+                    body_b64: b64,
+                    meta: {source_url: imageUrl},
+                }),
+            });
+            if (uploadResp.ok) {
+                const rec = await uploadResp.json();
+                assetHash = rec.hash;
+                galleryUrl = window.location.origin + '/api/assets/' + rec.hash;
+            }
+        }
+    } catch (e) { /* fall through — emit without gallery */ }
+
+    // Emit the event whether or not the upload succeeded
+    fetch('/api/events/emit', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            kind: kind,
+            origin: 'guild',
+            data: {
+                image_url: galleryUrl || imageUrl,  // prefer stable URL
+                source_url: imageUrl,
+                asset_hash: assetHash,
+                source: 'image-action-chip',
+                chip_label: action.label || '',
+            },
+        }),
+    }).catch(() => {/* silent */});
+}
+
+function _blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            // result looks like "data:image/png;base64,iVBORw0KGgo..."
+            const s = reader.result || '';
+            const comma = s.indexOf(',');
+            resolve(comma >= 0 ? s.substring(comma + 1) : s);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+}
+
+// Show the overflow menu for extra image actions.
+function _showImageActionOverflow(anchorBtn, imageUrl) {
+    if (typeof window.getImageActionOverflow !== 'function') return;
+    // Remove any existing overflow popover
+    document.querySelectorAll('.image-action-overflow').forEach(el => el.remove());
+
+    // Same interface-gating as the primary chips: an overflow entry
+    // that targets an absent interface stays out of the menu
+    const overflow = window.getImageActionOverflow().filter(a => {
+        if (!a.targetInterface) return true;
+        return typeof window.isInterfaceActive === 'function'
+            && window.isInterfaceActive(a.targetInterface);
+    });
+    const pop = document.createElement('div');
+    pop.className = 'image-action-overflow';
+    overflow.forEach((a, i) => {
+        const item = document.createElement('button');
+        item.className = 'option-btn image-action-chip image-action-overflow-item';
+        item.innerHTML = `<span class="chip-icon">${a.icon}</span><span class="chip-label">${a.label}</span>`;
+        item.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            pop.remove();
+            _dispatchImageAction(a, imageUrl);
+        });
+        pop.appendChild(item);
+    });
+    // Position below the "More" button
+    anchorBtn.parentElement.appendChild(pop);
+
+    // Dismiss on outside click
+    const dismiss = (ev) => {
+        if (!pop.contains(ev.target) && ev.target !== anchorBtn) {
+            pop.remove();
+            document.removeEventListener('click', dismiss, true);
+        }
+    };
+    setTimeout(() => document.addEventListener('click', dismiss, true), 0);
 }
 
 // Open the Archivist's recast prompt with an inline N-times batch form.

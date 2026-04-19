@@ -29,6 +29,9 @@ import logging
 import os
 import threading
 import time
+import json
+import queue
+from dataclasses import dataclass, field, asdict
 from typing import Any, Callable, Dict, List, Optional
 
 from .comfyui_runner import ComfyUIRunner
@@ -94,6 +97,25 @@ class VideoBridge:
         self._in_flight: Dict[str, threading.Thread] = {}
         self._in_flight_lock = threading.Lock()
 
+        # SSE event bus
+        self._sse_subscribers: list = []
+        self._sse_lock = threading.Lock()
+        # Render progress tracking
+        self._active_progress: float = 0.0
+        self._active_stage: str = "idle"
+        self._active_started: float = 0.0
+        # Queue pause control
+        self._paused: bool = False
+        # Render concurrency limit — semaphore gates worker threads
+        self._max_concurrent: int = 2
+        self._render_sem = threading.Semaphore(self._max_concurrent)
+
+        # Export settings for final video assembly
+        self._export_settings = ExportSettings()
+
+        # Favorite presets
+        self._favorite_presets: List[str] = []
+
     # ------------------------------------------------------------------
     # Health
     # ------------------------------------------------------------------
@@ -119,6 +141,69 @@ class VideoBridge:
             },
             "in_flight": list(self._in_flight.keys()),
             "presets": preset_names(),
+            "render_progress": self.render_progress(),
+            "total_shots": len(self.board),
+            "ready_count": sum(1 for s in self.board if s.status == "ready"),
+        }
+
+    # ------------------------------------------------------------------
+    # SSE event bus
+    # ------------------------------------------------------------------
+
+    def subscribe(self):
+        """Return a Queue that will receive SSE events."""
+        import queue as _queue
+        q = _queue.Queue(maxsize=64)
+        with self._sse_lock:
+            self._sse_subscribers.append(q)
+        return q
+
+    def unsubscribe(self, q):
+        """Remove a subscriber queue."""
+        with self._sse_lock:
+            try:
+                self._sse_subscribers.remove(q)
+            except ValueError:
+                pass
+
+    def _emit(self, event: str, data: Dict[str, Any]) -> None:
+        """Push an event to all SSE subscribers."""
+        msg = {"event": event, "data": data, "ts": time.time()}
+        with self._sse_lock:
+            dead = []
+            for q in self._sse_subscribers:
+                try:
+                    q.put_nowait(msg)
+                except Exception:
+                    dead.append(q)
+            for q in dead:
+                try:
+                    self._sse_subscribers.remove(q)
+                except ValueError:
+                    pass
+
+    def _emit_shot_update(self, shot_id: str, **fields) -> None:
+        """Emit a shot-update SSE event."""
+        self._emit("shot-update", {"shot_id": shot_id, **fields})
+
+    def render_progress(self) -> Dict[str, Any]:
+        """Return current render progress for the UI."""
+        with self._in_flight_lock:
+            active_ids = list(self._in_flight.keys())
+        if not active_ids:
+            return {"active": None, "stage": "idle", "progress": 0}
+        shot_id = active_ids[0]
+        if self._active_progress > 0:
+            pct = min(self._active_progress * 0.8, 80)
+        elif self._active_started > 0:
+            elapsed = time.time() - self._active_started
+            pct = min(elapsed / 120 * 80, 80)
+        else:
+            pct = 0
+        return {
+            "active": shot_id,
+            "stage": self._active_stage,
+            "progress": round(pct, 1),
         }
 
     # ------------------------------------------------------------------
@@ -204,6 +289,9 @@ class VideoBridge:
         if not shot:
             return {"status": "error", "message": "shot not found"}
 
+        if self._paused:
+            return {"status": "paused", "message": "queue is paused"}
+
         with self._in_flight_lock:
             if shot_id in self._in_flight:
                 return {"status": "already_running",
@@ -251,12 +339,18 @@ class VideoBridge:
         if shot.trajectories:
             trajectories = [t.to_dict() for t in shot.trajectories]
 
+        overrides = dict(shot.overrides or {})
+        if shot.negative:
+            overrides.setdefault("negative_prompt", shot.negative)
+        if shot.seed is not None:
+            overrides.setdefault("seed", shot.seed)
+
         queue_result = self.wangp.queue_generation(
             preset=shot.preset,
             prompt=shot.prompt,
             image_path=shot.ref_image,
             trajectories=trajectories,
-            overrides=shot.overrides,
+            overrides=overrides,
         )
         if queue_result.get("status") != "queued":
             self.board.mark_failed(
@@ -269,9 +363,15 @@ class VideoBridge:
         self.board.mark_queued(shot.id, job_id)
 
         def worker() -> None:
+            self._render_sem.acquire()
             try:
                 self.board.mark_running(shot.id)
-                result = self.wangp.wait(job_id, endpoint_hint=endpoint)
+                render_start = time.time()
+                self._active_started = render_start
+                self._active_stage = "rendering"
+                def _on_wangp_progress(pct):
+                    self._active_progress = pct
+                result = self.wangp.wait(job_id, endpoint_hint=endpoint, on_progress=_on_wangp_progress)
                 if result.get("status") != "ok":
                     self.board.mark_failed(
                         shot.id, result.get("message", "WanGP error")
@@ -296,6 +396,9 @@ class VideoBridge:
                     )
                     return
                 self.board.mark_ready(shot.id, local)
+                elapsed = time.time() - render_start
+                self.board.update(shot.id, render_duration_s=elapsed)
+                self._emit_shot_update(shot.id, status="ready")
                 # Continuity hand-off: extract last frame and wire it
                 # as the next shot's reference image.
                 last_frame = extract_last_frame(local)
@@ -308,6 +411,10 @@ class VideoBridge:
                     except Exception:  # noqa: BLE001
                         log.exception("on_complete raised")
             finally:
+                self._render_sem.release()
+                self._active_progress = 0.0
+                self._active_stage = "idle"
+                self._active_started = 0.0
                 with self._in_flight_lock:
                     self._in_flight.pop(shot.id, None)
 
@@ -322,6 +429,57 @@ class VideoBridge:
                 "backend": "wangp", "job_id": job_id}
 
     # ---- ComfyUI path ----------------------------------------------
+
+    @staticmethod
+    def _patch_comfy_workflow(workflow: Dict[str, Any], shot) -> Dict[str, Any]:
+        """Inject shot fields into a ComfyUI API-format workflow."""
+        import copy as _copy
+        patched = _copy.deepcopy(workflow)
+        ov = dict(shot.overrides or {})
+        for nid, node in patched.items():
+            if not isinstance(node, dict):
+                continue
+            ct = node.get("class_type", "")
+            inp = node.get("inputs", {})
+            meta_title = (node.get("_meta") or {}).get("title", "").lower()
+            # Prompt injection
+            if ct == "CLIPTextEncode" and "text" in inp:
+                if "positive" in meta_title and shot.prompt:
+                    inp["text"] = shot.prompt
+                elif "negative" in meta_title and shot.negative:
+                    inp["text"] = shot.negative
+            # Seed injection
+            if ct == "KSampler" and "seed" in inp:
+                if shot.seed is not None:
+                    inp["seed"] = shot.seed
+                if "steps" in ov:
+                    inp["steps"] = ov["steps"]
+                if "guidance" in ov or "cfg" in ov:
+                    inp["cfg"] = ov.get("guidance", ov.get("cfg", inp.get("cfg")))
+            # BasicScheduler
+            if ct == "BasicScheduler" and "steps" in inp:
+                if "steps" in ov:
+                    inp["steps"] = ov["steps"]
+            # CFGGuider
+            if ct == "CFGGuider" and "cfg" in inp:
+                if "guidance" in ov or "cfg" in ov:
+                    inp["cfg"] = ov.get("guidance", ov.get("cfg", inp.get("cfg")))
+            # EmptyLatentVideo
+            if ct == "EmptyLatentVideo":
+                if "frames" in ov and "length" in inp:
+                    inp["length"] = ov["frames"]
+                if "resolution" in ov:
+                    try:
+                        w, h = ov["resolution"].split("x")
+                        inp["width"] = int(w)
+                        inp["height"] = int(h)
+                    except (ValueError, AttributeError):
+                        pass
+            # LoadImage ref injection
+            if ct == "LoadImage" and "image" in inp:
+                if shot.ref_image:
+                    inp["image"] = os.path.basename(shot.ref_image)
+        return patched
 
     def _queue_comfy(self, shot: Shot,
                      on_complete: Optional[Callable[[Shot], None]]
@@ -360,10 +518,18 @@ class VideoBridge:
             self.board.mark_failed(shot.id, f"bad workflow json: {exc}")
             return {"status": "error", "message": str(exc)}
 
+        # Patch workflow with shot fields
+        workflow = VideoBridge._patch_comfy_workflow(workflow, shot)
+        # Upload ref image if present
+        if shot.ref_image and os.path.isfile(shot.ref_image):
+            self.comfy.upload_image(shot.ref_image, os.path.basename(shot.ref_image))
+
         self.board.mark_running(shot.id)
 
         def worker() -> None:
+            self._render_sem.acquire()
             try:
+                comfy_render_start = time.time()
                 result = self.comfy.run_raw(workflow)
                 if result.get("status") != "ok":
                     self.board.mark_failed(
@@ -392,6 +558,8 @@ class VideoBridge:
                 with open(local, "wb") as fh:
                     fh.write(data)
                 self.board.mark_ready(shot.id, local)
+                elapsed = time.time() - comfy_render_start
+                self.board.update(shot.id, render_duration_s=elapsed)
                 last_frame = extract_last_frame(local)
                 self.board.export_for_next(shot.id, last_frame)
                 if on_complete:
@@ -400,6 +568,10 @@ class VideoBridge:
                     except Exception:  # noqa: BLE001
                         log.exception("on_complete raised")
             finally:
+                self._render_sem.release()
+                self._active_progress = 0.0
+                self._active_stage = "idle"
+                self._active_started = 0.0
                 with self._in_flight_lock:
                     self._in_flight.pop(shot.id, None)
 
@@ -511,19 +683,348 @@ class VideoBridge:
         log.info("Hybrid upscale complete for shot %s -> %s",
                  shot_id, upscaled_local)
 
+    # ------------------------------------------------------------------
+    # Render cancellation
+    # ------------------------------------------------------------------
+
+    def cancel_shot(self, shot_id: str) -> Dict[str, Any]:
+        """Cancel an in-flight render for the given shot.
+
+        Removes the thread from the in-flight tracker and marks the shot
+        as draft.  The thread itself is a daemon and will be abandoned
+        (we cannot safely kill threads in Python, but daemon threads die
+        with the process).
+        """
+        with self._in_flight_lock:
+            thread = self._in_flight.pop(shot_id, None)
+        if not thread:
+            return {"status": "error", "message": "shot not in flight"}
+        self.board.update(shot_id, status="draft", error=None, job_id=None)
+        self._active_progress = 0.0
+        self._active_stage = "idle"
+        self._active_started = 0.0
+        self._emit_shot_update(shot_id, status="cancelled")
+        log.info("Cancelled render for shot %s", shot_id)
+        return {"status": "ok", "shot_id": shot_id}
+
+    # ------------------------------------------------------------------
+    # Batch rendering
+    # ------------------------------------------------------------------
+
+    def queue_all_drafts(self) -> Dict[str, Any]:
+        """Queue all draft shots in dependency-respecting order.
+
+        Uses topological sort so dependencies render before the shots
+        that need them.  Shots with unmet dependencies are deferred
+        until their deps complete.
+
+        Returns ``{"queued": N, "skipped": M, "deferred": D,
+        "has_cycle": bool, "shot_ids": [...]}``
+        """
+        # Use topological order so deps render first
+        sorted_shots = self.board.topological_sort()
+        drafts = [s for s in sorted_shots if s.status == "draft"]
+        has_cycle = self.board.has_cycle()
+        if not drafts:
+            return {"queued": 0, "skipped": 0, "deferred": 0,
+                    "has_cycle": has_cycle, "shot_ids": []}
+
+        queued_ids: List[str] = []
+        skipped = 0
+
+        first = drafts[0]
+        result = self.queue_shot(first.id)
+        if result.get("status") in ("queued", "already_running"):
+            queued_ids.append(first.id)
+        else:
+            skipped += 1
+
+        remaining = drafts[1:]
+        if remaining:
+            chain = list(remaining)
+
+            def _batch_watcher() -> None:
+                for nxt in chain:
+                    while True:
+                        with self._in_flight_lock:
+                            busy = bool(self._in_flight)
+                        if not busy:
+                            break
+                        time.sleep(2.0)
+                    # Respect pause flag
+                    while self._paused:
+                        time.sleep(1.0)
+                    fresh = self.board.get(nxt.id)
+                    if fresh and fresh.status == "draft":
+                        self.queue_shot(nxt.id)
+                        queued_ids.append(nxt.id)
+
+            watcher = threading.Thread(
+                target=_batch_watcher,
+                name="batch-render-watcher",
+                daemon=True,
+            )
+            watcher.start()
+            queued_ids.extend(s.id for s in remaining)
+
+        return {
+            "queued": len(queued_ids),
+            "skipped": skipped,
+            "deferred": 0,
+            "has_cycle": has_cycle,
+            "shot_ids": queued_ids,
+        }
+
+    def reset_failed(self) -> Dict[str, Any]:
+        """Reset all failed shots back to draft so they can be re-queued."""
+        failed = [s for s in self.board if s.status == "failed"]
+        reset_ids: List[str] = []
+        for s in failed:
+            self.board.update(s.id, status="draft", error=None, job_id=None)
+            reset_ids.append(s.id)
+        return {"reset": len(reset_ids), "shot_ids": reset_ids}
+
+    # ------------------------------------------------------------------
+    # Queue pause / resume
+    # ------------------------------------------------------------------
+
+    def pause_queue(self) -> Dict[str, Any]:
+        """Pause the render queue. Running shots finish, but no new ones start."""
+        self._paused = True
+        self._emit("queue_paused", {})
+        return {"status": "paused"}
+
+    def resume_queue(self) -> Dict[str, Any]:
+        """Resume the render queue."""
+        self._paused = False
+        self._emit("queue_resumed", {})
+        return {"status": "resumed"}
+
+    def queue_status(self) -> Dict[str, Any]:
+        """Return current queue status."""
+        with self._in_flight_lock:
+            in_flight = list(self._in_flight.keys())
+        drafts = [s.id for s in self.board if s.status == "draft"]
+        queued = [s.id for s in self.board if s.status == "queued"]
+        return {
+            "paused": self._paused,
+            "in_flight": in_flight,
+            "drafts_pending": len(drafts),
+            "queued": len(queued),
+            "max_concurrent": self._max_concurrent,
+        }
+
+    # ------------------------------------------------------------------
+    # Render concurrency settings
+    # ------------------------------------------------------------------
+
+    def get_settings(self) -> Dict[str, Any]:
+        """Return current bridge settings."""
+        return {
+            "max_concurrent": self._max_concurrent,
+            "paused": self._paused,
+            "export": self._export_settings.to_dict(),
+            "favorite_presets": list(self._favorite_presets),
+        }
+
+    def set_max_concurrent(self, n: int) -> Dict[str, Any]:
+        """Update the maximum number of concurrent renders.
+
+        Rebuilds the semaphore.  Active renders are not interrupted;
+        the new limit takes effect for future queue_shot() calls.
+        """
+        n = max(1, min(n, 8))  # clamp 1–8
+        old = self._max_concurrent
+        self._max_concurrent = n
+        self._render_sem = threading.Semaphore(n)
+        self._emit("settings_changed", {"max_concurrent": n})
+        return {"max_concurrent": n, "previous": old}
+
+    def get_export_settings(self) -> Dict[str, Any]:
+        """Return current export settings as a dict."""
+        return self._export_settings.to_dict()
+
+    def set_export_settings(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Update export settings from a dict.  Returns the new settings."""
+        self._export_settings = ExportSettings.from_dict(data)
+        self._emit("settings_changed", {"export": self._export_settings.to_dict()})
+        return self._export_settings.to_dict()
+
+    def get_favorite_presets(self) -> List[str]:
+        """Return the list of favorited preset keys."""
+        return list(self._favorite_presets)
+
+    def set_favorite_presets(self, presets: List[str]) -> List[str]:
+        """Replace the favorites list.  Returns the new list."""
+        self._favorite_presets = list(presets)
+        self._emit("settings_changed", {"favorite_presets": self._favorite_presets})
+        return self._favorite_presets
+
+    def toggle_favorite_preset(self, preset: str) -> Dict[str, Any]:
+        """Toggle a preset's favorite status.  Returns updated list + status."""
+        if preset in self._favorite_presets:
+            self._favorite_presets.remove(preset)
+            added = False
+        else:
+            self._favorite_presets.append(preset)
+            added = True
+        self._emit("settings_changed", {"favorite_presets": self._favorite_presets})
+        return {"preset": preset, "favorited": added, "favorites": list(self._favorite_presets)}
+
+    # ------------------------------------------------------------------
+    # Render time estimation
+    # ------------------------------------------------------------------
+
+    def estimate_render_time(self, preset: str = None) -> Dict[str, Any]:
+        """Estimate render time based on historical data.
+
+        Looks at all completed shots and computes average render_duration_s
+        per preset.  If ``preset`` is given, returns estimate for that
+        preset only; otherwise returns estimates for all known presets.
+        """
+        by_preset: Dict[str, List[float]] = {}
+        for s in self.board:
+            if s.status == "ready" and s.render_duration_s:
+                by_preset.setdefault(s.preset, []).append(s.render_duration_s)
+        estimates: Dict[str, Dict[str, Any]] = {}
+        for p, durations in by_preset.items():
+            avg = sum(durations) / len(durations)
+            estimates[p] = {
+                "avg_seconds": round(avg, 1),
+                "sample_count": len(durations),
+                "min_seconds": round(min(durations), 1),
+                "max_seconds": round(max(durations), 1),
+            }
+        if preset:
+            return estimates.get(preset, {
+                "avg_seconds": None,
+                "sample_count": 0,
+                "min_seconds": None,
+                "max_seconds": None,
+            })
+        return {"estimates": estimates}
+
+    def batch_update_preset(self, shot_ids: List[str],
+                            preset: str) -> Dict[str, Any]:
+        """Change the preset for multiple shots at once."""
+        updated = 0
+        for sid in shot_ids:
+            shot = self.board.get(sid)
+            if shot and shot.status == "draft":
+                self.board.update(sid, preset=preset)
+                updated += 1
+        return {"updated": updated, "preset": preset}
+
+    # ------------------------------------------------------------------
+    # Prompt Templates
+    # ------------------------------------------------------------------
+
+    def _templates_path(self) -> str:
+        return os.path.join(os.path.dirname(self.board.path),
+                            "prompt_templates.json")
+
+    def _load_templates(self) -> Dict[str, Dict[str, str]]:
+        path = self._templates_path()
+        if os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, OSError):
+                pass
+        return {}
+
+    def _save_templates(self, templates: Dict[str, Dict[str, str]]) -> None:
+        path = self._templates_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(templates, f, indent=2)
+
+    def list_templates(self) -> Dict[str, Any]:
+        """Return all saved prompt templates."""
+        return {"templates": self._load_templates()}
+
+    def save_template(self, name: str, prompt: str,
+                      negative: str = "") -> Dict[str, Any]:
+        """Save or overwrite a prompt template."""
+        if not name or not name.strip():
+            return {"status": "error", "message": "template name required"}
+        templates = self._load_templates()
+        templates[name.strip()] = {"prompt": prompt, "negative": negative}
+        self._save_templates(templates)
+        return {"status": "ok", "name": name.strip()}
+
+    def delete_template(self, name: str) -> Dict[str, Any]:
+        """Delete a prompt template by name."""
+        templates = self._load_templates()
+        if name not in templates:
+            return {"status": "error", "message": "template not found"}
+        del templates[name]
+        self._save_templates(templates)
+        return {"status": "ok", "name": name}
+
+    # ------------------------------------------------------------------
+    # Clone with variation
+    # ------------------------------------------------------------------
+
+    def clone_shot(self, shot_id: str,
+                   variation: str = "") -> Dict[str, Any]:
+        """Duplicate a shot, optionally appending a variation to the prompt."""
+        source = self.board.get(shot_id)
+        if not source:
+            return {"status": "error", "message": "shot not found"}
+        prompt = source.prompt
+        if variation and variation.strip():
+            prompt = f"{prompt} ({variation.strip()})"
+        new_shot = self.board.add(
+            title=f"{source.title} — var" if source.title else "",
+            prompt=prompt,
+            negative=source.negative,
+            seed=None,
+            backend=source.backend,
+            preset=source.preset,
+            overrides=dict(source.overrides or {}),
+            notes=source.notes,
+            carry_last_frame=source.carry_last_frame,
+        )
+        return new_shot.to_dict()
+
+    # ------------------------------------------------------------------
+    # Export / Import
+    # ------------------------------------------------------------------
+
+    def export_shotboard(self) -> Dict[str, Any]:
+        """Return the full shotboard state as a JSON-serialisable dict."""
+        return self.board.as_dict()
+
+    def import_shotboard(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Replace the current shotboard with imported data."""
+        from .shotboard import Shot
+        shots_raw = data.get("shots", [])
+        if not isinstance(shots_raw, list):
+            return {"status": "error", "message": "invalid format: shots must be a list"}
+        for s in list(self.board):
+            self.board.remove(s.id)
+        imported = 0
+        for sd in shots_raw:
+            if not isinstance(sd, dict):
+                continue
+            shot = Shot.from_dict(sd)
+            shot.status = "draft"
+            shot.job_id = None
+            shot.error = None
+            self.board._shots.append(shot)
+            imported += 1
+        self.board._reindex()
+        self.board._persist()
+        return {"status": "ok", "imported": imported}
+
 
 # -----------------------------------------------------------------------------
 # Output helpers
 # -----------------------------------------------------------------------------
 
 def _pick_video_output(outputs: List[Any]) -> Optional[Dict[str, Any]]:
-    """Find the first video-ish file in a ComfyUI run's outputs list.
-
-    ComfyUIRunner returns a flat list of file descriptor dicts; video
-    nodes (VHS_VideoCombine, SaveVideo) emit mp4/gif under the
-    ``videos`` or ``gifs`` key per node, but ComfyUIRunner normalises
-    these into the outer list already.
-    """
+    """Find the first video-ish file in a ComfyUI run's outputs list."""
     for o in outputs or []:
         if not isinstance(o, dict):
             continue
@@ -531,3 +1032,271 @@ def _pick_video_output(outputs: List[Any]) -> Optional[Dict[str, Any]]:
         if name.endswith((".mp4", ".webm", ".mov", ".mkv", ".gif")):
             return o
     return None
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Assembly — concatenate all ready shots into one final video
+# ═══════════════════════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════════════════
+# Export settings
+# ══════════════════════════════════════════════════════════════════════
+
+# Supported codecs for final assembly
+EXPORT_CODECS = ("h264", "h265", "vp9", "prores")
+EXPORT_RESOLUTIONS = ("source", "1920x1080", "1280x720", "3840x2160", "1080x1920", "720x1280")
+
+
+@dataclass
+class ExportSettings:
+    """User-configurable settings for final video assembly.
+
+    resolution: "source" keeps original, or "WxH" string
+    codec: one of EXPORT_CODECS
+    fps: frames per second (0 = keep source)
+    crf: constant rate factor (quality; lower = better; 0-51 for h264/h265)
+    audio: whether to include audio tracks
+    """
+    resolution: str = "source"
+    codec: str = "h264"
+    fps: int = 0
+    crf: int = 23
+    audio: bool = True
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ExportSettings":
+        known = {f.name for f in cls.__dataclass_fields__.values()}
+        clean = {k: v for k, v in data.items() if k in known}
+        return cls(**clean)
+
+    def ffmpeg_output_args(self) -> List[str]:
+        """Build the ffmpeg output arguments for these settings."""
+        args = []
+        # Codec
+        codec_map = {
+            "h264": ["-c:v", "libx264"],
+            "h265": ["-c:v", "libx265"],
+            "vp9": ["-c:v", "libvpx-vp9"],
+            "prores": ["-c:v", "prores_ks", "-profile:v", "3"],
+        }
+        args.extend(codec_map.get(self.codec, ["-c:v", "libx264"]))
+        # CRF (not for prores)
+        if self.codec != "prores":
+            crf = max(0, min(51, self.crf))
+            args.extend(["-crf", str(crf)])
+        # FPS
+        if self.fps > 0:
+            args.extend(["-r", str(self.fps)])
+        # Resolution
+        if self.resolution and self.resolution != "source":
+            try:
+                w, h = self.resolution.split("x")
+                # Use scale filter with padding to handle odd dimensions
+                args.extend(["-vf", f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2"])
+            except ValueError:
+                pass  # malformed, skip
+        # Audio
+        if not self.audio:
+            args.append("-an")
+        else:
+            args.extend(["-c:a", "aac", "-b:a", "192k"])
+        return args
+
+
+def _xfade_name(transition: str) -> str:
+    """Map our transition names to ffmpeg xfade transition names."""
+    mapping = {
+        "fade": "fade",
+        "crossfade": "fade",
+        "wipeleft": "wipeleft",
+        "wiperight": "wiperight",
+        "wipeup": "wipeup",
+        "wipedown": "wipedown",
+    }
+    return mapping.get(transition, "fade")
+
+
+
+def _build_xfade_filter(ready_shots, videos):
+    """Build an ffmpeg filter_complex string with xfade transitions.
+
+    ready_shots: list of Shot objects (only those with status=ready, ordered)
+    videos: list of video paths (same order/length as ready_shots)
+
+    Returns (filter_str, output_label) or (None, None) if all cuts.
+    """
+    n = len(videos)
+    if n < 2:
+        return None, None
+
+    # Collect transitions: shot[i].transition defines how shot[i] blends
+    # into shot[i+1].  We need n-1 transitions.
+    transitions = []
+    for i in range(n - 1):
+        t_type = getattr(ready_shots[i], "transition", "cut")
+        t_ms = getattr(ready_shots[i], "transition_ms", 500)
+        transitions.append((t_type, t_ms))
+
+    # If every transition is a hard cut, skip xfade entirely
+    if all(t == "cut" for t, _ in transitions):
+        return None, None
+
+    # Build chained xfade filters.
+    # Each xfade takes two inputs and produces one output.
+    # First pair: [0:v][1:v] xfade=... [v01]
+    # Then:       [v01][2:v] xfade=... [v012]  etc.
+    parts = []
+    prev_label = "[0:v]"
+    for i, (t_type, t_ms) in enumerate(transitions):
+        next_input = f"[{i+1}:v]"
+        out_label = f"[v{i}]"
+        if t_type == "cut":
+            # For a cut in the middle of xfade chain, use 0-duration fade
+            duration_s = 0.001
+            xfade = "fade"
+        else:
+            duration_s = max(0.1, t_ms / 1000.0)
+            xfade = _xfade_name(t_type)
+        # offset = time at which the transition starts (seconds from stream start)
+        # For simplicity, we use the shot's duration minus the transition duration.
+        # Since we don't know exact durations here, we use a fixed offset of 0
+        # and let ffmpeg figure it out — actually, xfade needs an explicit offset.
+        # We'll compute cumulative offsets from shot durations.
+        parts.append((prev_label, next_input, xfade, duration_s, out_label))
+        prev_label = out_label
+
+    # To compute offsets, we need shot durations.  Probe each video.
+    durations = []
+    for v in videos:
+        dur = _probe_duration(v)
+        durations.append(dur if dur else 3.0)  # fallback 3s
+
+    filter_parts = []
+    cumulative = 0.0
+    for i, (inp_a, inp_b, xfade, dur_s, out_lbl) in enumerate(parts):
+        # offset = cumulative duration of all previous segments minus
+        # the sum of all previous transition durations, minus this transition
+        offset = cumulative - dur_s
+        if offset < 0:
+            offset = 0
+        filter_parts.append(
+            f"{inp_a}{inp_b}xfade=transition={xfade}:duration={dur_s:.3f}"
+            f":offset={offset:.3f}{out_lbl}"
+        )
+        cumulative += durations[i] - dur_s
+
+    final_label = parts[-1][4]  # last output label
+    filter_str = ";".join(filter_parts)
+    return filter_str, final_label
+
+
+def _probe_duration(video_path: str) -> Optional[float]:
+    """Use ffprobe to get the duration of a video file in seconds."""
+    import shutil
+    import subprocess
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return None
+    try:
+        result = subprocess.run(
+            [ffprobe, "-v", "quiet", "-show_entries", "format=duration",
+             "-of", "csv=p=0", video_path],
+            capture_output=True, text=True, timeout=10,
+        )
+        return float(result.stdout.strip())
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired,
+            ValueError, AttributeError):
+        return None
+
+
+def assemble_shots(board, output_dir: str = None, export_settings: ExportSettings = None) -> Optional[str]:
+    """Concatenate all ready shots into a single mp4.
+
+    If shots have xfade transitions defined, uses ffmpeg's xfade filter
+    for blending.  Otherwise uses the concat demuxer (fast, no re-encode)
+    with a fallback to the concat filter (re-encodes).
+
+    Returns the path to the assembled file, or None if < 2 ready clips.
+    """
+    import shutil
+    import subprocess
+    import tempfile as _tmpmod
+
+    videos = board.ready_videos()
+    if len(videos) < 2:
+        return videos[0] if videos else None
+
+    if output_dir is None:
+        output_dir = _tmpmod.gettempdir()
+    os.makedirs(output_dir, exist_ok=True)
+
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        log.warning("ffmpeg not found — cannot assemble shots")
+        return None
+
+    if export_settings is None:
+        export_settings = ExportSettings()
+    output_args = export_settings.ffmpeg_output_args()
+
+    # Choose file extension based on codec
+    ext = ".webm" if export_settings.codec == "vp9" else ".mov" if export_settings.codec == "prores" else ".mp4"
+    out_path = os.path.join(output_dir,
+                            f"assembled_{int(time.time())}{ext}")
+
+    # Gather the ready shots in order (matching board.ready_videos() order)
+    ready_shots = [s for s in board if s.status == "ready" and s.video_path]
+
+    # --- Try xfade transitions first ----------------------------------
+    xfade_filter, out_label = _build_xfade_filter(ready_shots, videos)
+    if xfade_filter:
+        inputs = []
+        for v in videos:
+            inputs += ["-i", v]
+        try:
+            subprocess.run(
+                [ffmpeg, "-y"] + inputs +
+                ["-filter_complex", xfade_filter,
+                 "-map", out_label] + output_args + [out_path],
+                check=True, capture_output=True, timeout=600,
+            )
+            return out_path
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            log.warning("xfade assembly failed (%s), falling back to concat", exc)
+
+    # --- Try concat demuxer (fast, no re-encode) ----------------------
+    list_file = os.path.join(output_dir, ".concat_list.txt")
+    with open(list_file, "w") as fh:
+        for v in videos:
+            fh.write(f"file '{v}'\n")
+    try:
+        subprocess.run(
+            [ffmpeg, "-y", "-f", "concat", "-safe", "0",
+             "-i", list_file, "-c", "copy", out_path],
+            check=True, capture_output=True, timeout=300,
+        )
+        return out_path
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        log.info("concat demuxer failed, trying filter fallback")
+
+    # --- Fallback: concat filter (re-encodes) -------------------------
+    inputs = []
+    for v in videos:
+        inputs += ["-i", v]
+    n = len(videos)
+    filter_str = "".join(f"[{i}:v:0][{i}:a:0]" for i in range(n))
+    filter_str += f"concat=n={n}:v=1:a=1[outv][outa]"
+    try:
+        subprocess.run(
+            [ffmpeg, "-y"] + inputs +
+            ["-filter_complex", filter_str,
+             "-map", "[outv]", "-map", "[outa]"] + output_args + [out_path],
+            check=True, capture_output=True, timeout=600,
+        )
+        return out_path
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        log.error("ffmpeg assembly failed: %s", exc)
+        return None

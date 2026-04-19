@@ -50,6 +50,7 @@ signal_bridge_config.json
 .guild_version
 rebuild.bat
 push_*.bat
+DEVNOUPDATE*.bat
 
 # User-generated state (avatars, session data, timestamps)
 .guild_state/
@@ -60,6 +61,14 @@ config.json
 
 # Claude Code internal files
 .claude/
+.mcp.json
+
+# Per-session handover docs — contain real LAN IPs and local paths,
+# intended for Claude-to-Claude orchestration, never for the public repo
+HANDOVER_*.md
+
+# Gemini MCP output
+gemini-output/
 
 # Dev tools & scratch files
 tools/generate_readme_gifs.py

@@ -2,7 +2,25 @@
 
 ## What This Is
 
-Spellcaster is middleware between ComfyUI and user-facing apps (GIMP, Darktable, Wizard Guild chat UI, SillyTavern). It has 69 AI tools. The codebase spans 4 GitHub repos, SFW and NSFW variants, and a crash-safe plugin architecture.
+Spellcaster is **middleware** between ComfyUI and user-facing apps (GIMP, Darktable, Wizard Guild chat UI, SillyTavern). It has 69 AI tools. The codebase spans 4 GitHub repos, SFW and NSFW variants, and a crash-safe plugin architecture.
+
+## Zero Duplication Rule
+
+**NEVER duplicate logic.** Spellcaster enforces a single source of truth for ALL shared functionality. If the GIMP plugin and the Guild server both need a function, that function lives in `spellcaster_core/` and both import it. No exceptions.
+
+**Existing shared modules in `spellcaster_core/`:**
+- `workflows.py` — ALL workflow builders (build_img2img, build_klein_*, etc.)
+- `node_factory.py` — ALL ComfyUI node constructors
+- `composites.py` — multi-node building blocks (load_model_stack, inject_lora_chain, etc.)
+- `architectures.py` — architecture registry and ArchConfig
+- `prompt_enhance.py` — LLM prompt enhancement (all backends)
+- `comfyui_llm.py` — ComfyUI-based LLM text generation
+- `guild_llm.py` — LLM chat abstraction (ComfyUI → KoboldCpp → Ollama)
+- `privacy.py` — server file cleanup (privacy mode)
+- `preflight.py` — workflow validation and node substitution
+- `model_detect.py` — architecture detection from model filename
+
+**If you find yourself writing the same logic in two places:** STOP. Extract it into `spellcaster_core/` and have both consumers import it. The GIMP plugin at `_spellcaster_main.py` and the Guild server at `tavern/server.py` must NEVER have parallel implementations of the same feature.
 
 ## Critical Rules
 
@@ -72,6 +90,8 @@ rm -f "%APPDATA%/GIMP/3.2/pluginrc"
 ```
 
 **The NSFW auto-updater pulls from `spellcaster_NSFW` repo.** If you only push to the main repo, the NSFW installation will revert your changes. Always run `nsfw/build_nsfw.py --patch --push` after pushing to main.
+
+**See Rule 13 for the full auto-update risk matrix.** Short version: a GIMP restart or Guild restart will re-download from GitHub and overwrite anything uncommitted in the plugin dir / `tavern/` / `scaffold/`. Commit before restarting, or use `DEVNOUPDATE_NSFW Wizard Guild.bat` for the Guild.
 
 ### 6. NSFW Build Script (`nsfw/build_nsfw.py`)
 
@@ -164,6 +184,51 @@ git rm --cached path/to/file   # removes from tracking, keeps file locally
 - Before pushing, check for accidentally staged personal data
 - Use descriptive commit messages that explain WHY, not just WHAT
 - Always include `Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>`
+
+### 13. Server Restarts During Testing — AUTO-UPDATE WILL CLOBBER UNCOMMITTED WORK
+
+**Before restarting the Wizard Guild, the GIMP plugin, or the installer, check
+for uncommitted local changes and warn the user if any exist.**
+
+Three different auto-updaters run on startup and DOWNLOAD from GitHub, then
+OVERWRITE local files and DELETE anything not in remote:
+
+| Component | Updater | Runs when | Protected files | What gets clobbered |
+|-----------|---------|-----------|-----------------|----------------------|
+| **Wizard Guild** | `tavern/guild_launcher.py:check_for_updates` | every launch | `guild_launcher.py`, `guild_config.json`, `guild_common.py` | everything under `tavern/` and `scaffold/` |
+| **GIMP plugin** | `plugins/gimp/comfyui-connector/_spellcaster_main.py:_auto_update` | GIMP start | `comfyui-connector.py` (boot shim), `config.json`, `.spellcaster_version`, `user_presets.json`, `session_state.json` | everything else in the plugin dir + `spellcaster_core/` copy |
+| **Installer** | `installer/bootstrap.py` | every .exe launch | n/a (runs in temp dir) | nothing — bootstrap uses an ephemeral dir |
+
+**What this means for Claude during a session:**
+
+1. **Before recommending a Guild restart**: run `git status -s | grep -E "tavern/\|scaffold/"`. If anything is modified or untracked, warn the user — their changes will be overwritten unless they commit first OR use `--no-update`.
+
+2. **Before recommending a GIMP restart after editing `_spellcaster_main.py` or `spellcaster_core/`**: same check on `plugins/gimp/comfyui-connector/`. If there are uncommitted changes, offer to either (a) sync to local GIMP via the deploy procedure first, (b) commit and push so the auto-updater is a no-op, or (c) disable auto-update temporarily.
+
+3. **Safe-restart options in order of preference**:
+   a. **Commit and push** (cleanest) — auto-update downloads exactly what's already there.
+   b. **Use the no-update launcher** — `DEVNOUPDATE_NSFW Wizard Guild.bat` at repo root skips the Guild updater. For the GIMP plugin, no direct equivalent exists; delete `.update` files if needed.
+   c. **Set `auto_update: false`** in `guild_config.json` (Guild only) for longer debug sessions.
+   d. **Stash** (last resort) — `git stash push -m "WIP: before restart"` isolates local edits.
+
+4. **Never tell a user a restart is "safe" without checking first.** The Guild's auto-updater also PRUNES — files in your local tavern/ or scaffold/ that aren't in remote get DELETED.
+
+5. **When Claude makes changes that need a running server to test**: commit first, then restart. Do not ask the user to restart to see your changes while your edits are uncommitted — the restart will erase them.
+
+### 14. Installer Is Self-Updating — Bootstrap Pattern
+
+`spellcaster-installer.exe` is now a two-stage runner ([`installer/bootstrap.py`](installer/bootstrap.py)):
+
+1. Bootstrap fetches the latest `install.py`, `installer_gui.py`, and `manifest.json` from `raw.githubusercontent.com/laboratoiresonore/spellcaster/main` into a temp dir.
+2. Execs the fetched code via `importlib`, passing `SPELLCASTER_INSTALLER_ROOT=<temp_dir>` so the fetched install.py finds the fetched manifest.
+3. On fetch failure (no network, rate limit, etc.), falls back to the baked-in copy.
+
+**What this means for Claude:**
+
+- **You no longer need to rebuild the .exe for most installer fixes.** Editing `installer/install.py`, `installer/installer_gui.py`, or `installer/manifest.json` and pushing to main is enough — every existing .exe picks it up on next launch.
+- **The .exe only needs rebuilding when**: `bootstrap.py` itself changes, `build_installer.py` flags change, a NEW bundled asset is added (e.g. a new `plugins/` dir), or the PyInstaller hidden-imports list needs updating.
+- **The assets stay baked**: `plugins/`, `tavern/`, `scaffold/`, `assets/` are bundled. Asset finders (`_find_gimp_plugin_src`, `_find_tavern_src`, `_find_scaffold_src`) consult both `SCRIPT_DIR` (fetched temp dir) and `BUNDLE_DIR` (PyInstaller `_MEIPASS`). So bootstrapped runs can still locate bundled assets.
+- **Offline fallback** — users without internet still get the baked-in version, which is guaranteed-working at build time.
 
 ## File Structure Quick Reference
 
