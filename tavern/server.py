@@ -8751,8 +8751,10 @@ class GuildHandler(SimpleHTTPRequestHandler):
             try:
                 from spellcaster_core import guild_llm as _gllm
                 snap = _gllm.get_status()
+                snap["preferred"] = _gllm.get_preferred_backend()
             except Exception:
-                snap = {"backend": None, "host": None, "state": "idle"}
+                snap = {"backend": None, "host": None, "state": "idle",
+                         "preferred": None}
             # Never leak the raw host URL to the browser — the friendly
             # label from _host_label() is enough. The UI only renders
             # `host` and `backend`; host_url is used internally for

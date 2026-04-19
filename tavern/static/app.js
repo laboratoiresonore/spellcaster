@@ -1642,6 +1642,78 @@ async function initialize() {
     }
     window._persistUserSetting = _persistUserSetting;
 
+    function _wireLlmPicker() {
+        const picker = document.getElementById('llm-picker');
+        if (!picker) return;
+        const pills = picker.querySelectorAll('.llm-pill');
+
+        // Map the user-settings key "preferred_llm" values:
+        //   "comfyui"   — reroute, no service start
+        //   "ollama"    — ensure the local Ollama service is running
+        //   "kobold_rp" — ensure the kobold_rp service is running
+        // ComfyUI's embedded LLM is always available when ComfyUI is
+        // online; no dedicated start call is needed.
+        const NEEDS_START = { ollama: 'ollama', kobold_rp: 'kobold_rp' };
+
+        const setActive = (key) => {
+            pills.forEach(p => {
+                p.classList.toggle('is-active',
+                                     p.dataset.llm === key);
+            });
+        };
+
+        // Initial render from /api/llm_status (carries both the live
+        // backend + the stored `preferred`).
+        fetch('/api/llm_status', { cache: 'no-store' })
+            .then(r => r.ok ? r.json() : null)
+            .then(s => {
+                if (!s) return;
+                // preferred_llm is the authoritative pick; fall back to
+                // the live `backend` when nothing is persisted yet so
+                // the pill already reflects reality on first render.
+                const p = (s.preferred === 'kobold') ? 'kobold_rp'
+                                                      : s.preferred;
+                const live = (s.backend === 'kobold') ? 'kobold_rp'
+                                                       : s.backend;
+                setActive(p || live || 'comfyui');
+            })
+            .catch(() => setActive('comfyui'));
+
+        pills.forEach(pill => {
+            pill.addEventListener('click', async () => {
+                const key = pill.dataset.llm;
+                pills.forEach(p => p.classList.add('is-pending'));
+                try {
+                    // 1. Persist the choice server-side. guild_llm.chat
+                    //    rotates on the next call so no restart needed.
+                    await fetch('/api/user_settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            key: 'preferred_llm', value: key,
+                        }),
+                    });
+                    // 2. Start the backend service if this pill demands
+                    //    one (ComfyUI is a pure reroute → no start).
+                    const svc = NEEDS_START[key];
+                    if (svc) {
+                        try {
+                            await fetch('/api/app_control/start', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ app: svc }),
+                            });
+                        } catch (e) { /* silent — start is best-effort,
+                                         the chain will still route */ }
+                    }
+                    setActive(key);
+                } finally {
+                    pills.forEach(p => p.classList.remove('is-pending'));
+                }
+            });
+        });
+    }
+
     function _wireWalkieTalkieBtn() {
         const btn = document.getElementById('walkie-btn');
         const input = document.getElementById('chat-input');
@@ -1817,6 +1889,13 @@ async function initialize() {
     // when no kobold_tts backend is registered (503 from the endpoint
     // prompts the user to right-click an antenna chip to register one).
     _wireWalkieTalkieBtn();
+
+    // LLM primary-backend picker (3 pills in the sidebar header). Click
+    // one to pin it as the first hop in guild_llm's chat chain and
+    // spin up its service if it isn't running. Multiple backends can
+    // stay online simultaneously (e.g. ComfyUI + a dedicated RP kobold
+    // for SillyTavern); the pill just decides who answers first.
+    _wireLlmPicker();
 
     // Character-hover circle preview — large circular portrait that
     // fades in near the cursor when the user mouses over an avatar in
