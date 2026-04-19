@@ -2723,6 +2723,22 @@ def _seed_default_assets():
         if os.path.exists(dst):
             assets[char_id] = {"avatar_url": f"/api/cached_asset/{filename}"}
 
+    # Copy animated avatars (WAN/LTX I2V loops baked into the installer
+    # via tools/bake_canon_animated_avatars.py). When present, the
+    # wizard's sidebar chip uses the looping video instead of the still
+    # portrait. Runtime-generated animated_url still overrides.
+    for char_id, filename in manifest.get("animated_avatars", {}).items():
+        src = os.path.join(default_dir, filename)
+        dst = os.path.join(_CREATIONS_DIR, filename)
+        if os.path.exists(src) and not os.path.exists(dst):
+            os.makedirs(_CREATIONS_DIR, exist_ok=True)
+            import shutil
+            shutil.copy2(src, dst)
+            seeded += 1
+        if os.path.exists(dst):
+            assets.setdefault(char_id, {})["animated_url"] = (
+                f"/api/cached_asset/{filename}")
+
     if seeded:
         print(f"  [State] Seeded {seeded} pre-bundled asset(s) (core wizards + background)")
     return assets
