@@ -1167,6 +1167,36 @@ def _start_comfy_presence_heartbeat():
     _GIMP_PRESENCE_THREAD.start()
 
 
+def _peer_online(target_key):
+    """Three-valued check: True if presence confirms peer is alive,
+    False if we queried and it wasn't listed, None if we couldn't
+    reach any presence surface (ComfyUI + Guild both unreachable).
+
+    Callers that gate UI/actions should treat None as "allow the
+    action" — when we can't tell, don't pre-emptively block.
+    """
+    cfg = _load_config()
+    comfy_url = cfg.get("server_url") or "http://127.0.0.1:8188"
+    guild_url = cfg.get("guild_url") or "http://127.0.0.1:7777"
+    queried = False
+    # Primary: ComfyUI presence broker. Match on key (logical) so that
+    # GIMP@alice-pc OR GIMP@bob-pc both satisfy a "gimp online" check.
+    data = _presence_get(comfy_url, "/spellcaster/presence/list")
+    if isinstance(data, dict) and "peers" in data:
+        queried = True
+        for p in data.get("peers", []):
+            if p.get("key") == target_key:
+                return True
+    # Secondary: Wizard Guild registry.
+    data = _presence_get(guild_url, "/api/interfaces")
+    if isinstance(data, dict) and "interfaces" in data:
+        queried = True
+        info = (data.get("interfaces") or {}).get(target_key)
+        if info and info.get("online") is not False:
+            return True
+    return False if queried else None
+
+
 def _list_peers():
     """Union of ComfyUI-Spellcaster's /spellcaster/presence/list and
     the Guild's /api/interfaces. Used by the Send-to-X menu to gate
@@ -25812,6 +25842,17 @@ class Spellcaster(Gimp.PlugIn):
         successful publish. target = one of 'resolve', 'darktable',
         'sillytavern' — used as the event prefix and subscriber
         matcher."""
+        # Presence gate: if we can confirm the target isn't running,
+        # bail with a clearer message than the generic "Guild unreachable"
+        # path would produce. If presence query fails (ComfyUI + Guild
+        # both down), _peer_online returns None and we fall through —
+        # the existing Guild-upload error handling still catches it.
+        peer_status = _peer_online(target)
+        if peer_status is False:
+            Gimp.message(
+                f"Send to {friendly}: {friendly} isn't running right now. "
+                f"Start it and click Send again — your canvas is still here.")
+            return False
         try:
             tmp = _export_image_to_tmp(image)
             with open(tmp, "rb") as fh:

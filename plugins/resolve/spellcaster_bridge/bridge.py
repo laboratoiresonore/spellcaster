@@ -299,6 +299,133 @@ class Bridge:
             except Exception as e:
                 print(f"[Spellcaster Bridge] timeline import failed: {e}",
                       file=sys.stderr)
+        elif kind == "resolve.playhead.send_to_peer":
+            # Audit tier-1: Resolve-to-peer outbound. Grabs the current
+            # playhead frame, uploads it to the Guild's asset gallery,
+            # then publishes <target>.asset.send so the target plugin's
+            # existing subscriber (GIMP inbox puller, DT inbox button,
+            # ST /cross/inbox, etc.) ingests it. Payload: {target:
+            # "gimp"|"darktable"|"sillytavern"}. This closes the
+            # Resolve→GIMP / Resolve→ST / Resolve→DT gaps identified in
+            # AUDIT_CROSS_APP_DEEP.md §4.
+            try:
+                self._handle_playhead_send_to_peer(evt)
+            except Exception as e:
+                print(f"[Spellcaster Bridge] send_to_peer failed: {e}",
+                      file=sys.stderr)
+
+    # ── Audit tier-1: Resolve → peer outbound transport ──────────────
+
+    _SEND_TARGETS = frozenset({"gimp", "darktable", "sillytavern"})
+
+    def _handle_playhead_send_to_peer(self, evt: dict):
+        """Capture the current Resolve playhead frame, upload it to the
+        Guild as a canonical asset, then publish <target>.asset.send so
+        the target plugin ingests the image from its own inbox.
+
+        This is the Send-to-X equivalent for Resolve — the other
+        direction from R122's grab-into-shot. Used by the
+        Cinematographer wizard's "Send frame to GIMP / ST / DT" chips.
+
+        Event payload:
+            {target: "gimp"|"darktable"|"sillytavern", title?: str}
+        """
+        import os
+        data = evt.get("data") or {}
+        target = (data.get("target") or "").strip().lower()
+        if target not in self._SEND_TARGETS:
+            self._publish_send_done({
+                "error": f"unsupported target: {target!r} "
+                         f"(expected one of {sorted(self._SEND_TARGETS)})"})
+            return
+        try:
+            from resolve_helpers import capture_frame_at_playhead  # type: ignore
+        except ImportError:
+            self._publish_send_done({
+                "error": "resolve_helpers not available in this environment"})
+            return
+        png_path = capture_frame_at_playhead()
+        if not png_path or not os.path.isfile(png_path):
+            self._publish_send_done({
+                "target": target,
+                "error": ("Couldn't grab a still at the playhead. "
+                          "Switch to the Color page and retry.")})
+            return
+        try:
+            with open(png_path, "rb") as f:
+                png_bytes = f.read()
+        except OSError as e:
+            self._publish_send_done({
+                "target": target, "error": f"read failed: {e}"})
+            return
+        finally:
+            try:
+                os.unlink(png_path)
+            except Exception:
+                pass
+        # Upload via the Guild so it lands in the canonical asset
+        # gallery — the receiving plugin fetches by hash. This also
+        # keeps the event/mailbox path identical to GIMP/DT sends so
+        # subscriber code on the other side doesn't branch on origin.
+        try:
+            asset_url, asset_hash = self._upload_via_guild(
+                png_bytes, title=data.get("title") or "From Resolve")
+        except Exception as e:
+            self._publish_send_done({
+                "target": target, "error": f"upload failed: {e}"})
+            return
+        try:
+            self.guild._post_json("/api/events/emit", {
+                "kind": f"{target}.asset.send",
+                "origin": "resolve",
+                "data": {
+                    "image_url": asset_url,
+                    "hash": asset_hash,
+                    "source": "resolve",
+                    "kind": "generation",
+                },
+            }, timeout=5.0)
+        except Exception as e:
+            self._publish_send_done({
+                "target": target, "error": f"publish failed: {e}"})
+            return
+        self.sync._log(f"Resolve → {target}: {asset_hash[:8]}")
+        self._publish_send_done({
+            "ok": True, "target": target,
+            "hash": asset_hash, "size_bytes": len(png_bytes)})
+
+    def _upload_via_guild(self, png_bytes, title=""):
+        """POST bytes to the Guild's /api/assets endpoint. Returns
+        (asset_url, hash). Raises on any non-success."""
+        import base64 as _b64
+        body = json.dumps({
+            "body_b64": _b64.b64encode(png_bytes).decode("ascii"),
+            "kind": "generation",
+            "origin": "resolve",
+            "title": title,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            f"{self.guild.base_url}/api/assets",
+            data=body, method="POST",
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=10.0) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        h = payload.get("hash")
+        if not h:
+            raise RuntimeError(f"Guild rejected asset: {payload}")
+        return f"/api/assets/{h}", h
+
+    def _publish_send_done(self, data: dict):
+        """Result echo for UI feedback — Cinematographer or other
+        callers can subscribe to resolve.send_to_peer.done."""
+        try:
+            self.guild._post_json("/api/events/emit", {
+                "kind": "resolve.send_to_peer.done",
+                "origin": "resolve",
+                "data": data,
+            }, timeout=5.0)
+        except Exception:
+            pass
 
     # ── R122: bus-triggered Resolve actions ──────────────────────────
 
