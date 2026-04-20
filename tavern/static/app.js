@@ -1712,6 +1712,17 @@ async function initialize() {
             window.generationPreset = p.key;
             try { localStorage.setItem('guild_preset', p.key); } catch (e) {}
             if (persist) _persistUserSetting('guild_preset', p.key);
+            // Push to the Guild's in-memory quality-mode state so every
+            // WAN + LTX workflow (shot creation, avatar bake, retry)
+            // picks it up immediately. Intentionally non-persistent
+            // server-side — resets to turbo on Guild restart.
+            if (persist) {
+                fetch('/api/video/quality-mode', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({mode: p.key}),
+                }).catch(() => {});
+            }
             window.dispatchEvent(new CustomEvent('guildpresetchange',
                 { detail: { preset: p.key } }));
         };
@@ -1736,6 +1747,15 @@ async function initialize() {
                 }
             })
             .catch(() => {});
+        // Also sync the current preset to the server's in-memory video
+        // quality state on page load, so the freshly-restarted Guild
+        // (which defaults to "turbo") matches whatever the user had
+        // picked before. Fire-and-forget.
+        fetch('/api/video/quality-mode', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({mode: PRESETS[idx].key}),
+        }).catch(() => {});
     }
 
     // Persist any user setting to guild_config.user_settings. Silent on
