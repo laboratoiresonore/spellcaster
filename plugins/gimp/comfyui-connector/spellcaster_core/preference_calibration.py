@@ -91,7 +91,55 @@ _SKIP_KEYWORDS = (
     "upscale", "rife", "reactor", "ip-adapter", "controlnet",
     "ipadapter", "insightface", "face_restore", "codeformer",
     "gfpgan", "reswapper", "inswapper", "siglip", "ldsr",
+    # Encoders / text-towers that sometimes slip in under UNETLoader
+    "text_encoder", "text-encoder", "qwen2", "clipvision",
+    "normalcrafter", "depthanything", "midas",
+    # Guidance connectors  / post-processors
+    "rembg", "sam3", "sam_vit", "sam2", "matting",
 )
+
+# Architectures that the taste-test + settings calibration wizard
+# actually exercises. Video archs (wan/ltx/cogvideo/seedvr) use a
+# different inference path; listing them in the image-calibration
+# wizard causes render failures + skews the "57 models" count. Klein
+# and Kontext aren't test-able with a free-form prompt (Klein is
+# 4-step distilled-only, Kontext is instruction-only).
+_IMAGE_CALIBRATION_ARCHS = frozenset({
+    "sd15", "sdxl", "illustrious", "pony", "playground",
+    "sdxl_turbo", "zit", "flux1dev", "chroma",
+})
+
+# Video archs explicitly — listed so an explicit rejection reason
+# can surface in logs + so gen_calibrations / fancier callers can
+# pick them up elsewhere for video-side calibration in the future.
+_VIDEO_ARCHS = frozenset({"wan", "ltx", "cogvideo", "seedvr"})
+
+
+def _base_model_key(name):
+    """Strip quant tags + folder prefix so every Flux1Dev variant
+    (bf16 / fp8 / Q4_K_M / Q5_K_M / Q8_0 / etc.) collapses to the same
+    base key and the taste test shows ONE card instead of seven.
+
+    Returns a lowercased stem with the known quant markers removed.
+    """
+    if not name:
+        return ""
+    tail = name.replace("\\", "/").rsplit("/", 1)[-1]
+    stem = tail.rsplit(".", 1)[0].lower()
+    for tag in (
+        "-q4_0", "-q4_1", "-q4_k_m", "-q4_k_s", "-q5_0", "-q5_1",
+        "-q5_k_m", "-q5_k_s", "-q6_k", "-q8_0",
+        "_q4_0", "_q4_1", "_q4_k_m", "_q4_k_s", "_q5_0", "_q5_1",
+        "_q5_k_m", "_q5_k_s", "_q6_k", "_q8_0",
+        "-fp8", "_fp8", "-fp8-e4m3fn", "-fp8-scaled",
+        "-bf16", "_bf16", "-fp16", "_fp16",
+        "-scaled", "_scaled",
+    ):
+        stem = stem.replace(tag, "")
+    # Collapse double dashes/underscores left over from the strip.
+    while "--" in stem: stem = stem.replace("--", "-")
+    while "__" in stem: stem = stem.replace("__", "_")
+    return stem.strip("-_")
 
 # Calibration test prompts — one per architecture style
 _TEST_PROMPTS = {
@@ -148,15 +196,36 @@ def _get_test_prompt(arch_key):
 #  Model discovery
 # ═══════════════════════════════════════════════════════════════════════
 
-def discover_models(server):
+def discover_models(server, *, include_video=False, dedupe_quants=True):
     """Enumerate installed checkpoints + UNETs, classify by architecture.
 
-    Returns list of dicts:
-        [{"name": "SDXL/model.safetensors", "arch": "sdxl",
-          "loader": "CheckpointLoaderSimple", "short_name": "model"}, ...]
+    By default returns only IMAGE-generation archs (see
+    ``_IMAGE_CALIBRATION_ARCHS``) and collapses quant variants of the
+    same base UNET (``flux1-dev-fp8`` + ``flux1-dev-Q4_K_M`` + ``-bf16``
+    → one entry). The pre-2026-04-20 behaviour (every variant + video
+    UNETs included) yielded ~57 entries on the user's server for what
+    was really ~8 image models, making the wizard unusable.
+
+    Args:
+        include_video: include WAN / LTX / Cogvideo UNETs. Off by
+            default — their taste-test path doesn't exist yet. Video
+            calibration gets its own surface in gen_calibrations.py.
+        dedupe_quants: collapse quant/fp8/bf16 variants of the same
+            base model name. On by default; callers who genuinely want
+            to see Q4 vs Q8 for A/B testing pass False.
+
+    Returns list of dicts::
+
+        [{"name": "...", "arch": "sdxl", "loader": "...",
+          "short_name": "...", "variants": [{"name": "...", ...}, ...]}]
+
+    ``variants`` carries the sibling quants that collapsed into this
+    entry so the UI can offer a "test all variants" action.
     """
     all_models = []
     seen = set()
+    # Maps base-model-key → index into all_models (for variant merging).
+    by_base: dict = {}
 
     for node, field, classify_fn in [
         ("CheckpointLoaderSimple", "ckpt_name", classify_ckpt_model),
@@ -166,20 +235,61 @@ def discover_models(server):
         for name in _get_opts(server, node, field):
             if name in seen:
                 continue
+            seen.add(name)
             if any(kw in name.lower() for kw in _SKIP_KEYWORDS):
                 continue
             arch = classify_fn(name)
             if arch == "unknown":
                 continue
-            seen.add(name)
+            if arch not in _IMAGE_CALIBRATION_ARCHS:
+                if arch in _VIDEO_ARCHS and not include_video:
+                    continue
+                if not include_video:
+                    # Klein / Kontext / unknown — not image-taste-test
+                    # candidates. Don't pollute the wizard with them.
+                    continue
             short = name.rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
             short = short.rsplit(".", 1)[0]  # strip extension
-            all_models.append({
+            entry = {
                 "name": name,
                 "arch": arch,
                 "loader": node,
                 "short_name": short,
-            })
+                "variants": [],
+            }
+            if dedupe_quants:
+                base_key = f"{arch}::{_base_model_key(name)}"
+                if base_key in by_base:
+                    # Attach as a variant of the already-registered
+                    # canonical entry. Prefer fp16/bf16 as canonical
+                    # when available (highest quality); swap roles if
+                    # the new one is higher-quality than the one held.
+                    canon_idx = by_base[base_key]
+                    canon = all_models[canon_idx]
+                    # Simple quality score — higher is better.
+                    def _q(n: str) -> int:
+                        low = n.lower()
+                        if "bf16" in low or "fp16" in low: return 5
+                        if "fp8" in low or "scaled" in low: return 4
+                        if "q8_0" in low: return 4
+                        if "q6_k" in low: return 3
+                        if "q5" in low:   return 2
+                        if "q4" in low:   return 1
+                        return 3  # plain safetensors — usually fp16
+                    if _q(name) > _q(canon["name"]):
+                        # Swap: new entry becomes canon, old one a variant.
+                        new_entry = dict(entry)
+                        new_entry["variants"] = (canon["variants"]
+                                                  + [{"name": canon["name"],
+                                                      "loader": canon["loader"]}])
+                        all_models[canon_idx] = new_entry
+                    else:
+                        canon["variants"].append({
+                            "name": name, "loader": node,
+                        })
+                    continue
+                by_base[base_key] = len(all_models)
+            all_models.append(entry)
 
     return all_models
 
@@ -361,11 +471,29 @@ def generate_and_download(server, workflow, timeout=120):
     return None
 
 
-def generate_model_sample(server, model, seed=42, timeout=180, callback=None):
-    """Generate a single sample image for one model.
+def generate_model_sample_rich(server, model, seed=42, timeout=180,
+                                 callback=None):
+    """Richer variant of ``generate_model_sample`` — returns a dict
+    instead of raw bytes so the calibration wizard can surface speed,
+    distinguish "generation failed" from "user disliked", and build a
+    research/repair path when the render crashes.
 
-    Uses architecture-appropriate prompt and parameters.
-    Returns PNG bytes or None.
+    Returns a dict with these keys (all present even on failure)::
+
+        {
+          "png":        bytes | None,        # PNG bytes on success
+          "elapsed_ms": int,                 # wall-clock ms
+          "failed":    bool,                 # True iff png is None
+          "error":     str,                  # human-readable cause
+          "model":     str,                  # echoed for callback binding
+          "arch":      str,
+          "preset":    dict,                 # exact preset used
+          "prompt":    str,                  # prompt used
+          "seed":      int,
+        }
+
+    Legacy callers should use ``generate_model_sample`` (returns just
+    the PNG bytes) — it's a thin shim over this function.
     """
     try:
         from .workflows import build_txt2img
@@ -373,11 +501,27 @@ def generate_model_sample(server, model, seed=42, timeout=180, callback=None):
         from spellcaster_core.workflows import build_txt2img
 
     arch_key = model["arch"]
+    t0 = time.time()
+    result = {
+        "png":        None,
+        "elapsed_ms": 0,
+        "failed":     True,
+        "error":      "",
+        "model":      model.get("name", ""),
+        "arch":       arch_key,
+        "preset":     {},
+        "prompt":     "",
+        "seed":       seed,
+    }
+
     arch = get_arch(arch_key)
     if not arch:
-        return None
+        result["error"] = f"Unknown architecture: {arch_key!r}"
+        result["elapsed_ms"] = int((time.time() - t0) * 1000)
+        return result
 
     prompt, neg = _get_test_prompt(arch_key)
+    result["prompt"] = prompt
     w, h = arch.default_resolution
     if w >= 1024:
         w, h = 768, 768
@@ -394,16 +538,45 @@ def generate_model_sample(server, model, seed=42, timeout=180, callback=None):
         "loader": arch.loader,
         "clip_name1": "", "clip_name2": "", "vae_name": "",
     }
+    result["preset"] = dict(preset)
 
     try:
         wf = build_txt2img(preset, prompt, neg, seed)
-    except Exception:
-        return None
+    except Exception as e:
+        result["error"] = f"Workflow build failed: {e!s}"[:400]
+        result["elapsed_ms"] = int((time.time() - t0) * 1000)
+        return result
 
     if callback:
-        callback(f"Generating with {model['short_name']}...")
+        try:
+            callback(f"Generating with {model['short_name']}...")
+        except Exception:
+            pass
 
-    return generate_and_download(server, wf, timeout=timeout)
+    try:
+        png = generate_and_download(server, wf, timeout=timeout)
+    except Exception as e:
+        result["error"] = f"Dispatch failed: {e!s}"[:400]
+        result["elapsed_ms"] = int((time.time() - t0) * 1000)
+        return result
+    result["elapsed_ms"] = int((time.time() - t0) * 1000)
+    if png:
+        result["png"] = png
+        result["failed"] = False
+    else:
+        result["error"] = ("Server returned no image — check ComfyUI "
+                           "console for errors (missing CLIP / VAE / "
+                           "LoRA or OOM).")
+    return result
+
+
+def generate_model_sample(server, model, seed=42, timeout=180, callback=None):
+    """Legacy shim — returns just the PNG bytes (or None) so existing
+    callers don't break. New code should use
+    ``generate_model_sample_rich`` for speed + failure data."""
+    res = generate_model_sample_rich(server, model, seed=seed,
+                                       timeout=timeout, callback=callback)
+    return res.get("png")
 
 
 # ═══════════════════════════════════════════════════════════════════════

@@ -73,6 +73,28 @@
       const text = await resp.text();
       throw new Error(text || `HTTP ${resp.status}`);
     }
+    // Also forward to SpeedCoach's ratings log so Insights tab can
+    // compute per-handler / per-LoRA thumbs rates. Fire-and-forget;
+    // failure here must never break the primary feedback flow.
+    try {
+      const verdict = (rating === 1 || rating === '+1' || rating === 'up')
+        ? 'up'
+        : (rating === -1 || rating === '-1' || rating === 'down')
+          ? 'down' : String(rating);
+      fetch('/api/telemetry/rating', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          verdict:    verdict,
+          asset_hash: (meta && meta.asset_hash) || subjectId || '',
+          char_id:    (meta && meta.char_id) || '',
+          handler:    (meta && (meta.handler || meta.build_fn)) || subjectType || '',
+          arch:       (meta && meta.arch) || '',
+          loras:      (meta && meta.loras) || [],
+          origin:     'guild',
+        }),
+      }).catch(() => {});
+    } catch (_e) { /* ignore — best-effort telemetry */ }
     return resp.json();
   }
 

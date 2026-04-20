@@ -1839,6 +1839,80 @@ def _server_init(comfy_url=None):
         set_cache_dir(_STATE_DIR)
     except Exception:
         pass
+    # SpeedCoach aggregator reads dispatch_log.jsonl, preflight_cache.json,
+    # faceswap_state.json, ratings.jsonl, videoshot_log.jsonl,
+    # object_info_last.json — all under _STATE_DIR. Also point it at
+    # our mailbox for SLA stats.
+    try:
+        from spellcaster_core import speedcoach as _speedcoach_mod
+        _speedcoach_mod.set_state_dir(_STATE_DIR)
+        try:
+            from spellcaster_core import mailbox as _mailbox_mod
+            def _mailbox_stats_cb():
+                try:
+                    per = _mailbox_mod.all_mailboxes() or {}
+                    if not isinstance(per, dict) or not per:
+                        return {}
+                    now = time.time()
+                    pending = 0
+                    delivered = 0
+                    consumed = 0
+                    dropped = 0
+                    oldest = 0.0
+                    for s in per.values():
+                        if not isinstance(s, dict):
+                            continue
+                        pending += int(s.get("pending") or 0)
+                        delivered += int(s.get("delivered") or 0)
+                        consumed += int(s.get("consumed") or 0)
+                        dropped += int(s.get("dropped") or 0)
+                        ts = float(s.get("last_delivery_ts") or 0.0)
+                        if ts and (not oldest or ts < oldest):
+                            oldest = ts
+                    oldest_s = int(max(0.0, now - oldest)) if oldest else 0
+                    return {
+                        "pending": pending,
+                        "delivered": delivered,
+                        "consumed": consumed,
+                        "dropped": dropped,
+                        "oldest_s": oldest_s,
+                        "interfaces": len(per),
+                        "per_interface": per,
+                    }
+                except Exception:
+                    return {}
+            _speedcoach_mod.set_mailbox_callback(_mailbox_stats_cb)
+        except Exception:
+            pass
+    except Exception:
+        pass
+    # Probe ComfyUI's /object_info once at boot so drift detection has
+    # a current snapshot to diff future sessions against.
+    def _boot_drift_probe():
+        try:
+            import urllib.request, urllib.error
+            req = urllib.request.Request(
+                (COMFYUI_URL or "").rstrip("/") + "/object_info")
+            with urllib.request.urlopen(req, timeout=10.0) as resp:
+                if resp.status != 200:
+                    return
+                info = json.loads(resp.read().decode("utf-8", errors="replace"))
+            if not isinstance(info, dict):
+                return
+            nodes: dict[str, str] = {}
+            for name, meta in info.items():
+                try:
+                    req_inputs = ((meta or {}).get("input") or {}).get("required") or {}
+                    sig = ",".join(sorted(req_inputs.keys()))
+                    nodes[str(name)] = sig
+                except Exception:
+                    nodes[str(name)] = ""
+            from spellcaster_core import speedcoach as _sc
+            _sc.record_object_info_snapshot(nodes)
+        except Exception:
+            pass
+    threading.Thread(target=_boot_drift_probe, daemon=True,
+                      name="drift-probe").start()
     threading.Thread(
         target=_build_lora_registry, args=(url,), daemon=True
     ).start()
@@ -4919,6 +4993,90 @@ def _spellcaster_lora_knowledge_get(name: str, use_network: bool = True) -> tupl
     except Exception as e:
         return (500, {"error": f"knowledge lookup failed: {e}"})
     return (200, {"knowledge": k.to_dict()})
+
+
+def _speedcoach_route(path: str, params: dict) -> tuple[int, dict]:
+    """Read-side dispatcher for /api/speedcoach/*. All sub-paths are
+    pure read-aggregations; SpeedCoach never writes from a GET."""
+    try:
+        from spellcaster_core import speedcoach as sc
+    except Exception as e:
+        return (500, {"error": f"speedcoach unavailable: {e}"})
+    def _p(name, default=None):
+        v = params.get(name, [None])[0]
+        return v if v is not None else default
+
+    try:
+        if path == "/api/speedcoach/arch_speeds":
+            return (200, {"archs": sc.arch_speed_chart()})
+        if path == "/api/speedcoach/warnings_last":
+            return (200, sc.warnings_last_run().to_dict())
+        if path == "/api/speedcoach/drift":
+            return (200, sc.drift_since_last_session().to_dict())
+        if path == "/api/speedcoach/faceswap_reliability":
+            return (200, sc.faceswap_reliability())
+        if path == "/api/speedcoach/mailbox_stats":
+            return (200, sc.mailbox_stats() or {})
+        if path == "/api/speedcoach/lora_impact":
+            return (200, {"rows": sc.lora_impact()})
+        if path == "/api/speedcoach/queue_heatmap":
+            return (200, {"matrix": sc.queue_heatmap()})
+        if path == "/api/speedcoach/speed_leaderboard":
+            limit = int(_p("limit", 10))
+            return (200, {"rows": sc.speed_leaderboard(limit)})
+        if path == "/api/speedcoach/cost_vs_quality":
+            return (200, {"rows": sc.cost_vs_quality()})
+        if path == "/api/speedcoach/videoshot":
+            shot_id = _p("shot_id")
+            return (200, sc.videoshot_frame_times(shot_id))
+        if path == "/api/speedcoach/wizard_stats":
+            wid = _p("id") or _p("char_id") or ""
+            if not wid:
+                return (400, {"error": "id required"})
+            return (200, sc.wizard_profile_stats(wid))
+        if path == "/api/speedcoach/predicted":
+            arch = _p("arch") or ""
+            handler = _p("handler") or ""
+            steps = _p("steps")
+            upscale = _p("upscale")
+            lhash = _p("lora_stack_hash") or ""
+            spec = {"arch": arch, "handler": handler,
+                    "steps": int(steps) if steps and steps.isdigit() else None,
+                    "upscale": int(upscale) if upscale and upscale.isdigit() else None,
+                    "lora_stack_hash": lhash or None}
+            med, p95, n = sc.predicted_elapsed(spec)
+            return (200, {"median": med, "p95": p95, "sample_size": n})
+        if path == "/api/speedcoach/suggest":
+            arch = _p("arch") or ""
+            handler = _p("handler") or ""
+            steps = _p("steps")
+            upscale = _p("upscale")
+            lhash = _p("lora_stack_hash") or ""
+            spec = {"arch": arch, "handler": handler,
+                    "steps": int(steps) if steps and steps.isdigit() else None,
+                    "upscale": int(upscale) if upscale and upscale.isdigit() else None,
+                    "lora_stack_hash": lhash or None}
+            suggs = sc.suggest_alternatives(spec)
+            return (200, {"suggestions": [s.to_dict() for s in suggs]})
+        if path == "/api/speedcoach/insights":
+            try:
+                drift = sc.drift_since_last_session().to_dict()
+            except Exception:
+                drift = {"has_drift": False}
+            return (200, {
+                "speed_leaderboard":  sc.speed_leaderboard(10),
+                "cost_vs_quality":    sc.cost_vs_quality(),
+                "lora_impact":        sc.lora_impact()[:15],
+                "queue_heatmap":      sc.queue_heatmap(),
+                "arch_speeds":        sc.arch_speed_chart(),
+                "faceswap":           sc.faceswap_reliability(),
+                "mailbox":            sc.mailbox_stats() or {},
+                "drift":              drift,
+                "warnings_last":      sc.warnings_last_run().to_dict(),
+            })
+    except Exception as e:
+        return (500, {"error": f"speedcoach {path}: {e}"})
+    return (404, {"error": f"unknown speedcoach path: {path}"})
 
 
 def _spellcaster_faceswap_health() -> tuple[int, dict]:
@@ -9862,6 +10020,11 @@ class GuildHandler(SimpleHTTPRequestHandler):
         elif self.path == '/setup':
             # Legacy route — kept for bookmarks that hit the old wizard page.
             self.path = '/static/setup.html'
+        elif self.path == '/insights' or self.path.startswith('/insights?'):
+            # SpeedCoach Insights page — local read-only dashboard over
+            # the aggregator in spellcaster_core.speedcoach. Standalone
+            # so it opens in a new tab without steamrolling the chat UI.
+            self.path = '/static/insights.html'
 
         # ── Setup-mode API endpoints ──
         if self.path == '/api/setup/state':
@@ -9942,6 +10105,12 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(*_spellcaster_faceswap_reset())
         if self.path == '/api/spellcaster/preflight/status':
             return self.end_json(*_spellcaster_preflight_status())
+        # ── SpeedCoach read-side endpoints ───────────────────────────
+        if self.path.startswith('/api/speedcoach/'):
+            qs = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(qs)
+            return self.end_json(*_speedcoach_route(self.path.split('?')[0],
+                                                      params))
         if self.path == '/api/spellcaster/lora/calibrate/resumable':
             return self.end_json(*_spellcaster_lora_calibrate_resumable())
         if self.path.startswith('/api/spellcaster/lora/suggest'):
@@ -15063,17 +15232,147 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(200, {"status": "ok"})
 
         # -- /api/telemetry/dispatch_ok -- record successful dispatches
+        # (enriched schema: elapsed, predicted_elapsed, arch, model,
+        # loras, steps, cfg, upscale, warnings, failed, error — all
+        # optional but all fuel SpeedCoach suggestions when present).
         elif self.path == '/api/telemetry/dispatch_ok':
-            build_fn = (data.get('build_fn') or '')[:80]
-            char_id = (data.get('char_id') or '')[:80]
-            ts = data.get('ts') or time.time()
+            record = {
+                "ts": data.get('ts') or time.time(),
+                "build_fn": (data.get('build_fn') or '')[:80],
+                "char_id":  (data.get('char_id')  or '')[:80],
+            }
+            for k in ("handler", "arch", "model"):
+                v = data.get(k)
+                if v:
+                    record[k] = str(v)[:120]
+            for k in ("elapsed", "predicted_elapsed", "cfg"):
+                v = data.get(k)
+                if v is not None:
+                    try:
+                        record[k] = float(v)
+                    except (TypeError, ValueError):
+                        pass
+            for k in ("steps", "upscale"):
+                v = data.get(k)
+                if v is not None:
+                    try:
+                        record[k] = int(v)
+                    except (TypeError, ValueError):
+                        pass
+            if data.get("loras"):
+                record["loras"] = data.get("loras")
+            if data.get("warnings"):
+                record["warnings"] = [str(w)[:200] for w in
+                                       (data.get("warnings") or [])][:20]
+            if data.get("failed"):
+                record["failed"] = bool(data.get("failed"))
+            if data.get("error"):
+                record["error"] = str(data.get("error"))[:400]
+            if data.get("job_id"):
+                record["job_id"] = str(data.get("job_id"))[:40]
             try:
-                log_path = os.path.join(_STATE_DIR, 'dispatch_log.jsonl')
-                with open(log_path, 'a', encoding='utf-8') as f:
-                    f.write(json.dumps({"ts": ts, "build_fn": build_fn,
-                                        "char_id": char_id}) + "\n")
+                from spellcaster_core import speedcoach as _sc
+                _sc.append_dispatch_record(record)
+            except Exception:
+                try:
+                    log_path = os.path.join(_STATE_DIR, 'dispatch_log.jsonl')
+                    with open(log_path, 'a', encoding='utf-8') as f:
+                        f.write(json.dumps(record) + "\n")
+                except Exception as e:
+                    print(f"  [Telemetry] dispatch_ok log failed: {e}")
+            try:
+                from spellcaster_core.events import DispatchCompleted, publish_event
+                from spellcaster_core.event_bus import EventBus
+                publish_event(
+                    EventBus.default(),
+                    DispatchCompleted(
+                        job_id=record.get("job_id") or "",
+                        handler=record.get("handler") or record.get("build_fn") or "",
+                        arch=record.get("arch") or "",
+                        elapsed=float(record.get("elapsed") or 0.0),
+                        predicted_elapsed=float(record.get("predicted_elapsed") or 0.0),
+                        failed=bool(record.get("failed")),
+                        warnings=list(record.get("warnings") or []),
+                    ),
+                    origin=(data.get("origin") or "guild"),
+                )
+            except Exception:
+                pass
+            return self.end_json(200, {"status": "ok"})
+
+        # -- /api/telemetry/rating -- thumbs up/down (new)
+        elif self.path == '/api/telemetry/rating':
+            verdict = str(data.get('verdict') or '')[:16]
+            if not verdict:
+                return self.end_json(400, {"error": "verdict required"})
+            record = {
+                "ts":          data.get('ts') or time.time(),
+                "verdict":     verdict,
+                "asset_hash":  (data.get('asset_hash') or '')[:64],
+                "char_id":     (data.get('char_id')    or '')[:80],
+                "handler":     (data.get('handler')    or '')[:80],
+                "build_fn":    (data.get('build_fn')   or '')[:80],
+                "arch":        (data.get('arch')       or '')[:40],
+                "loras":       data.get('loras') or [],
+            }
+            try:
+                from spellcaster_core import speedcoach as _sc
+                _sc.append_rating_record(record)
             except Exception as e:
-                print(f"  [Telemetry] dispatch_ok log failed: {e}")
+                print(f"  [Telemetry] rating write failed: {e}")
+            try:
+                from spellcaster_core.events import RatingSubmitted, publish_event
+                from spellcaster_core.event_bus import EventBus
+                publish_event(
+                    EventBus.default(),
+                    RatingSubmitted(
+                        asset_hash=record["asset_hash"],
+                        verdict=verdict,
+                        char_id=record["char_id"] or None,
+                        handler=record["handler"] or record["build_fn"] or None,
+                        arch=record["arch"] or None,
+                    ),
+                    origin=(data.get("origin") or "guild"),
+                )
+            except Exception:
+                pass
+            return self.end_json(200, {"status": "ok"})
+
+        # -- /api/telemetry/speedcoach_event -- UIs publish shown /
+        # accepted / dismissed for Insights' acceptance-rate card.
+        elif self.path == '/api/telemetry/speedcoach_event':
+            action = str(data.get('action') or '')[:20]
+            if action not in ('shown', 'accepted', 'dismissed'):
+                return self.end_json(400, {"error": "bad action"})
+            try:
+                from spellcaster_core.events import SpeedCoachSuggestion, publish_event
+                from spellcaster_core.event_bus import EventBus
+                publish_event(
+                    EventBus.default(),
+                    SpeedCoachSuggestion(
+                        action=action,
+                        kind=str(data.get('kind') or '')[:32],
+                        speedup_pct=int(data.get('speedup_pct') or 0),
+                        sample_size=int(data.get('sample_size') or 0),
+                        job_id=str(data.get('job_id') or '')[:40] or None,
+                    ),
+                    origin=(data.get("origin") or "guild"),
+                )
+            except Exception:
+                pass
+            try:
+                log_path = os.path.join(_STATE_DIR, 'speedcoach_events.jsonl')
+                with open(log_path, 'a', encoding='utf-8') as f:
+                    f.write(json.dumps({
+                        "ts": data.get('ts') or time.time(),
+                        "action": action,
+                        "kind": str(data.get('kind') or '')[:32],
+                        "speedup_pct": int(data.get('speedup_pct') or 0),
+                        "sample_size": int(data.get('sample_size') or 0),
+                        "job_id": str(data.get('job_id') or '')[:40] or "",
+                    }) + "\n")
+            except Exception:
+                pass
             return self.end_json(200, {"status": "ok"})
 
         # -- /api/probe_tool -- server-side health probe for the

@@ -323,6 +323,87 @@ class GuildSelfUpdateError(_EventBase):
     error: str = ""
 
 
+# ── SpeedCoach + telemetry events ──────────────────────────────────
+
+@dataclass
+class DispatchPredicted(_EventBase):
+    """Emitted when SpeedCoach shows a predicted elapsed time in a UI
+    banner. Pairs with ``DispatchCompleted`` so the retrospective can
+    compare actual vs predicted. ``<origin>.dispatch.predicted``."""
+
+    KIND: str = field(default="*.dispatch.predicted", init=False, repr=False)
+    job_id: str = ""
+    handler: str = ""
+    arch: str = ""
+    median_s: float = 0.0
+    p95_s: float = 0.0
+    sample_size: int = 0
+
+
+@dataclass
+class DispatchCompleted(_EventBase):
+    """Emitted after every successful (or failed) dispatch. Fires
+    AFTER the AssetCreated event so subscribers ordering on ts see
+    the asset first, then the telemetry. ``<origin>.dispatch.completed``."""
+
+    KIND: str = field(default="*.dispatch.completed", init=False, repr=False)
+    job_id: str = ""
+    handler: str = ""
+    arch: str = ""
+    elapsed: float = 0.0
+    predicted_elapsed: float = 0.0
+    failed: bool = False
+    warnings: list = field(default_factory=list)
+
+
+@dataclass
+class SpeedCoachSuggestion(_EventBase):
+    """Emitted by SpeedCoach-aware UIs whenever a suggestion is shown,
+    accepted, or dismissed. ``action`` is one of ``shown`` / ``accepted``
+    / ``dismissed``. Enables the Insights tab to compute acceptance
+    rates without each client publishing separately.
+    ``<origin>.speedcoach.suggestion``."""
+
+    KIND: str = field(default="*.speedcoach.suggestion",
+                      init=False, repr=False)
+    action: str = ""                    # "shown" | "accepted" | "dismissed"
+    kind: str = ""                      # "arch_swap" | "param_trim" | "deferred_compute"
+    speedup_pct: int = 0
+    sample_size: int = 0
+    job_id: Optional[str] = None
+
+
+@dataclass
+class DriftDetected(_EventBase):
+    """ComfyUI node catalogue changed since the last recorded snapshot.
+    Published once per session. Listeners: GIMP banner, Guild hero
+    card. ``spellcaster.drift.detected``."""
+
+    KIND: str = field(default="spellcaster.drift.detected",
+                      init=False, repr=False)
+    added_count: int = 0
+    removed_count: int = 0
+    changed_count: int = 0
+    previous_hash: str = ""
+    current_hash: str = ""
+
+
+@dataclass
+class RatingSubmitted(_EventBase):
+    """User thumbs-up/down on a rendered asset. ``<origin>.rating.submitted``.
+
+    ``verdict`` is a normalised string (``"up"`` / ``"down"`` /
+    numeric score). The Insights tab uses these to compute per-handler
+    thumbs rates."""
+
+    KIND: str = field(default="*.rating.submitted", init=False, repr=False)
+    asset_hash: str = ""
+    verdict: str = ""
+    char_id: Optional[str] = None
+    handler: Optional[str] = None
+    arch: Optional[str] = None
+
+
 # ── registry + helpers ─────────────────────────────────────────────
 
 #: Every kind mapped to its dataclass. Wildcard patterns ("*.X.Y")
@@ -338,17 +419,22 @@ EVENT_SCHEMAS: dict[str, type[_EventBase]] = {
     "resolve.send_to_peer.done":     SendToPeerDone,
     "guild.self_update.result":      GuildSelfUpdateResult,
     "guild.self_update.error":       GuildSelfUpdateError,
+    "spellcaster.drift.detected":    DriftDetected,
 }
 
 #: Suffixes that map to a shared schema regardless of origin prefix.
 #: Extended like ``{"asset.created": AssetCreated}`` — any kind ending
 #: with ``.asset.created`` resolves to the same dataclass.
 _WILDCARD_SCHEMAS: dict[str, type[_EventBase]] = {
-    "asset.created":       AssetCreated,
-    "asset.uploaded":      AssetUploaded,
-    "generation.finished": GenerationFinished,
-    "asset.send":          AssetSend,
-    "presence.heartbeat":  PresenceHeartbeat,
+    "asset.created":         AssetCreated,
+    "asset.uploaded":        AssetUploaded,
+    "generation.finished":   GenerationFinished,
+    "asset.send":            AssetSend,
+    "presence.heartbeat":    PresenceHeartbeat,
+    "dispatch.predicted":    DispatchPredicted,
+    "dispatch.completed":    DispatchCompleted,
+    "speedcoach.suggestion": SpeedCoachSuggestion,
+    "rating.submitted":      RatingSubmitted,
 }
 
 
@@ -417,4 +503,7 @@ __all__ = [
     "PlayheadGrab", "PlayheadSendToPeer", "TimelineImport",
     # resolve response
     "PlayheadReady", "TimelineImported", "SendToPeerDone",
+    # speedcoach + telemetry
+    "DispatchPredicted", "DispatchCompleted",
+    "SpeedCoachSuggestion", "DriftDetected", "RatingSubmitted",
 ]
