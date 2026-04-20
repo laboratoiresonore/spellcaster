@@ -2026,6 +2026,71 @@ textarea::placeholder { color: #555; }
 .summon-model-row.selected { background: rgba(178, 70, 242, 0.2); outline: 1px solid var(--accent); border-radius: 6px; box-shadow: 0 0 10px var(--accent-glow); }
 .summon-model-row.exists { opacity: 0.4; cursor: default; }
 
+/* ── Summon archetype picker ── */
+.summon-archetype-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+    margin-bottom: 6px;
+}
+.summon-archetype-card {
+    background: #151520;
+    border: 1px solid #2a2440;
+    border-radius: 10px;
+    padding: 14px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 130px;
+}
+.summon-archetype-card:hover {
+    border-color: var(--accent);
+    background: rgba(178, 70, 242, 0.08);
+    transform: translateY(-1px);
+}
+.summon-archetype-card .arc-icon {
+    font-size: 24px; line-height: 1;
+}
+.summon-archetype-card .arc-title {
+    font-size: 15px; font-weight: 700; color: #e8e6f5;
+}
+.summon-archetype-card .arc-pitch {
+    font-size: 12px; color: #a89bcc; line-height: 1.4;
+}
+.summon-archetype-card .arc-badge {
+    display: inline-block;
+    font-size: 10px; font-weight: 700;
+    padding: 1px 8px; border-radius: 10px;
+    background: linear-gradient(90deg, #8a2be2, #4dabf7);
+    color: white;
+    align-self: flex-start;
+    margin-top: auto;
+}
+.summon-chimera-row, .summon-scalpel-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.summon-chimera-row:hover, .summon-scalpel-row:hover {
+    background: rgba(178, 70, 242, 0.08);
+}
+.summon-chimera-row input[type=checkbox] { accent-color: var(--accent); }
+.summon-chimera-row .domain-select {
+    margin-left: auto;
+    padding: 4px 6px; font-size: 12px;
+    background: #0a0e16; color: #e8e6f5;
+    border: 1px solid #2d3b54; border-radius: 4px;
+}
+.summon-scalpel-row.selected {
+    background: rgba(178, 70, 242, 0.2);
+    outline: 1px solid var(--accent);
+    border-radius: 6px;
+}
+
 /* ── Wizard Management (Settings) ── */
 .wizard-mgmt-row {
     display: flex; align-items: center; gap: 10px; padding: 8px 12px;

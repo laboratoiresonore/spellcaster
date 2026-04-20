@@ -4958,6 +4958,384 @@ def _spellcaster_preflight_run() -> tuple[int, dict]:
     return (200, {"ok": True, "started": True})
 
 
+_ARCHETYPE_CATALOGUE = {
+    # Each entry describes a summon-time archetype. The subtext is the
+    # default sidebar label; the system_prompt drives chat behaviour;
+    # the hue seeds the avatar gradient. Archetype-specific config
+    # (Chimera's model list, Oracle's LLM, Scalpel's base model) is
+    # stored separately on the character record as `archetype_config`.
+    "forensic": {
+        "icon": "🔎",
+        "default_subtext": "Forensic — PNG workflow extraction + remix",
+        "hue": 200,
+        "system_prompt": (
+            "You are Forensic, a reverse-engineering wizard in The Wizard "
+            "Guild. When the user drops a PNG you extract the embedded "
+            "workflow metadata (prompt, negative, seed, model, LoRAs, "
+            "sampler, steps, CFG) and report it in a structured way. If "
+            "the PNG has no metadata, say so plainly. Offer to remix the "
+            "workflow by tweaking one dimension at a time (seed, prompt, "
+            "LoRA strength, step count). Short sentences, investigator "
+            "tone — like a detective describing evidence."
+        ),
+    },
+    "chimera": {
+        "icon": "🌀",
+        "default_subtext": "Chimera — multi-model router",
+        "hue": 280,
+        "system_prompt": (
+            "You are Chimera, a multi-headed routing wizard. You have "
+            "several image models at your disposal, each tagged with a "
+            "domain (portraits / landscapes / photoreal / anime / "
+            "painted / nsfw / auto). For every user prompt you decide "
+            "which head best matches the subject, or ask the user "
+            "whether to parallel-render the top candidates and let the "
+            "scorer pick a winner. Announce which head you're using and "
+            "why in one short sentence before each render."
+        ),
+    },
+    "oracle": {
+        "icon": "👁",
+        "default_subtext": "Oracle — vision reader + critique",
+        "hue": 50,
+        "system_prompt": (
+            "You are Oracle, a vision-reading seer. Users drop images "
+            "on you and you describe what's there, critique composition/"
+            "lighting/anatomy, and suggest improvements that could be "
+            "fed back into another wizard's generation. You never "
+            "generate images yourself — you READ them. Speak with the "
+            "measured authority of an art critic."
+        ),
+    },
+    "lore_keeper": {
+        "icon": "📜",
+        "default_subtext": "Lore-keeper — conversational LoRA library",
+        "hue": 160,
+        "system_prompt": (
+            "You are Lore-keeper, the Wizard Guild's archivist of every "
+            "LoRA the user has calibrated. You answer questions like "
+            "'what does this LoRA do?', 'what pairs well with Sinozick?', "
+            "'show me my top 3 unused style LoRAs for SDXL', and 'what "
+            "trigger words activate this LoRA?'. You draw from the "
+            "user's Civitai metadata cache, safetensors headers, and "
+            "confirmation history. Calm, scholarly tone."
+        ),
+    },
+    "scalpel": {
+        "icon": "🗡",
+        "default_subtext": "Scalpel — semantic image editing",
+        "hue": 340,
+        "system_prompt": (
+            "You are Scalpel, a precision-editing wizard. Users give "
+            "you an image plus a natural-language edit: 'erase the car', "
+            "'change her dress to red', 'make the sky stormy'. You run "
+            "SAM3 segmentation → mask generation → inpaint via the "
+            "wizard's configured base model. Confirm what you're about "
+            "to edit before running, in one line. Keep your speech clipped "
+            "and surgical — like a doctor describing the operation."
+        ),
+    },
+}
+
+
+def _spellcaster_summon_archetype(
+    *, kind: str, name: str, personality: str, subtext: str, config: dict,
+) -> tuple[int, dict]:
+    """POST /api/summon_wizard archetype branch.
+
+    Builds a `type: "archetype"` character record with archetype_kind +
+    archetype_config, validates the config per kind, persists via
+    _save_custom_wizards, and registers the wizard in CHARS_CACHE so
+    the sidebar picks it up.
+    """
+    meta = _ARCHETYPE_CATALOGUE.get(kind)
+    if not meta:
+        return (400, {"error": f"unknown archetype_kind {kind!r}"})
+
+    # Per-kind config validation
+    errs = _validate_archetype_config(kind, config or {})
+    if errs:
+        return (400, {"error": "invalid config: " + "; ".join(errs)})
+
+    base = re.sub(r"[^a-z0-9]+", "_", (name or kind).lower()).strip("_") or kind
+    char_id = f"archetype_{kind}_{base}"
+    # Fight the duplicate case — different archetypes can share a name
+    # but not a full id.
+    suffix = 0
+    while any(c["id"] == char_id for c in CHARS_CACHE):
+        suffix += 1
+        char_id = f"archetype_{kind}_{base}_{suffix}"
+
+    hue = int(meta.get("hue", 220))
+    if not subtext:
+        subtext = meta["default_subtext"]
+
+    new_char = {
+        "id":              char_id,
+        "type":            "archetype",
+        "archetype_kind":  kind,
+        "archetype_config": dict(config or {}),
+        "name":            name or meta["icon"] + " " + kind.replace("_", " ").title(),
+        "subtext":         subtext,
+        "color1":          f"hsl({hue}, 85%, 42%)",
+        "color2":          f"hsl({(hue + 55) % 360}, 100%, 58%)",
+        "personality":     personality,
+        "system_prompt":   meta["system_prompt"],
+    }
+    CHARS_CACHE.append(new_char)
+    try:
+        _save_custom_wizards()
+    except Exception as e:
+        print(f"  [Summon] Archetype save failed (non-fatal): {e}")
+    print(f"  [Summon] Archetype '{kind}' created: id={char_id} name={name!r}")
+    return (200, {"status": "created", "character": new_char})
+
+
+def _validate_archetype_config(kind: str, config: dict) -> list[str]:
+    """Per-kind config validators. Return a list of error strings; an
+    empty list means the config is acceptable. Keep these loose — we'd
+    rather ship a wizard whose config needs tweaking than reject it
+    and frustrate the user."""
+    errs: list[str] = []
+    if kind == "chimera":
+        models = config.get("models") or []
+        if not isinstance(models, list) or len(models) < 2 or len(models) > 5:
+            errs.append("chimera needs 2–5 models")
+        else:
+            for m in models:
+                if not isinstance(m, dict) or not m.get("name"):
+                    errs.append("each chimera model must be a dict with a `name`")
+                    break
+    elif kind == "oracle":
+        if not isinstance(config.get("llm_model"), str) or not config["llm_model"]:
+            errs.append("oracle needs an llm_model string")
+    elif kind == "scalpel":
+        base = config.get("base_model")
+        if not isinstance(base, dict) or not base.get("name"):
+            errs.append("scalpel needs a base_model with a `name`")
+    # forensic & lore_keeper accept empty configs
+    return errs
+
+
+# ── Archetype runtime endpoints ─────────────────────────────────────────
+
+def _spellcaster_forensic_extract(image_b64: str) -> tuple[int, dict]:
+    """POST /api/archetype/forensic/extract — parse a PNG's embedded
+    workflow metadata. Accepts the image as base64 (UI sends it from
+    an attachment). Returns the structured workflow + prompt / seed /
+    sampler / model / LoRA summary so the Forensic wizard can read
+    out what was used.
+    """
+    if not image_b64:
+        return (400, {"error": "image_b64 required"})
+    import base64 as _b64
+    try:
+        raw = _b64.b64decode(image_b64)
+    except Exception as e:
+        return (400, {"error": f"base64 decode failed: {e}"})
+    try:
+        from spellcaster_core.forge import reverse_engineer_image
+    except Exception as e:
+        return (500, {"error": f"forge module unavailable: {e}"})
+    # `reverse_engineer_image` expects a filesystem path. Write to a
+    # tempfile, call, clean up — the raw bytes never leave the Guild
+    # process otherwise.
+    import tempfile
+    tmp_path = None
+    try:
+        fd, tmp_path = tempfile.mkstemp(suffix=".png", prefix="forensic_")
+        with os.fdopen(fd, "wb") as f:
+            f.write(raw)
+        info = reverse_engineer_image(tmp_path)
+    except Exception as e:
+        return (500, {"error": f"extraction failed: {e}"})
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try: os.remove(tmp_path)
+            except Exception: pass
+    if info is None:
+        return (200, {
+            "ok": True,
+            "forensic": None,
+            "note": "No ComfyUI / A1111 workflow metadata found in this PNG.",
+        })
+    return (200, {"ok": True, "forensic": info})
+
+
+def _spellcaster_oracle_review(
+    image_b64: str, prompt: str, llm_model: str,
+) -> tuple[int, dict]:
+    """POST /api/archetype/oracle/review — send an image + user prompt
+    to the local multimodal LLM (default gemma3:4b via Ollama) and
+    return a description / critique. Reuses the same probe module as
+    the Calibration scorer so availability + errors are consistent.
+    """
+    if not image_b64:
+        return (400, {"error": "image_b64 required"})
+    try:
+        from spellcaster_core.lora_scorer import score_image
+    except Exception as e:
+        return (500, {"error": f"scorer module unavailable: {e}"})
+    # Wrap the user's question in the probe format. We don't strictly
+    # need the 0-10 score — Oracle cares about the `reason` field.
+    query = prompt or (
+        "Describe this image in detail. Note composition, lighting, "
+        "anatomy issues, and suggest one concrete improvement."
+    )
+    result = score_image(
+        image_b64, query,
+        model=(llm_model or "gemma3:4b"),
+    )
+    return (200, {
+        "ok":      result.ok,
+        "score":   result.score,
+        "review":  result.reason,
+        "model":   result.model,
+        "error":   result.error,
+        "elapsed_ms": result.elapsed_ms,
+    })
+
+
+def _spellcaster_lore_keeper_query(query: str, limit: int = 6) -> tuple[int, dict]:
+    """POST /api/archetype/lore_keeper/query — look up LoRAs matching
+    `query` from the user's calibrated registry and return rich
+    summaries the Lore-keeper wizard can read back. Purely a library
+    query; no generation.
+    """
+    try:
+        from spellcaster_core import lora_calibration_store as store
+        from spellcaster_core.lora_knowledge import get_knowledge
+    except Exception as e:
+        return (500, {"error": f"knowledge module unavailable: {e}"})
+    q = (query or "").lower().strip()
+    merged = store.load_merged()
+    # Merge in registry so we catch non-calibrated LoRAs too.
+    reg = _LORA_REGISTRY or {}
+    candidate_names = set(merged.keys()) | set(reg.keys())
+    # Simple substring match across name + trigger words + stored
+    # base_model — enough to answer "show me Sinozick" or "SDXL
+    # portrait LoRAs" without an LLM in the loop.
+    hits: list[dict] = []
+    for name in candidate_names:
+        hay_parts = [name.lower()]
+        rec = merged.get(name) or {}
+        if rec.get("trigger_words"):
+            hay_parts.extend(str(t).lower() for t in rec["trigger_words"])
+        if rec.get("base_model"):
+            hay_parts.append(str(rec["base_model"]).lower())
+        reg_entry = reg.get(name) or {}
+        if reg_entry.get("trigger_words"):
+            hay_parts.extend(str(t).lower() for t in reg_entry["trigger_words"])
+        hay = " ".join(hay_parts)
+        if not q or q in hay:
+            hits.append({"name": name, "calibration": rec, "registry": reg_entry})
+        if len(hits) >= limit * 3:
+            break
+    # Sort calibrated first so the user sees vetted recipes at the top.
+    hits.sort(key=lambda h: (not h["calibration"].get("confirmed_by_user"),
+                              h["name"].lower()))
+    return (200, {
+        "ok": True,
+        "query": query,
+        "count": len(hits[:limit]),
+        "total_matched": len(hits),
+        "total_known": len(candidate_names),
+        "hits": hits[:limit],
+    })
+
+
+def _spellcaster_chimera_route(prompt: str, char_id: str) -> tuple[int, dict]:
+    """POST /api/archetype/chimera/route — given a prompt + a Chimera
+    wizard's id, return which of its configured models to use. First
+    version is pure keyword matching over each model's declared
+    domain — the Chimera card's scorer-driven parallel render comes
+    in a follow-up. Returns the pick and the reasoning the wizard
+    surfaces to the user.
+    """
+    wizard = next((c for c in CHARS_CACHE if c.get("id") == char_id), None)
+    if not wizard or wizard.get("archetype_kind") != "chimera":
+        return (404, {"error": "not a Chimera wizard"})
+    models = ((wizard.get("archetype_config") or {}).get("models") or [])
+    if not models:
+        return (409, {"error": "Chimera has no models configured"})
+    p = (prompt or "").lower()
+    # Tiny keyword-to-domain classifier. Good enough as a v1 default
+    # router; Chimera's owner can upgrade it to an LLM call later.
+    domain_keywords = {
+        "portraits":  ["portrait", "face", "closeup", "headshot", "selfie"],
+        "landscapes": ["landscape", "mountain", "forest", "horizon", "valley",
+                        "ocean", "wide shot", "vista"],
+        "photoreal":  ["photo", "photorealistic", "realistic", "dslr", "film"],
+        "anime":      ["anime", "manga", "chibi", "waifu", "toon", "2d"],
+        "painted":    ["painting", "oil", "brush", "watercolour", "watercolor",
+                        "impasto"],
+        "nsfw":       ["nsfw", "nude", "naked", "explicit"],
+    }
+    scores: dict[str, int] = {}
+    for dom, kws in domain_keywords.items():
+        scores[dom] = sum(1 for k in kws if k in p)
+    best_domain = max(scores, key=scores.get) if any(scores.values()) else "auto"
+    # Match first model tagged with that domain; fall back to first model.
+    pick = next((m for m in models if m.get("domain") == best_domain), None)
+    if not pick and best_domain != "auto":
+        pick = next((m for m in models if m.get("domain") == "auto"), None)
+    if not pick:
+        pick = models[0]
+    return (200, {
+        "ok":            True,
+        "picked_domain": best_domain,
+        "picked_model":  pick,
+        "all_models":    models,
+        "reasoning":     (f"prompt matches domain '{best_domain}'"
+                           if best_domain != "auto"
+                           else "no strong domain signal — used first registered head"),
+    })
+
+
+def _spellcaster_scalpel_plan(
+    char_id: str, instruction: str,
+) -> tuple[int, dict]:
+    """POST /api/archetype/scalpel/plan — v1 returns the plan Scalpel
+    would run for a given instruction without executing it yet, so the
+    wizard can show the user "I'll erase the car using SAM3 segment →
+    magic eraser → Klein inpaint with `base_model`". The full edit
+    dispatch lands in a follow-up once the SAM3 chain is wired
+    end-to-end into the Guild.
+    """
+    wizard = next((c for c in CHARS_CACHE if c.get("id") == char_id), None)
+    if not wizard or wizard.get("archetype_kind") != "scalpel":
+        return (404, {"error": "not a Scalpel wizard"})
+    base = ((wizard.get("archetype_config") or {}).get("base_model") or {})
+    instr = (instruction or "").strip()
+    if not instr:
+        return (400, {"error": "instruction required"})
+    # Deterministic verb detection — keeps the plan honest about what
+    # Scalpel will actually dispatch when the chain goes live.
+    verb = "edit"
+    lower = instr.lower()
+    if any(w in lower for w in ("erase", "remove", "delete")):
+        verb = "erase"
+    elif any(w in lower for w in ("replace", "change", "swap")):
+        verb = "replace"
+    elif any(w in lower for w in ("add", "insert", "put")):
+        verb = "add"
+    plan = {
+        "verb":        verb,
+        "steps": [
+            {"step": "sam3_segment", "note": "find the target region"},
+            {"step": "build_mask",    "note": "dilate + feather the mask"},
+            ({"step": "magic_eraser", "note": "content-aware fill"}
+              if verb == "erase" else
+              {"step": "klein_sam3_inpaint",
+               "note": f"inpaint using {base.get('name') or 'the configured base model'}"}),
+        ],
+        "base_model":  base,
+        "status":      "planned",
+    }
+    return (200, {"ok": True, "instruction": instr, "plan": plan,
+                   "note": "Plan preview only — full dispatch arrives in a follow-up."})
+
+
 def _spellcaster_faceswap_reset() -> tuple[int, dict]:
     """POST /api/spellcaster/faceswap/reset — wipe crash history and
     clear auto-disable. The user says "I fixed the TensorRT install,
@@ -7054,20 +7432,44 @@ def _cache_comfyui_asset(comfy_url_str, asset_type="image",
                 )
                 if emit_event and _EVENT_BUS is not None:
                     try:
-                        _EVENT_BUS.publish(
-                            f"{origin}.asset.created",
-                            origin=origin,
-                            data={
-                                'asset_hash': rec.hash,
-                                'kind': kind,
-                                'prompt': prompt,
-                                'model': model,
-                                'seed': seed,
-                                'title': title,
-                                'mime': rec.mime,
-                                'size': rec.size,
-                            },
-                        )
+                        # Typed event — validates publisher-side and
+                        # gives subscribers a dataclass view. Extra
+                        # fields (mime, size) ride through unchanged;
+                        # they're not in the AssetCreated schema but
+                        # the bus doesn't strip extras (see
+                        # spellcaster_core/events.py rule 3).
+                        try:
+                            from spellcaster_core.events import (
+                                AssetCreated, publish_event)
+                            evt = AssetCreated(
+                                asset_hash=rec.hash, origin=origin,
+                                kind=kind,
+                                url=f"/api/assets/{rec.hash}",
+                                prompt=prompt, model=model, seed=seed,
+                                title=title,
+                                tags=list(tags or []),
+                            )
+                            # Bring non-schema fields back so existing
+                            # subscribers that read mime/size keep
+                            # working until they migrate.
+                            payload = evt.to_payload()
+                            payload["mime"] = rec.mime
+                            payload["size"] = rec.size
+                            _EVENT_BUS.publish(
+                                f"{origin}.asset.created",
+                                origin=origin, data=payload)
+                        except ImportError:
+                            # Legacy fallback if events.py isn't in
+                            # spellcaster_core yet (old bundle).
+                            _EVENT_BUS.publish(
+                                f"{origin}.asset.created",
+                                origin=origin,
+                                data={
+                                    'asset_hash': rec.hash, 'kind': kind,
+                                    'prompt': prompt, 'model': model,
+                                    'seed': seed, 'title': title,
+                                    'mime': rec.mime, 'size': rec.size,
+                                })
                     except Exception:
                         pass  # bus is best-effort
                 return f"/api/assets/{rec.hash}"
@@ -13732,6 +14134,27 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(*_spellcaster_faceswap_reset())
         if self.path == '/api/spellcaster/preflight/run':
             return self.end_json(*_spellcaster_preflight_run())
+        # ── Archetype runtime endpoints ──
+        if self.path == '/api/archetype/forensic/extract':
+            return self.end_json(*_spellcaster_forensic_extract(
+                data.get('image_b64', '')))
+        if self.path == '/api/archetype/oracle/review':
+            return self.end_json(*_spellcaster_oracle_review(
+                data.get('image_b64', ''),
+                data.get('prompt', ''),
+                data.get('llm_model', 'gemma3:4b')))
+        if self.path == '/api/archetype/lore_keeper/query':
+            return self.end_json(*_spellcaster_lore_keeper_query(
+                data.get('query', ''),
+                int(data.get('limit', 6))))
+        if self.path == '/api/archetype/chimera/route':
+            return self.end_json(*_spellcaster_chimera_route(
+                data.get('prompt', ''),
+                data.get('char_id', '')))
+        if self.path == '/api/archetype/scalpel/plan':
+            return self.end_json(*_spellcaster_scalpel_plan(
+                data.get('char_id', ''),
+                data.get('instruction', '')))
         if self.path.startswith('/api/spellcaster/lora/shootout/cancel'):
             qs = urllib.parse.urlparse(self.path).query
             params = urllib.parse.parse_qs(qs)
@@ -14271,8 +14694,22 @@ class GuildHandler(SimpleHTTPRequestHandler):
             print(f"  [Guild] Scaffold deleted: {char_id}")
             return self.end_json(200, {"status": "ok", "id": char_id})
 
-        # -- /api/summon_wizard -- create a new wizard character from a model
+        # -- /api/summon_wizard -- create a new wizard character, either:
+        #   * classic per-model wizard (model_name + scaffold), or
+        #   * archetype wizard (archetype_kind + archetype_config)
         elif self.path == '/api/summon_wizard':
+            archetype_kind = (data.get('archetype_kind') or '').strip().lower()
+            # Archetype branch: different validation + record shape. Short-
+            # circuits before the classic per-model path so we don't demand
+            # a model_name for archetypes that don't tie to one.
+            if archetype_kind:
+                return self.end_json(*_spellcaster_summon_archetype(
+                    kind=archetype_kind,
+                    name=data.get('name', 'Unnamed Wizard'),
+                    personality=data.get('personality', ''),
+                    subtext=data.get('subtext', ''),
+                    config=data.get('archetype_config') or {},
+                ))
             model_name = data.get('model_name', '')
             model_arch = data.get('model_arch', 'sdxl')
             model_type = data.get('model_type', 'checkpoint')
