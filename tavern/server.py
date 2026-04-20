@@ -5119,6 +5119,38 @@ def _speedcoach_route(path: str, params: dict) -> tuple[int, dict]:
                     "lora_stack_hash": lhash or None}
             suggs = sc.suggest_alternatives(spec)
             return (200, {"suggestions": [s.to_dict() for s in suggs]})
+        if path == "/api/speedcoach/estimate":
+            # Pre-dispatch ETA baseline. Adjusted for current queue
+            # depth + VRAM pressure + cold-model flag when supplied.
+            try:
+                from spellcaster_core import estimate as _est
+            except Exception as _e:
+                return (500, {"error": f"estimate module unavailable: {_e}"})
+            arch = _p("arch") or ""
+            handler = _p("handler") or ""
+            steps = _p("steps")
+            upscale = _p("upscale")
+            lhash = _p("lora_stack_hash") or ""
+            width = _p("width")
+            height = _p("height")
+            queue_ahead = _p("queue_ahead")
+            vram_pct = _p("vram_pct")
+            cold = _p("cold_model")
+            spec = {"arch": arch, "handler": handler,
+                    "steps": int(steps) if steps and steps.isdigit() else None,
+                    "upscale": int(upscale) if upscale and upscale.isdigit() else None,
+                    "lora_stack_hash": lhash or None,
+                    "width":  int(width)  if width  and width.isdigit()  else None,
+                    "height": int(height) if height and height.isdigit() else None}
+            pre = _est.estimate_pre_dispatch(
+                spec,
+                queue_ahead=int(queue_ahead) if queue_ahead and queue_ahead.isdigit() else 0,
+                vram_pct=float(vram_pct) if vram_pct else 0.0,
+                cold_model=(str(cold or "").strip().lower()
+                             in ("1", "true", "yes")),
+            )
+            pre["handler_key"] = handler
+            return (200, pre)
         if path == "/api/speedcoach/insights":
             # Composite bundle for the Insights tab — one round trip.
             try:
