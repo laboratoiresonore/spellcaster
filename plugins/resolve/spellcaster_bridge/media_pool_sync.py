@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime
 import os
+import re
 import sys
 import threading
 
@@ -22,6 +23,19 @@ from resolve_helpers import (  # type: ignore
     ensure_bin, import_video, append_to_current_timeline,
     get_current_project, get_media_pool, add_spellcaster_marker,
 )
+
+
+# Guild shot ids are hex uuids or short prefix-tagged ids (e.g.
+# "guild_send_<ms>"). Anything outside this shape is suspicious: the id
+# is about to be joined into a cache path and opened for write, so an
+# attacker-controlled id with `..` or `/` would traverse out of the
+# cache dir. The Guild's event bus is unauthenticated on localhost, so
+# this is a real vector — clamp hard.
+_SAFE_SHOT_ID = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
+
+
+def _is_safe_shot_id(sid: str) -> bool:
+    return isinstance(sid, str) and bool(_SAFE_SHOT_ID.match(sid))
 
 
 class MediaPoolSync:
@@ -99,6 +113,11 @@ class MediaPoolSync:
     def _import_shot(self, shot: dict):
         shot_id = shot.get("id") or shot.get("shot_id")
         if not shot_id:
+            return
+        if not _is_safe_shot_id(str(shot_id)):
+            # Attacker-controlled or malformed id; would escape cache
+            # dir on os.path.join at line 128.
+            self._log(f"Rejected unsafe shot_id: {str(shot_id)[:40]!r}")
             return
         with self._lock:
             if shot_id in self._imported:

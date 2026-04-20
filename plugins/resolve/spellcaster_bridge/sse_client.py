@@ -87,6 +87,12 @@ class SSEClient:
         except Exception:
             pass
 
+        # Exponential backoff on consecutive SSE failures. Without this,
+        # a Guild that's down for a moment would get hammered with
+        # reconnect attempts every 2 s (SSE drop -> 15 s polling ->
+        # reconnect). Reset to the floor after a successful SSE session.
+        backoff_s = 2.0
+        MAX_BACKOFF_S = 60.0
         while not self._stop.is_set():
             if not self.guild.is_reachable():
                 self._mode = "disconnected"
@@ -97,11 +103,18 @@ class SSEClient:
 
             try:
                 self._run_sse()
+                # Clean disconnect (stream closed without raising) — reset
+                # the backoff so the next reconnect is fast.
+                backoff_s = 2.0
             except Exception as e:
                 self._last_error = f"SSE: {e}"
                 self._mode = "polling"
-                # Fall through to polling for a bit then retry SSE
+                # Fall through to polling for a bit then retry SSE with
+                # exponential backoff to avoid pounding a flaky Guild.
                 self._run_polling(duration_s=15.0)
+                if self._stop.wait(backoff_s):
+                    return
+                backoff_s = min(backoff_s * 2.0, MAX_BACKOFF_S)
 
     def _run_sse(self):
         """Try to maintain an SSE connection. Any failure bubbles up."""
