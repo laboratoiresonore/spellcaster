@@ -1243,13 +1243,20 @@ def _apply_speedup(nf, model_ref, arch_key, *, fast_mode=False, node_id=None):
 
 
 _AYS_ARCHES = {"sd15", "sdxl", "illustrious"}
+# Detail Daemon high-frequency boost — only fires at quality="max" and
+# only on arches where the wrap is known to help. ZIT is the headline
+# target (6-step distillation gains visible micro-detail). SD1/SDXL
+# already have AYS at "max" so DD layering is overkill; Klein has its
+# own enhancer chain and shouldn't double-process.
+_DETAIL_DAEMON_ARCHES = {"zit"}
 
 
 def _emit_sampler(nf, *, model_ref, pos_ref, neg_ref, latent_ref,
                     seed, steps, cfg, sampler, scheduler, denoise,
                     node_id,
                     arch_key=None, quality="balanced",
-                    ays_override=None, ays_node_base=670):
+                    ays_override=None, ays_node_base=670,
+                    detail_daemon_node_base=685):
     """Emit the final sampling node, choosing between:
 
       * plain KSampler                 (default — preserves previous
@@ -1258,6 +1265,9 @@ def _emit_sampler(nf, *, model_ref, pos_ref, neg_ref, latent_ref,
       * AYS custom-advanced pipeline   (5 nodes: AYSScheduler +
                                         KSamplerSelect + CFGGuider +
                                         RandomNoise + SamplerCustomAdvanced)
+      * Detail Daemon custom-advanced  (5 nodes: BasicScheduler +
+                                        KSamplerSelect + DetailDaemonSamplerNode +
+                                        CFGGuider + RandomNoise + SamplerCustomAdvanced)
 
     AYS is chosen when:
       * ays_override is explicitly True, OR
@@ -1265,6 +1275,12 @@ def _emit_sampler(nf, *, model_ref, pos_ref, neg_ref, latent_ref,
         Steps threshold is NOT enforced — AYS is never worse than Karras,
         just has diminishing returns at >20 steps. Users who set max
         knowingly accept the (negligible) extra cost.
+
+    Detail Daemon is chosen when:
+      * quality == "max" and arch_key in _DETAIL_DAEMON_ARCHES (zit).
+        Distilled DiT gains visible micro-detail from the noise-schedule
+        wrap; AYS does not apply (its sigma table is SD-only) so DD is
+        the equivalent quality-pass for these architectures.
 
     AYS is skipped for Flux/Klein/ZIT/Chroma — its sigma table is
     hard-coded for SD1/SDXL only and would produce garbage elsewhere.
@@ -1274,27 +1290,58 @@ def _emit_sampler(nf, *, model_ref, pos_ref, neg_ref, latent_ref,
     VAEDecode wiring stays unchanged.
     """
     use_ays = False
+    use_detail_daemon = False
     if ays_override is True:
         use_ays = True
     elif ays_override is None and quality == "max":
-        use_ays = arch_key in _AYS_ARCHES
+        if arch_key in _AYS_ARCHES:
+            use_ays = True
+        elif arch_key in _DETAIL_DAEMON_ARCHES:
+            use_detail_daemon = True
 
-    if not use_ays:
+    if not use_ays and not use_detail_daemon:
         return nf.ksampler(
             model_ref, pos_ref, neg_ref, latent_ref,
             seed, steps, cfg, sampler, scheduler, denoise, node_id=node_id,
         )
 
-    # AYS chain. model_type "SD1" for sd15, else "SDXL" (covers illustrious).
-    model_type = "SD1" if arch_key == "sd15" else "SDXL"
-    sched_id = nf.align_your_steps_scheduler(
-        model_type, steps, denoise, node_id=str(ays_node_base))
-    sel_id = nf.ksampler_select(sampler, node_id=str(ays_node_base + 1))
+    if use_ays:
+        # AYS chain. model_type "SD1" for sd15, else "SDXL" (covers illustrious).
+        model_type = "SD1" if arch_key == "sd15" else "SDXL"
+        sched_id = nf.align_your_steps_scheduler(
+            model_type, steps, denoise, node_id=str(ays_node_base))
+        sel_id = nf.ksampler_select(sampler, node_id=str(ays_node_base + 1))
+        guider_id = nf.cfg_guider(model_ref, pos_ref, neg_ref, cfg,
+                                   node_id=str(ays_node_base + 2))
+        noise_id = nf.random_noise(seed, node_id=str(ays_node_base + 3))
+        return nf.sampler_custom_advanced(
+            [noise_id, 0], [guider_id, 0], [sel_id, 0],
+            [sched_id, 0], latent_ref, node_id=node_id,
+        )
+
+    # Detail Daemon chain — same custom-advanced shape as AYS but the
+    # SAMPLER ref is wrapped with DetailDaemonSamplerNode for its
+    # noise-schedule modulation. BasicScheduler (model-driven) supplies
+    # the sigmas because there's no ZIT-specific sigma table to plug in.
+    sched_id = nf.basic_scheduler(model_ref, steps=steps, denoise=denoise,
+                                   scheduler=scheduler,
+                                   node_id=str(detail_daemon_node_base))
+    sel_id = nf.ksampler_select(sampler,
+                                 node_id=str(detail_daemon_node_base + 1))
+    # Distilled DiT: small detail_amount keeps the wrap subtle. The
+    # 0.2-0.8 sampling window is the muerrilla default and works well
+    # at 6-8 steps (ZIT's distilled regime).
+    dd_id = nf.detail_daemon_sampler(
+        [sel_id, 0], detail_amount=0.10,
+        start=0.2, end=0.8, bias=0.5, exponent=1.0,
+        smooth=True,
+        node_id=str(detail_daemon_node_base + 2))
     guider_id = nf.cfg_guider(model_ref, pos_ref, neg_ref, cfg,
-                               node_id=str(ays_node_base + 2))
-    noise_id = nf.random_noise(seed, node_id=str(ays_node_base + 3))
+                               node_id=str(detail_daemon_node_base + 3))
+    noise_id = nf.random_noise(seed,
+                                node_id=str(detail_daemon_node_base + 4))
     return nf.sampler_custom_advanced(
-        [noise_id, 0], [guider_id, 0], [sel_id, 0],
+        [noise_id, 0], [guider_id, 0], [dd_id, 0],
         [sched_id, 0], latent_ref, node_id=node_id,
     )
 
@@ -4720,6 +4767,19 @@ def build_photobooth(ref_filename, prompt_text, seed,
                      swap_model="reswapper_256.onnx",
                      face_restore_model="codeformer-v0.1.0.pth",
                      face_restore_vis=0.9, codeformer_weight=0.6,
+                     # Final-restore pass tuning — visibility controls
+                     # how much of the restored face blends over the
+                     # swap output (1.0 = full restore, 0.0 = no-op),
+                     # codeformer_weight tunes the CodeFormer network
+                     # at that final pass specifically (the stage-2
+                     # weight is shared with ReActor's FaceBoost).
+                     final_restore_vis=1.0, final_restore_weight=0.5,
+                     # Sampler override (default "euler" — matches the
+                     # Klein reference workflow). Advanced users can
+                     # try "dpmpp_2m" or "heun" for different sampling
+                     # characteristics. Scheduler stays flux2_scheduler
+                     # since that's Klein-specific.
+                     sampler_name="euler",
                      transparent=False,
                      klein_models=None):
     """Photobooth: generate passport-style headshots with extreme character fidelity.
@@ -4787,7 +4847,7 @@ def build_photobooth(ref_filename, prompt_text, seed,
     # Sampling at FIXED portrait dimensions (not derived from reference)
     guider_id = nf.cfg_guider(_pb_model, [ref_pos_id, 0], [ref_neg_id, 0],
                               guidance, node_id="20")
-    sampler_id = nf.ksampler_select("euler", node_id="21")
+    sampler_id = nf.ksampler_select(sampler_name or "euler", node_id="21")
     sched_id = nf.flux2_scheduler(steps, STUDIO_FACE_W, STUDIO_FACE_H,
                                    node_id="22")
     noise_id = nf.random_noise(seed, node_id="23")
@@ -4828,8 +4888,8 @@ def build_photobooth(ref_filename, prompt_text, seed,
         [swap_id, 0],
         model=face_restore_model,
         facedetection="retinaface_resnet50",
-        visibility=1.0,
-        codeformer_weight=0.5,
+        visibility=final_restore_vis,
+        codeformer_weight=final_restore_weight,
         node_id="50",
     )
 
@@ -4927,7 +4987,7 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
                       scale=None, position_x=0.5, position_y=0.5,
                       klein_model_key="Klein 9B", steps=20, denoise=0.25,
                       guidance=1.0, loras=None, klein_models=None,
-                      enhance=True):
+                      enhance=True, sampler_name="euler"):
     """Klein Blend: composite foreground onto background, then harmonize with Klein.
 
     Pipeline: LoadImage(FG) + LoadImage(BG) → AILab_ImageCombiner → Klein
@@ -4991,7 +5051,7 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
     # Sampler — BasicScheduler with low denoise
     guider_id = nf.cfg_guider(_bl_model, [ref_pos_id, 0], [ref_neg_id, 0],
                               guidance, node_id="30")
-    sampler_id = nf.ksampler_select("euler", node_id="31")
+    sampler_id = nf.ksampler_select(sampler_name or "euler", node_id="31")
     sched_id = nf.basic_scheduler(_bl_model, steps, denoise,
                                    scheduler="simple", node_id="32")
     noise_id = nf.random_noise(seed, node_id="33")
@@ -5156,7 +5216,8 @@ def build_klein_inpaint(image_filename, mask_filename=None, prompt_text="", seed
                         solid_mask_height=1024, loras=None,
                         klein_models=None, enhance=True,
                         sam3_prompt=None, sam3_invert=False,
-                        sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
+                        sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
+                        sampler_name="euler"):
     """Klein Inpaint: regenerate masked area using FluxGuidance + SetLatentNoiseMask.
 
     Supports three mask sources (precedence top → bottom):
