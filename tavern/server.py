@@ -4973,6 +4973,32 @@ def _spellcaster_lora_calibrate_confirm(
     })
 
 
+def _spellcaster_lora_shootout_cancel(job_id: str) -> tuple[int, dict]:
+    """POST /api/spellcaster/lora/shootout/cancel?job=X — stop an in-
+    flight shootout. Flags the worker to exit its loop after the
+    current render AND issues ComfyUI `/interrupt` + `/queue {clear:
+    true}` so the GPU frees up instantly."""
+    try:
+        from scaffold.lora_grouping import cancel_shootout_job
+    except Exception as e:
+        return (500, {"error": f"module unavailable: {e}"})
+    if not job_id:
+        return (400, {"error": "job param required"})
+    return (200, cancel_shootout_job(job_id))
+
+
+def _spellcaster_lora_calibrate_auto_cancel(job_id: str) -> tuple[int, dict]:
+    """POST /api/spellcaster/lora/calibrate/auto/cancel?job=X — same
+    contract as the shootout cancel, scoped to the calibration worker."""
+    try:
+        from scaffold.lora_grouping import cancel_calibration_job
+    except Exception as e:
+        return (500, {"error": f"module unavailable: {e}"})
+    if not job_id:
+        return (400, {"error": "job param required"})
+    return (200, cancel_calibration_job(job_id))
+
+
 def _spellcaster_lora_calibrate_summary() -> tuple[int, dict]:
     """GET /api/spellcaster/lora/calibrate/summary — counts, lists of
     confirmed vs unconfirmed LoRAs, and paths to the SFW/NSFW stores.
@@ -13126,6 +13152,16 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 targets=data.get('targets') or [],
                 subset=data.get('subset') or '',
                 use_network=bool(data.get('use_network', True))))
+        if self.path.startswith('/api/spellcaster/lora/shootout/cancel'):
+            qs = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(qs)
+            return self.end_json(*_spellcaster_lora_shootout_cancel(
+                params.get('job', [data.get('job', '')])[0]))
+        if self.path.startswith('/api/spellcaster/lora/calibrate/auto/cancel'):
+            qs = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(qs)
+            return self.end_json(*_spellcaster_lora_calibrate_auto_cancel(
+                params.get('job', [data.get('job', '')])[0]))
         if self.path == '/api/spellcaster/lora/calibrate/confirm':
             return self.end_json(*_spellcaster_lora_calibrate_confirm(
                 data.get('lora_name', ''),

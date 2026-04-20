@@ -102,6 +102,13 @@
         background: transparent; color: #4dabf7; border: 1px solid #4dabf7;
         border-radius: 6px; padding: 7px 13px; font-size: 13px; cursor: pointer;
       }
+      .sc-cal-btn-danger {
+        background: #b02a37; color: white; border: 0;
+        border-radius: 6px; padding: 7px 13px; font-size: 13px; cursor: pointer;
+        font-weight: 600;
+      }
+      .sc-cal-btn-danger:hover { background: #c0303d; }
+      .sc-cal-btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
       .sc-cal-grid {
         display: grid; gap: 16px;
         grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -162,6 +169,30 @@
       .sc-cal-empty {
         text-align: center; padding: 40px; color: #8ea0bf; font-style: italic;
       }
+      .sc-cal-skipped {
+        margin-bottom: 14px; padding: 10px 12px; border-radius: 8px;
+        background: #1a1f2e; border: 1px solid #2d3b54;
+        color: #8ea0bf; font-size: 12px;
+      }
+      .sc-cal-skipped-head {
+        font-weight: 600; color: #d9e1ed; display: flex;
+        align-items: center; justify-content: space-between; cursor: pointer;
+      }
+      .sc-cal-skipped-head .sc-cal-chev {
+        transition: transform .15s ease; display: inline-block;
+      }
+      .sc-cal-skipped.sc-cal-open .sc-cal-chev { transform: rotate(90deg); }
+      .sc-cal-skipped-list {
+        display: none; margin-top: 8px; max-height: 180px; overflow-y: auto;
+      }
+      .sc-cal-skipped.sc-cal-open .sc-cal-skipped-list { display: block; }
+      .sc-cal-skipped-list li {
+        list-style: none; padding: 2px 0; font-family: 'Consolas', monospace;
+      }
+      .sc-cal-skipped-list .sc-cal-skipped-reason {
+        color: #e8590c; font-family: system-ui, sans-serif;
+        font-style: italic; margin-left: 8px;
+      }
     `;
     document.head.appendChild(s);
   }
@@ -202,6 +233,12 @@
 
   async function pollStatus(jobId) {
     return api('/api/spellcaster/lora/calibrate/auto/status?job=' + encodeURIComponent(jobId));
+  }
+
+  async function cancelJob(jobId) {
+    return api('/api/spellcaster/lora/calibrate/auto/cancel?job=' + encodeURIComponent(jobId), {
+      method: 'POST', body: '{}',
+    });
   }
 
   async function confirmLora(payload) {
@@ -281,9 +318,11 @@
                 <input type="checkbox" class="sc-cal-network" checked> Civitai lookup
               </label>
               <button class="sc-cal-btn-secondary sc-cal-confirm-all" disabled>Confirm all visible</button>
+              <button class="sc-cal-btn-danger sc-cal-cancel" style="display:none">⏹ Cancel</button>
               <button class="sc-cal-btn-primary sc-cal-start">Start</button>
             </div>
           </div>
+          <div class="sc-cal-skipped" style="display:none"></div>
           <div class="sc-cal-grid sc-cal-grid-el"></div>
         </div>
       </div>
@@ -296,6 +335,7 @@
     const progress = qs('.sc-cal-progress > div');
     const startBtn = qs('.sc-cal-start');
     const confirmAllBtn = qs('.sc-cal-confirm-all');
+    const cancelBtn = qs('.sc-cal-cancel');
     const networkChk = qs('.sc-cal-network');
 
     function close() { overlay.remove(); state.polling = false; refreshButton(); }
@@ -435,6 +475,9 @@
         state.jobId = resp.job_id;
         setStatus(`rendering 1/${resp.total}…`);
         setProgress(0, resp.total);
+        cancelBtn.style.display = '';
+        cancelBtn.disabled = false;
+        cancelBtn.textContent = '⏹ Cancel';
         pollLoop(resp.total);
       } catch (e) {
         setStatus('start failed: ' + e);
@@ -442,6 +485,49 @@
       }
     }
     startBtn.addEventListener('click', startJob);
+
+    async function cancelCurrentJob() {
+      if (!state.jobId) return;
+      cancelBtn.disabled = true;
+      cancelBtn.textContent = 'Cancelling…';
+      try {
+        const r = await cancelJob(state.jobId);
+        const warn = (r.comfy && r.comfy.errors && r.comfy.errors.length)
+          ? ' (ComfyUI: ' + r.comfy.errors.join(', ') + ')' : '';
+        setStatus('cancel requested' + warn);
+      } catch (e) {
+        setStatus('cancel failed: ' + e);
+        cancelBtn.disabled = false;
+        cancelBtn.textContent = '⏹ Cancel';
+      }
+    }
+    cancelBtn.addEventListener('click', cancelCurrentJob);
+
+    function renderSkipped(list) {
+      const host = qs('.sc-cal-skipped');
+      if (!host) return;
+      if (!list || !list.length) { host.style.display = 'none'; return; }
+      // Group by reason so a long list collapses to one row per reason.
+      const byReason = {};
+      for (const s of list) {
+        const r = s.reason || 'skipped';
+        (byReason[r] ||= []).push(s);
+      }
+      const lines = Object.entries(byReason).map(([reason, entries]) => {
+        const names = entries.map(e => `<li>${e.lora_name}</li>`).join('');
+        return `<div style="margin-bottom:6px"><strong style="color:#e8590c">${reason}</strong> — ${entries.length} LoRA${entries.length === 1 ? '' : 's'}<ul>${names}</ul></div>`;
+      }).join('');
+      host.innerHTML = `
+        <div class="sc-cal-skipped-head">
+          <span>${list.length} LoRA${list.length === 1 ? '' : 's'} skipped — click for details</span>
+          <span class="sc-cal-chev">▸</span>
+        </div>
+        <div class="sc-cal-skipped-list">${lines}</div>
+      `;
+      host.style.display = 'block';
+      const head = host.querySelector('.sc-cal-skipped-head');
+      head.addEventListener('click', () => host.classList.toggle('sc-cal-open'));
+    }
 
     async function pollLoop(total) {
       state.polling = true;
@@ -459,12 +545,19 @@
           renderCard(s.samples[i]);
           state.samples.push(s.samples[i]);
         }
+        // Skipped list is computed once at job start, but render it
+        // on every tick in case it arrives on a later poll.
+        if (s.skipped && s.skipped.length) renderSkipped(s.skipped);
         if (s.status !== 'running') {
-          setStatus(`${s.status} — ${s.done}/${s.total}`);
+          const skipTag = (s.skipped && s.skipped.length)
+            ? `, ${s.skipped.length} skipped` : '';
+          setStatus(`${s.status} — ${s.done}/${s.total}${skipTag}`);
           state.polling = false;
           confirmAllBtn.disabled = false;
           startBtn.disabled = false;
-          startBtn.textContent = s.status === 'complete' ? 'Re-run' : 'Start';
+          startBtn.textContent = (s.status === 'complete' || s.status === 'cancelled')
+            ? 'Re-run' : 'Start';
+          cancelBtn.style.display = 'none';
         }
       }
     }
