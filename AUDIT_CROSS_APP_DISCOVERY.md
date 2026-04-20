@@ -279,13 +279,99 @@ Items 1–4 alone deliver most of the UX win. Items 5–7 complete the Darktable
 
 ---
 
+## 6.5 Seamless zero-config detection — move presence to ComfyUI
+
+The prior sections assume presence lives in the Guild's `/api/interfaces`. That means a user who runs GIMP + Darktable but NOT the Guild gets no cross-app discovery at all, and installing a new plugin doesn't magically light up peers' menus.
+
+**Cleanest fix: make ComfyUI-Spellcaster the presence broker.** Every Spellcaster-using plugin already talks to ComfyUI — it's the one hard dependency. Add three routes to the `ComfyUI-Spellcaster` pack:
+
+```
+POST /spellcaster/presence/register   body: {key, label, icon, capabilities, version}
+POST /spellcaster/presence/heartbeat  body: {key, meta?}                 # every ~20 s
+GET  /spellcaster/presence/list       → [{key, label, capabilities, age_s}, ...]
+```
+
+Custom-node process holds `{key: {registered_at, last_heartbeat, meta}}` in memory. Stale entries (>30 s) auto-drop.
+
+### Zero-config walkthrough
+
+1. User installs GIMP plugin. On load, `_get_cross_interface_client()` — or a new `_register_with_comfyui()` — POSTs `/spellcaster/presence/register`. No peers yet → GIMP's cross-app menu shows nothing beyond its own actions.
+2. User later installs Darktable plugin. Darktable's first boot registers against the same ComfyUI. Darktable's menu render (or a 30 s poll) fetches `/presence/list` → sees `[gimp]` → renders a "Send to GIMP" chip with GIMP's declared capabilities.
+3. GIMP's next cross-app-menu open fetches the list → sees `[darktable]` → renders "Send to Darktable".
+4. No reconfiguration, no Guild. Pure discovery via the ComfyUI both plugins already talk to.
+
+### Why this beats the current Guild-hosted registry
+
+- Every Spellcaster user runs ComfyUI; not everyone runs the Guild.
+- Plugin↔ComfyUI is already a mandatory connection — presence calls are effectively free.
+- Guild remains **optional**: install it to gain shotboard, chat, rich cross-app messaging — but discovery works without it.
+- Lines up with Option C (AUDIT_CROSS_APP_DEEP.md): ComfyUI becomes the authoritative HTTP home for plugin-facing services; Guild is orchestration + cross-app bus when installed.
+
+### What Guild still adds when installed (and why it stays relevant)
+
+- **Durable asset delivery** (AssetGallery content-hash store + Mailbox + SSE fan-out) — plugins can receive assets while they were offline.
+- **Shotboard, chat, variation groups, calibration** — UI-resident state that has no analog in ComfyUI.
+- **Richer presence metadata** — `online_local` vs `online_remote` distinction (antenna-relayed hosts) that ComfyUI has no native concept of.
+
+### Fallback chain (robust to any installation permutation)
+
+Every plugin's presence query does this in order:
+
+```
+peers = []
+# 1. Ask ComfyUI-Spellcaster — the baseline, always present if Spellcaster is installed.
+try:  peers += comfyui_spellcaster.GET("/spellcaster/presence/list")
+except: pass
+# 2. Ask Guild — richer data (online_local/remote, last_meta) when running.
+try:  peers += guild.GET("/api/interfaces")["interfaces"]
+except: pass
+# 3. Dedup by key; prefer Guild's richer record where both exist.
+return dedup_prefer_guild(peers)
+```
+
+Works when:
+- Guild off, ComfyUI-Spellcaster pack installed → presence via ComfyUI only ✓
+- Guild on, pack not yet registered → presence via Guild only ✓
+- Both → union, richer record wins ✓
+- Neither → single-plugin mode, no cross-app chips rendered (correct) ✓
+
+### Size
+
+~40 LOC of Python for the ComfyUI-Spellcaster route file (mirrored to NSFW variant by existing build). ~20 LOC per plugin for (register + heartbeat + list-consumer). Net cost is small; the hard part is the per-plugin UI wiring (which is G1 in the table below).
+
+### Sequencing notes
+
+This gets added to §3 as a PREREQUISITE for G1 (presence UI) rather than a separate item — because the point of G1 is to *consume* presence data, and by moving the source to ComfyUI we make G1 work without Guild.
+
+So the updated table becomes:
+
+| # | Item | Cost | Depends on |
+|--|--|--|--|
+| 0  | ComfyUI-hosted presence (/spellcaster/presence/*) | ~40 LOC in pack | — |
+| 1a | Each plugin registers + heartbeats against ComfyUI | ~10 LOC × 4 plugins | 0 |
+| 1b | Each plugin queries /presence/list → dedup with Guild's /api/interfaces | ~15 LOC × 4 plugins | 0, 1a |
+| 1c | Each plugin renders chips dynamically from the merged peer list | ~30 LOC × 3 plugins | 1b |
+| 2  | Asset-level `intent` field + receiver handlers (G3) | ~100 LOC | 1c |
+| 3  | Workflow-run-id propagation + chaining UX (G4) | ~50 LOC + UI | 2 |
+| ...| | | |
+
+Items 0 + 1a + 1b are the minimum to deliver the user's stated feature: **install a new plugin, the others discover it without any config, without the Guild running**.
+
+---
+
 ## 7. What I recommend as the next concrete step
 
-**Say "go" and I'll:**
-1. Implement G2 (ST heartbeat) — 20 LOC, testable immediately.
-2. Implement G3 (asset `intent` field + receiver handlers in GIMP's Check-Inbox + ST's /sc-inbox + Darktable's inbox). ~100 LOC total; backwards-compatible default is `intent="new_document"` which is the current behaviour.
-3. Implement G1 (presence UI) in all three plugins. Polls `/api/interfaces` every 30 s; grey-out chips for offline targets.
+**Say "go" and I'll implement the seamless-detection minimum:**
+1. Add ComfyUI-hosted presence routes (§6.5 item 0) — ~40 LOC in `ComfyUI-Spellcaster`, mirrored to NSFW variant.
+2. Wire every plugin to register + heartbeat + query (§6.5 items 1a + 1b) — ~25 LOC per plugin.
+3. Close the ST heartbeat gap (G2) as a drive-by — another ~10 LOC.
 
-That's **one coherent phase-9** that makes the cross-app discovery story real. After that we can decide whether to do the workflow-chain items (G4–G7) or go back to Option C / sentinel menu gating / the other earlier candidates.
+That delivers the user's target outcome: **install a new plugin, the others see it and offer new menu options, no Guild required**.
 
-Or if you prefer, pick a different subset. All documented here; pick and I'll drill.
+Phase-9 extras we can pick up after the minimum lands:
+- G3 asset `intent` field (unlocks new-layer / i2v-ref / return-edit semantics)
+- G4 workflow-run-id (enables chained workflow UX)
+- G1c dynamic chip rendering (replace hand-written chips with capability-driven ones)
+- G5 "Send to Guild-Video (I2V)" action per plugin — completes the user's example flow
+
+Or we go back to Option C / sentinel menu gating / end-to-end asset trace. All open tracks; pick one.
