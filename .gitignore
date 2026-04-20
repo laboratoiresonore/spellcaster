@@ -64,7 +64,11 @@ config.json
 .mcp.json
 
 # Per-session handover docs — contain real LAN IPs and local paths,
-# intended for Claude-to-Claude orchestration, never for the public repo
+# intended for Claude-to-Claude orchestration, never for the public repo.
+# Moved to _dev_docs/ per user directive 2026-04-20; old root-level
+# pattern left in place as a belt-and-braces guard against a stray
+# file accidentally being written back to the root.
+_dev_docs/HANDOVER_*.md
 HANDOVER_*.md
 
 # CLAUDE.md — dev-guide for Claude, kept local. Contains project-specific
