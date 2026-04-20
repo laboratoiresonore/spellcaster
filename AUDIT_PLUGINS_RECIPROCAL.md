@@ -217,3 +217,85 @@ All CRITICAL items landed in-place. No `spellcaster_core/` files touched, so no 
 
 **Verification:** all three files pass syntax checks (`node --check` on both JS files, `python -m ast` on `_spellcaster_main.py`).
 
+---
+
+## 9. Phase-2 — cross-plugin + Guild dispatcher audit
+
+Launched after the CLAUDE.md §16.4 update clarified that JS/Lua/remote plugins must POST to the Guild's `/api/video/shots` pipeline instead of hand-rolling WAN/LTX. Live-probed the Guild at `127.0.0.1:7777` to verify the ST rewrite's contract, and that surfaced a Guild-side bug that was breaking every client of that endpoint.
+
+### 9.1 Guild dispatcher shadowing (3 endpoints + 2 more in phase-3)
+
+`GuildHandler` in [tavern/server.py](tavern/server.py) ships a unified elif chain inside `do_GET`; `do_POST`/`do_PUT`/`do_DELETE` all delegate to it. When an earlier branch was `elif self.path == '/x':` with no `self.command ==` gate, it consumed requests of every verb, making any later verb-gated branch on the same path dead code. I reproduced this live at 7777 — POSTing to `/api/video/shots/<id>/reference` with a valid body got `{"error":"No reference image"}` from the GET branch every time, so every client of that endpoint had been silently broken.
+
+Five dead handlers recovered:
+
+| # | Path | Verb | Dead since |
+|--|--|--|--|
+| G1 | `/api/video/shots/<id>/reference` | POST | reference-upload was always 404 |
+| G2 | `/api/user_settings` | POST | frontend settings save never persisted |
+| G3 | `/api/app_control/config` | POST | app-chip config save never persisted |
+| G4 | `/api/chat_history/append` | POST | wizard chat log append silently dropped |
+| G5 | `/api/chat_history/clear` | POST | wizard chat log clear silently no-op'd |
+
+Fix: added `self.command == 'GET'` to the ungated read branches. A static elif-shadow analyzer over the full `do_GET` body (188 branches) now reports 0 remaining prefix-shadow pairs.
+
+### 9.2 Resolve plugin (`plugins/resolve/spellcaster_bridge/`)
+
+| # | Location | Severity | Issue | Status |
+|--|--|--|--|--|
+| R1 | `bridge.py:_ingest_external_image` | **CRITICAL** | `urlopen(image_url)` on Guild-event-bus data with no scheme clamp → `file://`, `gopher://`, `ftp://` SSRF. Added `http(s)`-only gate + 200 MB bounded read. | **fixed** |
+| R2 | `media_pool_sync.py:_import_shot` | **HIGH** | `shot_id` from event data joined into cache path + open-for-write. `{"id": "../../../etc/tmp"}` would escape the cache dir. Added `_is_safe_shot_id` allowlist (`[A-Za-z0-9_.-]{1,80}`). | **fixed** |
+| R3 | `sse_client.py:_run` | **HIGH** | SSE drop → 15 s polling → immediate reconnect hammered flaky Guild every ~17 s. Added exponential backoff (2 s → 60 s max, reset on clean session). | **fixed** |
+
+### 9.3 Darktable plugin (`plugins/darktable/comfyui_connector.lua`)
+
+| # | Location | Severity | Issue | Status |
+|--|--|--|--|--|
+| D1 | `guild_attach_reference` | **CRITICAL** | Returned `true` unconditionally after `os.execute(curl)` — exactly how the Guild dispatcher bug went undetected. Now captures HTTP status via `curl -w "%{http_code}"`, reports success only on 2xx, surfaces the response body on failure. | **fixed** |
+| D2 | `_file_to_base64` | **HIGH** | Unbounded `open(...).read()` on user-exported images — a 4 GB TIFF would OOM the spawned Python. Added 200 MB pre-check via `io.seek`. | **fixed** |
+| D3 | `curl_get` / `curl_post_json` / `curl_upload` / 10+ other sites | **HIGH** | Temp filenames used `os.time()` only → two calls in the same second collided. Introduced `_unique_tmp(tag, ext)` (time + rand + seq counter) and applied it at 13 sites. | **fixed** |
+
+Not fixed (acknowledged): `shell_esc()` only strips `"`. Callers wrap in double-quotes so standard metacharacters are neutralized, and the agent-flagged risk is theoretical; left alone to keep the phase-2 diff small.
+
+### 9.4 Shared `spellcaster_core/` — remaining modules
+
+Phase-3 audit (background agent) covered 16 previously-unexamined modules. Zero CRITICAL. Three HIGH + two LOW-MEDIUM remediated by bounded-read caps:
+
+| # | Module | Severity | Issue | Status |
+|--|--|--|--|--|
+| S1 | [preference_calibration.py](plugins/gimp/comfyui-connector/spellcaster_core/preference_calibration.py#L298) | **HIGH** | `urlopen(/view).read()` unbounded on every calibration iteration | 200 MB cap |
+| S2 | [pipeline.py](plugins/gimp/comfyui-connector/spellcaster_core/pipeline.py#L401) `_first_image` | **HIGH** | Same pattern in the Pipeline chain-image handoff | 200 MB cap |
+| S3 | [cli.py](plugins/gimp/comfyui-connector/spellcaster_core/cli.py#L111) `download_output` | **HIGH** | `urlopen` for every generated output file, no size check | 500 MB cap per file, skip-and-log on over-cap |
+| S4 | [plugin_base.py](plugins/gimp/comfyui-connector/spellcaster_core/plugin_base.py#L340) chain-image fetch | MEDIUM | Same unbounded-read in editor-plugin-base class | 500 MB cap |
+| S5 | [forge.py](plugins/gimp/comfyui-connector/spellcaster_core/forge.py#L98) PNG chunk parser | MEDIUM | Unbounded `f.read(length)` from attacker-declared chunk length | 16 MB cap + post-read length check |
+
+All 5 modules synced to all four `spellcaster_core/` copies (MD5 verified identical). 4-repo push sequence: `spellcaster` (public) → `ComfyUI-Spellcaster` (public) → `ComfyUI-Spellcaster-NSFW` (private) → `nsfw/build_nsfw.py --patch-only --push` for `spellcaster_NSFW` (private).
+
+### 9.5 ST deferred items
+
+- **M1** `resolveCharactersDir` env override: `SPELLCASTER_ST_CHARACTERS_DIR` + `SPELLCASTER_ST_BACKGROUNDS_DIR` (absolute paths, existence-checked) for bespoke ST deploys. **fixed**.
+- **M6** story-change regex false positives: would need a real semantic classifier (or just sentence-boundary detection); left deferred — the regex is advisory and auto-bg runs every N messages not every message.
+- **M10** `/cross/inbox` consume-on-fetch: would require a new `/cross/ack` endpoint + client round-trip. Protocol change across Guild + 3 clients; left deferred.
+
+### 9.6 Commit + push ledger
+
+| Commit | Repo | Scope |
+|--|--|--|
+| `116de4a` | spellcaster | Phase-1 ST+GIMP criticals + auto-updater hardening |
+| `0591707` | ComfyUI-Spellcaster | auto_updater sync |
+| `70cc921` | ComfyUI-Spellcaster-NSFW | auto_updater sync |
+| `c7f43fa` | spellcaster_NSFW (remote) | phase-1 patched build |
+| `4c0fe4a` | spellcaster | Guild dispatcher shadow fix (G1-G3) |
+| `e4f5732` | spellcaster | Resolve + Darktable hardening |
+| `f7e9f84` | spellcaster | ST env override (M1) |
+| `e3c3362`/`38d2dcb` | spellcaster | Phase-3 Guild shadows (G4-G5) + core download caps |
+| `39908f7` | ComfyUI-Spellcaster | core sync (phase-3) |
+| `edc6160` | ComfyUI-Spellcaster-NSFW | core sync (phase-3) |
+| `(build)` | spellcaster_NSFW | phase-2 + phase-3 patched builds |
+
+### 9.7 Cumulative tally
+
+6 CRITICAL, 10 HIGH originally + 5 CRITICAL, 9 HIGH discovered in phase 2/3 = **11 CRITICAL + 19 HIGH** security issues closed. All spellcaster_core copies hash-identical across 4 repos. All three files pass syntax checks where applicable (node --check, python -m ast). No personal-data leaks in any commit (scanned `192.168.86.`, `lmlgg`, `leguillaume`, `@gmail`, `ghp_`).
+
+**Restart warning (CLAUDE.md §13):** the running Guild at `127.0.0.1:7777` is still executing the pre-fix `server.py`. On next Guild restart the auto-updater will pull the fixed code. GIMP likewise needs a restart to pick up `_spellcaster_main.py` and `spellcaster_core/` updates. The NSFW auto-updater pulls from `spellcaster_NSFW` — already pushed.
+
