@@ -178,7 +178,7 @@ _STOCK_SD15_MARKERS = (
 )
 
 
-def _is_stock_sd15(filename_lower: str) -> bool:
+def _is_stock_sd15(filename: str) -> bool:
     """True for base SD 1.5 checkpoints.
 
     Returns False for every community finetune (Juggernaut Reborn,
@@ -186,10 +186,11 @@ def _is_stock_sd15(filename_lower: str) -> bool:
     because those have their own prompt profiles further up the
     PROFILES list and get matched first.
     """
-    return any(m in filename_lower for m in _STOCK_SD15_MARKERS)
+    n = (filename or "").lower()
+    return any(m in n for m in _STOCK_SD15_MARKERS)
 
 
-def _is_zpop_aio(filename_lower: str) -> bool:
+def _is_zpop_aio(filename: str) -> bool:
     """True for all-in-one Zpop merges (GonzaloMo Zpop v3 AIO and look-alikes).
 
     The AIO merges differ from pure pop-art Zpop checkpoints in that
@@ -199,15 +200,16 @@ def _is_zpop_aio(filename_lower: str) -> bool:
     string-matcher entry below this function which injects the bold-
     outlines / saturated-colours bias they're tuned for.
     """
-    if "zpop" not in filename_lower:
+    n = (filename or "").lower()
+    if "zpop" not in n:
         return False
     # Explicit "aio" marker anywhere in the filename — most reliable signal.
-    if "aio" in filename_lower:
+    if "aio" in n:
         return True
     # GonzaloMo Zpop 3.x is published as v30AIO / v3_0_AIO / v3aio.
     # Version 2.x and earlier are pre-AIO pure pop-art.
-    if "gonzalomozpop" in filename_lower and any(
-        v in filename_lower for v in ("v30", "v3_0", "v3.0", "v3aio", "-v3")):
+    if "gonzalomozpop" in n and any(
+        v in n for v in ("v30", "v3_0", "v3.0", "v3aio", "-v3")):
         return True
     return False
 

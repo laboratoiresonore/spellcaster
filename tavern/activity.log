@@ -28,3 +28,5 @@
 {"ts": 1776659455.2420082, "action": "shot_removed", "shot_id": "a3ec13862a834633a75831edd12553e2"}
 {"ts": 1776661660.8199434, "action": "shot_created", "shot_id": "cbb5cf1f0309458ba3d143ad0d45e0e7", "title": "post-fix-test"}
 {"ts": 1776661661.1351342, "action": "shot_removed", "shot_id": "cbb5cf1f0309458ba3d143ad0d45e0e7"}
+{"ts": 1776661897.7526126, "action": "shot_created", "shot_id": "8cc926f9f8cf428eae560a422c14d456", "title": "leak-probe"}
+{"ts": 1776661898.1099906, "action": "shot_removed", "shot_id": "8cc926f9f8cf428eae560a422c14d456"}
