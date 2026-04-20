@@ -680,6 +680,46 @@ function registerSlashCommands() {
         helpString: 'Restore ALL character avatars to their originals (before restyle).',
     }));
 
+    // /edit [instruction] — Edit-by-prompt on the current avatar.
+    // Routes through the /edit endpoint's Klein → Kontext → SDXL
+    // waterfall. Unlike /restyle (which expects a full style target),
+    // /edit takes a natural-language instruction:
+    //   /edit make her hair red
+    //   /edit add a wizard hat
+    //   /edit remove the glasses
+    // Result is shown inline; unlike /restyle it does NOT persist to
+    // disk — use /restyle when you want to replace the avatar.
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'edit',
+        callback: async (args, value) => {
+            if (!value) return 'Usage: /edit [instruction, e.g. "change the hair to red"]';
+            const context = getContext();
+            const char = context.characters[context.characterId];
+            if (!char?.avatar) return 'No character with avatar selected.';
+
+            toastr.info(`Editing ${char.name}...`, 'Spellcaster');
+            try {
+                const avatarRes = await fetch(`/characters/${char.avatar}`);
+                if (!avatarRes.ok) return `Failed to fetch avatar: ${avatarRes.status}`;
+                const base64 = await blobToBase64(await avatarRes.blob());
+
+                const result = await spellcasterAPI('/edit', {
+                    image_base64: base64,
+                    instruction: value,
+                });
+                if (result.images?.[0]) {
+                    const engine = result.engine || 'edit';
+                    toastr.success(`${char.name} edited via ${engine.toUpperCase()}`, 'Spellcaster');
+                    return `![edited](data:image/png;base64,${result.images[0].base64})\n*Edit: ${value} — engine: ${engine}*`;
+                }
+                return 'Edit completed but no output received';
+            } catch (e) {
+                return `Error: ${e.message}`;
+            }
+        },
+        helpString: 'Edit the current avatar via natural-language instruction (Klein 2 / Flux Kontext / SDXL). Identity is preserved; the instruction drives the change.',
+    }));
+
     // /animate [prompt] — Animate the current character's avatar as a short GIF
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'animate',
