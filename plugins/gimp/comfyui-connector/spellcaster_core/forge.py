@@ -95,13 +95,23 @@ def _read_png_text_chunks(filepath):
         if sig != b'\x89PNG\r\n\x1a\n':
             return chunks
 
+        # PNG spec allows chunk lengths up to 2**31 - 1, but no legitimate
+        # Spellcaster workflow chunk exceeds a few MB. A crafted PNG with
+        # a huge declared length would otherwise force Python to allocate
+        # and read that many bytes before we notice anything is wrong.
+        # Cap at 16 MB — generous for workflow JSON, tight for attacks.
+        _MAX_CHUNK = 16 * 1024 * 1024
         while True:
             header = f.read(8)
             if len(header) < 8:
                 break
             length = struct.unpack(">I", header[:4])[0]
+            if length > _MAX_CHUNK:
+                break  # Refuse to allocate; bail cleanly.
             chunk_type = header[4:8]
             data = f.read(length)
+            if len(data) != length:
+                break  # Truncated source; stop.
             f.read(4)  # CRC
 
             if chunk_type == b'tEXt':

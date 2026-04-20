@@ -337,7 +337,13 @@ class SpellcasterPlugin:
                     ft = item.get("type", "output")
                     url = f"{self.server}/view?filename={fn}&subfolder={sf}&type={ft}"
                     try:
-                        data = urllib.request.urlopen(url, timeout=120).read()
+                        # 500 MB cap — same as cli.download_output. Beyond
+                        # this the server is streaming garbage and we'd
+                        # rather surface an error than hang the editor.
+                        _MAX = 500 * 1024 * 1024
+                        data = urllib.request.urlopen(url, timeout=120).read(_MAX + 1)
+                        if len(data) > _MAX:
+                            raise IOError(f"/view exceeded {_MAX} bytes")
                         if len(data) > 100:
                             self._last_upload = None
                             # Re-upload for chaining

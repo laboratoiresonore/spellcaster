@@ -144,7 +144,19 @@ class Pipeline:
 
     def wan_video(self, prompt, negative="blurry static", length=33,
                   width=576, height=320, turbo=True, fps=16):
-        """Animate the previous output into a video using WAN I2V."""
+        """Animate the previous output into a video using WAN I2V.
+
+        Routes through the canonical pipeline (CLAUDE.md §16):
+
+            _run_wan()
+              → video_presets.detect_wan_preset(server)
+              → video_presets.wan_turbo_kwargs(turbo)
+              → workflows.build_wan_video(preset, **turbo_kwargs, ...)
+
+        `turbo=True` (default) uses the preset's accel LoRAs at ~6 steps;
+        `turbo=False` runs full-step (30/3.5/15) — reliable path when accel
+        LoRAs produce black frames on a given card. See §16.2.
+        """
         self._steps.append(("wan_video", {
             "prompt": prompt, "negative": negative, "length": length,
             "width": width, "height": height, "turbo": turbo, "fps": fps,

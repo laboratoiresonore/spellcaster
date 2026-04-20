@@ -24,6 +24,14 @@ let GUILD_URL = 'http://127.0.0.1:7777';
 // Backgrounds directory (SillyTavern stores them here)
 let BG_DIR = '';
 
+// Wizard-provisioned defaults. Mirror the three settings the ST-side
+// wizard writes so downstream workflow builders can read them. Empty
+// string on IMAGE_MODEL means "let getBestModel() auto-pick" (the
+// pre-wizard behaviour, preserved when no wizard choice was made).
+let SPELLCASTER_IMAGE_MODEL = '';
+let SPELLCASTER_VIDEO_BACKEND = 'auto';   // 'auto' | 'wan22' | 'none'
+let SPELLCASTER_QUALITY_PROFILE = 'balanced'; // 'fast' | 'balanced' | 'max'
+
 // Max base64 body size (~20 MB decoded). 20 * 1024 * 1024 * 4/3 ≈ 27.97 MB chars.
 const MAX_B64_CHARS = 28 * 1024 * 1024;
 const MAX_FETCH_BYTES = 50 * 1024 * 1024;
@@ -72,9 +80,20 @@ function _safeNameOrNull(name, { maxLen = 96 } = {}) {
 }
 
 /**
- * Resolve ST's characters directory from the working directory.
+ * Resolve ST's characters directory. Tries (in order):
+ *   1. SPELLCASTER_ST_CHARACTERS_DIR env var (absolute path) — override
+ *      for users running ST under Docker / custom data-user / non-
+ *      default deploys. Without this, bespoke installs hit every
+ *      /save-* endpoint's generic "Cannot find characters directory"
+ *      error with nothing actionable.
+ *   2. ST's canonical `data/default-user/characters/` (post-1.11 layout)
+ *   3. ST's legacy `public/characters/` (pre-1.11 layout)
  */
 function resolveCharactersDir() {
+    const envOverride = process.env.SPELLCASTER_ST_CHARACTERS_DIR;
+    if (envOverride && path.isAbsolute(envOverride) && fs.existsSync(envOverride)) {
+        return envOverride;
+    }
     const dir = path.resolve('.');
     for (const c of [
         path.join(dir, 'data', 'default-user', 'characters'),
@@ -87,9 +106,15 @@ function resolveCharactersDir() {
 
 /**
  * Auto-detect and set BG_DIR from ST's data layout (if not already set).
+ * Also honours SPELLCASTER_ST_BACKGROUNDS_DIR as an override.
  */
 function autoDetectBgDir() {
     if (BG_DIR) return;
+    const envOverride = process.env.SPELLCASTER_ST_BACKGROUNDS_DIR;
+    if (envOverride && path.isAbsolute(envOverride) && fs.existsSync(envOverride)) {
+        BG_DIR = envOverride;
+        return;
+    }
     const dir = path.resolve('.');
     for (const c of [
         path.join(dir, 'data', 'default-user', 'backgrounds'),
