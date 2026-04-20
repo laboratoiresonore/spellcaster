@@ -490,24 +490,94 @@ function init(router) {
             const { image_base64, prompt, style, denoise } = req.body;
             if (!image_base64) return res.status(400).json({ error: 'image_base64 required' });
 
-            const model = await detectBestModel();
-            if (!model) return res.status(500).json({ error: 'No checkpoint models found on ComfyUI' });
-
-            // Upload to ComfyUI
             const imgBuf = Buffer.from(image_base64, 'base64');
             const uploadName = `spellcaster_restyle_${Date.now()}.png`;
             await uploadToComfyUI(imgBuf, uploadName);
 
-            const workflow = buildImg2ImgWorkflow(
-                uploadName,
-                prompt || 'photorealistic portrait, professional photography, detailed',
-                'cartoon, anime, drawing, sketch, blurry, low quality',
-                denoise || 0.55,
-                model
-            );
+            // Route through the best-available img2img engine:
+            //   Klein 2 → Flux Kontext → SDXL img2img
+            // All three accept the same denoise slider so the
+            // existing client UX (slider 0.3..0.7) still maps cleanly.
+            const engine = await detectEditEngine();
+            let workflow = null;
+            let usedEngine = engine;
+            const effectivePrompt = prompt ||
+                'photorealistic portrait, professional photography, detailed';
+            if (engine === "klein") {
+                workflow = buildKleinEditWorkflow(uploadName, effectivePrompt, {
+                    denoise: denoise || 0.55,
+                });
+            } else if (engine === "kontext") {
+                workflow = buildKontextEditWorkflow(uploadName, effectivePrompt, {
+                    denoise: denoise || 0.55,
+                });
+            } else {
+                const model = await detectBestModel();
+                if (!model) return res.status(500).json({
+                    error: 'No checkpoint models found on ComfyUI',
+                });
+                usedEngine = "sdxl";
+                workflow = buildImg2ImgWorkflow(
+                    uploadName, effectivePrompt,
+                    'cartoon, anime, drawing, sketch, blurry, low quality',
+                    denoise || 0.55, model,
+                );
+            }
             const result = await dispatchWorkflow(workflow);
             res.json({
                 status: 'ok',
+                engine: usedEngine,
+                images: result.images.map(i => ({ base64: i.base64, filename: i.filename })),
+            });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    // ── Semantic edit-by-prompt ────────────────────────────────────
+    // Like /restyle but tuned for instructions rather than full
+    // style transforms. Routed through the same engine waterfall:
+    //   Klein 2 img2img  →  Flux Kontext  →  SDXL img2img
+    // Default denoise is 0.55; callers can pass 0.3 for subtle
+    // tweaks ("add glasses") or 0.75 for heavier redesigns.
+    router.post('/edit', async (req, res) => {
+        try {
+            const { image_base64, instruction, denoise, engine: forceEngine } = req.body || {};
+            if (!image_base64) return res.status(400).json({ error: 'image_base64 required' });
+            if (!instruction) return res.status(400).json({ error: 'instruction required' });
+
+            const imgBuf = Buffer.from(image_base64, 'base64');
+            const uploadName = `spellcaster_edit_${Date.now()}.png`;
+            await uploadToComfyUI(imgBuf, uploadName);
+
+            const engine = (forceEngine && ["klein","kontext","sdxl"].includes(forceEngine))
+                ? forceEngine : await detectEditEngine();
+            let workflow = null;
+            let usedEngine = engine;
+            if (engine === "klein") {
+                workflow = buildKleinEditWorkflow(uploadName, instruction, {
+                    denoise: denoise || 0.55,
+                });
+            } else if (engine === "kontext") {
+                workflow = buildKontextEditWorkflow(uploadName, instruction, {
+                    denoise: denoise || 1.0,
+                });
+            } else {
+                const model = await detectBestModel();
+                if (!model) return res.status(500).json({
+                    error: 'No edit engine available on ComfyUI',
+                });
+                usedEngine = "sdxl";
+                workflow = buildImg2ImgWorkflow(
+                    uploadName, instruction,
+                    'blurry, low quality, distorted',
+                    denoise || 0.55, model,
+                );
+            }
+            const result = await dispatchWorkflow(workflow);
+            res.json({
+                status: 'ok',
+                engine: usedEngine,
                 images: result.images.map(i => ({ base64: i.base64, filename: i.filename })),
             });
         } catch (e) {
@@ -1062,6 +1132,7 @@ function buildBodyWorkflow(avatarImageName, bodyPrompt, _unusedModelName) {
         "10": { "class_type": "LoadImage", "inputs": { "image": avatarImageName }},
         "11": { "class_type": "ImageScaleToTotalPixels", "inputs": {
             "image": ["10", 0], "upscale_method": "lanczos", "megapixels": 1.0,
+            "resolution_steps": 1,
         }},
         "12": { "class_type": "VAEEncode", "inputs": {
             "pixels": ["11", 0], "vae": ["3", 0],
@@ -1109,6 +1180,180 @@ function buildBodyWorkflow(avatarImageName, bodyPrompt, _unusedModelName) {
             "images": ["60", 0],
         }},
     };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Edit-by-prompt pipeline  (Klein 2 preferred, Flux Kontext fallback)
+// ═══════════════════════════════════════════════════════════════════
+//
+// Semantic edits ("change the outfit to armour", "remove the hat")
+// need a ReferenceLatent-style workflow that holds identity while
+// the diffusion re-paints the instructed region. The Spellcaster
+// canon is: Klein 2 > Flux Kontext > SDXL img2img. Klein is preferred
+// because it's the user-maintained spine of every Spellcaster edit
+// path; Kontext is the proven external fallback.
+
+// Flux Kontext model file names — fixed by architectures.py:
+const KONTEXT_UNET  = "Flux\\flux1-dev-kontext_fp8_scaled.safetensors";
+const KONTEXT_CLIP1 = "clip_l.safetensors";
+const KONTEXT_CLIP2 = "t5xxl_fp8_e4m3fn.safetensors";
+const KONTEXT_VAE   = "ae.safetensors";
+
+/**
+ * Klein 2 edit — same spine as buildBodyWorkflow but:
+ *   - no Image Rembg at the end (the user wants a flat edited image,
+ *     not a transparent cutout)
+ *   - denoise controlled by caller (default 0.55 for moderate edits)
+ *   - positive prompt used verbatim (no body-specific boilerplate)
+ * Identity holds via ReferenceLatent on the source image; the
+ * instruction lives in the positive text encoding.
+ */
+function buildKleinEditWorkflow(imageName, instruction, opts = {}) {
+    const { denoise = 0.55, steps = 6, guidance = 1.0 } = opts;
+    const seed = Math.floor(Math.random() * 2147483647);
+    return {
+        "1":  { "class_type": "UNETLoader", "inputs": {
+            "unet_name": KLEIN_UNET, "weight_dtype": "default",
+        }},
+        "2":  { "class_type": "CLIPLoader", "inputs": {
+            "clip_name": KLEIN_CLIP, "type": "flux2", "device": "default",
+        }},
+        "3":  { "class_type": "VAELoader", "inputs": { "vae_name": FLUX2_VAE }},
+        "4":  { "class_type": "CLIPTextEncode", "inputs": {
+            "text": instruction, "clip": ["2", 0],
+        }},
+        "5":  { "class_type": "ConditioningZeroOut", "inputs": {
+            "conditioning": ["4", 0],
+        }},
+        "10": { "class_type": "LoadImage", "inputs": { "image": imageName }},
+        "11": { "class_type": "ImageScaleToTotalPixels", "inputs": {
+            "image": ["10", 0], "upscale_method": "lanczos", "megapixels": 1.0,
+            "resolution_steps": 1,
+        }},
+        "12": { "class_type": "VAEEncode", "inputs": {
+            "pixels": ["11", 0], "vae": ["3", 0],
+        }},
+        "20": { "class_type": "ReferenceLatent", "inputs": {
+            "conditioning": ["4", 0], "latent": ["12", 0],
+        }},
+        "21": { "class_type": "ReferenceLatent", "inputs": {
+            "conditioning": ["5", 0], "latent": ["12", 0],
+        }},
+        "30": { "class_type": "CFGGuider", "inputs": {
+            "model": ["1", 0], "positive": ["20", 0], "negative": ["21", 0],
+            "cfg": guidance,
+        }},
+        "31": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler" }},
+        "32": { "class_type": "BasicScheduler", "inputs": {
+            "model": ["1", 0], "scheduler": "simple",
+            "steps": steps, "denoise": denoise,
+        }},
+        "33": { "class_type": "RandomNoise", "inputs": { "noise_seed": seed }},
+        "40": { "class_type": "SamplerCustomAdvanced", "inputs": {
+            "noise": ["33", 0], "guider": ["30", 0], "sampler": ["31", 0],
+            "sigmas": ["32", 0], "latent_image": ["12", 0],
+        }},
+        "50": { "class_type": "VAEDecode", "inputs": {
+            "samples": ["40", 0], "vae": ["3", 0],
+        }},
+        "9":  { "class_type": "SaveImage", "inputs": {
+            "filename_prefix": "Spellcaster_edit_klein",
+            "images": ["50", 0],
+        }},
+    };
+}
+
+/**
+ * Flux Kontext edit — fallback path for servers without Klein. Uses
+ * the dedicated Kontext UNET + DualCLIP + FluxKontextImageScale
+ * (auto-resizes the reference to one of Kontext's supported buckets)
+ * + FluxGuidance. Node structure mirrors Flux Kontext's published
+ * reference workflow.
+ *
+ * ReferenceLatent on the encoded reference image anchors identity;
+ * the text instruction drives the edit. Keep defaults close to
+ * architectures.py's flux_kontext entry (cfg=3.5, steps=25).
+ */
+function buildKontextEditWorkflow(imageName, instruction, opts = {}) {
+    const { denoise = 1.0, steps = 25, guidance = 3.5 } = opts;
+    const seed = Math.floor(Math.random() * 2147483647);
+    return {
+        "1":  { "class_type": "UNETLoader", "inputs": {
+            "unet_name": KONTEXT_UNET, "weight_dtype": "default",
+        }},
+        "2":  { "class_type": "DualCLIPLoader", "inputs": {
+            "clip_name1": KONTEXT_CLIP1, "clip_name2": KONTEXT_CLIP2,
+            "type": "flux", "device": "default",
+        }},
+        "3":  { "class_type": "VAELoader", "inputs": { "vae_name": KONTEXT_VAE }},
+        "4":  { "class_type": "CLIPTextEncode", "inputs": {
+            "text": instruction, "clip": ["2", 0],
+        }},
+        "5":  { "class_type": "FluxGuidance", "inputs": {
+            "conditioning": ["4", 0], "guidance": guidance,
+        }},
+        "6":  { "class_type": "ConditioningZeroOut", "inputs": {
+            "conditioning": ["4", 0],
+        }},
+        "10": { "class_type": "LoadImage", "inputs": { "image": imageName }},
+        "11": { "class_type": "FluxKontextImageScale", "inputs": {
+            "image": ["10", 0],
+        }},
+        "12": { "class_type": "VAEEncode", "inputs": {
+            "pixels": ["11", 0], "vae": ["3", 0],
+        }},
+        "20": { "class_type": "ReferenceLatent", "inputs": {
+            "conditioning": ["5", 0], "latent": ["12", 0],
+        }},
+        "3s": { "class_type": "KSampler", "inputs": {
+            "seed": seed, "steps": steps, "cfg": 1.0,
+            "sampler_name": "euler", "scheduler": "simple",
+            "denoise": denoise,
+            "model": ["1", 0],
+            "positive": ["20", 0], "negative": ["6", 0],
+            "latent_image": ["12", 0],
+        }},
+        "50": { "class_type": "VAEDecode", "inputs": {
+            "samples": ["3s", 0], "vae": ["3", 0],
+        }},
+        "9":  { "class_type": "SaveImage", "inputs": {
+            "filename_prefix": "Spellcaster_edit_kontext",
+            "images": ["50", 0],
+        }},
+    };
+}
+
+/**
+ * Pick the best edit engine based on the server's /object_info/UNETLoader.
+ * Cached per COMFYUI_URL — invalidate by flipping _cachedEditEngine to null.
+ *
+ * Priority: klein9b > klein4b > kontext > sdxl (falls through to
+ * buildImg2ImgWorkflow in the /edit handler).
+ */
+let _cachedEditEngine = null;
+let _cachedEditEngineUrl = null;
+
+async function detectEditEngine() {
+    if (_cachedEditEngine && _cachedEditEngineUrl === COMFYUI_URL) {
+        return _cachedEditEngine;
+    }
+    try {
+        const r = await fetchJSON(`${COMFYUI_URL}/object_info/UNETLoader`);
+        const names = r.data?.UNETLoader?.input?.required?.unet_name?.[0] || [];
+        const names2 = r.data?.UNETLoader?.input?.required?.unet_name?.[1]?.options || [];
+        const all = [...names, ...names2];
+        const haveKlein9 = all.some(n => n.toLowerCase().includes("flux-2-klein-9b"));
+        const haveKlein4 = all.some(n => n.toLowerCase().includes("flux-2-klein-4b") || n.toLowerCase().includes("flux-2-klein-base-4b"));
+        const haveKontext = all.some(n => n.toLowerCase().includes("kontext"));
+        let engine = "sdxl";
+        if (haveKlein9 || haveKlein4) engine = "klein";
+        else if (haveKontext) engine = "kontext";
+        _cachedEditEngine = engine;
+        _cachedEditEngineUrl = COMFYUI_URL;
+        return engine;
+    } catch {
+        return "sdxl";
+    }
 }
 
 /**
@@ -1198,6 +1443,7 @@ function buildSceneCompositeWorkflow(scenePrompt, characters, modelName) {
     }};
     workflow["70"] = { "class_type": "ImageScaleToTotalPixels", "inputs": {
         "image": currentImageRef, "upscale_method": "lanczos", "megapixels": 1.0,
+        "resolution_steps": 1,
     }};
     workflow["71"] = { "class_type": "VAEEncode", "inputs": {
         "pixels": ["70", 0], "vae": ["92", 0],
