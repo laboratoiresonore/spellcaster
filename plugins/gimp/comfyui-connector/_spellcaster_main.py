@@ -1079,12 +1079,32 @@ def _get_cross_interface_client():
 # best-effort; absence of presence just means the "Send to X" menu in
 # sibling plugins won't list GIMP until GIMP next heartbeats.
 
+def _safe_hostname():
+    """Short, LAN-safe hostname. Falls back to 'gimp-host' if the
+    platform returns something weird — the broker only uses it for
+    display + instance_id disambiguation."""
+    try:
+        import socket
+        h = socket.gethostname() or ""
+    except Exception:
+        h = ""
+    h = h.strip().split(".")[0][:64]
+    # Sanitize to match the broker's _safe_host charset.
+    allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                  "0123456789-_")
+    h = "".join(c for c in h if c in allowed)
+    return h or "gimp-host"
+
+
+_GIMP_HOST = _safe_hostname()
 _GIMP_PRESENCE_META = {
     "key": "gimp",
     "label": "GIMP",
     "icon": "🖼️",
     "version": "2.0.0",
     "capabilities": ["send_image", "receive_image", "pixel_edit"],
+    "host": _GIMP_HOST,
+    "instance_id": f"gimp@{_GIMP_HOST}",
 }
 _GIMP_PRESENCE_THREAD = None
 _GIMP_PRESENCE_STOP = None
@@ -1130,9 +1150,14 @@ def _start_comfy_presence_heartbeat():
         _presence_post(comfy_url, "/spellcaster/presence/register",
                         _GIMP_PRESENCE_META)
         # Heartbeat immediately, then every 20 s until told to stop.
+        hb_body = {
+            "key": _GIMP_PRESENCE_META["key"],
+            "instance_id": _GIMP_PRESENCE_META["instance_id"],
+            "host": _GIMP_PRESENCE_META["host"],
+        }
         while not _GIMP_PRESENCE_STOP.is_set():
             _presence_post(comfy_url, "/spellcaster/presence/heartbeat",
-                            {"key": _GIMP_PRESENCE_META["key"]})
+                            hb_body)
             if _GIMP_PRESENCE_STOP.wait(20.0):
                 break
 
@@ -1151,15 +1176,22 @@ def _list_peers():
     guild_url = cfg.get("guild_url") or "http://127.0.0.1:7777"
     seen = {}
 
-    # Primary: ComfyUI-Spellcaster pack
+    # Primary: ComfyUI-Spellcaster pack. Dedup by instance_id so the
+    # same plugin on two different hosts both appear in the list (the
+    # broker returns them as separate entries). Filter out only OUR
+    # own instance_id, not every "gimp" entry — another GIMP on the
+    # LAN is a real peer.
+    my_inst = _GIMP_PRESENCE_META["instance_id"]
     data = _presence_get(comfy_url, "/spellcaster/presence/list")
     if isinstance(data, dict):
         for p in data.get("peers", []):
-            k = p.get("key")
-            if k and k != _GIMP_PRESENCE_META["key"]:
-                seen[k] = p
+            inst = p.get("instance_id") or p.get("key")
+            if inst and inst != my_inst:
+                seen[inst] = p
 
-    # Secondary: Wizard Guild (richer data; wins where both exist)
+    # Secondary: Wizard Guild (richer data; wins where both exist).
+    # Guild keys are per-kind not per-instance, so collisions fall back
+    # to kind-level dedup there.
     data = _presence_get(guild_url, "/api/interfaces")
     if isinstance(data, dict):
         import time as _time
@@ -1172,9 +1204,11 @@ def _list_peers():
             last_hb = info.get("last_heartbeat") or 0
             seen[key] = {
                 "key": key,
+                "instance_id": key,
                 "label": info.get("ui_label") or key,
                 "icon": info.get("icon") or "",
                 "capabilities": info.get("capabilities") or [],
+                "host": info.get("host") or "",
                 "age_s": max(0, round(now - last_hb, 2)),
                 "source": "guild",
             }

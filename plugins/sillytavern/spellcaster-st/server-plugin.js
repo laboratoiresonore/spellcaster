@@ -1510,12 +1510,26 @@ function init(router) {
 //  Cross-app presence (phase-9)
 // ═══════════════════════════════════════════════════════════════════
 
+// Short, LAN-safe hostname so the same plugin kind coexists on
+// different machines. The broker derives instance_id from key@host when
+// we don't supply one; we set both explicitly for clarity.
+const _ST_HOST = (() => {
+    try {
+        const os = require('os');
+        const raw = (os.hostname() || '').trim().split('.')[0].slice(0, 64);
+        const cleaned = raw.replace(/[^a-zA-Z0-9_-]/g, '');
+        return cleaned || 'st-host';
+    } catch { return 'st-host'; }
+})();
+
 const _ST_PRESENCE = {
     key: 'sillytavern',
     label: 'SillyTavern',
     icon: '🎭',
     version: '2.0.0',
     capabilities: ['chat', 'send_image', 'receive_image', 'roleplay'],
+    host: _ST_HOST,
+    instance_id: `sillytavern@${_ST_HOST}`,
 };
 
 let _stPresenceTimer = null;
@@ -1581,7 +1595,13 @@ async function getPeerList() {
         if (r.ok) {
             const data = await r.json();
             for (const p of data.peers || []) {
-                if (p.key && p.key !== _ST_PRESENCE.key) seen.set(p.key, p);
+                // Dedup by instance_id so multiple machines running the
+                // same plugin kind all stay visible; only hide OUR own
+                // instance_id.
+                const inst = p.instance_id || p.key;
+                if (inst && inst !== _ST_PRESENCE.instance_id) {
+                    seen.set(inst, p);
+                }
             }
         }
     } catch { /* pack too old or ComfyUI down */ }

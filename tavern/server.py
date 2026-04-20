@@ -7244,6 +7244,78 @@ def _get_ltx_preset(comfy_url):
 
 _LTX_PATCH_PROBE = {}
 
+# ── Temporary video quality mode (turbo / standard / quality) ─────────
+#
+# Global in-memory toggle set by the Guild's ⚡/⚖️/💎 cycling button
+# (tavern/static/app.js::_wireGlobalPresetBtn). Every WAN + LTX workflow
+# creation path reads this to decide which preset + overrides to use —
+# see _apply_quality_mode below. Intentionally NOT persisted: resets to
+# the default on every Guild restart so we never "strand" a user in
+# quality mode after a reboot and wonder why generations are slow.
+#
+# Valid modes:
+#   turbo    — fastest (WAN turbo / LTX distilled)
+#   standard — full-step, no accel LoRAs (WAN 30/3.5/15, LTX full 30)
+#   quality  — highest quality (WAN HQ preset, LTX two-stage upscale+refine)
+_GUILD_VIDEO_MODE: str = "turbo"
+
+
+def _mode_is_valid(m):
+    return m in ("turbo", "standard", "quality")
+
+
+def _apply_quality_mode(preset_key, overrides, quality_mode):
+    """Remap (preset_key, overrides) according to the global video mode.
+
+    The quality mode is a global override across every video shot the
+    Guild dispatches. Per-shot explicit `overrides` still win if the
+    caller already set `turbo` / `distilled` / `two_stage` — the mode
+    only fills in defaults. Preset key can be rewritten (lightning→HQ
+    for quality, any LTX→ltx2_text_to_video_2stage for quality, etc.)
+    to pick up a new set of baseline parameters.
+
+    Returns the possibly-modified (preset_key, overrides) tuple.
+    """
+    if not quality_mode or not _mode_is_valid(quality_mode):
+        return preset_key, overrides
+    overrides = dict(overrides or {})
+
+    fam_wan = isinstance(preset_key, str) and preset_key.startswith("wan")
+    fam_ltx = isinstance(preset_key, str) and preset_key.startswith("ltx")
+
+    if fam_wan:
+        if quality_mode == "turbo":
+            overrides.setdefault("turbo", True)
+        elif quality_mode == "standard":
+            overrides.setdefault("turbo", False)
+        elif quality_mode == "quality":
+            overrides.setdefault("turbo", False)
+            # Lightning preset's LoRAs tune for turbo; when the user
+            # wants "quality", swap to the HQ preset so we get its
+            # non-accel schedule + higher cfg. Other Wan presets keep
+            # their identity.
+            if preset_key == "wan22_i2v_lightning":
+                preset_key = "wan22_i2v_hq"
+
+    elif fam_ltx:
+        if quality_mode == "turbo":
+            # Force distilled 8-step path. Preserve i2v vs t2v by
+            # keeping the matching distilled preset.
+            if preset_key != "ltx2_image_to_video":
+                preset_key = "ltx2_distilled"
+        elif quality_mode == "standard":
+            if preset_key in ("ltx2_distilled",
+                              "ltx2_text_to_video_distilled"):
+                preset_key = "ltx2_dev"
+            overrides.setdefault("distilled", False)
+            overrides.setdefault("two_stage", False)
+        elif quality_mode == "quality":
+            # Half-res → 2× latent upscale → re-denoise.
+            preset_key = "ltx2_text_to_video_2stage"
+            overrides.setdefault("two_stage", True)
+
+    return preset_key, overrides
+
 
 def _ltx_server_opts(comfy_url):
     """Probe the server for optional LTX quality / speed patches + return
@@ -10511,6 +10583,22 @@ class GuildHandler(SimpleHTTPRequestHandler):
             # ungenerated wizard now uses the same Spellcaster icon so
             # the UI looks coherent and the pending fade animation works.
             return _serve_placeholder_icon(self)
+
+        # ── Global video quality mode (GET / POST) ──
+        # Temporary in-memory toggle; see _GUILD_VIDEO_MODE comment for
+        # semantics. GET returns current; POST {mode: ...} sets it.
+        elif self.path == '/api/video/quality-mode' and self.command == 'GET':
+            return self.end_json(200, {"mode": _GUILD_VIDEO_MODE})
+        elif self.path == '/api/video/quality-mode' and self.command == 'POST':
+            global _GUILD_VIDEO_MODE  # noqa: PLW0603
+            m = (data or {}).get("mode", "")
+            if not _mode_is_valid(m):
+                return self.end_json(400, {
+                    "error": f"invalid mode {m!r}; "
+                             "expected turbo|standard|quality"})
+            _GUILD_VIDEO_MODE = m
+            print(f"  [Guild] video quality mode → {m}")
+            return self.end_json(200, {"mode": _GUILD_VIDEO_MODE})
 
         # ── Video API GET endpoints ──
         elif self.path == '/api/video/shots' and self.command == 'GET':
