@@ -2034,6 +2034,100 @@ def _add_runs_spinner(dialog, box):
     box.pack_start(hb, False, False, 0)
 
 
+def _walk_all_layers(image):
+    """Return a flat list of (layer, index_path_str) for every layer in
+    the image, descending into group layers. GIMP 3's
+    ``image.get_layers()`` only returns TOP-LEVEL layers — nested layers
+    inside a group (common with Spellcaster's auto-organized results)
+    are invisible to a shallow scan.
+
+    Each element is ``(layer_obj, path_str)`` where ``path_str`` is a
+    dotted chain of 0-based indices (e.g. ``"2.0"`` = third top-level
+    layer, first child). The path is stable per-session and usable as a
+    ComboBoxText id so the resolver in
+    ``_collect_normal_map_from_dialog`` / ``_export_normal_map_layer``
+    can find the same layer again without caring whether it's at top
+    level or nested.
+    """
+    out = []
+
+    def _descend(layers, prefix):
+        for i, l in enumerate(layers):
+            pid = f"{prefix}{i}" if not prefix else f"{prefix}.{i}"
+            out.append((l, pid))
+            # GIMP 3 group check: is_group() + get_children(). Older
+            # bindings expose .children as an attribute; guard both.
+            children = None
+            try:
+                if hasattr(l, "is_group") and l.is_group():
+                    children = l.get_children()
+                elif hasattr(l, "get_children"):
+                    _maybe = l.get_children()
+                    if _maybe:
+                        children = _maybe
+            except Exception:
+                children = None
+            if children:
+                _descend(children, pid)
+
+    try:
+        _descend(image.get_layers(), "")
+    except Exception:
+        # Fall back to shallow scan if the recursion bindings differ.
+        for i, l in enumerate(image.get_layers()):
+            out.append((l, str(i)))
+    return out
+
+
+def _find_layer_by_path(image, path):
+    """Inverse of _walk_all_layers — resolve a ``"2.0"``-style path
+    back to a layer object. Returns None when the path no longer
+    matches (layer deleted / reordered between dialog open and OK)."""
+    if not path:
+        return None
+    parts = str(path).split(".")
+    try:
+        node_list = image.get_layers()
+        layer = None
+        for p in parts:
+            i = int(p)
+            if i < 0 or i >= len(node_list):
+                return None
+            layer = node_list[i]
+            if p == parts[-1]:
+                return layer
+            # Descend for next part
+            try:
+                if hasattr(layer, "is_group") and layer.is_group():
+                    node_list = layer.get_children() or []
+                elif hasattr(layer, "get_children"):
+                    node_list = layer.get_children() or []
+                else:
+                    return None
+            except Exception:
+                return None
+        return layer
+    except Exception:
+        return None
+
+
+def _find_normal_layer(image):
+    """Scan every layer (recursively) for one whose name contains
+    'normal' (case-insensitive). Returns the first match as a layer
+    object or None. Used by IC-Light's runtime reuse path + by any
+    caller that just wants 'do I have a normal map?' without building
+    a combo. Recursion matters: auto-generated normals land in the
+    'Spellcaster results' group, one level down."""
+    try:
+        for layer, _path in _walk_all_layers(image):
+            name = (layer.get_name() or "").lower()
+            if "normal" in name:
+                return layer
+    except Exception:
+        pass
+    return None
+
+
 def _add_normal_map_selector(dialog, box, image):
     """Add a normal map layer dropdown to any dialog.
 
@@ -2072,23 +2166,32 @@ def _add_normal_map_selector(dialog, box, image):
     # Populate with layers that look like normal maps (● prefix) first,
     # then all remaining layers (so the user can still manually pick
     # any layer if they named their normal layer something odd).
+    # Walk RECURSIVELY so normal-map layers inside groups (Spellcaster's
+    # auto-organized "Spellcaster results" / "Normal Map (auto)" group)
+    # are discovered too — pre-2026-04-20 the scan only saw top-level
+    # layers and silently missed any normal that had been tucked inside
+    # a group, even though the Generate button creates them one level
+    # deep by design. IDs are dotted paths ("2.0") so the resolver in
+    # _collect_normal_map_from_dialog / _export_normal_map_layer can
+    # find the layer again regardless of depth.
     found_normal = False
-    normal_layers: list[tuple[int, str]] = []
-    other_layers: list[tuple[int, str]] = []
-    for i, layer in enumerate(image.get_layers()):
-        name = layer.get_name() or f"Layer {i}"
+    all_layers = _walk_all_layers(image)
+    normal_layers: list[tuple[str, str]] = []
+    other_layers: list[tuple[str, str]] = []
+    for layer, path in all_layers:
+        name = layer.get_name() or f"Layer {path}"
         if "normal" in name.lower():
-            normal_layers.append((i, name))
+            normal_layers.append((path, name))
         else:
-            other_layers.append((i, name))
-    for i, name in normal_layers:
-        dialog._normal_combo.append(str(i), f"● {name}")
+            other_layers.append((path, name))
+    for path, name in normal_layers:
+        dialog._normal_combo.append(path, f"● {name}")
         if not found_normal:
-            dialog._normal_combo.set_active_id(str(i))
+            dialog._normal_combo.set_active_id(path)
             dialog._normal_enabled.set_active(True)
             found_normal = True
-    for i, name in other_layers:
-        dialog._normal_combo.append(str(i), name)
+    for path, name in other_layers:
+        dialog._normal_combo.append(path, name)
 
     if not found_normal:
         dialog._normal_combo.set_active_id("none")
@@ -2153,14 +2256,15 @@ def _add_normal_map_selector(dialog, box, image):
             # ● prefix + is selected. Easier than surgically inserting.
             dialog._normal_combo.remove_all()
             dialog._normal_combo.append("none", "(no normal map)")
-            for i, layer in enumerate(image.get_layers()):
-                n = layer.get_name() or f"Layer {i}"
+            for layer, path in _walk_all_layers(image):
+                n = layer.get_name() or f"Layer {path}"
                 label = f"● {n}" if "normal" in n.lower() else n
-                dialog._normal_combo.append(str(i), label)
-            # Find the freshly-inserted layer index and select it
-            for i, layer in enumerate(image.get_layers()):
+                dialog._normal_combo.append(path, label)
+            # Find the freshly-inserted layer and select it — match by
+            # name (nest-path is whatever GIMP assigned it).
+            for layer, path in _walk_all_layers(image):
                 if (layer.get_name() or "") == new_layer_name:
-                    dialog._normal_combo.set_active_id(str(i))
+                    dialog._normal_combo.set_active_id(path)
                     dialog._normal_enabled.set_active(True)
                     dialog._normal_combo.set_sensitive(True)
                     break
@@ -2187,30 +2291,67 @@ def _add_normal_map_selector(dialog, box, image):
     box.pack_start(frame, False, False, 0)
 
 
-def _export_normal_map_layer(image, layer_index):
+def _export_normal_map_layer(image, layer_ref):
     """Export a specific layer as a temp PNG file for upload to ComfyUI.
 
-    Temporarily makes only the target layer visible, exports the
-    flattened image, then restores original visibility.
+    ``layer_ref`` accepts either a dotted-path string ("2.0" = first
+    child of third top-level layer) produced by ``_walk_all_layers``,
+    or an integer top-level index (legacy callers). Temporarily makes
+    only the target layer visible (recursively — parents of a nested
+    target are re-shown so the group's composite includes the child),
+    exports the flattened image, then restores original visibility.
 
-    Returns the temp file path (caller must unlink after upload).
+    Returns the temp file path (caller must unlink after upload) or
+    None when the layer can't be resolved.
     """
-    layers = image.get_layers()
-    if layer_index < 0 or layer_index >= len(layers):
-        return None
+    # Resolve the target layer
+    if isinstance(layer_ref, int):
+        layers = image.get_layers()
+        if layer_ref < 0 or layer_ref >= len(layers):
+            return None
+        target = layers[layer_ref]
+    else:
+        target = _find_layer_by_path(image, layer_ref)
+        if target is None:
+            return None
 
-    # Save and hide all layers
-    orig_vis = [(l, l.get_visible()) for l in layers]
+    # Snapshot visibility of EVERY layer (top-level + nested) so we can
+    # restore exactly. Then hide everything, re-show the target AND
+    # every ancestor group (so group-mask/opacity lets the child
+    # composite through).
+    all_layers = [l for l, _ in _walk_all_layers(image)]
+    orig_vis = [(l, l.get_visible()) for l in all_layers]
     for l, _ in orig_vis:
-        l.set_visible(False)
-    layers[layer_index].set_visible(True)
+        try:
+            l.set_visible(False)
+        except Exception:
+            pass
+    try:
+        target.set_visible(True)
+    except Exception:
+        pass
+    # Re-show ancestor groups — walk by matching get_parent chain.
+    try:
+        ancestor = target.get_parent() if hasattr(target, "get_parent") else None
+        while ancestor is not None:
+            try:
+                ancestor.set_visible(True)
+            except Exception:
+                break
+            ancestor = (ancestor.get_parent()
+                        if hasattr(ancestor, "get_parent") else None)
+    except Exception:
+        pass
 
     # Export
     path = _export_image_to_tmp(image)
 
     # Restore
     for l, v in orig_vis:
-        l.set_visible(v)
+        try:
+            l.set_visible(v)
+        except Exception:
+            pass
 
     return path
 
@@ -2232,11 +2373,9 @@ def _collect_normal_map_from_dialog(dlg, image, server_url):
     idx_id = cmb.get_active_id()
     if not idx_id or idx_id == "none":
         return None
-    try:
-        idx = int(idx_id)
-    except (TypeError, ValueError):
-        return None
-    tmp = _export_normal_map_layer(image, idx)
+    # idx_id is now a dotted path ("2.0") from _walk_all_layers; pass
+    # through to the exporter which handles both strings and legacy ints.
+    tmp = _export_normal_map_layer(image, idx_id)
     if not tmp:
         return None
     nm_name = f"gimp_nm_{uuid.uuid4().hex[:8]}.png"
@@ -24481,9 +24620,13 @@ class Spellcaster(Gimp.PlugIn):
         lora_str_spin = _lora_picker.strength_spin
         # ── Normal Map (3D surface guidance) ──────────────────────────
         normal_cb = Gtk.CheckButton(label="Use 3D Normal Map for surface-aware relighting")
-        # Auto-detect: check if there's a layer named "Normal Map" or "NormalCrafter"
-        _has_normal = any("normal" in (l.get_name() or "").lower()
-                          for l in image.get_layers())
+        # Auto-detect: scan ALL layers (recursive, including inside
+        # groups like "Spellcaster results" where auto-generated
+        # normals land) for one whose name contains "normal". Pre-
+        # 2026-04-20 this was a shallow image.get_layers() scan so a
+        # normal tucked into any group was invisible and this
+        # checkbox stayed off even when a normal was clearly present.
+        _has_normal = _find_normal_layer(image) is not None
         normal_cb.set_active(_has_normal)
         normal_cb.set_tooltip_text(
             "When enabled, generates a 3D normal map of your image and\n"
@@ -24555,23 +24698,40 @@ class Spellcaster(Gimp.PlugIn):
             # Generate or reuse normal map if enabled
             normal_uname = None
             if use_normal:
-                # Check if a normal map layer already exists
-                normal_layer = None
-                for l in image.get_layers():
-                    if "normal" in (l.get_name() or "").lower():
-                        normal_layer = l
-                        break
+                # Recursive search — auto-generated normals live one
+                # group-level deep under "Spellcaster results", which
+                # the old shallow scan missed.
+                normal_layer = _find_normal_layer(image)
                 if normal_layer:
-                    # Export the existing normal map layer
+                    # Export the existing normal map layer. Walk ALL
+                    # layers (nested included) to snapshot + restore
+                    # visibility; set_visible(False) on a group hides
+                    # its children implicitly, which is what we want
+                    # while we flip only the normal on.
                     _update_spinner_status("IC-Light: exporting normal map layer...")
-                    # Temporarily make only the normal layer visible
-                    orig_vis = [(l, l.get_visible()) for l in image.get_layers()]
+                    all_layers = [l for l, _ in _walk_all_layers(image)]
+                    orig_vis = [(l, l.get_visible()) for l in all_layers]
                     for l, _ in orig_vis:
-                        l.set_visible(False)
-                    normal_layer.set_visible(True)
+                        try: l.set_visible(False)
+                        except Exception: pass
+                    try: normal_layer.set_visible(True)
+                    except Exception: pass
+                    # Re-show ancestor groups so the nested normal
+                    # layer composites through.
+                    try:
+                        a = (normal_layer.get_parent()
+                             if hasattr(normal_layer, "get_parent") else None)
+                        while a is not None:
+                            try: a.set_visible(True)
+                            except Exception: break
+                            a = (a.get_parent()
+                                 if hasattr(a, "get_parent") else None)
+                    except Exception:
+                        pass
                     ntmp = _export_image_to_tmp(image)
                     for l, v in orig_vis:
-                        l.set_visible(v)
+                        try: l.set_visible(v)
+                        except Exception: pass
                     normal_uname = f"gimp_iclight_normal_{uuid.uuid4().hex[:8]}.png"
                     _upload_image(srv, ntmp, normal_uname); os.unlink(ntmp)
                 else:
