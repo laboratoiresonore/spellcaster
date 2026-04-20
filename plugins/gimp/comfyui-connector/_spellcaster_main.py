@@ -1279,6 +1279,227 @@ if not getattr(sys.modules.get(__name__), _PRESENCE_KEY, False):
         print(f"[Spellcaster] Presence heartbeat failed to start: {_e}")
 
 
+# ═══════════════════════════════════════════════════════════════════════
+#  Cross-interface INBOX — worker + per-menu-invocation auto-drain
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Every Spellcaster menu click triggers a silent inbox drain BEFORE the
+# user's intended action runs. GIMP 3 plugins are one-shot processes
+# (no persistent main loop for a background timer), so instead of a
+# long-lived poller, we gate on an on-disk timestamp and drain at most
+# once per `_INBOX_POLL_INTERVAL_S` seconds across the whole user
+# session. Errors are swallowed — the inbox drain must never block or
+# fail a user's primary action.
+#
+# Manual "Check Spellcaster Inbox" still exists and shares the same
+# worker — it bypasses the interval gate so "force drain now" works.
+#
+# The on-disk gate file sits next to GIMP's pluginrc under the user's
+# plug-ins dir. We deliberately avoid the main plugin config.json so a
+# stale timestamp never blocks legitimate config reads.
+
+_INBOX_GATE_FILE = None          # lazy-populated on first call
+_INBOX_POLL_INTERVAL_S = 30.0    # don't hit the mailbox more than twice/min
+_INBOX_AUTO_HTTP_TIMEOUT = 3.0   # short cap — silent path, not blocking
+_INBOX_AUTO_ASSET_TIMEOUT = 8.0  # per-asset download budget on auto path
+_INBOX_AUTO_MAX_SIZE = 25 * 1024 * 1024   # 25 MB on auto path
+
+
+def _inbox_gate_path():
+    global _INBOX_GATE_FILE
+    if _INBOX_GATE_FILE is None:
+        try:
+            _INBOX_GATE_FILE = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "spellcaster_inbox_gate.json")
+        except Exception:
+            # Fallback: system temp if somehow __file__ isn't resolvable.
+            _INBOX_GATE_FILE = os.path.join(
+                tempfile.gettempdir(), "spellcaster_inbox_gate.json")
+    return _INBOX_GATE_FILE
+
+
+def _inbox_gate_read():
+    try:
+        with open(_inbox_gate_path(), "r", encoding="utf-8") as f:
+            return float((json.load(f) or {}).get("last_poll_ts") or 0.0)
+    except Exception:
+        return 0.0
+
+
+def _inbox_gate_write(ts):
+    try:
+        with open(_inbox_gate_path(), "w", encoding="utf-8") as f:
+            json.dump({"last_poll_ts": float(ts)}, f)
+    except Exception:
+        pass  # best-effort — a missed write just re-polls sooner
+
+
+def _drain_inbox_worker(*, http_timeout, per_asset_timeout, max_asset_size,
+                        silent):
+    """Pull and open gimp mailbox assets. Used by both the manual
+    "Check Inbox" menu entry and the silent per-invocation auto-drain.
+
+    Returns a dict:
+      {"status":  "ok" | "empty" | "cross_interface_missing" |
+                  "guild_backbone_off" | "guild_http_error" |
+                  "guild_unreachable",
+       "opened":  int,
+       "failures": [str],
+       "http_code": int | None,
+       "error":    str | None}
+
+    ``silent=True`` suppresses ``Gimp.message`` popups and caps size +
+    timeouts so the auto-poll path never blocks a user for more than a
+    few seconds even if the Guild is slow.
+    """
+    result = {"status": "ok", "opened": 0, "failures": [],
+              "http_code": None, "error": None}
+    try:
+        from spellcaster_core.cross_interface import resolve_guild_url
+    except ImportError as e:
+        result["status"] = "cross_interface_missing"
+        result["error"] = str(e)
+        return result
+
+    import urllib.request as _ur
+    import urllib.error as _ue
+    import urllib.parse as _up
+    import json as _json
+
+    guild_base = resolve_guild_url()
+    url = f"{guild_base}/api/gimp/inbox?consume=1&max=20"
+    try:
+        req = _ur.Request(url, headers={"Accept": "application/json"})
+        with _ur.urlopen(req, timeout=http_timeout) as resp:
+            body = _json.loads(resp.read())
+    except _ue.HTTPError as e:
+        if e.code == 501:
+            result["status"] = "guild_backbone_off"
+        else:
+            result["status"] = "guild_http_error"
+            result["http_code"] = e.code
+        return result
+    except Exception as e:
+        result["status"] = "guild_unreachable"
+        result["error"] = str(e)
+        return result
+
+    messages = (body or {}).get("messages") or []
+    keepers = [m for m in messages
+                if (m.get("kind") or "").startswith("gimp.asset.")]
+    if not keepers:
+        result["status"] = "empty"
+        return result
+
+    opened = 0
+    failures = []
+    for m in keepers:
+        md = m.get("data") or {}
+        image_url = (md.get("image_url") or md.get("url") or "").strip()
+        if not image_url:
+            failures.append("(message with no image_url)")
+            continue
+        if image_url.startswith("/"):
+            image_url = guild_base.rstrip("/") + image_url
+        try:
+            _scheme = _up.urlparse(image_url).scheme.lower()
+        except Exception:
+            _scheme = ""
+        if _scheme not in ("http", "https"):
+            failures.append(f"blocked non-http url: {image_url[:80]}")
+            continue
+        try:
+            req = _ur.Request(image_url,
+                              headers={"User-Agent": "spellcaster-gimp/2.0"})
+            with _ur.urlopen(req, timeout=per_asset_timeout) as resp:
+                asset_bytes = resp.read(max_asset_size + 1)
+                if len(asset_bytes) > max_asset_size:
+                    failures.append(
+                        f"oversize (>{max_asset_size // (1024*1024)} MB): "
+                        f"{image_url[:80]}")
+                    continue
+        except Exception as e:
+            failures.append(f"download: {e}")
+            continue
+        suffix = ".png"
+        if image_url.lower().endswith((".jpg", ".jpeg")):
+            suffix = ".jpg"
+        elif image_url.lower().endswith(".mp4"):
+            failures.append(
+                f"mp4 can't open in GIMP: {image_url.rsplit('/', 1)[-1]}")
+            continue
+        tmp = tempfile.NamedTemporaryFile(
+            delete=False, suffix=suffix, prefix="spellcaster_inbox_")
+        try:
+            tmp.write(asset_bytes)
+            tmp.close()
+            gfile = Gio.File.new_for_path(tmp.name)
+            new_image = Gimp.file_load(
+                Gimp.RunMode.NONINTERACTIVE, gfile)
+            if new_image is None:
+                failures.append(f"GIMP couldn't load {tmp.name}")
+                continue
+            Gimp.Display.new(new_image)
+            opened += 1
+        except Exception as e:
+            failures.append(f"load: {e}")
+
+    result["opened"] = opened
+    result["failures"] = failures
+    return result
+
+
+def _maybe_auto_drain_inbox():
+    """Silent, interval-gated inbox drain. Called at the top of every
+    wrapped Spellcaster procedure callback.
+
+    Returns immediately if:
+      - disabled via config (``auto_inbox_poll=false``);
+      - less than ``_INBOX_POLL_INTERVAL_S`` has passed since the
+        last drain (on-disk timestamp);
+      - any exception during gate read (fail-open skips the drain
+        rather than risk blocking the user).
+
+    NEVER raises. Prints any internal error to stdout for the dev log
+    but does not surface to the user — the auto path is fire-and-forget.
+    """
+    try:
+        cfg = _load_config()
+        if not cfg.get("auto_inbox_poll", True):
+            return
+        now = time.time()
+        last = _inbox_gate_read()
+        if (now - last) < _INBOX_POLL_INTERVAL_S:
+            return
+        _inbox_gate_write(now)
+        result = _drain_inbox_worker(
+            http_timeout=_INBOX_AUTO_HTTP_TIMEOUT,
+            per_asset_timeout=_INBOX_AUTO_ASSET_TIMEOUT,
+            max_asset_size=_INBOX_AUTO_MAX_SIZE,
+            silent=True)
+        # Only log when something actually happened — silent drains
+        # shouldn't clutter the dev console.
+        if result.get("opened"):
+            print(f"[Spellcaster] Auto-drained {result['opened']} "
+                  f"inbox asset(s)")
+    except Exception as e:
+        print(f"[Spellcaster] auto inbox drain skipped: {e}")
+
+
+def _wrap_auto_drain(callback):
+    """Wrap a GIMP procedure callback so the inbox auto-drain runs
+    before the user's action. The drain is capped by timeout + size
+    (see `_INBOX_AUTO_*` constants) so even a slow or hostile Guild
+    can't block the user more than a few seconds. Errors from the
+    drain NEVER propagate to the wrapped callback.
+    """
+    def wrapped(procedure, run_mode, image, drawables, config, data):
+        _maybe_auto_drain_inbox()
+        return callback(procedure, run_mode, image, drawables, config, data)
+    return wrapped
+
+
 def _auto_enhance(prompt, arch_key, negative="", model_name=None,
                    method="scene"):
     """Enhance a prompt via local LLM if the global toggle is ON.
@@ -13881,7 +14102,15 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-outpaint",
         }
 
-        proc = Gimp.ImageProcedure.new(self, name, Gimp.PDBProcType.PLUGIN, callback, None)
+        # Wrap every callback with the inbox auto-drain so users see
+        # any pending cross-interface sends without having to click
+        # "Check Inbox" first. Interval-gated + timeout-capped inside
+        # the wrapper — see `_maybe_auto_drain_inbox` for the policy.
+        # The manual `_run_check_inbox` handler bypasses the gate via
+        # its direct call into `_drain_inbox_worker`.
+        proc = Gimp.ImageProcedure.new(
+            self, name, Gimp.PDBProcType.PLUGIN,
+            _wrap_auto_drain(callback), None)
         proc.set_menu_label(label)
         # Primary Spellcaster top-level menu path
         proc.add_menu_path(_menu_paths.get(name, _S))
@@ -27388,113 +27617,49 @@ class Spellcaster(Gimp.PlugIn):
         path prepended with the Guild's base URL) and opens it as a
         new image. Messages are consumed on read, so pressing Check
         Inbox a second time gives an empty pull.
+
+        Shares its worker (`_drain_inbox_worker`) with the auto-poll
+        path: every Spellcaster menu invocation also drains silently
+        in the background via `_maybe_auto_drain_inbox`, so users
+        typically don't need to click this manually — it's the force
+        drain + diagnostic view.
         """
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(
                 Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
-        try:
-            from spellcaster_core.cross_interface import (
-                CrossInterfaceClient, resolve_guild_url,
-            )
-        except ImportError as e:
-            Gimp.message(f"Check Inbox: cross_interface helper missing — {e}")
+        result = _drain_inbox_worker(
+            http_timeout=10, per_asset_timeout=30,
+            max_asset_size=100 * 1024 * 1024,
+            silent=False)
+        status = result.get("status")
+        if status == "cross_interface_missing":
+            Gimp.message(f"Check Inbox: cross_interface helper missing — "
+                         f"{result.get('error') or 'ImportError'}")
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+        if status == "guild_backbone_off":
+            Gimp.message(
+                "Check Inbox: the Guild's mailbox primitives are "
+                "disabled (cross-interface backbone off). Start the "
+                "Wizard Guild with cross_interface enabled.")
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+        if status == "guild_http_error":
+            Gimp.message(
+                f"Check Inbox: Guild returned HTTP {result.get('http_code')}.")
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+        if status == "guild_unreachable":
+            Gimp.message(f"Check Inbox: Guild unreachable — {result.get('error')}")
             return procedure.new_return_values(
                 Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
-        guild_base = resolve_guild_url()
-        import urllib.request as _ur
-        import urllib.error as _ue
-        import json as _json
-
-        url = f"{guild_base}/api/gimp/inbox?consume=1&max=20"
-        try:
-            req = _ur.Request(url, headers={"Accept": "application/json"})
-            with _ur.urlopen(req, timeout=10) as resp:
-                body = _json.loads(resp.read())
-        except _ue.HTTPError as e:
-            if e.code == 501:
-                Gimp.message(
-                    "Check Inbox: the Guild's mailbox primitives are "
-                    "disabled (cross-interface backbone off). Start the "
-                    "Wizard Guild with cross_interface enabled.")
-            else:
-                Gimp.message(f"Check Inbox: Guild returned HTTP {e.code}.")
-            return procedure.new_return_values(
-                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
-        except Exception as e:
-            Gimp.message(f"Check Inbox: Guild unreachable — {e}")
-            return procedure.new_return_values(
-                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
-
-        messages = (body or {}).get("messages") or []
-        # Keep only gimp.asset.send events — ignore other bus noise
-        # that might have been routed to the gimp mailbox.
-        keepers = [m for m in messages
-                    if (m.get("kind") or "").startswith("gimp.asset.")]
-        if not keepers:
+        opened = result.get("opened", 0)
+        failures = result.get("failures") or []
+        if status == "empty":
             Gimp.message("Check Inbox: nothing waiting.")
             return procedure.new_return_values(
                 Gimp.PDBStatusType.SUCCESS, GLib.Error())
-
-        opened = 0
-        failures: list[str] = []
-        for m in keepers:
-            md = m.get("data") or {}
-            image_url = (md.get("image_url") or md.get("url")
-                          or "").strip()
-            if not image_url:
-                failures.append("(message with no image_url)")
-                continue
-            if image_url.startswith("/"):
-                image_url = guild_base.rstrip("/") + image_url
-            # Scheme clamp — an attacker with Guild-publish access could
-            # otherwise smuggle file:// / gopher:// / ftp:// URLs that
-            # urllib happily follows, tricking this GIMP instance into
-            # reading arbitrary local files or probing internal services.
-            try:
-                _scheme = urllib.parse.urlparse(image_url).scheme.lower()
-            except Exception:
-                _scheme = ""
-            if _scheme not in ("http", "https"):
-                failures.append(f"blocked non-http url: {image_url[:80]}")
-                continue
-            # Download bytes (cap size to avoid RAM-bomb replies)
-            try:
-                req = _ur.Request(image_url, headers={"User-Agent": "spellcaster-gimp/2.0"})
-                with _ur.urlopen(req, timeout=30) as resp:
-                    _MAX = 100 * 1024 * 1024  # 100 MB
-                    asset_bytes = resp.read(_MAX + 1)
-                    if len(asset_bytes) > _MAX:
-                        failures.append(f"oversize (>100 MB): {image_url[:80]}")
-                        continue
-            except Exception as e:
-                failures.append(f"download: {e}")
-                continue
-            # Write to temp + load into GIMP
-            suffix = ".png"
-            if image_url.lower().endswith((".jpg", ".jpeg")):
-                suffix = ".jpg"
-            elif image_url.lower().endswith(".mp4"):
-                suffix = ".mp4"  # GIMP won't open mp4 — skip
-                failures.append(
-                    f"mp4 can't open in GIMP: {image_url.rsplit('/', 1)[-1]}")
-                continue
-            tmp = tempfile.NamedTemporaryFile(
-                delete=False, suffix=suffix,
-                prefix="spellcaster_inbox_")
-            try:
-                tmp.write(asset_bytes)
-                tmp.close()
-                gfile = Gio.File.new_for_path(tmp.name)
-                new_image = Gimp.file_load(
-                    Gimp.RunMode.NONINTERACTIVE, gfile)
-                if new_image is None:
-                    failures.append(f"GIMP couldn't load {tmp.name}")
-                    continue
-                Gimp.Display.new(new_image)
-                opened += 1
-            except Exception as e:
-                failures.append(f"load: {e}")
 
         lines = [f"Opened {opened} image(s) from the inbox."]
         if failures:

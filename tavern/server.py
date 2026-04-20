@@ -64,6 +64,7 @@ try:
     from spellcaster_core.interface_registry import registry as _iface_registry
     from spellcaster_core.model_registry import get_registry as _get_model_registry
     from spellcaster_core.signal_notifier import start_default as _start_signal_notifier
+    from spellcaster_core import events as _events
     CROSS_INTERFACE_AVAILABLE = True
 except (ImportError, SyntaxError):
     CROSS_INTERFACE_AVAILABLE = False
@@ -71,6 +72,7 @@ except (ImportError, SyntaxError):
     validate_kind = None
     sse_format = None
     AssetGallery = None
+    _events = None
     _iface_registry = None
     _get_model_registry = None
 
@@ -1948,9 +1950,10 @@ def _server_init(comfy_url=None):
         try:
             if action_key == "pull_playhead":
                 t0 = time.time()
-                _EVENT_BUS.publish("resolve.playhead.grab",
-                                    origin="guild",
-                                    data={"want": "reference_still"})
+                _publish_typed(
+                    _events.PlayheadGrab(want="reference_still")
+                        if _events else None,
+                    origin="guild")
                 ack = _await_ack("resolve.playhead.ready", timeout_s=12.0)
                 if ack is None:
                     return {"error": ("Bridge didn't ack within 12s — "
@@ -1968,9 +1971,10 @@ def _server_init(comfy_url=None):
                                   "the Shot Wizard to queue it.")}
             if action_key == "import_edl":
                 t0 = time.time()
-                _EVENT_BUS.publish("resolve.timeline.import",
-                                    origin="guild",
-                                    data={"source": "cinematographer"})
+                _publish_typed(
+                    _events.TimelineImport(source="cinematographer")
+                        if _events else None,
+                    origin="guild")
                 ack = _await_ack("resolve.timeline.imported", timeout_s=20.0)
                 if ack is None:
                     return {"error": ("Bridge didn't ack within 20s — "
@@ -2856,6 +2860,37 @@ if CROSS_INTERFACE_AVAILABLE:
         _EVENT_BUS = None
         _ASSET_GALLERY = None
         _SIGNAL_NOTIFIER = None
+
+
+def _publish_typed(event, *, origin: str, extras: dict | None = None) -> None:
+    """Publish a typed ``spellcaster_core.events`` dataclass on the bus.
+
+    Thin wrapper over ``events.publish_event`` that:
+      - silently no-ops when the bus or schema module is unavailable
+        (dev installs with the backbone init failure);
+      - merges ``extras`` into the dataclass's ``to_payload`` output for
+        non-schema fields that current subscribers still read (e.g. the
+        ``mime`` / ``size`` fields on AssetCreated);
+      - swallows bus exceptions — publish is best-effort and must never
+        take down the caller.
+
+    Use this for every Guild-side publish that has a schema in
+    ``events.EVENT_SCHEMAS`` / ``events._WILDCARD_SCHEMAS``. Untyped
+    kinds (user-emitted via ``POST /api/events/emit``, generic
+    mailbox-fanout paths) keep calling ``_EVENT_BUS.publish`` directly.
+    """
+    if _EVENT_BUS is None or _events is None or event is None:
+        return
+    try:
+        kind = event.KIND
+        if kind.startswith("*."):
+            kind = f"{origin}.{kind[2:]}"
+        payload = event.to_payload()
+        if extras:
+            payload.update(extras)
+        _EVENT_BUS.publish(kind, origin=origin, data=payload)
+    except Exception:
+        pass
 
 def _apply_user_settings(settings):
     """Push every user_settings key into the live subsystem it controls.
@@ -7461,48 +7496,21 @@ def _cache_comfyui_asset(comfy_url_str, asset_type="image",
                     tags=tags,
                     meta=merged_meta,
                 )
-                if emit_event and _EVENT_BUS is not None:
-                    try:
-                        # Typed event — validates publisher-side and
-                        # gives subscribers a dataclass view. Extra
-                        # fields (mime, size) ride through unchanged;
-                        # they're not in the AssetCreated schema but
-                        # the bus doesn't strip extras (see
-                        # spellcaster_core/events.py rule 3).
-                        try:
-                            from spellcaster_core.events import (
-                                AssetCreated, publish_event)
-                            evt = AssetCreated(
-                                asset_hash=rec.hash, origin=origin,
-                                kind=kind,
-                                url=f"/api/assets/{rec.hash}",
-                                prompt=prompt, model=model, seed=seed,
-                                title=title,
-                                tags=list(tags or []),
-                            )
-                            # Bring non-schema fields back so existing
-                            # subscribers that read mime/size keep
-                            # working until they migrate.
-                            payload = evt.to_payload()
-                            payload["mime"] = rec.mime
-                            payload["size"] = rec.size
-                            _EVENT_BUS.publish(
-                                f"{origin}.asset.created",
-                                origin=origin, data=payload)
-                        except ImportError:
-                            # Legacy fallback if events.py isn't in
-                            # spellcaster_core yet (old bundle).
-                            _EVENT_BUS.publish(
-                                f"{origin}.asset.created",
-                                origin=origin,
-                                data={
-                                    'asset_hash': rec.hash, 'kind': kind,
-                                    'prompt': prompt, 'model': model,
-                                    'seed': seed, 'title': title,
-                                    'mime': rec.mime, 'size': rec.size,
-                                })
-                    except Exception:
-                        pass  # bus is best-effort
+                if emit_event:
+                    # Typed AssetCreated; mime + size ride as ``extras``
+                    # so existing subscribers that read them keep working
+                    # until they migrate to the dataclass-only view.
+                    _publish_typed(
+                        _events.AssetCreated(
+                            asset_hash=rec.hash, origin=origin,
+                            kind=kind,
+                            url=f"/api/assets/{rec.hash}",
+                            prompt=prompt, model=model, seed=seed,
+                            title=title,
+                            tags=list(tags or []),
+                        ) if _events else None,
+                        origin=origin,
+                        extras={"mime": rec.mime, "size": rec.size})
                 return f"/api/assets/{rec.hash}"
             except Exception as e:
                 print(f"  [Asset] gallery put failed ({e}); falling back to flat cache")
@@ -9738,14 +9746,11 @@ class GuildHandler(SimpleHTTPRequestHandler):
         except Exception as e:
             return self.end_json(500, {"error": f"gallery put failed: {e}"})
         # Fire an event so other interfaces can react
-        if _EVENT_BUS is not None:
-            try:
-                _EVENT_BUS.publish(f"{rec.origin}.asset.uploaded",
-                                   origin=rec.origin,
-                                   data={"hash": rec.hash, "kind": rec.kind,
-                                         "title": rec.title, "model": rec.model})
-            except Exception:
-                pass
+        _publish_typed(
+            _events.AssetUploaded(
+                hash=rec.hash, kind=rec.kind,
+                title=rec.title, model=rec.model) if _events else None,
+            origin=rec.origin)
         return self.end_json(200, rec.to_dict())
 
     def _handle_models_list(self):
@@ -12363,13 +12368,10 @@ class GuildHandler(SimpleHTTPRequestHandler):
                         _sys.path.insert(0, _here)
                     import guild_launcher as _gl
                     applied = _gl.check_for_updates(verbose=True)
-                    if _EVENT_BUS is not None:
-                        try:
-                            _EVENT_BUS.publish("guild.self_update.result",
-                                                origin="guild",
-                                                data={"applied": bool(applied)})
-                        except Exception:
-                            pass
+                    _publish_typed(
+                        _events.GuildSelfUpdateResult(applied=bool(applied))
+                            if _events else None,
+                        origin="guild")
                     if applied:
                         # Give the client a beat to see the toast, then re-exec.
                         # os.execv replaces this process image with a fresh
@@ -12387,13 +12389,10 @@ class GuildHandler(SimpleHTTPRequestHandler):
                                          name="guild-self-restart").start()
                 except Exception as e:
                     print(f"  [self-update] failed: {e}")
-                    if _EVENT_BUS is not None:
-                        try:
-                            _EVENT_BUS.publish("guild.self_update.error",
-                                                origin="guild",
-                                                data={"error": str(e)})
-                        except Exception:
-                            pass
+                    _publish_typed(
+                        _events.GuildSelfUpdateError(error=str(e))
+                            if _events else None,
+                        origin="guild")
 
             import threading
             threading.Thread(target=_run_update, daemon=True,
@@ -13869,12 +13868,10 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     _antenna_registry.ingest_heartbeat(meta)
                 except Exception as e:
                     print(f"  [antenna_registry] ingest failed: {e}")
-            if _EVENT_BUS is not None:
-                try:
-                    _EVENT_BUS.publish(f"{iface_key}.presence.heartbeat",
-                                       origin=iface_key, data={"meta": meta})
-                except Exception:
-                    pass
+            _publish_typed(
+                _events.PresenceHeartbeat(meta=meta if isinstance(meta, dict) else {})
+                    if _events else None,
+                origin=iface_key)
             return self.end_json(200, {"ok": True, "interface": iface_key})
 
         if self.path == '/api/events/emit':
