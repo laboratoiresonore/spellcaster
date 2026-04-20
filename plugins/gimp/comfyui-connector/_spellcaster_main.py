@@ -2137,22 +2137,45 @@ def _add_normal_map_selector(dialog, box, image):
     adds the result as a new layer — no dialog-cancel dance required
     (fix 2 from the 2026-04-20 3D audit).
 
-    Sets dialog._normal_combo (ComboBoxText) and dialog._normal_enabled
-    (CheckButton). Use dialog._normal_combo.get_active_id() to get the
-    layer index, or None/"none" if disabled.
+    UX note (2026-04-20 follow-up): when no normal layer is found in
+    the image, the "Auto-generate when I submit" checkbox is shown
+    default-ON + a headline label explaining "A 3D normal map will
+    be generated automatically — you don't need to touch ControlNet
+    settings." The submit path (`_collect_normal_map_from_dialog`)
+    honours this flag and generates NormalCrafter inline before the
+    main workflow runs, so users who don't know what a normal map is
+    get the benefit for free.
+
+    Sets on dialog:
+      * _normal_combo       — ComboBoxText (layer picker)
+      * _normal_enabled     — CheckButton  (use-it master switch)
+      * _normal_auto_gen    — CheckButton  (auto-generate when missing)
     """
-    frame = Gtk.Frame(label="  3D Normal Map (optional)  ")
+    frame = Gtk.Frame(label="  3D Normal Map (surface-aware, optional)  ")
     fbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
     fbox.set_margin_start(8); fbox.set_margin_end(8)
     fbox.set_margin_top(4); fbox.set_margin_bottom(6)
 
-    dialog._normal_enabled = Gtk.CheckButton(label="Use normal map for 3D-aware generation")
+    # Headline — set once we know whether a candidate layer exists
+    # (below). Stays visible so users who don't care about CN settings
+    # understand what's happening.
+    dialog._normal_headline = Gtk.Label(xalign=0.0)
+    dialog._normal_headline.set_line_wrap(True)
+    fbox.pack_start(dialog._normal_headline, False, False, 0)
+
+    dialog._normal_enabled = Gtk.CheckButton(
+        label="Use 3D normal map for surface-aware generation")
     dialog._normal_enabled.set_tooltip_text(
-        "When enabled, the selected normal map layer provides 3D surface\n"
-        "information to the AI. This dramatically improves:\n"
+        "When enabled, a 3D surface-normal map guides the AI. This\n"
+        "dramatically improves:\n"
         "  • Relighting accuracy (light wraps around surfaces correctly)\n"
         "  • Inpainting consistency (fills respect 3D geometry)\n"
-        "  • Style transfer (preserves 3D structure)")
+        "  • Style transfer (preserves 3D structure)\n\n"
+        "If no 'normal'-named layer is in your image, one will be\n"
+        "generated automatically via NormalCrafter right before the\n"
+        "main workflow runs (as long as 'Auto-generate if missing' is\n"
+        "ticked). No ControlNet tweaking needed — this handles that\n"
+        "behind the scenes.")
     fbox.pack_start(dialog._normal_enabled, False, False, 0)
 
     dialog._normal_combo = Gtk.ComboBoxText()
@@ -2195,9 +2218,41 @@ def _add_normal_map_selector(dialog, box, image):
 
     if not found_normal:
         dialog._normal_combo.set_active_id("none")
-        dialog._normal_enabled.set_active(False)
+        # When the image has no normal-map layer, we keep the master
+        # switch ON and rely on the auto-generate checkbox below. This
+        # is the "user doesn't know what a normal map is" path — the
+        # submit handler auto-generates one for them.
+        dialog._normal_enabled.set_active(True)
 
     fbox.pack_start(dialog._normal_combo, False, False, 0)
+
+    # Auto-generate toggle. Default ON, shown regardless of whether a
+    # normal layer is present so users can force re-generation when
+    # the layer they have is stale. The submit path
+    # (_collect_normal_map_from_dialog) checks this flag + runs
+    # NormalCrafter if active_id == "none".
+    dialog._normal_auto_gen = Gtk.CheckButton(
+        label="Auto-generate if missing")
+    dialog._normal_auto_gen.set_active(True)
+    dialog._normal_auto_gen.set_tooltip_text(
+        "When you click OK, if no normal-map layer is selected, one will\n"
+        "be generated automatically via NormalCrafter before the main\n"
+        "workflow runs. Adds ~10-30 s to the first run; subsequent runs\n"
+        "in the same session reuse the layer. Turn this off if you\n"
+        "explicitly don't want 3D guidance (rare — the map improves\n"
+        "almost every result).")
+    fbox.pack_start(dialog._normal_auto_gen, False, False, 0)
+
+    # Headline copy depends on starting state.
+    if found_normal:
+        dialog._normal_headline.set_markup(
+            '<small>✓ Found a normal-map layer in this image — it will '
+            'guide the AI. No ControlNet tweaking needed.</small>')
+    else:
+        dialog._normal_headline.set_markup(
+            '<small>A 3D normal map will be generated automatically when '
+            'you click OK. No ControlNet tweaking needed — untick '
+            '<i>Use 3D normal map</i> below to skip.</small>')
 
     # Inline "Generate now" row — removes the cancel-and-reopen dance
     # when the user hasn't made a normal map yet. Runs NormalCrafter
@@ -2357,20 +2412,103 @@ def _export_normal_map_layer(image, layer_ref):
 
 
 def _collect_normal_map_from_dialog(dlg, image, server_url):
-    """If the dialog's normal-map picker is enabled + a layer is
-    selected, export that layer to a PNG and upload it to ComfyUI's
-    input directory. Returns the uploaded filename, or None when the
-    feature is disabled / unconfigured.
+    """If the dialog's normal-map picker is enabled, return the name
+    of a normal-map PNG that's been uploaded to ComfyUI's input dir.
 
-    Silently no-ops when the dialog hasn't had `_add_normal_map_selector`
-    called on it — every caller passes any dlg, and we check for the
-    attributes before reading.
+    Three paths:
+        1. Layer selected → export that layer, upload, return.
+        2. No layer + Auto-generate ON → run NormalCrafter on the
+           canvas, import the result as a new "Normal Map (auto)"
+           layer, upload it, return the filename. This is the
+           zero-config path for users who don't know what a normal
+           map is — they just see a 3D-aware result.
+        3. Everything off → return None (caller skips normal-map CN).
+
+    Silently no-ops when the dialog hasn't had
+    `_add_normal_map_selector` called on it — every caller passes
+    any dlg, and we check for the attributes before reading.
     """
     cb = getattr(dlg, "_normal_enabled", None)
     cmb = getattr(dlg, "_normal_combo", None)
+    auto_cb = getattr(dlg, "_normal_auto_gen", None)
     if cb is None or cmb is None or not cb.get_active():
         return None
     idx_id = cmb.get_active_id()
+
+    # Path 2: auto-generate when nothing is picked + auto-gen is ON.
+    if (not idx_id or idx_id == "none") and auto_cb is not None and auto_cb.get_active():
+        # Preflight NormalCrafter before spending time on export/upload.
+        try:
+            nodes = _probe_comfyui_nodes(server_url)
+            if nodes and "NormalCrafterNode" not in nodes:
+                try:
+                    Gimp.message(
+                        "3D Normal Map auto-generation needs the "
+                        "NormalCrafter node on your ComfyUI server.\n\n"
+                        "Either install it (ComfyUI Manager → search "
+                        "'NormalCrafter') or untick 'Auto-generate if "
+                        "missing' to skip 3D guidance for this run.")
+                except Exception:
+                    pass
+                return None
+        except Exception:
+            pass  # probe failed — best-effort, let the workflow error out
+        # Export canvas + upload
+        try:
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_nmsrc_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(server_url, tmp, uname)
+            try:
+                os.unlink(tmp)
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[Spellcaster] auto-normal-map export failed: {e}")
+            return None
+        # Build + run NormalCrafter workflow
+        try:
+            from spellcaster_core.workflows import build_normal_map
+            wf = build_normal_map(
+                uname, max_res=min(image.get_width(), 1024))
+            results = list(_run_comfyui_workflow(
+                server_url, wf, timeout=300))
+        except Exception as e:
+            print(f"[Spellcaster] auto-normal-map generation failed: {e}")
+            return None
+        if not results:
+            return None
+        fn, sf, ft = results[0]
+        data = _download_image(server_url, fn, sf, ft)
+        # Import as layer so the user can reuse it on subsequent runs
+        try:
+            _import_result_as_layer(
+                image, data, "Normal Map (auto)", keep_size=True)
+            Gimp.displays_flush()
+        except Exception:
+            pass
+        # Upload the SAME bytes back to ComfyUI under a new name so the
+        # main workflow's LoadImage has a stable filename to reference.
+        import tempfile as _tf
+        ntmp = _tf.NamedTemporaryFile(suffix=".png", delete=False)
+        ntmp.write(data)
+        ntmp.close()
+        nm_name = f"gimp_nmauto_{uuid.uuid4().hex[:8]}.png"
+        try:
+            _upload_image(server_url, ntmp.name, nm_name)
+        except Exception as e:
+            print(f"[Spellcaster] auto-normal-map upload failed: {e}")
+            try:
+                os.unlink(ntmp.name)
+            except Exception:
+                pass
+            return None
+        try:
+            os.unlink(ntmp.name)
+        except Exception:
+            pass
+        return nm_name
+
+    # Path 1: layer is explicitly selected.
     if not idx_id or idx_id == "none":
         return None
     # idx_id is now a dotted path ("2.0") from _walk_all_layers; pass
@@ -2811,6 +2949,10 @@ OUTPAINT_PURPOSE_PRESETS = {
         "prompt": "extending scene to reveal environmental context, narrative elements, props and details that tell a story, matching art direction, coherent world-building",
         "negative": "unrelated objects, off-genre props, style break, visible seam, inconsistent lighting, perspective errors",
     },
+    # ── NSFW_OUTPAINT_INJECTION_POINT ──
+    # nsfw/build_nsfw.py injects NSFW purpose presets here (explicit
+    # body completion / suggestive extension variants) in the NSFW
+    # edition. SFW repo keeps only the mainstream options.
 }
 
 
@@ -3277,6 +3419,10 @@ HALLUCINATE_PRESETS = {
         "negative": "extra fingers, missing fingers, fused fingers, six fingers, four fingers, "
                     "deformed hands, floating fingers, wrong anatomy, claws",
     },
+    # ── NSFW_HALLUCINATE_INJECTION_POINT ──
+    # nsfw/build_nsfw.py injects NSFW detail-hallucinate presets here
+    # (anatomy / skin-detail / intimate-scene variants) in the NSFW
+    # edition. SFW repo keeps only mainstream photo-detail options.
 }
 
 ICLIGHT_PRESETS = {
@@ -3305,6 +3451,10 @@ ICLIGHT_PRESETS = {
     "Sunset / Magic Hour": "sunset golden light, magic hour warm glow, long shadows, orange and pink sky, warm highlights, dramatic silhouette edges, cinematic sunset",
     "Cloudy / Overcast Flat": "overcast even lighting, soft diffused light, no harsh shadows, cloudy day, flat neutral illumination, grey sky ambient, shadowless",
     "Rim Light / Silhouette Edge": "strong backlight rim light, luminous hair edge, silhouette glow, halo effect, backlit portrait, glowing outline, contra jour",
+    # ── NSFW_ICLIGHT_INJECTION_POINT ──
+    # nsfw/build_nsfw.py injects NSFW lighting presets here (boudoir
+    # / low-key / candlelit-intimate variants) in the NSFW edition.
+    # SFW repo keeps only mainstream photography lighting options.
 }
 
 KLEIN_DEFAULTS = {
@@ -3355,6 +3505,11 @@ KONTEXT_TASKS = {
         "hint": "Subtly [enhancement] while preserving the overall image, matching existing lighting and color exactly",
         "denoise": 0.35, "cfg": 2.5, "steps": 20,
     },
+    # ── NSFW_KONTEXT_INJECTION_POINT ──
+    # nsfw/build_nsfw.py injects NSFW Flux Kontext edit instruction
+    # templates here (undress / reposition-intimately / change-outfit-
+    # suggestive variants) in the NSFW edition. SFW repo keeps only
+    # the mainstream instruction shapes.
 }
 
 KONTEXT_DEFAULTS = {
@@ -24206,24 +24361,43 @@ class Spellcaster(Gimp.PlugIn):
         lora_combo = _lora_picker.combo
         lora_str_spin = _lora_picker.strength_spin
         # ── Normal Map (3D surface guidance) ──────────────────────────
-        normal_cb = Gtk.CheckButton(label="Use 3D Normal Map for surface-aware relighting")
-        # Auto-detect: scan ALL layers (recursive, including inside
-        # groups like "Spellcaster results" where auto-generated
-        # normals land) for one whose name contains "normal". Pre-
-        # 2026-04-20 this was a shallow image.get_layers() scan so a
-        # normal tucked into any group was invisible and this
-        # checkbox stayed off even when a normal was clearly present.
+        # Default-ON regardless of whether a normal layer exists — if
+        # one's there, we reuse it; if not, the submit path auto-
+        # generates via NormalCrafter. Headline + label updated
+        # 2026-04-20 so users who aren't familiar with ControlNets see
+        # what's happening ("auto-generated if needed") instead of
+        # wondering whether they need to set anything up.
         _has_normal = _find_normal_layer(image) is not None
-        normal_cb.set_active(_has_normal)
+        normal_cb = Gtk.CheckButton(
+            label="Use 3D Normal Map for surface-aware relighting "
+                  "(auto-generated if needed)")
+        normal_cb.set_active(True)
         normal_cb.set_tooltip_text(
-            "When enabled, generates a 3D normal map of your image and\n"
-            "passes it to IC-Light as surface geometry guidance.\n\n"
-            "This MASSIVELY improves relighting accuracy — the AI knows\n"
-            "the exact surface angle at every pixel, so light wraps\n"
+            "When enabled, a 3D normal map guides IC-Light so the AI\n"
+            "knows the exact surface angle at every pixel — light wraps\n"
             "around objects correctly instead of being painted on flat.\n\n"
-            "If you already generated a normal map (Enhance > 3D Normal Map),\n"
-            "it will be auto-detected and reused."
+            "  • If your image has a layer named 'Normal *', it will be\n"
+            "    reused automatically.\n"
+            "  • Otherwise, NormalCrafter generates one for you right\n"
+            "    before the main run (adds ~20-30 s, but massively\n"
+            "    improves the result). No ControlNet configuration\n"
+            "    needed — this handles 3D guidance behind the scenes.\n\n"
+            "Uncheck only if you explicitly don't want 3D-aware\n"
+            "relighting (fastest path, flatter result)."
         )
+        # Short headline so the checkbox's meaning is visible at a glance.
+        if _has_normal:
+            _normal_hint = Gtk.Label(xalign=0.0)
+            _normal_hint.set_markup(
+                '<small>✓ Found a normal-map layer in this image — '
+                'it will be reused.</small>')
+            bx.pack_start(_normal_hint, False, False, 0)
+        else:
+            _normal_hint = Gtk.Label(xalign=0.0)
+            _normal_hint.set_markup(
+                '<small>A 3D normal map will be generated automatically '
+                'when you click Relight. No ControlNet setup needed.</small>')
+            bx.pack_start(_normal_hint, False, False, 0)
         bx.pack_start(normal_cb, False, False, 0)
         bx.show_all()
         last = _SESSION.get("iclight")
@@ -25650,6 +25824,10 @@ class Spellcaster(Gimp.PlugIn):
                           "dynamic proportions, neutral background, clean graphic novel style.",
                 "negative": "photorealistic, photograph, 3D render, blurry, cropped, watermark",
             },
+            # ── NSFW_BODY_FACTORY_INJECTION_POINT ──
+            # nsfw/build_nsfw.py injects NSFW body-type presets here
+            # (nude/lingerie/implied variants) in the NSFW edition.
+            # SFW repo keeps only the prose-correct options above.
         }
 
         # ── Dialog ──
@@ -25949,6 +26127,10 @@ class Spellcaster(Gimp.PlugIn):
             "Winter — heavy coat": "wearing a heavy winter coat, scarf, warm gloves, winter boots, cold weather layered outfit",
             "Spring — light dress": "wearing a light spring dress, pastel colors, floral print, breezy fabric, open-toe shoes",
             "Rain — trench coat": "wearing a classic beige trench coat, rain boots, carrying umbrella, rainy day chic",
+            # ── NSFW_CLOTHING_STORE_INJECTION_POINT ──
+            # nsfw/build_nsfw.py injects NSFW outfit presets here
+            # (lingerie / implied-nude / suggestive categories) in the
+            # NSFW edition. SFW repo keeps only mainstream options.
         }
 
         has_sel, sx1, sy1, sx2, sy2 = _get_selection_bounds(image)
