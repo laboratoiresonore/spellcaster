@@ -540,6 +540,15 @@ def build_native_workflow(preset_key: str, *, prompt: str,
                            i2v_strength: Optional[float] = None,
                            stg_layers: Optional[str] = None,
                            chunk_size: Optional[int] = None,
+                           # VAE decode tiling — for VRAM tuning +
+                           # last-frame artifact fixes on RTX 50xx.
+                           vae_spatial_tiles: Optional[int] = None,
+                           vae_temporal_tile_length: Optional[int] = None,
+                           vae_last_frame_fix: bool = False,
+                           vae_working_dtype: Optional[str] = None,
+                           # Extra LoRAs beyond the preset's distilled LoRA.
+                           # List of (name, strength) tuples.
+                           extra_loras: Optional[List[Tuple[str, float]]] = None,
                            ) -> Tuple[Optional[dict], Optional[str]]:
     """Build a ComfyUI workflow dict for `preset_key`.
 
@@ -662,6 +671,11 @@ def build_native_workflow(preset_key: str, *, prompt: str,
         if chunk_size   is not None: extra["chunk_size"]   = chunk_size
         if enable_sage     is not None: extra["enable_sage"]     = bool(enable_sage)
         if enable_cfg_zero is not None: extra["enable_cfg_zero"] = bool(enable_cfg_zero)
+        if vae_spatial_tiles        is not None: extra["vae_spatial_tiles"]        = vae_spatial_tiles
+        if vae_temporal_tile_length is not None: extra["vae_temporal_tile_length"] = vae_temporal_tile_length
+        if vae_last_frame_fix:                   extra["vae_last_frame_fix"]       = True
+        if vae_working_dtype:                    extra["vae_working_dtype"]        = vae_working_dtype
+        if extra_loras:                          extra["loras"]                    = list(extra_loras)
 
         try:
             # Pass the caller's negative verbatim so shot.negative

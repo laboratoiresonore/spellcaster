@@ -534,6 +534,13 @@ class VideoBridge:
             stg_layers=ov.get("stg_layers") or None,
             chunk_size=int(ov["chunk_size"])
                 if ov.get("chunk_size") is not None else None,
+            vae_spatial_tiles=int(ov["vae_spatial_tiles"])
+                if ov.get("vae_spatial_tiles") is not None else None,
+            vae_temporal_tile_length=int(ov["vae_temporal_tile_length"])
+                if ov.get("vae_temporal_tile_length") is not None else None,
+            vae_last_frame_fix=bool(ov.get("vae_last_frame_fix", False)),
+            vae_working_dtype=ov.get("vae_working_dtype") or None,
+            extra_loras=ov.get("extra_loras") or None,
         )
         if not workflow:
             return {"status": "error", "message": err or "build failed"}

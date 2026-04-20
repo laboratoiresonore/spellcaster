@@ -5710,7 +5710,13 @@ def _build_ltx_video(preset_key, prompt_text, seed,
                       # present); True/False / "on"/"off" = force on/off.
                       sage=None, cfg_zero=None,
                       # Optional tuning knobs. None = canon default.
-                      sampler_name=None, stg_layers=None, chunk_size=None):
+                      sampler_name=None, stg_layers=None, chunk_size=None,
+                      # VAE decode tiling (CLAUDE.md §16.3).
+                      vae_spatial_tiles=None, vae_temporal_tile_length=None,
+                      vae_last_frame_fix=False, vae_working_dtype=None,
+                      # Extra LoRAs beyond the distilled LoRA. List of
+                      # (lora_filename, strength) tuples; empty = none.
+                      extra_loras=None):
     """→ Delegated to canonical build_ltx_video with GIMP-side extras.
 
     See CLAUDE.md §16.3 "LTX 2.3 — full formula". This wrapper probes
@@ -5735,11 +5741,19 @@ def _build_ltx_video(preset_key, prompt_text, seed,
     enable_sage     = _resolve_patch(sage,     probe["sage"])
     enable_cfg_zero = _resolve_patch(cfg_zero, probe["cfg_zero"])
 
+    # Merge dialog-supplied LoRAs with any legacy 'loras' param. The
+    # canonical build_ltx_video's `loras` kwarg is a list of (name,
+    # strength) tuples that are applied AFTER the distilled LoRA.
+    merged_loras = list(loras or [])
+    if extra_loras:
+        merged_loras.extend(extra_loras)
+
     return build_ltx_video(preset, prompt_text, seed,
                             width=width, height=height, num_frames=num_frames,
                             steps=steps, cfg=cfg, stg=stg, rescale=rescale,
                             two_stage=two_stage, distilled=distilled,
-                            loras=loras, interpolate=interpolate,
+                            loras=(merged_loras or None),
+                            interpolate=interpolate,
                             rtx_scale=rtx_scale, fps=fps, pingpong=pingpong,
                             image_filename=image_filename,
                             i2v_strength=i2v_strength,
@@ -5747,7 +5761,11 @@ def _build_ltx_video(preset_key, prompt_text, seed,
                             enable_cfg_zero=enable_cfg_zero,
                             sampler_name=sampler_name,
                             stg_layers=stg_layers,
-                            chunk_size=chunk_size)
+                            chunk_size=chunk_size,
+                            vae_spatial_tiles=vae_spatial_tiles,
+                            vae_temporal_tile_length=vae_temporal_tile_length,
+                            vae_last_frame_fix=vae_last_frame_fix,
+                            vae_working_dtype=vae_working_dtype)
 
 
 def _write_rgb_png(filepath, width, height, pixel_rows):
@@ -9636,6 +9654,39 @@ class LtxVideoDialog(Gtk.Dialog):
         hb.pack_start(self.server_entry, True, True, 0)
         box.pack_start(hb, False, False, 0)
 
+        # ── Preflight node check ────────────────────────────────────
+        # Probe the server for the four LTX-critical nodes once at
+        # dialog open. Show a warning label if any is missing so the
+        # user can fix their install before hitting Generate.
+        required_nodes = [
+            "LTXVBaseSampler",
+            "LTXAVTextEncoderLoader",
+            "LTXVApplySTG",
+            "LTXVSpatioTemporalTiledVAEDecode",
+        ]
+        missing = []
+        for node_class in required_nodes:
+            try:
+                _api_get(server_url, f"/object_info/{node_class}")
+            except Exception:
+                missing.append(node_class)
+        if missing:
+            warn = Gtk.Label(xalign=0)
+            msg = ("<b>\u26a0 Missing ComfyUI nodes:</b> "
+                   + ", ".join(missing)
+                   + "\nInstall ComfyUI-LTXVideo / KJNodes / ltx-video-ltxv "
+                     "before generating — the run will fail otherwise.")
+            warn.set_markup(msg)
+            warn.set_line_wrap(True)
+            warn.set_margin_top(4); warn.set_margin_bottom(4)
+            # Subtle yellow background via CSS class.
+            try:
+                ctx = warn.get_style_context()
+                ctx.add_class("warning")
+            except Exception:
+                pass
+            box.pack_start(warn, False, False, 0)
+
         # Model preset
         box.pack_start(Gtk.Label(label="Model Preset:", xalign=0), False, False, 0)
         self.preset_combo = Gtk.ComboBoxText()
@@ -9676,6 +9727,22 @@ class LtxVideoDialog(Gtk.Dialog):
         sw.add(self.prompt_view)
         box.pack_start(sw, False, False, 0)
 
+        # Prompt enhancement — LTX explicitly rewards long cinematic
+        # descriptions (see spellcaster_core/prompt_enhance.py "ltx"
+        # profile: "LENGTH: aim for 150-200 words — short prompts
+        # produce static shots"). Requires config.json → prompt_enhance
+        # to be true AND an LLM URL configured, otherwise no-op.
+        self.enhance_check = Gtk.CheckButton(
+            label="Enhance prompt via LLM (recommended for LTX)")
+        self.enhance_check.set_active(bool(_PROMPT_ENHANCE))
+        self.enhance_check.set_tooltip_text(
+            "Run the user prompt through the local LLM with LTX's cinematic\n"
+            "prompt profile before generation. LTX 2.3 explicitly rewards\n"
+            "long (150-200 word) cinematic descriptions — short prompts\n"
+            "produce static shots. Uses your configured LLM URL\n"
+            "(global prefs → Prompt Enhancement).")
+        box.pack_start(self.enhance_check, False, False, 0)
+
         # Dimensions & Frames — defaults are VRAM-aware
         _def_w, _def_h = 768, 512
         try:
@@ -9713,6 +9780,45 @@ class LtxVideoDialog(Gtk.Dialog):
         self.fps_spin.set_tooltip_text("Output frame rate. LTX2.3 native rate = 25fps.")
         grid.attach(self.fps_spin, 3, 1, 1, 1)
         box.pack_start(grid, False, False, 0)
+
+        # Aspect ratio preset buttons. LTX quality degrades on off-mod-32
+        # dims; these buttons snap to multiples of 32 from a base of 768
+        # (close to the LTX sweet spot). "Current" honours the canvas
+        # dims the caller passed.
+        ar_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        ar_hb.pack_start(Gtk.Label(label="Aspect:"), False, False, 0)
+
+        def _mod32(v):
+            return int(max(128, round(v / 32) * 32))
+
+        def _make_ar_btn(label, ratio_w, ratio_h, tooltip):
+            b = Gtk.Button(label=label)
+            b.set_tooltip_text(tooltip)
+
+            def _on_click(_btn, rw=ratio_w, rh=ratio_h):
+                # Base on the shorter axis = 512 (canon LTX sweet-spot)
+                # so wide ratios land at 912×512-ish, not 512×288.
+                if rw >= rh:
+                    h = 512
+                    w = _mod32(h * rw / rh)
+                else:
+                    w = 512
+                    h = _mod32(w * rh / rw)
+                self.w_spin.set_value(w)
+                self.h_spin.set_value(h)
+            b.connect("clicked", _on_click)
+            ar_hb.pack_start(b, False, False, 0)
+            return b
+
+        _make_ar_btn("9:16", 9, 16,
+            "Portrait / TikTok / Reels — snaps to 288×512 base, 512 short side.")
+        _make_ar_btn("1:1", 1, 1,
+            "Square — 512×512 canon. Fastest to generate.")
+        _make_ar_btn("16:9", 16, 9,
+            "Landscape / YouTube — 912×512 snapped to mod-32.")
+        _make_ar_btn("21:9", 21, 9,
+            "Cinematic ultra-wide — 1184×512 snapped to mod-32.")
+        box.pack_start(ar_hb, False, False, 0)
 
         # Sampling params
         grid2 = Gtk.Grid(column_spacing=8, row_spacing=4)
@@ -9879,7 +9985,79 @@ class LtxVideoDialog(Gtk.Dialog):
             "Higher = less VRAM but slightly slower; lower = faster if\n"
             "you have spare VRAM.")
         grid_adv.attach(self.ltx_chunk_spin, 1, 3, 1, 1)
+
+        # VAE decode tiling — forwarded into LTXVSpatioTemporalTiledVAEDecode.
+        # 4 / 16 are the canon defaults. Low-VRAM users raise spatial_tiles
+        # (more, smaller tiles); users hitting last-frame artifacts on
+        # RTX 50xx toggle last_frame_fix or switch working_dtype to bf16.
+        grid_adv.attach(Gtk.Label(label="VAE Spatial Tiles:", xalign=1), 0, 4, 1, 1)
+        self.ltx_vae_spatial_spin = Gtk.SpinButton.new_with_range(1, 16, 1)
+        self.ltx_vae_spatial_spin.set_value(4)
+        self.ltx_vae_spatial_spin.set_tooltip_text(
+            "Spatial tiles for LTXVSpatioTemporalTiledVAEDecode. Canon: 4.\n"
+            "Raise to 6-8 for <12GB VRAM; lower (2-3) if you have spare VRAM.")
+        grid_adv.attach(self.ltx_vae_spatial_spin, 1, 4, 1, 1)
+
+        grid_adv.attach(Gtk.Label(label="VAE Temporal Tile:", xalign=1), 0, 5, 1, 1)
+        self.ltx_vae_temporal_spin = Gtk.SpinButton.new_with_range(1, 64, 1)
+        self.ltx_vae_temporal_spin.set_value(16)
+        self.ltx_vae_temporal_spin.set_tooltip_text(
+            "Frames per temporal VAE tile. Canon: 16.\n"
+            "Raise for smoother decode on short videos; lower for VRAM savings.")
+        grid_adv.attach(self.ltx_vae_temporal_spin, 1, 5, 1, 1)
+
+        self.ltx_vae_lff_check = Gtk.CheckButton(label="Last-frame fix")
+        self.ltx_vae_lff_check.set_tooltip_text(
+            "Enable LTXVSpatioTemporalTiledVAEDecode's last_frame_fix to\n"
+            "suppress a known artifact where the final frame of the\n"
+            "decoded video shows garbled pixels on some RTX 50xx setups.")
+        grid_adv.attach(self.ltx_vae_lff_check, 0, 6, 1, 1)
+
+        self.ltx_vae_dtype_combo = Gtk.ComboBoxText()
+        for dt in ("auto", "fp16", "bf16", "fp32"):
+            self.ltx_vae_dtype_combo.append(dt, f"VAE dtype: {dt}")
+        self.ltx_vae_dtype_combo.set_active_id("auto")
+        self.ltx_vae_dtype_combo.set_tooltip_text(
+            "VAE decode working dtype. Canon: auto. Switch to bf16 if you\n"
+            "see nan/inf artifacts on fp16 hardware.")
+        grid_adv.attach(self.ltx_vae_dtype_combo, 1, 6, 1, 1)
+
         box.pack_start(grid_adv, False, False, 0)
+
+        # ── LoRA picker (3 slots) ───────────────────────────────────
+        # The canonical build_ltx_video `loras` kwarg accepts a list of
+        # (name, strength) tuples applied AFTER the distilled LoRA. We
+        # expose 3 slots; empty slots are dropped before the call.
+        lora_frame = Gtk.Frame(label="Extra LoRAs (optional)")
+        lora_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        lora_box.set_margin_start(8); lora_box.set_margin_end(8)
+        lora_box.set_margin_top(4); lora_box.set_margin_bottom(4)
+
+        self._ltx_lora_fetch_btn = Gtk.Button(label="Fetch LoRAs from server")
+        self._ltx_lora_fetch_btn.set_tooltip_text(
+            "Populate the combos below with all LoRAs present on the\n"
+            "ComfyUI server. No filtering — LTX accepts any LoRA, the\n"
+            "architecture-match warning only matters for image models.")
+        self._ltx_lora_fetch_btn.connect("clicked", self._on_fetch_ltx_loras)
+        lora_box.pack_start(self._ltx_lora_fetch_btn, False, False, 0)
+
+        self._ltx_lora_rows = []
+        for i in range(3):
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+            combo = Gtk.ComboBoxText()
+            combo.append("none", "(none)")
+            combo.set_active(0); combo.set_hexpand(True)
+            combo.set_tooltip_text(f"LoRA slot {i+1} — style / character add-on.")
+            row.pack_start(combo, True, True, 0)
+            row.pack_start(Gtk.Label(label="Str:"), False, False, 0)
+            strength = Gtk.SpinButton.new_with_range(-2.0, 2.0, 0.05)
+            strength.set_digits(2); strength.set_value(1.0)
+            strength.set_tooltip_text("LoRA strength. 1.0 = full effect.")
+            row.pack_start(strength, False, False, 0)
+            lora_box.pack_start(row, False, False, 0)
+            self._ltx_lora_rows.append((combo, strength))
+        lora_frame.add(lora_box)
+        box.pack_start(lora_frame, False, False, 0)
 
         # Runs
         hbr2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -9890,7 +10068,143 @@ class LtxVideoDialog(Gtk.Dialog):
         hbr2.pack_start(self._runs_spin, False, False, 0)
         box.pack_start(hbr2, False, False, 0)
 
+        # User preset save/load bar (reuses the generic helper — see
+        # _add_preset_ui for the contract: we implement
+        # _collect_user_preset() / _apply_user_preset(p) below).
+        _add_preset_ui(self, box, "ltx_video")
+
         self.show_all()
+
+    def _on_fetch_ltx_loras(self, _btn):
+        """Populate LoRA combos with whatever the server has."""
+        server = self.server_entry.get_text().strip()
+        if not server:
+            return
+        try:
+            all_loras = _fetch_loras(server)
+        except Exception as e:
+            print(f"[Spellcaster] LTX: LoRA fetch failed: {e}")
+            return
+        for combo, _str in self._ltx_lora_rows:
+            current = combo.get_active_id()
+            combo.remove_all()
+            combo.append("none", "(none)")
+            for ln in all_loras:
+                combo.append(ln, ln)
+            if current and current in all_loras:
+                combo.set_active_id(current)
+            else:
+                combo.set_active_id("none")
+
+    def _collect_extra_loras(self):
+        """Return [(lora_name, strength), ...] for any non-empty slots."""
+        out = []
+        for combo, strength in getattr(self, "_ltx_lora_rows", []):
+            name = combo.get_active_id()
+            if name and name != "none":
+                out.append((name, float(strength.get_value())))
+        return out
+
+    def _collect_user_preset(self):
+        """Snapshot every saveable widget for user_presets.json."""
+        start = self.prompt_buf.get_start_iter()
+        end = self.prompt_buf.get_end_iter()
+        return {
+            "name":         "",  # filled in by _up_save before persist
+            "prompt":       self.prompt_buf.get_text(start, end, True),
+            "preset_key":   self.preset_combo.get_active_id(),
+            "width":        int(self.w_spin.get_value()),
+            "height":       int(self.h_spin.get_value()),
+            "num_frames":   int(self.frames_spin.get_value()),
+            "fps":          int(self.fps_spin.get_value()),
+            "steps":        int(self.steps_spin.get_value()),
+            "cfg":          self.cfg_spin.get_value(),
+            "stg":          self.stg_spin.get_value(),
+            "rescale":      self.rescale_spin.get_value(),
+            "two_stage":    self.two_stage_check.get_active(),
+            "distilled":    self.distilled_check.get_active(),
+            "interpolate":  self.interpolate_check.get_active(),
+            "rtx":          self.rtx_check.get_active(),
+            "rtx_scale":    self.rtx_scale_spin.get_value(),
+            "pingpong":     self.pingpong_check.get_active(),
+            "i2v":          self.i2v_check.get_active(),
+            "i2v_strength": self.i2v_strength_spin.get_value(),
+            "enhance":      self.enhance_check.get_active(),
+            # Advanced patches
+            "sage":         self.ltx_sage_combo.get_active_id() or "auto",
+            "cfg_zero":     self.ltx_cfg_zero_combo.get_active_id() or "auto",
+            "sampler_name": self.ltx_sampler_combo.get_active_id() or "euler",
+            "stg_layers":   self.ltx_stg_layers_entry.get_text().strip(),
+            "chunk_size":   int(self.ltx_chunk_spin.get_value()),
+            # VAE decode
+            "vae_spatial_tiles":         int(self.ltx_vae_spatial_spin.get_value()),
+            "vae_temporal_tile_length":  int(self.ltx_vae_temporal_spin.get_value()),
+            "vae_last_frame_fix":        self.ltx_vae_lff_check.get_active(),
+            "vae_working_dtype":         self.ltx_vae_dtype_combo.get_active_id() or "auto",
+            # LoRAs
+            "extra_loras":  self._collect_extra_loras(),
+            "runs":         int(self._runs_spin.get_value()),
+        }
+
+    def _apply_user_preset(self, p):
+        """Restore every saveable widget from a user_presets.json entry."""
+        if not isinstance(p, dict):
+            return
+        if "prompt" in p:       self.prompt_buf.set_text(p["prompt"] or "")
+        if "preset_key" in p and p["preset_key"]:
+            self.preset_combo.set_active_id(p["preset_key"])
+        if "width" in p:        self.w_spin.set_value(p["width"])
+        if "height" in p:       self.h_spin.set_value(p["height"])
+        if "num_frames" in p:   self.frames_spin.set_value(p["num_frames"])
+        if "fps" in p:          self.fps_spin.set_value(p["fps"])
+        if "steps" in p:        self.steps_spin.set_value(p["steps"])
+        if "cfg" in p:          self.cfg_spin.set_value(p["cfg"])
+        if "stg" in p:          self.stg_spin.set_value(p["stg"])
+        if "rescale" in p:      self.rescale_spin.set_value(p["rescale"])
+        if "two_stage" in p:    self.two_stage_check.set_active(bool(p["two_stage"]))
+        if "distilled" in p:    self.distilled_check.set_active(bool(p["distilled"]))
+        if "interpolate" in p:  self.interpolate_check.set_active(bool(p["interpolate"]))
+        if "rtx" in p:          self.rtx_check.set_active(bool(p["rtx"]))
+        if "rtx_scale" in p:    self.rtx_scale_spin.set_value(p["rtx_scale"])
+        if "pingpong" in p:     self.pingpong_check.set_active(bool(p["pingpong"]))
+        if "i2v" in p:          self.i2v_check.set_active(bool(p["i2v"]))
+        if "i2v_strength" in p: self.i2v_strength_spin.set_value(p["i2v_strength"])
+        if "enhance" in p:      self.enhance_check.set_active(bool(p["enhance"]))
+        if p.get("sage"):         self.ltx_sage_combo.set_active_id(p["sage"])
+        if p.get("cfg_zero"):     self.ltx_cfg_zero_combo.set_active_id(p["cfg_zero"])
+        if p.get("sampler_name"): self.ltx_sampler_combo.set_active_id(p["sampler_name"])
+        if "stg_layers" in p:   self.ltx_stg_layers_entry.set_text(p["stg_layers"] or "")
+        if "chunk_size" in p:   self.ltx_chunk_spin.set_value(p["chunk_size"])
+        if "vae_spatial_tiles" in p:
+            self.ltx_vae_spatial_spin.set_value(p["vae_spatial_tiles"])
+        if "vae_temporal_tile_length" in p:
+            self.ltx_vae_temporal_spin.set_value(p["vae_temporal_tile_length"])
+        if "vae_last_frame_fix" in p:
+            self.ltx_vae_lff_check.set_active(bool(p["vae_last_frame_fix"]))
+        if p.get("vae_working_dtype"):
+            self.ltx_vae_dtype_combo.set_active_id(p["vae_working_dtype"])
+        # Extra LoRAs — populate combos if the preset carries them.
+        extra = p.get("extra_loras") or []
+        for i, (combo, strength) in enumerate(self._ltx_lora_rows):
+            if i < len(extra):
+                name, s = extra[i]
+                # Ensure the combo has this entry before selecting it.
+                have = False
+                m = combo.get_model()
+                if m is not None:
+                    it = m.get_iter_first()
+                    while it is not None:
+                        if m.get_value(it, 1) == name:
+                            have = True; break
+                        it = m.iter_next(it)
+                if not have:
+                    combo.append(name, name)
+                combo.set_active_id(name)
+                strength.set_value(s)
+            else:
+                combo.set_active_id("none")
+                strength.set_value(1.0)
+        if "runs" in p: self._runs_spin.set_value(p["runs"])
 
     def _on_mode_toggled(self, widget):
         """Mutual exclusion: two-stage and distilled can't both be active."""
@@ -9959,6 +10273,14 @@ class LtxVideoDialog(Gtk.Dialog):
             "sampler_name": self.ltx_sampler_combo.get_active_id() or "euler",
             "stg_layers":   (self.ltx_stg_layers_entry.get_text().strip() or None),
             "chunk_size":   int(self.ltx_chunk_spin.get_value()),
+            # VAE decode tiling (CLAUDE.md §16.3).
+            "vae_spatial_tiles":        int(self.ltx_vae_spatial_spin.get_value()),
+            "vae_temporal_tile_length": int(self.ltx_vae_temporal_spin.get_value()),
+            "vae_last_frame_fix":       self.ltx_vae_lff_check.get_active(),
+            "vae_working_dtype":        self.ltx_vae_dtype_combo.get_active_id() or "auto",
+            # Prompt enhancement toggle + LoRA picker output.
+            "enhance":      self.enhance_check.get_active(),
+            "extra_loras":  self._collect_extra_loras(),
         }
 
 
@@ -12818,6 +13140,19 @@ class Spellcaster(Gimp.PlugIn):
                 _upload_image(v["server"], tmp, i2v_filename)
                 os.unlink(tmp)
 
+            # Prompt enhancement — if the dialog toggle is on, run the
+            # user prompt through the local LLM with LTX's cinematic
+            # profile (spellcaster_core/prompt_enhance.py "ltx" entry).
+            # Global toggle in config.json gates this too; if disabled
+            # globally _auto_enhance no-ops regardless of dialog state.
+            if v.get("enhance"):
+                orig_prompt = v["prompt"]
+                v["prompt"], _ = _auto_enhance(v["prompt"], "ltx")
+                if v["prompt"] != orig_prompt:
+                    _update_spinner_status(
+                        f"LTX: prompt enhanced ({len(orig_prompt.split())}"
+                        f"→{len(v['prompt'].split())} words)")
+
             base_seed = v["seed"]
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
@@ -12840,6 +13175,14 @@ class Spellcaster(Gimp.PlugIn):
                     sampler_name=v.get("sampler_name"),
                     stg_layers=v.get("stg_layers"),
                     chunk_size=v.get("chunk_size"),
+                    vae_spatial_tiles=v.get("vae_spatial_tiles"),
+                    vae_temporal_tile_length=v.get("vae_temporal_tile_length"),
+                    vae_last_frame_fix=v.get("vae_last_frame_fix", False),
+                    vae_working_dtype=(
+                        v.get("vae_working_dtype")
+                        if v.get("vae_working_dtype") and v["vae_working_dtype"] != "auto"
+                        else None),
+                    extra_loras=v.get("extra_loras"),
                 )
                 mode_str = "I2V" if i2v_filename else "T2V"
                 label = f"LTX {mode_str} run {run_i+1}/{runs}" if runs > 1 else f"LTX {mode_str}"
