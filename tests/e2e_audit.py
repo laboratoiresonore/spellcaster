@@ -1578,6 +1578,650 @@ def test_coverage_inventory(report: Report, verbose: bool = False) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+#  REGRESSION GUARDS — pin the bug classes we've chased this cycle
+# ═══════════════════════════════════════════════════════════════════════
+#
+# These sections don't require a live Guild or ComfyUI. They pin the
+# bug classes we've been hunting over the recent sessions:
+#
+#   upload_cache    — privacy.CACHE_PREFIXES exempts sc_cache_ from the
+#                     per-workflow wipe; purge_cache targets only those.
+#   guards          — blank-PNG / uniform-mask detectors classify the
+#                     synthetic edge cases correctly (the classifiers
+#                     that drive SAM3 / BiRefNet "nothing matched"
+#                     warnings and the IC-Light fallback).
+#   iclight_cn      — build_iclight routes the normal map through a
+#                     proper ControlNet (not the FBC opt_background
+#                     colour-compositing slot).
+#   plugin_surface  — AST sweep of _spellcaster_main.py:
+#                       - registration integrity (§7 of CLAUDE.md):
+#                         every _PROC_FEATURES key has a menu_map entry
+#                         and a _menu_paths entry.
+#                       - _apply_mask_mode calls pass 5 or 6 positional
+#                         args (not the silently-swallowed 6-arg regression
+#                         from 2026-04-20).
+#                       - every _run_* handler's outer `except Exception`
+#                         prints a traceback before the Gimp.message.
+#                       - _download_image() assignments use bytes-typed
+#                         variable names (no "mask_path = bytes" footgun).
+
+
+def test_upload_cache(report: Report, verbose: bool = False) -> None:
+    """Pure-Python test of the GIMP upload-cache privacy exemption.
+
+    Monkey-patches ``_overwrite_with_tiny`` so no network calls fire
+    and confirms:
+      * ``sc_cache_*`` filenames are skipped by ``cleanup_inputs``
+        when passed via the workflow dict AND the full-server-scan
+        path (via a stub /object_info response).
+      * ``cleanup_outputs`` still wipes result PNGs.
+      * ``purge_cache`` does the OPPOSITE: targets ONLY the cache
+        prefixes, leaves ``gimp_*`` / ``spellcaster_*`` alone.
+      * ``CACHE_PREFIXES`` and ``OWNED_PREFIXES`` don't overlap.
+    """
+    section = "Upload cache & privacy"
+    t0 = time.time()
+
+    try:
+        from spellcaster_core import privacy as _priv
+    except Exception as e:
+        report.add(section, "import privacy", FAIL,
+                   f"{type(e).__name__}: {e}")
+        return
+
+    # Sanity: prefixes don't overlap (a sc_cache_* file would otherwise
+    # also match the OWNED_PREFIXES wipe path).
+    overlap = set(_priv.CACHE_PREFIXES) & set(_priv.OWNED_PREFIXES)
+    report.add(section,
+               "CACHE_PREFIXES \u2229 OWNED_PREFIXES is empty",
+               PASS if not overlap else FAIL,
+               f"overlap={overlap}" if overlap else "")
+
+    # Spy on the HTTP wipe helper so we can assert WHICH files got touched
+    # without hitting any server.
+    wiped: list[str] = []
+
+    def _spy_overwrite(server: str, fname: str) -> None:
+        wiped.append(fname)
+
+    orig_over = _priv._overwrite_with_tiny
+    _priv._overwrite_with_tiny = _spy_overwrite
+
+    # Stub urlopen for the Strategy-2 /object_info scan.
+    import urllib.request as _u
+    orig_urlopen = _u.urlopen
+    SERVER_INPUTS = ["gimp_123.png", "sc_cache_abc.png",
+                     "spellcaster_xyz.png", "unrelated_user_file.png"]
+
+    class _FakeResp:
+        status = 200
+        def __init__(self, body: bytes): self._body = body
+        def __enter__(self): return self
+        def __exit__(self, *_a): pass
+        def read(self): return self._body
+
+    def _fake_urlopen(req, *a, **kw):
+        url = getattr(req, "full_url", str(req))
+        if "/object_info/LoadImage" in url:
+            body = json.dumps({
+                "LoadImage": {"input": {"required": {
+                    "image": [SERVER_INPUTS]}}}}).encode()
+            return _FakeResp(body)
+        # Anything else: empty body, caller will choke — desired.
+        return _FakeResp(b"{}")
+
+    _u.urlopen = _fake_urlopen
+    try:
+        # Case 1 — cleanup_inputs with a workflow that REFERENCES a
+        # cache-protected file in a LoadImage node. It must not wipe.
+        wf = {
+            "1": {"class_type": "LoadImage",
+                   "inputs": {"image": "sc_cache_deadbeef.png"}},
+            "2": {"class_type": "LoadImage",
+                   "inputs": {"image": "gimp_abc.png"}},
+        }
+        wiped.clear()
+        _priv.cleanup_inputs("http://test:1", workflow=wf)
+        cache_wiped = [f for f in wiped if f.startswith("sc_cache_")]
+        gimp_wiped = [f for f in wiped if f.startswith("gimp_")]
+        report.add(section,
+                   "cleanup_inputs SKIPS sc_cache_* from workflow",
+                   PASS if not cache_wiped else FAIL,
+                   f"wiped={cache_wiped}")
+        report.add(section,
+                   "cleanup_inputs WIPES gimp_* from workflow",
+                   PASS if gimp_wiped else FAIL,
+                   f"wiped={gimp_wiped}")
+
+        # Case 2 — Strategy-2 server scan. sc_cache_* stays, gimp_*
+        # and spellcaster_* go, user files ignored.
+        wiped.clear()
+        _priv.cleanup_inputs("http://test:1", workflow=None)
+        want_wiped = {"gimp_123.png", "spellcaster_xyz.png"}
+        want_alive = {"sc_cache_abc.png", "unrelated_user_file.png"}
+        got_wiped = set(wiped)
+        missing = want_wiped - got_wiped
+        extra = got_wiped & want_alive
+        ok = not missing and not extra
+        report.add(section,
+                   "cleanup_inputs server-scan exempts sc_cache_*",
+                   PASS if ok else FAIL,
+                   f"missing={missing}, extra={extra}")
+
+        # Case 3 — purge_cache does the INVERSE: only sc_cache_*.
+        wiped.clear()
+        res = _priv.purge_cache("http://test:1")
+        pc_wiped = set(res.get("wiped") or [])
+        only_cache = all(f.startswith("sc_cache_") for f in pc_wiped)
+        has_the_cache_one = "sc_cache_abc.png" in pc_wiped
+        report.add(section,
+                   "purge_cache targets ONLY CACHE_PREFIXES",
+                   PASS if only_cache and has_the_cache_one else FAIL,
+                   f"wiped={sorted(pc_wiped)}")
+
+        # Case 4 — cleanup_outputs wipes its arg unconditionally.
+        wiped.clear()
+        _priv.cleanup_outputs("http://test:1", [
+            ("result_1.png", "", "output"),
+            ("sc_cache_should_still_go_if_passed_here.png", "", "output"),
+        ])
+        report.add(section,
+                   "cleanup_outputs wipes all result files",
+                   PASS if len(wiped) == 2 else FAIL,
+                   f"wiped={wiped}")
+    finally:
+        _priv._overwrite_with_tiny = orig_over
+        _u.urlopen = orig_urlopen
+
+    report.add(section, "section complete", PASS,
+               elapsed_ms=int((time.time() - t0) * 1000))
+
+
+# ─── Synthetic PNG helper used by multiple regression sections ─────────
+
+def _synth_png(w: int, h: int, color_type: int, *,
+                fill_val: int = 255,
+                alpha: "int | None" = None,
+                mixed: bool = False) -> bytes:
+    """Minimal valid PNG builder for test fixtures.
+
+    color_type: 0=L, 2=RGB, 3=palette (unused), 4=LA, 6=RGBA.
+    fill_val   : grayscale/R channel byte.
+    alpha      : override the alpha channel byte (RGBA/LA only).
+    mixed      : generate a 50/50 black-white pattern (structure).
+    """
+    import struct
+    import zlib
+    import binascii
+    channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[color_type]
+    ihdr = struct.pack(">IIBBBBB", w, h, 8, color_type, 0, 0, 0)
+
+    def _chunk(tag: bytes, data: bytes) -> bytes:
+        crc = binascii.crc32(tag + data) & 0xFFFFFFFF
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", crc)
+
+    if mixed and color_type == 0:
+        rows = []
+        for _y in range(h):
+            pix = b"\xff" * (w // 2) + b"\x00" * (w - w // 2)
+            rows.append(b"\x00" + pix)
+        raw = b"".join(rows)
+    else:
+        if color_type == 6:
+            a = alpha if alpha is not None else 255
+            pixel = bytes([fill_val, 0, 0, a])
+        elif color_type == 4:
+            a = alpha if alpha is not None else 255
+            pixel = bytes([fill_val, a])
+        elif color_type == 2:
+            pixel = bytes([fill_val, 0, 0])
+        else:
+            pixel = bytes([fill_val])
+        row = b"\x00" + pixel * w
+        raw = row * h
+    idat = zlib.compress(raw)
+    return (b"\x89PNG\r\n\x1a\n"
+            + _chunk(b"IHDR", ihdr)
+            + _chunk(b"IDAT", idat)
+            + _chunk(b"IEND", b""))
+
+
+def _extract_plugin_functions(*names: str) -> dict:
+    """Lift standalone helper functions out of the GIMP plugin source
+    without importing the whole module (``_spellcaster_main.py``
+    does ``import gi`` at top-level, which fails off-GIMP).
+
+    Returns ``{name: callable}`` for each requested function. A miss
+    leaves the key absent; callers should treat that as SKIP.
+    """
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    path = os.path.join(repo_root, "plugins", "gimp", "comfyui-connector",
+                        "_spellcaster_main.py")
+    if not os.path.exists(path):
+        return {}
+    with open(path, encoding="utf-8") as f:
+        src = f.read()
+    import ast as _ast
+    try:
+        tree = _ast.parse(src)
+    except Exception:
+        return {}
+    out: dict = {}
+    requested = set(names)
+    for node in tree.body:  # module-level only \u2014 no method defs
+        if isinstance(node, _ast.FunctionDef) and node.name in requested:
+            src_slice = _ast.get_source_segment(src, node)
+            if not src_slice:
+                continue
+            ns: dict = {}
+            try:
+                exec(src_slice, ns)
+            except Exception:
+                continue
+            if node.name in ns:
+                out[node.name] = ns[node.name]
+    return out
+
+
+def test_guards(report: Report, verbose: bool = False) -> None:
+    """Pin the blank/uniform classifiers that drive SAM3 / BiRefNet
+    "nothing matched" warnings and the IC-Light rembg fallback.
+
+    Each classifier gets a canned suite of synthetic PNGs with known
+    answers. A regression that makes either function always-True or
+    always-False would show up here immediately.
+    """
+    section = "Blank/uniform classifiers"
+    t0 = time.time()
+
+    fns = _extract_plugin_functions(
+        "_looks_like_blank_rembg", "_looks_like_uniform_mask")
+    blank = fns.get("_looks_like_blank_rembg")
+    uni = fns.get("_looks_like_uniform_mask")
+
+    if not blank or not uni:
+        report.add(section, "extract helpers from _spellcaster_main.py",
+                   SKIP, "helper not found (refactored?)")
+        return
+
+    blank_cases = [
+        # (label, png_bytes, expect_blank)
+        ("empty bytes",            b"",                                   True),
+        ("garbage bytes",          b"not a PNG",                          True),
+        ("RGBA alpha=0 (blank)",    _synth_png(16, 16, 6, alpha=0),        True),
+        ("RGBA alpha=255 (opaque)", _synth_png(16, 16, 6, alpha=255),      False),
+        ("RGB (no alpha channel)",  _synth_png(16, 16, 2),                 True),
+        ("LA alpha=0",              _synth_png(16, 16, 4, alpha=0),        True),
+        ("LA alpha=255",            _synth_png(16, 16, 4, alpha=255),      False),
+    ]
+    for label, buf, want in blank_cases:
+        try:
+            got = bool(blank(buf))
+        except Exception as e:
+            report.add(section, f"blank: {label}", FAIL,
+                       f"{type(e).__name__}: {e}")
+            continue
+        report.add(section, f"blank: {label}",
+                   PASS if got == want else FAIL,
+                   "" if got == want else f"got={got} want={want}")
+
+    uni_cases = [
+        ("all-black L",   _synth_png(16, 16, 0, fill_val=0),   True),
+        ("all-white L",   _synth_png(16, 16, 0, fill_val=255), True),
+        ("mixed L",       _synth_png(32, 32, 0, mixed=True),   False),
+        ("empty",         b"",                                  True),
+    ]
+    for label, buf, want in uni_cases:
+        try:
+            got = bool(uni(buf))
+        except Exception as e:
+            report.add(section, f"uniform: {label}", FAIL,
+                       f"{type(e).__name__}: {e}")
+            continue
+        report.add(section, f"uniform: {label}",
+                   PASS if got == want else FAIL,
+                   "" if got == want else f"got={got} want={want}")
+
+    report.add(section, "section complete", PASS,
+               elapsed_ms=int((time.time() - t0) * 1000))
+
+
+def test_iclight_cn(report: Report, verbose: bool = False) -> None:
+    """Pin the IC-Light normal-map routing fix: normal maps go through
+    a real ``control_v11p_sd15_normalbae`` ControlNet, NOT through
+    ``iclight_sd15_fbc``'s ``opt_background`` colour-compositing slot.
+
+    Builds the workflow in two configurations and inspects the graph
+    node types + filenames. Doesn't hit ComfyUI \u2014 pure builder
+    compile.
+    """
+    section = "IC-Light normal-map routing"
+    t0 = time.time()
+
+    try:
+        from spellcaster_core.workflows import build_iclight
+    except Exception as e:
+        report.add(section, "import build_iclight", FAIL,
+                   f"{type(e).__name__}: {e}")
+        return
+
+    # Path A: normal map provided. Expect FC UNET + normalbae CN chain.
+    try:
+        wf_a = build_iclight(
+            image_filename="test_input.png",
+            ckpt_name="SD-1.5\\v1-5-pruned-emaonly.safetensors",
+            prompt="studio light from top-left",
+            negative="",
+            seed=42,
+            normal_map_filename="test_normal.png",
+        )
+    except Exception as e:
+        report.add(section, "build_iclight(normal=X) compiles", FAIL,
+                   f"{type(e).__name__}: {e}")
+        return
+    classes_a = {n.get("class_type", "") for n in wf_a.values()
+                 if isinstance(n, dict)}
+
+    # FBC model is the bug class B regression \u2014 must not be loaded.
+    has_fbc = any(
+        "iclight_sd15_fbc" in (n.get("inputs", {}) or {}).get("model_path", "")
+        or "iclight_sd15_fbc" in json.dumps(n.get("inputs") or {})
+        for n in wf_a.values() if isinstance(n, dict))
+    report.add(section,
+               "normal-map path does NOT load iclight_sd15_fbc",
+               PASS if not has_fbc else FAIL,
+               "FBC would re-introduce the pastel-colour bug"
+               if has_fbc else "")
+
+    # ControlNet chain MUST be present with the normalbae model.
+    has_cn_loader = "ControlNetLoader" in classes_a
+    has_cn_apply = "ControlNetApplyAdvanced" in classes_a
+    cn_names = [
+        (n.get("inputs", {}) or {}).get("control_net_name", "")
+        for n in wf_a.values()
+        if isinstance(n, dict)
+        and n.get("class_type") == "ControlNetLoader"
+    ]
+    has_normalbae = any("normalbae" in (n or "").lower() for n in cn_names)
+    report.add(section,
+               "normal-map path loads ControlNetLoader",
+               PASS if has_cn_loader else FAIL,
+               f"classes={sorted(classes_a)}")
+    report.add(section,
+               "normal-map path applies ControlNetApplyAdvanced",
+               PASS if has_cn_apply else FAIL)
+    report.add(section,
+               "CN model is normalbae (surface-aware)",
+               PASS if has_normalbae else FAIL,
+               f"cn_names={cn_names}")
+
+    # Confirm the normal map is loaded as an IMAGE (LoadImage) \u2014
+    # NOT VAE-encoded to a latent (the old FBC path).
+    nm_load = any(
+        (n.get("inputs") or {}).get("image", "") == "test_normal.png"
+        and n.get("class_type") == "LoadImage"
+        for n in wf_a.values() if isinstance(n, dict))
+    report.add(section,
+               "normal map loaded as image (not latent)",
+               PASS if nm_load else FAIL)
+
+    # Path B: NO normal map. Expect FC UNET + NO CN.
+    try:
+        wf_b = build_iclight(
+            image_filename="test_input.png",
+            ckpt_name="SD-1.5\\v1-5-pruned-emaonly.safetensors",
+            prompt="studio light",
+            negative="",
+            seed=42,
+            normal_map_filename=None,
+        )
+    except Exception as e:
+        report.add(section, "build_iclight(normal=None) compiles", FAIL,
+                   f"{type(e).__name__}: {e}")
+        return
+    classes_b = {n.get("class_type", "") for n in wf_b.values()
+                 if isinstance(n, dict)}
+    report.add(section,
+               "no-normal path does NOT include ControlNet",
+               PASS if "ControlNetLoader" not in classes_b
+               and "ControlNetApplyAdvanced" not in classes_b
+               else FAIL,
+               f"classes={sorted(classes_b)}")
+
+    report.add(section, "section complete", PASS,
+               elapsed_ms=int((time.time() - t0) * 1000))
+
+
+def test_plugin_surface(report: Report, verbose: bool = False) -> None:
+    """AST sweep of the GIMP plugin. Catches four regression classes:
+
+      1. Registration integrity (CLAUDE.md §7): the three dicts
+         ``_PROC_FEATURES`` / ``menu_map`` / ``_menu_paths`` must have
+         identical keys. A procedure missing from any one of them
+         silently fails to appear in the GIMP menu.
+      2. ``_apply_mask_mode`` arg count. The signature is
+         ``(server, image, img_data, layer_name, mask_enabled,
+         keep_size=False)`` \u2014 5 required + 1 kwarg-style
+         positional. 4 args = missing flag; 7+ = off-by-one
+         regression.
+      3. Traceback discipline: every ``_run_*`` handler whose outer
+         ``except Exception`` shows a ``Gimp.message`` must first
+         print the traceback. Silent tracebacks are how we hunted
+         ghosts for three sessions.
+      4. ``_download_image`` bytes-typed variables. The helper
+         returns PNG bytes, NOT a path \u2014 assigning into a
+         variable named ``*_path`` is the footgun that caused
+         "Anything But" to die with "embedded null byte".
+      5. Upload-cache migration coverage: count remaining
+         ``_export_image_to_tmp(image)`` \u2192 ``_upload_image(srv,
+         tmp, ...)`` idioms and report. Regression-checked against
+         a baseline.
+    """
+    section = "Plugin surface (AST)"
+    t0 = time.time()
+
+    repo_root = os.path.abspath(os.path.join(
+        os.path.dirname(__file__), ".."))
+    path = os.path.join(repo_root, "plugins", "gimp", "comfyui-connector",
+                        "_spellcaster_main.py")
+    if not os.path.exists(path):
+        report.add(section, "_spellcaster_main.py present", SKIP,
+                   "file missing")
+        return
+    with open(path, encoding="utf-8") as f:
+        src = f.read()
+
+    import ast as _ast
+    try:
+        tree = _ast.parse(src)
+    except SyntaxError as e:
+        report.add(section, "plugin parses", FAIL,
+                   f"line {e.lineno}: {e.msg}")
+        return
+    report.add(section, "plugin parses", PASS)
+
+    # ── 1. Registration-integrity ─────────────────────────────
+    def _dict_keys_at_name(var_name: str) -> "set[str] | None":
+        """Return the set of string keys for the FIRST assignment of
+        ``var_name = {...}`` or ``... = {var_name: ...}`` at any
+        depth that has literal string keys. Walk the whole tree
+        because these dicts live inside ``do_query_procedures``."""
+        for node in _ast.walk(tree):
+            # Direct module-level assign: `var_name = {...}`
+            if isinstance(node, _ast.Assign):
+                for tgt in node.targets:
+                    if (isinstance(tgt, _ast.Name) and tgt.id == var_name
+                            and isinstance(node.value, _ast.Dict)):
+                        return {k.value for k in node.value.keys
+                                if isinstance(k, _ast.Constant)
+                                and isinstance(k.value, str)}
+            # Inside do_query_procedures: `self.<var_name> = {...}` or
+            # `<var_name> = {...}` local.
+            if isinstance(node, _ast.Assign):
+                for tgt in node.targets:
+                    if (isinstance(tgt, _ast.Attribute)
+                            and tgt.attr == var_name
+                            and isinstance(node.value, _ast.Dict)):
+                        return {k.value for k in node.value.keys
+                                if isinstance(k, _ast.Constant)
+                                and isinstance(k.value, str)}
+        return None
+
+    proc_keys = _dict_keys_at_name("_PROC_FEATURES")
+    menu_keys = _dict_keys_at_name("menu_map")
+    path_keys = _dict_keys_at_name("_menu_paths")
+    if proc_keys is None or menu_keys is None or path_keys is None:
+        report.add(section, "locate registration dicts", SKIP,
+                   f"PROC={proc_keys is not None}, "
+                   f"menu={menu_keys is not None}, "
+                   f"paths={path_keys is not None}")
+    else:
+        missing_in_menu = proc_keys - menu_keys
+        missing_in_paths = proc_keys - path_keys
+        orphan_menu = menu_keys - proc_keys
+        orphan_paths = path_keys - proc_keys
+        report.add(section,
+                   f"every _PROC_FEATURES key has menu_map entry "
+                   f"({len(proc_keys)} procs)",
+                   PASS if not missing_in_menu else FAIL,
+                   f"missing={sorted(missing_in_menu)[:8]}"
+                   if missing_in_menu else "")
+        report.add(section,
+                   "every _PROC_FEATURES key has _menu_paths entry",
+                   PASS if not missing_in_paths else FAIL,
+                   f"missing={sorted(missing_in_paths)[:8]}"
+                   if missing_in_paths else "")
+        report.add(section,
+                   "no orphan menu_map keys (every menu has a feature)",
+                   PASS if not orphan_menu else WARN,
+                   f"orphan={sorted(orphan_menu)[:8]}"
+                   if orphan_menu else "")
+        report.add(section,
+                   "no orphan _menu_paths keys",
+                   PASS if not orphan_paths else WARN,
+                   f"orphan={sorted(orphan_paths)[:8]}"
+                   if orphan_paths else "")
+
+    # ── 2. _apply_mask_mode arg count ─────────────────────────
+    amm_calls = []  # list of (lineno, positional_count)
+    for node in _ast.walk(tree):
+        if (isinstance(node, _ast.Call)
+                and isinstance(node.func, _ast.Name)
+                and node.func.id == "_apply_mask_mode"):
+            amm_calls.append((node.lineno, len(node.args)))
+    bad = [(ln, n) for (ln, n) in amm_calls if n not in (5, 6)]
+    report.add(section,
+               f"_apply_mask_mode arity (5 or 6) across "
+               f"{len(amm_calls)} call sites",
+               PASS if not bad else FAIL,
+               f"bad={bad[:5]}" if bad else "")
+
+    # ── 3. Traceback discipline in _run_* handlers ────────────
+    # We only care about the OUTER try/except of each handler \u2014
+    # the catch-all at the tail of the method that surfaces an
+    # unexpected failure back to the user. Nested try/except blocks
+    # (Gtk callbacks, optional post-success degradation like
+    # "MP4 export failed but GIF succeeded") are not the silent-
+    # swallow regression class the plugin's outer handlers embody.
+    missing_tb: list[str] = []
+    for node in _ast.walk(tree):
+        if not (isinstance(node, _ast.FunctionDef)
+                and node.name.startswith("_run_")):
+            continue
+        # Find the outermost Try node whose body is the handler's
+        # top-level work block. Traverse direct children only.
+        outer_try = None
+        for stmt in node.body:
+            if isinstance(stmt, _ast.Try):
+                outer_try = stmt
+                # Don't break \u2014 some handlers wrap the whole
+                # body in a single Try, but others have preflight
+                # `try: import ...` blocks first. Pick the LAST
+                # top-level Try \u2014 that's the work-wrapping one.
+        if outer_try is None:
+            continue
+        for inner in outer_try.handlers:
+            handler_src = _ast.get_source_segment(src, inner) or ""
+            if "Gimp.message" not in handler_src:
+                continue
+            if "{e}" not in handler_src:
+                continue
+            if ("traceback.print_exc" in handler_src
+                    or "traceback.format_exc" in handler_src):
+                continue
+            missing_tb.append(f"{node.name}:{inner.lineno}")
+    report.add(section,
+               "every _run_* Gimp.message-ing except prints traceback",
+               PASS if not missing_tb else WARN,
+               f"missing={missing_tb[:8]}" if missing_tb else "")
+
+    # ── 4. _download_image assigned to path-typed variable ────
+    # The helper returns bytes. A variable name like `*_path`,
+    # `*_file`, or `path` implies a filesystem path and is the
+    # footgun that crashed "Anything But".
+    SUSPECT_NAMES = {"path", "mask_path", "img_path", "file_path",
+                     "image_path", "ref_path", "output_path"}
+    bad_assigns: list[str] = []
+    for node in _ast.walk(tree):
+        if not isinstance(node, _ast.Assign):
+            continue
+        # Accept single-target assigns only
+        if len(node.targets) != 1:
+            continue
+        tgt = node.targets[0]
+        if not (isinstance(tgt, _ast.Name) and tgt.id in SUSPECT_NAMES):
+            continue
+        if not (isinstance(node.value, _ast.Call)
+                and isinstance(node.value.func, _ast.Name)
+                and node.value.func.id == "_download_image"):
+            continue
+        bad_assigns.append(f"{tgt.id} at line {node.lineno}")
+    report.add(section,
+               "_download_image results aren't stored as '*_path'",
+               PASS if not bad_assigns else FAIL,
+               f"bad={bad_assigns[:5]}" if bad_assigns else "")
+
+    # ── 5. Upload-cache migration coverage ────────────────────
+    # Count pre-cache idiom hits vs post-cache idiom hits. Baseline
+    # is "most things migrated" \u2014 lots of pre-cache hits would
+    # mean a new handler slipped in without using the cached helper.
+    pre_cache_hits = src.count("_export_image_to_tmp(image)")
+    cached_helper_hits = src.count("_export_and_upload_cached(")
+    # The 8 intentional leaves (helper internals, manual send, etc.)
+    # are documented; flag when it climbs sharply.
+    LEAVE_BUDGET = 12  # fail-fast ceiling, not a strict count
+    report.add(section,
+               f"upload-cache migration "
+               f"(cached={cached_helper_hits}, "
+               f"legacy={pre_cache_hits})",
+               PASS if pre_cache_hits <= LEAVE_BUDGET else WARN,
+               f"{pre_cache_hits} legacy idioms remain "
+               f"(budget {LEAVE_BUDGET}; helper leaves are expected)")
+
+    # ── 6. Prefix discipline ──────────────────────────────────
+    # Ensure sc_cache_ is used for cached uploads and gimp_ or
+    # sc_nmauto_ are used for privacy-wipeable / auto-gen uploads.
+    # A literal `sc_cache_` not followed by formatted hash would be
+    # suspicious.
+    bad_prefix: list[str] = []
+    import re as _re
+    for m in _re.finditer(r'"sc_cache_([^"]*)"', src):
+        rest = m.group(1)
+        # Normal case: "sc_cache_{fp}.png" or "sc_cache_{fingerprint}.png"
+        if "{" in rest or rest.startswith("cache"):
+            continue
+        line = src[:m.start()].count("\n") + 1
+        bad_prefix.append(f"line {line}: sc_cache_{rest!r}")
+    report.add(section,
+               "sc_cache_* literals use content-hash suffix",
+               PASS if not bad_prefix else WARN,
+               f"non-hash={bad_prefix[:5]}" if bad_prefix else "")
+
+    report.add(section, "section complete", PASS,
+               elapsed_ms=int((time.time() - t0) * 1000))
+
+
+# ═══════════════════════════════════════════════════════════════════════
 #  MAIN
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -1598,6 +2242,12 @@ SECTIONS = {
     "guild_client":      test_guild_client,
     "cn_model_coverage": test_cn_model_coverage,
     "coverage_inventory": test_coverage_inventory,
+    # Regression-guard layer (all offline) — pin the bug classes
+    # chased over the recent sessions.
+    "upload_cache":      test_upload_cache,
+    "guards":            test_guards,
+    "iclight_cn":        test_iclight_cn,
+    "plugin_surface":    test_plugin_surface,
 }
 
 
@@ -1618,7 +2268,9 @@ def main():
     args = ap.parse_args()
 
     # Sections that don't contact the Guild — safe to run standalone.
-    OFFLINE_SECTIONS = {"events_schema", "coverage_inventory"}
+    OFFLINE_SECTIONS = {"events_schema", "coverage_inventory",
+                         "upload_cache", "guards", "iclight_cn",
+                         "plugin_surface"}
 
     selected = set(SECTIONS.keys())
     if args.only:
