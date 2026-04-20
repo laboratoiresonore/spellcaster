@@ -1799,6 +1799,71 @@ def _export_normal_map_layer(image, layer_index):
     return path
 
 
+def _collect_normal_map_from_dialog(dlg, image, server_url):
+    """If the dialog's normal-map picker is enabled + a layer is
+    selected, export that layer to a PNG and upload it to ComfyUI's
+    input directory. Returns the uploaded filename, or None when the
+    feature is disabled / unconfigured.
+
+    Silently no-ops when the dialog hasn't had `_add_normal_map_selector`
+    called on it — every caller passes any dlg, and we check for the
+    attributes before reading.
+    """
+    cb = getattr(dlg, "_normal_enabled", None)
+    cmb = getattr(dlg, "_normal_combo", None)
+    if cb is None or cmb is None or not cb.get_active():
+        return None
+    idx_id = cmb.get_active_id()
+    if not idx_id or idx_id == "none":
+        return None
+    try:
+        idx = int(idx_id)
+    except (TypeError, ValueError):
+        return None
+    tmp = _export_normal_map_layer(image, idx)
+    if not tmp:
+        return None
+    nm_name = f"gimp_nm_{uuid.uuid4().hex[:8]}.png"
+    try:
+        _upload_image(server_url, tmp, nm_name)
+    except Exception as e:
+        print(f"[Spellcaster] normal-map upload failed: {e}")
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+        return None
+    try:
+        os.unlink(tmp)
+    except Exception:
+        pass
+    return nm_name
+
+
+def _maybe_override_cn_with_normal_map(controlnet, normal_map_filename):
+    """Overlay the 'Normal Map (use existing layer)' CN mode onto the
+    user's ControlNet selection whenever a normal-map filename is set.
+
+    The user's strength / start_percent / end_percent choices are
+    preserved — only the mode + ref_image_filename are replaced. When
+    they hadn't picked a CN at all, we default to strength=0.8 (solid
+    3D guidance, still leaves room for prompt creativity).
+
+    canonical inject_controlnet (composites.py) reads the
+    `ref_image_filename` key and loads that file via LoadImage as the
+    CN input — see CLAUDE.md note on 3D normal map integration.
+    """
+    if not normal_map_filename:
+        return controlnet
+    merged = dict(controlnet or {})
+    merged["mode"] = "Normal Map (use existing layer) — all archs"
+    merged["ref_image_filename"] = normal_map_filename
+    merged.setdefault("strength", 0.8)
+    merged.setdefault("start_percent", 0.0)
+    merged.setdefault("end_percent", 1.0)
+    return merged
+
+
 def _add_mask_mode_checkbox(dialog, box):
     """Add a 'Generate as Mask (transparent)' checkbox to any image dialog.
 
@@ -13758,20 +13823,23 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-klein-outpaint":    "<Image>/Image",
         }
 
-        # ── 3D submenu — groups all normal-map-enabled tools ──────
-        # These tools appear in BOTH their original submenu AND in
-        # ◆ Spellcaster > 3D for easy discovery.
+        # ── 3D submenu — tools that actually surface a normal-map
+        # selector in their dialog AND consume it at build time. This
+        # list used to include style-transfer, colorize,
+        # detail-hallucinate, and seedv2r — but those dialogs never
+        # wired the picker, making the 3D menu a dead promise.
+        # Shrunk to 6 entries that genuinely benefit: the generator
+        # itself, IC-Light (relighting is the strongest 3D case), and
+        # the four core img-gen dialogs (img2img / txt2img / inpaint /
+        # outpaint — all share _collect_normal_map_from_dialog to
+        # override their ControlNet selection with Normal Map mode).
         _3d_tools = {
-            "spellcaster-normal-map",        # Generate 3D Normal Map
-            "spellcaster-iclight",           # Relighting (uses normal map as FBC background)
-            "spellcaster-img2img",           # CN: Normal Map mode
-            "spellcaster-txt2img",           # CN: Normal Map mode
-            "spellcaster-inpaint",           # CN: Normal Map mode
-            "spellcaster-outpaint",          # CN: Normal Map mode
-            "spellcaster-style-transfer",    # CN: Normal Map mode
-            "spellcaster-colorize",          # CN: Normal Map mode
-            "spellcaster-detail-hallucinate",# CN: Normal Map mode
-            "spellcaster-seedv2r",           # CN: Normal Map mode
+            "spellcaster-normal-map",
+            "spellcaster-iclight",
+            "spellcaster-img2img",
+            "spellcaster-txt2img",
+            "spellcaster-inpaint",
+            "spellcaster-outpaint",
         }
 
         proc = Gimp.ImageProcedure.new(self, name, Gimp.PDBProcType.PLUGIN, callback, None)
@@ -26642,27 +26710,56 @@ class Spellcaster(Gimp.PlugIn):
                 "Send to {}: Wizard Guild unreachable. Start the Guild "
                 "and try again.".format(friendly))
             return False
-        rec = client.upload_asset(
-            png_bytes, kind=kind,
-            title=f"From GIMP → {friendly}",
-            tags=[f"to_{target}", "gimp_export"],
-        )
-        if not rec or not rec.get("hash"):
-            Gimp.message(
-                f"Send to {friendly} failed — Guild unreachable or rejected "
-                f"the upload. Start the Wizard Guild and try again.")
-            return False
-        asset_url = f"/api/assets/{rec['hash']}"
+        # Transport preference (audit tier-3 blob bus): try ComfyUI's
+        # blob bus first — bytes skip the Guild's machine, peer plugins
+        # download direct from ComfyUI. Falls back to the Guild
+        # AssetGallery upload when blob_put fails (no ComfyUI URL
+        # configured, blob bus off, request 5xx, etc). Event still
+        # publishes via Guild either way; the transport field tells
+        # subscribers which URL shape they got.
+        cfg = _load_config()
+        comfy_url = cfg.get("server_url") or ""
+        asset_url: str
+        asset_hash: str
+        transport: str
+        if comfy_url:
+            blob_rec = client.blob_put(
+                comfy_url, png_bytes, kind=kind, timeout=15.0)
+        else:
+            blob_rec = None
+        if blob_rec and blob_rec.get("hash") and blob_rec.get("url"):
+            asset_url = blob_rec["url"]
+            asset_hash = blob_rec["hash"]
+            transport = "blob"
+        else:
+            rec = client.upload_asset(
+                png_bytes, kind=kind,
+                title=f"From GIMP → {friendly}",
+                tags=[f"to_{target}", "gimp_export"],
+            )
+            if not rec or not rec.get("hash"):
+                Gimp.message(
+                    f"Send to {friendly} failed — Guild unreachable or "
+                    f"rejected the upload. Start the Wizard Guild and "
+                    f"try again.")
+                return False
+            asset_hash = rec["hash"]
+            asset_url = f"/api/assets/{asset_hash}"
+            transport = "guild"
         # Publish the directed-send event. The receiving subscriber
-        # pulls the bytes via asset_url.
+        # pulls the bytes via asset_url (either blob-bus or Guild
+        # gallery URL — both are plain http(s), subscribers don't
+        # care).
         client.publish(f"{target}.asset.send", data={
             "image_url": asset_url,
-            "hash": rec["hash"],
+            "hash": asset_hash,
             "source": "gimp",
             "kind": kind,
+            "transport": transport,
         })
         Gimp.message(
-            f"Sent to {friendly}. Asset hash: {rec['hash'][:10]}… "
+            f"Sent to {friendly} via {transport}. "
+            f"Asset hash: {asset_hash[:10]}… "
             f"The {friendly} plugin picks it up automatically.")
         return True
 
