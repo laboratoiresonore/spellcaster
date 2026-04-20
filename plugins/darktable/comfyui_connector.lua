@@ -1219,7 +1219,20 @@ end
 -- Short, LAN-safe hostname so the broker can disambiguate the same
 -- plugin kind running on multiple machines. Lua has no portable
 -- os.hostname, so we shell out once at script load and cache.
-local function _dt_hostname()
+-- NOTE: locals in Lua's main chunk count against a hard 200-slot
+-- limit. Darktable plugins are loaded as a single main chunk so every
+-- top-level `local X = ...` line consumes a slot file-wide. This
+-- plugin had already accumulated ~200 top-level locals from widget
+-- declarations; adding the presence + blob-bus + 3D helpers below
+-- tipped us past the limit and Lua refused to compile with "too many
+-- local variables in main function". Dropping `local` from each of
+-- these decls promotes them to the file-scope globals DT plugins
+-- traditionally use for cross-section access (comfy_presence_*,
+-- process_normal_map, _blob_upload all have domain-unique names so
+-- namespace collision is a non-issue). When more than a small number
+-- of new helpers need adding, wrap them in `do ... end` to free the
+-- slots instead.
+function _dt_hostname()
   local f = io.popen(package.config:sub(1,1) == "\\" and "hostname" or "uname -n")
   if not f then return "dt-host" end
   local h = f:read("*l") or ""
@@ -1231,8 +1244,8 @@ local function _dt_hostname()
   return h:sub(1, 64)
 end
 
-local DARKTABLE_HOST = _dt_hostname()
-local DARKTABLE_PRESENCE_META = {
+DARKTABLE_HOST = _dt_hostname()
+DARKTABLE_PRESENCE_META = {
   key = "darktable",
   label = "Darktable",
   icon = "📷",
@@ -1244,7 +1257,7 @@ local DARKTABLE_PRESENCE_META = {
 
 -- Fire-and-forget POST via curl. Guards: 2s timeout; stdout+stderr
 -- swallowed so a missing route / ComfyUI-down doesn't flood the log.
-local function _comfy_presence_post(endpoint, body_str)
+function _comfy_presence_post(endpoint, body_str)
   local comfy = get_server()
   if not comfy or comfy == "" then return end
   local tmp = _unique_tmp("dt_presence", ".json")
@@ -1264,7 +1277,7 @@ local function _comfy_presence_post(endpoint, body_str)
   os.remove(tmp)
 end
 
-local function comfy_presence_register()
+function comfy_presence_register()
   -- Caps list as JSON array
   local caps_json = '["' .. table.concat(DARKTABLE_PRESENCE_META.capabilities, '","') .. '"]'
   local body = string.format(
@@ -1279,7 +1292,7 @@ local function comfy_presence_register()
   _comfy_presence_post("/spellcaster/presence/register", body)
 end
 
-local function comfy_presence_heartbeat()
+function comfy_presence_heartbeat()
   _comfy_presence_post("/spellcaster/presence/heartbeat",
     string.format('{"key":"%s","host":"%s","instance_id":"%s"}',
       DARKTABLE_PRESENCE_META.key,
@@ -1291,7 +1304,7 @@ end
 -- (ComfyUI down, pack too old, etc.). Does NOT merge Guild data here —
 -- the existing guild_active_peers() helper handles the Guild side so
 -- callers decide which union they want.
-local function comfy_presence_list()
+function comfy_presence_list()
   local comfy = get_server()
   if not comfy or comfy == "" then return {} end
   local tmp = _unique_tmp("dt_peers", ".json")
@@ -1415,7 +1428,7 @@ end
 -- caller falls back to Guild upload). curl's -F flag builds the
 -- multipart body natively so we skip the Python-b64 shuffle needed
 -- for the JSON endpoint.
-local function _blob_upload(png_path)
+function _blob_upload(png_path)
   local comfy = get_server()
   if not comfy or comfy == "" then return nil end
   local resp_path = tmp_dir() .. sep
@@ -4896,7 +4909,7 @@ end
 -- has a native menu entry for the same builder; this DT button mirrors
 -- it so a RAW processor user can generate the normal map without
 -- leaving Darktable first.
-local function process_normal_map(image, max_res)
+function process_normal_map(image, max_res)
   local server = get_server()
   -- Fix 4b (3D audit 2026-04-20): preflight the NormalCrafter custom
   -- node so the user sees an actionable message before we spend time
@@ -9934,7 +9947,7 @@ local inbox_btn = dt.new_widget("button") {
 -- target, "unknown" if we couldn't reach any presence surface. UI
 -- code treats "unknown" the same as "yes" — don't pre-emptively block
 -- when we can't tell.
-local function _peer_online_tristate(target_key)
+function _peer_online_tristate(target_key)
   local queried = false
   local peers = comfy_presence_list()
   if type(peers) == "table" then
