@@ -4708,6 +4708,70 @@ local function process_upscale_blend(image, model_a_file, model_b_file,
   dt.print(string.format(_("Upscale blend done — %d image(s) imported"), imported))
 end
 
+-- ── Z-Image-Turbo img2img (canonical, full quality stack) ─────────────
+-- Routes through POST /api/run_builder → build_img2img with arch="zit",
+-- so the canonical Python builder applies the full ZIT optimization
+-- chain (PAG @ scale 1.5 + SkipLayerGuidanceDiT @ scale 2.0 + optional
+-- TeaCache @ rel_l1_thresh=0.3 when fast_mode=True). Single source of
+-- truth — Darktable doesn't reimplement the workflow.
+--
+-- Optional sam3_prompt scopes the change to a SAM3-segmented region
+-- (the same plumbing the Klein flows use). Optional ckpt override lets
+-- the user point at a different ZIT checkpoint than the AIO default.
+local function process_zit_img2img(image, prompt, negative, denoise,
+                                    quality, fast_mode, sam3_prompt, ckpt_override)
+  local server = get_server()
+
+  dt.print(_("Exporting for Z-Image-Turbo img2img..."))
+  local path, fname = export_to_temp(image)
+  if not path then dt.print(_("Export failed")); return end
+
+  dt.print(_("Uploading to ComfyUI..."))
+  local img_name = "dt_zit_img_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
+  curl_upload(server .. "/upload/image", path, img_name)
+  os.remove(path)
+
+  -- Build extras: sam3 + ckpt overrides as comma-prefixed JSON tail
+  local extras = ""
+  if sam3_prompt and sam3_prompt ~= "" then
+    extras = extras .. string.format(
+      ',"sam3_prompt":"%s","sam3_expand":6,"sam3_blur":4',
+      json_escape(sam3_prompt))
+  end
+  if ckpt_override and ckpt_override ~= "" then
+    extras = extras .. string.format(',"ckpt":"%s"', json_escape(ckpt_override))
+  end
+
+  local seed = math.random(1, 2^31 - 1)
+  local fast_str = (fast_mode and "true" or "false")
+  local params = string.format(
+    '{"image_filename":"%s","arch":"zit","prompt_text":"%s","negative_text":"%s",'
+    .. '"seed":%d,"denoise":%.2f,"quality":"%s","fast_mode":%s%s}',
+    json_escape(img_name),
+    json_escape(prompt or ""),
+    json_escape(negative or ""),
+    seed,
+    denoise or 0.55,
+    quality or "balanced",
+    fast_str,
+    extras)
+
+  dt.print(string.format(
+    _("Z-Image-Turbo img2img running (quality=%s, fast=%s)..."),
+    quality or "balanced", fast_str))
+  local urls, err = _run_builder("build_img2img", params)
+  if not urls then
+    dt.print(_("Z-Image-Turbo img2img failed: ") .. tostring(err))
+    return
+  end
+  if #urls == 0 then
+    dt.print(_("Z-Image-Turbo img2img returned no images"))
+    return
+  end
+  local imported = _download_guild_assets(urls, "zit_img2img")
+  dt.print(string.format(_("Z-Image-Turbo done — %d image(s) imported"), imported))
+end
+
 -- ── Color Grading / LUT processing ────────────────────────────────────
 local function process_lut(image, lut_file, strength)
   local server = get_server()
@@ -8051,6 +8115,88 @@ local upscale_blend_send_btn = dt.new_widget("button") {
   end
 }
 
+-- ── Z-Image-Turbo (Advanced) controls ──────────────────────────────────
+-- All parameters flow through the canonical build_img2img builder via
+-- /api/run_builder. The Lua side intentionally stays thin: file upload
+-- + parameter packaging. PAG / SkipLayerGuidanceDiT / TeaCache
+-- selection happens in spellcaster_core.workflows so any future tuning
+-- reaches Darktable for free.
+local zit_ckpt_entry = dt.new_widget("entry") {
+  text = "ZIT\\gonzalomoZpop_v30AIO.safetensors",
+  placeholder = _("ZIT checkpoint path on the ComfyUI server..."),
+  tooltip = _("Full path of the Z-Image-Turbo checkpoint as ComfyUI sees it. Defaults to the GonzaloMo Zpop AIO."),
+  editable = true,
+}
+
+local zit_prompt_entry = dt.new_widget("entry") {
+  text = "",
+  placeholder = _("Edit prompt (Z-Image-Turbo prefers short, plain language)..."),
+  tooltip = _("ZIT is distilled — short, focused prompts beat long tag spam. cfg is fixed low (~2.0) by the canonical builder."),
+  editable = true,
+}
+
+local zit_negative_entry = dt.new_widget("entry") {
+  text = "",
+  placeholder = _("Negative prompt (optional)..."),
+  tooltip = _("Optional negative. Keep it minimal on distilled models."),
+  editable = true,
+}
+
+local zit_denoise_slider = dt.new_widget("slider") {
+  label = _("Denoise"),
+  tooltip = _("How far the result drifts from the source. 0.4 = subtle, 0.85 = bold."),
+  soft_min = 0.20, soft_max = 0.95,
+  hard_min = 0.05, hard_max = 1.00,
+  step = 0.02, digits = 2, value = 0.55,
+}
+
+local zit_quality_selector = dt.new_widget("combobox") {
+  label = _("Quality"),
+  tooltip = _("balanced = PAG + SLG (recommended). max = also enables FreeU/SLG cap. fast = no boosters (raw 6-step)."),
+  selected = 2,
+  "fast",
+  "balanced",
+  "max",
+}
+
+local zit_fast_check = dt.new_widget("check_button") {
+  label = _("⚡ TeaCache (fast_mode)"),
+  tooltip = _("Wraps the model in ApplyTeaCachePatch (rel_l1_thresh=0.3 for ZIT). Bigger win on batches than single shots; needs the ComfyUI-TeaCache custom pack."),
+  value = false,
+}
+
+local zit_send_btn = dt.new_widget("button") {
+  label = _("✨ Z-Image-Turbo Generate"),
+  tooltip = _("img2img with the full Z-Image-Turbo quality stack (canonical build_img2img via the Guild). Reuses the SAM3 prompt entry above when you want to scope the edit."),
+  clicked_callback = function()
+    local images = dt.gui.selection()
+    if #images == 0 then dt.print(_("No images selected")); return end
+    local prompt = zit_prompt_entry.text or ""
+    if prompt == "" then
+      dt.print(_("Enter a prompt for Z-Image-Turbo")); return
+    end
+    local negative = zit_negative_entry.text or ""
+    local denoise = zit_denoise_slider.value
+    local quality_idx = zit_quality_selector.selected or 2
+    local quality = ({"fast", "balanced", "max"})[quality_idx] or "balanced"
+    local fast_mode = zit_fast_check.value
+    local ckpt = zit_ckpt_entry.text or ""
+    -- Reuse the shared SAM3 mask prompt entry from the Klein section so
+    -- the user types the target once and can switch arches without
+    -- re-entering it. Empty string = no scoping (full image).
+    local sam3 = klein_sam3_prompt_entry.text or ""
+    for i, img in ipairs(images) do
+      dt.print(string.format(_("Z-Image-Turbo %d/%d"), i, #images))
+      local ok, err = pcall(process_zit_img2img, img, prompt, negative,
+                             denoise, quality, fast_mode, sam3, ckpt)
+      if not ok then
+        dt.print(_("Error: ") .. tostring(err))
+        dt.print_error("Spellcaster Z-Image-Turbo error: " .. tostring(err))
+      end
+    end
+  end
+}
+
 -- ═══════════════════════════════════════════════════════════════════════
 -- Color Grading / LUT GUI widgets
 -- ═══════════════════════════════════════════════════════════════════════
@@ -9799,6 +9945,21 @@ local module_widget = dt.new_widget("box") {
   upscale_blend_factor_slider,
   upscale_blend_scale_slider,
   upscale_blend_send_btn,
+  dt.new_widget("separator") {},
+
+  -- Z-Image-Turbo (advanced) — full PAG + SLG + optional TeaCache stack
+  -- via the canonical build_img2img builder.
+  dt.new_widget("label") { label = _("\xe2\x9c\xa6 Z-IMAGE-TURBO (ADVANCED)") },
+  dt.new_widget("label") { label = _("Checkpoint:") },
+  zit_ckpt_entry,
+  dt.new_widget("label") { label = _("Prompt:") },
+  zit_prompt_entry,
+  dt.new_widget("label") { label = _("Negative:") },
+  zit_negative_entry,
+  zit_denoise_slider,
+  zit_quality_selector,
+  zit_fast_check,
+  zit_send_btn,
   dt.new_widget("separator") {},
 
   -- Color Grading / LUT section
