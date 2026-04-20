@@ -46,6 +46,27 @@ TYPICAL USAGE:
 """
 
 
+# Canonical method names used by `supported_methods`. Workflow builders
+# and UI scaffolds check membership to decide whether to expose a given
+# action for a model. Keep these lists in sync with the builder set in
+# `workflows.py` — unknown names are harmless (they just never match).
+IMAGE_METHODS = (
+    "txt2img", "img2img", "inpaint", "outpaint",
+    "upscale", "detail_hallucinate", "seedv2r",
+    "face_restore", "faceswap", "photobooth",
+    "controlnet_gen", "colorize", "style_transfer",
+    "relight", "reimagine",
+)
+VIDEO_METHODS = (
+    "video_gen", "video_img2video", "video_upscale",
+)
+KLEIN_METHODS = (
+    "klein_edit", "klein_headswap", "klein_repose",
+    "klein_refine", "klein_inpaint",
+)
+ALL_IMAGE_METHODS = IMAGE_METHODS + KLEIN_METHODS
+
+
 class ArchConfig:
     """Configuration for a single model architecture.
 
@@ -101,8 +122,30 @@ class ArchConfig:
         "prompt_style", "prompt_guidance",
         "autoset_prompts", "autoset_denoise", "autoset_cn", "autoset_loras",
         "scene_group",
+        "supported_methods",  # tuple of method names this arch can dispatch
+        "registered",         # False when the registry entry is a stub placeholder
         "extra",
     )
+
+# Canonical method names used by `supported_methods`. Workflow builders
+# and UI scaffolds check membership to decide whether to expose a given
+# action for a model. Keep this list in sync with the builder set in
+# `workflows.py` — unknown names are harmless (they just never match).
+IMAGE_METHODS = (
+    "txt2img", "img2img", "inpaint", "outpaint",
+    "upscale", "detail_hallucinate", "seedv2r",
+    "face_restore", "faceswap", "photobooth",
+    "controlnet_gen", "colorize", "style_transfer",
+    "relight", "reimagine",
+)
+VIDEO_METHODS = (
+    "video_gen", "video_img2video", "video_upscale",
+)
+KLEIN_METHODS = (
+    "klein_edit", "klein_headswap", "klein_repose",
+    "klein_refine", "klein_inpaint",
+)
+ALL_IMAGE_METHODS = IMAGE_METHODS + KLEIN_METHODS
 
     def __init__(self, key, **kw):
         self.key = key
@@ -128,7 +171,20 @@ class ArchConfig:
         self.autoset_cn = kw.get("autoset_cn", {})
         self.autoset_loras = kw.get("autoset_loras", {})
         self.scene_group = kw.get("scene_group", "sdxl")
+        # supported_methods drives UI gating so wizards don't advertise
+        # methods their model can't actually dispatch (e.g. video archs
+        # listing txt2img, DiT-only archs listing controlnet when the
+        # builder doesn't have a matching ControlNet entry).
+        self.supported_methods = tuple(kw.get("supported_methods", IMAGE_METHODS))
+        # Stub archs (placeholder registrations for orphaned kinds we
+        # detect but don't yet fully scaffold) set registered=False so
+        # callers can distinguish "deeply integrated" from "known-of".
+        self.registered = bool(kw.get("registered", True))
         self.extra = kw.get("extra", {})
+
+    def supports_method(self, method: str) -> bool:
+        """True if this arch's builders can dispatch `method`."""
+        return method in self.supported_methods
 
     def get_denoise(self, mode, fallback=0.60):
         """Get recommended denoise strength for a specific use case.
@@ -248,6 +304,7 @@ _reg("sd15",
      default_denoise=0.62,
      default_sampler="dpmpp_2m",
      default_scheduler="karras",
+     supported_methods=IMAGE_METHODS,
      lora_prefixes=[],
      turbo_config={
          "label": "Hyper-SD15 8-step",
@@ -320,6 +377,7 @@ _reg("sdxl",
      default_denoise=0.60,
      default_sampler="dpmpp_2m_sde",
      default_scheduler="karras",
+     supported_methods=IMAGE_METHODS,
      lora_prefixes=["SDXL\\", "Illustrious\\", "Illustrious-Pony\\", "Pony\\"],
      turbo_config={
          "label": "Hyper-SDXL 8-step",
@@ -395,6 +453,7 @@ _reg("illustrious",
      default_denoise=0.58,
      default_sampler="euler_ancestral",
      default_scheduler="normal",
+     supported_methods=IMAGE_METHODS,
      lora_prefixes=["Illustrious\\", "Illustrious-Pony\\"],
      turbo_config={
          "label": "Hyper-SDXL 8-step",
@@ -461,6 +520,7 @@ _reg("zit",
      default_denoise=0.55,
      default_sampler="euler",
      default_scheduler="sgm_uniform",
+     supported_methods=IMAGE_METHODS,
      lora_prefixes=["Z-Image-Turbo\\"],
      turbo_config=None,  # Already fast at 4-6 steps
      prompt_style="booru_tags",
@@ -516,6 +576,7 @@ _reg("flux1dev",
      default_denoise=0.55,
      default_sampler="euler",
      default_scheduler="simple",
+     supported_methods=IMAGE_METHODS,
      lora_prefixes=["Flux-1-Dev\\"],
      turbo_config={
          "label": "Hyper-FLUX 8-step",
@@ -592,6 +653,7 @@ _reg("chroma",
      default_denoise=0.65,
      default_sampler="euler",
      default_scheduler="simple",
+     supported_methods=IMAGE_METHODS,
      lora_prefixes=[],
      turbo_config=None,
      prompt_style="natural",
