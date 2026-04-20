@@ -8995,6 +8995,41 @@ class _JobManager:
             # otherwise it's clutter. 60 % is the threshold where
             # tile-loaded workflows start spilling.
             parts.append(f"host RAM {r['ram_used_pct']}%")
+
+        # ── Refined ETA countdown ────────────────────────────────
+        # First tick of each job fetches a pre-dispatch baseline from
+        # the Guild's /api/speedcoach/estimate (aware of queue depth,
+        # VRAM, cold-model, historical fingerprint medians). Every
+        # subsequent tick refines that baseline in-process using the
+        # current step/max ratio — no HTTP per tick.
+        if "pre_est" not in current:
+            try:
+                current["pre_est"] = _speedcoach_initial_estimate(
+                    current, rich=r)
+            except Exception:
+                current["pre_est"] = None
+        pre = current.get("pre_est") or {}
+        try:
+            from spellcaster_core import estimate as _est_mod
+            elapsed_f = time.time() - current["start_ts"]
+            live = _est_mod.estimate_during_dispatch(
+                pre,
+                elapsed=elapsed_f,
+                step_cur=int(pv or 0),
+                step_max=int(pm or 0),
+            )
+            eta = float(live.get("eta_sec") or 0)
+            if pre.get("est_sec") or (pv and pm):
+                if eta >= 0.5:
+                    parts.append(f"ETA {_est_mod.format_countdown(eta)}")
+                else:
+                    # Overrun: show how far past we are so the user
+                    # sees something honest rather than a stuck "~now".
+                    parts.append(_est_mod.format_overrun(-eta))
+            current["live_total_est"] = float(live.get("total_sec") or 0)
+        except Exception:
+            pass
+
         parts.append(elapsed_str)
         try:
             for extra in _speedcoach_tick_parts():
@@ -9244,6 +9279,75 @@ def _speedcoach_lora_stack_hash(loras) -> str:
         return _sc._lora_stack_hash(loras)
     except Exception:
         return "none" if not loras else "unknown"
+
+
+def _speedcoach_initial_estimate(job: dict, *, rich: dict | None = None) -> dict:
+    """Fetch a pre-dispatch ETA baseline for ``job``.
+
+    Called ONCE per job, on the first status-bar tick, so the
+    expensive (historical-median lookup) part runs outside the 300 ms
+    render loop. Combines three data sources:
+
+      1. ``_SPEEDCOACH_STATE["last_prediction"]`` — stamped by the
+         handler-dialog banner helper before dispatch. When present
+         and fresh, treat it as the pre-dispatch median.
+      2. Otherwise call the Guild's ``/api/speedcoach/estimate``
+         endpoint with whatever spec we can infer from session state.
+      3. Fall back to the local ``spellcaster_core.estimate`` module
+         so even without the Guild we get an arch-default baseline.
+
+    ``rich`` is the cached ``_fetch_comfy_status_rich`` dict so we
+    can pass queue depth + VRAM % into the estimator without a
+    second HTTP call.
+    """
+    r = rich or {}
+    queue_ahead = int(r.get("pending") or 0)
+    vram_pct = float(r.get("vram_used_pct") or 0.0)
+    pred = _SPEEDCOACH_STATE.get("last_prediction") or {}
+    spec_arch = str(pred.get("arch") or "")
+    spec_handler = str(pred.get("handler") or "")
+    spec_steps = pred.get("steps")
+    spec_lora_hash = pred.get("lora_stack_hash")
+    # Ask the Guild first — it has dispatch_log + preflight cache in
+    # one place and already does the pre-dispatch adjustments.
+    try:
+        params = {}
+        if spec_arch:    params["arch"] = spec_arch
+        if spec_handler: params["handler"] = spec_handler
+        if spec_steps is not None:
+            params["steps"] = str(int(spec_steps))
+        if spec_lora_hash:
+            params["lora_stack_hash"] = spec_lora_hash
+        if queue_ahead:
+            params["queue_ahead"] = str(queue_ahead)
+        if vram_pct:
+            params["vram_pct"] = str(int(vram_pct))
+        data = _speedcoach_get("/api/speedcoach/estimate", params)
+        if isinstance(data, dict) and data.get("est_sec"):
+            return data
+    except Exception:
+        pass
+    # Local fallback: estimate module runs against whatever
+    # dispatch_log the plugin has access to locally (shared state-dir
+    # on same-box installs; empty otherwise → arch default only).
+    try:
+        from spellcaster_core import estimate as _est_mod
+        spec = {
+            "arch":    spec_arch,
+            "handler": spec_handler,
+            "steps":   int(spec_steps) if isinstance(spec_steps, (int, float)) else None,
+            "lora_stack_hash": spec_lora_hash,
+        }
+        est = _est_mod.estimate_pre_dispatch(
+            spec,
+            queue_ahead=queue_ahead,
+            vram_pct=vram_pct,
+            cold_model=False,
+        )
+        est["handler_key"] = spec_handler
+        return est
+    except Exception:
+        return {}
 
 
 def _speedcoach_tick_parts() -> list[str]:
