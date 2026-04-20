@@ -13719,13 +13719,25 @@ class Spellcaster(Gimp.PlugIn):
             # profile (spellcaster_core/prompt_enhance.py "ltx" entry).
             # Global toggle in config.json gates this too; if disabled
             # globally _auto_enhance no-ops regardless of dialog state.
+            #
+            # Wrapped in _run_with_spinner so the (potentially multi-
+            # second) LLM call doesn't freeze the GIMP UI — the user
+            # sees a live "enhancing prompt…" status instead of a hung
+            # dialog.
             if v.get("enhance"):
-                orig_prompt = v["prompt"]
-                v["prompt"], _ = _auto_enhance(v["prompt"], "ltx")
-                if v["prompt"] != orig_prompt:
-                    _update_spinner_status(
-                        f"LTX: prompt enhanced ({len(orig_prompt.split())}"
-                        f"→{len(v['prompt'].split())} words)")
+                _orig_prompt = v["prompt"]
+                def _do_ltx_enhance(_p=_orig_prompt):
+                    enhanced, _neg = _auto_enhance(_p, "ltx")
+                    return enhanced
+                _new_prompt = _run_with_spinner(
+                    "LTX: enhancing prompt via LLM (aiming for 150-200 "
+                    "words — LTX rewards length)...",
+                    _do_ltx_enhance)
+                if _new_prompt and _new_prompt != _orig_prompt:
+                    v["prompt"] = _new_prompt
+                    print(f"[Spellcaster] LTX prompt enhanced: "
+                          f"{len(_orig_prompt.split())}→"
+                          f"{len(_new_prompt.split())} words")
 
             base_seed = v["seed"]
             for run_i in range(runs):

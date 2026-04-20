@@ -9161,6 +9161,21 @@ local module_widget = dt.new_widget("box") {
   lama_send_btn,
   dt.new_widget("separator") {},
 
+  -- Klein Inpaint + Re-pose (canonical builders, dispatched via the Guild)
+  dt.new_widget("label") { label = _("\xe2\x9c\xa6 KLEIN SURGICAL EDITS") },
+  klein_model_selector,
+  dt.new_widget("label") { label = _("Inpaint mask path (white=replace):") },
+  klein_inpaint_mask_entry,
+  dt.new_widget("label") { label = _("Inpaint prompt:") },
+  klein_inpaint_prompt_entry,
+  klein_inpaint_denoise_slider,
+  klein_inpaint_send_btn,
+  dt.new_widget("label") { label = _("Re-pose prompt:") },
+  klein_repose_prompt_entry,
+  klein_repose_denoise_slider,
+  klein_repose_send_btn,
+  dt.new_widget("separator") {},
+
   -- Color Grading / LUT section
   dt.new_widget("label") { label = _("\xe2\x9c\xa6 COLOR GRADING / LUT") },
   dt.new_widget("label") { label = _("LUT Preset:") },

@@ -1781,6 +1781,14 @@ def _server_init(comfy_url=None):
     CHARS_CACHE, NODES_CACHE = fetch_all_characters(comfy_url=url)
     _apply_scaffold_overrides()
     _load_lora_registry()
+    # Tell the calibration engine where to persist job metadata so a
+    # Guild restart mid-batch can surface "resume previous run" on the
+    # Calibration modal. See scaffold/lora_grouping::set_calibration_persist_dir.
+    try:
+        from scaffold.lora_grouping import set_calibration_persist_dir
+        set_calibration_persist_dir(_STATE_DIR)
+    except Exception:
+        pass
     threading.Thread(
         target=_build_lora_registry, args=(url,), daemon=True
     ).start()
@@ -4787,6 +4795,30 @@ def _spellcaster_lora_scorer_probe() -> tuple[int, dict]:
     return (200, probe_available())
 
 
+def _spellcaster_lora_calibrate_resumable() -> tuple[int, dict]:
+    """GET /api/spellcaster/lora/calibrate/resumable — return any
+    prior calibration jobs that ended as `interrupted` (Guild was
+    restarted mid-run). The UI uses this to show a "Resume?" banner
+    on modal open."""
+    try:
+        from scaffold.lora_grouping import list_resumable_jobs
+    except Exception as e:
+        return (500, {"error": f"module unavailable: {e}"})
+    return (200, {"jobs": list_resumable_jobs()})
+
+
+def _spellcaster_lora_calibrate_dismiss_resumable() -> tuple[int, dict]:
+    """POST /api/spellcaster/lora/calibrate/resumable/clear — the user
+    said "start fresh, forget the old run". Delete persisted job
+    metadata so next modal open doesn't re-prompt."""
+    try:
+        from scaffold.lora_grouping import clear_resumable_jobs
+    except Exception as e:
+        return (500, {"error": f"module unavailable: {e}"})
+    n = clear_resumable_jobs()
+    return (200, {"ok": True, "cleared": n})
+
+
 def _spellcaster_lora_calibrate_auto_start(
     targets: list = None,
     subset: str = "",
@@ -4794,6 +4826,9 @@ def _spellcaster_lora_calibrate_auto_start(
     score_with_llm: bool = False,
     ollama_url: str = "",
     scorer_model: str = "",
+    preflight: bool = True,
+    stability_seeds: int = 1,
+    sweep_strengths: list = None,
 ) -> tuple[int, dict]:
     """POST /api/spellcaster/lora/calibrate/auto/start — render ONE
     auto-recipe sample per target LoRA.
@@ -4861,6 +4896,17 @@ def _spellcaster_lora_calibrate_auto_start(
     except Exception as e:
         return (502, {"error": f"ComfyUI not reachable: {e}"})
 
+    # Sanitise sweep_strengths: list of floats in (0, 1.5].
+    sw: Optional[list[float]] = None
+    if isinstance(sweep_strengths, list) and sweep_strengths:
+        try:
+            sw = [float(x) for x in sweep_strengths
+                   if 0 < float(x) <= 1.5]
+            if not sw or len(sw) < 2:
+                sw = None
+        except (TypeError, ValueError):
+            sw = None
+
     state = start_calibration_job(
         COMFYUI_URL, final_targets, models,
         lora_path_resolver=_resolve_lora_abs_path,
@@ -4869,6 +4915,9 @@ def _spellcaster_lora_calibrate_auto_start(
         score_with_llm=bool(score_with_llm),
         ollama_url=(ollama_url or None),
         scorer_model=(scorer_model or None),
+        preflight=bool(preflight),
+        stability_seeds=max(1, min(9, int(stability_seeds or 1))),
+        sweep_strengths=sw,
     )
     return (200, {"ok": True, "job_id": state.job_id,
                   "total": state.total, "status": state.status,
@@ -7092,6 +7141,41 @@ def _get_ltx_preset(comfy_url):
     return _LTX_PRESET_CACHE if _LTX_PRESET_CACHE else None
 
 
+_LTX_PATCH_PROBE = {}
+
+
+def _ltx_server_opts(comfy_url):
+    """Probe the server for optional LTX quality / speed patches + return
+    kwargs ready to spread into build_ltx_video.
+
+    Mirrors the GIMP plugin's _ltx_quality_patches_available probe
+    (CLAUDE.md §16.3) so every Guild-side LTX caller — animated-avatar
+    baker, shot dispatcher's i2v retry path, future character animation
+    flows — automatically picks up SAGE + CFG Zero Star when the nodes
+    are installed. No UI, no config, just auto-enable when available.
+
+    Returns a dict suitable for `**_ltx_server_opts(url)` in a
+    build_ltx_video call. Cached per-URL so we don't hammer /object_info.
+    """
+    if comfy_url in _LTX_PATCH_PROBE:
+        return _LTX_PATCH_PROBE[comfy_url]
+    result = {}
+    for key, path in (
+        ("enable_sage",     "/object_info/PatchSageAttentionKJ"),
+        ("enable_cfg_zero", "/object_info/CFGZeroStar"),
+    ):
+        try:
+            url = f"{comfy_url}/object_info/{path.split('/object_info/')[-1]}"
+            req = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                if resp.status == 200:
+                    result[key] = True
+        except Exception:
+            pass
+    _LTX_PATCH_PROBE[comfy_url] = result
+    return result
+
+
 
 def _validate_and_normalize_image(data: bytes, filename: str) -> tuple[bytes, str]:
     """Validate that ``data`` decodes as an image and normalize it to PNG.
@@ -7354,6 +7438,7 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
             i2v_strength=0.85,
             pingpong=True,
             **ltx_mode,
+            **_ltx_server_opts(comfy_url),
         )
         engine = "ltx"
         print(f"  [Guild] Anim via LTX i2v (canonical): {char_id}")
@@ -7763,6 +7848,7 @@ def _retry_anim_as_ltx(entry, char_id, comfy_url, reason):
             i2v_strength=0.85,
             pingpong=True,
             **ltx_mode,
+            **_ltx_server_opts(comfy_url),
         )
         body = json.dumps({"prompt": ltx_wf}).encode("utf-8")
         req = urllib.request.Request(
@@ -9110,6 +9196,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 use_network=(params.get('network', ['1'])[0] != '0')))
         if self.path == '/api/spellcaster/lora/scorer/probe':
             return self.end_json(*_spellcaster_lora_scorer_probe())
+        if self.path == '/api/spellcaster/lora/calibrate/resumable':
+            return self.end_json(*_spellcaster_lora_calibrate_resumable())
         if self.path.startswith('/api/spellcaster/lora/suggest'):
             qs = urllib.parse.urlparse(self.path).query
             params = urllib.parse.parse_qs(qs)
@@ -13322,7 +13410,12 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 use_network=bool(data.get('use_network', True)),
                 score_with_llm=bool(data.get('score_with_llm', False)),
                 ollama_url=data.get('ollama_url') or '',
-                scorer_model=data.get('scorer_model') or ''))
+                scorer_model=data.get('scorer_model') or '',
+                preflight=bool(data.get('preflight', True)),
+                stability_seeds=int(data.get('stability_seeds', 1)),
+                sweep_strengths=data.get('sweep_strengths') or None))
+        if self.path == '/api/spellcaster/lora/calibrate/resumable/clear':
+            return self.end_json(*_spellcaster_lora_calibrate_dismiss_resumable())
         if self.path.startswith('/api/spellcaster/lora/shootout/cancel'):
             qs = urllib.parse.urlparse(self.path).query
             params = urllib.parse.parse_qs(qs)

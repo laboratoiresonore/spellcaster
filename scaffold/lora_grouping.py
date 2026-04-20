@@ -1637,9 +1637,45 @@ def start_calibration_job(
     state.skipped = skipped
     with _CALIB_LOCK:
         _CALIB_JOBS[job_id] = state
+    _persist_job(state)
 
     def _worker():
         try:
+            # Preflight — one base render per unique arch. Archs that
+            # fail get ALL their LoRAs moved to the skipped list with
+            # the arch-level failure reason, so the batch doesn't stream
+            # 20 identical error cards for a broken pipeline.
+            if preflight and renderable:
+                unique_archs = sorted({r["arch"].lower() for r in renderable})
+                still_renderable = list(renderable)
+                for a in unique_archs:
+                    if state.cancel_requested:
+                        break
+                    state.current = f"preflight: {a}"
+                    _persist_job(state)
+                    ok, err = _preflight_arch_probe(server, a, models)
+                    state.preflight[a] = {"ok": ok, "error": err}
+                    if ok:
+                        continue
+                    rejected = [r for r in still_renderable
+                                 if r["arch"].lower() == a]
+                    still_renderable = [r for r in still_renderable
+                                         if r["arch"].lower() != a]
+                    for r in rejected:
+                        state.skipped.append({
+                            "lora_name":     r["name"],
+                            "arch":          r["arch"],
+                            "purpose_group": r["purpose_group"],
+                            "reason":        f"arch pipeline broken: {err}",
+                        })
+                # Adjust total so progress bar reflects only what we'll
+                # actually try to render.
+                removed = len(renderable) - len(still_renderable)
+                if removed:
+                    state.total = max(0, state.total - removed)
+                renderable[:] = still_renderable
+                _persist_job(state)
+
             for t in renderable:
                 if state.cancel_requested:
                     break
@@ -1661,6 +1697,8 @@ def start_calibration_job(
                         score_with_llm=score_with_llm,
                         ollama_url=ollama_url,
                         scorer_model=scorer_model,
+                        stability_seeds=stability_seeds,
+                        sweep_strengths=sweep_strengths,
                     )
                 except Exception as e:
                     out = {
@@ -1670,12 +1708,14 @@ def start_calibration_job(
                     }
                 state.samples.append(out)
                 state.done += 1
+                _persist_job(state)
             state.status = "cancelled" if state.cancel_requested else "complete"
         except Exception as e:
             state.status = "error"
             state.error = f"{e!s}"[:400]
         finally:
             state.finished_at = time.time()
+            _persist_job(state)
 
     t = threading.Thread(target=_worker, daemon=True,
                          name=f"lora-calibrate-{job_id}")
@@ -1744,4 +1784,7 @@ __all__ = [
     "get_calibration_job",
     "cancel_shootout_job",
     "cancel_calibration_job",
+    "set_calibration_persist_dir",
+    "list_resumable_jobs",
+    "clear_resumable_jobs",
 ]
