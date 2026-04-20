@@ -40,6 +40,7 @@ from spellcaster_core.lora_knowledge import (  # noqa: E402,F401
 from spellcaster_core import lora_calibration_store as store  # noqa: E402
 from spellcaster_core import lora_scorer as scorer  # noqa: E402
 from spellcaster_core import faceswap_health as fsh  # noqa: E402
+from spellcaster_core import preflight_status as pfs  # noqa: E402
 
 
 # ── Fakes / helpers ────────────────────────────────────────────────────
@@ -1019,6 +1020,132 @@ def case_fsh_user_forced_off_beats_auto_state():
         assert raised
     finally:
         _reset_fsh_for_test()
+
+
+# ── Preflight aggregator (traffic-light verdict) ──────────────────────
+
+def case_preflight_classify_red_when_comfy_unreachable():
+    colour, msg = pfs._classify_overall(
+        comfy_ok=False, comfy_error="no route to host",
+        fs_state="auto_on", scorer_ok=True,
+        canaries=[], canary_ran_at=None,
+    )
+    assert colour == "red"
+    assert "ComfyUI" in msg
+
+
+def case_preflight_classify_red_when_faceswap_escalated():
+    colour, _ = pfs._classify_overall(
+        comfy_ok=True, comfy_error="",
+        fs_state="escalated", scorer_ok=True,
+        canaries=[], canary_ran_at=None,
+    )
+    assert colour == "red"
+
+
+def case_preflight_classify_red_when_canary_failed():
+    colour, msg = pfs._classify_overall(
+        comfy_ok=True, comfy_error="",
+        fs_state="auto_on", scorer_ok=True,
+        canaries=[{"arch": "sdxl", "ok": True},
+                   {"arch": "auraflow", "ok": False, "error": "CLIP missing"}],
+        canary_ran_at=time.time(),
+    )
+    assert colour == "red"
+    assert "auraflow" in msg
+
+
+def case_preflight_classify_yellow_when_scorer_offline():
+    colour, _ = pfs._classify_overall(
+        comfy_ok=True, comfy_error="",
+        fs_state="auto_on", scorer_ok=False,
+        canaries=[{"arch": "sdxl", "ok": True}],
+        canary_ran_at=time.time(),
+    )
+    assert colour == "yellow"
+
+
+def case_preflight_classify_yellow_when_no_preflight_yet():
+    colour, msg = pfs._classify_overall(
+        comfy_ok=True, comfy_error="",
+        fs_state="auto_on", scorer_ok=True,
+        canaries=[], canary_ran_at=None,
+    )
+    assert colour == "yellow"
+    assert "No preflight" in msg
+
+
+def case_preflight_classify_yellow_when_canary_stale():
+    stale = time.time() - pfs.CANARY_FRESH_SECONDS - 3600
+    colour, msg = pfs._classify_overall(
+        comfy_ok=True, comfy_error="",
+        fs_state="auto_on", scorer_ok=True,
+        canaries=[{"arch": "sdxl", "ok": True}], canary_ran_at=stale,
+    )
+    assert colour == "yellow"
+    assert "old" in msg
+
+
+def case_preflight_classify_green_when_all_good():
+    colour, msg = pfs._classify_overall(
+        comfy_ok=True, comfy_error="",
+        fs_state="auto_on", scorer_ok=True,
+        canaries=[{"arch": "sdxl", "ok": True},
+                   {"arch": "sd15", "ok": True}],
+        canary_ran_at=time.time() - 60,
+    )
+    assert colour == "green"
+    assert "All systems go" in msg
+
+
+def case_preflight_run_full_caches_results_to_disk():
+    """run_full_preflight delegates to an arch_probe callable, caches
+    every result to the JSON in the caller-provided dir, and a
+    subsequent get_status picks them up without re-running."""
+    with tempfile.TemporaryDirectory() as tmp:
+        pfs.set_cache_dir(tmp)
+        calls: list[tuple[str, str]] = []
+        def _fake_probe(server, arch, models, timeout):
+            calls.append((server, arch))
+            return (arch != "broken"), ("kernel size" if arch == "broken" else "")
+        canaries = pfs.run_full_preflight(
+            "http://fake",
+            _fake_probe,
+            [{"arch": "sdxl", "name": "m1"},
+             {"arch": "broken", "name": "m2"},
+             {"arch": "wan", "name": "m3"}],   # wan is video, skipped
+        )
+        archs = sorted(c.arch for c in canaries)
+        assert archs == ["broken", "sdxl"], archs
+        assert [c.ok for c in canaries if c.arch == "broken"] == [False]
+        # Cached to disk
+        cache_path = os.path.join(tmp, pfs.CACHE_FILENAME)
+        with open(cache_path, "r", encoding="utf-8") as f:
+            cache = json.load(f)
+        assert len(cache["canaries"]) == 2
+        assert "ran_at" in cache
+    pfs.set_cache_dir(None)
+
+
+def case_preflight_get_status_reads_cache_for_canaries():
+    """get_status returns canaries from the on-disk cache, not from
+    memory — the install-flow trigger writes to disk in one process
+    and the user's browser reads via the Guild's next poll."""
+    with tempfile.TemporaryDirectory() as tmp:
+        pfs.set_cache_dir(tmp)
+        with open(os.path.join(tmp, pfs.CACHE_FILENAME), "w", encoding="utf-8") as f:
+            json.dump({
+                "canaries": [{"arch": "sdxl", "ok": True, "error": "",
+                               "elapsed_ms": 1000, "ran_at": time.time()}],
+                "ran_at": time.time(),
+            }, f)
+        # comfy probe will fail on a dead URL; we only care that the
+        # cached canaries come through.
+        snap = pfs.get_status("http://127.0.0.1:59996")
+        assert len(snap.canaries) == 1
+        assert snap.canaries[0]["arch"] == "sdxl"
+        assert snap.canary_ran_at is not None
+    pfs.set_cache_dir(None)
 
 
 def case_recipe_graceful_fallback_on_knowledge_error():

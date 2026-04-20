@@ -1830,6 +1830,13 @@ def _server_init(comfy_url=None):
                           name="faceswap-heartbeat").start()
     except Exception:
         pass
+    # Point the preflight cache at our state dir so the status dot
+    # can show per-arch canaries across restarts without re-running.
+    try:
+        from spellcaster_core.preflight_status import set_cache_dir
+        set_cache_dir(_STATE_DIR)
+    except Exception:
+        pass
     threading.Thread(
         target=_build_lora_registry, args=(url,), daemon=True
     ).start()
@@ -2540,6 +2547,30 @@ def _run_avatar_setup_in_background(comfy_url, char_filter=None,
         _setup_state_update(
             phase="complete", completed_at=time.time())
         _setup_marker_done()
+        # End-of-install preflight: ComfyUI URL is confirmed, models
+        # are installed, LoRA registry is built. This is the first
+        # moment where we can actually run per-arch canaries to verify
+        # the whole render pipeline works — so do it now, in the
+        # background, and cache the result. The Calibration status dot
+        # will pick up the results on its next poll.
+        try:
+            from spellcaster_core.preflight_status import (
+                run_full_preflight, set_cache_dir,
+            )
+            from spellcaster_core.preference_calibration import discover_models
+            from scaffold.lora_grouping import _preflight_arch_probe
+            set_cache_dir(_STATE_DIR)
+
+            def _boot_preflight():
+                try:
+                    models = discover_models(COMFYUI_URL)
+                    run_full_preflight(COMFYUI_URL, _preflight_arch_probe, models)
+                except Exception:
+                    pass
+            threading.Thread(target=_boot_preflight, daemon=True,
+                              name="preflight-post-install").start()
+        except Exception:
+            pass
 
 
 _PLACEHOLDER_ICON_CACHE = {"bytes": None, "ts": 0.0}
@@ -4868,6 +4899,63 @@ def _spellcaster_faceswap_health() -> tuple[int, dict]:
         "history":             effective.get("history"),
     })
     return (200, out)
+
+
+def _spellcaster_preflight_status() -> tuple[int, dict]:
+    """GET /api/spellcaster/preflight/status — aggregated traffic
+    light for the Calibration status dot.
+
+    Combines ComfyUI reachability, the faceswap auto-recovering
+    state machine, the LLM scorer probe, and the most recent per-
+    arch render canaries from disk cache. Returns one of
+    green / yellow / red / unknown along with a short headline
+    suitable for the dot's tooltip.
+    """
+    try:
+        from spellcaster_core.preflight_status import get_status, get_run_job_state
+    except Exception as e:
+        return (500, {"error": f"preflight module unavailable: {e}"})
+    snap = get_status(COMFYUI_URL)
+    out = snap.to_dict()
+    try:
+        out["run_job"] = get_run_job_state()
+    except Exception:
+        pass
+    return (200, out)
+
+
+def _spellcaster_preflight_run() -> tuple[int, dict]:
+    """POST /api/spellcaster/preflight/run — kick off a fresh set
+    of per-arch render canaries in the background. Returns
+    immediately; the UI polls /api/spellcaster/preflight/status to
+    watch progress and pick up the cached result.
+    """
+    try:
+        from spellcaster_core.preflight_status import (
+            run_full_preflight, get_run_job_state, set_cache_dir,
+        )
+        from spellcaster_core.preference_calibration import discover_models
+        from scaffold.lora_grouping import _preflight_arch_probe
+    except Exception as e:
+        return (500, {"error": f"preflight module unavailable: {e}"})
+    set_cache_dir(_STATE_DIR)
+    if get_run_job_state().get("running"):
+        return (200, {"ok": True, "already_running": True,
+                       "progress": get_run_job_state().get("progress", "")})
+    try:
+        models = discover_models(COMFYUI_URL)
+    except Exception as e:
+        return (502, {"error": f"ComfyUI not reachable: {e}"})
+
+    def _worker():
+        try:
+            run_full_preflight(COMFYUI_URL, _preflight_arch_probe, models)
+        except Exception:
+            pass
+
+    threading.Thread(target=_worker, daemon=True,
+                      name="preflight-canary").start()
+    return (200, {"ok": True, "started": True})
 
 
 def _spellcaster_faceswap_reset() -> tuple[int, dict]:
@@ -7598,6 +7686,15 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
     except ImportError:
         ltx_mode = {"distilled": True, "two_stage": False}
 
+    # Global quality mode affects how this avatar is baked. Default
+    # (turbo) keeps the existing distilled i2v fast path; standard
+    # runs full 30-step for higher fidelity; quality adds two-stage
+    # upscale. Overrides the default ltx_mode tuple accordingly.
+    if _GUILD_VIDEO_MODE == "standard":
+        ltx_mode = {"distilled": False, "two_stage": False}
+    elif _GUILD_VIDEO_MODE == "quality":
+        ltx_mode = {"distilled": False, "two_stage": True}
+
     try:
         workflow = build_ltx(
             preset=ltx_preset,
@@ -7614,7 +7711,7 @@ def _queue_animated_avatar(char_id, image_url, prompt_text, comfy_url):
             **_ltx_server_opts(comfy_url),
         )
         engine = "ltx"
-        print(f"  [Guild] Anim via LTX i2v (canonical): {char_id}")
+        print(f"  [Guild] Anim via LTX i2v ({_GUILD_VIDEO_MODE}): {char_id}")
     except Exception as e:
         return {"queued": False,
                 "reason": f"LTX workflow build failed: {e}"}
@@ -8008,6 +8105,12 @@ def _retry_anim_as_ltx(entry, char_id, comfy_url, reason):
         ltx_mode = _vp.ltx_mode_kwargs("i2v")
     except ImportError:
         ltx_mode = {"distilled": True, "two_stage": False}
+
+    # Respect the Guild's global video quality mode on retry too.
+    if _GUILD_VIDEO_MODE == "standard":
+        ltx_mode = {"distilled": False, "two_stage": False}
+    elif _GUILD_VIDEO_MODE == "quality":
+        ltx_mode = {"distilled": False, "two_stage": True}
 
     try:
         ltx_wf = build_ltx(
@@ -9374,6 +9477,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
         if self.path == '/api/spellcaster/faceswap/reset':
             # GET for convenience (curl-friendly); also handled on POST.
             return self.end_json(*_spellcaster_faceswap_reset())
+        if self.path == '/api/spellcaster/preflight/status':
+            return self.end_json(*_spellcaster_preflight_status())
         if self.path == '/api/spellcaster/lora/calibrate/resumable':
             return self.end_json(*_spellcaster_lora_calibrate_resumable())
         if self.path.startswith('/api/spellcaster/lora/suggest'):
@@ -10692,6 +10797,15 @@ class GuildHandler(SimpleHTTPRequestHandler):
                            'overrides'):
                 if field in data:
                     kw[field] = data[field]
+            # Apply the global video quality mode. Caller's explicit
+            # `quality_mode` in the body wins (useful for batched
+            # scripts that want to pin a mode); otherwise fall back to
+            # the Guild-wide `_GUILD_VIDEO_MODE` toggle. The helper only
+            # fills defaults — per-shot explicit turbo/distilled/
+            # two_stage in overrides still win.
+            _mode = data.get("quality_mode") or _GUILD_VIDEO_MODE
+            kw["preset"], kw["overrides"] = _apply_quality_mode(
+                kw["preset"], kw.get("overrides"), _mode)
             shot = _VIDEO_BRIDGE.add_shot(**kw)
             return self._shot_json(200, shot)
 
@@ -13612,6 +13726,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(*_spellcaster_lora_calibrate_dismiss_resumable())
         if self.path == '/api/spellcaster/faceswap/reset':
             return self.end_json(*_spellcaster_faceswap_reset())
+        if self.path == '/api/spellcaster/preflight/run':
+            return self.end_json(*_spellcaster_preflight_run())
         if self.path.startswith('/api/spellcaster/lora/shootout/cancel'):
             qs = urllib.parse.urlparse(self.path).query
             params = urllib.parse.parse_qs(qs)

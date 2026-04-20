@@ -582,6 +582,35 @@ Every runtime call path for video goes through exactly one of the entries below.
 
 If you see a new caller that doesn't fit one of these, it's a canon violation in the making — route it through one of the above.
 
+#### 16.7 Global quality mode — the ⚡/⚖️/💎 toggle
+
+The Wizard Guild's global preset button cycles through **three** session-scoped quality modes that every WAN + LTX workflow respects:
+
+| Mode | Icon | WAN effect | LTX effect |
+|---|---|---|---|
+| `turbo` | ⚡ | `turbo=True` (6 steps + lightning LoRAs, cfg 1.0) | `distilled=True` (8-step fast path) |
+| `standard` | ⚖️ | `turbo=False` (30/3.5/15 full-step, no accel LoRAs) | `distilled=False, two_stage=False` (30-step full) |
+| `quality` | 💎 | `turbo=False` + preset auto-swaps `wan22_i2v_lightning` → `wan22_i2v_hq` | preset auto-swaps to `ltx2_text_to_video_2stage` (half-res → 2× latent upscale → re-denoise) |
+
+**State lives in `tavern/server.py::_GUILD_VIDEO_MODE`** — a module-level string, intentionally NOT persisted. Resets to `"turbo"` on every Guild restart. Users who want their choice to survive restart should rely on the button's localStorage caching (client-side) — the server state is the per-session runtime override.
+
+**Endpoints:**
+- `GET /api/video/quality-mode` → `{"mode": "turbo"|"standard"|"quality"}`
+- `POST /api/video/quality-mode` body `{"mode": "..."}` → updates + echoes back
+
+**Client sync** ([tavern/static/app.js::_wireGlobalPresetBtn](tavern/static/app.js)): the button's click handler POSTs the new mode to the server; on page load it also POSTs the localStorage-cached mode so a freshly-restarted Guild (which boots at "turbo") picks up the user's prior choice.
+
+**Remapping helper** ([tavern/server.py::_apply_quality_mode](tavern/server.py)): called in `POST /api/video/shots` to rewrite `(preset_key, overrides)` before they reach `_VIDEO_BRIDGE.add_shot`. Caller's explicit `overrides` still win — the mode only fills defaults via `setdefault()`, and preset rewrites only happen when the current preset has no explicit quality-aware variant (e.g., lightning → hq for WAN quality).
+
+**Consumers:**
+- `POST /api/video/shots` — applies mode to incoming shot (caller's body `quality_mode` field wins over `_GUILD_VIDEO_MODE` if present)
+- `_queue_animated_avatar` — reads `_GUILD_VIDEO_MODE` directly, overrides `ltx_mode_kwargs("i2v")` default
+- `_retry_anim_as_ltx` — same pattern
+
+**Intentional non-coverage:**
+- The GIMP plugin's `_build_ltx_video` wrapper and `_run_ltx_t2v` use the dialog's explicit mode checkboxes (distilled / two_stage), NOT the Guild mode. GIMP users pick per-run; Guild users pick globally.
+- The scaffold dispatcher's LTX branch respects caller overrides over hint defaults (§16.4 rule #6), so the remapped preset + overrides flow through without further interference.
+
 ## File Structure Quick Reference
 
 ```
