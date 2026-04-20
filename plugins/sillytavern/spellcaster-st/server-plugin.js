@@ -126,7 +126,18 @@ function autoDetectBgDir() {
 
 /**
  * Fetch JSON from a URL (Node.js native, no dependencies).
+ *
+ * Bounded by default:
+ *   - timeoutMs: 30 s on the whole request. A stalled ComfyUI or Guild
+ *     used to hang this call forever; the poll loops in dispatchWorkflow
+ *     and _animateViaGuild then accumulated one zombie socket per
+ *     pending generation.
+ *   - maxBytes: 50 MB hard ceiling. ComfyUI's /object_info can run 1–5 MB;
+ *     a runaway or malicious server could otherwise stream unbounded data
+ *     into the ST process.
  */
+const FETCH_JSON_MAX_BYTES = 50 * 1024 * 1024;
+const FETCH_JSON_TIMEOUT_MS = 30000;
 function fetchJSON(url, options = {}) {
     return new Promise((resolve, reject) => {
         const mod = url.startsWith('https') ? https : http;
@@ -138,15 +149,33 @@ function fetchJSON(url, options = {}) {
             method: options.method || 'GET',
             headers: options.headers || {},
         };
+        const maxBytes = options.maxBytes || FETCH_JSON_MAX_BYTES;
+        const timeoutMs = options.timeoutMs || FETCH_JSON_TIMEOUT_MS;
         const req = mod.request(reqOpts, (res) => {
-            let data = '';
-            res.on('data', chunk => data += chunk);
+            const chunks = [];
+            let total = 0;
+            let aborted = false;
+            res.on('data', chunk => {
+                total += chunk.length;
+                if (total > maxBytes) {
+                    if (!aborted) {
+                        aborted = true;
+                        req.destroy(new Error(`response exceeded ${maxBytes} bytes`));
+                    }
+                    return;
+                }
+                chunks.push(chunk);
+            });
             res.on('end', () => {
+                if (aborted) return;
+                const data = Buffer.concat(chunks).toString('utf8');
                 try { resolve({ status: res.statusCode, data: JSON.parse(data) }); }
                 catch { resolve({ status: res.statusCode, data: data }); }
             });
+            res.on('error', reject);
         });
         req.on('error', reject);
+        req.setTimeout(timeoutMs, () => req.destroy(new Error(`fetchJSON timeout after ${timeoutMs}ms`)));
         if (options.body) req.write(options.body);
         req.end();
     });
