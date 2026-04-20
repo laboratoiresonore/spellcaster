@@ -1,0 +1,14 @@
+[      39ms] [ERROR] Failed to generate details: TypeError: Failed to fetch
+    at llmGenerate (http://127.0.0.1:7777/app.js?v=20260420a:126:27)
+    at generateNamesForCharacters (http://127.0.0.1:7777/app.js?v=20260420a:2965:37)
+    at async checkLlmAndGenerateNames (http://127.0.0.1:7777/app.js?v=20260420a:2824:17)
+    at async initialize (http://127.0.0.1:7777/app.js?v=20260420a:2038:5)
+    at async boot (http://127.0.0.1:7777/app.js?v=20260420a:6703:5) @ http://127.0.0.1:7777/app.js?v=20260420a:2969
+[     195ms] [WARNING] GSAP target #splash-ring-outer not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[     196ms] [WARNING] GSAP target #splash-ring-inner not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[     196ms] [WARNING] GSAP target #splash-star not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[     196ms] [WARNING] GSAP target #splash-star not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[     196ms] [WARNING] GSAP target #splash-eye not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[     196ms] [WARNING] GSAP target #splash-pupil not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[     469ms] [LOG] [Guild] Synced 43 pre-generated assets from server @ http://127.0.0.1:7777/app.js?v=20260420a:305
+[     488ms] [LOG] [Guild] Synced 105 identity field(s) from server @ http://127.0.0.1:7777/app.js?v=20260420a:333

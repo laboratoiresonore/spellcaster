@@ -1,0 +1,233 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - heading "The Wizard Guild" [level=1] [ref=e5]
+    - paragraph [ref=e6]: The Guild awaits...
+  - generic [ref=e9]:
+    - complementary [ref=e10]:
+      - generic [ref=e11]:
+        - heading "The Wizard Guild" [level=2] [ref=e12]
+        - radiogroup "Primary LLM backend" [ref=e13]:
+          - button "🎨 ComfyUI" [ref=e14] [cursor=pointer]
+          - button "🦙 Ollama" [ref=e15] [cursor=pointer]
+          - button "📜 Kobold" [ref=e16] [cursor=pointer]
+        - generic [ref=e18]:
+          - generic [ref=e19]: VRAM 14.6/15.9
+          - generic [ref=e22]: RAM 38.1/63.8
+          - generic [ref=e25]: Cache 10.3/11.6
+        - generic [ref=e28]:
+          - generic [ref=e29]: Connected apps
+          - generic [ref=e30]:
+            - 'generic "ComfyUI: declared remote (<INTERNAL_HOST>) — no heartbeat yet · not yet verified · (click to change where this app runs)" [ref=e31] [cursor=pointer]':
+              - text: ●
+              - button "⚡" [ref=e33]
+              - generic [ref=e34]: 📡🎨
+              - generic [ref=e35]: ComfyUI
+              - generic [ref=e36]: <INTERNAL_HOST>
+            - 'generic "GIMP: declared local — no heartbeat yet · send_image, receive_image, pixel_edit · not yet verified · (click to change where this app runs)" [ref=e37] [cursor=pointer]':
+              - text: ●
+              - button "⚡" [disabled] [ref=e39]
+              - generic [ref=e40]: 🖼️
+              - generic [ref=e41]: GIMP
+              - generic [ref=e42]: this machine
+            - 'generic "Ollama: declared remote (<INTERNAL_HOST>) — no heartbeat yet · not yet verified · (click to change where this app runs)" [ref=e43] [cursor=pointer]':
+              - text: ●
+              - button "⚡" [ref=e45]
+              - generic [ref=e46]: 📡🦙
+              - generic [ref=e47]: Ollama
+              - generic [ref=e48]: <INTERNAL_HOST>
+            - 'generic "Kobold · RP: idle · no declared placement · (click to change where this app runs)" [ref=e49] [cursor=pointer]':
+              - text: ●
+              - button "⚡" [ref=e51]
+              - generic [ref=e52]: 📜
+              - generic [ref=e53]: Kobold · RP
+              - generic [ref=e54]: this machine
+            - 'generic "Kobold · TTS: idle · no declared placement · (click to change where this app runs)" [ref=e55] [cursor=pointer]':
+              - text: ●
+              - button "⚡" [ref=e57]
+              - generic [ref=e58]: 🎙️
+              - generic [ref=e59]: Kobold · TTS
+              - generic [ref=e60]: this machine
+        - generic [ref=e61]:
+          - generic [ref=e62]:
+            - text: Antennas
+            - button "+ Pair new" [ref=e63] [cursor=pointer]
+          - generic [ref=e65]: no antennas paired yet
+        - generic [ref=e66]:
+          - generic [ref=e67]: Recent across apps
+          - generic [ref=e68]:
+            - 'generic "Wizard Guild · direct cast: comfyui_SDXL_Cartoon-3D_novaCartoonXL_v60_safetensors" [ref=e69] [cursor=pointer]':
+              - generic: 💬
+            - generic "Wizard Guild · An enchanted forest hot spring clearing, bioluminescent flowers and aphrodisiac pollen drifting in the air. Steaming turquoise pools with glowing runes shimmer under moonbeams on glistening wet stone. Scattered silk robes lie on mossy rocks as fireflies dance above. Privacy wards pulse softly between ancient trees, casting ethereal glows. Wide angle shot captures a detailed environment concept art scene, rich with fantasy illustration atmosphere and high quality lighting., photorealistic, highly detailed, sharp focus, professional photograph, 8K UHD, natural lighting, depth of field" [ref=e70] [cursor=pointer]:
+              - generic: 💬
+            - generic "Wizard Guild · An enchanted forge transformed into a lush pleasure den, glowing with warm ember light and shimmering hammered copper art installations. A steaming bath filled with enchanted water lies scattered with sparkling metalwork jewellery. Fur-draped anvils stand in the corner, adding to the intimate warmth of this detailed fantasy environment concept art. Wide-angle shot captures atmospheric lighting that enhances every detail., photorealistic, highly detailed, sharp focus, professional photograph, 8K UHD, natural lighting, depth of field" [ref=e71] [cursor=pointer]:
+              - generic: 💬
+        - textbox "Search Wizard" [ref=e73]
+      - generic [ref=e74]:
+        - generic [ref=e76]: Core Spellcasters
+        - generic [ref=e80] [cursor=pointer]:
+          - heading "Spellcaster" [level=3] [ref=e81]
+          - paragraph [ref=e82]: Install Manager · Calibration · Custom Builds
+        - generic [ref=e86] [cursor=pointer]:
+          - heading "Imaginus" [level=3] [ref=e87]
+          - paragraph [ref=e88]: Image Creation (txt2img, ControlNet)
+        - generic [ref=e92] [cursor=pointer]:
+          - heading "Transmutex" [level=3] [ref=e93]
+          - paragraph [ref=e94]: Image Transformation (img2img, Style Transfer)
+        - generic [ref=e98] [cursor=pointer]:
+          - heading "Masquerade" [level=3] [ref=e99]
+          - paragraph [ref=e100]: Face & Identity (Face Swap, FaceID, PuLID)
+        - generic [ref=e104] [cursor=pointer]:
+          - heading "Restorix" [level=3] [ref=e105]
+          - paragraph [ref=e106]: Upscaling & Restoration Pipelines
+        - generic [ref=e110] [cursor=pointer]:
+          - heading "Erasure" [level=3] [ref=e111]
+          - paragraph [ref=e112]: Inpainting, Removal & Surgical Edits
+        - generic [ref=e116] [cursor=pointer]:
+          - heading "Videomancer" [level=3] [ref=e117]
+          - paragraph [ref=e118]: Video Generation & Enhancement
+        - generic [ref=e122] [cursor=pointer]:
+          - heading "Cinematic" [level=3] [ref=e123]
+          - paragraph [ref=e124]: Director's Chair — Multi-Step Video Sequences
+        - generic [ref=e128] [cursor=pointer]:
+          - heading "Studiocraft" [level=3] [ref=e129]
+          - paragraph [ref=e130]: Magic Studios — Full Character Pipeline
+        - generic [ref=e133] [cursor=pointer]:
+          - heading "Whimsy Weaver" [level=3] [ref=e134]
+          - paragraph [ref=e135]: LTX2 Video Generation & Enhancement (Video)
+        - generic [ref=e138] [cursor=pointer]:
+          - heading "The Enigma Mage" [level=3] [ref=e139]
+          - paragraph [ref=e140]: WAN Video Generation (Video)
+        - generic [ref=e142]: Per-Model Wizards
+        - generic [ref=e143]:
+          - generic [ref=e144]: ✦
+          - generic [ref=e145]: Flux 2 Klein
+          - generic [ref=e146]: "4"
+        - generic [ref=e149] [cursor=pointer]:
+          - heading "Fluxx the Whisperer" [level=3] [ref=e150]
+          - paragraph [ref=e151]: flux-2-klein-9b — Flux 2 Klein — Explicit Image Generation
+        - generic [ref=e154] [cursor=pointer]:
+          - heading "Flux Whisperer" [level=3] [ref=e155]
+          - paragraph [ref=e156]: flux-2-klein-4b-fp8 — Flux 2 Klein — Explicit Image Generation
+        - generic [ref=e159] [cursor=pointer]:
+          - heading "Flux Whisperer" [level=3] [ref=e160]
+          - paragraph [ref=e161]: flux-2-klein-base-4b-fp8 — Flux 2 Klein — Explicit Image Generation
+        - generic [ref=e164] [cursor=pointer]:
+          - heading "Chroma Kali" [level=3] [ref=e165]
+          - paragraph [ref=e166]: chroma2_kaleidoscope — Flux 2 Klein — Explicit Image Generation
+        - generic [ref=e167]:
+          - generic [ref=e168]: ◈
+          - generic [ref=e169]: Flux 1 Dev
+          - generic [ref=e170]: "2"
+        - generic [ref=e173] [cursor=pointer]:
+          - heading "Sparkle Flux" [level=3] [ref=e174]
+          - paragraph [ref=e175]: FLUX1 Dev fp8 — Flux — Photorealistic NSFW Generation
+        - generic [ref=e178] [cursor=pointer]:
+          - heading "Flux Hydra" [level=3] [ref=e179]
+          - paragraph [ref=e180]: HyFU-8-step-v1.0-pruned — Flux — Photorealistic NSFW Generation
+        - generic [ref=e181]:
+          - generic [ref=e182]: ❋
+          - generic [ref=e183]: Chroma
+          - generic [ref=e184]: "1"
+        - generic [ref=e187] [cursor=pointer]:
+          - heading "ChromaWhisperer" [level=3] [ref=e188]
+          - paragraph [ref=e189]: Chroma1-HD-fp8_scaled_defaultloader_hybrid_large_rev2 — Chroma Image Generation
+        - generic [ref=e190]:
+          - generic [ref=e191]: ✹
+          - generic [ref=e192]: Stable Diffusion XL
+          - generic [ref=e193]: "12"
+        - generic [ref=e196] [cursor=pointer]:
+          - heading "NoobAI-SuperDuper" [level=3] [ref=e197]
+          - paragraph [ref=e198]: NoobAI-XL-v1.1 — SDXL — Detailed Explicit Generation
+        - generic [ref=e201] [cursor=pointer]:
+          - heading "Nova Spark" [level=3] [ref=e202]
+          - paragraph [ref=e203]: novaAnimeXL_ilV170 — SDXL — Detailed Explicit Generation
+        - generic [ref=e206] [cursor=pointer]:
+          - heading "WaiIllustrious Wizard" [level=3] [ref=e207]
+          - paragraph [ref=e208]: waiIllustriousSDXL_v160-a5f5 — SDXL — Detailed Explicit Generation
+        - generic [ref=e211] [cursor=pointer]:
+          - heading "Albedo the Luminous" [level=3] [ref=e212]
+          - paragraph [ref=e213]: AlbedoBaseXL — SDXL — Detailed Explicit Generation
+        - generic [ref=e216] [cursor=pointer]:
+          - heading "SparkleStable" [level=3] [ref=e217]
+          - paragraph [ref=e218]: sd_xl_base_1.0 — SDXL — Detailed Explicit Generation
+        - generic [ref=e221] [cursor=pointer]:
+          - heading "Pixel Whiz" [level=3] [ref=e222]
+          - paragraph [ref=e223]: modernDisneyXL_v3 — SDXL — Detailed Explicit Generation
+        - generic [ref=e226] [cursor=pointer]:
+          - heading "NovaCartoonXL" [level=3] [ref=e227]
+          - paragraph [ref=e228]: novaCartoonXL_v60 — SDXL — Detailed Explicit Generation
+        - generic [ref=e231] [cursor=pointer]:
+          - heading "CybeReal Pony" [level=3] [ref=e232]
+          - paragraph [ref=e233]: cyberrealisticPony_v160 — SDXL — Detailed Explicit Generation
+        - generic [ref=e236] [cursor=pointer]:
+          - heading "JibMix Realistic XL" [level=3] [ref=e237]
+          - paragraph [ref=e238]: jibMixRealisticXL_v180SkinSupreme — SDXL — Detailed Explicit Generation
+        - generic [ref=e241] [cursor=pointer]:
+          - heading "Juggernaut XL" [level=3] [ref=e242]
+          - paragraph [ref=e243]: juggernautXL_ragnarok — SDXL — Detailed Explicit Generation
+        - generic [ref=e246] [cursor=pointer]:
+          - heading "JuggernautXL" [level=3] [ref=e247]
+          - paragraph [ref=e248]: juggernautXL_v9Rundiffusionphoto2 — SDXL — Detailed Explicit Generation
+        - generic [ref=e251] [cursor=pointer]:
+          - heading "Chroma Weaver" [level=3] [ref=e252]
+          - paragraph [ref=e253]: zavychromaxl_v100 — SDXL — Detailed Explicit Generation
+        - generic [ref=e254]:
+          - generic [ref=e255]: ❀
+          - generic [ref=e256]: Illustrious
+          - generic [ref=e257]: "1"
+        - generic [ref=e260] [cursor=pointer]:
+          - heading "Sloppy Mix Wizard" [level=3] [ref=e261]
+          - paragraph [ref=e262]: sloppyMessyMix_sloppyMessyMixV1 — Illustrious — Anime NSFW Generation
+        - generic [ref=e263]:
+          - generic [ref=e264]: ✧
+          - generic [ref=e265]: Stable Diffusion 1.5
+          - generic [ref=e266]: "3"
+        - generic [ref=e269] [cursor=pointer]:
+          - heading "Juggernaut Reborn" [level=3] [ref=e270]
+          - paragraph [ref=e271]: juggernaut_reborn — SD 1.5 — Classic Explicit Generation
+        - generic [ref=e274] [cursor=pointer]:
+          - heading "Pixel Weave Mage" [level=3] [ref=e275]
+          - paragraph [ref=e276]: v1-5-pruned-emaonly — SD 1.5 — Classic Explicit Generation
+        - generic [ref=e279] [cursor=pointer]:
+          - heading "Zippy the Pixel Wizard" [level=3] [ref=e280]
+          - paragraph [ref=e281]: gonzalomoZpop_v30AIO — SD 1.5 — Classic Explicit Generation
+      - generic [ref=e282]:
+        - button "✨ Animate All Avatars" [ref=e283] [cursor=pointer]
+        - generic "Include the Guild's shipped wizards (Imaginus, Videomancer, Restorix, Spellcaster…). Off by default — their core portraits don't usually need re-animating." [ref=e284] [cursor=pointer]:
+          - checkbox "Include built-in wizards" [ref=e285]
+          - generic [ref=e286]: Include built-in wizards
+        - link "🧙 Travelling Wizard" [ref=e287] [cursor=pointer]:
+          - /url: /static/guild.html
+        - button "⚙️ Settings" [ref=e288] [cursor=pointer]
+        - button "⏻ Exit" [ref=e289] [cursor=pointer]
+    - main [ref=e290]:
+      - generic [ref=e291]:
+        - generic [ref=e294]:
+          - heading "Loading..." [level=2] [ref=e295]
+          - paragraph [ref=e296]: Connecting to guild...
+        - generic [ref=e297]:
+          - button "Rename Wizard" [ref=e298] [cursor=pointer]
+          - button "Generate Background" [ref=e299] [cursor=pointer]
+          - button "Avatar Icon Generate Avatar" [ref=e300] [cursor=pointer]:
+            - img "Avatar Icon" [ref=e301]
+            - text: Generate Avatar
+          - button "Enchantments" [ref=e302] [cursor=pointer]
+          - button "Reset Icon Reset Memory" [ref=e303] [cursor=pointer]:
+            - img "Reset Icon" [ref=e304]
+            - text: Reset Memory
+          - button "Batch Icon Generate All" [ref=e305] [cursor=pointer]:
+            - img "Batch Icon" [ref=e306]
+            - text: Generate All
+      - generic [ref=e308]:
+        - button "⚡ Turbo" [ref=e309] [cursor=pointer]
+        - button "⚔ Shootouts 34" [ref=e310] [cursor=pointer]:
+          - text: ⚔ Shootouts
+          - generic [ref=e311]: "34"
+      - generic [ref=e313]:
+        - button "📎" [ref=e314] [cursor=pointer]
+        - textbox "Just talk to it..." [ref=e315]
+        - button "🎙️" [ref=e316] [cursor=pointer]
+        - button "Summon Wizard" [ref=e317] [cursor=pointer]:
+          - img "Summon Wizard" [ref=e318]
+        - button "🎬" [ref=e319] [cursor=pointer]
+        - button "✨" [ref=e320] [cursor=pointer]

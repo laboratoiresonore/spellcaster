@@ -1,0 +1,8 @@
+[     446ms] [WARNING] GSAP target #splash-ring-outer not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[     447ms] [WARNING] GSAP target #splash-ring-inner not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[     448ms] [WARNING] GSAP target #splash-star not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[     448ms] [WARNING] GSAP target #splash-star not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[     448ms] [WARNING] GSAP target #splash-eye not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[     448ms] [WARNING] GSAP target #splash-pupil not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[     691ms] [LOG] [Guild] Synced 43 pre-generated assets from server @ http://127.0.0.1:7777/app.js?v=20260420a:305
+[     701ms] [LOG] [Guild] Synced 105 identity field(s) from server @ http://127.0.0.1:7777/app.js?v=20260420a:333

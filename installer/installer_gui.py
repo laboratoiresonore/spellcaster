@@ -103,7 +103,7 @@ class _ToolTip:
         self._tip = tk.Toplevel(self.widget)
         self._tip.wm_overrideredirect(True)
         self._tip.wm_geometry(f"+{x}+{y}")
-        label = tk.Label(self._tip, text=self.text, background="#1a1a2e", foreground="#ebe2df",
+        label = tk.Label(self._tip, text=self.text, background="#1a1a2e", foreground="#e8e6f5",
                          relief="solid", borderwidth=1, font=("Inter", 14),
                          wraplength=500, justify="left", padx=12, pady=8)
         label.pack()
@@ -191,8 +191,8 @@ class MagicalEffects:
             y = h + 5
             size = random.uniform(1.5, 3.5)
             speed = random.uniform(0.3, 1.0)
-            hue_shift = random.choice(["#9B59B6", "#8E44AD", "#D4A5FF",
-                                        "#C39BD3", "#BB8FCE", "#FFD700",
+            hue_shift = random.choice(["#B246F2", "#6a1b9a", "#d9c2ff",
+                                        "#c4b8e3", "#c4b8e3", "#FFD700",
                                         "#F39C12", "#E8DAEF"])
             alpha_tag = f"mote_{id(hue_shift)}_{random.randint(0,9999)}"
             oid = canvas.create_oval(x - size, y - size, x + size, y + size,
@@ -262,12 +262,12 @@ class MagicalEffects:
         # Outer ring
         r_outer = 110 * s
         c.create_oval(cx - r_outer, cy - r_outer, cx + r_outer, cy + r_outer,
-                      outline="#9B59B6", width=2)
+                      outline="#B246F2", width=2)
 
         # Inner ring (counter-rotating)
         r_inner = 75 * s
         c.create_oval(cx - r_inner, cy - r_inner, cx + r_inner, cy + r_inner,
-                      outline="#D4A5FF", width=1)
+                      outline="#d9c2ff", width=1)
 
         # Rotating pentagram
         points = []
@@ -281,7 +281,7 @@ class MagicalEffects:
         star_coords = []
         for idx in star_order:
             star_coords.extend(points[idx])
-        c.create_polygon(star_coords, outline="#8E44AD", fill="", width=1.5)
+        c.create_polygon(star_coords, outline="#6a1b9a", fill="", width=1.5)
 
         # Counter-rotating rune ring
         runes = "\u16A0\u16A2\u16A6\u16A8\u16B1\u16B7\u16C1\u16C7\u16D2\u16DA\u16DE\u16DF"
@@ -289,19 +289,19 @@ class MagicalEffects:
             ra = a2 + (i * 2 * math.pi / len(runes))
             rx = cx + 95 * s * math.cos(ra)
             ry = cy + 95 * s * math.sin(ra)
-            c.create_text(rx, ry, text=glyph, fill="#6C3483",
+            c.create_text(rx, ry, text=glyph, fill="#8a7eaf",
                           font=("Serif", int(11 * s)))
 
         # Center eye
         eye_r = 18 * s
         c.create_oval(cx - eye_r, cy - eye_r * 0.6, cx + eye_r, cy + eye_r * 0.6,
-                      outline="#D4A5FF", fill="#1A0A2E", width=1.5)
+                      outline="#d9c2ff", fill="#1A0A2E", width=1.5)
         # Pupil
         pupil_r = 6 * s
         px = cx + 3 * math.sin(a * 0.5) * s
         py = cy + 2 * math.cos(a * 0.7) * s
         c.create_oval(px - pupil_r, py - pupil_r, px + pupil_r, py + pupil_r,
-                      fill="#E32234", outline="")
+                      fill="#ffd700", outline="")
 
         # Orbiting sparks
         for i in range(4):
@@ -393,9 +393,9 @@ class MagicalEffects:
 
         # Color shift as progress increases
         if fraction < 0.33:
-            self.progress_bar.configure(progress_color="#E32234")  # magenta
+            self.progress_bar.configure(progress_color="#ffd700")  # gold (Guild accent)
         elif fraction < 0.66:
-            self.progress_bar.configure(progress_color="#8E44AD")  # purple
+            self.progress_bar.configure(progress_color="#6a1b9a")  # purple
         elif fraction < 1.0:
             self.progress_bar.configure(progress_color="#F39C12")  # amber
         else:
@@ -462,15 +462,15 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         self.minsize(860, 540)
 
         # Premium Magical Theme Colors
-        self.bg_color = "#150B07"
-        self.sidebar_color = "#261510"
-        self.accent_color = "#E32234"
-        self.accent_hover = "#F74D5E"
+        self.bg_color = "#12101d"
+        self.sidebar_color = "#1a1730"
+        self.accent_color = "#ffd700"
+        self.accent_hover = "#ffea00"
         self.accent_green = "#00E676"
         self.accent_amber = "#FFB300"
         self.accent_red = "#FF5252"
         self.text_main = "#FFFFFF"
-        self.text_muted = "#9D8E88"
+        self.text_muted = "#c4b8e3"
 
         ctk.set_appearance_mode("dark")
         self.configure(fg_color=self.bg_color)
@@ -566,7 +566,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         # Helper for themed buttons
         def mk_btn(text, cmd, row):
             b = ctk.CTkButton(self.sidebar_frame, text=text, anchor="w", command=cmd,
-                              fg_color="transparent", hover_color="#3B2115",
+                              fg_color="transparent", hover_color="#1a1730",
                               text_color=self.text_main,
                               font=ctk.CTkFont(family="Inter", size=13, weight="bold"),
                               height=28)
@@ -778,7 +778,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         self._usecase_vars = {}
         for label, desc, features, *_img in _use_cases:
             _showcase_img = _img[0] if _img else None
-            card = ctk.CTkFrame(f_use, fg_color="#110A1F", corner_radius=10,
+            card = ctk.CTkFrame(f_use, fg_color="#161228", corner_radius=10,
                                 border_width=1, border_color="#633A32")
             card.pack(fill="x", padx=30, pady=5)
             var = ctk.BooleanVar(value=False)
@@ -834,7 +834,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                      font=ctk.CTkFont(family="Inter", size=15), text_color=self.text_muted).pack(anchor="w", padx=30, pady=(0, 25))
 
         def _make_quick_card(parent, title, desc, color, cmd):
-            card = ctk.CTkFrame(parent, fg_color="#110A1F", corner_radius=12,
+            card = ctk.CTkFrame(parent, fg_color="#161228", corner_radius=12,
                                 border_width=2, border_color=color)
             card.pack(fill="x", padx=30, pady=8)
             ctk.CTkButton(card, text=title, height=50,
@@ -923,7 +923,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                          text_color=self.text_muted, justify="left").pack(anchor="w", padx=20, pady=(0, 12))
 
         # General model advice
-        tips_frame = ctk.CTkFrame(f_advisor, fg_color="#110A1F", corner_radius=10,
+        tips_frame = ctk.CTkFrame(f_advisor, fg_color="#161228", corner_radius=10,
                                    border_width=1, border_color="#633A32")
         tips_frame.pack(fill="x", padx=30, pady=8)
         ctk.CTkLabel(tips_frame, text="Model Tips",
@@ -969,7 +969,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                        command=lambda: self.select_frame("paths")).pack(side="left")
         ctk.CTkButton(nav_row, text="Skip to Review & Deploy  \u21E5", height=42,
                        font=ctk.CTkFont(family="Inter", size=14),
-                       fg_color="#633A32", hover_color="#3B2115",
+                       fg_color="#633A32", hover_color="#1a1730",
                        command=lambda: self.select_frame("install")).pack(side="left", padx=15)
 
         # ================================================================
@@ -1066,7 +1066,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         self.summary_details = ctk.CTkTextbox(summary_outer, wrap="word", height=140,
                                                font=ctk.CTkFont(family="Consolas", size=12),
                                                fg_color="#0A0610", text_color="#A9A4B3",
-                                               border_width=1, border_color="#3B2115")
+                                               border_width=1, border_color="#1a1730")
         self.summary_details.pack(fill="x", padx=20, pady=(5, 15))
         self.summary_details.configure(state="disabled")
 
@@ -1094,7 +1094,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         self.log_box = ctk.CTkTextbox(f_inst, wrap="word", height=250,
                                        font=ctk.CTkFont(family="Consolas", size=13),
                                        fg_color="#0A0610", text_color="#A9A4B3",
-                                       border_width=1, border_color="#3B2115")
+                                       border_width=1, border_color="#1a1730")
         self.log_box.pack(fill="both", expand=True, padx=30, pady=(0, 20))
         _ToolTip(self.log_box, "Live installation log. Shows each step as it executes: plugin copies, git clones, model downloads, and any warnings or errors. Scroll up to review earlier messages.")
 
@@ -1177,12 +1177,12 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                      text_color=self.text_muted).pack(side="left")
         ctk.CTkButton(redetect_row, text="Re-detect All", width=110, height=30,
                        font=ctk.CTkFont(family="Inter", size=12, weight="bold"),
-                       fg_color="#633A32", hover_color="#3B2115",
+                       fg_color="#633A32", hover_color="#1a1730",
                        border_width=1, border_color=self.accent_color,
                        command=self._redetect_apps).pack(side="left", padx=10)
 
         # Theme override checkbox
-        theme_frame = ctk.CTkFrame(f_paths, fg_color="#261510", corner_radius=8,
+        theme_frame = ctk.CTkFrame(f_paths, fg_color="#1a1730", corner_radius=8,
                                    border_width=1, border_color="#633A32")
         theme_frame.pack(fill="x", padx=30, pady=(10, 20))
         theme_cb = ctk.CTkCheckBox(
@@ -1232,7 +1232,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         _has_editor = _has_gimp or _has_dt
 
         # --- Prereq checklist ---
-        prereq_frame = ctk.CTkFrame(parent, fg_color="#110A1F", corner_radius=12,
+        prereq_frame = ctk.CTkFrame(parent, fg_color="#161228", corner_radius=12,
                                      border_width=1, border_color="#633A32")
         prereq_frame.pack(fill="x", padx=30, pady=(0, 15))
 
@@ -1242,7 +1242,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                      font=ctk.CTkFont(family="Inter", size=16, weight="bold")).pack(side="left")
         ctk.CTkButton(header_row, text="Re-detect", width=100, height=30,
                        font=ctk.CTkFont(family="Inter", size=12, weight="bold"),
-                       fg_color="#633A32", hover_color="#3B2115",
+                       fg_color="#633A32", hover_color="#1a1730",
                        border_width=1, border_color=self.accent_color,
                        command=self._redetect_apps).pack(side="right")
 
@@ -1326,7 +1326,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                              text_color=self.text_main, width=100, anchor="w").pack(side="left")
                 link_btn = ctk.CTkButton(link_row, text=app_url,
                                           font=ctk.CTkFont(family="Inter", size=13, underline=True),
-                                          fg_color="transparent", hover_color="#3B2115",
+                                          fg_color="transparent", hover_color="#1a1730",
                                           text_color="#7c9dff", anchor="w",
                                           command=lambda u=app_url: __import__('webbrowser').open(u))
                 link_btn.pack(side="left", padx=5)
@@ -1370,7 +1370,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                 height=32,
                 font=ctk.CTkFont(family="Inter", size=12, weight="bold"),
                 fg_color="#633A32",
-                hover_color="#3B2115",
+                hover_color="#1a1730",
                 border_width=1,
                 border_color=self.accent_color,
                 command=self._test_remote_comfyui,
@@ -1689,7 +1689,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
 
             # Category container
             cat_frame = ctk.CTkFrame(self.feat_container,
-                                      fg_color="#110A1F", corner_radius=12,
+                                      fg_color="#161228", corner_radius=12,
                                       border_width=1, border_color="#633A32")
             cat_frame.pack(fill="x", padx=30, pady=(0, 18))
 
@@ -1721,7 +1721,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                 var.trace_add("write", lambda *args, k=fkey: self._on_feature_toggle(k))
 
                 feat_card = ctk.CTkFrame(cat_frame, fg_color=self.sidebar_color,
-                                          corner_radius=8, border_width=1, border_color="#3B2115")
+                                          corner_radius=8, border_width=1, border_color="#1a1730")
                 feat_card.pack(fill="x", padx=20, pady=5)
 
                 # Top row: checkbox + badges
@@ -1743,7 +1743,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                         vram_badge_text = f"{vram_min}-{vram_rec} GB VRAM"
                     ctk.CTkLabel(top_row, text=vram_badge_text,
                                  font=ctk.CTkFont(family="Inter", size=10, weight="bold"),
-                                 text_color="#150B07", fg_color="#633A32",
+                                 text_color="#12101d", fg_color="#633A32",
                                  corner_radius=4, width=90, height=22).pack(side="right", padx=(5, 0))
 
                 # Compatibility badge
@@ -2052,7 +2052,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
     def _base_select_frame(self, name):
         """Show the frame for *name* and highlight its sidebar button."""
         for key, btn in self._sidebar_btns.items():
-            btn.configure(fg_color="#3B2115" if key == name else "transparent")
+            btn.configure(fg_color="#1a1730" if key == name else "transparent")
 
         for k, f in self.frames.items():
             if k == name:

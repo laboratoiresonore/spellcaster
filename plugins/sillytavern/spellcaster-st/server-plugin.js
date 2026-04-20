@@ -680,18 +680,36 @@ function init(router) {
     router.post('/animate', async (req, res) => {
         try {
             const { image_base64, prompt, length, turbo, pingpong,
-                    engine } = req.body || {};
+                    engine, end_image_base64, i2v_strength } = req.body || {};
             if (!image_base64) return res.status(400).json({ error: 'image_base64 required' });
 
             const imgBuf = Buffer.from(image_base64, 'base64');
             const uploadName = `spellcaster_anim_${Date.now()}.png`;
             await uploadToComfyUI(imgBuf, uploadName);
 
-            // Probe the Guild for a WAN preset (unless the caller
-            // explicitly asked for the legacy engine via engine="legacy").
+            // Optional first-last-frame end image — uploads alongside
+            // the start frame. WAN supports this natively via
+            // WanFirstLastFrameToVideo; LTX ignores it for now.
+            let endUploadName = null;
+            if (end_image_base64) {
+                const endBuf = Buffer.from(end_image_base64, 'base64');
+                endUploadName = `spellcaster_anim_end_${Date.now()}.png`;
+                await uploadToComfyUI(endBuf, endUploadName);
+            }
+
+            // Engine selection:
+            //   engine="wan"    → force WAN (default; auto-detects preset)
+            //   engine="ltx"    → force LTX-2
+            //   engine="legacy" → force the noise-injection fallback
+            //   engine undefined → try WAN first, then LTX, then legacy
+            const wantLtx    = engine === "ltx";
+            const wantLegacy = engine === "legacy";
+            const wantWan    = engine === "wan" || engine === undefined;
+
             let workflow = null;
             let usedEngine = "legacy";
-            if (engine !== "legacy") {
+
+            if (!wantLegacy && wantWan) {
                 const wanPreset = await fetchVideoPreset("wan");
                 if (wanPreset) {
                     usedEngine = "wan";
@@ -703,13 +721,32 @@ function init(router) {
                             length: length || 33,
                             turbo:    turbo    !== undefined ? !!turbo    : true,
                             pingpong: pingpong !== undefined ? !!pingpong : true,
+                            endImage: endUploadName,
                         },
                     );
                 }
             }
+
+            if (workflow === null && !wantLegacy && (wantLtx || engine === undefined)) {
+                const ltxPreset = await fetchVideoPreset("ltx");
+                if (ltxPreset) {
+                    usedEngine = "ltx";
+                    workflow = buildLtxI2VWorkflow(
+                        uploadName,
+                        prompt || 'subtle breathing, gentle movement, living portrait',
+                        ltxPreset,
+                        {
+                            length: length || 25,
+                            pingpong: pingpong !== undefined ? !!pingpong : true,
+                            distilled: turbo !== undefined ? !!turbo : true,
+                            i2v_strength: i2v_strength || 0.9,
+                        },
+                    );
+                }
+            }
+
             if (workflow === null) {
-                // Either the Guild is unreachable, the server has no
-                // WAN / LTX install, or the caller forced legacy mode.
+                // No preset available, or the caller forced legacy mode.
                 workflow = buildAnimationWorkflow(
                     uploadName,
                     prompt || 'subtle animation, gentle movement',
@@ -1628,6 +1665,11 @@ async function fetchVideoPreset(engine = "wan") {
 // returned by fetchVideoPreset — see video_presets.py for the schema.
 // Parameters beyond `preset` are animation-shape only (dims, length,
 // fps) plus `turbo` and `pingpong` which are common caller overrides.
+//
+// When `endImage` is supplied the workflow switches to first-last-
+// frame mode via WanFirstLastFrameToVideo — the animation
+// interpolates from start to end. The end image uses its own
+// CLIPVisionEncode for matched semantic conditioning.
 function buildWanI2VWorkflow(avatarImage, prompt, preset, opts = {}) {
     const {
         width = 512, height = 512,       // mod-16 square for ST avatars
@@ -1636,6 +1678,7 @@ function buildWanI2VWorkflow(avatarImage, prompt, preset, opts = {}) {
         turbo = true,                     // preset defaults are already turbo
         pingpong = true,                  // looping avatar is the common case
         negative_prompt = null,
+        endImage = null,                  // optional FLF target frame
     } = opts;
     const seed = Math.floor(Math.random() * 2147483647);
 
@@ -1694,6 +1737,23 @@ function buildWanI2VWorkflow(avatarImage, prompt, preset, opts = {}) {
         crop: "none",
     }};
 
+    // ── End image (first-last-frame mode) ──
+    // Mirror the start-image pipeline: LoadImage → ImageScale → own
+    // CLIPVisionEncode. Reuses the same CLIPVisionLoader to keep the
+    // workflow tight.
+    const useFLF = !!endImage;
+    if (useFLF) {
+        wf["7b"]  = { class_type: "LoadImage", inputs: { image: endImage }};
+        wf["7br"] = { class_type: "ImageScale", inputs: {
+            image: ["7b", 0], upscale_method: "lanczos",
+            width, height, crop: "center",
+        }};
+        wf["7be"] = { class_type: "CLIPVisionEncode", inputs: {
+            clip_vision: ["7cv", 0], image: ["7b", 0],
+            crop: "none",
+        }};
+    }
+
     // ── Acceleration LoRAs (turbo only) — LightX2V/Lightning I2V pair
     // stored on the preset. Strength 1.5 is the calibrated default.
     let highRef = ["2", 0];
@@ -1724,15 +1784,30 @@ function buildWanI2VWorkflow(avatarImage, prompt, preset, opts = {}) {
         lowRef  = ["31", 0];
     }
 
-    // ── WanImageToVideo: outputs [positive, negative, latent] ──
-    wf["40"] = { class_type: "WanImageToVideo", inputs: {
-        positive:            ["5", 0],
-        negative:            ["6", 0],
-        vae:                 ["4", 0],
-        width, height, length, batch_size: 1,
-        clip_vision_output:  ["7ce", 0],
-        start_image:         ["7r", 0],
-    }};
+    // ── Video conditioning: WanImageToVideo (I2V) or
+    //    WanFirstLastFrameToVideo (FLF with end image). Both output
+    //    [positive, negative, latent].
+    if (useFLF) {
+        wf["40"] = { class_type: "WanFirstLastFrameToVideo", inputs: {
+            positive: ["5", 0],
+            negative: ["6", 0],
+            vae:      ["4", 0],
+            width, height, length, batch_size: 1,
+            clip_vision_start_image: ["7ce", 0],
+            clip_vision_end_image:   ["7be", 0],
+            start_image:             ["7r", 0],
+            end_image:               ["7br", 0],
+        }};
+    } else {
+        wf["40"] = { class_type: "WanImageToVideo", inputs: {
+            positive:            ["5", 0],
+            negative:            ["6", 0],
+            vae:                 ["4", 0],
+            width, height, length, batch_size: 1,
+            clip_vision_output:  ["7ce", 0],
+            start_image:         ["7r", 0],
+        }};
+    }
 
     // ── Two-pass KSamplerAdvanced (HIGH frames 0..second_step,
     //    LOW frames second_step..end). The LOW pass disables noise
@@ -1768,6 +1843,133 @@ function buildWanI2VWorkflow(avatarImage, prompt, preset, opts = {}) {
     wf["70"] = { class_type: "VHS_VideoCombine", inputs: {
         images: ["60", 0], frame_rate: fps,
         loop_count: 0, filename_prefix: "Spellcaster_ST_wan_i2v",
+        format: "image/gif", pingpong: !!pingpong,
+        save_output: true,
+    }};
+
+    return wf;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  LTX-2.3 I2V — canonical Spellcaster alternative to WAN
+// ═══════════════════════════════════════════════════════════════════
+//
+// LTX-2 is ~4× faster than WAN full-step and comparable quality for
+// portrait animation. Mirrors build_ltx_video in spellcaster_core.
+// Key canon points (CLAUDE.md §16.3):
+//   • LTXVChunkFeedForward(chunks=4) wraps the UNET for VRAM
+//   • LTXVApplySTG on layers "14, 19" before the sampler
+//   • Default negative prompt blocks LTX's subtitle-burn-in artifact
+//   • Distilled mode overrides steps/cfg/stg/rescale + injects the
+//     distilled LoRA; full mode keeps preset defaults (30/4.0/1.0/0.7)
+
+function buildLtxI2VWorkflow(avatarImage, prompt, preset, opts = {}) {
+    const {
+        width = 768, height = 512, length = 25, fps = 24,
+        distilled = true,            // turbo-equivalent — 8 steps, cfg 1.0
+        i2v_strength = 0.9,
+        pingpong = true,
+        negative_prompt = null,
+    } = opts;
+    const seed = Math.floor(Math.random() * 2147483647);
+
+    // Distilled overrides — mirror build_ltx_video exactly
+    const steps   = distilled ? 8   : (preset.steps   ?? 30);
+    const cfg     = distilled ? 1.0 : (preset.cfg     ?? 4.0);
+    const stg     = distilled ? 0.0 : (preset.stg     ?? 1.0);
+    const rescale = distilled ? 0.0 : (preset.rescale ?? 0.7);
+
+    // Subtitle-burn-in blocker — LTX training corpus includes
+    // subtitled video; without this the model reproduces them.
+    const neg = negative_prompt || (
+        "text, subtitles, captions, watermark, logo, timestamp, UI, "
+        + "interface, closed captions, overlay, written letters, typography"
+    );
+
+    const wf = {};
+    const isGgufUnet = !!preset.unet_is_gguf ||
+        (preset.unet || "").toLowerCase().endsWith(".gguf");
+
+    wf["1"] = isGgufUnet
+        ? { class_type: "UnetLoaderGGUF", inputs: { unet_name: preset.unet }}
+        : { class_type: "UNETLoader",     inputs: { unet_name: preset.unet, weight_dtype: "default" }};
+
+    let modelRef = ["1", 0];
+    if (distilled && preset.distilled_lora) {
+        wf["1b"] = { class_type: "LoraLoaderModelOnly", inputs: {
+            model: modelRef, lora_name: preset.distilled_lora,
+            strength_model: 1.0,
+        }};
+        modelRef = ["1b", 0];
+    }
+
+    // VRAM chunking + Spatial-Temporal Guidance
+    wf["2"] = { class_type: "LTXVChunkFeedForward", inputs: {
+        model: modelRef, chunks: 4,
+    }};
+    wf["3"] = { class_type: "LTXVApplySTG", inputs: {
+        model: ["2", 0], block_indices: "14, 19",
+    }};
+
+    // Text encoder (Gemma-3 via LTX's custom loader) + embeddings connector.
+    // The node input names differ from the canonical preset keys:
+    //   preset.text_encoder       → LTXAVTextEncoderLoader.text_encoder
+    //   preset.embeddings_connector → LTXAVTextEncoderLoader.ckpt_name
+    wf["4"] = { class_type: "LTXAVTextEncoderLoader", inputs: {
+        text_encoder: preset.text_encoder,
+        ckpt_name: preset.embeddings_connector,
+        device: "default",
+    }};
+
+    wf["10"] = { class_type: "CLIPTextEncode", inputs: {
+        text: prompt, clip: ["4", 0],
+    }};
+    wf["11"] = { class_type: "CLIPTextEncode", inputs: {
+        text: neg, clip: ["4", 0],
+    }};
+
+    wf["5"] = { class_type: "VAELoader", inputs: { vae_name: preset.vae }};
+
+    wf["12"] = { class_type: "LTXVConditioning", inputs: {
+        positive: ["10", 0], negative: ["11", 0],
+        frame_rate: fps,
+    }};
+
+    wf["15"] = { class_type: "LTXVScheduler", inputs: { steps }};
+    wf["16"] = { class_type: "STGGuider", inputs: {
+        model: ["3", 0],
+        positive: ["12", 0], negative: ["12", 1],
+        cfg, stg, rescale,
+    }};
+    wf["17"] = { class_type: "KSamplerSelect", inputs: { sampler_name: "euler" }};
+    wf["18"] = { class_type: "RandomNoise", inputs: { noise_seed: seed }};
+
+    // Start image — I2V conditioning
+    wf["19"] = { class_type: "LoadImage", inputs: { image: avatarImage }};
+    wf["20"] = { class_type: "LTXVBaseSampler", inputs: {
+        model: ["3", 0], vae: ["5", 0], guider: ["16", 0],
+        sampler: ["17", 0], sigmas: ["15", 0], noise: ["18", 0],
+        width, height, num_frames: length,
+        optional_cond_images: ["19", 0],
+        optional_cond_indices: "0",
+        strength: i2v_strength,
+    }};
+
+    // Spatio-temporal tiled VAE decode — LTX's memory-efficient path.
+    // Input name is `latents` (not `samples`); tile params + overlap
+    // + last_frame_fix all required after ComfyUI's recent LTX node
+    // refactor. Defaults mirror the node's declared defaults.
+    wf["40"] = { class_type: "LTXVSpatioTemporalTiledVAEDecode", inputs: {
+        vae: ["5", 0], latents: ["20", 0],
+        spatial_tiles: 4, spatial_overlap: 1,
+        temporal_tile_length: 16, temporal_overlap: 1,
+        last_frame_fix: false,
+    }};
+
+    // GIF output so the existing markdown client renders inline
+    wf["50"] = { class_type: "VHS_VideoCombine", inputs: {
+        images: ["40", 0], frame_rate: fps,
+        loop_count: 0, filename_prefix: "Spellcaster_ST_ltx_i2v",
         format: "image/gif", pingpong: !!pingpong,
         save_output: true,
     }};

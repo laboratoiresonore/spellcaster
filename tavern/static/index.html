@@ -8,10 +8,21 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
 </head>
 <body class="dark-theme" style="overflow:hidden;">
-    <!-- Splash Screen — polls server before revealing UI -->
+    <!-- Splash Screen — polls server before revealing UI. The spinner
+         is the animated Wizard Spell-Casting loop (MP4); muted +
+         autoplay so Chrome allows inline playback. The <img> fallback
+         keeps the rune visible if the video fails to load (e.g. on a
+         very old browser or when the file is missing). -->
     <div id="guild-splash">
         <div id="splash-sigil">
-            <img src="/static/assets/03_guild_loading.png" alt="Loading Sigil" id="splash-rune-img" style="width: 100%; height: 100%; object-fit: contain; border-radius: 50%; box-shadow: 0 0 20px rgba(255, 215, 0, 0.2);">
+            <video id="splash-rune-video"
+                   src="/static/assets/Wizard_Spell_Casting_GIF_Generated.mp4"
+                   autoplay loop muted playsinline
+                   poster="/static/assets/03_guild_loading.png"
+                   style="width: 100%; height: 100%; object-fit: cover;
+                          object-position: center;
+                          border-radius: 50%;
+                          box-shadow: 0 0 20px rgba(255, 215, 0, 0.2);"></video>
         </div>
         <h1 id="splash-title">The Wizard Guild</h1>
         <p id="splash-status">Awakening the arcane...</p>
