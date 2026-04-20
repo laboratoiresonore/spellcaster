@@ -3768,14 +3768,27 @@ local cn_guide_modes = {
   {label = "Tile (detail)",      preprocessor = nil,                       key = "tile"},
 }
 
--- ControlNet model auto-selection by mode and architecture
+-- ControlNet model auto-selection by mode and architecture.
+--
+-- Z-Image-Turbo uses a SINGLE "Union" ControlNet
+-- (Z-Image-Turbo-Fun-Controlnet-Union.safetensors) that handles every
+-- mode — canny / depth / lineart / pose / scribble / tile are all
+-- routed through the same file on the ComfyUI side and the loader
+-- disambiguates by the preprocessor feeding it. The earlier per-mode
+-- zit entries all pointed at SDXL\\controlnet-canny-sdxl-1.0
+-- (copy-paste bug) which silently loaded an SDXL CN into a ZIT
+-- workflow and either failed at sampling or produced garbage. Canon:
+-- mirror what spellcaster_core.architectures._reg("zit", ...)
+-- autoset_cn declares and what CONTROLNET_GUIDE_MODES["ZIT Union"]
+-- uses in the GIMP plugin.
+local ZIT_UNION_CN = "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"
 local CN_MODEL_MAP = {
-  canny    = {sd15 = "control_v11p_sd15_lineart_fp16.safetensors", sdxl = "SDXL\\controlnet-canny-sdxl-1.0.safetensors", zit = "SDXL\\controlnet-canny-sdxl-1.0.safetensors"},
-  depth    = {sd15 = "control_v11f1p_sd15_depth_fp16.safetensors", sdxl = "SDXL\\controlnet-canny-sdxl-1.0.safetensors", zit = "SDXL\\controlnet-canny-sdxl-1.0.safetensors"},
-  lineart  = {sd15 = "control_v11p_sd15_lineart_fp16.safetensors", sdxl = "SDXL\\controlnet-canny-sdxl-1.0.safetensors", zit = "SDXL\\controlnet-canny-sdxl-1.0.safetensors"},
-  pose     = {sd15 = "control_v11p_sd15_openpose_fp16.safetensors", sdxl = "OpenPoseXL2.safetensors", zit = "SDXL\\controlnet-canny-sdxl-1.0.safetensors"},
-  scribble = {sd15 = "control_v11p_sd15_lineart_fp16.safetensors", sdxl = "SDXL\\controlnet-canny-sdxl-1.0.safetensors", zit = "SDXL\\controlnet-canny-sdxl-1.0.safetensors"},
-  tile     = {sd15 = "control_v11f1e_sd15_tile.pth", sdxl = "SDXL\\ttplanetSDXLControlnet_Tile_v20Fp16.safetensors", zit = "SDXL\\controlnet-canny-sdxl-1.0.safetensors"},
+  canny    = {sd15 = "control_v11p_sd15_lineart_fp16.safetensors", sdxl = "SDXL\\controlnet-canny-sdxl-1.0.safetensors", zit = ZIT_UNION_CN},
+  depth    = {sd15 = "control_v11f1p_sd15_depth_fp16.safetensors", sdxl = "SDXL\\control-lora-depth-rank128.safetensors", zit = ZIT_UNION_CN},
+  lineart  = {sd15 = "control_v11p_sd15_lineart_fp16.safetensors", sdxl = "SDXL\\controlnet-canny-sdxl-1.0.safetensors", zit = ZIT_UNION_CN},
+  pose     = {sd15 = "control_v11p_sd15_openpose_fp16.safetensors", sdxl = "OpenPoseXL2.safetensors", zit = ZIT_UNION_CN},
+  scribble = {sd15 = "control_v11p_sd15_lineart_fp16.safetensors", sdxl = "SDXL\\controlnet-canny-sdxl-1.0.safetensors", zit = ZIT_UNION_CN},
+  tile     = {sd15 = "control_v11f1e_sd15_tile.pth", sdxl = "SDXL\\ttplanetSDXLControlnet_Tile_v20Fp16.safetensors", zit = ZIT_UNION_CN},
 }
 
 -- ═══════════════════════════════════════════════════════════════════════
