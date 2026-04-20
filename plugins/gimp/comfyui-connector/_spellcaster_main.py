@@ -20658,9 +20658,15 @@ class Spellcaster(Gimp.PlugIn):
             results = _run_with_spinner("Upscale Blend: upscaling with two models and blending...",
                                          lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
             for i, (fn, sf, ft) in enumerate(results):
+                # 5th arg (mask_enabled) was omitted prior to 2026-04-20;
+                # _apply_mask_mode raised "missing positional argument"
+                # which got swallowed into "Upscaler Blend Error: …"
+                # so users submitted, workflow succeeded on ComfyUI,
+                # but nothing landed in GIMP.
                 _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
                                         f"Upscale {100 - ratio*100:.0f}%{ma_key.split('(')[0].strip()}"
-                                        f" + {ratio*100:.0f}%{mb_key.split('(')[0].strip()} #{i+1}")
+                                        f" + {ratio*100:.0f}%{mb_key.split('(')[0].strip()} #{i+1}",
+                                        False)
             Gimp.displays_flush()
             Gimp.progress_end()
             _LAST_PROCEDURE["name"] = "spellcaster-upscale-blend"
