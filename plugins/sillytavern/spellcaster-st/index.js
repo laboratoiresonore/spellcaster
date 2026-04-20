@@ -1453,12 +1453,33 @@ function renderSettingsPanel() {
 //  Utilities
 // ═══════════════════════════════════════════════════════════════════
 
+// Client-side 20 MB cap matches the server's 28 MB base64-chars cap
+// (decoded ≈ 21 MB). Fail fast so the user gets a clear error instead
+// of a generic HTTP 413 roundtrip.
+const BLOB_TO_B64_MAX_BYTES = 20 * 1024 * 1024;
 function blobToBase64(blob) {
     return new Promise((resolve, reject) => {
+        if (!(blob instanceof Blob)) {
+            reject(new Error('blobToBase64: expected Blob'));
+            return;
+        }
+        if (blob.size > BLOB_TO_B64_MAX_BYTES) {
+            reject(new Error(`blobToBase64: image is ${Math.round(blob.size / 1024 / 1024)} MB, max ${BLOB_TO_B64_MAX_BYTES / 1024 / 1024} MB`));
+            return;
+        }
         const reader = new FileReader();
         reader.onloadend = () => {
-            const base64 = reader.result.split(',')[1];
-            resolve(base64);
+            try {
+                const res = reader.result;
+                if (typeof res !== 'string') {
+                    reject(new Error('blobToBase64: FileReader produced non-string result'));
+                    return;
+                }
+                const comma = res.indexOf(',');
+                resolve(comma >= 0 ? res.slice(comma + 1) : res);
+            } catch (e) {
+                reject(e);
+            }
         };
         reader.onerror = () => reject(new Error('Failed to read image data'));
         reader.readAsDataURL(blob);
@@ -1608,8 +1629,13 @@ async function autoCastOnStartup() {
     const settings = getSettings();
     spellcasterAPI('/settings', { comfyui_url: settings.comfyui_url }).catch(() => {});
 
-    // Auto-cast all characters in background (non-blocking, 5s delay)
-    setTimeout(() => autoCastOnStartup(), 5000);
+    // Auto-cast all characters in background (non-blocking, 5s delay).
+    // Swallow any unhandled rejection — the function is best-effort;
+    // per-character failures are already logged inside it.
+    setTimeout(() => {
+        autoCastOnStartup().catch(err =>
+            console.warn('[Spellcaster] autoCastOnStartup failed:', err));
+    }, 5000);
 
     console.log('[Spellcaster] Extension loaded. ComfyUI:', settings.comfyui_url);
 })();
