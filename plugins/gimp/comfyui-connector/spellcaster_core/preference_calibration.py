@@ -295,9 +295,16 @@ def generate_and_download(server, workflow, timeout=120):
         params = urllib.parse.urlencode({
             "filename": fn, "subfolder": sf, "type": ft
         })
+        # Bound the download so a malicious or misconfigured ComfyUI
+        # can't stream an unbounded blob into the caller's RAM. 200 MB
+        # is comfortably above any legitimate generated image/video.
+        _MAX = 200 * 1024 * 1024
         with urllib.request.urlopen(
                 f"{server}/view?{params}", timeout=30) as r:
-            return r.read()
+            data = r.read(_MAX + 1)
+        if len(data) > _MAX:
+            return None
+        return data
     except ImportError:
         pass  # dispatch not available — fall through
     except Exception:

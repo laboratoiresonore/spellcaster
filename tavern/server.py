@@ -9361,8 +9361,11 @@ class GuildHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 print(f"  [Bridge] Failed to load signal config: {e}")
                 return self.end_json(500, {"error": str(e)})
-        elif self.path.startswith('/api/chat_history/'):
+        elif self.path.startswith('/api/chat_history/') and self.command == 'GET':
             # GET — read the persistent chat log for one wizard.
+            # Gate to GET only; without it this branch shadowed the
+            # /api/chat_history/append and /api/chat_history/clear POST
+            # handlers further down the same dispatcher chain.
             # Stored as JSONL in tavern/.guild_state/chat_history/
             # so partial writes don't corrupt the whole file. Returns
             # the latest CHAT_HISTORY_MAX records (currently 500) so
