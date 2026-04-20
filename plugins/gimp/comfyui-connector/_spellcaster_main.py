@@ -3926,6 +3926,109 @@ MODEL_PRESETS = [
 #  Architecture → compatible LoRA folder prefixes
 # ═══════════════════════════════════════════════════════════════════════════
 
+# ═══════════════════════════════════════════════════════════════════════════
+#  Photobooth base prompt library (15 hand-tuned headshot styles)
+# ═══════════════════════════════════════════════════════════════════════════
+# Used by _run_photobooth's style combobox. Each entry has a `key` (stable
+# ID persisted in user presets), `label` (shown in the combo), and
+# `prompt_template` with `{gender}` substituted at generation time.
+# "Auto variety" in the dialog cycles 3 of these across a batch. NSFW
+# variants can be injected at # ── NSFW_PHOTOBOOTH_STYLES_INJECTION_POINT ──
+_PHOTOBOOTH_STYLES = [
+    {"key": "grey_studio",
+     "label": "Classic Passport — grey BG",
+     "prompt_template":
+        "professional passport headshot of a {gender}, clean neutral grey studio "
+        "background, soft even studio lighting, facing directly at camera, neutral "
+        "expression, sharp focus, photorealistic skin texture, shoulders visible"},
+    {"key": "white_id",
+     "label": "Driver License — white BG",
+     "prompt_template":
+        "professional ID photo of a {gender}, clean white studio background, bright "
+        "soft lighting, front-facing, neutral expression, sharp focus, "
+        "photorealistic, shoulders visible"},
+    {"key": "actor_dark",
+     "label": "Actor Headshot — dark BG",
+     "prompt_template":
+        "professional actor headshot of a {gender}, dark studio background, dramatic "
+        "portrait lighting, facing camera, confident expression, sharp focus, "
+        "photorealistic, shoulders visible"},
+    {"key": "editorial_fashion",
+     "label": "Editorial Fashion — moody",
+     "prompt_template":
+        "editorial fashion portrait of a {gender}, moody gradient backdrop, directional "
+        "key light with deep shadows, strong cheekbones, cinematic colour grading, "
+        "Vogue-magazine aesthetic, shoulders visible"},
+    {"key": "rembrandt",
+     "label": "Rembrandt Light — painterly",
+     "prompt_template":
+        "classical portrait of a {gender}, Rembrandt lighting from camera-left, rich "
+        "dark background, painterly oil-portrait atmosphere, thoughtful expression, "
+        "photorealistic skin, shoulders visible"},
+    {"key": "natural_window",
+     "label": "Natural Window Light",
+     "prompt_template":
+        "candid natural-light portrait of a {gender}, soft window light from the "
+        "side, neutral warm room background blurred, relaxed expression, "
+        "photorealistic skin with natural pores, shoulders visible"},
+    {"key": "film_noir",
+     "label": "Film Noir — B&W",
+     "prompt_template":
+        "black-and-white film noir portrait of a {gender}, hard directional "
+        "lighting, deep shadows, venetian blind shadow pattern, 1940s detective "
+        "atmosphere, 35mm film grain, shoulders visible"},
+    {"key": "corporate_blue",
+     "label": "Corporate LinkedIn — blue BG",
+     "prompt_template":
+        "professional corporate headshot of a {gender}, muted blue-grey studio "
+        "background, clean even lighting, confident business-appropriate "
+        "expression, crisp focus, shoulders visible"},
+    {"key": "cinematic_teal_orange",
+     "label": "Cinematic Teal/Orange",
+     "prompt_template":
+        "cinematic close-up portrait of a {gender}, teal-shadow-and-orange-highlight "
+        "colour grade, shallow depth of field, anamorphic lens feel, moody "
+        "atmosphere, movie-still aesthetic, shoulders visible"},
+    {"key": "golden_hour",
+     "label": "Golden Hour — warm backlight",
+     "prompt_template":
+        "golden-hour outdoor portrait of a {gender}, warm amber backlight rimming the "
+        "hair, soft fill from front, creamy bokeh background, cinematic shallow "
+        "depth of field, photorealistic, shoulders visible"},
+    {"key": "renaissance",
+     "label": "Renaissance Oil Painting",
+     "prompt_template":
+        "renaissance-style oil-painting portrait of a {gender}, dark velvet "
+        "background, candlelight from one side, painterly brushwork texture, "
+        "regal atmosphere, shoulders visible"},
+    {"key": "high_key",
+     "label": "High-Key — bright clean",
+     "prompt_template":
+        "high-key studio portrait of a {gender}, pure white backdrop, bright even "
+        "softbox lighting from multiple angles, minimal shadows, editorial beauty "
+        "aesthetic, photorealistic skin, shoulders visible"},
+    {"key": "low_key",
+     "label": "Low-Key — chiaroscuro",
+     "prompt_template":
+        "low-key chiaroscuro portrait of a {gender}, near-black background, single "
+        "dramatic light source from the side, deep contrast, theatrical painterly "
+        "feel, photorealistic, shoulders visible"},
+    {"key": "beauty_ring",
+     "label": "Beauty Ringlight — catchlight",
+     "prompt_template":
+        "beauty portrait of a {gender}, ring-light catchlight in both eyes, soft "
+        "wrap-around illumination, clean off-white backdrop, fashion-editorial "
+        "aesthetic, flawless skin detail, shoulders visible"},
+    {"key": "environmental_street",
+     "label": "Environmental Street Portrait",
+     "prompt_template":
+        "candid environmental portrait of a {gender}, urban street backdrop blurred, "
+        "natural overcast light, documentary reportage aesthetic, 35mm film "
+        "feel, relaxed expression, shoulders visible"},
+    # ── NSFW_PHOTOBOOTH_STYLES_INJECTION_POINT ──
+]
+
+
 ARCH_LORA_PREFIXES = {
     # Maps each model architecture to the LoRA subfolder prefixes it's
     # compatible with. When the user selects a model preset, only LoRAs
@@ -23321,6 +23424,94 @@ class Spellcaster(Gimp.PlugIn):
         cand_row.pack_start(cand_spin, False, False, 0)
         bx.pack_start(cand_row, False, False, 0)
 
+        # Style picker — 15 hand-tuned headshot styles from passport
+        # to cinematic. "Auto variety" cycles a curated mix across
+        # the candidate batch; any other pick uses that single style
+        # for every candidate.
+        style_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        style_row.pack_start(Gtk.Label(label="Style:"), False, False, 0)
+        style_combo = Gtk.ComboBoxText()
+        # Auto-variety first, then ordered styles. _PHOTOBOOTH_STYLES
+        # is module-level so the NSFW build can inject extras via the
+        # NSFW_PHOTOBOOTH_STYLES_INJECTION_POINT marker.
+        style_combo.append("auto", "Auto variety (mix 3)")
+        for s in _PHOTOBOOTH_STYLES:
+            style_combo.append(s["key"], s["label"])
+        style_combo.set_active_id("auto")
+        style_combo.set_tooltip_text(
+            "Background + lighting style for the generated headshots.\n"
+            "'Auto variety' rotates through grey / white / dark studio so\n"
+            "you see diverse options in one batch. Pick a single style for\n"
+            "consistent candidates.")
+        style_row.pack_start(style_combo, True, True, 0)
+        bx.pack_start(style_row, False, False, 0)
+
+        # Face-restore picker (ReActor face_boost + final restore pass).
+        # Exposes what the build_photobooth signature already supports
+        # but the dialog was hiding. Defaults match the canon (CodeFormer
+        # 0.1.0 @ weight 0.6 / visibility 0.9).
+        fr_frame = Gtk.Frame(label="  Face Restore  ")
+        fr_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        fr_box.set_margin_start(8); fr_box.set_margin_end(8)
+        fr_box.set_margin_top(4); fr_box.set_margin_bottom(8)
+
+        fr_model_combo = Gtk.ComboBoxText()
+        # ReActor ships with several face-restore models; we expose the
+        # three the Studiocraft wizard documents. Users can still edit
+        # the code if they have a custom model.
+        fr_model_combo.append("codeformer-v0.1.0.pth", "CodeFormer Sharp (default)")
+        fr_model_combo.append("GPEN-BFR-2048.onnx",    "GPEN-2048 Balanced")
+        fr_model_combo.append("GFPGANv1.4.pth",        "GFPGAN 1.4 Faithful")
+        fr_model_combo.set_active_id("codeformer-v0.1.0.pth")
+        fr_model_combo.set_tooltip_text(
+            "ReActor face-restore model.\n"
+            "  CodeFormer Sharp   — crispest output, occasional over-sharpening.\n"
+            "  GPEN-2048 Balanced — softer, good for difficult lighting.\n"
+            "  GFPGAN 1.4 Faithful — most faithful to source features.\n"
+            "If the model isn't installed on the server, generation fails\n"
+            "with a clear error listing the missing file.")
+        fr_box.pack_start(Gtk.Label(label="Restore model:", xalign=0), False, False, 0)
+        fr_box.pack_start(fr_model_combo, False, False, 0)
+
+        fr_weight_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        fr_weight_row.pack_start(Gtk.Label(label="CodeFormer weight:"), False, False, 0)
+        fr_weight_spin = Gtk.SpinButton.new_with_range(0.0, 1.0, 0.05)
+        fr_weight_spin.set_digits(2); fr_weight_spin.set_value(0.6)
+        fr_weight_spin.set_tooltip_text(
+            "CodeFormer fidelity ↔ quality trade-off (0.0 = quality, 1.0 = fidelity).\n"
+            "Only applies to CodeFormer-based models. 0.6 is the canon default.")
+        fr_weight_row.pack_start(fr_weight_spin, False, False, 0)
+        fr_box.pack_start(fr_weight_row, False, False, 0)
+
+        fr_vis_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        fr_vis_row.pack_start(Gtk.Label(label="Restore visibility:"), False, False, 0)
+        fr_vis_spin = Gtk.SpinButton.new_with_range(0.0, 1.0, 0.05)
+        fr_vis_spin.set_digits(2); fr_vis_spin.set_value(0.9)
+        fr_vis_spin.set_tooltip_text(
+            "How much of the restored face blends over ReActor's swap output.\n"
+            "1.0 = full restore (can over-smooth), 0.0 = no restore (raw swap).\n"
+            "0.9 is the canon default — mostly restored with a touch of texture.")
+        fr_vis_row.pack_start(fr_vis_spin, False, False, 0)
+        fr_box.pack_start(fr_vis_row, False, False, 0)
+
+        # Sampler override — Klein uses flux2_scheduler so only the
+        # sampler is swappable. Canon default "euler" is fine 99% of
+        # the time; exposing it matches the LTX/WAN dialog ergonomics.
+        fr_sampler_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        fr_sampler_row.pack_start(Gtk.Label(label="Sampler:"), False, False, 0)
+        fr_sampler_combo = Gtk.ComboBoxText()
+        for s in ("euler", "dpmpp_2m", "dpmpp_2m_sde", "heun", "uni_pc"):
+            fr_sampler_combo.append(s, s)
+        fr_sampler_combo.set_active_id("euler")
+        fr_sampler_combo.set_tooltip_text(
+            "Sampler used in the Klein head generation pass.\n"
+            "'euler' matches the canon Klein reference workflow.\n"
+            "Alternative samplers may give slightly different texture.")
+        fr_sampler_row.pack_start(fr_sampler_combo, False, False, 0)
+        fr_box.pack_start(fr_sampler_row, False, False, 0)
+
+        fr_frame.add(fr_box); bx.pack_start(fr_frame, False, False, 0)
+
         bx.show_all()
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
@@ -23332,6 +23523,13 @@ class Spellcaster(Gimp.PlugIn):
         gender = gender_combo.get_active_id() or "person"
         model_name = name_entry.get_text().strip() or "photobooth_face"
         num_candidates = int(cand_spin.get_value())
+        # Style choice — "auto" → 3-way variety mix; specific key → use
+        # that single style for every candidate.
+        style_key = style_combo.get_active_id() or "auto"
+        fr_model = fr_model_combo.get_active_id() or "codeformer-v0.1.0.pth"
+        fr_weight = float(fr_weight_spin.get_value())
+        fr_vis = float(fr_vis_spin.get_value())
+        fr_sampler = fr_sampler_combo.get_active_id() or "euler"
         dlg.destroy()
 
         # ═══════════════════════════════════════════════════════════════
@@ -23353,17 +23551,22 @@ class Spellcaster(Gimp.PlugIn):
 
             klein_key = list(KLEIN_MODELS.keys())[0]  # Default to first available
 
-            bg_prompts = [
-                f"professional passport headshot of a {gender}, clean neutral grey studio background, "
-                f"soft even studio lighting, facing directly at camera, neutral expression, "
-                f"sharp focus, photorealistic skin texture, shoulders visible",
-                f"professional ID photo of a {gender}, clean white studio background, "
-                f"bright soft lighting, front-facing, neutral expression, "
-                f"sharp focus, photorealistic, shoulders visible",
-                f"professional actor headshot of a {gender}, dark studio background, "
-                f"dramatic portrait lighting, facing camera, confident expression, "
-                f"sharp focus, photorealistic, shoulders visible",
-            ]
+            # Build the per-candidate prompt list from the style selector.
+            # "auto" rotates a curated mix (grey / white / dark) across
+            # the batch so users see lighting diversity. A specific style
+            # key uses that single style for every candidate.
+            _style_by_key = {s["key"]: s for s in _PHOTOBOOTH_STYLES}
+            if style_key == "auto":
+                _variety_keys = ["grey_studio", "white_id", "actor_dark"]
+                _tpls = [_style_by_key[k]["prompt_template"]
+                         for k in _variety_keys if k in _style_by_key]
+            else:
+                _chosen = _style_by_key.get(style_key)
+                _tpls = [_chosen["prompt_template"]] if _chosen else [
+                    _style_by_key["grey_studio"]["prompt_template"]]
+            bg_prompts = [t.format(gender=gender) for t in _tpls]
+            bg_labels = [s["label"] for s in _PHOTOBOOTH_STYLES
+                         if s["prompt_template"] in _tpls] or ["(variety)"]
 
             chosen_image = None
 
@@ -23376,11 +23579,17 @@ class Spellcaster(Gimp.PlugIn):
                         klein_model_key=klein_key,
                         steps=20, guidance=1.0,
                         klein_models=KLEIN_MODELS,
+                        face_restore_model=fr_model,
+                        codeformer_weight=fr_weight,
+                        face_restore_vis=fr_vis,
+                        final_restore_vis=fr_vis,
+                        final_restore_weight=fr_weight,
+                        sampler_name=fr_sampler,
                     )
                     _wf = wf
-                    bg_labels = ['grey bg', 'white bg', 'dark bg']
+                    _label = bg_labels[i % len(bg_labels)]
                     res = _run_with_spinner(
-                        f"Photobooth: generating {i+1}/{num_candidates} ({bg_labels[i % len(bg_labels)]})...",
+                        f"Photobooth: generating {i+1}/{num_candidates} ({_label})...",
                         lambda: list(_run_comfyui_workflow(srv, _wf)))
                     for fn, sf, ft in res:
                         if fn.lower().endswith(".png"):
@@ -24371,38 +24580,85 @@ class Spellcaster(Gimp.PlugIn):
 
         SCENE_BG_PRESETS = {
             "(use current canvas as background)": "",
+            # ── Studio (6) ────────────────────────────────────────
             "Studio — neutral grey": "professional photography studio, neutral grey seamless backdrop, even studio lighting, clean background",
-            "Studio — white": "professional white cyclorama studio, pure white backdrop, soft even lighting, fashion photography",
+            "Studio — white cyc": "professional white cyclorama studio, pure white backdrop, soft even lighting, fashion photography",
             "Studio — dark/moody": "dark moody studio backdrop, dramatic lighting, black background, professional portrait",
+            "Studio — Rembrandt light": "professional photography studio, warm Rembrandt lighting from camera-left, rich shadows, painterly atmosphere, neutral backdrop",
+            "Studio — beauty ringlight": "beauty photography studio, ring light catchlight, soft wrap-around lighting, clean white-grey seamless, editorial vibe",
+            "Studio — gradient teal": "professional studio with teal-to-black gradient backdrop, cinematic moody lighting, editorial fashion photography",
+            # ── Indoor (12) ───────────────────────────────────────
             "Indoor — bedroom": "modern bedroom interior, bed with white sheets, warm ambient lighting, cozy atmosphere, photorealistic",
             "Indoor — living room": "modern living room, sofa, warm lighting, comfortable interior, photorealistic",
-            "Indoor — office": "modern office space, desk, window with city view, professional environment, photorealistic",
+            "Indoor — office modern": "modern office space, desk, window with city view, professional environment, photorealistic",
+            "Indoor — office executive": "corporate executive office, floor-to-ceiling windows, skyline view, glass desk, leather chair, power lighting",
             "Indoor — bathroom": "luxury bathroom, marble surfaces, warm lighting, elegant interior, photorealistic",
             "Indoor — kitchen": "modern kitchen, marble countertops, warm pendant lighting, clean interior, photorealistic",
-            "Indoor — hotel room": "luxury hotel room, king bed, city view window, ambient lighting, photorealistic",
-            "Outdoor — beach": "tropical beach scene, palm trees, turquoise ocean, golden sand, sunset lighting, photorealistic",
+            "Indoor — hotel luxury": "luxury hotel suite, king bed, city view window, warm ambient lighting, five-star elegance, photorealistic",
+            "Indoor — hotel boutique": "boutique hotel room, eclectic decor, soft lamps, plush fabrics, moody atmosphere, photorealistic",
+            "Indoor — cafe": "cozy cafe interior, warm pendant lights, wooden tables, plants, coffee shop atmosphere, window light, photorealistic",
+            "Indoor — library": "grand library interior, tall wooden bookshelves, golden lamp light, leather armchairs, academic atmosphere",
+            "Indoor — restaurant upscale": "upscale restaurant interior, dim ambient lighting, candlelit tables, elegant décor, intimate atmosphere",
+            "Indoor — art gallery": "minimalist art gallery interior, white walls, polished concrete floor, spotlit artworks, museum lighting",
+            "Indoor — warehouse loft": "industrial warehouse loft, exposed brick, large windows, concrete floor, golden hour sunlight streaming in",
+            # ── Outdoor (10) ──────────────────────────────────────
+            "Outdoor — beach tropical": "tropical beach scene, palm trees, turquoise ocean, golden sand, sunset lighting, photorealistic",
+            "Outdoor — beach overcast": "moody overcast beach, grey ocean, stormy sky, rocky shoreline, cinematic atmospheric",
             "Outdoor — park": "lush green park, trees, dappled sunlight, grass, peaceful nature setting, photorealistic",
-            "Outdoor — city street": "urban city street, buildings, sidewalk, evening lighting, photorealistic",
-            "Outdoor — rooftop": "urban rooftop at sunset, city skyline background, golden hour lighting, photorealistic",
-            "Outdoor — forest": "enchanted forest clearing, tall trees, dappled light, mossy ground, mystical atmosphere",
-            "Outdoor — pool": "luxury swimming pool area, sun loungers, tropical plants, clear water, resort setting, photorealistic",
+            "Outdoor — city street day": "urban city street, buildings, sidewalk, bright afternoon light, photorealistic",
+            "Outdoor — city street neon": "rainy city street at night, neon signs reflecting on wet pavement, cyberpunk atmosphere, anamorphic lens flare",
+            "Outdoor — rooftop golden": "urban rooftop at sunset, city skyline background, golden hour lighting, photorealistic",
+            "Outdoor — forest sunlit": "enchanted forest clearing, tall trees, dappled light, mossy ground, mystical atmosphere",
+            "Outdoor — forest foggy": "misty autumn forest, tall conifers, drifting fog, atmospheric light shafts, cinematic",
+            "Outdoor — pool resort": "luxury swimming pool area, sun loungers, tropical plants, clear water, resort setting, photorealistic",
+            "Outdoor — mountain vista": "alpine mountain vista, rocky peaks, dramatic clouds, golden-hour light on distant ridges, epic scale",
+            # ── Urban / architectural (5) ────────────────────────
+            "Urban — alley moody": "narrow urban alley, brick walls, steam rising from vents, dramatic side lighting, film-noir atmosphere",
+            "Urban — parking garage": "concrete parking garage, fluorescent overhead lighting, moody rows of columns, cinematic perspective",
+            "Urban — subway platform": "underground subway platform, tiled walls, train approaching with headlight glow, motion blur, cinematic",
+            "Urban — skyscraper top": "skyscraper observation deck, floor-to-ceiling glass, cityscape far below, dramatic height perspective",
+            "Urban — street market": "bustling night street market, hanging lanterns, food stalls, warm ambient glow, crowd atmosphere",
+            # ── Fantasy / sci-fi (6) ─────────────────────────────
             "Fantasy — throne room": "grand fantasy throne room, ornate columns, dramatic torchlight, medieval castle interior",
             "Fantasy — enchanted garden": "magical enchanted garden, glowing flowers, fairy lights, mystical atmosphere",
-            "Sci-Fi — spaceship interior": "futuristic spaceship bridge, holographic displays, blue ambient lighting, sci-fi interior",
-            "Abstract — gradient": "smooth gradient background, soft pastel colors, clean minimal backdrop, studio lighting",
+            "Fantasy — tavern": "cozy medieval tavern, wooden beams, fireplace roaring, candlelight, bustling adventurer atmosphere",
+            "Fantasy — witch cottage": "witch's cottage interior, herbs hanging from ceiling, bubbling cauldron, candles, mystical shelves of potions",
+            "Sci-Fi — spaceship bridge": "futuristic spaceship bridge, holographic displays, blue ambient lighting, sci-fi interior",
+            "Sci-Fi — cyberpunk apartment": "cyberpunk apartment interior, neon signs visible through window, holographic displays, moody blue-pink lighting",
+            # ── Abstract / clean (3) ─────────────────────────────
+            "Abstract — gradient pastel": "smooth gradient background, soft pastel colors, clean minimal backdrop, studio lighting",
+            "Abstract — gradient sunset": "smooth gradient background transitioning from warm orange to deep purple, minimal abstract, cinematic",
+            "Abstract — void black": "pure black void, subject isolated, minimal dramatic lighting, editorial fashion aesthetic",
+            # ── NSFW_STUDIO_SET_SCENES_INJECTION_POINT ──
         }
 
         PLACEMENT_PRESETS = {
+            # ── Center compositions (4) ──────────────────────────
             "Center — standing": "centered in frame, standing upright, facing camera",
             "Center — sitting": "centered in frame, sitting naturally",
-            "Left side — standing": "positioned on the left side, standing, facing right",
-            "Right side — standing": "positioned on the right side, standing, facing left",
-            "Left — leaning": "leaning against something on the left side, relaxed",
-            "Right — seated": "seated on the right side of the scene, relaxed posture",
-            "Foreground — close": "in the foreground, close to camera, prominent",
-            "Background — far": "in the background, further from camera, establishing scale",
-            "Left — kneeling": "kneeling on the left side of the frame",
             "Center — lying down": "lying in the center of the scene, relaxed",
+            "Center — action pose": "centered in frame, dynamic action pose, mid-motion",
+            # ── Left side (4) ────────────────────────────────────
+            "Left — standing": "positioned on the left side, standing, facing right",
+            "Left — leaning": "leaning against something on the left side, relaxed",
+            "Left — kneeling": "kneeling on the left side of the frame",
+            "Left — seated": "seated on the left side of the scene, relaxed posture",
+            # ── Right side (4) ───────────────────────────────────
+            "Right — standing": "positioned on the right side, standing, facing left",
+            "Right — seated": "seated on the right side of the scene, relaxed posture",
+            "Right — leaning": "leaning against something on the right side, casual stance",
+            "Right — crouching": "crouching on the right side of the frame, low angle",
+            # ── Depth / foreground-background (4) ───────────────
+            "Foreground — close-up": "in the foreground, close to camera, prominent, shoulders-up framing",
+            "Foreground — three-quarter": "in the foreground at three-quarter framing, hands visible",
+            "Background — establishing": "in the background, further from camera, establishing scale",
+            "Mid-ground — walking": "in mid-ground, walking naturally toward the camera",
+            # ── Cinematic framings (4) ──────────────────────────
+            "Over-shoulder": "subject framed over-the-shoulder, looking into the scene",
+            "Wide — full body": "wide shot showing full body, environment dominant",
+            "Low angle — heroic": "low-angle shot, looking up at subject, heroic framing",
+            "High angle — vulnerable": "high-angle shot, looking down at subject, vulnerable framing",
+            # ── NSFW_STUDIO_SET_PLACEMENTS_INJECTION_POINT ──
         }
 
         # ═══════════════════════════════════════════════════════════════
