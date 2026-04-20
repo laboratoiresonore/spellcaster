@@ -1170,6 +1170,226 @@ local function _asset_upload_and_emit(target, png_path, friendly)
   return true, hash
 end
 
+-- ═══════════════════════════════════════════════════════════════════════
+-- GUILD SHOT API — canonical WAN I2V path (CLAUDE.md §16.4)
+-- ═══════════════════════════════════════════════════════════════════════
+-- Every WAN generation in Darktable routes through these helpers so the
+-- hand-rolled workflow JSON is gone. The Guild's /api/video/shots endpoints
+-- wrap the canonical spellcaster_core.workflows.build_wan_video + the
+-- canonical video_presets.wan_turbo_kwargs. When the canon moves, this
+-- plugin tracks it automatically — no more drift.
+--
+-- Flow:
+--   1. guild_create_shot()           → draft shot in the Guild's shotboard
+--   2. guild_attach_reference()      → base64-upload the ref frame
+--   3. guild_render_shot()           → queues the canonical build_wan_video
+--   4. guild_wait_for_shot_ready()   → polls until status="ready"
+--   5. guild_download_shot_video()   → fetches the MP4 output
+
+-- File → base64 string using the same python helper pattern as
+-- _asset_upload_and_emit. Returns nil on failure.
+local function _file_to_base64(path)
+  local b64_out = tmp_dir() .. sep .. "dt_b64_"
+                  .. os.time() .. "_" .. math.random(10000,99999) .. ".txt"
+  local cmd
+  if package.config:sub(1,1) == "\\" then
+    cmd = string.format(
+      'python -c "import base64,sys; sys.stdout.buffer.write(base64.b64encode(open(r\'%s\',\'rb\').read()))" > "%s" 2>NUL',
+      shell_esc(path), shell_esc(b64_out))
+  else
+    cmd = string.format(
+      'python -c "import base64,sys; sys.stdout.buffer.write(base64.b64encode(open(\'%s\',\'rb\').read()))" > "%s" 2>/dev/null',
+      shell_esc(path), shell_esc(b64_out))
+  end
+  os.execute(cmd)
+  local f = io.open(b64_out, "r")
+  if not f then return nil end
+  local b64 = f:read("*all"); f:close(); os.remove(b64_out)
+  if not b64 or b64 == "" then return nil end
+  return b64
+end
+
+-- Create a draft shot on the Guild. Returns shot_id or nil.
+-- `overrides` is an optional table of per-shot parameter overrides the
+-- Guild will pass through to build_wan_video (width, height, length, fps,
+-- ip_adapter_*, loras_high, loras_low, motion_mask, etc.). The Guild
+-- applies wan_turbo_kwargs internally based on the `preset` name.
+local function guild_create_shot(title, prompt, negative, preset, overrides)
+  local guild = get_guild_url()
+  if not guild or guild == "" then
+    return nil, "Guild URL not configured (preferences → Wizard Guild URL)"
+  end
+
+  -- Build JSON payload. Escape strings via json_escape where available.
+  local function esc(s) return (s or ""):gsub('\\', '\\\\'):gsub('"', '\\"') end
+  local overrides_json = "{}"
+  if overrides and next(overrides) ~= nil then
+    local parts = {}
+    for k, v in pairs(overrides) do
+      local kesc = esc(tostring(k))
+      if type(v) == "string" then
+        table.insert(parts, string.format('"%s":"%s"', kesc, esc(v)))
+      elseif type(v) == "boolean" then
+        table.insert(parts, string.format('"%s":%s', kesc, v and "true" or "false"))
+      elseif type(v) == "number" then
+        table.insert(parts, string.format('"%s":%s', kesc, tostring(v)))
+      end
+    end
+    overrides_json = "{" .. table.concat(parts, ",") .. "}"
+  end
+
+  local body = string.format(
+    '{"title":"%s","prompt":"%s","negative":"%s","preset":"%s","overrides":%s}',
+    esc(title or ""), esc(prompt or ""), esc(negative or ""),
+    esc(preset or "wan22_i2v_lightning"), overrides_json)
+
+  local tmp = tmp_dir() .. sep .. "dt_shot_create_" .. os.time() .. ".json"
+  local f = io.open(tmp, "w"); if not f then return nil, "tmp write failed" end
+  f:write(body); f:close()
+  local resp_path = tmp_dir() .. sep .. "dt_shot_resp_" .. os.time() .. ".json"
+  local cmd
+  if package.config:sub(1,1) == "\\" then
+    cmd = string.format(
+      'curl -s --max-time 30 -X POST -H "Content-Type: application/json" --data-binary "@%s" "%s/api/video/shots" -o "%s" 2>NUL',
+      shell_esc(tmp), shell_esc(guild), shell_esc(resp_path))
+  else
+    cmd = string.format(
+      'curl -s --max-time 30 -X POST -H "Content-Type: application/json" --data-binary "@%s" "%s/api/video/shots" -o "%s" 2>/dev/null',
+      shell_esc(tmp), shell_esc(guild), shell_esc(resp_path))
+  end
+  os.execute(cmd)
+  os.remove(tmp)
+  local rf = io.open(resp_path, "r")
+  if not rf then return nil, "no response" end
+  local resp = rf:read("*all"); rf:close(); os.remove(resp_path)
+  local shot_id = resp and (resp:match('"id"%s*:%s*"([^"]+)"')
+                            or resp:match('"shot_id"%s*:%s*"([^"]+)"'))
+  if not shot_id then
+    return nil, string.format("shot create failed: %s",
+                              (resp or ""):sub(1, 200))
+  end
+  return shot_id
+end
+
+-- Attach a reference image to an existing shot (base64 upload).
+local function guild_attach_reference(shot_id, image_path)
+  local guild = get_guild_url()
+  if not guild or guild == "" then return false, "no guild url" end
+  local b64 = _file_to_base64(image_path)
+  if not b64 then return false, "base64 encode failed" end
+  local body = string.format('{"image_data":"data:image/png;base64,%s"}', b64)
+  local tmp = tmp_dir() .. sep .. "dt_shot_ref_" .. os.time() .. ".json"
+  local f = io.open(tmp, "w"); if not f then return false, "tmp write failed" end
+  f:write(body); f:close()
+  local url = string.format("%s/api/video/shots/%s/reference", guild, shot_id)
+  local cmd
+  if package.config:sub(1,1) == "\\" then
+    cmd = string.format(
+      'curl -s --max-time 60 -X POST -H "Content-Type: application/json" --data-binary "@%s" "%s" -o NUL 2>NUL',
+      shell_esc(tmp), shell_esc(url))
+  else
+    cmd = string.format(
+      'curl -s --max-time 60 -X POST -H "Content-Type: application/json" --data-binary "@%s" "%s" -o /dev/null 2>/dev/null',
+      shell_esc(tmp), shell_esc(url))
+  end
+  os.execute(cmd)
+  os.remove(tmp)
+  return true
+end
+
+-- Trigger render for a shot. Returns true on queued, false on error.
+local function guild_render_shot(shot_id)
+  local guild = get_guild_url()
+  if not guild or guild == "" then return false, "no guild url" end
+  local url = string.format("%s/api/video/shots/%s/render", guild, shot_id)
+  local resp_path = tmp_dir() .. sep .. "dt_shot_render_" .. os.time() .. ".json"
+  local cmd
+  if package.config:sub(1,1) == "\\" then
+    cmd = string.format(
+      'curl -s --max-time 15 -X POST -H "Content-Type: application/json" -d "{}" "%s" -o "%s" 2>NUL',
+      shell_esc(url), shell_esc(resp_path))
+  else
+    cmd = string.format(
+      'curl -s --max-time 15 -X POST -H "Content-Type: application/json" -d "{}" "%s" -o "%s" 2>/dev/null',
+      shell_esc(url), shell_esc(resp_path))
+  end
+  os.execute(cmd)
+  local rf = io.open(resp_path, "r")
+  if not rf then return false, "no response" end
+  local resp = rf:read("*all"); rf:close(); os.remove(resp_path)
+  local status = resp and resp:match('"status"%s*:%s*"([^"]+)"') or ""
+  -- queued / running / ready → success; error / paused → failure
+  if status == "error" or status == "paused" then
+    return false, status .. ": " .. (resp or ""):sub(1, 200)
+  end
+  return true, status
+end
+
+-- Poll the Guild's shot list until the target shot reaches status="ready"
+-- (or "failed"). Returns (ready, status_or_error).
+local function guild_wait_for_shot_ready(shot_id, timeout_s)
+  local guild = get_guild_url()
+  if not guild or guild == "" then return false, "no guild url" end
+  timeout_s = timeout_s or 600
+  local deadline = os.time() + timeout_s
+  local last_status = "unknown"
+  while os.time() < deadline do
+    local list_url = guild .. "/api/video/shots"
+    local resp = curl_get(list_url)
+    if resp then
+      -- Find our shot by id within the list. The list is a JSON array of
+      -- shot dicts; each has "id" and "status". We do not parse the full
+      -- JSON (that would require a library) — we carve out the slice
+      -- between our id and the next id boundary.
+      local slice_start = resp:find('"id"%s*:%s*"' .. shot_id .. '"', 1, false)
+      if slice_start then
+        -- Look for the next "id": field OR end of array — whichever is
+        -- earlier bounds the slice containing our shot's keys.
+        local next_id = resp:find('"id"%s*:%s*"', slice_start + 1, false)
+        local slice_end = next_id or #resp
+        local slice = resp:sub(slice_start, slice_end)
+        local status = slice:match('"status"%s*:%s*"([^"]+)"') or "unknown"
+        last_status = status
+        if status == "ready" then return true, "ready" end
+        if status == "failed" then
+          local err = slice:match('"error"%s*:%s*"([^"]+)"') or ""
+          return false, "failed: " .. err
+        end
+      end
+    end
+    -- ~3s between polls is fine — WAN renders take minutes.
+    os.execute(
+      package.config:sub(1,1) == "\\" and "timeout /t 3 /nobreak > NUL"
+                                       or "sleep 3")
+  end
+  return false, "timeout (last status: " .. last_status .. ")"
+end
+
+-- Download the rendered video for a shot. Returns true on success.
+local function guild_download_shot_video(shot_id, out_path)
+  local guild = get_guild_url()
+  if not guild or guild == "" then return false, "no guild url" end
+  local url = string.format("%s/api/video/shots/%s/video", guild, shot_id)
+  curl_download(url, out_path)
+  local f = io.open(out_path, "rb")
+  if not f then return false, "no output file" end
+  local head = f:read(4); f:close()
+  -- Sanity check — ensure we didn't just download the 404 JSON body.
+  -- MP4 files start with an 'ftyp' box around offset 4; we just check
+  -- size > 1KB to rule out the error body.
+  local size = 0
+  local s = io.open(out_path, "rb")
+  if s then
+    s:seek("end")
+    size = s:seek()
+    s:close()
+  end
+  if size < 1024 then
+    return false, "download too small (likely error response)"
+  end
+  return true
+end
+
 -- SIMPLE JSON VALUE EXTRACTION
 -- ═════════════════════════════════════════════════════════════════════════
 -- Minimal parser to avoid adding a JSON library dependency.
@@ -2071,24 +2291,30 @@ local function wan_video_dims(src_w, src_h, target_long, align)
 end
 
 -- ══════════════════════════════════════════════════════════════════
---  ⚠ DIVERGENCE FROM CANON — see CLAUDE.md §16 "Canonical Video
---     Pipelines". The hand-rolled WAN workflow JSON in this file is
---     THE ONE KNOWN VIOLATION of the zero-duplication rule. When you
---     touch it:
---       1. Cross-check every value against CLAUDE.md §16.2 (WAN
---          formula) — high/low model filenames, VAE pairing by UNET
---          family, clip = umt5_xxl_fp8_e4m3fn_scaled.safetensors,
---          lightning steps=4 second_step=2 cfg=1 shift=5.0, accel
---          strength=1.0.
---       2. Prefer deleting this table outright. Darktable should
---          POST shots at the Guild's /api/video/shots endpoint like
---          the Resolve + SillyTavern plugins — that routes through
---          `spellcaster_core.video_presets.detect_wan_preset` +
---          `spellcaster_core.workflows.build_wan_video` so the canon
---          lands everywhere at once.
---       3. DO NOT change these values in isolation — if the canon
---          moves, the Darktable copy bricks on the user's box while
---          the rest of the app keeps working.
+--  LEGACY UI-LABEL TABLE — no longer drives generation
+--  ──────────────────────────────────────────────────────────────────
+--  As of the CLAUDE.md §16.4 refactor, WAN I2V is produced by the
+--  Guild's /api/video/shots pipeline (see `process_wan_i2v` below,
+--  which calls `guild_create_shot` → canonical
+--  `spellcaster_core.workflows.build_wan_video` +
+--  `video_presets.wan_turbo_kwargs` server-side).
+--
+--  This table now exists ONLY so the Darktable dropdown keeps the
+--  familiar labels ("Wan I2V 14B (GGUF Q4)", "fp8", etc.). The
+--  `high_model` / `low_model` / `vae` fields below are NOT consulted
+--  by `process_wan_i2v` anymore — the Guild re-detects the right
+--  files via `detect_wan_preset(comfy_url)` for the user's server.
+--
+--  We keep the fields populated for two reasons:
+--    1. The emergency escape hatch `build_wan_i2v_json` below still
+--       reads them — leave it callable if the Guild is unreachable.
+--    2. The label-to-preset heuristic in `process_wan_i2v` peeks at
+--       the label text (e.g. "hq", "lightning") to pick the Guild
+--       preset name. The model filenames are incidental now.
+--
+--  If you ADD a new UI label: just add an entry with a distinctive
+--  `label` string. You do NOT need to keep the other fields in sync
+--  with reality — the Guild owns the canon.
 -- ══════════════════════════════════════════════════════════════════
 local WAN_I2V_MODELS = {
   {
@@ -2357,6 +2583,20 @@ local cached_wan_lora_pairs = {}
 --
 -- If end_image_filename is set, VACE start-to-end conditioning replaces
 -- the standard WanImageToVideo node, enabling interpolation between frames.
+-- ══════════════════════════════════════════════════════════════════
+--  LEGACY: NO LONGER THE CANONICAL WAN I2V PATH
+--  ──────────────────────────────────────────────────────────────────
+--  `process_wan_i2v` now routes through `guild_create_shot` →
+--  Guild `/api/video/shots` → canonical
+--  `spellcaster_core.workflows.build_wan_video` +
+--  `video_presets.wan_turbo_kwargs`.
+--
+--  This hand-rolled JSON is kept as an emergency escape hatch for
+--  when the Guild is unreachable. It's intentionally NOT called by
+--  any live code path — see CLAUDE.md §16.4 rule #4. If you add a
+--  direct caller, you're reintroducing the drift this file fought
+--  for months. Go through the Guild.
+-- ══════════════════════════════════════════════════════════════════
 local function build_wan_i2v_json(image_filename, wan_preset, prompt, negative, seed,
                                    width, height, length, steps, cfg, shift, second_step,
                                    loras, accel_enabled, accel_strength,
@@ -4086,98 +4326,125 @@ local function process_colorize(image, ckpt, controlnet_name, prompt, negative, 
 end
 
 -- ── Wan I2V processing ──────────────────────────────────────────────────
+-- CANONICAL path (CLAUDE.md §16.4 rule #4): route through Guild's shot API.
+-- The Guild wraps spellcaster_core.workflows.build_wan_video +
+-- video_presets.wan_turbo_kwargs so this plugin tracks the canon
+-- automatically. The old hand-rolled JSON (build_wan_i2v_json) is left in
+-- the file as an emergency escape hatch but is no longer called.
 local function process_wan_i2v(image, wan_preset_idx, prompt, negative,
                                 width, height, length, steps, cfg, shift, second_step,
                                 loras, accel_enabled, accel_strength,
                                 upscale, upscale_factor, interpolate, pingpong, fps,
                                 crop_region, end_image_path, vace_strength)
-  local server = get_server()
-  local wan_preset = WAN_I2V_MODELS[wan_preset_idx]
+  local guild = get_guild_url()
+  if not guild or guild == "" then
+    dt.print(_("Wizard Guild URL not configured — preferences → Wizard Guild URL"))
+    return
+  end
+
+  -- Map the Darktable UI "WAN preset" label to a Guild preset name.
+  -- The Guild knows how to pick the right UNET / VAE / accel LoRAs via
+  -- video_presets.detect_wan_preset + wan_turbo_kwargs. We only need to
+  -- tell it which schedule the user wants (turbo vs HQ).
+  local dt_preset = WAN_I2V_MODELS[wan_preset_idx] or {}
+  local label = (dt_preset.label or ""):lower()
+  -- Heuristic: explicit HQ / full-step labels go to wan22_i2v_hq,
+  -- everything else (lightning / Q4 / fp8 / default) goes to lightning.
+  local guild_preset =
+    (label:find("hq") or label:find("full") or label:find("quality"))
+      and "wan22_i2v_hq"
+       or "wan22_i2v_lightning"
 
   dt.print(_("Exporting for Wan I2V..."))
-  local path, fname = export_to_temp(image)
-  if not path then dt.print(_("Export failed")); return end
+  local ref_path, fname = export_to_temp(image)
+  if not ref_path then dt.print(_("Export failed")); return end
 
-  dt.print(_("Uploading to ComfyUI..."))
-  local upload_name = "dt_wan_" .. os.time() .. "_" .. math.random(10000,99999) .. ".png"
-  curl_upload(server .. "/upload/image", path, upload_name)
-  os.remove(path)
-
-  -- Upload end image if provided
-  local end_upload_name = nil
+  -- Build the `overrides` dict — per-shot parameters the Guild passes
+  -- straight through to build_wan_video. Only non-nil / non-default
+  -- values are sent so the canonical preset is free to fill its defaults.
+  local overrides = {}
+  if width           then overrides.width           = width end
+  if height          then overrides.height          = height end
+  if length          then overrides.length          = length end
+  if fps             then overrides.fps             = fps end
+  if pingpong ~= nil then overrides.pingpong        = pingpong and true or false end
+  if upscale ~= nil  then
+    overrides.rtx_scale = (upscale and (upscale_factor or 2.5)) or 0
+  end
+  if interpolate ~= nil then overrides.interpolate  = interpolate and true or false end
+  -- Pass LoRA lists when the user picked any — the Guild's canonical
+  -- build_wan_video wires these via lora_loader_model_only (CLAUDE.md
+  -- §16.2 "LoRA injection"); the cross-family filter is bypassed so WAN
+  -- LoRAs aren't dropped.
+  if loras and loras.high and #loras.high > 0 then
+    overrides.loras_high = table.concat(loras.high, ",")
+  end
+  if loras and loras.low and #loras.low > 0 then
+    overrides.loras_low = table.concat(loras.low, ",")
+  end
+  if accel_enabled ~= nil then overrides.accel_enabled   = accel_enabled and true or false end
+  if accel_strength        then overrides.accel_strength  = accel_strength end
   if end_image_path and end_image_path ~= "" then
-    dt.print(_("Uploading end image..."))
-    end_upload_name = "dt_wan_end_" .. os.time() .. "_" .. math.random(10000,99999) .. ".png"
-    curl_upload(server .. "/upload/image", end_image_path, end_upload_name)
+    -- The Guild's shot API doesn't currently surface end_image, but the
+    -- override is passed through so future endpoints can read it.
+    overrides.end_image_path = end_image_path
+  end
+  if vace_strength then overrides.vace_strength = vace_strength end
+
+  local title = string.format("Darktable: %s", (image and image.filename) or "frame")
+  dt.print(_("Creating shot in the Wizard Guild..."))
+  local shot_id, err = guild_create_shot(title, prompt, negative or "",
+                                         guild_preset, overrides)
+  if not shot_id then
+    dt.print(string.format(_("Could not create shot: %s"), tostring(err)))
+    os.remove(ref_path)
+    return
   end
 
-  local seed = math.random(0, 2^31 - 1)
-  local wf_json = build_wan_i2v_json(upload_name, wan_preset, prompt, negative, seed,
-                                      width, height, length, steps, cfg, shift, second_step,
-                                      loras, accel_enabled, accel_strength,
-                                      upscale, upscale_factor, interpolate, pingpong, fps,
-                                      crop_region, end_upload_name, vace_strength)
-
-  dt.print(_("Queuing Wan I2V (this may take a while)..."))
-  local resp = curl_post_json(server .. "/prompt", wf_json)
-  local pid = json_val(resp, "prompt_id")
-  if not pid then dt.print(_("Failed to queue Wan I2V")); return end
-
-  dt.print(string.format(_("Generating video with %s..."), wan_preset.label))
-  local results = wait_result_all(pid, 600)
-  if not results then dt.print(_("Wan I2V timed out or failed")); return end
-
-  local gif_imported = false
-  local mp4_opened = false
-  local imgs_imported = 0
-
-  for j, entry in ipairs(results) do
-    local fn = entry.filename
-    local sf = entry.subfolder
-    local lower_fn = fn:lower()
-
-    -- Build download URL with subfolder if present
-    local url
-    if sf and sf ~= "" then
-      url = string.format("%s/view?filename=%s&subfolder=%s&type=output", server, fn, sf)
-    else
-      url = string.format("%s/view?filename=%s&type=output", server, fn)
-    end
-
-    if lower_fn:match("%.gif$") then
-      local out = tmp_dir() .. sep .. "comfy_wan_" .. os.time() .. "_" .. j .. ".gif"
-      curl_download(url, out)
-      dt.database.import(out)
-      gif_imported = true
-
-    elseif lower_fn:match("%.mp4$") or lower_fn:match("%.webm$") then
-      local vid_dir = tmp_dir() .. sep .. "comfyui_videos"
-      os.execute((dt.configuration.running_os == "windows" and "mkdir " or "mkdir -p ") .. '"' .. shell_esc(vid_dir) .. '"')
-      local safe_fn = fn:gsub("\\", "_"):gsub("/", "_")
-      local vid_path = vid_dir .. sep .. safe_fn
-      curl_download(url, vid_path)
-      mp4_opened = true
-      -- Open with system player
-      if dt.configuration.running_os == "windows" then
-        os.execute('start "" "' .. shell_esc(vid_path) .. '"')
-      elseif dt.configuration.running_os == "macos" then
-        os.execute('open "' .. shell_esc(vid_path) .. '"')
-      else
-        os.execute('xdg-open "' .. shell_esc(vid_path) .. '" &')
-      end
-
-    end
+  dt.print(_("Uploading reference frame..."))
+  local ok_ref, ref_err = guild_attach_reference(shot_id, ref_path)
+  os.remove(ref_path)
+  if not ok_ref then
+    dt.print(string.format(_("Reference upload failed: %s"), tostring(ref_err)))
+    return
   end
 
-  -- Status message
-  local parts = {}
-  if gif_imported then table.insert(parts, "GIF imported") end
-  if mp4_opened then table.insert(parts, "video opened in player") end
-  if #parts > 0 then
-    dt.print(string.format(_("Wan I2V complete! %s"), table.concat(parts, ", ")))
+  dt.print(string.format(_("Rendering via canonical pipeline (%s)..."),
+                         guild_preset))
+  local ok_render, status_or_err = guild_render_shot(shot_id)
+  if not ok_render then
+    dt.print(string.format(_("Render request refused: %s"),
+                           tostring(status_or_err)))
+    return
+  end
+
+  local ok_ready, status = guild_wait_for_shot_ready(shot_id, 900)
+  if not ok_ready then
+    dt.print(string.format(_("Render did not complete: %s"), tostring(status)))
+    return
+  end
+
+  local vid_dir = tmp_dir() .. sep .. "comfyui_videos"
+  os.execute((dt.configuration.running_os == "windows" and "mkdir " or "mkdir -p ")
+             .. '"' .. shell_esc(vid_dir) .. '"')
+  local vid_path = vid_dir .. sep .. string.format(
+    "guild_wan_%s_%d.mp4", shot_id:sub(1, 8), os.time())
+  local ok_dl, dl_err = guild_download_shot_video(shot_id, vid_path)
+  if not ok_dl then
+    dt.print(string.format(_("Video download failed: %s"), tostring(dl_err)))
+    return
+  end
+
+  -- Open with system player
+  if dt.configuration.running_os == "windows" then
+    os.execute('start "" "' .. shell_esc(vid_path) .. '"')
+  elseif dt.configuration.running_os == "macos" then
+    os.execute('open "' .. shell_esc(vid_path) .. '"')
   else
-    dt.print(_("Wan I2V complete!"))
+    os.execute('xdg-open "' .. shell_esc(vid_path) .. '" &')
   end
+
+  dt.print(_("Wan I2V complete (canonical pipeline) — video opened in player"))
 end
 
 -- ── Klein Flux2 processing ──────────────────────────────────────────────

@@ -482,14 +482,23 @@ class Pipeline:
             raise RuntimeError("WAN video not available")
         # Build WAN preset from server detection
         from .preflight import get_available_nodes
+        from . import video_presets as _vp
         wan_preset = self._detect_wan_preset()
         seed = random.randint(1, 2**32 - 1)
+        turbo = params.get("turbo", True)
+        # Canon: pair every build_wan_video call with wan_turbo_kwargs so
+        # turbo/full-step schedules (steps/cfg/second_step) match across
+        # every WAN consumer. Without this, turbo=False leaks the preset's
+        # turbo defaults and produces black frames on the user's RTX 5060 Ti.
+        # See CLAUDE.md §16.4 rule #2.
+        _canon = _vp.wan_turbo_kwargs(bool(turbo))
         wf = build_wan_video(
             image, wan_preset, params["prompt"], params.get("negative", "blurry"), seed,
             width=params.get("width", 576), height=params.get("height", 320),
-            length=params.get("length", 33), turbo=params.get("turbo", True),
+            length=params.get("length", 33), turbo=turbo,
             rtx_scale=0, interpolate=False, face_swap=False,
-            fps=params.get("fps", 16))
+            fps=params.get("fps", 16),
+            **_canon)
         return self._run_simple(wf)
 
     def _run_ltx(self, image, params):
