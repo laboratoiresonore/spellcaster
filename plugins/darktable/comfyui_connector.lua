@@ -4318,11 +4318,15 @@ end
 -- The Lua plugin used to do all inpainting via SDXL/KSampler; this path
 -- gets the architecturally correct Klein workflow (UNETLoader +
 -- Flux2Scheduler + SamplerCustomAdvanced + the Klein enhancer chain)
--- without duplicating the 200-line builder JSON. Mask is uploaded to
--- ComfyUI directly (same as LaMa) so the builder's image_filename /
--- mask_filename args see the names ComfyUI's LoadImage expects.
+-- without duplicating the 200-line builder JSON.
+--
+-- Mask source — pass either ``mask_path`` (file on disk) OR
+-- ``sam3_prompt`` (text describing what to mask, segmentation built
+-- server-side via SAM3). When both are set, SAM3 wins because typing
+-- a prompt is the explicit "I don't want to deal with mask files"
+-- gesture. Either-or is enforced in the canonical builder.
 local function process_klein_inpaint(image, mask_path, klein_model_label,
-                                      prompt, denoise)
+                                      prompt, denoise, sam3_prompt)
   local server = get_server()
 
   dt.print(_("Exporting for Klein inpaint..."))
@@ -4334,20 +4338,33 @@ local function process_klein_inpaint(image, mask_path, klein_model_label,
   curl_upload(server .. "/upload/image", path, img_name)
   os.remove(path)
 
-  dt.print(_("Uploading mask to ComfyUI..."))
-  local mask_name = "dt_kinp_mask_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
-  curl_upload(server .. "/upload/image", mask_path, mask_name)
+  -- Mask param — SAM3 prompt takes precedence over file path
+  local mask_param
+  if sam3_prompt and sam3_prompt ~= "" then
+    mask_param = string.format(
+      ',"sam3_prompt":"%s","sam3_expand":6,"sam3_blur":4',
+      json_escape(sam3_prompt))
+    dt.print(_("Building SAM3 mask: ") .. sam3_prompt)
+  elseif mask_path and mask_path ~= "" then
+    dt.print(_("Uploading mask to ComfyUI..."))
+    local mask_name = "dt_kinp_mask_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
+    curl_upload(server .. "/upload/image", mask_path, mask_name)
+    mask_param = string.format(',"mask_filename":"%s"', json_escape(mask_name))
+  else
+    dt.print(_("Klein inpaint: provide either a mask path or a SAM3 mask prompt"))
+    return
+  end
 
   local seed = math.random(1, 2^31 - 1)
   local params = string.format(
-    '{"image_filename":"%s","mask_filename":"%s","prompt_text":"%s",'
-    .. '"seed":%d,"klein_model_key":"%s","denoise":%.2f,"enhance":true}',
+    '{"image_filename":"%s","prompt_text":"%s",'
+    .. '"seed":%d,"klein_model_key":"%s","denoise":%.2f,"enhance":true%s}',
     json_escape(img_name),
-    json_escape(mask_name),
     json_escape(prompt or ""),
     seed,
     json_escape(klein_model_label or "Klein 9B"),
-    denoise or 0.92)
+    denoise or 0.92,
+    mask_param)
 
   dt.print(_("Klein inpaint running (this may take a minute)..."))
   local urls, err = _run_builder("build_klein_inpaint", params)
@@ -4361,6 +4378,48 @@ local function process_klein_inpaint(image, mask_path, klein_model_label,
   end
   local imported = _download_guild_assets(urls, "klein_inpaint")
   dt.print(string.format(_("Klein inpaint done — %d image(s) imported"), imported))
+end
+
+-- ── LaMa Object Removal (canonical, with SAM3 support) ─────────────────
+-- The legacy build_lama_json + process_lama path requires a mask file.
+-- This canonical path accepts a SAM3 prompt instead, so the user can
+-- type "the trash can" and never leave Darktable.
+local function process_lama_canon(image, mask_path, sam3_prompt)
+  local server = get_server()
+
+  dt.print(_("Exporting for LaMa removal..."))
+  local path, fname = export_to_temp(image)
+  if not path then dt.print(_("Export failed")); return end
+
+  dt.print(_("Uploading image to ComfyUI..."))
+  local img_name = "dt_lama2_img_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
+  curl_upload(server .. "/upload/image", path, img_name)
+  os.remove(path)
+
+  local mask_param
+  if sam3_prompt and sam3_prompt ~= "" then
+    mask_param = string.format(
+      ',"sam3_prompt":"%s","sam3_expand":8,"sam3_blur":6',
+      json_escape(sam3_prompt))
+    dt.print(_("SAM3 mask: ") .. sam3_prompt)
+  elseif mask_path and mask_path ~= "" then
+    dt.print(_("Uploading mask to ComfyUI..."))
+    local mask_name = "dt_lama2_mask_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
+    curl_upload(server .. "/upload/image", mask_path, mask_name)
+    mask_param = string.format(',"mask_filename":"%s"', json_escape(mask_name))
+  else
+    dt.print(_("LaMa Remove: provide either a mask path or a SAM3 mask prompt"))
+    return
+  end
+
+  local params = string.format('{"image_filename":"%s"%s}',
+                               json_escape(img_name), mask_param)
+  dt.print(_("LaMa Remove running..."))
+  local urls, err = _run_builder("build_lama_remove", params)
+  if not urls then dt.print(_("LaMa Remove failed: ") .. tostring(err)); return end
+  if #urls == 0 then dt.print(_("LaMa Remove returned no images")); return end
+  local imported = _download_guild_assets(urls, "lama_remove")
+  dt.print(string.format(_("LaMa Remove done — %d image(s) imported"), imported))
 end
 
 -- ── Klein Re-pose (canonical) ──────────────────────────────────────────
@@ -4403,6 +4462,125 @@ local function process_klein_repose(image, klein_model_label, prompt, denoise)
   end
   local imported = _download_guild_assets(urls, "klein_repose")
   dt.print(string.format(_("Klein re-pose done — %d image(s) imported"), imported))
+end
+
+-- ── Klein Head Swap (canonical) ────────────────────────────────────────
+-- ReActor face swap → Klein img2img refinement. The two stages are
+-- chained inside spellcaster_core.workflows.build_klein_headswap so we
+-- just hand it both filenames + the model key. ``source`` is the face
+-- to insert; ``target`` is the photo whose head gets replaced.
+local function process_klein_headswap(image, source_path, klein_model_label,
+                                       prompt, denoise)
+  local server = get_server()
+
+  dt.print(_("Exporting target for Klein head swap..."))
+  local path, fname = export_to_temp(image)
+  if not path then dt.print(_("Export failed")); return end
+
+  dt.print(_("Uploading target to ComfyUI..."))
+  local tgt_name = "dt_khs_tgt_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
+  curl_upload(server .. "/upload/image", path, tgt_name)
+  os.remove(path)
+
+  dt.print(_("Uploading source face..."))
+  local src_name = "dt_khs_src_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
+  curl_upload(server .. "/upload/image", source_path, src_name)
+
+  local seed = math.random(1, 2^31 - 1)
+  local params = string.format(
+    '{"target_filename":"%s","source_filename":"%s","prompt":"%s",'
+    .. '"seed":%d,"klein_model_key":"%s","denoise":%.2f,"enhance":true}',
+    json_escape(tgt_name),
+    json_escape(src_name),
+    json_escape(prompt or ""),
+    seed,
+    json_escape(klein_model_label or "Klein 9B"),
+    denoise or 0.35)
+
+  dt.print(_("Klein head swap running (ReActor + Klein refine)..."))
+  local urls, err = _run_builder("build_klein_headswap", params)
+  if not urls then dt.print(_("Klein head swap failed: ") .. tostring(err)); return end
+  if #urls == 0 then dt.print(_("Klein head swap returned no images")); return end
+  local imported = _download_guild_assets(urls, "klein_headswap")
+  dt.print(string.format(_("Klein head swap done — %d image(s) imported"), imported))
+end
+
+-- ── Klein img2img with reference (canonical) ───────────────────────────
+-- Uses the reference image as the ReferenceLatent source rather than
+-- the input itself — soft style/lighting/structure guidance from a
+-- separate photo while editing the main image. ref_strength 1.0 =
+-- strong influence, 0.4 = subtle nudge.
+local function process_klein_img2img_ref(image, ref_path, klein_model_label,
+                                          prompt, denoise, ref_strength)
+  local server = get_server()
+
+  dt.print(_("Exporting for Klein img2img+ref..."))
+  local path, fname = export_to_temp(image)
+  if not path then dt.print(_("Export failed")); return end
+
+  dt.print(_("Uploading image to ComfyUI..."))
+  local img_name = "dt_kref_img_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
+  curl_upload(server .. "/upload/image", path, img_name)
+  os.remove(path)
+
+  dt.print(_("Uploading reference..."))
+  local ref_name = "dt_kref_ref_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
+  curl_upload(server .. "/upload/image", ref_path, ref_name)
+
+  local seed = math.random(1, 2^31 - 1)
+  local params = string.format(
+    '{"image_filename":"%s","ref_filename":"%s","prompt_text":"%s",'
+    .. '"seed":%d,"klein_model_key":"%s","denoise":%.2f,'
+    .. '"ref_strength":%.2f,"enhance":true}',
+    json_escape(img_name),
+    json_escape(ref_name),
+    json_escape(prompt or ""),
+    seed,
+    json_escape(klein_model_label or "Klein 9B"),
+    denoise or 0.65,
+    ref_strength or 1.0)
+
+  dt.print(_("Klein img2img+ref running..."))
+  local urls, err = _run_builder("build_klein_img2img_ref", params)
+  if not urls then dt.print(_("Klein img2img+ref failed: ") .. tostring(err)); return end
+  if #urls == 0 then dt.print(_("Klein img2img+ref returned no images")); return end
+  local imported = _download_guild_assets(urls, "klein_img2img_ref")
+  dt.print(string.format(_("Klein img2img+ref done — %d image(s) imported"), imported))
+end
+
+-- ── Upscale Blend (canonical) ──────────────────────────────────────────
+-- Run two upscaler models in parallel and blend the outputs. Useful
+-- when one model is sharp-but-crunchy (e.g. RealESRGAN) and the other
+-- is smooth-but-soft (e.g. Remacri) — the blend gives a tunable
+-- middle ground.
+local function process_upscale_blend(image, model_a_file, model_b_file,
+                                      blend_factor, scale_by)
+  local server = get_server()
+
+  dt.print(_("Exporting for upscale blend..."))
+  local path, fname = export_to_temp(image)
+  if not path then dt.print(_("Export failed")); return end
+
+  dt.print(_("Uploading to ComfyUI..."))
+  local img_name = "dt_ublend_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
+  curl_upload(server .. "/upload/image", path, img_name)
+  os.remove(path)
+
+  local params = string.format(
+    '{"image_filename":"%s","model_a_name":"%s","model_b_name":"%s",'
+    .. '"blend_factor":%.2f,"scale_by":%.2f}',
+    json_escape(img_name),
+    json_escape(model_a_file or ""),
+    json_escape(model_b_file or ""),
+    blend_factor or 0.5,
+    scale_by or 1.0)
+
+  dt.print(_("Upscale blend running..."))
+  local urls, err = _run_builder("build_upscale_blend", params)
+  if not urls then dt.print(_("Upscale blend failed: ") .. tostring(err)); return end
+  if #urls == 0 then dt.print(_("Upscale blend returned no images")); return end
+  local imported = _download_guild_assets(urls, "upscale_blend")
+  dt.print(string.format(_("Upscale blend done — %d image(s) imported"), imported))
 end
 
 -- ── Color Grading / LUT processing ────────────────────────────────────
@@ -7387,20 +7565,35 @@ local klein_inpaint_denoise_slider = dt.new_widget("slider") {
   step = 0.02, digits = 2, value = 0.92,
 }
 
+-- Shared SAM3 mask prompt entry — feeds Klein Inpaint, LaMa (canonical),
+-- and the smart-action buttons. When this is non-empty, the mask file
+-- path is ignored: SAM3 builds the mask server-side from the text. UX
+-- win: photographers describe what to mask in plain English instead of
+-- bouncing to GIMP to draw a PNG.
+local klein_sam3_prompt_entry = dt.new_widget("entry") {
+  text = "",
+  placeholder = _("...or SAM3 mask prompt: 'the sky', 'her face', 'the trash can'..."),
+  tooltip = _("Type what you want masked. SAM3 segments the image server-side. Leave empty to fall back to the mask path above."),
+  editable = true,
+}
+
 local klein_inpaint_send_btn = dt.new_widget("button") {
   label = _("Klein Inpaint"),
-  tooltip = _("Regenerate the masked region with Flux 2 Klein (canonical workflow via the Guild)"),
+  tooltip = _("Regenerate the masked region with Flux 2 Klein. Use SAM3 prompt for hands-free masking, or supply a mask file."),
   clicked_callback = function()
     local images = dt.gui.selection()
     if #images == 0 then dt.print(_("No images selected")); return end
     if #images > 1 then dt.print(_("Klein inpaint processes one image at a time — using first selected")); end
-    local mask_path = klein_inpaint_mask_entry.text
-    if not mask_path or mask_path == "" then
-      dt.print(_("Enter mask image path first")); return
+    local sam3 = klein_sam3_prompt_entry.text or ""
+    local mask_path = klein_inpaint_mask_entry.text or ""
+    if (sam3 == "") and (mask_path == "") then
+      dt.print(_("Enter a SAM3 mask prompt OR a mask image path")); return
     end
-    local mf = io.open(mask_path, "r")
-    if not mf then dt.print(_("Mask image not found: ") .. mask_path); return end
-    mf:close()
+    if mask_path ~= "" and sam3 == "" then
+      local mf = io.open(mask_path, "r")
+      if not mf then dt.print(_("Mask image not found: ") .. mask_path); return end
+      mf:close()
+    end
     local prompt = klein_inpaint_prompt_entry.text or ""
     if prompt == "" then
       dt.print(_("Enter a prompt describing what should appear in the masked area")); return
@@ -7409,10 +7602,118 @@ local klein_inpaint_send_btn = dt.new_widget("button") {
     local model_label = KLEIN_MODELS[model_idx] and KLEIN_MODELS[model_idx].label or "Klein 9B"
     local denoise = klein_inpaint_denoise_slider.value
     local ok, err = pcall(process_klein_inpaint, images[1], mask_path,
-                          model_label, prompt, denoise)
+                          model_label, prompt, denoise, sam3)
     if not ok then
       dt.print(_("Error: ") .. tostring(err))
       dt.print_error("Spellcaster Klein inpaint error: " .. tostring(err))
+    end
+  end
+}
+
+-- LaMa Remove with SAM3 — sibling button to the legacy mask-path lama
+-- button up above. Reuses the shared klein_sam3_prompt_entry so the
+-- user types the target object once and can run either Klein Inpaint
+-- (regenerate) or LaMa Remove (deterministic erase) against the same
+-- mask description.
+local lama_sam3_send_btn = dt.new_widget("button") {
+  label = _("LaMa Remove (SAM3)"),
+  tooltip = _("Erase the SAM3-described region with LaMa. Deterministic, no diffusion — best for small objects."),
+  clicked_callback = function()
+    local images = dt.gui.selection()
+    if #images == 0 then dt.print(_("No images selected")); return end
+    if #images > 1 then dt.print(_("LaMa Remove processes one image at a time — using first selected")); end
+    local sam3 = klein_sam3_prompt_entry.text or ""
+    local mask_path = klein_inpaint_mask_entry.text or ""
+    if (sam3 == "") and (mask_path == "") then
+      dt.print(_("Enter a SAM3 mask prompt (or a mask image path) first")); return
+    end
+    local ok, err = pcall(process_lama_canon, images[1], mask_path, sam3)
+    if not ok then
+      dt.print(_("Error: ") .. tostring(err))
+      dt.print_error("Spellcaster LaMa SAM3 error: " .. tostring(err))
+    end
+  end
+}
+
+-- ── Smart Actions ──────────────────────────────────────────────────────
+-- One-click, no-mask, no-prompt photo edits. Each chains a fixed SAM3
+-- mask prompt + a fixed Klein Inpaint refinement to give photographers
+-- workflow buttons rather than tool buttons. Internally identical to a
+-- normal Klein Inpaint with the values pre-filled.
+local function _smart_klein_inpaint(image, sam3_target, refinement_prompt, denoise)
+  local model_idx = klein_model_selector.selected or 1
+  local model_label = KLEIN_MODELS[model_idx] and KLEIN_MODELS[model_idx].label or "Klein 9B"
+  return process_klein_inpaint(image, "", model_label, refinement_prompt,
+                                denoise, sam3_target)
+end
+
+local smart_skin_btn = dt.new_widget("button") {
+  label = _("✨ Smooth Skin"),
+  tooltip = _("Auto-mask all visible skin via SAM3, then run Klein with the skin-texture refinement."),
+  clicked_callback = function()
+    local images = dt.gui.selection()
+    if #images == 0 then dt.print(_("No images selected")); return end
+    for i, img in ipairs(images) do
+      dt.print(string.format(_("Smooth Skin %d/%d"), i, #images))
+      local ok, err = pcall(_smart_klein_inpaint, img, "skin",
+        "detailed skin texture, realistic skin pores, natural skin surface, subsurface scattering, photorealistic skin detail",
+        0.45)
+      if not ok then dt.print(_("Smooth Skin error: ") .. tostring(err)) end
+    end
+  end
+}
+
+local smart_eyes_btn = dt.new_widget("button") {
+  label = _("✨ Brighten Eyes"),
+  tooltip = _("Auto-mask the eyes via SAM3, then run Klein with the iris-detail refinement."),
+  clicked_callback = function()
+    local images = dt.gui.selection()
+    if #images == 0 then dt.print(_("No images selected")); return end
+    for i, img in ipairs(images) do
+      dt.print(string.format(_("Brighten Eyes %d/%d"), i, #images))
+      local ok, err = pcall(_smart_klein_inpaint, img, "eyes",
+        "beautiful detailed eyes, perfect symmetrical eyes, clear sharp iris, realistic eye reflections, natural eye color, detailed eyelashes",
+        0.65)
+      if not ok then dt.print(_("Brighten Eyes error: ") .. tostring(err)) end
+    end
+  end
+}
+
+-- The sky button takes the prompt entry's contents to drive the new sky
+-- (defaulting to a dramatic stormy sky). It's the one smart action that
+-- benefits from a knob; the others have a single canonical refinement.
+local smart_sky_btn = dt.new_widget("button") {
+  label = _("✨ Replace Sky"),
+  tooltip = _("Auto-mask the sky via SAM3, then run Klein Inpaint with the prompt above (defaults to a dramatic sky)."),
+  clicked_callback = function()
+    local images = dt.gui.selection()
+    if #images == 0 then dt.print(_("No images selected")); return end
+    local prompt = klein_inpaint_prompt_entry.text or ""
+    if prompt == "" then
+      prompt = "dramatic stormy sky with golden hour clouds, cinematic lighting, high dynamic range, photorealistic"
+      dt.print(_("Replace Sky: using default dramatic-sky prompt (set Inpaint prompt to override)"))
+    end
+    for i, img in ipairs(images) do
+      dt.print(string.format(_("Replace Sky %d/%d"), i, #images))
+      local ok, err = pcall(_smart_klein_inpaint, img, "sky", prompt, 0.92)
+      if not ok then dt.print(_("Replace Sky error: ") .. tostring(err)) end
+    end
+  end
+}
+
+local smart_bg_remove_btn = dt.new_widget("button") {
+  label = _("✨ Remove Background"),
+  tooltip = _("Auto-mask the main subject via SAM3 (inverted), then erase the background with LaMa."),
+  clicked_callback = function()
+    local images = dt.gui.selection()
+    if #images == 0 then dt.print(_("No images selected")); return end
+    -- LaMa with SAM3 prompt "background" — sam3_invert is set in the
+    -- builder defaults to false; here we want literal background. SAM3
+    -- knows that label well enough to produce a usable mask.
+    for i, img in ipairs(images) do
+      dt.print(string.format(_("Remove Background %d/%d"), i, #images))
+      local ok, err = pcall(process_lama_canon, img, "", "background")
+      if not ok then dt.print(_("Remove Background error: ") .. tostring(err)) end
     end
   end
 }
@@ -7451,6 +7752,176 @@ local klein_repose_send_btn = dt.new_widget("button") {
     if not ok then
       dt.print(_("Error: ") .. tostring(err))
       dt.print_error("Spellcaster Klein re-pose error: " .. tostring(err))
+    end
+  end
+}
+
+-- Klein Head Swap controls
+local klein_headswap_source_entry = dt.new_widget("entry") {
+  text = "",
+  placeholder = _("Path to source face image..."),
+  tooltip = _("PNG/JPG of the face you want to swap INTO the selected target image"),
+  editable = true,
+}
+
+local klein_headswap_prompt_entry = dt.new_widget("entry") {
+  text = "",
+  placeholder = _("Optional refinement prompt (e.g. 'natural skin, studio lighting')..."),
+  tooltip = _("Klein refinement prompt — leave empty for a neutral blend"),
+  editable = true,
+}
+
+local klein_headswap_denoise_slider = dt.new_widget("slider") {
+  label = _("Refine denoise"),
+  tooltip = _("Klein refinement strength after ReActor swap. 0.20 = subtle blend, 0.45 = stronger smoothing."),
+  soft_min = 0.10, soft_max = 0.60,
+  hard_min = 0.05, hard_max = 0.95,
+  step = 0.02, digits = 2, value = 0.35,
+}
+
+local klein_headswap_send_btn = dt.new_widget("button") {
+  label = _("Klein Head Swap"),
+  tooltip = _("ReActor face swap + Klein refinement (canonical workflow via the Guild)"),
+  clicked_callback = function()
+    local images = dt.gui.selection()
+    if #images == 0 then dt.print(_("No images selected")); return end
+    if #images > 1 then dt.print(_("Klein head swap processes one image at a time — using first selected")); end
+    local src = klein_headswap_source_entry.text
+    if not src or src == "" then dt.print(_("Enter source face image path first")); return end
+    local sf = io.open(src, "r")
+    if not sf then dt.print(_("Source face image not found: ") .. src); return end
+    sf:close()
+    local model_idx = klein_model_selector.selected or 1
+    local model_label = KLEIN_MODELS[model_idx] and KLEIN_MODELS[model_idx].label or "Klein 9B"
+    local prompt = klein_headswap_prompt_entry.text or ""
+    local denoise = klein_headswap_denoise_slider.value
+    local ok, err = pcall(process_klein_headswap, images[1], src, model_label, prompt, denoise)
+    if not ok then
+      dt.print(_("Error: ") .. tostring(err))
+      dt.print_error("Spellcaster Klein head swap error: " .. tostring(err))
+    end
+  end
+}
+
+-- Klein img2img with reference controls
+local klein_img2img_ref_path_entry = dt.new_widget("entry") {
+  text = "",
+  placeholder = _("Path to reference image (lighting / mood / style guide)..."),
+  tooltip = _("PNG/JPG used as soft style + structure guidance via Klein's ReferenceLatent"),
+  editable = true,
+}
+
+local klein_img2img_ref_prompt_entry = dt.new_widget("entry") {
+  text = "",
+  placeholder = _("Edit prompt (what should change in the main image)..."),
+  tooltip = _("Klein img2img with reference — natural language prompt"),
+  editable = true,
+}
+
+local klein_img2img_ref_denoise_slider = dt.new_widget("slider") {
+  label = _("Denoise"),
+  tooltip = _("How far the result drifts from the input. 0.4 = subtle, 0.8 = bold."),
+  soft_min = 0.30, soft_max = 0.95,
+  hard_min = 0.10, hard_max = 1.00,
+  step = 0.02, digits = 2, value = 0.65,
+}
+
+local klein_img2img_ref_strength_slider = dt.new_widget("slider") {
+  label = _("Reference strength"),
+  tooltip = _("How strongly the reference influences the output. 1.0 = strong guide, 0.4 = soft hint."),
+  soft_min = 0.20, soft_max = 1.50,
+  hard_min = 0.10, hard_max = 2.00,
+  step = 0.05, digits = 2, value = 1.0,
+}
+
+local klein_img2img_ref_send_btn = dt.new_widget("button") {
+  label = _("Klein img2img + Ref"),
+  tooltip = _("Edit while matching a reference image's lighting/structure (canonical workflow via the Guild)"),
+  clicked_callback = function()
+    local images = dt.gui.selection()
+    if #images == 0 then dt.print(_("No images selected")); return end
+    if #images > 1 then dt.print(_("Klein img2img+ref processes one image at a time — using first selected")); end
+    local refp = klein_img2img_ref_path_entry.text
+    if not refp or refp == "" then dt.print(_("Enter reference image path first")); return end
+    local rf = io.open(refp, "r")
+    if not rf then dt.print(_("Reference image not found: ") .. refp); return end
+    rf:close()
+    local prompt = klein_img2img_ref_prompt_entry.text or ""
+    if prompt == "" then dt.print(_("Enter a prompt describing the edit")); return end
+    local model_idx = klein_model_selector.selected or 1
+    local model_label = KLEIN_MODELS[model_idx] and KLEIN_MODELS[model_idx].label or "Klein 9B"
+    local denoise = klein_img2img_ref_denoise_slider.value
+    local refs = klein_img2img_ref_strength_slider.value
+    local ok, err = pcall(process_klein_img2img_ref, images[1], refp, model_label,
+                          prompt, denoise, refs)
+    if not ok then
+      dt.print(_("Error: ") .. tostring(err))
+      dt.print_error("Spellcaster Klein img2img+ref error: " .. tostring(err))
+    end
+  end
+}
+
+-- Hybrid Upscale Blend controls
+-- Reuses the existing UPSCALE_MODELS table (line ~2033). Two combos
+-- for the two models, one slider for the mix.
+local upscale_blend_model_a_selector = dt.new_widget("combobox") {
+  label = _("Upscale model A"),
+  tooltip = _("First upscaler — typically the sharper one"),
+  selected = 1,
+  UPSCALE_MODELS[1].label,
+  UPSCALE_MODELS[2].label,
+  UPSCALE_MODELS[3].label,
+  UPSCALE_MODELS[4].label,
+  UPSCALE_MODELS[5].label,
+}
+
+local upscale_blend_model_b_selector = dt.new_widget("combobox") {
+  label = _("Upscale model B"),
+  tooltip = _("Second upscaler — typically the smoother one"),
+  selected = 4,
+  UPSCALE_MODELS[1].label,
+  UPSCALE_MODELS[2].label,
+  UPSCALE_MODELS[3].label,
+  UPSCALE_MODELS[4].label,
+  UPSCALE_MODELS[5].label,
+}
+
+local upscale_blend_factor_slider = dt.new_widget("slider") {
+  label = _("Blend (A→B)"),
+  tooltip = _("0.0 = pure A, 1.0 = pure B, 0.5 = even mix"),
+  soft_min = 0.0, soft_max = 1.0,
+  hard_min = 0.0, hard_max = 1.0,
+  step = 0.05, digits = 2, value = 0.5,
+}
+
+local upscale_blend_scale_slider = dt.new_widget("slider") {
+  label = _("Scale by"),
+  tooltip = _("Final downscale relative to the upscaler's native output. 1.0 keeps the full 4x; 0.5 halves it."),
+  soft_min = 0.25, soft_max = 1.0,
+  hard_min = 0.10, hard_max = 1.0,
+  step = 0.05, digits = 2, value = 1.0,
+}
+
+local upscale_blend_send_btn = dt.new_widget("button") {
+  label = _("Hybrid Upscale (Blend)"),
+  tooltip = _("Run two upscalers in parallel and blend the outputs (canonical workflow via the Guild)"),
+  clicked_callback = function()
+    local images = dt.gui.selection()
+    if #images == 0 then dt.print(_("No images selected")); return end
+    local a_idx = upscale_blend_model_a_selector.selected or 1
+    local b_idx = upscale_blend_model_b_selector.selected or 4
+    local a_file = UPSCALE_MODELS[a_idx] and UPSCALE_MODELS[a_idx].file
+    local b_file = UPSCALE_MODELS[b_idx] and UPSCALE_MODELS[b_idx].file
+    if not a_file or not b_file then dt.print(_("Invalid upscale model selection")); return end
+    local blend = upscale_blend_factor_slider.value
+    local scale = upscale_blend_scale_slider.value
+    for i, img in ipairs(images) do
+      dt.print(string.format(_("Upscale blend %d/%d"), i, #images))
+      local ok, err = pcall(process_upscale_blend, img, a_file, b_file, blend, scale)
+      if not ok then
+        dt.print(_("Error: ") .. tostring(err))
+        dt.print_error("Spellcaster upscale blend error: " .. tostring(err))
+      end
     end
   end
 }
@@ -9166,14 +9637,43 @@ local module_widget = dt.new_widget("box") {
   klein_model_selector,
   dt.new_widget("label") { label = _("Inpaint mask path (white=replace):") },
   klein_inpaint_mask_entry,
+  klein_sam3_prompt_entry,
   dt.new_widget("label") { label = _("Inpaint prompt:") },
   klein_inpaint_prompt_entry,
   klein_inpaint_denoise_slider,
   klein_inpaint_send_btn,
+  lama_sam3_send_btn,
+  dt.new_widget("label") { label = _("\xe2\x9c\xa8 SMART ACTIONS (SAM3-driven, no mask file needed):") },
+  smart_skin_btn,
+  smart_eyes_btn,
+  smart_sky_btn,
+  smart_bg_remove_btn,
   dt.new_widget("label") { label = _("Re-pose prompt:") },
   klein_repose_prompt_entry,
   klein_repose_denoise_slider,
   klein_repose_send_btn,
+  dt.new_widget("label") { label = _("Head swap source face path:") },
+  klein_headswap_source_entry,
+  dt.new_widget("label") { label = _("Head swap refine prompt:") },
+  klein_headswap_prompt_entry,
+  klein_headswap_denoise_slider,
+  klein_headswap_send_btn,
+  dt.new_widget("label") { label = _("img2img reference image path:") },
+  klein_img2img_ref_path_entry,
+  dt.new_widget("label") { label = _("img2img+ref prompt:") },
+  klein_img2img_ref_prompt_entry,
+  klein_img2img_ref_denoise_slider,
+  klein_img2img_ref_strength_slider,
+  klein_img2img_ref_send_btn,
+  dt.new_widget("separator") {},
+
+  -- Hybrid Upscale Blend (canonical builder via the Guild)
+  dt.new_widget("label") { label = _("\xe2\x9c\xa6 HYBRID UPSCALE BLEND") },
+  upscale_blend_model_a_selector,
+  upscale_blend_model_b_selector,
+  upscale_blend_factor_slider,
+  upscale_blend_scale_slider,
+  upscale_blend_send_btn,
   dt.new_widget("separator") {},
 
   -- Color Grading / LUT section

@@ -6278,6 +6278,11 @@ def _build_ltx_video(preset_key, prompt_text, seed,
                       loras=None, interpolate=False, rtx_scale=0,
                       fps=25, pingpong=False, image_filename=None,
                       i2v_strength=0.9,
+                      # Negative prompt — when None, the canonical builder
+                      # injects a subtitle-burn-in blocker (LTX 2.3's
+                      # training set contains subtitled footage). Users
+                      # who want to append or override pass it here.
+                      negative_text=None,
                       server_url=None,
                       # Tri-state per-call overrides. None/"auto" = defer
                       # to the server probe (auto-enable when the node is
@@ -6331,6 +6336,7 @@ def _build_ltx_video(preset_key, prompt_text, seed,
                             rtx_scale=rtx_scale, fps=fps, pingpong=pingpong,
                             image_filename=image_filename,
                             i2v_strength=i2v_strength,
+                            negative_text=negative_text,
                             enable_sage=enable_sage,
                             enable_cfg_zero=enable_cfg_zero,
                             sampler_name=sampler_name,
@@ -10317,6 +10323,29 @@ class LtxVideoDialog(Gtk.Dialog):
             "(global prefs → Prompt Enhancement).")
         box.pack_start(self.enhance_check, False, False, 0)
 
+        # Negative prompt (optional). Leave empty to let the canonical
+        # builder auto-inject its subtitle-burn-in blocker — LTX 2.3's
+        # training set contains subtitled footage and without the default
+        # negative the model reproduces captions / watermarks.
+        box.pack_start(Gtk.Label(label="Negative (optional):", xalign=0),
+                       False, False, 0)
+        neg_sw = Gtk.ScrolledWindow()
+        neg_sw.set_min_content_height(40)
+        neg_sw.set_max_content_height(80)
+        neg_sw.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        self.neg_buf = Gtk.TextBuffer()
+        self.neg_view = Gtk.TextView(buffer=self.neg_buf)
+        self.neg_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        self.neg_view.set_tooltip_text(
+            "Leave empty for canon default (blocks subtitles/watermarks/\n"
+            "timestamps/overlays — LTX's training set contains subtitled\n"
+            "footage so the model reproduces them without this).\n\n"
+            "Write your own to replace the default entirely — include\n"
+            "'text, subtitles, watermark, logo, timestamp, UI, overlay'\n"
+            "in your own list if you don't want those either.")
+        neg_sw.add(self.neg_view)
+        box.pack_start(neg_sw, False, False, 0)
+
         # Dimensions & Frames — defaults are VRAM-aware
         _def_w, _def_h = 768, 512
         try:
@@ -10704,6 +10733,9 @@ class LtxVideoDialog(Gtk.Dialog):
             "i2v":          self.i2v_check.get_active(),
             "i2v_strength": self.i2v_strength_spin.get_value(),
             "enhance":      self.enhance_check.get_active(),
+            "negative":     self.neg_buf.get_text(
+                                self.neg_buf.get_start_iter(),
+                                self.neg_buf.get_end_iter(), True),
             # Advanced patches
             "sage":         self.ltx_sage_combo.get_active_id() or "auto",
             "cfg_zero":     self.ltx_cfg_zero_combo.get_active_id() or "auto",
@@ -10744,6 +10776,7 @@ class LtxVideoDialog(Gtk.Dialog):
         if "i2v" in p:          self.i2v_check.set_active(bool(p["i2v"]))
         if "i2v_strength" in p: self.i2v_strength_spin.set_value(p["i2v_strength"])
         if "enhance" in p:      self.enhance_check.set_active(bool(p["enhance"]))
+        if "negative" in p:     self.neg_buf.set_text(p["negative"] or "")
         if p.get("sage"):         self.ltx_sage_combo.set_active_id(p["sage"])
         if p.get("cfg_zero"):     self.ltx_cfg_zero_combo.set_active_id(p["cfg_zero"])
         if p.get("sampler_name"): self.ltx_sampler_combo.set_active_id(p["sampler_name"])
@@ -10855,6 +10888,11 @@ class LtxVideoDialog(Gtk.Dialog):
             # Prompt enhancement toggle + LoRA picker output.
             "enhance":      self.enhance_check.get_active(),
             "extra_loras":  self._collect_extra_loras(),
+            # Negative prompt (optional) — empty string means "use canon
+            # default subtitle blocker"; non-empty replaces it entirely.
+            "negative":     self.neg_buf.get_text(
+                                self.neg_buf.get_start_iter(),
+                                self.neg_buf.get_end_iter(), True),
         }
 
 
@@ -13755,6 +13793,7 @@ class Spellcaster(Gimp.PlugIn):
                     pingpong=v.get("pingpong", False),
                     image_filename=i2v_filename,
                     i2v_strength=v.get("i2v_strength", 0.9),
+                    negative_text=(v.get("negative", "").strip() or None),
                     server_url=v["server"],
                     sage=v.get("sage", "auto"),
                     cfg_zero=v.get("cfg_zero", "auto"),

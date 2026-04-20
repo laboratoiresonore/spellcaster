@@ -1453,12 +1453,29 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
 #  Face Swap — ReActor with quality presets and double-pass
 # ═══════════════════════════════════════════════════════════════════════════
 
+def _faceswap_guard(feature: str) -> None:
+    """Raise FaceswapDisabledError if the user has opted face-swap off.
+    Wrapper around faceswap_health.guard_faceswap that degrades to a
+    no-op when the guard module is missing (old installs). Keeping
+    the wrapper in this module avoids every builder needing its own
+    try/except for the import."""
+    try:
+        from spellcaster_core.faceswap_health import guard_faceswap
+    except ImportError:
+        try:
+            from faceswap_health import guard_faceswap  # type: ignore
+        except ImportError:
+            return
+    guard_faceswap(feature)
+
+
 def build_faceswap(target_filename, source_filename, swap_model="inswapper_128.onnx",
                    face_restore_model="codeformer-v0.1.0.pth",
                    face_restore_vis=1.0, codeformer_weight=0.7,
                    detect_gender_input="no", detect_gender_source="no",
                    input_face_idx="0", source_face_idx="0",
                    quality_preset=None, quality_presets=None):
+    _faceswap_guard("faceswap")
     """Face swap using ReActor with optional quality presets and restoration.
 
     Swaps faces from source image into target image using ReActor (a face-swap
@@ -1600,6 +1617,7 @@ def build_faceswap_model(target_filename, face_model_name,
                           input_face_idx="0", source_face_idx="0",
                           quality_preset=None, quality_presets=None):
     """ReActor face swap using a saved face model. Drop-in for _build_faceswap_model()."""
+    _faceswap_guard("faceswap_model")
     if quality_presets and quality_preset and quality_preset in quality_presets:
         qp = quality_presets[quality_preset]
         swap_model = qp["pass1_model"]
@@ -1691,6 +1709,7 @@ def build_faceswap_mtb(target_filename, source_filename,
                         swap_model="inswapper_128.onnx",
                         faces_index="0"):
     """Face swap using mtb facetools. Drop-in for _build_faceswap_mtb()."""
+    _faceswap_guard("faceswap_mtb")
     nf = NodeFactory()
     target_id = nf.load_image(target_filename, node_id="1")
     source_id = nf.load_image(source_filename, node_id="2")
