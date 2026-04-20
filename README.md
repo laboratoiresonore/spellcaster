@@ -10,6 +10,20 @@
 </p>
 
 <p align="center">
+  <a href="DEEP_DIVE.md#all-69-tools" title="All supported model families"><img src="https://img.shields.io/badge/Flux%202%20Klein-ffd700?style=flat-square&labelColor=1a1422" alt="Flux 2 Klein"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="All supported model families"><img src="https://img.shields.io/badge/Flux%201%20Dev-58e0ff?style=flat-square&labelColor=1a1422" alt="Flux 1 Dev"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="All supported model families"><img src="https://img.shields.io/badge/Chroma-ff7ad7?style=flat-square&labelColor=1a1422" alt="Chroma"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="All supported model families"><img src="https://img.shields.io/badge/SDXL-b470ff?style=flat-square&labelColor=1a1422" alt="SDXL"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="All supported model families"><img src="https://img.shields.io/badge/Illustrious-ff8fd1?style=flat-square&labelColor=1a1422" alt="Illustrious"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="All supported model families"><img src="https://img.shields.io/badge/SD%201.5-8aa9ff?style=flat-square&labelColor=1a1422" alt="SD 1.5"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="All supported model families"><img src="https://img.shields.io/badge/Z%E2%80%91Image%20Turbo-ffef4a?style=flat-square&labelColor=1a1422" alt="Z-Image Turbo"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="All supported model families"><img src="https://img.shields.io/badge/Wan%202.2-10b981?style=flat-square&labelColor=1a1422" alt="Wan 2.2"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="All supported model families"><img src="https://img.shields.io/badge/LTX%202.3-5eead4?style=flat-square&labelColor=1a1422" alt="LTX 2.3"/></a>
+  <br/>
+  <sub><em>Spellcaster auto-detects your installed checkpoints and routes each generation to the right architecture. You never pick a sampler.</em></sub>
+</p>
+
+<p align="center">
   <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-installer.exe"><img src="https://img.shields.io/badge/Windows-Download-7c3aed?style=for-the-badge&logo=windows&logoColor=white" alt="Windows"/></a>
   &nbsp;
   <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-installer-macos.zip"><img src="https://img.shields.io/badge/macOS-Download-7c3aed?style=for-the-badge&logo=apple&logoColor=white" alt="macOS"/></a>
@@ -66,12 +80,14 @@ Three things Spellcaster does in one click that most people spend an afternoon (
 </td>
 <td width="33%" align="center" valign="top">
   <img src="assets/showcase_supir.png" alt="SUPIR Restoration" width="100%"/>
+  <img src="assets/_px.gif" width="1" height="208" alt=""/>
   <br/><br/>
   <strong>Resurrect a blurry photo</strong><br/>
   <sub>SUPIR state-of-the-art restoration. One click. Damaged, compressed, low-res — it reconstructs faces, skin, texture. Works on grandma's scanned photos and on JPEGs you downloaded in 2006.</sub>
 </td>
 <td width="33%" align="center" valign="top">
   <img src="assets/showcase_wan_breathing.gif" alt="Wan 2.2 Image-to-Video" width="100%"/>
+  <img src="assets/_px.gif" width="1" height="323" alt=""/>
   <br/><br/>
   <strong>Animate a still</strong><br/>
   <sub>Wan 2.2 Image-to-Video. Pick your motion preset (zoom, turntable, parallax, 26 of them), click. 81 frames, 720p, 2-5 seconds. The image breathes. Render it overnight, post it tomorrow.</sub>
@@ -212,6 +228,7 @@ The **Antenna** is a small always-on bridge that lets Spellcaster on your laptop
   <img src="assets/wizardguild.png" alt="Wizard Guild — chat UI" width="100%"/>
   <img src="assets/t1.png" alt="Wizard Guild — second view" width="100%"/>
   <img src="assets/t3.png" alt="Wizard Guild — third view" width="100%"/>
+  <img src="assets/_px.gif" width="1" height="38" alt=""/>
   <br/><br/>
   <strong>🧙 Wizard Guild</strong><br/>
   <sub>The chat UI. AI wizard characters walk you through every tool conversationally. "Restore this photo." "Make the sky orange." "Turn this into a video." No menus, no modes. <a href="DEEP_DIVE.md#the-wizard-guild-chat-interface">How it works →</a></sub>
