@@ -4619,7 +4619,8 @@ end
 -- (the same plumbing the Klein flows use). Optional ckpt override lets
 -- the user point at a different ZIT checkpoint than the AIO default.
 local function process_zit_img2img(image, prompt, negative, denoise,
-                                    quality, fast_mode, sam3_prompt, ckpt_override)
+                                    quality, fast_mode, sam3_prompt,
+                                    ckpt_override, lora_name, lora_strength)
   local server = get_server()
 
   dt.print(_("Exporting for Z-Image-Turbo img2img..."))
@@ -4631,7 +4632,12 @@ local function process_zit_img2img(image, prompt, negative, denoise,
   curl_upload(server .. "/upload/image", path, img_name)
   os.remove(path)
 
-  -- Build extras: sam3 + ckpt overrides as comma-prefixed JSON tail
+  -- Build extras: sam3 + ckpt + loras as comma-prefixed JSON tail. The
+  -- canonical build_img2img accepts loras=[{name, strength_model,
+  -- strength_clip}] and runs them through inject_lora_chain — which
+  -- (per CLAUDE.md model_detect.LORA_COMPAT_BUCKETS) silently drops
+  -- cross-arch LoRAs. ZIT-folder LoRAs get the zit bucket and are
+  -- safe to inject; passing through any other folder is a no-op.
   local extras = ""
   if sam3_prompt and sam3_prompt ~= "" then
     extras = extras .. string.format(
@@ -4640,6 +4646,12 @@ local function process_zit_img2img(image, prompt, negative, denoise,
   end
   if ckpt_override and ckpt_override ~= "" then
     extras = extras .. string.format(',"ckpt":"%s"', json_escape(ckpt_override))
+  end
+  if lora_name and lora_name ~= "" then
+    local s = lora_strength or 1.0
+    extras = extras .. string.format(
+      ',"loras":[{"name":"%s","strength_model":%.3f,"strength_clip":%.3f}]',
+      json_escape(lora_name), s, s)
   end
 
   local seed = math.random(1, 2^31 - 1)
@@ -5818,10 +5830,16 @@ end
 
 local fetch_lora_btn = dt.new_widget("button") {
   label = _("Fetch LoRAs"),
-  tooltip = _("Fetch LoRAs from ComfyUI (filtered by model architecture)"),
+  tooltip = _("Fetch LoRAs from ComfyUI (filtered by model architecture). Also refreshes the dedicated Z-Image-Turbo LoRA picker further down."),
   clicked_callback = function()
     local all = fetch_all_loras()
     refresh_lora_selector()
+    -- Pop the dedicated ZIT-arch LoRA picker too. Defined later in the
+    -- file (near the Z-Image-Turbo Advanced section); guard with a type
+    -- check so this fires only after the function has been declared.
+    if type(refresh_zit_lora_selector) == "function" then
+      refresh_zit_lora_selector()
+    end
     local shown = #cached_loras
     local total = #all
     local arch = get_current_arch()
@@ -8048,6 +8066,48 @@ local zit_fast_check = dt.new_widget("check_button") {
   value = false,
 }
 
+-- Dedicated ZIT LoRA selector — independent of the global lora_selector
+-- so the user can pick a Z-Image-Turbo style/effect LoRA without
+-- changing the active img2img preset's arch. cached_zit_loras is
+-- populated by refresh_zit_lora_selector(), which runs after the
+-- existing Fetch LoRAs button (no separate fetch needed).
+local cached_zit_loras = {}
+
+local zit_lora_selector = dt.new_widget("combobox") {
+  label = _("ZIT LoRA"),
+  tooltip = _("Pick a Z-Image-Turbo LoRA from your ComfyUI server. Click 'Fetch LoRAs' above first to populate."),
+  selected = 1,
+  "(none)",
+}
+
+local zit_lora_strength_slider = dt.new_widget("slider") {
+  label = _("ZIT LoRA strength"),
+  tooltip = _("Strength applied to both model and CLIP. 1.0 = full effect, 0.5 = subtle."),
+  soft_min = -2, soft_max = 2,
+  hard_min = -2, hard_max = 2,
+  step = 0.05, digits = 2, value = 0.8,
+}
+
+-- Mirror of refresh_lora_selector, but always filters to the zit
+-- bucket regardless of the currently-selected img2img model. Hooked
+-- into fetch_lora_btn below so pressing "Fetch LoRAs" once populates
+-- BOTH the global selector AND this ZIT-specific one.
+function refresh_zit_lora_selector()
+  cached_zit_loras = filter_loras_for_arch(cached_all_loras, "zit")
+  while #zit_lora_selector > 0 do
+    zit_lora_selector[#zit_lora_selector] = nil
+  end
+  zit_lora_selector[1] = "(none)"
+  for _, name in ipairs(cached_zit_loras) do
+    -- Show short label (last path segment) so the dropdown stays
+    -- readable; the full path is recovered from cached_zit_loras
+    -- via the same idx-1 trick the global selector uses.
+    local short = name:match("\\([^\\]+)$") or name:match("/([^/]+)$") or name
+    zit_lora_selector[#zit_lora_selector + 1] = short
+  end
+  zit_lora_selector.selected = 1
+end
+
 local zit_send_btn = dt.new_widget("button") {
   label = _("✨ Z-Image-Turbo Generate"),
   tooltip = _("img2img with the full Z-Image-Turbo quality stack (canonical build_img2img via the Guild). Reuses the SAM3 prompt entry above when you want to scope the edit."),
@@ -8068,10 +8128,18 @@ local zit_send_btn = dt.new_widget("button") {
     -- the user types the target once and can switch arches without
     -- re-entering it. Empty string = no scoping (full image).
     local sam3 = klein_sam3_prompt_entry.text or ""
+    -- ZIT LoRA pick (item 1 = "(none)")
+    local lora_idx = zit_lora_selector.selected or 1
+    local lora_name = ""
+    if lora_idx > 1 and cached_zit_loras[lora_idx - 1] then
+      lora_name = cached_zit_loras[lora_idx - 1]
+    end
+    local lora_strength = zit_lora_strength_slider.value
     for i, img in ipairs(images) do
       dt.print(string.format(_("Z-Image-Turbo %d/%d"), i, #images))
       local ok, err = pcall(process_zit_img2img, img, prompt, negative,
-                             denoise, quality, fast_mode, sam3, ckpt)
+                             denoise, quality, fast_mode, sam3, ckpt,
+                             lora_name, lora_strength)
       if not ok then
         dt.print(_("Error: ") .. tostring(err))
         dt.print_error("Spellcaster Z-Image-Turbo error: " .. tostring(err))
@@ -9842,6 +9910,8 @@ local module_widget = dt.new_widget("box") {
   zit_denoise_slider,
   zit_quality_selector,
   zit_fast_check,
+  zit_lora_selector,
+  zit_lora_strength_slider,
   zit_send_btn,
   dt.new_widget("separator") {},
 
