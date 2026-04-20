@@ -18,6 +18,11 @@ Everything the [README](README.md) intentionally left out. Architecture, subsyst
 - [🎯 LLM primary picker](#-llm-primary-picker--comfyui-reroute-ollama--kobold-auto-start)
 - [🛠 Scaffold system](#-scaffold-system--state-machine-wizards-for-7b-models)
 - [⚡ Global preset cycle](#-global-preset-cycle--turbo--standard--quality)
+- [⚡ SpeedCoach — live telemetry + ETA countdown](#-speedcoach--live-telemetry--eta-countdown)
+- [🔄 LoRA version migration](#-lora-version-migration--no-orphaned-settings-when-you-upgrade)
+- [🎨 Civitai rich metadata](#-civitai-rich-metadata--trigger-words-recommended-weights-example-prompts)
+- [🔷 3D Normal Map modes](#-3d-normal-map--mandatory-submenu-vs-opt-in-toggle)
+- [🧰 Installer / Updater / Repair](#-installer--updater--repair--one-click-fixes)
 - [📡 Antenna](#-antenna--15-endpoints-tray-menu-self-update)
 - [🎙 Voice](#-voice--walkie-talkie-stt--tts-playback)
 - [🧩 Connect-an-app](#-connect-an-app--register-launchers-windows-shortcuts-auto-start)
@@ -183,15 +188,31 @@ Seven different ways to put your face where it doesn't belong. We built them for
 <details>
 <summary><strong>Optometrist for your GPU</strong></summary>
 
-First time using Spellcaster? The Calibration Wizard tests every installed model and tunes all settings to your taste — no technical knowledge required. It is, to our knowledge, the only software that treats your artistic preferences like a medical condition that needs diagnosing.
+First time using Spellcaster? The Calibration Wizard tests every installed image model and tunes all settings to your taste — no technical knowledge required. It is, to our knowledge, the only software that treats your artistic preferences like a medical condition that needs diagnosing.
 
-1. **Model Taste Test** — generates the same scene with every installed model. You rate each one: Love / OK / Dislike.
-2. **Settings Calibration** — for your favorite models, shows A/B/C comparisons (CFG, steps, sampler). You pick the image you prefer. That's it.
-3. **Apply** — your preferences become the default everywhere. Every dialog reads from your calibrated profile.
+**Three steps**
 
-It's an eye exam, but for art. "Which is better — A or B?" Repeat until your defaults are perfect.
+1. **Taste test.** One image per model on the SAME prompt + seed so differences are the model, not luck. Rate with 4 buttons:
+   - ♥ **Love** — keep at the top of the picker
+   - ○ **OK** — keep available
+   - ✗ **Dislike** — hide from the default picker
+   - ⚠ **FAILED** — render crashed or was broken (special: gets a research / repair dialog, see below)
+2. **Settings.** For each Loved model, compare CFG / step / sampler alternatives side by side. Timing is logged to SpeedCoach so dialog banners can suggest faster alternatives later.
+3. **Apply.** A calibration profile is written to `config.json`. Every Spellcaster dialog auto-loads it — no manual copy.
 
-Access: `Spellcaster > Tools > Calibration Wizard`
+**v2.3 polish**
+
+- **Click thumbnails to view full size.** Every sample is wrapped in an event box; click opens a modal up to 90 % of the parent dialog's width with the native pixbuf scaled up (never past source).
+- **Elapsed time per sample.** Each card shows `sdxl_base (sdxl) · 3.4s`, and every sample is POSTed to `/api/telemetry/dispatch_ok` so SpeedCoach's arch-speed-chart + speed-leaderboard learn from calibration runs too.
+- **FAILED vs Dislike distinction.** Rendered samples that came back broken (missing CLIP, OOM, bad weights) are routed to a dedicated FAILED bucket, NOT confused with "user didn't like this output". Failed cards expose a 🛠 **Research fix** button that opens a three-button diagnosis dialog:
+  - 🔍 **Civitai lookup** — searches the public API by filename; first 3 results link out.
+  - ⚙ **Node drift** — hits `/api/speedcoach/drift` to diff the current ComfyUI `/object_info` against the last session; a missing custom node is the top cause of model-load failures.
+  - 🧠 **Ask LLM** — POSTs the error to the local Ollama (default gemma3:4b) for a 3-bullet "most likely cause / verification step / fix" diagnosis.
+  - **Re-try this model** button re-runs JUST that model's sample without restarting the whole batch.
+- **Model-list filter fix.** The pre-v2.3 wizard surfaced ~57 entries on a 7-image-model server — every quant variant of every UNET was listed separately alongside video / Klein / Kontext archs. v2.3 filters to the 9 image-calibration archs (`sd15 / sdxl / illustrious / pony / playground / sdxl_turbo / zit / flux1dev / chroma`) and collapses quant variants of the same base model (`flux1-dev-fp8 / bf16 / Q4_K_M / Q8_0` → ONE card with a `variants` list). Same 7 models, now legibly displayed.
+- **Welcome page rewrite.** Explicit "what each step does, what FAILED means, thumbnails are click-to-enlarge" up front so users don't learn by trial-and-error.
+
+Access: `Spellcaster > Tools > Calibration Wizard`. The richer Wizard Guild side (SFW + NSFW stores, multi-seed stability, Civitai-driven prompt recipes, LLM vision scoring) lives under `✧ Calibration` in the chat UI — see the "Under the Hood" section for the full stack.
 
 </details>
 
@@ -402,6 +423,181 @@ A small pill above the chat input cycles through three generation presets on eac
 - **💎 Quality** — max-effort path. Klein enhancer chain, higher step counts, no turbo LoRAs, full CFG.
 
 The label + colour shifts with the state. Value persists to both `localStorage.guild_preset` AND `guild_config.user_settings.guild_preset` (via `/api/user_settings`), then gets published on `window.generationPreset` + a `guildpresetchange` CustomEvent so downstream action builders can opt in with a single listener.
+
+## ⚡ SpeedCoach — live telemetry + ETA countdown
+
+<details>
+<summary><strong>"How long will this take?" — with numbers that keep refining</strong></summary>
+
+Ships in v2.3. A read-side aggregator that mines the telemetry Spellcaster already collects (dispatch log, preflight canaries, faceswap crash history, ratings, videoshot frame timings, ComfyUI `/object_info` snapshots) and turns it into actionable signals across every UI.
+
+**What you see**
+
+- **Live ETA countdown in the GIMP status bar.** Every handler dispatch shows `ETA 1m 20s` alongside the existing step-progress + VRAM + elapsed. The countdown starts from a historical-median baseline (if n≥3 samples of the same fingerprint exist), then refines every 300 ms using ComfyUI's live sampler step progress. By step 5 of 25 the live projection has full weight; before that it blends with the baseline so first-step model-load spikes don't wreck the number. When the sampler finishes but the job isn't done (VAE decode + post-processing tail), the estimate accounts for the per-handler tail fraction (~55-92 % depending on handler).
+- **Warnings chip in the status bar.** A `⚠ 2` chip appears when the last dispatch returned warnings (uncalibrated LoRA, VRAM near OOM, model fallback, prompt truncated). Click-equivalent: `Spellcaster > Diagnostics > Last Run Warnings...` opens the full list.
+- **Post-dispatch retrospective.** When actual runtime diverges ≥2× from prediction, a one-line banner surfaces for 6 s: `Done 47s (predicted 22s). Click Diagnostics for breakdown.` Breakdown dialog decomposes queue wait / extra LoRA / upscale / cold-model overhead.
+- **SpeedCoach banner on handler dialogs.** When there's a fingerprint match with n≥3 samples AND a faster alternative exists (another arch, fewer steps, smaller upscale) with ≥30 % speedup, an amber banner offers the suggestion: `⚡ Avg 47s on your box (n=12). Drop upscale 4x→2x: ~18s (predicted, n=8 similar).` Three buttons: **Try faster** / **Keep** / **× don't show for this dialog this session**. Persisted: acceptance + dismissals logged to Insights so the user can see whether SpeedCoach is right for them.
+- **Mini-HUD.** `Spellcaster > View > Show Mini-HUD` opens a floating dialog that mirrors the status-bar fields: current job, step progress, queue depth, VRAM %, live ETA. Stays open while you keep working in GIMP (non-modal + nested `GLib.MainLoop`).
+- **Insights dashboard.** Wizard Guild sidebar → **⚡ Insights** opens a standalone page with 8 cards: speed leaderboard per handler, cost vs. quality scatter (elapsed vs thumbs rate), LoRA impact (Δtime + Δthumbs per LoRA), queue-by-hour-of-week heatmap, arch speed chart, faceswap reliability sparkline, mailbox SLA, last-run warnings. A drift hero banner appears if ComfyUI's node catalogue changed since the last session.
+
+**Under the hood**
+
+- Canonical module: `spellcaster_core/speedcoach.py` (mirrored to all 5 canonical copies). 14 read-side aggregators + 4 writers over:
+  - `dispatch_log.jsonl` — every handler's completion record (ts / build_fn / arch / model / loras / steps / cfg / upscale / elapsed / predicted_elapsed / warnings / failed)
+  - `preflight_cache.json` — per-arch canary `elapsed_ms`
+  - `faceswap_state.json` — crash history ring
+  - `ratings.jsonl` — thumbs up/down per asset + fingerprint
+  - `videoshot_log.jsonl` — per-frame render timings
+  - `object_info_last.json` — two-snapshot ComfyUI node diff
+- Sample-size gated: suggestions require n≥3. Speedup-threshold gated: ≥30 %. Never auto-applies, never phones home.
+- Typed events: `DispatchPredicted`, `DispatchCompleted`, `SpeedCoachSuggestion`, `DriftDetected`, `RatingSubmitted`.
+- 14 GET endpoints under `/api/speedcoach/*` — `arch_speeds`, `warnings_last`, `drift`, `faceswap_reliability`, `mailbox_stats`, `lora_impact`, `queue_heatmap`, `speed_leaderboard`, `cost_vs_quality`, `videoshot`, `wizard_stats`, `predicted`, `suggest`, `estimate`, `insights` (composite bundle).
+
+Preferences: Wizard Guild Settings → SpeedCoach (propagated via presence broker). `speedcoach.enabled`, `speedcoach.min_n`, `speedcoach.min_speedup_pct`. Per-dialog dismissals are session-scoped.
+
+</details>
+
+## 🔄 LoRA version migration — no orphaned settings when you upgrade
+
+<details>
+<summary><strong>When you swap MyLora_v1 for MyLora_v2, every trigger word / weight / calibration recipe moves with it</strong></summary>
+
+Ships in v2.3. The problem: you download a newer version of a LoRA you've been using, delete the old file, drop the new one in. Your GIMP picker shows both — one broken, one with no saved strength / trigger words / calibration. Every piece of state keyed by the old filename (registry entry, user-confirmed triggers, failure history, calibration recipes, wizard toggles, session state, user presets) now points at nothing.
+
+**What happens now**
+
+1. **On LoRA registry build**, Spellcaster scans for orphaned registry entries (a registry record whose file is no longer on the ComfyUI server).
+2. **For each orphan**, it scores every currently-present LoRA as a candidate replacement, with explicit reasons:
+   - Same filename stem after stripping version / epoch / rank / quant / hash / `v2` / `_final` / `_epoch_050` / `_fp8` / `_Q4_K_M` suffixes → 0.7
+   - Same Civitai `model_id` across versions → +0.5
+   - Same folder → +0.1
+   - Arch overlap → +0.1, arch mismatch → −0.5
+3. **High-confidence unambiguous matches (≥0.9 + single candidate)** auto-migrate. Low-confidence or multi-candidate orphans surface in a UI banner in the LoRA manager with a dropdown + Apply / Dismiss / Delete buttons per orphan.
+4. **Apply** rewrites every JSON file under `.guild_state/` plus both calibration stores (SFW + NSFW). Registry entries are merged — user-confirmed fields (triggers, default strength, failure history, preferred_for_purpose, purpose_group) survive the move.
+5. **Before any rewrite**, `lora_registry.json` is backed up to a timestamped sidecar `.pre-migration-YYYYMMDD-HHMMSS.bak`.
+
+Endpoints:
+- `GET /api/spellcaster/lora/migrations` → pending list
+- `POST /api/spellcaster/lora/migrations/resolve` → `{old_name, new_name, action}` where action is `apply` / `dismiss` / `delete`
+
+UI: Wizard Guild's LoRA manager surfaces a blue banner when pending migrations exist; each row shows the old short filename, a dropdown of candidates with confidence % + reasons ("same filename stem 'sinozick'", "arch overlap sdxl, illustrious", "same folder"), Apply / Dismiss / Delete buttons.
+
+The rewriter walks JSON recursively — handles dict keys, string values, and `["name", model_str, clip_str]` tuple-format entries. Atomic writes (temp file + `os.replace`). If a LoRA rename also changed the Civitai model ID, the apply path refuses — user has to resolve manually.
+
+</details>
+
+## 🎨 Civitai rich metadata — trigger words, recommended weights, example prompts
+
+<details>
+<summary><strong>When the user activates "Metadata download for all LoRAs", every LoRA card grows real info</strong></summary>
+
+Ships in v2.3. `_query_civitai_by_filename` now picks the exact filename-matched model version and harvests:
+
+| Harvested | Source | Surfaces |
+|---|---|---|
+| Trigger words | `trainedWords` | Trigger badges in the LoRA manager, auto-appended to message input on enable |
+| Base model | `baseModel` | Arch-compat filter (blocks WAN LoRAs on SDXL pickers etc) |
+| Recommended sampler | Mode across up to 6 example images | `civitai_recommended_sampler` pill on the card |
+| Recommended CFG | Average of example `cfgScale` values | Cited alongside sampler |
+| Recommended weight | Average of `<lora:…:N>` markers in example prompts (sane range 0.1-1.5 only) | Strength chip seeded from this when user hasn't tuned one |
+| Example prompts | First 3 non-empty `meta.prompt` entries | 💡 expander button reveals prompts, click any to copy |
+| Preview URL | First image URL | Thumbnail on each LoRA card |
+| NSFW flag | Model OR any example image flagged | `NSFW` chip |
+
+**User-confirmed fields always win over Civitai-downloaded values.** `trigger_words` as a comma-string (user-typed) is authoritative over `civitai_trigger_words` (list). Same for `default_strength` and sampler picks.
+
+**Calibration integration.** `scaffold/lora_grouping._adapt_registry_override` translates the civitai_* registry fields into the shape `lora_knowledge.get_knowledge` expects so the calibration recipe benefits from Civitai-downloaded metadata even when we don't have the LoRA's Civitai hash locally. `_fetch_civitai_reference_image` caches preview URLs → base64 per process (4 MiB cap, 8 s timeout) so the calibration UI can render "trainer's example vs your render" side-by-side in each sample tile.
+
+**Pre-calibration top-up.** `/api/spellcaster/lora/calibrate/auto/start` now runs a synchronous Civitai fetch for any target LoRA still missing metadata before the calibration job starts, so the recipe gets proper trigger words + weight hints on first run instead of landing on heuristic defaults.
+
+**Frontend UX** (`tavern/static/app.js`):
+- Click trigger badge → copy to clipboard
+- 💡 prompts expander — click any prompt to copy it
+- On enabling a LoRA, any Civitai trainedWord NOT already in the message input is auto-appended
+- Preview thumbnail per row
+- Sampler + CFG chip when recommendations are available
+- Filter row: search (name + purpose + triggers + desc + civitai_name), purpose combo, enabled-only, hide-NSFW — all in-memory, no server round-trip
+
+</details>
+
+## 🔷 3D Normal Map — mandatory submenu vs opt-in toggle
+
+<details>
+<summary><strong>Two modes: the /3D submenu locks it on; everywhere else it's a convenience default</strong></summary>
+
+Ships in v2.3. 3D normal map integration in Spellcaster has two distinct UX modes that took a couple of iterations to get right:
+
+**Mandatory mode — `Spellcaster ◆ > 3D` submenu**
+
+Four dedicated entries:
+- 🔷 **3D Image to Image...**
+- 🔷 **3D Inpaint Selection...**
+- 🔷 **3D Outpaint / Extend Canvas...**
+- 🔷 **3D IC-Light Relighting...**
+
+Each is a standalone procedure (`spellcaster-img2img-3d`, etc) that wraps the canonical handler with a `_FORCE_3D_MODE = True` guard. When the dialog opens:
+- The normal-map section banner reads **3D Mode — ControlNet is locked to Normal Map. Launched from the 3D submenu. For a CN-free run, use the matching entry in the Generate / Enhance / Style submenu.**
+- The frame title is **🔷 3D NORMAL MAP — MANDATORY for this tool**.
+- The Enable checkbox is force-active and greyed out (user can't turn it off here).
+- The CN=Off short-circuit in `_collect_normal_map_from_dialog` is bypassed — 3D guidance always runs, even if the user's stored CN state says Off.
+- Missing Normal Map CN file for the target arch still shows the install-it popup (for /3D entries, user clearly wants 3D guidance — warning is the correct UX).
+
+**Opt-in mode — regular /Generate, /Enhance, /Style, /Colors submenus**
+
+Same dialogs, but 3D normal map is an OPTIONAL checkbox. v2.3 fix: when the user explicitly picks `ControlNet = Off`, the 3D map flow short-circuits silently — no 30-second auto-gen, no "missing CN model" popup. The 3D feature requires a CN slot to be useful, and a Off pick is an explicit "no CN" choice we respect.
+
+**NormalCrafter auto-generation**
+
+If a dialog has 3D enabled AND no layer is selected AND "Auto-generate if missing" is checked, the plug-in runs NormalCrafter on the canvas before the main dispatch (~10-30 s first time, reused from the layer afterwards). The auto-generated layer lands in the Spellcaster results group named "Normal Map (auto)" and is reused by subsequent 3D runs without regenerating.
+
+**Bug class fixed along the way**
+
+- **Flatten / black-image bug.** `_export_normal_map_layer` used to manipulate visibility on the user's live image. A mid-export raise left the canvas with every-layer-hidden; the next dispatch then exported that all-hidden state as a black PNG. Fixed by duplicating the image first, toggling visibility on the duplicate, and wrapping the export call in try/finally so the original canvas is never touched. Same pattern found and fixed in the IC-Light normal-map path and the SAM3 mask-to-channel flow.
+- **CN file preflight.** `/object_info/ControlNetLoader` cache lets `_maybe_override_cn_with_normal_map` detect when the arch-specific Normal Map CN file is missing (e.g. `controlnet-union-sdxl-1.0.safetensors` on a server that only has the Flux Union) and gracefully degrade with a clear message — instead of the cryptic "MISSING union net tile" that was surfacing mid-dispatch before.
+
+</details>
+
+## 🧰 Installer / Updater / Repair — one-click fixes
+
+<details>
+<summary><strong>Three tools that together keep everything current + recoverable</strong></summary>
+
+**Installer** (`installer/install.py` v2.3, compiled as `spellcaster-installer.exe`)
+
+Two-stage bootstrap: the .exe fetches the latest `install.py`, `installer_gui.py`, and `manifest.json` from `raw.githubusercontent.com/laboratoiresonore/spellcaster/main` on every launch and execs the fetched code. Falls back to the baked-in copy on network failure. **Most installer fixes don't need an .exe rebuild anymore** — editing `install.py` and pushing to main is enough.
+
+New v2.3 flags:
+- `--check-updates` — probes Civitai for newer versions of every manifest entry and proposes the latest download URL. Slower but keeps you current.
+- `--no-server-probe` — skips the remote-ComfyUI `/object_info` enumeration (for when the server is unreachable).
+
+**Remote-server probe.** When `--server-url` is set, `enumerate_server_models(comfyui_url)` hits `/object_info/<Loader>` for CheckpointLoaderSimple / LoraLoader / ControlNetLoader / VAELoader / CLIPLoader / UNETLoader / UpscaleModelLoader and returns `{category: set(filenames)}`. Any manifest entry whose basename is already on the server gets a ✓ "Already on ComfyUI server" line and is skipped — no re-download. Fixes the "installer proposes 40 GB of files I already have on my remote ComfyUI" problem the common Spellcaster layout (GIMP box + separate ComfyUI box) hit on first run.
+
+**Update-check.** `detect_available_updates(manifest, civitai_key)` resolves the latest version-id for every manifest entry pointing at a Civitai model page. Entries with a newer version get the latest URL swapped in on the fly + a ⇈ "Update available" line prints the note.
+
+**Manual Updater / Repairer** (`installer/manual_update.py` v2.3, compiled as `spellcaster-manual-update.exe`)
+
+One binary serves both roles — "update" is the happy path, "repair" is when a previous install is bricked. Finds + rescues mis-located GIMP plugin installations via glob patterns (handles users who copied the plugin to the wrong dir or had a partial install). Downloads fresh files from GitHub tree API on launch; static fallback list for offline cases.
+
+**GIMP plugin in-process updater** (`_auto_update` at boot + Settings → Repair / Update Now)
+
+On every GIMP launch, compares the local `.spellcaster_version` SHA against `raw.githubusercontent.com/.../HEAD`. If different:
+1. Fetches the full tree listing
+2. Downloads every file under `plugins/gimp/comfyui-connector/` + `comfyui-spellcaster/spellcaster_core/` (canonical always wins over the bundled plugin copy)
+3. Stages `.py` files as `.update` (can't replace a loaded Python module on Windows)
+4. Removes local files no longer in the repo
+5. Re-applies theme / splash / icons to GIMP's install location (bug fixed in v2.3: the Repair button used to skip this step, leaving GIMP reading the OLD theme after a fresh asset download)
+6. Purges `pluginrc` so GIMP re-scans procedures
+7. Writes the new SHA
+
+**Procedure-set drift guard** (`do_query_procedures`, v2.3 addition). Every launch, sha1-hashes the sorted registered-procedure list and compares against the previous digest in `config.json`. On mismatch → force-delete `pluginrc`. Protects against stale procedure-name cache when the code renames / removes a menu entry but the SHA-diff updater skipped the purge.
+
+**Restart button** (Settings → Repair / Update Now row, v2.3 addition). Spawns the new GIMP via a shell wrapper that sleeps 3 s before exec'ing (lets the old instance release pluginrc / config.json file locks), closes the Settings dialog programmatically, and schedules `Gimp.quit(False)` via `GLib.idle_add` so it fires after the dialog-close event. Equivalent to close + reopen, but one click.
+
+**NSFW variant**
+
+Auto-update URLs + headers are redirected to `laboratoiresonore/spellcaster_NSFW` (private repo) at NSFW-build time via `nsfw/build_nsfw.py`. The NSFW installer, manual_update, and Wizard Guild launcher all ship with an auth token patched in so they can pull from the private repo. Public Spellcaster users don't see NSFW repo references anywhere in their installed files.
+
+</details>
 
 ## 📡 Antenna — 15+ endpoints, tray menu, self-update
 
