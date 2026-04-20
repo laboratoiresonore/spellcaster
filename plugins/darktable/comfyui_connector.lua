@@ -8296,13 +8296,21 @@ local upscale_blend_scale_slider = dt.new_widget("slider") {
 local normal_map_btn = dt.new_widget("button") {
   label = _("💎 3D Normal Map (NormalCrafter)"),
   tooltip = _("Generate a 3D surface normal map for the selected image via the canonical build_normal_map builder. "
-              .. "Useful for relighting + ControlNet normal guidance."),
+              .. "Useful for relighting + ControlNet normal guidance. "
+              .. "The 'Max Processing Res' slider above controls NormalCrafter's internal inference resolution."),
   clicked_callback = function()
     local images = dt.gui.selection()
     if #images == 0 then dt.print(_("No images selected")); return end
+    -- Reuse the existing 'Max Processing Res' slider so the user has
+    -- a single knob for all AI processing in the panel. NormalCrafter
+    -- clamps internally; any value works, though 1024 is the sweet
+    -- spot (defined as soft_max in the slider, enforced here).
+    local nm_res = math.floor(math.min(
+      (max_res_slider and max_res_slider.value) or 1024, 1024))
     for i, img in ipairs(images) do
-      dt.print(string.format(_("Normal map %d/%d"), i, #images))
-      local ok, err = pcall(process_normal_map, img, 1024)
+      dt.print(string.format(_("Normal map %d/%d (max_res=%d)"),
+                              i, #images, nm_res))
+      local ok, err = pcall(process_normal_map, img, nm_res)
       if not ok then
         dt.print(_("Error: ") .. tostring(err))
         dt.print_error("Spellcaster normal map error: " .. tostring(err))
