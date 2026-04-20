@@ -212,11 +212,11 @@ The **Antenna** is a small always-on bridge that lets Spellcaster on your laptop
 
 ---
 
-## Four ways to use it
+## Three ways to use it
 
 <table>
 <tr>
-<td width="50%" align="center" valign="top">
+<td width="33%" align="center" valign="top">
   <img src="assets/demo_step1_inpaint.png" alt="GIMP plugin — select what to fix" width="100%"/>
   <img src="assets/demo_step2_inpaint.png" alt="GIMP plugin — pick a preset" width="100%"/>
   <img src="assets/demo_step4_inpaint.png" alt="GIMP plugin — result on a new layer" width="100%"/>
@@ -224,7 +224,7 @@ The **Antenna** is a small always-on bridge that lets Spellcaster on your laptop
   <strong>🖌️ GIMP plugin</strong><br/>
   <sub>The menu. 69 tools across <code>Filters > Spellcaster</code>. Select layers, paint masks, click a tool. Keyboard shortcuts (<code>Ctrl+Alt+E/U/F/B/X</code>) for the quick ones. Every output lands as a new layer. Non-destructive, reversible, composable.</sub>
 </td>
-<td width="50%" align="center" valign="top">
+<td width="33%" align="center" valign="top">
   <img src="assets/wizardguild.png" alt="Wizard Guild — chat UI" width="100%"/>
   <img src="assets/t1.png" alt="Wizard Guild — second view" width="100%"/>
   <img src="assets/t3.png" alt="Wizard Guild — third view" width="100%"/>
@@ -233,24 +233,26 @@ The **Antenna** is a small always-on bridge that lets Spellcaster on your laptop
   <strong>🧙 Wizard Guild</strong><br/>
   <sub>The chat UI. AI wizard characters walk you through every tool conversationally. "Restore this photo." "Make the sky orange." "Turn this into a video." No menus, no modes. <a href="DEEP_DIVE.md#the-wizard-guild-chat-interface">How it works →</a></sub>
 </td>
-</tr>
-<tr>
-<td width="50%" align="center" valign="top">
+<td width="33%" align="center" valign="top">
   <img src="assets/ResolvePlugin.png" alt="DaVinci Resolve plugin" width="100%"/>
   <br/><br/>
   <strong>🎬 DaVinci Resolve plugin</strong><br/>
   <sub>The timeline. Drop the playhead, type a prompt, get an LTX-2 clip back in the Media Pool. Gap-fill between clips with reference-aware rendering. Markers map to render profiles. <a href="DEEP_DIVE.md#-resolve-bridge--timeline-aware-shot-generation">How it works →</a></sub>
 </td>
-<td width="50%" align="center" valign="top">
-  <img src="assets/ST.png" alt="SillyTavern — roleplay interface" width="100%"/>
-  <br/><br/>
-  <strong>💎 <a href="https://github.com/SillyTavern/SillyTavern">SillyTavern</a> integration</strong><br/>
-  <sub>The roleplay surface. Spellcaster's <a href="plugins/sillytavern/">ST plugin</a> plus a round-trip-safe <strong>Character Card Editor</strong> in GIMP let you paint card art, edit the V2 metadata with LLM-scaffolded best-practice auto-optimization, and save spec-compliant <code>chara</code> PNGs without damaging the embedded data. Slash commands (<code>/scene</code>, <code>/portrait</code>, <code>/animate</code>) render Klein-2 + LTX-2 in-chat. <a href="DEEP_DIVE.md#-cross-interface-backbone--every-surface-is-the-same-surface">How it works →</a></sub>
-</td>
 </tr>
 </table>
 
-All four talk to the same ComfyUI backend. Every generated asset is visible from every interface. [The mechanics →](DEEP_DIVE.md#-cross-interface-backbone--every-surface-is-the-same-surface)
+All three talk to the same ComfyUI backend. Every generated asset is visible from every interface. [The mechanics →](DEEP_DIVE.md#-cross-interface-backbone--every-surface-is-the-same-surface)
+
+---
+
+## Plus: 💎 [SillyTavern](https://github.com/SillyTavern/SillyTavern) integration
+
+<p align="center">
+  <img src="assets/ST.png" alt="SillyTavern — roleplay interface with Spellcaster" width="85%"/>
+</p>
+
+Spellcaster's [SillyTavern plugin](plugins/sillytavern/) turns the roleplay surface into a fourth interface. Slash commands (`/scene`, `/portrait`, `/animate`) render Klein-2 stills and LTX-2 clips in-chat. A round-trip-safe **Character Card Editor** in GIMP lets you paint card art, edit the V2 metadata with LLM-scaffolded best-practice auto-optimization, and save spec-compliant `chara` PNGs without damaging the embedded data. [How it works →](DEEP_DIVE.md#-cross-interface-backbone--every-surface-is-the-same-surface)
 
 ---
 
