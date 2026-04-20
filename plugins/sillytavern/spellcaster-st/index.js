@@ -200,11 +200,27 @@ function detectStoryChanges(messageText) {
         /(?:scene\s+(?:shifts?|changes?|moves?|cuts?)\s+to|now\s+(?:in|at|inside|outside))\s+(?:the\s+|a\s+)?([^.,!?*"]{8,80})/gi,
         /(?:they\s+(?:are|were)\s+now\s+(?:in|at))\s+(?:the\s+|a\s+)?([^.,!?*"]{8,80})/gi,
     ];
+    // Trim the captured location at common sentence-internal hinges so
+    // "walked into the bar and ordered drinks" captures "bar" rather
+    // than "bar and ordered drinks". Also lowercases + caps to 60
+    // chars so a 200-char run-on stops at a realistic place name.
+    const _trimLocation = (s) => {
+        let t = String(s).trim();
+        // Cut at the first conjunction / clause break. The lookahead-style
+        // regex in the patterns can't express "stop at these words" without
+        // going non-greedy + cumbersome, so do it here as a post-filter.
+        const hinge = t.search(/\s+(?:and|but|then|while|because|after|before|until|so|or|where|as)\s+/i);
+        if (hinge > 4) t = t.slice(0, hinge);
+        // Also stop at possessive pronouns joining a new clause.
+        const pronoun = t.search(/\s+(?:he|she|they|his|her|their|it)\s+/i);
+        if (pronoun > 4) t = t.slice(0, pronoun);
+        return t.trim().slice(0, 60);
+    };
     for (const p of locationPatterns) {
         const m = p.exec(messageText);
         if (m && m[1].trim().length > 5) {
-            const newLoc = m[1].trim();
-            if (newLoc !== _sceneState.location) {
+            const newLoc = _trimLocation(m[1]);
+            if (newLoc.length > 5 && newLoc !== _sceneState.location) {
                 changes.push({ type: 'location_change', reason: `Moved to: ${newLoc}`, params: { location: newLoc } });
             }
         }
@@ -263,7 +279,8 @@ function detectStoryChanges(messageText) {
     for (const p of attirePatterns) {
         const m = p.exec(messageText);
         if (m) {
-            changes.push({ type: 'attire_change', reason: `Attire: ${m[0].substring(0, 50)}`, params: { attire: m[1]?.trim() || m[0].trim() } });
+            const raw = m[1]?.trim() || m[0].trim();
+            changes.push({ type: 'attire_change', reason: `Attire: ${m[0].substring(0, 50)}`, params: { attire: _trimLocation(raw) } });
         }
     }
 
