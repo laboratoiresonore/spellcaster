@@ -206,14 +206,17 @@ function detectStoryChanges(messageText) {
     // chars so a 200-char run-on stops at a realistic place name.
     const _trimLocation = (s) => {
         let t = String(s).trim();
-        // Cut at the first conjunction / clause break. The lookahead-style
-        // regex in the patterns can't express "stop at these words" without
-        // going non-greedy + cumbersome, so do it here as a post-filter.
+        // Cut at the first conjunction / clause break. Any positive-index
+        // match is trimmed; the outer guard `newLoc.length > 5` then
+        // drops captures that turned out to be too short to be a real
+        // place name (e.g. "bar and ordered drinks" -> "bar" -> dropped).
+        // Previous `hinge > 4` threshold left "bar and ordered drinks"
+        // un-trimmed because the conjunction landed at index 3 — the
+        // whole run-on string was then pushed as the "location".
         const hinge = t.search(/\s+(?:and|but|then|while|because|after|before|until|so|or|where|as)\s+/i);
-        if (hinge > 4) t = t.slice(0, hinge);
-        // Also stop at possessive pronouns joining a new clause.
+        if (hinge > 0) t = t.slice(0, hinge);
         const pronoun = t.search(/\s+(?:he|she|they|his|her|their|it)\s+/i);
-        if (pronoun > 4) t = t.slice(0, pronoun);
+        if (pronoun > 0) t = t.slice(0, pronoun);
         return t.trim().slice(0, 60);
     };
     for (const p of locationPatterns) {
