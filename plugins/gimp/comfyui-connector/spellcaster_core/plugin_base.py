@@ -72,6 +72,13 @@ class SpellcasterPlugin:
         self.server = server_url
         self._last_upload = None  # filename on ComfyUI
         self._last_result = None  # (filename, subfolder, type)
+        # Canonical URL for the most recent generation — set by
+        # `_download_and_insert` after `_stash_in_gallery`. Callers
+        # that need a shareable reference (chat embed, save-to-disk
+        # link, downstream HTTP consumer) read this rather than
+        # reconstructing the ComfyUI /view URL. Falls back to the raw
+        # /view URL when no Guild is configured.
+        self._last_gallery_url = None
         # Cross-interface backbone (§15). Optional — subclasses that
         # want to participate in AssetGallery / EventBus pass
         # ``guild_url``; leaving it None keeps the plugin purely
@@ -82,8 +89,14 @@ class SpellcasterPlugin:
         self._guild_url = (guild_url or "").rstrip("/") or None
         self._origin = origin or ""
         self._heartbeat_started = False
+        self._inbox_poll_started = False
         if self._guild_url and self._origin:
             self._start_heartbeat_loop()
+            # Start inbox poll so the plugin can RECEIVE peer sends
+            # (GIMP → Blender, Resolve → Krita, …). Without this the
+            # interface is permanently "send-only" even though the
+            # Guild already routes events to its mailbox.
+            self._start_inbox_poll_loop()
 
     # ── Abstract methods (override in subclass) ──────────────────
 
@@ -266,6 +279,104 @@ class SpellcasterPlugin:
         sees SOMETHING even from barebones plugins.
         """
         return {"plugin": self._origin, "transport": "plugin_base"}
+
+    def _start_inbox_poll_loop(self, interval_s=20):
+        """Start a daemon thread that drains this plugin's Guild
+        inbox every ``interval_s`` and calls
+        :meth:`_on_inbox_message` for each received event.
+
+        Enables peer-send (GIMP → Blender, Resolve → Krita, …): when
+        another plugin publishes ``<this_origin>.asset.send``, the
+        mailbox fanout on the Guild side routes it to this interface's
+        per-key queue, and this loop pops + dispatches it.
+
+        Silent no-op when ``self._guild_url`` / ``self._origin``
+        aren't set. Only starts ONCE per plugin instance — the
+        ``_inbox_poll_started`` guard prevents stacking loops across
+        editor reloads.
+
+        Subclasses override ``_on_inbox_message(msg)`` to actually
+        insert received bytes into their editor. Default
+        implementation does nothing, so adding the poll loop to a
+        new plugin is harmless even before it wires up the handler.
+        """
+        if (getattr(self, "_inbox_poll_started", False)
+                or not self._guild_url or not self._origin):
+            return
+        self._inbox_poll_started = True
+        import threading as _th
+        t = _th.Thread(target=self._inbox_poll_loop_body,
+                       args=(float(interval_s),),
+                       daemon=True,
+                       name=f"spellcaster-{self._origin}-inbox")
+        t.start()
+
+    def _inbox_poll_loop_body(self, interval_s):
+        """Run loop for the inbox poller. NEVER raises — errors
+        swallowed so a temporary Guild outage doesn't kill the poller.
+        """
+        while True:
+            try:
+                req = urllib.request.Request(
+                    f"{self._guild_url}/api/{self._origin}/inbox?consume=1&max=20",
+                    headers={"Accept": "application/json"})
+                body = urllib.request.urlopen(req, timeout=5).read()
+                msgs = (json.loads(body) or {}).get("messages") or []
+                for m in msgs:
+                    try:
+                        self._on_inbox_message(m)
+                    except Exception as _e:
+                        self.show_error(
+                            f"Inbox message dispatch failed: {_e}")
+            except Exception:
+                pass  # Guild offline — try again next tick
+            time.sleep(interval_s)
+
+    def _on_inbox_message(self, msg):
+        """Override to handle a popped mailbox message.
+
+        ``msg`` is the raw event dict (shape defined by
+        ``spellcaster_core.events.AssetSend`` for ``*.asset.send``
+        kinds). Subclasses typically pull ``msg['data']['image_url']``,
+        resolve it against ``self._guild_url`` if relative, download,
+        and call ``self.insert_layer(bytes, name)``.
+
+        Default implementation: auto-handle ``*.asset.send`` by
+        downloading the referenced asset and inserting as a layer.
+        Subclasses with richer needs (Photoshop layer-group,
+        Blender image-editor binding) override this.
+        """
+        kind = str(msg.get("kind") or "")
+        data = msg.get("data") or {}
+        if not kind.endswith(".asset.send"):
+            return
+        image_url = (data.get("image_url") or data.get("url") or "").strip()
+        if not image_url:
+            return
+        if image_url.startswith("/"):
+            image_url = self._guild_url.rstrip("/") + image_url
+        # Scheme clamp — refuse file://, gopher://, etc.
+        from urllib.parse import urlparse as _urlparse
+        try:
+            scheme = _urlparse(image_url).scheme.lower()
+        except Exception:
+            scheme = ""
+        if scheme not in ("http", "https"):
+            return
+        try:
+            # Cap at 100 MB — an adversarial peer could otherwise push
+            # arbitrarily large bytes into the editor's memory.
+            _MAX = 100 * 1024 * 1024
+            resp_bytes = urllib.request.urlopen(image_url, timeout=30).read(_MAX + 1)
+            if len(resp_bytes) > _MAX or len(resp_bytes) < 64:
+                return
+        except Exception:
+            return
+        label = data.get("title") or data.get("source") or "peer asset"
+        try:
+            self.insert_layer(resp_bytes, f"From {label}")
+        except NotImplementedError:
+            pass  # Subclass doesn't implement insert_layer — no-op.
 
     def _stash_in_gallery(self, png_bytes, *, kind="generation",
                            title=None, prompt=None, model=None, seed=None,
@@ -466,8 +577,16 @@ class SpellcasterPlugin:
                             # into AssetGallery so every other plugin
                             # sees the generation via
                             # ``<origin>.asset.created``.
-                            self._stash_in_gallery(
+                            gallery_url = self._stash_in_gallery(
                                 data, kind=label, title=fn)
+                            # Record the canonical URL on the plugin
+                            # so callers that want it can
+                            # ``plugin._last_gallery_url`` without
+                            # re-reading the bytes. Falls back to the
+                            # raw ComfyUI /view URL only when the
+                            # gallery stash didn't happen (no guild
+                            # configured or upload failed).
+                            self._last_gallery_url = gallery_url or url
                             self.show_progress(f"Done! ({len(data)//1024} KB)")
                             return data
                     except Exception as e:
