@@ -400,11 +400,16 @@ class Pipeline:
 
     def _first_image(self, results):
         """Get the first image filename from results (for chaining)."""
+        # 200 MB cap — keeps a compromised ComfyUI from OOMing the
+        # pipeline host via an unbounded /view response.
+        _MAX = 200 * 1024 * 1024
         for fn, sf, ft in results:
             if fn.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
                 # Upload the output back to input folder for next step
                 url = f"{self._server}/view?filename={fn}&subfolder={sf}&type={ft}"
-                data = urllib.request.urlopen(url, timeout=60).read()
+                data = urllib.request.urlopen(url, timeout=60).read(_MAX + 1)
+                if len(data) > _MAX:
+                    raise IOError(f"/view response exceeded {_MAX} bytes")
                 import uuid
                 new_name = f"pipeline_{uuid.uuid4().hex[:8]}.png"
                 tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
