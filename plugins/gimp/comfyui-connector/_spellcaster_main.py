@@ -5281,16 +5281,64 @@ WAN_I2V_PRESETS = {
 }
 
 # ── LTX 2.3 Model Presets ─────────────────────────────────────────────────
+# Each preset maps a user-picked variant to the UNET / text encoder / VAE /
+# distilled-LoRA tuple that build_ltx_video expects. Text encoder, VAE,
+# embeddings connector, distilled LoRA, and upscaler are the same across
+# the 22B family — only the UNET checkpoint differs. Quantisation trade-off:
+# Q4 = smallest (~11 GB), Q8 ≈ Q5+20%, fp8 ≈ half-precision native, bf16
+# full precision. 13B variant has its own LoRA + connector pair.
+#
+# These filenames match the canonical naming scheme ComfyUI uses for the
+# LTX community release. `_resolve_server_path` will auto-adapt to the
+# actual filenames the server reports if the pattern is close. Users with
+# unusual filenames can still edit this dict or use the Guild shot API
+# (server-side `detect_ltx_preset` finds models automatically).
+_LTX_COMMON = {
+    "text_encoder":         "gemma_3_12B_it_fp4_mixed.safetensors",
+    "embeddings_connector": "LTX\\ltx-2.3-22b-dev_embeddings_connectors.safetensors",
+    "vae":                  "LTX23_video_vae_bf16.safetensors",
+    "steps": 30, "cfg": 4.0, "stg": 1.0, "rescale": 0.7,
+    "distilled_lora":       "ltxv\\ltx-2.3-22b-distilled-lora-384.safetensors",
+    "latent_upscaler":      "ltx-2-spatial-upscaler-x2-1.0.safetensors",
+    "lora_prefix":          "ltxv",
+}
 LTX_PRESETS = {
-    "LTX 2.3 22B (GGUF Q4)": {
+    "LTX 2.3 22B (GGUF Q4_K_M) — fastest, lowest VRAM": {
         "unet": "LTX\\ltx-2.3-22b-dev-Q4_K_M.gguf",
-        "text_encoder": "gemma_3_12B_it_fp4_mixed.safetensors",
-        "embeddings_connector": "LTX\\ltx-2.3-22b-dev_embeddings_connectors.safetensors",
-        "vae": "LTX23_video_vae_bf16.safetensors",
+        **_LTX_COMMON,
+    },
+    "LTX 2.3 22B (GGUF Q5_K_M) — better quality, mid VRAM": {
+        "unet": "LTX\\ltx-2.3-22b-dev-Q5_K_M.gguf",
+        **_LTX_COMMON,
+    },
+    "LTX 2.3 22B (GGUF Q6_K) — high quality, higher VRAM": {
+        "unet": "LTX\\ltx-2.3-22b-dev-Q6_K.gguf",
+        **_LTX_COMMON,
+    },
+    "LTX 2.3 22B (GGUF Q8_0) — near-fp16 quality": {
+        "unet": "LTX\\ltx-2.3-22b-dev-Q8_0.gguf",
+        **_LTX_COMMON,
+    },
+    "LTX 2.3 22B (fp8 scaled) — native half-precision": {
+        "unet": "LTX\\ltx-2.3-22b-dev-fp8_scaled.safetensors",
+        **_LTX_COMMON,
+    },
+    "LTX 2.3 22B (bf16) — full precision, max VRAM": {
+        "unet": "LTX\\ltx-2.3-22b-dev-bf16.safetensors",
+        **_LTX_COMMON,
+    },
+    "LTX 2.3 13B (GGUF Q4_K_M) — small model, fastest": {
+        # The 13B family has its own distilled LoRA + connector; paths
+        # mirror the 22B naming convention. If the community release
+        # uses different filenames, edit this entry.
+        "unet":                 "LTX\\ltx-2.3-13b-dev-Q4_K_M.gguf",
+        "text_encoder":         "gemma_3_12B_it_fp4_mixed.safetensors",
+        "embeddings_connector": "LTX\\ltx-2.3-13b-dev_embeddings_connectors.safetensors",
+        "vae":                  "LTX23_video_vae_bf16.safetensors",
         "steps": 30, "cfg": 4.0, "stg": 1.0, "rescale": 0.7,
-        "distilled_lora": "ltxv\\ltx-2.3-22b-distilled-lora-384.safetensors",
-        "latent_upscaler": "ltx-2-spatial-upscaler-x2-1.0.safetensors",
-        "lora_prefix": "ltxv",
+        "distilled_lora":       "ltxv\\ltx-2.3-13b-distilled-lora-384.safetensors",
+        "latent_upscaler":      "ltx-2-spatial-upscaler-x2-1.0.safetensors",
+        "lora_prefix":          "ltxv",
     },
 }
 
@@ -13541,13 +13589,25 @@ class Spellcaster(Gimp.PlugIn):
             # profile (spellcaster_core/prompt_enhance.py "ltx" entry).
             # Global toggle in config.json gates this too; if disabled
             # globally _auto_enhance no-ops regardless of dialog state.
+            #
+            # Wrapped in _run_with_spinner so the (potentially multi-
+            # second) LLM call doesn't freeze the GIMP UI — the user
+            # sees a live "enhancing prompt…" status instead of a hung
+            # dialog.
             if v.get("enhance"):
-                orig_prompt = v["prompt"]
-                v["prompt"], _ = _auto_enhance(v["prompt"], "ltx")
-                if v["prompt"] != orig_prompt:
-                    _update_spinner_status(
-                        f"LTX: prompt enhanced ({len(orig_prompt.split())}"
-                        f"→{len(v['prompt'].split())} words)")
+                _orig_prompt = v["prompt"]
+                def _do_ltx_enhance(_p=_orig_prompt):
+                    enhanced, _neg = _auto_enhance(_p, "ltx")
+                    return enhanced
+                _new_prompt = _run_with_spinner(
+                    "LTX: enhancing prompt via LLM (aiming for 150-200 "
+                    "words — LTX rewards length)...",
+                    _do_ltx_enhance)
+                if _new_prompt and _new_prompt != _orig_prompt:
+                    v["prompt"] = _new_prompt
+                    print(f"[Spellcaster] LTX prompt enhanced: "
+                          f"{len(_orig_prompt.split())}→"
+                          f"{len(_new_prompt.split())} words")
 
             base_seed = v["seed"]
             for run_i in range(runs):
