@@ -175,17 +175,94 @@ def fetch_latest_sha(commits_url: str, headers: dict[str, str],
     return data[0]["sha"]
 
 
+class TruncatedTreeError(RuntimeError):
+    """Raised when GitHub's tree API truncated the response.
+
+    Happens when a repo has more than ~100,000 files in a single
+    recursive tree call. If this ever fires for spellcaster we've
+    either bloated the repo or GitHub changed the limit — both
+    worth a loud failure so a maintainer notices.
+    """
+
+
 def fetch_tree(tree_url: str, headers: dict[str, str],
                timeout: float = 30) -> list[dict[str, Any]]:
     """GET <tree_url> (recursive) → list of tree items (blobs and trees).
 
     Each blob has keys: path, type, sha, size, url. Use type=="blob" to
     filter for files; trees (directories) are returned too.
+
+    Raises `TruncatedTreeError` when GitHub signals the response is
+    truncated — otherwise we'd silently miss half the asset files and
+    the stale-file cleanup would delete whatever didn't appear in
+    `remote_filenames`.
     """
     req = urllib.request.Request(tree_url, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         data = json.loads(resp.read().decode("utf-8"))
+    if data.get("truncated"):
+        raise TruncatedTreeError(
+            "GitHub tree API returned truncated=true. The recursive "
+            "tree endpoint caps out around 100,000 files; some assets "
+            "will be missing from the update pass. Paginate via "
+            "per-directory calls or `gitdata.trees.get` with "
+            "a deeper page."
+        )
     return data.get("tree", [])
+
+
+def download_blob_with_retry(
+    url: str, expected_size: int, headers: dict[str, str],
+    *, timeout: float = 60, scrub_nulls: bool = True,
+    filename_hint: str = "",
+    max_size: int = DEFAULT_MAX_BLOB_SIZE,
+    expected_sha: Optional[str] = None,
+    retries: int = 3,
+    backoff_seconds: float = 1.0,
+) -> bytes:
+    """`download_blob` wrapped with exponential backoff retries.
+
+    Transient network failures (connection reset, timeout, partial
+    read) are a real source of silent asset-update failures. Retry
+    up to `retries` times with exponential backoff before giving
+    up. SHA mismatches and size mismatches are NOT retried — those
+    indicate the server is handing back a different blob, and
+    retrying won't help.
+
+    Raises the final exception from the underlying `download_blob`
+    call if every retry fails.
+    """
+    import time as _time
+    last_exc: Optional[Exception] = None
+    for attempt in range(max(1, retries)):
+        try:
+            return download_blob(
+                url, expected_size, headers,
+                timeout=timeout, scrub_nulls=scrub_nulls,
+                filename_hint=filename_hint, max_size=max_size,
+                expected_sha=expected_sha,
+            )
+        except IOError as e:
+            # Deterministic failures don't benefit from retries —
+            # the server will send the same bad blob every time.
+            # "incomplete" covers the size-mismatch path in
+            # download_blob; "mismatch" covers explicit SHA diffs;
+            # "exceeds" covers max_size clips. Everything else
+            # (connection reset mid-stream, transient 5xx) is
+            # worth retrying.
+            msg = str(e).lower()
+            if "incomplete" in msg or "mismatch" in msg or "exceeds" in msg:
+                raise
+            last_exc = e
+        except (urllib.error.URLError, OSError, TimeoutError) as e:
+            # Transient network errors ARE worth retrying.
+            last_exc = e
+        if attempt < retries - 1:
+            _time.sleep(backoff_seconds * (2 ** attempt))
+    # Every attempt failed — surface the last exception so the caller
+    # can log it and mark the file as failed for the next update pass.
+    assert last_exc is not None
+    raise last_exc
 
 
 def download_blob(url: str, expected_size: int, headers: dict[str, str],

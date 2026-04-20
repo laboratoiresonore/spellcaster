@@ -878,6 +878,16 @@ dt.preferences.register(MODULE_NAME, "guild_url", "string",
   _("Leave blank to run stand-alone; set to e.g. http://127.0.0.1:7777 to show Darktable in the Guild UI"),
   "http://127.0.0.1:7777")
 
+-- Auto-poll cadence for the cross-interface inbox. 0 disables the
+-- background drain (user falls back to the manual "Check Inbox"
+-- button). 30 seconds is a reasonable default: low enough for peers
+-- to feel instant, high enough not to hammer the Guild or wake the
+-- disk every few seconds.
+dt.preferences.register(MODULE_NAME, "inbox_auto_interval_s", "integer",
+  _("Auto inbox poll interval (seconds, 0 = off)"),
+  _("How often Darktable silently checks the Spellcaster inbox for assets other plugins sent it. 0 disables the background drain; use the 💎 Check Inbox button to pull on demand instead."),
+  30, 0, 3600)
+
 -- ═══════════════════════════════════════════════════════════════════════
 -- HTTP communication via curl
 -- ═══════════════════════════════════════════════════════════════════════
@@ -1029,6 +1039,14 @@ end
 local function curl_download(url, out)
   os.execute(string.format('curl -s -o "%s" "%s"', shell_esc(out), shell_esc(url)))
 end
+
+-- Forward declarations for helpers defined further below. Lua scopes
+-- ``local`` names from declaration point forward, so we can't call a
+-- local that doesn't exist yet. Declaring the names up front lets
+-- other helpers (e.g. ``_download_comfyui_view``) reference them
+-- before the body is filled in down at the base64 + POST site.
+local _gallery_stash_after_download
+local _download_comfyui_view
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- Canonical-builder dispatch — talk to spellcaster_core via the Guild.
@@ -1477,6 +1495,65 @@ local function _file_to_base64(path)
   local b64 = f:read("*all"); f:close(); os.remove(b64_out)
   if not b64 or b64 == "" then return nil end
   return b64
+end
+
+-- Body for ``_gallery_stash_after_download`` (forward-declared near
+-- curl_download). Pushes a locally-downloaded ComfyUI output into the
+-- Guild's AssetGallery so every cross-interface subscriber sees the
+-- generation via ``darktable.asset.created``. Fire-and-forget —
+-- errors are swallowed so Darktable's own import never blocks on a
+-- slow or offline Guild. Darktable keeps the bytes locally as its
+-- source of truth; the gallery stash is additive visibility.
+_gallery_stash_after_download = function(out, filename, extra_tags)
+  local guild = get_guild_url()
+  if not guild or guild == "" then return end
+  local probe = io.open(out, "rb")
+  if not probe then return end
+  local head = probe:read(16); probe:close()
+  if not head or #head == 0 then return end
+  local b64 = _file_to_base64(out)
+  if not b64 or b64 == "" then return end
+  local title = tostring(filename or "darktable generation"):gsub('"', "'")
+  local tags_json = '["darktable_generation"'
+  for _, t in ipairs(extra_tags or {}) do
+    tags_json = tags_json .. ',"' .. tostring(t):gsub('"', "'") .. '"'
+  end
+  tags_json = tags_json .. "]"
+  local payload = string.format(
+    '{"origin":"darktable","kind":"generation","title":"%s","tags":%s,"body_b64":"%s"}',
+    title, tags_json, b64)
+  local body_file = _unique_tmp("spellcaster_stash", ".json")
+  local resp_file = _unique_tmp("spellcaster_stash_resp", ".json")
+  local f = io.open(body_file, "w")
+  if not f then return end
+  f:write(payload); f:close()
+  local cmd
+  if package.config:sub(1,1) == "\\" then
+    cmd = string.format(
+      'curl -s --max-time 30 -X POST -H "Content-Type: application/json" --data-binary "@%s" "%s/api/assets" -o "%s" 2>NUL',
+      shell_esc(body_file), shell_esc(guild), shell_esc(resp_file))
+  else
+    cmd = string.format(
+      'curl -s --max-time 30 -X POST -H "Content-Type: application/json" --data-binary "@%s" "%s/api/assets" -o "%s" 2>/dev/null',
+      shell_esc(body_file), shell_esc(guild), shell_esc(resp_file))
+  end
+  os.execute(cmd)
+  os.remove(body_file)
+  os.remove(resp_file)
+end
+
+-- Body for ``_download_comfyui_view`` (forward-declared near
+-- curl_download). Canonical ComfyUI-result download for Darktable —
+-- fetches the /view endpoint into ``out`` AND stashes the bytes into
+-- the Guild's AssetGallery so every other plugin sees the generation
+-- via the ``darktable.asset.created`` event. Replaces the ad-hoc
+-- ``curl_download(format("%s/view?..."))`` sites that previously left
+-- cross-interface subscribers blind to Darktable generations.
+_download_comfyui_view = function(server, filename, out)
+  local url = string.format("%s/view?filename=%s&type=output",
+                             server, shell_esc(filename))
+  curl_download(url, out)
+  pcall(_gallery_stash_after_download, out, filename, nil)
 end
 
 -- Create a draft shot on the Guild. Returns shot_id or nil.
@@ -2555,7 +2632,7 @@ local function process_faceswap_mtb(image, source_path, analysis_model, swap_mod
 
   for j, rfn in ipairs(results) do
     local out = tmp_dir() .. sep .. "comfy_mtb_" .. os.time() .. "_" .. j .. ".png"
-    curl_download(string.format("%s/view?filename=%s&type=output", server, rfn), out)
+    _download_comfyui_view(server, rfn, out)
     dt.database.import(out)
   end
   dt.print(_("mtb face swap complete!"))
@@ -4319,7 +4396,7 @@ local function process_image(image, preset, prompt, negative, lora_name, lora_st
 
   for j, rfn in ipairs(results) do
     local out = tmp_dir() .. sep .. "comfy_result_" .. os.time() .. "_" .. j .. ".png"
-    curl_download(string.format("%s/view?filename=%s&type=output", server, rfn), out)
+    _download_comfyui_view(server, rfn, out)
     dt.database.import(out)
   end
 
@@ -4355,7 +4432,7 @@ local function process_faceswap_model(image, face_model_name, swap_model)
 
   for j, rfn in ipairs(results) do
     local out = tmp_dir() .. sep .. "comfy_fs_" .. os.time() .. "_" .. j .. ".png"
-    curl_download(string.format("%s/view?filename=%s&type=output", server, rfn), out)
+    _download_comfyui_view(server, rfn, out)
     dt.database.import(out)
   end
   dt.print(_("Face swap complete!"))
@@ -4420,7 +4497,7 @@ local function process_rembg(image)
 
   for j, rfn in ipairs(results) do
     local out = tmp_dir() .. sep .. "comfy_rembg_" .. os.time() .. "_" .. j .. ".png"
-    curl_download(string.format("%s/view?filename=%s&type=output", server, shell_esc(rfn)), out)
+    _download_comfyui_view(server, rfn, out)
     dt.database.import(out)
   end
   dt.print(_("Background removed!"))
@@ -4452,7 +4529,7 @@ local function process_upscale(image, upscale_model_file)
 
   for j, rfn in ipairs(results) do
     local out = tmp_dir() .. sep .. "comfy_upscale_" .. os.time() .. "_" .. j .. ".png"
-    curl_download(string.format("%s/view?filename=%s&type=output", server, shell_esc(rfn)), out)
+    _download_comfyui_view(server, rfn, out)
     dt.database.import(out)
   end
   dt.print(_("Upscale complete!"))
@@ -4488,7 +4565,7 @@ local function process_lama(image, mask_path)
 
   for j, rfn in ipairs(results) do
     local out = tmp_dir() .. sep .. "comfy_lama_" .. os.time() .. "_" .. j .. ".png"
-    curl_download(string.format("%s/view?filename=%s&type=output", server, shell_esc(rfn)), out)
+    _download_comfyui_view(server, rfn, out)
     dt.database.import(out)
   end
   dt.print(_("Object removal complete!"))
@@ -4866,7 +4943,7 @@ local function process_lut(image, lut_file, strength)
 
   for j, rfn in ipairs(results) do
     local out = tmp_dir() .. sep .. "comfy_lut_" .. os.time() .. "_" .. j .. ".png"
-    curl_download(string.format("%s/view?filename=%s&type=output", server, shell_esc(rfn)), out)
+    _download_comfyui_view(server, rfn, out)
     dt.database.import(out)
   end
   dt.print(_("LUT color grading complete!"))
@@ -4905,7 +4982,7 @@ local function process_outpaint(image, preset, prompt, negative,
 
   for j, rfn in ipairs(results) do
     local out = tmp_dir() .. sep .. "comfy_outpaint_" .. os.time() .. "_" .. j .. ".png"
-    curl_download(string.format("%s/view?filename=%s&type=output", server, shell_esc(rfn)), out)
+    _download_comfyui_view(server, rfn, out)
     dt.database.import(out)
   end
   dt.print(_("Outpaint complete!"))
@@ -4947,7 +5024,7 @@ local function process_style_transfer(image, style_ref_path, ckpt, prompt, negat
 
   for j, rfn in ipairs(results) do
     local out = tmp_dir() .. sep .. "comfy_style_" .. os.time() .. "_" .. j .. ".png"
-    curl_download(string.format("%s/view?filename=%s&type=output", server, shell_esc(rfn)), out)
+    _download_comfyui_view(server, rfn, out)
     dt.database.import(out)
   end
   dt.print(_("Style transfer complete!"))
@@ -4979,7 +5056,7 @@ local function process_face_restore(image, model, visibility, codeformer_weight)
 
   for j, rfn in ipairs(results) do
     local out = tmp_dir() .. sep .. "comfy_facerestore_" .. os.time() .. "_" .. j .. ".png"
-    curl_download(string.format("%s/view?filename=%s&type=output", server, shell_esc(rfn)), out)
+    _download_comfyui_view(server, rfn, out)
     dt.database.import(out)
   end
   dt.print(_("Face restore complete!"))
@@ -5011,7 +5088,7 @@ local function process_photo_restore(image, upscale_model, face_model, sharpen_a
 
   for j, rfn in ipairs(results) do
     local out = tmp_dir() .. sep .. "comfy_photorestore_" .. os.time() .. "_" .. j .. ".png"
-    curl_download(string.format("%s/view?filename=%s&type=output", server, shell_esc(rfn)), out)
+    _download_comfyui_view(server, rfn, out)
     dt.database.import(out)
   end
   dt.print(_("Photo restoration complete!"))
@@ -5044,7 +5121,7 @@ local function process_detail_hallucinate(image, ckpt, prompt, negative, cfg, de
 
   for j, rfn in ipairs(results) do
     local out = tmp_dir() .. sep .. "comfy_hallucinate_" .. os.time() .. "_" .. j .. ".png"
-    curl_download(string.format("%s/view?filename=%s&type=output", server, shell_esc(rfn)), out)
+    _download_comfyui_view(server, rfn, out)
     dt.database.import(out)
   end
   dt.print(_("Detail hallucination complete!"))
@@ -5077,7 +5154,7 @@ local function process_colorize(image, ckpt, controlnet_name, prompt, negative, 
 
   for j, rfn in ipairs(results) do
     local out = tmp_dir() .. sep .. "comfy_colorize_" .. os.time() .. "_" .. j .. ".png"
-    curl_download(string.format("%s/view?filename=%s&type=output", server, shell_esc(rfn)), out)
+    _download_comfyui_view(server, rfn, out)
     dt.database.import(out)
   end
   dt.print(_("Colorization complete!"))
@@ -5251,7 +5328,7 @@ local function process_klein(image, klein_model, prompt, steps, guidance)
 
   for j, rfn in ipairs(results) do
     local out = tmp_dir() .. sep .. "comfy_klein_" .. os.time() .. "_" .. j .. ".png"
-    curl_download(string.format("%s/view?filename=%s&type=output", server, rfn), out)
+    _download_comfyui_view(server, rfn, out)
     dt.database.import(out)
   end
   dt.print(string.format(_("Klein %s complete!"), klein_model.label))
@@ -5293,7 +5370,7 @@ local function process_pulid_flux(image, face_source_path, prompt, strength, ste
 
   for j, rfn in ipairs(results) do
     local out = tmp_dir() .. sep .. "comfy_pulid_" .. os.time() .. "_" .. j .. ".png"
-    curl_download(string.format("%s/view?filename=%s&type=output", server, rfn), out)
+    _download_comfyui_view(server, rfn, out)
     dt.database.import(out)
   end
   dt.print(_("PuLID Flux complete!"))
@@ -5332,7 +5409,7 @@ local function process_faceswap_direct(image, source_path, swap_model)
 
   for j, rfn in ipairs(results) do
     local out = tmp_dir() .. sep .. "comfy_fsd_" .. os.time() .. "_" .. j .. ".png"
-    curl_download(string.format("%s/view?filename=%s&type=output", server, rfn), out)
+    _download_comfyui_view(server, rfn, out)
     dt.database.import(out)
   end
   dt.print(_("Direct face swap complete!"))
@@ -5375,7 +5452,7 @@ local function process_faceid(image, preset, face_ref_path, prompt, negative,
 
   for j, rfn in ipairs(results) do
     local out = tmp_dir() .. sep .. "comfy_faceid_" .. os.time() .. "_" .. j .. ".png"
-    curl_download(string.format("%s/view?filename=%s&type=output", server, rfn), out)
+    _download_comfyui_view(server, rfn, out)
     dt.database.import(out)
   end
   dt.print(string.format(_("FaceID %s complete!"), preset.label))
@@ -5416,7 +5493,7 @@ local function process_klein_ref(image, ref_path, klein_model, prompt, steps, gu
 
   for j, rfn in ipairs(results) do
     local out = tmp_dir() .. sep .. "comfy_kleinref_" .. os.time() .. "_" .. j .. ".png"
-    curl_download(string.format("%s/view?filename=%s&type=output", server, rfn), out)
+    _download_comfyui_view(server, rfn, out)
     dt.database.import(out)
   end
   dt.print(string.format(_("Klein+Ref %s complete!"), klein_model.label))
@@ -5465,7 +5542,7 @@ local function process_inpaint(image, preset, mask_path, prompt, negative, loras
 
   for j, rfn in ipairs(results) do
     local out = tmp_dir() .. sep .. "comfy_inpaint_" .. os.time() .. "_" .. j .. ".png"
-    curl_download(string.format("%s/view?filename=%s&type=output", server, rfn), out)
+    _download_comfyui_view(server, rfn, out)
     dt.database.import(out)
   end
   dt.print(string.format(_("Inpaint %s complete!"), preset.label))
@@ -5489,7 +5566,7 @@ local function process_batch_variations(preset, prompt, negative, lora_name, lor
 
   for j, rfn in ipairs(results) do
     local out = tmp_dir() .. sep .. "comfy_batch_" .. os.time() .. "_" .. j .. ".png"
-    curl_download(string.format("%s/view?filename=%s&type=output", server, shell_esc(rfn)), out)
+    _download_comfyui_view(server, rfn, out)
     dt.database.import(out)
   end
   dt.print(string.format(_("Batch complete! %d variations generated."), #results))
@@ -5528,7 +5605,7 @@ local function process_iclight(image, prompt, negative, multiplier)
 
   for j, rfn in ipairs(results) do
     local out = tmp_dir() .. sep .. "comfy_iclight_" .. os.time() .. "_" .. j .. ".png"
-    curl_download(string.format("%s/view?filename=%s&type=output", server, shell_esc(rfn)), out)
+    _download_comfyui_view(server, rfn, out)
     dt.database.import(out)
   end
   dt.print(_("IC-Light relighting complete!"))
@@ -5561,7 +5638,7 @@ local function process_supir(image, supir_model, sdxl_model, prompt, steps, deno
 
   for j, rfn in ipairs(results) do
     local out = tmp_dir() .. sep .. "comfy_supir_" .. os.time() .. "_" .. j .. ".png"
-    curl_download(string.format("%s/view?filename=%s&type=output", server, shell_esc(rfn)), out)
+    _download_comfyui_view(server, rfn, out)
     dt.database.import(out)
   end
   dt.print(_("SUPIR restoration complete!"))
@@ -5600,7 +5677,7 @@ local function process_seedv2r(image, upscale_model, ckpt, prompt, negative,
 
   for j, rfn in ipairs(results) do
     local out = tmp_dir() .. sep .. "comfy_seedv2r_" .. os.time() .. "_" .. j .. ".png"
-    curl_download(string.format("%s/view?filename=%s&type=output", server, shell_esc(rfn)), out)
+    _download_comfyui_view(server, rfn, out)
     dt.database.import(out)
   end
   dt.print(_("SeedV2R upscale complete!"))
@@ -9552,13 +9629,25 @@ local function _inbox_dir()
   return pics
 end
 
-local function _check_spellcaster_inbox()
+-- Worker: drains the Darktable inbox and writes any received assets
+-- to the Pictures/Spellcaster-Inbox folder. Returns a table:
+--   { status = "ok" | "no_guild" | "unreachable" | "empty",
+--     downloaded = int, failed = int,
+--     imported = int,       -- files added to dt.database (silent path)
+--     dir = <inbox path> }
+-- The ``silent`` flag skips dt.print and (crucially) auto-imports the
+-- new files into the Darktable library via dt.database.import so the
+-- user sees them in lighttable without touching the Import panel.
+-- The manual "Check Inbox" button passes silent=false — it prints a
+-- one-line summary and leaves auto-import off so users can still
+-- review files before adding them.
+local function _drain_spellcaster_inbox(silent)
+  local res = { status = "ok", downloaded = 0, failed = 0, imported = 0, dir = nil }
   local guild = get_guild_url()
   if not guild or guild == "" then
-    dt.print(_("💎 Inbox: no Guild URL configured — set Server in Spellcaster panel."))
-    return
+    res.status = "no_guild"
+    return res
   end
-  -- 1) pull the inbox queue with consume=1 (pop on read)
   local resp_file = _unique_tmp("spellcaster_inbox", ".json")
   local cmd
   if package.config:sub(1,1) == "\\" then
@@ -9573,34 +9662,28 @@ local function _check_spellcaster_inbox()
   os.execute(cmd)
   local f = io.open(resp_file, "r")
   if not f then
-    dt.print(_("💎 Inbox: couldn't reach the Guild."))
-    return
+    res.status = "unreachable"
+    return res
   end
   local body = f:read("*all"); f:close(); os.remove(resp_file)
   if not body or body == "" then
-    dt.print(_("💎 Inbox: Guild returned an empty response."))
-    return
+    res.status = "unreachable"
+    return res
   end
-  -- 2) collect every image_url field (darktable.asset.* events).
-  --    Regex-level extraction keeps us off a JSON library dependency.
   local urls = {}
   for url in body:gmatch('"image_url"%s*:%s*"([^"]+)"') do
     table.insert(urls, url)
   end
   if #urls == 0 then
-    dt.print(_("💎 Inbox: nothing waiting."))
-    return
+    res.status = "empty"
+    return res
   end
-  -- 3) download each to the Spellcaster-Inbox folder
   local dir = _inbox_dir()
-  local downloaded = 0
-  local failed = 0
+  res.dir = dir
   for i, url in ipairs(urls) do
-    -- Resolve relative paths against the Guild URL
     if url:sub(1, 1) == "/" then
       url = guild:gsub("/+$", "") .. url
     end
-    -- Infer filename from last URL segment; default to timestamped PNG
     local hash = url:match("/api/assets/([^/?#]+)") or tostring(i)
     local out = dir .. sep .. "sc_" .. os.time() .. "_" .. hash:sub(1, 8) .. ".png"
     local dcmd
@@ -9612,23 +9695,52 @@ local function _check_spellcaster_inbox()
                             shell_esc(out), shell_esc(url))
     end
     os.execute(dcmd)
-    -- Verify file exists + non-empty
     local check = io.open(out, "rb")
     if check then
       local chunk = check:read(16); check:close()
       if chunk and #chunk > 0 then
-        downloaded = downloaded + 1
+        res.downloaded = res.downloaded + 1
+        -- Silent path auto-imports so users discover the asset in
+        -- lighttable without an extra click. Manual path leaves the
+        -- file unimported so users can review first.
+        if silent then
+          local ok = pcall(function()
+            local img = dt.database.import(out)
+            if img then res.imported = res.imported + 1 end
+          end)
+          if not ok then
+            -- Import failed — leave the file on disk; user can
+            -- still pick it up via the Import panel.
+          end
+        end
       else
         os.remove(out)
-        failed = failed + 1
+        res.failed = res.failed + 1
       end
     else
-      failed = failed + 1
+      res.failed = res.failed + 1
     end
+  end
+  return res
+end
+
+local function _check_spellcaster_inbox()
+  local res = _drain_spellcaster_inbox(false)
+  if res.status == "no_guild" then
+    dt.print(_("💎 Inbox: no Guild URL configured — set Server in Spellcaster panel."))
+    return
+  end
+  if res.status == "unreachable" then
+    dt.print(_("💎 Inbox: couldn't reach the Guild."))
+    return
+  end
+  if res.status == "empty" then
+    dt.print(_("💎 Inbox: nothing waiting."))
+    return
   end
   dt.print(string.format(
     _("💎 Inbox: %d image(s) saved to %s. Open Darktable's Import panel to add them to the library."),
-    downloaded, dir))
+    res.downloaded, res.dir or _inbox_dir()))
 end
 
 local inbox_btn = dt.new_widget("button") {
@@ -10358,6 +10470,41 @@ script_data.show = restart              -- Alias for restart() when re-enabling
 dt.print(_("Spellcaster loaded - img2img, inpaint, face swap, Wan I2V, Klein Flux2, PuLID Flux, FaceID, Klein+Ref, batch, ControlNet, IC-Light, SUPIR"))
 
 -- ═══════════════════════════════════════════════════════════════════════
+-- Background inbox auto-drain
+-- ═══════════════════════════════════════════════════════════════════════
+-- Darktable runs a persistent Lua main loop, so we can keep a
+-- long-lived dispatched coroutine that silently drains the
+-- cross-interface inbox on an interval. Every tick calls
+-- _drain_spellcaster_inbox(true) — the silent path that also
+-- dt.database.import()s any newly downloaded assets so users discover
+-- peer-sent files in lighttable without clicking anything.
+--
+-- Guarded by a global module flag so script_manager reloads don't
+-- stack multiple pollers, and gated on the user pref
+-- ``inbox_auto_interval_s`` (0 = disabled).
+if not _G._SPELLCASTER_INBOX_POLL_STARTED then
+  _G._SPELLCASTER_INBOX_POLL_STARTED = true
+  dt.control.dispatch(function()
+    while true do
+      local ok_iv, iv = pcall(dt.preferences.read,
+                               MODULE_NAME, "inbox_auto_interval_s", "integer")
+      if not ok_iv or type(iv) ~= "number" then iv = 30 end
+      if iv <= 0 then
+        -- Disabled — sleep a minute and re-check the pref so users
+        -- enabling it in the preferences dialog see it take effect
+        -- without a full Darktable restart.
+        dt.control.sleep(60 * 1000)
+      else
+        -- Fire-and-forget drain. pcall insulates the loop from any
+        -- networking/filesystem error so the poller never dies.
+        pcall(_drain_spellcaster_inbox, true)
+        dt.control.sleep(iv * 1000)
+      end
+    end
+  end)
+end
+
+-- ═══════════════════════════════════════════════════════════════════════
 -- Auto-updater (GitHub-based self-update mechanism)
 -- ═══════════════════════════════════════════════════════════════════════
 -- On every plugin load, checks the GitHub API for the latest commit SHA
@@ -10438,13 +10585,25 @@ local function spellcaster_auto_update()
   end
   os.remove(tree_tmp)
 
-  -- Fallback to static list if tree API returned nothing
+  -- Fallback to static list if tree API returned nothing.
+  -- THIS LIST MUST INCLUDE EVERY TOP-LEVEL FILE in plugins/darktable/
+  -- (check via `ls plugins/darktable/`). When an asset file exists
+  -- in the repo but is missing here, it won't refresh on the rare
+  -- days the GitHub Tree API is unreachable — which is exactly the
+  -- silent-asset-update bug flagged in the 2026-04 updater audit.
   if #update_files == 0 then
     update_files = {
+      -- Core code
       { src = "plugins/darktable/comfyui_connector.lua",     dst = "comfyui_connector.lua", expected_size = 0 },
-      { src = "plugins/darktable/installer_background.png",  dst = "installer_background.png", expected_size = 0 },
       { src = "plugins/darktable/splash.py",                 dst = "splash.py", expected_size = 0 },
       { src = "plugins/darktable/spellcaster_steg.py",       dst = "spellcaster_steg.py", expected_size = 0 },
+      -- Theme + branding assets (MUST be included — the pre-fix
+      -- fallback skipped these, which meant users with stale icons
+      -- never saw an update whenever the GitHub Tree API hiccuped).
+      { src = "plugins/darktable/spellcaster-darktable.css", dst = "spellcaster-darktable.css", expected_size = 0 },
+      { src = "plugins/darktable/spellcaster_icon.png",      dst = "spellcaster_icon.png", expected_size = 0 },
+      { src = "plugins/darktable/spellcaster_header.png",    dst = "spellcaster_header.png", expected_size = 0 },
+      { src = "plugins/darktable/installer_background.png",  dst = "installer_background.png", expected_size = 0 },
       { src = "plugins/darktable/darktable_splash.jpg",      dst = "darktable_splash.jpg", expected_size = 0 },
     }
     for _, f in ipairs(update_files) do remote_filenames[f.dst] = true end

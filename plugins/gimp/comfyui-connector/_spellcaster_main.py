@@ -671,6 +671,12 @@ def _auto_update():
         staged = 0
         failed = 0
         remote_filenames = set()
+        # Track non-py assets that failed so the end-of-run summary
+        # can call them out by name — the user's support complaint
+        # was about silently-skipped theme / icon updates, and the
+        # fix is to name names in stderr so they can eyeball which
+        # file actually broke.
+        _failed_assets: list[tuple[str, str]] = []
         _plugin_root = _PLUGIN_DIR.resolve()
         for rel_path, remainder, expected_size, expected_sha in remote_files:
             remote_filenames.add(remainder)
@@ -695,7 +701,17 @@ def _auto_update():
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 tmp = dest.with_suffix(dest.suffix + ".tmp")
                 if _au is not None:
-                    blob = _au.download_blob(
+                    # Use the retry wrapper when available — asset
+                    # files (CSS / PNG / GIF) fail more often than
+                    # plain .py downloads because they hit large
+                    # blob endpoints. Transient network hiccups get
+                    # smoothed over 3 attempts with exp backoff;
+                    # deterministic failures (SHA / size mismatch)
+                    # still fail fast and land in the `failed`
+                    # counter.
+                    _dl = getattr(_au, "download_blob_with_retry",
+                                  _au.download_blob)
+                    blob = _dl(
                         url, expected_size, _hdrs,
                         timeout=60,
                         filename_hint=remainder,
@@ -730,6 +746,10 @@ def _auto_update():
                         staged += 1
             except Exception as e:
                 failed += 1
+                # Track failed non-py assets separately so the final
+                # summary can call them out by name.
+                if not remainder.endswith(".py"):
+                    _failed_assets.append((remainder, str(e)[:120]))
                 print(f"[Spellcaster] Failed to download {remainder}: {e}", file=_sys.stderr)
                 # Clean up any partial tmp file so the next run starts fresh.
                 try:
@@ -865,6 +885,14 @@ def _auto_update():
             if failed > 0:
                 msg += (f"\n{failed} file(s) failed integrity check or "
                         "download — next launch will retry them.")
+                # Name the failed asset files explicitly. Without
+                # this, "3 files failed" doesn't tell the user their
+                # themes / icons specifically are affected.
+                if _failed_assets:
+                    names = ", ".join(n for n, _err in _failed_assets[:6])
+                    if len(_failed_assets) > 6:
+                        names += f", +{len(_failed_assets) - 6} more"
+                    msg += f"\nAssets that failed: {names}"
             if staged > 0:
                 msg += "\nRestart GIMP to apply all updates (some files were in use)."
             elif updated > 0:
@@ -2305,27 +2333,36 @@ CONTROLNET_GUIDE_MODES = {
                        "illustrious": "SDXL\\ttplanetSDXLControlnet_Tile_v20Fp16.safetensors",
                        "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
     },
+    # Three normal-map modes share the same cn_models shape. Prior to
+    # 2026-04-20 all three were mis-wired to depth (SDXL/Illustrious)
+    # or lineart (SD1.5) ControlNet files — normal-vector RGB colours
+    # fed into an unrelated CN produced visually-garbage output. The
+    # corrected filenames below are the canonical normal-map CNs. If
+    # a given model isn't on the user's ComfyUI server, workflow
+    # submit fails with a clear "model not found" error (far better
+    # than silent wrong-CN output). The cn_model_coverage section in
+    # tests/e2e_audit.py flags missing files against a live server.
     "Normal Map (surface 3D) — SD1.5/SDXL/Flux/ZIT": {
         "preprocessor": "BAE-NormalMapPreprocessor",
-        "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors",
-                       "sdxl": "SDXL\\control-lora-depth-rank128.safetensors",
-                       "illustrious": "SDXL\\control-lora-depth-rank128.safetensors",
+        "cn_models": {"sd15": "control_v11p_sd15_normalbae.pth",
+                       "sdxl": "SDXL\\controlnet-union-sdxl-1.0.safetensors",
+                       "illustrious": "SDXL\\controlnet-union-sdxl-1.0.safetensors",
                        "flux1dev": "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors",
                        "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
     },
     "Normal Map (use existing layer) — all archs": {
         "preprocessor": None,
-        "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors",
-                       "sdxl": "SDXL\\control-lora-depth-rank128.safetensors",
-                       "illustrious": "SDXL\\control-lora-depth-rank128.safetensors",
+        "cn_models": {"sd15": "control_v11p_sd15_normalbae.pth",
+                       "sdxl": "SDXL\\controlnet-union-sdxl-1.0.safetensors",
+                       "illustrious": "SDXL\\controlnet-union-sdxl-1.0.safetensors",
                        "flux1dev": "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors",
                        "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
     },
     "Normal DSINE (high quality) — SD1.5/SDXL/Flux/ZIT": {
         "preprocessor": "DSINE-NormalMapPreprocessor",
-        "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors",
-                       "sdxl": "SDXL\\control-lora-depth-rank128.safetensors",
-                       "illustrious": "SDXL\\control-lora-depth-rank128.safetensors",
+        "cn_models": {"sd15": "control_v11p_sd15_normalbae.pth",
+                       "sdxl": "SDXL\\controlnet-union-sdxl-1.0.safetensors",
+                       "illustrious": "SDXL\\controlnet-union-sdxl-1.0.safetensors",
                        "flux1dev": "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors",
                        "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
     },
@@ -2340,6 +2377,213 @@ CONTROLNET_GUIDE_MODES = {
         "cn_models": {"zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
     },
 }
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  OUTPAINT_PURPOSE_PRESETS — shared between Outpaint and Klein Outpaint
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Single source of truth for every "what are you extending" preset the two
+# outpaint dialogs offer. Both `_run_outpaint` (generic, ControlNet path)
+# and `_run_klein_outpaint` (Flux 2 Klein) populate their Purpose combobox
+# from this dict so the feature parity is by construction. Each entry
+# carries BOTH a positive prompt and a negative — architectures that
+# reject negative conditioning (Klein, Flux 1 Dev, Kontext, Chroma per §9)
+# still see the preset in the list; the dialog just ignores the negative
+# at submit time (`_apply_arch_optimizations` disables the widget).
+#
+# Rule when adding a new purpose: prompt must explicitly encode "seamless
+# continuation" language (the model's job is to extend, not replace),
+# and the negative must reject "visible seam / mismatched lighting /
+# inconsistent perspective" style failure modes.
+
+OUTPAINT_PURPOSE_PRESETS = {
+    "(general extension)": {
+        "prompt": "seamless continuation of the existing scene, matching lighting, style, and color palette, natural extension, consistent perspective, same quality and mood",
+        "negative": "different style, inconsistent lighting, visible seam, border artifact, blurry, mismatched colors, distorted perspective",
+    },
+    "Complete person / body": {
+        "prompt": "natural continuation of the human body, correct anatomy, matching skin tone and clothing, same pose direction, realistic body proportions, matching lighting on skin",
+        "negative": "extra limbs, wrong anatomy, mismatched skin color, different clothing, floating body parts, deformed, cut off",
+    },
+    "Extend landscape / sky": {
+        "prompt": "seamless landscape continuation, matching horizon line, consistent sky, natural terrain, same vegetation style, matching cloud formation, coherent depth of field",
+        "negative": "different landscape, sky mismatch, horizon break, inconsistent foliage, visible seam, different season",
+    },
+    "Complete cut-off object": {
+        "prompt": "natural completion of the cut-off object, matching material, same texture and color, correct proportions, physically plausible shape, seamless extension",
+        "negative": "wrong shape, different material, inconsistent color, floating parts, impossible geometry, visible seam",
+    },
+    "Extend interior / room": {
+        "prompt": "seamless room extension, matching wall color, consistent floor, same furniture style, correct perspective lines, matching ambient lighting",
+        "negative": "different room, wrong perspective, inconsistent decor, floating furniture, visible seam, mismatched lighting",
+    },
+    "Add more background / bokeh": {
+        "prompt": "smooth background extension, matching bokeh and depth of field, consistent blur, same color tones, natural out-of-focus continuation",
+        "negative": "sharp background, different blur, focus shift, inconsistent bokeh, visible seam, different color temperature",
+    },
+    "Widen panorama": {
+            # ── NSFW Outpaint Presets (auto-injected) ──
+            'Reveal more body': 'natural continuation of the human body, correct anatomy, matching skin tone, realistic proportions, smooth skin texture, same lighting on skin',
+            'Extend intimate scene': 'seamless continuation of bedroom scene, matching satin sheets, soft warm lighting, romantic atmosphere, same color palette',
+            'Complete figure (full body)': 'natural full body continuation, correct proportions, same clothing or lack thereof, matching skin tone, same pose direction, anatomically correct',
+            'Extend bath / pool scene': 'seamless water continuation, matching reflections, wet surfaces, steam, same lighting, bathroom or pool tiles',
+            'Reveal outfit below frame': 'natural clothing continuation below the frame, matching fabric texture and color, correct draping, same style',
+            'Reveal bare feet below frame': 'natural continuation downward showing bare feet, correct anatomy, five toes per foot, matching skin tone, natural foot proportions, same lighting on skin, detailed soles and toes',
+            'Reveal bare feet (standing)': 'natural continuation downward revealing bare feet standing on floor, correct anatomy, five toes per foot, arched soles, matching skin tone, floor surface continuation, weight bearing on feet, natural shadow under feet, same lighting',
+            'Reveal bare feet (lying down)': 'natural downward continuation showing bare feet while lying on bed or couch, relaxed toes, soles partially visible, feet slightly apart, soft fabric beneath feet, matching skin tone, warm intimate lighting',
+            'Reveal bare feet (seated)': 'natural continuation showing bare feet while seated, legs extending downward, feet resting on floor, relaxed toes, matching skin tone, natural foot placement, correct ankle proportions, same lighting on skin',
+            'Reveal soles (feet toward camera)': 'natural continuation revealing bare foot soles facing toward camera, wrinkled soles, visible arches, detailed toe pads, soft skin texture, matching skin tone, feet raised or propped up, shallow depth of field on soles',
+            'Reveal bare feet on bed': 'downward extension showing bare feet on soft sheets, toes peeking from under covers, satin or cotton fabric around feet, relaxed foot position, warm bedroom lighting, matching skin tone, detailed toe nails',
+            'Reveal bare feet in water': 'downward continuation showing bare feet in shallow water, wet skin glistening, water ripples around ankles, sand or pool floor visible, matching skin tone, natural refraction, bright natural lighting',
+        "prompt": "panoramic scene extension, wide angle continuation, matching horizon, consistent sky and ground, seamless blend at edges, natural wide-angle perspective",
+        "negative": "lens distortion mismatch, different exposure, sky break, visible stitch line, perspective error",
+    },
+    "Add headroom / sky / ceiling above": {
+        "prompt": "natural continuation upward, sky or ceiling matching scene context, correct lighting direction from above, consistent atmosphere, proper vertical perspective",
+        "negative": "floating objects, wrong ceiling, sky mismatch, inconsistent overhead lighting, visible seam, direction reversed",
+    },
+    "Add floor / ground below": {
+        "prompt": "natural ground surface below subject, matching floor material, correct shadows, consistent perspective, seamless edge blending, proper ground-plane vanishing point",
+        "negative": "floating subject, wrong floor material, mismatched shadows, impossible perspective, visible seam, tilted ground",
+    },
+    "Reveal hidden subject": {
+        "prompt": "extending to reveal more of a partially visible person or object, natural body continuation, matching pose and proportions, seamless completion of what was cut off",
+        "negative": "wrong anatomy, mismatched pose, duplicated head or limbs, distorted proportions, visible seam, conflicting perspective",
+    },
+    "Add reflection surface": {
+        "prompt": "reflective surface below, mirror-like floor or water reflection, matching lighting, symmetrical reflection of subject, natural ripples or glossy finish",
+        "negative": "incorrect reflection, mismatched subject in reflection, distorted mirror image, broken symmetry, harsh seam",
+    },
+    "Cinematic widescreen crop": {
+        "prompt": "extending sides for cinematic 2.39:1 aspect ratio, matching scene content, letterbox-style wide composition, environmental context at the edges",
+        "negative": "repeated edge content, tiled artefacts, obvious crop lines, inconsistent color temperature, distorted perspective at edges",
+    },
+    "Add foreground elements": {
+        "prompt": "natural foreground elements, depth-appropriate objects, bokeh foreground blur, matching scene context and lighting, framing the subject without blocking it",
+        "negative": "foreground obscuring subject, wrong depth of field, sharp elements where blur is expected, lighting mismatch, floating objects",
+    },
+    "Environmental storytelling": {
+        "prompt": "extending scene to reveal environmental context, narrative elements, props and details that tell a story, matching art direction, coherent world-building",
+        "negative": "unrelated objects, off-genre props, style break, visible seam, inconsistent lighting, perspective errors",
+    },
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  ARCH_OPTIMIZATIONS — central per-model post-select optimization layer
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# When the user picks a model in ANY dialog, `_apply_arch_optimizations`
+# reads this table and adjusts the UI so the defaults match what that arch
+# actually wants: disables negative-prompt widgets on no-negative
+# architectures (Klein / Flux 1 Dev / Flux Kontext / Chroma per CLAUDE.md
+# §9), surfaces an inline hint explaining the arch's prompt style, and
+# applies any arch-specific warnings.
+#
+# Single source of truth — every dialog that has a model selector MUST
+# call `_apply_arch_optimizations(dlg, arch_key)` on its preset-changed
+# handler, matching the existing LoRA / ControlNet / scene refresh calls.
+# This is the "bigger design thing" §24 sibling: the Lua surfaces get
+# canonical dispatch, the Python surfaces get canonical UI behaviour.
+
+ARCH_OPTIMIZATIONS = {
+    # Arches that DO support negative prompts.
+    "sd15":         {"negative": True,
+                      "hint": "SD 1.5 — classic tag prompts, cfg 7-9, 20-30 steps."},
+    "sdxl":         {"negative": True,
+                      "hint": "SDXL — tag-based prompts OK, cfg 5-7, 25-30 steps."},
+    "sdxl_turbo":   {"negative": True,
+                      "hint": "SDXL Turbo — low cfg (1-2), 4-8 steps."},
+    "illustrious":  {"negative": True,
+                      "hint": "Illustrious — booru tags, low cfg 5-6, euler_ancestral."},
+    "pony":         {"negative": True,
+                      "hint": "Pony — score tags (score_9, score_8_up...), cfg 6-8."},
+    "playground":   {"negative": True,
+                      "hint": "Playground v2.5 — aesthetic natural language, cfg 3."},
+    "zit":          {"negative": True,
+                      "hint": "Z-Image-Turbo — short prompts, cfg 2.0, 6 steps."},
+    "sd3":          {"negative": True,
+                      "hint": "SD3 / SD3.5 — MMDiT, natural language, cfg 4-6."},
+    "sd3_turbo":    {"negative": True,
+                      "hint": "SD3.5 Turbo — low cfg (1-2), 4-8 steps."},
+    "kolors":       {"negative": True,
+                      "hint": "Kolors — Chinese+English prompts, cfg 5-7."},
+    "hunyuan_dit":  {"negative": True,
+                      "hint": "HunyuanDiT — bilingual prompts, cfg 6."},
+    "pixart":       {"negative": True,
+                      "hint": "PixArt — natural language, cfg 4-5, 20 steps."},
+    "auraflow":     {"negative": True,
+                      "hint": "AuraFlow — natural language, cfg 3-5, 25 steps."},
+    # Arches that DO NOT support negative prompts (CLAUDE.md §9).
+    "flux1dev":     {"negative": False,
+                      "hint": "Flux 1 Dev — natural language, NO negative prompt, cfg 3.5, 25 steps."},
+    "flux_kontext": {"negative": False,
+                      "hint": "Flux Kontext — edit instructions, NO negative prompt, cfg 3.5."},
+    "flux2klein":   {"negative": False,
+                      "hint": "Flux 2 Klein — natural language, NO negative prompt, cfg 1.0, 4-6 steps. Enhancer is ON by default."},
+    "chroma":       {"negative": False,
+                      "hint": "Chroma — natural language, NO negative prompt, no ControlNet."},
+}
+
+
+def _apply_arch_optimizations(dlg, arch_key, *, arch_hint_label=None):
+    """Per-model UI optimization applied on every preset change.
+
+    Reads ARCH_OPTIMIZATIONS[arch_key] and:
+      * disables / re-enables ``dlg.neg_tv`` (and greys any negative
+        prompt label found at ``dlg._neg_label``) based on whether the
+        arch accepts negative conditioning. CLAUDE.md §9 is the source
+        of truth — calling this is equivalent to baking the matrix
+        into every dialog's init.
+      * sets an arch-specific tooltip on ``neg_tv`` explaining WHY it
+        was disabled, so the user doesn't assume the dialog is broken.
+      * writes a one-line hint into ``arch_hint_label`` (if provided)
+        summarising the arch's prompting style and default knobs.
+
+    Silent no-op when the dialog has no ``neg_tv`` attribute — caller
+    dialogs without a negative prompt widget (Klein outpaint etc.)
+    still benefit from the hint label.
+
+    Pair to the existing ``_refresh_cn_combos`` / ``_refresh_lora_combos``
+    / ``_refresh_scene_combo`` calls — all four fire from one
+    ``_on_preset_changed`` handler on PresetDialog.
+    """
+    opt = ARCH_OPTIMIZATIONS.get(arch_key or "", {})
+    supports_neg = opt.get("negative", True)
+    hint = opt.get("hint", "")
+
+    neg_tv = getattr(dlg, "neg_tv", None)
+    if neg_tv is not None:
+        neg_tv.set_sensitive(supports_neg)
+        try:
+            neg_tv.set_editable(supports_neg)
+        except Exception:
+            pass
+        if supports_neg:
+            neg_tv.set_tooltip_text(
+                "Describe elements you DO NOT want in the image "
+                "(e.g. 'blurry, distorted, watermark, text').")
+        else:
+            neg_tv.set_tooltip_text(
+                f"This architecture ({arch_key}) doesn't use negative prompts — "
+                f"the canonical workflow calls ConditioningZeroOut on the "
+                f"positive conditioning instead. Anything you type here is "
+                f"ignored at submit time.")
+    neg_label = getattr(dlg, "_neg_label", None)
+    if neg_label is not None:
+        try:
+            neg_label.set_sensitive(supports_neg)
+        except Exception:
+            pass
+
+    target_hint = arch_hint_label or getattr(dlg, "_arch_hint_label", None)
+    if target_hint is not None and hint:
+        try:
+            target_hint.set_markup(f"<i>{hint}</i>")
+            target_hint.show()
+        except Exception:
+            pass
+
 
 FACEID_PRESETS = {
     "SD1.5 — Juggernaut Reborn": {
@@ -8469,13 +8713,24 @@ class PresetDialog(Gtk.Dialog):
         sw = Gtk.ScrolledWindow(); sw.set_min_content_height(60); sw.add(self.prompt_tv)
         box.pack_start(sw, False, False, 0)
 
-        # Negative
-        box.pack_start(Gtk.Label(label="Negative:", xalign=0), False, False, 0)
+        # Negative. Label is captured on self so _apply_arch_optimizations
+        # can grey it out on no-negative arches (Flux / Kontext / Klein /
+        # Chroma) at the same time the TextView is disabled.
+        self._neg_label = Gtk.Label(label="Negative:", xalign=0)
+        box.pack_start(self._neg_label, False, False, 0)
         self.neg_tv = Gtk.TextView()
         self.neg_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         self.neg_tv.set_tooltip_text("Describe elements you DO NOT want in the image (e.g. 'blurry, distorted, watermark, text').")
         sw2 = Gtk.ScrolledWindow(); sw2.set_min_content_height(40); sw2.add(self.neg_tv)
         box.pack_start(sw2, False, False, 0)
+
+        # Per-arch hint — populated by _apply_arch_optimizations on every
+        # preset change. Starts empty; the first _apply_preset call will
+        # fill it with the active arch's prompt-style summary.
+        self._arch_hint_label = Gtk.Label(xalign=0)
+        self._arch_hint_label.set_line_wrap(True)
+        self._arch_hint_label.set_margin_top(2)
+        box.pack_start(self._arch_hint_label, False, False, 0)
 
         # ── Advanced Parameters (collapsible) ────────────────────────────
         adv_exp = Gtk.Expander(label="\u25b8 Advanced Parameters")
@@ -8887,6 +9142,11 @@ class PresetDialog(Gtk.Dialog):
         # Update style preset availability labels for new arch
         if self._all_lora_names:
             self._check_style_preset_availability()
+        # Per-arch UI optimization — disables the negative prompt widget
+        # on no-negative architectures and surfaces a prompting-style
+        # hint. Companion to _refresh_cn_combos / _refresh_lora_combos.
+        # See ARCH_OPTIMIZATIONS and _apply_arch_optimizations above.
+        _apply_arch_optimizations(self, p.get("arch"))
 
     # ── Turbo mode helpers ────────────────────────────────────────────
 
@@ -16664,43 +16924,29 @@ class Spellcaster(Gimp.PlugIn):
         klein_combo.set_active(0)
         bx.pack_start(klein_combo, False, False, 0)
 
-        # Purpose presets (reuse from outpaint)
-        KLEIN_OUTPAINT_PRESETS = {
-            "(general extension)": "seamless continuation of the existing scene, matching lighting, style, and color palette, natural extension, consistent perspective",
-            "Complete person / body": "natural continuation of the human body, correct anatomy, matching skin tone and clothing, same pose direction, realistic proportions",
-            "Extend landscape / sky": "seamless landscape continuation, matching horizon, consistent sky, natural terrain, same vegetation, coherent depth of field",
-            "Complete cut-off object": "natural completion of the cut-off object, matching material and texture, correct proportions, seamless extension",
-            "Extend interior / room": "seamless room extension, matching wall color, consistent floor, same furniture style, correct perspective",
-            "Add more background": "smooth background extension, matching colors and blur, consistent depth of field, natural continuation",
-            "Widen panorama": "panoramic scene extension, wide angle continuation, matching horizon, consistent sky and ground",
-            # ── NSFW Outpaint Presets (auto-injected) ──
-            'Reveal more body': 'natural continuation of the human body, correct anatomy, matching skin tone, realistic proportions, smooth skin texture, same lighting on skin',
-            'Extend intimate scene': 'seamless continuation of bedroom scene, matching satin sheets, soft warm lighting, romantic atmosphere, same color palette',
-            'Complete figure (full body)': 'natural full body continuation, correct proportions, same clothing or lack thereof, matching skin tone, same pose direction, anatomically correct',
-            'Extend bath / pool scene': 'seamless water continuation, matching reflections, wet surfaces, steam, same lighting, bathroom or pool tiles',
-            'Reveal outfit below frame': 'natural clothing continuation below the frame, matching fabric texture and color, correct draping, same style',
-            'Reveal bare feet below frame': 'natural continuation downward showing bare feet, correct anatomy, five toes per foot, matching skin tone, natural foot proportions, same lighting on skin, detailed soles and toes',
-            'Reveal bare feet (standing)': 'natural continuation downward revealing bare feet standing on floor, correct anatomy, five toes per foot, arched soles, matching skin tone, floor surface continuation, weight bearing on feet, natural shadow under feet, same lighting',
-            'Reveal bare feet (lying down)': 'natural downward continuation showing bare feet while lying on bed or couch, relaxed toes, soles partially visible, feet slightly apart, soft fabric beneath feet, matching skin tone, warm intimate lighting',
-            'Reveal bare feet (seated)': 'natural continuation showing bare feet while seated, legs extending downward, feet resting on floor, relaxed toes, matching skin tone, natural foot placement, correct ankle proportions, same lighting on skin',
-            'Reveal soles (feet toward camera)': 'natural continuation revealing bare foot soles facing toward camera, wrinkled soles, visible arches, detailed toe pads, soft skin texture, matching skin tone, feet raised or propped up, shallow depth of field on soles',
-            'Reveal bare feet on bed': 'downward extension showing bare feet on soft sheets, toes peeking from under covers, satin or cotton fabric around feet, relaxed foot position, warm bedroom lighting, matching skin tone, detailed toe nails',
-            'Reveal bare feet in water': 'downward continuation showing bare feet in shallow water, wet skin glistening, water ripples around ankles, sand or pool floor visible, matching skin tone, natural refraction, bright natural lighting',
-            "Add floor / ground": "natural ground surface below subject, matching floor material, correct shadows, consistent perspective, seamless edge blending",
-            "Add ceiling / sky above": "natural continuation upward, ceiling or sky matching scene context, correct lighting direction, consistent atmosphere",
-            "Reveal hidden subject": "extending to reveal more of a partially visible person or object, natural body continuation, matching pose and proportions",
-            "Add reflection surface": "reflective surface below, mirror-like floor or water reflection, matching lighting, symmetrical reflection of subject",
-            "Cinematic widescreen crop": "extending sides for cinematic 2.39:1 aspect ratio, matching scene content, letterbox-style wide composition",
-            "Add foreground elements": "natural foreground elements, depth-appropriate objects, bokeh foreground blur, matching scene context and lighting",
-            "Environmental storytelling": "extending scene to reveal environmental context, narrative elements, props and details that tell a story, matching art direction",
-        }
+        # Purpose presets — canonical shared dict (OUTPAINT_PURPOSE_PRESETS
+        # at module level). Klein only consumes the `prompt` field since
+        # the Klein workflow doesn't accept a negative prompt per §9;
+        # the `negative` in each entry is preserved for the generic
+        # _run_outpaint path which layers it into CLIPTextEncode.
         bx.pack_start(Gtk.Label(label="Purpose:", xalign=0), False, False, 0)
         purpose_combo = Gtk.ComboBoxText()
         purpose_combo.set_tooltip_text("What you're extending — auto-fills an optimized prompt.")
-        for label in KLEIN_OUTPAINT_PRESETS:
+        for label in OUTPAINT_PURPOSE_PRESETS:
             purpose_combo.append(label, label)
         purpose_combo.set_active(0)
         bx.pack_start(purpose_combo, False, False, 0)
+
+        # Arch hint — Klein is hard-coded flux2klein. Let
+        # _apply_arch_optimizations fill in the "Klein 2 — natural
+        # language, NO negative, cfg 1.0, 4-6 steps. Enhancer is ON by
+        # default." line so the user sees the same style of per-model
+        # summary every dialog surfaces.
+        arch_hint = Gtk.Label(xalign=0)
+        arch_hint.set_line_wrap(True)
+        arch_hint.set_margin_top(2)
+        bx.pack_start(arch_hint, False, False, 0)
+        _apply_arch_optimizations(dlg, "flux2klein", arch_hint_label=arch_hint)
 
         # Prompt
         bx.pack_start(Gtk.Label(label="Prompt:", xalign=0), False, False, 0)
@@ -16712,8 +16958,9 @@ class Spellcaster(Gimp.PlugIn):
 
         def _on_purpose(combo):
             key = combo.get_active_id()
-            if key and key in KLEIN_OUTPAINT_PRESETS:
-                prompt_tv.get_buffer().set_text(KLEIN_OUTPAINT_PRESETS[key])
+            entry = OUTPAINT_PURPOSE_PRESETS.get(key) if key else None
+            if entry:
+                prompt_tv.get_buffer().set_text(entry.get("prompt", ""))
         purpose_combo.connect("changed", _on_purpose)
         _on_purpose(purpose_combo)
 
@@ -21556,60 +21803,39 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     def _run_outpaint(self, procedure, run_mode, image, drawables, config, data):
-        """Outpaint: extend canvas by generating new content at the edges."""
+        """Outpaint: extend canvas by generating new content at the edges.
+
+        Purpose presets come from the module-level OUTPAINT_PURPOSE_PRESETS
+        (shared with _run_klein_outpaint) so both dialogs offer the same
+        14 continuation recipes. Per-model optimization rides on the
+        standard PresetDialog flow: picking a model fires _apply_preset,
+        which sets arch-specific steps/cfg/sampler/scheduler AND calls
+        _apply_arch_optimizations to disable the negative-prompt widget
+        on Flux / Klein / Kontext / Chroma and surface an arch hint.
+        """
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
-        OUTPAINT_PRESETS = {
-            "(general extension)": {
-                "prompt": "seamless continuation of the existing scene, matching lighting, style, and color palette, natural extension, consistent perspective, same quality and mood",
-                "negative": "different style, inconsistent lighting, visible seam, border artifact, blurry, mismatched colors, distorted perspective",
-            },
-            "Complete person / body": {
-                "prompt": "natural continuation of the human body, correct anatomy, matching skin tone and clothing, same pose direction, realistic body proportions, matching lighting on skin",
-                "negative": "extra limbs, wrong anatomy, mismatched skin color, different clothing, floating body parts, deformed, cut off",
-            },
-            "Extend landscape / sky": {
-                "prompt": "seamless landscape continuation, matching horizon line, consistent sky, natural terrain, same vegetation style, matching cloud formation, coherent depth of field",
-                "negative": "different landscape, sky mismatch, horizon break, inconsistent foliage, visible seam, different season",
-            },
-            "Complete cut-off object": {
-                "prompt": "natural completion of the cut-off object, matching material, same texture and color, correct proportions, physically plausible shape, seamless extension",
-                "negative": "wrong shape, different material, inconsistent color, floating parts, impossible geometry, visible seam",
-            },
-            "Extend interior / room": {
-                "prompt": "seamless room extension, matching wall color, consistent floor, same furniture style, correct perspective lines, matching ambient lighting",
-                "negative": "different room, wrong perspective, inconsistent decor, floating furniture, visible seam, mismatched lighting",
-            },
-            "Add more background / bokeh": {
-                "prompt": "smooth background extension, matching bokeh and depth of field, consistent blur, same color tones, natural out-of-focus continuation",
-                "negative": "sharp background, different blur, focus shift, inconsistent bokeh, visible seam, different color temperature",
-            },
-            "Widen panorama": {
-                "prompt": "panoramic scene extension, wide angle continuation, matching horizon, consistent sky and ground, seamless blend at edges, natural wide-angle perspective",
-                "negative": "lens distortion mismatch, different exposure, sky break, visible stitch line, perspective error",
-            },
-            "Add headroom / space above": {
-                "prompt": "natural sky or ceiling continuation above the subject, matching lighting from above, consistent atmosphere, proper vertical perspective",
-                "negative": "floating objects, wrong ceiling, sky mismatch, inconsistent overhead lighting, visible seam",
-            },
-        }
         dlg = PresetDialog("Spellcaster — Outpaint / Extend Canvas", mode="img2img")
         dlg.w_spin.set_value(image.get_width())
         dlg.h_spin.set_value(image.get_height())
 
-        # Outpaint purpose dropdown
+        # Outpaint purpose dropdown — sources from the shared canonical
+        # OUTPAINT_PURPOSE_PRESETS dict (module-level). Each entry has
+        # {prompt, negative}; negative is silently ignored at submit
+        # time on no-negative arches because _apply_arch_optimizations
+        # disables dlg.neg_tv for those.
         purpose_combo = Gtk.ComboBoxText()
         purpose_combo.set_tooltip_text("What you're extending. Each purpose has an optimized prompt\nfor seamless continuation of that specific content type.")
-        for label in OUTPAINT_PRESETS:
+        for label in OUTPAINT_PURPOSE_PRESETS:
             purpose_combo.append(label, label)
         purpose_combo.set_active(0)
         def _on_purpose_changed(combo):
             key = combo.get_active_id()
-            if key and key in OUTPAINT_PRESETS:
-                p = OUTPAINT_PRESETS[key]
-                dlg.prompt_tv.get_buffer().set_text(p["prompt"])
-                dlg.neg_tv.get_buffer().set_text(p["negative"])
+            entry = OUTPAINT_PURPOSE_PRESETS.get(key) if key else None
+            if entry:
+                dlg.prompt_tv.get_buffer().set_text(entry.get("prompt", ""))
+                dlg.neg_tv.get_buffer().set_text(entry.get("negative", ""))
         purpose_combo.connect("changed", _on_purpose_changed)
         purpose_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         purpose_box.pack_start(Gtk.Label(label="Purpose:"), False, False, 0)
