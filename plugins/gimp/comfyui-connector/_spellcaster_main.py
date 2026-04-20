@@ -2633,6 +2633,60 @@ def _collect_normal_map_from_dialog(dlg, image, server_url):
 _CN_INCOMPATIBLE_ARCHS = frozenset({"flux2klein", "flux_kontext", "chroma"})
 
 
+def _populate_model_combo(combo, label_task="img2img", *,
+                           arch_predicate=None,
+                           unavailable_note=None):
+    """Fill a checkpoint ComboBoxText from MODEL_PRESETS with
+    optional arch-filtering.
+
+    Used to enforce wrong-choice-proofing in handlers whose workflow
+    has hard architecture requirements. Every handler's model-combo
+    populator should call this instead of hand-rolling the for-loop
+    so the filter + favorite-seed + active-row logic lives in one
+    place.
+
+    Args:
+        combo: the Gtk.ComboBoxText to fill (cleared first).
+        label_task: task key passed to _model_label for badge tags.
+        arch_predicate: optional callable ``arch_key → bool``. When
+            supplied, only presets whose ``arch`` satisfies the
+            predicate are appended. The most common use is
+            ``lambda a: a not in _CN_INCOMPATIBLE_ARCHS`` for
+            handlers that REQUIRE ControlNet (colorize, detail
+            hallucinate, SeedV2R).
+        unavailable_note: optional explanation appended to the combo
+            when the filter leaves ZERO compatible presets. Useful so
+            a user with only Klein checkpoints installed sees *why*
+            the dropdown is empty instead of a mystery blank combo.
+
+    Returns the number of presets that made it in. Callers typically
+    call ``combo.set_active(0)`` after this to pick the first compat
+    preset.
+    """
+    combo.remove_all()
+    count = 0
+    _fav = _load_config().get("favourite_model", -1)
+    for i, p in enumerate(MODEL_PRESETS):
+        arch = p.get("arch", "sdxl")
+        if arch_predicate is not None and not arch_predicate(arch):
+            continue
+        combo.append(str(i), _model_label(p, label_task))
+        count += 1
+    if count == 0 and unavailable_note:
+        combo.append("__none__",
+                     f"(no compatible checkpoint — {unavailable_note})")
+        combo.set_active(0)
+        combo.set_sensitive(False)
+        return 0
+    if 0 <= _fav < len(MODEL_PRESETS):
+        fav_arch = MODEL_PRESETS[_fav].get("arch", "sdxl")
+        if (arch_predicate is None or arch_predicate(fav_arch)):
+            combo.set_active_id(str(_fav))
+    if combo.get_active() < 0:
+        combo.set_active(0)
+    return count
+
+
 def _maybe_override_cn_with_normal_map(controlnet, normal_map_filename,
                                          arch_key=None):
     """Overlay the 'Normal Map (use existing layer)' CN mode onto the
@@ -24018,17 +24072,26 @@ class Spellcaster(Gimp.PlugIn):
             "DDColor Natural: Fast AI colorization, most accurate colors.")
         engine_hb.pack_start(colorize_engine, True, True, 0)
         bx.pack_start(engine_hb, False, False, 0)
-        # Checkpoint model dropdown
+        # Checkpoint model dropdown. Colorize REQUIRES ControlNet
+        # lineart to do its job — without a compatible CN, the
+        # workflow silently degrades to plain img2img with a colorize
+        # prompt, producing unrelated output. So we filter Klein /
+        # Kontext / Chroma (the 3 archs whose canonical builders skip
+        # CN injection) out of the dropdown at the source.
         bx.pack_start(Gtk.Label(label="Checkpoint Model:", xalign=0), False, False, 0)
         model_combo = Gtk.ComboBoxText()
-        model_combo.set_tooltip_text("AI model for colorization. Realistic photo models work best.\nThe model generates colors guided by ControlNet lineart.")
-        for i, p in enumerate(MODEL_PRESETS):
-            model_combo.append(str(i), _model_label(p, "seedv2r"))
-        _fav = _load_config().get("favourite_model", -1)
-        if 0 <= _fav < len(MODEL_PRESETS) and model_combo.get_active_id() is None:
-            model_combo.set_active_id(str(_fav))
-        if model_combo.get_active() < 0:
-            model_combo.set_active(0)
+        model_combo.set_tooltip_text(
+            "AI model for colorization. Realistic photo models work best.\n"
+            "The model generates colors guided by ControlNet lineart.\n\n"
+            "Flux 2 Klein / Flux Kontext / Chroma are filtered out here — "
+            "they don't accept ControlNet conditioning, and colorize can't "
+            "work without the lineart guide.")
+        _populate_model_combo(
+            model_combo, label_task="colorize",
+            arch_predicate=lambda a: a not in _CN_INCOMPATIBLE_ARCHS,
+            unavailable_note=("Klein / Kontext / Chroma can't do colorize. "
+                              "Install an SD 1.5, SDXL, Illustrious, "
+                              "Flux.1-dev, or Z-Image-Turbo checkpoint."))
         bx.pack_start(model_combo, False, False, 0)
         # Colorization style preset
         bx.pack_start(Gtk.Label(label="Colorization Style:", xalign=0), False, False, 0)
