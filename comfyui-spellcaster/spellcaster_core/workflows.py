@@ -1134,6 +1134,12 @@ _QUALITY_ARCHES_FREEU = {"sdxl"}  # not illustrious — FreeU hurts anime
 # when the model HAS transformer blocks. SD1/SDXL/Klein use different
 # samplers (or in Klein's case its own enhancer) and don't benefit.
 _QUALITY_ARCHES_SLG = {"flux1dev", "flux_kontext", "zit"}
+# CFGZeroStar — cleans up the saturation drift distilled samplers hit
+# when running near cfg=1-2 with 4-8 steps. ZIT is the headline target
+# (always distilled). flux1dev / flux_kontext only benefit when the
+# caller's cfg is low; we gate on cfg < 4.5 inside _apply_quality_boost
+# rather than baking the gate into the set.
+_QUALITY_ARCHES_CFG_ZERO_STAR = {"zit", "flux1dev", "flux_kontext"}
 
 
 def _apply_quality_boost(nf, model_ref, arch_key, *,
@@ -1157,6 +1163,17 @@ def _apply_quality_boost(nf, model_ref, arch_key, *,
     if quality == "fast" or arch_key == "flux2klein":
         return model_ref
     nid = node_base_id
+
+    # CFGZeroStar — applied first, before PAG/SLG, so subsequent
+    # patches stack on top of the corrected guidance. Only fires on
+    # the registered distilled-DiT arches AND only when cfg is in the
+    # distilled regime (Flux Schnell-ish). For ZIT (always distilled)
+    # the cfg gate is effectively no-op.
+    if arch_key in _QUALITY_ARCHES_CFG_ZERO_STAR and (
+            cfg is None or cfg < 4.5):
+        czs = nf.cfg_zero_star(model_ref, node_id=str(nid))
+        model_ref = [czs, 0]
+        nid += 1
 
     if arch_key in _QUALITY_ARCHES_PAG:
         # Distilled DiT (zit, ~6 steps, cfg 1-2) is sensitive to high
