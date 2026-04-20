@@ -34,7 +34,12 @@
     s.id = STYLE_ID;
     s.textContent = `
       #sc-cal-btn {
-        position: fixed; top: 14px; right: 180px; z-index: 999;
+        /* Fallback layout only — normally the button lives inline in
+           #chat-shootout-slot (between Shootouts and the Turbo preset
+           cycler). We put the fixed-position fallback BELOW the
+           shootout button (top:52px) and at right:20px so neither
+           overlaps if the inline slot is missing. */
+        position: fixed; top: 52px; right: 20px; z-index: 999;
         background: linear-gradient(135deg, #0d6efd, #20c997);
         color: white; border: none; border-radius: 22px;
         padding: 8px 14px; font-size: 13px; font-weight: 600;
@@ -207,17 +212,39 @@
   }
 
   // ── Button ────────────────────────────────────────────────────────────
+  //
+  // Layout: we want the button order in #chat-shootout-slot to be
+  //     [Shootouts]  [Auto-calibrate]  [Turbo]
+  // The Shootouts button is injected by lora_shootout.js (appended
+  // into the slot). The Turbo button (#global-preset-btn) is
+  // hardcoded in index.html, always present. So "between them"
+  // means: insertBefore(#global-preset-btn).
+  //
+  // This function is both create-on-first-call AND re-place-on-
+  // every-call: if some later DOM change orphans the button (splash
+  // screen rerenders, slot gets replaced), we snap it back into the
+  // right spot.
   function ensureButton() {
     let btn = document.getElementById('sc-cal-btn');
+    const slot = document.getElementById('chat-shootout-slot');
     if (!btn) {
       btn = document.createElement('button');
       btn.id = 'sc-cal-btn';
       btn.setAttribute('data-pending', '0');
       btn.innerHTML = '✨ Auto-calibrate<span class="sc-cal-badge">0</span>';
       btn.addEventListener('click', openModal);
-      const slot = document.getElementById('chat-shootout-slot');
-      if (slot) { btn.classList.add('sc-cal-btn--inline'); slot.appendChild(btn); }
-      else { document.body.appendChild(btn); }
+    }
+    if (slot) {
+      btn.classList.add('sc-cal-btn--inline');
+      const turbo = slot.querySelector('#global-preset-btn');
+      if (turbo && turbo.previousSibling !== btn) {
+        slot.insertBefore(btn, turbo);
+      } else if (!turbo && btn.parentNode !== slot) {
+        slot.appendChild(btn);
+      }
+    } else if (btn.parentNode !== document.body) {
+      btn.classList.remove('sc-cal-btn--inline');
+      document.body.appendChild(btn);
     }
     return btn;
   }
