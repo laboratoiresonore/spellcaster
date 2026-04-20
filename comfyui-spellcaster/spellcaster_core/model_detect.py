@@ -42,6 +42,8 @@ UNET_ARCH_RULES = [
     ("kaleidoscope", "flux2klein"),  # chroma2_kaleidoscope is a Klein 4B finetune
     ("chromaxl",  "sdxl"),          # Zavy Chroma XL and similar — SDXL finetunes with "chroma" in name
     ("chroma",    "chroma"),        # Chroma v1/v2 — single CLIPLoader type="chroma"
+    ("z_image",   "zit"),           # Z-Image-Turbo (z_image_turbo, z_image_de_turbo)
+    ("z-image",   "zit"),
     ("flux",      "flux1dev"),
     ("wan",       "wan"),
     ("ltx",       "ltx"),
@@ -61,6 +63,15 @@ UNET_ARCH_RULES = [
 # Checkpoint model-name keywords → arch key   (order = priority)
 CKPT_ARCH_RULES = [
     ("playground",  "playground"),
+    # Z-Image-Turbo AIO checkpoints (gonzalomoZpop, etc.) MUST come before
+    # the generic "turbo" → sdxl_turbo rule below or they get misclassified
+    # as SDXL Turbo and load with the wrong sampler / steps / native res.
+    ("z_image",     "zit"),
+    ("z-image",     "zit"),
+    ("zit\\",       "zit"),            # ZIT\... folder prefix (Windows separator)
+    ("zit/",        "zit"),            # ZIT/... folder prefix (POSIX separator)
+    ("gonzalomozpop", "zit"),          # GonzaloMo Zpop AIO merges
+    ("zpop",        "zit"),            # other Zpop variants
     ("sdxl_turbo",  "sdxl_turbo"),
     ("sdxl_lightning", "sdxl_turbo"),
     ("lcm",         "sdxl_turbo"),
@@ -92,6 +103,7 @@ BEST_MODEL_PRIORITY = [
     ("unet",  lambda ml: "klein" in ml and "4b" in ml,  "flux2klein"),
     ("unet",  lambda ml: "kaleidoscope" in ml,           "flux2klein"),
     ("unet",  lambda ml: "chroma" in ml and "kaleidoscope" not in ml, "chroma"),
+    ("unet",  lambda ml: "z_image" in ml or "z-image" in ml, "zit"),
     ("unet",  lambda ml: "flux" in ml and "dev" in ml,  "flux1dev"),
     ("unet",  lambda ml: "flux" in ml,                  "flux1dev"),
     ("unet",  lambda ml: "sd3.5" in ml and "turbo" not in ml, "sd3"),
@@ -101,6 +113,9 @@ BEST_MODEL_PRIORITY = [
     ("ckpt",  lambda ml: "kaleidoscope" in ml,           "flux2klein"),
     ("ckpt",  lambda ml: "chromaxl" in ml,               "sdxl"),   # SDXL finetunes with "chroma" in name
     ("ckpt",  lambda ml: "chroma" in ml and "kaleidoscope" not in ml and "xl" not in ml, "chroma"),
+    # Z-Image-Turbo AIO checkpoints — must come before any "turbo"/"xl"
+    # rules so gonzalomoZpop_v30AIO doesn't get auto-picked as SDXL.
+    ("ckpt",  lambda ml: "z_image" in ml or "z-image" in ml or "gonzalomozpop" in ml or "zpop" in ml, "zit"),
     ("ckpt",  lambda ml: "sd3.5" in ml and "turbo" not in ml, "sd3"),
     ("ckpt",  lambda ml: "playground" in ml,            "playground"),
     ("ckpt",  lambda ml: "kolors" in ml,                "kolors"),
@@ -131,6 +146,7 @@ LORA_ARCH_PREFIXES = {
     "flux2klein":   ["Flux-2-Klein\\", "Flux2/"],
     "flux1dev":     ["Flux-1-Dev\\", "Flux\\", "Flux/"],
     "flux_kontext": ["Flux-1-Dev\\", "Flux/"],
+    "zit":          ["Z-Image-Turbo\\", "ZIT\\", "Z-Image-Turbo/", "ZIT/"],
     "ltx":          ["ltxv\\", "LTX\\", "ltxv/", "LTX/"],
     "wan":          ["Wan\\", "WAN\\", "Wan-2.2-I2V\\", "Wan/", "WAN/"],
     "seedvr":       ["SeedVR\\", "seedvr\\", "SeedVR/", "seedvr/"],
@@ -147,6 +163,13 @@ LORA_ARCH_PREFIXES = {
 # video LoRAs too (e.g. "Wan_realism_enhance") and pollute SDXL wizards
 # with Wan LoRAs, which is the exact bug we're guarding against.
 LORA_NAME_ARCH_HINTS = [
+    # --- Z-Image-Turbo first (specific, unambiguous) ---
+    ("z_image",    "zit"),
+    ("z-image",    "zit"),
+    ("zturbo",     "zit"),
+    ("z_turbo",    "zit"),
+    ("gonzalomozpop", "zit"),
+    ("zpop",       "zit"),
     # --- Video models first (unambiguous keywords) ---
     ("ltxv",       "ltx"),
     ("ltx-video",  "ltx"),
@@ -226,6 +249,7 @@ LORA_COMPAT_BUCKETS = {
     "flux_kontext": ("flux1dev", "flux_kontext"),
     "flux2klein":   ("flux2klein",),
     "chroma":       ("chroma",),
+    "zit":          ("zit",),  # Z-Image-Turbo LoRAs are arch-specific
     "wan":          ("wan",),
     "ltx":          ("ltx",),
     "seedvr":       ("seedvr",),
