@@ -3017,6 +3017,25 @@ def _seed_default_assets():
     assets = {}
     seeded = 0
 
+    # The preferred URL shape is `/api/assets/<hash>` via AssetGallery
+    # (CLAUDE.md §15). For bundled defaults we run the copied file
+    # through the gallery so we emit canonical URLs on fresh installs
+    # — the legacy `/api/cached_asset/<filename>` shape is kept only
+    # as a reader for users whose saved state still references it.
+    def _gallery_url(path: str, kind: str, title: str,
+                     fallback_filename: str) -> str:
+        if _ASSET_GALLERY is None:
+            return f"/api/cached_asset/{fallback_filename}"
+        try:
+            with open(path, "rb") as _f:
+                _bytes = _f.read()
+            rec = _ASSET_GALLERY.put(
+                _bytes, origin="guild", kind=kind, title=title,
+                tags=["bundled_default"])
+            return f"/api/assets/{rec.hash}"
+        except Exception:
+            return f"/api/cached_asset/{fallback_filename}"
+
     # Copy background
     bg = manifest.get("background", {})
     if bg.get("filename"):
@@ -3028,7 +3047,8 @@ def _seed_default_assets():
             shutil.copy2(src, dst)
             seeded += 1
         if os.path.exists(dst):
-            assets["_global"] = {"bg_url": f"/api/cached_asset/{bg['filename']}"}
+            assets["_global"] = {"bg_url": _gallery_url(
+                dst, "background", "Tavern background", bg["filename"])}
 
     # Copy avatars
     for char_id, filename in manifest.get("avatars", {}).items():
@@ -3040,7 +3060,8 @@ def _seed_default_assets():
             shutil.copy2(src, dst)
             seeded += 1
         if os.path.exists(dst):
-            assets[char_id] = {"avatar_url": f"/api/cached_asset/{filename}"}
+            assets[char_id] = {"avatar_url": _gallery_url(
+                dst, "avatar", f"Avatar: {char_id}", filename)}
 
     # Copy animated avatars (WAN/LTX I2V loops baked into the installer
     # via tools/bake_canon_animated_avatars.py). When present, the
@@ -3055,8 +3076,9 @@ def _seed_default_assets():
             shutil.copy2(src, dst)
             seeded += 1
         if os.path.exists(dst):
-            assets.setdefault(char_id, {})["animated_url"] = (
-                f"/api/cached_asset/{filename}")
+            assets.setdefault(char_id, {})["animated_url"] = _gallery_url(
+                dst, "animated_avatar", f"Animated avatar: {char_id}",
+                filename)
 
     if seeded:
         print(f"  [State] Seeded {seeded} pre-bundled asset(s) (core wizards + background)")
