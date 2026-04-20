@@ -72,7 +72,7 @@ else:
     BUNDLE_DIR = SCRIPT_DIR
 
 MANIFEST_PATH = SCRIPT_DIR / "manifest.json"
-VERSION = "2.2"
+VERSION = "2.3"
 DEFAULT_SERVER_URL = "http://127.0.0.1:8188"
 DEFAULT_LLM_URL = "http://127.0.0.1:5001"
 _BOX_LINE = "=" * 50
