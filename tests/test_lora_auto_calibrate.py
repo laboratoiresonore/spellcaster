@@ -863,6 +863,164 @@ def case_faceswap_probe_classifies_object_info_response():
         srv.shutdown()
 
 
+# ── Faceswap auto-recovering state machine ────────────────────────────
+
+def _reset_fsh_for_test():
+    """Isolate each state-machine test from siblings: clear env,
+    config, and the in-memory state."""
+    os.environ.pop("SPELLCASTER_FACESWAP_DISABLED", None)
+    fsh.set_config_lookup(None)
+    fsh.set_persist_path(None)
+    fsh.reset_state()
+
+
+def case_fsh_auto_disable_on_crash_within_window():
+    """Failed probe landing within the attribution window of a
+    dispatch → auto_disabled, and future guard calls raise."""
+    _reset_fsh_for_test()
+    fsh.record_dispatch()
+    fsh.record_probe(False)   # crash attributed immediately
+    st = fsh.get_effective_state()
+    assert st["state"] == "auto_off", st
+    assert st["auto_disabled"] is True
+    assert "unreachable" in st["state_reason"]
+    raised = False
+    try: fsh.guard_faceswap("photobooth")
+    except fsh.FaceswapDisabledError as e:
+        raised = True
+        assert "auto-re-enable" in str(e)
+    assert raised
+
+
+def case_fsh_failed_probe_outside_window_does_not_disable():
+    """If ComfyUI goes down with NO recent face-swap dispatch, we
+    don't attribute the outage to face-swap. Prevents false-positives
+    from user-triggered restarts or unrelated ComfyUI bugs."""
+    _reset_fsh_for_test()
+    # No dispatch stamped. Probe fails.
+    fsh.record_probe(False)
+    st = fsh.get_effective_state()
+    assert st["state"] == "auto_on"
+    assert st["auto_disabled"] is False
+
+
+def case_fsh_auto_reenable_after_stability_window():
+    """After the stable-reenable window, a successful probe flips
+    auto_disabled off without any user action."""
+    _reset_fsh_for_test()
+    # Force an auto-disable by faking an attribution event.
+    fsh.record_dispatch()
+    fsh.record_probe(False)
+    assert fsh.get_effective_state()["state"] == "auto_off"
+    # Fake a long-stable streak by rewinding reachable_since. (The
+    # state dict is module-private but we assume tests are allowed
+    # to tweak it for time-travel — mirrors what the heartbeat thread
+    # sees across 30 real minutes.)
+    fsh._STATE["reachable_since"] = time.time() - (fsh.STABLE_REENABLE_SECONDS + 5)
+    fsh.record_probe(True)   # triggers the re-enable check
+    st = fsh.get_effective_state()
+    assert st["state"] == "auto_on", st
+    assert st["auto_disabled"] is False
+    assert "re-enabled" in (st["state_reason"] or "")
+
+
+def case_fsh_escalation_after_n_auto_disables():
+    """After CRASH_ESCALATION_COUNT attributed crashes the state
+    escalates — auto-re-enable no longer works, manual reset needed."""
+    _reset_fsh_for_test()
+    for _ in range(fsh.CRASH_ESCALATION_COUNT):
+        # Each iteration: dispatch → crash → manually clear auto_disabled
+        # via a fake "we tried again" so the next crash counts as a NEW
+        # event instead of a no-op.
+        fsh.record_dispatch()
+        fsh.record_probe(False)
+        fsh._STATE["auto_disabled"] = False
+        fsh._STATE["last_dispatch_ts"] = None
+    # Now fire the Nth crash properly
+    fsh.record_dispatch()
+    fsh.record_probe(False)
+    st = fsh.get_effective_state()
+    assert st["escalated"] is True, st
+    assert st["state"] == "escalated"
+    # Stability window must NOT auto-re-enable when escalated
+    fsh._STATE["reachable_since"] = time.time() - (fsh.STABLE_REENABLE_SECONDS + 5)
+    fsh.record_probe(True)
+    assert fsh.get_effective_state()["state"] == "escalated"
+
+
+def case_fsh_reset_clears_everything():
+    """reset_state() drops the crash history and auto-disable so the
+    user's "try again" UI action fully clears prior state."""
+    _reset_fsh_for_test()
+    fsh.record_dispatch()
+    fsh.record_probe(False)
+    assert fsh.get_effective_state()["state"] == "auto_off"
+    fsh.reset_state()
+    st = fsh.get_effective_state()
+    assert st["state"] == "auto_on"
+    assert st["auto_disabled"] is False
+    assert st["history"] == []
+
+
+def case_fsh_state_persists_across_set_persist_path():
+    """A crash landed, state was saved to disk. A fresh Python
+    process (simulated by clearing in-memory state and re-loading
+    from the same file) must pick up the auto-disable — otherwise
+    every Guild auto-update would clobber our known-broken state."""
+    _reset_fsh_for_test()
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "faceswap_state.json")
+        fsh.set_persist_path(path)
+        fsh.record_dispatch()
+        fsh.record_probe(False)
+        assert fsh.get_effective_state()["state"] == "auto_off"
+        # Simulate restart: wipe in-memory state, then re-point at
+        # the same file. State should be restored from disk.
+        fsh._STATE.update({
+            "auto_disabled": False, "auto_disabled_at": None,
+            "history": [], "auto_disable_count": 0, "escalated": False,
+        })
+        fsh.set_persist_path(path)
+        st = fsh.get_effective_state()
+        assert st["auto_disabled"] is True
+        assert st["state"] == "auto_off"
+    _reset_fsh_for_test()
+
+
+def case_fsh_force_enable_bypasses_auto_disable():
+    """When the user has set faceswap_force_enable, auto_off still
+    passes the guard — they're telling us they fixed the install and
+    don't want to wait the 30-minute stability window."""
+    _reset_fsh_for_test()
+    fsh.record_dispatch()
+    fsh.record_probe(False)
+    assert fsh.get_effective_state()["state"] == "auto_off"
+    fsh.set_config_lookup(lambda: {"faceswap_force_enable": True})
+    try:
+        st = fsh.get_effective_state()
+        assert st["state"] == "forced_on"
+        # Guard passes without raising
+        fsh.guard_faceswap("photobooth")
+    finally:
+        _reset_fsh_for_test()
+
+
+def case_fsh_user_forced_off_beats_auto_state():
+    """User env var override is the highest-precedence input —
+    doesn't matter if the auto state is on, user wins."""
+    _reset_fsh_for_test()
+    os.environ["SPELLCASTER_FACESWAP_DISABLED"] = "1"
+    try:
+        st = fsh.get_effective_state()
+        assert st["state"] == "forced_off"
+        raised = False
+        try: fsh.guard_faceswap("photobooth")
+        except fsh.FaceswapDisabledError: raised = True
+        assert raised
+    finally:
+        _reset_fsh_for_test()
+
+
 def case_recipe_graceful_fallback_on_knowledge_error():
     """Forcing a knowledge error should degrade cleanly, not crash."""
     from scaffold.lora_grouping import resolve_shootout_recipe_for_lora
@@ -939,6 +1097,15 @@ CASES = [
     ("faceswap-guard: config flag triggers guard",      case_faceswap_guard_config_override_raises),
     ("faceswap-probe: offline returns unreachable",     case_faceswap_probe_offline_reports_unreachable),
     ("faceswap-probe: classifies /object_info result",  case_faceswap_probe_classifies_object_info_response),
+
+    ("fsh-state: auto-disable on crash in window",      case_fsh_auto_disable_on_crash_within_window),
+    ("fsh-state: failed probe outside window no-op",    case_fsh_failed_probe_outside_window_does_not_disable),
+    ("fsh-state: auto-re-enable after stability",       case_fsh_auto_reenable_after_stability_window),
+    ("fsh-state: escalation after repeated crashes",    case_fsh_escalation_after_n_auto_disables),
+    ("fsh-state: reset clears history",                 case_fsh_reset_clears_everything),
+    ("fsh-state: state survives persist path reload",   case_fsh_state_persists_across_set_persist_path),
+    ("fsh-state: force_enable bypasses auto-disable",   case_fsh_force_enable_bypasses_auto_disable),
+    ("fsh-state: user forced-off beats auto state",     case_fsh_user_forced_off_beats_auto_state),
 ]
 
 
