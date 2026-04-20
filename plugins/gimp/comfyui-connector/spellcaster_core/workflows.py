@@ -7352,7 +7352,17 @@ def build_ltx_video(preset, prompt_text, seed,
                      # behavior if the chosen node isn't installed.
                      enable_sage=False, enable_cfg_zero=False,
                      # Per-call tuning (None = use canon default).
-                     sampler_name=None, stg_layers=None, chunk_size=None):
+                     sampler_name=None, stg_layers=None, chunk_size=None,
+                     # VAE decode tiling knobs — forwarded into
+                     # LTXVSpatioTemporalTiledVAEDecode. None = node
+                     # default (canon: spatial_tiles=4, temporal=16,
+                     # last_frame_fix=False, dtype="auto"). Low-VRAM
+                     # users raise spatial_tiles; RTX 50xx users
+                     # sometimes need last_frame_fix=True or
+                     # working_dtype="bf16" to avoid end-frame
+                     # artifacts.
+                     vae_spatial_tiles=None, vae_temporal_tile_length=None,
+                     vae_last_frame_fix=False, vae_working_dtype=None):
     # ═══════════════════════════════════════════════════════════════════
     #  CANONICAL LTX 2.3 BUILDER — DO NOT DIVERGE
     # ═══════════════════════════════════════════════════════════════════
@@ -7561,8 +7571,21 @@ def build_ltx_video(preset, prompt_text, seed,
         decode_latent_ref = [stage2_id, 0]
 
     # ── VAE decode ────────────────────────────────────────────────
+    # Optional tiling tuning. The canonical defaults live in the node
+    # factory (spatial_tiles=4, temporal_tile_length=16, last_frame_fix
+    # =False, working_dtype="auto") — callers pass overrides when they
+    # need VRAM / artifact tuning (CLAUDE.md §16.3).
+    _vae_kwargs = {}
+    if vae_spatial_tiles is not None:
+        _vae_kwargs["spatial_tiles"] = int(vae_spatial_tiles)
+    if vae_temporal_tile_length is not None:
+        _vae_kwargs["temporal_tile_length"] = int(vae_temporal_tile_length)
+    if vae_last_frame_fix:
+        _vae_kwargs["last_frame_fix"] = True
+    if vae_working_dtype:
+        _vae_kwargs["working_dtype"] = vae_working_dtype
     decode_id = nf.ltxv_spatiotemporal_tiled_vae_decode(
-        [vae_id, 0], decode_latent_ref, node_id="40")
+        [vae_id, 0], decode_latent_ref, node_id="40", **_vae_kwargs)
 
     frames_ref = [decode_id, 0]
 
