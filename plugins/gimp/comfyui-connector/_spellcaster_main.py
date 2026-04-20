@@ -8989,21 +8989,41 @@ class _JobManager:
         parts = [current["phase_text"] or current["label_text"]]
         if queued:
             parts.append(f"+{queued} queued")
-        # Poll ComfyUI every ~3 s to add queue + VRAM to the status.
+        # Poll ComfyUI every ~3 s to add queue + VRAM + progress. We
+        # cache between polls so the 300 ms re-render doesn't DoS the
+        # server at high cadence.
         self._poll_counter += 1
         if self._poll_counter % 10 == 1:
             try:
                 cfg = _load_config()
                 srv = cfg.get("server_url", COMFYUI_DEFAULT_URL)
-                self._poll_cached = _fetch_comfy_status(srv)
+                self._poll_rich_cached = _fetch_comfy_status_rich(srv)
             except Exception:
                 pass
-        running, pending, gpu, vt, vf = self._poll_cached
-        if running or pending:
-            parts.append(f"queue {running}+{pending}")
-        if vt > 0 and vf is not None:
-            vram_pct = int((1 - vf / max(vt, 1)) * 100)
-            parts.append(f"VRAM {vram_pct}%")
+        r = getattr(self, "_poll_rich_cached", None) or {}
+        # Step progress — the sharpest real-time signal we get from
+        # ComfyUI. When present, replace the elapsed-time suffix with
+        # "step X/Y" so the user sees live denoise progress.
+        pv = r.get("progress_value", 0)
+        pm = r.get("progress_max", 0)
+        if pv and pm:
+            parts.append(f"step {pv}/{pm}")
+        if r.get("running") or r.get("pending"):
+            parts.append(
+                f"queue {r.get('running', 0)}+{r.get('pending', 0)}")
+        if r.get("vram_used_pct"):
+            parts.append(f"VRAM {r['vram_used_pct']}%")
+        if r.get("torch_vram_gb"):
+            # Model size actively resident — moves when ComfyUI swaps
+            # UNET/LoRA. Lets the user see "9.2 GB model loaded" at a
+            # glance which the plain VRAM% can't distinguish from e.g.
+            # a browser tab on the same card.
+            parts.append(f"model {r['torch_vram_gb']:.1f}G")
+        if r.get("ram_used_pct") and r["ram_used_pct"] > 60:
+            # Only surface host RAM when it's actually stressed —
+            # otherwise it's clutter. 60 % is the threshold where
+            # tile-loaded workflows start spilling.
+            parts.append(f"host RAM {r['ram_used_pct']}%")
         parts.append(elapsed_str)
         text = "   ·   ".join(parts)
 
@@ -9360,29 +9380,98 @@ _spinner_cleanup_gen = 0
 
 
 def _fetch_comfy_status(server):
-    """Fetch queue + system status from ComfyUI for the spinner display."""
+    """Fetch queue + system status from ComfyUI.
+
+    Returns a 5-tuple for back-compat with the JobManager's existing
+    render: ``(running, pending, gpu_name, vram_total_gb, vram_free_gb)``.
+    Richer fields (host RAM, PyTorch VRAM, step progress) come back
+    via the new ``_fetch_comfy_status_rich`` helper that the status
+    bar reads in addition to the legacy tuple. Keeping the old shape
+    means every other caller (diagnostics dialogs, video dispatch)
+    that unpacks 5 values stays working.
+    """
+    r = _fetch_comfy_status_rich(server)
+    return (r["running"], r["pending"], r["gpu_name"],
+            r["vram_total_gb"], r["vram_free_gb"])
+
+
+def _fetch_comfy_status_rich(server):
+    """Richer ComfyUI-side stats — everything /system_stats and
+    /queue expose that's useful in a status line.
+
+    Returns a dict with a stable set of keys; missing values default
+    to 0 / "" so the consumer can format without None-guards. Callers
+    that don't need the full set use _fetch_comfy_status above.
+
+    Keys:
+      running, pending                  int   – queue depth
+      gpu_name                          str   – GPU brand (GPU 0)
+      vram_total_gb, vram_free_gb       float – on-card VRAM
+      vram_used_pct                     int   – (1 - free/total)*100
+      torch_vram_gb                     float – PyTorch reserved (model size)
+      ram_total_gb, ram_free_gb         float – ComfyUI host RAM
+      ram_used_pct                      int
+      progress_value, progress_max      int   – current step / total
+      comfyui_version                   str
+    """
+    out = {
+        "running": 0, "pending": 0, "gpu_name": "",
+        "vram_total_gb": 0.0, "vram_free_gb": 0.0, "vram_used_pct": 0,
+        "torch_vram_gb": 0.0,
+        "ram_total_gb": 0.0, "ram_free_gb": 0.0, "ram_used_pct": 0,
+        "progress_value": 0, "progress_max": 0,
+        "comfyui_version": "",
+    }
     try:
         q = _api_get(server, "/queue")
-        running = len(q.get("queue_running", []))
-        pending = len(q.get("queue_pending", []))
+        out["running"] = len(q.get("queue_running") or [])
+        out["pending"] = len(q.get("queue_pending") or [])
     except Exception:
-        running, pending = 0, 0
+        pass
     try:
-        stats = _api_get(server, "/system_stats")
-        devices = stats.get("devices", [{}])
+        stats = _api_get(server, "/system_stats") or {}
+        sysinfo = stats.get("system") or {}
+        devices = stats.get("devices") or []
         if devices:
             d = devices[0]
-            vram_total = d.get("vram_total", 0) / (1024**3)
-            vram_free = d.get("vram_free", 0) / (1024**3)
-            gpu_name = d.get("name", "").split(":")[0].strip()
-            gpu_name = gpu_name.replace("cuda:0 ", "")
-        else:
-            vram_total = vram_free = 0
-            gpu_name = ""
+            vt = float(d.get("vram_total", 0) or 0) / (1024**3)
+            vf = float(d.get("vram_free", 0) or 0) / (1024**3)
+            out["vram_total_gb"] = vt
+            out["vram_free_gb"] = vf
+            if vt > 0:
+                out["vram_used_pct"] = int((1 - vf / vt) * 100)
+            name = (d.get("name") or "").split(":")[-1].strip()
+            # "cuda:0 NVIDIA GeForce RTX 5060 Ti" → "NVIDIA GeForce RTX 5060 Ti"
+            # Handle the leading "N NVIDIA" artefact from the split above.
+            if name.startswith(("cuda", "cuda0")):
+                parts = (d.get("name") or "").split(" ", 2)
+                name = parts[-1] if parts else name
+            # Short-form the very long default string
+            name = (name.replace("NVIDIA GeForce ", "")
+                         .replace("cudaMallocAsync", "")
+                         .strip())
+            out["gpu_name"] = name
+            tvt = float(d.get("torch_vram_total", 0) or 0) / (1024**3)
+            tvf = float(d.get("torch_vram_free", 0) or 0) / (1024**3)
+            out["torch_vram_gb"] = max(0.0, tvt - tvf)
+        rt = float(sysinfo.get("ram_total", 0) or 0) / (1024**3)
+        rf = float(sysinfo.get("ram_free", 0) or 0) / (1024**3)
+        out["ram_total_gb"] = rt
+        out["ram_free_gb"] = rf
+        if rt > 0:
+            out["ram_used_pct"] = int((1 - rf / rt) * 100)
+        out["comfyui_version"] = sysinfo.get("comfyui_version", "")
     except Exception:
-        vram_total = vram_free = 0
-        gpu_name = ""
-    return running, pending, gpu_name, vram_total, vram_free
+        pass
+    # Step progress — ComfyUI publishes it via /progress (newer) or
+    # as a field on the running queue entry. Try the cheap one first.
+    try:
+        prog = _api_get(server, "/progress") or {}
+        out["progress_value"] = int(prog.get("value", 0) or 0)
+        out["progress_max"] = int(prog.get("max", 0) or 0)
+    except Exception:
+        pass
+    return out
 
 
 def _run_with_spinner(label_text, func, *args):
@@ -10258,7 +10347,22 @@ class PresetDialog(Gtk.Dialog):
             self._refresh_cn_combos()
 
     def _on_lora_combo_changed(self, combo, model_spin, clip_spin):
-        """When a LoRA is selected, look up metadata for trigger words and optimal strength."""
+        """When a LoRA is selected, look up metadata for trigger words and optimal strength.
+
+        Two sources, tried in order:
+          1. Hardcoded ``LORA_METADATA`` \u2014 a tiny curated list of
+             LoRAs we ship with known-good triggers / strengths. Fast,
+             no network.
+          2. The Wizard Guild's ``/api/spellcaster/lora/knowledge``
+             endpoint, which consults the user's LoRA registry +
+             shipped calibration defaults + Civitai cache. Populated
+             every time the user runs the LoRA manager's metadata
+             download, so every LoRA the Guild has seen is covered.
+
+        The Guild lookup fires asynchronously; if the Guild isn't
+        reachable or doesn't know the LoRA, we silently give up \u2014
+        the combo keeps whatever defaults it had.
+        """
         lora_id = combo.get_active_id()
         if not lora_id or lora_id == "none":
             return
@@ -10267,21 +10371,93 @@ class PresetDialog(Gtk.Dialog):
         if "/" in basename:
             basename = basename.rsplit("/", 1)[-1]
         meta = LORA_METADATA.get(basename)
-        if not meta:
+        if meta:
+            self._apply_lora_metadata(
+                model_spin, clip_spin,
+                strength=meta["strength"], triggers=meta["trigger"])
             return
-        # Set optimal strength
-        model_spin.set_value(meta["strength"])
-        clip_spin.set_value(meta["strength"])
-        # Append trigger words to prompt (avoid duplicates)
-        buf = self.prompt_tv.get_buffer()
-        start, end = buf.get_bounds()
-        current_text = buf.get_text(start, end, False)
-        trigger = meta["trigger"]
-        if trigger not in current_text:
-            if current_text and not current_text.rstrip().endswith(","):
-                buf.insert(end, f", {trigger}")
+        # Fall back to the Guild knowledge endpoint \u2014 this is where
+        # all the metadata the LoRA manager has downloaded lives.
+        self._fetch_lora_knowledge_async(lora_id, model_spin, clip_spin)
+
+    def _apply_lora_metadata(self, model_spin, clip_spin, *,
+                             strength=None, triggers=None):
+        """Apply resolved LoRA metadata to the dialog widgets.
+
+        Extracted so the hardcoded path and the async-Guild path
+        converge on identical widget writes. Safe against bogus
+        strengths (ignored if outside 0.0-2.0) and duplicate triggers
+        (case-insensitive substring match against the existing prompt).
+        """
+        if strength is not None:
+            try:
+                s = float(strength)
+                if 0.0 < s <= 2.0:
+                    model_spin.set_value(s)
+                    clip_spin.set_value(s)
+            except (TypeError, ValueError):
+                pass
+        if triggers:
+            if isinstance(triggers, (list, tuple)):
+                trigger = ", ".join(str(t).strip() for t in triggers if str(t).strip())
             else:
-                buf.insert(end, f" {trigger}" if current_text else trigger)
+                trigger = str(triggers).strip()
+            if not trigger:
+                return
+            buf = self.prompt_tv.get_buffer()
+            start, end = buf.get_bounds()
+            current_text = buf.get_text(start, end, False)
+            low = current_text.lower()
+            parts = [p.strip() for p in trigger.split(",")]
+            new_parts = [p for p in parts if p and p.lower() not in low]
+            if not new_parts:
+                return
+            addition = ", ".join(new_parts)
+            if current_text and not current_text.rstrip().endswith(","):
+                buf.insert(end, f", {addition}")
+            else:
+                buf.insert(end, f" {addition}" if current_text else addition)
+
+    def _fetch_lora_knowledge_async(self, lora_id, model_spin, clip_spin):
+        """Query the Guild's knowledge endpoint for this LoRA and apply
+        whatever it returns. Silent on any failure \u2014 the dialog
+        still works with the combo's default strength.
+        """
+        try:
+            from spellcaster_core.cross_interface import resolve_guild_url
+        except Exception:
+            return
+        try:
+            guild = resolve_guild_url()
+        except Exception:
+            return
+        if not guild:
+            return
+
+        def fetch():
+            import urllib.parse
+            import urllib.request
+            import json as _json
+            qs = urllib.parse.urlencode({"name": lora_id})
+            url = f"{guild.rstrip('/')}/api/spellcaster/lora/knowledge?{qs}"
+            with urllib.request.urlopen(url, timeout=4) as r:
+                return _json.loads(r.read().decode("utf-8", errors="replace"))
+
+        def on_done(data):
+            if not isinstance(data, dict):
+                return
+            triggers = data.get("trigger_words") or []
+            weight = data.get("recommended_weight")
+            if not triggers and weight in (None, ""):
+                return
+            self._apply_lora_metadata(
+                model_spin, clip_spin,
+                strength=weight, triggers=triggers)
+
+        def on_err(_e):
+            pass
+
+        _async_fetch(fetch, on_done, on_err)
 
     def _apply_preset(self, idx):
         """Populate all parameter widgets from a MODEL_PRESETS entry."""

@@ -535,6 +535,23 @@
                 </div>
             </div>
 
+            <!-- Search + filters — drops in front of the list. Only
+                 shows when metadata has populated (civitai_* fields) so
+                 users on day-1 without the fetch don't see empty filters. -->
+            <div id="lora-filter-row" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+                <input type="text" id="lora-search" placeholder="Search name, purpose, tags, trigger…"
+                    style="flex:1;min-width:200px;padding:6px 10px;border-radius:6px;border:1px solid #333;background:#151520;color:#eee;font-size:12px;">
+                <select id="lora-filter-purpose" style="padding:6px 10px;border-radius:6px;border:1px solid #333;background:#151520;color:#ccc;font-size:12px;">
+                    <option value="">All purposes</option>
+                </select>
+                <label style="display:flex;align-items:center;gap:4px;color:#aaa;font-size:11px;cursor:pointer;">
+                    <input type="checkbox" id="lora-filter-enabled-only" style="accent-color:#B246F2;"> Enabled
+                </label>
+                <label style="display:flex;align-items:center;gap:4px;color:#aaa;font-size:11px;cursor:pointer;" title="Hide LoRAs Civitai flagged as NSFW">
+                    <input type="checkbox" id="lora-filter-hide-nsfw" style="accent-color:#B246F2;"> Hide NSFW
+                </label>
+            </div>
+
             <!-- LoRA list (toggleable per wizard) -->
             <div id="lora-list" style="border:1px solid #333;border-radius:8px;background:#151520;max-height:400px;overflow-y:auto;">
                 <p style="color:#666;padding:12px;text-align:center;">Loading enchantments...</p>

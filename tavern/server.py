@@ -6382,12 +6382,112 @@ def _query_civitai_by_filename(lora_name):
         # Determine purpose from tags + description
         purpose = _infer_lora_purpose(best.get("name", ""), tags, desc_clean)
 
+        # Pick the FIRST model version for rich metadata (trainedWords,
+        # images, baseModel). Civitai sorts versions newest-first; that's
+        # usually the one whose file the user downloaded.
+        version = {}
+        versions_list = best.get("modelVersions") or []
+        if isinstance(versions_list, list) and versions_list:
+            # Prefer the exact version that matched (by filename scan
+            # above) so strengths line up with the actual file on disk.
+            for v in versions_list:
+                for f in v.get("files", []) or []:
+                    fname = (f.get("name") or "").rsplit(".", 1)[0].lower()
+                    if fname == search_lower:
+                        version = v
+                        break
+                if version:
+                    break
+            if not version:
+                version = versions_list[0]
+
+        trained_words = version.get("trainedWords") or []
+        if isinstance(trained_words, list):
+            trigger_words = [str(w).strip() for w in trained_words
+                             if isinstance(w, str) and w.strip()][:10]
+        else:
+            trigger_words = []
+
+        base_model = str(version.get("baseModel") or "").strip()
+
+        # Harvest prompt / sampler / cfg / strength from posted examples.
+        # Civitai stores these on each image's `meta` dict; averaging
+        # across the first few smooths out outlier renders.
+        example_prompts: list[str] = []
+        samplers: list[str] = []
+        cfgs: list[float] = []
+        weights: list[float] = []
+        preview_url = ""
+        nsfw_examples = False
+        for img in (version.get("images") or [])[:6]:
+            if not isinstance(img, dict):
+                continue
+            if not preview_url and img.get("url"):
+                preview_url = str(img["url"])
+            if img.get("nsfw") and img.get("nsfw") != "None":
+                nsfw_examples = True
+            m = img.get("meta") or {}
+            if not isinstance(m, dict):
+                continue
+            p = m.get("prompt")
+            if isinstance(p, str) and p.strip():
+                example_prompts.append(p.strip()[:400])
+            s = m.get("sampler") or m.get("Sampler")
+            if isinstance(s, str) and s:
+                samplers.append(s.strip())
+            c = m.get("cfgScale") or m.get("CFG scale") or m.get("cfg_scale")
+            try:
+                if c is not None:
+                    cfgs.append(float(c))
+            except (TypeError, ValueError):
+                pass
+            # "<lora:Name:0.85>" weight markers inside the prompt.
+            if isinstance(p, str):
+                for wm in re.finditer(r"<lora:[^:>]+:([\d.]+)>", p):
+                    try:
+                        weights.append(float(wm.group(1)))
+                    except ValueError:
+                        pass
+
+        recommended_sampler = ""
+        if samplers:
+            by_count: dict[str, int] = {}
+            for s in samplers:
+                key = s.lower()
+                by_count[key] = by_count.get(key, 0) + 1
+            recommended_sampler = sorted(
+                by_count.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+
+        recommended_cfg = None
+        if cfgs:
+            recommended_cfg = round(sum(cfgs) / len(cfgs), 2)
+
+        recommended_weight = None
+        sane_w = [w for w in weights if 0.1 <= w <= 1.5]
+        if sane_w:
+            recommended_weight = round(sum(sane_w) / len(sane_w), 2)
+
+        model_info = best.get("model") or {}
+        nsfw_flag = bool(
+            best.get("nsfw")
+            or (isinstance(model_info, dict) and model_info.get("nsfw"))
+            or nsfw_examples
+        )
+
         return {
             "purpose": purpose,
             "tags": tags[:10],  # limit tag count
             "civitai_url": f"https://civitai.com/models/{best.get('id', '')}",
             "description": desc_clean,
             "civitai_name": best.get("name", ""),
+            "civitai_trigger_words": trigger_words,
+            "civitai_base_model": base_model,
+            "civitai_recommended_sampler": recommended_sampler,
+            "civitai_recommended_cfg": recommended_cfg,
+            "civitai_recommended_weight": recommended_weight,
+            "civitai_example_prompts": example_prompts[:3],
+            "civitai_preview_url": preview_url,
+            "civitai_nsfw": nsfw_flag,
         }
     except Exception as e:
         print(f"  [LoRA] CivitAI lookup failed for '{search_name}': {e}")
@@ -6681,6 +6781,35 @@ def _civitai_metadata_worker(lora_names):
             entry["civitai_name"] = meta.get("civitai_name", "")
             entry["description"] = meta.get("description", "")
             entry["source"] = "civitai"
+            # Rich metadata — when the user activates "metadata download"
+            # we cache Civitai's trainedWords, recommended sampling
+            # params, example prompts, a preview URL, and the NSFW flag.
+            # We DO NOT overwrite anything the user has already confirmed
+            # via the F10 interrogation flow (`user_*` / `trigger_words`
+            # set by the approval step are authoritative).
+            civ_triggers = meta.get("civitai_trigger_words") or []
+            if civ_triggers:
+                entry["civitai_trigger_words"] = civ_triggers
+                if not entry.get("trigger_words"):
+                    entry["trigger_words"] = ", ".join(civ_triggers)
+            if meta.get("civitai_base_model"):
+                entry["civitai_base_model"] = meta["civitai_base_model"]
+            if meta.get("civitai_recommended_sampler"):
+                entry["civitai_recommended_sampler"] = meta["civitai_recommended_sampler"]
+            if meta.get("civitai_recommended_cfg") is not None:
+                entry["civitai_recommended_cfg"] = meta["civitai_recommended_cfg"]
+            if meta.get("civitai_recommended_weight") is not None:
+                entry["civitai_recommended_weight"] = meta["civitai_recommended_weight"]
+                # Only seed default_strength from Civitai if the user
+                # hasn't already set one — never overwrite their pick.
+                if "default_strength" not in entry or entry.get("default_strength") in (None, 0.7):
+                    entry["default_strength"] = meta["civitai_recommended_weight"]
+            if meta.get("civitai_example_prompts"):
+                entry["civitai_example_prompts"] = meta["civitai_example_prompts"]
+            if meta.get("civitai_preview_url"):
+                entry["civitai_preview_url"] = meta["civitai_preview_url"]
+            if meta.get("civitai_nsfw"):
+                entry["civitai_nsfw"] = True
             fetched += 1
         else:
             skipped += 1
@@ -6782,6 +6911,18 @@ def _get_loras_for_wizard(char_id):
             # via the F10 LoRA interrogation flow.
             "trigger_words": info.get("trigger_words", ""),
             "default_strength": info.get("default_strength", 0.7),
+            # Rich Civitai metadata (populated when the Metadata Download
+            # setting is on). Trigger words here are the trainer's
+            # canonical list, kept separate from the user-edited
+            # `trigger_words` string so the UI can distinguish origin.
+            "civitai_trigger_words": info.get("civitai_trigger_words", []),
+            "civitai_recommended_weight": info.get("civitai_recommended_weight"),
+            "civitai_recommended_sampler": info.get("civitai_recommended_sampler", ""),
+            "civitai_recommended_cfg": info.get("civitai_recommended_cfg"),
+            "civitai_example_prompts": info.get("civitai_example_prompts", []),
+            "civitai_preview_url": info.get("civitai_preview_url", ""),
+            "civitai_base_model": info.get("civitai_base_model", ""),
+            "civitai_nsfw": bool(info.get("civitai_nsfw")),
             # Multi-approve (Phase 3) fields — surface the user's
             # keyword scaffolding so the Wizard Guild client can auto-
             # suggest an approved LoRA whose keyword matches the prompt
@@ -10722,6 +10863,14 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     "user_desc": info.get("user_desc", ""),
                     "source": info.get("source", "discovered"),
                     "tags": info.get("tags", [])[:5],
+                    # Civitai metadata surfaces (see _get_loras_for_wizard
+                    # for the full set — kept slim here since scaffold
+                    # editor lists hundreds of rows).
+                    "civitai_trigger_words": info.get("civitai_trigger_words", []),
+                    "civitai_recommended_weight": info.get("civitai_recommended_weight"),
+                    "civitai_preview_url": info.get("civitai_preview_url", ""),
+                    "civitai_url": info.get("civitai_url", ""),
+                    "civitai_nsfw": bool(info.get("civitai_nsfw")),
                 }
                 for arch in info.get("archs", []):
                     by_arch.setdefault(arch, []).append(entry)

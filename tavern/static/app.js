@@ -6750,6 +6750,16 @@ loraBtn.addEventListener('click', async () => {
 
 loraCloseBtn.addEventListener('click', () => loraModal.classList.add('hidden'));
 
+// Filter row wiring. All four controls re-apply `_applyLoraFilter` in
+// place — no server round-trip, so large libraries stay snappy.
+['lora-search', 'lora-filter-purpose', 'lora-filter-enabled-only', 'lora-filter-hide-nsfw'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+        const ev = (el.tagName === 'INPUT' && el.type !== 'checkbox') ? 'input' : 'change';
+        el.addEventListener(ev, _applyLoraFilter);
+    }
+});
+
 loraRefreshBtn.addEventListener('click', async () => {
     loraRefreshBtn.textContent = 'Refreshing...';
     loraRefreshBtn.disabled = true;
@@ -6770,7 +6780,57 @@ loraRefreshBtn.addEventListener('click', async () => {
     loraRefreshBtn.disabled = false;
 });
 
+// Last-rendered set — the filter row re-applies against this without
+// a server round-trip, keeping the modal snappy on large LoRA libraries.
+let _loraRenderCache = { loras: [], charId: null };
+
 function renderLoraList(loras, charId) {
+    _loraRenderCache = { loras: loras || [], charId };
+    _populateLoraPurposeFilter(loras || []);
+    _applyLoraFilter();
+}
+
+function _populateLoraPurposeFilter(loras) {
+    const sel = document.getElementById('lora-filter-purpose');
+    if (!sel) return;
+    const prev = sel.value;
+    const purposes = new Set();
+    loras.forEach(l => { if (l.purpose) purposes.add(l.purpose); });
+    sel.innerHTML = '<option value="">All purposes</option>' +
+        Array.from(purposes).sort().map(p =>
+            `<option value="${p.replace(/"/g, '&quot;')}">${p}</option>`
+        ).join('');
+    if (prev && purposes.has(prev)) sel.value = prev;
+}
+
+function _applyLoraFilter() {
+    const { loras, charId } = _loraRenderCache;
+    const q = (document.getElementById('lora-search')?.value || '').trim().toLowerCase();
+    const purp = document.getElementById('lora-filter-purpose')?.value || '';
+    const enabledOnly = document.getElementById('lora-filter-enabled-only')?.checked;
+    const hideNsfw = document.getElementById('lora-filter-hide-nsfw')?.checked;
+    const state = loraEnabledState[charId] || {};
+
+    const filtered = loras.filter(lora => {
+        if (purp && lora.purpose !== purp) return false;
+        if (enabledOnly && !state[lora.name]) return false;
+        if (hideNsfw && lora.civitai_nsfw) return false;
+        if (q) {
+            const hay = [
+                lora.display_name, lora.purpose, lora.user_desc,
+                lora.description, lora.civitai_name,
+                (lora.trigger_words || ''),
+                (lora.civitai_trigger_words || []).join(' '),
+                (lora.tags || []).join(' '),
+            ].filter(Boolean).join(' ').toLowerCase();
+            if (!hay.includes(q)) return false;
+        }
+        return true;
+    });
+    _renderLoraListFiltered(filtered, charId);
+}
+
+function _renderLoraListFiltered(loras, charId) {
     if (!loras.length) {
         loraList.innerHTML = '<p style="color:#888;padding:16px;text-align:center;">No compatible LoRAs found for this wizard\'s architecture.</p>';
         return;
@@ -6790,16 +6850,53 @@ function renderLoraList(loras, charId) {
 
         // Trigger keyword badges + recommended strength chip — surface
         // anything the user (or CivitAI metadata) has captured about
-        // how to invoke this LoRA.
+        // how to invoke this LoRA. User-typed triggers win; Civitai
+        // trainedWords fill the gap when the user hasn't provided any.
+        const userWords = lora.trigger_words
+            ? String(lora.trigger_words).split(',').map(w => w.trim()).filter(Boolean)
+            : [];
+        const civiWords = Array.isArray(lora.civitai_trigger_words)
+            ? lora.civitai_trigger_words.filter(Boolean)
+            : [];
+        const displayWords = userWords.length ? userWords : civiWords;
+        const triggerSource = userWords.length ? 'user' : (civiWords.length ? 'civitai' : '');
         let triggerBadges = '';
-        if (lora.trigger_words) {
-            const words = String(lora.trigger_words).split(',').map(w => w.trim()).filter(Boolean);
-            triggerBadges = words.map(w =>
-                `<span style="display:inline-block;padding:1px 6px;margin:2px 3px 0 0;background:rgba(252,211,77,0.15);border:1px solid rgba(252,211,77,0.3);border-radius:4px;font-size:10px;color:#fde68a;font-family:monospace;">${w}</span>`
+        if (displayWords.length) {
+            triggerBadges = displayWords.map(w =>
+                `<span title="${triggerSource === 'civitai' ? 'Civitai trainedWord (click to copy)' : 'trigger word (click to copy)'}" data-copy-trigger="${String(w).replace(/"/g, '&quot;')}" style="display:inline-block;padding:1px 6px;margin:2px 3px 0 0;background:rgba(252,211,77,0.15);border:1px solid rgba(252,211,77,${triggerSource === 'civitai' ? '0.5' : '0.3'});border-radius:4px;font-size:10px;color:#fde68a;font-family:monospace;cursor:pointer;">${w}</span>`
             ).join('');
+            if (triggerSource === 'civitai') {
+                triggerBadges = `<span style="font-size:9px;color:#a78bfa;text-transform:uppercase;letter-spacing:0.5px;margin-right:4px;" title="From Civitai metadata">civitai</span>` + triggerBadges;
+            }
         }
-        const strengthChip = (lora.default_strength != null && lora.default_strength !== 0.7)
-            ? `<span style="display:inline-block;padding:1px 6px;margin-left:4px;background:rgba(178,70,242,0.15);border:1px solid rgba(178,70,242,0.3);border-radius:4px;font-size:10px;color:#c4b5fd;">str ${lora.default_strength}</span>`
+        // Strength chip reflects either the user-confirmed default OR
+        // the Civitai-recommended weight (when the user hasn't tuned
+        // one yet). We badge the origin so confidence is visible.
+        const hasUserStrength = (lora.default_strength != null && lora.default_strength !== 0.7);
+        const civiWeight = lora.civitai_recommended_weight;
+        let strengthChip = '';
+        if (hasUserStrength) {
+            strengthChip = `<span title="User-confirmed weight" style="display:inline-block;padding:1px 6px;margin-left:4px;background:rgba(178,70,242,0.15);border:1px solid rgba(178,70,242,0.3);border-radius:4px;font-size:10px;color:#c4b5fd;">str ${lora.default_strength}</span>`;
+        } else if (civiWeight != null) {
+            strengthChip = `<span title="Civitai-recommended weight (avg of posted examples)" style="display:inline-block;padding:1px 6px;margin-left:4px;background:rgba(88,224,255,0.12);border:1px solid rgba(88,224,255,0.35);border-radius:4px;font-size:10px;color:#7dd3fc;">str ${civiWeight} <span style="opacity:0.7;">civitai</span></span>`;
+        }
+        const samplerChip = lora.civitai_recommended_sampler
+            ? `<span title="Civitai users' most-common sampler for this LoRA" style="display:inline-block;padding:1px 6px;margin-left:4px;background:rgba(88,224,255,0.08);border:1px solid rgba(88,224,255,0.25);border-radius:4px;font-size:10px;color:#7dd3fc;font-family:monospace;">${lora.civitai_recommended_sampler}${lora.civitai_recommended_cfg != null ? ` · cfg ${lora.civitai_recommended_cfg}` : ''}</span>`
+            : '';
+        const nsfwChip = lora.civitai_nsfw
+            ? `<span title="Civitai flagged this LoRA (or its examples) as NSFW" style="display:inline-block;padding:1px 6px;margin-left:4px;background:rgba(244,63,94,0.12);border:1px solid rgba(244,63,94,0.4);border-radius:4px;font-size:10px;color:#fda4af;">NSFW</span>`
+            : '';
+        // Tiny preview thumbnail from Civitai's first posted image.
+        const previewThumb = lora.civitai_preview_url
+            ? `<img src="${lora.civitai_preview_url}" alt="" loading="lazy" style="width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid rgba(178,70,242,0.35);flex-shrink:0;" onerror="this.style.display='none'"/>`
+            : '';
+        // Example prompts expander — one click reveals the top 1-3
+        // posted prompts, one click on a prompt copies it.
+        const examples = Array.isArray(lora.civitai_example_prompts)
+            ? lora.civitai_example_prompts.filter(Boolean)
+            : [];
+        const examplesBtn = examples.length
+            ? `<button type="button" data-examples="${lora.name}" title="Show ${examples.length} prompt example(s) from Civitai" style="margin-left:6px;padding:1px 6px;background:transparent;border:1px solid rgba(178,70,242,0.35);border-radius:4px;color:#c4b5fd;font-size:10px;cursor:pointer;">💡 prompts</button>`
             : '';
 
         // Auto-blacklist surface: a LoRA that has racked up failures
@@ -6823,18 +6920,23 @@ function renderLoraList(loras, charId) {
                 <input type="checkbox" data-lora="${lora.name}" ${enabled && !lora.blocked ? 'checked' : ''} ${lora.blocked ? 'disabled' : ''}
                     style="width:18px;height:18px;accent-color:#B246F2;cursor:${lora.blocked ? 'not-allowed' : 'pointer'};">
             </label>
+            ${previewThumb}
             <div style="flex:1;min-width:0;">
                 <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
                     <span style="font-weight:600;color:#eee;font-size:13px;">${lora.display_name}</span>
                     <span style="font-size:11px;color:#888;" title="${lora.source}">${sourceIcon}</span>
                     ${strengthChip}
+                    ${samplerChip}
+                    ${nsfwChip}
                     ${blockedBadge}
                     ${unblockBtn}
                     ${civitLink}
+                    ${examplesBtn}
                 </div>
                 <p style="color:#aaa;font-size:12px;margin-top:2px;">${purposeText}</p>
                 ${triggerBadges ? `<div style="margin-top:3px;">${triggerBadges}</div>` : ''}
                 ${lora.description ? `<p style="color:#666;font-size:11px;margin-top:2px;max-height:40px;overflow:hidden;">${lora.description.substring(0, 120)}</p>` : ''}
+                <div data-examples-target="${lora.name}" style="display:none;margin-top:6px;padding:6px 8px;background:rgba(178,70,242,0.05);border:1px solid rgba(178,70,242,0.2);border-radius:6px;"></div>
             </div>
         `;
 
@@ -6843,7 +6945,72 @@ function renderLoraList(loras, charId) {
             if (lora.blocked) { checkbox.checked = false; return; }
             state[lora.name] = checkbox.checked;
             saveLoraState();
+            // When the user enables a LoRA AND we have Civitai trainedWords
+            // AND no user-typed triggers already exist, drop the trainer's
+            // activation words into the next-message draft so they don't
+            // have to copy-paste manually. No-op when the message input
+            // isn't on screen (settings pages etc).
+            if (checkbox.checked && !userWords.length && civiWords.length) {
+                const input = document.getElementById('message-input');
+                if (input) {
+                    const existing = input.value || '';
+                    const toAdd = civiWords.filter(w => !existing.toLowerCase().includes(String(w).toLowerCase()));
+                    if (toAdd.length) {
+                        const glue = existing && !/[,\s]$/.test(existing) ? ', ' : (existing ? '' : '');
+                        input.value = existing + glue + toAdd.join(', ');
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                }
+            }
         });
+
+        // Trigger-word click → copy to clipboard. One-click snag of an
+        // activation keyword for the current prompt.
+        row.querySelectorAll('[data-copy-trigger]').forEach(el => {
+            el.addEventListener('click', async () => {
+                const word = el.getAttribute('data-copy-trigger') || '';
+                try {
+                    await navigator.clipboard.writeText(word);
+                    const prev = el.textContent;
+                    el.textContent = '✓ ' + prev;
+                    setTimeout(() => { el.textContent = prev; }, 900);
+                } catch (_) { /* clipboard may be denied; ignore */ }
+            });
+        });
+
+        // Example-prompts expander. Lazy-render the prompt list so
+        // hundreds of rows don't inflate the DOM until needed.
+        const examplesBtnEl = row.querySelector(`button[data-examples="${lora.name}"]`);
+        const examplesTarget = row.querySelector(`[data-examples-target="${lora.name}"]`);
+        if (examplesBtnEl && examplesTarget && examples.length) {
+            let expanded = false;
+            examplesBtnEl.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                expanded = !expanded;
+                if (expanded) {
+                    examplesTarget.innerHTML = examples.map((p, i) =>
+                        `<div data-copy-prompt="${i}" title="Click to copy" style="color:#c4b5fd;font-size:11px;line-height:1.4;padding:4px 6px;margin-bottom:3px;background:rgba(178,70,242,0.06);border-radius:4px;cursor:pointer;font-family:monospace;white-space:pre-wrap;">${String(p).replace(/</g, '&lt;')}</div>`
+                    ).join('');
+                    examplesTarget.style.display = 'block';
+                    examplesTarget.querySelectorAll('[data-copy-prompt]').forEach((el, i) => {
+                        el.addEventListener('click', async () => {
+                            try {
+                                await navigator.clipboard.writeText(examples[i]);
+                                const prev = el.style.borderLeft;
+                                el.style.borderLeft = '3px solid #10b981';
+                                setTimeout(() => { el.style.borderLeft = prev; }, 700);
+                            } catch (_) {}
+                        });
+                    });
+                    examplesBtnEl.textContent = '💡 hide';
+                } else {
+                    examplesTarget.style.display = 'none';
+                    examplesTarget.innerHTML = '';
+                    examplesBtnEl.textContent = `💡 prompts`;
+                }
+            });
+        }
 
         const unblockEl = row.querySelector('button[data-unblock]');
         if (unblockEl) {
