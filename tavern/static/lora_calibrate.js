@@ -102,6 +102,13 @@
         background: transparent; color: #4dabf7; border: 1px solid #4dabf7;
         border-radius: 6px; padding: 7px 13px; font-size: 13px; cursor: pointer;
       }
+      .sc-cal-btn-danger {
+        background: #b02a37; color: white; border: 0;
+        border-radius: 6px; padding: 7px 13px; font-size: 13px; cursor: pointer;
+        font-weight: 600;
+      }
+      .sc-cal-btn-danger:hover { background: #c0303d; }
+      .sc-cal-btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
       .sc-cal-grid {
         display: grid; gap: 16px;
         grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -228,6 +235,12 @@
     return api('/api/spellcaster/lora/calibrate/auto/status?job=' + encodeURIComponent(jobId));
   }
 
+  async function cancelJob(jobId) {
+    return api('/api/spellcaster/lora/calibrate/auto/cancel?job=' + encodeURIComponent(jobId), {
+      method: 'POST', body: '{}',
+    });
+  }
+
   async function confirmLora(payload) {
     return api('/api/spellcaster/lora/calibrate/confirm', {
       method: 'POST',
@@ -305,6 +318,7 @@
                 <input type="checkbox" class="sc-cal-network" checked> Civitai lookup
               </label>
               <button class="sc-cal-btn-secondary sc-cal-confirm-all" disabled>Confirm all visible</button>
+              <button class="sc-cal-btn-danger sc-cal-cancel" style="display:none">⏹ Cancel</button>
               <button class="sc-cal-btn-primary sc-cal-start">Start</button>
             </div>
           </div>
@@ -321,6 +335,7 @@
     const progress = qs('.sc-cal-progress > div');
     const startBtn = qs('.sc-cal-start');
     const confirmAllBtn = qs('.sc-cal-confirm-all');
+    const cancelBtn = qs('.sc-cal-cancel');
     const networkChk = qs('.sc-cal-network');
 
     function close() { overlay.remove(); state.polling = false; refreshButton(); }
@@ -460,6 +475,9 @@
         state.jobId = resp.job_id;
         setStatus(`rendering 1/${resp.total}…`);
         setProgress(0, resp.total);
+        cancelBtn.style.display = '';
+        cancelBtn.disabled = false;
+        cancelBtn.textContent = '⏹ Cancel';
         pollLoop(resp.total);
       } catch (e) {
         setStatus('start failed: ' + e);
@@ -467,6 +485,23 @@
       }
     }
     startBtn.addEventListener('click', startJob);
+
+    async function cancelCurrentJob() {
+      if (!state.jobId) return;
+      cancelBtn.disabled = true;
+      cancelBtn.textContent = 'Cancelling…';
+      try {
+        const r = await cancelJob(state.jobId);
+        const warn = (r.comfy && r.comfy.errors && r.comfy.errors.length)
+          ? ' (ComfyUI: ' + r.comfy.errors.join(', ') + ')' : '';
+        setStatus('cancel requested' + warn);
+      } catch (e) {
+        setStatus('cancel failed: ' + e);
+        cancelBtn.disabled = false;
+        cancelBtn.textContent = '⏹ Cancel';
+      }
+    }
+    cancelBtn.addEventListener('click', cancelCurrentJob);
 
     function renderSkipped(list) {
       const host = qs('.sc-cal-skipped');
@@ -520,7 +555,9 @@
           state.polling = false;
           confirmAllBtn.disabled = false;
           startBtn.disabled = false;
-          startBtn.textContent = s.status === 'complete' ? 'Re-run' : 'Start';
+          startBtn.textContent = (s.status === 'complete' || s.status === 'cancelled')
+            ? 'Re-run' : 'Start';
+          cancelBtn.style.display = 'none';
         }
       }
     }
