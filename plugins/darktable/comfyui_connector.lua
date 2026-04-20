@@ -1320,9 +1320,52 @@ end
 -- We use a Python helper to base64-encode the file since Lua's
 -- stdlib has no b64. Python ships with the Spellcaster runtime and is
 -- reliably on PATH for every install tier.
+-- Try ComfyUI's blob bus first (audit tier-3). Saves a LAN hop when
+-- the Guild is on a different machine from ComfyUI + the target peer.
+-- Returns hash string on success, nil on any failure (no error spam;
+-- caller falls back to Guild upload). curl's -F flag builds the
+-- multipart body natively so we skip the Python-b64 shuffle needed
+-- for the JSON endpoint.
+local function _blob_upload(png_path)
+  local comfy = get_server()
+  if not comfy or comfy == "" then return nil end
+  local resp_path = tmp_dir() .. sep
+                    .. "spellcaster_blob_resp_" .. os.time() .. ".json"
+  local cmd
+  if package.config:sub(1,1) == "\\" then
+    cmd = string.format(
+      'curl -s --max-time 30 -X POST -F "origin=darktable" -F "kind=generation" -F "file=@%s" "%s/spellcaster/blob/put" -o "%s" 2>NUL',
+      shell_esc(png_path), shell_esc(comfy), shell_esc(resp_path))
+  else
+    cmd = string.format(
+      'curl -s --max-time 30 -X POST -F "origin=darktable" -F "kind=generation" -F "file=@%s" "%s/spellcaster/blob/put" -o "%s" 2>/dev/null',
+      shell_esc(png_path), shell_esc(comfy), shell_esc(resp_path))
+  end
+  os.execute(cmd)
+  local rf = io.open(resp_path, "r")
+  if not rf then return nil end
+  local body = rf:read("*all"); rf:close(); os.remove(resp_path)
+  if not body or body == "" then return nil end
+  local hash = body:match('"hash"%s*:%s*"([^"]+)"')
+  local url = body:match('"url"%s*:%s*"([^"]+)"')
+  if not hash or not url then return nil end
+  return hash, url
+end
+
 local function _asset_upload_and_emit(target, png_path, friendly)
   local guild = get_guild_url()
   if not guild or guild == "" then return false, "no guild url" end
+  -- Blob-bus-first path — byte transport skips the Guild when possible.
+  -- Guild still handles the event signal, so subscribers (GIMP, ST,
+  -- Resolve Bridge) don't care which URL shape they see.
+  local bhash, burl = _blob_upload(png_path)
+  if bhash and burl then
+    local data_json = string.format(
+      '{"image_url":"%s","hash":"%s","source":"darktable","kind":"generation","transport":"blob"}',
+      burl, bhash)
+    guild_emit_event(target .. ".asset.send", data_json)
+    return true, bhash
+  end
   -- 1) base64-encode the file to a temp .txt via python helper
   local b64_out = tmp_dir() .. sep
                   .. "spellcaster_b64_" .. os.time() .. ".txt"
@@ -1375,7 +1418,7 @@ local function _asset_upload_and_emit(target, png_path, friendly)
   if not hash or hash == "" then return false, "no hash in response" end
   -- 3) publish event for the target's subscriber (Bridge / GIMP / ST)
   local data_json = string.format(
-    '{"image_url":"/api/assets/%s","hash":"%s","source":"darktable","kind":"asset"}',
+    '{"image_url":"/api/assets/%s","hash":"%s","source":"darktable","kind":"asset","transport":"guild"}',
     hash, hash)
   guild_emit_event(target .. ".asset.send", data_json)
   return true, hash
